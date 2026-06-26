@@ -22,6 +22,7 @@ import numpy as np
 try:
     import pypowsybl as pp
     from lightsim2grid.network import init_from_pypowsybl
+    from lightsim2grid.network.from_pypowsybl import bake_outer_loops
     HAS_PYPOWSYBL = True
 except ImportError:
     HAS_PYPOWSYBL = False
@@ -102,6 +103,29 @@ def _svc_net(mode=VOLTAGE, target_v=398.0, target_q=0.0, slope=0.0, remote=False
     return n
 
 
+def _dist_slack_pq_net():
+    """3 radial buses for a distributed slack with a PQ participant: G0@B0 is a
+    voltage-regulating gen, G1@B1 is a NON-regulating gen (voltage_regulator_on=
+    False, e.g. baked to PQ at its Q-limit). Both join the distributed slack, so
+    G1's bus is a slack bus that is NOT pinned by a local PV gen: it must keep a
+    free Vm unknown + Q equation, otherwise its magnitude is frozen at the init
+    value. The load exceeds generation so the slack actually distributes."""
+    n = pp.network.create_empty()
+    n.create_substations(id=["S0", "S1", "S2"])
+    n.create_voltage_levels(id=["VL0", "VL1", "VL2"], substation_id=["S0", "S1", "S2"],
+                            topology_kind=["BUS_BREAKER"] * 3, nominal_v=[400.0] * 3)
+    n.create_buses(id=["B0", "B1", "B2"], voltage_level_id=["VL0", "VL1", "VL2"])
+    n.create_lines(id=["L02", "L12"], voltage_level1_id=["VL0", "VL1"], voltage_level2_id=["VL2", "VL2"],
+                   bus1_id=["B0", "B1"], bus2_id=["B2", "B2"],
+                   r=[1.0, 1.0], x=[20.0, 20.0], g1=[0.0, 0.0], b1=[0.0, 0.0], g2=[0.0, 0.0], b2=[0.0, 0.0])
+    n.create_loads(id="LD", voltage_level_id="VL2", bus_id="B2", p0=180.0, q0=60.0)
+    n.create_generators(id="G0", voltage_level_id="VL0", bus_id="B0", target_p=60.0,
+                        target_q=0.0, target_v=400.0, voltage_regulator_on=True, max_p=1000.0, min_p=0.0)
+    n.create_generators(id="G1", voltage_level_id="VL1", bus_id="B1", target_p=60.0,
+                        target_q=10.0, target_v=400.0, voltage_regulator_on=False, max_p=1000.0, min_p=0.0)
+    return n
+
+
 @unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
 class TestVoltageControlPypowsybl(unittest.TestCase):
     def setUp(self):
@@ -160,13 +184,63 @@ class TestVoltageControlPypowsybl(unittest.TestCase):
         q = {g.name: g.res_q_mvar for g in model.get_generators()}
         self.assertAlmostEqual(q["G1"] / q["G2"], 100.0 / 300.0, places=4)
 
-    def test_remote_gen_on_pv_bus_raises(self):
-        # a controller whose OWN bus is the slack has no Q equation -> v1 rejection
+    def test_remote_gen_on_slack(self):
+        # A remote controller whose OWN bus is the slack. The active-power slack
+        # role and the reactive/voltage role are decoupled: the slack bus is given
+        # a free Vm unknown + a Q equation (MultiSlack) so the remote control
+        # attaches, while its angle stays the reference. (This used to be rejected,
+        # cf the former test_remote_gen_on_pv_bus_raises.) Matches OLF when OLF's
+        # slack is pinned to the same voltage level.
         n = _star(g2_reg=None, g1_reg="LD", g1_tv=405.0)
-        with self.assertRaises(Exception):
-            # make G1 (the remote controller) the slack -> its bus loses its Q row
-            init_from_pypowsybl(n, gen_slack_id="G1", sort_index=True).ac_pf(
-                np.ones(3, dtype=np.complex128), 30, 1e-10)
+        self._compare(n, "VL1", "G1", "remote-gen-on-slack")
+
+    def test_remote_gen_on_slack_baked(self):
+        # The same controller-on-slack case that test_remote_gen_on_pv_bus_raises
+        # rejects: bake_outer_loops rewrites G1's remote control to local control at
+        # its solved terminal voltage, so it loads and reproduces the (remote-control)
+        # OLF solution. OLF's slack is pinned to G1's voltage level so the angle
+        # references coincide; baking does not re-solve, so the network still carries
+        # the with-loops solution that _assert_bus_parity compares against.
+        n = _star(g2_reg=None, g1_reg="LD", g1_tv=405.0)
+        n.per_unit = False
+        ref = pp.loadflow.run_ac(n, parameters=self._params("VL1"))
+        self.assertEqual(ref[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+        bake_outer_loops(n)
+        # G1 is now a LOCAL controller of its own terminal
+        self.assertEqual(n.get_generators().loc["G1", "regulated_element_id"], "G1")
+        _, V = self._run_ls(n, "G1")  # used to raise; now supported via baking
+        self._assert_bus_parity(n, V, "remote-gen-on-slack-baked")
+
+    def test_dist_slack_pq_participant(self):
+        # Regression: a distributed-slack participant whose generator is PQ
+        # (voltage_regulator_on=False) gets the active-power slack role on its P
+        # row, but its magnitude must still be solved through a Q equation -- it is
+        # NOT pinned by a local PV gen. Before MultiSlack handled this, the bus was
+        # Vm-fixed at the init value (1.0), which on a real grid froze the magnitude
+        # of every non-regulating distributed-slack gen. Compare magnitudes to OLF's
+        # distributed slack (proportional to Pmax), with G0's voltage level as the
+        # angle reference.
+        n = _dist_slack_pq_net()
+        n.per_unit = False
+        params = pp.loadflow.Parameters(
+            distributed_slack=True, use_reactive_limits=False,
+            balance_type=pp.loadflow.BalanceType.PROPORTIONAL_TO_GENERATION_P_MAX,
+            provider_parameters={"slackBusSelectionMode": "NAME", "slackBusesIds": "VL0"})
+        ref = pp.loadflow.run_ac(n, parameters=params)
+        self.assertEqual(ref[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+        self.assertGreater(abs(ref[0].distributed_active_power), 1.0)  # slack really distributes
+
+        model, V = self._run_ls(n, {"G0": 1.0, "G1": 1.0})
+        # magnitude parity with OLF (the frozen bug showed up on |V|; the angle
+        # datum of a distributed slack is reference-dependent, so check |V| only)
+        self._assert_bus_parity(n, V, "dist-slack-pq", check_angle=False)
+        # G1's bus (VL1) must be solved away from the frozen init value, and G1
+        # keeps its fixed reactive setpoint (PQ behaviour)
+        vl1 = list(n.get_buses().index).index(
+            n.get_buses().index[n.get_buses()["voltage_level_id"] == "VL1"][0])
+        self.assertGreater(abs(abs(V[vl1]) - 1.0), 1e-3, "VL1 magnitude was frozen at init")
+        q = {g.name: g.res_q_mvar for g in model.get_generators()}
+        self.assertAlmostEqual(q["G1"], 10.0, places=4)
 
     # ----- SVC --------------------------------------------------------------
     def test_svc_local_voltage(self):

@@ -9,10 +9,14 @@
 __all__ = ["init",
            "bake_outer_loops",
            "get_pypowsybl_loopfree_parameters",
+           "get_pypowsybl_loopfree_distributed_slack_parameters",
            "compare_baked",
            "ComparisonResult"]
 
 from ._from_pypowsybl import init
 from ._olf_bake import bake_outer_loops
-from ._olf_params import get_pypowsybl_loopfree_parameters
+from ._olf_params import (
+    get_pypowsybl_loopfree_parameters,
+    get_pypowsybl_loopfree_distributed_slack_parameters,
+)
 from ._olf_compare import compare_baked, ComparisonResult

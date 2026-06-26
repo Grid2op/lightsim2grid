@@ -8,6 +8,7 @@
 
 import warnings
 import copy
+from collections import deque
 import numpy as np
 import pandas as pd
 import pypowsybl as pypo
@@ -98,6 +99,134 @@ def _aux_regulated_bus_view_ids(net, regulated_ids):
                            "not be resolved (unknown or disconnected regulated element): "
                            f"{missing}. This is not supported at the moment.")
     return np.array([lookup[rid] for rid in regulated_ids], dtype=object)
+
+
+def _default_distributed_slack(net, df_gen):
+    """Build the default distributed slack matching OpenLoadFlow's behaviour.
+
+    Returns an *ordered* ``{generator_name: weight}`` dict (the reference generator
+    first, so it becomes ``slack_ids[0]`` -- the angle datum) suitable for
+    ``gen_slack_id``, or ``None`` if no participating generator is found (the caller
+    then falls back to :meth:`LSGrid.assign_slack_to_most_connected`).
+
+    The participating set and the sharing key mirror OLF's default distributed
+    slack:
+
+    * participants are the connected generators with ``max_p > 0`` that take part in
+      active-power control (``participate`` flag of the ``activePowerControl``
+      extension); if that extension is absent, every connected producing generator
+      participates;
+    * participants are restricted to the *main country* (the country hosting the
+      most buses) when substation ``country`` metadata is available -- this keeps
+      the slack out of foreign border-equivalent generators;
+    * the per-generator weight is the distributed-slack key: the
+      ``participation_factor`` from the ``activePowerControl`` extension when it is
+      set, otherwise the generator's ``max_p`` (matching OLF's
+      ``PROPORTIONAL_TO_GENERATION_P_MAX`` default).
+
+    The reference generator (angle datum) follows OLF's grid-connection logic:
+    follow each candidate's step-up transformer to the highest-voltage bus it
+    reaches, pick the bus carrying the most generator active power, then the
+    generator injecting the most into it.
+    """
+    names = df_gen.index
+    n = len(names)
+    if n == 0:
+        return None
+    connected = df_gen["connected"].to_numpy(bool)
+    max_p = df_gen["max_p"].to_numpy(float)
+    target_p = df_gen["target_p"].to_numpy(float)
+    gen_bus = df_gen["bus_id"].to_numpy()
+
+    # participation set + sharing key from the activePowerControl extension
+    try:
+        apc = net.get_extensions("activePowerControl")
+    except Exception:
+        apc = None
+    if apc is not None and len(apc) and "participate" in apc.columns:
+        # a generator listed in the extension uses its flag; one absent from it
+        # participates by default (OLF treats a missing extension as participating)
+        participate = apc["participate"].reindex(names).fillna(True).to_numpy(bool)
+        if "participation_factor" in apc.columns:
+            pfac = apc["participation_factor"].reindex(names).to_numpy(float)
+        else:
+            pfac = np.full(n, np.nan)
+    else:
+        participate = np.ones(n, bool)  # no (or empty) extension -> everything participates
+        pfac = np.full(n, np.nan)
+
+    # sharing key (PROPORTIONAL_TO_GENERATION_P_MAX): participation_factor when set,
+    # else max_p.
+    weight = np.where(np.isfinite(pfac) & (pfac > 0.), pfac, max_p)
+
+    # participants: connected, *started* (positive target P -- OLF does not
+    # distribute on zero-MW generators), participating, with a usable positive weight.
+    mask = connected & participate & (target_p > 0.) & np.isfinite(weight) & (weight > 0.)
+
+    # main-component filter: a slack generator must sit in the main component,
+    # otherwise lightsim2grid's `consider_only_main_component` deactivates its
+    # (islanded) bus and the solver then trips on a disconnected slack. "Main" is
+    # the largest synchronous component, which matches the line + transformer
+    # connectivity lightsim2grid keeps (HVDC excluded). Real grids carry many small
+    # boundary islands that satisfy the country/participation tests above.
+    df_bus = net.get_buses(attributes=["synchronous_component", "voltage_level_id"])
+    main_sync = df_bus["synchronous_component"].value_counts().idxmax()
+    gen_sync = df_gen["bus_id"].map(df_bus["synchronous_component"]).to_numpy()
+    mask = mask & (gen_sync == main_sync)
+
+    # country filter (main country = the one hosting the most buses)
+    subs = net.get_substations()
+    vls = net.get_voltage_levels()
+    if "country" in subs.columns and subs["country"].notna().any():
+        vl2sub = vls["substation_id"]
+        bus_country = df_bus["voltage_level_id"].map(vl2sub).map(subs["country"])
+        main_country = bus_country.value_counts().idxmax()
+        gen_country = df_gen["voltage_level_id"].map(vl2sub).map(subs["country"]).to_numpy()
+        mask = mask & (gen_country == main_country)
+
+    if not mask.any():
+        return None
+
+    # reference (angle datum): follow the step-up transformer(s) to the
+    # highest-voltage node, take the node with the most generator active power, then
+    # the generator injecting the most into it.
+    nomv = net.get_buses()["voltage_level_id"].map(vls["nominal_v"]).to_dict()
+    tw = net.get_2_windings_transformers(attributes=["bus1_id", "bus2_id", "connected1", "connected2"])
+    tc = tw[tw["connected1"] & tw["connected2"]]
+    adj = {}
+    for b1, b2 in zip(tc["bus1_id"], tc["bus2_id"]):
+        adj.setdefault(b1, []).append(b2)
+        adj.setdefault(b2, []).append(b1)
+
+    def follow_gsu(bus, max_hops=4):
+        seen = {bus}
+        q = deque([(bus, 0)])
+        best = bus
+        while q:
+            b, d = q.popleft()
+            if nomv.get(b, 0.) > nomv.get(best, 0.):
+                best = b
+            if d < max_hops:
+                for nb in adj.get(b, []):
+                    if nb not in seen:
+                        seen.add(nb)
+                        q.append((nb, d + 1))
+        return best
+
+    cand = np.where(mask)[0]
+    conn = {i: follow_gsu(gen_bus[i]) for i in cand}
+    cvolt = {i: nomv.get(conn[i], 0.) for i in cand}
+    vmax = max(cvolt.values())
+    node_p = {}
+    for i in cand:
+        if cvolt[i] == vmax:
+            node_p[conn[i]] = node_p.get(conn[i], 0.) + target_p[i]
+    ref_node = max(node_p, key=node_p.get)
+    ref_i = max((i for i in cand if cvolt[i] == vmax and conn[i] == ref_node),
+                key=lambda i: target_p[i])
+
+    order = [int(ref_i)] + [int(i) for i in cand if i != ref_i]
+    return {names[i]: float(weight[i]) for i in order}
 
 
 def init(net : pypo.network.Network,
@@ -733,13 +862,15 @@ def init(net : pypo.network.Network,
            model.deactivate_storage(batt_id) 
     model.set_storage_names(df_batt.index)
 
-    # TODO dist slack
     if gen_slack_id is None and slack_bus_id is None:
-        # if nothing is given, by default I assign a slack bus to a bus where a lot of lines are connected
-        # quite central in the grid
-        bus_id, gen_id = model.assign_slack_to_most_connected()
-        gen_slack_ids_int = [gen_id]
-    elif gen_slack_id is not None:
+        # Default: reproduce OpenLoadFlow's distributed slack, sharing the
+        # active-power mismatch over the participating generators (see
+        # _default_distributed_slack). Returns None -- handled by the single
+        # most-connected slack fallback below -- when no participating generator
+        # is found.
+        gen_slack_id = _default_distributed_slack(net, df_gen)
+
+    if gen_slack_id is not None:
         if slack_bus_id is not None:
             raise RuntimeError("You provided both gen_slack_id and slack_bus_id "
                                "which is not possible.")
@@ -777,7 +908,10 @@ def init(net : pypo.network.Network,
                 gen_slack_ids_int.append(gen_id)
                 model.add_gen_slackbus(gen_id, 1. / nb_conn)    
     else:
-        raise RuntimeError("You need to provide at least one slack with `gen_slack_id` or `slack_bus_id`") 
+        # nothing provided and the default distributed slack found no participating
+        # generator: fall back to a single slack on the most-connected generator bus
+        bus_id, gen_id = model.assign_slack_to_most_connected()
+        gen_slack_ids_int = [gen_id]
     
     # TODO checks
     # no 3windings trafo and other exotic stuff

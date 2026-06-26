@@ -226,6 +226,17 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             if((!turnedoff_gen_pv_) && is_pseudo_off(gen_id)) return false;
             return true;
         }
+        // true iff this generator pins the magnitude of its OWN bus (the PV path):
+        // exactly the gating used by fillpv. A bus with such a generator is
+        // Vm-fixed; a bus without one is PQ-for-voltage (free Vm + Q equation),
+        // even when it also carries the active-power slack role.
+        bool gen_is_local_voltage_controller(int gen_id) const {
+            if(!status_[gen_id]) return false;
+            if(!voltage_regulator_on_[gen_id]) return false;
+            if(regulates_remote(gen_id)) return false;
+            if((!turnedoff_gen_pv_) && is_pseudo_off(gen_id)) return false;
+            return true;
+        }
         real_type get_target_vm_pu(int gen_id) const {return target_vm_pu_(gen_id);}
         real_type get_min_q(int gen_id) const {return min_q_.coeff(gen_id);}
         real_type get_max_q(int gen_id) const {return max_q_.coeff(gen_id);}

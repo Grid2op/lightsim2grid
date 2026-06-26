@@ -177,20 +177,22 @@ class TwoSidesContainer : public GenericContainer
                     side_2_.deactivate(i, unused_solver_control);
                     continue;
                 }
-                GlobalBusId bus_side_1 = bus_side_1_id_(i);
-                GlobalBusId bus_side_2 = bus_side_2_id_(i);
-                if(!busbar_in_main_component[bus_side_1.cast_int()])
-                {
+                // A side is "outside the main component" only if it is CONNECTED
+                // (its bus is a real bus, not the deactivated/open marker) AND that
+                // bus is not flagged in the main component. An open side (bus ==
+                // _deactivated_bus_id, e.g. a half-open line) imposes no constraint:
+                // such a branch stays as long as its connected side(s) are in main.
+                const int b1 = bus_side_1_id_(i).cast_int();
+                const int b2 = bus_side_2_id_(i).cast_int();
+                const bool s1_outside = (b1 != _deactivated_bus_id) && !busbar_in_main_component[b1];
+                const bool s2_outside = (b2 != _deactivated_bus_id) && !busbar_in_main_component[b2];
+                if(s1_outside || s2_outside){
+                    // island, boundary, or (defensively) a branch straddling two
+                    // components: drop the whole element rather than throw. Keeping
+                    // the main component well-posed is the goal of this function.
                     side_1_.deactivate(i, unused_solver_control);
                     side_2_.deactivate(i, unused_solver_control);
                     if(!ignore_status_global_) status_global_[i] = false;
-                    if(busbar_in_main_component[bus_side_2.cast_int()]){
-                        // a powerline is connected, both its ends should be on the same connected component
-                        throw std::runtime_error("A connected line has an end connected to a given connected component, and another one in another. This should not happen.");
-                    }
-                }
-                if(!busbar_in_main_component[bus_side_2.cast_int()] && busbar_in_main_component[bus_side_1.cast_int()]){
-                    throw std::runtime_error("A connected line has an end connected to a given connected component, and another one in another. This should not happen.");
                 }
             }
         }
