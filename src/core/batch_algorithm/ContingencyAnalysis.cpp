@@ -348,6 +348,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     // perform some initial checks and reset timers
     size_t nb_total_bus = _reset_data_and_check_vinit(Vinit);
     _timer_modif_Ybus = 0.;
+    _timer_thread_init = 0.;
 
     // read from the grid the usefull information
     const auto & sn_mva = _grid_model.get_sn_mva();
@@ -391,6 +392,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
 
     if(!n_powerflow_has_conv) return;
 
+    auto timer_thread = CustTimer();
     // now perform the security analysis, possibly split across several threads
     const size_t nb_cont = _li_coeffs.size();
     const int nb_thread = std::min(static_cast<int>(nb_cont), std::max(1, _nb_thread));
@@ -403,42 +405,37 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
             0, nb_cont,
             _algo, _algo_controler, Ybus_, Vinit_solver,
             ac_solver_used, mask_mode, max_iter, tol, sn_mva,
-            _timer_modif_Ybus, _nb_solved, _timer_solver, err);
+            _timer_modif_Ybus, _nb_solved, _timer_solver, err, false);
         if(err) std::rethrow_exception(err);
         _timer_total = timer.duration();
         return;
     }
 
-    // multi-threaded path: one solver + one Ybus copy + one AlgoControl per thread.
-    // Thread 0 reuses the member solver / Ybus_ / control (already warmed up) to
-    // save one copy + one warm-up. The remaining threads build a fresh solver of
-    // the same type and warm it up so its factorization / sparsity pattern match.
-    std::vector<std::unique_ptr<AlgorithmSelector> > extra_algos(nb_thread - 1);
+    // multi-threaded path: every thread owns its solver / control / Ybus copy.
+    std::vector<std::unique_ptr<AlgorithmSelector> > algos(nb_thread);
     std::vector<AlgoControl> controls(nb_thread);
-    std::vector<Eigen::SparseMatrix<cplx_type> > ybus_copies(nb_thread - 1);
+    std::vector<Eigen::SparseMatrix<cplx_type> > ybus_copies(nb_thread);
     std::vector<double> th_timer_modif(nb_thread, 0.);
     std::vector<int> th_nb_solved(nb_thread, 0);
     std::vector<double> th_timer_solver(nb_thread, 0.);
     std::vector<std::exception_ptr> th_err(nb_thread);
 
-    controls[0] = _algo_controler;  // already "nothing changed" after preprocessing
-    for(int t = 1; t < nb_thread; ++t){
-        extra_algos[t - 1] = std::make_unique<AlgorithmSelector>();
-        AlgorithmSelector & algo = *extra_algos[t - 1];
+    for(int t = 0; t < nb_thread; ++t){
+        algos[t] = std::make_unique<AlgorithmSelector>();
+        AlgorithmSelector & algo = *algos[t];
         algo.set_lsgrid(&_grid_model);
         algo.change_algorithm(get_algo_type());
         algo.set_config(_algo.get_config());  // match the member solver's configuration
-        controls[t] = _algo_controler;  // copy, made independent by warmup_solver
-        warmup_solver(algo, controls[t], Vinit_solver, max_iter, tol);
-        ybus_copies[t - 1] = Ybus_;  // thread-local working copy of the admittance
+        controls[t] = _algo_controler;
+        ybus_copies[t] = Ybus_;  // thread-local working copy of the admittance
     }
 
     // contiguous split of [0, nb_cont) across the threads
     auto algo_for = [&](int t) -> AlgorithmSelector & {
-        return t == 0 ? _algo : *extra_algos[t - 1];
+        return *algos[t];
     };
     auto ybus_for = [&](int t) -> Eigen::SparseMatrix<cplx_type> & {
-        return t == 0 ? Ybus_ : ybus_copies[t - 1];
+        return ybus_copies[t];
     };
     const size_t base = nb_cont / static_cast<size_t>(nb_thread);
     const size_t rem = nb_cont % static_cast<size_t>(nb_thread);
@@ -460,17 +457,19 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
                 b, e,
                 algo_for(t), controls[t], ybus_for(t), Vinit_solver,
                 ac_solver_used, mask_mode, max_iter, tol, sn_mva,
-                th_timer_modif[t], th_nb_solved[t], th_timer_solver[t], th_err[t]);
+                th_timer_modif[t], th_nb_solved[t], th_timer_solver[t], th_err[t], true);
         });
     }
+    _timer_thread_init = timer_thread.duration();
+
     {
         size_t b, e;
         range_of(0, b, e);
         run_contingency_range(
             b, e,
-            _algo, controls[0], Ybus_, Vinit_solver,
+            algo_for(0), controls[0], ybus_for(0), Vinit_solver,
             ac_solver_used, mask_mode, max_iter, tol, sn_mva,
-            th_timer_modif[0], th_nb_solved[0], th_timer_solver[0], th_err[0]);
+            th_timer_modif[0], th_nb_solved[0], th_timer_solver[0], th_err[0], true);
     }
 
     for(auto & th : threads) th.join();
@@ -503,10 +502,16 @@ void ContingencyAnalysis::run_contingency_range(
     double & timer_modif_Ybus_acc,
     int & nb_solved,
     double & timer_solver,
-    std::exception_ptr & err)
+    std::exception_ptr & err,
+    bool needs_solver_init)
 {
     try {
         CplxVect V;
+        if(needs_solver_init){
+            // Fresh per-thread solvers must analyze / factorize on their first actual solve.
+            control.tell_all_changed();
+        }
+
         for(size_t cont_id = cont_begin; cont_id < cont_end; ++cont_id){
             const std::vector<Coeff> & coeffs_modif = _li_coeffs[cont_id];
             auto timer_modif_Ybus = CustTimer();
@@ -530,6 +535,10 @@ void ContingencyAnalysis::run_contingency_range(
                         slack_ids_me_.as_eigen(), sw,
                         bus_pv_.as_eigen(), bus_pq_.as_eigen(),
                         max_iter, tol / sn_mva);
+                    if(needs_solver_init){
+                        control.tell_none_changed();
+                        needs_solver_init = false;
+                    }
                     algo.set_masked_buses(std::vector<int>());  // reset for the next contingency
 
                     timer_modif_Ybus = CustTimer();
@@ -562,6 +571,10 @@ void ContingencyAnalysis::run_contingency_range(
                         bus_pq_.as_eigen(),
                         max_iter,
                         tol / sn_mva);
+                    if(needs_solver_init){
+                        control.tell_none_changed();
+                        needs_solver_init = false;
+                    }
                 }
 
                 timer_modif_Ybus = CustTimer();

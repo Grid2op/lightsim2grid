@@ -75,9 +75,14 @@ _Q_LIMIT_TOL = 1e-3
             
             
 def _keep_only_main_comp(df_el, df_bus):
+    """
+    keep only element (modeled in df_el) that are on the main component => bus_els["synchronous_component"] == 0
+    
+    This does not deactivate anything.
+    """
     mask_conn = df_el["connected"]
     bus_els = df_bus.loc[df_el.loc[mask_conn, "bus_id"]]
-    mask_main = (bus_els["synchronous_component"] == 0).values
+    mask_main = (bus_els["synchronous_component"] == 0).to_numpy()
     df_el = df_el.loc[df_el.loc[mask_conn][mask_main].index]
     return df_el
 

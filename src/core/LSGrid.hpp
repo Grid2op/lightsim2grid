@@ -643,6 +643,13 @@ class LS2G_API LSGrid final
         void reactivate_powerline(int powerline_id) {
             powerlines_.reactivate(powerline_id, algo_controler_);
         }
+        // per-side (de)activation: model a powerline connected on one terminal only
+        // ("half-open"). With set_synch_status_both_side(false), the other side stays
+        // as is; with the default (true) the other side follows (whole-line behaviour).
+        void deactivate_powerline_side1(int powerline_id) { powerlines_.deactivate_side_1(powerline_id, algo_controler_); }
+        void deactivate_powerline_side2(int powerline_id) { powerlines_.deactivate_side_2(powerline_id, algo_controler_); }
+        void reactivate_powerline_side1(int powerline_id) { powerlines_.reactivate_side_1(powerline_id, algo_controler_); }
+        void reactivate_powerline_side2(int powerline_id) { powerlines_.reactivate_side_2(powerline_id, algo_controler_); }
 
         /**
          * Change the bus on the "side 1" of the powerline powerline_id.
@@ -681,6 +688,12 @@ class LS2G_API LSGrid final
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, algo_controler_); }
         void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, algo_controler_); }
+        // per-side (de)activation of a transformer terminal ("half-open"), see the
+        // powerline equivalents above.
+        void deactivate_trafo_side1(int trafo_id) { trafos_.deactivate_side_1(trafo_id, algo_controler_); }
+        void deactivate_trafo_side2(int trafo_id) { trafos_.deactivate_side_2(trafo_id, algo_controler_); }
+        void reactivate_trafo_side1(int trafo_id) { trafos_.reactivate_side_1(trafo_id, algo_controler_); }
+        void reactivate_trafo_side2(int trafo_id) { trafos_.reactivate_side_2(trafo_id, algo_controler_); }
 
         /**
          * Change the bus on the "side 1" of the trafo trafo_id.
