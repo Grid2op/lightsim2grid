@@ -79,6 +79,34 @@ class TestPstTapImpedance(unittest.TestCase):
         self.assertGreater(abs(x_pu - base_x), 1e-4,
                            "the step correction was not applied (x_pu == neutral x)")
 
+    def test_in_place_shift_change_refreshes_rx(self):
+        # changing the phase shift in place (no re-import, no "tap") must refresh the
+        # series impedance from the alpha -> r/x dependency, NOT leave it stale.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            n = pn.create_four_substations_node_breaker_network()
+            lf.run_ac(n)
+            npu = pn.create_four_substations_node_breaker_network()
+            lf.run_ac(npu)
+            npu.per_unit = True
+            base_x = float(npu.get_2_windings_transformers(all_attributes=True).loc["TWT", "x"])
+            model = init_from_pypowsybl(n, sort_index=False, buses_for_sub=False)
+
+        steps = n.get_phase_tap_changer_steps()
+        tap_a = int(n.get_phase_tap_changers().loc["TWT", "tap"])
+        # pick another tap whose step x% differs noticeably from the loaded one
+        x_a = float(steps.loc[("TWT", tap_a)]["x"])
+        cands = [(t, float(steps.loc[("TWT", t)]["x"]))
+                 for t in steps.loc["TWT"].index if abs(float(steps.loc[("TWT", t)]["x"]) - x_a) > 5.0]
+        tap_b, x_b_pct = cands[0]
+        alpha_b_rad = float(np.deg2rad(steps.loc[("TWT", tap_b)]["alpha"]))
+
+        tid = next(i for i, el in enumerate(model.get_trafos()) if el.name == "TWT")
+        model.change_shift_trafo(tid, alpha_b_rad)  # in-place, like an OLF tap change
+        _, x_pu = self._ls_trafo(model, "TWT")
+        self.assertAlmostEqual(x_pu, base_x * (1.0 + x_b_pct / 100.0), places=8,
+                               msg="series impedance not refreshed after an in-place shift change")
+
 
 if __name__ == "__main__":
     unittest.main()

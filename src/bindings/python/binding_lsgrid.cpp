@@ -188,6 +188,19 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
             )mydelimiter")
         .def("change_shift_trafo_deg", &LSGrid::change_shift_trafo_deg,
             "Same as ``change_shift_trafo`` but phase shift is expressed in degree and NOT in rad.")
+        .def("set_trafo_shift_dependent_rx", &LSGrid::set_trafo_shift_dependent_rx,
+            py::arg("enable"), py::arg("alpha_rad"), py::arg("rx_corr_pct"),
+            R"mydelimiter(
+            Declare that (some) transformers have a series impedance (r, x) that depends
+            on their phase-shift angle alpha, supplied as a per-transformer table of
+            sample points ``alpha (rad) -> r/x correction (%)`` (the per-step r/x deltas
+            of a pypowsybl phase-tap-changer; r% == x%). The effective r / x is then
+            ``base * (1 + corr(shift) / 100)``, interpolated on the current shift and
+            refreshed whenever ``change_shift_trafo`` / ``change_ratio_trafo`` is called.
+            There is NO "tap" concept: the dependency is purely on the (continuous) shift.
+            Pass an empty list for a transformer without such a dependency; ``enable`` is
+            kept False for pandapower (which has no such data).
+            )mydelimiter")
         .def("deactivate_load", &LSGrid::deactivate_load, DocLSGrid::_internal_do_not_use.c_str())
         .def("reactivate_load", &LSGrid::reactivate_load, DocLSGrid::_internal_do_not_use.c_str())
         .def("change_bus_load", &LSGrid::change_bus_load_python, DocLSGrid::_internal_do_not_use.c_str())
