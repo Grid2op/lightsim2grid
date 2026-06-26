@@ -116,6 +116,7 @@ def bake_outer_loops(
     bake_taps: bool = True,
     bake_reactive_limits: bool = True,
     bake_active_power: bool = True,
+    bake_remote_voltage_control: bool = True,
     balance_on_loads: bool = False,
     load_power_factor_constant: bool = False,
     keep_only_main_comp: bool=True
@@ -140,6 +141,11 @@ def bake_outer_loops(
     bake_active_power
         Write realized active power back into generator/battery target P
         (and load p0/q0 if ``balance_on_loads``).
+    bake_remote_voltage_control
+        Rewrite remote voltage control to local control at the solved terminal
+        voltage (see :func:`_bake_remote_voltage_control`). Needed so that
+        remote-regulating generators can sit on a (distributed) slack bus, which
+        lightsim2grid v1 does not otherwise support.
     balance_on_loads
         Set if the slack was distributed on loads (BalanceType
         PROPORTIONAL_TO_LOAD / CONFORM_LOAD).
@@ -147,7 +153,7 @@ def bake_outer_loops(
         Mirror OLF's ``loadPowerFactorConstant``: also rewrite load q0 so the
         power factor is preserved.
     keep_only_main_comp
-        Only elements of the main connected components are updated (True by default)
+        Only elements of the main connected component are updated (True by default)
 
     Notes
     -----
@@ -166,6 +172,8 @@ def bake_outer_loops(
             load_power_factor_constant=load_power_factor_constant,
             keep_only_main_comp=keep_only_main_comp
         )
+    if bake_remote_voltage_control:
+        _bake_remote_voltage_control(network, keep_only_main_comp)
 
 
 def _bake_taps_and_sections(network, keep_only_main_comp=True):
@@ -258,6 +266,54 @@ def _bake_reactive_limit_switches(
 
     # Static var compensators are deliberately left regulating; see module
     # docstring. Hook for susceptance-envelope saturation would go here.
+
+
+def _bake_remote_voltage_control(network, keep_only_main_comp=True):
+    """Rewrite *remote* voltage control into *local* control at the solved terminal.
+
+    A generator regulating a bus other than its own terminal (``regulated_element_id``
+    resolving to a different bus -- e.g. holding the 400 kV grid-connection point
+    across its step-up transformer) is rewritten to regulate its OWN terminal at that
+    terminal's solved magnitude, and the remote regulation is cleared so the converter
+    treats it as local control.
+
+    At the converged operating point this is exact: the generator's own terminal
+    already sits at ``v_mag`` with the realized reactive output, so fixing it locally
+    reproduces the same fixed point (same V everywhere, same Q; the formerly-regulated
+    remote bus still lands on its solved value). A subsequent loop-free solve -- OLF
+    (whose loop-free parameters disable remote control anyway) or lightsim2grid --
+    reproduces the baked state.
+
+    Why it exists: lightsim2grid v1 cannot host a remote voltage controller on a slack
+    bus, and the default distributed slack puts many remote-regulating generators on
+    slack buses. Making every controller local sidesteps that.
+
+    .. warning::
+        This is a *base-case* faithful approximation. Under a topology change the
+        generator then holds its own terminal magnitude instead of the remote bus, so
+        the post-contingency reactive behaviour differs from true remote control.
+
+    Operates in place; idempotent (an already-local generator is left untouched).
+    """
+    df_bus = network.get_buses(attributes=["v_mag", "synchronous_component"])
+    gen = network.get_generators(
+        attributes=["voltage_regulator_on", "regulated_element_id", "connected", "bus_id"]
+    )
+    if keep_only_main_comp:
+        gen = _keep_only_main_comp(gen, df_bus)
+    if not len(gen):
+        return
+    # "remote" matches the converter's own test (see _from_pypowsybl.init): a non-empty
+    # regulated element that is not the generator's own id.
+    reg = gen["regulated_element_id"].fillna("")
+    remote = gen["voltage_regulator_on"] & gen["connected"] & (reg != "") & (reg != gen.index)
+    gen = gen[remote]
+    if not len(gen):
+        return
+    upd = pd.DataFrame(index=gen.index)
+    upd["target_v"] = df_bus.loc[gen["bus_id"].values, "v_mag"].values  # own terminal, kV
+    upd["regulated_element_id"] = gen.index  # regulate own terminal -> local control
+    network.update_generators(upd)
 
 
 def _bake_active_power(network, balance_on_loads, load_power_factor_constant, keep_only_main_comp=True):
