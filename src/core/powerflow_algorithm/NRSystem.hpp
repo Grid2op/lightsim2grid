@@ -22,6 +22,7 @@
 #include <cmath>
 #include <tuple>
 #include <vector>
+#include <set>
 #include <stdexcept>
 
 // Public API (used by NRAlgo, in order)
@@ -258,20 +259,18 @@ class LS2G_API MultiSlack   // distributed-slack extension
             slack_col_(-1),
             slack_absorbed_(static_cast<real_type>(0.)) {}
 
-        // call at the beginning of each NR solve
-        // once. It is not called for
-        // NR iterations
+        // call at the beginning of each NR solve once. It is not called for NR
+        // iterations. Defined out-of-line (NRSystemMultiSlack.cpp) because it needs
+        // the full LSGrid type (NRSystem.hpp only forward-declares it): besides
+        // caching slack_weights / slack_absorbed it pulls the set of slack buses
+        // that need a free Vm unknown + Q equation, used by register_in.
         void update_state(
-            const Base *                           /*nr_system_base_ptr*/,
-            const LSGrid *                         /*lsgrid_ptr*/,
-            const Eigen::SparseMatrix<cplx_type>&  /*Ybus*/,
+            const Base *                           nr_system_base_ptr,
+            const LSGrid *                         lsgrid_ptr,
+            const Eigen::SparseMatrix<cplx_type>&  Ybus,
             const CplxVect&                        Sbus,
             const RealVect&                        slack_weights
-        ){
-            slack_weights_ = slack_weights;
-            // initial slack absorbed (see MultiSlackPolicy::initial_slack_absorbed)
-            slack_absorbed_ = std::real(Sbus.sum());
-        }
+        );
 
         // call after update_state
         // at the beginning of each solve
@@ -300,6 +299,27 @@ class LS2G_API MultiSlack   // distributed-slack extension
                 slack_p_rows_.push_back(ledger.add_p_equation(slack_buses_[k]));
             }
             slack_p_rows_.push_back(ledger.add_p_equation(ref_slack_id_));
+            // A slack bus whose magnitude is NOT pinned by a local PV generator must
+            // keep a free Vm unknown and a Q equation. This is the common case for a
+            // *distributed* slack: a participant whose generator is PQ
+            // (voltage_regulator_on == false) carries the active-power slack role on
+            // its P row, but its magnitude is still an unknown solved through its Q
+            // equation -- exactly like an ordinary PQ bus. It also covers slack buses
+            // hosting a remote-voltage controller or an SVC (the VoltageControl
+            // extension looks up q_row(bus) / vm_col(reg_bus) and attaches here).
+            // Without this the bus would be Vm-fixed (PV-like) at its init value,
+            // which is wrong unless a local PV generator actually holds it.
+            // The reference slack keeps its angle fixed (no theta unknown), so adding
+            // Vm + Q turns it into a "theta-fixed PQ" bus (fixed angle, free Vm). The
+            // new rows/cols are filled by the generic dS pass and the ledger-driven
+            // residual loop of NRSystem; nothing extra is needed here. (+1 Vm col and
+            // +1 Q row per such bus keep the Jacobian square.)
+            for (int k = 0; k < my_size_; ++k) {
+                if (free_vm_slack_buses_.count(slack_buses_[k])) {
+                    ledger.add_vm_unknown(slack_buses_[k]);
+                    ledger.add_q_equation(slack_buses_[k]);
+                }
+            }
             slack_col_ = ledger.add_custom_col();  // slack_absorbed unknown
         }
 
@@ -348,6 +368,7 @@ class LS2G_API MultiSlack   // distributed-slack extension
             feature_handles_.clear();
             slack_weights_ = RealVect();
             slack_absorbed_ = static_cast<real_type>(0.);
+            free_vm_slack_buses_.clear();
         }
 
     private:
@@ -358,6 +379,10 @@ class LS2G_API MultiSlack   // distributed-slack extension
         std::vector<int>   slack_p_rows_;     // P row of each slack bus (same order)
         std::vector<int>   feature_handles_;  // FeatureSink handles (same order)
         RealVect           slack_weights_;    // size: nb_bus
+        // solver-bus ids of slack buses NOT pinned by a local PV generator (PQ
+        // distributed-slack participants, remote-voltage / SVC controllers); those
+        // get an extra Vm unknown + Q equation in register_in (set by update_state)
+        std::set<int>      free_vm_slack_buses_;
         real_type          slack_absorbed_;
 
 };

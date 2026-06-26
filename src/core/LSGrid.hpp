@@ -11,7 +11,7 @@
 
 #include <iostream>
 #include <vector>
-// #include <set>
+#include <set>
 #include <stdio.h>
 #include <cstdint> // for int32
 #include <chrono>
@@ -872,6 +872,18 @@ class LS2G_API LSGrid final
          * probe #3). Only valid once `pre_process_solver` ran.
          */
         void fill_voltage_control_solver_data(VoltageControlSolverData & data, bool ac) const;
+        /**
+         * Solver-bus ids of the slack buses that need a free Vm unknown and a Q
+         * equation (added by the MultiSlack NR extension), i.e. every slack bus
+         * whose magnitude is NOT pinned by a local voltage-regulating generator.
+         * This covers distributed-slack participants whose generator is PQ
+         * (voltage_regulator_on == false), slack buses hosting a remote-voltage
+         * controller, and SVC-regulated slack buses. A slack bus that DOES host a
+         * local PV generator stays Vm-fixed (PV-like) with no Q equation. AC
+         * labelling. Only valid once `pre_process_solver` ran (it needs
+         * `id_me_to_ac_solver_` / `slack_bus_id_ac_solver_`).
+         */
+        std::set<int> get_free_vm_slack_solver_buses() const;
         /**
          * Set the grid bus whose voltage generator `gen_id` regulates (remote
          * voltage control). `bus_id` == the generator's own bus restores ordinary

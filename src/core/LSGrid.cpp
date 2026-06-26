@@ -442,6 +442,15 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
         const int b = bus_pq_(k).cast_int();
         if(b >= 0 && b < nb_bus_solver) is_pq[b] = true;
     }
+    // Slack buses are not PQ in the base block, but a slack bus that is not pinned
+    // by a local PV generator is given a Q equation + free Vm by the MultiSlack
+    // extension (see LSGrid::get_free_vm_slack_solver_buses), so a controller on
+    // such a slack bus is supported even though `is_pq` is false there.
+    std::vector<bool> is_slack(nb_bus_solver, false);
+    for(int k = 0; k < static_cast<int>(slack_bus_id_ac_solver_.size()); ++k){
+        const int b = slack_bus_id_ac_solver_(k).cast_int();
+        if(b >= 0 && b < nb_bus_solver) is_slack[b] = true;
+    }
 
     // 1. collect the active voltage-mode controllers (remote-regulating gens for
     //    now; voltage-mode SVCs are added with the SvcContainer). Per controller:
@@ -469,11 +478,11 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
                  << " regulates a disconnected bus.";
             throw std::runtime_error(exc_.str());
         }
-        if(!is_pq[ctrl_solver]){
+        if(!is_pq[ctrl_solver] && !is_slack[ctrl_solver]){
             std::ostringstream exc_;
             exc_ << "LSGrid::fill_voltage_control_solver_data: generator " << gen_id
                  << " regulates a remote bus but its OWN bus has no reactive (Q) equation"
-                    " (it is a slack or PV bus). This is not supported in v1.";
+                    " (it is a PV bus that is not a slack). This is not supported in v1.";
             throw std::runtime_error(exc_.str());
         }
         if(!is_pq[reg_solver]){
@@ -601,6 +610,39 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
             ++cursor;
         }
     }
+}
+
+std::set<int> LSGrid::get_free_vm_slack_solver_buses() const
+{
+    std::set<int> res;
+    // solver-bus ids of the slack buses
+    std::set<int> slack;
+    for(int k = 0; k < static_cast<int>(slack_bus_id_ac_solver_.size()); ++k){
+        slack.insert(slack_bus_id_ac_solver_(k).cast_int());
+    }
+    if(slack.empty()) return res;
+
+    // A slack bus is Vm-fixed (PV-like, no Q equation) only when a LOCAL
+    // voltage-regulating generator pins its magnitude. Collect those buses.
+    std::set<int> locally_vfixed;
+    const SolverBusIdVect & id_me_to_solver = id_me_to_ac_solver_;
+    const int nb_gen = static_cast<int>(generators_.nb());
+    const GlobalBusIdVect & gen_buses = generators_.get_buses();
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if(!generators_.gen_is_local_voltage_controller(gen_id)) continue;
+        const int ctrl_grid = gen_buses(gen_id).cast_int();
+        const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
+        if(ctrl_solver == GenericContainer::_deactivated_bus_id) continue;
+        locally_vfixed.insert(ctrl_solver);
+    }
+
+    // Every slack bus whose magnitude is NOT pinned locally needs a free Vm
+    // unknown + Q equation: distributed-slack PQ participants (the common case),
+    // remote-voltage controllers, and SVC-regulated slack buses all fall here.
+    for(int b : slack){
+        if(!locally_vfixed.count(b)) res.insert(b);
+    }
+    return res;
 }
 
 void LSGrid::check_solution_q_values_onegen(CplxVect & res,

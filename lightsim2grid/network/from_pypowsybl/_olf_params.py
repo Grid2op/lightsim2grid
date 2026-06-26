@@ -252,3 +252,50 @@ def get_pypowsybl_loopfree_parameters(
     for name, value in overrides.items():
         put(name, value)
     return _lf.Parameters(**kwargs)
+
+
+def get_pypowsybl_loopfree_distributed_slack_parameters(
+    slack_bus_ids: Optional[Union[str, Iterable[str]]] = None,
+    max_outer_loop_iterations: int = 20,
+    **overrides,
+) -> _lf.Parameters:
+    """Loop-free OLF parameters EXCEPT the active-power slack distribution.
+
+    Identical to :func:`get_pypowsybl_loopfree_parameters` but with OLF's
+    *distributed slack* enabled: the active-power mismatch is shared over the
+    participating generators proportionally to their maximum active power
+    (``PROPORTIONAL_TO_GENERATION_P_MAX`` -- already the loop-free balance type),
+    which is what lightsim2grid's default distributed slack reproduces. Every
+    *other* outer loop stays disabled, so OLF (loop-free + distributed slack) and
+    lightsim2grid agree on a baked grid.
+
+    Implementation note: in OpenLoadFlow the slack distribution is itself an AC
+    outer loop (``"DistributedSlack"``), so the empty ``outerLoopNames`` allow-list
+    used by the loop-free factory would suppress it. Here that allow-list is set to
+    exactly that one loop, and the outer-loop iteration cap (pinned to ``1`` by the
+    loop-free factory, where it is moot) is restored to ``max_outer_loop_iterations``
+    so the distribution can iterate to convergence. On OpenLoadFlow older than
+    1.4.0 the empty allow-list is not used, and ``distributed_slack=True`` alone
+    enables the distribution.
+
+    Parameters
+    ----------
+    slack_bus_ids : str or iterable of str, optional
+        Forwarded to :func:`get_pypowsybl_loopfree_parameters`.
+    max_outer_loop_iterations : int
+        Outer-loop iteration cap for the distribution (default 20, the upstream
+        OLF default).
+    **overrides
+        Forwarded to :func:`get_pypowsybl_loopfree_parameters`.
+    """
+    overrides.setdefault("distributed_slack", True)
+    params = get_pypowsybl_loopfree_parameters(slack_bus_ids=slack_bus_ids, **overrides)
+    prov = dict(params.provider_parameters)
+    # Allow ONLY the distributed-slack outer loop (kept out by the empty allow-list
+    # otherwise); restore a usable outer-loop budget so it can converge.
+    if "outerLoopNames" in prov:
+        prov["outerLoopNames"] = "DistributedSlack"
+    if "maxOuterLoopIterations" in prov:
+        prov["maxOuterLoopIterations"] = str(int(max_outer_loop_iterations))
+    params.provider_parameters = prov
+    return params

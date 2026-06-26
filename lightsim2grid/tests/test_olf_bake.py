@@ -49,16 +49,78 @@ TOL_VA_DEG = 5e-2
 TOL_VM_KV = 1e-2  # for the pure-OLF kV-space check
 
 
+# Default OLF provider parameters of pypowsybl 1.15.0 in the project's reference
+# venv (``venv_ls``). They are pinned EXPLICITLY here, never read from the
+# installed build's defaults: some pypowsybl builds ship the same version string
+# but different defaults (e.g. ``extrapolateReactiveLimits``,
+# ``stateVectorScalingMode``, ``maxRealisticVoltage``), which would otherwise make
+# the with-loops solve -- and hence the "baked grid is inert" check -- behave
+# differently from one environment to the next. Pinning every field makes these
+# tests reproducible across builds.
+_REF_PROVIDER_PARAMS = {
+    'maxVoltageMismatch': '1.0E-4', 'generatorVoltageControlMinNominalVoltage': '-1.0',
+    'startWithFrozenACEmulation': 'false', 'networkCacheEnabled': 'false',
+    'reactiveRangeCheckMode': 'MAX', 'maxVoltageChangeStateVectorScalingMaxDphi': '0.17453292519943295',
+    'maxRatioMismatch': '1.0E-5', 'areaInterchangeControl': 'false', 'loadPowerFactorConstant': 'false',
+    'acSolverType': 'NEWTON_RAPHSON', 'actionableTransformersIds': '',
+    'maxVoltageChangeStateVectorScalingMaxDv': '0.1', 'incrementalShuntControlOuterLoopMaxSectionShift': '3',
+    'maxSusceptanceMismatch': '1.0E-4', 'maxNewtonKrylovIterations': '100',
+    'reactivePowerDispatchMode': 'Q_EQUAL_PROPORTION', 'phaseShifterControlMode': 'CONTINUOUS_WITH_DISCRETISATION',
+    'extrapolateReactiveLimits': 'false', 'asymmetrical': 'false', 'slackBusPMaxMismatch': '1.0',
+    'maxActivePowerMismatch': '0.01', 'disableVoltageControlOfGeneratorsOutsideActivePowerLimits': 'false',
+    'maxSlackBusCount': '1', 'mostMeshedSlackBusSelectorMaxNominalVoltagePercentile': '95.0',
+    'maxNewtonRaphsonIterations': '15', 'minPlausibleTargetVoltage': '0.8', 'secondaryVoltageControl': 'false',
+    'useActiveLimits': 'true', 'stateVectorScalingMode': 'NONE', 'useLoadModel': 'false',
+    'voltageRemoteControlRobustMode': 'true', 'maxOuterLoopIterations': '20',
+    'generatorReactivePowerRemoteControl': 'false', 'newtonRaphsonConvEpsPerEq': '1.0E-4',
+    'lowImpedanceBranchMode': 'REPLACE_BY_ZERO_IMPEDANCE_LINE', 'actionableSwitchesIds': '',
+    'maxRealisticVoltage': '2.0', 'fictitiousGeneratorVoltageControlCheckMode': 'FORCED',
+    'maxReactivePowerMismatch': '0.01', 'transformerReactivePowerControl': 'false', 'minRealisticVoltage': '0.5',
+    'fixVoltageTargets': 'false', 'acDcNetwork': 'false', 'simulateAutomationSystems': 'false',
+    'forceTargetQInReactiveLimits': 'false', 'plausibleActivePowerLimit': '10000.0',
+    'voltagePerReactivePowerControl': 'false', 'dcApproximationType': 'IGNORE_R', 'linePerUnitMode': 'IMPEDANCE',
+    'referenceBusSelectionMode': 'FIRST_SLACK', 'newtonRaphsonStoppingCriteriaType': 'UNIFORM_CRITERIA',
+    'disableInconsistentVoltageControls': 'false', 'generatorsWithZeroMwTargetAreNotStarted': 'true',
+    'svcVoltageMonitoring': 'true', 'alwaysUpdateNetwork': 'false', 'slackBusSelectionMode': 'MOST_MESHED',
+    'voltageInitModeOverride': 'NONE', 'slackBusCountryFilter': '', 'minNominalVoltageTargetVoltageCheck': '20.0',
+    'areaInterchangePMaxMismatch': '2.0', 'maxPlausibleTargetVoltage': '1.2', 'lowImpedanceThreshold': '1.0E-8',
+    'transformerVoltageControlUseInitialTapPosition': 'false', 'newtonKrylovLineSearch': 'false',
+    'maxAngleMismatch': '1.0E-5', 'transformerVoltageControlMode': 'INCREMENTAL_VOLTAGE_CONTROL',
+    'voltageRemoteControl': 'true', 'slackBusesIds': '', 'reportedFeatures': '',
+    'areaInterchangeControlAreaType': 'ControlArea', 'shuntVoltageControlMode': 'WITH_GENERATOR_VOLTAGE_CONTROL',
+    'lineSearchStateVectorScalingStepFold': '1.3333333333333333', 'reactiveLimitsMaxPqPvSwitch': '3',
+    'incrementalTransformerRatioTapControlOuterLoopMaxTapShift': '3', 'lineSearchStateVectorScalingMaxIteration': '10',
+    'slackDistributionFailureBehavior': 'FAIL', 'minNominalVoltageRealisticVoltageCheck': '0.0',
+    'writeReferenceTerminals': 'true', 'voltageTargetPriorities': 'VOLTAGE_SOURCE_CONVERTER,GENERATOR,TRANSFORMER,SHUNT',
+}
+
+
 def _with_loops_params():
-    # ``twt_split_shunt_admittance=True`` matches the transformer model the
-    # loop-free / lightsim2grid solve uses (see get_pypowsybl_loopfree_parameters);
-    # keeping it consistent here isolates the outer-loop effect, which is what
+    # Every field is pinned to the ``venv_ls`` (pypowsybl 1.15.0) default so the
+    # outer-loop solve is identical across pypowsybl builds (see
+    # ``_REF_PROVIDER_PARAMS``). The single intentional deviation from that default
+    # is ``twt_split_shunt_admittance=True`` (default is False): it matches the
+    # transformer model the loop-free / lightsim2grid solve uses (see
+    # get_pypowsybl_loopfree_parameters), which isolates the outer-loop effect that
     # baking neutralizes.
     return lf.Parameters(
-        distributed_slack=True,
+        voltage_init_mode=lf.VoltageInitMode.UNIFORM_VALUES,
+        transformer_voltage_control_on=False,
         use_reactive_limits=True,
-        balance_type=pp.loadflow.BalanceType.PROPORTIONAL_TO_GENERATION_P_MAX,
-        twt_split_shunt_admittance=True,
+        phase_shifter_regulation_on=False,
+        twt_split_shunt_admittance=True,  # intentional deviation; see above
+        shunt_compensator_voltage_control_on=False,
+        read_slack_bus=True,
+        write_slack_bus=True,
+        distributed_slack=True,
+        balance_type=lf.BalanceType.PROPORTIONAL_TO_GENERATION_P_MAX,
+        dc_use_transformer_ratio=True,
+        countries_to_balance=[],
+        component_mode=lf.ComponentMode.MAIN_CONNECTED,
+        dc_power_factor=1.0,
+        hvdc_ac_emulation=True,
+        dc=False,
+        provider_parameters=dict(_REF_PROVIDER_PARAMS),
     )
 
 
