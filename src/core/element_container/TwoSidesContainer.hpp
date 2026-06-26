@@ -166,7 +166,7 @@ class TwoSidesContainer : public GenericContainer
             // (in this case this can do nothing if side_1 or side_2 is not connected)
         }
 
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) final {
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override {
             const int nb_el = nb();
             DualAlgoControl unused_solver_control;
             const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
@@ -283,6 +283,32 @@ class TwoSidesContainer : public GenericContainer
                 // update coefficient for Ybus
                 this->_update_effective_coeffs_one_el(el_id);
             }
+        }
+
+        // Per-side (de)activation: open / close a single terminal of the element.
+        // `resolve_status` enforces the synch_status_both_side_ policy (when true the
+        // other side follows, reproducing the whole-element behaviour; when false the
+        // element stays "half-open" with the other side untouched). Mirrors the
+        // change_bus_side_1 / change_bus_side_2 pattern below.
+        virtual void deactivate_side_1(int el_id, DualAlgoControl & solver_control) final {
+            bool one_changed = side_1_.deactivate(el_id, solver_control);
+            one_changed = resolve_status(el_id, true, solver_control) || one_changed;
+            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
+        }
+        virtual void deactivate_side_2(int el_id, DualAlgoControl & solver_control) final {
+            bool one_changed = side_2_.deactivate(el_id, solver_control);
+            one_changed = resolve_status(el_id, false, solver_control) || one_changed;
+            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
+        }
+        virtual void reactivate_side_1(int el_id, DualAlgoControl & solver_control) final {
+            bool one_changed = side_1_.reactivate(el_id, solver_control);
+            one_changed = resolve_status(el_id, true, solver_control) || one_changed;
+            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
+        }
+        virtual void reactivate_side_2(int el_id, DualAlgoControl & solver_control) final {
+            bool one_changed = side_2_.reactivate(el_id, solver_control);
+            one_changed = resolve_status(el_id, false, solver_control) || one_changed;
+            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
         }
 
         void reset_results_tsc(){
