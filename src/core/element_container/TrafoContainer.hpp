@@ -72,7 +72,12 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                    std::vector<real_type>, // ratio_
                    std::vector<bool> , // is_tap_hv_side
                    std::vector<real_type>, // shift_
-                   bool  // ignore_tap_side_for_shift_
+                   bool,  // ignore_tap_side_for_shift_
+                   bool,  // shift_dependent_rx_
+                   std::vector<real_type>,  // base_r_
+                   std::vector<real_type>,  // base_x_
+                   std::vector<std::vector<real_type> >,  // rx_corr_alpha_
+                   std::vector<std::vector<real_type> >   // rx_corr_pct_
                >;
 
         TrafoContainer() noexcept = default;
@@ -106,6 +111,23 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         void set_state(StateRes & my_state );
 
         bool ignore_tap_side_for_shift() const { return ignore_tap_side_for_shift_; }
+
+        /**
+         * Declare that the series impedance (r, x) of (some) transformers depends on
+         * the phase-shift angle `alpha` (= `shift_`), and supply that dependency as a
+         * per-transformer table of sample points `alpha (rad) -> r/x correction (%)`
+         * (the per-step r/x deltas of a pypowsybl phase-tap-changer; r% == x%). The
+         * effective impedance is `base * (1 + corr(shift_) / 100)`, recomputed (by
+         * interpolation on `shift_`) every time the coefficients are rebuilt -- in
+         * particular whenever `change_shift` / `change_ratio` is called -- so there is
+         * NO notion of a discrete "tap" in lightsim2grid. Pass an empty inner vector
+         * for a transformer that has no such dependency. `enable` is the master flag
+         * (kept false for pandapower, which has no such data).
+         */
+        void set_shift_dependent_rx(bool enable,
+                                    const std::vector<std::vector<real_type> > & alpha_rad,
+                                    const std::vector<std::vector<real_type> > & rx_corr_pct,
+                                    DualAlgoControl & solver_control);
 
         virtual void hack_Sbus_for_dc_phase_shifter(
             CplxVect & Sbus,
@@ -260,10 +282,37 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         RealVect ratio_;  // transformer ratio (no unit) (depends on is_tap_side1_)
         RealVect shift_;  // phase shifter (in radian !) (might depends on is_tap_side1, if ignore_tap_side_for_shift_ is true, then it is the shift side1)
 
+        // alpha-dependent series-impedance correction (phase-shifting transformers).
+        // lightsim2grid has no "tap" concept: the per-step r/x correction is stored
+        // as a function of the phase-shift `alpha` and looked up by the current
+        // `shift_`. Disabled (flag false, empty tables) for pandapower.
+        bool shift_dependent_rx_;
+        RealVect base_r_;  // neutral (uncorrected) r, per trafo
+        RealVect base_x_;  // neutral (uncorrected) x, per trafo
+        std::vector<std::vector<real_type> > rx_corr_alpha_;  // per trafo: alpha (rad), ascending
+        std::vector<std::vector<real_type> > rx_corr_pct_;    // per trafo: r/x correction (%) at each alpha (r% == x%)
+
         //output data
 
         // model coefficients
         RealVect dc_x_tau_shift_;
+
+        // r/x correction (%) at the current `shift_(el_id)`, linearly interpolated on
+        // the stored `alpha -> correction` samples (clamped outside the range). 0 if
+        // the transformer carries no such dependency.
+        real_type _shift_rx_corr_pct(int el_id) const {
+            const std::vector<real_type> & xs = rx_corr_alpha_[el_id];
+            const std::vector<real_type> & ys = rx_corr_pct_[el_id];
+            const std::size_t n = xs.size();
+            if(n == 0) return my_zero_;
+            const real_type a = shift_(el_id);
+            if(a <= xs.front()) return ys.front();
+            if(a >= xs.back()) return ys.back();
+            std::size_t hi = 1;
+            while(hi < n && xs[hi] < a) ++hi;
+            const real_type t = (a - xs[hi - 1]) / (xs[hi] - xs[hi - 1]);
+            return ys[hi - 1] + t * (ys[hi] - ys[hi - 1]);
+        }
 
     protected:
 
