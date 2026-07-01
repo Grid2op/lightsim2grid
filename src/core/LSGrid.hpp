@@ -163,6 +163,20 @@ class LS2G_API LSGrid final
             generators_.update_slack_weights_by_id(slack_ids, algo_controler_);
         }
 
+        // Force a given (gridmodel) bus to be the angle reference among the slack
+        // buses, WITHOUT changing the slack set or weights: the slack list is
+        // reordered at solve time so this bus becomes slack_ids[0] (the NR
+        // reference). Pass -1 to clear (default: natural generator order). Used to
+        // align the base ac_pf with ContingencyAnalysis::pick_reference_slack() so
+        // the GPU companion inherits a reference stranded by the fewest
+        // contingencies. Triggers a slack re-evaluation on the next solve.
+        void set_reference_slack_bus(int bus_id){
+            _forced_ref_slack_bus_id = bus_id;
+            algo_controler_.ac_algo_controler().tell_slack_participate_changed();
+            algo_controler_.dc_algo_controler().tell_slack_participate_changed();
+        }
+        int get_reference_slack_bus() const {return _forced_ref_slack_bus_id;}
+
         const SGenContainer & get_static_generators_as_data() const {return sgens_;}
         const LoadContainer & get_loads_as_data() const {return loads_;}
         const LineContainer & get_powerlines_as_data() const {return powerlines_;}
@@ -1375,7 +1389,21 @@ class LS2G_API LSGrid final
         Eigen::SparseMatrix<real_type> get_J_python_solver() const{
             return _algo.get_J_python();  // This is copied to python
         }
-        
+
+        // Ledger maps of the augmented NR Jacobian, in solver bus numbering
+        // (size n_bus, -1 when the bus owns no such row/column). They describe
+        // the layout of get_J_solver() and let external batched solvers (e.g.
+        // gpusim2grid) rebuild the dS scatter / residual layout without
+        // re-deriving it from Ybus. Only valid for Newton-Raphson algorithms
+        // after a solve; throw otherwise (via the active algo).
+        IntVect get_theta_to_J_col_solver() const { return _algo.get_theta_to_J_col_python(); }
+        IntVect get_vm_to_J_col_solver()    const { return _algo.get_vm_to_J_col_python(); }
+        IntVect get_q_to_J_col_solver()     const { return _algo.get_q_to_J_col_python(); }
+        IntVect get_p_to_J_row_solver()     const { return _algo.get_p_to_J_row_python(); }
+        IntVect get_q_to_J_row_solver()     const { return _algo.get_q_to_J_row_python(); }
+        // MultiSlack slack_absorbed J column (-1 when distributed slack inactive).
+        int     get_slack_col_solver()      const { return _algo.get_slack_col(); }
+
         real_type get_computation_time() const{ return _algo.get_computation_time();}
         real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}
 
@@ -1858,6 +1886,11 @@ class LS2G_API LSGrid final
         // to solve the newton raphson
         AlgorithmSelector _algo;
         AlgorithmSelector _dc_algo;
+
+        // forced angle-reference slack bus (gridmodel id, -1 = none). Declared
+        // LAST so existing member offsets are unchanged (ABI-stable for the
+        // gpusim2grid cross-module LSGrid cast). See set_reference_slack_bus.
+        int _forced_ref_slack_bus_id = -1;
 };
 
 

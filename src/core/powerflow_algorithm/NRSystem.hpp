@@ -371,6 +371,12 @@ class LS2G_API MultiSlack   // distributed-slack extension
             free_vm_slack_buses_.clear();
         }
 
+    public:
+        // J column of the slack_absorbed unknown (custom column, not recorded in
+        // any bus-keyed map). -1 before register_in. Consumed by external batched
+        // solvers that re-stamp the slack feature entries on the GPU.
+        int slack_col() const { return slack_col_; }
+
     private:
         int                my_size_;
         int                ref_slack_id_;
@@ -894,6 +900,12 @@ public:
     const std::vector<int>& vm_to_J_col()    const { return ledger_.vm_col_of_bus(); }
     const std::vector<int>& q_to_J_col()     const { return ledger_.q_col_of_bus(); }
 
+    // bus_id -> Jacobian row of that bus' P / Q mismatch equation (-1 if none).
+    // The row counterpart of *_to_J_col; size n_bus, spans the augmented J. Used
+    // by external batched solvers to rebuild the dS scatter / residual layout.
+    const std::vector<int>& p_to_J_row() const { return ledger_.p_row_of_bus(); }
+    const std::vector<int>& q_to_J_row() const { return ledger_.q_row_of_bus(); }
+
     size_t total_state_variables() const { return static_cast<size_t>(ledger_.size()); }
 
     // ----- VoltageControl results (empty when the extension is not in the tuple) --
@@ -910,6 +922,12 @@ public:
     IntVect controller_elem_id() const {
         const VoltageControl* vc = _find_extension<VoltageControl>();
         return vc ? IntVect(vc->controller_elem_id()) : IntVect();
+    }
+
+    // ----- MultiSlack: slack_absorbed J column (-1 when the extension is absent) --
+    int slack_col() const {
+        const MultiSlack* ms = _find_extension<MultiSlack>();
+        return ms ? ms->slack_col() : -1;
     }
 
     // ----- Scaling reductions ----------------------------------------------------

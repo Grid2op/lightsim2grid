@@ -239,6 +239,14 @@ class LS2G_API AlgorithmSelector final
             check_right_solver("get_q_to_J_col");
             return get_prt_solver("get_q_to_J_col", false)->get_q_to_J_col_python();
         }
+        IntVect get_p_to_J_row_python() const {
+            check_right_solver("get_p_to_J_row");
+            return get_prt_solver("get_p_to_J_row", false)->get_p_to_J_row_python();
+        }
+        IntVect get_q_to_J_row_python() const {
+            check_right_solver("get_q_to_J_row");
+            return get_prt_solver("get_q_to_J_row", false)->get_q_to_J_row_python();
+        }
 
         // VoltageControl (remote gen + SVC) converged reactive injection per
         // controller (pu) + identity, in controller registration order. Empty
@@ -252,6 +260,9 @@ class LS2G_API AlgorithmSelector final
         }
         IntVect get_controller_elem_id() const {
             return get_prt_solver("get_controller_elem_id", false)->get_controller_elem_id();
+        }
+        int get_slack_col() const {
+            return get_prt_solver("get_slack_col", false)->get_slack_col();
         }
 
         double get_computation_time() const {
