@@ -852,6 +852,22 @@ CplxVect LSGrid::_pre_process_solver_impl(
         slack_bus_id_me = generators_.get_slack_bus_id();
         // this is the slack bus ids with the gridmodel ordering, not the solver ordering.
         // conversion to solver ordering is done in init_slack_bus
+
+        // Optional forced angle reference: move the requested (gridmodel) bus to
+        // the front so the NR uses it as slack_ids[0] (the reference) without
+        // changing the slack set or weights. See LSGrid::set_reference_slack_bus.
+        if (_forced_ref_slack_bus_id >= 0){
+            std::vector<int> sids = slack_bus_id_me.to_int_vector();
+            for (std::size_t i = 1; i < sids.size(); ++i){
+                if (sids[i] == _forced_ref_slack_bus_id){
+                    const int ref = sids[i];
+                    sids.erase(sids.begin() + static_cast<std::ptrdiff_t>(i));
+                    sids.insert(sids.begin(), ref);
+                    slack_bus_id_me = GlobalBusIdVect(sids);
+                    break;
+                }
+            }
+        }
     }
     if (redo_all || solver_control.has_one_el_changed_bus()){
         init_bus_status();

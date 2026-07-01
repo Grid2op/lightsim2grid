@@ -102,6 +102,16 @@ class LS2G_API BaseAlgo : public BaseConstants
             throw std::runtime_error("get_q_to_J_col: only available for Newton-Raphson solvers.");
         }
 
+        // bus_id -> Jacobian row of that bus' P / Q mismatch equation (-1 if none).
+        // The row counterpart of the *_to_J_col maps. Only Newton-Raphson solvers
+        // define a Jacobian, hence these throw by default.
+        virtual IntVect get_p_to_J_row_python() const {
+            throw std::runtime_error("get_p_to_J_row: only available for Newton-Raphson solvers.");
+        }
+        virtual IntVect get_q_to_J_row_python() const {
+            throw std::runtime_error("get_q_to_J_row: only available for Newton-Raphson solvers.");
+        }
+
         // VoltageControl (remote gen + SVC) converged reactive injection per
         // controller (pu) and its (kind, element id) identity, in controller
         // registration order. Empty for algorithms without the extension (DC,
@@ -109,6 +119,10 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual RealVect get_controller_q()       const { return RealVect(); }
         virtual IntVect  get_controller_kind()    const { return IntVect(); }
         virtual IntVect  get_controller_elem_id() const { return IntVect(); }
+
+        // MultiSlack: J column of the slack_absorbed unknown (-1 when the
+        // distributed-slack-in-Jacobian extension is not active).
+        virtual int      get_slack_col()          const { return -1; }
 
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;

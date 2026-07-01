@@ -108,6 +108,10 @@ void bind_batch(py::module_& m) {
         // inspect
         .def("my_defaults", &ContingencyAnalysis::my_defaults_vect, DocSecurityAnalysis::my_defaults_vect.c_str())
         .def("is_grid_connected_after_contingency", &ContingencyAnalysis::is_grid_connected_after_contingency, DocLSGrid::_internal_do_not_use.c_str())
+        .def("pick_reference_slack", &ContingencyAnalysis::pick_reference_slack,
+             "Over the registered contingencies, return the slack bus (gridmodel id) "
+             "stranded by the fewest of them — feed it to LSGrid.set_reference_slack_bus "
+             "before ac_pf so handle_disconnected_grid skips as few contingencies as possible.")
 
         // perform computation
         .def("compute", &ContingencyAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())
