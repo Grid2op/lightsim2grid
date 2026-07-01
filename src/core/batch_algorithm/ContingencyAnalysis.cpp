@@ -321,6 +321,25 @@ IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
     return res;
 }
 
+int ContingencyAnalysis::pick_reference_slack(){
+    const bool ac_solver_used = _algo.ac_solver_used();
+    // Build the solver inputs + per-contingency coefficients on demand (same
+    // pattern as is_grid_connected_after_contingency / compute).
+    const bool inputs_ready = (ac_solver_used ? Ybus_.cols() != 0 : Bbus_.cols() != 0);
+    if(!inputs_ready || _li_coeffs.size() != _li_defaults.size()){
+        const size_t nb_total_bus = _grid_model.total_bus();
+        CplxVect Vinit = CplxVect::Constant(static_cast<Eigen::Index>(nb_total_bus),
+                                            {_grid_model.get_init_vm_pu(), 0.});
+        prepare_solver_input_base(Vinit, ac_solver_used);
+        init_li_coeffs(ac_solver_used, id_me_to_solver_);
+    }
+    // select_ref_slack_and_masks() scores every candidate slack and reorders
+    // slack_ids_me_ so the stranded-by-fewest reference is index 0.
+    select_ref_slack_and_masks();
+    if(slack_ids_me_.size() == 0) return -1;
+    return slack_ids_me_[static_cast<int>(0)].cast_int();  // gridmodel bus id
+}
+
 void ContingencyAnalysis::readd_to_Ybus(
     Eigen::SparseMatrix<cplx_type> & Ybus,
     const std::vector<Coeff> & coeffs,

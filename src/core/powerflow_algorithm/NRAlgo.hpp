@@ -75,10 +75,17 @@ public:
     virtual IntVect get_vm_to_J_col_python()    const override { return _to_intvect(_system.vm_to_J_col()); }
     virtual IntVect get_q_to_J_col_python()     const override { return _to_intvect(_system.q_to_J_col()); }
 
+    // ----- row (equation) -> bus-id converters (NR-only) -----------------------
+    // bus_id -> Jacobian row of that bus' P / Q mismatch equation (-1 if none).
+    // Same lifetime / semantics as the *_to_J_col converters above.
+    virtual IntVect get_p_to_J_row_python() const override { return _to_intvect(_system.p_to_J_row()); }
+    virtual IntVect get_q_to_J_row_python() const override { return _to_intvect(_system.q_to_J_row()); }
+
     // ----- VoltageControl (remote gen + SVC) converged results -----------------
     virtual RealVect get_controller_q()       const override { return _system.controller_q(); }
     virtual IntVect  get_controller_kind()    const override { return _system.controller_kind(); }
     virtual IntVect  get_controller_elem_id() const override { return _system.controller_elem_id(); }
+    virtual int      get_slack_col()          const override { return _system.slack_col(); }
 
     // ----- timers --------------------------------------------------------------
 

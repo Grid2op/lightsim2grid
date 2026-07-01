@@ -133,6 +133,16 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         void compute(const CplxVect & Vinit, int max_iter, real_type tol);
         IntVect is_grid_connected_after_contingency();
 
+        // Choose, over the currently-registered contingencies, the reference slack
+        // bus (gridmodel numbering) that is stranded by the FEWEST of them — so the
+        // "handle disconnected grid" mode can keep its (untouched) Jacobian reused
+        // for as many contingencies as possible. Returns -1 if there is no slack.
+        // Side-effect free w.r.t. the registered defaults; prepares the solver
+        // inputs on demand (like is_grid_connected_after_contingency). Feed the
+        // result to LSGrid::set_reference_slack_bus() before the base ac_pf so the
+        // GPU companion (gpusim2grid) inherits this reference.
+        int pick_reference_slack();
+
         Eigen::Ref<RealMat > compute_flows() {
             compute_flows_from_Vs();
             clean_flows();

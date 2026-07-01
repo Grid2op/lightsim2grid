@@ -129,6 +129,11 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("update_slack_weights", &LSGrid::update_slack_weights, "TODO")
         .def("update_slack_weights_by_id", &LSGrid::update_slack_weights_by_id, "TODO")
         .def("assign_slack_to_most_connected", &LSGrid::assign_slack_to_most_connected, "TODO")
+        .def("set_reference_slack_bus", &LSGrid::set_reference_slack_bus,
+             "Force a (gridmodel) bus to be the angle reference among the slack buses "
+             "(reordered to slack_ids[0]) without changing the slack set/weights; -1 clears it.")
+        .def("get_reference_slack_bus", &LSGrid::get_reference_slack_bus,
+             "Forced angle-reference slack bus (gridmodel id), or -1 if none.")
         .def("consider_only_main_component", &LSGrid::consider_only_main_component, "TODO and TODO DC LINE: one side might be in the connected comp and not the other !")
         .def("set_ignore_status_global", &LSGrid::set_ignore_status_global, "Ignore the 'global_status' flags for powerlines and trafo (set to true if you want to control independantly each side of powerlines and trafo). Default: false.")
         .def("set_synch_status_both_side", &LSGrid::set_synch_status_both_side, "Synch the status of each side of the powerlines and trafo. It means that if you disconnect one side of a powerline / trafo, the other side will also be disconnected. Default: true.")
