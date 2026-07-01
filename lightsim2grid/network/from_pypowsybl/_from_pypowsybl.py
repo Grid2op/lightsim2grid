@@ -22,6 +22,16 @@ from ._aux_handle_slack import handle_slack_iterable, handle_slack_one_el
 PP_BUG_RATIO_TAP_CHANGER = version.parse("1.9")
 PYPOWSYBL_VER = version.parse(pypo.__version__)
 
+# suffix of the synthetic branch lightsim2grid line id for a dangling line's
+# equivalent boundary branch (see `_aux_dangling_lines_fictitious`)
+_DANGLING_BOUNDARY_LINE_SUFFIX = "@boundary_line"
+
+# OpenLoadFlow's hardcoded fallback droop (in `AbstractLfGenerator.DEFAULT_DROOP`,
+# "why not") used for every generator whose `activePowerControl` extension does not
+# set its own droop, under the ``PROPORTIONAL_TO_GENERATION_P_MAX`` balance type --
+# see `_default_distributed_slack`.
+_OLF_DEFAULT_DROOP = 4.0
+
 
 def _aux_get_bus(vl_df, bus_df, first_bus_per_vl, el_type, df, conn_key="connected", bus_key="bus_id", vl_key="voltage_level_id"):
     if df.shape[0] == 0:
@@ -55,6 +65,65 @@ def _aux_get_bus(vl_df, bus_df, first_bus_per_vl, el_type, df, conn_key="connect
     
     sub_id = bus_df.loc[tmp_bus_id.values]["glop_sub_id"].values
     return bus_id, mask_disco.values, sub_id
+
+
+def _aux_dangling_lines_fictitious(net, sort_index):
+    """One fictitious 1-bus "substation" per dangling line, at the far
+    (boundary) end of its series impedance.
+
+    Real full grids never have any dangling line -- they only appear when
+    zooming into a sub-area with
+    ``network.reduce_by_ids_and_depths(..., with_boundary_lines=True)``
+    (*eg* in ``reduce_and_compare.py`` / ``validate_olf_vs_lightsim.py``),
+    which cuts the grid and represents everything beyond the cut as a
+    ``DanglingLine`` (series r/x/g/b + a constant-power p0/q0 "load" at the
+    boundary). Without this, ``_from_pypowsybl`` silently drops that
+    boundary injection (it never reads ``get_dangling_lines()``), which can
+    be tens to hundreds of MW and makes the reduced-grid comparison
+    meaningless.
+
+    IIDM convention: the shunt admittance (g, b) of a dangling line sits
+    entirely on the connectable (network) side; the boundary side carries
+    none (same convention already used for transformers' single ``h``, see
+    ``trafo_h`` below).
+
+    Returns ``(bus_extra, vl_extra, df_dl)``; ``bus_extra``/``vl_extra`` are
+    ``None`` and ``df_dl`` is empty if the grid has no dangling line.
+    ``df_dl`` carries two extra columns, ``boundary_bus_id`` /
+    ``boundary_vl_id``, used later to attach the equivalent branch + load.
+    """
+    df_dl = net.get_dangling_lines()
+    if sort_index:
+        df_dl = df_dl.sort_index()
+    if df_dl.shape[0] == 0:
+        return None, None, df_dl
+    df_dl = df_dl.copy()
+    df_dl["boundary_bus_id"] = [f"{dl_id}@boundary_bus" for dl_id in df_dl.index]
+    df_dl["boundary_vl_id"] = [f"{dl_id}@boundary_vl" for dl_id in df_dl.index]
+    nominal_v = net.get_voltage_levels().loc[df_dl["voltage_level_id"].values, "nominal_v"].values
+    bus_extra = pd.DataFrame({"voltage_level_id": df_dl["boundary_vl_id"].values, "name": ""},
+                             index=pd.Index(df_dl["boundary_bus_id"].values, name=df_dl.index.name or "id"))
+    vl_extra = pd.DataFrame({"nominal_v": nominal_v},
+                            index=pd.Index(df_dl["boundary_vl_id"].values, name="id"))
+    return bus_extra, vl_extra, df_dl
+
+
+def dangling_line_boundary_bus(model: LSGrid) -> Dict[str, int]:
+    """Dangling-line id -> lightsim2grid global bus id of its fictitious
+    boundary bus, for a grid built with ``init(..., convert_dangling_lines=True)``
+    (see :func:`_aux_dangling_lines_fictitious`). Empty if the grid has no
+    dangling line, or was built with ``convert_dangling_lines=False``.
+
+    Unlike every other bus, a dangling line's boundary bus has no counterpart in
+    ``network.get_buses()`` so it is not reachable through ``model._ls_to_orig``.
+    Rather than stashing extra state on ``model`` (a pybind11 object without
+    ``dynamic_attr``, so arbitrary attributes cannot be set on it), this is
+    reconstructed from the synthetic boundary branch's own (real, C++-backed)
+    ``bus2_id`` -- once built, that branch is an ordinary lightsim2grid line.
+    """
+    suffix = _DANGLING_BOUNDARY_LINE_SUFFIX
+    return {el.name[:-len(suffix)]: el.bus2_id
+            for el in model.get_lines() if el.name.endswith(suffix)}
 
 
 def _aux_phase_shift_rx_tables(trafo_index, net):
@@ -156,18 +225,40 @@ def _default_distributed_slack(net, df_gen):
       active-power control (``participate`` flag of the ``activePowerControl``
       extension); if that extension is absent, every connected producing generator
       participates;
-    * participants are restricted to the *main country* (the country hosting the
-      most buses) when substation ``country`` metadata is available -- this keeps
-      the slack out of foreign border-equivalent generators;
-    * the per-generator weight is the distributed-slack key: the
-      ``participation_factor`` from the ``activePowerControl`` extension when it is
-      set, otherwise the generator's ``max_p`` (matching OLF's
-      ``PROPORTIONAL_TO_GENERATION_P_MAX`` default).
+    * participants are restricted to the *main synchronous component* (OLF's
+      ``ActivePowerDistribution.run`` only ever considers
+      ``LfSynchronousNetwork.getBuses()``) -- **not** to any particular country:
+      ``ActivePowerDistribution.filterParticipatingBuses`` has no country logic at
+      all, and OLF's own ``slackBusCountryFilter`` is empty by default, so foreign
+      border-equivalent generators (*eg* a cross-border interconnection's
+      equivalent generator, which can carry a very large ``max_p``/weight) do
+      participate. An earlier version of this function restricted participants to
+      the country hosting the most buses; that was a guess, not something OLF
+      actually does, and it was found to materially skew which generators absorb
+      the slack mismatch on real multi-country RTE grids -- removed;
+    * the per-generator weight matches OLF's default ``PROPORTIONAL_TO_GENERATION_P_MAX``
+      balance type exactly (``GenerationActivePowerDistributionStep.getParticipationFactor``,
+      ``MAX`` case): ``max_p / droop``, where ``droop`` is the ``activePowerControl``
+      extension's own droop when it sets one (> 0), otherwise OLF's hardcoded
+      ``DEFAULT_DROOP = 4`` for *every* generator regardless of the extension.
+      **Not** the extension's ``participation_factor`` -- that key is only used
+      under the (different, not reproduced here) ``PROPORTIONAL_TO_GENERATION_PARTICIPATION_FACTOR``
+      balance type, even though real grids often set both fields together.
 
-    The reference generator (angle datum) follows OLF's grid-connection logic:
-    follow each candidate's step-up transformer to the highest-voltage bus it
-    reaches, pick the bus carrying the most generator active power, then the
-    generator injecting the most into it.
+    The reference generator (angle datum, ``slack_ids[0]``) is a separate concern
+    from the participant/weight logic above and IS restricted to the main country
+    (the country hosting the most buses) when available: follow each candidate's
+    step-up transformer to the highest-voltage bus it reaches, pick the bus
+    carrying the most generator active power, then the generator injecting the
+    most into it -- a lightsim2grid-only proxy for OLF's own
+    ``slackBusSelectionMode=MOST_MESHED``. Without the country restriction here, a
+    single cross-border aggregate generator (*eg* a "whole neighbouring country"
+    equivalent injection, `max_p` in the tens of GW) reaches a high-voltage tie bus
+    and dominates this heuristic, becoming the reference -- which behaves nothing
+    like a real MOST_MESHED domestic bus and was empirically much worse (see the
+    country-filter history above; this restriction previously covered the
+    participant set too, until that was found to disagree with OLF and narrowed
+    down to just the reference pick).
     """
     names = df_gen.index
     n = len(names)
@@ -187,17 +278,20 @@ def _default_distributed_slack(net, df_gen):
         # a generator listed in the extension uses its flag; one absent from it
         # participates by default (OLF treats a missing extension as participating)
         participate = apc["participate"].reindex(names).fillna(True).to_numpy(bool)
-        if "participation_factor" in apc.columns:
-            pfac = apc["participation_factor"].reindex(names).to_numpy(float)
+        if "droop" in apc.columns:
+            droop = apc["droop"].reindex(names).to_numpy(float)
         else:
-            pfac = np.full(n, np.nan)
+            droop = np.full(n, np.nan)
     else:
         participate = np.ones(n, bool)  # no (or empty) extension -> everything participates
-        pfac = np.full(n, np.nan)
+        droop = np.full(n, np.nan)
 
-    # sharing key (PROPORTIONAL_TO_GENERATION_P_MAX): participation_factor when set,
-    # else max_p.
-    weight = np.where(np.isfinite(pfac) & (pfac > 0.), pfac, max_p)
+    # sharing key (PROPORTIONAL_TO_GENERATION_P_MAX): max_p / droop, OLF's own
+    # DEFAULT_DROOP=4 when the extension does not set a droop of its own (pypowsybl
+    # reports an unset droop as 0.0, not NaN, hence the `> 0.` guard rather than
+    # `np.isfinite`).
+    droop_used = np.where(np.isfinite(droop) & (droop > 0.), droop, _OLF_DEFAULT_DROOP)
+    weight = max_p / droop_used
 
     # participants: connected, *started* (positive target P -- OLF does not
     # distribute on zero-MW generators), participating, with a usable positive weight.
@@ -207,22 +301,13 @@ def _default_distributed_slack(net, df_gen):
     # otherwise lightsim2grid's `consider_only_main_component` deactivates its
     # (islanded) bus and the solver then trips on a disconnected slack. "Main" is
     # the largest synchronous component, which matches the line + transformer
-    # connectivity lightsim2grid keeps (HVDC excluded). Real grids carry many small
-    # boundary islands that satisfy the country/participation tests above.
+    # connectivity lightsim2grid keeps (HVDC excluded) and mirrors OLF's own
+    # `LfSynchronousNetwork.getBuses()` restriction. Real grids carry many small
+    # boundary islands that satisfy the participation tests above.
     df_bus = net.get_buses(attributes=["synchronous_component", "voltage_level_id"])
     main_sync = df_bus["synchronous_component"].value_counts().idxmax()
     gen_sync = df_gen["bus_id"].map(df_bus["synchronous_component"]).to_numpy()
     mask = mask & (gen_sync == main_sync)
-
-    # country filter (main country = the one hosting the most buses)
-    subs = net.get_substations()
-    vls = net.get_voltage_levels()
-    if "country" in subs.columns and subs["country"].notna().any():
-        vl2sub = vls["substation_id"]
-        bus_country = df_bus["voltage_level_id"].map(vl2sub).map(subs["country"])
-        main_country = bus_country.value_counts().idxmax()
-        gen_country = df_gen["voltage_level_id"].map(vl2sub).map(subs["country"]).to_numpy()
-        mask = mask & (gen_country == main_country)
 
     if not mask.any():
         return None
@@ -230,6 +315,7 @@ def _default_distributed_slack(net, df_gen):
     # reference (angle datum): follow the step-up transformer(s) to the
     # highest-voltage node, take the node with the most generator active power, then
     # the generator injecting the most into it.
+    vls = net.get_voltage_levels()
     nomv = net.get_buses()["voltage_level_id"].map(vls["nominal_v"]).to_dict()
     tw = net.get_2_windings_transformers(attributes=["bus1_id", "bus2_id", "connected1", "connected2"])
     tc = tw[tw["connected1"] & tw["connected2"]]
@@ -253,16 +339,38 @@ def _default_distributed_slack(net, df_gen):
                         q.append((nb, d + 1))
         return best
 
+    # candidate pool for the *reference* (angle datum) only: restricted to the main
+    # country when available. This is a lightsim2grid-only heuristic proxy for OLF's
+    # own `slackBusSelectionMode=MOST_MESHED` reference pick (unrelated to country),
+    # added because a cross-border tie's equivalent generator (*eg* a single "whole
+    # neighbouring country" aggregate with a very large `max_p`) otherwise dominates
+    # the "most generation at the highest voltage reached" heuristic below and gets
+    # picked as reference, which is a poor MOST_MESHED proxy and was empirically much
+    # worse than restricting to the domestic candidates. Unlike this reference pick,
+    # the *participant* set (`mask` above) is intentionally left unrestricted, since
+    # OLF's actual active-power distribution (`ActivePowerDistribution.
+    # filterParticipatingBuses`) has no country logic at all.
+    ref_mask = mask
+    subs = net.get_substations()
+    if "country" in subs.columns and subs["country"].notna().any():
+        vl2sub = vls["substation_id"]
+        bus_country = df_bus["voltage_level_id"].map(vl2sub).map(subs["country"])
+        main_country = bus_country.value_counts().idxmax()
+        gen_country = df_gen["voltage_level_id"].map(vl2sub).map(subs["country"]).to_numpy()
+        if (mask & (gen_country == main_country)).any():
+            ref_mask = mask & (gen_country == main_country)
+
     cand = np.where(mask)[0]
-    conn = {i: follow_gsu(gen_bus[i]) for i in cand}
-    cvolt = {i: nomv.get(conn[i], 0.) for i in cand}
+    ref_cand = np.where(ref_mask)[0]
+    conn = {i: follow_gsu(gen_bus[i]) for i in ref_cand}
+    cvolt = {i: nomv.get(conn[i], 0.) for i in ref_cand}
     vmax = max(cvolt.values())
     node_p = {}
-    for i in cand:
+    for i in ref_cand:
         if cvolt[i] == vmax:
             node_p[conn[i]] = node_p.get(conn[i], 0.) + target_p[i]
     ref_node = max(node_p, key=node_p.get)
-    ref_i = max((i for i in cand if cvolt[i] == vmax and conn[i] == ref_node),
+    ref_i = max((i for i in ref_cand if cvolt[i] == vmax and conn[i] == ref_node),
                 key=lambda i: target_p[i])
 
     order = [int(ref_i)] + [int(i) for i in cand if i != ref_i]
@@ -282,6 +390,7 @@ def init(net : pypo.network.Network,
          buses_for_sub:Optional[bool]=None,  # new in 0.9.1
          init_vm_pu:float=1.06,
          keep_half_open_lines: bool=False,
+         convert_dangling_lines: bool=False,
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -373,6 +482,22 @@ def init(net : pypo.network.Network,
                        deactivated. Default False (whole-branch deactivation, as before).
     :type keep_half_open_lines: bool
 
+    :param convert_dangling_lines: If True, every IIDM ``DanglingLine`` (*eg*
+                       produced by ``network.reduce_by_ids_and_depths(...,
+                       with_boundary_lines=True)`` when zooming into a
+                       sub-area) is converted to its equivalent branch +
+                       constant-power load: a fictitious 1-bus "substation" at
+                       the boundary end, a line carrying the dangling line's own
+                       r/x/g/b (shunt entirely on the local side, matching
+                       transformers' single ``h``), and a load consuming its
+                       p0/q0. Without this (the default), dangling lines are
+                       silently ignored -- fine for real full grids, which
+                       never have any, but it drops a real boundary injection
+                       (can be hundreds of MW) whenever they do appear. Off by
+                       default to keep existing behaviour unchanged; the
+                       reduce/validate debug scripts turn it on.
+    :type convert_dangling_lines: bool
+
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
     """
@@ -404,7 +529,35 @@ def init(net : pypo.network.Network,
         voltage_levels = net.get_voltage_levels().sort_index()
     else:
         voltage_levels = net.get_voltage_levels()
-    
+
+    # dangling lines (only present when the grid was cut with
+    # `reduce_by_ids_and_depths(..., with_boundary_lines=True)`, see
+    # `_aux_dangling_lines_fictitious`) each get their own fictitious 1-bus
+    # "substation" at their boundary end, appended *after* the real buses so
+    # `orig_id` / row-position based mappings (eg `_ls_to_orig`, used by
+    # `lightsim_bus_to_iidm`) keep pointing at real pypowsybl buses only.
+    if convert_dangling_lines:
+        bus_extra, vl_extra, df_dl = _aux_dangling_lines_fictitious(net, sort_index)
+    else:
+        raw_dl = net.get_dangling_lines()
+        bus_extra, vl_extra, df_dl = None, None, raw_dl.iloc[0:0]
+        if raw_dl.shape[0] > 0:
+            warnings.warn(f"{raw_dl.shape[0]} dangling line(s) found in the grid (eg from "
+                          "`network.reduce_by_ids_and_depths(..., with_boundary_lines=True)`) "
+                          "but `convert_dangling_lines=False` (the default): their boundary "
+                          "injection is ignored. Pass `convert_dangling_lines=True` to model "
+                          "them as an equivalent branch + constant-power load instead.")
+    if df_dl.shape[0] > 0:
+        if buses_for_sub is not None and buses_for_sub:
+            raise RuntimeError("Dangling lines (eg from `network.reduce_by_ids_and_depths("
+                               "..., with_boundary_lines=True)`) are not supported "
+                               "together with buses_for_sub=True (legacy mode). Use "
+                               "buses_for_sub=False (or None).")
+        bus_extra = bus_extra.copy()
+        bus_extra["orig_id"] = np.arange(bus_df.shape[0], bus_df.shape[0] + bus_extra.shape[0])
+        bus_df = pd.concat([bus_df, bus_extra])
+        voltage_levels = pd.concat([voltage_levels, vl_extra])
+
     all_buses_vn_kv = voltage_levels.loc[bus_df["voltage_level_id"].values]["nominal_v"].values
     nb_bus_per_vl = bus_df[["voltage_level_id", "name"]].groupby("voltage_level_id").count()
     
@@ -540,7 +693,12 @@ def init(net : pypo.network.Network,
     # for oldest pypowsybl version, we could have "" there
     bus_reg = np.where(bus_reg == "", df_gen.index, bus_reg)
     vl_reg = copy.deepcopy(df_gen["voltage_level_id"].values)
-    mask_remote_gen = bus_reg != df_gen.index.values
+    # a disconnected generator is deactivated below regardless of its (possibly
+    # itself disconnected / unresolvable) regulated element, so exclude it here:
+    # otherwise a disconnected generator remotely "regulating" a disconnected
+    # busbar section (empty bus-view id) crashes the (moot, since deactivated)
+    # bus resolution below.
+    mask_remote_gen = (bus_reg != df_gen.index.values) & ~gen_disco
     gen_reg_bus_view = None
     if mask_remote_gen.any():
         gen_reg_bus_view = _aux_regulated_bus_view_ids(net, bus_reg[mask_remote_gen])
@@ -575,6 +733,18 @@ def init(net : pypo.network.Network,
         df_load = net.get_loads().sort_index()
     else:
         df_load = net.get_loads()
+    if df_dl.shape[0] > 0:
+        # equivalent constant-power load at each dangling line's boundary bus
+        # (see `_aux_dangling_lines_fictitious`); p0/q0 are already in MW/MVAr,
+        # same raw convention as `net.get_loads()`.
+        df_load_extra = pd.DataFrame({
+            "p0": df_dl["p0"].values,
+            "q0": df_dl["q0"].values,
+            "bus_id": df_dl["boundary_bus_id"].values,
+            "connected": True,
+            "voltage_level_id": df_dl["boundary_vl_id"].values,
+        }, index=[f"{dl_id}@boundary_load" for dl_id in df_dl.index])
+        df_load = pd.concat([df_load, df_load_extra])
     load_bus, load_disco, load_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "load", df_load)
     model.init_loads(df_load["p0"].values,
                      df_load["q0"].values,
@@ -603,6 +773,32 @@ def init(net : pypo.network.Network,
             warnings.warn("The `PerUnitView` (python side) is less efficient and less "
                           "tested that the equivalent java class. Please upgrade pypowsybl version")
     df_line_pu = net_pu.get_lines().loc[df_line.index]
+    if df_dl.shape[0] > 0:
+        # equivalent branch (local bus -> fictitious boundary bus) for each
+        # dangling line, see `_aux_dangling_lines_fictitious`. Shunt admittance
+        # (g, b) sits entirely on the local (network) side, none on the
+        # boundary side -- same convention already used for the single `h` of
+        # a transformer (see `trafo_h` below).
+        df_dl_pu = net_pu.get_dangling_lines().loc[df_dl.index]
+        line_ids_extra = [f"{dl_id}{_DANGLING_BOUNDARY_LINE_SUFFIX}" for dl_id in df_dl.index]
+        df_line_extra = pd.DataFrame({
+            "bus1_id": df_dl["bus_id"].values,
+            "bus2_id": df_dl["boundary_bus_id"].values,
+            "connected1": df_dl["connected"].values,
+            "connected2": True,
+            "voltage_level1_id": df_dl["voltage_level_id"].values,
+            "voltage_level2_id": df_dl["boundary_vl_id"].values,
+        }, index=line_ids_extra)
+        df_line_extra_pu = pd.DataFrame({
+            "r": df_dl_pu["r"].values,
+            "x": df_dl_pu["x"].values,
+            "g1": df_dl_pu["g"].values,
+            "b1": df_dl_pu["b"].values,
+            "g2": 0.,
+            "b2": 0.,
+        }, index=line_ids_extra)
+        df_line = pd.concat([df_line, df_line_extra])
+        df_line_pu = pd.concat([df_line_pu, df_line_extra_pu])
     line_r = df_line_pu["r"].values
     line_x = df_line_pu["x"].values
     line_h_or = (df_line_pu["g1"].values + 1j * df_line_pu["b1"].values)
