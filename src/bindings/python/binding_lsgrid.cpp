@@ -8,6 +8,7 @@
 
 #include "binding_declarations.hpp"
 #include "pickle_helpers.hpp"
+#include "binary_helpers.hpp"
 #include "LSGrid.hpp"
 #include "help_fun_msg.hpp"
 
@@ -46,6 +47,7 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def_property_readonly("timer_last_ac_pf", &LSGrid::timer_last_ac_pf, "TODO")
         .def_property_readonly("timer_last_dc_pf", &LSGrid::timer_last_dc_pf, "TODO");
     add_pickle(lsgrid_cls, "LSGrid");
+    add_binary_serialization(lsgrid_cls);
     lsgrid_cls
         // algo config (scaling/refactor policy params)
         .def("get_ac_algo_config", &LSGrid::get_ac_algo_config,
@@ -248,6 +250,8 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("change_q_storage", &LSGrid::change_q_storage, DocLSGrid::_internal_do_not_use.c_str())
 
         .def("deactivate_dcline", &LSGrid::deactivate_dcline, DocLSGrid::_internal_do_not_use.c_str())
+        .def("deactivate_dcline_side1", &LSGrid::deactivate_dcline_side1, "Disconnect only converter station 1 of an HVDC line; station 2 stays active (injecting / regulating).")
+        .def("deactivate_dcline_side2", &LSGrid::deactivate_dcline_side2, "Disconnect only converter station 2 of an HVDC line; station 1 stays active (injecting / regulating).")
         .def("reactivate_dcline", &LSGrid::reactivate_dcline, DocLSGrid::_internal_do_not_use.c_str())
         .def("change_p_dcline", &LSGrid::change_p_dcline, DocLSGrid::_internal_do_not_use.c_str())
         .def("change_v1_dcline", &LSGrid::change_v1_dcline, DocLSGrid::_internal_do_not_use.c_str())

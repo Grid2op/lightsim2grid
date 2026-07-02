@@ -110,6 +110,10 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         StateRes get_state() const;
         void set_state(StateRes & my_state );
 
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path) const;
+        static TrafoContainer load_binary(const std::string & path);
+
         bool ignore_tap_side_for_shift() const { return ignore_tap_side_for_shift_; }
 
         /**

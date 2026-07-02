@@ -91,6 +91,10 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         // pickle
         GeneratorContainer::StateRes get_state() const;
         void set_state(GeneratorContainer::StateRes & my_state );
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path) const;
+        static GeneratorContainer load_binary(const std::string & path);
                    
         // slack handling
         /**

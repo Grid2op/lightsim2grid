@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "SvcContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -233,6 +234,14 @@ bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoCo
         solver_control.dc_algo_controler().tell_pv_changed();
     }
     return true;
+}
+
+void SvcContainer::save_binary(const std::string & path) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+}
+
+SvcContainer SvcContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<SvcContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

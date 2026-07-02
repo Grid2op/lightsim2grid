@@ -8,6 +8,7 @@
 
 #include "binding_declarations.hpp"
 #include "pickle_helpers.hpp"
+#include "binary_helpers.hpp"
 #include "element_container/GeneratorContainer.hpp"
 #include "element_container/SGenContainer.hpp"
 #include "element_container/SvcContainer.hpp"
@@ -31,6 +32,7 @@ void bind_containers(py::module_& m) {
             }, py::keep_alive<0, 1>())
         .def("get_bus_id", &GeneratorContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
     add_pickle(gen_cls, "GeneratorContainer");
+    add_binary_serialization(gen_cls);
 
     py::class_<GenInfo>(m, "GenInfo", DocIterator::GenInfo.c_str())
         .def_readonly("id", &GenInfo::id, DocIterator::id.c_str())
@@ -62,6 +64,7 @@ void bind_containers(py::module_& m) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>());
     add_pickle(svc_cls, "SvcContainer");
+    add_binary_serialization(svc_cls);
 
     py::class_<SvcInfo>(m, "SvcInfo", "Information about one Static Var Compensator (SVC).")
         .def_readonly("id", &SvcInfo::id, DocIterator::id.c_str())
@@ -92,6 +95,7 @@ void bind_containers(py::module_& m) {
             }, py::keep_alive<0, 1>())
         .def("get_bus_id", &SGenContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
     add_pickle(sgen_cls, "SGenContainer");
+    add_binary_serialization(sgen_cls);
 
     py::class_<SGenInfo>(m, "SGenInfo", DocIterator::SGenInfo.c_str())
         .def_readonly("id", &SGenInfo::id, DocIterator::id.c_str())
@@ -121,6 +125,7 @@ void bind_containers(py::module_& m) {
             }, py::keep_alive<0, 1>())
         .def("get_bus_id", &LoadContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
     add_pickle(load_cls, "LoadContainer");
+    add_binary_serialization(load_cls);
 
     py::class_<LoadInfo>(m, "LoadInfo", DocIterator::LoadInfo.c_str())
         .def_readonly("id", &LoadInfo::id, DocIterator::id.c_str())
@@ -148,6 +153,7 @@ void bind_containers(py::module_& m) {
             }, py::keep_alive<0, 1>())
         .def("get_bus_id", &StorageContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
     add_pickle(storage_cls, "StorageContainer");
+    add_binary_serialization(storage_cls);
 
     py::class_<StorageInfo>(m, "StorageInfo", DocIterator::LoadInfo.c_str())
         .def_readonly("id", &StorageInfo::id, DocIterator::id.c_str())
@@ -173,6 +179,7 @@ void bind_containers(py::module_& m) {
             }, py::keep_alive<0, 1>())
         .def("get_bus_id", &ShuntContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
     add_pickle(shunt_cls, "ShuntContainer");
+    add_binary_serialization(shunt_cls);
 
     py::class_<ShuntInfo>(m, "ShuntInfo", DocIterator::ShuntInfo.c_str())
         .def_readonly("id", &ShuntInfo::id, DocIterator::id.c_str())
@@ -208,6 +215,7 @@ void bind_containers(py::module_& m) {
         .def("get_yac_eff_21", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_21(); }, "TODO doc", py::keep_alive<0, 1>())
         .def("get_yac_eff_22", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_22(); }, "TODO doc", py::keep_alive<0, 1>());
     add_pickle(trafo_cls, "TrafoContainer");
+    add_binary_serialization(trafo_cls);
 
     py::class_<TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
         .def_readonly("id", &TrafoInfo::id, DocIterator::id.c_str())
@@ -267,6 +275,7 @@ void bind_containers(py::module_& m) {
         .def("get_yac_eff_21", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_21(); }, "TODO doc", py::keep_alive<0, 1>())
         .def("get_yac_eff_22", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_22(); }, "TODO doc", py::keep_alive<0, 1>());
     add_pickle(line_cls, "LineContainer");
+    add_binary_serialization(line_cls);
 
     py::class_<LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
         .def_readonly("id", &LineInfo::id, DocIterator::id.c_str())
@@ -342,6 +351,7 @@ void bind_containers(py::module_& m) {
         .def("get_bus_id_side_1", &HvdcLineContainer::get_bus_id_side_1_numpy)
         .def("get_bus_id_side_2", &HvdcLineContainer::get_bus_id_side_2_numpy);
     add_pickle(dcline_cls, "HvdcLineContainer");
+    add_binary_serialization(dcline_cls);
 
     py::class_<HvdcLineInfo>(m, "HvdcLineInfo", DocIterator::DCLineInfo.c_str())
         .def_readonly("id", &HvdcLineInfo::id, DocIterator::id.c_str())
@@ -392,6 +402,7 @@ void bind_containers(py::module_& m) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>());
     add_pickle(sub_cls, "SubstationContainer");
+    add_binary_serialization(sub_cls);
 
     py::class_<SubstationInfo>(m, "SubstationInfo", "TODO")
         .def_readonly("id", &SubstationInfo::id, DocIterator::id.c_str())

@@ -134,6 +134,17 @@ ATTR_DCLINE_INPUT = (ATTR_2SIDES_INPUT +
 )
 
 
+ATTR_SVC_INPUT = [
+    "regulation_mode",
+    "target_vm_pu",
+    "target_q_mvar",
+    "slope_pu",
+    "b_min",
+    "b_max",
+    "regulated_bus_id",
+]
+
+
 ATTR_STATION_INPUT = [
     "converter_type",
     "loss_factor",
@@ -271,6 +282,17 @@ def _compare_static_generators(network1: LSGrid, network2: LSGrid, tol=1e-8):
     return res_sgens
 
 
+def _compare_svcs(network1: LSGrid, network2: LSGrid, tol=1e-8):
+    res_svcs =  _aux_compare(
+        network1,
+        network2,
+        "get_svcs",
+        ATTR_SVC_INPUT,
+        tol,
+    )
+    return res_svcs
+
+
 def _compare_loads(network1: LSGrid, network2: LSGrid, tol=1e-8):
     res_loads =  _aux_compare(
         network1,
@@ -345,4 +367,7 @@ def compare_network_input(network1: LSGrid, network2: LSGrid, tol=1e-8):
     shunts = _compare_shunts(network1, network2, tol)
     if len(shunts) > 0:
         res["shunts"] = shunts
+    svcs = _compare_svcs(network1, network2, tol)
+    if len(svcs) > 0:
+        res["svcs"] = svcs
     return res

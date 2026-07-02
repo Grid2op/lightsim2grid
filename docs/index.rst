@@ -62,6 +62,7 @@ This is a work in progress at the moment
    time_series
    security_analysis
    solver_plugin
+   binary_serialization
 
 
 Indices and tables

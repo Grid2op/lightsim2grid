@@ -67,6 +67,10 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         SubstationContainer::StateRes get_state() const;
         void set_state(SubstationContainer::StateRes & my_state);
 
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path) const;
+        static SubstationContainer load_binary(const std::string & path);
+
         SubstationContainer() noexcept:
             n_sub_(-1), 
             nmax_busbar_per_sub_(-1),

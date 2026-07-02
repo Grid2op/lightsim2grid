@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "GeneratorContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -593,6 +594,14 @@ void GeneratorContainer::update_slack_weights_by_id(
             else remove_slackbus(gen_id, solver_control);
         }
     }
+}
+
+void GeneratorContainer::save_binary(const std::string & path) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+}
+
+GeneratorContainer GeneratorContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<GeneratorContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

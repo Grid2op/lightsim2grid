@@ -103,6 +103,10 @@ class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<S
         SvcContainer::StateRes get_state() const;
         void set_state(SvcContainer::StateRes & my_state);
 
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path) const;
+        static SvcContainer load_binary(const std::string & path);
+
         // accessors
         int get_regulation_mode(int svc_id) const {return regulation_mode_(svc_id);}
         real_type get_target_vm_pu(int svc_id) const {return target_vm_pu_(svc_id);}
