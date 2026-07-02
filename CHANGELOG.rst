@@ -16,6 +16,23 @@ Change Log
 - code `helm` powerflow method
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
+- `GeneratorContainer::is_pseudo_off` (used when ``turnedoff_no_pv`` /
+  ``LightSimBackend(turned_off_pv=False)`` is active) is not implemented as
+  originally intended: it currently only checks ``target_p == 0`` to decide a
+  generator is "pseudo off" (and so should not pin its bus voltage). It was meant
+  to emulate PowSyBl OpenLoadFlow's own rule
+  (``generatorsWithZeroMwTargetAreNotStarted``,
+  ``AbstractLfGenerator.checkIfGeneratorStartedForVoltageControl``), which
+  additionally requires ``min_p > 0`` (a generator with ``min_p <= 0`` is allowed
+  to legitimately sit at 0 MW and stays a normal voltage-controlling PV bus even
+  at ``p == 0``). ``GeneratorContainer`` does not currently store ``min_p`` at
+  all. There should be a convention (and a stored ``min_p`` per generator) so
+  ``is_pseudo_off`` can check ``target_p == 0 AND min_p > 0``, matching OLF. For
+  now this OLF-specific behavior is instead reproduced Python-side, on the
+  pypowsybl-loading path only, by ``lightsim2grid.network.from_pypowsybl.
+  bake_outer_loops`` (see ``_bake_generator_not_started`` in ``_olf_bake.py``),
+  which rewrites ``voltage_regulator_on=False`` in the IIDM network for such
+  generators before conversion, rather than relying on this C++ mechanism.
 
 TODO: speed directly update the pv, pq, Sbus and Ybus part when updating the elements
       (less error prone and faster to recompute). Then what is passed to the solver 
