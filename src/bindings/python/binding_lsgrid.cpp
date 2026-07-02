@@ -106,6 +106,14 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("remove_gen_slackbus", &LSGrid::remove_gen_slackbus, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_bus_vn_kv", &LSGrid::get_bus_vn_kv, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_bus_status", &LSGrid::get_bus_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("set_bus_voltage_limits", &LSGrid::set_bus_voltage_limits,
+             "Set the per-bus min/max operating voltage (in kV), one value per bus (see `get_bus_vn_kv`).")
+        .def("get_bus_vmin_kv", &LSGrid::get_bus_vmin_kv,
+             "Per-bus min operating voltage, in kV (NaN if not provided for a given bus, empty array if never set).",
+             py::return_value_policy::reference)
+        .def("get_bus_vmax_kv", &LSGrid::get_bus_vmax_kv,
+             "Per-bus max operating voltage, in kV (NaN if not provided for a given bus, empty array if never set).",
+             py::return_value_policy::reference)
 
         // inspect the grid
         .def("get_substations", &LSGrid::get_substations, "TODO", py::return_value_policy::reference)
@@ -146,6 +154,10 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("set_line_names", &LSGrid::set_line_names, "TODO")
         .def("set_dcline_names", &LSGrid::set_dcline_names, "TODO")
         .def("set_trafo_names", &LSGrid::set_trafo_names, "TODO")
+        .def("set_line_thermal_limit", &LSGrid::set_line_thermal_limit,
+             "Set the per-side thermal (current) limit of each powerline, in kA (see `limit_a1_ka`/`limit_a2_ka` on `LineInfo`).")
+        .def("set_trafo_thermal_limit", &LSGrid::set_trafo_thermal_limit,
+             "Set the per-side thermal (current) limit of each transformer, in kA (see `limit_a1_ka`/`limit_a2_ka` on `TrafoInfo`).")
         .def("set_gen_names", &LSGrid::set_gen_names, "TODO")
         .def("set_load_names", &LSGrid::set_load_names, "TODO")
         .def("set_storage_names", &LSGrid::set_storage_names, "TODO")

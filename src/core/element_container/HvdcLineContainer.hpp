@@ -282,6 +282,15 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         bool is_droop_active(int hvdc_id) const {
             return droop_enabled_[hvdc_id] && status_global_[hvdc_id];
         }
+        // Angle-droop ("AC emulation") needs both remote angles: cannot run once either
+        // converter is individually opened while the line stays connected_global (a
+        // "half-open" HVDC, see deactivate_side_1/2 and
+        // disconnect_if_not_in_main_component, which does the same for the
+        // main-component case) -- fall back to the fixed power setpoint. Called by
+        // LSGrid::deactivate_dcline_side1/2; without it, fill_hvdc_droop_solver_data
+        // would try to resolve the now-disconnected (-1) side's bus and read out of
+        // bounds.
+        void disable_droop(int hvdc_id) { droop_enabled_[hvdc_id] = false; }
         bool has_droop_active() const {
             const int nb_hvdc = static_cast<int>(nb());
             for(int i = 0; i < nb_hvdc; ++i) if(is_droop_active(i)) return true;
