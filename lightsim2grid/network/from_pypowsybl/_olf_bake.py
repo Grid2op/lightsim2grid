@@ -50,15 +50,13 @@ What gets baked
 * Active-power redistribution from distributed slack / area interchange: the
   realized P is written back into the target P of generators and batteries
   (and optionally loads, if the slack was distributed on load).
-
-What is intentionally *not* baked
----------------------------------
-* Static var compensators are left regulating. An SVC's reactive range is
-  voltage-dependent (it is a susceptance band b_min..b_max, not a fixed Q box),
-  so the generator-style "Q at a fixed limit" test does not apply. If an SVC is
-  still regulating voltage at convergence, leaving it regulating reproduces the
-  OLF result. Freezing a saturated SVC would require its regulated-bus voltage
-  and the OLF susceptance sign convention; that is left as a hook.
+* Static var compensators whose realized reactive output sits at (or beyond)
+  their voltage-dependent susceptance envelope (``Q(V) = b * V^2``, ``b`` in
+  ``b_min``..``b_max``, recomputed in MVAr at the SVC's own solved terminal
+  voltage) are frozen to fixed-Q (``REACTIVE_POWER`` mode), mirroring the
+  generator/VSC reactive-limit switch above. An SVC still comfortably inside
+  its envelope is left regulating (its target reproduces the OLF result
+  exactly, since it isn't saturated).
 
 Verified against pypowsybl 1.15.0. The OLF-internal round trip (solve with
 outer loops -> bake -> solve loop-free) reproduces bus voltages to ~2e-4 kV /
@@ -269,8 +267,44 @@ def _bake_reactive_limit_switches(
             upd["voltage_regulator_on"] = False
             network.update_vsc_converter_stations(upd)
 
-    # Static var compensators are deliberately left regulating; see module
-    # docstring. Hook for susceptance-envelope saturation would go here.
+    _bake_svc_saturation(network, keep_only_main_comp)
+
+
+def _bake_svc_saturation(network, keep_only_main_comp=True):
+    """Freeze a VOLTAGE-mode SVC whose realized reactive output sits at (or beyond)
+    its voltage-dependent susceptance envelope to fixed-Q (REACTIVE_POWER mode),
+    mirroring ``_bake_reactive_limit_switches`` for generators/VSC stations above.
+
+    Unlike a generator's fixed Q box, an SVC's reactive range is
+    ``Q(V) = b * V^2`` (``b`` in ``b_min``..``b_max``, in Siemens): recompute
+    ``qmin``/``qmax`` in MVAr at the SVC's own solved terminal voltage before
+    comparing against the realized ``q``.
+    """
+    df_bus = network.get_buses(attributes=["v_mag", "synchronous_component"])
+    svc = network.get_static_var_compensators(
+        attributes=["regulating", "regulation_mode", "q", "b_min", "b_max", "connected", "bus_id"]
+    )
+    if keep_only_main_comp:
+        svc = _keep_only_main_comp(svc, df_bus)
+    is_voltage = svc["regulating"] & (svc["regulation_mode"] == "VOLTAGE")
+    svc = svc[is_voltage]
+    if not len(svc):
+        return
+    v_kv = df_bus.loc[svc["bus_id"].values, "v_mag"].to_numpy()
+    # SVC "q" (like generators') is the terminal/receptor-convention result: flip to
+    # generator/injection convention to compare against the susceptance envelope.
+    q_gen = -svc["q"].to_numpy()
+    qmax = svc["b_max"].to_numpy() * v_kv ** 2  # Q[MVAr] = B[S] * V[kV]^2
+    qmin = svc["b_min"].to_numpy() * v_kv ** 2
+    mask = (q_gen >= qmax - _Q_LIMIT_TOL) | (q_gen <= qmin + _Q_LIMIT_TOL)
+    if mask.any():
+        upd = pd.DataFrame(index=svc.index[mask])
+        # unlike Generator.target_q (already generator convention), StaticVarCompensator
+        # .target_q is receptor convention like its "q" result column -- write the raw
+        # (unflipped) realized value.
+        upd["target_q"] = svc["q"].to_numpy()[mask]
+        upd["regulation_mode"] = "REACTIVE_POWER"
+        network.update_static_var_compensators(upd)
 
 
 def _bake_remote_voltage_control(network, keep_only_main_comp=True):

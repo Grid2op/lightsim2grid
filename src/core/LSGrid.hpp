@@ -183,6 +183,14 @@ class LS2G_API LSGrid final
         const TrafoContainer & get_trafos_as_data() const {return trafos_;}
         const HvdcLineContainer & get_dclines_as_data() const {return hvdc_lines_;}
         Eigen::Ref<const RealVect> get_bus_vn_kv() const {return substations_.get_bus_vn_kv();}
+
+        // per-bus min/max operating voltage (kV), optional: empty if never set
+        void set_bus_voltage_limits(const RealVect & bus_vmin_kv, const RealVect & bus_vmax_kv){
+            substations_.init_bus_voltage_limits(bus_vmin_kv, bus_vmax_kv);
+        }
+        Eigen::Ref<const RealVect> get_bus_vmin_kv() const {return substations_.get_bus_vmin_kv();}
+        Eigen::Ref<const RealVect> get_bus_vmax_kv() const {return substations_.get_bus_vmax_kv();}
+
         std::tuple<int, int> assign_slack_to_most_connected();
         void consider_only_main_component();
         /**
@@ -635,6 +643,17 @@ class LS2G_API LSGrid final
             GenericContainer::check_size(names, trafos_.nb(), "set_trafo_names");
             trafos_.set_names(names);
         }
+        // per-side thermal (current) limit, in kA, optional: empty if never set
+        void set_line_thermal_limit(const RealVect & limit_a1_ka, const RealVect & limit_a2_ka){
+            GenericContainer::check_size(limit_a1_ka, powerlines_.nb(), "set_line_thermal_limit (side1)");
+            GenericContainer::check_size(limit_a2_ka, powerlines_.nb(), "set_line_thermal_limit (side2)");
+            powerlines_.set_thermal_limit(limit_a1_ka, limit_a2_ka);
+        }
+        void set_trafo_thermal_limit(const RealVect & limit_a1_ka, const RealVect & limit_a2_ka){
+            GenericContainer::check_size(limit_a1_ka, trafos_.nb(), "set_trafo_thermal_limit (side1)");
+            GenericContainer::check_size(limit_a2_ka, trafos_.nb(), "set_trafo_thermal_limit (side2)");
+            trafos_.set_thermal_limit(limit_a1_ka, limit_a2_ka);
+        }
         void set_gen_names(const std::vector<std::string> & names){
             GenericContainer::check_size(names, generators_.nb(), "set_gen_names");
             generators_.set_names(names);
@@ -895,8 +914,14 @@ class LS2G_API LSGrid final
         // a still-active local reactive/voltage-support device (not a dead branch).
         // Unlike powerlines/trafos this is unconditional (HvdcLineContainer's
         // synch_status_both_side_ defaults to false), no `keep_half_open_lines` needed.
-        void deactivate_dcline_side1(int dcline_id) {hvdc_lines_.deactivate_side_1(dcline_id, algo_controler_); }
-        void deactivate_dcline_side2(int dcline_id) {hvdc_lines_.deactivate_side_2(dcline_id, algo_controler_); }
+        void deactivate_dcline_side1(int dcline_id) {
+            hvdc_lines_.deactivate_side_1(dcline_id, algo_controler_);
+            hvdc_lines_.disable_droop(dcline_id);  // remote angle is gone, see disable_droop's doc
+        }
+        void deactivate_dcline_side2(int dcline_id) {
+            hvdc_lines_.deactivate_side_2(dcline_id, algo_controler_);
+            hvdc_lines_.disable_droop(dcline_id);
+        }
         void change_p_dcline(int dcline_id, real_type new_p) {hvdc_lines_.change_p(dcline_id, new_p, algo_controler_); }
         void change_v1_dcline(int dcline_id, real_type new_v_pu) {hvdc_lines_.change_v_side_1(dcline_id, new_v_pu, algo_controler_); }
         void change_v2_dcline(int dcline_id, real_type new_v_pu) {hvdc_lines_.change_v_side_2(dcline_id, new_v_pu, algo_controler_); }

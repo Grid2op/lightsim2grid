@@ -166,6 +166,46 @@ def _aux_phase_shift_rx_tables(trafo_index, net):
     return alpha, corr
 
 
+def _aux_current_limits(element_ids, group_1, group_2, operational_limits):
+    """Per-side thermal (current) limit, in **kA**, for a set of branch elements
+    (lines or transformers), aligned to ``element_ids``.
+
+    ``group_1``/``group_2`` are the elements' ``selected_limits_group_1``/``_2``
+    (pandas Series, from ``net.get_lines()``/``net.get_2_windings_transformers()``
+    called with ``all_attributes=True``) -- a branch can carry several unused limit
+    groups (eg summer/winter), only the *selected* one per side is relevant.
+    ``operational_limits`` is ``net.get_operational_limits()`` already filtered to
+    ``type == "CURRENT"``.
+
+    For each (element, side), the minimum finite value across all durations
+    (permanent + temporary) within the side's selected limit group is kept --
+    pypowsybl's ``~1.8e308`` "no limit for this duration" placeholder is ignored.
+    NaN for a given (element, side) if it carries no current limit (or its selected
+    group has none)."""
+    n = len(element_ids)
+    limit_a1_ka = np.full(n, np.nan)
+    limit_a2_ka = np.full(n, np.nan)
+    if operational_limits is None or operational_limits.shape[0] == 0 or n == 0:
+        return limit_a1_ka, limit_a2_ka
+    # ignore the "no limit for this duration" placeholder
+    operational_limits = operational_limits[operational_limits["value"] < 1e30]
+    pos = pd.Series(np.arange(n), index=element_ids)
+    for out, side_str, group in ((limit_a1_ka, "ONE", group_1), (limit_a2_ka, "TWO", group_2)):
+        rows = operational_limits[operational_limits.index.get_level_values("side") == side_str]
+        if rows.shape[0] == 0:
+            continue
+        rows = rows.reset_index()[["element_id", "group_name", "value"]]
+        sel_group = group.reindex(element_ids).rename("sel_group").rename_axis("element_id").reset_index()
+        rows = rows.merge(sel_group, on="element_id", how="inner")
+        rows = rows[rows["group_name"] == rows["sel_group"]]
+        if rows.shape[0] == 0:
+            continue
+        min_per_el = rows.groupby("element_id")["value"].min() / 1000.  # A -> kA
+        idx = pos.reindex(min_per_el.index).dropna().astype(int)
+        out[idx.values] = min_per_el.loc[idx.index].values
+    return limit_a1_ka, limit_a2_ka
+
+
 def _aux_regulated_bus_view_ids(net, regulated_ids):
     """Resolve voltage-controller regulated elements to their terminal bus.
 
@@ -573,8 +613,12 @@ def init(net : pypo.network.Network,
             n_busbar_per_sub = 1
             
         all_buses_vn_kv = voltage_levels.loc[bus_df["voltage_level_id"], "nominal_v"].values
+        all_buses_vmin_kv = voltage_levels.loc[bus_df["voltage_level_id"], "low_voltage_limit"].values
+        all_buses_vmax_kv = voltage_levels.loc[bus_df["voltage_level_id"], "high_voltage_limit"].values
         if n_busbar_per_sub > 1:
             all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
+            all_buses_vmin_kv = np.concatenate([all_buses_vmin_kv for _ in range(n_busbar_per_sub)])
+            all_buses_vmax_kv = np.concatenate([all_buses_vmax_kv for _ in range(n_busbar_per_sub)])
         n_sub_ls = bus_df.shape[0]
         ls_to_orig = np.zeros(all_buses_vn_kv.shape[0], dtype=int) - 1
         ls_to_orig[:n_sub_ls] = np.arange(n_sub_ls)
@@ -612,8 +656,12 @@ def init(net : pypo.network.Network,
                                f"which is not compatible with the n_busbar_per_sub={n_busbar_per_sub} "
                                "given as input.")
         all_buses_vn_kv = voltage_levels["nominal_v"].values
+        all_buses_vmin_kv = voltage_levels["low_voltage_limit"].values
+        all_buses_vmax_kv = voltage_levels["high_voltage_limit"].values
         if n_busbar_per_sub > 1:
             all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
+            all_buses_vmin_kv = np.concatenate([all_buses_vmin_kv for _ in range(n_busbar_per_sub)])
+            all_buses_vmax_kv = np.concatenate([all_buses_vmax_kv for _ in range(n_busbar_per_sub)])
         n_sub_ls = voltage_levels.shape[0]
         voltage_levels["glop_sub_id"] = np.arange(voltage_levels.shape[0])
         n_busbar_per_sub_ls = n_busbar_per_sub
@@ -661,6 +709,7 @@ def init(net : pypo.network.Network,
     model._ls_to_orig = ls_to_orig
     model._max_nb_bus_per_sub = n_busbar_per_sub_ls
     model.set_substation_names(sub_names)
+    model.set_bus_voltage_limits(all_buses_vmin_kv.astype(float), all_buses_vmax_kv.astype(float))
         
     # do the generators
     if sort_index:
@@ -754,13 +803,27 @@ def init(net : pypo.network.Network,
         if is_disco:
             model.deactivate_load(load_id)
     model.set_load_names(df_load.index)
-    
+
+    # thermal (current) limits for lines / trafos, see `_aux_current_limits`
+    try:
+        ol_current = net.get_operational_limits()
+        ol_current = ol_current[ol_current.index.get_level_values("type") == "CURRENT"]
+    except Exception:  # noqa: BLE001 - not available on legacy pypowsybl
+        ol_current = None
+
     # for lines
     if sort_index:
         df_line = net.get_lines().sort_index()
     else:
         df_line = net.get_lines()
-        
+    try:
+        line_limit_groups = net.get_lines(all_attributes=True)[["selected_limits_group_1", "selected_limits_group_2"]]
+    except (TypeError, KeyError):
+        # not available on legacy pypowsybl / grid with no limit group at all
+        line_limit_groups = pd.DataFrame(
+            {"selected_limits_group_1": np.nan, "selected_limits_group_2": np.nan}, index=df_line.index
+        )
+
     # per unit
     if net_pu is None:
         if hasattr(net, "per_unit"):
@@ -820,7 +883,14 @@ def init(net : pypo.network.Network,
         elif is_ex_disc:
             model.deactivate_powerline_side2(line_id) if keep_half_open_lines else model.deactivate_powerline(line_id)
     model.set_line_names(df_line.index)
-    
+    line_limit_a1_ka, line_limit_a2_ka = _aux_current_limits(
+        df_line.index,
+        line_limit_groups["selected_limits_group_1"],
+        line_limit_groups["selected_limits_group_2"],
+        ol_current,
+    )
+    model.set_line_thermal_limit(line_limit_a1_ka, line_limit_a2_ka)
+
     # for trafo
     # I extract trafo with `all_attributes=True` so that I have access to the `rho`
     try:
@@ -896,6 +966,17 @@ def init(net : pypo.network.Network,
         elif is_ex_disc:
             model.deactivate_trafo_side2(t_id) if keep_half_open_lines else model.deactivate_trafo(t_id)
     model.set_trafo_names(df_trafo.index)
+    if "selected_limits_group_1" in df_trafo.columns:
+        trafo_group_1 = df_trafo["selected_limits_group_1"]
+        trafo_group_2 = df_trafo["selected_limits_group_2"]
+    else:
+        # not available on legacy pypowsybl
+        trafo_group_1 = pd.Series(np.nan, index=df_trafo.index)
+        trafo_group_2 = pd.Series(np.nan, index=df_trafo.index)
+    trafo_limit_a1_ka, trafo_limit_a2_ka = _aux_current_limits(
+        df_trafo.index, trafo_group_1, trafo_group_2, ol_current
+    )
+    model.set_trafo_thermal_limit(trafo_limit_a1_ka, trafo_limit_a2_ka)
     # phase-shifting transformers: declare the (alpha -> r/x correction) dependency so
     # lightsim2grid keeps the series impedance right when the shift changes, without any
     # "tap" concept (the per-step r/x deltas pypowsybl carries only in its tap steps).
@@ -989,8 +1070,17 @@ def init(net : pypo.network.Network,
         target_v = df_svc["target_v"].values.astype(float)
         # target_v (kV) -> pu at the regulated bus; NaN (REACTIVE_POWER / OFF) -> 1 pu
         target_vm_pu = np.where(np.isfinite(target_v), target_v, svc_reg_vn) / svc_reg_vn
-        b_min = df_svc["b_min"].values.astype(float)
-        b_max = df_svc["b_max"].values.astype(float)
+        # pypowsybl/IIDM gives b_min/b_max in SIEMENS (physical susceptance), while
+        # lightsim2grid's SvcContainer expects them in per unit (base sn_mva, at the
+        # regulated bus's nominal voltage -- same base as target_vm_pu/slope above).
+        # Without this conversion the SVC's modeled Q range is smaller than its real one
+        # by a factor of (nominal_v_kv)^2 / sn_mva (eg ~500x on a 225kV/100MVA bus),
+        # making a perfectly healthy SVC collapse to a near-zero Q range: it saturates
+        # (or, since check_solution never enforces SVC Q limits, silently hits a "hard"
+        # voltage pin at its own target_vm_pu regardless of what Q that would truly take)
+        # long before the real device would.
+        b_min = df_svc["b_min"].values.astype(float) * (svc_reg_vn ** 2) / sn_mva_used
+        b_max = df_svc["b_max"].values.astype(float) * (svc_reg_vn ** 2) / sn_mva_used
     else:
         target_vm_pu = np.zeros(0)
         b_min = np.zeros(0)
