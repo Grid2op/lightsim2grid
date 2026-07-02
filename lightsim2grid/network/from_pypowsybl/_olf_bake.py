@@ -41,6 +41,13 @@ What gets baked
   guarded: it only happens where the changer was regulating AND a solved value
   exists, because ``solved_tap_position`` is NaN for changers that did not take
   part in an outer loop -- copying NaN would destroy the input tap.
+* Generators dispatched at (approximately) 0 MW with a strictly positive
+  ``min_p``: OLF never sets these up as voltage-controlling PV buses in the
+  first place (``generatorsWithZeroMwTargetAreNotStarted``, "not started"),
+  regardless of their ``voltage_regulator_on``/``target_v`` attributes. Frozen
+  to fixed-Q (their realized reactive output) before the reactive-limit switch
+  below runs. A generator with ``min_p <= 0`` (legitimately allowed to sit at
+  0 MW) is left alone.
 * PV -> PQ reactive-limit switches (generators, VSC converter stations): only
   the units whose realized reactive power actually sits at a Q limit are frozen
   to fixed-Q at that value, with voltage regulation switched off. Units still
@@ -262,9 +269,60 @@ def _bake_taps_and_sections(network, keep_only_main_comp=True):
             network.update_shunt_compensators(upd)
 
 
+# Tolerance (MW) for deciding a generator's target_p is "zero": mirrors OLF's own
+# POWER_EPSILON_SI = 1e-4 MW (AbstractLfGenerator.checkIfGeneratorStartedForVoltageControl).
+_ZERO_P_TOL = 1e-4
+
+
+def _bake_generator_not_started(network, keep_only_main_comp=True):
+    """Freeze a voltage-regulating generator dispatched at (approximately) 0 MW,
+    with a strictly positive minimum active power, to fixed-Q (PQ) -- mirroring
+    PowSyBl OpenLoadFlow's own generator setup rule (default-on parameter
+    ``generatorsWithZeroMwTargetAreNotStarted``,
+    ``AbstractLfGenerator.checkIfGeneratorStartedForVoltageControl``): such a
+    generator is declared unable to legitimately run at 0 MW (``min_p > 0``), so
+    OLF treats it as "not started" and never sets it up as a voltage-controlling
+    PV bus in the first place -- regardless of its ``voltage_regulator_on`` /
+    ``target_v`` attributes, which read as if it were actively regulating. A
+    generator with ``min_p <= 0`` (legitimately allowed to sit at 0 MW, e.g. a
+    curtailed renewable) is NOT affected -- OLF keeps it on voltage control.
+
+    ``lightsim2grid``'s own C++ analogue (``GeneratorContainer::is_pseudo_off``,
+    gated by ``turnedoff_no_pv`` / ``LightSimBackend(turned_off_pv=False)``) does
+    not check ``min_p`` yet (see the CHANGELOG.rst TODO) and is off by default
+    anyway (Grid2Op semantics: an agent redispatching a generator to ~0 MW
+    mid-episode should not silently also drop its voltage support) -- so this
+    OLF-specific case is instead resolved here, on the pypowsybl-loading path
+    only, the same way ``_bake_svc_standby`` resolves the SVC standby automaton.
+
+    Runs before the reactive-limit-switch check below: a generator resolved to PQ
+    here is already frozen and skipped there (it only looks at
+    ``voltage_regulator_on == True``).
+    """
+    df_bus = network.get_buses(attributes=["synchronous_component"])
+    gen = network.get_generators(
+        attributes=["voltage_regulator_on", "target_p", "min_p", "q", "connected", "bus_id"]
+    )
+    if keep_only_main_comp:
+        gen = _keep_only_main_comp(gen, df_bus)
+    not_started = (
+        gen["voltage_regulator_on"]
+        & (gen["target_p"].abs() < _ZERO_P_TOL)
+        & (gen["min_p"] > _ZERO_P_TOL)
+    )
+    if not not_started.any():
+        return
+    upd = pd.DataFrame(index=gen.index[not_started])
+    # result "q" is load/receptor convention; Generator.target_q is generator convention
+    upd["target_q"] = -gen["q"].to_numpy()[not_started]
+    upd["voltage_regulator_on"] = False
+    network.update_generators(upd)
+
+
 def _bake_reactive_limit_switches(
     network,
     keep_only_main_comp=True):
+    _bake_generator_not_started(network, keep_only_main_comp)
     df_bus = network.get_buses(attributes=["synchronous_component"])
     gen = network.get_generators(
         attributes=[
