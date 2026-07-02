@@ -712,20 +712,34 @@ def init(net : pypo.network.Network,
     model.set_bus_voltage_limits(all_buses_vmin_kv.astype(float), all_buses_vmax_kv.astype(float))
         
     # do the generators
+    gen_attrs = [
+        "connected", "max_p", "target_p", "target_v", "target_q", "p",
+        "voltage_regulator_on", "regulated_element_id", "voltage_level_id", "bus_id",
+        "min_q", "max_q", "min_q_at_target_p", "max_q_at_target_p",
+    ]
     if sort_index:
-        df_gen = net.get_generators().sort_index()
+        df_gen = net.get_generators(attributes=gen_attrs).sort_index()
     else:
-        df_gen = net.get_generators()
-        
-    # to handle encoding in 32 bits and overflow when "splitting" the Q values among 
+        df_gen = net.get_generators(attributes=gen_attrs)
+
+    # to handle encoding in 32 bits and overflow when "splitting" the Q values among
     min_float_value = np.finfo(np.float32).min * 1e-4 + 1.
     max_float_value = np.finfo(np.float32).max * 1e-4 + 1.
-    min_q_aux = 1. * df_gen["min_q"].values
+    # "min_q"/"max_q" (the flat MIN_MAX box) are NaN for a generator whose
+    # reactive_limits_kind is CURVE -- pypowsybl only populates those through
+    # "min_q_at_target_p"/"max_q_at_target_p" (the capability curve evaluated at the
+    # generator's own target P, available even before any loadflow has been run,
+    # unlike "min_q_at_p" which depends on a solved "p"). Without this, every
+    # CURVE-kind generator silently got the "no limit" float32 sentinel below
+    # regardless of its real reactive range.
+    min_q_src = df_gen["min_q_at_target_p"].where(df_gen["min_q_at_target_p"].notna(), df_gen["min_q"])
+    max_q_src = df_gen["max_q_at_target_p"].where(df_gen["max_q_at_target_p"].notna(), df_gen["max_q"])
+    min_q_aux = 1. * min_q_src.values
     too_small = min_q_aux < min_float_value
     min_q_aux[too_small] = min_float_value
     min_q = min_q_aux.astype(np.float32)
-    
-    max_q_aux = 1. * df_gen["max_q"].values
+
+    max_q_aux = 1. * max_q_src.values
     too_big = np.abs(max_q_aux) > max_float_value
     max_q_aux[too_big] = np.sign(max_q_aux[too_big]) * max_float_value
     max_q = max_q_aux.astype(np.float32)
