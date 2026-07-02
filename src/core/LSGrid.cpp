@@ -739,14 +739,15 @@ CplxVect LSGrid::check_solution(const CplxVect & V_proposed, bool check_q_limits
     bool is_ac = true;
     AlgoControl reset_solver;
     reset_solver.tell_none_changed();  // TODO reset solver
-    CplxVect V = pre_process_solver(V_proposed, 
+    CplxVect V = pre_process_solver(V_proposed,
                                     acSbus_,
-                                    Ybus_ac_, 
+                                    Ybus_ac_,
                                     id_me_to_ac_solver_,
                                     id_ac_solver_to_me_,
                                     slack_bus_id_ac_me_,
                                     slack_bus_id_ac_solver_,
-                                    is_ac, reset_solver);
+                                    is_ac, reset_solver,
+                                    false);  // do NOT snap regulated buses to their target: we are testing V_proposed as-is
 
     // compute the mismatch
     CplxVect tmp = Ybus_ac_ * V;  // this is a vector
@@ -844,7 +845,8 @@ CplxVect LSGrid::_pre_process_solver_impl(
     GlobalBusIdVect & id_solver_to_me,
     GlobalBusIdVect & slack_bus_id_me,
     SolverBusIdVect & slack_bus_id_solver,
-    const AlgoControl & solver_control)
+    const AlgoControl & solver_control,
+    bool init_pv_vm_targets)
 {
     // cplx_type matrix => AC solver family, real_type matrix => DC solver family
     const bool is_ac = std::is_same<MatScalar, cplx_type>::value;
@@ -921,9 +923,15 @@ CplxVect LSGrid::_pre_process_solver_impl(
         }
         V(bus_solver_id) = Vinit(bus_me_id.cast_int());
     }
-    generators_.set_vm(V, id_me_to_solver);
-    hvdc_lines_.set_vm(V, id_me_to_solver);
-    svcs_.set_vm(V, id_me_to_solver);  // VOLTAGE-mode SVCs (init quality at the regulated bus)
+    if(init_pv_vm_targets){
+        // NR-initialization heuristic only: snaps regulated buses with no droop/slope
+        // to their own target voltage magnitude. Skipped by check_solution, which must
+        // evaluate the caller-supplied voltage as given (see the `init_pv_vm_targets`
+        // doc on `pre_process_solver`).
+        generators_.set_vm(V, id_me_to_solver);
+        hvdc_lines_.set_vm(V, id_me_to_solver);
+        svcs_.set_vm(V, id_me_to_solver);  // VOLTAGE-mode SVCs (init quality at the regulated bus)
+    }
 
     if(solver_control.need_reset_solver() ||
        solver_control.has_dimension_changed() ||
@@ -958,11 +966,12 @@ CplxVect LSGrid::pre_process_solver(
     GlobalBusIdVect & slack_bus_id_me,
     SolverBusIdVect & slack_bus_id_solver,
     bool is_ac,  // kept for API compatibility; DC now goes through pre_process_dc_solver
-    const AlgoControl & solver_control)
+    const AlgoControl & solver_control,
+    bool init_pv_vm_targets)
 {
     return _pre_process_solver_impl<cplx_type>(
         Vinit, Sbus, Ybus, id_me_to_solver, id_solver_to_me,
-        slack_bus_id_me, slack_bus_id_solver, solver_control);
+        slack_bus_id_me, slack_bus_id_solver, solver_control, init_pv_vm_targets);
 }
 
 CplxVect LSGrid::pre_process_dc_solver(
@@ -977,7 +986,7 @@ CplxVect LSGrid::pre_process_dc_solver(
 {
     return _pre_process_solver_impl<real_type>(
         Vinit, Pbus, Bbus, id_me_to_solver, id_solver_to_me,
-        slack_bus_id_me, slack_bus_id_solver, solver_control);
+        slack_bus_id_me, slack_bus_id_solver, solver_control, true);
 }
 
 CplxVect LSGrid::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,

@@ -1540,6 +1540,16 @@ class LS2G_API LSGrid final
 
         This is use internally by ac_pf or dc_pf but also when doing batched solvers (*eg* TimeSeries or Contingency analysis)
         **/
+        // `init_pv_vm_targets`: when true (the default, used by the real ac_pf / dc_pf
+        // solves), voltage-controlled elements with no droop/slope (generators, HVDC
+        // converters, zero-slope SVCs -- see SvcContainer::set_vm) have the proposed
+        // voltage MAGNITUDE at their regulated bus snapped to their own target, a
+        // reasonable NR-initialization heuristic. `check_solution` passes `false`: it
+        // is testing a caller-supplied (eg OLF's) voltage as-is, and silently
+        // overwriting it there defeats the whole point of the check -- even a tiny,
+        // physically-correct gap between that voltage and the local target (the
+        // regulator doing its job) can look like a large spurious power mismatch at a
+        // strongly-meshed bus.
         CplxVect pre_process_solver(const CplxVect & Vinit,
                                     CplxVect & Sbus,
                                     Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -1548,7 +1558,8 @@ class LS2G_API LSGrid final
                                     GlobalBusIdVect & slack_bus_id_me,
                                     SolverBusIdVect & slack_bus_id_solver,
                                     bool is_ac,
-                                    const AlgoControl & solver_control);
+                                    const AlgoControl & solver_control,
+                                    bool init_pv_vm_targets = true);
 
         // DC-specific pre processing: builds the real Bbus (admittance) matrix and the
         // real Pbus (active power) vector, reusing the shared bus-mapping helpers. Mirrors
@@ -1728,7 +1739,8 @@ class LS2G_API LSGrid final
                                           GlobalBusIdVect & id_solver_to_me,
                                           GlobalBusIdVect & slack_bus_id_me,
                                           SolverBusIdVect & slack_bus_id_solver,
-                                          const AlgoControl & solver_control);
+                                          const AlgoControl & solver_control,
+                                          bool init_pv_vm_targets);
         // matrix (re)initialization, overloaded per family (no `if constexpr`, C++14)
         void init_solver_matrix(Eigen::SparseMatrix<cplx_type> & mat, int nb_bus_solver){ init_Ybus(mat, nb_bus_solver); }
         void init_solver_matrix(Eigen::SparseMatrix<real_type> & mat, int nb_bus_solver){ init_Bbus(mat, nb_bus_solver); }

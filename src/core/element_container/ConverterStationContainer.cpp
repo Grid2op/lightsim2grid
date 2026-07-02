@@ -170,9 +170,6 @@ void ConverterStationContainer::fillSbus_station(CplxVect & Sbus,
         //  i don't do anything if the station is disconnected
         if(!status_[station_id]) continue;
 
-        // a regulating station that is "pseudo off" is considered turned off (legacy dcline behaviour)
-        if (is_pseudo_off(station_id) && is_regulating(station_id)) continue;
-
         bus_id_me = bus_id_(station_id);
         if(bus_id_me.cast_int() == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
@@ -211,7 +208,6 @@ void ConverterStationContainer::fillpv(std::vector<int> & bus_pv,
     for(int station_id = 0; station_id < nb_station; ++station_id){
         if(!status_[station_id]) continue;
         if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-        if (is_pseudo_off(station_id)) continue;  // turned off stations are not pv (legacy dcline behaviour)
 
         bus_id_me = bus_id_(station_id);
         if(bus_id_me.cast_int() == _deactivated_bus_id){
@@ -249,7 +245,6 @@ void ConverterStationContainer::init_q_vector(int nb_bus,
     {
         if(!status_[station_id]) continue;
         if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-        if (is_pseudo_off(station_id)) continue;  // turned off stations are not pv (legacy dcline behaviour)
 
         const GlobalBusId bus_id = bus_id_(station_id);
         total_q_min_per_bus(bus_id.cast_int()) += min_q_(station_id);
@@ -285,12 +280,6 @@ void ConverterStationContainer::set_q(const RealVect & reactive_mismatch,
             res_q_(station_id) = target_q_mvar_(station_id);
             continue;
         }
-        if (is_pseudo_off(station_id)) {
-            // it's as if the station were turned off (legacy dcline behaviour)
-            res_q_(station_id) = 0.;
-            continue;
-        }
-
         const GlobalBusId bus_id = bus_id_(station_id);
         const SolverBusId bus_solver = id_grid_to_solver[bus_id.cast_int()];
         // TODO DEBUG MODE: check that the bus is correct!
@@ -318,7 +307,6 @@ void ConverterStationContainer::get_vm_for_dc(RealVect & Vm)
     for(int station_id = 0; station_id < nb_station; ++station_id){
         if(!status_[station_id]) continue;
         if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-        if (is_pseudo_off(station_id)) continue;  // turned off stations are not pv (legacy dcline behaviour)
 
         bus_id_me = bus_id_(station_id);
         real_type tmp = target_vm_pu_(station_id);
@@ -334,7 +322,6 @@ void ConverterStationContainer::set_vm(CplxVect & V, const SolverBusIdVect & id_
     for(int station_id = 0; station_id < nb_station; ++station_id){
         if(!status_[station_id]) continue;
         if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-        if (is_pseudo_off(station_id)) continue;  // turned off stations are not pv (legacy dcline behaviour)
 
         bus_id_me = bus_id_(station_id);
         if(bus_id_me.cast_int() == _deactivated_bus_id){
