@@ -1105,8 +1105,19 @@ def init(net : pypo.network.Network,
                           )
     for hvdc_id, (is_or_disc, is_ex_disc, line_conn1, line_conn2) in enumerate(
             zip(hvdc_from_disco, hvdc_to_disco, df_dc["connected1"].values, df_dc["connected2"].values)):
-        if is_or_disc or is_ex_disc or (not line_conn1) or (not line_conn2):
+        # a converter station with its own terminal open (eg its DC partner is
+        # switched off, or its whole substation is dead) is NOT a dead branch: real
+        # VSC stations (and OpenLoadFlow) keep the still-connected converter
+        # injecting its scheduled P / regulating Q-V as a local device. Only fully
+        # deactivate when BOTH stations are disconnected.
+        or_disc = is_or_disc or (not line_conn1)
+        ex_disc = is_ex_disc or (not line_conn2)
+        if or_disc and ex_disc:
             model.deactivate_dcline(hvdc_id)
+        elif or_disc:
+            model.deactivate_dcline_side1(hvdc_id)
+        elif ex_disc:
+            model.deactivate_dcline_side2(hvdc_id)
     model.set_dcline_names(df_dc.index)
                 
     # storage units (IIDM batteries). IIDM gives the battery setpoints in the

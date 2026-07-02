@@ -61,6 +61,10 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
         // pickle (python)
         LoadContainer::StateRes get_state() const;
         void set_state(LoadContainer::StateRes & my_state);
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path) const;
+        static LoadContainer load_binary(const std::string & path);
         
         void init(const RealVect & load_p_mw,
                   const RealVect & load_q_mvar,

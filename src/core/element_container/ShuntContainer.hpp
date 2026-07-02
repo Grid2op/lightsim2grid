@@ -64,6 +64,10 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         // pickle (python)
         ShuntContainer::StateRes get_state() const;
         void set_state(ShuntContainer::StateRes & my_state );
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path) const;
+        static ShuntContainer load_binary(const std::string & path);
         
         virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                               bool ac,

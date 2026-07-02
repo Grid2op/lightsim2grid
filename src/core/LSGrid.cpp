@@ -8,6 +8,7 @@
 
 #include "LSGrid.hpp"
 #include "AlgorithmSelector.hpp"  // to avoid circular references
+#include "BinaryArchive.hpp"
 
 #include <queue>
 
@@ -192,6 +193,14 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     _algo.change_algorithm(std::get<16>(my_state));
     _dc_algo.change_algorithm(std::get<17>(my_state));
 };
+
+void LSGrid::save_binary(const std::string & path) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+}
+
+LSGrid LSGrid::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<LSGrid>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+}
 
 void LSGrid::set_ls_to_orig(const IntVect & ls_to_orig){
     if(ls_to_orig.size() == 0){

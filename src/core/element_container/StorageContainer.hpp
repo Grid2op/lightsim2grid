@@ -64,6 +64,10 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
         StorageContainer::StateRes get_state() const;
         void set_state(StorageContainer::StateRes & my_state);
 
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path) const;
+        static StorageContainer load_binary(const std::string & path);
+
         void init(const RealVect & storage_p_mw,
                   const RealVect & storage_q_mvar,
                   const Eigen::VectorXi & storage_bus_id

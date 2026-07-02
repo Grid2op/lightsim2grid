@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "ShuntContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <iostream>
 
@@ -165,6 +166,14 @@ void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
         if(ac) res_q_(shunt_id) = std::imag(s) * sn_mva;
         else res_q_(shunt_id) = my_zero_;
     }
+}
+
+void ShuntContainer::save_binary(const std::string & path) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+}
+
+ShuntContainer ShuntContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<ShuntContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

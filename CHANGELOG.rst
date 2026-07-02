@@ -233,6 +233,18 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   enables the `get_theta_to_J_col()` / `get_vm_to_J_col()` / `get_q_to_J_col()` mappings
   above. This central registry is also what makes the HVDC / voltage-control Jacobian
   extensions possible.
+- [ADDED] a fast, additive binary serialization path: `LSGrid.save_binary(path)` /
+  `LSGrid.load_binary(path)`, and the same two methods on every individual element
+  container that has its own state (*eg* `gridmodel.get_loads().save_binary(...)`),
+  mirroring what is already picklable. This is **not** a replacement for pickle: it
+  trades portability for speed, meant for repeatedly re-loading the *same* grid on the
+  *same* machine / lightsim2grid build. **NB** as with pickle, a file can only be
+  reloaded with the exact same lightsim2grid version it was saved with; a version
+  mismatch or a corrupted / truncated file raises a `RuntimeError` (no cross-version
+  migration is attempted). See the new "Fast binary serialization" documentation page
+  and `benchmarks/benchmark_binary_serialization.py` for speed comparisons against
+  pickle (the speed up grows with grid size: up to ~17x faster to write and ~8x faster
+  to read than pickle on grids with ~9000 buses).
 
 [0.13.1]  2026-04-21
 --------------------
