@@ -158,14 +158,18 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     // static var compensators (index 16/17 are the ac/dc algo types)
     SvcContainer::StateRes & state_svcs = std::get<18>(my_state);
 
-    // assign it to this instance
-    set_ls_to_orig(IntVect::Map(ls_to_pp.data(), ls_to_pp.size()));  // set also _orig_to_ls
-
     // substations
     last_bus_status_saved_ = last_bus_status_saved;
     substations_.set_state(state_substations);
     max_nb_bus_per_sub_ = substations_.nmax_busbar_per_sub();
     n_sub_ = substations_.nb_sub();
+
+    // assign it to this instance -- must run *after* substations_ is restored above,
+    // since set_ls_to_orig() validates the vector size against substations_.nb_bus()
+    // (on a freshly default-constructed LSGrid, as pickle/binary restore does, that
+    // would otherwise still be 0 and any non-empty ls_to_orig would wrongly be
+    // rejected as a size mismatch).
+    set_ls_to_orig(IntVect::Map(ls_to_pp.data(), ls_to_pp.size()));  // set also _orig_to_ls
 
     // elements
     // 1. powerlines
@@ -691,7 +695,15 @@ void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
             // the generator is disconnected, I do nothing
             continue;
         }
-        check_solution_q_values_onegen(res, gen.bus_id, gen.min_q_mvar, gen.max_q_mvar, check_q_limits);
+        // Only a voltage-regulating generator has a genuinely FREE Q at its own bus in
+        // the real NR system (GeneratorContainer::fillSbus never stamps Q there, local
+        // or remote control alike -- see fillpv / the VoltageControl extension). A
+        // non-regulating (fixed PQ) generator's Q is deterministic and already part of
+        // Sbus, so masking it here would hide a real mismatch instead of correctly
+        // reporting "this bus's Q is free, don't judge it".
+        if(gen.voltage_regulator_on){
+            check_solution_q_values_onegen(res, gen.bus_id, gen.min_q_mvar, gen.max_q_mvar, check_q_limits);
+        }
 
         // if(gen.id == gen_slackbus_)
         if(gen.is_slack)
@@ -714,10 +726,13 @@ void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
         const auto & station_2 = hvdc.station_side_2;
         // a side may be open while the line is still connected_global (a line whose
         // remote converter is in another synchronous component, see
-        // HvdcLineContainer::disconnect_if_not_in_main_component): skip the open side
-        if(station_1.connected)
+        // HvdcLineContainer::disconnect_if_not_in_main_component): skip the open side.
+        // Same "only mask a genuinely free Q" reasoning as for generators above: a
+        // fixed-Q / power-factor (LCC) station's Q is real Sbus data, not a free
+        // variable -- see ConverterStationContainer::fillSbus_station.
+        if(station_1.connected && station_1.voltage_regulator_on)
             check_solution_q_values_onegen(res, station_1.bus_id, station_1.min_q_mvar, station_1.max_q_mvar, check_q_limits);
-        if(station_2.connected)
+        if(station_2.connected && station_2.voltage_regulator_on)
             check_solution_q_values_onegen(res, station_2.bus_id, station_2.min_q_mvar, station_2.max_q_mvar, check_q_limits);
     }
 
@@ -738,7 +753,16 @@ CplxVect LSGrid::check_solution(const CplxVect & V_proposed, bool check_q_limits
     const int nb_bus = static_cast<int>(V_proposed.size());
     bool is_ac = true;
     AlgoControl reset_solver;
-    reset_solver.tell_none_changed();  // TODO reset solver
+    // `AlgoControl`'s own default constructor already asks for a full rebuild
+    // (`need_reset_solver_=true`) -- only downgrade that to "nothing changed" once the
+    // AC solver bus mapping has actually been built at least once (by a prior
+    // `ac_pf`/`dc_pf`/`check_solution` call). Calling `check_solution` as the very
+    // first operation on a freshly-built model with `tell_none_changed()`
+    // unconditionally used to leave `id_me_to_ac_solver_`/`Ybus_ac_` at their
+    // default-constructed (empty) size, and `fill_hvdc_droop_solver_data`'s
+    // `id_me_to_solver[bus_id]` lookup (bus ids in the hundreds/thousands) then read
+    // out of bounds -- a silent, hard-to-reproduce segfault instead of a clean rebuild.
+    if(id_me_to_ac_solver_.size() > 0) reset_solver.tell_none_changed();
     CplxVect V = pre_process_solver(V_proposed,
                                     acSbus_,
                                     Ybus_ac_,

@@ -59,7 +59,9 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             std::vector<real_type>, // sub_vn_kv_;
             std::vector<bool>,  // bus_status_;
             std::vector<real_type>,  // bus_vn_kv_;
-            std::vector<std::string>  // sub_names_
+            std::vector<std::string>,  // sub_names_
+            std::vector<real_type>,  // bus_vmin_kv_ (optional, empty if unset)
+            std::vector<real_type>  // bus_vmax_kv_ (optional, empty if unset)
             >;
         
         int nb() const {return n_sub_;}
@@ -138,6 +140,21 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         int nmax_busbar_per_sub() const {return nmax_busbar_per_sub_;}
 
         Eigen::Ref<const RealVect> get_bus_vn_kv() const {return bus_vn_kv_;}
+
+        // per-bus min/max operating voltage (kV), optional: empty if never set (e.g. pandapower-origin grids)
+        void init_bus_voltage_limits(const RealVect & bus_vmin_kv, const RealVect & bus_vmax_kv){
+            if(static_cast<size_t>(bus_vmin_kv.size()) != nb_bus()){
+                throw std::runtime_error("SubstationContainer::init_bus_voltage_limits: bus_vmin_kv does not have the proper size.");
+            }
+            if(static_cast<size_t>(bus_vmax_kv.size()) != nb_bus()){
+                throw std::runtime_error("SubstationContainer::init_bus_voltage_limits: bus_vmax_kv does not have the proper size.");
+            }
+            bus_vmin_kv_ = bus_vmin_kv;
+            bus_vmax_kv_ = bus_vmax_kv;
+        }
+        Eigen::Ref<const RealVect> get_bus_vmin_kv() const {return bus_vmin_kv_;}
+        Eigen::Ref<const RealVect> get_bus_vmax_kv() const {return bus_vmax_kv_;}
+
         bool is_bus_connected(const GridModelBusId & global_bus_id) const {return bus_status_[global_bus_id.cast_int()];}
         bool is_bus_connected(int sub_id, const LocalBusId & local_bus_id) const {
             return bus_status_[local_to_gridmodel(sub_id, local_bus_id).cast_int()];
@@ -231,6 +248,8 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         std::vector<bool> bus_status_;
         RealVect bus_vn_kv_;
         std::vector<std::string> sub_names_;
+        RealVect bus_vmin_kv_;  // optional, empty if unset
+        RealVect bus_vmax_kv_;  // optional, empty if unset
 
 };
 

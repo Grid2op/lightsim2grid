@@ -18,13 +18,17 @@ SubstationContainer::StateRes SubstationContainer::get_state() const
 {
      std::vector<real_type> sub_vn_kv(sub_vn_kv_.begin(), sub_vn_kv_.end());
      std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
+     std::vector<real_type> bus_vmin_kv(bus_vmin_kv_.begin(), bus_vmin_kv_.end());
+     std::vector<real_type> bus_vmax_kv(bus_vmax_kv_.begin(), bus_vmax_kv_.end());
      SubstationContainer::StateRes res(
         n_sub_,
         nmax_busbar_per_sub_,
         sub_vn_kv,
         bus_status_,
         bus_vn_kv,
-        sub_names_);
+        sub_names_,
+        bus_vmin_kv,
+        bus_vmax_kv);
      return res;
 }
 
@@ -47,6 +51,11 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     bus_status_ = bus_status;
     bus_vn_kv_ = RealVect::Map(&bus_vn_kv[0], bus_vn_kv.size());
     sub_names_ = std::get<5>(my_state);
+
+    std::vector<real_type> & bus_vmin_kv = std::get<6>(my_state);
+    std::vector<real_type> & bus_vmax_kv = std::get<7>(my_state);
+    bus_vmin_kv_ = bus_vmin_kv.empty() ? RealVect() : RealVect::Map(&bus_vmin_kv[0], bus_vmin_kv.size());
+    bus_vmax_kv_ = bus_vmax_kv.empty() ? RealVect() : RealVect::Map(&bus_vmax_kv[0], bus_vmax_kv.size());
 }
 
 void SubstationContainer::save_binary(const std::string & path) const {

@@ -98,6 +98,13 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   built its working matrix from the grid model's own (never populated, hence empty) Ybus,
   causing out-of-bounds writes. It now uses the correctly indexed internal `Ybus_` and builds
   the required inputs on demand, so it works both before and after `compute()`.
+- [FIXED] pickling (or `save_binary`/`load_binary`) an `LSGrid` whose `_ls_to_orig`
+  bus-mapping was set (which `init_from_pypowsybl` and `init_from_pandapower` both do)
+  always raised ``"Impossible to set the converter ls_to_orig: the provided vector has
+  not the same size as the number of bus on the grid."`` on restore. `LSGrid::set_state`
+  validated `_ls_to_orig` against `substations_.nb_bus()` before `substations_` itself
+  had been restored on the fresh instance pickle/binary loading constructs, so that size
+  was always 0. Fixed by restoring `substations_` first.
 - [ADDED] `lightsim2grid.network.bake_outer_loops`: rewrites a pypowsybl network's
   input setpoints to the converged PowSyBl OpenLoadFlow (OLF) outer-loop state (tap /
   shunt positions, reactive-limit PV->PQ switches, distributed-slack active power) so
@@ -245,6 +252,16 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   and `benchmarks/benchmark_binary_serialization.py` for speed comparisons against
   pickle (the speed up grows with grid size: up to ~17x faster to write and ~8x faster
   to read than pickle on grids with ~9000 buses).
+- [ADDED] `init_from_pypowsybl` now reads and exposes operating limits: per-bus min/max
+  voltage (`LSGrid.get_bus_vmin_kv()` / `get_bus_vmax_kv()`, from the source voltage
+  levels' `low_voltage_limit` / `high_voltage_limit`) and per-side branch thermal
+  (current) limits (`limit_a1_ka` / `limit_a2_ka` on `LineInfo` / `TrafoInfo`, from
+  `network.get_operational_limits()`, honoring each side's *selected* limit group and
+  taking the minimum finite value across all durations). NaN where a limit is not
+  configured; both fields round-trip through pickle and `save_binary`/`load_binary`.
+  Grids built from pandapower never populate these (getters return an empty array /
+  NaN per element). Not wired into `LightSimBackend.thermal_limit_a`, which keeps its
+  existing behaviour.
 
 [0.13.1]  2026-04-21
 --------------------

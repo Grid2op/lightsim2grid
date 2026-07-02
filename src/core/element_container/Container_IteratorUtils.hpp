@@ -43,7 +43,17 @@ class GenericContainerConstIterator
             my_info(*data_, id)
             {};
 
-        const DataInfo& operator*() const { return my_info; }
+        // Returns a COPY, not a reference: `my_info` is a single member reused/overwritten
+        // in place by every `operator++`/`operator--` (see below), so a caller holding onto
+        // a `const DataInfo&` across more than one increment would silently see it mutate
+        // out from under them. This bit pybind11's `__iter__` binding hard: `py::make_iterator`
+        // dereferences+advances the SAME C++ iterator for every `__next__()`, so
+        // `list(container)` (which exhausts the iterator before Python is done with any of
+        // the yielded objects) ended up handing back N aliases of the SAME final `my_info`
+        // state (mostly the past-the-end default-constructed one, id=-1) instead of N
+        // independent per-element snapshots. Returning by value forces pybind11 to copy at
+        // each step; `model.get_X()[i]` (`operator[]`, unaffected) was always correct.
+        DataInfo operator*() const { return my_info; }
         bool operator==(const GenericContainerConstIterator<DataType> & other) const { return (my_id == other.my_id) && (_p_data_ == other._p_data_); }
         bool operator!=(const GenericContainerConstIterator<DataType> & other) const { return !(*this == other); }
         GenericContainerConstIterator<DataType> & operator++()

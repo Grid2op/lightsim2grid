@@ -9,6 +9,8 @@
 #ifndef TWO_SIDES_CONTAINER_RXH_A_H
 #define TWO_SIDES_CONTAINER_RXH_A_H
 
+#include <limits>
+
 #include "TwoSidesContainer.hpp"
 
 namespace ls2g {
@@ -73,6 +75,11 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 real_type res_a1_ka;
                 real_type res_a2_ka;
 
+                // thermal (current) limit, in kA -- input, not a powerflow result;
+                // NaN if not provided when the grid was built
+                real_type limit_a1_ka;
+                real_type limit_a2_ka;
+
                 cplx_type yac_11;
                 cplx_type yac_12;
                 cplx_type yac_21;
@@ -95,6 +102,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 has_res(false),
                 res_a1_ka(0.),
                 res_a2_ka(0.),
+                limit_a1_ka(std::numeric_limits<real_type>::quiet_NaN()),
+                limit_a2_ka(std::numeric_limits<real_type>::quiet_NaN()),
                 yac_11(0., 0.),
                 yac_12(0., 0.),
                 yac_21(0., 0.),
@@ -121,6 +130,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                         res_a1_ka = r_data.res_a_side_1_.coeff(my_id);
                         res_a2_ka = r_data.res_a_side_2_.coeff(my_id);
                     }
+
+                    if(r_data.limit_a1_ka_.size() > 0) limit_a1_ka = r_data.limit_a1_ka_.coeff(my_id);
+                    if(r_data.limit_a2_ka_.size() > 0) limit_a2_ka = r_data.limit_a2_ka_.coeff(my_id);
 
                     // coeffs
                     yac_11 = r_data.yac_11_.coeff(my_id);
@@ -153,8 +165,21 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                    std::vector<real_type>,  // branch_r
                    std::vector<real_type>,  // branch_x
                    std::vector<cplx_type>,   // branch_h1
-                   std::vector<cplx_type>   // branch_h2
+                   std::vector<cplx_type>,   // branch_h2
+                   std::vector<real_type>,  // limit_a1_ka (optional, empty if unset)
+                   std::vector<real_type>  // limit_a2_ka (optional, empty if unset)
                >;
+
+        // thermal (current) limit, in kA, per side -- input, not a powerflow result.
+        // Optional: empty (size 0) if never set (e.g. pandapower-origin grids).
+        void set_thermal_limit(const RealVect & limit_a1_ka, const RealVect & limit_a2_ka){
+            check_size(limit_a1_ka, nb(), "TwoSidesContainer_rxh_A::set_thermal_limit (side 1)");
+            check_size(limit_a2_ka, nb(), "TwoSidesContainer_rxh_A::set_thermal_limit (side 2)");
+            limit_a1_ka_ = limit_a1_ka;
+            limit_a2_ka_ = limit_a2_ka;
+        }
+        Eigen::Ref<const RealVect> get_limit_a1_ka() const {return limit_a1_ka_;}
+        Eigen::Ref<const RealVect> get_limit_a2_ka() const {return limit_a2_ka_;}
 
         // getter (results)
         tuple4d get_res_side_1() const {
@@ -792,12 +817,16 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             std::vector<real_type> branch_x(x_.begin(), x_.end());
             std::vector<cplx_type> branch_h1(h_side_1_.begin(), h_side_1_.end());
             std::vector<cplx_type> branch_h2(h_side_2_.begin(), h_side_2_.end());
+            std::vector<real_type> limit_a1_ka(limit_a1_ka_.begin(), limit_a1_ka_.end());
+            std::vector<real_type> limit_a2_ka(limit_a2_ka_.begin(), limit_a2_ka_.end());
             StateRes res(
                 get_tsc_state(),
                 branch_r,
                 branch_x,
                 branch_h1,
-                branch_h2
+                branch_h2,
+                limit_a1_ka,
+                limit_a2_ka
             );
             return res;
         }
@@ -820,6 +849,21 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             x_ = RealVect::Map(&branch_x[0], size);
             h_side_1_ = CplxVect::Map(&branch_h1[0], size);
             h_side_2_ = CplxVect::Map(&branch_h2[0], size);
+
+            const std::vector<real_type> & limit_a1_ka = std::get<5>(my_state);
+            const std::vector<real_type> & limit_a2_ka = std::get<6>(my_state);
+            if(limit_a1_ka.size() > 0){
+                check_size(limit_a1_ka, size, "limit_a1_ka");
+                limit_a1_ka_ = RealVect::Map(&limit_a1_ka[0], size);
+            } else {
+                limit_a1_ka_ = RealVect();
+            }
+            if(limit_a2_ka.size() > 0){
+                check_size(limit_a2_ka, size, "limit_a2_ka");
+                limit_a2_ka_ = RealVect::Map(&limit_a2_ka[0], size);
+            } else {
+                limit_a2_ka_ = RealVect();
+            }
         }
 
         void reset_results_tsc_rxha(){
@@ -982,12 +1026,16 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             ydc_12_(el_id) = -tmp;
         }
 
-    protected:        
+    protected:
         // physical properties
         RealVect r_;  // in pu
         RealVect x_;  // in pu
         CplxVect h_side_1_;  // in pu
         CplxVect h_side_2_;  // in pu
+
+        // input data (optional, empty if unset)
+        RealVect limit_a1_ka_;  // thermal (current) limit, side 1, in kA
+        RealVect limit_a2_ka_;  // thermal (current) limit, side 2, in kA
 
         //output data
         RealVect res_a_side_1_;  // in kA
