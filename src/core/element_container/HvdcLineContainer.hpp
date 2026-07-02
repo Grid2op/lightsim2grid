@@ -99,7 +99,13 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             SIDE_2_RECTIFIER = 1
         };
 
-        HvdcLineContainer() noexcept = default;
+        // Unlike a normal branch, the two converter stations of an HVDC line are NOT
+        // synchronous partners: disconnecting one (its DC partner switched off) does
+        // not electrically justify tripping the other, which OpenLoadFlow keeps
+        // active as a local reactive/voltage-support device. So, unlike
+        // TwoSidesContainer's generic default (mirror both sides), HVDC lines default
+        // to independent sides.
+        HvdcLineContainer() noexcept { synch_status_both_side_ = false; }
         virtual ~HvdcLineContainer() noexcept = default;
 
         // pickle
@@ -138,6 +144,10 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                       "HvdcLineContainer::StateRes and StateResIdx do not match");
         HvdcLineContainer::StateRes get_state() const;
         void set_state(HvdcLineContainer::StateRes & my_state);
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path) const;
+        static HvdcLineContainer load_binary(const std::string & path);
 
         /**
          * Full IIDM-style initialization (used by the pypowsybl converter and

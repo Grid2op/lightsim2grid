@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "SubstationContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -46,6 +47,14 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     bus_status_ = bus_status;
     bus_vn_kv_ = RealVect::Map(&bus_vn_kv[0], bus_vn_kv.size());
     sub_names_ = std::get<5>(my_state);
+}
+
+void SubstationContainer::save_binary(const std::string & path) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+}
+
+SubstationContainer SubstationContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<SubstationContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

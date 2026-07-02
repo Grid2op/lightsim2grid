@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "TrafoContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -333,6 +334,14 @@ TrafoContainer::FDPFCoeffs TrafoContainer::get_fdpf_coeffs(int tr_id, FDPFMethod
     res.ytf_bpp = -ys_bpp_r / tau_bpp;
     res.yft_bpp = -ys_bpp_r / tau_bpp;
     return res;
+}
+
+void TrafoContainer::save_binary(const std::string & path) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+}
+
+TrafoContainer TrafoContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<TrafoContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

@@ -69,6 +69,10 @@ class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorA
         // pickle (python)
         SGenContainer::StateRes get_state() const;
         void set_state(SGenContainer::StateRes & my_state );
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path) const;
+        static SGenContainer load_binary(const std::string & path);
         
         
         void init(const RealVect & sgen_p,

@@ -460,6 +460,12 @@ class LS2G_API LSGrid final
         LSGrid::StateRes get_state() const ;
         void set_state(LSGrid::StateRes & my_state) ;
 
+        // fast binary serialization (additive alternative to pickle, see
+        // BinaryArchive.hpp -- NOT cross-version compatible, same lightsim2grid
+        // version required to reload)
+        void save_binary(const std::string & path) const;
+        static LSGrid load_binary(const std::string & path);
+
         // algo config (scaling/refactor policy params) — not part of StateRes pickle
         AlgoConfig get_ac_algo_config() const { return _algo.get_config(); }
         void set_ac_algo_config(const AlgoConfig& cfg) { _algo.set_config(cfg); }
@@ -883,6 +889,14 @@ class LS2G_API LSGrid final
         //deactivate a powerline (disconnect it)
         void deactivate_dcline(int dcline_id) {hvdc_lines_.deactivate(dcline_id, algo_controler_); }
         void reactivate_dcline(int dcline_id) {hvdc_lines_.reactivate(dcline_id, algo_controler_); }
+        // Disconnect only one converter station of an HVDC line ("half-open"): the
+        // other station keeps injecting its scheduled P / regulating Q-V, matching
+        // OpenLoadFlow which treats a VSC station with its DC partner switched off as
+        // a still-active local reactive/voltage-support device (not a dead branch).
+        // Unlike powerlines/trafos this is unconditional (HvdcLineContainer's
+        // synch_status_both_side_ defaults to false), no `keep_half_open_lines` needed.
+        void deactivate_dcline_side1(int dcline_id) {hvdc_lines_.deactivate_side_1(dcline_id, algo_controler_); }
+        void deactivate_dcline_side2(int dcline_id) {hvdc_lines_.deactivate_side_2(dcline_id, algo_controler_); }
         void change_p_dcline(int dcline_id, real_type new_p) {hvdc_lines_.change_p(dcline_id, new_p, algo_controler_); }
         void change_v1_dcline(int dcline_id, real_type new_v_pu) {hvdc_lines_.change_v_side_1(dcline_id, new_v_pu, algo_controler_); }
         void change_v2_dcline(int dcline_id, real_type new_v_pu) {hvdc_lines_.change_v_side_2(dcline_id, new_v_pu, algo_controler_); }

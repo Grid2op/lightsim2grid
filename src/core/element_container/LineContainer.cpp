@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "LineContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <sstream>
 
@@ -70,6 +71,14 @@ void LineContainer::init(const RealVect & branch_r,
     init_tsc(branch_from_id, branch_to_id, "trafo");
     _update_model_coeffs();
     reset_results();
+}
+
+void LineContainer::save_binary(const std::string & path) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+}
+
+LineContainer LineContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<LineContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

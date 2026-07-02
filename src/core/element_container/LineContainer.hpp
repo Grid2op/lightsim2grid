@@ -75,7 +75,11 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
             _update_model_coeffs();
             reset_results();
         }
-        
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path) const;
+        static LineContainer load_binary(const std::string & path);
+
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,
                              const Eigen::Ref<const CplxVect> & V,

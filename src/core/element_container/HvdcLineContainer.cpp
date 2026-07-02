@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "HvdcLineContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <cmath>
 #include <sstream>
@@ -443,6 +444,14 @@ void HvdcLineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
         res_p_1(hvdc_id) = -p1_flow;
         res_p_2(hvdc_id) = -p2_flow;
     }
+}
+
+void HvdcLineContainer::save_binary(const std::string & path) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+}
+
+HvdcLineContainer HvdcLineContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<HvdcLineContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g
