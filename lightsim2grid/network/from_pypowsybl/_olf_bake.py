@@ -57,6 +57,17 @@ What gets baked
   generator/VSC reactive-limit switch above. An SVC still comfortably inside
   its envelope is left regulating (its target reproduces the OLF result
   exactly, since it isn't saturated).
+* Static var compensators carrying a "standby automaton" (``standby=True``):
+  OLF's own outer loop starts these as a fixed ``b0`` shunt (no voltage
+  control) and only switches them to active voltage control once their bus
+  voltage crosses a low/high threshold. The static ``regulating`` /
+  ``target_v`` attributes do *not* reflect this -- they read as if the SVC
+  were always actively regulating. Resolved before the reactive-limit
+  switch above: an SVC that stayed within its deadband is frozen to fixed-Q
+  (0 when, as commonly configured, ``b0 == 0``); one that crossed a
+  threshold is switched to ``VOLTAGE`` mode targeting the corresponding
+  ``low_voltage_setpoint`` / ``high_voltage_setpoint`` (then still eligible
+  for the ordinary saturation freeze).
 
 Verified against pypowsybl 1.15.0. The OLF-internal round trip (solve with
 outer loops -> bake -> solve loop-free) reproduces bus voltages to ~2e-4 kV /
@@ -65,11 +76,31 @@ four-substations node-breaker network, which carries VSC and LCC HVDC, an SVC
 regulating voltage, a shunt, and ratio + phase tap changers.
 """
 
+import numpy as np
 import pandas as pd
 
 
-# Tolerance (MVAr) for deciding a reactive injection sits "at" its Q limit.
-_Q_LIMIT_TOL = 1e-3
+# Tolerance (MVAr) for deciding a reactive injection sits "at" its Q limit: the
+# larger of a small absolute floor (catches exact/near-exact hits, dominated by
+# float rounding) and a fraction of the unit's own Q range (catches OLF's discrete
+# reactive-limit outer loop settling a hair inside the limit -- e.g. because P kept
+# shifting slightly in later outer-loop iterations after the PV->PQ switch already
+# happened). A fixed absolute tolerance alone is either too tight for large-range
+# units (missing genuine saturation) or too loose for small-range ones (freezing
+# units that still have real headroom).
+_Q_LIMIT_TOL_ABS = 1e-3
+_Q_LIMIT_TOL_REL = 0.005  # 0.5% of (qmax - qmin)
+
+
+def _q_limit_tol(qmin, qmax):
+    rng = np.asarray(qmax) - np.asarray(qmin)
+    # An unset reactive-limit box defaults to +/-Double.MAX in pypowsybl (an
+    # "unbounded" sentinel, not a real 3.6e308 MVAr range): a relative tolerance on
+    # that would swallow every generator. Treat absurdly large / non-finite ranges
+    # as "no limit" -- no relative bonus, just the absolute floor -- rather than
+    # let them dominate the max().
+    rng = np.where(np.isfinite(rng) & (rng < 1e6), rng, 0.0)
+    return np.maximum(_Q_LIMIT_TOL_ABS, _Q_LIMIT_TOL_REL * rng)
             
             
 def _keep_only_main_comp(df_el, df_bus):
@@ -109,8 +140,9 @@ def _bound_at_qlimit(df: pd.DataFrame, regulating: pd.Series):
     """
     q_gen = -df["q"]  # result column is load convention; flip to generator
     qmin, qmax = _reactive_limits(df)
-    at_max = regulating & (q_gen >= qmax - _Q_LIMIT_TOL)
-    at_min = regulating & (q_gen <= qmin + _Q_LIMIT_TOL)
+    tol = _q_limit_tol(qmin, qmax)
+    at_max = regulating & (q_gen >= qmax - tol)
+    at_min = regulating & (q_gen <= qmin + tol)
     return (at_max | at_min), q_gen
 
 
@@ -267,7 +299,68 @@ def _bake_reactive_limit_switches(
             upd["voltage_regulator_on"] = False
             network.update_vsc_converter_stations(upd)
 
+    _bake_svc_standby(network, keep_only_main_comp)
     _bake_svc_saturation(network, keep_only_main_comp)
+
+
+def _bake_svc_standby(network, keep_only_main_comp=True):
+    """Resolve an SVC's "standby automaton" (PowSyBl OLF's ``MonitoringVoltageOuterLoop``)
+    to the state the outer loop actually settled on.
+
+    A standby SVC (``standbyAutomaton`` extension, ``standby=True``) starts the outer loop
+    as a fixed-susceptance shunt (``b0``, no voltage control) rather than a normal
+    voltage-regulating device -- regardless of what its static ``regulating`` /
+    ``regulation_mode`` / ``target_v`` attributes say. It only switches to active PV control
+    -- targeting ``low_voltage_setpoint`` / ``high_voltage_setpoint`` -- once its own bus
+    voltage crosses ``low_voltage_threshold`` / ``high_voltage_threshold``. Inside the
+    deadband it stays a plain ``b0`` shunt: the realized ``q`` there already equals
+    ``b0 * v_mag_kv ** 2`` (0 when, as commonly configured, ``b0 == 0``), so freezing it to
+    that realized value -- like a saturated SVC -- reproduces the deadband state exactly.
+
+    Runs before ``_bake_svc_saturation``: an SVC resolved to VOLTAGE mode here (crossed a
+    threshold) is still eligible for the ordinary saturation freeze; an SVC resolved to
+    REACTIVE_POWER here is already frozen and the saturation check leaves it alone (it only
+    looks at ``regulation_mode == "VOLTAGE"``).
+    """
+    try:
+        automaton = network.get_extensions("standbyAutomaton")
+    except Exception:  # noqa: BLE001 - extension unsupported / absent on old pypowsybl
+        return
+    automaton = automaton[automaton["standby"]]
+    if not len(automaton):
+        return
+    df_bus = network.get_buses(attributes=["v_mag", "synchronous_component"])
+    svc = network.get_static_var_compensators(attributes=["connected", "bus_id"])
+    svc = svc.loc[svc.index.intersection(automaton.index)]
+    if keep_only_main_comp:
+        svc = _keep_only_main_comp(svc, df_bus)
+    automaton = automaton.loc[svc.index]
+    if not len(automaton):
+        return
+
+    v_kv = df_bus.loc[svc["bus_id"].values, "v_mag"].to_numpy()
+    above_high = v_kv > automaton["high_voltage_threshold"].to_numpy()
+    below_low = v_kv < automaton["low_voltage_threshold"].to_numpy()
+
+    active = above_high | below_low
+    if active.any():
+        upd = pd.DataFrame(index=automaton.index[active])
+        upd["target_v"] = np.where(
+            above_high[active],
+            automaton["high_voltage_setpoint"].to_numpy()[active],
+            automaton["low_voltage_setpoint"].to_numpy()[active],
+        )
+        upd["regulation_mode"] = "VOLTAGE"
+        network.update_static_var_compensators(upd)
+
+    idle_ids = automaton.index[~active]
+    if len(idle_ids):
+        # realized "q" (receptor convention, matches target_q) already equals b0 * v^2
+        svc_q = network.get_static_var_compensators(attributes=["q"]).loc[idle_ids, "q"]
+        upd = pd.DataFrame(index=idle_ids)
+        upd["target_q"] = svc_q
+        upd["regulation_mode"] = "REACTIVE_POWER"
+        network.update_static_var_compensators(upd)
 
 
 def _bake_svc_saturation(network, keep_only_main_comp=True):
@@ -296,7 +389,8 @@ def _bake_svc_saturation(network, keep_only_main_comp=True):
     q_gen = -svc["q"].to_numpy()
     qmax = svc["b_max"].to_numpy() * v_kv ** 2  # Q[MVAr] = B[S] * V[kV]^2
     qmin = svc["b_min"].to_numpy() * v_kv ** 2
-    mask = (q_gen >= qmax - _Q_LIMIT_TOL) | (q_gen <= qmin + _Q_LIMIT_TOL)
+    tol = _q_limit_tol(qmin, qmax)
+    mask = (q_gen >= qmax - tol) | (q_gen <= qmin + tol)
     if mask.any():
         upd = pd.DataFrame(index=svc.index[mask])
         # unlike Generator.target_q (already generator convention), StaticVarCompensator
