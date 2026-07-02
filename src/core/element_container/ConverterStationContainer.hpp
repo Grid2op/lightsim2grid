@@ -174,17 +174,6 @@ class LS2G_API ConverterStationContainer : public OneSideContainer_PQ, public It
         bool _reactivate(int station_id, DualAlgoControl & solver_control) final;
         bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) final;
 
-        /**
-         * Station with a derived active power of 0: not PV, no Sbus contribution
-         * when regulating (legacy dcline behaviour, cf `turnedoff_no_pv`).
-         */
-        bool is_pseudo_off(int station_id) const {
-            return (abs(target_p_mw_(station_id)) < _tol_equal_float);
-        }
-        bool is_regulating(int station_id) const {
-            return voltage_regulator_on_[station_id];
-        }
-
     private:
         // input data
         IntVect type_;                           // ConverterType, per station
