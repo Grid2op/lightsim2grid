@@ -11,8 +11,6 @@ import numpy as np
 
 import grid2op
 from grid2op.Parameters import Parameters
-from grid2op.Action import BaseAction
-from grid2op.Chronics import ChangeNothing
 import warnings
 from lightsim2grid import LightSimBackend, ContingencyAnalysis
 

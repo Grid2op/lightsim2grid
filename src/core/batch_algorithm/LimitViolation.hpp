@@ -14,27 +14,30 @@
 namespace ls2g {
 
 // the kind of element on which a limit was violated
-enum class ViolationElementType : int {
+enum class LS2G_API ViolationElementType : int {
     BUS = 0,
     LINE = 1,
-    TRAFO = 2
+    TRAFO = 2,
+    GRID = 3  // the whole grid / contingency, not a specific element (see LimitViolationType::DIVERGENCE)
 };
 
 // the kind of limit that was violated
-enum class LimitViolationType : int {
+enum class LS2G_API LimitViolationType : int {
     LOW_VOLTAGE = 0,
     HIGH_VOLTAGE = 1,
-    CURRENT = 2
+    CURRENT = 2,
+    NOT_SIMULATED = 3,  // a pre-check (graph connectivity) skipped the contingency: the solver was never invoked
+    DIVERGENCE = 4  // the solver was invoked (for the contingency, or the pre-contingency "n" case) but did not converge
 };
 
 // a single limit violation, as detected by ContingencyAnalysis (see compute_limit_violations)
-struct LimitViolation {
+struct LS2G_API LimitViolation {
     ViolationElementType element_type;
-    int element_id;  // grid-model bus id for BUS ; local (0-based, own type) line / trafo id otherwise
-    int side;  // 1 or 2 for LINE / TRAFO ; unused (0) for BUS
+    int element_id;  // grid-model bus id for BUS ; local (0-based, own type) line / trafo id otherwise ; unused (-1) for GRID
+    int side;  // 1 or 2 for LINE / TRAFO ; unused (0) for BUS / GRID
     LimitViolationType violation_type;
-    real_type value;  // value reached
-    real_type limit;  // limit that was violated
+    real_type value;  // value reached ; unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    real_type limit;  // limit that was violated ; unused (NaN) for NOT_SIMULATED / DIVERGENCE
 };
 
 } // namespace ls2g

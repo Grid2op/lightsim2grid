@@ -24,7 +24,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
 {
     public:
         explicit  ContingencyAnalysis(const LSGrid & init_grid_model,
-                                       bool compute_limit_violations = false) noexcept:
+                                       bool compute_limit_violations = false):
                             BaseBatchSolverSynch(init_grid_model),
                             _li_defaults(),
                             _li_coeffs(),
@@ -155,7 +155,9 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         int get_nb_thread() const {return _nb_thread;}
         void set_nb_thread(int n) {_nb_thread = (n < 1 ? 1 : n);}
 
-        // make the computation
+        // make the computation. Throws if the pre-contingency ("n", no disconnection) powerflow
+        // itself does not converge -- every contingency is solved starting from / relative to
+        // that base case, so a diverging base case makes the whole analysis meaningless.
         void compute(const CplxVect & Vinit, int max_iter, real_type tol);
         IntVect is_grid_connected_after_contingency();
 

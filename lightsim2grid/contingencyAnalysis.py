@@ -34,8 +34,10 @@ class PreContingencyResult:
     """Limit violations for the pre-contingency ("n", no disconnection) case.
 
     .. note::
-        If ``converged`` is False, ``limit_violations`` is empty because no result is
-        available -- this does NOT mean there is no violation.
+        ``converged`` is always True here: `ContingencyAnalysisCPP.compute` raises a
+        ``RuntimeError`` if the pre-contingency powerflow itself does not converge (every
+        contingency is solved relative to this base case, so a diverging base case makes the
+        whole analysis meaningless).
     """
     converged: bool
     limit_violations: List[LimitViolation]
@@ -46,8 +48,11 @@ class ContingencyResult:
     """Limit violations for a single simulated contingency.
 
     .. note::
-        If ``converged`` is False (the contingency was skipped or diverged), ``limit_violations``
-        is empty because no result is available -- this does NOT mean there is no violation.
+        If ``converged`` is False, ``limit_violations`` contains exactly one ``LimitViolation``
+        with ``element_type == ViolationElementType.GRID`` and ``violation_type`` either
+        ``LimitViolationType.NOT_SIMULATED`` (a pre-check skipped this contingency, eg it splits
+        the grid, without ever invoking the solver) or ``LimitViolationType.DIVERGENCE`` (the
+        solver ran but did not converge).
     """
     element_ids: List[int]  #: branch ids (lines then trafos) disconnected by this contingency
     contingency_name: Optional[str]  #: user-supplied name, see `add_single_contingency`
@@ -469,6 +474,10 @@ class __ContingencyAnalysis(object):
         set via ``this_instance.compute_limit_violations = True``), else a `RuntimeError` is
         raised. Prefer `run_ac` / `run_dc` if you want to also select the algorithm family.
 
+        A `RuntimeError` is also raised if the pre-contingency ("n") powerflow itself does not
+        converge -- every contingency is solved relative to this base case, so a diverging base
+        case makes the whole analysis meaningless.
+
         The returned object mimics pypowsybl's security analysis result:
 
         .. code-block:: python
@@ -483,10 +492,12 @@ class __ContingencyAnalysis(object):
                 cont.limit_violations
 
         .. note::
-            A `converged == False` entry (pre- or post-contingency) has an empty
-            `limit_violations` list because no result is available for it (skipped or diverged
-            powerflow) -- this does NOT mean there is no violation, unlike a `converged == True`
-            entry with an empty list, which genuinely means no violation was found.
+            A `converged == False` post-contingency entry has exactly one `LimitViolation` in
+            `limit_violations`, with `element_type == ViolationElementType.GRID` and
+            `violation_type` either `LimitViolationType.NOT_SIMULATED` (a pre-check skipped it,
+            eg it splits the grid) or `LimitViolationType.DIVERGENCE` (the solver ran but did not
+            converge) -- unlike a `converged == True` entry with an empty list, which genuinely
+            means no violation was found.
         """
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")

@@ -113,7 +113,8 @@ class TestConvergedFlag(unittest.TestCase):
         self.env.close()
 
     def test_converged_matches_nan_heuristic(self):
-        # 17 converges, 18 diverges (splits the grid), 19 converges -- see
+        # 17 converges, 18 diverges (splits the grid -> a pre-check skips it before the solver
+        # is ever invoked, hence NOT_SIMULATED), 19 converges -- see
         # test_SecurityAnlysis_cpp.test_compute_nonconnected_graph for the reference behaviour
         SA = ContingencyAnalysisCPP(self.env.backend._grid, True)
         lid_cont = [17, 18, 19]
@@ -129,8 +130,39 @@ class TestConvergedFlag(unittest.TestCase):
             assert bool(converged[cont_id]) == nan_heuristic_converged, \
                 f"converged() disagrees with the nan/0 heuristic for contingency {cont_id}"
             if not converged[cont_id]:
-                assert violations[cont_id] == [], \
-                    "a non-converged contingency must not report fabricated violations"
+                viol = violations[cont_id]
+                assert len(viol) == 1, \
+                    "a non-converged contingency must report exactly one GRID violation, " \
+                    f"got {viol}"
+                assert viol[0].element_type == ViolationElementType.GRID
+                assert viol[0].violation_type == LimitViolationType.NOT_SIMULATED, \
+                    "contingency 18 splits the grid: a pre-check should skip it before the " \
+                    "solver is invoked"
+
+
+class TestBaseCaseDivergenceRaises(unittest.TestCase):
+    """the pre-contingency ("n") case is special: unlike a single contingency, it cannot
+    silently be reported as "no result available" (every contingency is solved relative to
+    it), so a non-converging base case must raise instead."""
+    def setUp(self):
+        import grid2op
+        from lightsim2grid import LightSimBackend
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
+        self.env.reset(seed=0, options={"time serie id": 0})
+
+    def tearDown(self):
+        self.env.close()
+
+    def test_n_divergence_raises(self):
+        SA = ContingencyAnalysisCPP(self.env.backend._grid, True)
+        SA.add_all_n1()
+        nb_bus = self.env.backend._grid.get_bus_vn_kv().shape[0]
+        # deliberately bad starting point + a single NR iteration: the base case cannot converge
+        bad_vinit = np.full(nb_bus, 0.5, dtype=complex)
+        with self.assertRaises(RuntimeError):
+            SA.compute(bad_vinit, 1, self.env.backend.tol)
 
 
 class TestThreadIndependence(unittest.TestCase):

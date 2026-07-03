@@ -64,7 +64,9 @@ LSGrid::LSGrid(const LSGrid & other)
     // assign the right solver
     reset(true, true, true);
     _algo.change_algorithm(other.get_algo_type());
+    _algo.set_config(other.get_algo().get_config());
     _dc_algo.change_algorithm(other.get_dc_algo_type());
+    _dc_algo.set_config(other.get_dc_algo().get_config());
 }
 
 //pickle
