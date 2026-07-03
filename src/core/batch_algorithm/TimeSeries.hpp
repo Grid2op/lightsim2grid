@@ -86,7 +86,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
                             bool add  // if true call += else calls -=
                             ) const 
         {
-            auto nb_el = structure_data.nb();
+            size_t nb_el = structure_data.nb();
             const auto & el_status = structure_data.get_status();
             const auto & el_bus_id = structure_data.get_bus_id();
             SolverBusId bus_id_solver;
@@ -123,7 +123,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
                             bool add  // if true call += else calls -=
                             ) const 
         {
-            auto nb_el = structure_data.nb();
+            size_t nb_el = structure_data.nb();
             const auto & el_status = structure_data.get_status();
             const auto & el_bus_id = structure_data.get_bus_id();
             SolverBusId  bus_id_solver;

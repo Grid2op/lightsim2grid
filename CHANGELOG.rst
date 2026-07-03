@@ -122,6 +122,18 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   validated `_ls_to_orig` against `substations_.nb_bus()` before `substations_` itself
   had been restored on the fresh instance pickle/binary loading constructs, so that size
   was always 0. Fixed by restoring `substations_` first.
+- [FIXED] a member-initialization-order bug in `ContingencyAnalysis`'s constructor
+  (compiler ``-Wreorder`` warning): ``_compute_limit_violations_`` was listed before
+  ``_li_defaults`` in the initializer list although declared after it in the class.
+  C++ always initializes members in declaration order regardless of initializer-list
+  order, so the list was misleading (harmless today since there is no data dependency
+  between the two, but a latent hazard for future refactors). The initializer list now
+  matches declaration order.
+- [IMPROVED] (cpp) the codebase now compiles warning-free under ``-Wall -Wextra
+  -Werror``: fixed 29 signed/unsigned comparison warnings (``int`` / ``Eigen::Index``
+  vs ``size_t``) and silenced ~188 intentionally-unused parameters on interface /
+  default-virtual-method signatures (kept as ``/*name*/`` comments for documentation,
+  matching the convention already used elsewhere in the codebase).
 - [ADDED] `lightsim2grid.network.bake_outer_loops`: rewrites a pypowsybl network's
   input setpoints to the converged PowSyBl OpenLoadFlow (OLF) outer-loop state (tap /
   shunt positions, reactive-limit PV->PQ switches, distributed-slack active power) so

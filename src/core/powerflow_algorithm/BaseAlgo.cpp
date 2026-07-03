@@ -166,7 +166,7 @@ Eigen::VectorXi BaseAlgo::extract_slack_bus_id(Eigen::Ref<const IntVect> pv,
     {
         if(tmp[k])
         {
-            if((i_res >= nb_slacks)){
+            if((i_res >= static_cast<size_t>(nb_slacks))){
                 // TODO DEBUG MODE
                 throw std::runtime_error("BaseAlgo::extract_slack_bus_id: too many slack found. Maybe a bus is both PV and PQ ?");
             }
@@ -174,7 +174,7 @@ Eigen::VectorXi BaseAlgo::extract_slack_bus_id(Eigen::Ref<const IntVect> pv,
             ++i_res;
         }
     }
-    if(res.size() != i_res){
+    if(static_cast<size_t>(res.size()) != i_res){
         // TODO DEBUG MODE
         throw std::runtime_error("BaseAlgo::extract_slack_bus_id: Some slacks are not found in your grid.");
     }

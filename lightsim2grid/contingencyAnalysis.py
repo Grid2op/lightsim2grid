@@ -6,14 +6,19 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__all__ = ["ContingencyAnalysisCPP"]
+__all__ = ["ContingencyAnalysisCPP", "LimitViolation", "ViolationElementType",
+           "LimitViolationType", "PreContingencyResult",
+           "ContingencyResult", "SecurityAnalysisResult"]
 
 import copy
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 import numpy as np
 from collections.abc import Iterable
 
 from lightsim2grid.algorithm import AlgorithmType
-from .lightsim2grid_cpp import ContingencyAnalysisCPP
+from .lightsim2grid_cpp import (ContingencyAnalysisCPP, LimitViolation,
+                                 ViolationElementType, LimitViolationType)
 
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend
@@ -22,6 +27,40 @@ try:
 except ImportError as exc_:  # noqa: F841
     # grid2op is not installed
     GRID2OP_INSTALLED = False
+
+
+@dataclass
+class PreContingencyResult:
+    """Limit violations for the pre-contingency ("n", no disconnection) case.
+
+    .. note::
+        If ``converged`` is False, ``limit_violations`` is empty because no result is
+        available -- this does NOT mean there is no violation.
+    """
+    converged: bool
+    limit_violations: List[LimitViolation]
+
+
+@dataclass
+class ContingencyResult:
+    """Limit violations for a single simulated contingency.
+
+    .. note::
+        If ``converged`` is False (the contingency was skipped or diverged), ``limit_violations``
+        is empty because no result is available -- this does NOT mean there is no violation.
+    """
+    element_ids: List[int]  #: branch ids (lines then trafos) disconnected by this contingency
+    contingency_name: Optional[str]  #: user-supplied name, see `add_single_contingency`
+    converged: bool
+    limit_violations: List[LimitViolation]
+
+
+@dataclass
+class SecurityAnalysisResult:
+    """Result of `ContingencyAnalysis.run` / `run_ac` / `run_dc`, modeled after pypowsybl's
+    security analysis result."""
+    pre_contingency_result: PreContingencyResult
+    post_contingency_results: List[ContingencyResult]
 
 
 class __ContingencyAnalysis(object):
@@ -87,7 +126,7 @@ class __ContingencyAnalysis(object):
     """
     STR_TYPES = (str, np.str_)  # np.str deprecated in numpy 1.20 and earlier versions not supported anyway
         
-    def __init__(self, grid2op_env):
+    def __init__(self, grid2op_env, compute_limit_violations: bool = False):
         if not GRID2OP_INSTALLED:
             raise RuntimeError("Impossible to use the python wrapper `ContingencyAnalysis` "
                                "when grid2op is not installed. Please fall back to the "
@@ -108,9 +147,10 @@ class __ContingencyAnalysis(object):
         else:
             raise RuntimeError("`ContingencyAnalysis` can only be created "
                                "with a grid2op `Environment` or a `LightSimBackend`")
-        self.computer = ContingencyAnalysisCPP(self._ls_backend._grid)
+        self.computer = ContingencyAnalysisCPP(self._ls_backend._grid, bool(compute_limit_violations))
         self._contingency_order = {}  # key: contingency (as tuple), value: order in which it is entered
         self._all_contingencies = []
+        self._contingency_names = {}  # key: contingency (as tuple), value: user-supplied name (or None)
         self.__computed = False
         self._vs = None
         self._ampss = None
@@ -149,6 +189,27 @@ class __ContingencyAnalysis(object):
         if bool(val) != val:
             raise ValueError("The `handle_disconnected_grid` attribute must be a boolean.")
         self.computer.handle_disconnected_grid = bool(val)
+
+    @property
+    def compute_limit_violations(self):
+        """Whether limit violations are computed inline, per contingency, during `run` /
+        `run_ac` / `run_dc` (see also `get_violations` on the underlying `computer`). Default:
+        false. Computing violations means an extra per-element current / voltage check in
+        every contingency's solve, so leave this off if you only need `get_flows`. Can only be
+        set at construction time (`ContingencyAnalysis(env, compute_limit_violations=True)`) or
+        via this setter; changing it clears any previously-computed results.
+        """
+        return self.computer.compute_limit_violations
+
+    @compute_limit_violations.setter
+    def compute_limit_violations(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `compute_limit_violations` attribute must be a boolean.")
+        val = bool(val)
+        if val == self.computer.compute_limit_violations:
+            return  # no-op, matches the C++ side (which also no-ops and does not clear)
+        self.computer.compute_limit_violations = val  # this clears the C++-side results / contingencies
+        self.clear()  # keep the python-side bookkeeping (contingency order / names) in sync
 
     @property
     def nb_thread(self):
@@ -194,6 +255,7 @@ class __ContingencyAnalysis(object):
             self.computer.clear()
             self._contingency_order = {}
             self._all_contingencies = []
+            self._contingency_names = {}
         else:
             self.computer.clear_results_only()
 
@@ -215,7 +277,7 @@ class __ContingencyAnalysis(object):
             li_disc.append(stuff)
         return li_disc
 
-    def add_single_contingency(self, *args):
+    def add_single_contingency(self, *args, name=None):
         """
         This function allows to add a single contingency specified by either the powerlines names
         (which should match env.name_line) or by their ID.
@@ -223,7 +285,12 @@ class __ContingencyAnalysis(object):
         The contingency added can be a "n-1" which will simulate a single powerline disconnection
         or a "n-k" which will simulate the disconnection of multiple powerlines.
 
-        It does not accept any keword arguments.
+        It does not accept any positional keyword arguments, but accepts the keyword-only
+        `name` argument: an optional, user-supplied string used to identify this contingency
+        in the result of `run` / `run_ac` / `run_dc` (`ContingencyResult.contingency_name`). If
+        not given, `contingency_name` is `None` for this contingency. If this exact contingency
+        was already registered (same set of disconnected elements), `name` is ignored (the
+        first registration wins).
 
         Examples
         --------
@@ -265,6 +332,7 @@ class __ContingencyAnalysis(object):
                 my_id = len(self._contingency_order)
                 self._contingency_order[li_disc_tup] = my_id
                 self._all_contingencies.append(li_disc_tup)
+                self._contingency_names[li_disc_tup] = name
             except Exception as exc_:
                 raise RuntimeError(f"Impossible to add the contingency {args}. The most likely cause "
                                    f"is that you try to disconnect a powerline that is not present "
@@ -388,6 +456,101 @@ class __ContingencyAnalysis(object):
             self.compute_P()
         
         return self._mws[orders_], self._ampss[orders_], self._vs[orders_]
+
+    def run(self) -> SecurityAnalysisResult:
+        """
+        Run this contingency analysis and report, for the pre-contingency ("n") case and for
+        each registered contingency, the list of limit violations (bus voltage out of
+        [vmin_kv, vmax_kv], line/trafo current above limit_a1_ka / limit_a2_ka -- see
+        `LSGrid.set_bus_voltage_limits` / `set_line_current_limit_side1` / `set_line_current_limit_side2`
+        / `set_trafo_current_limit_side1` / `set_trafo_current_limit_side2`).
+
+        This requires `compute_limit_violations=True` (either passed at construction time or
+        set via ``this_instance.compute_limit_violations = True``), else a `RuntimeError` is
+        raised. Prefer `run_ac` / `run_dc` if you want to also select the algorithm family.
+
+        The returned object mimics pypowsybl's security analysis result:
+
+        .. code-block:: python
+
+            res = security_analysis.run()
+            for v in res.pre_contingency_result.limit_violations:
+                ...
+            for cont in res.post_contingency_results:  # a list, ordered like `add_single_contingency` calls
+                cont.element_ids       # branch ids disconnected by this contingency (always present)
+                cont.contingency_name  # optional, user-supplied via add_single_contingency(..., name=...)
+                cont.converged
+                cont.limit_violations
+
+        .. note::
+            A `converged == False` entry (pre- or post-contingency) has an empty
+            `limit_violations` list because no result is available for it (skipped or diverged
+            powerflow) -- this does NOT mean there is no violation, unlike a `converged == True`
+            entry with an empty list, which genuinely means no violation was found.
+        """
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
+        if not self.computer.compute_limit_violations:
+            raise RuntimeError("`run` (and `run_ac` / `run_dc`) require `compute_limit_violations=True`, "
+                               "set either at construction time (`ContingencyAnalysis(env, "
+                               "compute_limit_violations=True)`) or via "
+                               "`this_instance.compute_limit_violations = True`.")
+        if not self.__computed:
+            self.compute_V()
+
+        all_defaults = self.computer.my_defaults()
+        orders_ = np.zeros(len(all_defaults), dtype=int)
+        for id_cpp, cont_ in enumerate(all_defaults):
+            tup_ = tuple(cont_)
+            orders_[self._contingency_order[tup_]] = id_cpp
+
+        converged = self.computer.converged()
+        violations = self.computer.get_violations()
+
+        pre_contingency_result = PreContingencyResult(
+            converged=self.computer.converged_n(),
+            limit_violations=list(self.computer.get_violations_n()),
+        )
+        post_contingency_results = [
+            ContingencyResult(
+                element_ids=list(all_defaults[id_cpp]),
+                contingency_name=self._contingency_names.get(self._all_contingencies[id_me]),
+                converged=bool(converged[id_cpp]),
+                limit_violations=list(violations[id_cpp]),
+            )
+            for id_me, id_cpp in enumerate(orders_)
+        ]
+        return SecurityAnalysisResult(pre_contingency_result, post_contingency_results)
+
+    def _change_algorithm_family(self, want_dc: bool):
+        """internal: switch to a default AC / DC algorithm, but only if the current one is not
+        already of the requested family, so this does not needlessly `clear()` (and thus lose
+        the registered contingencies) when it is already the case."""
+        current_is_dc = "DC_" in self.computer.get_algo_type().name
+        if current_is_dc == want_dc:
+            return
+        preferred = (["DC_KLU", "DC_SparseLU"] if want_dc else ["NR_KLU", "NR_SparseLU"])
+        available = {a.name: a for a in self.computer.available_default_algorithms()}
+        for name in preferred:
+            if name in available:
+                self.change_algorithm(available[name])
+                return
+        raise RuntimeError(f"Impossible to find a default {'DC' if want_dc else 'AC'} algorithm "
+                           f"among {list(available.keys())}.")
+
+    def run_ac(self) -> SecurityAnalysisResult:
+        """Like `run`, but first makes sure an AC algorithm is selected (switches to NR_KLU /
+        NR_SparseLU if the current algorithm is a DC one -- which clears any previously
+        registered contingency, exactly like `change_algorithm`; does nothing if already AC)."""
+        self._change_algorithm_family(want_dc=False)
+        return self.run()
+
+    def run_dc(self) -> SecurityAnalysisResult:
+        """Like `run`, but first makes sure the DC algorithm is selected (switches to DC_KLU /
+        DC_SparseLU if the current algorithm is an AC one -- which clears any previously
+        registered contingency, exactly like `change_algorithm`; does nothing if already DC)."""
+        self._change_algorithm_family(want_dc=True)
+        return self.run()
 
     def compute_V(self):
         """

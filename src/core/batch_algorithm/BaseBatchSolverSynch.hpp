@@ -180,7 +180,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             Eigen::Ref<const RealVect> vect_ydc_ft = structure_data.ydc_12();
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
-            Eigen::Index nb_el = structure_data.nb();
+            size_t nb_el = structure_data.nb();
 
             RealVect res;
             for(size_t el_id = 0; el_id < nb_el; ++el_id){
@@ -336,7 +336,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
         size_t _reset_data_and_check_vinit(const CplxVect & Vinit){
             const size_t nb_total_bus = _grid_model.total_bus();
-            if(Vinit.size() != nb_total_bus){
+            if(static_cast<size_t>(Vinit.size()) != nb_total_bus){
                 std::ostringstream exc_;
                 exc_ << "TimeSeries::compute_Sbuses: Size of the Vinit should be the same as the total number of buses. Currently:  ";
                 exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_total_bus << " buses.";

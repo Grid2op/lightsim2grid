@@ -52,7 +52,7 @@ class LS2G_API NoScalingPolicy final : public ScalingPolicy<NRSystem>
 {
     public:
         virtual ScalingPolicyType type() const final {return ScalingPolicyType::NoScaling;}
-        virtual real_type scale(const NRSystem& system, const RealVect & F) final
+        virtual real_type scale(const NRSystem& /*system*/, const RealVect & /*F*/) final
         {
             return 1.;
         }

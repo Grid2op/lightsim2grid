@@ -29,7 +29,7 @@ void StorageContainer::set_state(StorageContainer::StateRes & my_state)
 
 void StorageContainer::fillSbus(CplxVect & Sbus,
                                 const SolverBusIdVect & id_grid_to_solver,
-                                bool ac) const
+                                bool /*ac*/) const
 {
     int nb_storage = nb();
     GlobalBusId bus_id_me;

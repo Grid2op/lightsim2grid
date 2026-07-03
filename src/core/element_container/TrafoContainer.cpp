@@ -154,7 +154,7 @@ void TrafoContainer::set_shift_dependent_rx(
     base_x_ = x_;
     // sort each (alpha -> correction) table by ascending alpha so the interpolation
     // in _shift_rx_corr_pct is well defined
-    for(int el_id = 0; el_id < size; ++el_id){
+    for(size_t el_id = 0; el_id < size; ++el_id){
         auto & xs = rx_corr_alpha_[el_id];
         auto & ys = rx_corr_pct_[el_id];
         if(xs.size() != ys.size())

@@ -643,16 +643,22 @@ class LS2G_API LSGrid final
             GenericContainer::check_size(names, trafos_.nb(), "set_trafo_names");
             trafos_.set_names(names);
         }
-        // per-side thermal (current) limit, in kA, optional: empty if never set
-        void set_line_thermal_limit(const RealVect & limit_a1_ka, const RealVect & limit_a2_ka){
-            GenericContainer::check_size(limit_a1_ka, powerlines_.nb(), "set_line_thermal_limit (side1)");
-            GenericContainer::check_size(limit_a2_ka, powerlines_.nb(), "set_line_thermal_limit (side2)");
-            powerlines_.set_thermal_limit(limit_a1_ka, limit_a2_ka);
+        // per-side current limit, in kA, optional: empty if never set
+        void set_line_current_limit_side1(const RealVect & limit_a1_ka){
+            GenericContainer::check_size(limit_a1_ka, powerlines_.nb(), "set_line_current_limit_side1");
+            powerlines_.set_limit_a1_ka(limit_a1_ka);
         }
-        void set_trafo_thermal_limit(const RealVect & limit_a1_ka, const RealVect & limit_a2_ka){
-            GenericContainer::check_size(limit_a1_ka, trafos_.nb(), "set_trafo_thermal_limit (side1)");
-            GenericContainer::check_size(limit_a2_ka, trafos_.nb(), "set_trafo_thermal_limit (side2)");
-            trafos_.set_thermal_limit(limit_a1_ka, limit_a2_ka);
+        void set_line_current_limit_side2(const RealVect & limit_a2_ka){
+            GenericContainer::check_size(limit_a2_ka, powerlines_.nb(), "set_line_current_limit_side2");
+            powerlines_.set_limit_a2_ka(limit_a2_ka);
+        }
+        void set_trafo_current_limit_side1(const RealVect & limit_a1_ka){
+            GenericContainer::check_size(limit_a1_ka, trafos_.nb(), "set_trafo_current_limit_side1");
+            trafos_.set_limit_a1_ka(limit_a1_ka);
+        }
+        void set_trafo_current_limit_side2(const RealVect & limit_a2_ka){
+            GenericContainer::check_size(limit_a2_ka, trafos_.nb(), "set_trafo_current_limit_side2");
+            trafos_.set_limit_a2_ka(limit_a2_ka);
         }
         void set_gen_names(const std::vector<std::string> & names){
             GenericContainer::check_size(names, generators_.nb(), "set_gen_names");
@@ -1668,7 +1674,7 @@ class LS2G_API LSGrid final
             std::vector<Eigen::Triplet<T> > tripletList;
             tripletList.reserve(Ybus.nonZeros());
             const auto n_col = Ybus.cols();
-            for (size_t col_=0; col_ < n_col; ++col_){
+            for (Eigen::Index col_=0; col_ < n_col; ++col_){
                 for (typename Eigen::SparseMatrix<T>::InnerIterator it(Ybus, col_); it; ++it)
                 {
                     if(relabel_row) tripletList.push_back({static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.row())]),

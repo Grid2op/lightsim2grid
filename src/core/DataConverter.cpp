@@ -134,7 +134,7 @@ std::tuple<RealVect,
                                                       const RealVect & branch_g,
                                                       const RealVect & branch_c,
                                                       const RealVect & branch_from_kv,
-                                                      const RealVect & branch_to_kv)
+                                                      const RealVect & /*branch_to_kv*/)
 {
     //TODO does not use c at the moment!
     _check_init();
@@ -166,7 +166,7 @@ std::tuple<RealVect,
                                         const RealVect & branch_g,
                                         const RealVect & branch_c,
                                         const RealVect & branch_from_kv,
-                                        const RealVect & branch_to_kv)
+                                        const RealVect & /*branch_to_kv*/)
 {
     _check_init();
     const int nb_line = static_cast<int>(branch_r.size());
