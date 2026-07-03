@@ -18,21 +18,33 @@ void bind_batch(py::module_& m) {
     py::enum_<ViolationElementType>(m, "ViolationElementType", "The kind of element on which a limit was violated.")
         .value("BUS", ViolationElementType::BUS)
         .value("LINE", ViolationElementType::LINE)
-        .value("TRAFO", ViolationElementType::TRAFO);
+        .value("TRAFO", ViolationElementType::TRAFO)
+        .value("GRID", ViolationElementType::GRID,
+               "The whole grid / contingency, not a specific element (see LimitViolationType.NOT_SIMULATED "
+               "/ LimitViolationType.DIVERGENCE).");
 
     py::enum_<LimitViolationType>(m, "LimitViolationType", "The kind of limit that was violated.")
         .value("LOW_VOLTAGE", LimitViolationType::LOW_VOLTAGE)
         .value("HIGH_VOLTAGE", LimitViolationType::HIGH_VOLTAGE)
-        .value("CURRENT", LimitViolationType::CURRENT);
+        .value("CURRENT", LimitViolationType::CURRENT)
+        .value("NOT_SIMULATED", LimitViolationType::NOT_SIMULATED,
+               "A pre-check (graph connectivity) skipped this contingency: the solver was never "
+               "invoked (element_type is ViolationElementType.GRID).")
+        .value("DIVERGENCE", LimitViolationType::DIVERGENCE,
+               "The solver was invoked for this contingency but did not converge (element_type is "
+               "ViolationElementType.GRID).");
 
     py::class_<LimitViolation>(m, "LimitViolation", "A single limit violation, as detected by ContingencyAnalysisCPP.")
         .def_readonly("element_type", &LimitViolation::element_type)
         .def_readonly("element_id", &LimitViolation::element_id,
-                      "grid-model bus id for BUS ; local (0-based, own type) line / trafo id otherwise")
-        .def_readonly("side", &LimitViolation::side, "1 or 2 for LINE / TRAFO ; unused (0) for BUS")
+                      "grid-model bus id for BUS ; local (0-based, own type) line / trafo id otherwise ; "
+                      "unused (-1) for GRID")
+        .def_readonly("side", &LimitViolation::side, "1 or 2 for LINE / TRAFO ; unused (0) for BUS / GRID")
         .def_readonly("violation_type", &LimitViolation::violation_type)
-        .def_readonly("value", &LimitViolation::value, "value reached")
-        .def_readonly("limit", &LimitViolation::limit, "limit that was violated");
+        .def_readonly("value", &LimitViolation::value,
+                      "value reached ; unused (NaN) for NOT_SIMULATED / DIVERGENCE")
+        .def_readonly("limit", &LimitViolation::limit,
+                      "limit that was violated ; unused (NaN) for NOT_SIMULATED / DIVERGENCE");
 
     py::class_<TimeSeries>(m, "TimeSeriesCPP", DocComputers::Computers.c_str())
         .def(py::init<const LSGrid &>())
@@ -49,6 +61,13 @@ void bind_batch(py::module_& m) {
         .def("change_solver", &TimeSeries::change_algorithm, "DEPRECATED: use 'change_algorithm' instead")
         .def("available_default_algorithms", &TimeSeries::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
         .def("get_algo_type", &TimeSeries::get_algo_type, DocLSGrid::get_algo_type.c_str())
+        .def("get_algo_config", &TimeSeries::get_algo_config,
+             "Config (eg ScalingPolicyType / damping parameters) of the internal solver used for "
+             "every step. Copied once from the grid model's own get_ac_algo_config() at "
+             "construction time, then independent of it; re-apply with set_algo_config() if you "
+             "change the grid model's config afterwards, or after change_algorithm().")
+        .def("set_algo_config", &TimeSeries::set_algo_config, py::arg("config"),
+             "See get_algo_config().")
 
         // timers
         .def("total_time", &TimeSeries::total_time, DocComputers::total_time.c_str())
@@ -118,6 +137,14 @@ void bind_batch(py::module_& m) {
         .def("change_solver", &ContingencyAnalysis::change_algorithm, "DEPRECATED: use 'change_algorithm' instead")
         .def("available_default_algorithms", &ContingencyAnalysis::available_default_algorithms, DocLSGrid::available_algorithm_names.c_str())
         .def("get_algo_type", &ContingencyAnalysis::get_algo_type, DocLSGrid::get_algo_type.c_str())
+        .def("get_algo_config", &ContingencyAnalysis::get_algo_config,
+             "Config (eg ScalingPolicyType / damping parameters) of the internal solver used for "
+             "the pre-contingency ('n') and every per-contingency powerflow. Copied once from the "
+             "grid model's own get_ac_algo_config() at construction time, then independent of it; "
+             "re-apply with set_algo_config() if you change the grid model's config afterwards, or "
+             "after change_algorithm().")
+        .def("set_algo_config", &ContingencyAnalysis::set_algo_config, py::arg("config"),
+             "See get_algo_config().")
 
         // add contingencies
         .def("add_all_n1", &ContingencyAnalysis::add_all_n1, DocSecurityAnalysis::add_all_n1.c_str())
@@ -165,7 +192,11 @@ void bind_batch(py::module_& m) {
              "Per contingency (row order matches my_defaults()): whether it converged / was "
              "actually simulated (False for skipped or diverged contingencies).")
         .def("get_violations", &ContingencyAnalysis::get_violations,
-             "Per contingency (row order matches my_defaults()): list of LimitViolation.",
+             "Per contingency (row order matches my_defaults()): list of LimitViolation. A "
+             "non-converged contingency (converged() is False) has exactly one LimitViolation "
+             "here, with element_type ViolationElementType.GRID and violation_type either "
+             "LimitViolationType.NOT_SIMULATED (a pre-check skipped it, eg it splits the grid) or "
+             "LimitViolationType.DIVERGENCE (the solver ran but did not converge).",
              py::return_value_policy::reference_internal)
         .def("converged_n", &ContingencyAnalysis::converged_n,
              "Whether the pre-contingency ('n') powerflow converged.")
