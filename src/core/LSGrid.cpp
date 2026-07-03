@@ -213,7 +213,7 @@ void LSGrid::set_ls_to_orig(const IntVect & ls_to_orig){
         return;
     }
 
-    if(ls_to_orig.size() != substations_.nb_bus()) 
+    if(static_cast<size_t>(ls_to_orig.size()) != substations_.nb_bus())
         throw std::runtime_error("Impossible to set the converter ls_to_orig: the provided vector has not the same size as the number of bus on the grid.");
     set_ls_to_orig_internal(ls_to_orig);
 }
@@ -233,7 +233,7 @@ void LSGrid::set_orig_to_ls(const IntVect & orig_to_ls){
         throw std::runtime_error("Impossible to set the converter orig_to_ls: the number of 'non -1' component in the provided vector does not match the number of buses on the grid.");
     _ls_to_orig = IntVect::Constant(nb_bus_ls, -1);
     size_t ls2or_ind = 0;
-    for(auto or2ls_ind = 0; or2ls_ind < nb_bus_ls; ++or2ls_ind){
+    for(size_t or2ls_ind = 0; or2ls_ind < nb_bus_ls; ++or2ls_ind){
         const auto my_ind = _orig_to_ls[or2ls_ind];
         if(my_ind >= 0){
             _ls_to_orig[ls2or_ind] = my_ind;
@@ -263,8 +263,8 @@ void LSGrid::set_ls_to_orig_internal(const IntVect & ls_to_orig) noexcept{
 void LSGrid::init_bus(unsigned int n_sub,
                          unsigned int n_busbar_per_sub,
                          const RealVect & bus_vn_kv,
-                         int nb_line,
-                         int nb_trafo){
+                         int /*nb_line*/,
+                         int /*nb_trafo*/){
     /**
     initialize the bus_vn_kv_ member
     and
@@ -989,7 +989,7 @@ CplxVect LSGrid::pre_process_solver(
     GlobalBusIdVect & id_solver_to_me,
     GlobalBusIdVect & slack_bus_id_me,
     SolverBusIdVect & slack_bus_id_solver,
-    bool is_ac,  // kept for API compatibility; DC now goes through pre_process_dc_solver
+    bool /*is_ac*/,  // kept for API compatibility; DC now goes through pre_process_dc_solver
     const AlgoControl & solver_control,
     bool init_pv_vm_targets)
 {
@@ -1093,7 +1093,7 @@ void LSGrid::init_Bbus(Eigen::SparseMatrix<real_type> & Bbus,
 }
 
 void LSGrid::init_slack_bus(const SolverBusIdVect& id_me_to_solver,
-                               const GlobalBusIdVect& id_solver_to_me,
+                               const GlobalBusIdVect& /*id_solver_to_me*/,
                                const GlobalBusIdVect & slack_bus_id_me,
                                SolverBusIdVect & slack_bus_id_solver)
 {
@@ -1184,7 +1184,7 @@ void LSGrid::fillSbus_me(CplxVect & Sbus, bool ac, const SolverBusIdVect& id_me_
 void LSGrid::fillpv_pq(const SolverBusIdVect& id_me_to_solver,
                           const GlobalBusIdVect& id_solver_to_me,
                           const SolverBusIdVect & slack_bus_id_solver,
-                          const AlgoControl & solver_control)
+                          const AlgoControl & /*solver_control*/)
 {
     // Nothing to do if neither pv, nor pq nor the dimension of the problem has changed
 
@@ -1317,8 +1317,8 @@ void LSGrid::reset_results(){
 }
 
 CplxVect LSGrid::dc_pf(const CplxVect & Vinit,
-                          int max_iter,  // not used for DC
-                          real_type tol  // not used for DC
+                          int /*max_iter*/,  // not used for DC
+                          real_type /*tol*/  // not used for DC
                           )
 {
     //TODO SLACK: improve distributed slack for DC mode !
@@ -1401,7 +1401,7 @@ RealMat LSGrid::get_lodf(){
     // convert it to solver bus id
     IntVect from_bus_solver(nb_el);  // TODO : SolverBusIdVect here
     IntVect to_bus_solver(nb_el);
-    for(int el_id = 0; el_id < nb_el; ++el_id){
+    for(size_t el_id = 0; el_id < nb_el; ++el_id){
         // from side
         GlobalBusId f_grid_bus = from_bus[el_id];
         SolverBusId f_solver_bus = id_me_to_dc_solver_[f_grid_bus.cast_int()];

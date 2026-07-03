@@ -62,7 +62,7 @@ void GenericContainer::_generic_change_bus(
     int el_id,
     const GridModelBusId & new_gridmodel_bus_id,
     GlobalBusIdVect & el_bus_ids,
-    DualAlgoControl & solver_control,
+    DualAlgoControl & /*solver_control*/,
     int nb_max_bus) const {
     // bus id here "me_id" and NOT "solver_id"
 
@@ -109,7 +109,7 @@ GridModelBusId GenericContainer::_get_bus(int el_id, const std::vector<bool> & s
     return res;
 }
 
-void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
+void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & /*Va*/,
                                      const Eigen::Ref<const RealVect> & Vm,
                                      const std::vector<bool> & status,
                                      int nb_element,
@@ -148,12 +148,12 @@ void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
 }
 
 void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
-                                     const Eigen::Ref<const RealVect> & Vm,
+                                     const Eigen::Ref<const RealVect> & /*Vm*/,
                                      const std::vector<bool> & status,
                                      int nb_element,
                                      const GlobalBusIdVect & bus_me_id,
                                      const SolverBusIdVect & id_grid_to_solver,
-                                     const RealVect & bus_vn_kv,
+                                     const RealVect & /*bus_vn_kv*/,
                                      RealVect & theta) const
 {
     for(int el_id = 0; el_id < nb_element; ++el_id){

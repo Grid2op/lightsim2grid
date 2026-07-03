@@ -59,10 +59,68 @@ case_names = [
               "case9241pegase.json"
               ]
 
+MAX_CONT = 1000  # cap the number of n-1 contingencies simulated, for speed
+
+
+def _set_benchmark_limits(grid):
+    """Set voltage / current limits on the grid: loose enough that they are not expected
+    to be violated (so this does not change convergence behaviour), but present, so that
+    `compute_limit_violations=True` actually exercises its per-element checks instead of
+    early-returning on empty limit vectors."""
+    vn_kv = grid.get_bus_vn_kv()
+    grid.set_bus_voltage_limits(0.5 * vn_kv, 1.5 * vn_kv)
+    n_line = len(grid.get_lines())
+    n_trafo = len(grid.get_trafos())
+    grid.set_line_current_limit_side1(np.full(n_line, 1e4))
+    grid.set_line_current_limit_side2(np.full(n_line, 1e4))
+    grid.set_trafo_current_limit_side1(np.full(n_trafo, 1e4))
+    grid.set_trafo_current_limit_side2(np.full(n_trafo, 1e4))
+
+
+def _run_one_config(env_lightsim, *, init_from_n_powerflow=False,
+                     handle_disconnected_grid=False, compute_limit_violations=False,
+                     nb_thread=1):
+    """Run all n-1 contingencies (capped at MAX_CONT) for one (env, configuration) pair and
+    return (pf / s, nb_solved) so the caller can report timings.
+
+    .. note::
+        `sa.close()` also resets the underlying `computer`'s counters, so the values needed
+        by the caller are extracted *before* closing, not returned as the (now-reset) computer
+        object itself.
+    """
+    env_lightsim.reset()
+    if compute_limit_violations:
+        _set_benchmark_limits(env_lightsim.backend._grid)
+    sa = ContingencyAnalysis(env_lightsim, compute_limit_violations=compute_limit_violations)
+    for i in range(env_lightsim.n_line):
+        sa.add_single_contingency(i)
+        if i >= MAX_CONT:
+            break
+    sa.init_from_n_powerflow = init_from_n_powerflow
+    sa.handle_disconnected_grid = handle_disconnected_grid
+    sa.nb_thread = nb_thread
+    sa.get_flows()
+    computer_sa = sa.computer
+    total_time = computer_sa.total_time() + computer_sa.amps_computation_time()
+    nb_solved = computer_sa.nb_solved()
+    pf_per_s = nb_solved / total_time if total_time > 0. else float("nan")
+    sa.close()
+    return pf_per_s, nb_solved
+
+
+# the 4 configurations compared below, each toggling exactly one flag away from the
+# defaults (`ContingencyAnalysis.get_flows()` with none of these options set)
+FEATURE_CONFIGS = [
+    ("default", dict()),
+    ("init_from_n_powerflow", dict(init_from_n_powerflow=True)),
+    ("handle_disconnected_grid", dict(handle_disconnected_grid=True)),
+    ("compute_limit_violations", dict(compute_limit_violations=True)),
+]
 
 
 if __name__ == "__main__":
-    
+    tab_features = []  # one row per grid size, one column per entry in FEATURE_CONFIGS
+
     for case_name in tqdm(case_names):
 
         if not os.path.exists(case_name):
@@ -138,5 +196,31 @@ if __name__ == "__main__":
             linear_solver_used_str = solver_names[env_lightsim.backend._grid.get_solver_type()]
         for k, v in cases_by_threads.items():
             print(f"{case_name}, nb_threads={k}: {cases_by_threads[1] / v:.1f}x speed-up vs 1 thread")
+
+        # compare the "default", "init_from_n_powerflow", "handle_disconnected_grid" and
+        # "compute_limit_violations" options against one another (single thread, so the
+        # comparison isolates the cost of each feature from thread-scaling effects above)
+        row = [get_env_name_displayed(case_name)]
+        pf_per_s_default = None
+        for config_name, kwargs in FEATURE_CONFIGS:
+            pf_per_s, nb_solved = _run_one_config(env_lightsim, **kwargs)
+            if config_name == "default":
+                pf_per_s_default = pf_per_s
+            if VERBOSE:
+                print(f"[{case_name}] {config_name}: {nb_solved} pf solved, "
+                      f"{pf_per_s:.0f} pf / s ({1000. / pf_per_s:.3f} ms / pf)")
+            speed_ratio = pf_per_s / pf_per_s_default if pf_per_s_default else float("nan")
+            row.append(f"{pf_per_s:.0f} pf/s ({speed_ratio:.2f}x default)")
+        tab_features.append(row)
+
         env_lightsim.close()
-        break
+
+    print("\nComparison of `default` / `init_from_n_powerflow` / `handle_disconnected_grid` / "
+          "`compute_limit_violations` (single thread, up to "
+          f"{MAX_CONT + 1} n-1 contingencies per grid)")
+    if TABULATE_AVAIL:
+        print(tabulate(tab_features,
+                        headers=["grid"] + [name for name, _ in FEATURE_CONFIGS],
+                        tablefmt="rst"))
+    else:
+        print(tab_features)

@@ -29,7 +29,7 @@ void LoadContainer::set_state(LoadContainer::StateRes & my_state)
 
 void LoadContainer::fillSbus(CplxVect & Sbus,
                              const SolverBusIdVect & id_grid_to_solver,
-                             bool ac) const
+                             bool /*ac*/) const
 {
     int nb_load = nb();
     GlobalBusId bus_id_me;

@@ -231,10 +231,10 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         }
 
         virtual void _change_bus_side_1(
-            int el_id, 
-            GridModelBusId new_gridmodel_bus_id, 
+            int /*el_id*/, 
+            GridModelBusId /*new_gridmodel_bus_id*/, 
             DualAlgoControl & solver_control, 
-            const SubstationContainer & substation,
+            const SubstationContainer & /*substation*/,
             bool has_effectively_changed
         ) {
             if(has_effectively_changed){
@@ -244,10 +244,10 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         }
 
         virtual void _change_bus_side_2(
-            int el_id,
-            GridModelBusId new_gridmodel_bus_id,
+            int /*el_id*/,
+            GridModelBusId /*new_gridmodel_bus_id*/,
             DualAlgoControl & solver_control,
-            const SubstationContainer & substation,
+            const SubstationContainer & /*substation*/,
             bool has_effectively_changed
         ) {
             if(has_effectively_changed){
@@ -258,7 +258,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
 
         virtual void _update_topo(
             DualAlgoControl & solver_control,
-            SubstationContainer & substations,
+            SubstationContainer & /*substations*/,
             const std::vector<bool> & side1_changed,
             const std::vector<bool> & side2_changed
         )
@@ -340,7 +340,7 @@ shift_rad(-1.0),
 is_tap_side1(true)
 {
     if(my_id < 0) return;
-    if(my_id >= r_data_trafo.nb()) return;
+    if(static_cast<size_t>(my_id) >= r_data_trafo.nb()) return;
     is_tap_side1 = r_data_trafo.is_tap_side1_[my_id];
     ratio = r_data_trafo.ratio_.coeff(my_id);
     shift_rad = r_data_trafo.shift_.coeff(my_id);

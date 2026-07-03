@@ -118,7 +118,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 ydc_22(0., 0.)
                 {
                     if(my_id < 0) return;
-                    if(my_id >= r_data.nb()) return;
+                    if(static_cast<size_t>(my_id) >= r_data.nb()) return;
                     r_pu = r_data.r_.coeff(my_id);
                     x_pu = r_data.x_.coeff(my_id);
                     h1_pu = r_data.h_side_1_.coeff(my_id);
@@ -170,12 +170,14 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                    std::vector<real_type>  // limit_a2_ka (optional, empty if unset)
                >;
 
-        // thermal (current) limit, in kA, per side -- input, not a powerflow result.
+        // current limit, in kA, per side -- input, not a powerflow result.
         // Optional: empty (size 0) if never set (e.g. pandapower-origin grids).
-        void set_thermal_limit(const RealVect & limit_a1_ka, const RealVect & limit_a2_ka){
-            check_size(limit_a1_ka, nb(), "TwoSidesContainer_rxh_A::set_thermal_limit (side 1)");
-            check_size(limit_a2_ka, nb(), "TwoSidesContainer_rxh_A::set_thermal_limit (side 2)");
+        void set_limit_a1_ka(const RealVect & limit_a1_ka){
+            check_size(limit_a1_ka, nb(), "TwoSidesContainer_rxh_A::set_limit_a1_ka");
             limit_a1_ka_ = limit_a1_ka;
+        }
+        void set_limit_a2_ka(const RealVect & limit_a2_ka){
+            check_size(limit_a2_ka, nb(), "TwoSidesContainer_rxh_A::set_limit_a2_ka");
             limit_a2_ka_ = limit_a2_ka;
         }
         Eigen::Ref<const RealVect> get_limit_a1_ka() const {return limit_a1_ka_;}
@@ -222,7 +224,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             
             BX_fpdf_coeffs_.init(nb());
             XB_fpdf_coeffs_.init(nb());
-            for(int el_id = 0; el_id < nb(); ++el_id){
+            for(int el_id = 0; el_id < static_cast<int>(nb()); ++el_id){
                 BX_fpdf_coeffs_.assign_el(el_id, this->get_fdpf_coeffs(el_id, FDPFMethod::BX));
                 XB_fpdf_coeffs_.assign_el(el_id, this->get_fdpf_coeffs(el_id, FDPFMethod::XB));
             }
@@ -446,7 +448,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             std::vector<Eigen::Triplet<cplx_type> > & res,
             bool ac,
             const SolverBusIdVect & id_grid_to_solver,
-            real_type sn_mva) const
+            real_type /*sn_mva*/) const
         {
             const size_t nb_els = nb();
             const std::vector<bool> & status1 = side_1_.get_status();
@@ -532,7 +534,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         virtual void fillBdc(
             std::vector<Eigen::Triplet<real_type> > & res,
             const SolverBusIdVect & id_grid_to_solver,
-            real_type sn_mva) const override
+            real_type /*sn_mva*/) const override
         {
             const size_t nb_els = nb();
             const std::vector<bool> & status1 = side_1_.get_status();
@@ -571,7 +573,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
                                 const SolverBusIdVect & id_grid_to_solver,
-                                real_type sn_mva,
+                                real_type /*sn_mva*/,
                                 FDPFMethod xb_or_bx) const
         {
 
@@ -668,7 +670,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
         void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
                              const SolverBusIdVect & id_grid_to_solver,
-                             real_type sn_mva,
+                             real_type /*sn_mva*/,
                              int nb_powerline,
                              bool transpose) const
         {
@@ -898,7 +900,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             return x_(el_id);
         }
 
-        virtual int fillBf_for_PTDF_id(int el_id, int nb_powerline) const{
+        virtual int fillBf_for_PTDF_id(int el_id, int /*nb_powerline*/) const{
             return el_id;
         }
 

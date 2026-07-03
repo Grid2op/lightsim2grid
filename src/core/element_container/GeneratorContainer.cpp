@@ -165,7 +165,7 @@ RealVect GeneratorContainer::get_slack_weights_solver(
     return res;
 }
 
-void GeneratorContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const {
+void GeneratorContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const {
     const int nb_gen = nb();
     GlobalBusId bus_id_me;
     SolverBusId bus_id_solver;
@@ -272,7 +272,7 @@ void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
     }
 }
 
-void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, DualAlgoControl & solver_control)
+void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control)
 {
     if (abs(target_p_mw_(gen_id) - new_p) > _tol_equal_float) {
         solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
@@ -338,7 +338,7 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, DualAl
     }
 }
 
-bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) {
+bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) {
     // el_id is validated (and the proper IndexError raised) by `_generic_change_bus`,
     // which the caller runs *after* this function. Bail out here on an out-of-range
     // id so the `regulated_bus_id_` write below never touches memory out of bounds.
@@ -455,7 +455,7 @@ void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
     }
 }
 
-void GeneratorContainer::init_q_vector(int nb_bus,
+void GeneratorContainer::init_q_vector(int /*nb_bus*/,
                                        Eigen::VectorXi & total_gen_per_bus,
                                        RealVect & total_q_min_per_bus,
                                        RealVect & total_q_max_per_bus) const

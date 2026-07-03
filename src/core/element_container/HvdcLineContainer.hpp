@@ -210,7 +210,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             side_2_.reconnect_connected_buses(substation);
         }
 
-        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const override {
+        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & /*res*/) const override {
             // for buses only connected through a hvdc line, i don't add them
             // they are not in the same "connected component"
         }
@@ -344,11 +344,11 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             side_2_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);
         }
 
-        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                                std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const SolverBusIdVect & id_grid_to_solver,
-                                real_type sn_mva,
-                                FDPFMethod xb_or_bx) const override {
+        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
+                                std::vector<Eigen::Triplet<real_type> > & /*Bpp*/,
+                                const SolverBusIdVect & /*id_grid_to_solver*/,
+                                real_type /*sn_mva*/,
+                                FDPFMethod /*xb_or_bx*/) const override {
                                     // no Bp coeffs for hvdc lines
                                 }
 

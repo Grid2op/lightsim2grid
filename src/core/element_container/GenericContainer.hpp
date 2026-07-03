@@ -30,10 +30,10 @@ class LS2G_API GenericContainer : public BaseConstants
 {
     public:
 
-        virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
-                              bool ac,
-                              const SolverBusIdVect & id_grid_to_solver,
-                              real_type sn_mva) const {
+        virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & /*res*/,
+                              bool /*ac*/,
+                              const SolverBusIdVect & /*id_grid_to_solver*/,
+                              real_type /*sn_mva*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                               };
@@ -41,72 +41,72 @@ class LS2G_API GenericContainer : public BaseConstants
         // Real-valued DC admittance matrix (Bbus) contribution. DC only needs `Bbus . theta = Pbus`
         // (all real), so this fills real triplets directly (no complex temporary).
         // Only "branches" (lines, transformers) contribute to the DC Bbus.
-        virtual void fillBdc(std::vector<Eigen::Triplet<real_type> > & res,
-                             const SolverBusIdVect & id_grid_to_solver,
-                             real_type sn_mva) const {
+        virtual void fillBdc(std::vector<Eigen::Triplet<real_type> > & /*res*/,
+                             const SolverBusIdVect & /*id_grid_to_solver*/,
+                             real_type /*sn_mva*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                              };
 
-        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                                std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const SolverBusIdVect & id_grid_to_solver,
-                                real_type sn_mva,
-                                FDPFMethod xb_or_bx) const {
+        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
+                                std::vector<Eigen::Triplet<real_type> > & /*Bpp*/,
+                                const SolverBusIdVect & /*id_grid_to_solver*/,
+                                real_type /*sn_mva*/,
+                                FDPFMethod /*xb_or_bx*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
                                 
-        virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
-                                     const SolverBusIdVect & id_grid_to_solver,
-                                     real_type sn_mva,
-                                     int nb_line,
-                                     bool transpose) const {
+        virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & /*Bf*/,
+                                     const SolverBusIdVect & /*id_grid_to_solver*/,
+                                     real_type /*sn_mva*/,
+                                     int /*nb_line*/,
+                                     bool /*transpose*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
 
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const {
+        virtual void fillSbus(CplxVect & /*Sbus*/, const SolverBusIdVect & /*id_grid_to_solver*/, bool /*ac*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "one side elements" (loads, generators etc.)
                                 };
-        virtual void fillpv(std::vector<int>& bus_pv,
-                            std::vector<bool> & has_bus_been_added,
-                            const SolverBusIdVect& slack_bus_id_solver,
-                            const SolverBusIdVect & id_grid_to_solver) const {
+        virtual void fillpv(std::vector<int>& /*bus_pv*/,
+                            std::vector<bool> & /*has_bus_been_added*/,
+                            const SolverBusIdVect& /*slack_bus_id_solver*/,
+                            const SolverBusIdVect & /*id_grid_to_solver*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "generators"
                             };
         
-        virtual void get_q(std::vector<real_type>& q_by_bus) {
+        virtual void get_q(std::vector<real_type>& /*q_by_bus*/) {
                                 // nothing to do by default
                                 // is overriden mainly for "generators"
                                 };
         
-        virtual void set_p_slack(const RealVect& node_mismatch, const SolverBusIdVect & id_grid_to_solver) {
+        virtual void set_p_slack(const RealVect& /*node_mismatch*/, const SolverBusIdVect & /*id_grid_to_solver*/) {
                                 // nothing to do by default
                                 // is overriden mainly for "generators"
                                 };
     
         static const int _deactivated_bus_id;
-        virtual void reconnect_connected_buses(SubstationContainer & substation) const {
+        virtual void reconnect_connected_buses(SubstationContainer & /*substation*/) const {
                                 // nothing to do by default
                                 };
 
         /**computes the total amount of power for each bus (for generator only)**/
-        virtual void gen_p_per_bus(std::vector<real_type> & res) const {
+        virtual void gen_p_per_bus(std::vector<real_type> & /*res*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "one side elements" (loads, generators etc.)
                                 };
-        virtual void nb_line_end(std::vector<int> & res) const {
+        virtual void nb_line_end(std::vector<int> & /*res*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
-        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const {
+        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & /*res*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) {
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & /*busbar_in_main_component*/) {
                                 // nothing to do by default
                                 };
 
@@ -152,7 +152,7 @@ class LS2G_API GenericContainer : public BaseConstants
         static void _check_in_range(IntType el_id, const Cont & cont, FunName fun_name="")
         {
             // TODO debug mode: only in debug mode
-            if(el_id >= cont.size())
+            if(el_id >= static_cast<IntType>(cont.size()))
             {
                 // TODO DEBUG MODE: only check in debug mode
                 std::ostringstream exc_;
