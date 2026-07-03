@@ -197,13 +197,14 @@ contingencies were added), not a dictionary:
 Each ``LimitViolation`` reports:
 
 - ``element_type``: :class:`lightsim2grid.contingencyAnalysis.ViolationElementType`
-  (``BUS``, ``LINE`` or ``TRAFO``);
+  (``BUS``, ``LINE``, ``TRAFO``, or ``GRID`` for a non-converged contingency, see below);
 - ``element_id``: the grid-model bus id (for ``BUS``) or the local line / trafo id (for
-  ``LINE`` / ``TRAFO``);
-- ``side``: ``1`` or ``2`` for ``LINE`` / ``TRAFO`` (unused, ``0``, for ``BUS``);
+  ``LINE`` / ``TRAFO``); unused (``-1``) for ``GRID``;
+- ``side``: ``1`` or ``2`` for ``LINE`` / ``TRAFO`` (unused, ``0``, for ``BUS`` / ``GRID``);
 - ``violation_type``: :class:`lightsim2grid.contingencyAnalysis.LimitViolationType`
-  (``LOW_VOLTAGE``, ``HIGH_VOLTAGE`` or ``CURRENT``);
-- ``value`` / ``limit``: the value reached and the limit that was violated.
+  (``LOW_VOLTAGE``, ``HIGH_VOLTAGE``, ``CURRENT``, ``NOT_SIMULATED`` or ``DIVERGENCE``, see below);
+- ``value`` / ``limit``: the value reached and the limit that was violated; unused (``NaN``) for
+  ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 Each ``ContingencyResult`` reports ``element_ids`` (the branch ids disconnected by this
 contingency -- always present, even without a ``name``), the optional user-supplied
@@ -219,10 +220,18 @@ contingency ``converged``, and its ``limit_violations``.
     the usual ``get_flows()`` is completely unaffected -- there is no need to pay for the extra
     per-element voltage / current checks if you only want the flows.
 
-    Also, if a contingency (or the pre-contingency case) does not converge, its
-    ``limit_violations`` is left empty because no result is available for it -- this does
-    **not** mean there is no violation, unlike a converged case with an empty list, which
-    genuinely means none was found.
+    Also, if a contingency does not converge, its ``limit_violations`` contains exactly one
+    ``LimitViolation`` with ``element_type == ViolationElementType.GRID`` and ``violation_type``
+    either ``LimitViolationType.NOT_SIMULATED`` (a pre-check -- eg it splits the grid in multiple
+    connected components -- skipped this contingency without ever invoking the solver) or
+    ``LimitViolationType.DIVERGENCE`` (the solver ran but did not converge, eg reached
+    ``max_iter``). This is unlike a converged case with an empty ``limit_violations`` list, which
+    genuinely means no violation was found.
+
+    The pre-contingency ("n") case is different: if it does not converge, `compute` (and thus
+    `run` / `run_ac` / `run_dc`) raises a ``RuntimeError`` instead, since every contingency is
+    solved relative to that base case -- a diverging base case makes the whole analysis
+    meaningless.
 
 Violation checking is fully compatible with the ``handle_disconnected_grid`` and ``nb_thread``
 options described above: it is performed **inline, per contingency, inside the thread that

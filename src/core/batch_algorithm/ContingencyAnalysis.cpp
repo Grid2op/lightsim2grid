@@ -14,6 +14,7 @@
 #include <thread>
 #include <vector>
 #include <memory>
+#include <limits>
 
 namespace ls2g {
 
@@ -586,34 +587,42 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
         timer_preproc
     );
 
+    if(!n_powerflow_has_conv){
+        // a diverging base case makes the whole analysis meaningless (every contingency is
+        // solved starting from / relative to this state) -- fail loudly instead of silently
+        // returning with all-zero voltages and no contingency simulated at all.
+        std::ostringstream exc_;
+        exc_ << "ContingencyAnalysis::compute: the pre-contingency (\"n\", no disconnection) "
+                "powerflow did not converge (error: " << _algo.get_error() << "). No contingency "
+                "can be simulated from a non-converged base case; check the input `Vinit` / "
+                "`tol` / `max_iter`, or the grid state itself.";
+        throw std::runtime_error(exc_.str());
+    }
+
     if(_compute_limit_violations_){
         // pre-contingency ("n") case: this is the only point at which the base-case V is
         // observable -- the per-contingency solves (below) reuse / overwrite the member
         // `_algo`'s state in the single-threaded path, and build separate per-thread copies
         // only afterward (in init_thread) in the multi-threaded path.
-        _converged_n_ = n_powerflow_has_conv;
-        if(n_powerflow_has_conv){
-            const CplxVect V_n = _algo.get_V();
-            const std::vector<int> no_skip;
-            check_bus_voltage_violations(V_n, id_me_to_solver_,
-                                          _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
-                                          _grid_model.get_bus_vn_kv(), nullptr, _violations_n_);
-            check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
-                                      V_n, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
-                                      ac_solver_used, sn_mva,
-                                      _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
-                                      _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
-                                      no_skip, _violations_n_);
-            check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
-                                      V_n, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
-                                      ac_solver_used, sn_mva,
-                                      _grid_model.get_trafos_as_data().get_limit_a1_ka(),
-                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
-                                      no_skip, _violations_n_);
-        }
+        _converged_n_ = true;
+        const CplxVect V_n = _algo.get_V();
+        const std::vector<int> no_skip;
+        check_bus_voltage_violations(V_n, id_me_to_solver_,
+                                      _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
+                                      _grid_model.get_bus_vn_kv(), nullptr, _violations_n_);
+        check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
+                                  V_n, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
+                                  ac_solver_used, sn_mva,
+                                  _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
+                                  _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
+                                  no_skip, _violations_n_);
+        check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
+                                  V_n, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
+                                  ac_solver_used, sn_mva,
+                                  _grid_model.get_trafos_as_data().get_limit_a1_ka(),
+                                  _grid_model.get_trafos_as_data().get_limit_a2_ka(),
+                                  no_skip, _violations_n_);
     }
-
-    if(!n_powerflow_has_conv) return;
 
     auto timer_thread = CustTimer();
     // now perform the security analysis, possibly split across several threads
@@ -751,6 +760,9 @@ void ContingencyAnalysis::run_contingency_range(
             auto timer_modif_Ybus = CustTimer();
             bool do_store = false;
             bool conv = false;
+            // only meaningful when do_store ends up false (see below): why no result is
+            // available for this contingency.
+            LimitViolationType div_reason = LimitViolationType::NOT_SIMULATED;
 
             if(mask_mode){
                 // disconnected-grid handling: solve the largest component while masking
@@ -783,7 +795,12 @@ void ContingencyAnalysis::run_contingency_range(
                         // masked buses are not simulated: report 0 voltage for them
                         for(int b : masked) if(b >= 0 && b < V.size()) V(b) = cplx_type(0., 0.);
                         do_store = true;
+                    } else {
+                        div_reason = LimitViolationType::DIVERGENCE;
                     }
+                } else {
+                    // skipped contingency: strands the chosen reference slack, solver never ran
+                    div_reason = LimitViolationType::NOT_SIMULATED;
                 }
                 // skipped contingency: conv stays false, voltages stay 0
             } else {
@@ -809,6 +826,9 @@ void ContingencyAnalysis::run_contingency_range(
                         control.tell_none_changed();
                         needs_solver_init = false;
                     }
+                    if(!conv) div_reason = LimitViolationType::DIVERGENCE;
+                } else {
+                    div_reason = LimitViolationType::NOT_SIMULATED;
                 }
 
                 timer_modif_Ybus = CustTimer();
@@ -821,6 +841,12 @@ void ContingencyAnalysis::run_contingency_range(
 
             if(li_defaults_vect != nullptr){
                 _converged[cont_id] = do_store ? 1 : 0;
+                if(!do_store){
+                    _violations[cont_id].push_back(LimitViolation{
+                        ViolationElementType::GRID, -1, 0, div_reason,
+                        std::numeric_limits<real_type>::quiet_NaN(),
+                        std::numeric_limits<real_type>::quiet_NaN()});
+                }
                 if(do_store){
                     // split this contingency's disconnected branch ids (grid-wide numbering,
                     // lines first then trafos, see init_li_coeffs) into per-type LOCAL ids so

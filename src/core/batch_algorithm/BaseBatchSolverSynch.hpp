@@ -28,7 +28,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         using RealMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
         using CplxMat =  Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
         
-        explicit BaseBatchSolverSynch(const LSGrid & init_grid_model) noexcept:
+        explicit BaseBatchSolverSynch(const LSGrid & init_grid_model):
             _grid_model(init_grid_model),
             n_line_(init_grid_model.nb_powerline()),
             n_trafos_(init_grid_model.nb_trafo()),
@@ -42,6 +42,15 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // hvdc angle-droop data flows through this pointer (the member
                 // _grid_model has a stable address, the class is not copyable)
                 _algo.set_lsgrid(&_grid_model);
+                // inherit the source grid's AC algorithm (type + config, eg a
+                // ScalingPolicyType::MaxVoltageChange damping set via
+                // set_ac_algo_config): _algo is otherwise a fresh, independent,
+                // default (undamped NR_SparseLU) solver, so without this the n /
+                // n-1 powerflows run here can converge to a different root than
+                // (or fail to converge unlike) init_grid_model.ac_pf() -- same class
+                // of bug as the one just fixed in LSGrid's copy constructor.
+                _algo.change_algorithm(init_grid_model.get_algo_type());
+                _algo.set_config(init_grid_model.get_ac_algo_config());
             }
         virtual ~BaseBatchSolverSynch() noexcept = default;  // to avoid warning about overload virtual
         BaseBatchSolverSynch(const BaseBatchSolverSynch&) = delete;
@@ -69,6 +78,15 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         }
 
         AlgorithmType get_algo_type() const {return _algo.get_type(); }
+
+        // the config (eg ScalingPolicyType / damping parameters) of the internal
+        // solver used for every n / n-1 powerflow here. This is a fresh, independent
+        // solver (see the constructor): the source LSGrid's own config is copied in
+        // once at construction time, but is NOT kept in sync afterwards, so re-apply
+        // it here if you change it on the grid model after building this object (or
+        // after a change_algorithm(), which resets to that new algorithm's defaults).
+        AlgoConfig get_algo_config() const {return _algo.get_config(); }
+        void set_algo_config(const AlgoConfig & cfg) {_algo.set_config(cfg); }
 
         // // TODO
         // void change_gridmodel(const GridModel & new_grid_model){

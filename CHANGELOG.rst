@@ -129,6 +129,34 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   order, so the list was misleading (harmless today since there is no data dependency
   between the two, but a latent hazard for future refactors). The initializer list now
   matches declaration order.
+- [BREAKING] `ContingencyAnalysisCPP.compute()` (and the python `ContingencyAnalysis.run` /
+  `run_ac` / `run_dc` / `compute_V`) now raises a ``RuntimeError`` if the pre-contingency ("n",
+  no disconnection) powerflow itself does not converge, instead of silently returning with all
+  voltages at 0 and no contingency simulated at all. Every contingency is solved relative to
+  this base case, so a diverging base case made the whole analysis meaningless; failing loudly
+  is safer than silently returning an all-zero result that could be mistaken for "every
+  contingency was skipped".
+- [ADDED] `ViolationElementType.GRID` and two new `LimitViolationType` values,
+  `NOT_SIMULATED` and `DIVERGENCE`, so a non-converged contingency (`converged()` /
+  `ContingencyResult.converged` is `False`) now reports exactly one `LimitViolation` in
+  `get_violations()` / `limit_violations` instead of an empty list: `NOT_SIMULATED` when a
+  pre-check (graph connectivity) skips the contingency without ever invoking the solver (eg it
+  splits the grid in multiple connected components), `DIVERGENCE` when the solver is invoked but
+  does not converge (eg reaches `max_iter`). This only applies to `get_violations()` /
+  `get_violations_n()` -- see the `ContingencyAnalysisCPP.compute()` change above for the
+  pre-contingency ("n") case itself.
+- [FIXED] `ContingencyAnalysisCPP` / `TimeSeriesCPP` (and so the python `ContingencyAnalysis`,
+  `SecurityAnalysis` and `TimeSerie` wrappers) solved every powerflow with a fresh, independent,
+  *default* solver (`NR_SparseLU`, no scaling/damping policy), completely ignoring whatever
+  algorithm type or `AlgoConfig` (eg a `ScalingPolicyType.MaxVoltageChange` damping) was set on
+  the source `LSGrid`. This is the same class of bug as the `LSGrid` copy-constructor fix above,
+  but in `BaseBatchSolverSynch`: a grid whose own `ac_pf()` converged fine (thanks to a configured
+  damping policy) could see its pre-contingency ("n") powerflow diverge inside
+  `ContingencyAnalysisCPP.compute()`, now raising the `RuntimeError` added above instead of being
+  silently swallowed. The algorithm type and config are now copied from the grid model once at
+  construction time; `get_algo_config()` / `set_algo_config()` were added to
+  `ContingencyAnalysisCPP` / `TimeSeriesCPP` to re-apply a config afterwards (eg after
+  `change_algorithm()`, which resets to that algorithm's defaults).
 - [IMPROVED] (cpp) the codebase now compiles warning-free under ``-Wall -Wextra
   -Werror``: fixed 29 signed/unsigned comparison warnings (``int`` / ``Eigen::Index``
   vs ``size_t``) and silenced ~188 intentionally-unused parameters on interface /

@@ -451,6 +451,33 @@ class TestAlgoConfigViaGridModel(unittest.TestCase):
         self.assertAlmostEqual(out.real_params[0], 0.4)
         self.assertAlmostEqual(out.real_params[4], 5e-4, places=10)
 
+    def test_algo_config_survives_copy(self):
+        """LSGrid.copy() (used internally by e.g. ContingencyAnalysis / TimeSeries,
+        which each hold their own internal copy of the grid model) must preserve
+        the AC/DC solver's AlgoConfig, not just its algorithm type. Regression
+        test for a bug where `LSGrid`'s copy constructor called `change_algorithm`
+        (which resets to a default AlgoConfig) without re-applying the source's
+        AlgoConfig, silently dropping e.g. a tuned MaxVoltageChange scaling policy."""
+        gm = self._try_import_gridmodel_direct()
+        if gm is None:
+            self.skipTest("LSGrid C++ class not directly instantiable without a grid")
+
+        # the AC solver (NR-family) is the one whose AlgoConfig (scaling policy,
+        # max_dVa/max_dVm, ...) is meaningful and must survive the copy; DC
+        # solvers don't override get_config/set_config (always empty AlgoConfig)
+        ac_cfg = AlgoConfig()
+        ac_cfg.int_params  = [int(ScalingPolicyType.MaxVoltageChange),
+                              int(RefactorPolicyType.EveryN), 20, 3]
+        ac_cfg.real_params = [0.4, 0.08, 1e-3, 0.7, 5e-4, 0.9]
+        gm.set_ac_algo_config(ac_cfg)
+
+        gm_copy = gm.copy()
+
+        out_ac = gm_copy.get_ac_algo_config()
+        self.assertEqual(out_ac.int_params, ac_cfg.int_params)
+        for a, b in zip(out_ac.real_params, ac_cfg.real_params):
+            self.assertAlmostEqual(a, b, places=10)
+
 
 if __name__ == "__main__":
     unittest.main()
