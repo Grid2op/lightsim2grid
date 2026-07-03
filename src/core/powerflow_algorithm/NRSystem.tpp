@@ -188,7 +188,7 @@ inline void NRSystem<Base, Rest...>::fill_internal_variables()
     cplx_type * ds_dva_val_ptr = dS_dVa_.valuePtr();
 
     size_t pos = 0;
-    for (size_t col_id = 0; col_id < size_dS; ++col_id) {
+    for (size_t col_id = 0; col_id < static_cast<size_t>(size_dS); ++col_id) {
         for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator it(Ybus, col_id); it; ++it) {
             const size_t row_id = static_cast<size_t>(it.row());
             const cplx_type el_ybus = it.value();

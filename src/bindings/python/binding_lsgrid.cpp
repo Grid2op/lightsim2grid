@@ -154,10 +154,14 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("set_line_names", &LSGrid::set_line_names, "TODO")
         .def("set_dcline_names", &LSGrid::set_dcline_names, "TODO")
         .def("set_trafo_names", &LSGrid::set_trafo_names, "TODO")
-        .def("set_line_thermal_limit", &LSGrid::set_line_thermal_limit,
-             "Set the per-side thermal (current) limit of each powerline, in kA (see `limit_a1_ka`/`limit_a2_ka` on `LineInfo`).")
-        .def("set_trafo_thermal_limit", &LSGrid::set_trafo_thermal_limit,
-             "Set the per-side thermal (current) limit of each transformer, in kA (see `limit_a1_ka`/`limit_a2_ka` on `TrafoInfo`).")
+        .def("set_line_current_limit_side1", &LSGrid::set_line_current_limit_side1,
+             "Set the side-1 current limit of each powerline, in kA (see `limit_a1_ka` on `LineInfo`).")
+        .def("set_line_current_limit_side2", &LSGrid::set_line_current_limit_side2,
+             "Set the side-2 current limit of each powerline, in kA (see `limit_a2_ka` on `LineInfo`).")
+        .def("set_trafo_current_limit_side1", &LSGrid::set_trafo_current_limit_side1,
+             "Set the side-1 current limit of each transformer, in kA (see `limit_a1_ka` on `TrafoInfo`).")
+        .def("set_trafo_current_limit_side2", &LSGrid::set_trafo_current_limit_side2,
+             "Set the side-2 current limit of each transformer, in kA (see `limit_a2_ka` on `TrafoInfo`).")
         .def("set_gen_names", &LSGrid::set_gen_names, "TODO")
         .def("set_load_names", &LSGrid::set_load_names, "TODO")
         .def("set_storage_names", &LSGrid::set_storage_names, "TODO")

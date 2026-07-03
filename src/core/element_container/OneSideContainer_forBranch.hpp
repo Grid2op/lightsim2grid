@@ -62,7 +62,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
     // regular implementation
     public:
         OneSideContainer_ForBranch() noexcept = default;
-        explicit OneSideContainer_ForBranch(bool is_trafo) noexcept{};
+        explicit OneSideContainer_ForBranch(bool /*is_trafo*/) noexcept{};
         virtual ~OneSideContainer_ForBranch() noexcept = default;
 
         // public generic API
@@ -96,10 +96,10 @@ class OneSideContainer_ForBranch : public OneSideContainer
         }
         
         void init_osc_forB(
-            const RealVect & els_p,
-            const RealVect & els_q,
+            const RealVect & /*els_p*/,
+            const RealVect & /*els_q*/,
             const Eigen::VectorXi & els_bus_id,
-            const std::string & name_el
+            const std::string & /*name_el*/
             )  // osc: one side element
         {
             init_osc(els_bus_id);
@@ -110,13 +110,13 @@ class OneSideContainer_ForBranch : public OneSideContainer
             // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos)
             // elements
         };
-        virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
-                                      const Eigen::Ref<const RealVect> & Vm,
-                                      const Eigen::Ref<const CplxVect> & V,
-                                      const SolverBusIdVect & id_grid_to_solver,
-                                      const RealVect & bus_vn_kv,
-                                      real_type sn_mva,
-                                      bool ac) override {
+        virtual void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+                                      const Eigen::Ref<const RealVect> & /*Vm*/,
+                                      const Eigen::Ref<const CplxVect> & /*V*/,
+                                      const SolverBusIdVect & /*id_grid_to_solver*/,
+                                      const RealVect & /*bus_vn_kv*/,
+                                      real_type /*sn_mva*/,
+                                      bool /*ac*/) override {
 
             // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos)
             // elements
@@ -142,7 +142,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
             }
             return false;
         };
-        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) override {
+        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) override {
             const GridModelBusId & bus_me_id = bus_id_(el_id);
             
             if(bus_me_id != new_bus_id) {

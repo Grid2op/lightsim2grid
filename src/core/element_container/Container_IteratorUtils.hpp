@@ -105,7 +105,7 @@ class IteratorAdder
             {
                 throw std::range_error("You cannot ask for a negative element id.");
             }
-            if(id >= static_cast<const ConcreteContainer*>(this)->nb())
+            if(id >= static_cast<int>(static_cast<const ConcreteContainer*>(this)->nb()))
             {
                 throw std::range_error("Load out of bound. Not enough elements of this type on the grid.");
             }

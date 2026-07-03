@@ -65,7 +65,7 @@ class BaseFDPFAlgo: public BaseAlgo
         CplxVect evaluate_mismatch(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                    const CplxVect & V,
                                    const CplxVect & Sbus,
-                                   size_t slack_id,  // id of the ref slack bus
+                                   size_t /*slack_id*/,  // id of the ref slack bus
                                    real_type slack_absorbed,
                                    const RealVect & slack_weights)
         {

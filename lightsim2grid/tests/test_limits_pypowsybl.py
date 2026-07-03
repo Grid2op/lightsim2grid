@@ -94,12 +94,12 @@ class TestLimitsPypowsybl(unittest.TestCase):
         self.assertAlmostEqual(vmin[by_name["VL3"]], 80.0)
         self.assertAlmostEqual(vmax[by_name["VL3"]], 100.0)
 
-    def test_line_thermal_limit(self):
+    def test_line_current_limit(self):
         line = [el for el in self.model.get_lines() if el.name == "L12"][0]
         self.assertAlmostEqual(line.limit_a1_ka, 0.5, places=6)  # min(500, 600) A
         self.assertAlmostEqual(line.limit_a2_ka, 0.45, places=6)
 
-    def test_trafo_thermal_limit(self):
+    def test_trafo_current_limit(self):
         trafo = [el for el in self.model.get_trafos() if el.name == "T23"][0]
         self.assertAlmostEqual(trafo.limit_a1_ka, 0.1234, places=6)
         self.assertTrue(np.isnan(trafo.limit_a2_ka))
@@ -132,7 +132,8 @@ def _build_ls_grid_with_limits():
     g.set_bus_voltage_limits(np.array([18.0, np.nan]), np.array([22.0, np.nan]))
     g.init_powerlines(np.array([0.01]), np.array([0.05]), np.array([0.0 + 0.0j]),
                       np.array([0], dtype=np.int32), np.array([1], dtype=np.int32))
-    g.set_line_thermal_limit(np.array([1.234]), np.array([np.nan]))
+    g.set_line_current_limit_side1(np.array([1.234]))
+    g.set_line_current_limit_side2(np.array([np.nan]))
     return g
 
 

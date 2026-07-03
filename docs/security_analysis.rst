@@ -147,6 +147,89 @@ This feature only relies on the C++ standard library (``std::thread``): no addit
     ``nb_thread`` is also available on the lower-level ``ContingencyAnalysisCPP`` class (same
     semantics).
 
+Reporting limit violations
+---------------------------
+
+Starting from lightsim2grid 0.14.0, if you have set some operating limits on the grid model
+(per-bus voltage bounds with :func:`lightsim2grid.network.LSGrid.set_bus_voltage_limits`,
+per-side current limits on lines / trafos with
+:func:`lightsim2grid.network.LSGrid.set_line_current_limit_side1` /
+:func:`lightsim2grid.network.LSGrid.set_line_current_limit_side2` /
+:func:`lightsim2grid.network.LSGrid.set_trafo_current_limit_side1` /
+:func:`lightsim2grid.network.LSGrid.set_trafo_current_limit_side2`), ``ContingencyAnalysis`` can
+report, for the pre-contingency ("n") case and for each simulated contingency, which of these
+limits are violated. The API is modeled after pypowsybl's security analysis
+(``res.pre_contingency_result.limit_violations`` / ``res.post_contingency_results``), with the
+notable difference that ``post_contingency_results`` is a **list** (ordered like the
+contingencies were added), not a dictionary:
+
+.. code-block:: python
+
+    import numpy as np
+    import grid2op
+    from lightsim2grid import ContingencyAnalysis
+    from lightsim2grid import LightSimBackend
+    env = grid2op.make(..., backend=LightSimBackend())
+
+    # set some limits on the grid model (kV for buses, kA for lines / trafos)
+    grid = env.backend._grid
+    nb_bus = grid.get_bus_vn_kv().shape[0]
+    grid.set_bus_voltage_limits(0.95 * grid.get_bus_vn_kv(), 1.05 * grid.get_bus_vn_kv())
+    grid.set_line_current_limit_side1(line_limit_a1_ka)
+    grid.set_line_current_limit_side2(line_limit_a2_ka)
+    grid.set_trafo_current_limit_side1(trafo_limit_a1_ka)
+    grid.set_trafo_current_limit_side2(trafo_limit_a2_ka)
+
+    # the feature must be explicitly requested at construction time
+    security_analysis = ContingencyAnalysis(env, compute_limit_violations=True)
+    security_analysis.add_single_contingency(0, name="line_0")  # `name` is optional
+    security_analysis.add_all_n1_contingencies()
+
+    res = security_analysis.run()  # or run_ac() / run_dc() to also pick the algorithm family
+
+    for violation in res.pre_contingency_result.limit_violations:
+        print(violation.element_type, violation.element_id, violation.side,
+              violation.violation_type, violation.value, violation.limit)
+
+    for cont in res.post_contingency_results:  # a list, in the order contingencies were added
+        print(cont.element_ids, cont.contingency_name, cont.converged, cont.limit_violations)
+
+Each ``LimitViolation`` reports:
+
+- ``element_type``: :class:`lightsim2grid.contingencyAnalysis.ViolationElementType`
+  (``BUS``, ``LINE`` or ``TRAFO``);
+- ``element_id``: the grid-model bus id (for ``BUS``) or the local line / trafo id (for
+  ``LINE`` / ``TRAFO``);
+- ``side``: ``1`` or ``2`` for ``LINE`` / ``TRAFO`` (unused, ``0``, for ``BUS``);
+- ``violation_type``: :class:`lightsim2grid.contingencyAnalysis.LimitViolationType`
+  (``LOW_VOLTAGE``, ``HIGH_VOLTAGE`` or ``CURRENT``);
+- ``value`` / ``limit``: the value reached and the limit that was violated.
+
+Each ``ContingencyResult`` reports ``element_ids`` (the branch ids disconnected by this
+contingency -- always present, even without a ``name``), the optional user-supplied
+``contingency_name`` (set via ``add_single_contingency(..., name=...)``), whether the
+contingency ``converged``, and its ``limit_violations``.
+
+.. warning::
+
+    This feature is **opt-in** and must be requested at construction time
+    (``ContingencyAnalysis(env, compute_limit_violations=True)``, or by setting
+    ``security_analysis.compute_limit_violations = True`` before running). Leaving it to its
+    default (``False``) means ``run`` / ``run_ac`` / ``run_dc`` raise a ``RuntimeError``, and
+    the usual ``get_flows()`` is completely unaffected -- there is no need to pay for the extra
+    per-element voltage / current checks if you only want the flows.
+
+    Also, if a contingency (or the pre-contingency case) does not converge, its
+    ``limit_violations`` is left empty because no result is available for it -- this does
+    **not** mean there is no violation, unlike a converged case with an empty list, which
+    genuinely means none was found.
+
+Violation checking is fully compatible with the ``handle_disconnected_grid`` and ``nb_thread``
+options described above: it is performed **inline, per contingency, inside the thread that
+solves it** (not as a separate post-processing pass), so it does not affect the multi-threading
+performance characteristics; and masked (disconnected-island) buses are correctly excluded from
+the voltage checks.
+
 .. _sa_benchmarks:
 
 Benchmarks (Contingency Analysis)

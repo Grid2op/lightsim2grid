@@ -77,7 +77,7 @@ class TwoSidesContainer : public GenericContainer
                 res_theta2_deg(0.)
                 {
                     if (my_id < 0) return;
-                    if (my_id >= r_data_two_sides.nb()) return;
+                    if (static_cast<size_t>(my_id) >= r_data_two_sides.nb()) return;
                     id = my_id;
 
                     if(r_data_two_sides.names_.size()){
@@ -402,8 +402,8 @@ class TwoSidesContainer : public GenericContainer
             side_2_.set_state(std::get<5>(my_state));
             auto size = nb();
             if(names_.size() > 0) check_size(names_, size, "names");  // names are optional
-            if(side_1_.nb() != size) throw std::runtime_error("Side_1 do not have the proper size");
-            if(side_2_.nb() != size) throw std::runtime_error("Side_2 do not have the proper size");
+            if(static_cast<size_t>(side_1_.nb()) != size) throw std::runtime_error("Side_1 do not have the proper size");
+            if(static_cast<size_t>(side_2_.nb()) != size) throw std::runtime_error("Side_2 do not have the proper size");
         }
 
         bool resolve_status(int el_id, bool side_1_modif, DualAlgoControl & solver_control){
@@ -435,45 +435,45 @@ class TwoSidesContainer : public GenericContainer
         // hook when disconnecting or changing the bus a given element
         // for example used when disconnecting a powerline on only one side
         // to update yac_eff_12_, yac_eff_21_ etc. in TwoSidesContainer_rxh_A
-        virtual void _update_effective_coeffs_one_el(int el_id) {
+        virtual void _update_effective_coeffs_one_el(int /*el_id*/) {
             // nothing to do by default
         }
 
-        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) {
+        virtual bool _deactivate(int el_id, DualAlgoControl & /*solver_control*/) {
             // nothing to do by default: handled in derived class
             if(status_global_[el_id]) return true;
             return false;
         }
-        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) {
+        virtual bool _reactivate(int el_id, DualAlgoControl & /*solver_control*/) {
             // nothing to do by default: handled in derived class
             if(!status_global_[el_id]) return true;
             return false;
         }
 
         virtual void _change_bus_side_1(
-            int el_id, 
-            GridModelBusId new_gridmodel_bus_id, 
-            DualAlgoControl & solver_control, 
-            const SubstationContainer & substation,
-            bool has_effectively_changed
+            int /*el_id*/, 
+            GridModelBusId /*new_gridmodel_bus_id*/, 
+            DualAlgoControl & /*solver_control*/, 
+            const SubstationContainer & /*substation*/,
+            bool /*has_effectively_changed*/
         ) {
             // nothing to do by default: handled in derived class
         }
         virtual void _change_bus_side_2(
-            int el_id,
-            GridModelBusId new_gridmodel_bus_id,
-            DualAlgoControl & solver_control,
-            const SubstationContainer & substation,
-            bool has_effectively_changed
+            int /*el_id*/,
+            GridModelBusId /*new_gridmodel_bus_id*/,
+            DualAlgoControl & /*solver_control*/,
+            const SubstationContainer & /*substation*/,
+            bool /*has_effectively_changed*/
         ) {
             // nothing to do by default: handled in derived class
         }
 
         virtual void _update_topo(
-            DualAlgoControl & solver_control,
-            SubstationContainer & substations,
-            const std::vector<bool> & side1_changed,
-            const std::vector<bool> & side2_changed
+            DualAlgoControl & /*solver_control*/,
+            SubstationContainer & /*substations*/,
+            const std::vector<bool> & /*side1_changed*/,
+            const std::vector<bool> & /*side2_changed*/
         )
         {
             // nothing to do by default: handled in derived class

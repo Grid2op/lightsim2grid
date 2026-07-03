@@ -10,6 +10,7 @@
 #define SECURITYANALYSIS_H
 
 #include "BaseBatchSolverSynch.hpp"
+#include "LimitViolation.hpp"
 #include <set>
 #include <exception>
 
@@ -22,13 +23,30 @@ have been disconnected
 class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
 {
     public:
-        explicit  ContingencyAnalysis(const LSGrid & init_grid_model) noexcept:
+        explicit  ContingencyAnalysis(const LSGrid & init_grid_model,
+                                       bool compute_limit_violations = false) noexcept:
                             BaseBatchSolverSynch(init_grid_model),
                             _li_defaults(),
                             _li_coeffs(),
+                            _compute_limit_violations_(compute_limit_violations),
                             _timer_modif_Ybus(0.),
                             _timer_thread_init(0.)
                             { }
+
+        // whether limit violations are computed (see `converged`, `get_violations`,
+        // `converged_n`, `get_violations_n` below). Defaults to `False` (settable at
+        // construction too): computing violations means an extra per-element current/voltage
+        // check inline in every contingency's solve, so users who only need
+        // `compute_flows()`/`get_flows()` should not pay for it. Changing this flag clears any
+        // previously-computed results (limit-violation results as well as voltages/flows,
+        // same as `clear()`) so stale results computed under the other setting can never be
+        // returned.
+        bool get_compute_limit_violations() const noexcept {return _compute_limit_violations_;}
+        void set_compute_limit_violations(bool val){
+            if(val == _compute_limit_violations_) return;
+            _compute_limit_violations_ = val;
+            clear();
+        }
 
         ~ContingencyAnalysis() noexcept = default;
         ContingencyAnalysis(const ContingencyAnalysis&) = delete;
@@ -38,7 +56,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
 
         // utilities to add defaults to simulate
         void add_all_n1(){
-            for(int l_id = 0; l_id < n_total_; ++l_id){
+            for(int l_id = 0; l_id < static_cast<int>(n_total_); ++l_id){
                 std::set<int> this_default = {l_id};
                 _li_defaults.insert(this_default);
             }
@@ -72,6 +90,10 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             _li_coeffs.clear();
             _li_masked.clear();
             _skip_mask.clear();
+            _converged.clear();
+            _violations.clear();
+            _converged_n_ = false;
+            _violations_n_.clear();
             _timer_total = 0.;
             _timer_modif_Ybus = 0.;
             _timer_thread_init = 0.;
@@ -81,6 +103,10 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             BaseBatchSolverSynch::clear();
             _li_masked.clear();
             _skip_mask.clear();
+            _converged.clear();
+            _violations.clear();
+            _converged_n_ = false;
+            _violations_n_.clear();
             _timer_total = 0.;
             _timer_modif_Ybus = 0.;
             _timer_thread_init = 0.;
@@ -168,6 +194,27 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             return res;
         }
 
+        // limit violations (only available if constructed with `compute_limit_violations=True`,
+        // see get_compute_limit_violations() above; computed inline, per contingency, during
+        // `compute()`). Row order matches `my_defaults_vect()` / `_voltages` rows.
+        const std::vector<char> & converged() const {
+            _check_limit_violations_enabled("converged");
+            return _converged;
+        }
+        const std::vector<std::vector<LimitViolation> > & get_violations() const {
+            _check_limit_violations_enabled("get_violations");
+            return _violations;
+        }
+        // pre-contingency ("n") case
+        bool converged_n() const {
+            _check_limit_violations_enabled("converged_n");
+            return _converged_n_;
+        }
+        const std::vector<LimitViolation> & get_violations_n() const {
+            _check_limit_violations_enabled("get_violations_n");
+            return _violations_n_;
+        }
+
         // timers
         double total_time() const {return _timer_total;}
         double preprocessing_time() const {return _timer_pre_proc;}
@@ -184,13 +231,25 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
                 exc_ << el << " contingency id should be > 0";
                 throw std::runtime_error(exc_.str());
             }
-            if(el >= n_total_){
+            if(el >= static_cast<Eigen::Index>(n_total_)){
                 std::ostringstream exc_;
                 exc_ << "SecurityAnalysis: cannot add the contingency with id ";
                 exc_ << el << " because the grid counts only " << n_total_ << " powerlines / trafos.";
                 throw std::runtime_error(exc_.str());
             }
         }
+        // raises if the user never asked for limit violations to be computed (see
+        // get_compute_limit_violations())
+        void _check_limit_violations_enabled(const std::string & fun_name) const {
+            if(!_compute_limit_violations_){
+                std::ostringstream exc_;
+                exc_ << "ContingencyAnalysis::" << fun_name << ": limit violations were not "
+                        "requested. Construct this object with `compute_limit_violations=True` "
+                        "to use this feature.";
+                throw std::runtime_error(exc_.str());
+            }
+        }
+
         void init_li_coeffs(bool ac_solver_used, const SolverBusIdVect &id_me_to_solver);
         // remove the line parameters from Ybus, this is to emulate its disconnection.
         // `algo` is the solver whose internal Ybus is updated in DC mode (one per thread).
@@ -243,7 +302,18 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
                                    int & nb_solved,
                                    double & timer_solver,
                                    std::exception_ptr & err,
-                                   bool needs_solver_init);
+                                   bool needs_solver_init,
+                                   // limit-violation checking: only non-null when
+                                   // _compute_limit_violations_ is true. Built once (before
+                                   // the threads are spawned, see compute()) since it walks
+                                   // the whole `_li_defaults` set -- avoids every contingency
+                                   // (or every thread) rebuilding it via my_defaults_vect().
+                                   // The per-bus / per-branch limit vectors themselves are NOT
+                                   // threaded through here: they are trivial reference-return
+                                   // accessors on the (already shared, read-only during this
+                                   // phase) _grid_model, so run_contingency_range fetches them
+                                   // directly where needed instead of adding 7 more parameters.
+                                   const std::vector<std::vector<int> > * li_defaults_vect);
 
     private:
         // li_default
@@ -257,6 +327,13 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         bool _handle_disconnected_grid = false;
         std::vector<std::vector<int> > _li_masked;  // per contingency: masked solver bus ids (mask mode)
         std::vector<char> _skip_mask;               // per contingency: 1 => skip (strands the ref slack)
+
+        // limit violations (see get_compute_limit_violations() / converged() / get_violations())
+        bool _compute_limit_violations_ = false;
+        std::vector<char> _converged;                          // per contingency, aligned with my_defaults_vect()
+        std::vector<std::vector<LimitViolation> > _violations;  // per contingency, aligned with my_defaults_vect()
+        bool _converged_n_ = false;                              // pre-contingency ("n") case
+        std::vector<LimitViolation> _violations_n_;
 
         //timers
         double _timer_modif_Ybus;  // time to update the Ybus between the defaults simulation

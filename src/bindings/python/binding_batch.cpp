@@ -9,11 +9,31 @@
 #include "binding_declarations.hpp"
 #include "batch_algorithm/TimeSeries.hpp"
 #include "batch_algorithm/ContingencyAnalysis.hpp"
+#include "batch_algorithm/LimitViolation.hpp"
 #include "help_fun_msg.hpp"
 
 using namespace ls2g;
 
 void bind_batch(py::module_& m) {
+    py::enum_<ViolationElementType>(m, "ViolationElementType", "The kind of element on which a limit was violated.")
+        .value("BUS", ViolationElementType::BUS)
+        .value("LINE", ViolationElementType::LINE)
+        .value("TRAFO", ViolationElementType::TRAFO);
+
+    py::enum_<LimitViolationType>(m, "LimitViolationType", "The kind of limit that was violated.")
+        .value("LOW_VOLTAGE", LimitViolationType::LOW_VOLTAGE)
+        .value("HIGH_VOLTAGE", LimitViolationType::HIGH_VOLTAGE)
+        .value("CURRENT", LimitViolationType::CURRENT);
+
+    py::class_<LimitViolation>(m, "LimitViolation", "A single limit violation, as detected by ContingencyAnalysisCPP.")
+        .def_readonly("element_type", &LimitViolation::element_type)
+        .def_readonly("element_id", &LimitViolation::element_id,
+                      "grid-model bus id for BUS ; local (0-based, own type) line / trafo id otherwise")
+        .def_readonly("side", &LimitViolation::side, "1 or 2 for LINE / TRAFO ; unused (0) for BUS")
+        .def_readonly("violation_type", &LimitViolation::violation_type)
+        .def_readonly("value", &LimitViolation::value, "value reached")
+        .def_readonly("limit", &LimitViolation::limit, "limit that was violated");
+
     py::class_<TimeSeries>(m, "TimeSeriesCPP", DocComputers::Computers.c_str())
         .def(py::init<const LSGrid &>())
         .def_property("init_from_n_powerflow",
@@ -54,7 +74,16 @@ void bind_batch(py::module_& m) {
         .def("get_sbuses", &TimeSeries::get_sbuses, DocComputers::get_sbuses.c_str(), py::return_value_policy::reference_internal);
 
     py::class_<ContingencyAnalysis>(m, "ContingencyAnalysisCPP", DocSecurityAnalysis::SecurityAnalysis.c_str())
-        .def(py::init<const LSGrid &>())
+        .def(py::init<const LSGrid &, bool>(), py::arg("grid_model"), py::arg("compute_limit_violations") = false)
+        .def_property("compute_limit_violations",
+                      [](const ContingencyAnalysis & self){ return self.get_compute_limit_violations(); },
+                      [](ContingencyAnalysis & self, bool val){ self.set_compute_limit_violations(val); },
+                      R"mydelim(Whether limit violations are computed inline, per contingency, "
+                      "during compute() (see converged / get_violations / converged_n / "
+                      "get_violations_n). Default: false. Computing violations means an extra "
+                      "per-element current / voltage check in every contingency's solve, so "
+                      "users who only need compute_flows() / get_flows() should leave this off. "
+                      "Changing this flag clears any previously-computed results.)mydelim")
         .def_property("init_from_n_powerflow",
                       [](const ContingencyAnalysis & self){ return self.get_init_from_n_powerflow(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_init_from_n_powerflow(val); },
@@ -122,6 +151,27 @@ void bind_batch(py::module_& m) {
         .def("get_flows", &ContingencyAnalysis::get_flows, DocSecurityAnalysis::get_flows.c_str(), py::return_value_policy::reference_internal)
         .def("get_voltages", &ContingencyAnalysis::get_voltages, DocSecurityAnalysis::get_voltages.c_str(), py::return_value_policy::reference_internal)
         .def("get_power_flows", &ContingencyAnalysis::get_power_flows, DocSecurityAnalysis::get_power_flows.c_str(), py::return_value_policy::reference_internal)
+
+        // limit violations (only usable if `compute_limit_violations=True`, see above ;
+        // raises otherwise). Row order matches `my_defaults()`.
+        .def("converged", [](const ContingencyAnalysis & self){
+                 const std::vector<char> & c = self.converged();  // internal storage: char, not
+                 // bool, so multi-threaded writes to disjoint indices during compute() can never
+                 // race (std::vector<bool> is bit-packed and NOT safe for that). Convert to a
+                 // fresh std::vector<bool> here (a copy, so no thread-safety concern) purely so
+                 // Python gets a clean list[bool] instead of pybind11's char -> 1-char-str cast.
+                 return std::vector<bool>(c.begin(), c.end());
+             },
+             "Per contingency (row order matches my_defaults()): whether it converged / was "
+             "actually simulated (False for skipped or diverged contingencies).")
+        .def("get_violations", &ContingencyAnalysis::get_violations,
+             "Per contingency (row order matches my_defaults()): list of LimitViolation.",
+             py::return_value_policy::reference_internal)
+        .def("converged_n", &ContingencyAnalysis::converged_n,
+             "Whether the pre-contingency ('n') powerflow converged.")
+        .def("get_violations_n", &ContingencyAnalysis::get_violations_n,
+             "List of LimitViolation for the pre-contingency ('n') case.",
+             py::return_value_policy::reference_internal)
 
         // timers
         .def("total_time", &ContingencyAnalysis::total_time, DocComputers::total_time.c_str())

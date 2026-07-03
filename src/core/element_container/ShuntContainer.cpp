@@ -64,11 +64,11 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
-void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
                                 const SolverBusIdVect & id_grid_to_solver,
                                 real_type sn_mva,
-                                FDPFMethod xb_or_bx) const
+                                FDPFMethod /*xb_or_bx*/) const
 {
     const int nb_shunt = nb();
     real_type tmp;
@@ -130,11 +130,11 @@ void ShuntContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_t
     }
 }
 
-void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
-                                      const Eigen::Ref<const RealVect> & Vm,
+void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+                                      const Eigen::Ref<const RealVect> & /*Vm*/,
                                       const Eigen::Ref<const CplxVect> & V,
                                       const SolverBusIdVect & id_grid_to_solver,
-                                      const RealVect & bus_vn_kv,
+                                      const RealVect & /*bus_vn_kv*/,
                                       real_type sn_mva,
                                       bool ac)
 {

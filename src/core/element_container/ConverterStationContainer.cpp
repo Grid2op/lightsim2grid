@@ -159,7 +159,7 @@ void ConverterStationContainer::change_v(int station_id, real_type new_v_pu, Dua
 
 void ConverterStationContainer::fillSbus_station(CplxVect & Sbus,
                                                  const SolverBusIdVect & id_grid_to_solver,
-                                                 bool ac,
+                                                 bool /*ac*/,
                                                  const std::vector<bool> & skip_p) const
 {
     const int nb_station = nb();
@@ -235,7 +235,7 @@ void ConverterStationContainer::fillpv(std::vector<int> & bus_pv,
     }
 }
 
-void ConverterStationContainer::init_q_vector(int nb_bus,
+void ConverterStationContainer::init_q_vector(int /*nb_bus*/,
                                               Eigen::VectorXi & total_gen_per_bus,
                                               RealVect & total_q_min_per_bus,
                                               RealVect & total_q_max_per_bus) const

@@ -903,7 +903,8 @@ def init(net : pypo.network.Network,
         line_limit_groups["selected_limits_group_2"],
         ol_current,
     )
-    model.set_line_thermal_limit(line_limit_a1_ka, line_limit_a2_ka)
+    model.set_line_current_limit_side1(line_limit_a1_ka)
+    model.set_line_current_limit_side2(line_limit_a2_ka)
 
     # for trafo
     # I extract trafo with `all_attributes=True` so that I have access to the `rho`
@@ -990,7 +991,8 @@ def init(net : pypo.network.Network,
     trafo_limit_a1_ka, trafo_limit_a2_ka = _aux_current_limits(
         df_trafo.index, trafo_group_1, trafo_group_2, ol_current
     )
-    model.set_trafo_thermal_limit(trafo_limit_a1_ka, trafo_limit_a2_ka)
+    model.set_trafo_current_limit_side1(trafo_limit_a1_ka)
+    model.set_trafo_current_limit_side2(trafo_limit_a2_ka)
     # phase-shifting transformers: declare the (alpha -> r/x correction) dependency so
     # lightsim2grid keeps the series impedance right when the shift changes, without any
     # "tap" concept (the per-step r/x deltas pypowsybl carries only in its tap steps).

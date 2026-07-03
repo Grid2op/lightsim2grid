@@ -85,7 +85,7 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     reset_results();
 }
 
-void SvcContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const
+void SvcContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const
 {
     const int nb_svc = nb();
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
@@ -212,7 +212,7 @@ bool SvcContainer::_reactivate(int svc_id, DualAlgoControl & solver_control)
     return false;
 }
 
-bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus)
+bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/)
 {
     // el_id is validated (and the proper IndexError raised) by `_generic_change_bus`,
     // which the caller runs *after* this function. Bail out here on an out-of-range

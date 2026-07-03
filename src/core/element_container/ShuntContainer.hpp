@@ -81,7 +81,7 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const;  // in DC i need that
         
     protected:
-        virtual void _change_p(int shunt_id, real_type new_p, bool my_status, DualAlgoControl & solver_control) override
+        virtual void _change_p(int shunt_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control) override
         {
             if(abs(target_p_mw_(shunt_id) - new_p) > _tol_equal_float){
                 solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
@@ -89,14 +89,14 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
             }
         }
 
-        virtual void _change_q(int shunt_id, real_type new_q, bool my_status, DualAlgoControl & solver_control) override
+        virtual void _change_q(int shunt_id, real_type new_q, bool /*my_status*/, DualAlgoControl & solver_control) override
         {
             if(abs(target_q_mvar_(shunt_id) - new_q) > _tol_equal_float){
                 solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
             }
         }
 
-        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) override {
+        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) override {
             if(bus_id_(el_id) != new_bus_id){
                 solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
                 solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();

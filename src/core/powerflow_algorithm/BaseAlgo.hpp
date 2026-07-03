@@ -176,15 +176,15 @@ class LS2G_API BaseAlgo : public BaseConstants
         // Every AC solver overrides this; the DC solver does not (it uses `compute_pf_dc`) and
         // therefore inherits this throwing default (symmetric with `compute_pf_dc` below).
         virtual
-        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                        CplxVect & V,  // store the results of the powerflow and the Vinit !
-                        const CplxVect & Sbus,
-                        Eigen::Ref<const IntVect> slack_ids,
-                        const RealVect & slack_weights,
-                        Eigen::Ref<const IntVect> pv,
-                        Eigen::Ref<const IntVect> pq,
-                        int max_iter,
-                        real_type tol
+        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & /*Ybus*/,
+                        CplxVect & /*V*/,  // store the results of the powerflow and the Vinit !
+                        const CplxVect & /*Sbus*/,
+                        Eigen::Ref<const IntVect> /*slack_ids*/,
+                        const RealVect & /*slack_weights*/,
+                        Eigen::Ref<const IntVect> /*pv*/,
+                        Eigen::Ref<const IntVect> /*pq*/,
+                        int /*max_iter*/,
+                        real_type /*tol*/
                         ){
             throw std::runtime_error("compute_pf (complex AC entry point) is not available for this solver (DC solvers use compute_pf_dc).");
         }
@@ -194,13 +194,13 @@ class LS2G_API BaseAlgo : public BaseConstants
         // `V` carries the complex initial voltage (slack angle + voltage setpoints) on input
         // and the complex result on output. There is no max_iter / tol: DC is a single linear solve.
         virtual
-        bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
-                           CplxVect & V,
-                           const RealVect & Pbus,
-                           Eigen::Ref<const IntVect> slack_ids,
-                           const RealVect & slack_weights,
-                           Eigen::Ref<const IntVect> pv,
-                           Eigen::Ref<const IntVect> pq){
+        bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & /*Bbus*/,
+                           CplxVect & /*V*/,
+                           const RealVect & /*Pbus*/,
+                           Eigen::Ref<const IntVect> /*slack_ids*/,
+                           const RealVect & /*slack_weights*/,
+                           Eigen::Ref<const IntVect> /*pv*/,
+                           Eigen::Ref<const IntVect> /*pq*/){
             throw std::runtime_error("compute_pf_dc is only available for DC solvers.");
         }
 
@@ -211,15 +211,15 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual RealMat get_ptdf(){
             throw std::runtime_error("Impossible to get the PTDF matrix with this solver type.");
         }
-        virtual RealMat get_lodf(const IntVect & from_bus,
-                                 const IntVect & to_bus){  // TODO interface is likely to change
+        virtual RealMat get_lodf(const IntVect & /*from_bus*/,
+                                 const IntVect & /*to_bus*/){  // TODO interface is likely to change
             throw std::runtime_error("Impossible to get the LODF matrix with this solver type.");
         }
         virtual Eigen::SparseMatrix<real_type> get_bsdf(){  // TODO interface is likely to change
             throw std::runtime_error("Impossible to get the BSDF matrix with this solver type.");
         }
 
-        virtual void update_internal_Ybus(const Coeff & new_coeffs, bool add){
+        virtual void update_internal_Ybus(const Coeff & /*new_coeffs*/, bool /*add*/){
             throw std::runtime_error("Function update_internal_Ybus not implemented in general.");
         }
 

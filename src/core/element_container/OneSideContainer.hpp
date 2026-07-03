@@ -424,34 +424,34 @@ class OneSideContainer : public GenericContainer
         virtual void _reset_results() {
             // nothing to do by default
         };
-        virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
-                                      const Eigen::Ref<const RealVect> & Vm,
-                                      const Eigen::Ref<const CplxVect> & V,
-                                      const SolverBusIdVect & id_grid_to_solver,
-                                      const RealVect & bus_vn_kv,
-                                      real_type sn_mva,
-                                      bool ac) {
+        virtual void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+                                      const Eigen::Ref<const RealVect> & /*Vm*/,
+                                      const Eigen::Ref<const CplxVect> & /*V*/,
+                                      const SolverBusIdVect & /*id_grid_to_solver*/,
+                                      const RealVect & /*bus_vn_kv*/,
+                                      real_type /*sn_mva*/,
+                                      bool /*ac*/) {
                                         // nothing to do by default
                                       };
-        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) {
+        virtual bool _deactivate(int el_id, DualAlgoControl & /*solver_control*/) {
             // nothing do to by default
             if(status_[el_id]) return true;
             return false;
         };
-        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) {
+        virtual bool _reactivate(int el_id, DualAlgoControl & /*solver_control*/) {
             // nothing to do by default
             if(!status_[el_id]) return false;
             return true;
         };
-        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) {
+        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & /*solver_control*/, int /*nb_bus*/) {
             // nothing to do by default
             if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
             return true;
         };
-        virtual void _change_p(int el_id, real_type new_p, bool my_status, DualAlgoControl & solver_control) {
+        virtual void _change_p(int /*el_id*/, real_type /*new_p*/, bool /*my_status*/, DualAlgoControl & /*solver_control*/) {
             // nothing to do by default
             };
-        virtual void _change_q(int el_id, real_type new_p, bool my_status,DualAlgoControl & solver_control) {
+        virtual void _change_q(int /*el_id*/, real_type /*new_p*/, bool /*my_status*/,DualAlgoControl & /*solver_control*/) {
             // nothing to do by default
         };
 

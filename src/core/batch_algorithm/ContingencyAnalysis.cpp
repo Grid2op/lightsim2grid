@@ -17,6 +17,171 @@
 
 namespace ls2g {
 
+namespace {
+
+// appends BUS limit violations for a single, already-solved voltage vector `V` (solver
+// numbering). `masked_solver_ids` is nullptr for the base ("n") case; in "handle disconnected
+// grid" mode it is this contingency's masked solver-bus-id list -- those buses are forced to
+// V=0 post-solve and must never be checked (else every one of them would spuriously report a
+// LOW_VOLTAGE violation).
+void check_bus_voltage_violations(
+    const CplxVect & V,
+    const SolverBusIdVect & id_me_to_solver,
+    Eigen::Ref<const RealVect> bus_vmin_kv,
+    Eigen::Ref<const RealVect> bus_vmax_kv,
+    Eigen::Ref<const RealVect> bus_vn_kv,
+    const std::vector<int> * masked_solver_ids,
+    std::vector<LimitViolation> & out)
+{
+    const Eigen::Index nb_bus = bus_vmin_kv.size();
+    if(nb_bus == 0) return;  // voltage limits never configured on this grid
+
+    std::vector<bool> is_masked;
+    if(masked_solver_ids != nullptr && !masked_solver_ids->empty()){
+        is_masked.assign(static_cast<size_t>(V.size()), false);
+        for(int b : *masked_solver_ids){
+            if(b >= 0 && static_cast<size_t>(b) < is_masked.size()) is_masked[static_cast<size_t>(b)] = true;
+        }
+    }
+
+    for(Eigen::Index grid_id = 0; grid_id < nb_bus; ++grid_id){
+        const real_type vmin = bus_vmin_kv(grid_id);
+        const real_type vmax = bus_vmax_kv(grid_id);
+        if(isnan(vmin) && isnan(vmax)) continue;  // no limit configured for this specific bus
+
+        const int solver_id = id_me_to_solver(static_cast<int>(grid_id)).cast_int();
+        if(solver_id == BaseConstants::_deactivated_bus_id) continue;
+        if(!is_masked.empty() && is_masked[static_cast<size_t>(solver_id)]) continue;
+
+        const real_type vm_kv = std::abs(V(solver_id)) * bus_vn_kv(grid_id);
+        if(!isnan(vmin) && vm_kv < vmin){
+            out.push_back(LimitViolation{ViolationElementType::BUS, static_cast<int>(grid_id), 0,
+                                          LimitViolationType::LOW_VOLTAGE, vm_kv, vmin});
+        } else if(!isnan(vmax) && vm_kv > vmax){
+            out.push_back(LimitViolation{ViolationElementType::BUS, static_cast<int>(grid_id), 0,
+                                          LimitViolationType::HIGH_VOLTAGE, vm_kv, vmax});
+        }
+    }
+}
+
+// appends CURRENT limit violations (both sides) for a single, already-solved voltage vector
+// `V` (solver numbering), for every element of `structure_data` (LineContainer or
+// TrafoContainer). `skip_ids` are the LOCAL (own-type) element ids disconnected BY THIS
+// CONTINGENCY: the contingency only edits Ybus coefficients, it never flips
+// `get_status_global()`, so these elements would otherwise still look "connected" and produce
+// a bogus current from the pre-removal coefficients -- exactly why the existing
+// BaseBatchSolverSynch::clean_flows() has to retroactively zero these columns for the batch
+// matrix API; here we just skip them proactively.
+template<class T>
+void check_current_violations(
+    const T & structure_data,
+    ViolationElementType el_type,
+    const CplxVect & V,
+    const SolverBusIdVect & id_me_to_solver,
+    Eigen::Ref<const RealVect> bus_vn_kv,
+    bool ac_solver_used,
+    real_type sn_mva,
+    Eigen::Ref<const RealVect> limit1,
+    Eigen::Ref<const RealVect> limit2,
+    const std::vector<int> & skip_ids,
+    std::vector<LimitViolation> & out)
+{
+    if(limit1.size() == 0 && limit2.size() == 0) return;  // thermal limits never configured
+
+    const auto & el_status = structure_data.get_status_global();
+    const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
+    const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
+
+    Eigen::Ref<const CplxVect> yac_eff_11 = structure_data.yac_eff_11();
+    Eigen::Ref<const CplxVect> yac_eff_12 = structure_data.yac_eff_12();
+    Eigen::Ref<const CplxVect> yac_eff_21 = structure_data.yac_eff_21();
+    Eigen::Ref<const CplxVect> yac_eff_22 = structure_data.yac_eff_22();
+    Eigen::Ref<const RealVect> ydc_11 = structure_data.ydc_11();
+    Eigen::Ref<const RealVect> ydc_12 = structure_data.ydc_12();
+    Eigen::Ref<const RealVect> ydc_21 = structure_data.ydc_21();
+    Eigen::Ref<const RealVect> ydc_22 = structure_data.ydc_22();
+    Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift();
+    const bool has_tau_shift = dc_x_tau_shift.size() > 0;  // trafo only, empty for lines
+
+    const size_t nb_el = structure_data.nb();
+    const real_type sqrt_3 = sqrt(3.);
+
+    std::vector<bool> skip;
+    if(!skip_ids.empty()){
+        skip.assign(nb_el, false);
+        for(int id : skip_ids){
+            if(id >= 0 && static_cast<size_t>(id) < nb_el) skip[static_cast<size_t>(id)] = true;
+        }
+    }
+
+    for(size_t el_id = 0; el_id < nb_el; ++el_id){
+        if(!el_status[el_id]) continue;
+        if(!skip.empty() && skip[el_id]) continue;
+
+        const Eigen::Index el_idx = static_cast<Eigen::Index>(el_id);
+        const bool has_lim1 = limit1.size() > 0 && !isnan(limit1(el_idx));
+        const bool has_lim2 = limit2.size() > 0 && !isnan(limit2(el_idx));
+        if(!has_lim1 && !has_lim2) continue;
+
+        const int bus_from_me = bus_from(static_cast<int>(el_id)).cast_int();
+        const int bus_to_me = bus_to(static_cast<int>(el_id)).cast_int();
+        const int solver_from = id_me_to_solver(bus_from_me).cast_int();
+        const int solver_to = id_me_to_solver(bus_to_me).cast_int();
+        if(solver_from == BaseConstants::_deactivated_bus_id ||
+           solver_to == BaseConstants::_deactivated_bus_id) continue;
+
+        const cplx_type Efrom = V(solver_from);
+        const cplx_type Eto = V(solver_to);
+        const real_type v_from_kv = std::abs(Efrom) * bus_vn_kv(bus_from_me);
+        const real_type v_to_kv = std::abs(Eto) * bus_vn_kv(bus_to_me);
+
+        real_type amps1 = 0.;
+        real_type amps2 = 0.;
+        if(ac_solver_used){
+            // side 1: mirrors BaseBatchSolverSynch::compute_amps_flows (self=from, mutual=to)
+            const cplx_type I_from = std::conj(yac_eff_11(el_idx) * Efrom + yac_eff_12(el_idx) * Eto);
+            const cplx_type S_from = Efrom * I_from;
+            amps1 = std::abs(S_from) * sn_mva / (sqrt_3 * v_from_kv);
+
+            // side 2: mirrors TwoSidesContainer_rxh_A::compute_results_tsc_rxha (self=to, mutual=from)
+            const cplx_type I_to = std::conj(yac_eff_22(el_idx) * Eto + yac_eff_21(el_idx) * Efrom);
+            const cplx_type S_to = Eto * I_to;
+            amps2 = std::abs(S_to) * sn_mva / (sqrt_3 * v_to_kv);
+        } else {
+            const real_type theta_from = std::arg(Efrom);
+            const real_type theta_to = std::arg(Eto);
+            // side 1: mirrors BaseBatchSolverSynch::compute_amps_flows exactly (incl. the
+            // tau-shift subtraction with no extra sn_mva factor, BaseBatchSolverSynch.hpp:158)
+            real_type p_from = (ydc_11(el_idx) * theta_from + ydc_12(el_idx) * theta_to) * sn_mva;
+            if(has_tau_shift) p_from -= dc_x_tau_shift(el_idx);
+            amps1 = std::abs(p_from) / (sqrt_3 * v_from_kv);
+
+            // side 2: mirrored from side 1 (self=to, mutual=from). The tau-shift sign here is
+            // the OPPOSITE of side 1's -- verified against the fundamental DC power-flow
+            // invariant (no losses are modeled in DC, so p_from must equal -p_to exactly for
+            // any series branch, phase-shifting or not): with ydc_22==ydc_11 and
+            // ydc_21==ydc_12 (as they are for a simple series admittance), using the same sign
+            // on both sides would break that identity by 2*dc_x_tau_shift, while the opposite
+            // sign (used here) preserves p_from+p_to==0 exactly, confirmed numerically on a
+            // case14 grid with an added phase-shifting transformer.
+            real_type p_to = (ydc_22(el_idx) * theta_to + ydc_21(el_idx) * theta_from) * sn_mva;
+            if(has_tau_shift) p_to += dc_x_tau_shift(el_idx);
+            amps2 = std::abs(p_to) / (sqrt_3 * v_to_kv);
+        }
+
+        if(has_lim1 && amps1 > limit1(el_idx)){
+            out.push_back(LimitViolation{el_type, static_cast<int>(el_id), 1,
+                                          LimitViolationType::CURRENT, amps1, limit1(el_idx)});
+        }
+        if(has_lim2 && amps2 > limit2(el_idx)){
+            out.push_back(LimitViolation{el_type, static_cast<int>(el_id), 2,
+                                          LimitViolationType::CURRENT, amps2, limit2(el_idx)});
+        }
+    }
+}
+
+}  // anonymous namespace
+
 bool ContingencyAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const{
     std::vector<bool> visited(Ybus.cols(), false); 
     std::vector<bool> already_added(Ybus.cols(), false);
@@ -209,14 +374,14 @@ void ContingencyAnalysis::init_li_coeffs(
         for(auto br_id : this_cont_id){
             int el_id;
             const TwoSidesContainer_rxh_A<OneSideContainer_ForBranch> *p_branch;
-            if(br_id < n_line_)
+            if(static_cast<size_t>(br_id) < n_line_)
             {
                 // this is a powerline
                 el_id = br_id;
                 p_branch = & powerlines;
             }else{
                 // this is a trafo
-                el_id = br_id - n_line_;
+                el_id = br_id - static_cast<int>(n_line_);
                 p_branch = & trafos;
             }
             
@@ -374,6 +539,18 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     const bool ac_solver_used = _algo.ac_solver_used();
     size_t nb_steps = _li_defaults.size();
 
+    // limit-violation checking (only if requested, see set_compute_limit_violations()):
+    // my_defaults_vect() walks the whole `_li_defaults` set, so it is built once here (before
+    // any per-contingency work, single- or multi-threaded) rather than once per contingency.
+    const std::vector<std::vector<int> > li_defaults_vect =
+        _compute_limit_violations_ ? my_defaults_vect() : std::vector<std::vector<int> >();
+    if(_compute_limit_violations_){
+        _converged.assign(nb_steps, 0);
+        _violations.assign(nb_steps, std::vector<LimitViolation>());
+        _converged_n_ = false;
+        _violations_n_.clear();
+    }
+
     // prepare the gridmodel (compute Ybus, Sbus etc.)
     CplxVect Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used);
 
@@ -409,6 +586,33 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
         timer_preproc
     );
 
+    if(_compute_limit_violations_){
+        // pre-contingency ("n") case: this is the only point at which the base-case V is
+        // observable -- the per-contingency solves (below) reuse / overwrite the member
+        // `_algo`'s state in the single-threaded path, and build separate per-thread copies
+        // only afterward (in init_thread) in the multi-threaded path.
+        _converged_n_ = n_powerflow_has_conv;
+        if(n_powerflow_has_conv){
+            const CplxVect V_n = _algo.get_V();
+            const std::vector<int> no_skip;
+            check_bus_voltage_violations(V_n, id_me_to_solver_,
+                                          _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
+                                          _grid_model.get_bus_vn_kv(), nullptr, _violations_n_);
+            check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
+                                      V_n, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
+                                      ac_solver_used, sn_mva,
+                                      _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
+                                      _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
+                                      no_skip, _violations_n_);
+            check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
+                                      V_n, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
+                                      ac_solver_used, sn_mva,
+                                      _grid_model.get_trafos_as_data().get_limit_a1_ka(),
+                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
+                                      no_skip, _violations_n_);
+        }
+    }
+
     if(!n_powerflow_has_conv) return;
 
     auto timer_thread = CustTimer();
@@ -424,7 +628,8 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
             0, nb_cont,
             _algo, _algo_controler, Ybus_, Vinit_solver,
             ac_solver_used, mask_mode, max_iter, tol, sn_mva,
-            _timer_modif_Ybus, _nb_solved, _timer_solver, err, false);
+            _timer_modif_Ybus, _nb_solved, _timer_solver, err, false,
+            _compute_limit_violations_ ? &li_defaults_vect : nullptr);
         if(err) std::rethrow_exception(err);
         _timer_total = timer.duration();
         return;
@@ -475,14 +680,15 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     for(int t = 1; t < nb_thread; ++t){
         size_t b, e;
         range_of(t, b, e);
-        threads.emplace_back([=, &init_thread, &algo_for, &ybus_for, &controls, &th_timer_modif,
+        threads.emplace_back([=, this, &init_thread, &algo_for, &ybus_for, &controls, &th_timer_modif,
                               &th_nb_solved, &th_timer_solver, &th_err, &Vinit_solver](){
             init_thread(t);  // build this worker's solver / control / Ybus copy in parallel
             run_contingency_range(
                 b, e,
                 algo_for(t), controls[t], ybus_for(t), Vinit_solver,
                 ac_solver_used, mask_mode, max_iter, tol, sn_mva,
-                th_timer_modif[t], th_nb_solved[t], th_timer_solver[t], th_err[t], true);
+                th_timer_modif[t], th_nb_solved[t], th_timer_solver[t], th_err[t], true,
+                _compute_limit_violations_ ? &li_defaults_vect : nullptr);
         });
     }
     _timer_thread_init = timer_thread.duration();
@@ -495,7 +701,8 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
             b, e,
             algo_for(0), controls[0], ybus_for(0), Vinit_solver,
             ac_solver_used, mask_mode, max_iter, tol, sn_mva,
-            th_timer_modif[0], th_nb_solved[0], th_timer_solver[0], th_err[0], true);
+            th_timer_modif[0], th_nb_solved[0], th_timer_solver[0], th_err[0], true,
+            _compute_limit_violations_ ? &li_defaults_vect : nullptr);
     }
 
     for(auto & th : threads) th.join();
@@ -529,7 +736,8 @@ void ContingencyAnalysis::run_contingency_range(
     int & nb_solved,
     double & timer_solver,
     std::exception_ptr & err,
-    bool needs_solver_init)
+    bool needs_solver_init,
+    const std::vector<std::vector<int> > * li_defaults_vect)
 {
     try {
         CplxVect V;
@@ -610,6 +818,40 @@ void ContingencyAnalysis::run_contingency_range(
             }
 
             if (do_store) _voltages.row(cont_id)(id_solver_to_me_.as_eigen()) = V.array();
+
+            if(li_defaults_vect != nullptr){
+                _converged[cont_id] = do_store ? 1 : 0;
+                if(do_store){
+                    // split this contingency's disconnected branch ids (grid-wide numbering,
+                    // lines first then trafos, see init_li_coeffs) into per-type LOCAL ids so
+                    // check_current_violations can skip them (they still look "connected" via
+                    // get_status_global(), only the Ybus coefficients were edited)
+                    std::vector<int> skip_lines, skip_trafos;
+                    for(int br_id : (*li_defaults_vect)[cont_id]){
+                        if(static_cast<size_t>(br_id) < n_line_) skip_lines.push_back(br_id);
+                        else skip_trafos.push_back(static_cast<int>(br_id - static_cast<int>(n_line_)));
+                    }
+
+                    const std::vector<int> * masked_ids = (mask_mode && !_li_masked[cont_id].empty())
+                                                           ? &_li_masked[cont_id] : nullptr;
+                    check_bus_voltage_violations(V, id_me_to_solver_,
+                                                  _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
+                                                  _grid_model.get_bus_vn_kv(), masked_ids,
+                                                  _violations[cont_id]);
+                    check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
+                                              V, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
+                                              ac_solver_used, sn_mva,
+                                              _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
+                                              _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
+                                              skip_lines, _violations[cont_id]);
+                    check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
+                                              V, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
+                                              ac_solver_used, sn_mva,
+                                              _grid_model.get_trafos_as_data().get_limit_a1_ka(),
+                                              _grid_model.get_trafos_as_data().get_limit_a2_ka(),
+                                              skip_trafos, _violations[cont_id]);
+                }
+            }
         }
     } catch(...) {
         err = std::current_exception();
