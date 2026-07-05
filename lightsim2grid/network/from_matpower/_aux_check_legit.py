@@ -9,16 +9,17 @@
 import warnings
 import numpy as np
 
-from ._my_const import MIN_BUS_COLS, MIN_GEN_COLS, MIN_BRANCH_COLS, TAP, SHIFT, BUS_TYPE, NONE
+from ._my_const import (MIN_BUS_COLS, MIN_GEN_COLS, MIN_BRANCH_COLS, MIN_DCLINE_COLS,
+                        TAP, SHIFT, BUS_TYPE, NONE)
 
 
-def _aux_check_legit(bus, gen, branch):
+def _aux_check_legit(bus, gen, branch, dcline):
     """
     Check that the raw matpower matrices can be handled by lightsim2grid.
 
     Parameters
     ----------
-    bus, gen, branch: numpy arrays
+    bus, gen, branch, dcline: numpy arrays
         The raw matpower matrices, as returned by `_parse_matpower_source.load_matpower_data`
 
     Returns
@@ -31,6 +32,8 @@ def _aux_check_legit(bus, gen, branch):
         raise RuntimeError(f"`mpc.gen` should have at least {MIN_GEN_COLS} columns, found {gen.shape[1]}.")
     if branch.shape[0] and branch.shape[1] < MIN_BRANCH_COLS:
         raise RuntimeError(f"`mpc.branch` should have at least {MIN_BRANCH_COLS} columns, found {branch.shape[1]}.")
+    if dcline.shape[0] and dcline.shape[1] < MIN_DCLINE_COLS:
+        raise RuntimeError(f"`mpc.dcline` should have at least {MIN_DCLINE_COLS} columns, found {dcline.shape[1]}.")
 
     if branch.shape[0]:
         is_line = branch[:, TAP] == 0.
