@@ -148,6 +148,64 @@ class BaseTests:
         np.testing.assert_allclose(mpc["branch"][0, 9], 30.0)  # SHIFT column, degrees
 
 
+class TestPFDeltaDCLine(unittest.TestCase):
+    """PFΔ's own pglib-derived cases (case14/30/57/118/500/2000) never contain a
+    `"dcline"` entry, but PowerModels' schema supports one and `from_matpower` now
+    converts it (`model.init_dclines`), so this exercises that translation path
+    directly rather than leaving it silently unsupported."""
+
+    @staticmethod
+    def _network_with_dcline():
+        return {
+            "baseMVA": 100.0,
+            "bus": {"1": {"bus_i": 1, "bus_type": 3, "vmax": 1.1, "vmin": 0.9},
+                    "2": {"bus_i": 2, "bus_type": 1, "vmax": 1.1, "vmin": 0.9},
+                    "3": {"bus_i": 3, "bus_type": 1, "vmax": 1.1, "vmin": 0.9}},
+            "gen": {"1": {"gen_bus": 1, "pg": 0.0, "qg": 0.0, "qmax": 100.0, "qmin": -100.0,
+                          "vg": 1.0, "pmax": 200.0, "pmin": 0.0, "gen_status": 1}},
+            "load": {"1": {"load_bus": 2, "pd": 10.0, "qd": 2.0, "status": 1},
+                     "2": {"load_bus": 3, "pd": 5.0, "qd": 1.0, "status": 1}},
+            "shunt": {},
+            "branch": {"1": {"f_bus": 1, "t_bus": 2, "br_r": 0.01, "br_x": 0.1, "br_status": 1},
+                       "2": {"f_bus": 2, "t_bus": 3, "br_r": 0.01, "br_x": 0.1, "br_status": 1}},
+            # PowerModels keeps "pf" at matpower's own sign, but negates "pt"/"qf"/"qt";
+            # only f_bus/t_bus/br_status/pf/loss0/loss1/vf/vt/qmin*/qmax* are actually
+            # consumed by from_matpower's converter (see _aux_add_dc_line.py)
+            "dcline": {"1": {"f_bus": 2, "t_bus": 3, "pf": 10.0, "pt": -9.0, "qf": 0.0, "qt": 0.0,
+                             "vf": 1.0, "vt": 1.0, "qminf": -10.0, "qmaxf": 10.0,
+                             "qmint": -10.0, "qmaxt": 10.0, "loss0": 0.5, "loss1": 0.05,
+                             "br_status": 1}},
+        }
+
+    def test_no_dcline_key_at_all(self):
+        network = self._network_with_dcline()
+        del network["dcline"]
+        model = init_from_pf_delta({"network": network})
+        assert len(model.get_dclines()) == 0
+
+    def test_dcline_is_converted_and_matches_matpower_loss_formula(self):
+        model = init_from_pf_delta({"network": self._network_with_dcline()})
+        dclines = model.get_dclines()
+        assert len(dclines) == 1
+        # matpower's PF (10 MW, "from" -> "to") maps to lightsim2grid's "power received
+        # at side 1" convention, so it must be negated (same as the pandapower loader)
+        assert abs(dclines[0].target_p1_mw - (-10.0)) <= 1e-8
+
+        Vfinal = model.ac_pf(np.full(3, 1.0, dtype=complex), 10, 1e-8)
+        assert Vfinal.shape[0] > 0, "powerflow diverged"
+        dclines = model.get_dclines()
+        # PT = PF - (LOSS0 + LOSS1 * PF) = 10 - (0.5 + 0.05 * 10) = 9.0
+        assert abs(dclines[0].res_p1_mw - (-10.0)) <= 1e-4
+        assert abs(dclines[0].res_p2_mw - 9.0) <= 1e-4
+
+    def test_deactivated_dcline(self):
+        network = self._network_with_dcline()
+        network["dcline"]["1"]["br_status"] = 0
+        model = init_from_pf_delta({"network": network})
+        Vfinal = model.ac_pf(np.full(3, 1.0, dtype=complex), 10, 1e-8)
+        assert Vfinal.shape[0] > 0, "powerflow diverged"
+
+
 class TestLSGridPFDelta(BaseTests, unittest.TestCase):
     pass
 
