@@ -25,6 +25,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+matpower = [
+    "scipy",
+    "matpowercaseframes",
+]
 docs = [
     "numpydoc>=0.9.2",
     "sphinx>=2.4.4",
@@ -34,7 +38,9 @@ docs = [
     "grid2op>=1.6.4",
     "recommonmark",
     "pypowsybl",
-    "pandapower"
+    "pandapower",
+    "scipy",
+    "matpowercaseframes"
 ]
 
 [project.urls]
