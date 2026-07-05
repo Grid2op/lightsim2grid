@@ -43,6 +43,9 @@ except ImportError:
     # a ".m"/".mat" file
     pass
 
+from lightsim2grid.network.from_pf_delta import init as init_from_pf_delta  # noqa
+__all__.append("init_from_pf_delta")
+
 try:
     from lightsim2grid.network.compare_lsgrid import compare_lsgrid  # noqa
     __all__.append("compare_lsgrid")
