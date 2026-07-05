@@ -319,6 +319,16 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   Grids built from pandapower never populate these (getters return an empty array /
   NaN per element). Not wired into `LightSimBackend.thermal_limit_a`, which keeps its
   existing behaviour.
+- [ADDED] `lightsim2grid.network.init_from_pf_delta`: builds an `LSGrid` from one row of
+  the PFΔ benchmark dataset (arXiv:2510.22048, a PowerModels.jl/MATPOWER-format dict
+  with a solved power-flow state attached). Accepts either a parsed row (dict) or a
+  path to its `.json` file. Implemented as a thin translation layer on top of
+  `init_from_matpower`: the PFΔ row's PowerModels dict is converted into a raw
+  MATPOWER-shaped `bus`/`gen`/`branch` array triple and delegated to it, reusing its
+  bus-id remapping, line/transformer splitting, generator/load/shunt conversion and
+  slack-bus handling. Tested in `test_LSGrid_pf_delta.py`, including an end-to-end
+  check that lightsim2grid's own AC powerflow reproduces a row's solved `vm`/`va`/
+  `pf`/`qf`/`pt`/`qt` to solver tolerance.
 
 [0.13.1]  2026-04-21
 --------------------
