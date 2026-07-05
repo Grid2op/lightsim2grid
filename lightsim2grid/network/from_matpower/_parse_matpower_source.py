@@ -9,6 +9,8 @@
 import os
 import numpy as np
 
+from ._my_const import MIN_DCLINE_COLS
+
 
 def _as_array(obj):
     # accepts a numpy array, a pandas DataFrame (via ".values") or anything array-like
@@ -25,6 +27,21 @@ def _as_array(obj):
     return arr
 
 
+def _as_dcline_array(obj):
+    """Like `_as_array`, but `mpc.dcline` is optional (most matpower cases have no
+    HVDC line at all): missing / empty input becomes a (0, MIN_DCLINE_COLS) array
+    instead of an error or a malformed (1, 0) reshape.
+    """
+    if obj is None:
+        return np.zeros((0, MIN_DCLINE_COLS))
+    arr = np.asarray(obj.values) if hasattr(obj, "values") else np.asarray(obj)
+    if arr.size == 0:
+        return np.zeros((0, MIN_DCLINE_COLS))
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    return arr
+
+
 def _load_from_m(path):
     """Parse a MATPOWER ``.m`` case file using the optional ``matpowercaseframes`` package."""
     try:
@@ -34,7 +51,9 @@ def _load_from_m(path):
                            "\"matpowercaseframes\" package. Install it with "
                            "`pip install matpowercaseframes` (or `pip install lightsim2grid[matpower]`).") from exc_
     cf = CaseFrames(path)
-    return _as_array(cf.bus), _as_array(cf.gen), _as_array(cf.branch), float(cf.baseMVA)
+    dcline = getattr(cf, "dcline", None)
+    return (_as_array(cf.bus), _as_array(cf.gen), _as_array(cf.branch),
+            _as_dcline_array(dcline), float(cf.baseMVA))
 
 
 def _load_from_mat(path):
@@ -58,10 +77,16 @@ def _load_from_mat(path):
     if hasattr(mpc, "bus"):
         # scipy loaded it as a matlab struct (mat_struct instance)
         bus, gen, branch, baseMVA = mpc.bus, mpc.gen, mpc.branch, mpc.baseMVA
+        dcline = getattr(mpc, "dcline", None)
     else:
         # scipy loaded it as a structured / record array
         bus, gen, branch, baseMVA = mpc["bus"], mpc["gen"], mpc["branch"], mpc["baseMVA"]
-    return _as_array(bus), _as_array(gen), _as_array(branch), float(np.asarray(baseMVA).item())
+        try:
+            dcline = mpc["dcline"]
+        except (KeyError, ValueError):
+            dcline = None
+    return (_as_array(bus), _as_array(gen), _as_array(branch),
+            _as_dcline_array(dcline), float(np.asarray(baseMVA).item()))
 
 
 def _load_from_dict_like(source):
@@ -71,9 +96,12 @@ def _load_from_dict_like(source):
     """
     if isinstance(source, dict):
         bus, gen, branch, baseMVA = source["bus"], source["gen"], source["branch"], source["baseMVA"]
+        dcline = source.get("dcline")
     else:
         bus, gen, branch, baseMVA = source.bus, source.gen, source.branch, source.baseMVA
-    return _as_array(bus), _as_array(gen), _as_array(branch), float(baseMVA)
+        dcline = getattr(source, "dcline", None)
+    return (_as_array(bus), _as_array(gen), _as_array(branch),
+            _as_dcline_array(dcline), float(baseMVA))
 
 
 def load_matpower_data(source):
@@ -93,6 +121,9 @@ def load_matpower_data(source):
     bus, gen, branch: numpy arrays
         The raw matpower matrices (rows = elements, columns = matpower's
         positional column layout, see `lightsim2grid.network.from_matpower._my_const`)
+    dcline: numpy array
+        The raw `mpc.dcline` matrix, or a `(0, MIN_DCLINE_COLS)` array if the source
+        has no dcline table at all (most matpower cases don't have any HVDC line)
     baseMVA: float
         The system base MVA
     """
