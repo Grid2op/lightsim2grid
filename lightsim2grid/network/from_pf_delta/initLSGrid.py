@@ -27,7 +27,6 @@ from ._pf_delta_to_mpc import network_to_mpc
 
 
 def init(row: Union[dict, str, "os.PathLike"],
-         n_sub: Optional[int] = None,  # number of voltage levels
          n_busbar_per_sub: Optional[int] = None,  # max number of buses allowed per substation / voltage level
          ) -> LSGrid:
     """
@@ -39,11 +38,15 @@ def init(row: Union[dict, str, "os.PathLike"],
         Either a PFΔ row already parsed into a dict (with a top-level ``"network"``
         key), or a path (str or `os.PathLike`) to a ``.json`` file containing that same
         structure.
-    n_sub:
-        number of voltage levels / substations. If not provided, defaults to one
-        substation per PFΔ bus (`n_busbar_per_sub` is then forced to 1).
     n_busbar_per_sub:
-        max number of buses allowed per substation / voltage level.
+        There is always exactly one substation / voltage level per PFΔ bus (PFΔ has no
+        notion of several busbar sections within a bus, so this is not configurable).
+        This parameter only controls how many buses / busbar sections lightsim2grid
+        allocates *per substation*, which is useful if you intend to perform grid2op-like
+        topology actions on the resulting grid afterwards. Defaults to 1 (no extra busbar
+        section). Any extra busbar section is deactivated, since nothing in the base
+        PFΔ row is ever connected to it. Passed through directly to
+        `lightsim2grid.network.init_from_matpower`.
 
     Returns
     -------
@@ -60,4 +63,4 @@ def init(row: Union[dict, str, "os.PathLike"],
                            f"got a dict with keys {sorted(row.keys())}.")
 
     mpc = network_to_mpc(row["network"])
-    return _init_from_matpower(mpc, n_sub=n_sub, n_busbar_per_sub=n_busbar_per_sub)
+    return _init_from_matpower(mpc, n_busbar_per_sub=n_busbar_per_sub)
