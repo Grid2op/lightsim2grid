@@ -324,11 +324,13 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   with a solved power-flow state attached). Accepts either a parsed row (dict) or a
   path to its `.json` file. Implemented as a thin translation layer on top of
   `init_from_matpower`: the PFΔ row's PowerModels dict is converted into a raw
-  MATPOWER-shaped `bus`/`gen`/`branch` array triple and delegated to it, reusing its
-  bus-id remapping, line/transformer splitting, generator/load/shunt conversion and
-  slack-bus handling. Tested in `test_LSGrid_pf_delta.py`, including an end-to-end
-  check that lightsim2grid's own AC powerflow reproduces a row's solved `vm`/`va`/
-  `pf`/`qf`/`pt`/`qt` to solver tolerance.
+  MATPOWER-shaped `bus`/`gen`/`branch` (and, if present, `dcline`) array set and
+  delegated to it, reusing its bus-id remapping, line/transformer splitting,
+  generator/load/shunt/HVDC conversion and slack-bus handling. Tested in
+  `test_LSGrid_pf_delta.py`, including an end-to-end check that lightsim2grid's own AC
+  powerflow reproduces a row's solved `vm`/`va`/`pf`/`qf`/`pt`/`qt` to solver tolerance,
+  and a synthetic-network check of the `"dcline"` translation (PFΔ's own pglib-derived
+  cases never contain one, but the schema and `from_matpower` both support it).
 
 [0.13.1]  2026-04-21
 --------------------
