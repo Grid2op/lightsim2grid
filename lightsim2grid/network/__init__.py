@@ -35,6 +35,15 @@ except ImportError:
     pass
 
 try:
+    from lightsim2grid.network.from_matpower import init as init_from_matpower  # noqa
+    __all__.append("init_from_matpower")
+except ImportError:
+    # should not happen: from_matpower has no hard dependency beyond numpy,
+    # matpowercaseframes/scipy are only imported lazily when actually reading
+    # a ".m"/".mat" file
+    pass
+
+try:
     from lightsim2grid.network.compare_lsgrid import compare_lsgrid  # noqa
     __all__.append("compare_lsgrid")
 except ImportError:
