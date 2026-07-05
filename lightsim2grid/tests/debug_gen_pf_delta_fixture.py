@@ -119,7 +119,13 @@ def build_pf_delta_row(net) -> dict:
 
 if __name__ == "__main__":
     net = pn.case14()
-    pp.runpp(net, numba=False)
+    # trafo_model="pi": pandapower defaults to the more physically-accurate "t"
+    # (T-equivalent) transformer model, which does not in general produce the same
+    # per-unit branch parameters as MATPOWER/PowerModels' single-pi-model convention
+    # (they only happen to coincide when a transformer has no iron losses / no series
+    # resistance, as is the case for plain case14). Forcing "pi" here keeps this
+    # fixture representative of what a real MATPOWER-derived PFΔ case looks like.
+    pp.runpp(net, numba=False, trafo_model="pi")
     row = build_pf_delta_row(net)
 
     out_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "pf_delta_case14.json")
