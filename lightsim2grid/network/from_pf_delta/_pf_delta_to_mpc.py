@@ -12,7 +12,9 @@ from ..from_matpower._my_const import (
     BUS_I, BUS_TYPE, PD, QD, GS, BS, BUS_AREA, VM, VA, BASE_KV, ZONE, VMAX, VMIN,
     GEN_BUS, PG, QG, QMAX, QMIN, VG, MBASE, GEN_STATUS, PMAX, PMIN,
     F_BUS, T_BUS, BR_R, BR_X, BR_B, RATE_A, RATE_B, RATE_C, TAP, SHIFT, BR_STATUS,
-    MIN_BUS_COLS, MIN_GEN_COLS, MIN_BRANCH_COLS,
+    DC_F_BUS, DC_T_BUS, DC_BR_STATUS, DC_PF, DC_VF, DC_VT,
+    DC_QMINF, DC_QMAXF, DC_QMINT, DC_QMAXT, DC_LOSS0, DC_LOSS1,
+    MIN_BUS_COLS, MIN_GEN_COLS, MIN_BRANCH_COLS, MIN_DCLINE_COLS,
 )
 
 
@@ -37,10 +39,9 @@ def network_to_mpc(network: dict) -> dict:
     by tests that need to map a built `LSGrid`'s element positions back to the original
     PFΔ row's bus / gen / branch keys.
     """
-    for unsupported in ("dcline", "storage"):
-        if network.get(unsupported):
-            raise RuntimeError(f'"{unsupported}" is present in this PFΔ row but is not '
-                               f"supported by this loader.")
+    if network.get("storage"):
+        raise RuntimeError('"storage" is present in this PFΔ row but is not supported '
+                           "by this loader (from_matpower has no storage container either).")
     if network.get("multinetwork"):
         raise RuntimeError("multinetwork PowerModels dicts are not supported by this loader.")
 
@@ -126,4 +127,31 @@ def network_to_mpc(network: dict) -> dict:
         branch[i, SHIFT] = np.rad2deg(br.get("shift", 0.0))
         branch[i, BR_STATUS] = br.get("br_status", 1)
 
-    return {"bus": bus, "gen": gen, "branch": branch, "baseMVA": base_mva}
+    mpc = {"bus": bus, "gen": gen, "branch": branch, "baseMVA": base_mva}
+
+    if network.get("dcline"):
+        dcline_keys = sorted(network["dcline"], key=int)
+        dcline = np.zeros((len(dcline_keys), MIN_DCLINE_COLS))
+        for i, k in enumerate(dcline_keys):
+            dc = network["dcline"][k]
+            dcline[i, DC_F_BUS] = int(dc["f_bus"])
+            dcline[i, DC_T_BUS] = int(dc["t_bus"])
+            dcline[i, DC_BR_STATUS] = dc.get("br_status", 1)
+            # PowerModels keeps "pf" at matpower's own value/sign (only "pt"/"qf"/"qt"
+            # get sign-flipped by PowerModels.jl's parser); from_matpower's own dcline
+            # converter is the one that negates it to match lightsim2grid's "received
+            # at side 1" convention, so it must be passed through here unchanged.
+            dcline[i, DC_PF] = dc["pf"]
+            dcline[i, DC_VF] = dc.get("vf", 1.0)
+            dcline[i, DC_VT] = dc.get("vt", 1.0)
+            dcline[i, DC_QMINF] = dc["qminf"]
+            dcline[i, DC_QMAXF] = dc["qmaxf"]
+            dcline[i, DC_QMINT] = dc["qmint"]
+            dcline[i, DC_QMAXT] = dc["qmaxt"]
+            dcline[i, DC_LOSS0] = dc["loss0"]
+            dcline[i, DC_LOSS1] = dc["loss1"]
+            # DC_PT / DC_QF / DC_QT / DC_PMIN / DC_PMAX are not read by
+            # from_matpower's dcline converter (see _aux_add_dc_line.py) -- left at 0.0
+        mpc["dcline"] = dcline
+
+    return mpc
