@@ -53,7 +53,8 @@ def _aux_add_slack(model, bus, gen, mp_to_ls, isolated_ls_bus):
         return
     if n_ref > 1:
         warnings.warn(f"{n_ref} buses found with `BUS_TYPE == 3` (reference bus), matpower "
-                      f"normally expects a single one. All of them will be considered.")
+                      f"normally expects a single one. All of them will be considered, "
+                      f"with equal weights.")
 
     ref_bus_mp = bus[ref_mask, BUS_I]
     ref_bus_ls = mp_bus_to_ls(ref_bus_mp, mp_to_ls)

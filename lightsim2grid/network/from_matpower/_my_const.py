@@ -22,9 +22,15 @@ PQ, PV, REF, NONE = 1, 2, 3, 4
 (F_BUS, T_BUS, BR_R, BR_X, BR_B, RATE_A, RATE_B, RATE_C,
  TAP, SHIFT, BR_STATUS, ANGMIN, ANGMAX) = range(13)
 
+# column indices, 0-based, matching MATPOWER's lib/idx_dcline.m
+(DC_F_BUS, DC_T_BUS, DC_BR_STATUS, DC_PF, DC_PT, DC_QF, DC_QT, DC_VF, DC_VT,
+ DC_PMIN, DC_PMAX, DC_QMINF, DC_QMAXF, DC_QMINT, DC_QMAXT,
+ DC_LOSS0, DC_LOSS1) = range(17)
+
 # minimum number of columns lightsim2grid needs to find in each matpower
 # matrix (matpower case files may have fewer optional trailing columns,
 # e.g. no ANGMIN / ANGMAX, or more, e.g. solved-case result columns)
 MIN_BUS_COLS = VMIN + 1
 MIN_GEN_COLS = PMIN + 1
 MIN_BRANCH_COLS = BR_STATUS + 1
+MIN_DCLINE_COLS = DC_LOSS1 + 1
