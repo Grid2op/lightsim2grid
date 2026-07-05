@@ -25,11 +25,11 @@ from ._aux_add_load import _aux_add_load
 from ._aux_add_shunt import _aux_add_shunt
 from ._aux_add_gen import _aux_add_gen
 from ._aux_add_slack import _aux_add_slack
+from ._aux_add_dc_line import _aux_add_dc_line
 from ._my_const import BUS_I, BUS_TYPE, BASE_KV, NONE
 
 
 def init(source: Union[str, "os.PathLike", dict],
-         n_sub: Optional[int] = None,  # number of voltage levels
          n_busbar_per_sub: Optional[int] = None,  # max number of buses allowed per substation / voltage level
          ) -> LSGrid:
     """
@@ -47,7 +47,7 @@ def init(source: Union[str, "os.PathLike", dict],
 
     Cases for which conversion is not possible include, but are not limited to:
 
-    - `mpc.gencost`, `mpc.areas` and `mpc.dcline` are ignored (not needed for a powerflow)
+    - `mpc.gencost` and `mpc.areas` are ignored (not needed for a powerflow)
     - matpower's `.m` files require the optional `matpowercaseframes` package,
       `.mat` files require the optional `scipy` package.
 
@@ -59,11 +59,14 @@ def init(source: Union[str, "os.PathLike", dict],
         "baseMVA" keys (e.g. as returned by `pypower`'s `caseN()` functions), or any
         object exposing these as attributes (e.g. a `matpowercaseframes.CaseFrames`
         instance built beforehand).
-    n_sub:
-        number of voltage levels / substations. If not provided, defaults to one
-        substation per matpower bus (`n_busbar_per_sub` is then forced to 1).
     n_busbar_per_sub:
-        max number of buses allowed per substation / voltage level.
+        There is always exactly one substation / voltage level per matpower bus (matpower
+        has no notion of several busbar sections within a bus, so this is not configurable).
+        This parameter only controls how many buses / busbar sections lightsim2grid
+        allocates *per substation*, which is useful if you intend to perform grid2op-like
+        topology actions on the resulting grid afterwards. Defaults to 1 (no extra busbar
+        section). Any extra busbar section is deactivated, since nothing in the base
+        matpower case is ever connected to it.
 
     Returns
     -------
@@ -71,8 +74,8 @@ def init(source: Union[str, "os.PathLike", dict],
         The initialized network
 
     """
-    bus, gen, branch, baseMVA = load_matpower_data(source)
-    _aux_check_legit(bus, gen, branch)
+    bus, gen, branch, dcline, baseMVA = load_matpower_data(source)
+    _aux_check_legit(bus, gen, branch, dcline)
 
     mp_to_ls, ls_to_orig = build_bus_remap(bus[:, BUS_I])
 
@@ -83,21 +86,9 @@ def init(source: Union[str, "os.PathLike", dict],
     model = LSGrid()
     model.set_sn_mva(baseMVA)
 
-    if n_sub is None:
-        n_sub = bus.shape[0]
-        if n_busbar_per_sub is not None and n_busbar_per_sub != 1:
-            raise RuntimeError(f"If n_sub is None, n_busbar_per_sub must be None (or 1), found {n_busbar_per_sub}.")
+    n_sub = bus.shape[0]
+    if n_busbar_per_sub is None:
         n_busbar_per_sub = 1
-
-    try:
-        tmp = int(n_sub)
-    except ValueError as exc_:
-        raise RuntimeError("Impossible to convert n_sub to int") from exc_
-    if tmp != n_sub:
-        raise RuntimeError(f"n_sub should be a int, you provided {tmp} which cannot safely be converted to an int.")
-    n_sub = tmp
-    if n_sub <= 0:
-        raise RuntimeError(f"You need to provide a grid with at least 1 substation / voltage level, provided n_sub={n_sub}")
 
     try:
         tmp = int(n_busbar_per_sub)
@@ -110,8 +101,24 @@ def init(source: Union[str, "os.PathLike", dict],
         raise RuntimeError(f"You need to provide a grid with at least 1 busbar per "
                            f"substation / voltage level, provided n_busbar_per_sub={n_busbar_per_sub}")
 
-    model.init_bus(n_sub, n_busbar_per_sub, bus[:, BASE_KV], nb_line, nb_trafo)
+    # lightsim2grid lays out global bus ids busbar-section-major: ids [0, n_sub) are
+    # busbar section 1 of every substation (one per matpower bus, in matpower order),
+    # ids [n_sub, 2*n_sub) are section 2, etc. `np.tile` replicates `bus[:, BASE_KV]`
+    # to match that layout.
+    vn_kv = np.tile(bus[:, BASE_KV], n_busbar_per_sub)
+    model.init_bus(n_sub, n_busbar_per_sub, vn_kv, nb_line, nb_trafo)
+    if n_busbar_per_sub > 1:
+        # extra busbar sections have no corresponding matpower bus at all
+        ls_to_orig = np.concatenate((ls_to_orig,
+                                     np.full(n_sub * (n_busbar_per_sub - 1), -1, dtype=int)))
     model._ls_to_orig = ls_to_orig
+
+    if n_busbar_per_sub > 1:
+        # matpower has no data for these extra busbar sections: nothing is connected
+        # to them in the base case, so deactivate them until a topology action moves
+        # something there
+        for ls_bus_id in range(n_sub, n_sub * n_busbar_per_sub):
+            model.deactivate_bus(ls_bus_id)
 
     isolated_mask = bus[:, BUS_TYPE] == NONE
     if np.any(isolated_mask):
@@ -135,5 +142,8 @@ def init(source: Union[str, "os.PathLike", dict],
 
     # deal with the slack bus(es)
     _aux_add_slack(model, bus, gen, mp_to_ls, isolated_ls_bus)
+
+    # init the HVDC lines (mpc.dcline), if any
+    _aux_add_dc_line(model, dcline, mp_to_ls, isolated_ls_bus)
 
     return model

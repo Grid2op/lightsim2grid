@@ -158,6 +158,85 @@ class TestInitFromMatpowerDict(unittest.TestCase):
             init_from_matpower(raw)
 
 
+class TestInitFromMatpowerNBusbarPerSub(unittest.TestCase):
+    """There is always exactly one substation per matpower bus (not configurable), but
+    `n_busbar_per_sub` (number of busbar sections lightsim2grid allocates per substation,
+    for later grid2op-like topology actions) should accept any value >= 1."""
+
+    def test_default_is_one_busbar_per_sub(self):
+        model = init_from_matpower(_toy_mpc())
+        np.testing.assert_array_equal(model.get_bus_status(), [True, True, True, True])
+        Vfinal = _run_pf(model)
+        self.assertGreater(Vfinal.shape[0], 0)
+
+    def test_explicit_one_busbar_per_sub_same_as_default(self):
+        model = init_from_matpower(_toy_mpc(), n_busbar_per_sub=1)
+        np.testing.assert_array_equal(model.get_bus_status(), [True, True, True, True])
+        Vfinal = _run_pf(model)
+        self.assertGreater(Vfinal.shape[0], 0)
+
+    def test_several_busbar_per_sub(self):
+        model = init_from_matpower(_toy_mpc(), n_busbar_per_sub=3)
+        status = model.get_bus_status()
+        self.assertEqual(len(status), 4 * 3)
+        # only the first busbar section of each substation (the one matpower actually
+        # describes) should be active; the 2 extra ones per substation are empty
+        np.testing.assert_array_equal(status[:4], [True, True, True, True])
+        np.testing.assert_array_equal(status[4:], [False] * 8)
+        Vfinal = _run_pf(model, n_bus=12)
+        self.assertGreater(Vfinal.shape[0], 0)
+
+    def test_n_busbar_per_sub_must_be_positive(self):
+        with self.assertRaises(RuntimeError):
+            init_from_matpower(_toy_mpc(), n_busbar_per_sub=0)
+
+
+class TestInitFromMatpowerDCLine(unittest.TestCase):
+    """`mpc.dcline` is optional (most matpower cases have no HVDC line at all) and,
+    when present, should be converted with the same loss / sign conventions as
+    lightsim2grid's pandapower loader (`model.init_dclines`)."""
+
+    @staticmethod
+    def _dcline_row(status=1):
+        # F_BUS, T_BUS, BR_STATUS, PF, PT, QF, QT, VF, VT, PMIN, PMAX,
+        # QMINF, QMAXF, QMINT, QMAXT, LOSS0, LOSS1
+        return [20, 40, status, 10., 9.5, 0., 0., 1.0, 1.0, -100, 100,
+                -10, 10, -10, 10, 0.5, 0.05]
+
+    def test_no_dcline_key_at_all(self):
+        raw = _toy_mpc()
+        self.assertNotIn("dcline", raw)
+        model = init_from_matpower(raw)
+        self.assertEqual(len(model.get_dclines()), 0)
+
+    def test_dcline_target_p1_is_negated_pf(self):
+        raw = _toy_mpc()
+        raw["dcline"] = np.array([self._dcline_row()])
+        model = init_from_matpower(raw)
+        dclines = model.get_dclines()
+        self.assertEqual(len(dclines), 1)
+        # matpower's PF (10 MW, "from" -> "to") maps to lightsim2grid's "power received
+        # at side 1" convention, so it must be negated (same as the pandapower loader)
+        self.assertAlmostEqual(dclines[0].target_p1_mw, -10.)
+
+    def test_dcline_losses_match_matpower_formula(self):
+        raw = _toy_mpc()
+        raw["dcline"] = np.array([self._dcline_row()])
+        model = init_from_matpower(raw)
+        _run_pf(model)
+        dclines = model.get_dclines()
+        # PT = PF - (LOSS0 + LOSS1 * PF) = 10 - (0.5 + 0.05 * 10) = 9.0
+        self.assertAlmostEqual(dclines[0].res_p1_mw, -10., places=4)
+        self.assertAlmostEqual(dclines[0].res_p2_mw, 9.0, places=4)
+
+    def test_deactivated_dcline(self):
+        raw = _toy_mpc()
+        raw["dcline"] = np.array([self._dcline_row(status=0)])
+        model = init_from_matpower(raw)
+        Vfinal = _run_pf(model)
+        self.assertGreater(Vfinal.shape[0], 0)
+
+
 class TestInitFromMatpowerFile(unittest.TestCase):
     """Tests for the file-path dispatch (".m" via matpowercaseframes, ".mat" via scipy)."""
 
