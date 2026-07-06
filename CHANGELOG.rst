@@ -342,6 +342,17 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   and `benchmarks/benchmark_binary_serialization.py` for speed comparisons against
   pickle (the speed up grows with grid size: up to ~17x faster to write and ~8x faster
   to read than pickle on grids with ~9000 buses).
+- [FIXED] `LSGrid.save_binary`/`load_binary` (and pickle, which shares the same
+  `LSGrid::get_state()`/`set_state()`/`StateRes` contract) silently dropped the
+  per-solver `AlgoConfig` (scaling/refactor policy, line-search tolerances, etc. --
+  see `get_ac_algo_config()`/`set_ac_algo_config()` and the DC counterparts): only the
+  coarse `AlgorithmType` enum (eg `NR_SparseLU`) round-tripped, so any custom tuning
+  applied via `set_ac_algo_config()`/`set_dc_algo_config()` reverted to the solver's
+  defaults after a save/load or pickle round trip. Both AC and DC `AlgoConfig` are now
+  part of `LSGrid::StateRes` and restored after the algorithm itself is selected on
+  `set_state()` (mirroring the existing copy-constructor behavior). `LSGrid::StateRes`
+  tuple positions are now named (`LSGrid::SUBSTATION_ID`, `LSGrid::HVDC_ID`, etc.)
+  instead of raw integer literals in `get_state()`/`set_state()`.
 - [ADDED] `init_from_pypowsybl` now reads and exposes operating limits: per-bus min/max
   voltage (`LSGrid.get_bus_vmin_kv()` / `get_bus_vmax_kv()`, from the source voltage
   levels' `low_voltage_limit` / `high_voltage_limit`) and per-side branch thermal

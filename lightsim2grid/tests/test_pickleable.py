@@ -146,6 +146,38 @@ class TestPickle(unittest.TestCase):
             self.aux_test_2sides(self.env.backend._grid, backend_1._grid, True)
             self.aux_test_1side(self.env.backend._grid, backend_1._grid, True)
 
+    def test_pickle_algo_config(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
+        grid = self.env.backend._grid
+
+        ac_cfg = grid.get_ac_algo_config()
+        ac_cfg.int_params = [1, 2, 3, 4]
+        ac_cfg.real_params = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+        grid.set_ac_algo_config(ac_cfg)
+        # DC solver (DC_SparseLU) does not populate AlgoConfig at all (only the
+        # NRAlgo family does): get_config()/set_config() are BaseAlgo's no-op.
+        # Read back whatever is actually applied rather than assuming the
+        # values above took effect, so this only tests that the round trip
+        # preserves whatever the config actually is.
+        dc_cfg = grid.get_dc_algo_config()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test_pickle_algo_config.pickle")
+            with open(path, "wb") as f:
+                pickle.dump(grid, f)
+            with open(path, "rb") as f:
+                grid_1 = pickle.load(f)
+
+        ac_cfg_1 = grid_1.get_ac_algo_config()
+        assert list(ac_cfg_1.int_params) == list(ac_cfg.int_params)
+        assert np.allclose(ac_cfg_1.real_params, ac_cfg.real_params)
+
+        dc_cfg_1 = grid_1.get_dc_algo_config()
+        assert list(dc_cfg_1.int_params) == list(dc_cfg.int_params)
+        assert np.allclose(dc_cfg_1.real_params, dc_cfg.real_params)
+
     def test_cannot_load_unfit_ls_version(self):
         tmpdir = Path(".") / "old_pickle"
         with self.assertRaises((ImportError, AttributeError)):

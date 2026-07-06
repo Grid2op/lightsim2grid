@@ -77,12 +77,41 @@ class LS2G_API LSGrid final
                 StorageContainer::StateRes,
                 //hvdc lines (was the "dc lines" before lightsim2grid 0.12)
                 HvdcLineContainer::StateRes,
+                // static var compensators (appended; old pickles are version-gated)
+                SvcContainer::StateRes,
                 // algo types
                 AlgorithmType, // ac_algo
                 AlgorithmType, // dc_algo
-                // static var compensators (appended; old pickles are version-gated)
-                SvcContainer::StateRes
+                // algo config (scaling/refactor/line-search params, appended;
+                // old pickles are version-gated): int_params, real_params
+                std::tuple<std::vector<int>, std::vector<double> >,  // ac_algo_config
+                std::tuple<std::vector<int>, std::vector<double> >   // dc_algo_config
                 >;
+
+        // named indices into the StateRes tuple above (get_state()/set_state()
+        // use these instead of raw std::get<N> literals so the two stay in
+        // sync when fields are reordered or appended)
+        static const std::size_t VERSION_MAJOR_ID = 0;
+        static const std::size_t VERSION_MEDIUM_ID = 1;
+        static const std::size_t VERSION_MINOR_ID = 2;
+        static const std::size_t LS_TO_ORIG_ID = 3;
+        static const std::size_t INIT_VM_PU_ID = 4;
+        static const std::size_t SN_MVA_ID = 5;
+        static const std::size_t BUS_STATUS_ID = 6;
+        static const std::size_t SUBSTATION_ID = 7;
+        static const std::size_t LINE_ID = 8;
+        static const std::size_t SHUNT_ID = 9;
+        static const std::size_t TRAFO_ID = 10;
+        static const std::size_t GEN_ID = 11;
+        static const std::size_t LOAD_ID = 12;
+        static const std::size_t SGEN_ID = 13;
+        static const std::size_t STORAGE_ID = 14;
+        static const std::size_t HVDC_ID = 15;
+        static const std::size_t SVC_ID = 16;
+        static const std::size_t AC_ALGO_TYPE_ID = 17;
+        static const std::size_t DC_ALGO_TYPE_ID = 18;
+        static const std::size_t AC_ALGO_CONFIG_ID = 19;
+        static const std::size_t DC_ALGO_CONFIG_ID = 20;
 
         LSGrid():
           timer_last_ac_pf_(0.),
@@ -474,7 +503,8 @@ class LS2G_API LSGrid final
         void save_binary(const std::string & path) const;
         static LSGrid load_binary(const std::string & path);
 
-        // algo config (scaling/refactor policy params) — not part of StateRes pickle
+        // algo config (scaling/refactor policy params) — also part of StateRes,
+        // see LSGrid::get_state()/set_state()
         AlgoConfig get_ac_algo_config() const { return _algo.get_config(); }
         void set_ac_algo_config(const AlgoConfig& cfg) { _algo.set_config(cfg); }
         AlgoConfig get_dc_algo_config() const { return _dc_algo.get_config(); }
