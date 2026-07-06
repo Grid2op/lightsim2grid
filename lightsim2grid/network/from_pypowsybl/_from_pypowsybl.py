@@ -206,6 +206,65 @@ def _aux_current_limits(element_ids, group_1, group_2, operational_limits):
     return limit_a1_ka, limit_a2_ka
 
 
+def _aux_ensure_net_pu(net, net_pu):
+    """Return `net_pu` unchanged if already provided by the caller; otherwise
+    build the per-unit view of `net` once. Factored out so the zero-impedance
+    bus-fusion pre-pass (which needs per-unit r/x before the "normal" per-unit
+    view is built) and the main line/trafo processing can share a single,
+    lazily-built `net_pu` instead of constructing it twice."""
+    if net_pu is not None:
+        return net_pu
+    if hasattr(net, "per_unit"):
+        net_pu = copy.deepcopy(net)
+        net_pu.per_unit = True
+    else:
+        # legacy pypowsybl mode: this did not exist
+        from pypowsybl.network import PerUnitView
+        net_pu = PerUnitView(net)
+        warnings.warn("The `PerUnitView` (python side) is less efficient and less "
+                      "tested that the equivalent java class. Please upgrade pypowsybl version")
+    return net_pu
+
+
+def _aux_get_2wt_all_attrs(net_like):
+    """`get_2_windings_transformers(all_attributes=True)`, falling back to the
+    plain call on legacy pypowsybl versions that don't support it."""
+    try:
+        return net_like.get_2_windings_transformers(all_attributes=True)
+    except TypeError:
+        return net_like.get_2_windings_transformers()
+
+
+def _aux_trafo_alpha(df_trafo_pu, net):
+    """Phase-shift angle, in **degree**, for every transformer in `df_trafo_pu`
+    (a per-unit `get_2_windings_transformers()` table)."""
+    if 'alpha' in df_trafo_pu:
+        return np.rad2deg(df_trafo_pu['alpha'].values)  # given in radian by pypowsybl
+    if net.get_phase_tap_changers().shape[0] > 0:
+        raise RuntimeError("Phase tap changer are not handled by the pypowsybl converter "
+                           "when not accessible using the 'alpha' columns "
+                           "of the net (once per unit). Please upgrade pypowsybl."
+                           "NB: phase tap change are handled by lightsim2grid)")
+    return np.zeros(df_trafo_pu.shape[0])
+
+
+def _aux_trafo_rho(df_trafo_pu, ratio_tap_changer):
+    """Turns ratio for every transformer in `df_trafo_pu` (a per-unit
+    `get_2_windings_transformers()` table)."""
+    if "rho" in df_trafo_pu:
+        return 1. * df_trafo_pu["rho"].values
+    # in powsybl (https://javadoc.io/doc/com.powsybl/powsybl-core/latest/com/powsybl/iidm/network/TwoWindingsTransformer.html)
+    #  rho = transfo.getRatedU2() / transfo.getRatedU1()
+    # * (transfo.getRatioTapChanger() != null ? transfo.getRatioTapChanger().getCurrentStep().getRho() : 1);
+    # * (transfo.getPhaseTapChanger() != null ? transfo.getPhaseTapChanger().getCurrentStep().getRho() : 1);
+    ratio = 1. * (df_trafo_pu["rated_u2"].values / df_trafo_pu["rated_u1"].values)
+    has_r_tap_changer = np.isin(df_trafo_pu.index, ratio_tap_changer.index)
+    if PYPOWSYBL_VER <= PP_BUG_RATIO_TAP_CHANGER:
+        # bug in per unit view in both python and java
+        ratio[has_r_tap_changer] = 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
+    return ratio
+
+
 def _aux_regulated_bus_view_ids(net, regulated_ids):
     """Resolve voltage-controller regulated elements to their terminal bus.
 
@@ -431,6 +490,8 @@ def init(net : pypo.network.Network,
          init_vm_pu:float=1.06,
          keep_half_open_lines: bool=False,
          convert_dangling_lines: bool=False,
+         fuse_zero_impedance_branches: bool=False,
+         zero_impedance_threshold_pu: float=1e-8,
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -537,6 +598,50 @@ def init(net : pypo.network.Network,
                        default to keep existing behaviour unchanged; the
                        reduce/validate debug scripts turn it on.
     :type convert_dangling_lines: bool
+
+    :param fuse_zero_impedance_branches: If True, a line or 2-winding transformer
+                       whose per-unit impedance is (near-)zero -- ``|r_pu| <
+                       zero_impedance_threshold_pu`` and ``|x_pu| <
+                       zero_impedance_threshold_pu`` -- has its two terminal buses
+                       fused into a single electrical node instead of contributing
+                       a ``1/Z`` admittance (which is ``Inf`` for an exact zero, and
+                       breaks the sparse LU factorization outright). This mirrors
+                       OpenLoadFlow's ``lowImpedanceBranchMode`` /
+                       ``lowImpedanceThreshold``. A zero-impedance transformer is
+                       only fused if it is also at (near-)neutral tap (``rho`` close
+                       to 1 and ``alpha`` close to 0) *and* its two sides are at the
+                       same nominal voltage: pypowsybl's per-unit ``rho`` is the
+                       deviation from the transformer's *own* rated ratio (the
+                       tap-changer effect), not its absolute turns ratio, so
+                       ``rho~=1`` alone does not mean "no transformation" for a
+                       genuine step-down/up transformer -- otherwise it is a real
+                       ideal ratio/phase-shifting element, not a same-node short, and
+                       is left untouched. A zero-impedance *line* spanning two
+                       *different* nominal voltages raises a ``RuntimeError``
+                       (inconsistent grid data) -- unlike for transformers, this is
+                       never legitimate for a line. The fusing branch itself is kept in
+                       the model (for topology-vector bookkeeping) but deactivated,
+                       same as any other disconnected branch; substation/topology
+                       identity (``glop_sub_id``) of elements on the two original
+                       buses is *not* changed, only the internal solver bus id --
+                       grid2op topology actions still see the original, distinct
+                       substations. Off by default to keep existing behaviour
+                       unchanged.
+
+                       .. warning::
+                            This is a static, import-time decision. If a fused
+                            transformer's tap is later moved away from neutral
+                            during a simulation, the two buses stay fused in
+                            lightsim2grid even though the transformer is no longer
+                            electrically a plain wire. Best suited for static /
+                            diagnostic use, or grid2op environments known not to
+                            actuate the affected transformer's tap.
+    :type fuse_zero_impedance_branches: bool
+
+    :param zero_impedance_threshold_pu: Per-unit impedance magnitude threshold used
+                       by ``fuse_zero_impedance_branches`` (ignored otherwise).
+                       Matches OpenLoadFlow's ``lowImpedanceThreshold`` default.
+    :type zero_impedance_threshold_pu: float
 
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
@@ -710,7 +815,92 @@ def init(net : pypo.network.Network,
     model._max_nb_bus_per_sub = n_busbar_per_sub_ls
     model.set_substation_names(sub_names)
     model.set_bus_voltage_limits(all_buses_vmin_kv.astype(float), all_buses_vmax_kv.astype(float))
-        
+
+    # fuse the two terminal buses of (near-)zero-impedance lines / neutral-tap
+    # transformers, mirroring OpenLoadFlow's `lowImpedanceBranchMode`. Must run
+    # before any `_aux_get_bus` call (generators, just below) so every element
+    # type transparently picks up the fused `bus_global_id` for free -- see
+    # `_aux_get_bus`'s single choke point at `bus_df["bus_global_id"]`.
+    fused_line_ids = set()
+    fused_trafo_ids = set()
+    if fuse_zero_impedance_branches:
+        net_pu = _aux_ensure_net_pu(net, net_pu)
+        parent = np.arange(all_buses_vn_kv.shape[0])
+
+        def _uf_find(x):
+            while parent[x] != x:
+                x = parent[x]
+            return x
+
+        def _uf_union(a, b):
+            ra, rb = _uf_find(a), _uf_find(b)
+            if ra != rb:
+                parent[max(ra, rb)] = min(ra, rb)  # deterministic: smaller id wins
+
+        # -- zero-impedance LINES --
+        df_line_fuse = net.get_lines()
+        if sort_index:
+            df_line_fuse = df_line_fuse.sort_index()
+        df_line_fuse_pu = net_pu.get_lines().loc[df_line_fuse.index]
+        both_conn = (df_line_fuse["connected1"].values & df_line_fuse["connected2"].values)
+        is_zero = ((np.abs(df_line_fuse_pu["r"].values) < zero_impedance_threshold_pu)
+                   & (np.abs(df_line_fuse_pu["x"].values) < zero_impedance_threshold_pu))
+        line_candidate = both_conn & is_zero
+        if line_candidate.any():
+            cand = df_line_fuse[line_candidate]
+            vn1 = voltage_levels.loc[cand["voltage_level1_id"].values, "nominal_v"].values
+            vn2 = voltage_levels.loc[cand["voltage_level2_id"].values, "nominal_v"].values
+            bad = ~np.isclose(vn1, vn2)
+            if bad.any():
+                raise RuntimeError(
+                    f"Zero-impedance line(s) {list(cand.index[bad])} connect two buses at "
+                    "different nominal voltages: this is inconsistent grid data, refusing "
+                    "to fuse them (fuse_zero_impedance_branches=True)."
+                )
+            gid1 = bus_df.loc[cand["bus1_id"].values, "bus_global_id"].values
+            gid2 = bus_df.loc[cand["bus2_id"].values, "bus_global_id"].values
+            for a, b in zip(gid1, gid2):
+                _uf_union(int(a), int(b))
+            fused_line_ids.update(cand.index)
+
+        # -- zero-impedance, neutral-tap, SAME-NOMINAL-VOLTAGE TRANSFORMERS --
+        # NB: pypowsybl's per-unit `rho` is the deviation from the transformer's OWN
+        # rated_u1/rated_u2 ratio (tap-changer effect), not the absolute turns ratio:
+        # a genuine step-down transformer (eg rated_u1=225kV/rated_u2=90kV) reports
+        # rho=1 at neutral tap even though it performs a real voltage transformation
+        # (implicit in the differing per-unit bus voltage bases on each side, not in
+        # `rho` itself). So `rho~=1` alone only means "no ADDITIONAL tap deviation" --
+        # it does NOT mean "no transformation at all". A transformer is only a true,
+        # fusable ideal wire when it is ALSO between two buses of the same nominal
+        # voltage (same requirement as for lines, just not an error here since most
+        # real transformers legitimately span different nominal voltages).
+        df_trafo_fuse = _aux_get_2wt_all_attrs(net)
+        if sort_index:
+            df_trafo_fuse = df_trafo_fuse.sort_index()
+        if df_trafo_fuse.shape[0] > 0:
+            df_trafo_fuse_pu = _aux_get_2wt_all_attrs(net_pu).loc[df_trafo_fuse.index]
+            ratio_tap_changer_fuse = net_pu.get_ratio_tap_changers()
+            alpha_fuse = _aux_trafo_alpha(df_trafo_fuse_pu, net)
+            rho_fuse = _aux_trafo_rho(df_trafo_fuse_pu, ratio_tap_changer_fuse)
+            both_conn_t = (df_trafo_fuse["connected1"].values & df_trafo_fuse["connected2"].values)
+            is_zero_t = ((np.abs(df_trafo_fuse_pu["r"].values) < zero_impedance_threshold_pu)
+                        & (np.abs(df_trafo_fuse_pu["x"].values) < zero_impedance_threshold_pu))
+            is_ideal_t = (np.abs(rho_fuse - 1.) < 1e-9) & (np.abs(alpha_fuse) < 1e-9)
+            vn1_t = voltage_levels.loc[df_trafo_fuse["voltage_level1_id"].values, "nominal_v"].values
+            vn2_t = voltage_levels.loc[df_trafo_fuse["voltage_level2_id"].values, "nominal_v"].values
+            same_vn_t = np.isclose(vn1_t, vn2_t)
+            trafo_candidate = both_conn_t & is_zero_t & is_ideal_t & same_vn_t
+            if trafo_candidate.any():
+                cand_t = df_trafo_fuse[trafo_candidate]
+                gid1 = bus_df.loc[cand_t["bus1_id"].values, "bus_global_id"].values
+                gid2 = bus_df.loc[cand_t["bus2_id"].values, "bus_global_id"].values
+                for a, b in zip(gid1, gid2):
+                    _uf_union(int(a), int(b))
+                fused_trafo_ids.update(cand_t.index)
+
+        rep = np.array([_uf_find(i) for i in range(parent.shape[0])])
+        bus_df["bus_global_id"] = rep[bus_df["bus_global_id"].values]
+
     # do the generators
     gen_attrs = [
         "connected", "max_p", "target_p", "target_v", "target_q", "p",
@@ -839,16 +1029,7 @@ def init(net : pypo.network.Network,
         )
 
     # per unit
-    if net_pu is None:
-        if hasattr(net, "per_unit"):
-            net_pu = copy.deepcopy(net)
-            net_pu.per_unit = True
-        else:
-            # legacy pypowsybl mode: this did not exist
-            from pypowsybl.network import PerUnitView
-            net_pu = PerUnitView(net)
-            warnings.warn("The `PerUnitView` (python side) is less efficient and less "
-                          "tested that the equivalent java class. Please upgrade pypowsybl version")
+    net_pu = _aux_ensure_net_pu(net, net_pu)
     df_line_pu = net_pu.get_lines().loc[df_line.index]
     if df_dl.shape[0] > 0:
         # equivalent branch (local bus -> fictitious boundary bus) for each
@@ -896,6 +1077,10 @@ def init(net : pypo.network.Network,
             model.deactivate_powerline_side1(line_id) if keep_half_open_lines else model.deactivate_powerline(line_id)
         elif is_ex_disc:
             model.deactivate_powerline_side2(line_id) if keep_half_open_lines else model.deactivate_powerline(line_id)
+        elif fuse_zero_impedance_branches and df_line.index[line_id] in fused_line_ids:
+            # both terminal buses already fused into one node above: this line
+            # would otherwise contribute a 1/Z admittance (Inf for an exact zero)
+            model.deactivate_powerline(line_id)
     model.set_line_names(df_line.index)
     line_limit_a1_ka, line_limit_a2_ka = _aux_current_limits(
         df_line.index,
@@ -908,35 +1093,20 @@ def init(net : pypo.network.Network,
 
     # for trafo
     # I extract trafo with `all_attributes=True` so that I have access to the `rho`
-    try:
-        df_trafo_not_sorted = net.get_2_windings_transformers(all_attributes=True)
-    except TypeError:
-        # not available in legacy pypowsybl version
-        df_trafo_not_sorted = net.get_2_windings_transformers()
-        
+    df_trafo_not_sorted = _aux_get_2wt_all_attrs(net)
+
     if sort_index:
         df_trafo = df_trafo_not_sorted.sort_index()
     else:
         df_trafo = df_trafo_not_sorted
-    
-    try :
-        df_trafo_pu = net_pu.get_2_windings_transformers(all_attributes=True)
-    except TypeError:
-        df_trafo_pu = net_pu.get_2_windings_transformers()
+
+    df_trafo_pu = _aux_get_2wt_all_attrs(net_pu)
     df_trafo_pu = df_trafo_pu.loc[df_trafo.index]
     ratio_tap_changer = net_pu.get_ratio_tap_changers()
-    
-    if 'alpha' in df_trafo_pu:
-        shift_ = np.rad2deg(df_trafo_pu['alpha'].values)  # given in radian by pypowsybl
-    else:
-        if net.get_phase_tap_changers().shape[0] > 0:
-            raise RuntimeError("Phase tap changer are not handled by the pypowsybl converter "
-                               "when not accessible using the 'alpha' columns "
-                               "of the net (once per unit). Please upgrade pypowsybl."
-                               "NB: phase tap change are handled by lightsim2grid)")
-        shift_ = np.zeros(df_trafo.shape[0])
+
+    shift_ = _aux_trafo_alpha(df_trafo_pu, net)
     # tap is side 2 in IIDM
-    is_tap_side1 = np.zeros(df_trafo.shape[0], dtype=bool)   
+    is_tap_side1 = np.zeros(df_trafo.shape[0], dtype=bool)
     # neutral-tap impedance (the phase-shift -> r/x dependence of phase-shifting
     # transformers is handled by lightsim2grid as a function of the shift alpha, see
     # the model.set_trafo_shift_dependent_rx(...) call below).
@@ -946,20 +1116,7 @@ def init(net : pypo.network.Network,
 
     # now get the ratio
     # in lightsim2grid (cpp)
-    if "rho" in df_trafo_pu:
-        ratio = 1. * df_trafo_pu["rho"].values
-    else:
-        # in powsybl (https://javadoc.io/doc/com.powsybl/powsybl-core/latest/com/powsybl/iidm/network/TwoWindingsTransformer.html)
-        #  rho = transfo.getRatedU2() / transfo.getRatedU1()
-        # * (transfo.getRatioTapChanger() != null ? transfo.getRatioTapChanger().getCurrentStep().getRho() : 1);
-        # * (transfo.getPhaseTapChanger() != null ? transfo.getPhaseTapChanger().getCurrentStep().getRho() : 1);
-
-        ratio = 1. * (df_trafo_pu["rated_u2"].values / df_trafo_pu["rated_u1"].values)
-        has_r_tap_changer = np.isin(df_trafo_pu.index, ratio_tap_changer.index)
-    
-        if PYPOWSYBL_VER <= PP_BUG_RATIO_TAP_CHANGER:
-            # bug in per unit view in both python and java
-            ratio[has_r_tap_changer] = 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
+    ratio = _aux_trafo_rho(df_trafo_pu, ratio_tap_changer)
 
     tor_bus, tor_disco, tor_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "trafo (side 1)", df_trafo, conn_key="connected1", bus_key="bus1_id", vl_key="voltage_level1_id")
     tex_bus, tex_disco, tex_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "trafo (side 2)", df_trafo, conn_key="connected2", bus_key="bus2_id", vl_key="voltage_level2_id")
@@ -980,6 +1137,9 @@ def init(net : pypo.network.Network,
             model.deactivate_trafo_side1(t_id) if keep_half_open_lines else model.deactivate_trafo(t_id)
         elif is_ex_disc:
             model.deactivate_trafo_side2(t_id) if keep_half_open_lines else model.deactivate_trafo(t_id)
+        elif fuse_zero_impedance_branches and df_trafo.index[t_id] in fused_trafo_ids:
+            # both terminal buses already fused into one node above
+            model.deactivate_trafo(t_id)
     model.set_trafo_names(df_trafo.index)
     if "selected_limits_group_1" in df_trafo.columns:
         trafo_group_1 = df_trafo["selected_limits_group_1"]
