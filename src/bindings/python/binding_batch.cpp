@@ -44,7 +44,11 @@ void bind_batch(py::module_& m) {
         .def_readonly("value", &LimitViolation::value,
                       "value reached ; unused (NaN) for NOT_SIMULATED / DIVERGENCE")
         .def_readonly("limit", &LimitViolation::limit,
-                      "limit that was violated ; unused (NaN) for NOT_SIMULATED / DIVERGENCE");
+                      "limit that was violated ; unused (NaN) for NOT_SIMULATED / DIVERGENCE")
+        .def_readonly("name", &LimitViolation::name,
+                      "element name (LINE / TRAFO only, see LSGrid.set_line_names / set_trafo_names) ; "
+                      "empty string if names were never set on the grid, or for BUS / GRID (no per-bus "
+                      "name exists in LSGrid, only per-substation ones)");
 
     py::class_<TimeSeries>(m, "TimeSeriesCPP", DocComputers::Computers.c_str())
         .def(py::init<const LSGrid &>())
