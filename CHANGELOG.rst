@@ -145,6 +145,12 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   does not converge (eg reaches `max_iter`). This only applies to `get_violations()` /
   `get_violations_n()` -- see the `ContingencyAnalysisCPP.compute()` change above for the
   pre-contingency ("n") case itself.
+- [ADDED] `LimitViolation.name`: the name of the LINE / TRAFO element the violation was
+  detected on, if names were configured on the grid (`LSGrid.set_line_names` /
+  `set_trafo_names`); empty string otherwise, and for `BUS` / `GRID` violations (there is no
+  per-bus name in `LSGrid`, only per-substation ones via `get_substation_names()`). Also adds
+  `LSGrid.get_line_names()` / `get_trafo_names()` getters (previously write-only) and
+  `GenericContainer::get_names()` c++ side.
 - [FIXED] `ContingencyAnalysisCPP` / `TimeSeriesCPP` (and so the python `ContingencyAnalysis`,
   `SecurityAnalysis` and `TimeSerie` wrappers) solved every powerflow with a fresh, independent,
   *default* solver (`NR_SparseLU`, no scaling/damping policy), completely ignoring whatever
@@ -157,6 +163,33 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   construction time; `get_algo_config()` / `set_algo_config()` were added to
   `ContingencyAnalysisCPP` / `TimeSeriesCPP` to re-apply a config afterwards (eg after
   `change_algorithm()`, which resets to that algorithm's defaults).
+- [FIXED] the pre-contingency ("n") powerflow inside `ContingencyAnalysisCPP.compute()` and the
+  initial powerflow inside `TimeSeriesCPP.compute_Vs()` (both go through the shared
+  `BaseBatchSolverSynch::_finish_preprocessing`) compared the NR mismatch against the raw,
+  un-scaled `tol` argument, instead of `tol / sn_mva` like every other powerflow in the codebase
+  (`LSGrid::ac_pf`, and even the *per-contingency* / per-step solves in these same two classes):
+  `Sbus_` is already per-unit (`sn_mva`-divided, same convention as `LSGrid::ac_pf`'s `acSbus_`),
+  so comparing it against a physical-MW `tol` accepted a mismatch up to `sn_mva` times (eg 100x)
+  looser than what the caller asked for on this one call.
+- [FIXED] every powerflow solved by `ContingencyAnalysisCPP` and `TimeSeriesCPP` (the
+  pre-contingency / initial "n" solve in `BaseBatchSolverSynch::_finish_preprocessing` and
+  `::warmup_solver`, every per-contingency solve in `ContingencyAnalysis::run_contingency_range`,
+  and every per-step solve in `TimeSeries::compute_Vs`) passed `slack_ids_me_` -- the slack bus ids
+  in *gridmodel* (global) numbering -- to `AlgorithmSelector::compute_pf` / `compute_pf_dc`, which
+  expect *solver-space* numbering (matching `Ybus_` / `Sbus_` / `bus_pv_` / `bus_pq_`'s own
+  indexing), exactly like `LSGrid::ac_pf` correctly passes its `slack_bus_id_ac_solver_`. The
+  correct member, `slack_ids_solver_`, was computed by `pre_process_solver` but never actually
+  used anywhere. On a grid with any deactivated bus, `id_me_to_solver` compacts the numbering, so
+  global bus ids run higher than (and do not correspond to) valid solver-space indices -- silently
+  picking the wrong buses as the NR angle reference, up to reading out of bounds on a large grid
+  (reproduced as a segfault while isolating this bug). This was invisible on small, fully-connected
+  test grids (global id == solver id there, no compaction), which is why the existing test suite
+  never caught it. This was the actual cause of the pre-contingency `SolverFactor` divergence
+  reported and investigated above: on a real large RTE grid, `ContingencyAnalysisCPP.compute()`'s
+  "n" solve diverged while `LSGrid.ac_pf()` called directly on an extracted, verified-bit-identical
+  copy (same `Vinit` / `Ybus_` / `Sbus_` / `bus_pv_` / `bus_pq_` / algorithm / `AlgoConfig` / `tol`)
+  converged fine; fixing the slack ids resolves it (confirmed convergent, all contingencies, on two
+  different real grids).
 - [IMPROVED] (cpp) the codebase now compiles warning-free under ``-Wall -Wextra
   -Werror``: fixed 29 signed/unsigned comparison warnings (``int`` / ``Eigen::Index``
   vs ``size_t``) and silenced ~188 intentionally-unused parameters on interface /

@@ -152,8 +152,10 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
 
         // names
         .def("set_line_names", &LSGrid::set_line_names, "TODO")
+        .def("get_line_names", &LSGrid::get_line_names, "Names of the powerlines, as set by `set_line_names`; empty if never set.")
         .def("set_dcline_names", &LSGrid::set_dcline_names, "TODO")
         .def("set_trafo_names", &LSGrid::set_trafo_names, "TODO")
+        .def("get_trafo_names", &LSGrid::get_trafo_names, "Names of the transformers, as set by `set_trafo_names`; empty if never set.")
         .def("set_line_current_limit_side1", &LSGrid::set_line_current_limit_side1,
              "Set the side-1 current limit of each powerline, in kA (see `limit_a1_ka` on `LineInfo`).")
         .def("set_line_current_limit_side2", &LSGrid::set_line_current_limit_side2,
@@ -329,9 +331,22 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_line_res1", &LSGrid::get_line_res1, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_line_res2", &LSGrid::get_line_res2, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_lines_status", &LSGrid::get_lines_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_lines_status_side1", &LSGrid::get_lines_status_side1,
+             "Per-side status of each powerline's side 1 (relevant for half-open lines: "
+             "get_lines_status() is True as soon as either side is connected).",
+             py::return_value_policy::reference)
+        .def("get_lines_status_side2", &LSGrid::get_lines_status_side2,
+             "Per-side status of each powerline's side 2, see get_lines_status_side1().",
+             py::return_value_policy::reference)
         .def("get_trafo_res1", &LSGrid::get_trafo_res1, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_trafo_res2", &LSGrid::get_trafo_res2, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_trafo_status", &LSGrid::get_trafo_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_status_side1", &LSGrid::get_trafo_status_side1,
+             "Per-side status of each transformer's side 1, see get_lines_status_side1().",
+             py::return_value_policy::reference)
+        .def("get_trafo_status_side2", &LSGrid::get_trafo_status_side2,
+             "Per-side status of each transformer's side 2, see get_lines_status_side1().",
+             py::return_value_policy::reference)
         .def("get_storages_res", &LSGrid::get_storages_res, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_storages_status", &LSGrid::get_storages_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_sgens_res", &LSGrid::get_sgens_res, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
