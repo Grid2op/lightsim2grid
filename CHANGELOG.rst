@@ -384,6 +384,20 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   `qt` to solver tolerance, and synthetic-network checks of the `"storage"` and
   `"dcline"` conversions (PFΔ's own pglib-derived cases never contain either, but the
   schema and `init_from_powermodels` both support them).
+- [ADDED] `init_from_pypowsybl(..., fuse_zero_impedance_branches=True)`: a line or
+  2-winding transformer whose per-unit impedance is (near-)zero has its two terminal
+  buses fused into a single electrical node instead of contributing a `1/Z` admittance
+  (`Inf` for an exact zero, which broke the sparse LU factorization outright -- found on
+  a real RTE grid with a genuine `r=x=0` line). Mirrors PowSyBl OpenLoadFlow's
+  `lowImpedanceBranchMode`/`lowImpedanceThreshold` (new `zero_impedance_threshold_pu`
+  parameter, default `1e-8` pu, matching OLF's default). A zero-impedance transformer is
+  only fused if it is also at (near-)neutral tap **and** its two sides are at the same
+  nominal voltage: PowSyBl's per-unit `rho` is the deviation from the transformer's own
+  rated ratio (the tap-changer effect), not its absolute turns ratio, so `rho~=1` alone
+  does not mean "no transformation" for a genuine step-up/down transformer. A
+  zero-impedance *line* spanning two different nominal voltages raises a `RuntimeError`
+  (inconsistent grid data) rather than being silently fused. Off by default (existing
+  behaviour unchanged); tested in `test_bus_fusion_pypowsybl.py`.
 
 [0.13.1]  2026-04-21
 --------------------
