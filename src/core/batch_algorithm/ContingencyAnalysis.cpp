@@ -92,6 +92,7 @@ void check_current_violations(
     const auto & el_status = structure_data.get_status_global();
     const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
     const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
+    const std::vector<std::string> & el_names = structure_data.get_names();  // empty if never set
 
     Eigen::Ref<const CplxVect> yac_eff_11 = structure_data.yac_eff_11();
     Eigen::Ref<const CplxVect> yac_eff_12 = structure_data.yac_eff_12();
@@ -170,13 +171,14 @@ void check_current_violations(
             amps2 = std::abs(p_to) / (sqrt_3 * v_to_kv);
         }
 
+        const std::string el_name = el_id < el_names.size() ? el_names[el_id] : std::string();
         if(has_lim1 && amps1 > limit1(el_idx)){
             out.push_back(LimitViolation{el_type, static_cast<int>(el_id), 1,
-                                          LimitViolationType::CURRENT, amps1, limit1(el_idx)});
+                                          LimitViolationType::CURRENT, amps1, limit1(el_idx), el_name});
         }
         if(has_lim2 && amps2 > limit2(el_idx)){
             out.push_back(LimitViolation{el_type, static_cast<int>(el_id), 2,
-                                          LimitViolationType::CURRENT, amps2, limit2(el_idx)});
+                                          LimitViolationType::CURRENT, amps2, limit2(el_idx), el_name});
         }
     }
 }
@@ -778,7 +780,7 @@ void ContingencyAnalysis::run_contingency_range(
                     conv = compute_one_powerflow(
                         algo, control, nb_solved, timer_solver,
                         Ybus, V, Sbus_,
-                        slack_ids_me_.as_eigen(), sw,
+                        slack_ids_solver_.as_eigen(), sw,
                         bus_pv_.as_eigen(), bus_pq_.as_eigen(),
                         max_iter, tol / sn_mva);
                     if(needs_solver_init){
@@ -816,7 +818,7 @@ void ContingencyAnalysis::run_contingency_range(
                         Ybus,
                         V,
                         Sbus_,
-                        slack_ids_me_.as_eigen(),
+                        slack_ids_solver_.as_eigen(),
                         slack_weights_,
                         bus_pv_.as_eigen(),
                         bus_pq_.as_eigen(),
