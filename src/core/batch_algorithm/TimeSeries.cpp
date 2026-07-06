@@ -92,9 +92,9 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     for(size_t i = 0; i < nb_steps; ++i){
         conv = false;
         conv = compute_one_powerflow(Ybus_,
-                                     V, 
+                                     V,
                                      _Sbuses.row(i),
-                                     slack_ids_me_.as_eigen(),
+                                     slack_ids_solver_.as_eigen(),
                                      slack_weights_,
                                      bus_pv_.as_eigen(),
                                      bus_pq_.as_eigen(),

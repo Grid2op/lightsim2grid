@@ -113,7 +113,11 @@ class LS2G_API GenericContainer : public BaseConstants
         void set_names(const std::vector<std::string> & names){
             names_ = names;
         }
-        
+        // empty if set_names() was never called on this container
+        const std::vector<std::string> & get_names() const {
+            return names_;
+        }
+
         /**"define" the destructor for compliance with clang (otherwise lots of warnings)**/
         GenericContainer() noexcept = default;
         virtual ~GenericContainer() noexcept = default;
