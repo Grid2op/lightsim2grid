@@ -6,6 +6,6 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__all__ = ["init"]
-
-from .initLSGrid import init
+# bus type constants, matching PowerModels.jl / MATPOWER's convention
+# (https://lanl-ansi.github.io/PowerModels.jl/stable/network-data/)
+PQ, PV, REF, NONE = 1, 2, 3, 4

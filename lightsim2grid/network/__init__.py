@@ -43,7 +43,9 @@ except ImportError:
     # a ".m"/".mat" file
     pass
 
-from lightsim2grid.network.from_pf_delta import init as init_from_pf_delta  # noqa
+from lightsim2grid.network.from_powermodels import init as init_from_powermodels  # noqa
+from lightsim2grid.network.from_powermodels import init_from_pfdelta as init_from_pf_delta  # noqa
+__all__.append("init_from_powermodels")
 __all__.append("init_from_pf_delta")
 
 try:
