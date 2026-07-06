@@ -87,6 +87,11 @@ LSGrid::StateRes LSGrid::get_state() const
     auto res_hvdc_line = hvdc_lines_.get_state();
     auto res_svc = svcs_.get_state();
 
+    AlgoConfig ac_algo_cfg = get_ac_algo_config();
+    AlgoConfig dc_algo_cfg = get_dc_algo_config();
+    auto res_ac_algo_cfg = std::make_tuple(ac_algo_cfg.int_params, ac_algo_cfg.real_params);
+    auto res_dc_algo_cfg = std::make_tuple(dc_algo_cfg.int_params, dc_algo_cfg.real_params);
+
     LSGrid::StateRes res(version_major,
                             version_medium,
                             version_minor,
@@ -103,9 +108,11 @@ LSGrid::StateRes LSGrid::get_state() const
                             res_sgen,
                             res_storage,
                             res_hvdc_line,
+                            res_svc,
                             get_algo_type(),
                             get_dc_algo_type(),
-                            res_svc
+                            res_ac_algo_cfg,
+                            res_dc_algo_cfg
                             );
     return res;
 };
@@ -119,9 +126,9 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     compute_results_ = true;
 
     // extract data from the state
-    std::string version_major = std::get<0>(my_state);
-    std::string version_medium = std::get<1>(my_state);
-    std::string version_minor = std::get<2>(my_state);
+    std::string version_major = std::get<VERSION_MAJOR_ID>(my_state);
+    std::string version_medium = std::get<VERSION_MEDIUM_ID>(my_state);
+    std::string version_minor = std::get<VERSION_MINOR_ID>(my_state);
     if((version_major != VERSION_MAJOR )| (version_medium != VERSION_MEDIUM) | (version_minor != VERSION_MINOR))
     {
         std::ostringstream exc_;
@@ -132,33 +139,35 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
         exc_ << "It is not possible. Please reinstall it.";
         throw std::runtime_error(exc_.str());
     }
-    const std::vector<int> & ls_to_pp = std::get<3>(my_state);
-    init_vm_pu_ = std::get<4>(my_state);
-    sn_mva_ = std::get<5>(my_state);
-    // const std::vector<real_type> & bus_vn_kv = std::get<6>(my_state);
-    const std::vector<bool> & last_bus_status_saved = std::get<6>(my_state);
-    SubstationContainer::StateRes & state_substations = std::get<7>(my_state);
+    const std::vector<int> & ls_to_pp = std::get<LS_TO_ORIG_ID>(my_state);
+    init_vm_pu_ = std::get<INIT_VM_PU_ID>(my_state);
+    sn_mva_ = std::get<SN_MVA_ID>(my_state);
+    const std::vector<bool> & last_bus_status_saved = std::get<BUS_STATUS_ID>(my_state);
+    SubstationContainer::StateRes & state_substations = std::get<SUBSTATION_ID>(my_state);
     // powerlines
-    LineContainer::StateRes & state_lines = std::get<8>(my_state);
+    LineContainer::StateRes & state_lines = std::get<LINE_ID>(my_state);
     // shunts
-    ShuntContainer::StateRes & state_shunts = std::get<9>(my_state);
+    ShuntContainer::StateRes & state_shunts = std::get<SHUNT_ID>(my_state);
     // trafos
-    TrafoContainer::StateRes & state_trafos = std::get<10>(my_state);
+    TrafoContainer::StateRes & state_trafos = std::get<TRAFO_ID>(my_state);
     // generators
     // total_q_min_per_bus_;
     // total_q_max_per_bus_;
     // total_gen_per_bus_;
-    GeneratorContainer::StateRes & state_gens = std::get<11>(my_state);
+    GeneratorContainer::StateRes & state_gens = std::get<GEN_ID>(my_state);
     // loads
-    LoadContainer::StateRes & state_loads = std::get<12>(my_state);
+    LoadContainer::StateRes & state_loads = std::get<LOAD_ID>(my_state);
     // static gen
-    SGenContainer::StateRes & state_sgens= std::get<13>(my_state);
+    SGenContainer::StateRes & state_sgens= std::get<SGEN_ID>(my_state);
     // storage units
-    StorageContainer::StateRes & state_storages = std::get<14>(my_state);
+    StorageContainer::StateRes & state_storages = std::get<STORAGE_ID>(my_state);
     // hvdc lines
-    HvdcLineContainer::StateRes & state_hvdc_lines = std::get<15>(my_state);
-    // static var compensators (index 16/17 are the ac/dc algo types)
-    SvcContainer::StateRes & state_svcs = std::get<18>(my_state);
+    HvdcLineContainer::StateRes & state_hvdc_lines = std::get<HVDC_ID>(my_state);
+    // static var compensators
+    SvcContainer::StateRes & state_svcs = std::get<SVC_ID>(my_state);
+    // algo configs (scaling/refactor/line-search params)
+    auto & state_ac_algo_cfg = std::get<AC_ALGO_CONFIG_ID>(my_state);
+    auto & state_dc_algo_cfg = std::get<DC_ALGO_CONFIG_ID>(my_state);
 
     // substations
     last_bus_status_saved_ = last_bus_status_saved;
@@ -196,8 +205,21 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
 
     // handle the solver
     reset(true, true, true);
-    _algo.change_algorithm(std::get<16>(my_state));
-    _dc_algo.change_algorithm(std::get<17>(my_state));
+    _algo.change_algorithm(std::get<AC_ALGO_TYPE_ID>(my_state));
+    _dc_algo.change_algorithm(std::get<DC_ALGO_TYPE_ID>(my_state));
+
+    // algo configs -- must be restored *after* change_algorithm() above,
+    // since set_config() operates on the currently-selected concrete solver
+    // (same order as the copy constructor)
+    AlgoConfig ac_algo_cfg;
+    ac_algo_cfg.int_params = std::get<0>(state_ac_algo_cfg);
+    ac_algo_cfg.real_params = std::get<1>(state_ac_algo_cfg);
+    set_ac_algo_config(ac_algo_cfg);
+
+    AlgoConfig dc_algo_cfg;
+    dc_algo_cfg.int_params = std::get<0>(state_dc_algo_cfg);
+    dc_algo_cfg.real_params = std::get<1>(state_dc_algo_cfg);
+    set_dc_algo_config(dc_algo_cfg);
 };
 
 void LSGrid::save_binary(const std::string & path) const {
