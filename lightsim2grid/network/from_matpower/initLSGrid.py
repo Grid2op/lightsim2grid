@@ -10,23 +10,25 @@
 Natively parse a MATPOWER case (".m" file, ".mat" file, or already-parsed mpc dict /
 object) and initialize a LSGrid c++ object from it, without ever going through a
 pandapower or pypowsybl network.
+
+MATPOWER's raw matrix format is a strict subset of PowerModels.jl's network data
+dictionary (no separate load/shunt/storage/dcline tables to begin with, a single
+combined line-charging value, a "TAP == 0" sentinel for plain lines, angles in
+degrees, ...), so this loader's only real job is to translate the raw matrices into
+that richer dict and hand off to the shared, feature-complete
+`lightsim2grid.network.from_powermodels` engine -- which is also what
+`init_from_pfdelta` (PFΔ dataset rows) uses directly, since those are already
+PowerModels dicts.
 """
 
 from typing import Optional, Union
 import os
-import numpy as np
 
 from ...lightsim2grid_cpp import LSGrid
+from ..from_powermodels import init as _init_from_powermodels
 from ._parse_matpower_source import load_matpower_data
-from ._mp_bus_to_ls_bus import build_bus_remap, mp_bus_to_ls
 from ._aux_check_legit import _aux_check_legit
-from ._aux_add_branch import get_branch_split, _aux_add_branch
-from ._aux_add_load import _aux_add_load
-from ._aux_add_shunt import _aux_add_shunt
-from ._aux_add_gen import _aux_add_gen
-from ._aux_add_slack import _aux_add_slack
-from ._aux_add_dc_line import _aux_add_dc_line
-from ._my_const import BUS_I, BUS_TYPE, BASE_KV, NONE
+from ._mpc_to_powermodels import mpc_to_powermodels
 
 
 def init(source: Union[str, "os.PathLike", dict],
@@ -36,8 +38,8 @@ def init(source: Union[str, "os.PathLike", dict],
     Convert a MATPOWER case into a LSGrid.
 
     Unlike `lightsim2grid.network.init_from_pandapower`, this never constructs a
-    pandapower network: it reads MATPOWER's raw `bus` / `gen` / `branch` matrices
-    directly and initializes the `LSGrid` from them. In particular, several
+    pandapower network: it reads MATPOWER's raw `bus` / `gen` / `branch` / `dcline`
+    matrices directly and initializes the `LSGrid` from them. In particular, several
     generators connected to the same bus are all kept as independent generators
     (no aggregation).
 
@@ -77,73 +79,5 @@ def init(source: Union[str, "os.PathLike", dict],
     bus, gen, branch, dcline, baseMVA = load_matpower_data(source)
     _aux_check_legit(bus, gen, branch, dcline)
 
-    mp_to_ls, ls_to_orig = build_bus_remap(bus[:, BUS_I])
-
-    is_trafo = get_branch_split(branch)
-    nb_line = int((~is_trafo).sum())
-    nb_trafo = int(is_trafo.sum())
-
-    model = LSGrid()
-    model.set_sn_mva(baseMVA)
-
-    n_sub = bus.shape[0]
-    if n_busbar_per_sub is None:
-        n_busbar_per_sub = 1
-
-    try:
-        tmp = int(n_busbar_per_sub)
-    except ValueError as exc_:
-        raise RuntimeError("Impossible to convert n_busbar_per_sub to int") from exc_
-    if tmp != n_busbar_per_sub:
-        raise RuntimeError(f"n_busbar_per_sub should be a int, you provided {tmp} which cannot safely be converted to an int.")
-    n_busbar_per_sub = tmp
-    if n_busbar_per_sub <= 0:
-        raise RuntimeError(f"You need to provide a grid with at least 1 busbar per "
-                           f"substation / voltage level, provided n_busbar_per_sub={n_busbar_per_sub}")
-
-    # lightsim2grid lays out global bus ids busbar-section-major: ids [0, n_sub) are
-    # busbar section 1 of every substation (one per matpower bus, in matpower order),
-    # ids [n_sub, 2*n_sub) are section 2, etc. `np.tile` replicates `bus[:, BASE_KV]`
-    # to match that layout.
-    vn_kv = np.tile(bus[:, BASE_KV], n_busbar_per_sub)
-    model.init_bus(n_sub, n_busbar_per_sub, vn_kv, nb_line, nb_trafo)
-    if n_busbar_per_sub > 1:
-        # extra busbar sections have no corresponding matpower bus at all
-        ls_to_orig = np.concatenate((ls_to_orig,
-                                     np.full(n_sub * (n_busbar_per_sub - 1), -1, dtype=int)))
-    model._ls_to_orig = ls_to_orig
-
-    if n_busbar_per_sub > 1:
-        # matpower has no data for these extra busbar sections: nothing is connected
-        # to them in the base case, so deactivate them until a topology action moves
-        # something there
-        for ls_bus_id in range(n_sub, n_sub * n_busbar_per_sub):
-            model.deactivate_bus(ls_bus_id)
-
-    isolated_mask = bus[:, BUS_TYPE] == NONE
-    if np.any(isolated_mask):
-        isolated_ls_bus = mp_bus_to_ls(bus[isolated_mask, BUS_I], mp_to_ls)
-        for ls_bus_id in isolated_ls_bus:
-            model.deactivate_bus(int(ls_bus_id))
-    else:
-        isolated_ls_bus = np.array([], dtype=int)
-
-    # init the powerlines and transformers
-    _aux_add_branch(model, branch, is_trafo, mp_to_ls, isolated_ls_bus)
-
-    # init the shunts
-    _aux_add_shunt(model, bus, mp_to_ls, isolated_ls_bus)
-
-    # init the loads
-    _aux_add_load(model, bus, mp_to_ls, isolated_ls_bus)
-
-    # init the generators
-    _aux_add_gen(model, gen, mp_to_ls, isolated_ls_bus)
-
-    # deal with the slack bus(es)
-    _aux_add_slack(model, bus, gen, mp_to_ls, isolated_ls_bus)
-
-    # init the HVDC lines (mpc.dcline), if any
-    _aux_add_dc_line(model, dcline, mp_to_ls, isolated_ls_bus)
-
-    return model
+    network = mpc_to_powermodels(bus, gen, branch, dcline, baseMVA)
+    return _init_from_powermodels(network, n_busbar_per_sub=n_busbar_per_sub)
