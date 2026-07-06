@@ -104,7 +104,7 @@ bool BaseBatchSolverSynch::warmup_solver(
             Ybus_,
             Vinit_solver,
             Sbus_,
-            slack_ids_me_.as_eigen(),
+            slack_ids_solver_.as_eigen(),
             slack_weights_,
             bus_pv_.as_eigen(),
             bus_pq_.as_eigen(),
@@ -115,7 +115,7 @@ bool BaseBatchSolverSynch::warmup_solver(
             Bbus_,
             Vinit_solver,
             Pbus_,
-            slack_ids_me_.as_eigen(),
+            slack_ids_solver_.as_eigen(),
             slack_weights_,
             bus_pv_.as_eigen(),
             bus_pq_.as_eigen());

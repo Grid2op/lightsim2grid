@@ -635,6 +635,7 @@ class LS2G_API LSGrid final
             GenericContainer::check_size(names, powerlines_.nb(), "set_line_names");
             powerlines_.set_names(names);
         }
+        const std::vector<std::string> & get_line_names() const {return powerlines_.get_names();}
         void set_dcline_names(const std::vector<std::string> & names){
             GenericContainer::check_size(names, hvdc_lines_.nb(), "set_dcline_names");
             hvdc_lines_.set_names(names);
@@ -643,6 +644,7 @@ class LS2G_API LSGrid final
             GenericContainer::check_size(names, trafos_.nb(), "set_trafo_names");
             trafos_.set_names(names);
         }
+        const std::vector<std::string> & get_trafo_names() const {return trafos_.get_names();}
         // per-side current limit, in kA, optional: empty if never set
         void set_line_current_limit_side1(const RealVect & limit_a1_ka){
             GenericContainer::check_size(limit_a1_ka, powerlines_.nb(), "set_line_current_limit_side1");
@@ -1010,9 +1012,16 @@ class LS2G_API LSGrid final
         tuple4d get_line_res1() const {return powerlines_.get_res_side_1();}
         tuple4d get_line_res2() const {return powerlines_.get_res_side_2();}
         const std::vector<bool>& get_lines_status() const { return powerlines_.get_status_global();}
+        // per-side status (relevant for half-open lines, see `set_synch_status_both_side` /
+        // `keep_half_open_lines`): `get_lines_status()` is the *global* status (both sides
+        // disconnected), these report each side independently.
+        const std::vector<bool>& get_lines_status_side1() const { return powerlines_.get_status_side_1();}
+        const std::vector<bool>& get_lines_status_side2() const { return powerlines_.get_status_side_2();}
         tuple4d get_trafo_res1() const {return trafos_.get_res_side_1();}
         tuple4d get_trafo_res2() const {return trafos_.get_res_side_2();}
         const std::vector<bool>& get_trafo_status() const { return trafos_.get_status_global();}
+        const std::vector<bool>& get_trafo_status_side1() const { return trafos_.get_status_side_1();}
+        const std::vector<bool>& get_trafo_status_side2() const { return trafos_.get_status_side_2();}
         tuple3d get_storages_res() const {return storages_.get_res();}
         const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
         tuple3d get_sgens_res() const {return sgens_.get_res();}

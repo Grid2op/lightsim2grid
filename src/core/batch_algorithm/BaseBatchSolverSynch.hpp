@@ -395,22 +395,27 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 CplxVect Vinit_solver2 = Vinit_solver;
                 bool conv;
                 if(_algo.ac_solver_used()){
+                    // Sbus_ is already per-unit (pre_process_solver / fillSbus_me divides by
+                    // sn_mva when != 1), same convention as LSGrid::ac_pf's acSbus_ -- so tol
+                    // (a physical MW/MVAr tolerance) must be converted the same way LSGrid::ac_pf
+                    // does (`tol / sn_mva_`), or this initial solve accepts a per-unit mismatch
+                    // up to sn_mva times looser than what the caller asked for.
                     conv = _algo.compute_pf(
                         Ybus_,
                         Vinit_solver2,
                         Sbus_,
-                        slack_ids_me_.as_eigen(),
+                        slack_ids_solver_.as_eigen(),
                         slack_weights_,
                         bus_pv_.as_eigen(),
                         bus_pq_.as_eigen(),
                         max_iter,
-                        tol);
+                        tol / _grid_model.get_sn_mva());
                 } else {
                     conv = _algo.compute_pf_dc(
                         Bbus_,
                         Vinit_solver2,
                         Pbus_,
-                        slack_ids_me_.as_eigen(),
+                        slack_ids_solver_.as_eigen(),
                         slack_weights_,
                         bus_pv_.as_eigen(),
                         bus_pq_.as_eigen());
