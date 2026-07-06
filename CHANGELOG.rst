@@ -319,18 +319,27 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   Grids built from pandapower never populate these (getters return an empty array /
   NaN per element). Not wired into `LightSimBackend.thermal_limit_a`, which keeps its
   existing behaviour.
-- [ADDED] `lightsim2grid.network.init_from_pf_delta`: builds an `LSGrid` from one row of
-  the PFΔ benchmark dataset (arXiv:2510.22048, a PowerModels.jl/MATPOWER-format dict
-  with a solved power-flow state attached). Accepts either a parsed row (dict) or a
-  path to its `.json` file. Implemented as a thin translation layer on top of
-  `init_from_matpower`: the PFΔ row's PowerModels dict is converted into a raw
-  MATPOWER-shaped `bus`/`gen`/`branch` (and, if present, `dcline`) array set and
-  delegated to it, reusing its bus-id remapping, line/transformer splitting,
-  generator/load/shunt/HVDC conversion and slack-bus handling. Tested in
-  `test_LSGrid_pf_delta.py`, including an end-to-end check that lightsim2grid's own AC
-  powerflow reproduces a row's solved `vm`/`va`/`pf`/`qf`/`pt`/`qt` to solver tolerance,
-  and a synthetic-network check of the `"dcline"` translation (PFΔ's own pglib-derived
-  cases never contain one, but the schema and `from_matpower` both support it).
+- [ADDED] `lightsim2grid.network.init_from_powermodels`: a native, feature-complete
+  loader that builds an `LSGrid` directly from a PowerModels.jl network data
+  dictionary (see https://lanl-ansi.github.io/PowerModels.jl/stable/network-data/):
+  bus, branch (line/transformer split), gen, load, shunt, **storage** and dcline
+  (HVDC), including distributed-slack handling. Since PowerModels' dict is strictly
+  richer than raw MATPOWER (separate load/shunt/storage tables, independent per-side
+  line charging, no `tap == 0` sentinel to work around), this is now the shared engine
+  other loaders build on: `init_from_matpower` converts its raw `bus`/`gen`/`branch`/
+  `dcline` matrices into a PowerModels-style dict and delegates here (its own public
+  behavior is unchanged; verified against its existing test suite), rather than the
+  other way around.
+- [ADDED] `lightsim2grid.network.init_from_pf_delta`: builds an `LSGrid` from one row
+  of the PFΔ benchmark dataset (arXiv:2510.22048, a PowerModels.jl-format dict with a
+  solved power-flow state attached). Accepts either a parsed row (dict) or a path to
+  its `.json` file; a thin wrapper unwrapping the row's `"network"` key and calling
+  `init_from_powermodels` directly, since PFΔ rows already are PowerModels dicts.
+  Tested in `test_LSGrid_pf_delta.py`, including an end-to-end check that
+  lightsim2grid's own AC powerflow reproduces a row's solved `vm`/`va`/`pf`/`qf`/`pt`/
+  `qt` to solver tolerance, and synthetic-network checks of the `"storage"` and
+  `"dcline"` conversions (PFΔ's own pglib-derived cases never contain either, but the
+  schema and `init_from_powermodels` both support them).
 
 [0.13.1]  2026-04-21
 --------------------

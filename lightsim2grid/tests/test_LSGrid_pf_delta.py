@@ -6,30 +6,16 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-import copy
 import json
 import os
 import unittest
 
 import numpy as np
 
-from lightsim2grid.network import init_from_pf_delta
-from lightsim2grid.network.from_pf_delta._pf_delta_to_mpc import network_to_mpc
-from lightsim2grid.network.from_matpower._aux_add_branch import get_branch_split
+from lightsim2grid.network import init_from_pf_delta, init_from_powermodels
+from lightsim2grid.network.from_powermodels._aux_add_branch import classify_branches
 
 _FIXTURE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), "pf_delta_case14.json")
-
-
-def _branch_split_keys(network):
-    """Reproduces, from the row's `network` dict alone, which branch keys end up as
-    lines vs. transformers and in what order -- by reusing `network_to_mpc` (the exact
-    function `init_from_pf_delta` uses) and `from_matpower`'s own classification, so
-    this never drifts out of sync with the loader itself."""
-    branch_keys = sorted(network["branch"], key=int)
-    is_trafo = get_branch_split(network_to_mpc(network)["branch"])
-    line_keys = [k for k, t in zip(branch_keys, is_trafo) if not t]
-    trafo_keys = [k for k, t in zip(branch_keys, is_trafo) if t]
-    return line_keys, trafo_keys
 
 
 def validate_against_row(model, row, tol=1e-5):
@@ -41,7 +27,7 @@ def validate_against_row(model, row, tol=1e-5):
     solution = row["solution"]["solution"]
 
     bus_keys = sorted(network["bus"], key=int)
-    line_keys, trafo_keys = _branch_split_keys(network)
+    line_keys, trafo_keys = classify_branches(network)
 
     vm = model.get_Vm()
     va = model.get_Va()
@@ -87,7 +73,7 @@ class BaseTests:
 
     def test_counts(self):
         network = self.row["network"]
-        line_keys, trafo_keys = _branch_split_keys(network)
+        line_keys, trafo_keys = classify_branches(network)
         assert len(self.model.get_lines()) == len(line_keys)
         assert len(self.model.get_trafos()) == len(trafo_keys)
         assert len(self.model.get_generators()) == len(network["gen"])
@@ -99,7 +85,7 @@ class BaseTests:
         # shunt absent) the AC powerflow test below would not actually be exercising
         # the tap-ratio / shunt-sign conversions
         network = self.row["network"]
-        _, trafo_keys = _branch_split_keys(network)
+        _, trafo_keys = classify_branches(network)
         assert len(trafo_keys) > 0, "fixture has no transformers, tap conversion untested"
         assert any(network["branch"][k]["tap"] != 1.0 for k in trafo_keys)
         assert len(network.get("shunt", {})) > 0, "fixture has no shunt, sign convention untested"
@@ -120,20 +106,59 @@ class BaseTests:
         Vfinal = model.ac_pf(np.full(nb_bus, 1.0, dtype=complex), 10, 1e-8)
         assert Vfinal.shape[0] > 0, "powerflow diverged"
 
+    def test_init_from_powermodels_on_bare_network_dict(self):
+        # init_from_pf_delta is a thin wrapper unwrapping row["network"] and calling
+        # init_from_powermodels directly -- both should behave identically
+        model = init_from_powermodels(self.row["network"])
+        assert len(model.get_lines()) == len(self.model.get_lines())
+        assert len(model.get_trafos()) == len(self.model.get_trafos())
+        nb_bus = len(self.row["network"]["bus"])
+        Vfinal = model.ac_pf(np.full(nb_bus, 1.0, dtype=complex), 10, 1e-8)
+        assert Vfinal.shape[0] > 0, "powerflow diverged"
+
     def test_missing_network_key_raises(self):
         with self.assertRaises(RuntimeError):
             init_from_pf_delta(self.row["network"])
 
-    def test_nonzero_g_fr_raises(self):
-        row = copy.deepcopy(self.row)
-        first_branch_key = next(iter(row["network"]["branch"]))
-        row["network"]["branch"][first_branch_key]["g_fr"] = 0.01
-        with self.assertRaises(RuntimeError):
-            init_from_pf_delta(row)
 
-    def test_shift_is_converted_from_radians_to_degrees(self):
-        # case14 has no phase shifters (shift == 0 everywhere), so this exercises the
-        # rad -> deg conversion directly on a small synthetic network instead
+class TestLSGridPFDelta(BaseTests, unittest.TestCase):
+    pass
+
+
+class TestPFDeltaBranchConductance(unittest.TestCase):
+    """Unlike `init_from_matpower` (which routes through matpower's raw `mpc.branch`,
+    whose single `BR_B` column cannot represent line conductance at all),
+    `init_from_powermodels` builds lines directly from `"g_fr"`/`"g_to"`, so an
+    asymmetric, non-zero line conductance should convert and solve without issue."""
+
+    @staticmethod
+    def _network(g_fr=0.0, g_to=0.0):
+        return {
+            "baseMVA": 100.0,
+            "bus": {"1": {"bus_i": 1, "bus_type": 3, "vmax": 1.1, "vmin": 0.9},
+                    "2": {"bus_i": 2, "bus_type": 1, "vmax": 1.1, "vmin": 0.9}},
+            "gen": {"1": {"gen_bus": 1, "pg": 0.0, "qg": 0.0, "qmax": 10.0, "qmin": -10.0,
+                          "vg": 1.0, "pmax": 100.0, "pmin": 0.0, "gen_status": 1}},
+            "load": {"1": {"load_bus": 2, "pd": 10.0, "qd": 2.0, "status": 1}},
+            "shunt": {},
+            "branch": {"1": {"f_bus": 1, "t_bus": 2, "br_r": 0.01, "br_x": 0.1,
+                             "g_fr": g_fr, "g_to": g_to, "br_status": 1}},
+        }
+
+    def test_asymmetric_line_conductance_converts_and_solves(self):
+        model = init_from_powermodels(self._network(g_fr=0.001, g_to=0.002))
+        assert len(model.get_lines()) == 1
+        Vfinal = model.ac_pf(np.full(2, 1.0, dtype=complex), 10, 1e-8)
+        assert Vfinal.shape[0] > 0, "powerflow diverged"
+
+
+class TestPFDeltaShiftConversion(unittest.TestCase):
+    """case14 has no phase shifters (`shift == 0` everywhere in the real pglib case),
+    so this exercises the radians -> degrees -> radians round trip through the
+    `init_trafo` API boundary directly on a small synthetic network instead."""
+
+    def test_shift_round_trips_through_init_trafo(self):
+        shift_rad = np.pi / 6
         network = {
             "baseMVA": 100.0,
             "bus": {"1": {"bus_i": 1, "bus_type": 3, "vmax": 1.1, "vmin": 0.9},
@@ -142,15 +167,58 @@ class BaseTests:
                           "vg": 1.0, "pmax": 100.0, "pmin": 0.0, "gen_status": 1}},
             "load": {}, "shunt": {},
             "branch": {"1": {"f_bus": 1, "t_bus": 2, "br_r": 0.01, "br_x": 0.1,
-                             "tap": 1.05, "shift": np.pi / 6, "br_status": 1}},
+                             "tap": 1.05, "shift": shift_rad, "br_status": 1}},
         }
-        mpc = network_to_mpc(network)
-        np.testing.assert_allclose(mpc["branch"][0, 9], 30.0)  # SHIFT column, degrees
+        model = init_from_powermodels(network)
+        trafos = model.get_trafos()
+        assert len(trafos) == 1
+        assert abs(trafos[0].shift_rad - shift_rad) <= 1e-8
+
+
+class TestPFDeltaStorage(unittest.TestCase):
+    """PFΔ's own pglib-derived cases never contain a `"storage"` entry, but
+    PowerModels' schema supports one and lightsim2grid itself supports storage
+    (unlike `from_matpower`'s raw mpc format, which has no storage table at all), so
+    this exercises that conversion path directly."""
+
+    @staticmethod
+    def _network_with_storage(status=1):
+        return {
+            "baseMVA": 100.0,
+            "bus": {"1": {"bus_i": 1, "bus_type": 3, "vmax": 1.1, "vmin": 0.9},
+                    "2": {"bus_i": 2, "bus_type": 1, "vmax": 1.1, "vmin": 0.9}},
+            "gen": {"1": {"gen_bus": 1, "pg": 0.0, "qg": 0.0, "qmax": 100.0, "qmin": -100.0,
+                          "vg": 1.0, "pmax": 200.0, "pmin": 0.0, "gen_status": 1}},
+            "load": {"1": {"load_bus": 2, "pd": 10.0, "qd": 2.0, "status": 1}},
+            "shunt": {},
+            "branch": {"1": {"f_bus": 1, "t_bus": 2, "br_r": 0.01, "br_x": 0.1, "br_status": 1}},
+            "storage": {"1": {"storage_bus": 2, "ps": 5.0, "qs": 1.0, "status": status}},
+        }
+
+    def test_no_storage_key_at_all(self):
+        network = self._network_with_storage()
+        del network["storage"]
+        model = init_from_powermodels(network)
+        assert len(model.get_storages()) == 0
+
+    def test_storage_is_converted(self):
+        model = init_from_powermodels(self._network_with_storage())
+        storages = model.get_storages()
+        assert len(storages) == 1
+        # PowerModels' "ps"/"qs" are load-convention (withdrawn=positive), matching
+        # lightsim2grid's own init_storages convention directly -- no sign flip
+        Vfinal = model.ac_pf(np.full(2, 1.0, dtype=complex), 10, 1e-8)
+        assert Vfinal.shape[0] > 0, "powerflow diverged"
+
+    def test_deactivated_storage(self):
+        model = init_from_powermodels(self._network_with_storage(status=0))
+        Vfinal = model.ac_pf(np.full(2, 1.0, dtype=complex), 10, 1e-8)
+        assert Vfinal.shape[0] > 0, "powerflow diverged"
 
 
 class TestPFDeltaDCLine(unittest.TestCase):
     """PFΔ's own pglib-derived cases (case14/30/57/118/500/2000) never contain a
-    `"dcline"` entry, but PowerModels' schema supports one and `from_matpower` now
+    `"dcline"` entry, but PowerModels' schema supports one and lightsim2grid now
     converts it (`model.init_dclines`), so this exercises that translation path
     directly rather than leaving it silently unsupported."""
 
@@ -170,7 +238,7 @@ class TestPFDeltaDCLine(unittest.TestCase):
                        "2": {"f_bus": 2, "t_bus": 3, "br_r": 0.01, "br_x": 0.1, "br_status": 1}},
             # PowerModels keeps "pf" at matpower's own sign, but negates "pt"/"qf"/"qt";
             # only f_bus/t_bus/br_status/pf/loss0/loss1/vf/vt/qmin*/qmax* are actually
-            # consumed by from_matpower's converter (see _aux_add_dc_line.py)
+            # consumed by the converter (see from_powermodels/_aux_add_dc_line.py)
             "dcline": {"1": {"f_bus": 2, "t_bus": 3, "pf": 10.0, "pt": -9.0, "qf": 0.0, "qt": 0.0,
                              "vf": 1.0, "vt": 1.0, "qminf": -10.0, "qmaxf": 10.0,
                              "qmint": -10.0, "qmaxt": 10.0, "loss0": 0.5, "loss1": 0.05,
@@ -204,10 +272,6 @@ class TestPFDeltaDCLine(unittest.TestCase):
         model = init_from_pf_delta({"network": network})
         Vfinal = model.ac_pf(np.full(3, 1.0, dtype=complex), 10, 1e-8)
         assert Vfinal.shape[0] > 0, "powerflow diverged"
-
-
-class TestLSGridPFDelta(BaseTests, unittest.TestCase):
-    pass
 
 
 if __name__ == "__main__":
