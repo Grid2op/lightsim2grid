@@ -7,12 +7,11 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 """Malformed reactive capability curve data (min_q/max_q effectively "swapped" at
-one of the curve points) was found on two real RTE grids (PtFige-20240531-2225 and
-PtFige-20240601-0030, generators CSTTT.HG1/CSTTT.HG2): pypowsybl's "at target p"
-interpolation then yields min_q > max_q, which OpenLoadFlow tolerates silently but
-which used to make lightsim2grid's ``GeneratorContainer::init`` hard-crash with
-``RuntimeError: ... min_q being above max_q``. `from_pypowsybl.init()` now sorts
-the pair instead of crashing.
+one of the curve points) was found on a real RTE grid snapshot: pypowsybl's
+"at target p" interpolation then yields min_q > max_q, which OpenLoadFlow
+tolerates silently but which used to make lightsim2grid's
+``GeneratorContainer::init`` hard-crash with ``RuntimeError: ... min_q being
+above max_q``. `from_pypowsybl.init()` now sorts the pair instead of crashing.
 """
 
 import unittest
@@ -32,8 +31,8 @@ class TestGenReactiveCurveSwap(unittest.TestCase):
             self.skipTest("pypowsybl is required")
         self.net = pn.create_ieee14()
         self.gid = self.net.get_generators().index[0]
-        # reproduces the real-world curve found on CSTTT.HG1/CSTTT.HG2: the
-        # p=0.99 point has min_q (0.053) > max_q (0.04), a data-entry error.
+        # reproduces the real-world curve found in the wild: the p=0.99 point
+        # has min_q (0.053) > max_q (0.04), a data-entry error.
         self.net.create_curve_reactive_limits(
             id=[self.gid, self.gid], p=[-0.15, 0.99],
             min_q=[0.0, 0.053], max_q=[0.0, 0.04])
