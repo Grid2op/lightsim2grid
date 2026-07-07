@@ -19,6 +19,8 @@ pypowsybl is unavailable.
 import unittest
 import numpy as np
 
+from lightsim2grid.algorithm import AlgorithmType
+
 try:
     import pypowsybl as pp
     from lightsim2grid.network import init_from_pypowsybl
@@ -124,6 +126,19 @@ def _dist_slack_pq_net():
     n.create_generators(id="G1", voltage_level_id="VL1", bus_id="B1", target_p=60.0,
                         target_q=10.0, target_v=400.0, voltage_regulator_on=False, max_p=1000.0, min_p=0.0)
     return n
+
+
+def _single_slack_algos(model):
+    """(name, AlgorithmType) pairs to exercise every NRSing_* build actually
+    available, mirroring the KLU-preferred / SparseLU-fallback guard used in
+    LightSimBackend._assign_right_solver. NRSing_SparseLU has no external
+    dependency, so it is always exercised; NRSing_KLU is added only when
+    available, so its absence never fails the test."""
+    algos = [("NRSing_SparseLU", AlgorithmType.NRSing_SparseLU)]
+    avail = model.available_default_algorithms()
+    if AlgorithmType.NRSing_KLU in avail:
+        algos.append(("NRSing_KLU", AlgorithmType.NRSing_KLU))
+    return algos
 
 
 @unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
@@ -241,6 +256,46 @@ class TestVoltageControlPypowsybl(unittest.TestCase):
         self.assertGreater(abs(abs(V[vl1]) - 1.0), 1e-3, "VL1 magnitude was frozen at init")
         q = {g.name: g.res_q_mvar for g in model.get_generators()}
         self.assertAlmostEqual(q["G1"], 10.0, places=4)
+
+    def test_dist_slack_pq_participant_single_slack_solver(self):
+        # Regression for the SingleSlackNRSystem bug: with gen_slack_id="G1"
+        # (a single string, not a dict) G1 is the SOLE slack bus, still not
+        # pinned by a local PV gen (voltage_regulator_on=False). Switching to
+        # NRSing_* must NOT freeze its Vm at the init value the way the
+        # unpatched SingleSlackNRSystem (no MultiSlack extension at all) did.
+        n = _dist_slack_pq_net()
+        n.per_unit = False
+        model = init_from_pypowsybl(n, gen_slack_id="G1", sort_index=True)
+        nb = len(model.get_bus_status())
+        vl1_bus = list(n.get_buses().index).index(
+            n.get_buses().index[n.get_buses()["voltage_level_id"] == "VL1"][0])
+        for name, algo in _single_slack_algos(model):
+            model.change_algorithm(algo)
+            V0 = np.ones(nb, dtype=np.complex128)
+            V = model.ac_pf(V0, 30, 1e-11)
+            self.assertGreater(V.shape[0], 0, f"{name}: diverged")
+            self.assertGreater(abs(abs(V[vl1_bus]) - 1.0), 1e-3,
+                                f"{name}: slack bus (VL1) magnitude was frozen at init")
+            q = {g.name: g.res_q_mvar for g in model.get_generators()}
+            self.assertAlmostEqual(q["G1"], 10.0, places=4, msg=f"{name}: wrong Q on G1")
+
+    def test_remote_gen_on_slack_single_slack_solver(self):
+        # test_remote_gen_on_slack's fixture: G1's own bus IS the (sole) slack,
+        # regulated only remotely (target on "LD"). Same regression, on the
+        # "remote-voltage-controller-on-slack" variant of the bug.
+        n = _star(g2_reg=None, g1_reg="LD", g1_tv=405.0)
+        n.per_unit = False
+        model = init_from_pypowsybl(n, gen_slack_id="G1", sort_index=True)
+        nb = len(model.get_bus_status())
+        vl1_bus = list(n.get_buses().index).index(
+            n.get_buses().index[n.get_buses()["voltage_level_id"] == "VL1"][0])
+        for name, algo in _single_slack_algos(model):
+            model.change_algorithm(algo)
+            V0 = np.ones(nb, dtype=np.complex128)
+            V = model.ac_pf(V0, 30, 1e-11)
+            self.assertGreater(V.shape[0], 0, f"{name}: diverged")
+            self.assertGreater(abs(abs(V[vl1_bus]) - 1.0), 1e-3,
+                                f"{name}: slack bus (VL1) magnitude was frozen at init")
 
     # ----- SVC --------------------------------------------------------------
     def test_svc_local_voltage(self):
