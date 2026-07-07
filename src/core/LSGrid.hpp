@@ -12,6 +12,7 @@
 #include <iostream>
 #include <vector>
 #include <set>
+#include <tuple>
 #include <stdio.h>
 #include <cstdint> // for int32
 #include <chrono>
@@ -980,6 +981,19 @@ class LS2G_API LSGrid final
          * (ie from within a solver's compute_pf).
          */
         void fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) const;
+
+        // Python-facing wrapper around fill_hvdc_droop_solver_data(ac=true):
+        // (bus1, bus2, status, p0, k, lf1, lf2, r, pmax12, pmax21), one entry
+        // per CONNECTED droop-enabled hvdc line, solver bus numbering, pu.
+        // Ground truth for external solvers re-deriving the theta-dependent
+        // droop flow contribution to F independently.
+        std::tuple<Eigen::VectorXi, Eigen::VectorXi, Eigen::VectorXi,
+                   RealVect, RealVect, RealVect, RealVect, RealVect, RealVect, RealVect>
+        get_hvdc_droop_data_solver() const {
+            HvdcDroopSolverData d;
+            fill_hvdc_droop_solver_data(d, true);
+            return {d.bus1, d.bus2, d.status, d.p0, d.k, d.lf1, d.lf2, d.r, d.pmax12, d.pmax21};
+        }
         /**
          * Per-solve data of the ACTIVE voltage-mode controllers (remote-regulating
          * generators and, later, voltage-mode SVCs), grouped by regulated solver
@@ -1485,8 +1499,36 @@ class LS2G_API LSGrid final
         IntVect get_q_to_J_col_solver()     const { return _algo.get_q_to_J_col_python(); }
         IntVect get_p_to_J_row_solver()     const { return _algo.get_p_to_J_row_python(); }
         IntVect get_q_to_J_row_solver()     const { return _algo.get_q_to_J_row_python(); }
+
+        // Compact (bus, row/col) registration pair lists -- the row/col
+        // counterpart of the *_to_J_col / *_to_J_row maps above, but preserving
+        // EVERY registration in order (a bus may appear more than once, or be
+        // absent from the bus-keyed map's current value if a later
+        // registration shadowed it there -- see NRLedger's "Multiplicity
+        // rules"). NRSystem::_residual() itself iterates these, not the
+        // bus-keyed maps; external batched solvers must do the same to
+        // reproduce every contribution.
+        IntVect get_p_buses_solver()     const { return _algo.get_p_buses_python(); }
+        IntVect get_p_rows_solver()      const { return _algo.get_p_rows_python(); }
+        IntVect get_q_buses_solver()     const { return _algo.get_q_buses_python(); }
+        IntVect get_q_rows_solver()      const { return _algo.get_q_rows_python(); }
+        IntVect get_theta_buses_solver() const { return _algo.get_theta_buses_python(); }
+        IntVect get_theta_cols_solver()  const { return _algo.get_theta_cols_python(); }
+        IntVect get_vm_buses_solver()    const { return _algo.get_vm_buses_python(); }
+        IntVect get_vm_cols_solver()     const { return _algo.get_vm_cols_python(); }
         // MultiSlack slack_absorbed J column (-1 when distributed slack inactive).
         int     get_slack_col_solver()      const { return _algo.get_slack_col(); }
+        // MultiSlack converged slack_absorbed VALUE (pu; 0 when inactive). This
+        // is the ground-truth state after convergence -- NOT the 0 initial
+        // guess an external solver's own linearized derivation starts from.
+        real_type get_slack_absorbed_solver() const { return _algo.get_slack_absorbed(); }
+        // VoltageControl (remote gen + SVC) converged reactive injection per
+        // controller (pu), + its (kind: 0=GEN,1=SVC; element id) identity, in
+        // controller registration order (empty when the extension is inactive).
+        // Ground truth for external solvers deriving their own controller_q.
+        RealVect get_controller_q_solver()       const { return _algo.get_controller_q(); }
+        IntVect  get_controller_kind_solver()    const { return _algo.get_controller_kind(); }
+        IntVect  get_controller_elem_id_solver() const { return _algo.get_controller_elem_id(); }
 
         real_type get_computation_time() const{ return _algo.get_computation_time();}
         real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}
