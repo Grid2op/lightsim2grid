@@ -398,6 +398,20 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   zero-impedance *line* spanning two different nominal voltages raises a `RuntimeError`
   (inconsistent grid data) rather than being silently fused. Off by default (existing
   behaviour unchanged); tested in `test_bus_fusion_pypowsybl.py`.
+- [FIXED] `init_from_pypowsybl` no longer crashes (`GeneratorContainer::init: ...min_q
+  being above max_q...`) when a generator's reactive capability curve has a malformed
+  point (`min_q > max_q` at that active power, a data-entry error) that, after the
+  curve is interpolated at the generator's `target_p`, yields an inverted interval.
+  OpenLoadFlow tolerates this silently; lightsim2grid now sorts the pair instead of
+  hard-rejecting it (found on real RTE grids PtFige-20240531-2225 / PtFige-20240601-0030,
+  generators CSTTT.HG1/CSTTT.HG2). Tested in `test_gen_reactive_curve_swap.py`.
+- [FIXED] `init_from_pypowsybl` no longer crashes (`KeyError: "[''] not in index"`) when
+  a *connected* generator or SVC remotely regulates the voltage of a terminal that is
+  itself disconnected (e.g. a de-energized voltage level). PowSyBl's bus-view id for a
+  disconnected element is `''`, not NaN, and could not be resolved to any bus; the
+  controller now falls back to local voltage control instead of crashing, matching
+  OpenLoadFlow's behaviour (found on real RTE grid PtFige-20251102-0905, generators
+  B.SSBEA1/B.SSBEA2). Tested in `test_remote_control_disconnected_target.py`.
 
 [0.13.1]  2026-04-21
 --------------------
