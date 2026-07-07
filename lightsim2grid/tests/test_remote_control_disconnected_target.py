@@ -7,13 +7,13 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 """A *connected* generator (or SVC) can remotely regulate the voltage of a
-terminal that is itself disconnected (found on a real RTE grid,
-PtFige-20251102-0905: generators B.SSBEA1/B.SSBEA2 remotely regulate busbar
-sections B.SSBP6_1A/1B, a de-energized voltage level). pypowsybl's bus-view id
-for a disconnected element is `''`, not NaN, which used to crash
-`from_pypowsybl.init()` with `KeyError: "[''] not in index"`. OpenLoadFlow
-converges fine on such grids, so `init()` now falls back to local voltage
-control for the affected controller instead of crashing.
+terminal that is itself disconnected (found on a real RTE grid snapshot: two
+generators remotely regulate busbar sections in a de-energized voltage
+level). pypowsybl's bus-view id for a disconnected element is `''`, not NaN,
+which used to crash `from_pypowsybl.init()` with
+`KeyError: "[''] not in index"`. OpenLoadFlow converges fine on such grids,
+so `init()` now falls back to local voltage control for the affected
+controller instead of crashing.
 
 This is a different case from the one covered by
 `test_disconnected_remote_voltage_control` (a *disconnected* generator
