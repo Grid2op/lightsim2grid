@@ -929,10 +929,10 @@ def init(net : pypo.network.Network,
     # malformed source curve data (eg a reactive capability curve point entered with
     # min_q/max_q swapped) can make the "at target p" interpolation yield min_q > max_q.
     # OpenLoadFlow tolerates this silently; lightsim2grid's GeneratorContainer::init
-    # hard-rejects it (real case found on PtFige-20240531-2225 / PtFige-20240601-0030,
-    # generators CSTTT.HG1/CSTTT.HG2). Restore a valid interval by sorting the pair
-    # instead of crashing -- this only ever affects the (already tiny) width of the
-    # interval, never which generators get a reactive constraint at all.
+    # hard-rejects it (real case found on a real RTE grid snapshot). Restore a valid
+    # interval by sorting the pair instead of crashing -- this only ever affects the
+    # (already tiny) width of the interval, never which generators get a reactive
+    # constraint at all.
     swapped = min_q_aux > max_q_aux
     if swapped.any():
         min_q_aux[swapped], max_q_aux[swapped] = max_q_aux[swapped], min_q_aux[swapped].copy()
@@ -967,11 +967,11 @@ def init(net : pypo.network.Network,
         remote_idx = np.nonzero(mask_remote_gen)[0]
         gen_reg_bus_view = _aux_regulated_bus_view_ids(net, bus_reg[mask_remote_gen])
         # a *connected* generator can still remotely regulate a busbar section that is
-        # itself disconnected (found on PtFige-20251102-0905: B.SSBEA1/B.SSBEA2 ->
-        # B.SSBP6_1A/1B, a de-energized voltage level). pypowsybl's bus-view id for a
-        # disconnected element is '' , not NaN, and can't be resolved to any bus_df
-        # row. OLF converges fine on this grid, so it must fall back to local voltage
-        # control in this situation; mirror that instead of crashing.
+        # itself disconnected (found on a real RTE grid snapshot: a de-energized
+        # voltage level). pypowsybl's bus-view id for a disconnected element is '',
+        # not NaN, and can't be resolved to any bus_df row. OLF converges fine on such
+        # grids, so it must fall back to local voltage control in this situation;
+        # mirror that instead of crashing.
         unresolved = gen_reg_bus_view == ""
         if unresolved.any():
             mask_remote_gen[remote_idx[unresolved]] = False
