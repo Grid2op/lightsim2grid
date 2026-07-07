@@ -430,6 +430,8 @@ void LSGrid::fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) co
     data.r = RealVect(nb_droop);
     data.pmax12 = RealVect(nb_droop);
     data.pmax21 = RealVect(nb_droop);
+    data.connected1.assign(nb_droop, true);
+    data.connected2.assign(nb_droop, true);
     for(int pos = 0; pos < nb_droop; ++pos){
         const int hvdc_id = indices[pos];
         const GlobalBusId bus_1 = hvdc_lines_.get_bus_side_1(hvdc_id);
@@ -455,6 +457,14 @@ void LSGrid::fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) co
         data.r(pos) = (v_nom > 0.) ? hvdc_lines_.get_r_ohm(hvdc_id) * sn_mva_ / (v_nom * v_nom) : 0.;
         data.pmax12(pos) = hvdc_lines_.get_pmax_1to2_mw(hvdc_id) / sn_mva_;
         data.pmax21(pos) = hvdc_lines_.get_pmax_2to1_mw(hvdc_id) / sn_mva_;
+        // status_global[hvdc_id] being true only guarantees at least ONE side
+        // is in the main synchronous component (see
+        // disconnect_if_not_in_main_component) -- the OTHER side may be
+        // individually open. bus1/bus2 solver ids stay valid either way (the
+        // AC bus itself, not the converter, is what id_me_to_solver maps),
+        // but the theta-dependent flow into an open side is meaningless.
+        data.connected1[pos] = hvdc_lines_.get_connected_side_1(hvdc_id);
+        data.connected2[pos] = hvdc_lines_.get_connected_side_2(hvdc_id);
     }
 }
 

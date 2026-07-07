@@ -248,6 +248,39 @@ class LS2G_API AlgorithmSelector final
             return get_prt_solver("get_q_to_J_row", false)->get_q_to_J_row_python();
         }
 
+        IntVect get_p_buses_python() const {
+            check_right_solver("get_p_buses");
+            return get_prt_solver("get_p_buses", false)->get_p_buses_python();
+        }
+        IntVect get_p_rows_python() const {
+            check_right_solver("get_p_rows");
+            return get_prt_solver("get_p_rows", false)->get_p_rows_python();
+        }
+        IntVect get_q_buses_python() const {
+            check_right_solver("get_q_buses");
+            return get_prt_solver("get_q_buses", false)->get_q_buses_python();
+        }
+        IntVect get_q_rows_python() const {
+            check_right_solver("get_q_rows");
+            return get_prt_solver("get_q_rows", false)->get_q_rows_python();
+        }
+        IntVect get_theta_buses_python() const {
+            check_right_solver("get_theta_buses");
+            return get_prt_solver("get_theta_buses", false)->get_theta_buses_python();
+        }
+        IntVect get_theta_cols_python() const {
+            check_right_solver("get_theta_cols");
+            return get_prt_solver("get_theta_cols", false)->get_theta_cols_python();
+        }
+        IntVect get_vm_buses_python() const {
+            check_right_solver("get_vm_buses");
+            return get_prt_solver("get_vm_buses", false)->get_vm_buses_python();
+        }
+        IntVect get_vm_cols_python() const {
+            check_right_solver("get_vm_cols");
+            return get_prt_solver("get_vm_cols", false)->get_vm_cols_python();
+        }
+
         // VoltageControl (remote gen + SVC) converged reactive injection per
         // controller (pu) + identity, in controller registration order. Empty
         // for any active solver without the extension (no right-solver check on
@@ -263,6 +296,9 @@ class LS2G_API AlgorithmSelector final
         }
         int get_slack_col() const {
             return get_prt_solver("get_slack_col", false)->get_slack_col();
+        }
+        real_type get_slack_absorbed() const {
+            return get_prt_solver("get_slack_absorbed", false)->get_slack_absorbed();
         }
 
         double get_computation_time() const {
