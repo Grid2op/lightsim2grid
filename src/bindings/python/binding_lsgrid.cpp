@@ -310,6 +310,50 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_slack_ids_solver", &LSGrid::get_slack_ids_solver_numpy, DocLSGrid::get_slack_ids_solver.c_str(), py::return_value_policy::reference)
         .def("get_slack_ids_dc_solver", &LSGrid::get_slack_ids_dc_solver_numpy, DocLSGrid::get_slack_ids_dc_solver.c_str(), py::return_value_policy::reference)
         .def("get_slack_weights_solver", &LSGrid::get_slack_weights_solver, DocLSGrid::get_slack_weights_solver.c_str(), py::return_value_policy::reference)
+        .def("get_slack_col_solver", &LSGrid::get_slack_col_solver,
+             "J column of the MultiSlack slack_absorbed unknown (-1 when "
+             "distributed slack is inactive).")
+        .def("get_slack_absorbed_solver", &LSGrid::get_slack_absorbed_solver,
+             "Converged value (pu) of the MultiSlack slack_absorbed unknown "
+             "(0 when distributed slack is inactive). This is the GROUND "
+             "TRUTH after convergence -- not the 0 initial guess an external "
+             "solver's own linearized derivation starts from.")
+        .def("get_controller_q_solver", &LSGrid::get_controller_q_solver, py::return_value_policy::reference,
+             "Converged reactive injection (pu) per VoltageControl controller "
+             "(remote-regulating generator or voltage-mode SVC), in controller "
+             "registration order. Empty when the extension is inactive.")
+        .def("get_controller_kind_solver", &LSGrid::get_controller_kind_solver, py::return_value_policy::reference,
+             "Kind of each VoltageControl controller (0=GEN, 1=SVC), same "
+             "order as get_controller_q_solver().")
+        .def("get_controller_elem_id_solver", &LSGrid::get_controller_elem_id_solver, py::return_value_policy::reference,
+             "Element id (generator id if GEN, svc id if SVC) of each "
+             "VoltageControl controller, same order as get_controller_q_solver().")
+
+        .def("get_p_buses_solver", &LSGrid::get_p_buses_solver, py::return_value_policy::reference,
+             "Compact (bus, row) pair list for P equations -- the row/col "
+             "counterpart of get_p_to_J_row_solver(), preserving EVERY "
+             "registration (a bus may appear more than once; see NRLedger's "
+             "'Multiplicity rules'). Same length as get_p_rows_solver().")
+        .def("get_p_rows_solver", &LSGrid::get_p_rows_solver, py::return_value_policy::reference,
+             "J row of each entry in get_p_buses_solver(), same order.")
+        .def("get_q_buses_solver", &LSGrid::get_q_buses_solver, py::return_value_policy::reference,
+             "Compact (bus, row) pair list for Q equations, see get_p_buses_solver().")
+        .def("get_q_rows_solver", &LSGrid::get_q_rows_solver, py::return_value_policy::reference,
+             "J row of each entry in get_q_buses_solver(), same order.")
+        .def("get_theta_buses_solver", &LSGrid::get_theta_buses_solver, py::return_value_policy::reference,
+             "Compact (bus, col) pair list for theta unknowns, see get_p_buses_solver().")
+        .def("get_theta_cols_solver", &LSGrid::get_theta_cols_solver, py::return_value_policy::reference,
+             "J col of each entry in get_theta_buses_solver(), same order.")
+        .def("get_vm_buses_solver", &LSGrid::get_vm_buses_solver, py::return_value_policy::reference,
+             "Compact (bus, col) pair list for Vm unknowns, see get_p_buses_solver().")
+        .def("get_vm_cols_solver", &LSGrid::get_vm_cols_solver, py::return_value_policy::reference,
+             "J col of each entry in get_vm_buses_solver(), same order.")
+        .def("get_hvdc_droop_data_solver", &LSGrid::get_hvdc_droop_data_solver,
+             "(bus1, bus2, status, p0, k, lf1, lf2, r, pmax12, pmax21), one "
+             "entry per CONNECTED droop-enabled hvdc line (solver bus "
+             "numbering, pu). Ground truth for external solvers re-deriving "
+             "the theta-dependent droop flow contribution to F independently. "
+             "See HvdcDroopSolverData for the flow formula.")
 
         .def("get_Ybus", &LSGrid::get_Ybus, DocLSGrid::get_Ybus.c_str())
         .def("get_dcYbus", &LSGrid::get_dcYbus, DocLSGrid::get_dcYbus.c_str())
