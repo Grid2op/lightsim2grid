@@ -8,16 +8,11 @@
 
 #include "NRSystem.hpp"
 
-// out-of-line on purpose: NRSystem.hpp only forward-declares LSGrid (it is
-// included BY LSGrid.hpp), the full type is needed to query the slack buses that
-// need a free Vm unknown + Q equation.
-#include "LSGrid.hpp"
-
 namespace ls2g {
 
 void MultiSlack::update_state(
     const Base *                           /*nr_system_base_ptr*/,
-    const LSGrid *                         lsgrid_ptr,
+    const LSGrid *                         /*lsgrid_ptr*/,
     const Eigen::SparseMatrix<cplx_type>&  /*Ybus*/,
     const CplxVect&                        Sbus,
     const RealVect&                        slack_weights
@@ -26,12 +21,6 @@ void MultiSlack::update_state(
     slack_weights_ = slack_weights;
     // initial slack absorbed (see MultiSlackPolicy::initial_slack_absorbed)
     slack_absorbed_ = std::real(Sbus.sum());
-    // slack buses not pinned by a local PV generator need a free Vm + Q equation
-    // (added in register_in): PQ distributed-slack participants, and remote-voltage
-    // / SVC controllers (to which the VoltageControl extension then attaches).
-    free_vm_slack_buses_.clear();
-    if(lsgrid_ptr != nullptr)
-        free_vm_slack_buses_ = lsgrid_ptr->get_free_vm_slack_solver_buses();
 }
 
 } // namespace ls2g
