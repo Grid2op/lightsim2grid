@@ -112,6 +112,37 @@ class LS2G_API BaseAlgo : public BaseConstants
             throw std::runtime_error("get_q_to_J_row: only available for Newton-Raphson solvers.");
         }
 
+        // Compact (bus, row/col) registration pair lists -- the row/col
+        // counterpart of the *_to_J_col / *_to_J_row bus-keyed maps, but
+        // preserving every registration (a bus may appear more than once, or
+        // be absent from the bus-keyed map's CURRENT value if a later
+        // registration shadowed it there). Only Newton-Raphson solvers define
+        // a Jacobian, hence these throw by default.
+        virtual IntVect get_p_buses_python() const {
+            throw std::runtime_error("get_p_buses: only available for Newton-Raphson solvers.");
+        }
+        virtual IntVect get_p_rows_python() const {
+            throw std::runtime_error("get_p_rows: only available for Newton-Raphson solvers.");
+        }
+        virtual IntVect get_q_buses_python() const {
+            throw std::runtime_error("get_q_buses: only available for Newton-Raphson solvers.");
+        }
+        virtual IntVect get_q_rows_python() const {
+            throw std::runtime_error("get_q_rows: only available for Newton-Raphson solvers.");
+        }
+        virtual IntVect get_theta_buses_python() const {
+            throw std::runtime_error("get_theta_buses: only available for Newton-Raphson solvers.");
+        }
+        virtual IntVect get_theta_cols_python() const {
+            throw std::runtime_error("get_theta_cols: only available for Newton-Raphson solvers.");
+        }
+        virtual IntVect get_vm_buses_python() const {
+            throw std::runtime_error("get_vm_buses: only available for Newton-Raphson solvers.");
+        }
+        virtual IntVect get_vm_cols_python() const {
+            throw std::runtime_error("get_vm_cols: only available for Newton-Raphson solvers.");
+        }
+
         // VoltageControl (remote gen + SVC) converged reactive injection per
         // controller (pu) and its (kind, element id) identity, in controller
         // registration order. Empty for algorithms without the extension (DC,
@@ -123,6 +154,10 @@ class LS2G_API BaseAlgo : public BaseConstants
         // MultiSlack: J column of the slack_absorbed unknown (-1 when the
         // distributed-slack-in-Jacobian extension is not active).
         virtual int      get_slack_col()          const { return -1; }
+        // MultiSlack: converged VALUE of the slack_absorbed unknown (pu; 0
+        // when the extension is not active). NOT the same as the per-solve
+        // initial guess of 0 -- this is the ground truth after convergence.
+        virtual real_type get_slack_absorbed()     const { return static_cast<real_type>(0.); }
 
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;
