@@ -376,6 +376,12 @@ class LS2G_API MultiSlack   // distributed-slack extension
         // any bus-keyed map). -1 before register_in. Consumed by external batched
         // solvers that re-stamp the slack feature entries on the GPU.
         int slack_col() const { return slack_col_; }
+        // Converged value of the slack_absorbed unknown (pu), i.e. the TRUE
+        // per-solve state -- NOT 0, which is only the per-solve INITIAL guess
+        // (see update_state). External batched solvers that re-derive this
+        // state via a linearized correction from 0 can use this ground truth
+        // to check their derivation independently.
+        real_type slack_absorbed() const { return slack_absorbed_; }
 
     private:
         int                my_size_;
@@ -906,6 +912,24 @@ public:
     const std::vector<int>& p_to_J_row() const { return ledger_.p_row_of_bus(); }
     const std::vector<int>& q_to_J_row() const { return ledger_.q_row_of_bus(); }
 
+    // Compact (bus, row/col) registration pair lists -- the row/col counterpart
+    // of the *_to_J_col / *_to_J_row bus-keyed maps above. Unlike those maps
+    // (one slot per bus, "last registration wins"), these preserve EVERY
+    // registration in order: a bus may appear more than once (or not appear
+    // in the bus-keyed map's current value at all, if a later registration
+    // shadowed it there -- see NRLedger's "Multiplicity rules"). External
+    // batched solvers (e.g. gpusim2grid) that rebuild the dS scatter maps and
+    // the per-row residual assembly MUST iterate these, not the bus-keyed
+    // maps, to get every contribution NRSystem::_residual() itself sums.
+    const std::vector<int>& p_buses()     const { return ledger_.p_buses(); }
+    const std::vector<int>& p_rows()      const { return ledger_.p_rows(); }
+    const std::vector<int>& q_buses()     const { return ledger_.q_buses(); }
+    const std::vector<int>& q_rows()      const { return ledger_.q_rows(); }
+    const std::vector<int>& theta_buses() const { return ledger_.theta_buses(); }
+    const std::vector<int>& theta_cols()  const { return ledger_.theta_cols(); }
+    const std::vector<int>& vm_buses()    const { return ledger_.vm_buses(); }
+    const std::vector<int>& vm_cols()     const { return ledger_.vm_cols(); }
+
     size_t total_state_variables() const { return static_cast<size_t>(ledger_.size()); }
 
     // ----- VoltageControl results (empty when the extension is not in the tuple) --
@@ -928,6 +952,11 @@ public:
     int slack_col() const {
         const MultiSlack* ms = _find_extension<MultiSlack>();
         return ms ? ms->slack_col() : -1;
+    }
+    // ----- MultiSlack: converged slack_absorbed VALUE (0 when the extension is absent) --
+    real_type slack_absorbed() const {
+        const MultiSlack* ms = _find_extension<MultiSlack>();
+        return ms ? ms->slack_absorbed() : static_cast<real_type>(0.);
     }
 
     // ----- Scaling reductions ----------------------------------------------------

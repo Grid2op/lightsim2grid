@@ -122,6 +122,17 @@ class TwoSidesContainer : public GenericContainer
         size_t nb() const { return side_1_.nb(); }
         GridModelBusId get_bus_side_1(int el_id) const {return side_1_.get_bus(el_id);}
         GridModelBusId get_bus_side_2(int el_id) const {return side_2_.get_bus(el_id);}
+        // Per-side connectivity: an element can be `connected_global` (the
+        // TwoSidesContainer-level status, e.g. an HVDC line kept active
+        // because at least one converter is in the main synchronous
+        // component -- see disconnect_if_not_in_main_component) while ONE
+        // side is individually open (real RTE grids: a half-open HVDC line
+        // with its remote converter in another synchronous island). Callers
+        // that pull per-side data (e.g. droop flows, Q-limit masking) MUST
+        // check these, not just nb()/connected_global, or they will silently
+        // treat an open side as a normal, both-ends-connected element.
+        bool get_connected_side_1(int el_id) const {return side_1_.get_status(el_id);}
+        bool get_connected_side_2(int el_id) const {return side_2_.get_status(el_id);}
 
         void init_tsc(
             const Eigen::VectorXi & els_bus1_id,
