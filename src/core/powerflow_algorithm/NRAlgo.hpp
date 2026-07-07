@@ -81,11 +81,24 @@ public:
     virtual IntVect get_p_to_J_row_python() const override { return _to_intvect(_system.p_to_J_row()); }
     virtual IntVect get_q_to_J_row_python() const override { return _to_intvect(_system.q_to_J_row()); }
 
+    // ----- compact (bus, row/col) registration pair lists (NR-only) ------------
+    // Row/col counterpart of the *_to_J_col / *_to_J_row bus-keyed maps above,
+    // but preserving every registration (see NRSystem::p_buses() etc.).
+    virtual IntVect get_p_buses_python()     const override { return _to_intvect(_system.p_buses()); }
+    virtual IntVect get_p_rows_python()      const override { return _to_intvect(_system.p_rows()); }
+    virtual IntVect get_q_buses_python()     const override { return _to_intvect(_system.q_buses()); }
+    virtual IntVect get_q_rows_python()      const override { return _to_intvect(_system.q_rows()); }
+    virtual IntVect get_theta_buses_python() const override { return _to_intvect(_system.theta_buses()); }
+    virtual IntVect get_theta_cols_python()  const override { return _to_intvect(_system.theta_cols()); }
+    virtual IntVect get_vm_buses_python()    const override { return _to_intvect(_system.vm_buses()); }
+    virtual IntVect get_vm_cols_python()     const override { return _to_intvect(_system.vm_cols()); }
+
     // ----- VoltageControl (remote gen + SVC) converged results -----------------
     virtual RealVect get_controller_q()       const override { return _system.controller_q(); }
     virtual IntVect  get_controller_kind()    const override { return _system.controller_kind(); }
     virtual IntVect  get_controller_elem_id() const override { return _system.controller_elem_id(); }
     virtual int      get_slack_col()          const override { return _system.slack_col(); }
+    virtual real_type get_slack_absorbed()    const override { return _system.slack_absorbed(); }
 
     // ----- timers --------------------------------------------------------------
 
