@@ -925,11 +925,21 @@ def init(net : pypo.network.Network,
     min_q_src = df_gen["min_q_at_target_p"].where(df_gen["min_q_at_target_p"].notna(), df_gen["min_q"])
     max_q_src = df_gen["max_q_at_target_p"].where(df_gen["max_q_at_target_p"].notna(), df_gen["max_q"])
     min_q_aux = 1. * min_q_src.values
+    max_q_aux = 1. * max_q_src.values
+    # malformed source curve data (eg a reactive capability curve point entered with
+    # min_q/max_q swapped) can make the "at target p" interpolation yield min_q > max_q.
+    # OpenLoadFlow tolerates this silently; lightsim2grid's GeneratorContainer::init
+    # hard-rejects it (real case found on PtFige-20240531-2225 / PtFige-20240601-0030,
+    # generators CSTTT.HG1/CSTTT.HG2). Restore a valid interval by sorting the pair
+    # instead of crashing -- this only ever affects the (already tiny) width of the
+    # interval, never which generators get a reactive constraint at all.
+    swapped = min_q_aux > max_q_aux
+    if swapped.any():
+        min_q_aux[swapped], max_q_aux[swapped] = max_q_aux[swapped], min_q_aux[swapped].copy()
     too_small = min_q_aux < min_float_value
     min_q_aux[too_small] = min_float_value
     min_q = min_q_aux.astype(np.float32)
 
-    max_q_aux = 1. * max_q_src.values
     too_big = np.abs(max_q_aux) > max_float_value
     max_q_aux[too_big] = np.sign(max_q_aux[too_big]) * max_float_value
     max_q = max_q_aux.astype(np.float32)
@@ -954,7 +964,18 @@ def init(net : pypo.network.Network,
     mask_remote_gen = (bus_reg != df_gen.index.values) & ~gen_disco
     gen_reg_bus_view = None
     if mask_remote_gen.any():
+        remote_idx = np.nonzero(mask_remote_gen)[0]
         gen_reg_bus_view = _aux_regulated_bus_view_ids(net, bus_reg[mask_remote_gen])
+        # a *connected* generator can still remotely regulate a busbar section that is
+        # itself disconnected (found on PtFige-20251102-0905: B.SSBEA1/B.SSBEA2 ->
+        # B.SSBP6_1A/1B, a de-energized voltage level). pypowsybl's bus-view id for a
+        # disconnected element is '' , not NaN, and can't be resolved to any bus_df
+        # row. OLF converges fine on this grid, so it must fall back to local voltage
+        # control in this situation; mirror that instead of crashing.
+        unresolved = gen_reg_bus_view == ""
+        if unresolved.any():
+            mask_remote_gen[remote_idx[unresolved]] = False
+            gen_reg_bus_view = gen_reg_bus_view[~unresolved]
         vl_reg[mask_remote_gen] = bus_df.loc[gen_reg_bus_view, "voltage_level_id"].values
     model.init_generators_full(df_gen["target_p"].values,
                             #    df_gen["target_v"].values / voltage_levels.loc[df_gen["voltage_level_id"].values]["nominal_v"].values,
@@ -1217,7 +1238,15 @@ def init(net : pypo.network.Network,
                 # TODO: resolved once at import; if the regulated element later changes
                 # bus inside lightsim2grid this stays frozen and desynchronises from the
                 # original grid (see `_aux_regulated_bus_view_ids` warning).
+                remote_svc_idx = np.nonzero(mask_svc_remote)[0]
                 svc_reg_bus_view = _aux_regulated_bus_view_ids(net, reg_id[mask_svc_remote])
+                # same disconnected-remote-target situation as for generators above:
+                # fall back to local control rather than crashing on an unresolvable
+                # (disconnected) regulated element.
+                unresolved_svc = svc_reg_bus_view == ""
+                if unresolved_svc.any():
+                    mask_svc_remote[remote_svc_idx[unresolved_svc]] = False
+                    svc_reg_bus_view = svc_reg_bus_view[~unresolved_svc]
                 svc_reg_bus[mask_svc_remote] = bus_df.loc[svc_reg_bus_view, "bus_global_id"].values
                 svc_vl[mask_svc_remote] = bus_df.loc[svc_reg_bus_view, "voltage_level_id"].values
         svc_reg_vn = voltage_levels.loc[svc_vl, "nominal_v"].values
