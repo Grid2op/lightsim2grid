@@ -38,6 +38,19 @@ struct LS2G_API HvdcDroopSolverData
     RealVect r;       // dc line resistance, pu (r_ohm * sn_mva / nominal_v^2)
     RealVect pmax12;  // pu
     RealVect pmax21;  // pu
+    // Per-side connectivity: TRUE for a normal, both-ends-connected droop
+    // line. A line kept `connected_global` with only ONE converter in the
+    // main synchronous component (see TwoSidesContainer::
+    // disconnect_if_not_in_main_component / HVDC_OLF_FINDINGS.md) has the
+    // OPEN side's flag FALSE here -- its bus1/bus2 solver id is still valid
+    // (the AC bus itself is in-service), but the theta-dependent droop flow
+    // formula (raw = p0 + k*(theta1-theta2)) is NOT meaningful across an
+    // open converter (the remote angle is unknown / unsolved). Consumers
+    // MUST skip (or fix at the last known/scheduled value, never
+    // theta-derive) the flow into an open side; see LSGrid::check_solution's
+    // analogous `station.connected` guard for Q-limit masking.
+    std::vector<bool> connected1;
+    std::vector<bool> connected2;
 
     int size() const {return static_cast<int>(bus1.size());}
 
@@ -52,6 +65,8 @@ struct LS2G_API HvdcDroopSolverData
         r = RealVect();
         pmax12 = RealVect();
         pmax21 = RealVect();
+        connected1.clear();
+        connected2.clear();
     }
 
     /**
