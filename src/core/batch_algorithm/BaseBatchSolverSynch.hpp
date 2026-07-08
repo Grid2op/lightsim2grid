@@ -121,10 +121,12 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         void compute_amps_flows(const T & structure_data,
                                 real_type sn_mva,
                                 size_t lag_id,
-                                bool is_trafo) 
+                                bool is_trafo)
         {
             const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
             const auto & el_status = structure_data.get_status_global();
+            const auto & status1 = structure_data.get_status_side_1();
+            const auto & status2 = structure_data.get_status_side_2();
             const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
             const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
             bool is_ac = _algo.ac_solver_used();
@@ -138,21 +140,36 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
             size_t nb_el = structure_data.nb();
             real_type sqrt_3 = sqrt(3.);
+            const Eigen::Index nb_steps = _voltages.rows();
 
             RealVect res;
             for(size_t el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
 
-                // retrieve which buses are used
+                const bool s1 = status1[el_id];
+                const bool s2 = status2[el_id];
+
+                // retrieve which buses are used; a half-open branch (see
+                // keep_half_open_lines) has bus_id == _deactivated_bus_id on
+                // its open side and must not be used to index _voltages /
+                // bus_vn_kv -- substitute an open-end voltage of exactly 0
+                // instead (both sides treated the same way). For AC, yac_eff_*
+                // is already Kron-reduced for whichever side is open, so this
+                // alone gives the correct "or"-side (side 1) flow either way;
+                // DC has no such reduction (handled explicitly below).
                 GlobalBusId bus_from_me = bus_from(el_id);
                 GlobalBusId bus_to_me = bus_to(el_id);
+                const CplxVect Efrom = s1 ? CplxVect(_voltages.col(bus_from_me.cast_int())) : CplxVect::Zero(nb_steps);
+                const CplxVect Eto   = s2 ? CplxVect(_voltages.col(bus_to_me.cast_int()))   : CplxVect::Zero(nb_steps);
 
-                // retrieve voltages
-                const auto Efrom = _voltages.col(bus_from_me.cast_int());  // vector (one voltages per step)
-                const auto Eto = _voltages.col(bus_to_me.cast_int());
-
-                const real_type bus_vn_kv_f = bus_vn_kv(bus_from_me.cast_int());
-                const RealVect v_f_kv = Efrom.array().abs() * bus_vn_kv_f;
+                // vn_kv base for the amps conversion: use whichever side is
+                // actually energized. If side 1 (the one being measured) is
+                // open the numerator below is exactly 0 regardless (AC: Efrom
+                // == 0 forces S_ft == 0; DC: forced explicitly), so the choice
+                // of base here only has to avoid a spurious 0/0 division.
+                const real_type bus_vn_kv_f = s1 ? bus_vn_kv(bus_from_me.cast_int())
+                                                  : (s2 ? bus_vn_kv(bus_to_me.cast_int()) : real_type(1.));
+                const RealVect v_f_kv = (s1 ? Efrom.array().abs() : Eto.array().abs()) * bus_vn_kv_f;
 
                 if(is_ac){
                     // retrieve physical parameters (complex)
@@ -166,6 +183,15 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     // now compute the current flow
                     res = S_ft.array().abs() * sn_mva;
                 }else{
+                    // unlike yac_eff_*, ydc_11/ydc_12 are NOT Kron-reduced for a
+                    // half-open branch: DC treats one side open as fully
+                    // disconnected (see fillBdc: "disco on one side == disco on
+                    // both sides"), so report 0 rather than mixing ydc_ff/ydc_ft
+                    // with a meaningless open-end angle.
+                    if(!(s1 && s2)){
+                        _amps_flows.col(el_id + lag_id).setZero();
+                        continue;
+                    }
                     // DC active flow from the bus angles (theta) directly, like the gridmodel
                     // results: P = ydc_ff . theta_from + ydc_ft . theta_to  (theta = bus voltage angle)
                     const real_type y_ff = vect_ydc_ff(el_id);
@@ -187,6 +213,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                                         bool is_trafo)
         {
             const auto & el_status = structure_data.get_status_global();
+            const auto & status1 = structure_data.get_status_side_1();
+            const auto & status2 = structure_data.get_status_side_2();
             const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
             const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
             const bool is_ac = _algo.ac_solver_used();
@@ -199,18 +227,28 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
             size_t nb_el = structure_data.nb();
+            const Eigen::Index nb_steps = _voltages.rows();
 
             RealVect res;
             for(size_t el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
 
-                // retrieve which buses are used
+                const bool s1 = status1[el_id];
+                const bool s2 = status2[el_id];
+
+                // a half-open branch (see keep_half_open_lines) has bus_id ==
+                // _deactivated_bus_id on its open side; substitute an open-end
+                // voltage of exactly 0 rather than indexing _voltages with it
+                // (both sides treated the same way). For AC, yac_eff_* is
+                // already Kron-reduced for whichever side is open, so this
+                // alone gives the correct "or"-side (side 1) flow either way
+                // (0 when side 1 itself is open, matching
+                // TwoSidesContainer_rxh_A::compute_results_tsc_rxha_no_amps);
+                // DC has no such reduction (handled explicitly below).
                 GlobalBusId bus_from_me = bus_from(el_id);
                 GlobalBusId bus_to_me = bus_to(el_id);
-
-                // retrieve voltages
-                const auto & Efrom = _voltages.col(bus_from_me.cast_int());  // vector (one voltages per step)
-                const auto & Eto = _voltages.col(bus_to_me.cast_int());
+                const CplxVect Efrom = s1 ? CplxVect(_voltages.col(bus_from_me.cast_int())) : CplxVect::Zero(nb_steps);
+                const CplxVect Eto   = s2 ? CplxVect(_voltages.col(bus_to_me.cast_int()))   : CplxVect::Zero(nb_steps);
 
                 // trafo equations (to get the power at the "from" side)
                 if(is_ac){
@@ -224,6 +262,15 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     // now compute the active flow
                     res = S_ft.array().real() * sn_mva;
                 }else{
+                    // unlike yac_eff_*, ydc_11/ydc_12 are NOT Kron-reduced for a
+                    // half-open branch: DC treats one side open as fully
+                    // disconnected (see fillBdc: "disco on one side == disco on
+                    // both sides"), so report 0 rather than mixing ydc_ff/ydc_ft
+                    // with a meaningless open-end angle.
+                    if(!(s1 && s2)){
+                        _active_power_flows.col(el_id + lag_id).setZero();
+                        continue;
+                    }
                     // DC active flow from the bus angles (theta) directly, like the gridmodel
                     // results: P = ydc_ff . theta_from + ydc_ft . theta_to  (theta = bus voltage angle)
                     const real_type y_ff = vect_ydc_ff(el_id);
