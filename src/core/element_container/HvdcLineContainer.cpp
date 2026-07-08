@@ -379,6 +379,21 @@ void HvdcLineContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_gri
         for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
             if(!droop_enabled_[hvdc_id] || !status_global_[hvdc_id]) continue;
             if(status_droop_(hvdc_id) == 0) continue;  // linear: theta-dependent, handled by the DC algorithm
+            // angle-droop ("AC emulation") needs both remote angles: this must
+            // never happen (both call sites that can half-open an hvdc line --
+            // LSGrid::deactivate_dcline_side1/2 and
+            // disconnect_if_not_in_main_component -- call disable_droop at the
+            // same time), but enforce it explicitly rather than silently
+            // indexing id_grid_to_solver with the open side's bus id (-1) below.
+            if(!get_connected_side_1(hvdc_id) || !get_connected_side_2(hvdc_id)){
+                std::ostringstream exc_;
+                exc_ << "HvdcLineContainer::fillSbus: hvdc line with id ";
+                exc_ << hvdc_id;
+                exc_ << " has angle-droop enabled while half-open (one side "
+                        "disconnected) -- this should never happen, disable_droop "
+                        "must be called whenever a side is opened.";
+                throw std::runtime_error(exc_.str());
+            }
             real_type p1_flow, p2_flow;
             droop_flows_mw(hvdc_id, 0., p1_flow, p2_flow);  // raw unused when saturated
             const GlobalBusId bus_1 = get_bus_side_1(hvdc_id);
@@ -419,12 +434,30 @@ void HvdcLineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
     Eigen::Ref<RealVect> res_p_2 = get_res_p_side_2();
     for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
         if(!droop_enabled_[hvdc_id] || !status_global_[hvdc_id]) continue;
+        // same invariant as HvdcLineContainer::fillSbus: a droop-enabled line
+        // must never be half-open (disable_droop is called wherever a side can
+        // be opened) -- enforce it rather than silently indexing with -1 below.
+        if(!get_connected_side_1(hvdc_id) || !get_connected_side_2(hvdc_id)){
+            std::ostringstream exc_;
+            exc_ << "HvdcLineContainer::compute_results: hvdc line with id ";
+            exc_ << hvdc_id;
+            exc_ << " has angle-droop enabled while half-open (one side "
+                    "disconnected) -- this should never happen, disable_droop "
+                    "must be called whenever a side is opened.";
+            throw std::runtime_error(exc_.str());
+        }
         const GlobalBusId bus_1 = get_bus_side_1(hvdc_id);
         const GlobalBusId bus_2 = get_bus_side_2(hvdc_id);
         const SolverBusId bus_1_solver = id_grid_to_solver[bus_1.cast_int()];
         const SolverBusId bus_2_solver = id_grid_to_solver[bus_2.cast_int()];
         if((bus_1_solver.cast_int() == _deactivated_bus_id) ||
-           (bus_2_solver.cast_int() == _deactivated_bus_id)) continue;
+           (bus_2_solver.cast_int() == _deactivated_bus_id)){
+            std::ostringstream exc_;
+            exc_ << "HvdcLineContainer::compute_results: hvdc line with id ";
+            exc_ << hvdc_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
         const real_type theta_1 = Va(bus_1_solver.cast_int());
         const real_type theta_2 = Va(bus_2_solver.cast_int());
         const real_type raw = p0_mw_(hvdc_id) + k_mw_per_rad_(hvdc_id) * (theta_1 - theta_2);

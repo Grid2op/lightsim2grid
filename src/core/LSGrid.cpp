@@ -434,6 +434,21 @@ void LSGrid::fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) co
     data.connected2.assign(nb_droop, true);
     for(int pos = 0; pos < nb_droop; ++pos){
         const int hvdc_id = indices[pos];
+        // angle-droop ("AC emulation") needs both remote angles: this must never
+        // happen (both call sites that can half-open an hvdc line --
+        // LSGrid::deactivate_dcline_side1/2 and
+        // HvdcLineContainer::disconnect_if_not_in_main_component -- call
+        // disable_droop at the same time), but enforce it explicitly rather than
+        // silently indexing id_me_to_solver with the open side's bus id (-1) below.
+        if(!hvdc_lines_.get_connected_side_1(hvdc_id) || !hvdc_lines_.get_connected_side_2(hvdc_id)){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_hvdc_droop_solver_data: hvdc line with id ";
+            exc_ << hvdc_id;
+            exc_ << " has angle-droop enabled while half-open (one side "
+                    "disconnected) -- this should never happen, disable_droop "
+                    "must be called whenever a side is opened.";
+            throw std::runtime_error(exc_.str());
+        }
         const GlobalBusId bus_1 = hvdc_lines_.get_bus_side_1(hvdc_id);
         const GlobalBusId bus_2 = hvdc_lines_.get_bus_side_2(hvdc_id);
         const SolverBusId bus_1_solver = id_me_to_solver[bus_1.cast_int()];
@@ -1427,15 +1442,35 @@ RealMat LSGrid::get_lodf(){
     if(Bbus_dc_.size() == 0){
         throw std::runtime_error("LSGrid::get_lodf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
-    const size_t nb_el = powerlines_.nb() + trafos_.nb();
+    const size_t n_line = powerlines_.nb();
+    const size_t nb_el = n_line + trafos_.nb();
     // retrieve the from_bus / to_bus from the grid
     GlobalBusIdVect from_bus = GlobalBusIdVect::concat(powerlines_.get_bus_id_side_1(), trafos_.get_bus_id_side_1());
     GlobalBusIdVect to_bus   = GlobalBusIdVect::concat(powerlines_.get_bus_id_side_2(), trafos_.get_bus_id_side_2());
+    const auto & status1_line = powerlines_.get_status_side_1();
+    const auto & status2_line = powerlines_.get_status_side_2();
+    const auto & status1_trafo = trafos_.get_status_side_1();
+    const auto & status2_trafo = trafos_.get_status_side_2();
 
     // convert it to solver bus id
     IntVect from_bus_solver(nb_el);  // TODO : SolverBusIdVect here
     IntVect to_bus_solver(nb_el);
     for(size_t el_id = 0; el_id < nb_el; ++el_id){
+        const bool is_dc_connected = el_id < n_line
+            ? (status1_line[el_id] && status2_line[el_id])
+            : (status1_trafo[el_id - n_line] && status2_trafo[el_id - n_line]);
+        if(!is_dc_connected){
+            // half-open (see keep_half_open_lines) or fully disconnected: this
+            // branch carries no DC flow at all (TwoSidesContainer_rxh_A::fillBdc
+            // drops it from Bbus entirely -- "disco on one side == disco on both
+            // sides"), and its open/stale bus id must not index
+            // id_me_to_dc_solver_ -- propagate the deactivated sentinel instead,
+            // so BaseDCAlgo::get_lodf gives it the identity treatment (its
+            // "outage" changes nothing, anywhere).
+            from_bus_solver[el_id] = BaseConstants::_deactivated_bus_id;
+            to_bus_solver[el_id] = BaseConstants::_deactivated_bus_id;
+            continue;
+        }
         // from side
         GlobalBusId f_grid_bus = from_bus[el_id];
         SolverBusId f_solver_bus = id_me_to_dc_solver_[f_grid_bus.cast_int()];
