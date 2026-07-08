@@ -90,6 +90,8 @@ void check_current_violations(
     if(limit1.size() == 0 && limit2.size() == 0) return;  // thermal limits never configured
 
     const auto & el_status = structure_data.get_status_global();
+    const auto & status1 = structure_data.get_status_side_1();
+    const auto & status2 = structure_data.get_status_side_2();
     const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
     const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
     const std::vector<std::string> & el_names = structure_data.get_names();  // empty if never set
@@ -125,17 +127,36 @@ void check_current_violations(
         const bool has_lim2 = limit2.size() > 0 && !isnan(limit2(el_idx));
         if(!has_lim1 && !has_lim2) continue;
 
-        const int bus_from_me = bus_from(static_cast<int>(el_id)).cast_int();
-        const int bus_to_me = bus_to(static_cast<int>(el_id)).cast_int();
-        const int solver_from = id_me_to_solver(bus_from_me).cast_int();
-        const int solver_to = id_me_to_solver(bus_to_me).cast_int();
-        if(solver_from == BaseConstants::_deactivated_bus_id ||
-           solver_to == BaseConstants::_deactivated_bus_id) continue;
+        // a half-open branch (see keep_half_open_lines) has bus_id ==
+        // _deactivated_bus_id on its open side; only resolve / index with a
+        // side's bus id when that side is actually connected (both sides
+        // treated the same way), mirroring
+        // BaseBatchSolverSynch::compute_amps_flows / compute_active_power_flows.
+        const bool s1 = status1[el_id];
+        const bool s2 = status2[el_id];
+        int bus_from_me = BaseConstants::_deactivated_bus_id;
+        int bus_to_me = BaseConstants::_deactivated_bus_id;
+        int solver_from = BaseConstants::_deactivated_bus_id;
+        int solver_to = BaseConstants::_deactivated_bus_id;
+        if(s1){
+            bus_from_me = bus_from(static_cast<int>(el_id)).cast_int();
+            solver_from = id_me_to_solver(bus_from_me).cast_int();
+            if(solver_from == BaseConstants::_deactivated_bus_id) continue;  // bus not in the solver
+        }
+        if(s2){
+            bus_to_me = bus_to(static_cast<int>(el_id)).cast_int();
+            solver_to = id_me_to_solver(bus_to_me).cast_int();
+            if(solver_to == BaseConstants::_deactivated_bus_id) continue;
+        }
 
-        const cplx_type Efrom = V(solver_from);
-        const cplx_type Eto = V(solver_to);
-        const real_type v_from_kv = std::abs(Efrom) * bus_vn_kv(bus_from_me);
-        const real_type v_to_kv = std::abs(Eto) * bus_vn_kv(bus_to_me);
+        // an open side's voltage is exactly 0 (yac_eff_* is already Kron-reduced
+        // for whichever side is open, so this alone gives the correct AC result
+        // either way); the vn_kv base only has to avoid a spurious 0/0 division
+        // when that side isn't used (numerator forced to 0 too, see below).
+        const cplx_type Efrom = s1 ? V(solver_from) : cplx_type(0., 0.);
+        const cplx_type Eto = s2 ? V(solver_to) : cplx_type(0., 0.);
+        const real_type v_from_kv = s1 ? std::abs(Efrom) * bus_vn_kv(bus_from_me) : real_type(1.);
+        const real_type v_to_kv = s2 ? std::abs(Eto) * bus_vn_kv(bus_to_me) : real_type(1.);
 
         real_type amps1 = 0.;
         real_type amps2 = 0.;
@@ -149,7 +170,12 @@ void check_current_violations(
             const cplx_type I_to = std::conj(yac_eff_22(el_idx) * Eto + yac_eff_21(el_idx) * Efrom);
             const cplx_type S_to = Eto * I_to;
             amps2 = std::abs(S_to) * sn_mva / (sqrt_3 * v_to_kv);
-        } else {
+        } else if(s1 && s2){
+            // unlike yac_eff_*, ydc_11/ydc_12 are NOT Kron-reduced for a
+            // half-open branch: DC treats one side open as fully disconnected
+            // (see fillBdc: "disco on one side == disco on both sides"), so
+            // both sides report 0 (amps1/amps2 already initialized) rather
+            // than mixing ydc_ff/ydc_ft with a meaningless open-end angle.
             const real_type theta_from = std::arg(Efrom);
             const real_type theta_to = std::arg(Eto);
             // side 1: mirrors BaseBatchSolverSynch::compute_amps_flows exactly (incl. the
