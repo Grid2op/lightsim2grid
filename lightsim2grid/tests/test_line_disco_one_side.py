@@ -21,7 +21,8 @@ from grid2op.Chronics import ChangeNothing
 
 from lightsim2grid import LightSimBackend
 from lightsim2grid.network import init_from_pypowsybl
-from lightsim2grid.lightsim2grid_cpp import TimeSeriesCPP, AlgorithmType
+from lightsim2grid.lightsim2grid_cpp import (TimeSeriesCPP, AlgorithmType,
+                                              ContingencyAnalysisCPP, ViolationElementType)
 
 
 from test_match_with_pypowsybl.utils_for_slack import (
@@ -768,6 +769,107 @@ class TestImportHalfOpen(unittest.TestCase):
     def test_batch_algo_half_open_dc(self):
         """TimeSeriesCPP (DC) must not return huge bogus flows for a half-open line/trafo"""
         self._check_batch_algo_matches_direct_pf(is_dc=True)
+
+    def test_lodf_half_open(self):
+        """Regression test for LSGrid::get_lodf()/BaseDCAlgo::get_lodf indexing a bus id
+        of -1 (the open side's `_deactivated_bus_id`) without any guard. A half-open
+        branch carries no DC flow at all (same convention as `fillBdc`), so "outaging" it
+        changes nothing anywhere in the grid: its row and column in the LODF matrix should
+        be the identity (0 everywhere except a 1 on the diagonal)."""
+        n = pp_network.create_ieee118()
+        self._open_sides(n)
+        model = init_from_pypowsybl(n, gen_slack_id=self.GEN_SLACK_ID,
+                                    sort_index=False, keep_half_open_lines=True)
+        nb_bus = model.total_bus()
+        V0 = np.full(nb_bus, 1.0, dtype=complex)
+        V = model.dc_pf(V0, 10, 1e-8)
+        assert V.shape[0] > 0, "powerflow diverged"
+
+        LODF = model.get_lodf()
+        n_line = len(model.get_lines())
+        li = list(pp_network.create_ieee118().get_lines().index).index(self.LID)
+        ti = list(pp_network.create_ieee118().get_2_windings_transformers().index).index(self.TID)
+
+        for idx in (li, n_line + ti):
+            col = LODF[:, idx]
+            assert col[idx] == 1., f"diagonal (col) at {idx} is {col[idx]}, expected 1."
+            off_diag_col = np.delete(col, idx)
+            assert np.all(off_diag_col == 0.), f"non-zero off-diagonal in column {idx}"
+
+            row = LODF[idx, :]
+            assert row[idx] == 1., f"diagonal (row) at {idx} is {row[idx]}, expected 1."
+            off_diag_row = np.delete(row, idx)
+            # NaNs on the row are expected: they come from OTHER (unrelated) bridge/radial
+            # lines whose own LODF column is undefined, not from our half-open branch --
+            # every non-NaN entry must still be exactly 0.
+            finite = off_diag_row[~np.isnan(off_diag_row)]
+            assert np.all(finite == 0.), f"non-zero finite off-diagonal in row {idx}"
+
+    def _check_current_violations_half_open(self, is_dc):
+        """Regression test for ContingencyAnalysis.cpp::check_current_violations indexing
+        a bus id of -1 (the open side's `_deactivated_bus_id`) without any per-side guard
+        before the `_deactivated_bus_id` check (which ran too late, after the indexing
+        already happened). Sets an artificially tiny current limit on the half-open line
+        and trafo and checks the reported currents match the trusted per-branch reference
+        (`LSGrid.ac_pf`/`dc_pf` + `LineInfo`/`TrafoInfo`) exactly, instead of crashing or
+        reporting garbage."""
+        n = pp_network.create_ieee118()
+        self._open_sides(n)
+        model = init_from_pypowsybl(n, gen_slack_id=self.GEN_SLACK_ID,
+                                    sort_index=False, keep_half_open_lines=True)
+        li = list(pp_network.create_ieee118().get_lines().index).index(self.LID)
+        ti = list(pp_network.create_ieee118().get_2_windings_transformers().index).index(self.TID)
+        n_line = len(model.get_lines())
+        n_trafo = len(model.get_trafos())
+
+        # tiny (but not 0, to avoid the "no limit configured" early-return) limit on the
+        # half-open elements, huge limit (no violation) everywhere else
+        lim_line = np.full(n_line, 999.)
+        lim_line[li] = 1e-6
+        lim_trafo = np.full(n_trafo, 999.)
+        lim_trafo[ti] = 1e-6
+        model.set_line_current_limit_side1(lim_line)
+        model.set_line_current_limit_side2(lim_line)
+        model.set_trafo_current_limit_side1(lim_trafo)
+        model.set_trafo_current_limit_side2(lim_trafo)
+
+        nb_bus = model.total_bus()
+        V0 = np.full(nb_bus, 1.0, dtype=complex)
+
+        # reference: direct powerflow, using the already-correct per-branch compute_results
+        V = model.dc_pf(V0, 10, 1e-8) if is_dc else model.ac_pf(V0, 10, 1e-8)
+        assert V.shape[0] > 0, "powerflow diverged"
+        line_ref = self._line(model)
+        trafo_ref = self._trafo(model)
+
+        ca = ContingencyAnalysisCPP(model, True)  # compute_limit_violations=True
+        if is_dc:
+            ca.change_algorithm(AlgorithmType.DC_SparseLU)
+        ca.add_all_n1()
+        ca.compute(V0, 10, 1e-8)
+        violations = ca.get_violations_n()
+
+        by_side = {(v.element_id, v.side): v.value for v in violations
+                   if v.element_type == ViolationElementType.LINE and v.element_id == li}
+        by_side.update({(v.element_id, v.side): v.value for v in violations
+                        if v.element_type == ViolationElementType.TRAFO and v.element_id == ti})
+
+        # side 1 of the line is the open one: 0 current, never violates (not reported)
+        assert (li, 1) not in by_side or np.isclose(by_side[(li, 1)], line_ref.res_a1_ka, atol=1e-9)
+        # side 2 of the line is energized: matches the reference exactly (this is the one
+        # actually expected to violate the tiny limit, for AC -- line charging current)
+        if not np.isclose(line_ref.res_a2_ka, 0., atol=1e-9):
+            assert (li, 2) in by_side, "expected side 2 of the half-open line to violate"
+            assert np.isclose(by_side[(li, 2)], line_ref.res_a2_ka, atol=1e-9)
+        # the trafo (pure series, no charging) carries 0 A on both sides: no violation
+        assert (ti, 1) not in by_side or np.isclose(by_side[(ti, 1)], trafo_ref.res_a1_ka, atol=1e-9)
+        assert (ti, 2) not in by_side or np.isclose(by_side[(ti, 2)], trafo_ref.res_a2_ka, atol=1e-9)
+
+    def test_current_violations_half_open_ac(self):
+        self._check_current_violations_half_open(is_dc=False)
+
+    def test_current_violations_half_open_dc(self):
+        self._check_current_violations_half_open(is_dc=True)
 
 # TODO trafo with alpha (phase shift)
 # TODO FDPF powerflow too
