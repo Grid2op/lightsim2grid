@@ -507,8 +507,13 @@ RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
         auto f_bus = from_bus(line_id);
         auto t_bus = to_bus(line_id);
         if ((f_bus == BaseConstants::_deactivated_bus_id) || (t_bus == BaseConstants::_deactivated_bus_id)){
-            // element is disconnected
-            LODF.col(line_id).array() = std::numeric_limits<real_type>::quiet_NaN();
+            // element carries no DC flow (disconnected, or half-open -- see
+            // TwoSidesContainer_rxh_A::fillBdc's "disco on one side == disco on
+            // both sides" convention): "outaging" it has no effect anywhere in
+            // the grid, i.e. an identity column. Its own row is already all-0
+            // too, since its PTDF row is 0 (fillBf_for_PTDF excludes it from Bf).
+            LODF(line_id, line_id) = 1.;
+            continue;
         }
         LODF.col(line_id).array() = PTDF.col(f_bus).array() - PTDF.col(t_bus).array();
         const real_type diag_coeff = LODF(line_id, line_id);

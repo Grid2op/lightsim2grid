@@ -431,6 +431,51 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   `-1`, and force the DC flow to `0` whenever either side is open (matching `fillBdc`'s
   "disco on one side == disco on both sides" DC convention). Tested in
   `test_line_disco_one_side.py`.
+- [FIXED] `LSGrid.get_lodf()` indexed `id_me_to_dc_solver_` directly with a branch's raw
+  (grid-numbering) bus id, with no status check of any kind (not even the branch's
+  *global* one). For a half-open branch (`keep_half_open_lines`) the open side's bus id
+  is the `_deactivated_bus_id` (`-1`) sentinel, and `id_me_to_dc_solver_` casts negative
+  indices to a huge unsigned offset before indexing its backing `std::vector`, so this
+  was a near-certain out-of-bounds crash, reachable from plain Python via
+  `init_from_pypowsybl(keep_half_open_lines=True)` -> `dc_pf(...)` -> `get_lodf()`.
+  `BaseDCAlgo::get_lodf()` had a second, independent bug in the same spot: its
+  `_deactivated_bus_id` guard set the LODF column to `NaN` but never `continue`d, so the
+  very next line silently overwrote that with `PTDF.col(-1)` -- again indexing with `-1`.
+  Both are fixed: `LSGrid.get_lodf()` now checks each branch's own per-side DC
+  connectivity (half-open or fully disconnected both count, matching `fillBdc`'s "disco
+  on one side == disco on both sides") before resolving a solver bus id, propagating the
+  `_deactivated_bus_id` sentinel instead of indexing with it; `BaseDCAlgo::get_lodf()`
+  now gives such a branch the identity treatment (row and column all `0` except a `1` on
+  the diagonal) and `continue`s, matching the physical fact that a branch already
+  carrying no DC flow has zero impact anywhere, whether it is itself "outaged" or some
+  other line is. Tested in `test_line_disco_one_side.py`.
+- [FIXED] `ContingencyAnalysis.cpp`'s internal `check_current_violations` (feeds
+  `ContingencyAnalysisCPP.compute_limit_violations` / `get_violations` / `get_violations_n`,
+  used by the python `ContingencyAnalysis` / `SecurityAnalysis` wrappers) had the same
+  class of bug as the `BaseBatchSolverSynch` one above: it only checked a branch's
+  *global* status before resolving and indexing with each side's raw bus id (the
+  `_deactivated_bus_id` check ran only after that indexing had already happened). Now
+  each side's bus id is only resolved/indexed when that side's own status is connected
+  (mirroring the `BaseBatchSolverSynch` fix): an open side's voltage is substituted with
+  `0`, and for DC (no Kron-reduced coefficients to cancel a bogus open-end angle, unlike
+  AC) both sides report `0` current whenever either side is open, matching `fillBdc`'s
+  convention. Tested in `test_line_disco_one_side.py`.
+- [HARDENING] `HvdcLineContainer::fillSbus` / `compute_results` and
+  `LSGrid::fill_hvdc_droop_solver_data` resolve an angle-droop ("AC emulation") HVDC
+  line's two converter buses using the *masked* per-side accessor (`-1` if that side is
+  individually disconnected) before indexing `id_grid_to_solver`/`id_me_to_solver`, with
+  no per-side status check of their own -- only relying on the invariant that
+  `LSGrid::deactivate_dcline_side1`/`_side2` and
+  `HvdcLineContainer::disconnect_if_not_in_main_component` always call `disable_droop`
+  whenever a converter is individually opened (droop across an open converter has no
+  physical meaning: the remote angle used by the linear P(theta) relationship is gone).
+  This currently always holds (no other code path can set `droop_enabled_` per-element),
+  so this was not a live bug, but it depended on every future half-open-creating code
+  path remembering to also call `disable_droop`, with no immediate feedback if one
+  didn't. All three functions now explicitly check both sides are connected before
+  resolving/indexing, and raise a `RuntimeError` instead of silently indexing with `-1`
+  if that invariant is ever violated. Existing HVDC test suite (`test_hvdc_*`, 35 tests)
+  unaffected.
 
 [0.13.1]  2026-04-21
 --------------------
