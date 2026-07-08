@@ -21,6 +21,7 @@ from grid2op.Chronics import ChangeNothing
 
 from lightsim2grid import LightSimBackend
 from lightsim2grid.network import init_from_pypowsybl
+from lightsim2grid.lightsim2grid_cpp import TimeSeriesCPP, AlgorithmType
 
 
 from test_match_with_pypowsybl.utils_for_slack import (
@@ -703,6 +704,70 @@ class TestImportHalfOpen(unittest.TestCase):
 
     def test_import_half_open_dc_matches_olf(self):
         self._check_vs_olf(is_dc=True)
+
+    def _check_batch_algo_matches_direct_pf(self, is_dc):
+        """Regression test for a bug in BaseBatchSolverSynch::compute_amps_flows /
+        compute_active_power_flows: for a half-open branch (this class's setup), the
+        open side's bus id is the `_deactivated_bus_id` (-1) sentinel, and these two
+        functions used to index `_voltages` / `bus_vn_kv` with it directly (only the
+        branch's *global* status was checked, never each side's own status). This used
+        to report `NaN` (AC amps, when the open side was the one being measured) or huge
+        bogus flows / `Inf` (DC, which has no Kron-reduced coefficients to cancel the
+        garbage read). `TimeSeriesCPP` here stands in for the shared code path also used
+        by `ContingencyAnalysisCPP` / `SecurityAnalysis`."""
+        n = pp_network.create_ieee118()
+        self._open_sides(n)
+        model = init_from_pypowsybl(n, gen_slack_id=self.GEN_SLACK_ID,
+                                    sort_index=False, keep_half_open_lines=True)
+        nb_bus = model.total_bus()
+        V0 = np.full(nb_bus, 1.0, dtype=complex)
+
+        # reference: direct powerflow, using the already-correct per-branch
+        # compute_results path (TwoSidesContainer_rxh_A::compute_results_tsc_rxha)
+        V = model.dc_pf(V0, 1, 1e-8) if is_dc else model.ac_pf(V0, 10, 1e-8)
+        assert V.shape[0] > 0, "powerflow diverged"
+        line_ref = self._line(model)
+        trafo_ref = self._trafo(model)
+
+        # same case through the batch path (TimeSeriesCPP), which is what
+        # TimeSerie / ContingencyAnalysis / SecurityAnalysis use under the hood
+        gens = model.get_generators()
+        loads = model.get_loads()
+        sgens = model.get_static_generators()
+        gen_p = np.array([[g.target_p_mw for g in gens]])
+        sgen_p = np.array([[s.target_p_mw for s in sgens]]) if len(sgens) else np.zeros((1, 0))
+        load_p = np.array([[ld.target_p_mw for ld in loads]])
+        load_q = np.array([[ld.target_q_mvar for ld in loads]])
+
+        ts = TimeSeriesCPP(model)
+        if is_dc:
+            ts.change_algorithm(AlgorithmType.DC_SparseLU)
+        status = ts.compute_Vs(gen_p, sgen_p, load_p, load_q, V0, 10, 1e-8)
+        assert status == 1, "TimeSeriesCPP powerflow diverged"
+        P = ts.compute_power_flows()
+        A = ts.compute_flows()
+
+        # no NaN / Inf anywhere: this is exactly what the bug produced
+        assert np.isfinite(P).all(), "non-finite active power flow in the batch result"
+        assert np.isfinite(A).all(), "non-finite amps flow in the batch result"
+
+        n_line = len(model.get_lines())
+        li = list(pp_network.create_ieee118().get_lines().index).index(self.LID)
+        ti = list(pp_network.create_ieee118().get_2_windings_transformers().index).index(self.TID)
+
+        # and the values match the reference (per-branch, already-correct) computation
+        assert np.isclose(P[0, li], line_ref.res_p1_mw, atol=1e-6), f"{P[0, li]} vs {line_ref.res_p1_mw}"
+        assert np.isclose(A[0, li], line_ref.res_a1_ka, atol=1e-6), f"{A[0, li]} vs {line_ref.res_a1_ka}"
+        assert np.isclose(P[0, n_line + ti], trafo_ref.res_p1_mw, atol=1e-6), f"{P[0, n_line + ti]} vs {trafo_ref.res_p1_mw}"
+        assert np.isclose(A[0, n_line + ti], trafo_ref.res_a1_ka, atol=1e-6), f"{A[0, n_line + ti]} vs {trafo_ref.res_a1_ka}"
+
+    def test_batch_algo_half_open_ac(self):
+        """TimeSeriesCPP (AC) must not return NaN for a half-open line/trafo"""
+        self._check_batch_algo_matches_direct_pf(is_dc=False)
+
+    def test_batch_algo_half_open_dc(self):
+        """TimeSeriesCPP (DC) must not return huge bogus flows for a half-open line/trafo"""
+        self._check_batch_algo_matches_direct_pf(is_dc=True)
 
 # TODO trafo with alpha (phase shift)
 # TODO FDPF powerflow too

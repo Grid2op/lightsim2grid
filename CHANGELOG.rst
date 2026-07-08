@@ -412,6 +412,25 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   controller now falls back to local voltage control instead of crashing, matching
   OpenLoadFlow's behaviour (found on a real RTE grid snapshot). Tested in
   `test_remote_control_disconnected_target.py`.
+- [FIXED] `TimeSeriesCPP` / `ContingencyAnalysisCPP` (and so the python `TimeSerie`,
+  `ContingencyAnalysis` and `SecurityAnalysis` wrappers) could report `NaN` (AC) or
+  wildly wrong, physically meaningless flows of several GW / `Inf` (DC) for a line or
+  transformer imported as "half-open" (one side open, see `keep_half_open_lines` in
+  `init_from_pypowsybl`). `BaseBatchSolverSynch::compute_amps_flows` /
+  `compute_active_power_flows` only checked the branch's *global* status before indexing
+  `_voltages` / `bus_vn_kv` with each side's bus id, never each side's own status; for a
+  half-open branch the open side's bus id is the `_deactivated_bus_id` (`-1`) sentinel,
+  so this read out of bounds. AC results happened to often be numerically 0 by
+  incidental cancellation (the open side's Kron-reduced `yac_eff_*` coefficient is
+  already 0), except for the amps of a branch whose *measured* side ("or"/side 1) was
+  itself the open one, which divided by a bogus voltage base and produced `NaN`; the DC
+  path has no such Kron reduction (`ydc_11`/`ydc_12` are not reduced) and mixed in an
+  arbitrary, disconnected bus's angle unconditionally. Both functions now substitute an
+  explicit `0` for an open side's voltage (matching
+  `TwoSidesContainer_rxh_A::compute_results_tsc_rxha_no_amps`) instead of indexing with
+  `-1`, and force the DC flow to `0` whenever either side is open (matching `fillBdc`'s
+  "disco on one side == disco on both sides" DC convention). Tested in
+  `test_line_disco_one_side.py`.
 
 [0.13.1]  2026-04-21
 --------------------
