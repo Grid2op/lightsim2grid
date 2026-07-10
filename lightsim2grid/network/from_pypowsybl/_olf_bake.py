@@ -54,9 +54,22 @@ What gets baked
   inside their limits keep voltage control -- their equation type is unchanged.
   Units with NaN (unlimited) reactive limits are never frozen, since NaN
   comparisons are False.
+* Generators OLF's own voltage-control consistency checks would discard for a
+  reason other than "not started": too small a reactive range (default
+  ``reactiveRangeCheckMode``, widest ``max_q - min_q`` below 1 MVar) or an
+  implausible ``target_v`` (outside 0.8-1.2 pu of nominal, on buses above 20 kV).
+  Frozen to fixed-Q the same way as the "not started" case above, since OLF
+  itself never actually voltage-controlled them either.
 * Active-power redistribution from distributed slack / area interchange: the
   realized P is written back into the target P of generators and batteries
   (and optionally loads, if the slack was distributed on load).
+* Generators OLF's own ``checkActivePowerControl`` would exclude from
+  slack-distribution participation (dispatched at ~0 MW, an implausible
+  ``max_p``, ``target_p`` outside ``[min_p, max_p]``, or a degenerate P range):
+  their ``activePowerControl`` extension's ``participate`` flag is set to
+  ``False`` (created if absent), so neither a subsequent pypowsybl OLF re-solve
+  nor lightsim2grid's own distributed slack -- which reads that same flag --
+  puts slack mismatch back onto them.
 * Static var compensators whose realized reactive output sits at (or beyond)
   their voltage-dependent susceptance envelope (``Q(V) = b * V^2``, ``b`` in
   ``b_min``..``b_max``, recomputed in MVAr at the SVC's own solved terminal
@@ -157,8 +170,10 @@ def bake_outer_loops(
     network,
     bake_taps: bool = True,
     bake_reactive_limits: bool = True,
+    bake_generator_voltage_control_discards: bool = True,
     bake_active_power: bool = True,
-    bake_remote_voltage_control: bool = True,
+    bake_active_power_control_participation: bool = True,
+    bake_remote_voltage_control: bool = False,
     balance_on_loads: bool = False,
     load_power_factor_constant: bool = False,
     keep_only_main_comp: bool=True
@@ -180,9 +195,21 @@ def bake_outer_loops(
         input positions and disable their regulation.
     bake_reactive_limits
         Freeze generators / VSC stations that hit a Q limit to fixed-Q (PQ).
+    bake_generator_voltage_control_discards
+        Freeze generators OLF's own voltage-control consistency checks would
+        discard for a reason other than "not started": too small a reactive
+        range, or an implausible ``target_v`` (see
+        :func:`_bake_generator_voltage_control_discards`). Also gated by
+        ``bake_reactive_limits`` -- has no effect if that is off.
     bake_active_power
         Write realized active power back into generator/battery target P
         (and load p0/q0 if ``balance_on_loads``).
+    bake_active_power_control_participation
+        Zero out (``activePowerControl`` extension ``participate=False``)
+        slack-distribution participation for generators OLF's own
+        ``checkActivePowerControl`` would exclude (see
+        :func:`_bake_active_power_control_participation`). Also gated by
+        ``bake_active_power`` -- has no effect if that is off.
     bake_remote_voltage_control
         Rewrite remote voltage control to local control at the solved terminal
         voltage (see :func:`_bake_remote_voltage_control`). Needed so that
@@ -206,13 +233,16 @@ def bake_outer_loops(
     if bake_taps:
         _bake_taps_and_sections(network, keep_only_main_comp)
     if bake_reactive_limits:
-        _bake_reactive_limit_switches(network, keep_only_main_comp)
+        _bake_reactive_limit_switches(
+            network, keep_only_main_comp, bake_generator_voltage_control_discards
+        )
     if bake_active_power:
         _bake_active_power(
             network,
             balance_on_loads=balance_on_loads,
             load_power_factor_constant=load_power_factor_constant,
-            keep_only_main_comp=keep_only_main_comp
+            keep_only_main_comp=keep_only_main_comp,
+            bake_active_power_control_participation=bake_active_power_control_participation
         )
     if bake_remote_voltage_control:
         _bake_remote_voltage_control(network, keep_only_main_comp)
@@ -273,6 +303,27 @@ def _bake_taps_and_sections(network, keep_only_main_comp=True):
 # POWER_EPSILON_SI = 1e-4 MW (AbstractLfGenerator.checkIfGeneratorStartedForVoltageControl).
 _ZERO_P_TOL = 1e-4
 
+# OLF's own PlausibleValues.MIN_REACTIVE_RANGE (1 MVar): with the default
+# reactiveRangeCheckMode ("MAX"), a generator whose widest reactive range across its
+# whole active-power range (or its fixed min_q/max_q box, for a MIN_MAX-kind generator)
+# falls below this is discarded from voltage control
+# (AbstractLfGenerator.checkIfReactiveRangesAreLargeEnoughForVoltageControl).
+_MIN_REACTIVE_RANGE_MVAR = 1.0
+
+# OLF's own defaults (LfNetworkParameters): a generator's targetV, expressed in per
+# unit of its (regulated bus) nominal voltage, is discarded from voltage control if
+# outside this range -- but only on buses above the nominal-voltage floor below (this
+# is minNominalVoltageTargetVoltageCheck, distinct from the *realistic-voltage-check*
+# floor that PARAMS_STANDARD sets to 180 kV; this one is left at its own OLF default).
+_MIN_PLAUSIBLE_TARGET_V_PU = 0.8
+_MAX_PLAUSIBLE_TARGET_V_PU = 1.2
+_MIN_NOMINAL_V_FOR_TARGET_V_CHECK_KV = 20.0
+
+# OLF's own plausibleActivePowerLimit default (MW): a generator whose maxP exceeds
+# this is discarded from active-power (slack) participation regardless of any other
+# parameter (AbstractLfGenerator.checkActivePowerControl).
+_MAX_PLAUSIBLE_ACTIVE_POWER_MW = 10000.0
+
 
 def _bake_generator_not_started(network, keep_only_main_comp=True):
     """Freeze a voltage-regulating generator dispatched at (approximately) 0 MW,
@@ -319,10 +370,94 @@ def _bake_generator_not_started(network, keep_only_main_comp=True):
     network.update_generators(upd)
 
 
+def _generator_max_reactive_range(network, gen_index):
+    """OLF's own default ``reactiveRangeCheckMode`` is ``MAX``: the widest
+    ``max_q - min_q`` across the whole active-power range of the reactive
+    capability curve for a CURVE-kind generator, or simply ``max_q - min_q``
+    for a MIN_MAX (fixed box) generator. Returns a ``pandas.Series`` of ranges
+    (MVAr), indexed like ``gen_index``, ``NaN`` for any id not found.
+    """
+    rng = pd.Series(np.nan, index=gen_index)
+    if not len(gen_index):
+        return rng
+    box = network.get_generators(attributes=["reactive_limits_kind", "min_q", "max_q"])
+    box = box.loc[box.index.intersection(gen_index)]
+    is_box = box["reactive_limits_kind"] == "MIN_MAX"
+    rng.loc[box.index[is_box]] = (box["max_q"] - box["min_q"])[is_box]
+    curve_ids = box.index[~is_box]
+    if len(curve_ids):
+        pts = network.get_reactive_capability_curve_points()
+        # pts is indexed on a (id, num) MultiIndex -- intersecting it directly against
+        # a flat Index of generator ids matches nothing, since a tuple never equals a
+        # bare id; filter on the first level instead.
+        pts = pts.loc[pts.index.get_level_values(0).isin(curve_ids)]
+        if len(pts):
+            pt_range = pts["max_q"] - pts["min_q"]
+            rng.update(pt_range.groupby(level=0).max())
+    return rng
+
+
+def _bake_generator_voltage_control_discards(network, keep_only_main_comp=True):
+    """Freeze a voltage-regulating generator to fixed-Q when PowSyBl OLF's own
+    consistency checks (``AbstractLfGenerator.checkVoltageControlConsistency``)
+    would have discarded it from voltage control for a reason other than "not
+    started" (handled separately by :func:`_bake_generator_not_started`, which
+    must run before this so its frozen generators are excluded here):
+
+    * too small a reactive range (``checkIfReactiveRangesAreLargeEnoughForVoltageControl``,
+      see :func:`_generator_max_reactive_range` and ``_MIN_REACTIVE_RANGE_MVAR``);
+    * an implausible target voltage (``checkTargetV``, see
+      ``_MIN_PLAUSIBLE_TARGET_V_PU`` / ``_MAX_PLAUSIBLE_TARGET_V_PU``).
+
+    Like ``_bake_generator_not_started``, these generators never actually reached
+    voltage control in the reference (outer-loop) run: OLF falls back to a fixed-Q
+    injection at the raw IIDM ``target_q`` (``LfGeneratorImpl.getTargetQ()``), *not*
+    at any computed value -- so the realized ``q`` from the reference solve already
+    equals that fixed output, and freezing to it here is exact. Without this,
+    lightsim2grid -- which has no equivalent of these OLF-specific plausibility
+    screens -- would treat such a generator as a normal PV bus after baking.
+    """
+    df_bus = network.get_buses(attributes=["synchronous_component"])
+    gen = network.get_generators(
+        attributes=["voltage_regulator_on", "target_v", "q", "voltage_level_id", "connected", "bus_id"]
+    )
+    if keep_only_main_comp:
+        gen = _keep_only_main_comp(gen, df_bus)
+    reg = gen[gen["voltage_regulator_on"]]
+    if not len(reg):
+        return
+
+    nominal_v = network.get_voltage_levels(attributes=["nominal_v"])["nominal_v"]
+    # approximation: uses the generator's own terminal nominal voltage, not the
+    # (possibly remote) regulated bus -- same base-case approximation already
+    # documented for _bake_remote_voltage_control.
+    gen_nominal_v = nominal_v.reindex(reg["voltage_level_id"]).to_numpy()
+
+    max_range = _generator_max_reactive_range(network, reg.index).to_numpy()
+    too_small_range = max_range < _MIN_REACTIVE_RANGE_MVAR
+
+    target_v_pu = reg["target_v"].to_numpy() / gen_nominal_v
+    implausible_v = (
+        (gen_nominal_v > _MIN_NOMINAL_V_FOR_TARGET_V_CHECK_KV)
+        & ((target_v_pu < _MIN_PLAUSIBLE_TARGET_V_PU) | (target_v_pu > _MAX_PLAUSIBLE_TARGET_V_PU))
+    )
+
+    mask = too_small_range | implausible_v
+    if not mask.any():
+        return
+    upd = pd.DataFrame(index=reg.index[mask])
+    upd["target_q"] = -reg["q"].to_numpy()[mask]
+    upd["voltage_regulator_on"] = False
+    network.update_generators(upd)
+
+
 def _bake_reactive_limit_switches(
     network,
-    keep_only_main_comp=True):
+    keep_only_main_comp=True,
+    bake_generator_voltage_control_discards=True):
     _bake_generator_not_started(network, keep_only_main_comp)
+    if bake_generator_voltage_control_discards:
+        _bake_generator_voltage_control_discards(network, keep_only_main_comp)
     df_bus = network.get_buses(attributes=["synchronous_component"])
     gen = network.get_generators(
         attributes=[
@@ -507,13 +642,91 @@ def _bake_remote_voltage_control(network, keep_only_main_comp=True):
     network.update_generators(upd)
 
 
-def _bake_active_power(network, balance_on_loads, load_power_factor_constant, keep_only_main_comp=True):
+def _bake_active_power_control_participation(network, gen):
+    """Zero out active-power (slack-distribution) participation for generators that
+    PowSyBl OLF's own ``AbstractLfGenerator.checkActivePowerControl`` would exclude:
+
+    * dispatched at (approximately) zero MW (``POWER_EPSILON_SI``, regardless of
+      ``min_p`` -- unlike :func:`_bake_generator_not_started`, this check has no
+      ``min_p > 0`` guard);
+    * an implausible ``max_p`` (``_MAX_PLAUSIBLE_ACTIVE_POWER_MW``, always checked);
+    * ``target_p`` outside ``[min_target_p, max_target_p]``, or a degenerate
+      (``max_target_p == min_target_p``) range -- OLF's own defaults have
+      ``useActiveLimits`` on, so these are always checked too. ``min_target_p`` /
+      ``max_target_p`` default to ``min_p`` / ``max_p`` unless the generator's own
+      ``activePowerControl`` extension overrides them, mirroring
+      ``ActivePowerControlHelper``.
+
+    ``gen`` must be the pre-bake generator frame (``p``, ``target_p``, ``min_p``,
+    ``max_p``), read *before* :func:`_bake_active_power` overwrites ``target_p``
+    with the realized dispatch -- the discard decision is about what OLF actually
+    used to build the reference solve, not the post-bake value.
+
+    Writes ``participate=False`` into the network's own ``activePowerControl``
+    extension (created where absent) rather than any lightsim2grid-side state:
+    lightsim2grid's own ``_default_distributed_slack`` (mirroring the same OLF
+    rule) already reads exactly this extension's ``participate`` flag when
+    computing slack weights, so this single write keeps both lightsim2grid and any
+    subsequent pypowsybl OLF re-solve from putting slack mismatch back onto a
+    generator OLF itself excluded from participating.
+    """
+    apc = network.get_extensions("activePowerControl")
+    min_target_p = gen["min_p"].to_numpy(copy=True)
+    max_target_p = gen["max_p"].to_numpy(copy=True)
+    if len(apc):
+        common = gen.index.intersection(apc.index)
+        if len(common):
+            pos = gen.index.get_indexer(common)
+            if "min_target_p" in apc.columns:
+                v = apc.loc[common, "min_target_p"].to_numpy()
+                ok = ~np.isnan(v)
+                min_target_p[pos[ok]] = v[ok]
+            if "max_target_p" in apc.columns:
+                v = apc.loc[common, "max_target_p"].to_numpy()
+                ok = ~np.isnan(v)
+                max_target_p[pos[ok]] = v[ok]
+
+    target_p = gen["target_p"].to_numpy()
+    max_p = gen["max_p"].to_numpy()
+
+    zero_target = np.abs(target_p) < _ZERO_P_TOL
+    maxp_not_plausible = max_p > _MAX_PLAUSIBLE_ACTIVE_POWER_MW
+    outside_limits = (target_p > max_target_p) | (target_p < min_target_p)
+    degenerate_range = (max_target_p - min_target_p) < _ZERO_P_TOL
+
+    excluded = zero_target | maxp_not_plausible | outside_limits | degenerate_range
+    if not excluded.any():
+        return
+
+    excluded_ids = gen.index[excluded]
+    already_apc = excluded_ids.intersection(apc.index) if len(apc) else excluded_ids[:0]
+    new_apc = excluded_ids.difference(already_apc)
+
+    if len(already_apc):
+        network.update_extensions(
+            "activePowerControl", pd.DataFrame({"participate": False}, index=already_apc)
+        )
+    if len(new_apc):
+        network.create_extensions(
+            "activePowerControl", pd.DataFrame({"participate": False}, index=new_apc)
+        )
+
+
+def _bake_active_power(
+    network,
+    balance_on_loads,
+    load_power_factor_constant,
+    keep_only_main_comp=True,
+    bake_active_power_control_participation=True
+):
     df_bus = network.get_buses(attributes=["synchronous_component"])
-    
-    gen = network.get_generators(attributes=["p", "connected", "bus_id"])
+
+    gen = network.get_generators(attributes=["p", "target_p", "min_p", "max_p", "connected", "bus_id"])
     if keep_only_main_comp:
         gen = _keep_only_main_comp(gen, df_bus)
     if len(gen):
+        if bake_active_power_control_participation:
+            _bake_active_power_control_participation(network, gen)
         # result p is load convention; target_p is generator convention
         network.update_generators(
             pd.DataFrame({"target_p": -gen["p"]}, index=gen.index)
