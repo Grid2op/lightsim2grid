@@ -155,6 +155,51 @@ def four_substations():
     return pp.network.create_four_substations_node_breaker_network()
 
 
+def ieee14_curve_reactive_range_too_small():
+    """IEEE-14 with B2-G's reactive limits replaced by a degenerate CURVE (a
+    fixed +/-0.3 MVAr range, well under OLF's 1 MVar plausibility floor)
+    instead of the default MIN_MAX box. Mirrors real generators (small
+    run-of-river hydro units, etc.) that OLF silently treats as PQ regardless
+    of ``voltage_regulator_on``.
+
+    The range is kept comfortably nonzero (0.6 MVAr) so the *ordinary*
+    Q-at-limit saturation freeze (whose tolerance blows up and would
+    coincidentally catch an exactly-zero range) does not also fire here --
+    this exercises ``_bake_generator_voltage_control_discards`` alone. It is
+    also the only fixture in this file with CURVE (rather than MIN_MAX)
+    reactive limits, exercising ``_generator_max_reactive_range``'s
+    curve-points code path.
+    """
+    n = pp.network.create_ieee14()
+    n.create_curve_reactive_limits(
+        id=["B2-G", "B2-G"], p=[0.0, 100.0], min_q=[-0.3, -0.3], max_q=[0.3, 0.3]
+    )
+    return n
+
+
+def ieee14_curve_reactive_range_too_small_zero_target_q():
+    """Same too-small (+/-0.3 MVAr) CURVE range as
+    ``ieee14_curve_reactive_range_too_small``, but with B2-G's raw target_q
+    pinned to 0 -- i.e. *inside* the tiny box -- instead of IEEE-14's default
+    42.4 MVAr. Used only to isolate ``_bake_generator_voltage_control_discards``
+    from the ordinary Q-at-limit saturation freeze: with a target_q outside the
+    box (the other fixture), that pre-existing freeze also fires on its own
+    (realized Q lands far outside the box either way) and would mask the flag
+    having any effect; with target_q inside the box, only the new too-small-
+    range check discards the generator, so disabling it is observable."""
+    n = ieee14_curve_reactive_range_too_small()
+    n.update_generators(id="B2-G", target_q=0.0)
+    return n
+
+
+def ieee14_implausible_target_v():
+    """IEEE-14 with B2-G's target_v set far outside OLF's plausible target-
+    voltage window (0.8-1.2 pu of nominal): 50 kV on a 135 kV bus is ~0.37 pu."""
+    n = pp.network.create_ieee14()
+    n.update_generators(id="B2-G", target_v=50.0)
+    return n
+
+
 def _olf_roundtrip_max_dev(network_factory):
     """Return (max |dV| kV, max |dAngle| deg) between OLF-with-loops and the
     baked OLF-loop-free solve. Pure pypowsybl; no lightsim2grid. This is the
@@ -372,6 +417,120 @@ class TestOlfBake(unittest.TestCase):
             self._outer_loop_acted(str(rep)),
             "reporter shows an outer loop acted on the baked grid:\n" + str(rep),
         )
+
+    # -----------------------------------------------------------------
+    # Voltage-control discards beyond Q-limit saturation: too-small
+    # reactive range and implausible target_v
+    # (_bake_generator_voltage_control_discards).
+    # -----------------------------------------------------------------
+    def test_olf_reactive_range_too_small_frozen(self):
+        """A CURVE-kind generator with a sub-1-MVar reactive range is not
+        actually voltage-controlled by OLF: its realized Q sits far outside
+        the tiny +/-0.3 MVAr box the curve declares, proving OLF fell back to
+        the generator's raw (unconfined) target_q rather than confining it
+        through voltage control. Bake must freeze it to fixed-Q at that
+        realized q, and the baked loop-free re-solve must reproduce it."""
+        n_ref = ieee14_curve_reactive_range_too_small()
+        lf.run_ac(n_ref, _with_loops_params())
+        # not actually voltage-controlled: q falls way outside the +/-0.3 box
+        self.assertGreater(
+            abs(n_ref.get_generators(attributes=["q"]).loc["B2-G", "q"]), 1.0
+        )
+
+        n = ieee14_curve_reactive_range_too_small()
+        lf.run_ac(n, _with_loops_params())
+        q_ref = n.get_generators(attributes=["q"]).loc["B2-G", "q"]
+        bake_outer_loops(n)
+        g = n.get_generators(attributes=["voltage_regulator_on", "target_q"])
+        self.assertFalse(g.loc["B2-G", "voltage_regulator_on"])
+        self.assertLess(abs(g.loc["B2-G", "target_q"] - (-q_ref)), 1e-2)
+        # other generators (plain MIN_MAX, ample range) stay untouched
+        self.assertTrue(g.loc[["B1-G", "B3-G", "B6-G", "B8-G"], "voltage_regulator_on"].all())
+
+        res = lf.run_ac(n, get_pypowsybl_loopfree_parameters())
+        self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+        q_redo = n.get_generators(attributes=["q"]).loc["B2-G", "q"]
+        self.assertLess(abs(q_redo - q_ref), 1e-2)
+
+    def test_olf_reactive_range_too_small_flag_off(self):
+        """``bake_generator_voltage_control_discards=False`` leaves the
+        too-small-range generator regulating voltage. Uses the target_q=0
+        variant so the pre-existing Q-at-limit saturation freeze -- which
+        would otherwise also catch this generator on its own, masking the
+        flag -- does not fire (see the fixture's docstring)."""
+        n = ieee14_curve_reactive_range_too_small_zero_target_q()
+        lf.run_ac(n, _with_loops_params())
+        bake_outer_loops(n, bake_generator_voltage_control_discards=False)
+        self.assertTrue(
+            n.get_generators(attributes=["voltage_regulator_on"]).loc["B2-G", "voltage_regulator_on"]
+        )
+
+    def test_olf_reactive_range_too_small_zero_target_q_frozen(self):
+        """Same as ``test_olf_reactive_range_too_small_frozen`` but with the
+        flag on (default): confirms the new check alone -- independent of
+        the ordinary saturation freeze -- discards this generator too."""
+        n = ieee14_curve_reactive_range_too_small_zero_target_q()
+        lf.run_ac(n, _with_loops_params())
+        bake_outer_loops(n)
+        self.assertFalse(
+            n.get_generators(attributes=["voltage_regulator_on"]).loc["B2-G", "voltage_regulator_on"]
+        )
+
+    def test_olf_implausible_target_v_frozen(self):
+        """A generator with target_v far outside OLF's plausible window is
+        frozen to fixed-Q, at the realized q, the same way."""
+        n_ref = ieee14_implausible_target_v()
+        lf.run_ac(n_ref, _with_loops_params())
+        q_ref = n_ref.get_generators(attributes=["q"]).loc["B2-G", "q"]
+        b_ref = n_ref.get_buses(attributes=["v_mag"])
+        bus_id = n_ref.get_generators(attributes=["bus_id"]).loc["B2-G", "bus_id"]
+        self.assertGreater(abs(b_ref.loc[bus_id, "v_mag"] - 50.0), 1.0)
+
+        n = ieee14_implausible_target_v()
+        lf.run_ac(n, _with_loops_params())
+        bake_outer_loops(n)
+        g = n.get_generators(attributes=["voltage_regulator_on", "target_q"])
+        self.assertFalse(g.loc["B2-G", "voltage_regulator_on"])
+        self.assertLess(abs(g.loc["B2-G", "target_q"] - (-q_ref)), 1e-2)
+        self.assertTrue(g.loc[["B1-G", "B3-G", "B6-G", "B8-G"], "voltage_regulator_on"].all())
+
+    def test_olf_implausible_target_v_flag_off(self):
+        n = ieee14_implausible_target_v()
+        lf.run_ac(n, _with_loops_params())
+        bake_outer_loops(n, bake_generator_voltage_control_discards=False)
+        self.assertTrue(
+            n.get_generators(attributes=["voltage_regulator_on"]).loc["B2-G", "voltage_regulator_on"]
+        )
+
+    # -----------------------------------------------------------------
+    # Active-power (slack-distribution) participation zeroing
+    # (_bake_active_power_control_participation).
+    # -----------------------------------------------------------------
+    def test_olf_active_power_control_participation_excluded(self):
+        """B3-G/B6-G/B8-G sit at target_p=0 MW by default on IEEE-14, with
+        min_p < 0 (so they are NOT also frozen by the "not started" voltage
+        rule -- this isolates the active-power-only exclusion); B1-G gets an
+        implausible max_p. All four get participate=False written into the
+        network's own activePowerControl extension; the untouched B2-G does
+        not get an extension entry at all."""
+        n = pp.network.create_ieee14()
+        n.update_generators(id="B1-G", max_p=20000.0)
+        lf.run_ac(n, _with_loops_params())
+        bake_outer_loops(n)
+        apc = n.get_extensions("activePowerControl")
+        for gid in ["B1-G", "B3-G", "B6-G", "B8-G"]:
+            self.assertIn(gid, apc.index, f"{gid} should have an activePowerControl entry")
+            self.assertFalse(bool(apc.loc[gid, "participate"]), f"{gid} should not participate")
+        self.assertNotIn("B2-G", apc.index)
+
+    def test_olf_active_power_control_participation_flag_off(self):
+        """``bake_active_power_control_participation=False`` creates no
+        activePowerControl extension at all."""
+        n = pp.network.create_ieee14()
+        lf.run_ac(n, _with_loops_params())
+        bake_outer_loops(n, bake_active_power_control_participation=False)
+        apc = n.get_extensions("activePowerControl")
+        self.assertEqual(len(apc), 0)
 
     # -----------------------------------------------------------------
     # lightsim2grid agreement tests
