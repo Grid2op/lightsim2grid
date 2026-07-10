@@ -113,12 +113,15 @@ _Q_LIMIT_TOL_REL = 0.005  # 0.5% of (qmax - qmin)
 
 
 def _q_limit_tol(qmin, qmax):
-    rng = np.asarray(qmax) - np.asarray(qmin)
     # An unset reactive-limit box defaults to +/-Double.MAX in pypowsybl (an
-    # "unbounded" sentinel, not a real 3.6e308 MVAr range): a relative tolerance on
-    # that would swallow every generator. Treat absurdly large / non-finite ranges
-    # as "no limit" -- no relative bonus, just the absolute floor -- rather than
-    # let them dominate the max().
+    # "unbounded" sentinel, not a real 3.6e308 MVAr range): subtracting the two
+    # overflows to +inf, which is exactly the "no limit" case filtered out below --
+    # expected and already handled, so silence the resulting RuntimeWarning.
+    with np.errstate(over="ignore"):
+        rng = np.asarray(qmax) - np.asarray(qmin)
+    # A relative tolerance on that overflowed/absurd range would swallow every
+    # generator. Treat absurdly large / non-finite ranges as "no limit" -- no
+    # relative bonus, just the absolute floor -- rather than let them dominate max().
     rng = np.where(np.isfinite(rng) & (rng < 1e6), rng, 0.0)
     return np.maximum(_Q_LIMIT_TOL_ABS, _Q_LIMIT_TOL_REL * rng)
             
