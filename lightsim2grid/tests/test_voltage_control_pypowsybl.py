@@ -220,7 +220,7 @@ class TestVoltageControlPypowsybl(unittest.TestCase):
         n.per_unit = False
         ref = pp.loadflow.run_ac(n, parameters=self._params("VL1"))
         self.assertEqual(ref[0].status, pp.loadflow.ComponentStatus.CONVERGED)
-        bake_outer_loops(n)
+        bake_outer_loops(n, bake_remote_voltage_control=True)
         # G1 is now a LOCAL controller of its own terminal
         self.assertEqual(n.get_generators().loc["G1", "regulated_element_id"], "G1")
         _, V = self._run_ls(n, "G1")  # used to raise; now supported via baking
