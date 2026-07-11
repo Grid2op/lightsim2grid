@@ -10,6 +10,8 @@
 #ifndef CKTSOSOLVER_H
 #define CKTSOSOLVER_H
 
+#include <memory>
+
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
 #include "Utils.hpp"
@@ -52,13 +54,12 @@ class LS2G_API CKTSOLinearSolver final
         ~CKTSOLinearSolver() noexcept
         {
            if(solver_!= nullptr) solver_->DestroySolver();
-           if(ai_!= nullptr) delete [] ai_;
-           if(ap_!= nullptr) delete [] ap_;
-           
+           // ai_ / ap_ are std::unique_ptr and free themselves.
+
            // should not be deleted, see https://github.com/Grid2Op/lightsim2grid/issues/52#issuecomment-1333565959
            // if(iparm_!= nullptr) delete iparm_;
            // if(oparm_!= nullptr) delete oparm_;
-           
+
         }
         // CKTSOLinearSolver(CKTSOLinearSolver && other) noexcept: nb_thread_(ohter.nb_thread_){
         // TODO !
@@ -100,10 +101,12 @@ class LS2G_API CKTSOLinearSolver final
         // solver initialization
         ICktSo solver_;
         const unsigned int nb_thread_;
-        int * ai_;
-        int * ap_;
-        int * iparm_;
-        long long * oparm_;
+        // ai_ / ap_ own the CSC index buffers passed to CKTSO's Analyze; they must
+        // stay alive until reset() / destruction, which std::unique_ptr handles.
+        std::unique_ptr<int[]> ai_;
+        std::unique_ptr<int[]> ap_;
+        int * iparm_;   // owned by CKTSO, not freed here
+        long long * oparm_;  // owned by CKTSO, not freed here
 
 };
 

@@ -17,10 +17,8 @@ const bool NICSLULinearSolver::CAN_SOLVE_MAT = false;
 ErrorType NICSLULinearSolver::reset(){
     // free everything
     solver_.Free();
-    if(ai_ != nullptr) delete [] ai_;  // created in NICSLUSolver::initialize
-    if(ap_ != nullptr) delete [] ap_;  // created in NICSLUSolver::initialize
-    ai_ = nullptr;
-    ap_ = nullptr;
+    ai_.reset();  // created in NICSLUSolver::analyze
+    ap_.reset();  // created in NICSLUSolver::analyze
 
     solver_ = CNicsLU();
     int ret = solver_.Initialize();
@@ -43,21 +41,21 @@ ErrorType NICSLULinearSolver::analyze(const Eigen::SparseMatrix<real_type> & J){
     const auto n = J.cols();
     const unsigned int nnz = J.nonZeros();
 
-    ai_ = new unsigned int [nnz];  // deleted in destructor and NICSLUSolver::reset
+    ai_ = std::make_unique<unsigned int[]>(nnz);  // freed in destructor and NICSLUSolver::reset
     const int * ref_ai = J.innerIndexPtr();
     for(unsigned int i = 0; i < nnz; ++i){
         ai_[i] = static_cast<unsigned int>(ref_ai[i]);
     }
 
-    ap_ = new unsigned int [n+1];  // deleted in destructor and NICSLUSolver::reset
+    ap_ = std::make_unique<unsigned int[]>(n+1);  // freed in destructor and NICSLUSolver::reset
     const int * ref_ap = J.outerIndexPtr();
     for(int i = 0; i < n+1; ++i){
         ap_[i] = static_cast<unsigned int>(ref_ap[i]);
     }
     int ret = solver_.Analyze(n,
                               J.valuePtr(),
-                              ai_,
-                              ap_,
+                              ai_.get(),
+                              ap_.get(),
                               MATRIX_COLUMN_REAL);  // MATRIX_COLUMN_REAL, MATRIX_ROW_REAL
     if (ret < 0){
         // https://github.com/chenxm1986/nicslu/blob/master/nicslu202103/include/nicslu.h for error info

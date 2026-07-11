@@ -10,6 +10,8 @@
 #ifndef NICSLUSOLVER_H
 #define NICSLUSOLVER_H
 
+#include <memory>
+
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
 #include "Utils.hpp"
@@ -50,14 +52,7 @@ class LS2G_API NICSLULinearSolver final
         ~NICSLULinearSolver() noexcept
         {
            solver_.Free();
-           if(ai_!= nullptr){
-            delete [] ai_;
-            ai_= nullptr;
-           }
-           if(ap_!= nullptr){
-            delete [] ap_;
-            ap_ = nullptr;
-           }
+           // ai_ / ap_ are std::unique_ptr and free themselves.
         }
 
         // NICSLULinearSolver(NICSLULinearSolver && other) noexcept: nb_thread_(other.nb_thread_){
@@ -93,8 +88,10 @@ class LS2G_API NICSLULinearSolver final
         // solver initialization
         CNicsLU solver_;
         const unsigned int nb_thread_;
-        unsigned int * ai_;
-        unsigned int * ap_;
+        // ai_ / ap_ own the CSC index buffers passed to NICSLU's Analyze; they must
+        // stay alive until reset() / destruction, which std::unique_ptr handles.
+        std::unique_ptr<unsigned int[]> ai_;
+        std::unique_ptr<unsigned int[]> ap_;
 
 };
 
