@@ -55,6 +55,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         using DataInfo = GenInfo;
 
     public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes,
            bool,                    // turnedoff_gen_pv_
@@ -95,6 +96,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path) const;
         static GeneratorContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "GeneratorContainer"; }  // written into / checked against the binary file header
                    
         // slack handling
         /**

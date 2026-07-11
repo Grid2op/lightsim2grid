@@ -109,6 +109,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         virtual ~HvdcLineContainer() noexcept = default;
 
         // pickle
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
                 TwoSidesContainer<ConverterStationContainer>::StateRes,
                 std::vector<real_type>, // loss_percent_
@@ -148,6 +149,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path) const;
         static HvdcLineContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "HvdcLineContainer"; }  // written into / checked against the binary file header
 
         /**
          * Full IIDM-style initialization (used by the pypowsybl converter and

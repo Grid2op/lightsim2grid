@@ -53,6 +53,8 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         
     public:
 
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
+
         using StateRes = std::tuple<
             int,  // n_sub_
             int,  // nmax_busbar_per_sub
@@ -72,6 +74,7 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path) const;
         static SubstationContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "SubstationContainer"; }  // written into / checked against the binary file header
 
         SubstationContainer() noexcept:
             n_sub_(-1), 
