@@ -53,6 +53,8 @@ class LS2G_API LSGrid final
     public:
         using IntVectRowMaj = Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor>;
 
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
+
         using StateRes = std::tuple<
                 std::string, // version major
                 std::string, // version medium
@@ -499,10 +501,17 @@ class LS2G_API LSGrid final
         void set_state(LSGrid::StateRes & my_state) ;
 
         // fast binary serialization (additive alternative to pickle, see
-        // BinaryArchive.hpp -- NOT cross-version compatible, same lightsim2grid
-        // version required to reload)
+        // BinaryArchive.hpp -- readable by any lightsim2grid version sharing
+        // the same BINARY_FORMAT_VERSION)
         void save_binary(const std::string & path) const;
         static LSGrid load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "LSGrid"; }  // written into / checked against the binary file header
+        // binary-load hook (detected by load_binary_generic): rewrites the
+        // version strings embedded in a StateRes read from a binary file to
+        // this build's values, so the pickle-shared exact-version check in
+        // set_state() does not reject a cross-version load that the binary
+        // format number allows
+        static void fixup_binary_state(LSGrid::StateRes & state);
 
         // algo config (scaling/refactor policy params) — also part of StateRes,
         // see LSGrid::get_state()/set_state()

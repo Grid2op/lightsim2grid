@@ -41,6 +41,7 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         using DataInfo = LineInfo;
 
     public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes =  std::tuple<
                    TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes
                    >;
@@ -79,6 +80,7 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path) const;
         static LineContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "LineContainer"; }  // written into / checked against the binary file header
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,
