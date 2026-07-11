@@ -207,11 +207,16 @@ class OneSideContainer : public GenericContainer
         }
 
         virtual bool deactivate(int el_id, DualAlgoControl & solver_control) final {
+            // validate el_id *before* dispatching: `_deactivate` indexes status_[el_id]
+            // with an unchecked operator[] (a negative id would wrap to a huge size_t),
+            // and `_generic_deactivate` only checks afterwards.
+            _check_in_range(el_id, status_, "deactivate");
             bool res = this->_deactivate(el_id, solver_control);
             _generic_deactivate(el_id, status_);
             return res;
         }
         virtual bool reactivate(int el_id, DualAlgoControl & solver_control) final {
+            _check_in_range(el_id, status_, "reactivate");
             bool res = this->_reactivate(el_id, solver_control);
             _generic_reactivate(el_id, status_);
             return res;
@@ -228,6 +233,9 @@ class OneSideContainer : public GenericContainer
             GridModelBusId new_gridmodel_bus_id,
             DualAlgoControl & solver_control,
             const SubstationContainer & substation) final {
+                // validate load_id *before* dispatching: `_change_bus` reads bus_id_(load_id)
+                // with an unchecked Eigen operator(); `_generic_change_bus` only checks afterwards.
+                _check_in_range(load_id, bus_id_, "change_bus");
                 bool res = this->_change_bus(load_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
                 _generic_change_bus(load_id, new_gridmodel_bus_id, bus_id_, solver_control, substation.nb_bus());
                 return res;
@@ -253,11 +261,13 @@ class OneSideContainer : public GenericContainer
 
         void set_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
         {
+            check_size(pos_topo_vect, nb(), "pos_topo_vect");
             pos_topo_vect_.array() = pos_topo_vect;
         }
 
         void set_subid(Eigen::Ref<const IntVect> subid)
         {
+            check_size(subid, nb(), "subid");
             subid_.array() = subid;
         }
 
