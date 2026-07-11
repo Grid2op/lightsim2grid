@@ -564,11 +564,16 @@ void GeneratorContainer::update_slack_weights_by_id(
     int nb_gen = nb();
     std::vector<bool> maybe_slack_bus(nb_gen, false);
 
+    // validate every caller-supplied id before it is used to index status_ /
+    // maybe_slack_bus / target_p_mw_ below (raw operator[] / Eigen operator() are
+    // unchecked, and a negative id would wrap to a huge size_t -> OOB write).
+    for(int gen_id : gen_slack_id) _check_in_range(gen_id, status_, "update_slack_weights_by_id");
+
     // find which generators can be slack
     real_type total_target_p = 0.;
     for(int gen_id : gen_slack_id)
     {
-        if(status_[gen_id]) 
+        if(status_[gen_id])
         {
             maybe_slack_bus[gen_id] = true;
             total_target_p += abs(target_p_mw_(gen_id));
