@@ -848,22 +848,22 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             check_size(branch_h1, size, "branch h (=g+j.b), side 1");
             check_size(branch_h2, size, "branch h (=g+j.b), side 2");
 
-            r_ = RealVect::Map(&branch_r[0], size);
-            x_ = RealVect::Map(&branch_x[0], size);
-            h_side_1_ = CplxVect::Map(&branch_h1[0], size);
-            h_side_2_ = CplxVect::Map(&branch_h2[0], size);
+            r_ = RealVect::Map(branch_r.data(), size);
+            x_ = RealVect::Map(branch_x.data(), size);
+            h_side_1_ = CplxVect::Map(branch_h1.data(), size);
+            h_side_2_ = CplxVect::Map(branch_h2.data(), size);
 
             const std::vector<real_type> & limit_a1_ka = std::get<5>(my_state);
             const std::vector<real_type> & limit_a2_ka = std::get<6>(my_state);
             if(limit_a1_ka.size() > 0){
                 check_size(limit_a1_ka, size, "limit_a1_ka");
-                limit_a1_ka_ = RealVect::Map(&limit_a1_ka[0], size);
+                limit_a1_ka_ = RealVect::Map(limit_a1_ka.data(), size);
             } else {
                 limit_a1_ka_ = RealVect();
             }
             if(limit_a2_ka.size() > 0){
                 check_size(limit_a2_ka, size, "limit_a2_ka");
-                limit_a2_ka_ = RealVect::Map(&limit_a2_ka[0], size);
+                limit_a2_ka_ = RealVect::Map(limit_a2_ka.data(), size);
             } else {
                 limit_a2_ka_ = RealVect();
             }
