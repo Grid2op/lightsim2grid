@@ -1,0 +1,99 @@
+# Memory-hardening CI: builds the C++ core + bindings with instrumentation
+# that the release wheels do not carry, and runs the test modules most likely
+# to surface memory issues (out-of-bounds, use-after-free, UB, silenced
+# assertions). Complements the functional suites on CircleCI, which run
+# against plain optimized builds.
+
+name: Sanitizers
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  asan_ubsan:
+    # AddressSanitizer + UndefinedBehaviorSanitizer over the untrusted-input
+    # path (binary serialization) and the heaviest C++ compute paths (solver
+    # control, time series, contingency analysis).
+    name: ASan + UBSan tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_compile_ci.txt
+          python -m pip install grid2op scipy pandapower
+
+      - name: Build lightsim2grid with ASan + UBSan
+        # __SANITIZE=1 is picked up by src/core/CMakeLists.txt and
+        # src/bindings/python/CMakeLists.txt: -fsanitize=address,undefined
+        # on both lightsim2grid_core and lightsim2grid_cpp
+        run: __SANITIZE=1 python -m pip install -v . --no-build-isolation
+
+      - name: Run tests under ASan + UBSan
+        # The sanitized code lives in a python extension, so the ASan runtime
+        # must be the first thing loaded into the (uninstrumented) python
+        # process: hence LD_PRELOAD. Leak detection stays off: CPython's
+        # allocator keeps interned objects alive by design and would drown
+        # real reports in noise.
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          export LD_PRELOAD=$(gcc -print-file-name=libasan.so)
+          cd lightsim2grid/tests
+          python -W ignore -m unittest -v \
+            test_binary_serialization \
+            test_solver_control \
+            test_TimeSerie \
+            test_time_series_dc \
+            test_SecurityAnlysis \
+            test_DCSecurityAnlysis \
+            test_SecurityAnlysis_cpp \
+            test_ContingencyAnalysis_limit_violations \
+            test_ContingencyAnalysis_split
+
+  debug_asserts:
+    # Release wheels are compiled with NDEBUG, which silences every Eigen
+    # bounds assertion: logically-wrong-but-in-bounds indexing is invisible
+    # to ASan. This build re-enables them (plus the ABI-safe libstdc++
+    # container checks) and runs the solver-heavy modules.
+    name: Eigen/libstdc++ assertions tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_compile_ci.txt
+          python -m pip install grid2op scipy pandapower
+
+      - name: Build lightsim2grid with assertions re-enabled
+        # __DEBUG_ASSERTS=1 -> -UNDEBUG -D_GLIBCXX_ASSERTIONS on both targets
+        run: __DEBUG_ASSERTS=1 python -m pip install -v . --no-build-isolation
+
+      - name: Run solver tests with assertions active
+        run: |
+          cd lightsim2grid/tests
+          python -W ignore -m unittest -v \
+            test_ACPF \
+            test_DCPF \
+            test_solver_control
