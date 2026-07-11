@@ -117,12 +117,12 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
 
     // assign data
     voltage_regulator_on_ = voltage_regulator_on;
-    target_vm_pu_ = RealVect::Map(&vm_pu[0], vm_pu.size());
-    min_q_ = RealVect::Map(&min_q[0], min_q.size());
-    max_q_ = RealVect::Map(&max_q[0], max_q.size());
+    target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
+    min_q_ = RealVect::Map(min_q.data(), min_q.size());
+    max_q_ = RealVect::Map(max_q.data(), max_q.size());
     gen_slackbus_ = slack_bus;
     gen_slack_weight_ = slack_weight;
-    regulated_bus_id_ = Eigen::VectorXi::Map(&regulated_bus[0], regulated_bus.size());
+    regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
     reset_results();
 }
 
@@ -548,7 +548,7 @@ void GeneratorContainer::update_slack_weights(
     {
         if(could_be_slack(gen_id)) gen_slack_id.push_back(gen_id);
     }
-    Eigen::Ref<const IntVect> gen_slack_id_ref = IntVect::Map(&gen_slack_id[0], gen_slack_id.size());
+    Eigen::Ref<const IntVect> gen_slack_id_ref = IntVect::Map(gen_slack_id.data(), gen_slack_id.size());
     update_slack_weights_by_id(
         gen_slack_id_ref,
         solver_control);
