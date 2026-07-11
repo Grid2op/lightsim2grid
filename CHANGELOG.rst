@@ -115,6 +115,22 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   built its working matrix from the grid model's own (never populated, hence empty) Ybus,
   causing out-of-bounds writes. It now uses the correctly indexed internal `Ybus_` and builds
   the required inputs on demand, so it works both before and after `compute()`.
+- [FIXED] several Python-exposed methods could read or write out of bounds (potential
+  segfault / memory corruption) when given an out-of-range or negative element id or a
+  mis-shaped array, because the id / array reached unchecked ``operator[]`` /
+  Eigen ``operator()`` / ``.col()`` (whose bounds asserts are compiled out in release
+  builds) with no prior validation. Out-of-range ids now raise ``IndexError`` and
+  mis-shaped arrays raise ``RuntimeError``, instead of corrupting memory. Affected:
+  ``deactivate_* / reactivate_* / change_bus_*`` (loads, gens, sgens, storages, shunts,
+  powerlines, trafos, dclines — the bounds check ran *after* the access),
+  ``update_slack_weights_by_id`` and ``set_gen_regulated_bus`` (out-of-bounds writes, the
+  latter also stored an unvalidated bus id), ``change_ratio_trafo`` /
+  ``change_shift_trafo`` / ``change_shift_trafo_deg`` (out-of-bounds writes),
+  ``get_status_droop_hvdc``, the grid2op fast-update path
+  (``update_gens_p`` / ``update_loads_p`` / ... when ``new_values`` is shorter than
+  ``has_changed``), ``set_*_pos_topo_vect`` / ``set_*_to_subid``, and
+  ``TimeSeriesCPP.compute_Vs`` (injection-matrix column / row counts are now validated
+  against the grid element counts).
 - [FIXED] pickling (or `save_binary`/`load_binary`) an `LSGrid` whose `_ls_to_orig`
   bus-mapping was set (which `init_from_pypowsybl` and `init_from_pandapower` both do)
   always raised ``"Impossible to set the converter ls_to_orig: the provided vector has
@@ -195,6 +211,12 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   vs ``size_t``) and silenced ~188 intentionally-unused parameters on interface /
   default-virtual-method signatures (kept as ``/*name*/`` comments for documentation,
   matching the convention already used elsewhere in the codebase).
+- [IMPROVED] (cpp) the ``CKTSOLinearSolver`` and ``NICSLULinearSolver`` linear solvers now
+  hold their CSC index buffers (``ai_`` / ``ap_``) in ``std::unique_ptr<T[]>`` allocated with
+  ``std::make_unique`` instead of raw ``new[]`` / ``delete[]``. The lifetime is unchanged
+  (the buffers are still released on ``reset()`` and destruction), but ownership is now
+  RAII-managed, which also removes a latent leak if ``analyze()`` were called twice without
+  an intervening ``reset()``.
 - [ADDED] `lightsim2grid.network.bake_outer_loops`: rewrites a pypowsybl network's
   input setpoints to the converged PowSyBl OpenLoadFlow (OLF) outer-loop state (tap /
   shunt positions, reactive-limit PV->PQ switches, distributed-slack active power) so
