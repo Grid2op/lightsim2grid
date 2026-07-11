@@ -230,6 +230,15 @@ LSGrid LSGrid::load_binary(const std::string & path) {
     return ls2g::load_binary_generic<LSGrid>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
+void LSGrid::fixup_binary_state(LSGrid::StateRes & state) {
+    // must be defined in this translation unit: the VERSION_* macros here are
+    // exactly the ones get_state()/set_state() above are compiled with, so
+    // the rewritten fields always pass set_state()'s equality check
+    std::get<VERSION_MAJOR_ID>(state) = VERSION_MAJOR;
+    std::get<VERSION_MEDIUM_ID>(state) = VERSION_MEDIUM;
+    std::get<VERSION_MINOR_ID>(state) = VERSION_MINOR;
+}
+
 void LSGrid::set_ls_to_orig(const IntVect & ls_to_orig){
     if(ls_to_orig.size() == 0){
         _ls_to_orig = IntVect();
