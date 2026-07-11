@@ -213,6 +213,10 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             return regulated_bus_id_(gen_id) != bus_id_(gen_id).cast_int();
         }
         void set_regulated_bus(int gen_id, int bus_id, DualAlgoControl & solver_control){
+            // gen_id indexes regulated_bus_id_ with an unchecked Eigen operator() below
+            // (OOB write for an out-of-range / negative id). bus_id itself is validated
+            // by the caller (LSGrid::set_gen_regulated_bus) against the grid bus count.
+            _check_in_range(gen_id, regulated_bus_id_, "set_regulated_bus");
             if(regulated_bus_id_(gen_id) != bus_id){
                 regulated_bus_id_(gen_id) = bus_id;
                 solver_control.ac_algo_controler().tell_pv_changed();  // groups are rebuilt on topology init

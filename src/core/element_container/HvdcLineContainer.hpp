@@ -296,7 +296,12 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             for(int i = 0; i < nb_hvdc; ++i) if(is_droop_active(i)) return true;
             return false;
         }
-        int get_status_droop(int hvdc_id) const {return status_droop_(hvdc_id);}
+        int get_status_droop(int hvdc_id) const {
+            // hvdc_id indexes status_droop_ with an unchecked Eigen operator() (OOB read);
+            // the matching setter set_status_droop already guards the same way.
+            _check_in_range(hvdc_id, status_droop_, "get_status_droop");
+            return status_droop_(hvdc_id);
+        }
         std::vector<int> get_status_droop_vect() const {
             return std::vector<int>(status_droop_.begin(), status_droop_.end());
         }
