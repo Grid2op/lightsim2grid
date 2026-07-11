@@ -10,6 +10,7 @@
 #ifndef KLSOLVER_H
 #define KLSOLVER_H
 #include <iostream>
+#include <memory>
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
@@ -39,29 +40,14 @@ Otherwise, unexpected behaviour might follow, including "segfault".
 class LS2G_API KLULinearSolver final
 {
     public:
-        KLULinearSolver() noexcept :symbolic_(nullptr),numeric_(nullptr),common_(){}
+        KLULinearSolver() noexcept :
+            common_(),
+            symbolic_(nullptr, SymbolicDeleter{&common_}),
+            numeric_(nullptr, NumericDeleter{&common_})
+            {}
 
-        ~KLULinearSolver() noexcept
-        {
-            // std::cout << "KLULinearSolver destructor 1" << std::endl;
-            if(symbolic_ != nullptr) klu_free_symbolic(&symbolic_, &common_);
-            // std::cout << "KLULinearSolver destructor 2" << std::endl;
-            if(numeric_ != nullptr) klu_free_numeric(&numeric_, &common_);
-            // std::cout << "KLULinearSolver destructor 3" << std::endl;
-        }
-
-        // KLULinearSolver(KLULinearSolver && other) noexcept {
-        //     TODO
-        //     if(symbolic_ != nullptr) klu_free_symbolic(&symbolic_, &common_);
-        //     symbolic_ = other.symbolic_;
-        //     other.symbolic_ = nullptr;
-            
-        //     if(numeric_ != nullptr) klu_free_numeric(&numeric_, &common_);
-        //     numeric_ = other.numeric_;
-        //     other.numeric_ = nullptr;
-
-        //     std::swap(common_, other.common_);
-        // }
+        // symbolic_ / numeric_ are unique_ptr with custom deleters and free themselves.
+        ~KLULinearSolver() noexcept = default;
 
         // public api
         ErrorType reset();
@@ -72,12 +58,37 @@ class LS2G_API KLULinearSolver final
 
         // can this linear solver solve problem where RHS is a matrix
         static const bool CAN_SOLVE_MAT;
-        
+
     private:
-        // solver initialization
-        klu_symbolic* symbolic_;
-        klu_numeric* numeric_;
+        // KLU frees its symbolic / numeric handles through a pair of functions that
+        // also need the `klu_common` control struct, so the deleters are stateful and
+        // hold a pointer to `common_`. `common_` is therefore declared *before* the two
+        // handles: members are destroyed in reverse declaration order, so the handles
+        // (and their deleters, which dereference `common_`) are released while `common_`
+        // is still alive.
+        struct SymbolicDeleter {
+            klu_common* common_ = nullptr;
+            void operator()(klu_symbolic* ptr) const noexcept {
+                if(ptr != nullptr){
+                    klu_symbolic* tmp = ptr;  // klu_free_symbolic takes a klu_symbolic**
+                    klu_free_symbolic(&tmp, common_);
+                }
+            }
+        };
+        struct NumericDeleter {
+            klu_common* common_ = nullptr;
+            void operator()(klu_numeric* ptr) const noexcept {
+                if(ptr != nullptr){
+                    klu_numeric* tmp = ptr;  // klu_free_numeric takes a klu_numeric**
+                    klu_free_numeric(&tmp, common_);
+                }
+            }
+        };
+
+        // solver initialization (declaration order matters, see note above)
         klu_common common_;
+        std::unique_ptr<klu_symbolic, SymbolicDeleter> symbolic_;
+        std::unique_ptr<klu_numeric, NumericDeleter> numeric_;
 
         // no copy allowed
         KLULinearSolver(const KLULinearSolver&) = delete;
