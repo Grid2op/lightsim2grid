@@ -115,6 +115,8 @@ class OneSideContainer_PQ : public OneSideContainer
             }
         }
 
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
+
         using StateRes = std::tuple<
             OneSideContainer::StateRes,
             std::vector<real_type>, // p_mw

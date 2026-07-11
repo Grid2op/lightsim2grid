@@ -218,11 +218,32 @@ class TestBinarySerialization(unittest.TestCase):
         assert list(dc_cfg_1.int_params) == list(dc_cfg.int_params)
         assert np.allclose(dc_cfg_1.real_params, dc_cfg.real_params)
 
-    def test_cannot_load_wrong_version(self):
+    @staticmethod
+    def _header_end(data):
+        """Return the offset of the first state byte.
+
+        File header layout (stable across binary format versions): 4-byte
+        magic "LSB2", uint32 little-endian binary format version, then 4
+        length-prefixed strings (uint32 little-endian length + raw bytes):
+        type tag, major / medium / minor writer version.
+        """
+        off = 4 + 4  # magic + format version
+        for _ in range(4):  # type tag + 3 version strings
+            (str_len,) = struct.unpack_from("<I", data, off)
+            off += 4 + str_len
+        return off
+
+    def _make_grid(self, env_name="l2rpn_idf_2023"):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
-        grid = self.env.backend._grid
+            self.env = grid2op.make(env_name, test=True, backend=LightSimBackend())
+        return self.env.backend._grid
+
+    def test_cross_version_load(self):
+        """Compatibility is decided by the binary *format* version, not the
+        lightsim2grid version: a file whose writer-version strings differ
+        (but whose format number matches) must load fine."""
+        grid = self._make_grid()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test_binary.lsb")
@@ -230,26 +251,129 @@ class TestBinarySerialization(unittest.TestCase):
             with open(path, "rb") as f:
                 data = bytearray(f.read())
 
-            # file layout: 4-byte magic "LSB1", then 3 length-prefixed strings
-            # (uint32 little-endian length + raw bytes): major, medium, minor
-            # version. Doctor the major-version bytes so they cannot match the
-            # currently installed lightsim2grid version.
-            maj_len = struct.unpack("<I", bytes(data[4:8]))[0]
-            for i in range(8, 8 + maj_len):
-                data[i] = ord("9")
+            # doctor the 3 writer-version strings (they follow the type tag)
+            off = 4 + 4
+            (tag_len,) = struct.unpack_from("<I", bytes(data), off)
+            off += 4 + tag_len
+            for _ in range(3):
+                (str_len,) = struct.unpack_from("<I", bytes(data), off)
+                off += 4
+                for i in range(off, off + str_len):
+                    data[i] = ord("9")
+                off += str_len
 
-            bad_path = os.path.join(tmpdir, "test_binary_bad_version.lsb")
+            other_version_path = os.path.join(tmpdir, "test_binary_other_version.lsb")
+            with open(other_version_path, "wb") as f:
+                f.write(bytes(data))
+
+            grid_1 = type(grid).load_binary(other_version_path)
+            assert len(compare_network_input(grid, grid_1)) == 0
+
+    def test_cannot_load_wrong_format(self):
+        """A file with an unsupported binary format number must be rejected
+        with a clear error naming both versions and the format numbers."""
+        grid = self._make_grid()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test_binary.lsb")
+            grid.save_binary(path)
+            with open(path, "rb") as f:
+                data = bytearray(f.read())
+
+            # doctor the uint32 binary format version right after the magic
+            struct.pack_into("<I", data, 4, 999999)
+
+            bad_path = os.path.join(tmpdir, "test_binary_bad_format.lsb")
             with open(bad_path, "wb") as f:
                 f.write(bytes(data))
 
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(RuntimeError) as cm:
                 type(grid).load_binary(bad_path)
+            assert "binary format" in str(cm.exception)
+            assert "999999" in str(cm.exception)
+
+    def test_corrupted_count(self):
+        """A corrupted element-count field must raise a clean RuntimeError
+        (checked against the real file size before any allocation), not a
+        MemoryError / out-of-memory crash."""
+        grid = self._make_grid()
+        loads = grid.get_loads()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test_binary_loads.lsb")
+            loads.save_binary(path)
+            with open(path, "rb") as f:
+                data = bytearray(f.read())
+
+            # the first state field of a LoadContainer is a string-vector
+            # (names) whose uint64 count immediately follows the header:
+            # replace it with an absurdly huge value
+            struct.pack_into("<Q", data, self._header_end(bytes(data)), 2**62)
+
+            bad_path = os.path.join(tmpdir, "test_binary_loads_bad_count.lsb")
+            with open(bad_path, "wb") as f:
+                f.write(bytes(data))
+
+            with self.assertRaises(RuntimeError) as cm:
+                type(loads).load_binary(bad_path)
+            assert "truncated or corrupted" in str(cm.exception)
+
+    def test_cannot_load_wrong_type(self):
+        """LoadContainer and StorageContainer have identical StateRes layouts:
+        without the type tag in the header, loading one as the other would
+        silently succeed with an object of the wrong type."""
+        grid = self._make_grid()
+        loads = grid.get_loads()
+        storages = grid.get_storages()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test_binary_loads.lsb")
+            loads.save_binary(path)
+
+            with self.assertRaises(RuntimeError) as cm:
+                type(storages).load_binary(path)
+            assert "LoadContainer" in str(cm.exception)
+            assert "StorageContainer" in str(cm.exception)
+
+    def test_trailing_bytes_rejected(self):
+        """Bytes remaining after the state has been fully read are treated as
+        corruption (they would previously be silently ignored)."""
+        grid = self._make_grid()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test_binary.lsb")
+            grid.save_binary(path)
+            with open(path, "ab") as f:
+                f.write(b"some trailing garbage")
+
+            with self.assertRaises(RuntimeError) as cm:
+                type(grid).load_binary(path)
+            assert "remain after the end" in str(cm.exception)
+
+    def test_atomic_save(self):
+        """save_binary writes to a temporary file renamed into place on
+        success: no temp file survives a successful save, and a failing save
+        leaves a pre-existing good file untouched."""
+        grid = self._make_grid()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test_binary.lsb")
+            grid.save_binary(path)
+            assert not os.path.exists(path + ".lsb_tmp"), "temporary file left behind after a successful save"
+
+            # make the next save fail (the temp file cannot be created
+            # because a directory occupies its path), then check the
+            # previously saved file is still intact and loadable
+            os.mkdir(path + ".lsb_tmp")
+            with self.assertRaises(RuntimeError):
+                grid.save_binary(path)
+            os.rmdir(path + ".lsb_tmp")
+
+            grid_1 = type(grid).load_binary(path)
+            assert len(compare_network_input(grid, grid_1)) == 0
 
     def test_corrupted_file(self):
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
-        grid = self.env.backend._grid
+        grid = self._make_grid()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test_binary.lsb")
@@ -272,5 +396,88 @@ class TestBinarySerialization(unittest.TestCase):
                 type(grid).load_binary(garbage_path)
 
 
+# reference file saved with binary format 1 (see BINARY_FORMAT_VERSION in
+# src/core/BinaryArchive.hpp) + a few values it is known to contain, used by
+# TestBinaryLayoutUnchanged below. Regenerate (only after a deliberate format
+# bump) with: python -m lightsim2grid.tests.test_binary_serialization regen
+FIXTURE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "binary_format_fixture",
+                            "case14_sandbox_format1.lsb")
+FIXTURE_ENV_NAME = "l2rpn_case14_sandbox"
+FIXTURE_N_SUB = 14
+FIXTURE_N_LOAD = 11
+FIXTURE_N_GEN = 6
+FIXTURE_N_LINE_PLUS_TRAFO = 20
+
+
+class TestBinaryLayoutUnchanged(unittest.TestCase):
+    """Guards the stability of the binary layout: loads a reference file
+    committed to the repository and checks its content.
+
+    If this test starts failing after a code change, that change modified the
+    serialized layout (some StateRes tuple, or the encoding in
+    BinaryArchive.hpp/.cpp) without bumping BINARY_FORMAT_VERSION: files
+    saved by released lightsim2grid versions would be silently mis-read.
+    Bump BINARY_FORMAT_VERSION in src/core/BinaryArchive.hpp, then
+    regenerate this fixture (see FIXTURE_PATH above).
+    """
+
+    def test_reference_file_still_loads(self):
+        from lightsim2grid.network import LSGrid
+        try:
+            grid = LSGrid.load_binary(FIXTURE_PATH)
+        except RuntimeError as exc:
+            if "binary format" in str(exc):
+                self.fail(
+                    "The committed reference file uses an older BINARY_FORMAT_VERSION. "
+                    "If the format was bumped on purpose, regenerate the fixture "
+                    f"({FIXTURE_PATH}) and update the expected values next to it. "
+                    f"Original error: {exc}")
+            self.fail(
+                "The committed reference file no longer loads: the binary layout "
+                "changed without bumping BINARY_FORMAT_VERSION (src/core/BinaryArchive.hpp). "
+                f"Original error: {exc}")
+
+        # a mis-aligned read can also produce garbage instead of raising:
+        # check a few known values of the reference grid
+        assert len(grid.get_loads()) == FIXTURE_N_LOAD
+        assert len(grid.get_generators()) == FIXTURE_N_GEN
+        assert len(grid.get_lines()) + len(grid.get_trafos()) == FIXTURE_N_LINE_PLUS_TRAFO
+        for load in grid.get_loads():
+            assert load.connected
+        # the reference grid must still be able to run a powerflow
+        nb_bus_total = FIXTURE_N_SUB * 2
+        V = np.ones(nb_bus_total, dtype=complex)
+        V = grid.ac_pf(V, 10, 1e-8)
+        assert V.shape[0] > 0, "ac powerflow diverged on the reference grid"
+
+    def test_roundtrip_matches_reference_env(self):
+        """The fixture must stay equivalent to a freshly-built grid of the
+        same environment (guards against regenerating it with wrong data)."""
+        from lightsim2grid.network import LSGrid
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            env = grid2op.make(FIXTURE_ENV_NAME, test=True, backend=LightSimBackend())
+        grid_ref = env.backend._grid
+        grid_fixture = LSGrid.load_binary(FIXTURE_PATH)
+        assert len(compare_network_input(grid_ref, grid_fixture)) == 0
+
+
+def _regenerate_fixture():
+    """Manual helper: regenerate the committed reference file after a
+    deliberate BINARY_FORMAT_VERSION bump (never for any other reason)."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        env = grid2op.make(FIXTURE_ENV_NAME, test=True, backend=LightSimBackend())
+    os.makedirs(os.path.dirname(FIXTURE_PATH), exist_ok=True)
+    env.backend._grid.save_binary(FIXTURE_PATH)
+    print(f"fixture regenerated: {FIXTURE_PATH}")
+    print("update the FIXTURE_* expected values and the file name if the format number changed")
+
+
 if __name__ == "__main__":
-    unittest.main()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "regen":
+        _regenerate_fixture()
+    else:
+        unittest.main()
