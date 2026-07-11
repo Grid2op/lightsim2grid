@@ -381,13 +381,13 @@ class OneSideContainer : public GenericContainer
             {
                 const std::vector<int> & subid = std::get<4>(my_state);
                 check_size(subid, size, "subid");
-                subid_ = IntVect::Map(&subid[0], subid.size());
+                subid_ = IntVect::Map(subid.data(), subid.size());
             }
             if(has_topo_vect_info)
             {
                 const std::vector<int> & topo_vect = std::get<6>(my_state);
                 check_size(topo_vect, size, "topo_vect");
-                pos_topo_vect_ = IntVect::Map(&topo_vect[0], topo_vect.size());
+                pos_topo_vect_ = IntVect::Map(topo_vect.data(), topo_vect.size());
             }
 
             // input data

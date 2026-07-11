@@ -216,18 +216,18 @@ void HvdcLineContainer::set_state(HvdcLineContainer::StateRes & my_state)
     check_size(pmax_2to1_mw, size, "pmax_2to1_mw");
     check_size(status_droop, size, "status_droop");
 
-    loss_percent_ = RealVect::Map(&loss_percent[0], loss_percent.size());
-    loss_mw_ = RealVect::Map(&loss_mw[0], loss_mw.size());
-    converters_mode_ = IntVect::Map(&converters_mode[0], converters_mode.size());
-    p_setpoint_mw_ = RealVect::Map(&p_setpoint_mw[0], p_setpoint_mw.size());
-    r_ohm_ = RealVect::Map(&r_ohm[0], r_ohm.size());
-    nominal_v_kv_ = RealVect::Map(&nominal_v_kv[0], nominal_v_kv.size());
+    loss_percent_ = RealVect::Map(loss_percent.data(), loss_percent.size());
+    loss_mw_ = RealVect::Map(loss_mw.data(), loss_mw.size());
+    converters_mode_ = IntVect::Map(converters_mode.data(), converters_mode.size());
+    p_setpoint_mw_ = RealVect::Map(p_setpoint_mw.data(), p_setpoint_mw.size());
+    r_ohm_ = RealVect::Map(r_ohm.data(), r_ohm.size());
+    nominal_v_kv_ = RealVect::Map(nominal_v_kv.data(), nominal_v_kv.size());
     droop_enabled_ = droop_enabled;
-    p0_mw_ = RealVect::Map(&p0_mw[0], p0_mw.size());
-    k_mw_per_rad_ = RealVect::Map(&k_mw_per_rad[0], k_mw_per_rad.size());
-    pmax_1to2_mw_ = RealVect::Map(&pmax_1to2_mw[0], pmax_1to2_mw.size());
-    pmax_2to1_mw_ = RealVect::Map(&pmax_2to1_mw[0], pmax_2to1_mw.size());
-    status_droop_ = IntVect::Map(&status_droop[0], status_droop.size());
+    p0_mw_ = RealVect::Map(p0_mw.data(), p0_mw.size());
+    k_mw_per_rad_ = RealVect::Map(k_mw_per_rad.data(), k_mw_per_rad.size());
+    pmax_1to2_mw_ = RealVect::Map(pmax_1to2_mw.data(), pmax_1to2_mw.size());
+    pmax_2to1_mw_ = RealVect::Map(pmax_2to1_mw.data(), pmax_2to1_mw.size());
+    status_droop_ = IntVect::Map(status_droop.data(), status_droop.size());
     reset_results();
 }
 
