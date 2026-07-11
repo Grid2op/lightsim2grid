@@ -8,7 +8,7 @@
 
 #include "BinaryArchive.hpp"
 
-#include <cstdio>   // std::remove, std::rename
+#include <cstdio>   // std::remove, std::rename, std::snprintf
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
@@ -42,6 +42,29 @@ std::string supported_formats_str()
         oss << f;
         first = false;
     }
+    return oss.str();
+}
+
+// Strings read from a (possibly corrupted) file must be escaped before being
+// embedded in an exception message: pybind11 converts what() to a python str
+// as UTF-8, and raw garbage bytes would turn the intended RuntimeError into a
+// UnicodeDecodeError (found by the corruption-sweep test). Also truncated,
+// so a corrupted length cannot produce a message megabytes long.
+std::string printable(const std::string & s)
+{
+    const std::size_t max_len = 64;
+    std::ostringstream oss;
+    for (std::size_t i = 0; i < s.size() && i < max_len; ++i) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        if (c >= 0x20 && c < 0x7f) {
+            oss << static_cast<char>(c);
+        } else {
+            char buf[8];
+            std::snprintf(buf, sizeof(buf), "\\x%02x", c);
+            oss << buf;
+        }
+    }
+    if (s.size() > max_len) oss << "... (" << s.size() << " chars)";
     return oss.str();
 }
 
@@ -206,7 +229,7 @@ void BinaryArchive::check_header(const std::string & type_tag,
     if (!is_format_supported(file_format)) {
         std::ostringstream oss;
         oss << "BinaryArchive: incompatible file '" << path_ << "': it was written by lightsim2grid version "
-            << file_major << "." << file_medium << "." << file_minor
+            << printable(file_major) << "." << printable(file_medium) << "." << printable(file_minor)
             << " using binary format " << file_format
             << ", but the currently installed lightsim2grid (version "
             << v_major << "." << v_medium << "." << v_minor
@@ -219,7 +242,7 @@ void BinaryArchive::check_header(const std::string & type_tag,
     if (file_tag != type_tag) {
         std::ostringstream oss;
         oss << "BinaryArchive: wrong object type in file '" << path_ << "': it contains a '"
-            << file_tag << "', not a '" << type_tag << "'.";
+            << printable(file_tag) << "', not a '" << type_tag << "'.";
         throw std::runtime_error(oss.str());
     }
 }
