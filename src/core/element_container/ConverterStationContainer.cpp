@@ -110,13 +110,13 @@ void ConverterStationContainer::set_state(ConverterStationContainer::StateRes & 
     check_size(max_q, size, "max_q");
     check_size(power_factor, size, "power_factor");
 
-    type_ = IntVect::Map(&type[0], type.size());
-    loss_factor_ = RealVect::Map(&loss_factor[0], loss_factor.size());
+    type_ = IntVect::Map(type.data(), type.size());
+    loss_factor_ = RealVect::Map(loss_factor.data(), loss_factor.size());
     voltage_regulator_on_ = voltage_regulator_on;
-    target_vm_pu_ = RealVect::Map(&vm_pu[0], vm_pu.size());
-    min_q_ = RealVect::Map(&min_q[0], min_q.size());
-    max_q_ = RealVect::Map(&max_q[0], max_q.size());
-    power_factor_ = RealVect::Map(&power_factor[0], power_factor.size());
+    target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
+    min_q_ = RealVect::Map(min_q.data(), min_q.size());
+    max_q_ = RealVect::Map(max_q.data(), max_q.size());
+    power_factor_ = RealVect::Map(power_factor.data(), power_factor.size());
     reset_results();
 }
 

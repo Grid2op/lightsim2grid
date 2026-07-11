@@ -116,8 +116,8 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     GenericContainer::check_size(is_tap_side1, size, "is_tap_side1");
     GenericContainer::check_size(shift, size, "shift");
 
-    ratio_  = RealVect::Map(&ratio[0], size);
-    shift_  = RealVect::Map(&shift[0], size);
+    ratio_  = RealVect::Map(ratio.data(), size);
+    shift_  = RealVect::Map(shift.data(), size);
     is_tap_side1_ = is_tap_side1;
     ignore_tap_side_for_shift_ = std::get<4>(my_state);
 
@@ -126,8 +126,8 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     std::vector<real_type> & base_x = std::get<7>(my_state);
     GenericContainer::check_size(base_r, size, "base_r");
     GenericContainer::check_size(base_x, size, "base_x");
-    base_r_ = RealVect::Map(&base_r[0], size);
-    base_x_ = RealVect::Map(&base_x[0], size);
+    base_r_ = RealVect::Map(base_r.data(), size);
+    base_x_ = RealVect::Map(base_x.data(), size);
     rx_corr_alpha_ = std::get<8>(my_state);
     rx_corr_pct_ = std::get<9>(my_state);
 
