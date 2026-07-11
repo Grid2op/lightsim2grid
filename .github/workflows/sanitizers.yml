@@ -44,14 +44,17 @@ jobs:
       - name: Run tests under ASan + UBSan
         # The sanitized code lives in a python extension, so the ASan runtime
         # must be the first thing loaded into the (uninstrumented) python
-        # process: hence LD_PRELOAD. Leak detection stays off: CPython's
-        # allocator keeps interned objects alive by design and would drown
-        # real reports in noise.
+        # process: hence LD_PRELOAD. libstdc++ must be preloaded along with
+        # it: python itself does not link it, and without it ASan's
+        # __cxa_throw interceptor cannot resolve the real function and every
+        # C++ exception aborts the process. Leak detection stays off:
+        # CPython's allocator keeps interned objects alive by design and
+        # would drown real reports in noise.
         env:
           ASAN_OPTIONS: detect_leaks=0
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: |
-          export LD_PRELOAD=$(gcc -print-file-name=libasan.so)
+          export LD_PRELOAD="$(gcc -print-file-name=libasan.so) $(gcc -print-file-name=libstdc++.so.6)"
           cd lightsim2grid/tests
           python -W ignore -m unittest -v \
             test_binary_serialization \
