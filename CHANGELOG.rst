@@ -211,12 +211,15 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   vs ``size_t``) and silenced ~188 intentionally-unused parameters on interface /
   default-virtual-method signatures (kept as ``/*name*/`` comments for documentation,
   matching the convention already used elsewhere in the codebase).
-- [IMPROVED] (cpp) the ``CKTSOLinearSolver`` and ``NICSLULinearSolver`` linear solvers now
-  hold their CSC index buffers (``ai_`` / ``ap_``) in ``std::unique_ptr<T[]>`` allocated with
-  ``std::make_unique`` instead of raw ``new[]`` / ``delete[]``. The lifetime is unchanged
-  (the buffers are still released on ``reset()`` and destruction), but ownership is now
-  RAII-managed, which also removes a latent leak if ``analyze()`` were called twice without
-  an intervening ``reset()``.
+- [IMPROVED] (cpp) the built-in linear solvers now manage their solver memory with RAII
+  smart pointers instead of manual allocation. ``CKTSOLinearSolver`` and
+  ``NICSLULinearSolver`` hold their CSC index buffers (``ai_`` / ``ap_``) in
+  ``std::unique_ptr<T[]>`` allocated with ``std::make_unique`` (was raw ``new[]`` /
+  ``delete[]``); ``KLULinearSolver`` holds its ``klu_symbolic`` / ``klu_numeric`` handles in
+  ``std::unique_ptr`` with custom deleters that call ``klu_free_symbolic`` /
+  ``klu_free_numeric`` (was manual frees in the destructor and ``reset()``). Lifetimes are
+  unchanged, but ownership is now RAII-managed, which also removes a latent leak if
+  ``analyze()`` / ``factorize()`` were called twice without an intervening ``reset()``.
 - [ADDED] `lightsim2grid.network.bake_outer_loops`: rewrites a pypowsybl network's
   input setpoints to the converged PowSyBl OpenLoadFlow (OLF) outer-loop state (tap /
   shunt positions, reactive-limit PV->PQ switches, distributed-slack active power) so
