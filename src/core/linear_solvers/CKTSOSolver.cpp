@@ -20,15 +20,13 @@ const bool CKTSOLinearSolver::CAN_SOLVE_MAT = false;
 ErrorType CKTSOLinearSolver::reset(){
     // free everything
     if(solver_ != nullptr) solver_->DestroySolver();
-    if(ai_ != nullptr) delete [] ai_;
-    if(ap_ != nullptr) delete [] ap_;
+    ai_.reset();
+    ap_.reset();
 
     // should not be deleted, see https://github.com/Grid2Op/lightsim2grid/issues/52#issuecomment-1333565959
     // if(iparm_!= nullptr) delete iparm_;
     // if(oparm_!= nullptr) delete oparm_;
 
-    ai_ = nullptr;
-    ap_ = nullptr;
     iparm_ = nullptr;
     oparm_ = nullptr;
 
@@ -53,21 +51,21 @@ ErrorType CKTSOLinearSolver::analyze(const Eigen::SparseMatrix<real_type> & J){
     const auto n = J.cols();
     const unsigned int nnz = J.nonZeros();
 
-    ai_ = new int [nnz];
+    ai_ = std::make_unique<int[]>(nnz);
     const int * ref_ai = J.innerIndexPtr();
     for(unsigned int i = 0; i < nnz; ++i){
         ai_[i] = static_cast<int>(ref_ai[i]);
     }
 
-    ap_ = new int [n+1];
+    ap_ = std::make_unique<int[]>(n+1);
     const int * ref_ap = J.outerIndexPtr();
     for(int i = 0; i < n+1; ++i){
         ap_[i] = static_cast<int>(ref_ap[i]);
     }
     int ret = solver_->Analyze(false,  // complex or real
                                n,
-                               ap_,
-                               ai_,
+                               ap_.get(),
+                               ai_.get(),
                                J.valuePtr(),
                                nb_thread_);
     if (ret < 0){

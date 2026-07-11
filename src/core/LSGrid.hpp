@@ -1020,7 +1020,17 @@ class LS2G_API LSGrid final
          * voltage control). `bus_id` == the generator's own bus restores ordinary
          * local PV control.
          */
-        void set_gen_regulated_bus(int gen_id, int bus_id) {generators_.set_regulated_bus(gen_id, bus_id, algo_controler_); }
+        void set_gen_regulated_bus(int gen_id, int bus_id) {
+            // bus_id is stored verbatim and later dereferenced during solve, so reject
+            // an out-of-range bus here (gen_id is validated inside set_regulated_bus).
+            if(bus_id < 0 || bus_id >= static_cast<int>(total_bus())){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::set_gen_regulated_bus: regulated bus id should be >= 0 and < ";
+                exc_ << total_bus() << " (number of buses on the grid), you provided " << bus_id << ".";
+                throw std::out_of_range(exc_.str());
+            }
+            generators_.set_regulated_bus(gen_id, bus_id, algo_controler_);
+        }
         /**
          * Change the bus on the dc line "side 1" dcline_id.
          * 
@@ -1904,6 +1914,14 @@ class LS2G_API LSGrid final
                                       Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
                                       T fun)
         {
+            // new_values is indexed by has_changed's length below; a shorter new_values
+            // would over-read the buffer (Eigen operator[] is unchecked in release).
+            if(new_values.rows() != has_changed.rows()){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::update_continuous_values: 'has_changed' (size " << has_changed.rows();
+                exc_ << ") and 'new_values' (size " << new_values.rows() << ") must have the same size.";
+                throw std::runtime_error(exc_.str());
+            }
             for(int el_id = 0; el_id < has_changed.rows(); ++el_id)
             {
                 if(has_changed(el_id))
