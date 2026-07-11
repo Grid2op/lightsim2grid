@@ -177,6 +177,8 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             int el_id,
             real_type new_ratio,
             DualAlgoControl & solver_control){
+                // el_id indexes ratio_ with an unchecked Eigen operator() below (OOB write).
+                _check_in_range(el_id, ratio_, "change_ratio");
                 if(std::abs(ratio_(el_id) - new_ratio) >_tol_equal_float){
                     ratio_(el_id) = new_ratio;
                     // TODO speed: only some part needs to be recomputed
@@ -196,6 +198,8 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             int el_id,
             real_type new_shift_rad,
             DualAlgoControl & solver_control){
+                // el_id indexes shift_ with an unchecked Eigen operator() below (OOB write).
+                _check_in_range(el_id, shift_, "change_shift");
                 if(std::abs(shift_(el_id) - new_shift_rad) >_tol_equal_float){
                     shift_(el_id) = new_shift_rad;
                     // TODO speed: only some part needs to be recomputed
