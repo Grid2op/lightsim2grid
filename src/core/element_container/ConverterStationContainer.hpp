@@ -70,6 +70,8 @@ class LS2G_API ConverterStationContainer : public OneSideContainer_PQ, public It
             LCC = 1
         };
 
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
+
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes,
            std::vector<int>,        // type_

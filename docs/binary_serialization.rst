@@ -46,18 +46,33 @@ Individual element containers work the same way:
     from lightsim2grid.elements import LoadContainer
     loads_reloaded = LoadContainer.load_binary("my_loads.lsb")
 
+.. note::
+    Version compatibility is decided by a **binary format version** (an integer stored in the file
+    header, see ``BINARY_FORMAT_VERSION`` in ``src/core/BinaryArchive.hpp``), not by the lightsim2grid
+    version: the format number is only bumped when the serialized layout actually changes, so all
+    lightsim2grid versions sharing the same format number can read each other's files. Loading a file
+    with an unsupported format number raises a ``RuntimeError`` naming both versions and both format
+    numbers.
+
 .. warning::
-    ``load_binary`` performs a **hard version check**: the file can only be reloaded with the exact same
-    lightsim2grid version (major.medium.minor) that was used to write it. As opposed to pickle, there is
-    no attempt at cross-version migration: a mismatch always raises a ``RuntimeError``. The same is true
-    of a corrupted or truncated file: ``load_binary`` raises a ``RuntimeError`` rather than crashing or
-    silently returning garbage.
+    ``load_binary`` validates its input and always raises a ``RuntimeError`` (rather than crashing,
+    exhausting memory, or silently returning garbage) on ill-formed files: garbage or truncated files,
+    corrupted internal sizes (every count in the file is checked against the real file size *before*
+    anything is allocated), files that contain an object of a different type (*eg* loading a
+    ``LoadContainer`` file with ``StorageContainer.load_binary``), and files with unexpected trailing
+    bytes are all rejected. ``save_binary`` on the other hand is **atomic**: it writes to a temporary
+    file that only replaces the destination once fully written, so an interrupted save never destroys
+    a previously saved file. Note that the format stores raw native data: files are meant to be written
+    and read by builds sharing the same data layout (same endianness, ``real_type``, ...) -- there is
+    no checksum nor cross-platform migration, pickle remains the portable format.
 
 .. note::
     The binary format walks the exact same internal state (``get_state`` / ``set_state``) that pickle
     uses, so the two stay structurally in sync: anything that can be pickled can be saved with
     ``save_binary``. See ``lightsim2grid/tests/test_binary_serialization.py`` for the full test suite
-    (round trip, AC/DC powerflow round trip, version mismatch, corrupted file).
+    (round trip, AC/DC powerflow round trip, format mismatch, cross-version load, corrupted / truncated /
+    wrong-type files, atomicity, and a committed reference file guarding the layout against accidental
+    changes).
 
 .. _binary_serialization_benchmarks:
 

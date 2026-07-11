@@ -358,6 +358,8 @@ class TwoSidesContainer : public GenericContainer
             }
         }
 
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
+
         using StateRes = std::tuple<
             bool,  // ignore_status_global_
             bool,  // synch_status_both_side_

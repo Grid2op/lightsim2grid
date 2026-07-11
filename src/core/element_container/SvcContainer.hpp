@@ -65,6 +65,8 @@ class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<S
             REACTIVE_POWER = 2
         };
 
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
+
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes,
            std::vector<int>,        // regulation_mode_
@@ -106,6 +108,7 @@ class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<S
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path) const;
         static SvcContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "SvcContainer"; }  // written into / checked against the binary file header
 
         // accessors
         int get_regulation_mode(int svc_id) const {return regulation_mode_(svc_id);}
