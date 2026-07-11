@@ -76,12 +76,12 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     check_size(bmax, size, "b_max");
     check_size(regulated_bus, size, "regulated_bus");
 
-    regulation_mode_ = IntVect::Map(&mode[0], mode.size());
-    target_vm_pu_ = RealVect::Map(&vm_pu[0], vm_pu.size());
-    slope_pu_ = RealVect::Map(&slope[0], slope.size());
-    b_min_ = RealVect::Map(&bmin[0], bmin.size());
-    b_max_ = RealVect::Map(&bmax[0], bmax.size());
-    regulated_bus_id_ = Eigen::VectorXi::Map(&regulated_bus[0], regulated_bus.size());
+    regulation_mode_ = IntVect::Map(mode.data(), mode.size());
+    target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
+    slope_pu_ = RealVect::Map(slope.data(), slope.size());
+    b_min_ = RealVect::Map(bmin.data(), bmin.size());
+    b_max_ = RealVect::Map(bmax.data(), bmax.size());
+    regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
     reset_results();
 }
 
