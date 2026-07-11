@@ -43,6 +43,33 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     const auto & s_generators = _grid_model.get_static_generators_as_data();
     const auto & loads = _grid_model.get_loads_as_data();
 
+    // Validate the shapes of the caller-supplied matrices before fill_SBus_* uses them.
+    // fill_SBus_* iterates el_id up to the grid's element count and reads
+    // temporal_data.col(el_id) (unchecked Eigen .col()), so a matrix with too few
+    // columns over-reads; and _Sbuses is sized with gen_p.rows(), so mismatched row
+    // counts turn the `Sbuses.col(...) += tmp` into an out-of-bounds read/write.
+    const auto check_mat = [nb_steps](Eigen::Ref<const RealMat> mat, Eigen::Index nb_expected_cols,
+                                      const std::string & name){
+        if(static_cast<size_t>(mat.rows()) != nb_steps){
+            std::ostringstream exc_;
+            exc_ << "TimeSeries::compute_Vs: '" << name << "' has " << mat.rows()
+                 << " rows (time steps) while 'gen_p' has " << nb_steps
+                 << ". All injection matrices must share the same number of rows.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(mat.cols() != nb_expected_cols){
+            std::ostringstream exc_;
+            exc_ << "TimeSeries::compute_Vs: '" << name << "' has " << mat.cols()
+                 << " columns while the grid counts " << nb_expected_cols
+                 << " such elements. The number of columns must match the number of elements.";
+            throw std::runtime_error(exc_.str());
+        }
+    };
+    check_mat(gen_p, generators.nb(), "gen_p");
+    check_mat(sgen_p, s_generators.nb(), "sgen_p");
+    check_mat(load_p, loads.nb(), "load_p");
+    check_mat(load_q, loads.nb(), "load_q");
+
     // now build the Sbus
     _Sbuses = CplxMat::Zero(nb_steps, nb_buses_solver_);
 
