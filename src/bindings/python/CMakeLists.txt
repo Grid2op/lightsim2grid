@@ -55,6 +55,23 @@ target_include_directories(lightsim2grid_cpp PRIVATE
 
 target_link_libraries(lightsim2grid_cpp PRIVATE lightsim2grid_core)
 
+# CI hardening builds (see .github/workflows/sanitizers.yml). The env vars are
+# read again here (rather than relying on the USE_SANITIZERS/USE_DEBUG_ASSERTS
+# options defined in src/core/CMakeLists.txt) so the flags also apply when
+# lightsim2grid_core is imported pre-built and src/core is never processed.
+if(NOT MSVC)
+    set(ENV_SANITIZE "$ENV{__SANITIZE}")
+    if(ENV_SANITIZE STREQUAL "1" OR ENV_SANITIZE STREQUAL "True")
+        target_compile_options(lightsim2grid_cpp PRIVATE
+            -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1)
+        target_link_options(lightsim2grid_cpp PRIVATE -fsanitize=address,undefined)
+    endif()
+    set(ENV_DEBUG_ASSERTS "$ENV{__DEBUG_ASSERTS}")
+    if(ENV_DEBUG_ASSERTS STREQUAL "1" OR ENV_DEBUG_ASSERTS STREQUAL "True")
+        target_compile_options(lightsim2grid_cpp PRIVATE -UNDEBUG -D_GLIBCXX_ASSERTIONS)
+    endif()
+endif()
+
 if(APPLE)
     set(_LS2G_RPATH "@loader_path")
 elseif(NOT WIN32)
