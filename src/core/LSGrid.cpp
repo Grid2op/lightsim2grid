@@ -369,6 +369,7 @@ CplxVect LSGrid::ac_pf(const CplxVect & Vinit,
         exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
         throw std::runtime_error(exc_.str());
     }
+    BaseAlgo::check_iter_tol("LSGrid::ac_pf", max_iter, tol);
     if(hvdc_lines_.has_droop_active() && !_algo.supports_hvdc_droop(_algo.get_type())){
         std::ostringstream exc_;
         exc_ << "LSGrid::ac_pf: the grid counts hvdc lines with the angle-droop (AC emulation) enabled, ";
@@ -1375,8 +1376,8 @@ void LSGrid::reset_results(){
 }
 
 CplxVect LSGrid::dc_pf(const CplxVect & Vinit,
-                          int /*max_iter*/,  // not used for DC
-                          real_type /*tol*/  // not used for DC
+                          int max_iter,  // only validated: not used for DC (single linear solve)
+                          real_type tol  // only validated: not used for DC (single linear solve)
                           )
 {
     //TODO SLACK: improve distributed slack for DC mode !
@@ -1394,6 +1395,9 @@ CplxVect LSGrid::dc_pf(const CplxVect & Vinit,
         exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
         throw std::runtime_error(exc_.str());
     }
+    // DC ignores max_iter / tol, but nonsensical values still indicate a bug
+    // at the call site: reject them the same way ac_pf does
+    BaseAlgo::check_iter_tol("LSGrid::dc_pf", max_iter, tol);
     bool conv = false;
     CplxVect res = CplxVect();
 

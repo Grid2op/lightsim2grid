@@ -25,24 +25,6 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
     of the system.
     If the Ybus matrix changed, please uses the appropriate method to recomptue it!
     **/
-    // TODO DEBUG MODE check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
-    // TODO DEBUG MODE Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
-    // TODO DEBUG MODE: check that all nodes is either pv, pq or slack
-    // TODO DEBUG MODE: check that the slack_weights sum to 1.0
-    if(Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols() ){
-        // TODO DEBUG MODE
-        std::ostringstream exc_;
-        exc_ << "BaseFDPFAlgo::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
-        exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.cols() << ").";
-        throw std::runtime_error(exc_.str());
-    }
-    if(V.size() != Ybus.rows() || V.size() != Ybus.cols() ){
-        // TODO DEBUG MODE
-        std::ostringstream exc_;
-        exc_ << "BaseFDPFAlgo::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
-        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<< ", " << Ybus.cols() << ").";
-        throw std::runtime_error(exc_.str());
-    }
     reset_timer();
     if(!is_linear_solver_valid()) return false;
     if(_solver_control.need_reset_solver() || 
