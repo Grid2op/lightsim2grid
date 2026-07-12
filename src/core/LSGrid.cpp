@@ -222,8 +222,8 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     set_dc_algo_config(dc_algo_cfg);
 };
 
-void LSGrid::save_binary(const std::string & path) const {
-    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+void LSGrid::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
 }
 
 LSGrid LSGrid::load_binary(const std::string & path) {

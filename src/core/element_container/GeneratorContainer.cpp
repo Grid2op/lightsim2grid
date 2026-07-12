@@ -596,8 +596,8 @@ void GeneratorContainer::update_slack_weights_by_id(
     }
 }
 
-void GeneratorContainer::save_binary(const std::string & path) const {
-    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+void GeneratorContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
 }
 
 GeneratorContainer GeneratorContainer::load_binary(const std::string & path) {

@@ -372,6 +372,23 @@ class TestBinarySerialization(unittest.TestCase):
             grid_1 = type(grid).load_binary(path)
             assert len(compare_network_input(grid, grid_1)) == 0
 
+    def test_non_atomic_save(self):
+        """atomic=False writes the destination directly (the marginally
+        faster path, no temporary file): the file must still round-trip."""
+        grid = self._make_grid()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test_binary_fast.lsb")
+            grid.save_binary(path, atomic=False)
+            assert not os.path.exists(path + ".lsb_tmp")
+            grid_1 = type(grid).load_binary(path)
+            assert len(compare_network_input(grid, grid_1)) == 0
+
+            # overwriting an existing file the fast way works too
+            grid.save_binary(path, atomic=False)
+            grid_1 = type(grid).load_binary(path)
+            assert len(compare_network_input(grid, grid_1)) == 0
+
     def test_corrupted_file(self):
         grid = self._make_grid()
 
@@ -394,6 +411,59 @@ class TestBinarySerialization(unittest.TestCase):
                 f.write(b"this is not a lightsim2grid binary file at all, just some garbage bytes")
             with self.assertRaises(RuntimeError):
                 type(grid).load_binary(garbage_path)
+
+
+class TestSerializedEnumValues(unittest.TestCase):
+    """The integer values of these C++ enums are written verbatim into the
+    binary files (and into pickles), so they are part of the serialized
+    format even though no StateRes tuple changes when they are renumbered.
+
+    If this test fails: either restore the previous numbering (if the change
+    was accidental -- note that for AlgorithmType, inserting a member
+    anywhere but at the very end shifts every following value), or, if the
+    renumbering is deliberate, bump BINARY_FORMAT_VERSION in
+    src/core/BinaryArchive.hpp (and regenerate the reference fixture of
+    TestBinaryLayoutUnchanged), then update the expected values here.
+    """
+
+    def _check_enum(self, enum_cls, expected):
+        actual = {name: int(value) for name, value in enum_cls.__members__.items()}
+        assert actual == expected, (
+            f"The integer values of {enum_cls.__name__} changed, and they are "
+            f"serialized verbatim in binary files / pickles: bump "
+            f"BINARY_FORMAT_VERSION in src/core/BinaryArchive.hpp if this is "
+            f"deliberate (see this test's docstring). Expected {expected}, "
+            f"got {actual}")
+
+    def test_algorithm_type(self):
+        from lightsim2grid.lightsim2grid_cpp import AlgorithmType
+        self._check_enum(AlgorithmType, {
+            "NR_SparseLU": 0, "NR_KLU": 1, "GaussSeidel": 2, "DC_SparseLU": 3,
+            "GaussSeidelSynch": 4, "NR_NICSLU": 5,
+            "NRSing_SparseLU": 6, "NRSing_KLU": 7, "NRSing_NICSLU": 8,
+            "DC_KLU": 9, "DC_NICSLU": 10,
+            "NR_CKTSO": 11, "NRSing_CKTSO": 12, "DC_CKTSO": 13,
+            "FDPF_XB_SparseLU": 14, "FDPF_BX_SparseLU": 15,
+            "FDPF_XB_KLU": 16, "FDPF_BX_KLU": 17,
+            "FDPF_XB_NICSLU": 18, "FDPF_BX_NICSLU": 19,
+            "FDPF_XB_CKTSO": 20, "FDPF_BX_CKTSO": 21,
+            "Custom": 22,
+        })
+
+    def test_svc_regulation_mode(self):
+        from lightsim2grid.lightsim2grid_cpp import SvcContainer
+        self._check_enum(SvcContainer.RegulationMode,
+                         {"OFF": 0, "VOLTAGE": 1, "REACTIVE_POWER": 2})
+
+    def test_hvdc_converters_mode(self):
+        from lightsim2grid.lightsim2grid_cpp import HvdcLineContainer
+        self._check_enum(HvdcLineContainer.ConvertersMode,
+                         {"SIDE_1_RECTIFIER": 0, "SIDE_2_RECTIFIER": 1})
+
+    def test_converter_station_type(self):
+        from lightsim2grid.lightsim2grid_cpp import ConverterStationInfo
+        self._check_enum(ConverterStationInfo.ConverterType,
+                         {"VSC": 0, "LCC": 1})
 
 
 # reference file saved with binary format 1 (see BINARY_FORMAT_VERSION in

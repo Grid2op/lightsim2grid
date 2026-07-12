@@ -78,7 +78,7 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         }
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
-        void save_binary(const std::string & path) const;
+        void save_binary(const std::string & path, bool atomic = true) const;
         static LineContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "LineContainer"; }  // written into / checked against the binary file header
 

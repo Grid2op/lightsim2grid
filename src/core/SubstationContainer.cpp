@@ -58,8 +58,8 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     bus_vmax_kv_ = bus_vmax_kv.empty() ? RealVect() : RealVect::Map(&bus_vmax_kv[0], bus_vmax_kv.size());
 }
 
-void SubstationContainer::save_binary(const std::string & path) const {
-    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+void SubstationContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
 }
 
 SubstationContainer SubstationContainer::load_binary(const std::string & path) {
