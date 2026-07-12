@@ -47,22 +47,32 @@ std::string supported_formats_str()
 
 }  // anonymous namespace
 
-BinaryArchive::BinaryArchive(const std::string & path, Mode mode):
+BinaryArchive::BinaryArchive(const std::string & path, Mode mode, bool atomic_write):
     mode_(mode),
     path_(path),
+    atomic_write_(atomic_write),
     tmp_path_(),
     committed_(false),
     file_size_(0)
 {
     if (mode_ == Mode::Write) {
-        // write to a temporary file: the destination is only replaced in
-        // commit(), after the whole state has been written successfully.
-        tmp_path_ = path_ + ".lsb_tmp";
-        ofs_.open(tmp_path_, std::ios::binary | std::ios::out | std::ios::trunc);
-        if (!ofs_.is_open()) {
-            throw std::runtime_error(
-                "BinaryArchive: cannot open file for writing: '" + path_ +
-                "' (temporary file '" + tmp_path_ + "' could not be created)");
+        if (atomic_write_) {
+            // write to a temporary file: the destination is only replaced in
+            // commit(), after the whole state has been written successfully.
+            tmp_path_ = path_ + ".lsb_tmp";
+            ofs_.open(tmp_path_, std::ios::binary | std::ios::out | std::ios::trunc);
+            if (!ofs_.is_open()) {
+                throw std::runtime_error(
+                    "BinaryArchive: cannot open file for writing: '" + path_ +
+                    "' (temporary file '" + tmp_path_ + "' could not be created)");
+            }
+        } else {
+            // fast path (atomic=false): truncate + write the destination in
+            // place, no rename; an interrupted save leaves a truncated file
+            ofs_.open(path_, std::ios::binary | std::ios::out | std::ios::trunc);
+            if (!ofs_.is_open()) {
+                throw std::runtime_error("BinaryArchive: cannot open file for writing: '" + path_ + "'");
+            }
         }
     } else {
         ifs_.open(path_, std::ios::binary | std::ios::in);
@@ -79,7 +89,7 @@ BinaryArchive::BinaryArchive(const std::string & path, Mode mode):
 
 BinaryArchive::~BinaryArchive()
 {
-    if (mode_ == Mode::Write && !committed_) {
+    if (mode_ == Mode::Write && atomic_write_ && !committed_) {
         // interrupted write (exception during serialization, or commit()
         // failed): drop the temporary file, the destination is untouched.
         if (ofs_.is_open()) ofs_.close();
@@ -97,14 +107,16 @@ void BinaryArchive::commit()
         throw std::runtime_error("BinaryArchive: failed to write to file '" + path_ + "'");
     }
     ofs_.close();
-    // atomically replace the destination. std::rename overwrites on POSIX
-    // but fails on Windows when the destination exists, so remove it first
-    // (failure to remove is ignored: rename below reports the real error).
-    std::remove(path_.c_str());
-    if (std::rename(tmp_path_.c_str(), path_.c_str()) != 0) {
-        throw std::runtime_error(
-            "BinaryArchive: could not move the temporary file '" + tmp_path_ +
-            "' to its final destination '" + path_ + "'");
+    if (atomic_write_) {
+        // atomically replace the destination. std::rename overwrites on POSIX
+        // but fails on Windows when the destination exists, so remove it first
+        // (failure to remove is ignored: rename below reports the real error).
+        std::remove(path_.c_str());
+        if (std::rename(tmp_path_.c_str(), path_.c_str()) != 0) {
+            throw std::runtime_error(
+                "BinaryArchive: could not move the temporary file '" + tmp_path_ +
+                "' to its final destination '" + path_ + "'");
+        }
     }
     committed_ = true;
 }

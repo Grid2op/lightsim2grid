@@ -28,9 +28,11 @@
 //    trigger a multi-gigabyte allocation;
 //  - after the state is fully read, the file must be fully consumed
 //    (trailing bytes are treated as corruption);
-//  - writes go to a temporary file that is atomically renamed over the
-//    destination only on success, so a crash / full disk mid-save never
-//    destroys a previously good file.
+//  - by default (atomic=true), writes go to a temporary file that is
+//    atomically renamed over the destination only on success, so a crash /
+//    full disk mid-save never destroys a previously good file; pass
+//    atomic=false to save_binary to skip the temporary file (marginally
+//    faster, no such protection).
 // NOT covered (possible future work): a payload checksum (bit flips inside
 // numeric data that keep all counts consistent load silently), and an
 // ABI descriptor (endianness / sizeof(real_type)): files are assumed to be
@@ -78,21 +80,27 @@ class LS2G_API BinaryArchive
     public:
         enum class Mode { Write, Read };
 
-        // Write mode writes to a temporary file (path + ".lsb_tmp"); the
-        // data only replaces `path` when commit() is called after a fully
-        // successful write. Read mode opens `path` directly and captures
-        // its size for the bounds checks below.
-        BinaryArchive(const std::string & path, Mode mode);
+        // Write mode: when `atomic_write` is true (the default) the data
+        // goes to a temporary file (path + ".lsb_tmp") that only replaces
+        // `path` when commit() is called after a fully successful write;
+        // when false, `path` is truncated and written directly (marginally
+        // faster -- skips one rename -- but an interrupted save leaves a
+        // truncated file at the destination, destroying any previous one).
+        // Read mode opens `path` directly and captures its size for the
+        // bounds checks below (`atomic_write` is ignored).
+        BinaryArchive(const std::string & path, Mode mode, bool atomic_write = true);
         ~BinaryArchive();
         BinaryArchive(const BinaryArchive &) = delete;
         BinaryArchive & operator=(const BinaryArchive &) = delete;
 
-        // Write mode only: flush + close the temporary file and atomically
-        // rename it over the destination path. Throws std::runtime_error on
-        // any failure (the destination is left untouched in that case). If
-        // commit() is never called (eg an exception during the write), the
-        // destructor removes the temporary file and the destination keeps
-        // its previous content.
+        // Write mode only: flush + close the file; in atomic mode, then
+        // atomically rename the temporary file over the destination path.
+        // Throws std::runtime_error on any failure (in atomic mode the
+        // destination is left untouched in that case). If commit() is never
+        // called (eg an exception during the write), the destructor removes
+        // the temporary file in atomic mode and the destination keeps its
+        // previous content (in non-atomic mode the partial file remains,
+        // and is rejected at load time as truncated).
         void commit();
 
         // low level: the only methods that touch the underlying stream.
@@ -190,7 +198,8 @@ class LS2G_API BinaryArchive
         std::ifstream ifs_;
         Mode mode_;
         std::string path_;
-        std::string tmp_path_;         // write mode: temporary file actually written
+        bool atomic_write_;            // write mode: write to temp file + rename on commit()
+        std::string tmp_path_;         // write mode, atomic: temporary file actually written
         bool committed_;               // write mode: commit() completed
         std::uint64_t file_size_;      // read mode: total size of the file
 };
@@ -354,8 +363,9 @@ void archive_read_value(BinaryArchive & ar, T & v) {
 // into / checked against the file header.
 template<typename T>
 void save_binary_generic(const T & obj, const std::string & path,
-                          const std::string & v_major, const std::string & v_medium, const std::string & v_minor) {
-    BinaryArchive ar(path, BinaryArchive::Mode::Write);
+                          const std::string & v_major, const std::string & v_medium, const std::string & v_minor,
+                          bool atomic = true) {
+    BinaryArchive ar(path, BinaryArchive::Mode::Write, atomic);
     ar.write_header(T::binary_type_tag(), v_major, v_medium, v_minor);
     typename T::StateRes state = obj.get_state();
     archive_write_value(ar, state);

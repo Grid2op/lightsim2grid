@@ -60,9 +60,10 @@ Individual element containers work the same way:
     corrupted internal sizes (every count in the file is checked against the real file size *before*
     anything is allocated), files that contain an object of a different type (*eg* loading a
     ``LoadContainer`` file with ``StorageContainer.load_binary``), and files with unexpected trailing
-    bytes are all rejected. ``save_binary`` on the other hand is **atomic**: it writes to a temporary
-    file that only replaces the destination once fully written, so an interrupted save never destroys
-    a previously saved file. Note that the format stores raw native data: files are meant to be written
+    bytes are all rejected. ``save_binary`` on the other hand is **atomic by default**: it writes to a
+    temporary file that only replaces the destination once fully written, so an interrupted save never
+    destroys a previously saved file. Pass ``atomic=False`` to write the destination directly instead
+    (marginally faster -- it skips one temporary file and rename -- but without that protection). Note that the format stores raw native data: files are meant to be written
     and read by builds sharing the same data layout (same endianness, ``real_type``, ...) -- there is
     no checksum nor cross-platform migration, pickle remains the portable format.
 

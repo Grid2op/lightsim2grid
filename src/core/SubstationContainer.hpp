@@ -72,7 +72,7 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         void set_state(SubstationContainer::StateRes & my_state);
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
-        void save_binary(const std::string & path) const;
+        void save_binary(const std::string & path, bool atomic = true) const;
         static SubstationContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "SubstationContainer"; }  // written into / checked against the binary file header
 
