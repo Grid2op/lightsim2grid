@@ -358,9 +358,16 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
     succeeding when the layouts happen to match (*eg* `LoadContainer` vs
     `StorageContainer`).
   - trailing bytes after the end of the data are now rejected as corruption.
-  - `save_binary` is now **atomic**: it writes to a temporary file that only
-    replaces the destination once fully written, so an interrupted save (crash,
-    full disk, ...) never destroys a previously saved file.
+  - `save_binary` is now **atomic by default**: it writes to a temporary file
+    that only replaces the destination once fully written, so an interrupted
+    save (crash, full disk, ...) never destroys a previously saved file. Pass
+    `atomic=False` for the marginally faster direct write without that
+    protection.
+  - the integer values of the serialized enums (`AlgorithmType`,
+    `SvcContainer.RegulationMode`, `HvdcLineContainer.ConvertersMode`,
+    `ConverterStationInfo.ConverterType` -- the last three are now exposed to
+    python) are pinned by a test (`TestSerializedEnumValues`) that fails with
+    a "bump BINARY_FORMAT_VERSION" message if they are renumbered.
 - [FIXED] `LSGrid.save_binary`/`load_binary` (and pickle, which shares the same
   `LSGrid::get_state()`/`set_state()`/`StateRes` contract) silently dropped the
   per-solver `AlgoConfig` (scaling/refactor policy, line-search tolerances, etc. --

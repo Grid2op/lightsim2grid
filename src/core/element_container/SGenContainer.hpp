@@ -72,7 +72,7 @@ class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorA
         void set_state(SGenContainer::StateRes & my_state );
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
-        void save_binary(const std::string & path) const;
+        void save_binary(const std::string & path, bool atomic = true) const;
         static SGenContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "SGenContainer"; }  // written into / checked against the binary file header
         

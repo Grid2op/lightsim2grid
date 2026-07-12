@@ -65,6 +65,10 @@ class LS2G_API ConverterStationContainer : public OneSideContainer_PQ, public It
     public:
         using DataInfo = ConverterStationInfo;
 
+        // /!\ these integer values are serialized verbatim (binary files and
+        // pickles, as type_): renumbering requires bumping
+        // BINARY_FORMAT_VERSION (BinaryArchive.hpp). Guarded python side by
+        // TestSerializedEnumValues in test_binary_serialization.py.
         enum ConverterType {
             VSC = 0,
             LCC = 1

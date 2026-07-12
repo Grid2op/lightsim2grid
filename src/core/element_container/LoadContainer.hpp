@@ -64,7 +64,7 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
         void set_state(LoadContainer::StateRes & my_state);
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
-        void save_binary(const std::string & path) const;
+        void save_binary(const std::string & path, bool atomic = true) const;
         static LoadContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "LoadContainer"; }  // written into / checked against the binary file header
         

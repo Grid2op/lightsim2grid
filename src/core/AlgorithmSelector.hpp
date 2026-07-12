@@ -22,6 +22,12 @@
 
 namespace ls2g {
 
+// /!\ the integer values of this enum are serialized verbatim (binary
+// save_binary files and pickles, via LSGrid::StateRes): only APPEND new
+// members at the end (before Custom is NOT safe either: Custom's value
+// would shift). Renumbering existing members requires bumping
+// BINARY_FORMAT_VERSION (BinaryArchive.hpp). Guarded python side by
+// TestSerializedEnumValues in test_binary_serialization.py.
 enum class LS2G_API AlgorithmType {NR_SparseLU, NR_KLU, GaussSeidel, DC_SparseLU, GaussSeidelSynch, NR_NICSLU,
                        NRSing_SparseLU, NRSing_KLU, NRSing_NICSLU,
                        DC_KLU, DC_NICSLU,
