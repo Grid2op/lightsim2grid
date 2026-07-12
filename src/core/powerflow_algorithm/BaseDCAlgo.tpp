@@ -22,7 +22,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type
 {
     // V is used the following way: at pq buses it's completely ignored. For pv bus only the magnitude is used,
     //   and for the slack bus both the magnitude and the angle are used.
-
     if(!is_linear_solver_valid()) {
         return false;
     }
