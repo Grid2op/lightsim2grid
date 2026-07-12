@@ -413,6 +413,78 @@ class TestBinarySerialization(unittest.TestCase):
                 type(grid).load_binary(garbage_path)
 
 
+class TestCorruptionSweep(unittest.TestCase):
+    """Deterministic mini-fuzzer for load_binary: corrupt a valid file at
+    EVERY byte offset and check the loader never does anything worse than
+    raising a clean RuntimeError.
+
+    Loading a corrupted file has exactly two acceptable outcomes: success
+    (the corruption hit payload data and produced a different but structurally
+    valid grid) or RuntimeError (the corruption was detected). A segfault, a
+    MemoryError (a corrupted count being trusted before any bounds check) or
+    any other exception type is a bug in the reader. This test is most potent
+    in the ASan+UBSan CI job (.github/workflows/sanitizers.yml), where any
+    out-of-bounds read also becomes a hard failure even if it would not have
+    crashed a regular build.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
+        cls.grid_cls = type(env.backend._grid)
+        cls.tmpdir = tempfile.TemporaryDirectory()
+        path = os.path.join(cls.tmpdir.name, "sweep_reference.lsb")
+        env.backend._grid.save_binary(path)
+        with open(path, "rb") as f:
+            cls.data = f.read()
+        env.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmpdir.cleanup()
+
+    def _check_load(self, corrupted, description):
+        bad_path = os.path.join(self.tmpdir.name, "sweep_corrupted.lsb")
+        with open(bad_path, "wb") as f:
+            f.write(corrupted)
+        try:
+            self.grid_cls.load_binary(bad_path)
+        except RuntimeError:
+            pass  # corruption detected and rejected cleanly: fine
+        except BaseException as exc:
+            self.fail(f"{description}: load_binary raised {type(exc).__name__} "
+                      f"instead of RuntimeError: {exc}")
+
+    def test_single_byte_flips(self):
+        """Invert one byte at every offset of the file."""
+        for offset in range(len(self.data)):
+            corrupted = bytearray(self.data)
+            corrupted[offset] ^= 0xFF
+            self._check_load(bytes(corrupted), f"byte flip at offset {offset}")
+
+    def test_uint64_stamps(self):
+        """Stamp 8 bytes of 0xFF at every offset: turns any count/length
+        field it lands on into a huge value, the worst case for the
+        bounds-checked allocations."""
+        for offset in range(len(self.data) - 7):
+            corrupted = bytearray(self.data)
+            corrupted[offset:offset + 8] = b"\xff" * 8
+            self._check_load(bytes(corrupted), f"0xFF uint64 stamp at offset {offset}")
+
+    def test_truncations(self):
+        """Cut the file at every length: must always raise RuntimeError
+        (a strictly shorter file can never be a complete state)."""
+        for length in range(len(self.data)):
+            bad_path = os.path.join(self.tmpdir.name, "sweep_truncated.lsb")
+            with open(bad_path, "wb") as f:
+                f.write(self.data[:length])
+            with self.assertRaises(RuntimeError,
+                                   msg=f"no error for a file truncated at {length} bytes"):
+                self.grid_cls.load_binary(bad_path)
+
+
 class TestSerializedEnumValues(unittest.TestCase):
     """The integer values of these C++ enums are written verbatim into the
     binary files (and into pickles), so they are part of the serialized

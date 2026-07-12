@@ -47,15 +47,15 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     // TODO dev switches
 
     // assign data
-    sub_vn_kv_ = RealVect::Map(&sub_vn_kv[0], sub_vn_kv.size());
+    sub_vn_kv_ = RealVect::Map(sub_vn_kv.data(), sub_vn_kv.size());
     bus_status_ = bus_status;
-    bus_vn_kv_ = RealVect::Map(&bus_vn_kv[0], bus_vn_kv.size());
+    bus_vn_kv_ = RealVect::Map(bus_vn_kv.data(), bus_vn_kv.size());
     sub_names_ = std::get<5>(my_state);
 
     std::vector<real_type> & bus_vmin_kv = std::get<6>(my_state);
     std::vector<real_type> & bus_vmax_kv = std::get<7>(my_state);
-    bus_vmin_kv_ = bus_vmin_kv.empty() ? RealVect() : RealVect::Map(&bus_vmin_kv[0], bus_vmin_kv.size());
-    bus_vmax_kv_ = bus_vmax_kv.empty() ? RealVect() : RealVect::Map(&bus_vmax_kv[0], bus_vmax_kv.size());
+    bus_vmin_kv_ = bus_vmin_kv.empty() ? RealVect() : RealVect::Map(bus_vmin_kv.data(), bus_vmin_kv.size());
+    bus_vmax_kv_ = bus_vmax_kv.empty() ? RealVect() : RealVect::Map(bus_vmax_kv.data(), bus_vmax_kv.size());
 }
 
 void SubstationContainer::save_binary(const std::string & path, bool atomic) const {

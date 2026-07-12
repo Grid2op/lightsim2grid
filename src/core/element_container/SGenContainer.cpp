@@ -61,10 +61,10 @@ void SGenContainer::set_state(SGenContainer::StateRes & my_state )
     GenericContainer::check_size(q_min, size, "q_min");
     GenericContainer::check_size(q_max, size, "q_max");
 
-    p_min_mw_ = RealVect::Map(&p_min[0], size);
-    p_max_mw_ = RealVect::Map(&p_max[0], size);
-    q_min_mvar_ = RealVect::Map(&q_min[0], size);
-    q_max_mvar_ = RealVect::Map(&q_max[0], size);
+    p_min_mw_ = RealVect::Map(p_min.data(), size);
+    p_max_mw_ = RealVect::Map(p_max.data(), size);
+    q_min_mvar_ = RealVect::Map(q_min.data(), size);
+    q_max_mvar_ = RealVect::Map(q_max.data(), size);
     reset_results();
 }
 
