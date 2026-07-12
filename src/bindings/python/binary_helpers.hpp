@@ -15,10 +15,13 @@
 namespace py = pybind11;
 
 // Helper: attach save_binary()/load_binary() python methods to any container
-// that exposes get_state()/set_state() and a nested StateRes type (the same
-// contract used by add_pickle in pickle_helpers.hpp). This is an additive,
-// faster alternative to pickle -- NOT a replacement, and NOT cross-version
-// compatible (a version mismatch is a hard failure, see BinaryArchive.hpp).
+// that exposes get_state()/set_state(), a nested StateRes type (the same
+// contract used by add_pickle in pickle_helpers.hpp) and binary_type_tag().
+// This is an additive, faster alternative to pickle -- NOT a replacement.
+// Files are readable by any lightsim2grid version sharing the same
+// BINARY_FORMAT_VERSION (see BinaryArchive.hpp), and ill-formed input
+// (garbage, truncation, corrupted sizes, wrong object type, trailing bytes)
+// raises RuntimeError instead of crashing or over-allocating.
 //
 // These lambdas call ls2g::save_binary_generic/load_binary_generic directly
 // (rather than T::save_binary/T::load_binary): VERSION_MAJOR/MEDIUM/MINOR are
@@ -27,16 +30,23 @@ namespace py = pybind11;
 // unit where those macros carry the real version (mirrors pickle_helpers.hpp).
 template<typename T>
 void add_binary_serialization(py::class_<T>& cls) {
-    cls.def("save_binary", [](const T& obj, const std::string& path) {
-        ls2g::save_binary_generic(obj, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
-    }, py::arg("path"),
+    cls.def("save_binary", [](const T& obj, const std::string& path, bool atomic) {
+        ls2g::save_binary_generic(obj, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
+    }, py::arg("path"), py::arg("atomic") = true,
        "Save this object's state to a fast custom binary file (additive alternative "
-       "to pickle: faster, but NOT portable across lightsim2grid versions).");
+       "to pickle). By default (atomic=True) the write is atomic: an existing file "
+       "at that path is only replaced once the new content has been written "
+       "completely (an interrupted save never destroys a previous file). Pass "
+       "atomic=False to write the destination directly instead -- marginally faster "
+       "(skips one temporary file + rename), without that protection. The file stays "
+       "readable by any lightsim2grid version sharing the same binary format number.");
     cls.def_static("load_binary", [](const std::string& path) {
         return ls2g::load_binary_generic<T>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
     }, py::arg("path"),
        "Load an object previously saved with save_binary(). Raises RuntimeError on "
-       "a version mismatch or a corrupted / truncated file.");
+       "an incompatible binary format, a wrong object type, or a corrupted / "
+       "truncated file (including corrupted internal sizes: no attempt is made to "
+       "allocate more data than the file actually contains).");
 }
 
 #endif // BINARY_HELPERS_HPP

@@ -98,8 +98,8 @@ void SGenContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to
     }
 }
 
-void SGenContainer::save_binary(const std::string & path) const {
-    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+void SGenContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
 }
 
 SGenContainer SGenContainer::load_binary(const std::string & path) {

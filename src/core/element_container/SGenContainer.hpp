@@ -55,6 +55,7 @@ class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorA
         using DataInfo = SGenInfo;
 
     public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes,
            std::vector<real_type>, // p_min
@@ -71,8 +72,9 @@ class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorA
         void set_state(SGenContainer::StateRes & my_state );
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
-        void save_binary(const std::string & path) const;
+        void save_binary(const std::string & path, bool atomic = true) const;
         static SGenContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "SGenContainer"; }  // written into / checked against the binary file header
         
         
         void init(const RealVect & sgen_p,

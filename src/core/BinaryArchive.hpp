@@ -15,6 +15,29 @@
 // replace pickle: it trades portability for speed (no python-level
 // marshalling, raw contiguous writes for vector data).
 //
+// Robustness guarantees (all failures are std::runtime_error naming the
+// file, never a crash, a std::bad_alloc or an out-of-memory situation):
+//  - a magic number rejects files that are not lightsim2grid binary files;
+//  - a *binary format version* (see BINARY_FORMAT_VERSION below) decides
+//    compatibility across lightsim2grid releases;
+//  - a type tag rejects loading a file into the wrong class (eg a
+//    LoadContainer file into StorageContainer.load_binary, whose StateRes
+//    layouts are otherwise identical);
+//  - every count/length field read from the file is checked against the
+//    actual file size *before* any allocation, so a corrupted count cannot
+//    trigger a multi-gigabyte allocation;
+//  - after the state is fully read, the file must be fully consumed
+//    (trailing bytes are treated as corruption);
+//  - by default (atomic=true), writes go to a temporary file that is
+//    atomically renamed over the destination only on success, so a crash /
+//    full disk mid-save never destroys a previously good file; pass
+//    atomic=false to save_binary to skip the temporary file (marginally
+//    faster, no such protection).
+// NOT covered (possible future work): a payload checksum (bit flips inside
+// numeric data that keep all counts consistent load silently), and an
+// ABI descriptor (endianness / sizeof(real_type)): files are assumed to be
+// written and read by builds with the same data layout.
+//
 // C++14 only (see project policy, eg LSGrid.hpp): no `if constexpr`, no
 // `std::apply`, no fold expressions. The recursive walk over an arbitrary
 // StateRes tuple is done via partial-specialization of the `ValueArchiver`
@@ -37,15 +60,48 @@
 
 namespace ls2g {
 
+// Version of the binary *format* itself, decoupled from the lightsim2grid
+// package version: all lightsim2grid releases sharing the same format number
+// can read each other's binary files (most releases do not touch the
+// serialized layout at all). The lightsim2grid version that wrote a file is
+// still stored in its header, but only for diagnostics / error messages.
+//
+// >>> BUMP THIS NUMBER whenever anything about the serialized layout
+// >>> changes: any StateRes tuple (fields added / removed / reordered /
+// >>> retyped, in LSGrid or any container), or the encoding in this file.
+// A bumped format makes older files fail to load with a clear error instead
+// of being silently mis-read. If a future version wants to keep reading an
+// older format, add that format number to SUPPORTED_BINARY_FORMATS (in
+// BinaryArchive.cpp) together with the required migration code.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 1;
+
 class LS2G_API BinaryArchive
 {
     public:
         enum class Mode { Write, Read };
 
-        BinaryArchive(const std::string & path, Mode mode);
+        // Write mode: when `atomic_write` is true (the default) the data
+        // goes to a temporary file (path + ".lsb_tmp") that only replaces
+        // `path` when commit() is called after a fully successful write;
+        // when false, `path` is truncated and written directly (marginally
+        // faster -- skips one rename -- but an interrupted save leaves a
+        // truncated file at the destination, destroying any previous one).
+        // Read mode opens `path` directly and captures its size for the
+        // bounds checks below (`atomic_write` is ignored).
+        BinaryArchive(const std::string & path, Mode mode, bool atomic_write = true);
         ~BinaryArchive();
         BinaryArchive(const BinaryArchive &) = delete;
         BinaryArchive & operator=(const BinaryArchive &) = delete;
+
+        // Write mode only: flush + close the file; in atomic mode, then
+        // atomically rename the temporary file over the destination path.
+        // Throws std::runtime_error on any failure (in atomic mode the
+        // destination is left untouched in that case). If commit() is never
+        // called (eg an exception during the write), the destructor removes
+        // the temporary file in atomic mode and the destination keeps its
+        // previous content (in non-atomic mode the partial file remains,
+        // and is rejected at load time as truncated).
+        void commit();
 
         // low level: the only methods that touch the underlying stream.
         // Both throw std::runtime_error (including the file path) on any
@@ -54,22 +110,41 @@ class LS2G_API BinaryArchive
         void write_raw(const void * data, std::size_t nbytes);
         void read_raw(void * data, std::size_t nbytes);
 
-        // magic number ("LSB1"), to catch garbage files early
+        // magic number ("LSB2"), to catch garbage files early
         void write_magic();
         void check_magic();  // throws std::runtime_error on mismatch
 
-        // magic + 3 length-prefixed version strings. Version strings are
-        // passed in explicitly by the caller (never read from the
-        // VERSION_MAJOR/MEDIUM/MINOR macros in this shared header): those
-        // macros are only defined via target_compile_definitions on the
-        // python bindings target, not on lightsim2grid_core, so referencing
-        // them here would silently embed different values (even risk an ODR
-        // violation) depending on which translation unit instantiates this
-        // header first. Callers (each container's own .cpp, or
-        // binary_helpers.hpp on the bindings side) supply the macros
-        // themselves, each from a single, consistent translation unit.
-        void write_header(const std::string & v_major, const std::string & v_medium, const std::string & v_minor);
-        void check_header(const std::string & v_major, const std::string & v_medium, const std::string & v_minor);  // throws std::runtime_error on any mismatch
+        // Full header: magic, BINARY_FORMAT_VERSION (uint32), type tag
+        // (length-prefixed string, eg "LoadContainer"), then 3
+        // length-prefixed strings with the lightsim2grid version that wrote
+        // the file. This header layout is a stable contract across all
+        // binary format versions (so any version can at least *parse* the
+        // header of any file and produce a precise error message); only the
+        // state payload after the header is governed by the format number.
+        //
+        // check_header() throws std::runtime_error when the file's format
+        // version is not supported by this build, or when the type tag does
+        // not match. The writer version strings are NOT compared: two
+        // different lightsim2grid versions sharing the same binary format
+        // read each other's files.
+        //
+        // Version strings are passed in explicitly by the caller (never read
+        // from the VERSION_MAJOR/MEDIUM/MINOR macros in this shared header):
+        // those macros are only defined via target_compile_definitions on
+        // the python bindings target, not on lightsim2grid_core, so
+        // referencing them here would silently embed different values (even
+        // risk an ODR violation) depending on which translation unit
+        // instantiates this header first. Callers (each container's own
+        // .cpp, or binary_helpers.hpp on the bindings side) supply the
+        // macros themselves, each from a single, consistent translation unit.
+        void write_header(const std::string & type_tag,
+                          const std::string & v_major, const std::string & v_medium, const std::string & v_minor);
+        void check_header(const std::string & type_tag,
+                          const std::string & v_major, const std::string & v_medium, const std::string & v_minor);
+
+        // Read mode only: throws std::runtime_error if the whole file has
+        // not been consumed (trailing bytes = corrupted / wrong file).
+        void check_fully_consumed();
 
         void write_string(const std::string & s);
         void read_string(std::string & s);
@@ -103,15 +178,30 @@ class LS2G_API BinaryArchive
         void read_vector_raw(std::vector<T> & v) {
             std::uint64_t n = 0;
             read_scalar(n);
+            // reject a corrupted count before allocating anything
+            require_count(n, sizeof(T));
             v.resize(static_cast<std::size_t>(n));
             if (n) read_raw(v.data(), static_cast<std::size_t>(n) * sizeof(T));
         }
 
+        // Read mode: throws std::runtime_error if the file does not contain
+        // at least `count * elem_size` more bytes after the current read
+        // position (overflow-safe: does the check by division). Called
+        // before every count-driven allocation so ill-formed counts turn
+        // into clean errors instead of std::bad_alloc / OOM.
+        void require_count(std::uint64_t count, std::uint64_t elem_size);
+
     private:
+        std::uint64_t remaining_bytes();  // read mode: bytes after the current position
+
         std::ofstream ofs_;
         std::ifstream ifs_;
         Mode mode_;
         std::string path_;
+        bool atomic_write_;            // write mode: write to temp file + rename on commit()
+        std::string tmp_path_;         // write mode, atomic: temporary file actually written
+        bool committed_;               // write mode: commit() completed
+        std::uint64_t file_size_;      // read mode: total size of the file
 };
 
 namespace archive_detail {
@@ -150,9 +240,10 @@ struct ValueArchiver<T, typename std::enable_if<std::is_arithmetic<T>::value>::t
 };
 
 // cplx_type (std::complex<real_type>), standard-guaranteed layout
-// compatible with real_type[2] -- safe as a raw scalar for a same-build
-// round trip (no cross-platform guarantee needed, consistent with the
-// hard version-mismatch policy below).
+// compatible with real_type[2] -- safe as a raw scalar for a same-layout
+// round trip (no cross-platform guarantee needed: the binary format is
+// only supported on builds sharing the same data layout, see the
+// robustness notes at the top of this file).
 template<>
 struct ValueArchiver<cplx_type> {
     static void write(BinaryArchive & ar, const cplx_type & v) { ar.write_scalar(v); }
@@ -197,6 +288,8 @@ struct ValueArchiver<std::vector<std::vector<T> > > {
     static void read(BinaryArchive & ar, std::vector<std::vector<T> > & v) {
         std::uint64_t n = 0;
         ar.read_scalar(n);
+        // each inner vector takes at least its own 8-byte count
+        ar.require_count(n, sizeof(std::uint64_t));
         v.resize(static_cast<std::size_t>(n));
         for (auto & inner : v) ValueArchiver<std::vector<T> >::read(ar, inner);
     }
@@ -232,6 +325,24 @@ struct ValueArchiver<Tuple, typename std::enable_if<is_tuple_like<Tuple>::value>
     }
 };
 
+// ---- optional per-class fixup applied after a state has been read from a
+// binary file, before set_state(). Detected via the standard C++14
+// detection idiom: a class opting in declares
+//     static void fixup_binary_state(StateRes & state);
+// Today only LSGrid uses it (its StateRes embeds the writing build's
+// version strings, which its pickle-shared set_state() checks against the
+// *current* build -- fine for pickle, but it would wrongly reject a
+// cross-version binary load that the format number allows, so the fixup
+// rewrites those fields to the current build's values).
+template<typename T, typename = void>
+struct BinaryLoadFixup {
+    static void apply(typename T::StateRes &) {}
+};
+template<typename T>
+struct BinaryLoadFixup<T, void_t<decltype(T::fixup_binary_state(std::declval<typename T::StateRes &>()))> > {
+    static void apply(typename T::StateRes & state) { T::fixup_binary_state(state); }
+};
+
 }  // namespace archive_detail
 
 // Public entry points into the dispatcher above.
@@ -247,23 +358,29 @@ void archive_read_value(BinaryArchive & ar, T & v) {
 // Top-level helpers reused by every serializable class's save_binary()/
 // load_binary() (LSGrid + every element container with its own StateRes) --
 // the single shared implementation the per-class methods delegate to, so
-// none of them duplicate any serialization logic.
+// none of them duplicate any serialization logic. T must additionally
+// expose `static const char * binary_type_tag()` (its class name), written
+// into / checked against the file header.
 template<typename T>
 void save_binary_generic(const T & obj, const std::string & path,
-                          const std::string & v_major, const std::string & v_medium, const std::string & v_minor) {
-    BinaryArchive ar(path, BinaryArchive::Mode::Write);
-    ar.write_header(v_major, v_medium, v_minor);
+                          const std::string & v_major, const std::string & v_medium, const std::string & v_minor,
+                          bool atomic = true) {
+    BinaryArchive ar(path, BinaryArchive::Mode::Write, atomic);
+    ar.write_header(T::binary_type_tag(), v_major, v_medium, v_minor);
     typename T::StateRes state = obj.get_state();
     archive_write_value(ar, state);
+    ar.commit();
 }
 
 template<typename T>
 T load_binary_generic(const std::string & path,
                        const std::string & v_major, const std::string & v_medium, const std::string & v_minor) {
     BinaryArchive ar(path, BinaryArchive::Mode::Read);
-    ar.check_header(v_major, v_medium, v_minor);
+    ar.check_header(T::binary_type_tag(), v_major, v_medium, v_minor);
     typename T::StateRes state{};
     archive_read_value(ar, state);
+    ar.check_fully_consumed();
+    archive_detail::BinaryLoadFixup<T>::apply(state);
     T res{};
     res.set_state(state);
     return res;

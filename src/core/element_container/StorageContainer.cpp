@@ -61,8 +61,8 @@ void StorageContainer::fillSbus(CplxVect & Sbus,
     }
 }
 
-void StorageContainer::save_binary(const std::string & path) const {
-    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+void StorageContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
 }
 
 StorageContainer StorageContainer::load_binary(const std::string & path) {
