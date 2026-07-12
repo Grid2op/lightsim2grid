@@ -18,18 +18,9 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         int max_iter,
         real_type tol)
 {
-    if (Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols()) {
-        std::ostringstream exc_;
-        exc_ << "NRAlgo::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
-        exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.cols() << ").";
-        throw std::runtime_error(exc_.str());
-    }
-    if (V.size() != Ybus.rows() || V.size() != Ybus.cols()) {
-        std::ostringstream exc_;
-        exc_ << "NRAlgo::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
-        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.cols() << ").";
-        throw std::runtime_error(exc_.str());
-    }
+    BaseAlgo::check_pf_inputs("NRAlgo::compute_pf", Ybus.rows(), Ybus.cols(),
+                              V.size(), Sbus.size(), slack_ids, slack_weights, pv, pq);
+    BaseAlgo::check_iter_tol("NRAlgo::compute_pf", max_iter, tol);
     if (!is_linear_solver_valid()) return false;
 
     reset_timer();
