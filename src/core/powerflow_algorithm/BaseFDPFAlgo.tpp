@@ -25,9 +25,6 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
     of the system.
     If the Ybus matrix changed, please uses the appropriate method to recomptue it!
     **/
-    BaseAlgo::check_pf_inputs("BaseFDPFAlgo::compute_pf", Ybus.rows(), Ybus.cols(),
-                              V.size(), Sbus.size(), slack_ids, slack_weights, pv, pq);
-    BaseAlgo::check_iter_tol("BaseFDPFAlgo::compute_pf", max_iter, tol);
     reset_timer();
     if(!is_linear_solver_valid()) return false;
     if(_solver_control.need_reset_solver() || 
