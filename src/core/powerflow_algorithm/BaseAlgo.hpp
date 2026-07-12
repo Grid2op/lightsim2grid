@@ -115,7 +115,12 @@ class LS2G_API BaseAlgo : public BaseConstants
                                     Eigen::Ref<const IntVect> pv,
                                     Eigen::Ref<const IntVect> pq);
 
-        // Throws std::runtime_error unless max_iter > 0 and tol is a finite
+        // Throws std::runtime_error unless max_iter >= 0 (0 is a legitimate,
+        // well-defined call: every solver builds its initial state / first
+        // Jacobian before the iteration loop, so max_iter=0 deliberately
+        // returns that pre-iteration state without taking any NR/GS step --
+        // used eg by test_jacobian.py to check J iteration-by-iteration; only
+        // negative values are nonsensical) and tol is a finite
         // strictly positive number (NaN and infinity are rejected). AC only:
         // DC is a single linear solve without iterations / tolerance.
         static void check_iter_tol(const std::string & caller, int max_iter, real_type tol);

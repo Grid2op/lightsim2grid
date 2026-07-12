@@ -97,7 +97,8 @@ const std::string DocSolver::compute_pf = R"mydelimiter(
         This python-facing method (also available as ``solve``) validates its inputs before doing
         anything else: a non-square ``Ybus``, a size mismatch between ``Ybus`` / ``V`` / ``Sbus`` /
         ``slack_weights``, an out-of-range id in ``slack_ids`` / ``pv`` / ``pq``, a bus listed in more
-        than one of them, an empty ``slack_ids``, or a non-positive ``max_iter`` / non-finite or
+        than one of them, an empty ``slack_ids``, a negative ``max_iter`` (0 is accepted: it returns
+        the pre-iteration state, before any Newton-Raphson / Gauss-Seidel step), or a non-finite or
         non-positive ``tol`` all raise a clean ``RuntimeError`` (or ``IndexError`` for out-of-range
         ids) instead of touching the underlying solver. This validation is skipped on the internal
         C++ code path used by :class:`lightsim2grid.gridmodel.LSGrid` and the batch solvers
