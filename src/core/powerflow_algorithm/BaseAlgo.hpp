@@ -86,6 +86,34 @@ class LS2G_API BaseAlgo : public BaseConstants
             lsgrid_ptr_ = gridmodel;
         }
 
+        // ---- input validation shared by every solver entry point ----
+        // Called at the top of each compute_pf / compute_pf_dc override so
+        // ill-formed inputs (from python via Solver.solve / compute_pf, or
+        // from a buggy C++ caller) raise a clean exception instead of
+        // reaching raw Eigen indexing (whose bounds asserts are compiled out
+        // in release builds). One O(n) pass, negligible vs the solve itself.
+        //
+        // Throws std::runtime_error for structural problems: non-square
+        // Ybus, V / Sbus (or Pbus) / slack_weights not of size n (the
+        // slack weights are indexed *by bus id*, see eg SlackPolicies.tpp),
+        // no slack bus at all, or a bus listed twice / in more than one of
+        // slack_ids / pv / pq.
+        // Throws std::out_of_range (python IndexError) for any id of
+        // slack_ids / pv / pq outside [0, n).
+        // `caller` names the solver in the error message (eg "NRAlgo::compute_pf").
+        static void check_pf_inputs(const std::string & caller,
+                                    Eigen::Index ybus_rows, Eigen::Index ybus_cols,
+                                    Eigen::Index v_size, Eigen::Index sbus_size,
+                                    Eigen::Ref<const IntVect> slack_ids,
+                                    const RealVect & slack_weights,
+                                    Eigen::Ref<const IntVect> pv,
+                                    Eigen::Ref<const IntVect> pq);
+
+        // Throws std::runtime_error unless max_iter > 0 and tol is a finite
+        // strictly positive number (NaN and infinity are rejected). AC only:
+        // DC is a single linear solve without iterations / tolerance.
+        static void check_iter_tol(const std::string & caller, int max_iter, real_type tol);
+
         virtual Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const {
             throw std::runtime_error("AlgorithmSelector::get_J: There is not Jacobian matrix for this solver type.");
         }
