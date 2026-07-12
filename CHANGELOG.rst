@@ -364,6 +364,21 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   documentation page and `benchmarks/benchmark_binary_serialization.py` for speed
   comparisons against pickle (the speed up grows with grid size: up to ~17x faster to
   write and ~8x faster to read than pickle on grids with ~9000 buses).
+- [IMPROVED] robustness of the powerflow entry points against ill-formed input:
+  `LSGrid.ac_pf` / `LSGrid.dc_pf` now validate `max_iter` (> 0) and `tol`
+  (finite and > 0) in addition to the size of `Vinit`, and every solver's
+  `compute_pf` / `solve` (Newton-Raphson, single-slack, fast-decoupled,
+  Gauss-Seidel, DC -- shared `BaseAlgo::check_pf_inputs`) now validates its
+  inputs before touching them: non-square `Ybus`, `V` / `Sbus` /
+  `slack_weights` not matching the size of `Ybus`, empty `slack_ids` and
+  non-positive / non-finite `max_iter` / `tol` raise `RuntimeError`;
+  out-of-range or negative bus ids in `pv` / `pq` / `slack_ids` raise
+  `IndexError` (previously they reached raw Eigen indexing: out-of-bounds
+  reads/writes in Release builds); a bus listed in more than one of
+  slack/pv/pq (or twice in the same one) raises `RuntimeError` instead of
+  silently producing a wrong system. Tested by the new
+  `lightsim2grid/tests/test_pf_input_robustness.py` for every solver class
+  available in the build.
 - [IMPROVED] robustness of `save_binary` / `load_binary` against ill-formed input:
 
   - version compatibility is now decided by a dedicated **binary format version**
