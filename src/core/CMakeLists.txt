@@ -254,6 +254,24 @@ else()
     option(USE_O3_OPTIM "Enable O3 optimization" ON)
 endif()
 
+# CI hardening builds (see .github/workflows/sanitizers.yml), not meant for
+# distributed wheels. __SANITIZE=1 compiles with ASan+UBSan; __DEBUG_ASSERTS=1
+# re-enables the assertions Release builds silence with NDEBUG (Eigen bounds
+# checks) plus the ABI-safe libstdc++ hardening checks.
+set(ENV_SANITIZE "$ENV{__SANITIZE}")
+if(ENV_SANITIZE STREQUAL "1" OR ENV_SANITIZE STREQUAL "True")
+    option(USE_SANITIZERS "Compile with AddressSanitizer + UBSan" ON)
+else()
+    option(USE_SANITIZERS "Compile with AddressSanitizer + UBSan" OFF)
+endif()
+
+set(ENV_DEBUG_ASSERTS "$ENV{__DEBUG_ASSERTS}")
+if(ENV_DEBUG_ASSERTS STREQUAL "1" OR ENV_DEBUG_ASSERTS STREQUAL "True")
+    option(USE_DEBUG_ASSERTS "Re-enable NDEBUG-silenced assertions (Eigen bounds checks, _GLIBCXX_ASSERTIONS)" ON)
+else()
+    option(USE_DEBUG_ASSERTS "Re-enable NDEBUG-silenced assertions (Eigen bounds checks, _GLIBCXX_ASSERTIONS)" OFF)
+endif()
+
 
 # =============================================================================
 # Core library sources
@@ -361,6 +379,18 @@ if(NOT MSVC)
     endif()
     if(USE_MARCH_NATIVE)
         target_compile_options(lightsim2grid_core PRIVATE -march=native)
+    endif()
+    if(USE_SANITIZERS)
+        # placed after the -O3 block on purpose: the later -O1 wins, keeping
+        # ASan stack traces / line info usable
+        target_compile_options(lightsim2grid_core PRIVATE
+            -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1)
+        target_link_options(lightsim2grid_core PRIVATE -fsanitize=address,undefined)
+    endif()
+    if(USE_DEBUG_ASSERTS)
+        # -UNDEBUG comes after CMAKE_CXX_FLAGS_RELEASE's -DNDEBUG on the
+        # command line, so Eigen's bounds assertions come back to life
+        target_compile_options(lightsim2grid_core PRIVATE -UNDEBUG -D_GLIBCXX_ASSERTIONS)
     endif()
 else()
     if(USE_O3_OPTIM)
