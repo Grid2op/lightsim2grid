@@ -93,12 +93,19 @@ const std::string DocSolver::compute_pf = R"mydelimiter(
 
     see section :ref:`available-powerflow-solvers` for more information about these. 
 
-    .. warning::
-        There are strong assumption made on the validity of the parameters provided. Please have a look at the section :ref:`available-powerflow-solvers`
-        for more details about this.
-
-        If a non compliant state is provided, it might result in crash of the python virtual machine (session terminates with error like 
-        `segfault`) and there is absolutely no way to do anything and any data not saved on the hard drive will be lost.
+    .. note::
+        This python-facing method (also available as ``solve``) validates its inputs before doing
+        anything else: a non-square ``Ybus``, a size mismatch between ``Ybus`` / ``V`` / ``Sbus`` /
+        ``slack_weights``, an out-of-range id in ``slack_ids`` / ``pv`` / ``pq``, a bus listed in more
+        than one of them, an empty ``slack_ids``, a negative ``max_iter`` (0 is accepted: it returns
+        the pre-iteration state, before any Newton-Raphson / Gauss-Seidel step), or a non-finite or
+        non-positive ``tol`` all raise a clean ``RuntimeError`` (or ``IndexError`` for out-of-range
+        ids) instead of touching the underlying solver. This validation is skipped on the internal
+        C++ code path used by :class:`lightsim2grid.gridmodel.LSGrid` and the batch solvers
+        (:class:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysis`,
+        :class:`~lightsim2grid.timeSerie.TimeSerie`, security analysis), which build these arrays
+        themselves and call the solver many times in a loop: paying this check on every call there
+        would be pure overhead, so it is only performed at this python entry point.
 
     Parameters
     ------------
