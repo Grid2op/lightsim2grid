@@ -94,6 +94,10 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
     public:
         using DataInfo = HvdcLineInfo;
 
+        // /!\ these integer values are serialized verbatim (binary files and
+        // pickles, as converters_mode_): renumbering requires bumping
+        // BINARY_FORMAT_VERSION (BinaryArchive.hpp). Guarded python side by
+        // TestSerializedEnumValues in test_binary_serialization.py.
         enum ConvertersMode {
             SIDE_1_RECTIFIER = 0,
             SIDE_2_RECTIFIER = 1
@@ -109,6 +113,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         virtual ~HvdcLineContainer() noexcept = default;
 
         // pickle
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
                 TwoSidesContainer<ConverterStationContainer>::StateRes,
                 std::vector<real_type>, // loss_percent_
@@ -146,8 +151,9 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         void set_state(HvdcLineContainer::StateRes & my_state);
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
-        void save_binary(const std::string & path) const;
+        void save_binary(const std::string & path, bool atomic = true) const;
         static HvdcLineContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "HvdcLineContainer"; }  // written into / checked against the binary file header
 
         /**
          * Full IIDM-style initialization (used by the pypowsybl converter and
