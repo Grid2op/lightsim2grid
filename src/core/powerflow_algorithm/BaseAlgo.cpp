@@ -110,6 +110,37 @@ void BaseAlgo::check_iter_tol(const std::string & caller, int max_iter, real_typ
     }
 }
 
+bool BaseAlgo::compute_pf_with_input_validation(
+    const Eigen::SparseMatrix<cplx_type> & Ybus,
+    CplxVect & V,
+    const CplxVect & Sbus,
+    Eigen::Ref<const IntVect> slack_ids,
+    const RealVect & slack_weights,
+    Eigen::Ref<const IntVect> pv,
+    Eigen::Ref<const IntVect> pq,
+    int max_iter,
+    real_type tol)
+{
+    check_pf_inputs("compute_pf", Ybus.rows(), Ybus.cols(), V.size(), Sbus.size(),
+                    slack_ids, slack_weights, pv, pq);
+    check_iter_tol("compute_pf", max_iter, tol);
+    return compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
+}
+
+bool BaseAlgo::compute_pf_dc_with_input_validation(
+    const Eigen::SparseMatrix<real_type> & Bbus,
+    CplxVect & V,
+    const RealVect & Pbus,
+    Eigen::Ref<const IntVect> slack_ids,
+    const RealVect & slack_weights,
+    Eigen::Ref<const IntVect> pv,
+    Eigen::Ref<const IntVect> pq)
+{
+    check_pf_inputs("compute_pf_dc", Bbus.rows(), Bbus.cols(), V.size(), Pbus.size(),
+                    slack_ids, slack_weights, pv, pq);
+    return compute_pf_dc(Bbus, V, Pbus, slack_ids, slack_weights, pv, pq);
+}
+
 void BaseAlgo::reset(){
     // reset timers
     reset_timer();

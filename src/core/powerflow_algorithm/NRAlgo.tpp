@@ -18,9 +18,6 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         int max_iter,
         real_type tol)
 {
-    BaseAlgo::check_pf_inputs("NRAlgo::compute_pf", Ybus.rows(), Ybus.cols(),
-                              V.size(), Sbus.size(), slack_ids, slack_weights, pv, pq);
-    BaseAlgo::check_iter_tol("NRAlgo::compute_pf", max_iter, tol);
     if (!is_linear_solver_valid()) return false;
 
     reset_timer();
