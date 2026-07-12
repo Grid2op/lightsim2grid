@@ -14,13 +14,16 @@ bool GaussSeidelAlgo::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
                                    const CplxVect & Sbus,
                                    Eigen::Ref<const IntVect> slack_ids,
-                                   const RealVect & /*slack_weights*/,  // currently unused
+                                   const RealVect & slack_weights,  // only validated, otherwise unused
                                    Eigen::Ref<const IntVect> pv,
                                    Eigen::Ref<const IntVect> pq,
                                    int max_iter,
                                    real_type tol
                                    )
 {
+    BaseAlgo::check_pf_inputs("GaussSeidelAlgo::compute_pf", Ybus.rows(), Ybus.cols(),
+                              V.size(), Sbus.size(), slack_ids, slack_weights, pv, pq);
+    BaseAlgo::check_iter_tol("GaussSeidelAlgo::compute_pf", max_iter, tol);
     /**
     pv: id of the pv buses
     pq: id of the pq buses

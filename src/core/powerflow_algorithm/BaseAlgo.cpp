@@ -9,8 +9,106 @@
 #include "BaseAlgo.hpp"
 #include "LSGrid.hpp"  // needs to be included here because of the forward declaration
 
+#include <cmath>    // std::isfinite
+#include <sstream>
+
 namespace ls2g {
 
+namespace {
+
+// bounds + duplicate / overlap check for one of slack_ids / pv / pq.
+// `marks` holds, for each bus, 0 (unseen) or the 1-based index into
+// `array_names` of the array that already claimed it.
+void check_bus_id_array(const std::string & caller,
+                        Eigen::Ref<const IntVect> ids,
+                        Eigen::Index n,
+                        std::vector<char> & marks,
+                        int array_code,
+                        const char * const array_names[])
+{
+    const char * name = array_names[array_code - 1];
+    for (Eigen::Index i = 0; i < ids.size(); ++i) {
+        const int id = ids(i);
+        if (id < 0 || id >= n) {
+            std::ostringstream exc_;
+            exc_ << caller << ": " << name << "[" << i << "] = " << id
+                 << " is out of bounds: bus ids must be in [0, " << n
+                 << ") (n = size of Ybus).";
+            throw std::out_of_range(exc_.str());
+        }
+        if (marks[static_cast<std::size_t>(id)] != 0) {
+            const char * first = array_names[marks[static_cast<std::size_t>(id)] - 1];
+            std::ostringstream exc_;
+            exc_ << caller << ": bus id " << id << " appears both in " << first
+                 << " and in " << name
+                 << " (or twice in the same one): slack_ids, pv and pq must be disjoint.";
+            throw std::runtime_error(exc_.str());
+        }
+        marks[static_cast<std::size_t>(id)] = static_cast<char>(array_code);
+    }
+}
+
+}  // anonymous namespace
+
+void BaseAlgo::check_pf_inputs(const std::string & caller,
+                               Eigen::Index ybus_rows, Eigen::Index ybus_cols,
+                               Eigen::Index v_size, Eigen::Index sbus_size,
+                               Eigen::Ref<const IntVect> slack_ids,
+                               const RealVect & slack_weights,
+                               Eigen::Ref<const IntVect> pv,
+                               Eigen::Ref<const IntVect> pq)
+{
+    if (ybus_rows != ybus_cols) {
+        std::ostringstream exc_;
+        exc_ << caller << ": the Ybus matrix must be square. Currently: ("
+             << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    const Eigen::Index n = ybus_rows;
+    if (sbus_size != n) {
+        std::ostringstream exc_;
+        exc_ << caller << ": Size of the Sbus (or Pbus) vector should be the same as the size of Ybus. Currently: "
+             << "Sbus (" << sbus_size << ") and Ybus (" << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    if (v_size != n) {
+        std::ostringstream exc_;
+        exc_ << caller << ": Size of V (init voltages) should be the same as the size of Ybus. Currently: "
+             << "V (" << v_size << ") and Ybus (" << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    if (slack_weights.size() != n) {
+        std::ostringstream exc_;
+        exc_ << caller << ": Size of slack_weights should be the same as the size of Ybus "
+             << "(one weight per bus, indexed by bus id). Currently: slack_weights ("
+             << slack_weights.size() << ") and Ybus (" << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    if (slack_ids.size() == 0) {
+        std::ostringstream exc_;
+        exc_ << caller << ": at least one slack bus is required (slack_ids is empty).";
+        throw std::runtime_error(exc_.str());
+    }
+    static const char * const array_names[] = {"slack_ids", "pv", "pq"};
+    std::vector<char> marks(static_cast<std::size_t>(n), 0);
+    check_bus_id_array(caller, slack_ids, n, marks, 1, array_names);
+    check_bus_id_array(caller, pv, n, marks, 2, array_names);
+    check_bus_id_array(caller, pq, n, marks, 3, array_names);
+}
+
+void BaseAlgo::check_iter_tol(const std::string & caller, int max_iter, real_type tol)
+{
+    if (max_iter <= 0) {
+        std::ostringstream exc_;
+        exc_ << caller << ": max_iter must be a strictly positive integer, got " << max_iter << ".";
+        throw std::runtime_error(exc_.str());
+    }
+    if (!std::isfinite(tol) || !(tol > 0.)) {
+        std::ostringstream exc_;
+        exc_ << caller << ": tol must be a finite, strictly positive number, got " << tol << ".";
+        throw std::runtime_error(exc_.str());
+    }
+}
 
 void BaseAlgo::reset(){
     // reset timers
