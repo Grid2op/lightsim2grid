@@ -360,13 +360,39 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   container that has its own state (*eg* `gridmodel.get_loads().save_binary(...)`),
   mirroring what is already picklable. This is **not** a replacement for pickle: it
   trades portability for speed, meant for repeatedly re-loading the *same* grid on the
-  *same* machine / lightsim2grid build. **NB** as with pickle, a file can only be
-  reloaded with the exact same lightsim2grid version it was saved with; a version
-  mismatch or a corrupted / truncated file raises a `RuntimeError` (no cross-version
-  migration is attempted). See the new "Fast binary serialization" documentation page
-  and `benchmarks/benchmark_binary_serialization.py` for speed comparisons against
-  pickle (the speed up grows with grid size: up to ~17x faster to write and ~8x faster
-  to read than pickle on grids with ~9000 buses).
+  *same* machine / lightsim2grid build. See the new "Fast binary serialization"
+  documentation page and `benchmarks/benchmark_binary_serialization.py` for speed
+  comparisons against pickle (the speed up grows with grid size: up to ~17x faster to
+  write and ~8x faster to read than pickle on grids with ~9000 buses).
+- [IMPROVED] robustness of `save_binary` / `load_binary` against ill-formed input:
+
+  - version compatibility is now decided by a dedicated **binary format version**
+    (`BINARY_FORMAT_VERSION` in `src/core/BinaryArchive.hpp`, stored in the file
+    header) instead of requiring the exact same lightsim2grid version: the format
+    number is only bumped when the serialized layout changes, so all lightsim2grid
+    versions sharing the same format number read each other's files. An unsupported
+    format raises a `RuntimeError` naming both versions and format numbers. A
+    committed reference file (`lightsim2grid/tests/binary_format_fixture/`) guards
+    against layout changes made without bumping the format number.
+  - every count / length field read from a file is now validated against the real
+    file size *before* any allocation: a corrupted count raises a clean
+    `RuntimeError` instead of a `MemoryError` (or worse, an actual multi-gigabyte
+    allocation).
+  - the file header now stores the **object type** (*eg* `"LoadContainer"`):
+    loading a file into the wrong class raises a `RuntimeError` instead of silently
+    succeeding when the layouts happen to match (*eg* `LoadContainer` vs
+    `StorageContainer`).
+  - trailing bytes after the end of the data are now rejected as corruption.
+  - `save_binary` is now **atomic by default**: it writes to a temporary file
+    that only replaces the destination once fully written, so an interrupted
+    save (crash, full disk, ...) never destroys a previously saved file. Pass
+    `atomic=False` for the marginally faster direct write without that
+    protection.
+  - the integer values of the serialized enums (`AlgorithmType`,
+    `SvcContainer.RegulationMode`, `HvdcLineContainer.ConvertersMode`,
+    `ConverterStationInfo.ConverterType` -- the last three are now exposed to
+    python) are pinned by a test (`TestSerializedEnumValues`) that fails with
+    a "bump BINARY_FORMAT_VERSION" message if they are renumbered.
 - [FIXED] `LSGrid.save_binary`/`load_binary` (and pickle, which shares the same
   `LSGrid::get_state()`/`set_state()`/`StateRes` contract) silently dropped the
   per-solver `AlgoConfig` (scaling/refactor policy, line-search tolerances, etc. --

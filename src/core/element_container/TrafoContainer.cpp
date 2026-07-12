@@ -336,8 +336,8 @@ TrafoContainer::FDPFCoeffs TrafoContainer::get_fdpf_coeffs(int tr_id, FDPFMethod
     return res;
 }
 
-void TrafoContainer::save_binary(const std::string & path) const {
-    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+void TrafoContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
 }
 
 TrafoContainer TrafoContainer::load_binary(const std::string & path) {

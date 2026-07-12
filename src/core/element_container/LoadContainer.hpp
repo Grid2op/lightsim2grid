@@ -51,6 +51,7 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
 
     // regular implementation
     public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes  // state of the base class 
            > ;
@@ -63,8 +64,9 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
         void set_state(LoadContainer::StateRes & my_state);
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
-        void save_binary(const std::string & path) const;
+        void save_binary(const std::string & path, bool atomic = true) const;
         static LoadContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "LoadContainer"; }  // written into / checked against the binary file header
         
         void init(const RealVect & load_p_mw,
                   const RealVect & load_q_mvar,

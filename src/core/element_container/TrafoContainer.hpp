@@ -67,6 +67,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         using DataInfo = TrafoInfo;
 
     public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
                    TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes,
                    std::vector<real_type>, // ratio_
@@ -111,8 +112,9 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         void set_state(StateRes & my_state );
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
-        void save_binary(const std::string & path) const;
+        void save_binary(const std::string & path, bool atomic = true) const;
         static TrafoContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "TrafoContainer"; }  // written into / checked against the binary file header
 
         bool ignore_tap_side_for_shift() const { return ignore_tap_side_for_shift_; }
 
