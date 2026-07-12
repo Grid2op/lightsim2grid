@@ -59,6 +59,10 @@ class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<S
     public:
         using DataInfo = SvcInfo;
 
+        // /!\ these integer values are serialized verbatim (binary files and
+        // pickles, as regulation_mode_): renumbering requires bumping
+        // BINARY_FORMAT_VERSION (BinaryArchive.hpp). Guarded python side by
+        // TestSerializedEnumValues in test_binary_serialization.py.
         enum RegulationMode {
             OFF = 0,
             VOLTAGE = 1,
@@ -106,7 +110,7 @@ class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<S
         void set_state(SvcContainer::StateRes & my_state);
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
-        void save_binary(const std::string & path) const;
+        void save_binary(const std::string & path, bool atomic = true) const;
         static SvcContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "SvcContainer"; }  // written into / checked against the binary file header
 

@@ -65,6 +65,12 @@ void bind_containers(py::module_& m) {
             }, py::keep_alive<0, 1>());
     add_pickle(svc_cls, "SvcContainer");
     add_binary_serialization(svc_cls);
+    // exposed (also) so TestSerializedEnumValues can pin the integer values,
+    // which are serialized verbatim in binary files and pickles
+    py::enum_<SvcContainer::RegulationMode>(svc_cls, "RegulationMode", "Regulation mode of an SVC (values follow the IIDM model of powsybl)")
+        .value("OFF", SvcContainer::RegulationMode::OFF)
+        .value("VOLTAGE", SvcContainer::RegulationMode::VOLTAGE)
+        .value("REACTIVE_POWER", SvcContainer::RegulationMode::REACTIVE_POWER);
 
     py::class_<SvcInfo>(m, "SvcInfo", "Information about one Static Var Compensator (SVC).")
         .def_readonly("id", &SvcInfo::id, DocIterator::id.c_str())
@@ -323,7 +329,13 @@ void bind_containers(py::module_& m) {
         .def_readonly("voltage_level1_id", &LineInfo::sub_1_id, DocIterator::sub_id.c_str())
         .def_readonly("voltage_level2_id", &LineInfo::sub_2_id, DocIterator::sub_id.c_str());
 
-    py::class_<ConverterStationInfo>(m, "ConverterStationInfo", "Information about one hvdc converter station (VSC or LCC)")
+    auto cs_info_cls = py::class_<ConverterStationInfo>(m, "ConverterStationInfo", "Information about one hvdc converter station (VSC or LCC)");
+    // exposed (also) so TestSerializedEnumValues can pin the integer values,
+    // which are serialized verbatim in binary files and pickles
+    py::enum_<ConverterStationContainer::ConverterType>(cs_info_cls, "ConverterType", "Type of an hvdc converter station")
+        .value("VSC", ConverterStationContainer::ConverterType::VSC)
+        .value("LCC", ConverterStationContainer::ConverterType::LCC);
+    cs_info_cls
         .def_readonly("id", &ConverterStationInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &ConverterStationInfo::name, DocIterator::name.c_str())
         .def_readonly("sub_id", &ConverterStationInfo::sub_id, DocIterator::sub_id.c_str())
@@ -356,6 +368,11 @@ void bind_containers(py::module_& m) {
         .def("get_bus_id_side_2", &HvdcLineContainer::get_bus_id_side_2_numpy);
     add_pickle(dcline_cls, "HvdcLineContainer");
     add_binary_serialization(dcline_cls);
+    // exposed (also) so TestSerializedEnumValues can pin the integer values,
+    // which are serialized verbatim in binary files and pickles
+    py::enum_<HvdcLineContainer::ConvertersMode>(dcline_cls, "ConvertersMode", "Which side of an hvdc line is the rectifier (the other being the inverter)")
+        .value("SIDE_1_RECTIFIER", HvdcLineContainer::ConvertersMode::SIDE_1_RECTIFIER)
+        .value("SIDE_2_RECTIFIER", HvdcLineContainer::ConvertersMode::SIDE_2_RECTIFIER);
 
     py::class_<HvdcLineInfo>(m, "HvdcLineInfo", DocIterator::DCLineInfo.c_str())
         .def_readonly("id", &HvdcLineInfo::id, DocIterator::id.c_str())
