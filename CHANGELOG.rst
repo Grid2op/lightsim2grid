@@ -364,6 +364,30 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   documentation page and `benchmarks/benchmark_binary_serialization.py` for speed
   comparisons against pickle (the speed up grows with grid size: up to ~17x faster to
   write and ~8x faster to read than pickle on grids with ~9000 buses).
+- [IMPROVED] robustness of the powerflow entry points against ill-formed input:
+  `LSGrid.ac_pf` / `LSGrid.dc_pf` now validate `max_iter` (>= 0) and `tol`
+  (finite and > 0) in addition to the size of `Vinit`, and the python-facing
+  `Solver.compute_pf` / `Solver.solve` (Newton-Raphson, single-slack,
+  fast-decoupled, Gauss-Seidel -- shared `BaseAlgo::check_pf_inputs`, bound
+  via the new `BaseAlgo::compute_pf_with_input_validation`) now validate
+  their inputs before touching them: non-square `Ybus`, `V` / `Sbus` /
+  `slack_weights` not matching the size of `Ybus`, empty `slack_ids`,
+  a negative `max_iter` and a non-positive / non-finite `tol` raise
+  `RuntimeError` (`max_iter=0` is accepted: every solver builds its initial
+  state / first Jacobian before iterating, so it is a well-defined "return
+  the pre-iteration state" call, used by internal tests);
+  out-of-range or negative bus ids in `pv` / `pq` / `slack_ids` raise
+  `IndexError` (previously they reached raw Eigen indexing: out-of-bounds
+  reads/writes in Release builds); a bus listed in more than one of
+  slack/pv/pq (or twice in the same one) raises `RuntimeError` instead of
+  silently producing a wrong system. This validation is a python-boundary
+  concern only: the internal C++ solve path used by `LSGrid` and the batch
+  solvers (`ContingencyAnalysis`, `TimeSerie`, security analysis) still calls
+  the raw, unchecked `compute_pf` / `compute_pf_dc` in its hot loop, since
+  those callers build `Ybus` / `Sbus` / `pv` / `pq` themselves and paying an
+  O(n) validation pass on every contingency / timestep would be pure
+  overhead. Tested by the new `lightsim2grid/tests/test_pf_input_robustness.py`
+  for every solver class available in the build.
 - [IMPROVED] robustness of `save_binary` / `load_binary` against ill-formed input:
 
   - version compatibility is now decided by a dedicated **binary format version**

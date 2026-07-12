@@ -86,6 +86,77 @@ class LS2G_API BaseAlgo : public BaseConstants
             lsgrid_ptr_ = gridmodel;
         }
 
+        // ---- input validation, used ONLY by the *_with_input_validation
+        // wrappers below (never by compute_pf / compute_pf_dc themselves) ----
+        // compute_pf / compute_pf_dc are called, unchecked, on every hot
+        // C++-internal path (LSGrid::ac_pf/dc_pf, and BaseBatchSolverSynch --
+        // ie every contingency in ContingencyAnalysis, every timestep of
+        // TimeSeries / SecurityAnalysis): those callers build Ybus / Sbus /
+        // pv / pq / slack_ids themselves and can be assumed correct, so
+        // paying an O(n) validation pass on each of those calls would be
+        // pure overhead. The check is instead done once, at the actual
+        // trust boundary: python calling a solver directly (see
+        // compute_pf_with_input_validation below, bound as both
+        // Solver.compute_pf and Solver.solve in binding_solvers.cpp).
+        //
+        // Throws std::runtime_error for structural problems: non-square
+        // Ybus, V / Sbus (or Pbus) / slack_weights not of size n (the
+        // slack weights are indexed *by bus id*, see eg SlackPolicies.tpp),
+        // no slack bus at all, or a bus listed twice / in more than one of
+        // slack_ids / pv / pq.
+        // Throws std::out_of_range (python IndexError) for any id of
+        // slack_ids / pv / pq outside [0, n).
+        // `caller` names the solver in the error message (eg "NRAlgo::compute_pf").
+        static void check_pf_inputs(const std::string & caller,
+                                    Eigen::Index ybus_rows, Eigen::Index ybus_cols,
+                                    Eigen::Index v_size, Eigen::Index sbus_size,
+                                    Eigen::Ref<const IntVect> slack_ids,
+                                    const RealVect & slack_weights,
+                                    Eigen::Ref<const IntVect> pv,
+                                    Eigen::Ref<const IntVect> pq);
+
+        // Throws std::runtime_error unless max_iter >= 0 (0 is a legitimate,
+        // well-defined call: every solver builds its initial state / first
+        // Jacobian before the iteration loop, so max_iter=0 deliberately
+        // returns that pre-iteration state without taking any NR/GS step --
+        // used eg by test_jacobian.py to check J iteration-by-iteration; only
+        // negative values are nonsensical) and tol is a finite
+        // strictly positive number (NaN and infinity are rejected). AC only:
+        // DC is a single linear solve without iterations / tolerance.
+        static void check_iter_tol(const std::string & caller, int max_iter, real_type tol);
+
+        // Checked wrapper around the (virtual) compute_pf: validates with
+        // check_pf_inputs + check_iter_tol, then dispatches to compute_pf on
+        // whichever concrete solver `this` is. Not virtual: one shared
+        // implementation (BaseAlgo.cpp) is enough since it only needs to
+        // validate and then call the already-virtual compute_pf. This is
+        // the method actually bound to python's Solver.compute_pf / .solve
+        // (see binding_solvers.cpp) -- the raw compute_pf keeps its name and
+        // stays reachable only from C++.
+        bool compute_pf_with_input_validation(
+            const Eigen::SparseMatrix<cplx_type> & Ybus,
+            CplxVect & V,
+            const CplxVect & Sbus,
+            Eigen::Ref<const IntVect> slack_ids,
+            const RealVect & slack_weights,
+            Eigen::Ref<const IntVect> pv,
+            Eigen::Ref<const IntVect> pq,
+            int max_iter,
+            real_type tol);
+
+        // Same idea for the DC entry point (validates, then calls the
+        // virtual compute_pf_dc). Not bound to python today -- compute_pf_dc
+        // itself isn't exposed under any name -- kept symmetric with the AC
+        // wrapper above and ready if that binding gap is ever closed.
+        bool compute_pf_dc_with_input_validation(
+            const Eigen::SparseMatrix<real_type> & Bbus,
+            CplxVect & V,
+            const RealVect & Pbus,
+            Eigen::Ref<const IntVect> slack_ids,
+            const RealVect & slack_weights,
+            Eigen::Ref<const IntVect> pv,
+            Eigen::Ref<const IntVect> pq);
+
         virtual Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const {
             throw std::runtime_error("AlgorithmSelector::get_J: There is not Jacobian matrix for this solver type.");
         }
