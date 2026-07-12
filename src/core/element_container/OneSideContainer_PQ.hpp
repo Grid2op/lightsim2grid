@@ -150,8 +150,8 @@ class OneSideContainer_PQ : public OneSideContainer
             check_size(q_mvar, size, "q_mvar");
 
             // input data
-            target_p_mw_ = RealVect::Map(&p_mw[0], p_mw.size());
-            target_q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
+            target_p_mw_ = RealVect::Map(p_mw.data(), p_mw.size());
+            target_q_mvar_ = RealVect::Map(q_mvar.data(), q_mvar.size());
 
             // initialize properly the right "results" vectors (ie res_XXX RealVect)
             this->reset_results();

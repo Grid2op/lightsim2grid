@@ -393,6 +393,16 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
     `ConverterStationInfo.ConverterType` -- the last three are now exposed to
     python) are pinned by a test (`TestSerializedEnumValues`) that fails with
     a "bump BINARY_FORMAT_VERSION" message if they are renumbered.
+- [ADDED] memory-hardening CI (`.github/workflows/sanitizers.yml`): an
+  **ASan + UBSan** job (build with `__SANITIZE=1`, runs the binary
+  serialization, solver control, time series and contingency analysis test
+  modules under AddressSanitizer + UndefinedBehaviorSanitizer) and a
+  **debug-assertions** job (build with `__DEBUG_ASSERTS=1`:
+  `-UNDEBUG -D_GLIBCXX_ASSERTIONS`, re-enabling the Eigen bounds assertions
+  that Release builds silence, runs the solver-heavy modules). Also a new
+  corruption-sweep test (`TestCorruptionSweep`) that corrupts a valid binary
+  file at every byte offset and checks `load_binary` never does anything
+  worse than raising a clean `RuntimeError`.
 - [FIXED] `LSGrid.save_binary`/`load_binary` (and pickle, which shares the same
   `LSGrid::get_state()`/`set_state()`/`StateRes` contract) silently dropped the
   per-solver `AlgoConfig` (scaling/refactor policy, line-search tolerances, etc. --
