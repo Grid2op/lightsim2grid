@@ -98,9 +98,9 @@ void BaseAlgo::check_pf_inputs(const std::string & caller,
 
 void BaseAlgo::check_iter_tol(const std::string & caller, int max_iter, real_type tol)
 {
-    if (max_iter <= 0) {
+    if (max_iter < 0) {
         std::ostringstream exc_;
-        exc_ << caller << ": max_iter must be a strictly positive integer, got " << max_iter << ".";
+        exc_ << caller << ": max_iter must be a non-negative integer, got " << max_iter << ".";
         throw std::runtime_error(exc_.str());
     }
     if (!std::isfinite(tol) || !(tol > 0.)) {
