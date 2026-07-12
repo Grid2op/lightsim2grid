@@ -67,6 +67,8 @@ class OneSideContainer_ForBranch : public OneSideContainer
 
         // public generic API
 
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
+
         using StateRes = std::tuple<
             OneSideContainer::StateRes
             > ;
