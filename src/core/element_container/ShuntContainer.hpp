@@ -43,6 +43,7 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         using DataInfo = ShuntInfo;
 
     public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<OneSideContainer_PQ::StateRes >;
         
         ShuntContainer() noexcept = default;
@@ -66,8 +67,9 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         void set_state(ShuntContainer::StateRes & my_state );
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
-        void save_binary(const std::string & path) const;
+        void save_binary(const std::string & path, bool atomic = true) const;
         static ShuntContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "ShuntContainer"; }  // written into / checked against the binary file header
         
         virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                               bool ac,

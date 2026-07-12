@@ -53,6 +53,7 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
 
     // regular implementation
     public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes  // state of the base class
            > ;
@@ -65,8 +66,9 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
         void set_state(StorageContainer::StateRes & my_state);
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
-        void save_binary(const std::string & path) const;
+        void save_binary(const std::string & path, bool atomic = true) const;
         static StorageContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "StorageContainer"; }  // written into / checked against the binary file header
 
         void init(const RealVect & storage_p_mw,
                   const RealVect & storage_q_mvar,

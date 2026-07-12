@@ -168,8 +168,8 @@ void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
     }
 }
 
-void ShuntContainer::save_binary(const std::string & path) const {
-    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+void ShuntContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
 }
 
 ShuntContainer ShuntContainer::load_binary(const std::string & path) {
