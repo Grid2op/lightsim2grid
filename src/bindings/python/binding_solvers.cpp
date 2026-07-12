@@ -28,9 +28,15 @@ void bind_algo_methods(py::class_<Solver>& cls) {
         .def("get_nb_iter", &Solver::get_nb_iter, DocSolver::get_nb_iter.c_str())
         .def("reset",       &Solver::reset,       DocSolver::reset.c_str())
         .def("converged",   &Solver::converged,   DocSolver::converged.c_str())
-        .def("compute_pf",  &Solver::compute_pf,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())
+        // python-facing compute_pf / solve are bound to the *checked* wrapper
+        // (BaseAlgo::compute_pf_with_input_validation), not the raw virtual
+        // compute_pf: the raw one is the hot, unchecked path used internally
+        // by LSGrid / BaseBatchSolverSynch (ContingencyAnalysis, TimeSeries,
+        // SecurityAnalysis) in tight loops, which never goes through pybind11
+        // and so is unaffected by this binding.
+        .def("compute_pf",  &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())
         .def("get_timers",  &Solver::get_timers,  DocSolver::get_timers.c_str())
-        .def("solve",       &Solver::compute_pf,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())
+        .def("solve",       &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())
         ;
 }
 
