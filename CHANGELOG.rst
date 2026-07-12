@@ -365,14 +365,17 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   comparisons against pickle (the speed up grows with grid size: up to ~17x faster to
   write and ~8x faster to read than pickle on grids with ~9000 buses).
 - [IMPROVED] robustness of the powerflow entry points against ill-formed input:
-  `LSGrid.ac_pf` / `LSGrid.dc_pf` now validate `max_iter` (> 0) and `tol`
+  `LSGrid.ac_pf` / `LSGrid.dc_pf` now validate `max_iter` (>= 0) and `tol`
   (finite and > 0) in addition to the size of `Vinit`, and the python-facing
   `Solver.compute_pf` / `Solver.solve` (Newton-Raphson, single-slack,
   fast-decoupled, Gauss-Seidel -- shared `BaseAlgo::check_pf_inputs`, bound
   via the new `BaseAlgo::compute_pf_with_input_validation`) now validate
   their inputs before touching them: non-square `Ybus`, `V` / `Sbus` /
-  `slack_weights` not matching the size of `Ybus`, empty `slack_ids` and
-  non-positive / non-finite `max_iter` / `tol` raise `RuntimeError`;
+  `slack_weights` not matching the size of `Ybus`, empty `slack_ids`,
+  a negative `max_iter` and a non-positive / non-finite `tol` raise
+  `RuntimeError` (`max_iter=0` is accepted: every solver builds its initial
+  state / first Jacobian before iterating, so it is a well-defined "return
+  the pre-iteration state" call, used by internal tests);
   out-of-range or negative bus ids in `pv` / `pq` / `slack_ids` raise
   `IndexError` (previously they reached raw Eigen indexing: out-of-bounds
   reads/writes in Release builds); a bus listed in more than one of
