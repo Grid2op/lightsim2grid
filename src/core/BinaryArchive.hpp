@@ -232,11 +232,28 @@ struct is_raw_vector_elem : std::integral_constant<bool,
 template<typename T, typename Enable = void>
 struct ValueArchiver;  // intentionally incomplete: every real field type below has a specialization
 
-// arithmetic scalars (real_type, int, bool, ...)
+// arithmetic scalars (real_type, int, ...)
 template<typename T>
 struct ValueArchiver<T, typename std::enable_if<std::is_arithmetic<T>::value>::type> {
     static void write(BinaryArchive & ar, const T & v) { ar.write_scalar(v); }
     static void read(BinaryArchive & ar, T & v) { ar.read_scalar(v); }
+};
+
+// bool: one byte on disk (same size as before), but normalized to 0/1 on
+// read. Reading a corrupted byte straight into a bool object would create
+// a bool holding eg 255, and merely loading such a value later is undefined
+// behavior (found by UBSan under the corruption-sweep test).
+template<>
+struct ValueArchiver<bool> {
+    static void write(BinaryArchive & ar, const bool & v) {
+        const std::uint8_t b = v ? 1 : 0;
+        ar.write_scalar(b);
+    }
+    static void read(BinaryArchive & ar, bool & v) {
+        std::uint8_t b = 0;
+        ar.read_scalar(b);
+        v = (b != 0);
+    }
 };
 
 // cplx_type (std::complex<real_type>), standard-guaranteed layout
