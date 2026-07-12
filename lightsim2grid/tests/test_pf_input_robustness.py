@@ -17,8 +17,9 @@ silently compute garbage.
 Conventions (mirroring test_LSGrid_out_of_bounds.py):
   * ``RuntimeError`` for structural problems: mis-sized V / Sbus /
     slack_weights, non-square Ybus, empty slack_ids, a bus listed in more
-    than one of slack/pv/pq, non-positive max_iter, non-positive or
-    non-finite tol (``BaseAlgo::check_pf_inputs`` / ``check_iter_tol`` throw
+    than one of slack/pv/pq, negative max_iter (0 is valid: it returns the
+    pre-iteration state), non-positive or non-finite tol
+    (``BaseAlgo::check_pf_inputs`` / ``check_iter_tol`` throw
     ``std::runtime_error``);
   * ``IndexError`` for out-of-range / negative bus ids in slack_ids / pv / pq
     (``std::out_of_range``);
@@ -86,11 +87,19 @@ class TestAcDcPfInputs(unittest.TestCase):
                         pf(v, MAX_IT, TOL)
 
     def test_bad_max_iter(self):
+        # max_iter=0 is legitimate (returns the pre-iteration state); only
+        # negative values are rejected
         for name, pf in self._pf_methods():
-            for bad_iter in (0, -1, -100):
+            for bad_iter in (-1, -100):
                 with self.subTest(f"{name}, max_iter={bad_iter}"):
                     with self.assertRaises(RuntimeError):
                         pf(1.0 * self.v_init, bad_iter, TOL)
+
+    def test_zero_max_iter_is_valid(self):
+        # 0 is the well-defined "no iterations, just the initial state" call
+        for name, pf in self._pf_methods():
+            with self.subTest(name):
+                pf(1.0 * self.v_init, 0, TOL)  # must not raise
 
     def test_bad_tol(self):
         for name, pf in self._pf_methods():
@@ -233,7 +242,9 @@ class TestSolverComputePfInputs(unittest.TestCase):
             RuntimeError, "slack bus also in pv", pv=also_pv)
 
     def test_bad_max_iter(self):
-        for bad_iter in (0, -1):
+        # max_iter=0 is legitimate (returns the pre-iteration state); only
+        # negative values are rejected
+        for bad_iter in (-1, -100):
             self._assert_all_solvers_raise(
                 RuntimeError, f"max_iter={bad_iter}", max_iter=bad_iter)
 
