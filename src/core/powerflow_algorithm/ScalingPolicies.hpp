@@ -100,8 +100,16 @@ class LS2G_API LineSearchScalingPolicy final : public ScalingPolicy<NRSystem>
 
         virtual real_type scale(const NRSystem& system, const RealVect & F) final
         {
-            // TODO speed Save current merit (||mismatch||^2 before step)
-            const real_type F_norm_sq_0 = F.squaredNorm();
+            // Current merit (||mismatch(x)||^2 before the step). By the time scale()
+            // runs, F has already been overwritten in place by the linear solve
+            // (J*dx=F -> F becomes dx): F.squaredNorm() would be ||dx||^2, NOT the
+            // current mismatch -- the wrong quantity for the Armijo condition below.
+            // mismatch_sq_norm_at(zero) evaluates the residual at the CURRENT state
+            // (zero step), which is exactly ||mismatch(x)||^2 -- bit-identical to
+            // system.mismatch().squaredNorm(), since _compute_trial_V(zero)
+            // reconstructs the current V unchanged.
+            const real_type F_norm_sq_0 =
+                system.mismatch_sq_norm_at(RealVect::Zero(F.size()));
             real_type alpha = static_cast<real_type>(1.0);
             for (int k = 0; k < ls_max_iter_; ++k) {
                 const real_type threshold =
@@ -114,12 +122,12 @@ class LS2G_API LineSearchScalingPolicy final : public ScalingPolicy<NRSystem>
         }
 
     // virtual void update(const NRSystem& system, const RealVect & F) final {
-    //     F_norm_sq_0_ = F.squaredNorm();
-    // } 
+    //     F_norm_sq_0_ = system.mismatch_sq_norm_at(RealVect::Zero(F.size()));
+    // }
 
     // should be called each iteration of NR
     // real_type F_norm_sq_0() const {return F_norm_sq_0_;}
-    // void F_norm_sq_0(real_type val) {F_norm_sq_0_ = val;}  // F_norm_sq_0 = F.squaredNorm()
+    // void F_norm_sq_0(real_type val) {F_norm_sq_0_ = val;}  // ||mismatch(x)||^2 before the step
 
     // getter / setter
     int ls_max_iter() const {return ls_max_iter_;}
@@ -147,8 +155,15 @@ class IwamotoScalingPolicy final : public ScalingPolicy<NRSystem>
 
         virtual real_type scale(const NRSystem& system, const RealVect & F) final
         {
-            // TODO speed this is already computed in NR (in previous step)
-            real_type g0 = F.squaredNorm();
+            // g0 = ||mismatch(x)||^2 (current state, BEFORE the step) -- see the
+            // identical note in LineSearchScalingPolicy::scale: F is already dx by
+            // this point (overwritten in place by the linear solve), so
+            // F.squaredNorm() would be ||dx||^2, not the current mismatch. g1 below
+            // is ||mismatch(x + F)||^2 (the FULL, unscaled Newton step), so mixing
+            // ||dx||^2 into the same ratio as g0 would compare a state-step quantity
+            // against a mismatch quantity -- dimensionally wrong for the classic
+            // Iwamoto optimal-multiplier ratio mu = g0/(g0+g1).
+            real_type g0 = system.mismatch_sq_norm_at(RealVect::Zero(F.size()));
 
             real_type g1 = system.mismatch_sq_norm_at(F);
             real_type mu = (g0 + g1 > static_cast<real_type>(0.))
@@ -159,12 +174,12 @@ class IwamotoScalingPolicy final : public ScalingPolicy<NRSystem>
         }
 
     // virtual void update(const NRSystem& system, const RealVect & F) final {
-    //     g0_ = F.squaredNorm();
+    //     g0_ = system.mismatch_sq_norm_at(RealVect::Zero(F.size()));
     //     g1_ = system.mismatch_sq_norm_at(F);
-    // } 
+    // }
 
     // should be called each iteration of NR
-    // real_type g0() const {return g0_;}  //  F.squaredNorm();
+    // real_type g0() const {return g0_;}  //  ||mismatch(x)||^2 before the step
     // void g0(real_type val) {g0_ = val;}
 
     // real_type g1() const {return g1_;}  // _system.mismatch_sq_norm_at(F);
