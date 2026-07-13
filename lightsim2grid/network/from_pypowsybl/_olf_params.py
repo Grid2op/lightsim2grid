@@ -37,10 +37,30 @@ Background: OLF's outer loops fall into two families.
   named there are ever created, regardless of any other trigger flag
   (verified empirically: ``distributed_slack=True`` with an empty
   ``outerLoopNames`` does not distribute). So on 1.4.0+, this allow-list is
-  the only lever this module needs to touch for that family. Below 1.4.0,
-  where OLF rejects an empty ``outerLoopNames`` (and the parameter does not
-  exist at all in 1.0.0), the individual creation-trigger flags are the only
-  way to stop a loop, so they are forced off there instead -- and only there.
+  the only lever this module needs to touch for that family for an AC solve.
+  Below 1.4.0, where OLF rejects an empty ``outerLoopNames`` (and the
+  parameter does not exist at all in 1.0.0), the individual creation-trigger
+  flags are the only way to stop a loop, so they are forced off there instead.
+
+  ``DistributedSlack`` and ``ReactiveLimits`` are the two exceptions to
+  "the allow-list is the only lever": both also have a top-level
+  ``Parameters`` flag (``distributed_slack``, ``use_reactive_limits``) that
+  is not reliably gated by ``outerLoopNames``. ``run_dc`` always honors
+  ``distributed_slack`` directly, with no outer-loop pass and no
+  ``outerLoopNames`` gating at all -- it still distributes the slack across
+  generators with ``distributed_slack`` left at its default (``True``) even
+  with an empty allow-list. ``use_reactive_limits`` is not DC-specific but is
+  just as unreliable: on pypowsybl 1.9.0, ``run_ac`` still clips a generator
+  to its reactive limit with an empty ``outerLoopNames`` and
+  ``use_reactive_limits`` left at its default (``True``), producing a
+  generator ``Q`` a few 1e-3 MVAr off from lightsim2grid's (which never
+  clips) -- confirmed fixed by forcing ``use_reactive_limits=False``, and
+  confirmed absent on pypowsybl 1.15.0 for the same grid/scenario, so this
+  looks like an OLF-side version difference in how much the allow-list
+  actually covers, not a stable "AC is always allow-list-gated" rule. So
+  these two top-level flags are always forced off here (unless kept), on
+  every pypowsybl version, in addition to whatever the allow-list/trigger-flag
+  branch below does for the other, allow-list-only loops.
 
 The factory (both this module's ``remove_outer_loops`` and the
 ``get_pypowsybl_loopfree_*`` convenience wrappers below) is written to be
@@ -253,27 +273,33 @@ def remove_outer_loops(
             put_provider(pname, value)
 
     # 2. Loops with no inline alternative.
+
+    # DistributedSlack / ReactiveLimits: top-level flags OLF's DC solve honors
+    # directly (see the module docstring) -- forced regardless of pypowsybl
+    # version and regardless of the outerLoopNames allow-list below, which
+    # only gates the AC outer-loop mechanism.
+    if "DistributedSlack" not in keep:
+        put("distributed_slack", False)
+    if "ReactiveLimits" not in keep:
+        if not put("use_reactive_limits", False):
+            put("no_generator_reactive_limits", True)
+
     if _OUTERLOOP_EMPTY_OK:
-        # The allow-list alone gates creation, regardless of any trigger flag,
-        # so nothing else needs touching here.
+        # The allow-list alone gates AC outer-loop creation, regardless of any
+        # trigger flag, so nothing else needs touching here.
         put_provider("outerLoopNames", ",".join(sorted(keep & set(_LEGACY_TRIGGER))))
         if keep:
             put_provider("maxOuterLoopIterations", str(int(max_outer_loop_iterations)))
     else:
         # Pre-1.4 OLF: no allow-list: the only way to stop a loop is its own
         # creation trigger, forced off unless the caller asked to keep it.
+        # DistributedSlack/ReactiveLimits (spec is None) were already handled
+        # above, uniformly across versions.
         for loop, spec in _LEGACY_TRIGGER.items():
-            if loop in keep:
+            if loop in keep or spec is None:
                 continue
-            if spec is None:
-                if loop == "DistributedSlack":
-                    put("distributed_slack", False)
-                elif loop == "ReactiveLimits":
-                    if not put("use_reactive_limits", False):
-                        put("no_generator_reactive_limits", True)
-            else:
-                pname, value = spec
-                put_provider(pname, value)
+            pname, value = spec
+            put_provider(pname, value)
 
     if slack_bus_ids is not None:
         if not isinstance(slack_bus_ids, str):
