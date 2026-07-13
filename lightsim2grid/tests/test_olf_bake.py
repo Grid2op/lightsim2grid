@@ -31,7 +31,7 @@ try:
         init_from_pypowsybl,
         bake_outer_loops,
         compare_baked,
-        get_pypowsybl_loopfree_parameters,
+        remove_outer_loops,
     )
     HAS_PYPOWSYBL = True
 except ImportError:
@@ -98,11 +98,12 @@ _REF_PROVIDER_PARAMS = {
 def _with_loops_params():
     # Every field is pinned to the ``venv_ls`` (pypowsybl 1.15.0) default so the
     # outer-loop solve is identical across pypowsybl builds (see
-    # ``_REF_PROVIDER_PARAMS``). The single intentional deviation from that default
-    # is ``twt_split_shunt_admittance=True`` (default is False): it matches the
-    # transformer model the loop-free / lightsim2grid solve uses (see
-    # get_pypowsybl_loopfree_parameters), which isolates the outer-loop effect that
-    # baking neutralizes.
+    # ``_REF_PROVIDER_PARAMS``). The corresponding loop-free reference used
+    # throughout this file is ``remove_outer_loops(_with_loops_params())``, not a
+    # separately-defaulted factory: deriving it from this same object guarantees
+    # every field it does not touch (twt_split_shunt_admittance, component_mode,
+    # use_reactive_limits, voltage_init_mode, ...) is identical between the two
+    # runs, isolating the outer-loop effect that baking neutralizes.
     return lf.Parameters(
         voltage_init_mode=lf.VoltageInitMode.UNIFORM_VALUES,
         transformer_voltage_control_on=False,
@@ -206,7 +207,7 @@ def _olf_roundtrip_max_dev(network_factory):
     'without outer loop' test: the baked grid solved with every loop disabled
     must reproduce the original with-loops operating point."""
     with_loops = _with_loops_params()
-    loop_free = get_pypowsybl_loopfree_parameters()
+    loop_free = remove_outer_loops(with_loops)
 
     n_ref = network_factory()
     lf.run_ac(n_ref, with_loops)
@@ -283,7 +284,7 @@ class TestOlfBake(unittest.TestCase):
             unchanged.
         """
         with_loops = _with_loops_params()
-        loop_free = get_pypowsybl_loopfree_parameters()
+        loop_free = remove_outer_loops(with_loops)
 
         # (A) with-loops vs loop-free on the baked grid
         n_with = network_factory()
@@ -353,7 +354,7 @@ class TestOlfBake(unittest.TestCase):
         self.assertTrue(g.loc[["B1-G", "B2-G", "B8-G"], "voltage_regulator_on"].all())
 
         # Loop-free re-solve reproduces the with-limits reactive powers.
-        res = lf.run_ac(n, get_pypowsybl_loopfree_parameters())
+        res = lf.run_ac(n, remove_outer_loops(_with_loops_params()))
         self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
         q_redo = n.get_generators(attributes=["q"])["q"]
         self.assertLess((q_redo - q_ref).abs().max(), 1e-2)
@@ -376,7 +377,7 @@ class TestOlfBake(unittest.TestCase):
         lf.run_ac(n_with, _with_loops_params())
         v_with = n_with.get_buses()[["v_mag"]].copy()
         n_free = ieee14_forced_pv_pq()
-        lf.run_ac(n_free, get_pypowsybl_loopfree_parameters())
+        lf.run_ac(n_free, remove_outer_loops(_with_loops_params()))
         v_free = n_free.get_buses()[["v_mag"]]
         cmp = v_with.join(v_free, lsuffix="_w", rsuffix="_f")
         self.assertGreater((cmp["v_mag_w"] - cmp["v_mag_f"]).abs().max(), 1e-2)
@@ -447,7 +448,7 @@ class TestOlfBake(unittest.TestCase):
         # other generators (plain MIN_MAX, ample range) stay untouched
         self.assertTrue(g.loc[["B1-G", "B3-G", "B6-G", "B8-G"], "voltage_regulator_on"].all())
 
-        res = lf.run_ac(n, get_pypowsybl_loopfree_parameters())
+        res = lf.run_ac(n, remove_outer_loops(_with_loops_params()))
         self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
         q_redo = n.get_generators(attributes=["q"]).loc["B2-G", "q"]
         self.assertLess(abs(q_redo - q_ref), 1e-2)
