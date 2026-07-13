@@ -427,6 +427,16 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   corruption-sweep test (`TestCorruptionSweep`) that corrupts a valid binary
   file at every byte offset and checks `load_binary` never does anything
   worse than raising a clean `RuntimeError`.
+- [ADDED] a dedicated C++ unit test suite (Catch2, new git submodule, under
+  `src/tests/`) exercising the binary serialization layer (`BinaryArchive`)
+  without python or a real grid: synthetic `StateRes` round trips covering
+  every serialized field shape, every bounds-check / header-mismatch path,
+  the atomic temp-file commit/rollback, and a C++ port of the corruption
+  sweep. Built standalone (`cmake -S src/tests`) or via `BUILD_TESTING=ON`,
+  and run in CI both through ctest and under `valgrind --error-exitcode=1`
+  (`.github/workflows/cpp_unit_tests.yml`) -- practical only because the
+  suite is a small plain binary. This is also the first framework for C++
+  unit tests of the core (eg future solver-level tests).
 - [FIXED] `LSGrid.save_binary`/`load_binary` (and pickle, which shares the same
   `LSGrid::get_state()`/`set_state()`/`StateRes` contract) silently dropped the
   per-solver `AlgoConfig` (scaling/refactor policy, line-search tolerances, etc. --

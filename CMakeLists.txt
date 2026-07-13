@@ -71,6 +71,15 @@ endif()
 # pybind11 extension.
 add_subdirectory("src/bindings/python")
 
+# --- C++ unit tests (Catch2) ---
+# OFF by default so pip / wheel builds are unaffected. The tests can also be
+# configured standalone, without python or pybind11: cmake -S src/tests
+option(BUILD_TESTING "Build the C++ unit tests (src/tests, Catch2)" OFF)
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory("src/tests")
+endif()
+
 # --- Python-only compile definitions (applied after targets exist) ---
 
 # Read The Docs — only affects binding stubs
