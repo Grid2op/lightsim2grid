@@ -27,5 +27,17 @@ def get_pypowsybl_parameters(slack_voltage_level=None):
     # lightsim2grid.network.get_pypowsybl_loopfree_parameters). When a slack
     # voltage level is given, the slack is pinned by name so lightsim2grid and
     # pypowsybl use the same slack bus.
-    return get_pypowsybl_loopfree_parameters(slack_bus_ids=slack_voltage_level)
+    #
+    # twt_split_shunt_admittance=True is not an outer loop (it is a Ybus-
+    # construction convention: whether a transformer's shunt admittance is
+    # split half/half between its two sides), so get_pypowsybl_loopfree_parameters
+    # deliberately does not force it -- OLF's own default is False, but
+    # lightsim2grid's from_pypowsybl converter always splits it, so it must be
+    # forced here for the two engines to solve the same problem (verified on
+    # IEEE-300, which has transformers with non-negligible shunt admittance:
+    # leaving this at OLF's default desyncs bus voltages by up to ~0.4 pu).
+    return get_pypowsybl_loopfree_parameters(
+        slack_bus_ids=slack_voltage_level,
+        twt_split_shunt_admittance=True,
+    )
 
