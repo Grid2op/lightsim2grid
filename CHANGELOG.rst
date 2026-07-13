@@ -437,6 +437,25 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   (`.github/workflows/cpp_unit_tests.yml`) -- practical only because the
   suite is a small plain binary. This is also the first framework for C++
   unit tests of the core (eg future solver-level tests).
+- [ADDED] C++ unit tests for the `LSGrid` main API (`src/tests/test_lsgrid.cpp`):
+  a 3-bus grid built programmatically through the `init_*` methods and solved
+  with the default Eigen SparseLU algorithms -- AC/DC powerflow contract
+  (converged => per-bus V, diverged => empty vector), physically-checked
+  results (power balance, analytic DC angles), copy / `get_state` /
+  `save_binary` round trips, setpoint changes, load deactivation and the
+  documented error paths. The test target now links `lightsim2grid_core`.
+- [ADDED] documentation for using `lightsim2grid_core` as a standalone C++
+  library (`docs/cpp_library.rst`): building/installing it from source
+  (`cmake -S src/core`), consuming the copy shipped inside the python wheel
+  (`lightsim2grid.get_cmake_dir()`), linking with CMake via
+  `find_package(lightsim2grid_core CONFIG)` / `lightsim2grid::core`, a
+  complete build-a-grid-and-solve example, and how to run the C++ unit tests.
+- [FIXED] `TrafoContainer` left two bool members (`ignore_tap_side_for_shift_`,
+  `shift_dependent_rx_`) uninitialized when `init_trafo` was never called (any
+  grid built without trafos): copying or serializing such a grid read
+  indeterminate bools (undefined behavior, garbage written into binary files /
+  pickles). Found by valgrind over the new C++ LSGrid tests; both members now
+  have default initializers.
 - [FIXED] `LSGrid.save_binary`/`load_binary` (and pickle, which shares the same
   `LSGrid::get_state()`/`set_state()`/`StateRes` contract) silently dropped the
   per-solver `AlgoConfig` (scaling/refactor policy, line-search tolerances, etc. --
