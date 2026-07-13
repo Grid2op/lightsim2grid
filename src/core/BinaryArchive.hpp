@@ -73,7 +73,7 @@ namespace ls2g {
 // of being silently mis-read. If a future version wants to keep reading an
 // older format, add that format number to SUPPORTED_BINARY_FORMATS (in
 // BinaryArchive.cpp) together with the required migration code.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 1;
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 2;
 
 class LS2G_API BinaryArchive
 {

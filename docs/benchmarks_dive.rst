@@ -204,13 +204,13 @@ When we benchmark lightsim2grid in the page :ref:`benchmark-solvers` all 3 algor
 let us know, no problem at all).
 
 Pandapower
-++++++++++++
+~~~~~~~~~~~~
 
 When pandapower is benchmarked, only the Newton-Raphson algorithm is used, we will not detail the exact implementatoin of pandapower. Its implementation
 the python scipy package to perform the linear algebra operations needed.
 
 Pypowsybl
-++++++++++++
+~~~~~~~~~~~~
 
 When pypowsybl is benchmarked, only the Newton-Raphson algorithm is used. It internally uses some java implementation relying on powsybl framework and
 open-loadflow (for the default parameters) powerflow.
@@ -218,19 +218,19 @@ open-loadflow (for the default parameters) powerflow.
 Let us know if you are interested with more detail and more algorithm (powsybl can do much more than what is exposed here).
 
 Lightsim2grid
-++++++++++++++
+~~~~~~~~~~~~~~
 
-In the benchmarks, lightsim2grid counts the most reported algorithms. In this section we detail a "concisely" the bahviour all some of them. 
+In the benchmarks, lightsim2grid counts the most reported algorithms. In this section we detail a "concisely" the bahviour all some of them.
 
 Gauss Seidel
-~~~~~~~~~~~~~
+^^^^^^^^^^^^^
 
-Lightsim2grid comes with two different Gauss-Seidel algorithms. They are not very efficient for the kind of problem at hand, so 
+Lightsim2grid comes with two different Gauss-Seidel algorithms. They are not very efficient for the kind of problem at hand, so
 we will not spend lot of time discussing them here.
 
 
 Fast decoupled and Newton Raphson
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 These two types of algorithms comes each with different variants (we will not enter into too their detail here):
 
