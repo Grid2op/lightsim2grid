@@ -813,6 +813,10 @@ def init(net : pypo.network.Network,
                    )
     model._ls_to_orig = ls_to_orig
     model._max_nb_bus_per_sub = n_busbar_per_sub_ls
+    # relevant kwargs downstream consumers (eg a pypowsybl-shaped result view) need to
+    # recover conversion-time settings that are otherwise plain Python arguments lost
+    # after this function returns -- see LSGrid._init_kwargs.
+    model._init_kwargs = {"sort_index": str(sort_index), "buses_for_sub": str(buses_for_sub)}
     model.set_substation_names(sub_names)
     model.set_bus_voltage_limits(all_buses_vmin_kv.astype(float), all_buses_vmax_kv.astype(float))
 

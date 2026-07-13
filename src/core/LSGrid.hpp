@@ -12,6 +12,8 @@
 #include <iostream>
 #include <vector>
 #include <set>
+#include <map>
+#include <string>
 #include <tuple>
 #include <stdio.h>
 #include <cstdint> // for int32
@@ -88,7 +90,12 @@ class LS2G_API LSGrid final
                 // algo config (scaling/refactor/line-search params, appended;
                 // old pickles are version-gated): int_params, real_params
                 std::tuple<std::vector<int>, std::vector<double> >,  // ac_algo_config
-                std::tuple<std::vector<int>, std::vector<double> >   // dc_algo_config
+                std::tuple<std::vector<int>, std::vector<double> >,  // dc_algo_config
+                // relevant kwargs the grid was built with (eg by init_from_pypowsybl), as
+                // a string->string map flattened into parallel key/value vectors (appended;
+                // old pickles are version-gated). See get_init_kwargs()/set_init_kwargs().
+                std::vector<std::string>,  // init_kwargs keys
+                std::vector<std::string>   // init_kwargs values
                 >;
 
         // named indices into the StateRes tuple above (get_state()/set_state()
@@ -115,6 +122,8 @@ class LS2G_API LSGrid final
         static const std::size_t DC_ALGO_TYPE_ID = 18;
         static const std::size_t AC_ALGO_CONFIG_ID = 19;
         static const std::size_t DC_ALGO_CONFIG_ID = 20;
+        static const std::size_t INIT_KWARGS_KEYS_ID = 21;
+        static const std::size_t INIT_KWARGS_VALUES_ID = 22;
 
         LSGrid():
           timer_last_ac_pf_(0.),
@@ -1659,7 +1668,19 @@ class LS2G_API LSGrid final
             max_nb_bus_per_sub_ = max_nb_bus_per_sub;
         }
         int get_max_nb_bus_per_sub() const { return max_nb_bus_per_sub_;}
-        
+
+        /**
+         * Relevant kwargs the grid was built with (eg by `init_from_pypowsybl`), as a
+         * string->string map (eg {"sort_index": "True", "buses_for_sub": "False"}).
+         * Empty for a grid not built that way (eg pandapower/powermodels), or a
+         * default-constructed one. Set by the Python-side converter, never read by any
+         * C++ logic itself -- purely a way for downstream Python consumers (eg a
+         * pypowsybl-shaped result view) to recover conversion-time settings that are
+         * otherwise plain Python arguments lost after `init()` returns.
+         */
+        const std::map<std::string, std::string> & get_init_kwargs() const { return init_kwargs_;}
+        void set_init_kwargs(const std::map<std::string, std::string> & init_kwargs) { init_kwargs_ = init_kwargs;}
+
         void fillSbus_other(CplxVect & res, bool ac, const SolverBusIdVect& id_me_to_solver){
             fillSbus_me(res, ac, id_me_to_solver);
         }
@@ -1986,6 +2007,7 @@ class LS2G_API LSGrid final
         int max_nb_bus_per_sub_;
         SubstationContainer substations_;
         std::vector<bool> last_bus_status_saved_;
+        std::map<std::string, std::string> init_kwargs_;  // see get_init_kwargs()
 
         // always have the length of the number of buses,
         // id_me_to_model_[id_me] gives -1 if the bus "id_me" is deactivated, or "id_model" if it is activated.

@@ -155,6 +155,40 @@ largest voltage-magnitude and voltage-angle mismatches (plus a per-bus table):
 .. autofunction:: lightsim2grid.network.compare_baked
     :no-index:
 
+Inspecting results in a pypowsybl-like way
+********************************************
+
+``compare_baked`` above only compares bus voltages. If you want to inspect (or write
+generic analysis code against) the *full* result of a lightsim2grid powerflow -- lines,
+transformers, generators, loads, shunts, HVDC lines, ... -- with the exact same API and
+DataFrame shape as a solved pypowsybl :class:`pypowsybl.network.Network`, use
+:class:`lightsim2grid.network.LightsimResultNetwork`. It wraps a converged ``LSGrid``
+(built by ``init_from_pypowsybl``) and the pypowsybl network it was built from, and
+exposes ``get_buses`` / ``get_lines`` / ``get_2_windings_transformers`` /
+``get_generators`` / ``get_loads`` / ``get_shunt_compensators`` /
+``get_static_var_compensators`` / ``get_batteries`` / ``get_hvdc_lines`` /
+``get_vsc_converter_stations`` / ``get_lcc_converter_stations``, each returning a pandas
+DataFrame indexed by the pypowsybl element id, with pypowsybl's own column names and
+sign conventions (post-solve ``p`` / ``q`` in the load convention):
+
+.. code-block:: python
+
+    import pypowsybl as pp
+    from lightsim2grid.network import init_from_pypowsybl, LightsimResultNetwork
+
+    net = pp.network.create_ieee14()
+    grid = init_from_pypowsybl(net, gen_slack_id="B1-G")
+    V = grid.ac_pf(..., 10, 1e-7)
+    assert len(V) > 0  # converged
+
+    res_net = LightsimResultNetwork(grid, net)
+    res_net.get_generators()  # same shape/columns as net.get_generators() after a solve
+    res_net.get_lines(attributes=["p1", "q1", "i1"])
+
+.. autoclass:: lightsim2grid.network.LightsimResultNetwork
+    :members:
+    :no-index:
+
 Results
 -----------------------------------
 
