@@ -60,6 +60,12 @@ What gets baked
   implausible ``target_v`` (outside 0.8-1.2 pu of nominal, on buses above 20 kV).
   Frozen to fixed-Q the same way as the "not started" case above, since OLF
   itself never actually voltage-controlled them either.
+* A remotely-regulating generator whose own bus already hosts another
+  connected, locally-regulating generator: the shared bus's voltage is already
+  pinned by the local unit, so the remote unit's reactive injection cannot
+  independently move any voltage (including the one it targets). Frozen to
+  fixed-Q the same way, mirroring OLF's own handling of this configuration
+  (see :func:`_bake_remote_control_bus_conflicts`).
 * Active-power redistribution from distributed slack / area interchange: the
   realized P is written back into the target P of generators and batteries
   (and optionally loads, if the slack was distributed on load).
@@ -454,6 +460,64 @@ def _bake_generator_voltage_control_discards(network, keep_only_main_comp=True):
     network.update_generators(upd)
 
 
+def _bake_remote_control_bus_conflicts(network, keep_only_main_comp=True):
+    """Freeze a *remotely*-regulating generator to fixed-Q when its OWN bus
+    already hosts another connected, *locally* voltage-regulating generator.
+
+    Physical reason: if a co-located generator locally pins this bus's voltage
+    (holding it at its own target, within its own reactive limits), that bus's
+    voltage is not a free network unknown from the remote controller's point of
+    view -- AC power flow couples buses purely through voltage phasors, so how
+    the *combined* reactive injection at that bus splits between the two
+    co-located generators has *zero* effect on any other bus's voltage,
+    including the one the second generator is trying to remotely control. Its
+    own voltage target is therefore unreachable regardless of its dispatched Q.
+
+    Verified on a real grid carrying this exact configuration: solving the
+    baked (loop-free) network with OLF, with BOTH generators still nominally
+    regulating, reproduces almost exactly the voltage obtained by freezing the
+    remote one to its realized Q (much closer than OLF gets to the -- provably
+    unreachable -- raw remote target itself), showing OLF itself discards the
+    remote controller rather than actually achieving its target through free
+    reactive power.
+
+    lightsim2grid's own C++ voltage-control extension has no equivalent
+    discard: a lone remote controller sharing a bus with a local one produces a
+    genuinely singular Jacobian (the remote controller's own reactive-injection
+    unknown ends up with no equation to pair with) which either crashes
+    (``ErrorType.SolverFactor``, if the shared bus is classified as a
+    distributed-slack participant) or raises ``LSGrid::fill_voltage_control_
+    solver_data``'s own "not supported in v1" error (if it lands on an ordinary
+    PV bus) -- so this must be resolved before ``init()`` runs.
+
+    Runs after :func:`_bake_generator_not_started` and
+    :func:`_bake_generator_voltage_control_discards`: a co-located generator
+    already frozen there (e.g. "not started", or discarded for too small a
+    reactive range) no longer counts as "locally regulating", so a remote
+    generator sharing its bus is correctly left alone once the true conflict is
+    resolved.
+    """
+    df_bus = network.get_buses(attributes=["synchronous_component"])
+    gen = network.get_generators(
+        attributes=["voltage_regulator_on", "regulated_element_id", "q", "connected", "bus_id"]
+    )
+    if keep_only_main_comp:
+        gen = _keep_only_main_comp(gen, df_bus)
+    reg = gen["regulated_element_id"].fillna("")
+    is_remote = gen["voltage_regulator_on"] & (reg != "") & (reg != gen.index)
+    is_local = gen["voltage_regulator_on"] & ~is_remote
+    if not is_remote.any() or not is_local.any():
+        return
+    local_buses = set(gen.loc[is_local, "bus_id"])
+    conflict = is_remote & gen["bus_id"].isin(local_buses)
+    if not conflict.any():
+        return
+    upd = pd.DataFrame(index=gen.index[conflict])
+    upd["target_q"] = -gen["q"].to_numpy()[conflict]
+    upd["voltage_regulator_on"] = False
+    network.update_generators(upd)
+
+
 def _bake_reactive_limit_switches(
     network,
     keep_only_main_comp=True,
@@ -461,6 +525,7 @@ def _bake_reactive_limit_switches(
     _bake_generator_not_started(network, keep_only_main_comp)
     if bake_generator_voltage_control_discards:
         _bake_generator_voltage_control_discards(network, keep_only_main_comp)
+    _bake_remote_control_bus_conflicts(network, keep_only_main_comp)
     df_bus = network.get_buses(attributes=["synchronous_component"])
     gen = network.get_generators(
         attributes=[
