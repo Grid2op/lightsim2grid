@@ -17,8 +17,9 @@ The workflow:
    network (see ``_olf_bake``).
 3. Optionally apply the same topology change (e.g. a line outage) to both
    engines.
-4. Solve the baked network loop-free in OLF (see
-   :func:`get_pypowsybl_loopfree_parameters`) and in lightsim2grid.
+4. Solve the baked network loop-free in OLF (see :func:`remove_outer_loops`,
+   applied to the same ``olf_loop_params`` used for step 1) and in
+   lightsim2grid.
 5. Compare bus voltage magnitude (pu) and angle (deg).
 
 Bus mapping
@@ -42,7 +43,7 @@ import pypowsybl.loadflow as lf
 
 from ._from_pypowsybl import init as init_from_pypowsybl
 from ._olf_bake import bake_outer_loops
-from ._olf_params import get_pypowsybl_loopfree_parameters
+from ._olf_params import remove_outer_loops
 
 
 def iidm_bus_voltages(network) -> pd.DataFrame:
@@ -153,7 +154,12 @@ def compare_baked(
             balance_type=pp.loadflow.BalanceType.PROPORTIONAL_TO_GENERATION_P_MAX,
             twt_split_shunt_admittance=True,
         )
-    loop_free_params = get_pypowsybl_loopfree_parameters()
+    # Derived from ``olf_loop_params`` (not built independently): this guarantees
+    # every field the with-loops and loop-free solves do not differ on by design
+    # (twt_split_shunt_admittance, component_mode, voltage_init_mode, ...) is
+    # actually identical between them, so the comparison isolates the outer-loop
+    # effect that baking neutralizes rather than an unrelated model difference.
+    loop_free_params = remove_outer_loops(olf_loop_params)
 
     # ---- OLF side: with-loops solve, bake, outage, loop-free solve ----
     n_olf = network_factory()
