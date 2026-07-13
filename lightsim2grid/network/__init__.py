@@ -24,12 +24,14 @@ try:
     from lightsim2grid.network.from_pypowsybl import get_pypowsybl_loopfree_parameters  # noqa
     from lightsim2grid.network.from_pypowsybl import get_pypowsybl_loopfree_distributed_slack_parameters  # noqa
     from lightsim2grid.network.from_pypowsybl import compare_baked, ComparisonResult  # noqa
+    from lightsim2grid.network.from_pypowsybl import LightsimResultNetwork  # noqa
     __all__.append("init_from_pypowsybl")
     __all__.append("bake_outer_loops")
     __all__.append("get_pypowsybl_loopfree_parameters")
     __all__.append("get_pypowsybl_loopfree_distributed_slack_parameters")
     __all__.append("compare_baked")
     __all__.append("ComparisonResult")
+    __all__.append("LightsimResultNetwork")
 except ImportError:
     # pypowsybl is not installed
     pass
