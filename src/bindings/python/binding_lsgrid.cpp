@@ -44,6 +44,14 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
                       &LSGrid::get_max_nb_bus_per_sub,
                       &LSGrid::set_max_nb_bus_per_sub,
                       "do not modify it after loading !")
+        .def_property("_init_kwargs",
+                      &LSGrid::get_init_kwargs,
+                      &LSGrid::set_init_kwargs,
+                      R"mydelimiter(
+dict (str -> str) of the relevant kwargs this grid was built with (eg by
+`init_from_pypowsybl`), for example {"sort_index": "True", "buses_for_sub": "False"}.
+Empty for a grid not built that way, or a default-constructed one.
+)mydelimiter")
         .def_property_readonly("timer_last_ac_pf", &LSGrid::timer_last_ac_pf, "TODO")
         .def_property_readonly("timer_last_dc_pf", &LSGrid::timer_last_dc_pf, "TODO");
     add_pickle(lsgrid_cls, "LSGrid");

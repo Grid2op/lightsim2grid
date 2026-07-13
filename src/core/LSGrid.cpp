@@ -20,6 +20,7 @@ LSGrid::LSGrid(const LSGrid & other)
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
     compute_results_ = other.compute_results_;
+    init_kwargs_ = other.init_kwargs_;
 
     // copy the powersystem representation
     // 1. bus
@@ -92,6 +93,15 @@ LSGrid::StateRes LSGrid::get_state() const
     auto res_ac_algo_cfg = std::make_tuple(ac_algo_cfg.int_params, ac_algo_cfg.real_params);
     auto res_dc_algo_cfg = std::make_tuple(dc_algo_cfg.int_params, dc_algo_cfg.real_params);
 
+    std::vector<std::string> init_kwargs_keys;
+    std::vector<std::string> init_kwargs_values;
+    init_kwargs_keys.reserve(init_kwargs_.size());
+    init_kwargs_values.reserve(init_kwargs_.size());
+    for (const auto & kv : init_kwargs_) {
+        init_kwargs_keys.push_back(kv.first);
+        init_kwargs_values.push_back(kv.second);
+    }
+
     LSGrid::StateRes res(version_major,
                             version_medium,
                             version_minor,
@@ -112,7 +122,9 @@ LSGrid::StateRes LSGrid::get_state() const
                             get_algo_type(),
                             get_dc_algo_type(),
                             res_ac_algo_cfg,
-                            res_dc_algo_cfg
+                            res_dc_algo_cfg,
+                            init_kwargs_keys,
+                            init_kwargs_values
                             );
     return res;
 };
@@ -168,6 +180,9 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     // algo configs (scaling/refactor/line-search params)
     auto & state_ac_algo_cfg = std::get<AC_ALGO_CONFIG_ID>(my_state);
     auto & state_dc_algo_cfg = std::get<DC_ALGO_CONFIG_ID>(my_state);
+    // relevant kwargs the grid was built with (eg by init_from_pypowsybl)
+    const std::vector<std::string> & init_kwargs_keys = std::get<INIT_KWARGS_KEYS_ID>(my_state);
+    const std::vector<std::string> & init_kwargs_values = std::get<INIT_KWARGS_VALUES_ID>(my_state);
 
     // substations
     last_bus_status_saved_ = last_bus_status_saved;
@@ -220,6 +235,12 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     dc_algo_cfg.int_params = std::get<0>(state_dc_algo_cfg);
     dc_algo_cfg.real_params = std::get<1>(state_dc_algo_cfg);
     set_dc_algo_config(dc_algo_cfg);
+
+    // relevant kwargs the grid was built with (eg by init_from_pypowsybl)
+    init_kwargs_.clear();
+    for (std::size_t i = 0; i < init_kwargs_keys.size(); ++i) {
+        init_kwargs_[init_kwargs_keys[i]] = init_kwargs_values[i];
+    }
 };
 
 void LSGrid::save_binary(const std::string & path, bool atomic) const {
@@ -517,11 +538,18 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     // Slack buses are not PQ in the base block, but a slack bus that is not pinned
     // by a local PV generator is given a Q equation + free Vm by the MultiSlack
     // extension (see LSGrid::get_free_vm_slack_solver_buses), so a controller on
-    // such a slack bus is supported even though `is_pq` is false there.
-    std::vector<bool> is_slack(nb_bus_solver, false);
-    for(int k = 0; k < static_cast<int>(slack_bus_id_ac_solver_.size()); ++k){
-        const int b = slack_bus_id_ac_solver_(k).cast_int();
-        if(b >= 0 && b < nb_bus_solver) is_slack[b] = true;
+    // such a slack bus is supported even though `is_pq` is false there. A slack
+    // bus that IS locally pinned (another generator regulates it directly) gets
+    // no such Q equation at all -- checking membership of the whole `slack_bus_
+    // id_ac_solver_` list here (as opposed to just this "free" subset) would
+    // wrongly accept that case: its Q equation lookup then resolves to -1, the
+    // controller's own reactive-injection column ends up with no Jacobian entry
+    // anywhere, and the factorization fails with ErrorType::SolverFactor instead
+    // of this function's own clear error.
+    const std::set<int> free_vm_slack = get_free_vm_slack_solver_buses();
+    std::vector<bool> has_free_q(nb_bus_solver, false);
+    for(int b : free_vm_slack){
+        if(b >= 0 && b < nb_bus_solver) has_free_q[b] = true;
     }
 
     // 1. collect the active voltage-mode controllers (remote-regulating gens for
@@ -550,11 +578,13 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
                  << " regulates a disconnected bus.";
             throw std::runtime_error(exc_.str());
         }
-        if(!is_pq[ctrl_solver] && !is_slack[ctrl_solver]){
+        if(!is_pq[ctrl_solver] && !has_free_q[ctrl_solver]){
             std::ostringstream exc_;
             exc_ << "LSGrid::fill_voltage_control_solver_data: generator " << gen_id
                  << " regulates a remote bus but its OWN bus has no reactive (Q) equation"
-                    " (it is a PV bus that is not a slack). This is not supported in v1.";
+                    " (it is a PV bus that is not a slack, or a slack bus already locally"
+                    " pinned by another voltage-regulating generator). This is not supported"
+                    " in v1.";
             throw std::runtime_error(exc_.str());
         }
         if(!is_pq[reg_solver]){

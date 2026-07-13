@@ -561,6 +561,26 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   resolving/indexing, and raise a `RuntimeError` instead of silently indexing with `-1`
   if that invariant is ever violated. Existing HVDC test suite (`test_hvdc_*`, 35 tests)
   unaffected.
+- [BREAKING] (binary) bumped `BINARY_FORMAT_VERSION` (`src/core/BinaryArchive.hpp`) from
+  ``1`` to ``2`` for the new `LSGrid._init_kwargs` field below: a grid ``save_binary``'d
+  with a previous lightsim2grid version can no longer be `load_binary`'d. Pickle files are
+  unaffected by this specific bump (pickle already requires an exact matching
+  MAJOR.medium.patch lightsim2grid version, regardless of any `StateRes` layout change).
+- [ADDED] `LSGrid._init_kwargs`: a ``dict[str, str]`` property (get/set, persisted through
+  `copy()`, pickle and `save_binary`/`load_binary`) meant for a grid-building function (for
+  now only `init_from_pypowsybl`) to record the kwargs it was called with, so that code
+  operating on the returned `LSGrid` later does not have to separately remember them. Set
+  by `init_from_pypowsybl` to ``{"sort_index": str(sort_index), "buses_for_sub": str(buses_for_sub)}``.
+- [ADDED] `lightsim2grid.network.LightsimResultNetwork`: casts a converged `LSGrid` built by
+  `init_from_pypowsybl` back into a pypowsybl-``Network``-shaped view, so analysis code
+  written against a solved ``pypowsybl.network.Network`` (``get_buses`` / ``get_lines`` /
+  ``get_generators`` / ... returning a pandas DataFrame indexed by the pypowsybl element id)
+  runs unmodified against a solved lightsim2grid grid. Covers buses, lines, 2-winding
+  transformers, generators, loads, shunt compensators, static var compensators, batteries,
+  HVDC lines and VSC/LCC converter stations. Relies on `LSGrid._init_kwargs` above (no
+  need to separately pass `sort_index` back in) and raises `NotImplementedError` for a grid
+  built with the legacy `buses_for_sub=True` mode. See the "Inspecting results in a
+  pypowsybl-like way" section of the documentation.
 
 [0.13.1]  2026-04-21
 --------------------
