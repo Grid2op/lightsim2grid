@@ -282,8 +282,13 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
          * 
          * This is the default behaviour in pandapower, where the phase shifter
          * is always assigned to side 1.
+         *
+         * Default-initialized: a container whose init_trafo() is never called
+         * (grid without trafos) is still copied and serialized, and an
+         * indeterminate bool there is undefined behavior (found by valgrind
+         * over the C++ unit tests).
          */
-        bool ignore_tap_side_for_shift_;
+        bool ignore_tap_side_for_shift_ = false;
         
         // physical properties
         std::vector<bool> is_tap_side1_;  // whether the tap is hav side or not
@@ -296,7 +301,8 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         // lightsim2grid has no "tap" concept: the per-step r/x correction is stored
         // as a function of the phase-shift `alpha` and looked up by the current
         // `shift_`. Disabled (flag false, empty tables) for pandapower.
-        bool shift_dependent_rx_;
+        // Default-initialized for the same reason as ignore_tap_side_for_shift_.
+        bool shift_dependent_rx_ = false;
         RealVect base_r_;  // neutral (uncorrected) r, per trafo
         RealVect base_x_;  // neutral (uncorrected) x, per trafo
         std::vector<std::vector<real_type> > rx_corr_alpha_;  // per trafo: alpha (rad), ascending

@@ -6,7 +6,9 @@
 # this is how the cpp_unit_tests CI workflow builds them.
 if(NOT PROJECT_NAME)
     cmake_minimum_required(VERSION 3.16...4.99)
-    project(lightsim2grid_tests LANGUAGES CXX)
+    # the VERSION is required: src/core (added below) generates its CMake
+    # package version file from PROJECT_VERSION
+    project(lightsim2grid_tests VERSION 0.0.0 LANGUAGES CXX)
 
     if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 23)
@@ -32,22 +34,23 @@ if(NOT TARGET Catch2::Catch2WithMain)
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../Catch2" "${CMAKE_CURRENT_BINARY_DIR}/catch2")
 endif()
 
-# The archive layer under test is deliberately compiled into the test binary
-# instead of linking lightsim2grid_core: BinaryArchive.cpp is self-contained
-# (see its header), so the tests need neither KLU/SuiteSparse detection nor a
-# shared-library build, and compile in seconds. When solver-level unit tests
-# arrive, link lightsim2grid_core here instead of growing this source list.
+# The full core library: needed since the tests exercise LSGrid (powerflow,
+# solvers). Same guard as src/bindings/python/CMakeLists.txt: when added from
+# the root CMakeLists the bindings have already created the target; standalone
+# it is built from src/core (KLU detection included -- the core degrades
+# gracefully to Eigen SparseLU when KLU is not found, and the LSGrid tests
+# only rely on the always-available SparseLU algorithms).
+if(NOT TARGET lightsim2grid_core)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../core" "${CMAKE_CURRENT_BINARY_DIR}/core")
+endif()
+
 add_executable(lightsim2grid_unit_tests
-    "${CMAKE_CURRENT_SOURCE_DIR}/../core/BinaryArchive.cpp"
     test_binary_archive.cpp
     test_binary_archive_stateres.cpp
     test_binary_archive_corruption.cpp
+    test_lsgrid.cpp
 )
-target_include_directories(lightsim2grid_unit_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../core")
-# LS2G_API must resolve to dllexport (not dllimport) on MSVC, since the core
-# translation unit is built into this binary rather than imported from a DLL
-target_compile_definitions(lightsim2grid_unit_tests PRIVATE LS2G_BUILDING_CORE)
-target_link_libraries(lightsim2grid_unit_tests PRIVATE Catch2::Catch2WithMain)
+target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
 
 # one ctest entry per TEST_CASE
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Catch2/extras")
