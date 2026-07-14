@@ -84,9 +84,9 @@ class BaseDCAlgo final: public BaseAlgo
         virtual
         bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
                            CplxVect & V,
-                           const RealVect & Pbus,
+                           Eigen::Ref<const RealVect> Pbus,
                            Eigen::Ref<const IntVect> slack_ids,
-                           const RealVect & slack_weights,
+                           Eigen::Ref<const RealVect> slack_weights,
                            Eigen::Ref<const IntVect> pv,
                            Eigen::Ref<const IntVect> pq
                            ) final;

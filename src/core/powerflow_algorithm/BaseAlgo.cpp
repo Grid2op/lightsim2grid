@@ -54,7 +54,7 @@ void BaseAlgo::check_pf_inputs(const std::string & caller,
                                Eigen::Index ybus_rows, Eigen::Index ybus_cols,
                                Eigen::Index v_size, Eigen::Index sbus_size,
                                Eigen::Ref<const IntVect> slack_ids,
-                               const RealVect & slack_weights,
+                               Eigen::Ref<const RealVect> slack_weights,
                                Eigen::Ref<const IntVect> pv,
                                Eigen::Ref<const IntVect> pq)
 {
@@ -113,9 +113,9 @@ void BaseAlgo::check_iter_tol(const std::string & caller, int max_iter, real_typ
 bool BaseAlgo::compute_pf_with_input_validation(
     const Eigen::SparseMatrix<cplx_type> & Ybus,
     CplxVect & V,
-    const CplxVect & Sbus,
+    Eigen::Ref<const CplxVect> Sbus,
     Eigen::Ref<const IntVect> slack_ids,
-    const RealVect & slack_weights,
+    Eigen::Ref<const RealVect> slack_weights,
     Eigen::Ref<const IntVect> pv,
     Eigen::Ref<const IntVect> pq,
     int max_iter,
@@ -130,9 +130,9 @@ bool BaseAlgo::compute_pf_with_input_validation(
 bool BaseAlgo::compute_pf_dc_with_input_validation(
     const Eigen::SparseMatrix<real_type> & Bbus,
     CplxVect & V,
-    const RealVect & Pbus,
+    Eigen::Ref<const RealVect> Pbus,
     Eigen::Ref<const IntVect> slack_ids,
-    const RealVect & slack_weights,
+    Eigen::Ref<const RealVect> slack_weights,
     Eigen::Ref<const IntVect> pv,
     Eigen::Ref<const IntVect> pq)
 {
@@ -160,7 +160,7 @@ void BaseAlgo::reset(){
 
 RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                 const CplxVect & V,
-                                const CplxVect & Sbus,
+                                Eigen::Ref<const CplxVect> Sbus,
                                 Eigen::Ref<const IntVect> pv,
                                 Eigen::Ref<const IntVect> pq)
 {
@@ -186,10 +186,10 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
 
 RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                   const CplxVect & V,
-                                  const CplxVect & Sbus,
+                                  Eigen::Ref<const CplxVect> Sbus,
                                   size_t slack_id,  // id of the ref slack bus
                                   real_type slack_absorbed,
-                                  const RealVect & slack_weights,
+                                  Eigen::Ref<const RealVect> slack_weights,
                                   Eigen::Ref<const IntVect> pv,
                                   Eigen::Ref<const IntVect> pq)
 {

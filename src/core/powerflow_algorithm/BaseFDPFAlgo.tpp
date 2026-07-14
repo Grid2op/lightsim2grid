@@ -11,9 +11,9 @@
 template<class LinearSolver, FDPFMethod XB_BX>
 bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                    CplxVect & V,
-                                                   const CplxVect & Sbus,
+                                                   Eigen::Ref<const CplxVect> Sbus,
                                                    Eigen::Ref<const IntVect> slack_ids,
-                                                   const RealVect & slack_weights,
+                                                   Eigen::Ref<const RealVect> slack_weights,
                                                    Eigen::Ref<const IntVect> pv,
                                                    Eigen::Ref<const IntVect> pq,
                                                    int max_iter,
