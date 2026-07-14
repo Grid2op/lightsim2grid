@@ -14,35 +14,35 @@
 
 namespace ls2g {
 
-void HvdcLineContainer::init(const Eigen::VectorXi & bus1_id,
-                             const Eigen::VectorXi & bus2_id,
+void HvdcLineContainer::init(const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
+                             const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                              const std::vector<int> & type1,
                              const std::vector<int> & type2,
-                             const RealVect & loss_factor1,
-                             const RealVect & loss_factor2,
+                             const Eigen::Ref<const RealVect> & loss_factor1,
+                             const Eigen::Ref<const RealVect> & loss_factor2,
                              const std::vector<bool> & vreg1_on,
                              const std::vector<bool> & vreg2_on,
-                             const RealVect & vm1_pu,
-                             const RealVect & vm2_pu,
-                             const RealVect & q1_setpoint_mvar,
-                             const RealVect & q2_setpoint_mvar,
-                             const RealVect & min_q1,
-                             const RealVect & max_q1,
-                             const RealVect & min_q2,
-                             const RealVect & max_q2,
-                             const RealVect & power_factor1,
-                             const RealVect & power_factor2,
+                             const Eigen::Ref<const RealVect> & vm1_pu,
+                             const Eigen::Ref<const RealVect> & vm2_pu,
+                             const Eigen::Ref<const RealVect> & q1_setpoint_mvar,
+                             const Eigen::Ref<const RealVect> & q2_setpoint_mvar,
+                             const Eigen::Ref<const RealVect> & min_q1,
+                             const Eigen::Ref<const RealVect> & max_q1,
+                             const Eigen::Ref<const RealVect> & min_q2,
+                             const Eigen::Ref<const RealVect> & max_q2,
+                             const Eigen::Ref<const RealVect> & power_factor1,
+                             const Eigen::Ref<const RealVect> & power_factor2,
                              const std::vector<int> & converters_mode,
-                             const RealVect & p_setpoint_mw,
-                             const RealVect & r_ohm,
-                             const RealVect & nominal_v_kv,
-                             const RealVect & loss_percent,
-                             const RealVect & loss_mw,
+                             const Eigen::Ref<const RealVect> & p_setpoint_mw,
+                             const Eigen::Ref<const RealVect> & r_ohm,
+                             const Eigen::Ref<const RealVect> & nominal_v_kv,
+                             const Eigen::Ref<const RealVect> & loss_percent,
+                             const Eigen::Ref<const RealVect> & loss_mw,
                              const std::vector<bool> & droop_enabled,
-                             const RealVect & droop_p0_mw,
-                             const RealVect & droop_mw_per_deg,
-                             const RealVect & pmax_1to2_mw,
-                             const RealVect & pmax_2to1_mw
+                             const Eigen::Ref<const RealVect> & droop_p0_mw,
+                             const Eigen::Ref<const RealVect> & droop_mw_per_deg,
+                             const Eigen::Ref<const RealVect> & pmax_1to2_mw,
+                             const Eigen::Ref<const RealVect> & pmax_2to1_mw
                              )
 {
     init_tsc(bus1_id, bus2_id, "hvdc lines");
@@ -118,17 +118,17 @@ void HvdcLineContainer::init(const Eigen::VectorXi & bus1_id,
     }
 }
 
-void HvdcLineContainer::init_legacy(const Eigen::VectorXi & branch_from_id,
-                                    const Eigen::VectorXi & branch_to_id,
-                                    const RealVect & p_mw,
-                                    const RealVect & loss_percent,
-                                    const RealVect & loss_mw,
-                                    const RealVect & vm_or_pu,
-                                    const RealVect & vm_ex_pu,
-                                    const RealVect & min_q_or,
-                                    const RealVect & max_q_or,
-                                    const RealVect & min_q_ex,
-                                    const RealVect & max_q_ex)
+void HvdcLineContainer::init_legacy(const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                                    const Eigen::Ref<const Eigen::VectorXi> & branch_to_id,
+                                    const Eigen::Ref<const RealVect> & p_mw,
+                                    const Eigen::Ref<const RealVect> & loss_percent,
+                                    const Eigen::Ref<const RealVect> & loss_mw,
+                                    const Eigen::Ref<const RealVect> & vm_or_pu,
+                                    const Eigen::Ref<const RealVect> & vm_ex_pu,
+                                    const Eigen::Ref<const RealVect> & min_q_or,
+                                    const Eigen::Ref<const RealVect> & max_q_or,
+                                    const Eigen::Ref<const RealVect> & min_q_ex,
+                                    const Eigen::Ref<const RealVect> & max_q_ex)
 {
     const int size = static_cast<int>(p_mw.size());
     const std::vector<int> type_vsc(size, ConverterStationContainer::ConverterType::VSC);

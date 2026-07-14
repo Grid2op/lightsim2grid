@@ -316,7 +316,7 @@ void LSGrid::set_ls_to_orig_internal(const IntVect & ls_to_orig) noexcept{
 //init
 void LSGrid::init_bus(unsigned int n_sub,
                          unsigned int n_busbar_per_sub,
-                         const RealVect & bus_vn_kv,
+                         const Eigen::Ref<const RealVect> & bus_vn_kv,
                          int /*nb_line*/,
                          int /*nb_trafo*/){
     /**
