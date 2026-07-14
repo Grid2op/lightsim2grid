@@ -443,7 +443,14 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   (converged => per-bus V, diverged => empty vector), physically-checked
   results (power balance, analytic DC angles), copy / `get_state` /
   `save_binary` round trips, setpoint changes, load deactivation and the
-  documented error paths. The test target now links `lightsim2grid_core`.
+  documented error paths. Also covers every other element type and control
+  scenario: shunts, storage units, SVCs (all three regulation modes), HVDC
+  (VSC-VSC with and without angle droop, voltage-regulating VSC, LCC power
+  factor, LCC+droop rejection), transformers (tap ratio and phase shifter,
+  incl. the `change_ratio_trafo` / `change_shift_trafo` setters), distributed
+  slack, remote generator voltage control and the rejection of an unfeasible
+  local+remote controller pair on one bus. The test target now links
+  `lightsim2grid_core`.
 - [ADDED] documentation for using `lightsim2grid_core` as a standalone C++
   library (`docs/cpp_library.rst`): building/installing it from source
   (`cmake -S src/core`), consuming the copy shipped inside the python wheel
