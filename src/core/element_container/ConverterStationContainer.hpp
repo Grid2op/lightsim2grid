@@ -104,14 +104,14 @@ class LS2G_API ConverterStationContainer : public OneSideContainer_PQ, public It
         virtual ~ConverterStationContainer() noexcept = default;
 
         void init(const std::vector<int> & type,
-                  const RealVect & loss_factor,
+                  const Eigen::Ref<const RealVect> & loss_factor,
                   const std::vector<bool> & voltage_regulator_on,
-                  const RealVect & target_vm_pu,
-                  const RealVect & q_setpoint_mvar,
-                  const RealVect & min_q,
-                  const RealVect & max_q,
-                  const RealVect & power_factor,
-                  const Eigen::VectorXi & bus_id);
+                  const Eigen::Ref<const RealVect> & target_vm_pu,
+                  const Eigen::Ref<const RealVect> & q_setpoint_mvar,
+                  const Eigen::Ref<const RealVect> & min_q,
+                  const Eigen::Ref<const RealVect> & max_q,
+                  const Eigen::Ref<const RealVect> & power_factor,
+                  const Eigen::Ref<const Eigen::VectorXi> & bus_id);
 
         // pickle
         ConverterStationContainer::StateRes get_state() const;
