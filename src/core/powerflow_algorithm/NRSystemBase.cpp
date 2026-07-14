@@ -24,7 +24,7 @@ void Base::update_state(
     const LSGrid *                         lsgrid_ptr,
     const Eigen::SparseMatrix<cplx_type>&  /*Ybus*/,
     const CplxVect&                        /*Sbus*/,
-    const RealVect&                        /*slack_weights*/
+    Eigen::Ref<const RealVect>             /*slack_weights*/
 )
 {
     // Slack buses not pinned by a LOCAL voltage-regulating generator need a
