@@ -26,7 +26,7 @@ namespace ls2g {
  * not template parameters, so the same binary can switch strategy at run time.
  */
 template<class LinearSolver, class NRSystem>
-class NRAlgo : public BaseAlgo
+class NRAlgo final : public BaseAlgo
 {
 public:
     NRAlgo() noexcept :
@@ -61,7 +61,6 @@ public:
         return _system.J();
     }
 
-    virtual
     Eigen::SparseMatrix<real_type> get_J_python() const {
         Eigen::SparseMatrix<real_type> res = get_J();
         return res;
