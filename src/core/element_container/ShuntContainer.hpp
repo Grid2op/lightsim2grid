@@ -50,9 +50,9 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         virtual ~ShuntContainer() noexcept = default;
         
         
-        void init(const RealVect & shunt_p_mw,
-                  const RealVect & shunt_q_mvar,
-                  const Eigen::VectorXi & shunt_bus_id
+        void init(const Eigen::Ref<const RealVect> & shunt_p_mw,
+                  const Eigen::Ref<const RealVect> & shunt_q_mvar,
+                  const Eigen::Ref<const Eigen::VectorXi> & shunt_bus_id
                   )
         {
             init_osc_pq(shunt_p_mw,
@@ -131,7 +131,7 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,
             const SolverBusIdVect & id_grid_to_solver,
-            const RealVect & bus_vn_kv,
+            const Eigen::Ref<const RealVect> & bus_vn_kv,
             real_type sn_mva,
             bool ac) override;
 
