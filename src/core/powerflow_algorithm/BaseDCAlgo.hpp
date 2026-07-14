@@ -40,8 +40,8 @@ class BaseDCAlgo final: public BaseAlgo
 
         virtual ~BaseDCAlgo() noexcept = default;
 
-        virtual void reset() final;
-        virtual void reset_timer() final{
+        virtual void reset() override final;
+        virtual void reset_timer() override final{
             BaseAlgo::reset_timer();
             timer_refactor_ = 0.;
             timer_factor_ = 0.;
@@ -53,7 +53,7 @@ class BaseDCAlgo final: public BaseAlgo
             timer_lodf_ = 0.;
         }
 
-        virtual TimerJac get_timers_jacobian() const final
+        virtual TimerJac get_timers_jacobian() const override final
         {
             TimerJac res;
             res.timer_Fx_         = timer_Fx_;
@@ -68,7 +68,7 @@ class BaseDCAlgo final: public BaseAlgo
             return res;
         }
 
-        virtual TimerPTDFLODFType get_timers_ptdf_lodf() const final
+        virtual TimerPTDFLODFType get_timers_ptdf_lodf() const override final
         {
             TimerPTDFLODFType res = {
                 timer_ptdf_,  
@@ -89,14 +89,14 @@ class BaseDCAlgo final: public BaseAlgo
                            Eigen::Ref<const RealVect> slack_weights,
                            Eigen::Ref<const IntVect> pv,
                            Eigen::Ref<const IntVect> pq
-                           ) final;
+                           ) override final;
 
-        virtual RealMat get_ptdf() final;
+        virtual RealMat get_ptdf() override final;
         virtual RealMat get_lodf(const IntVect & from_bus,
-                                 const IntVect & to_bus) final;
-        virtual Eigen::SparseMatrix<real_type> get_bsdf() final;  // TODO BSDF
-        
-        virtual void update_internal_Ybus(const Coeff & coeff, bool add) final{
+                                 const IntVect & to_bus) override final;
+        virtual Eigen::SparseMatrix<real_type> get_bsdf() override final;  // TODO BSDF
+
+        virtual void update_internal_Ybus(const Coeff & coeff, bool add) override final{
             int row_res = static_cast<int>(coeff.row_id);
             row_res = mat_bus_id_(row_res);
             if(row_res == -1) return;
@@ -118,8 +118,8 @@ class BaseDCAlgo final: public BaseAlgo
         // a working copy of dcYbus_noslack_, so the (incrementally maintained)
         // persistent matrix and the symbolic factorization are left untouched (only a
         // numeric refactorize is needed). See compute_pf_dc.
-        virtual bool supports_bus_masking() const final { return true; }
-        virtual void set_masked_buses(const std::vector<int> & solver_bus_ids) final{
+        virtual bool supports_bus_masking() const override final { return true; }
+        virtual void set_masked_buses(const std::vector<int> & solver_bus_ids) override final{
             masked_buses_ = solver_bus_ids;
         }
 
