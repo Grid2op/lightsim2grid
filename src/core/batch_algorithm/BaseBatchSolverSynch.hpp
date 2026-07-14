@@ -159,6 +159,12 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // DC has no such reduction (handled explicitly below).
                 GlobalBusId bus_from_me = bus_from(el_id);
                 GlobalBusId bus_to_me = bus_to(el_id);
+                // TODO speed: this copies a full nb_steps-sized column per line/trafo,
+                // every call. _voltages is RowMajor, so a column isn't contiguous and
+                // can't bind to Eigen::Ref; the ternary also needs a common type with
+                // CplxVect::Zero(nb_steps). Avoiding the copy would need a control-flow
+                // restructure (separate open-side / closed-side code paths) rather than
+                // a reference-type change -- see CHANGELOG [TODO].
                 const CplxVect Efrom = s1 ? CplxVect(_voltages.col(bus_from_me.cast_int())) : CplxVect::Zero(nb_steps);
                 const CplxVect Eto   = s2 ? CplxVect(_voltages.col(bus_to_me.cast_int()))   : CplxVect::Zero(nb_steps);
 
@@ -247,6 +253,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // DC has no such reduction (handled explicitly below).
                 GlobalBusId bus_from_me = bus_from(el_id);
                 GlobalBusId bus_to_me = bus_to(el_id);
+                // TODO speed: same structural copy as in compute_amps_flows above (see
+                // the TODO there for why this isn't a simple Eigen::Ref fix) -- see
+                // CHANGELOG [TODO].
                 const CplxVect Efrom = s1 ? CplxVect(_voltages.col(bus_from_me.cast_int())) : CplxVect::Zero(nb_steps);
                 const CplxVect Eto   = s2 ? CplxVect(_voltages.col(bus_to_me.cast_int()))   : CplxVect::Zero(nb_steps);
 
