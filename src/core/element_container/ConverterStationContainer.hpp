@@ -58,7 +58,7 @@ A station with a (derived) active power of exactly 0 MW is considered
 (this mirrors the behaviour of the legacy DC lines, whose embedded generators
 were configured with `turnedoff_no_pv`).
 **/
-class LS2G_API ConverterStationContainer : public OneSideContainer_PQ, public IteratorAdder<ConverterStationContainer, ConverterStationInfo>
+class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, public IteratorAdder<ConverterStationContainer, ConverterStationInfo>
 {
     friend class ConverterStationInfo;
 
@@ -151,7 +151,7 @@ class LS2G_API ConverterStationContainer : public OneSideContainer_PQ, public It
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
-                            const SolverBusIdVect & id_grid_to_solver) const;
+                            const SolverBusIdVect & id_grid_to_solver) const override;
         void init_q_vector(int nb_bus,
                            Eigen::VectorXi & total_gen_per_bus,
                            RealVect & total_q_min_per_bus,

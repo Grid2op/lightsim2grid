@@ -184,7 +184,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         RealVect get_slack_weights_solver(size_t nb_bus_solver, const SolverBusIdVect & id_grid_to_solver);
     
         GlobalBusIdVect get_slack_bus_id() const;
-        virtual void set_p_slack(const RealVect& node_mismatch, const SolverBusIdVect & id_grid_to_solver);
+        virtual void set_p_slack(const RealVect& node_mismatch, const SolverBusIdVect & id_grid_to_solver) override;
     
         // modification
         void turnedoff_no_pv(DualAlgoControl & solver_control){
@@ -257,11 +257,11 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         void change_v(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control);
         void change_v_nothrow(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control);
         
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const;
+        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
-                            const SolverBusIdVect & id_grid_to_solver) const;
+                            const SolverBusIdVect & id_grid_to_solver) const override;
         void init_q_vector(int nb_bus,
                            Eigen::VectorXi & total_gen_per_bus,
                            RealVect & total_q_min_per_bus,

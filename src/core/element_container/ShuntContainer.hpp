@@ -74,13 +74,13 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                               bool ac,
                               const SolverBusIdVect & id_grid_to_solver,
-                              real_type sn_mva) const;
+                              real_type sn_mva) const override;
         virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
                                 const SolverBusIdVect & id_grid_to_solver,
                                 real_type sn_mva,
-                                FDPFMethod xb_or_bx) const;
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const;  // in DC i need that
+                                FDPFMethod xb_or_bx) const override;
+        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;  // in DC i need that
         
     protected:
         virtual void _change_p(int shunt_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control) override

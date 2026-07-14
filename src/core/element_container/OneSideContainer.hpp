@@ -193,7 +193,7 @@ class OneSideContainer : public GenericContainer
             }
         }
 
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) final {
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override final {
             const int nb_el = nb();
             DualAlgoControl unused_solver_control;
             for(int el_id = 0; el_id < nb_el; ++el_id)
