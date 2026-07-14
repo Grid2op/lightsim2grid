@@ -25,17 +25,17 @@ void PandaPowerConverter::_check_init(){
 std::tuple<RealVect,
            RealVect,
            CplxVect>
-           PandaPowerConverter::get_trafo_param_pp2(const RealVect & tap_step_pct,
-                                                    const RealVect & tap_pos,
-                                                    const RealVect & tap_angles,
+           PandaPowerConverter::get_trafo_param_pp2(const Eigen::Ref<const RealVect> & tap_step_pct,
+                                                    const Eigen::Ref<const RealVect> & tap_pos,
+                                                    const Eigen::Ref<const RealVect> & tap_angles,
                                                     const std::vector<bool> & is_tap_hv_side,
-                                                    const RealVect & vn_hv,  // nominal voltage of hv bus
-                                                    const RealVect & vn_lv,  // nominal voltage of lv bus
-                                                    const RealVect & trafo_vk_percent,
-                                                    const RealVect & trafo_vkr_percent,
-                                                    const RealVect & trafo_sn_trafo_mva,
-                                                    const RealVect & trafo_pfe_kw,
-                                                    const RealVect & trafo_i0_pct)
+                                                    const Eigen::Ref<const RealVect> & vn_hv,  // nominal voltage of hv bus
+                                                    const Eigen::Ref<const RealVect> & vn_lv,  // nominal voltage of lv bus
+                                                    const Eigen::Ref<const RealVect> & trafo_vk_percent,
+                                                    const Eigen::Ref<const RealVect> & trafo_vkr_percent,
+                                                    const Eigen::Ref<const RealVect> & trafo_sn_trafo_mva,
+                                                    const Eigen::Ref<const RealVect> & trafo_pfe_kw,
+                                                    const Eigen::Ref<const RealVect> & trafo_i0_pct)
 {
     //TODO consistency: move this class outside of here
     _check_init();
@@ -129,12 +129,12 @@ std::tuple<RealVect,
 std::tuple<RealVect,
            RealVect,
            CplxVect>
-           PandaPowerConverter::get_line_param_legacy(const RealVect & branch_r,
-                                                      const RealVect & branch_x,
-                                                      const RealVect & branch_g,
-                                                      const RealVect & branch_c,
-                                                      const RealVect & branch_from_kv,
-                                                      const RealVect & /*branch_to_kv*/)
+           PandaPowerConverter::get_line_param_legacy(const Eigen::Ref<const RealVect> & branch_r,
+                                                      const Eigen::Ref<const RealVect> & branch_x,
+                                                      const Eigen::Ref<const RealVect> & branch_g,
+                                                      const Eigen::Ref<const RealVect> & branch_c,
+                                                      const Eigen::Ref<const RealVect> & branch_from_kv,
+                                                      const Eigen::Ref<const RealVect> & /*branch_to_kv*/)
 {
     //TODO does not use c at the moment!
     _check_init();
@@ -161,12 +161,12 @@ std::tuple<RealVect,
            RealVect,
            CplxVect,
            CplxVect>
-    PandaPowerConverter::get_line_param(const RealVect & branch_r,
-                                        const RealVect & branch_x,
-                                        const RealVect & branch_g,
-                                        const RealVect & branch_c,
-                                        const RealVect & branch_from_kv,
-                                        const RealVect & /*branch_to_kv*/)
+    PandaPowerConverter::get_line_param(const Eigen::Ref<const RealVect> & branch_r,
+                                        const Eigen::Ref<const RealVect> & branch_x,
+                                        const Eigen::Ref<const RealVect> & branch_g,
+                                        const Eigen::Ref<const RealVect> & branch_c,
+                                        const Eigen::Ref<const RealVect> & branch_from_kv,
+                                        const Eigen::Ref<const RealVect> & /*branch_to_kv*/)
 {
     _check_init();
     const int nb_line = static_cast<int>(branch_r.size());
@@ -194,17 +194,17 @@ std::tuple<RealVect,
 std::tuple<RealVect,
            RealVect,
            CplxVect>
-           PandaPowerConverter::get_trafo_param_pp3(const RealVect & tap_step_pct,
-                                                    const RealVect & tap_pos,
-                                                    const RealVect & tap_angles,
+           PandaPowerConverter::get_trafo_param_pp3(const Eigen::Ref<const RealVect> & tap_step_pct,
+                                                    const Eigen::Ref<const RealVect> & tap_pos,
+                                                    const Eigen::Ref<const RealVect> & tap_angles,
                                                     const std::vector<bool> & is_tap_hv_side,
-                                                    const RealVect & vn_hv,  // nominal voltage of hv bus
-                                                    const RealVect & vn_lv,  // nominal voltage of lv bus
-                                                    const RealVect & trafo_vk_percent,
-                                                    const RealVect & trafo_vkr_percent,
-                                                    const RealVect & trafo_sn_mva,
-                                                    const RealVect & trafo_pfe_kw,
-                                                    const RealVect & trafo_i0_pct,
+                                                    const Eigen::Ref<const RealVect> & vn_hv,  // nominal voltage of hv bus
+                                                    const Eigen::Ref<const RealVect> & vn_lv,  // nominal voltage of lv bus
+                                                    const Eigen::Ref<const RealVect> & trafo_vk_percent,
+                                                    const Eigen::Ref<const RealVect> & trafo_vkr_percent,
+                                                    const Eigen::Ref<const RealVect> & trafo_sn_mva,
+                                                    const Eigen::Ref<const RealVect> & trafo_pfe_kw,
+                                                    const Eigen::Ref<const RealVect> & trafo_i0_pct,
                                                     bool trafo_model_is_t)
 {
     //TODO consistency: move this class outside of here
