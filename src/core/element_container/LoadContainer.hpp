@@ -68,9 +68,9 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
         static LoadContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "LoadContainer"; }  // written into / checked against the binary file header
         
-        void init(const RealVect & load_p_mw,
-                  const RealVect & load_q_mvar,
-                  const Eigen::VectorXi & load_bus_id
+        void init(const Eigen::Ref<const RealVect> & load_p_mw,
+                  const Eigen::Ref<const RealVect> & load_q_mvar,
+                  const Eigen::Ref<const Eigen::VectorXi> & load_bus_id
                   )
         {
             init_osc_pq(load_p_mw,
@@ -87,7 +87,7 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
                                     const Eigen::Ref<const RealVect> & /*Vm*/,
                                     const Eigen::Ref<const CplxVect> & /*V*/,
                                     const SolverBusIdVect & /*id_grid_to_solver*/,
-                                    const RealVect & /*bus_vn_kv*/,
+                                    const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
                                     real_type /*sn_mva*/,
                                     bool ac) override
                                     {

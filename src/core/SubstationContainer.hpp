@@ -163,7 +163,7 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             return bus_status_[local_to_gridmodel(sub_id, local_bus_id).cast_int()];
         }
 
-        void init_bus(int n_sub, int nmax_busbar_per_sub, const RealVect & bus_vn_kv)
+        void init_bus(int n_sub, int nmax_busbar_per_sub, const Eigen::Ref<const RealVect> & bus_vn_kv)
         {
             if(bus_vn_kv.size() != n_sub * nmax_busbar_per_sub){
                 std::ostringstream exc_;
