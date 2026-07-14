@@ -569,7 +569,7 @@ class LS2G_API LSGrid final
         const AlgoControl & get_dc_algo_controler() const {return algo_controler_.dc_algo_controler();}
 
         // dc powerflow
-        CplxVect dc_pf(const CplxVect & Vinit,
+        CplxVect dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
                        int max_iter,  // not used for DC
                        real_type tol  // not used for DC
                        );
@@ -610,12 +610,12 @@ class LS2G_API LSGrid final
         Eigen::SparseMatrix<real_type> get_Bf();
 
         // ac powerflow
-        CplxVect ac_pf(const CplxVect & Vinit,
+        CplxVect ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
                        int max_iter,
                        real_type tol);
 
         // check the kirchoff law
-        CplxVect check_solution(const CplxVect & V, bool check_q_limits);
+        CplxVect check_solution(const Eigen::Ref<const CplxVect> & V, bool check_q_limits);
 
         // deactivate a bus. Be careful, if a bus is deactivated, but an element is
         // still connected to it, it will throw an exception
@@ -1702,7 +1702,7 @@ class LS2G_API LSGrid final
         // physically-correct gap between that voltage and the local target (the
         // regulator doing its job) can look like a large spurious power mismatch at a
         // strongly-meshed bus.
-        CplxVect pre_process_solver(const CplxVect & Vinit,
+        CplxVect pre_process_solver(const Eigen::Ref<const CplxVect> & Vinit,
                                     CplxVect & Sbus,
                                     Eigen::SparseMatrix<cplx_type> & Ybus,
                                     SolverBusIdVect & id_me_to_solver,
@@ -1716,7 +1716,7 @@ class LS2G_API LSGrid final
         // DC-specific pre processing: builds the real Bbus (admittance) matrix and the
         // real Pbus (active power) vector, reusing the shared bus-mapping helpers. Mirrors
         // pre_process_solver but keeps the whole DC path real (no complex Ybus / Sbus).
-        CplxVect pre_process_dc_solver(const CplxVect & Vinit,
+        CplxVect pre_process_dc_solver(const Eigen::Ref<const CplxVect> & Vinit,
                                        RealVect & Pbus,
                                        Eigen::SparseMatrix<real_type> & Bbus,
                                        SolverBusIdVect & id_me_to_solver,
@@ -1884,7 +1884,7 @@ class LS2G_API LSGrid final
         // family (cplx_type => AC, real_type => DC); the type-specific steps (matrix init / fill,
         // injection assembly) are tag-dispatched to the overloads just below.
         template<class MatScalar, class InjVect>
-        CplxVect _pre_process_solver_impl(const CplxVect & Vinit,
+        CplxVect _pre_process_solver_impl(const Eigen::Ref<const CplxVect> & Vinit,
                                           InjVect & inj,
                                           Eigen::SparseMatrix<MatScalar> & mat,
                                           SolverBusIdVect & id_me_to_solver,
@@ -1919,7 +1919,7 @@ class LS2G_API LSGrid final
         // results
         /**process the results from the solver to this instance
         **/
-        void process_results(bool conv, CplxVect & res, const CplxVect & Vinit, bool ac,
+        void process_results(bool conv, CplxVect & res, const Eigen::Ref<const CplxVect> & Vinit, bool ac,
                              SolverBusIdVect & id_me_to_solver);
 
         /**
@@ -1961,7 +1961,7 @@ class LS2G_API LSGrid final
             }
         }
 
-        CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp,
+        CplxVect _get_results_back_to_orig_nodes(const Eigen::Ref<const CplxVect> & res_tmp,
                                                  SolverBusIdVect & id_me_to_solver,
                                                  int size);
 
