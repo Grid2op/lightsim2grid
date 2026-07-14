@@ -153,9 +153,9 @@ class LS2G_API AlgorithmSelector final
 
         bool compute_pf(const Eigen::SparseMatrix<cplx_type>& Ybus,
                         CplxVect& V,
-                        const CplxVect& Sbus,
+                        Eigen::Ref<const CplxVect> Sbus,
                         Eigen::Ref<const IntVect> slack_ids,
-                        const RealVect& slack_weights,
+                        Eigen::Ref<const RealVect> slack_weights,
                         Eigen::Ref<const IntVect> pv,
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,
@@ -169,9 +169,9 @@ class LS2G_API AlgorithmSelector final
         // Native real-valued DC entry point (only valid for DC solvers).
         bool compute_pf_dc(const Eigen::SparseMatrix<real_type>& Bbus,
                            CplxVect& V,
-                           const RealVect& Pbus,
+                           Eigen::Ref<const RealVect> Pbus,
                            Eigen::Ref<const IntVect> slack_ids,
-                           const RealVect& slack_weights,
+                           Eigen::Ref<const RealVect> slack_weights,
                            Eigen::Ref<const IntVect> pv,
                            Eigen::Ref<const IntVect> pq)
         {
