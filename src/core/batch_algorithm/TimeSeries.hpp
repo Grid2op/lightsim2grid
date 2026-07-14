@@ -81,7 +81,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
         template<class T>
         void fill_SBus_real(CplxMat & Sbuses,
                             const T & structure_data,
-                            const RealMat & temporal_data,
+                            const Eigen::Ref<const RealMat> & temporal_data,
                             const SolverBusIdVect & id_me_to_ac_solver,
                             bool add  // if true call += else calls -=
                             ) const 
@@ -118,7 +118,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
         template<class T>
         void fill_SBus_imag(CplxMat & Sbuses,
                             const T & structure_data,
-                            const RealMat & temporal_data,
+                            const Eigen::Ref<const RealMat> & temporal_data,
                             const SolverBusIdVect & id_me_to_ac_solver,
                             bool add  // if true call += else calls -=
                             ) const 

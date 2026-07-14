@@ -801,14 +801,26 @@ void ContingencyAnalysis::run_contingency_range(
                     timer_modif_Ybus_acc += timer_modif_Ybus.duration();
 
                     algo.set_masked_buses(masked);
-                    const RealVect sw = masked.empty() ? slack_weights_ : masked_slack_weights(masked);
                     V = Vinit_solver; // Vinit is reused for each contingencies
-                    conv = compute_one_powerflow(
-                        algo, control, nb_solved, timer_solver,
-                        Ybus, V, Sbus_,
-                        slack_ids_solver_.as_eigen(), sw,
-                        bus_pv_.as_eigen(), bus_pq_.as_eigen(),
-                        max_iter, tol / sn_mva);
+                    // avoid a ternary here: masked.empty() is the common case, and
+                    // unifying both branches into one RealVect would copy
+                    // slack_weights_ even then; call with it directly instead.
+                    if(masked.empty()){
+                        conv = compute_one_powerflow(
+                            algo, control, nb_solved, timer_solver,
+                            Ybus, V, Sbus_,
+                            slack_ids_solver_.as_eigen(), slack_weights_,
+                            bus_pv_.as_eigen(), bus_pq_.as_eigen(),
+                            max_iter, tol / sn_mva);
+                    } else {
+                        const RealVect sw = masked_slack_weights(masked);
+                        conv = compute_one_powerflow(
+                            algo, control, nb_solved, timer_solver,
+                            Ybus, V, Sbus_,
+                            slack_ids_solver_.as_eigen(), sw,
+                            bus_pv_.as_eigen(), bus_pq_.as_eigen(),
+                            max_iter, tol / sn_mva);
+                    }
                     if(needs_solver_init){
                         control.tell_none_changed();
                         needs_solver_init = false;
