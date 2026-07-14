@@ -177,7 +177,7 @@ class LS2G_API Base
             const LSGrid *                         lsgrid_ptr,
             const Eigen::SparseMatrix<cplx_type>&  Ybus,
             const CplxVect&                        Sbus,
-            const RealVect&                        slack_weights
+            Eigen::Ref<const RealVect>             slack_weights
         );
 
         // call after update_state
@@ -303,7 +303,7 @@ class LS2G_API MultiSlack   // distributed-slack extension
             const LSGrid *                         lsgrid_ptr,
             const Eigen::SparseMatrix<cplx_type>&  Ybus,
             const CplxVect&                        Sbus,
-            const RealVect&                        slack_weights
+            Eigen::Ref<const RealVect>             slack_weights
         );
 
         // call after update_state
@@ -448,7 +448,7 @@ class LS2G_API Hvdc
             const LSGrid *                         lsgrid_ptr,
             const Eigen::SparseMatrix<cplx_type>&  Ybus,
             const CplxVect&                        Sbus,
-            const RealVect&                        slack_weights
+            Eigen::Ref<const RealVect>             slack_weights
         );
 
         void init_topology(
@@ -616,7 +616,7 @@ class LS2G_API VoltageControl
             const LSGrid *                         lsgrid_ptr,
             const Eigen::SparseMatrix<cplx_type>&  Ybus,
             const CplxVect&                        Sbus,
-            const RealVect&                        slack_weights
+            Eigen::Ref<const RealVect>             slack_weights
         );
 
         void init_topology(

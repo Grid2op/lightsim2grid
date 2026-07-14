@@ -95,7 +95,13 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         void reset_results() {reset_results_tsc_rxha();}
 
         // for consistency with trafo, when used for example in BaseMultiplePowerflow...
-        Eigen::Ref<const RealVect> dc_x_tau_shift() const {return RealVect();}
+        // lines never have a phase shift: the Ref must point at something with a
+        // lifetime that outlives the call, not a temporary (a plain `return RealVect();`
+        // would bind the Ref to a temporary destroyed before the caller sees it).
+        Eigen::Ref<const RealVect> dc_x_tau_shift() const {
+            static const RealVect empty_dc_x_tau_shift{};
+            return empty_dc_x_tau_shift;
+        }
 
     protected:
         // physical properties
