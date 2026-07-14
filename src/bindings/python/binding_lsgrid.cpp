@@ -446,11 +446,18 @@ Empty for a grid not built that way, or a default-constructed one.
         .def("get_dc_algo_controler", &LSGrid::get_dc_algo_controler, "TODO", py::return_value_policy::reference)
         // .def("get_solver_control",  &LSGrid::get_algo_controler, "DEPRECATED use 'get_algo_controler'", py::return_value_policy::reference)
         .def("compute_newton", &LSGrid::ac_pf, DocLSGrid::ac_pf.c_str())
-        .def("get_ptdf", &LSGrid::get_ptdf, DocLSGrid::get_ptdf.c_str(), py::return_value_policy::reference)
-        .def("get_ptdf_solver", &LSGrid::get_ptdf_solver, DocLSGrid::get_ptdf_solver.c_str(), py::return_value_policy::reference)
-        .def("get_lodf", &LSGrid::get_lodf, DocLSGrid::get_lodf.c_str(), py::return_value_policy::reference)
-        .def("get_Bf", &LSGrid::get_Bf, DocLSGrid::get_Bf.c_str(), py::return_value_policy::reference)
-        .def("get_Bf_solver", &LSGrid::get_Bf_solver, DocLSGrid::get_Bf_solver.c_str(), py::return_value_policy::reference)
+        // get_ptdf/get_ptdf_solver/get_lodf/get_Bf/get_Bf_solver all return their
+        // matrix BY VALUE (freshly computed, not a reference to persistent state):
+        // no return_value_policy::reference here, since that would wrap the numpy
+        // array around the returned temporary's memory, which is freed as soon as
+        // this call returns (dangling on the Python side). The default policy
+        // (copy/move into a Python-owned array) is the only safe choice for a
+        // by-value return.
+        .def("get_ptdf", &LSGrid::get_ptdf, DocLSGrid::get_ptdf.c_str())
+        .def("get_ptdf_solver", &LSGrid::get_ptdf_solver, DocLSGrid::get_ptdf_solver.c_str())
+        .def("get_lodf", &LSGrid::get_lodf, DocLSGrid::get_lodf.c_str())
+        .def("get_Bf", &LSGrid::get_Bf, DocLSGrid::get_Bf.c_str())
+        .def("get_Bf_solver", &LSGrid::get_Bf_solver, DocLSGrid::get_Bf_solver.c_str())
 
         // apply action faster (optimized for grid2op representation)
         .def("update_gens_p", &LSGrid::update_gens_p, DocLSGrid::_internal_do_not_use.c_str())
