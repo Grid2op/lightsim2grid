@@ -29,9 +29,9 @@ class LS2G_API GaussSeidelAlgo : public BaseAlgo
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
-                        const CplxVect & Sbus,
+                        Eigen::Ref<const CplxVect> Sbus,
                         Eigen::Ref<const IntVect> slack_ids,
-                        const RealVect & slack_weights,  // currently unused
+                        Eigen::Ref<const RealVect> slack_weights,  // currently unused
                         Eigen::Ref<const IntVect> pv,
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,

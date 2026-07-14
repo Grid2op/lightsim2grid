@@ -111,7 +111,7 @@ class LS2G_API BaseAlgo : public BaseConstants
                                     Eigen::Index ybus_rows, Eigen::Index ybus_cols,
                                     Eigen::Index v_size, Eigen::Index sbus_size,
                                     Eigen::Ref<const IntVect> slack_ids,
-                                    const RealVect & slack_weights,
+                                    Eigen::Ref<const RealVect> slack_weights,
                                     Eigen::Ref<const IntVect> pv,
                                     Eigen::Ref<const IntVect> pq);
 
@@ -136,9 +136,9 @@ class LS2G_API BaseAlgo : public BaseConstants
         bool compute_pf_with_input_validation(
             const Eigen::SparseMatrix<cplx_type> & Ybus,
             CplxVect & V,
-            const CplxVect & Sbus,
+            Eigen::Ref<const CplxVect> Sbus,
             Eigen::Ref<const IntVect> slack_ids,
-            const RealVect & slack_weights,
+            Eigen::Ref<const RealVect> slack_weights,
             Eigen::Ref<const IntVect> pv,
             Eigen::Ref<const IntVect> pq,
             int max_iter,
@@ -151,9 +151,9 @@ class LS2G_API BaseAlgo : public BaseConstants
         bool compute_pf_dc_with_input_validation(
             const Eigen::SparseMatrix<real_type> & Bbus,
             CplxVect & V,
-            const RealVect & Pbus,
+            Eigen::Ref<const RealVect> Pbus,
             Eigen::Ref<const IntVect> slack_ids,
-            const RealVect & slack_weights,
+            Eigen::Ref<const RealVect> slack_weights,
             Eigen::Ref<const IntVect> pv,
             Eigen::Ref<const IntVect> pq);
 
@@ -284,9 +284,9 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & /*Ybus*/,
                         CplxVect & /*V*/,  // store the results of the powerflow and the Vinit !
-                        const CplxVect & /*Sbus*/,
+                        Eigen::Ref<const CplxVect> /*Sbus*/,
                         Eigen::Ref<const IntVect> /*slack_ids*/,
-                        const RealVect & /*slack_weights*/,
+                        Eigen::Ref<const RealVect> /*slack_weights*/,
                         Eigen::Ref<const IntVect> /*pv*/,
                         Eigen::Ref<const IntVect> /*pq*/,
                         int /*max_iter*/,
@@ -302,9 +302,9 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual
         bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & /*Bbus*/,
                            CplxVect & /*V*/,
-                           const RealVect & /*Pbus*/,
+                           Eigen::Ref<const RealVect> /*Pbus*/,
                            Eigen::Ref<const IntVect> /*slack_ids*/,
-                           const RealVect & /*slack_weights*/,
+                           Eigen::Ref<const RealVect> /*slack_weights*/,
                            Eigen::Ref<const IntVect> /*pv*/,
                            Eigen::Ref<const IntVect> /*pq*/){
             throw std::runtime_error("compute_pf_dc is only available for DC solvers.");
@@ -356,16 +356,16 @@ class LS2G_API BaseAlgo : public BaseConstants
         }
         RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                               const CplxVect & V,
-                              const CplxVect & Sbus,
+                              Eigen::Ref<const CplxVect> Sbus,
                               size_t slack_id,  // id of the slack bus
                               real_type slack_absorbed,
-                              const RealVect & slack_weights,
+                              Eigen::Ref<const RealVect> slack_weights,
                               Eigen::Ref<const IntVect> pv,
                               Eigen::Ref<const IntVect> pq);
 
         RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                               const CplxVect & V,
-                              const CplxVect & Sbus,
+                              Eigen::Ref<const CplxVect> Sbus,
                               Eigen::Ref<const IntVect> pv,
                               Eigen::Ref<const IntVect> pq);
 

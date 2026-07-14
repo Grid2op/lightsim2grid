@@ -26,9 +26,9 @@ class BaseFDPFAlgo: public BaseAlgo
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
-                        const CplxVect & Sbus,
+                        Eigen::Ref<const CplxVect> Sbus,
                         Eigen::Ref<const IntVect> slack_ids,
-                        const RealVect & slack_weights,
+                        Eigen::Ref<const RealVect> slack_weights,
                         Eigen::Ref<const IntVect> pv,
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,
@@ -64,10 +64,10 @@ class BaseFDPFAlgo: public BaseAlgo
 
         CplxVect evaluate_mismatch(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                    const CplxVect & V,
-                                   const CplxVect & Sbus,
+                                   Eigen::Ref<const CplxVect> Sbus,
                                    size_t /*slack_id*/,  // id of the ref slack bus
                                    real_type slack_absorbed,
-                                   const RealVect & slack_weights)
+                                   Eigen::Ref<const RealVect> slack_weights)
         {
             // CplxVect tmp = Ybus * V;  // this is a vector
             // tmp = tmp.array().conjugate();  // i take the conjugate
@@ -125,10 +125,10 @@ class BaseFDPFAlgo: public BaseAlgo
 
         bool has_converged(const Eigen::Ref<const CplxVect > & tmp_va,
                            const Eigen::SparseMatrix<cplx_type> & Ybus,
-                           const CplxVect & Sbus,
+                           Eigen::Ref<const CplxVect> Sbus,
                            size_t slack_bus_id,
                            real_type & slack_absorbed,
-                           const RealVect & slack_weights,
+                           Eigen::Ref<const RealVect> slack_weights,
                            const Eigen::Ref<const Eigen::VectorXi> & pvpq,
                            const Eigen::Ref<const Eigen::VectorXi> & pq,
                            real_type tol)
