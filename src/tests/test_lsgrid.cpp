@@ -21,11 +21,15 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "LSGrid.hpp"
 #include "test_helpers.hpp"
 
 using Catch::Approx;
+using Catch::Matchers::ContainsSubstring;
+using Catch::Matchers::MessageMatches;
 using ls2g::LSGrid;
 using ls2g::CplxVect;
 using ls2g::RealVect;
@@ -368,10 +372,13 @@ TEST_CASE("static var compensators", "[LSGrid][svc]")
 
 TEST_CASE("HVDC links between two converter stations", "[LSGrid][hvdc]")
 {
-    // one hvdc line between bus 1 (side 1, rectifier) and bus 2 (side 2),
-    // drawing 20 MW; helper filling the many init_hvdc_lines arguments
+    // one hvdc line between bus 1 (side 1, rectifier) and bus 2 (side 2);
+    // helper filling the many init_hvdc_lines arguments
     const auto add_hvdc = [](LSGrid & grid, int type2, bool vreg2_on,
-                             real_type vm2, real_type power_factor2) {
+                             real_type vm2, real_type power_factor2,
+                             real_type p_setpoint = 20.,
+                             bool droop = false, real_type droop_p0 = 0.,
+                             real_type droop_k_per_deg = 0.) {
         Eigen::VectorXi bus1(1), bus2(1);
         bus1 << 1;
         bus2 << 2;
@@ -379,18 +386,20 @@ TEST_CASE("HVDC links between two converter stations", "[LSGrid][hvdc]")
         const std::vector<int> type1{0};
         // HvdcLineContainer::ConvertersMode: SIDE_1_RECTIFIER = 0
         const std::vector<int> mode{0};
-        const std::vector<bool> vreg1{false}, vreg2{vreg2_on}, no_droop{false};
+        const std::vector<bool> vreg1{false}, vreg2{vreg2_on}, droop_on{droop};
         const RealVect zero = RealVect::Zero(1);
         RealVect vm1_pu(1), vm2_pu(1), q_min(1), q_max(1);
-        RealVect pf1(1), pf2(1), p_set(1), p_max(1);
+        RealVect pf1(1), pf2(1), p_set(1), p_max(1), p0(1), k_deg(1);
         vm1_pu << 1.0;
         vm2_pu << vm2;
         q_min << -1e6;
         q_max << 1e6;
         pf1 << 1.;
         pf2 << power_factor2;
-        p_set << 20.;
+        p_set << p_setpoint;
         p_max << 300.;
+        p0 << droop_p0;
+        k_deg << droop_k_per_deg;
         grid.init_hvdc_lines(bus1, bus2, type1, {type2},
                              zero, zero,           // no station losses
                              vreg1, vreg2, vm1_pu, vm2_pu,
@@ -398,7 +407,7 @@ TEST_CASE("HVDC links between two converter stations", "[LSGrid][hvdc]")
                              q_min, q_max, q_min, q_max,
                              pf1, pf2, mode, p_set,
                              zero, zero,           // r_ohm, nominal_v (no line loss)
-                             no_droop, zero, zero, p_max, p_max);
+                             droop_on, p0, k_deg, p_max, p_max);
         grid.tell_solver_need_reset();
     };
 
@@ -425,6 +434,28 @@ TEST_CASE("HVDC links between two converter stations", "[LSGrid][hvdc]")
         const real_type q2 = std::get<1>(grid.get_dcline_res2())(0);
         CHECK(p2 == Approx(20.).epsilon(1e-8));
         CHECK(q2 == Approx(-std::abs(p2) * std::tan(std::acos(0.9))).epsilon(1e-6));
+    }
+    SECTION("a VSC-VSC link with angle droop follows the droop law") {
+        LSGrid grid = make_three_bus_grid();
+        const real_type p0 = 10., k_per_deg = 2.;
+        add_hvdc(grid, /*type2=VSC*/ 0, false, 1.0, 1., /*p_setpoint=*/0.,
+                 /*droop=*/true, p0, k_per_deg);
+        const CplxVect V = solve_ac(grid);
+        REQUIRE(V.size() == 3);
+        // linear regime: transferred power (1 -> 2) is p0 + k * (theta1 - theta2),
+        // with k converted from MW/deg to MW/rad
+        const real_type k_per_rad = k_per_deg * 180. / std::acos(real_type(-1.));
+        const real_type expected = p0 + k_per_rad * (std::arg(V(1)) - std::arg(V(2)));
+        CHECK(std::get<0>(grid.get_dcline_res2())(0) == Approx(expected).epsilon(1e-6));
+        CHECK(std::get<0>(grid.get_dcline_res1())(0) == Approx(-expected).epsilon(1e-6));
+    }
+    SECTION("angle droop cannot be combined with an LCC station") {
+        LSGrid grid = make_three_bus_grid();
+        REQUIRE_THROWS_MATCHES(
+            add_hvdc(grid, /*type2=LCC*/ 1, false, 1.0, 0.9, /*p_setpoint=*/0.,
+                     /*droop=*/true, 10., 2.),
+            std::runtime_error,
+            MessageMatches(ContainsSubstring("only available for VSC - VSC")));
     }
 }
 
@@ -459,6 +490,138 @@ TEST_CASE("remote voltage control pins the regulated bus", "[LSGrid][vctrl]")
 
     // out-of-range regulated bus is rejected
     CHECK_THROWS_AS(grid.set_gen_regulated_bus(1, 12), std::out_of_range);
+}
+
+TEST_CASE("a local and a remote voltage controller on one bus is unfeasible", "[LSGrid][vctrl]")
+{
+    // two generators on bus 1: gen 1 regulates its own bus (ordinary PV
+    // pinning) while gen 2 regulates bus 2 remotely. Gen 2's own bus then
+    // has no reactive equation left to trade against the remote target, so
+    // the solve must reject the state instead of producing garbage.
+    LSGrid grid = make_three_bus_skeleton(0.01);
+    RealVect gen_p(3), gen_v(3), gen_min_q(3), gen_max_q(3);
+    gen_p << 0., 0., 0.;
+    gen_v << 1.02, 1.02, 1.04;
+    gen_min_q << -1000., -1000., -1000.;
+    gen_max_q << 1000., 1000., 1000.;
+    Eigen::VectorXi gen_bus(3);
+    gen_bus << 0, 1, 1;
+    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+    grid.set_gen_regulated_bus(2, 2);
+    grid.tell_solver_need_reset();
+
+    REQUIRE_THROWS_MATCHES(
+        solve_ac(grid), std::runtime_error,
+        MessageMatches(ContainsSubstring("no reactive (Q) equation")));
+}
+
+TEST_CASE("transformers: tap ratio and phase shifter", "[LSGrid][trafo]")
+{
+    // buses at 138 kV, slack gen (1.02 pu) at bus 0, 50 MW / 10 MVar load at
+    // bus 2. `loop` false: line 0-1 plus a trafo 1-2 (radial, for the ratio
+    // effect); true: lines 0-1 and 1-2 plus a trafo 0-2 closing a loop (a
+    // phase shifter only redirects flow inside a loop).
+    const auto make_trafo_grid = [](bool loop, real_type ratio, real_type shift_deg) {
+        LSGrid grid;
+        grid.set_sn_mva(100.);
+        grid.set_init_vm_pu(1.0);
+        RealVect bus_vn_kv(3);
+        bus_vn_kv << 138., 138., 138.;
+        grid.init_bus(3, 1, bus_vn_kv, 0, 0);
+
+        const int nb_line = loop ? 2 : 1;
+        RealVect line_r(nb_line), line_x(nb_line);
+        Eigen::VectorXi line_from(nb_line), line_to(nb_line);
+        if (loop) {
+            line_r << 0.01, 0.01;
+            line_x << 0.1, 0.1;
+            line_from << 0, 1;
+            line_to << 1, 2;
+        } else {
+            line_r << 0.01;
+            line_x << 0.1;
+            line_from << 0;
+            line_to << 1;
+        }
+        grid.init_powerlines(line_r, line_x, CplxVect::Zero(nb_line), line_from, line_to);
+
+        RealVect trafo_r(1), trafo_x(1), trafo_ratio(1), trafo_shift(1);
+        trafo_r << 0.01;
+        trafo_x << 0.2;
+        trafo_ratio << ratio;
+        trafo_shift << shift_deg;  // degrees at init time
+        Eigen::VectorXi trafo_bus1(1), trafo_bus2(1);
+        trafo_bus1 << (loop ? 0 : 1);
+        trafo_bus2 << 2;
+        grid.init_trafo(trafo_r, trafo_x, CplxVect::Zero(1), trafo_ratio, trafo_shift,
+                        {true}, trafo_bus1, trafo_bus2, true);
+
+        RealVect load_p(1), load_q(1);
+        load_p << 50.;
+        load_q << 10.;
+        Eigen::VectorXi load_bus(1);
+        load_bus << 2;
+        grid.init_loads(load_p, load_q, load_bus);
+
+        RealVect gen_p(1), gen_v(1), gen_min_q(1), gen_max_q(1);
+        gen_p << 0.;
+        gen_v << 1.02;
+        gen_min_q << -1000.;
+        gen_max_q << 1000.;
+        Eigen::VectorXi gen_bus(1);
+        gen_bus << 0;
+        grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+        grid.add_gen_slackbus(0, 1.);
+        return grid;
+    };
+
+    SECTION("the tap ratio scales the downstream voltage") {
+        LSGrid grid = make_trafo_grid(false, 1., 0.);
+        REQUIRE(solve_ac(grid).size() == 3);
+        const real_type vm2_ratio1 = std::abs(grid.get_V()(2));
+
+        grid.change_ratio_trafo(0, 1.05);
+        const CplxVect V_changed = solve_ac(grid);
+        REQUIRE(V_changed.size() == 3);
+        // raising the tap on the hv side lowers the lv-side voltage, by
+        // roughly the ratio (not exactly: the load's voltage dependence)
+        CHECK(std::abs(V_changed(2)) < vm2_ratio1);
+        CHECK(std::abs(V_changed(2)) == Approx(vm2_ratio1 / 1.05).epsilon(0.02));
+
+        // changing the ratio on a solved grid == initializing with it
+        LSGrid fresh = make_trafo_grid(false, 1.05, 0.);
+        const CplxVect V_fresh = solve_ac(fresh);
+        REQUIRE(V_fresh.size() == 3);
+        CHECK((V_changed - V_fresh).norm() < 1e-8);
+    }
+
+    SECTION("the phase shifter redirects the loop flow") {
+        LSGrid grid = make_trafo_grid(true, 1., 0.);
+        REQUIRE(solve_ac(grid).size() == 3);
+        const real_type p_trafo_0 = std::get<0>(grid.get_trafo_res1())(0);
+
+        grid.change_shift_trafo_deg(0, 5.);
+        REQUIRE(solve_ac(grid).size() == 3);
+        const real_type p_trafo_plus = std::get<0>(grid.get_trafo_res1())(0);
+        const CplxVect V_plus = grid.get_V();
+
+        grid.change_shift_trafo_deg(0, -5.);
+        REQUIRE(solve_ac(grid).size() == 3);
+        const real_type p_trafo_minus = std::get<0>(grid.get_trafo_res1())(0);
+
+        // opposite shifts move the trafo flow in opposite directions, and
+        // the load is served throughout
+        CHECK(p_trafo_plus != Approx(p_trafo_0).margin(1.));
+        CHECK((p_trafo_plus - p_trafo_0) * (p_trafo_minus - p_trafo_0) < 0.);
+        CHECK(std::get<0>(grid.get_loads_res())(0) == Approx(50.).epsilon(1e-8));
+
+        // changing the shift on a solved grid == initializing with it
+        LSGrid fresh = make_trafo_grid(true, 1., 5.);
+        const CplxVect V_fresh = solve_ac(fresh);
+        REQUIRE(V_fresh.size() == 3);
+        CHECK((V_plus - V_fresh).norm() < 1e-8);
+    }
 }
 
 TEST_CASE("documented error paths", "[LSGrid]")
