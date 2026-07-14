@@ -34,10 +34,10 @@ using ls2g::real_type;
 
 namespace {
 
-// Slack generator (1.02 pu) at bus 0, two identical lines 0-1 and 1-2
-// (x = 0.1 pu each), one 50 MW / 10 MVar load at bus 2. sn_mva = 100, so the
-// load is 0.5 pu and (with r = 0) the exact DC angles are 0 / -0.05 / -0.10.
-LSGrid make_three_bus_grid(real_type r_pu = 0.01)
+// Three 138 kV buses, two identical lines 0-1 and 1-2 (x = 0.1 pu each), one
+// 50 MW / 10 MVar load at bus 2. sn_mva = 100, so the load is 0.5 pu and
+// (with r = 0) the exact DC angles are 0 / -0.05 / -0.10. No generator yet.
+LSGrid make_three_bus_skeleton(real_type r_pu)
 {
     LSGrid grid;
     grid.set_sn_mva(100.);
@@ -62,7 +62,13 @@ LSGrid make_three_bus_grid(real_type r_pu = 0.01)
     Eigen::VectorXi load_bus(1);
     load_bus << 2;
     grid.init_loads(load_p, load_q, load_bus);
+    return grid;
+}
 
+// the skeleton plus a single slack generator (1.02 pu) at bus 0
+LSGrid make_three_bus_grid(real_type r_pu = 0.01)
+{
+    LSGrid grid = make_three_bus_skeleton(r_pu);
     RealVect gen_p(1), gen_v(1), gen_min_q(1), gen_max_q(1);
     gen_p << 0.;
     gen_v << 1.02;
@@ -72,6 +78,22 @@ LSGrid make_three_bus_grid(real_type r_pu = 0.01)
     gen_bus << 0;
     grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
     grid.add_gen_slackbus(0, 1.);
+    return grid;
+}
+
+// the skeleton plus generators at bus 0 (1.02 pu) and bus 1 (gen1_v_pu).
+// NO slack is registered: each test declares the slack setup it needs.
+LSGrid make_three_bus_grid_two_gens(real_type gen1_v_pu = 1.02)
+{
+    LSGrid grid = make_three_bus_skeleton(0.01);
+    RealVect gen_p(2), gen_v(2), gen_min_q(2), gen_max_q(2);
+    gen_p << 0., 0.;
+    gen_v << 1.02, gen1_v_pu;
+    gen_min_q << -1000., -1000.;
+    gen_max_q << 1000., 1000.;
+    Eigen::VectorXi gen_bus(2);
+    gen_bus << 0, 1;
+    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
     return grid;
 }
 
@@ -253,6 +275,190 @@ TEST_CASE("save_binary / load_binary round-trips the whole grid", "[LSGrid]")
     REQUIRE(V.size() == 3);
     REQUIRE(V_loaded.size() == 3);
     CHECK((V - V_loaded).norm() < 1e-10);
+}
+
+TEST_CASE("a capacitive shunt raises the local voltage", "[LSGrid][shunt]")
+{
+    LSGrid base = make_three_bus_grid();
+    REQUIRE(solve_ac(base).size() == 3);
+    const real_type vm2_without = std::abs(base.get_V()(2));
+
+    LSGrid grid = make_three_bus_grid();
+    // pandapower convention: q_mvar is what the shunt consumes at v = 1 pu,
+    // so -25 MVar is a 25 MVar capacitor bank
+    RealVect shunt_p(1), shunt_q(1);
+    shunt_p << 0.;
+    shunt_q << -25.;
+    Eigen::VectorXi shunt_bus(1);
+    shunt_bus << 2;
+    grid.init_shunt(shunt_p, shunt_q, shunt_bus);
+
+    REQUIRE(solve_ac(grid).size() == 3);
+    CHECK(std::abs(grid.get_V()(2)) > vm2_without);
+    // the shunt injects reactive power (generator sign convention on results)
+    CHECK(std::get<1>(grid.get_shunts_res())(0) < 0.);
+}
+
+TEST_CASE("a charging storage unit behaves as an extra load", "[LSGrid][storage]")
+{
+    LSGrid grid = make_three_bus_grid();
+    // load convention: positive target_p = charging (consumes from the grid)
+    RealVect storage_p(1), storage_q(1);
+    storage_p << 10.;
+    storage_q << 0.;
+    Eigen::VectorXi storage_bus(1);
+    storage_bus << 1;
+    grid.init_storages(storage_p, storage_q, storage_bus);
+
+    REQUIRE(solve_ac(grid).size() == 3);
+    CHECK(std::get<0>(grid.get_storages_res())(0) == Approx(10.).epsilon(1e-8));
+    // the slack now covers the load, the storage and the (positive) losses
+    CHECK(std::get<0>(grid.get_gen_res())(0) > 60.);
+}
+
+TEST_CASE("static var compensators", "[LSGrid][svc]")
+{
+    LSGrid base = make_three_bus_grid();
+    REQUIRE(solve_ac(base).size() == 3);
+    const CplxVect V_without = base.get_V();
+
+    // SvcContainer::RegulationMode: OFF = 0, VOLTAGE = 1, REACTIVE_POWER = 2
+    RealVect slope(1), b_min(1), b_max(1);
+    slope << 0.;
+    b_min << -100.;
+    b_max << 100.;
+    Eigen::VectorXi reg_bus(1), svc_bus(1);
+    reg_bus << 2;
+    svc_bus << 2;
+
+    SECTION("VOLTAGE mode holds the regulated bus at its setpoint") {
+        LSGrid grid = make_three_bus_grid();
+        RealVect target_vm(1), q_set(1);
+        target_vm << 1.03;
+        q_set << 0.;
+        grid.init_svcs({1}, target_vm, q_set, slope, b_min, b_max, reg_bus, svc_bus);
+        grid.tell_solver_need_reset();
+        REQUIRE(solve_ac(grid).size() == 3);
+        CHECK(std::abs(grid.get_V()(2)) == Approx(1.03).epsilon(1e-8));
+        // raising the bus above its natural voltage takes reactive injection
+        CHECK(std::get<1>(grid.get_svcs().get_res())(0) > 0.);
+    }
+    SECTION("REACTIVE_POWER mode injects exactly its setpoint") {
+        LSGrid grid = make_three_bus_grid();
+        RealVect target_vm(1), q_set(1);
+        target_vm << 1.0;
+        q_set << 25.;
+        grid.init_svcs({2}, target_vm, q_set, slope, b_min, b_max, reg_bus, svc_bus);
+        grid.tell_solver_need_reset();
+        REQUIRE(solve_ac(grid).size() == 3);
+        CHECK(std::get<1>(grid.get_svcs().get_res())(0) == Approx(25.).epsilon(1e-8));
+        CHECK(std::abs(grid.get_V()(2)) > std::abs(V_without(2)));
+    }
+    SECTION("OFF mode changes nothing") {
+        LSGrid grid = make_three_bus_grid();
+        RealVect target_vm(1), q_set(1);
+        target_vm << 1.03;
+        q_set << 25.;
+        grid.init_svcs({0}, target_vm, q_set, slope, b_min, b_max, reg_bus, svc_bus);
+        grid.tell_solver_need_reset();
+        REQUIRE(solve_ac(grid).size() == 3);
+        CHECK((grid.get_V() - V_without).norm() < 1e-10);
+    }
+}
+
+TEST_CASE("HVDC links between two converter stations", "[LSGrid][hvdc]")
+{
+    // one hvdc line between bus 1 (side 1, rectifier) and bus 2 (side 2),
+    // drawing 20 MW; helper filling the many init_hvdc_lines arguments
+    const auto add_hvdc = [](LSGrid & grid, int type2, bool vreg2_on,
+                             real_type vm2, real_type power_factor2) {
+        Eigen::VectorXi bus1(1), bus2(1);
+        bus1 << 1;
+        bus2 << 2;
+        // ConverterStationContainer::ConverterType: VSC = 0, LCC = 1
+        const std::vector<int> type1{0};
+        // HvdcLineContainer::ConvertersMode: SIDE_1_RECTIFIER = 0
+        const std::vector<int> mode{0};
+        const std::vector<bool> vreg1{false}, vreg2{vreg2_on}, no_droop{false};
+        const RealVect zero = RealVect::Zero(1);
+        RealVect vm1_pu(1), vm2_pu(1), q_min(1), q_max(1);
+        RealVect pf1(1), pf2(1), p_set(1), p_max(1);
+        vm1_pu << 1.0;
+        vm2_pu << vm2;
+        q_min << -1e6;
+        q_max << 1e6;
+        pf1 << 1.;
+        pf2 << power_factor2;
+        p_set << 20.;
+        p_max << 300.;
+        grid.init_hvdc_lines(bus1, bus2, type1, {type2},
+                             zero, zero,           // no station losses
+                             vreg1, vreg2, vm1_pu, vm2_pu,
+                             zero, zero,           // q setpoints
+                             q_min, q_max, q_min, q_max,
+                             pf1, pf2, mode, p_set,
+                             zero, zero,           // r_ohm, nominal_v (no line loss)
+                             no_droop, zero, zero, p_max, p_max);
+        grid.tell_solver_need_reset();
+    };
+
+    SECTION("a lossless VSC-VSC link moves its power setpoint") {
+        LSGrid grid = make_three_bus_grid();
+        add_hvdc(grid, /*type2=VSC*/ 0, false, 1.0, 1.);
+        REQUIRE(solve_ac(grid).size() == 3);
+        // generator sign convention: the rectifier consumes at bus 1, the
+        // inverter injects the (lossless) 20 MW at bus 2
+        CHECK(std::get<0>(grid.get_dcline_res1())(0) == Approx(-20.).epsilon(1e-8));
+        CHECK(std::get<0>(grid.get_dcline_res2())(0) == Approx(20.).epsilon(1e-8));
+    }
+    SECTION("a voltage-regulating VSC station holds its bus") {
+        LSGrid grid = make_three_bus_grid();
+        add_hvdc(grid, /*type2=VSC*/ 0, true, 1.03, 1.);
+        REQUIRE(solve_ac(grid).size() == 3);
+        CHECK(std::abs(grid.get_V()(2)) == Approx(1.03).epsilon(1e-8));
+    }
+    SECTION("an LCC station consumes reactive per its power factor") {
+        LSGrid grid = make_three_bus_grid();
+        add_hvdc(grid, /*type2=LCC*/ 1, false, 1.0, 0.9);
+        REQUIRE(solve_ac(grid).size() == 3);
+        const real_type p2 = std::get<0>(grid.get_dcline_res2())(0);
+        const real_type q2 = std::get<1>(grid.get_dcline_res2())(0);
+        CHECK(p2 == Approx(20.).epsilon(1e-8));
+        CHECK(q2 == Approx(-std::abs(p2) * std::tan(std::acos(0.9))).epsilon(1e-6));
+    }
+}
+
+TEST_CASE("distributed slack splits the mismatch by weight", "[LSGrid][slack]")
+{
+    LSGrid grid = make_three_bus_grid_two_gens();
+    grid.add_gen_slackbus(0, 0.7);
+    grid.add_gen_slackbus(1, 0.3);
+
+    REQUIRE(solve_ac(grid).size() == 3);
+    // both setpoints are 0 MW, so each gen's whole output is its slack share,
+    // and shares are proportional to the weights
+    const auto gen_res = grid.get_gen_res();
+    const real_type p0 = std::get<0>(gen_res)(0);
+    const real_type p1 = std::get<0>(gen_res)(1);
+    CHECK(p0 > 0.);
+    CHECK(p1 > 0.);
+    CHECK(p0 / 0.7 == Approx(p1 / 0.3).epsilon(1e-6));
+}
+
+TEST_CASE("remote voltage control pins the regulated bus", "[LSGrid][vctrl]")
+{
+    // the PV generator at bus 1 (target 1.04 pu) regulates bus 2 instead of
+    // its own bus (bordered VoltageControl extension, AC NR only)
+    LSGrid grid = make_three_bus_grid_two_gens(1.04);
+    grid.add_gen_slackbus(0, 1.);
+    grid.set_gen_regulated_bus(1, 2);
+    grid.tell_solver_need_reset();
+
+    REQUIRE(solve_ac(grid).size() == 3);
+    CHECK(std::abs(grid.get_V()(2)) == Approx(1.04).epsilon(1e-8));
+
+    // out-of-range regulated bus is rejected
+    CHECK_THROWS_AS(grid.set_gen_regulated_bus(1, 12), std::out_of_range);
 }
 
 TEST_CASE("documented error paths", "[LSGrid]")

@@ -10,7 +10,12 @@ if(NOT PROJECT_NAME)
     # package version file from PROJECT_VERSION
     project(lightsim2grid_tests VERSION 0.0.0 LANGUAGES CXX)
 
-    if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    # cxx_std_26 only appears in CMAKE_CXX_COMPILE_FEATURES when both CMake
+    # (>= 3.30) and the compiler know C++26, so the check is safe with the
+    # 3.16 minimum above: elsewhere it is simply never selected.
+    if("cxx_std_26" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+        set(CMAKE_CXX_STANDARD 26)
+    elseif("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 23)
     elseif("cxx_std_17" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 17)
