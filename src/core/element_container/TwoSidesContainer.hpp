@@ -135,8 +135,8 @@ class TwoSidesContainer : public GenericContainer
         bool get_connected_side_2(int el_id) const {return side_2_.get_status(el_id);}
 
         void init_tsc(
-            const Eigen::VectorXi & els_bus1_id,
-            const Eigen::VectorXi & els_bus2_id,
+            const Eigen::Ref<const Eigen::VectorXi> & els_bus1_id,
+            const Eigen::Ref<const Eigen::VectorXi> & els_bus2_id,
             const std::string & name_elements
         )  // tsc: two sides container
         {

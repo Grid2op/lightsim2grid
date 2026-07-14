@@ -13,13 +13,13 @@
 
 namespace ls2g {
 
-void SGenContainer::init(const RealVect & sgen_p,
-                         const RealVect & sgen_q,
-                         const RealVect & sgen_pmin,
-                         const RealVect & sgen_pmax,
-                         const RealVect & sgen_qmin,
-                         const RealVect & sgen_qmax,
-                         const Eigen::VectorXi & sgen_bus_id)
+void SGenContainer::init(const Eigen::Ref<const RealVect> & sgen_p,
+                         const Eigen::Ref<const RealVect> & sgen_q,
+                         const Eigen::Ref<const RealVect> & sgen_pmin,
+                         const Eigen::Ref<const RealVect> & sgen_pmax,
+                         const Eigen::Ref<const RealVect> & sgen_qmin,
+                         const Eigen::Ref<const RealVect> & sgen_qmax,
+                         const Eigen::Ref<const Eigen::VectorXi> & sgen_bus_id)
 {
     init_osc_pq(sgen_p, sgen_q, sgen_bus_id, "static_generators");
     
