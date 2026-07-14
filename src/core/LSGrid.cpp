@@ -377,7 +377,7 @@ void LSGrid::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     }
 }
 
-CplxVect LSGrid::ac_pf(const CplxVect & Vinit,
+CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
                           int max_iter,
                           real_type tol)
 {
@@ -836,7 +836,7 @@ void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
     }
 }
 
-CplxVect LSGrid::check_solution(const CplxVect & V_proposed, bool check_q_limits)
+CplxVect LSGrid::check_solution(const Eigen::Ref<const CplxVect> & V_proposed, bool check_q_limits)
 {
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     const int nb_bus = static_cast<int>(V_proposed.size());
@@ -951,7 +951,7 @@ void LSGrid::prepare_injection(RealVect & Pbus, bool redo_all, bool converter_ch
 
 template<class MatScalar, class InjVect>
 CplxVect LSGrid::_pre_process_solver_impl(
-    const CplxVect & Vinit,
+    const Eigen::Ref<const CplxVect> & Vinit,
     InjVect & inj,
     Eigen::SparseMatrix<MatScalar> & mat,
     SolverBusIdVect & id_me_to_solver,
@@ -1071,7 +1071,7 @@ CplxVect LSGrid::_pre_process_solver_impl(
 }
 
 CplxVect LSGrid::pre_process_solver(
-    const CplxVect & Vinit,
+    const Eigen::Ref<const CplxVect> & Vinit,
     CplxVect & Sbus,
     Eigen::SparseMatrix<cplx_type> & Ybus,
     SolverBusIdVect & id_me_to_solver,
@@ -1088,7 +1088,7 @@ CplxVect LSGrid::pre_process_solver(
 }
 
 CplxVect LSGrid::pre_process_dc_solver(
-    const CplxVect & Vinit,
+    const Eigen::Ref<const CplxVect> & Vinit,
     RealVect & Pbus,
     Eigen::SparseMatrix<real_type> & Bbus,
     SolverBusIdVect & id_me_to_solver,
@@ -1102,7 +1102,7 @@ CplxVect LSGrid::pre_process_dc_solver(
         slack_bus_id_me, slack_bus_id_solver, solver_control, true);
 }
 
-CplxVect LSGrid::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
+CplxVect LSGrid::_get_results_back_to_orig_nodes(const Eigen::Ref<const CplxVect> & res_tmp,
                                                     SolverBusIdVect & id_me_to_solver,
                                                     int size)
 {
@@ -1125,7 +1125,7 @@ CplxVect LSGrid::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
 
 void LSGrid::process_results(bool conv,
                                 CplxVect & res,
-                                const CplxVect & Vinit,
+                                const Eigen::Ref<const CplxVect> & Vinit,
                                 bool ac,
                                 SolverBusIdVect & id_me_to_solver)
 {
@@ -1135,7 +1135,10 @@ void LSGrid::process_results(bool conv,
             compute_results(ac);
         }
         // solver_control_.tell_none_changed();  // todo automatically set for ac / dc the `tell_none_changed()`
-        const CplxVect & res_tmp = ac ? _algo.get_V(): _dc_algo.get_V() ;
+        // was `const CplxVect & res_tmp = ...`: get_V() already returns Eigen::Ref<const
+        // CplxVect>, so binding that to a concrete CplxVect& forced a full-vector copy
+        // here on every single solve.
+        const Eigen::Ref<const CplxVect> res_tmp = ac ? _algo.get_V(): _dc_algo.get_V() ;
 
         // convert back the results to "big" vector
         res = _get_results_back_to_orig_nodes(res_tmp,
@@ -1405,7 +1408,7 @@ void LSGrid::reset_results(){
     svcs_.reset_results();
 }
 
-CplxVect LSGrid::dc_pf(const CplxVect & Vinit,
+CplxVect LSGrid::dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
                           int max_iter,  // only validated: not used for DC (single linear solve)
                           real_type tol  // only validated: not used for DC (single linear solve)
                           )
