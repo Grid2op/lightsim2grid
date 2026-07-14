@@ -15,7 +15,7 @@ void MultiSlack::update_state(
     const LSGrid *                         /*lsgrid_ptr*/,
     const Eigen::SparseMatrix<cplx_type>&  /*Ybus*/,
     const CplxVect&                        Sbus,
-    const RealVect&                        slack_weights
+    Eigen::Ref<const RealVect>             slack_weights
 )
 {
     slack_weights_ = slack_weights;
