@@ -15,13 +15,13 @@
 namespace ls2g {
 
 void SvcContainer::init(const std::vector<int> & regulation_mode,
-                        const RealVect & target_vm_pu,
-                        const RealVect & q_setpoint_mvar,
-                        const RealVect & slope_pu,
-                        const RealVect & b_min,
-                        const RealVect & b_max,
-                        const Eigen::VectorXi & regulated_bus_id,
-                        const Eigen::VectorXi & bus_id)
+                        const Eigen::Ref<const RealVect> & target_vm_pu,
+                        const Eigen::Ref<const RealVect> & q_setpoint_mvar,
+                        const Eigen::Ref<const RealVect> & slope_pu,
+                        const Eigen::Ref<const RealVect> & b_min,
+                        const Eigen::Ref<const RealVect> & b_max,
+                        const Eigen::Ref<const Eigen::VectorXi> & regulated_bus_id,
+                        const Eigen::Ref<const Eigen::VectorXi> & bus_id)
 {
     const int size = static_cast<int>(bus_id.size());
     // an SVC has NO active power

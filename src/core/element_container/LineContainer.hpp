@@ -49,19 +49,19 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         LineContainer() noexcept = default;
         virtual ~LineContainer() noexcept = default;
         
-        void init(const RealVect & branch_r,
-                  const RealVect & branch_x,
-                  const CplxVect & branch_h,
-                  const Eigen::VectorXi & branch_from_id,
-                  const Eigen::VectorXi & branch_to_id
+        void init(const Eigen::Ref<const RealVect> & branch_r,
+                  const Eigen::Ref<const RealVect> & branch_x,
+                  const Eigen::Ref<const CplxVect> & branch_h,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                   );
-              
-        void init(const RealVect & branch_r,
-                  const RealVect & branch_x,
-                  const CplxVect & branch_h_or,
-                  const CplxVect & branch_h_ex,
-                  const Eigen::VectorXi & branch_from_id,
-                  const Eigen::VectorXi & branch_to_id
+
+        void init(const Eigen::Ref<const RealVect> & branch_r,
+                  const Eigen::Ref<const RealVect> & branch_x,
+                  const Eigen::Ref<const CplxVect> & branch_h_or,
+                  const Eigen::Ref<const CplxVect> & branch_h_ex,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                   );
               
         // pickle

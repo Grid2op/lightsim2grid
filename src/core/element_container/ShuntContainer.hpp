@@ -50,9 +50,9 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         virtual ~ShuntContainer() noexcept = default;
         
         
-        void init(const RealVect & shunt_p_mw,
-                  const RealVect & shunt_q_mvar,
-                  const Eigen::VectorXi & shunt_bus_id
+        void init(const Eigen::Ref<const RealVect> & shunt_p_mw,
+                  const Eigen::Ref<const RealVect> & shunt_q_mvar,
+                  const Eigen::Ref<const Eigen::VectorXi> & shunt_bus_id
                   )
         {
             init_osc_pq(shunt_p_mw,

@@ -157,9 +157,9 @@ class OneSideContainer_PQ : public OneSideContainer
             this->reset_results();
         }
         
-        void init_osc_pq(const RealVect & els_p,
-                         const RealVect & els_q,
-                         const Eigen::VectorXi & els_bus_id,
+        void init_osc_pq(const Eigen::Ref<const RealVect> & els_p,
+                         const Eigen::Ref<const RealVect> & els_q,
+                         const Eigen::Ref<const Eigen::VectorXi> & els_bus_id,
                          const std::string & name_el
                          )  // osc: one side element
         {
