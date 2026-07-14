@@ -1462,8 +1462,10 @@ RealMat LSGrid::get_ptdf_solver(){
     if(Bbus_dc_.size() == 0){
         throw std::runtime_error("LSGrid::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
-    const RealMat & PTDF_solver = _dc_algo.get_ptdf();
-    return PTDF_solver;
+    // return the freshly-computed matrix directly (RVO/move) instead of binding it
+    // to a local const-ref first: `const RealMat& x = ...; return x;` defeats RVO
+    // and forces an extra full-matrix copy, since a reference can't be moved from.
+    return _dc_algo.get_ptdf();
 }
 
 
