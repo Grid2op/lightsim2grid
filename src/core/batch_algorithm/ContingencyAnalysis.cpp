@@ -553,7 +553,7 @@ void ContingencyAnalysis::readd_to_Ybus(
     }
 }
 
-void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type tol)
+void ContingencyAnalysis::compute(const Eigen::Ref<const CplxVect> & Vinit, int max_iter, real_type tol)
 {
     auto timer = CustTimer();
     auto timer_preproc = CustTimer();
