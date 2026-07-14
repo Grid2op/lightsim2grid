@@ -204,7 +204,7 @@ class OneSideContainer_PQ : public OneSideContainer
                                       const Eigen::Ref<const RealVect> & /*Vm*/,
                                       const Eigen::Ref<const CplxVect> & /*V*/,
                                       const SolverBusIdVect & /*id_grid_to_solver*/,
-                                      const RealVect & /*bus_vn_kv*/,
+                                      const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
                                       real_type /*sn_mva*/,
                                       bool /*ac*/) override {
             // nothing to do by default, as this class should be used as template for "one side" (eg loads or generators)
