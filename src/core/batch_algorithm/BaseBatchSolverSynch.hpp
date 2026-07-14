@@ -339,7 +339,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
         void compute_flows_from_Vs(bool amps=true);
 
-        CplxVect extract_Vsolver_from_Vinit(const CplxVect& Vinit,
+        CplxVect extract_Vsolver_from_Vinit(const Eigen::Ref<const CplxVect> & Vinit,
                                             size_t nb_buses_solver,
                                             size_t nb_total_bus,
                                             const SolverBusIdVect & id_me_to_ac_solver){
@@ -355,7 +355,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         }
     protected:
 
-        CplxVect prepare_solver_input_base(const CplxVect & Vinit, bool ac_solver_used){
+        CplxVect prepare_solver_input_base(const Eigen::Ref<const CplxVect> & Vinit, bool ac_solver_used){
             // clear previous data
             Sbus_ = CplxVect();
             Ybus_ = Eigen::SparseMatrix<cplx_type>();
@@ -408,7 +408,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             return res;
         }
 
-        size_t _reset_data_and_check_vinit(const CplxVect & Vinit){
+        size_t _reset_data_and_check_vinit(const Eigen::Ref<const CplxVect> & Vinit){
             const size_t nb_total_bus = _grid_model.total_bus();
             if(static_cast<size_t>(Vinit.size()) != nb_total_bus){
                 std::ostringstream exc_;
