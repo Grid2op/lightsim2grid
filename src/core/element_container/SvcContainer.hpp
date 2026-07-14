@@ -97,13 +97,13 @@ class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<S
         virtual ~SvcContainer() noexcept = default;
 
         void init(const std::vector<int> & regulation_mode,
-                  const RealVect & target_vm_pu,
-                  const RealVect & q_setpoint_mvar,
-                  const RealVect & slope_pu,
-                  const RealVect & b_min,
-                  const RealVect & b_max,
-                  const Eigen::VectorXi & regulated_bus_id,
-                  const Eigen::VectorXi & bus_id);
+                  const Eigen::Ref<const RealVect> & target_vm_pu,
+                  const Eigen::Ref<const RealVect> & q_setpoint_mvar,
+                  const Eigen::Ref<const RealVect> & slope_pu,
+                  const Eigen::Ref<const RealVect> & b_min,
+                  const Eigen::Ref<const RealVect> & b_max,
+                  const Eigen::Ref<const Eigen::VectorXi> & regulated_bus_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & bus_id);
 
         // pickle
         SvcContainer::StateRes get_state() const;
@@ -146,7 +146,7 @@ class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<S
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,
             const SolverBusIdVect & id_grid_to_solver,
-            const RealVect & bus_vn_kv,
+            const Eigen::Ref<const RealVect> & bus_vn_kv,
             real_type sn_mva,
             bool ac) override;
         bool _deactivate(int svc_id, DualAlgoControl & solver_control) final;

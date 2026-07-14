@@ -77,13 +77,13 @@ class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorA
         static const char * binary_type_tag() { return "SGenContainer"; }  // written into / checked against the binary file header
         
         
-        void init(const RealVect & sgen_p,
-                  const RealVect & sgen_q,
-                  const RealVect & sgen_pmin,
-                  const RealVect & sgen_pmax,
-                  const RealVect & sgen_qmin,
-                  const RealVect & sgen_qmax,
-                  const Eigen::VectorXi & sgen_bus_id
+        void init(const Eigen::Ref<const RealVect> & sgen_p,
+                  const Eigen::Ref<const RealVect> & sgen_q,
+                  const Eigen::Ref<const RealVect> & sgen_pmin,
+                  const Eigen::Ref<const RealVect> & sgen_pmax,
+                  const Eigen::Ref<const RealVect> & sgen_qmin,
+                  const Eigen::Ref<const RealVect> & sgen_qmax,
+                  const Eigen::Ref<const Eigen::VectorXi> & sgen_bus_id
                   );
               
         virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const ;
@@ -94,7 +94,7 @@ class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorA
             const Eigen::Ref<const RealVect> & /*Vm*/,
             const Eigen::Ref<const CplxVect> & /*V*/,
             const SolverBusIdVect & /*id_grid_to_solver*/,
-            const RealVect & /*bus_vn_kv*/,
+            const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
             real_type /*sn_mva*/,
             bool ac) override
             {

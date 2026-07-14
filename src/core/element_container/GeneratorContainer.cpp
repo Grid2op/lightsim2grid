@@ -14,11 +14,11 @@
 
 namespace ls2g {
 
-void GeneratorContainer::init(const RealVect & generators_p,
-                              const RealVect & generators_v,
-                              const RealVect & generators_min_q,
-                              const RealVect & generators_max_q,
-                              const Eigen::VectorXi & generators_bus_id)
+void GeneratorContainer::init(const Eigen::Ref<const RealVect> & generators_p,
+                              const Eigen::Ref<const RealVect> & generators_v,
+                              const Eigen::Ref<const RealVect> & generators_min_q,
+                              const Eigen::Ref<const RealVect> & generators_max_q,
+                              const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id)
 {
     const auto generators_q = RealVect::Zero(generators_p.size());
     const auto voltage_regulator_on = std::vector<bool>(generators_p.size(), true);
@@ -32,13 +32,13 @@ void GeneratorContainer::init(const RealVect & generators_p,
         generators_bus_id);
 }
 
-void GeneratorContainer::init_full(const RealVect & generators_p,
-                                   const RealVect & generators_v,
-                                   const RealVect & generators_q,
+void GeneratorContainer::init_full(const Eigen::Ref<const RealVect> & generators_p,
+                                   const Eigen::Ref<const RealVect> & generators_v,
+                                   const Eigen::Ref<const RealVect> & generators_q,
                                    const std::vector<bool> & voltage_regulator_on,
-                                   const RealVect & generators_min_q,
-                                   const RealVect & generators_max_q,
-                                   const Eigen::VectorXi & generators_bus_id
+                                   const Eigen::Ref<const RealVect> & generators_min_q,
+                                   const Eigen::Ref<const RealVect> & generators_max_q,
+                                   const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id
                                    )
 {
     init_osc_pq(generators_p, generators_q, generators_bus_id, "generators");

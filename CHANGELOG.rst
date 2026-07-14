@@ -43,6 +43,13 @@ TODO: in ContingencyAnalysisCpp: add back the `if(!ac_solver_used)` inside the  
 TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call_guard<py::gil_scoped_release>()` stuff
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
+TODO: speed: `BaseBatchSolverSynch::compute_amps_flows` / `compute_active_power_flows` build
+      `Efrom`/`Eto` via `CplxVect(_voltages.col(...))` for every line/trafo element, once per
+      call -- a full nb_steps-sized copy each time. `_voltages` is RowMajor, so a column isn't
+      contiguous and can't bind to `Eigen::Ref`, and the surrounding ternary also needs a
+      common type with `CplxVect::Zero(nb_steps)` for the open-side case. Removing the copy
+      would need a control-flow restructure (separate open-side / closed-side code paths),
+      not just a reference-type change.
 
 [0.14.0] 2026-xx-yy
 ---------------------
@@ -54,6 +61,15 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [BREAKING] For plugin developers (C++ side): the virtual method ``set_gridmodel`` in
   ``BaseAlgo`` is renamed ``set_lsgrid``, and the protected member ``gridmodel_ptr_``
   is renamed ``lsgrid_ptr_``.
+- [BREAKING] For plugin developers (C++ side): ``BaseAlgo::compute_pf`` /
+  ``compute_pf_dc`` (and their ``*_with_input_validation`` wrappers) now take
+  ``Sbus`` / ``Pbus`` / ``slack_weights`` as ``Eigen::Ref<const CplxVect>`` /
+  ``Eigen::Ref<const RealVect>`` instead of ``const CplxVect&`` / ``const RealVect&``,
+  matching the ``Eigen::Ref`` convention already used for ``slack_ids`` / ``pv`` / ``pq``.
+  This avoids a copy at every solve when the caller already holds a ``Eigen::Ref`` or a
+  matrix row/block (e.g. a batch solver's per-timestep ``Sbus``). Any external algorithm
+  plugin overriding ``compute_pf`` / ``compute_pf_dc`` (see ``examples/external_algorithm/``)
+  needs to update its signature to match.
 - [BREAKING] for Newton based solvers, the Jacobian row / columns does not have 
   the same ordering as before, this is because some modularity is being implemented
   at this level to allow for other types of "extensions" (similar to distributed slack)

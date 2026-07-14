@@ -159,6 +159,12 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // DC has no such reduction (handled explicitly below).
                 GlobalBusId bus_from_me = bus_from(el_id);
                 GlobalBusId bus_to_me = bus_to(el_id);
+                // TODO speed: this copies a full nb_steps-sized column per line/trafo,
+                // every call. _voltages is RowMajor, so a column isn't contiguous and
+                // can't bind to Eigen::Ref; the ternary also needs a common type with
+                // CplxVect::Zero(nb_steps). Avoiding the copy would need a control-flow
+                // restructure (separate open-side / closed-side code paths) rather than
+                // a reference-type change -- see CHANGELOG [TODO].
                 const CplxVect Efrom = s1 ? CplxVect(_voltages.col(bus_from_me.cast_int())) : CplxVect::Zero(nb_steps);
                 const CplxVect Eto   = s2 ? CplxVect(_voltages.col(bus_to_me.cast_int()))   : CplxVect::Zero(nb_steps);
 
@@ -247,6 +253,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // DC has no such reduction (handled explicitly below).
                 GlobalBusId bus_from_me = bus_from(el_id);
                 GlobalBusId bus_to_me = bus_to(el_id);
+                // TODO speed: same structural copy as in compute_amps_flows above (see
+                // the TODO there for why this isn't a simple Eigen::Ref fix) -- see
+                // CHANGELOG [TODO].
                 const CplxVect Efrom = s1 ? CplxVect(_voltages.col(bus_from_me.cast_int())) : CplxVect::Zero(nb_steps);
                 const CplxVect Eto   = s2 ? CplxVect(_voltages.col(bus_to_me.cast_int()))   : CplxVect::Zero(nb_steps);
 
@@ -288,9 +297,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // member solver / control / accumulators (single-threaded path).
         bool compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
-                                   const CplxVect & Sbus,
+                                   Eigen::Ref<const CplxVect> Sbus,
                                    Eigen::Ref<const IntVect> slack_ids,
-                                   const RealVect & slack_weights,
+                                   Eigen::Ref<const RealVect> slack_weights,
                                    Eigen::Ref<const IntVect> bus_pv,
                                    Eigen::Ref<const IntVect> bus_pq,
                                    int max_iter,
@@ -307,9 +316,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                                    double & timer_solver,
                                    const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
-                                   const CplxVect & Sbus,
+                                   Eigen::Ref<const CplxVect> Sbus,
                                    Eigen::Ref<const IntVect> slack_ids,
-                                   const RealVect & slack_weights,
+                                   Eigen::Ref<const RealVect> slack_weights,
                                    Eigen::Ref<const IntVect> bus_pv,
                                    Eigen::Ref<const IntVect> bus_pq,
                                    int max_iter,
@@ -330,7 +339,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
         void compute_flows_from_Vs(bool amps=true);
 
-        CplxVect extract_Vsolver_from_Vinit(const CplxVect& Vinit,
+        CplxVect extract_Vsolver_from_Vinit(const Eigen::Ref<const CplxVect> & Vinit,
                                             size_t nb_buses_solver,
                                             size_t nb_total_bus,
                                             const SolverBusIdVect & id_me_to_ac_solver){
@@ -346,7 +355,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         }
     protected:
 
-        CplxVect prepare_solver_input_base(const CplxVect & Vinit, bool ac_solver_used){
+        CplxVect prepare_solver_input_base(const Eigen::Ref<const CplxVect> & Vinit, bool ac_solver_used){
             // clear previous data
             Sbus_ = CplxVect();
             Ybus_ = Eigen::SparseMatrix<cplx_type>();
@@ -399,7 +408,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             return res;
         }
 
-        size_t _reset_data_and_check_vinit(const CplxVect & Vinit){
+        size_t _reset_data_and_check_vinit(const Eigen::Ref<const CplxVect> & Vinit){
             const size_t nb_total_bus = _grid_model.total_bus();
             if(static_cast<size_t>(Vinit.size()) != nb_total_bus){
                 std::ostringstream exc_;

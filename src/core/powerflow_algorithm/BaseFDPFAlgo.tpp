@@ -11,9 +11,9 @@
 template<class LinearSolver, FDPFMethod XB_BX>
 bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                    CplxVect & V,
-                                                   const CplxVect & Sbus,
+                                                   Eigen::Ref<const CplxVect> Sbus,
                                                    Eigen::Ref<const IntVect> slack_ids,
-                                                   const RealVect & slack_weights,
+                                                   Eigen::Ref<const RealVect> slack_weights,
                                                    Eigen::Ref<const IntVect> pv,
                                                    Eigen::Ref<const IntVect> pq,
                                                    int max_iter,
@@ -113,14 +113,13 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
         }
 
         // do the P iteration (for Va)
-        RealVect x = p_;
-        solve(_linear_solver_Bp, x);  //  dVa = -Bp_solver.solve(P)
+        solve(_linear_solver_Bp, p_);  //  dVa = -Bp_solver.solve(P)  (solved in place, like the Q iteration below)
         if(err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
             res = false;
             break;
         }
-        Va_(pvpq) -= x;  // Va[pvpq] = Va[pvpq] + dVa
+        Va_(pvpq) -= p_;  // Va[pvpq] = Va[pvpq] + dVa
         tmp_va.array() = (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>() );  // reused for Q iteration
         if(has_converged(tmp_va, Ybus, Sbus, slack_bus_id, slack_absorbed, slack_weights, pvpq, pq, tol)){
             converged = true;
