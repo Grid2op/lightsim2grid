@@ -23,8 +23,8 @@ Everything is in the ``ls2g`` namespace, headers at the root of
 - ``ls2g::LSGrid`` (``LSGrid.hpp``): the grid model itself -- built
   programmatically through the ``init_*`` methods (buses, powerlines, trafos,
   loads, generators, ...), solved with ``ac_pf`` / ``dc_pf``, inspected with
-  the ``get_*_res`` methods. This is the C++ class exposed to python as
-  ``GridModel``.
+  the ``get_*_res`` methods. This is the C++ class exposed to python under
+  the same name, ``LSGrid``.
 - the element containers (``element_container/*.hpp``), time series and
   contingency analysis (``batch_algorithm/``), the powerflow algorithms
   (``powerflow_algorithm/``) and linear solvers (``linear_solvers/``).
@@ -42,7 +42,7 @@ need your own copy.
 Option 1: use the copy shipped with the python wheel
 -----------------------------------------------------
 
-Every ``pip install lightsim2grid`` (>= 0.14) already contains everything a
+Every ``pip install lightsim2grid`` (>= 1.0) already contains everything a
 C++ consumer needs, inside the installed package directory:
 
 - ``liblightsim2grid_core.so`` (or ``.dylib`` / ``.dll``) next to the python
