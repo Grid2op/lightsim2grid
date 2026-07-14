@@ -196,8 +196,8 @@ class LS2G_API LSGrid final
             algo_controler_.dc_algo_controler().has_pv_changed();
             generators_.turnedoff_pv(algo_controler_);
         }
-        bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
-        void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack){
+        bool get_turnedoff_gen_pv() const {return generators_.get_turnedoff_gen_pv();}
+        void update_slack_weights(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack){
             generators_.update_slack_weights(could_be_slack, algo_controler_);
         }
         void update_slack_weights_by_id(Eigen::Ref<const IntVect> slack_ids){
@@ -302,9 +302,9 @@ class LS2G_API LSGrid final
         // All methods to init this data model, all need to be pair unit when applicable
         void init_bus(unsigned int n_sub, unsigned int n_busbar_per_sub, const Eigen::Ref<const RealVect> & bus_vn_kv, int nb_line, int nb_trafo);
         void set_init_vm_pu(real_type init_vm_pu) {init_vm_pu_ = init_vm_pu; }
-        real_type get_init_vm_pu() {return init_vm_pu_;}
+        real_type get_init_vm_pu() const {return init_vm_pu_;}
         void set_sn_mva(real_type sn_mva) {sn_mva_ = sn_mva; }
-        real_type get_sn_mva() {return sn_mva_;}
+        real_type get_sn_mva() const {return sn_mva_;}
 
         void init_powerlines(const Eigen::Ref<const RealVect> & branch_r,
                              const Eigen::Ref<const RealVect> & branch_x,
@@ -869,7 +869,7 @@ class LS2G_API LSGrid final
         }
         void change_p_load(int load_id, real_type new_p) {loads_.change_p_nothrow(load_id, new_p, algo_controler_); }
         void change_q_load(int load_id, real_type new_q) {loads_.change_q_nothrow(load_id, new_q, algo_controler_); }
-        int get_bus_load(int load_id) {return loads_.get_bus(load_id).cast_int();}
+        int get_bus_load(int load_id) const {return loads_.get_bus(load_id).cast_int();}
 
         //generator
         void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, algo_controler_); }
@@ -889,7 +889,7 @@ class LS2G_API LSGrid final
         void change_p_gen(int gen_id, real_type new_p) {generators_.change_p_nothrow(gen_id, new_p, algo_controler_); }
         void change_q_gen(int gen_id, real_type new_q) {generators_.change_q_nothrow(gen_id, new_q, algo_controler_); }
         void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, algo_controler_); }
-        int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id).cast_int();}
+        int get_bus_gen(int gen_id) const {return generators_.get_bus(gen_id).cast_int();}
 
         //static var compensator (SVC)
         void deactivate_svc(int svc_id) {svcs_.deactivate(svc_id, algo_controler_); }
@@ -900,7 +900,7 @@ class LS2G_API LSGrid final
         void change_bus_svc_python(int svc_id, int new_gridmodel_bus_id) {
             change_bus_svc(svc_id, GridModelBusId(new_gridmodel_bus_id));
         }
-        int get_bus_svc(int svc_id) {return svcs_.get_bus(svc_id).cast_int();}
+        int get_bus_svc(int svc_id) const {return svcs_.get_bus(svc_id).cast_int();}
         void set_svc_names(const std::vector<std::string> & names){
             GenericContainer::check_size(names, svcs_.nb(), "set_svc_names");
             svcs_.set_names(names);
@@ -922,7 +922,7 @@ class LS2G_API LSGrid final
         }
         void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p_nothrow(shunt_id, new_p, algo_controler_); }
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q_nothrow(shunt_id, new_q, algo_controler_); }
-        int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id).cast_int();}
+        int get_bus_shunt(int shunt_id) const {return shunts_.get_bus(shunt_id).cast_int();}
 
         //static gen
         void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, algo_controler_); }
@@ -940,7 +940,7 @@ class LS2G_API LSGrid final
         }
         void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p_nothrow(sgen_id, new_p, algo_controler_); }
         void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q_nothrow(sgen_id, new_q, algo_controler_); }
-        int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id).cast_int();}
+        int get_bus_sgen(int sgen_id) const {return sgens_.get_bus(sgen_id).cast_int();}
 
         //storage units
         void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, algo_controler_); }
@@ -960,7 +960,7 @@ class LS2G_API LSGrid final
                storages_.change_p_nothrow(storage_id, new_p, algo_controler_);
             }
         void change_q_storage(int storage_id, real_type new_q) {storages_.change_q_nothrow(storage_id, new_q, algo_controler_); }
-        int get_bus_storage(int storage_id) {return storages_.get_bus(storage_id).cast_int();}
+        int get_bus_storage(int storage_id) const {return storages_.get_bus(storage_id).cast_int();}
 
         //deactivate a powerline (disconnect it)
         void deactivate_dcline(int dcline_id) {hvdc_lines_.deactivate(dcline_id, algo_controler_); }
@@ -1563,26 +1563,26 @@ class LS2G_API LSGrid final
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage within grid2op !
-        void update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                           Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_sgens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                           Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_gens_v(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                           Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_loads_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                            Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_loads_q(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                            Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_gens_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                           Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_sgens_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                           Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_gens_v(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                           Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_loads_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                            Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_loads_q(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                            Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
         /**
          * Update the topology based on the topology vector id.
-         * 
+         *
          * The new_values are given in LocalBusId (-1, 1, 2 etc.) and not in
          * SolverBusId nor GridModelBusId
          */
         void update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                          Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_storages_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                               Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
 
         void set_load_pos_topo_vect(Eigen::Ref<const IntVect> load_pos_topo_vect)
         {
@@ -1940,8 +1940,8 @@ class LS2G_API LSGrid final
         optimization for grid2op
         **/
         template<class T>
-        void update_continuous_values(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
-                                      Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+        void update_continuous_values(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                                      Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values,
                                       T fun)
         {
             // new_values is indexed by has_changed's length below; a shorter new_values
