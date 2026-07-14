@@ -136,12 +136,12 @@ class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorA
         void set_voltage_control_q(int svc_id, real_type q_mvar) {res_q_(svc_id) = q_mvar;}
 
         // solver interface
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
         void get_vm_for_dc(RealVect & Vm);
         void set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const;
 
     protected:
-        virtual void _compute_results(
+        void _compute_results(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,

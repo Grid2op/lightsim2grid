@@ -175,7 +175,7 @@ class OneSideContainer : public GenericContainer
             return bus_id_.as_eigen();
         }
 
-        void reconnect_connected_buses(SubstationContainer & substation) const{
+        void reconnect_connected_buses(SubstationContainer & substation) const override{
             const int nb_els = nb();
             for(int el_id = 0; el_id < nb_els; ++el_id)
             {
@@ -193,7 +193,7 @@ class OneSideContainer : public GenericContainer
             }
         }
 
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override final {
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override final {
             const int nb_el = nb();
             DualAlgoControl unused_solver_control;
             for(int el_id = 0; el_id < nb_el; ++el_id)

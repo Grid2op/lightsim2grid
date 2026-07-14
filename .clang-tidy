@@ -3,7 +3,28 @@
 # family targets exactly the class of bug found in the Eigen unnecessary-copy
 # audit (by-value Eigen/STL params, const-ref-to-value copies, ...);
 # readability-const-return-type catches `const T foo()` return types that
-# block move semantics on the caller side.
+# block move semantics on the caller side. misc-const-correctness covers the
+# same ground as the manual const-correctness sweep (see the element_container
+# / LSGrid commit it landed alongside): local variables that are never
+# reassigned but aren't declared const. Runs in ~5 minutes over src/core as of
+# this writing (own measurement, GCC 13 / clang-tidy 18) -- noticeably slower
+# than the other checks here, but still well within the report-only job's
+# budget.
+#
+# modernize-use-override: this codebase used to keep the `virtual` keyword on
+# overrides alongside `override`/`final`, which this check flags as
+# redundant on every single one of them -- ~80% pure noise against that
+# style in an initial run. Rather than suppress the check, the redundant
+# `virtual` was dropped codebase-wide (virtual is implied by `override`, and
+# by `final` on an actual override) as part of the same final/override sweep,
+# bringing this down to ~40 residual warnings, all in two explainable
+# buckets: (1) destructors not annotated `override`/`final` -- valid C++ to
+# add, but this codebase doesn't follow that particular style and it wasn't
+# worth changing here; (2) `override final` used together for defensive
+# compile-time checking (marks BOTH "this really overrides something" and
+# "no further overrides") -- the check prefers `final` alone since it
+# implies `override`, but the pair is intentional in a few places and left
+# as-is.
 #
 # Known false-positive class: performance-unnecessary-value-param flags every
 # `Eigen::Ref<...>` parameter passed by value (the idiom used throughout this
@@ -14,7 +35,9 @@
 Checks: >
   -*,
   performance-*,
-  readability-const-return-type
+  readability-const-return-type,
+  misc-const-correctness,
+  modernize-use-override
 WarningsAsErrors: ''
 # Only report on our own headers (src/core, src/bindings) -- clang-tidy's
 # default (empty) header filter would otherwise only ever look at the

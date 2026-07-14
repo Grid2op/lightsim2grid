@@ -84,7 +84,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         }
 
         // utilities to remove defaults to simulate (TODO)
-        virtual void clear() override {
+        void clear() override {
             BaseBatchSolverSynch::clear();
             _li_defaults.clear();
             _li_coeffs.clear();
