@@ -70,9 +70,9 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
         static StorageContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "StorageContainer"; }  // written into / checked against the binary file header
 
-        void init(const RealVect & storage_p_mw,
-                  const RealVect & storage_q_mvar,
-                  const Eigen::VectorXi & storage_bus_id
+        void init(const Eigen::Ref<const RealVect> & storage_p_mw,
+                  const Eigen::Ref<const RealVect> & storage_q_mvar,
+                  const Eigen::Ref<const Eigen::VectorXi> & storage_bus_id
                   )
         {
             init_osc_pq(storage_p_mw,

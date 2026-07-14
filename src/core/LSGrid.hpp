@@ -300,123 +300,123 @@ class LS2G_API LSGrid final
         void reactivate_result_computation(){compute_results_=true;}
 
         // All methods to init this data model, all need to be pair unit when applicable
-        void init_bus(unsigned int n_sub, unsigned int n_busbar_per_sub, const RealVect & bus_vn_kv, int nb_line, int nb_trafo);
+        void init_bus(unsigned int n_sub, unsigned int n_busbar_per_sub, const Eigen::Ref<const RealVect> & bus_vn_kv, int nb_line, int nb_trafo);
         void set_init_vm_pu(real_type init_vm_pu) {init_vm_pu_ = init_vm_pu; }
         real_type get_init_vm_pu() {return init_vm_pu_;}
         void set_sn_mva(real_type sn_mva) {sn_mva_ = sn_mva; }
         real_type get_sn_mva() {return sn_mva_;}
 
-        void init_powerlines(const RealVect & branch_r,
-                             const RealVect & branch_x,
-                             const CplxVect & branch_h,
-                             const Eigen::VectorXi & branch_from_id,
-                             const Eigen::VectorXi & branch_to_id
+        void init_powerlines(const Eigen::Ref<const RealVect> & branch_r,
+                             const Eigen::Ref<const RealVect> & branch_x,
+                             const Eigen::Ref<const CplxVect> & branch_h,
+                             const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                             const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                              ){
             powerlines_.init(branch_r, branch_x, branch_h, branch_from_id, branch_to_id);
         }
-        void init_powerlines_full(const RealVect & branch_r,
-                                  const RealVect & branch_x,
-                                  const CplxVect & branch_h1,
-                                  const CplxVect & branch_h2,
-                                  const Eigen::VectorXi & branch_from_id,
-                                  const Eigen::VectorXi & branch_to_id
+        void init_powerlines_full(const Eigen::Ref<const RealVect> & branch_r,
+                                  const Eigen::Ref<const RealVect> & branch_x,
+                                  const Eigen::Ref<const CplxVect> & branch_h1,
+                                  const Eigen::Ref<const CplxVect> & branch_h2,
+                                  const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                                  const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                              ){
             powerlines_.init(branch_r, branch_x, branch_h1,
                              branch_h2, branch_from_id, 
                              branch_to_id);
         }
 
-        void init_shunt(const RealVect & shunt_p_mw,
-                        const RealVect & shunt_q_mvar,
-                        const Eigen::VectorXi & shunt_bus_id){
+        void init_shunt(const Eigen::Ref<const RealVect> & shunt_p_mw,
+                        const Eigen::Ref<const RealVect> & shunt_q_mvar,
+                        const Eigen::Ref<const Eigen::VectorXi> & shunt_bus_id){
             shunts_.init(shunt_p_mw, shunt_q_mvar, shunt_bus_id);
         }
-        void init_trafo_pandapower(const RealVect & trafo_r,
-                                   const RealVect & trafo_x,
-                                   const CplxVect & trafo_b,
-                                   const RealVect & trafo_tap_step_pct,
-                                   const RealVect & trafo_tap_pos,
-                                   const RealVect & trafo_shift_degree,
+        void init_trafo_pandapower(const Eigen::Ref<const RealVect> & trafo_r,
+                                   const Eigen::Ref<const RealVect> & trafo_x,
+                                   const Eigen::Ref<const CplxVect> & trafo_b,
+                                   const Eigen::Ref<const RealVect> & trafo_tap_step_pct,
+                                   const Eigen::Ref<const RealVect> & trafo_tap_pos,
+                                   const Eigen::Ref<const RealVect> & trafo_shift_degree,
                                    const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                                   const Eigen::VectorXi & bus1_id,
-                                   const Eigen::VectorXi & bus2_id,
+                                   const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
+                                   const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                                    bool ignore_tap_side_for_shift
                                    ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_shift_degree,
                          trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
         }
-        void init_trafo(const RealVect & trafo_r,
-                        const RealVect & trafo_x,
-                        const CplxVect & trafo_b,
-                        const RealVect & trafo_ratio,
-                        const RealVect & trafo_shift_degree,
+        void init_trafo(const Eigen::Ref<const RealVect> & trafo_r,
+                        const Eigen::Ref<const RealVect> & trafo_x,
+                        const Eigen::Ref<const CplxVect> & trafo_b,
+                        const Eigen::Ref<const RealVect> & trafo_ratio,
+                        const Eigen::Ref<const RealVect> & trafo_shift_degree,
                         const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                        const Eigen::VectorXi & bus1_id,
-                        const Eigen::VectorXi & bus2_id,
+                        const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
+                        const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                         bool ignore_tap_side_for_shift
                            ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_ratio, trafo_shift_degree,
                          trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
         }
 
-        void init_generators(const RealVect & generators_p,
-                             const RealVect & generators_v,
-                             const RealVect & generators_min_q,
-                             const RealVect & generators_max_q,
-                             const Eigen::VectorXi & generators_bus_id){
+        void init_generators(const Eigen::Ref<const RealVect> & generators_p,
+                             const Eigen::Ref<const RealVect> & generators_v,
+                             const Eigen::Ref<const RealVect> & generators_min_q,
+                             const Eigen::Ref<const RealVect> & generators_max_q,
+                             const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id){
             generators_.init(generators_p, generators_v, generators_min_q, generators_max_q, generators_bus_id);
         }
-        void init_generators_full(const RealVect & generators_p,
-                                  const RealVect & generators_v,
-                                  const RealVect & generators_q,
+        void init_generators_full(const Eigen::Ref<const RealVect> & generators_p,
+                                  const Eigen::Ref<const RealVect> & generators_v,
+                                  const Eigen::Ref<const RealVect> & generators_q,
                                   const std::vector<bool> & voltage_regulator_on,
-                                  const RealVect & generators_min_q,
-                                  const RealVect & generators_max_q,
-                                  const Eigen::VectorXi & generators_bus_id){
+                                  const Eigen::Ref<const RealVect> & generators_min_q,
+                                  const Eigen::Ref<const RealVect> & generators_max_q,
+                                  const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id){
             generators_.init_full(generators_p, generators_v, generators_q, voltage_regulator_on,
                                   generators_min_q, generators_max_q, generators_bus_id);
         }
-        void init_loads(const RealVect & loads_p,
-                        const RealVect & loads_q,
-                        const Eigen::VectorXi & loads_bus_id){
+        void init_loads(const Eigen::Ref<const RealVect> & loads_p,
+                        const Eigen::Ref<const RealVect> & loads_q,
+                        const Eigen::Ref<const Eigen::VectorXi> & loads_bus_id){
             loads_.init(loads_p, loads_q, loads_bus_id);
         }
-        void init_sgens(const RealVect & sgen_p,
-                        const RealVect & sgen_q,
-                        const RealVect & sgen_pmin,
-                        const RealVect & sgen_pmax,
-                        const RealVect & sgen_qmin,
-                        const RealVect & sgen_qmax,
-                        const Eigen::VectorXi & sgen_bus_id){
+        void init_sgens(const Eigen::Ref<const RealVect> & sgen_p,
+                        const Eigen::Ref<const RealVect> & sgen_q,
+                        const Eigen::Ref<const RealVect> & sgen_pmin,
+                        const Eigen::Ref<const RealVect> & sgen_pmax,
+                        const Eigen::Ref<const RealVect> & sgen_qmin,
+                        const Eigen::Ref<const RealVect> & sgen_qmax,
+                        const Eigen::Ref<const Eigen::VectorXi> & sgen_bus_id){
             sgens_.init(sgen_p, sgen_q, sgen_pmin, sgen_pmax, sgen_qmin, sgen_qmax, sgen_bus_id);
         }
         void init_svcs(const std::vector<int> & regulation_mode,
-                       const RealVect & target_vm_pu,
-                       const RealVect & q_setpoint_mvar,
-                       const RealVect & slope_pu,
-                       const RealVect & b_min,
-                       const RealVect & b_max,
-                       const Eigen::VectorXi & regulated_bus_id,
-                       const Eigen::VectorXi & svc_bus_id){
+                       const Eigen::Ref<const RealVect> & target_vm_pu,
+                       const Eigen::Ref<const RealVect> & q_setpoint_mvar,
+                       const Eigen::Ref<const RealVect> & slope_pu,
+                       const Eigen::Ref<const RealVect> & b_min,
+                       const Eigen::Ref<const RealVect> & b_max,
+                       const Eigen::Ref<const Eigen::VectorXi> & regulated_bus_id,
+                       const Eigen::Ref<const Eigen::VectorXi> & svc_bus_id){
             svcs_.init(regulation_mode, target_vm_pu, q_setpoint_mvar, slope_pu,
                        b_min, b_max, regulated_bus_id, svc_bus_id);
         }
-        void init_storages(const RealVect & storages_p,
-                           const RealVect & storages_q,
-                           const Eigen::VectorXi & storages_bus_id){
+        void init_storages(const Eigen::Ref<const RealVect> & storages_p,
+                           const Eigen::Ref<const RealVect> & storages_q,
+                           const Eigen::Ref<const Eigen::VectorXi> & storages_bus_id){
             storages_.init(storages_p, storages_q, storages_bus_id);
         }
-        void init_dclines(const Eigen::VectorXi & branch_from_id,
-                          const Eigen::VectorXi & branch_to_id,
-                          const RealVect & p_mw,
-                          const RealVect & loss_percent,
-                          const RealVect & loss_mw,
-                          const RealVect & vm1_pu,
-                          const RealVect & vm2_pu,
-                          const RealVect & min_q1,
-                          const RealVect & max_q1,
-                          const RealVect & min_q2,
-                          const RealVect & max_q2){
+        void init_dclines(const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                          const Eigen::Ref<const Eigen::VectorXi> & branch_to_id,
+                          const Eigen::Ref<const RealVect> & p_mw,
+                          const Eigen::Ref<const RealVect> & loss_percent,
+                          const Eigen::Ref<const RealVect> & loss_mw,
+                          const Eigen::Ref<const RealVect> & vm1_pu,
+                          const Eigen::Ref<const RealVect> & vm2_pu,
+                          const Eigen::Ref<const RealVect> & min_q1,
+                          const Eigen::Ref<const RealVect> & max_q1,
+                          const Eigen::Ref<const RealVect> & min_q2,
+                          const Eigen::Ref<const RealVect> & max_q2){
             hvdc_lines_.init_legacy(branch_from_id, branch_to_id, p_mw,
                                     loss_percent, loss_mw, vm1_pu, vm2_pu,
                                     min_q1, max_q1, min_q2, max_q2);
@@ -425,33 +425,33 @@ class LS2G_API LSGrid final
          * Full IIDM-style hvdc initialization (two converter stations - VSC or
          * LCC - per line, optional angle-droop). See HvdcLineContainer::init.
          */
-        void init_hvdc_lines(const Eigen::VectorXi & bus1_id,
-                             const Eigen::VectorXi & bus2_id,
+        void init_hvdc_lines(const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
+                             const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                              const std::vector<int> & type1,
                              const std::vector<int> & type2,
-                             const RealVect & loss_factor1,
-                             const RealVect & loss_factor2,
+                             const Eigen::Ref<const RealVect> & loss_factor1,
+                             const Eigen::Ref<const RealVect> & loss_factor2,
                              const std::vector<bool> & vreg1_on,
                              const std::vector<bool> & vreg2_on,
-                             const RealVect & vm1_pu,
-                             const RealVect & vm2_pu,
-                             const RealVect & q1_setpoint_mvar,
-                             const RealVect & q2_setpoint_mvar,
-                             const RealVect & min_q1,
-                             const RealVect & max_q1,
-                             const RealVect & min_q2,
-                             const RealVect & max_q2,
-                             const RealVect & power_factor1,
-                             const RealVect & power_factor2,
+                             const Eigen::Ref<const RealVect> & vm1_pu,
+                             const Eigen::Ref<const RealVect> & vm2_pu,
+                             const Eigen::Ref<const RealVect> & q1_setpoint_mvar,
+                             const Eigen::Ref<const RealVect> & q2_setpoint_mvar,
+                             const Eigen::Ref<const RealVect> & min_q1,
+                             const Eigen::Ref<const RealVect> & max_q1,
+                             const Eigen::Ref<const RealVect> & min_q2,
+                             const Eigen::Ref<const RealVect> & max_q2,
+                             const Eigen::Ref<const RealVect> & power_factor1,
+                             const Eigen::Ref<const RealVect> & power_factor2,
                              const std::vector<int> & converters_mode,
-                             const RealVect & p_setpoint_mw,
-                             const RealVect & r_ohm,
-                             const RealVect & nominal_v_kv,
+                             const Eigen::Ref<const RealVect> & p_setpoint_mw,
+                             const Eigen::Ref<const RealVect> & r_ohm,
+                             const Eigen::Ref<const RealVect> & nominal_v_kv,
                              const std::vector<bool> & droop_enabled,
-                             const RealVect & droop_p0_mw,
-                             const RealVect & droop_mw_per_deg,
-                             const RealVect & pmax_1to2_mw,
-                             const RealVect & pmax_2to1_mw){
+                             const Eigen::Ref<const RealVect> & droop_p0_mw,
+                             const Eigen::Ref<const RealVect> & droop_mw_per_deg,
+                             const Eigen::Ref<const RealVect> & pmax_1to2_mw,
+                             const Eigen::Ref<const RealVect> & pmax_2to1_mw){
             const RealVect no_legacy_loss = RealVect::Zero(bus1_id.size());
             hvdc_lines_.init(bus1_id, bus2_id, type1, type2,
                              loss_factor1, loss_factor2, vreg1_on, vreg2_on,

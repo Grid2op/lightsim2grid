@@ -396,7 +396,7 @@ class OneSideContainer : public GenericContainer
         }
         
         void init_osc(
-            const Eigen::VectorXi & els_bus_id
+            const Eigen::Ref<const Eigen::VectorXi> & els_bus_id
         )  // osc: one side container
         {
             bus_id_ = GlobalBusIdVect(els_bus_id);

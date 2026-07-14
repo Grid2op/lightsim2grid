@@ -14,11 +14,11 @@
 namespace ls2g {
 
 void LineContainer::init(
-    const RealVect & branch_r,
-    const RealVect & branch_x,
-    const CplxVect & branch_h,
-    const Eigen::VectorXi & branch_from_id,
-    const Eigen::VectorXi & branch_to_id
+    const Eigen::Ref<const RealVect> & branch_r,
+    const Eigen::Ref<const RealVect> & branch_x,
+    const Eigen::Ref<const CplxVect> & branch_h,
+    const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+    const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
 )
 {
     /**
@@ -36,12 +36,12 @@ void LineContainer::init(
     branch_to_id);
 }
 
-void LineContainer::init(const RealVect & branch_r,
-                         const RealVect & branch_x,
-                         const CplxVect & branch_h_or,
-                         const CplxVect & branch_h_ex,
-                         const Eigen::VectorXi & branch_from_id,
-                         const Eigen::VectorXi & branch_to_id
+void LineContainer::init(const Eigen::Ref<const RealVect> & branch_r,
+                         const Eigen::Ref<const RealVect> & branch_x,
+                         const Eigen::Ref<const CplxVect> & branch_h_or,
+                         const Eigen::Ref<const CplxVect> & branch_h_ex,
+                         const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                         const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                          )
 {
     /**
