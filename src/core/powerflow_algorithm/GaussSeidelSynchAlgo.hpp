@@ -29,7 +29,7 @@ class LS2G_API GaussSeidelSynchAlgo final: public GaussSeidelAlgo
                       const Eigen::SparseMatrix<cplx_type> & Ybus,
                       Eigen::Ref<const IntVect> pv,
                       Eigen::Ref<const IntVect> pq
-                      );
+                      ) override;
 
     private:
         // no copy allowed

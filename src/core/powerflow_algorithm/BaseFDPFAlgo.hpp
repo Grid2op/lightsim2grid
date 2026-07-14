@@ -17,7 +17,7 @@ namespace ls2g {
 Base class for Fast Decoupled Powerflow based solver
 **/
 template<class LinearSolver, FDPFMethod XB_BX>
-class BaseFDPFAlgo: public BaseAlgo
+class BaseFDPFAlgo final: public BaseAlgo
 {
     public:
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
@@ -77,7 +77,6 @@ class BaseFDPFAlgo: public BaseAlgo
         
         void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;  // defined in Solvers.cpp !
 
-        virtual
         void initialize() {
             auto timer = CustTimer();
             err_ = ErrorType::NoError; // reset error message
@@ -111,7 +110,6 @@ class BaseFDPFAlgo: public BaseAlgo
             timer_initialize_ += timer.duration();
         }
 
-        virtual
         void solve(LinearSolver& linear_solver,
                    RealVect & b){
             auto timer = CustTimer();
