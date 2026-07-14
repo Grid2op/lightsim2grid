@@ -266,10 +266,10 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             }
         }
 
-        real_type get_qmin_or(int hvdc_id) {return side_1_.get_qmin(hvdc_id);}
-        real_type get_qmax_or(int hvdc_id) {return side_1_.get_qmax(hvdc_id);}
-        real_type get_qmin_ex(int hvdc_id) {return side_2_.get_qmin(hvdc_id);}
-        real_type get_qmax_ex(int hvdc_id) {return side_2_.get_qmax(hvdc_id);}
+        real_type get_qmin_or(int hvdc_id) const {return side_1_.get_qmin(hvdc_id);}
+        real_type get_qmax_or(int hvdc_id) const {return side_1_.get_qmax(hvdc_id);}
+        real_type get_qmin_ex(int hvdc_id) const {return side_2_.get_qmin(hvdc_id);}
+        real_type get_qmax_ex(int hvdc_id) const {return side_2_.get_qmax(hvdc_id);}
 
         /**
          * Change the active power of the line, legacy convention: `new_p` is

@@ -539,7 +539,7 @@ void GeneratorContainer::set_q(
 }
 
 void GeneratorContainer::update_slack_weights(
-    Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+    Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
     DualAlgoControl & solver_control)
 {
     const int nb_gen = nb();

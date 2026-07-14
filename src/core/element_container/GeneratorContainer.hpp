@@ -198,14 +198,11 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             turnedoff_gen_pv_=true;  // turned off generators are pv. This is the default.
             }  
         bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
-        void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+        void update_slack_weights(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
                                   DualAlgoControl & solver_control);
         void update_slack_weights_by_id(Eigen::Ref<const IntVect> gen_slack_id, DualAlgoControl & solver_control);
         
         
-        real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
-        real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
-
         // ---- remote voltage control --------------------------------------------
         // grid bus id whose voltage this generator regulates (== its own bus for
         // ordinary local control). A remote-regulating gen does NOT join the PV
