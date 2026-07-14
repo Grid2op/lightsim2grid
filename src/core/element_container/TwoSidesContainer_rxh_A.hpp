@@ -406,7 +406,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             compute_amps_after_all_set();
         }
         
-        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
+        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const override
         {
             const auto my_size = nb();
             for(size_t el_id = 0; el_id < my_size; ++el_id){
@@ -449,7 +449,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             std::vector<Eigen::Triplet<cplx_type> > & res,
             bool ac,
             const SolverBusIdVect & id_grid_to_solver,
-            real_type /*sn_mva*/) const
+            real_type /*sn_mva*/) const override
         {
             const size_t nb_els = nb();
             const std::vector<bool> & status1 = side_1_.get_status();
@@ -575,7 +575,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
                                 const SolverBusIdVect & id_grid_to_solver,
                                 real_type /*sn_mva*/,
-                                FDPFMethod xb_or_bx) const
+                                FDPFMethod xb_or_bx) const override
         {
 
             // For Bp
