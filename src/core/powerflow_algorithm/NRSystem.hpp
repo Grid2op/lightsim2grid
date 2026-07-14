@@ -990,6 +990,11 @@ private:
     // ---- Shared data (one copy, shared by all components) -----------------------
     RealVect                               Va_, Vm_;
     CplxVect                               V_;
+    // cache for mismatch(): a persistent all-zero dx, resized (and re-zeroed) only
+    // when total_state_variables() changes; never written to otherwise, so it is
+    // safe to reuse across calls instead of allocating a fresh RealVect::Zero(n)
+    // every time (mismatch() runs at least twice per NR iteration).
+    mutable RealVect                       dx_zero_cache_;
     Eigen::SparseMatrix<real_type, Eigen::ColMajor>         J_;
     double                                 timer_dSbus_, timer_fillJ_;
     Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>         dS_dVm_, dS_dVa_;

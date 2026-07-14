@@ -218,7 +218,9 @@ template <typename... Rest>
 inline RealVect NRSystem<Base, Rest...>::mismatch() const
 {
     // current state: no step (dx == 0), residual evaluated at V_
-    return _residual(V_, RealVect::Zero(static_cast<Eigen::Index>(total_state_variables())));
+    const auto n = static_cast<Eigen::Index>(total_state_variables());
+    if(dx_zero_cache_.size() != n) dx_zero_cache_ = RealVect::Zero(n);
+    return _residual(V_, dx_zero_cache_);
 }
 
 template <typename... Rest>

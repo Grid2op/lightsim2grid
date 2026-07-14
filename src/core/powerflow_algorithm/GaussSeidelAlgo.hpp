@@ -43,8 +43,8 @@ class LS2G_API GaussSeidelAlgo : public BaseAlgo
         virtual
         void one_iter(CplxVect & tmp_Sbus,
                       const Eigen::SparseMatrix<cplx_type> & Ybus,
-                      const Eigen::VectorXi & pv,
-                      const Eigen::VectorXi & pq
+                      Eigen::Ref<const IntVect> pv,
+                      Eigen::Ref<const IntVect> pq
                       );
 
     private:

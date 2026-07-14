@@ -199,7 +199,10 @@ class LS2G_API GenericContainer : public BaseConstants
         /**
         compute the amps from the p, the q and the v (v should NOT be pair unit)
         **/
-        void _get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v) const;
+        void _get_amps(Eigen::Ref<RealVect> a,
+                       const Eigen::Ref<const RealVect> & p,
+                       const Eigen::Ref<const RealVect> & q,
+                       const Eigen::Ref<const RealVect> & v) const;
 
         /**
         convert v from pu to v in kv (and assign it to the right element...)
@@ -210,7 +213,7 @@ class LS2G_API GenericContainer : public BaseConstants
                            int nb_element,
                            const GlobalBusIdVect & bus_me_id,
                            const SolverBusIdVect & id_grid_to_solver,
-                           const RealVect & bus_vn_kv,
+                           const Eigen::Ref<const RealVect> & bus_vn_kv,
                            RealVect & v) const;
 
 
@@ -223,7 +226,7 @@ class LS2G_API GenericContainer : public BaseConstants
                            int nb_element,
                            const GlobalBusIdVect & bus_me_id,
                            const SolverBusIdVect & id_grid_to_solver,
-                           const RealVect & bus_vn_kv,
+                           const Eigen::Ref<const RealVect> & bus_vn_kv,
                            RealVect & v) const;
 };
 
