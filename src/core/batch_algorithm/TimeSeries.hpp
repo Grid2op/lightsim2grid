@@ -58,7 +58,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
                        const int max_iter,
                        const real_type tol);
                        
-        virtual void clear() override {
+        void clear() override {
             BaseBatchSolverSynch::clear();
             _Sbuses = CplxMat();
             _status = 1;

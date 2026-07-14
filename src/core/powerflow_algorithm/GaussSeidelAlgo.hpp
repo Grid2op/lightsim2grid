@@ -21,12 +21,11 @@ class LS2G_API GaussSeidelAlgo : public BaseAlgo
         virtual ~GaussSeidelAlgo() noexcept = default;
 
         // todo  can be factorized
-        virtual Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const override {
+        Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const override {
             throw std::runtime_error("get_J: There is no jacobian in the Gauss Seidel method");
         }
 
         // todo change the name!
-        virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
                         Eigen::Ref<const CplxVect> Sbus,

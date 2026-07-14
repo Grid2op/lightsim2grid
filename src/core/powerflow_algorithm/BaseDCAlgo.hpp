@@ -40,8 +40,8 @@ class BaseDCAlgo final: public BaseAlgo
 
         virtual ~BaseDCAlgo() noexcept = default;
 
-        virtual void reset() override final;
-        virtual void reset_timer() override final{
+        void reset() override final;
+        void reset_timer() override final{
             BaseAlgo::reset_timer();
             timer_refactor_ = 0.;
             timer_factor_ = 0.;
@@ -53,7 +53,7 @@ class BaseDCAlgo final: public BaseAlgo
             timer_lodf_ = 0.;
         }
 
-        virtual TimerJac get_timers_jacobian() const override final
+        TimerJac get_timers_jacobian() const override final
         {
             TimerJac res;
             res.timer_Fx_         = timer_Fx_;
@@ -68,7 +68,7 @@ class BaseDCAlgo final: public BaseAlgo
             return res;
         }
 
-        virtual TimerPTDFLODFType get_timers_ptdf_lodf() const override final
+        TimerPTDFLODFType get_timers_ptdf_lodf() const override final
         {
             TimerPTDFLODFType res = {
                 timer_ptdf_,  
@@ -81,7 +81,6 @@ class BaseDCAlgo final: public BaseAlgo
         // Native real-valued DC power flow: solves `Bbus . theta = Pbus`.
         // (the DC solver does not implement the complex `compute_pf`: it inherits the throwing
         //  default from BaseAlgo, since every DC code path goes through `compute_pf_dc`)
-        virtual
         bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
                            CplxVect & V,
                            Eigen::Ref<const RealVect> Pbus,
@@ -91,12 +90,12 @@ class BaseDCAlgo final: public BaseAlgo
                            Eigen::Ref<const IntVect> pq
                            ) override final;
 
-        virtual RealMat get_ptdf() override final;
-        virtual RealMat get_lodf(const IntVect & from_bus,
+        RealMat get_ptdf() override final;
+        RealMat get_lodf(const IntVect & from_bus,
                                  const IntVect & to_bus) override final;
-        virtual Eigen::SparseMatrix<real_type> get_bsdf() override final;  // TODO BSDF
+        Eigen::SparseMatrix<real_type> get_bsdf() override final;  // TODO BSDF
 
-        virtual void update_internal_Ybus(const Coeff & coeff, bool add) override final{
+        void update_internal_Ybus(const Coeff & coeff, bool add) override final{
             int row_res = static_cast<int>(coeff.row_id);
             row_res = mat_bus_id_(row_res);
             if(row_res == -1) return;
@@ -118,8 +117,8 @@ class BaseDCAlgo final: public BaseAlgo
         // a working copy of dcYbus_noslack_, so the (incrementally maintained)
         // persistent matrix and the symbolic factorization are left untouched (only a
         // numeric refactorize is needed). See compute_pf_dc.
-        virtual bool supports_bus_masking() const override final { return true; }
-        virtual void set_masked_buses(const std::vector<int> & solver_bus_ids) override final{
+        bool supports_bus_masking() const override final { return true; }
+        void set_masked_buses(const std::vector<int> & solver_bus_ids) override final{
             masked_buses_ = solver_bus_ids;
         }
 
