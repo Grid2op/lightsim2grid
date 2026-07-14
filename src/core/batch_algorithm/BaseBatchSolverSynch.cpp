@@ -70,15 +70,14 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
         // prepare_solver_input_base; Pbus is the real part of the (possibly per-step)
         // injection. ContingencyAnalysis leaves Sbus_ empty in DC (it relies on the
         // member Pbus_ built once), so fall back to Pbus_ when no complex Sbus is given.
-        const RealVect Pbus = (Sbus.size() == 0) ? Pbus_ : RealVect(Sbus.real());
-        conv = algo.compute_pf_dc(
-            Bbus_,
-            V,
-            Pbus,
-            slack_ids,
-            slack_weights,
-            bus_pv,
-            bus_pq);
+        // Split into two branches (rather than a ternary) so the common/no-Sbus case
+        // binds Pbus_ directly instead of unifying both branches into a fresh copy.
+        if(Sbus.size() == 0){
+            conv = algo.compute_pf_dc(Bbus_, V, Pbus_, slack_ids, slack_weights, bus_pv, bus_pq);
+        } else {
+            const RealVect Pbus = Sbus.real();
+            conv = algo.compute_pf_dc(Bbus_, V, Pbus, slack_ids, slack_weights, bus_pv, bus_pq);
+        }
     }
     if(conv){
         V = algo.get_V().array();
