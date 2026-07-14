@@ -211,12 +211,12 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                          );
 
         // accessor / modifiers
-        virtual void reconnect_connected_buses(SubstationContainer & substation) const override {
+        void reconnect_connected_buses(SubstationContainer & substation) const override {
             side_1_.reconnect_connected_buses(substation);
             side_2_.reconnect_connected_buses(substation);
         }
 
-        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & /*res*/) const override {
+        void get_graph(std::vector<Eigen::Triplet<real_type> > & /*res*/) const override {
             // for buses only connected through a hvdc line, i don't add them
             // they are not in the same "connected component"
         }
@@ -232,7 +232,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // NOT deactivate the whole line when a single side is outside the main
         // component: we keep the in-main converter injecting and open only the
         // out-of-main one. A line with BOTH sides outside is still fully dropped.
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override {
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override {
             const int nb_el = nb();
             DualAlgoControl unused_solver_control;
             const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
@@ -345,9 +345,9 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         void droop_flows_mw(int hvdc_id, real_type raw_mw, real_type & p1_flow_mw, real_type & p2_flow_mw) const;
 
         // solver stuff
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
-        virtual void fillpv(std::vector<int>& bus_pv,
+        void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
                             const SolverBusIdVect & id_grid_to_solver) const override {
@@ -355,7 +355,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             side_2_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);
         }
 
-        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
+        void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
                                 std::vector<Eigen::Triplet<real_type> > & /*Bpp*/,
                                 const SolverBusIdVect & /*id_grid_to_solver*/,
                                 real_type /*sn_mva*/,

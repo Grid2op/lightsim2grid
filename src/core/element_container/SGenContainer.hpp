@@ -86,10 +86,10 @@ class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorA
                   const Eigen::Ref<const Eigen::VectorXi> & sgen_bus_id
                   );
               
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
     protected:
-        virtual void _compute_results(
+        void _compute_results(
             const Eigen::Ref<const RealVect> & /*Va*/,
             const Eigen::Ref<const RealVect> & /*Vm*/,
             const Eigen::Ref<const CplxVect> & /*V*/,

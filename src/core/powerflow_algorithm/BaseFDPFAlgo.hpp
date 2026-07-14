@@ -23,7 +23,6 @@ class BaseFDPFAlgo final: public BaseAlgo
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
         virtual ~BaseFDPFAlgo() noexcept = default;
 
-        virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
                         Eigen::Ref<const CplxVect> Sbus,
@@ -35,7 +34,7 @@ class BaseFDPFAlgo final: public BaseAlgo
                         real_type tol
                         ) override;  // requires a gridmodel !
 
-        virtual void reset() override
+        void reset() override
         {   
             BaseAlgo::reset();
             // solution of the problem
@@ -58,7 +57,7 @@ class BaseFDPFAlgo final: public BaseAlgo
         Eigen::SparseMatrix<real_type> debug_get_Bpp_python() { return Bpp_;}
 
     protected:
-        virtual void reset_timer() override {
+        void reset_timer() override {
             BaseAlgo::reset_timer();
         }
 

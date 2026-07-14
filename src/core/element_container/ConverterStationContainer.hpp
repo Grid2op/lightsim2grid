@@ -148,7 +148,7 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
                               const SolverBusIdVect & id_grid_to_solver,
                               bool ac,
                               const std::vector<bool> & skip_p) const;
-        virtual void fillpv(std::vector<int>& bus_pv,
+        void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
                             const SolverBusIdVect & id_grid_to_solver) const override;
@@ -166,7 +166,7 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
         void set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const;
 
     protected:
-        virtual void _compute_results(
+        void _compute_results(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,

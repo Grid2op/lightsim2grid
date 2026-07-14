@@ -169,7 +169,7 @@ class TwoSidesContainer : public GenericContainer
         Eigen::Ref<const IntVect> get_bus_id_side_1_numpy() const {return side_1_.get_bus_id_numpy();}
         Eigen::Ref<const IntVect> get_bus_id_side_2_numpy() const {return side_2_.get_bus_id_numpy();}
 
-        void reconnect_connected_buses(SubstationContainer & substation) const{
+        void reconnect_connected_buses(SubstationContainer & substation) const override{
             side_1_.reconnect_connected_buses(substation);
             side_2_.reconnect_connected_buses(substation);
             // TODO think about status here !
@@ -177,7 +177,7 @@ class TwoSidesContainer : public GenericContainer
             // (in this case this can do nothing if side_1 or side_2 is not connected)
         }
 
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override {
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override {
             const int nb_el = nb();
             DualAlgoControl unused_solver_control;
             const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
@@ -207,7 +207,7 @@ class TwoSidesContainer : public GenericContainer
                 }
             }
         }
-        virtual void nb_line_end(std::vector<int> & res) const override final {
+        void nb_line_end(std::vector<int> & res) const override final {
             const int nb_el = nb();
             for(int el_id = 0; el_id < nb_el; ++el_id){
                 // don't do anything if the element is disconnected

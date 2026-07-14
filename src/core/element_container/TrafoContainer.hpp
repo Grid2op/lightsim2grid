@@ -213,12 +213,12 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         
     protected:
         // void _update_model_coeffs();
-        virtual void _update_model_coeffs_one_el(int el_id) override;
-        virtual void _update_other_model_coeffs() override {
+        void _update_model_coeffs_one_el(int el_id) override;
+        void _update_other_model_coeffs() override {
             dc_x_tau_shift_ = RealVect::Zero(nb());
         }
 
-        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
+        bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
             bool has_been_changed = TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>:: _deactivate(el_id, solver_control);
             if(has_been_changed){
                 // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
@@ -227,7 +227,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             return has_been_changed;
         }
 
-        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
+        bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
             bool has_been_changed = TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>:: _reactivate(el_id, solver_control);
             if(has_been_changed){
                 // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
@@ -236,7 +236,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             return has_been_changed;
         }
 
-        virtual void _change_bus_side_1(
+        void _change_bus_side_1(
             int /*el_id*/,
             GridModelBusId /*new_gridmodel_bus_id*/,
             DualAlgoControl & solver_control,
@@ -249,7 +249,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             }
         }
 
-        virtual void _change_bus_side_2(
+        void _change_bus_side_2(
             int /*el_id*/,
             GridModelBusId /*new_gridmodel_bus_id*/,
             DualAlgoControl & solver_control,
@@ -262,7 +262,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             }
         }
 
-        virtual void _update_topo(
+        void _update_topo(
             DualAlgoControl & solver_control,
             SubstationContainer & /*substations*/,
             const std::vector<bool> & side1_changed,
@@ -332,17 +332,17 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
 
     protected:
 
-        virtual real_type fillBf_for_PTDF_coeff(int tr_id) const override {
+        real_type fillBf_for_PTDF_coeff(int tr_id) const override {
             real_type res = x_(tr_id);
             real_type tau = is_tap_side1_[tr_id] ? ratio_(tr_id) : 1. / ratio_(tr_id);
             return res * tau;
         }
 
-        virtual int fillBf_for_PTDF_id(int tr_id, int nb_powerline) const override {
+        int fillBf_for_PTDF_id(int tr_id, int nb_powerline) const override {
             return tr_id + nb_powerline;
         }
 
-        virtual FDPFCoeffs get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const override;
+        FDPFCoeffs get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const override;
 };
 
 inline TrafoInfo::TrafoInfo(const TrafoContainer & r_data_trafo, int my_id) noexcept:

@@ -406,7 +406,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             compute_amps_after_all_set();
         }
         
-        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const override
+        void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const override
         {
             const auto my_size = nb();
             for(size_t el_id = 0; el_id < my_size; ++el_id){
@@ -445,7 +445,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         const std::vector<bool>& get_status_global()  const { return status_global_; }
 
         // solver interface
-        virtual void fillYbus(
+        void fillYbus(
             std::vector<Eigen::Triplet<cplx_type> > & res,
             bool ac,
             const SolverBusIdVect & id_grid_to_solver,
@@ -532,7 +532,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
         // Real DC equivalent of fillYbus (DC branch): pushes the real susceptance coefficients
         // directly into a real triplet list (no complex temporary).
-        virtual void fillBdc(
+        void fillBdc(
             std::vector<Eigen::Triplet<real_type> > & res,
             const SolverBusIdVect & id_grid_to_solver,
             real_type /*sn_mva*/) const override
@@ -571,7 +571,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
         }
 
-        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+        void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
                                 const SolverBusIdVect & id_grid_to_solver,
                                 real_type /*sn_mva*/,
@@ -673,7 +673,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                              const SolverBusIdVect & id_grid_to_solver,
                              real_type /*sn_mva*/,
                              int nb_powerline,
-                             bool transpose) const
+                             bool transpose) const override
         {
             const size_t nb_line = nb();
             const std::vector<bool> & side1_conn = side_1_.get_status();
@@ -683,7 +683,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 if(!status_global_[line_id]) continue;
                 if(!side1_conn[line_id]) continue;
                 if(!side2_conn[line_id]) continue;
-                
+
                 // get the from / to bus id
                 GlobalBusId bus_or_id_me = get_bus_side_1(line_id);
                 if(bus_or_id_me.cast_int() == _deactivated_bus_id){
@@ -735,7 +735,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         }
 
         // gridmodel utilities
-        void reconnect_connected_buses(SubstationContainer & substation) const{
+        void reconnect_connected_buses(SubstationContainer & substation) const override{
             const size_t nb_els = nb();
             const std::vector<bool>& status_side_1_ = get_status_side_1();
             const std::vector<bool>& status_side_2_ = get_status_side_2();
@@ -875,7 +875,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             res_a_side_2_ = RealVect(nb());  // in kA
         }
 
-        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
+        bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
             if(status_global_[el_id]){
                 // update solver control
                 solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
@@ -886,7 +886,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
             return false;
         }
-        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
+        bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
             if(!status_global_[el_id]){
                 // update solver control
                 solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
@@ -985,7 +985,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
          * This requires that status_global, status of side 1 and status of side 2 
          * are set correctly
          */
-        virtual void _update_effective_coeffs_one_el(int el_id) override {
+        void _update_effective_coeffs_one_el(int el_id) override {
             const bool s1 = side_1_.get_status(el_id);
             const bool s2 = side_2_.get_status(el_id);
             if (!status_global_[el_id] || (!s1 && !s2)) {
