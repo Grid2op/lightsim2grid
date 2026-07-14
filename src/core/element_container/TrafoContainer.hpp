@@ -135,10 +135,10 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                                     const std::vector<std::vector<real_type> > & rx_corr_pct,
                                     DualAlgoControl & solver_control);
 
-        virtual void hack_Sbus_for_dc_phase_shifter(
+        void hack_Sbus_for_dc_phase_shifter(
             CplxVect & Sbus,
             bool ac,
-            const SolverBusIdVect & id_grid_to_solver);  // needed for dc mode  
+            const SolverBusIdVect & id_grid_to_solver);  // needed for dc mode
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,
@@ -237,12 +237,12 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         }
 
         virtual void _change_bus_side_1(
-            int /*el_id*/, 
-            GridModelBusId /*new_gridmodel_bus_id*/, 
-            DualAlgoControl & solver_control, 
+            int /*el_id*/,
+            GridModelBusId /*new_gridmodel_bus_id*/,
+            DualAlgoControl & solver_control,
             const SubstationContainer & /*substation*/,
             bool has_effectively_changed
-        ) {
+        ) override {
             if(has_effectively_changed){
                 // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
                 solver_control.dc_algo_controler().tell_recompute_sbus();
@@ -255,7 +255,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             DualAlgoControl & solver_control,
             const SubstationContainer & /*substation*/,
             bool has_effectively_changed
-        ) {
+        ) override {
             if(has_effectively_changed){
                 // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
                 solver_control.dc_algo_controler().tell_recompute_sbus();
@@ -267,7 +267,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             SubstationContainer & /*substations*/,
             const std::vector<bool> & side1_changed,
             const std::vector<bool> & side2_changed
-        )
+        ) override
         {
             bool onechanged_1 = std::any_of(side1_changed.begin(), side1_changed.end(), [](bool v) { return v; });
             bool onechanged_2 = std::any_of(side2_changed.begin(), side2_changed.end(), [](bool v) { return v; });

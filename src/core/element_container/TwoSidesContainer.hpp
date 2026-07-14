@@ -207,7 +207,7 @@ class TwoSidesContainer : public GenericContainer
                 }
             }
         }
-        virtual void nb_line_end(std::vector<int> & res) const final {
+        virtual void nb_line_end(std::vector<int> & res) const override final {
             const int nb_el = nb();
             for(int el_id = 0; el_id < nb_el; ++el_id){
                 // don't do anything if the element is disconnected

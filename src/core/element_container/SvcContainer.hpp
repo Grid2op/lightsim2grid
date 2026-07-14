@@ -52,7 +52,7 @@ IIDM model of powsybl: three regulation modes
 `b_min_` / `b_max_` are stored for introspection but NEVER enforced (no outer
 loop, no limit check), mirroring the generator Qmin/Qmax handling.
 **/
-class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<SvcContainer, SvcInfo>
+class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorAdder<SvcContainer, SvcInfo>
 {
     friend class SvcInfo;
 
