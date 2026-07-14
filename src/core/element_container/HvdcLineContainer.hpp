@@ -375,7 +375,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                              const Eigen::Ref<const RealVect> & Vm,
                              const Eigen::Ref<const CplxVect> & V,
                              const SolverBusIdVect & id_grid_to_solver,
-                             const RealVect & bus_vn_kv,
+                             const Eigen::Ref<const RealVect> & bus_vn_kv,
                              real_type sn_mva,
                              bool ac);
 

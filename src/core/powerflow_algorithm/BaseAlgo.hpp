@@ -412,7 +412,7 @@ class LS2G_API BaseAlgo : public BaseConstants
         }
         
         // terribly inefficient way to know if an element is in a vector
-        bool isin(int k, const Eigen::VectorXi vect) const{
+        bool isin(int k, Eigen::Ref<const Eigen::VectorXi> vect) const{
             for(auto el : vect){
                 if(el == k) return true;
             }
