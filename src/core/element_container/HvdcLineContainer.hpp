@@ -308,8 +308,8 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             _check_in_range(hvdc_id, status_droop_, "get_status_droop");
             return status_droop_(hvdc_id);
         }
-        std::vector<int> get_status_droop_vect() const {
-            return std::vector<int>(status_droop_.begin(), status_droop_.end());
+        Eigen::Ref<const IntVect> get_status_droop_vect() const {
+            return status_droop_;
         }
         const std::vector<bool> & get_droop_enabled() const {return droop_enabled_;}
         real_type get_droop_p0_mw(int hvdc_id) const {return p0_mw_(hvdc_id);}
