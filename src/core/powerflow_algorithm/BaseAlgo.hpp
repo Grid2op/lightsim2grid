@@ -391,6 +391,16 @@ class LS2G_API BaseAlgo : public BaseConstants
         /**
         When there are multiple slacks, add the other "slack buses" in the PV buses indexes
         (behaves as if only the first element is used for the slack !!!, called "ref slack")
+
+        `slack_ids(0)` MUST be the intended reference / angle slack whenever this is called --
+        every algorithm family (DC via BaseDCAlgo, Fast-Decoupled via BaseFDPFAlgo, Gauss-Seidel)
+        funnels through this one method for that choice, and the (single-slack) Newton-Raphson
+        path makes the same assumption independently in NRSystem's MultiSlack extension
+        (`ref_slack_id_ = slack_ids[0]`, see NRSystem.hpp). Reordering `slack_ids` so a different
+        bus ends up at index 0 (eg ContingencyAnalysis::select_ref_slack_and_masks) silently
+        changes which bus is removed from the reduced linear system / used as the angle datum --
+        not a crash, just wrong (or non-reproducible) results that are miserable to debug back to
+        this assumption.
         **/
         Eigen::VectorXi retrieve_pv_with_slack(const Eigen::Ref<const IntVect> & slack_ids,
                                                const Eigen::Ref<const IntVect> & pv) const {

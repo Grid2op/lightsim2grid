@@ -189,6 +189,20 @@ sign conventions (post-solve ``p`` / ``q`` in the load convention):
     :members:
     :no-index:
 
+.. warning::
+    Only powerflow *results* (post-solve quantities such as ``p`` / ``q`` / ``i`` / bus
+    voltage) are actually read from the solved ``LSGrid`` and mapped back onto
+    pypowsybl's DataFrame shape. Everything else in the returned DataFrame -- topology,
+    ratings, static per-element metadata, ... -- is read from the original pypowsybl
+    ``net``, not recomputed by lightsim2grid.
+
+.. note::
+    ``LightsimResultNetwork`` is a convenience wrapper for pypowsybl-shaped analysis
+    code, not the fast path: building each DataFrame has real overhead (id alignment,
+    column renaming, sign-convention conversion) on top of the powerflow itself. If you
+    only need raw arrays for performance-sensitive code, use lightsim2grid's own
+    accessors on ``LSGrid`` directly instead.
+
 Results
 -----------------------------------
 

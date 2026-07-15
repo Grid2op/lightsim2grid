@@ -8,13 +8,13 @@
 
 """`fuse_zero_impedance_branches` (from_pypowsybl `init()`).
 
-A real RTE grid was found to have a line with `r_pu = x_pu = 0.0`. lightsim2grid
+A real grid was found to have a line with `r_pu = x_pu = 0.0`. lightsim2grid
 computed `B = 1/X = Inf`, corrupting the Ybus/dcYbus with literal `+/-Inf` entries
 and making the sparse LU factorization fail outright. OpenLoadFlow avoids this via
 its `lowImpedanceBranchMode` (default `REPLACE_BY_ZERO_IMPEDANCE_LINE`): the two
 terminal buses of a near-zero-impedance branch are fused into a single electrical
 node instead of computing `1/Z`. This is the same behaviour, opt-in via
-`fuse_zero_impedance_branches` (see HVDC_OLF_FINDINGS.md and the docstring of
+`fuse_zero_impedance_branches` (see the docstring of
 `lightsim2grid.network.from_pypowsybl.init`).
 """
 
@@ -262,7 +262,7 @@ class TestBusFusionResultNetwork(unittest.TestCase):
     branch itself must be recoverable by Kirchhoff's current law wherever a
     leaf endpoint makes it unambiguous (see `_reconstruct_fused_branches`).
 
-    Found on a real RTE grid (`PtFige-20241018-0355`): a zero-impedance line
+    Found on a real grid snapshot (`PtFige-20241018-0355`): a zero-impedance line
     (`CPNIEL61ZSINA`) merged bus `ZSINAP6_0` into `CPNIEP6_0`; the fused-away
     bus read `v_mag=0.0` and the fused line itself read 0 flow instead of the
     ~250 MW / 634 A OpenLoadFlow (with outer loops disabled by `outerLoopNames:
@@ -309,8 +309,8 @@ class TestBusFusionResultNetwork(unittest.TestCase):
         V = model.ac_pf(Vdc, 30, 1e-8)
         self.assertGreater(V.shape[0], 0)
 
-        # `net.get_buses()` (the *bus view*, used throughout `_from_pypowsybl.py`/
-        # `_result_network.py`) computes its own ids from the voltage level for a
+        # `net.get_buses()` (the *bus view*, used throughout the `from_pypowsybl`
+        # converter / `_result_network.py`) computes its own ids from the voltage level for a
         # BUS_BREAKER-topology network -- "VL1_0", not the bus-breaker-view id
         # ("B1") passed to `create_buses`/`create_lines(bus1_id=...)` above.
         bus1, bus2 = "VL1_0", "VL2_0"
