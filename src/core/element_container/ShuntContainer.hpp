@@ -47,7 +47,7 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         using StateRes = std::tuple<OneSideContainer_PQ::StateRes >;
         
         ShuntContainer() noexcept = default;
-        virtual ~ShuntContainer() noexcept = default;
+        ~ShuntContainer() noexcept override = default;
         
         
         void init(const Eigen::Ref<const RealVect> & shunt_p_mw,

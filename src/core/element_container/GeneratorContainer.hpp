@@ -70,7 +70,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         
         GeneratorContainer() noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(true){};
         explicit GeneratorContainer(bool turnedoff_gen_pv) noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(turnedoff_gen_pv) {};
-        virtual ~GeneratorContainer() noexcept = default;
+        ~GeneratorContainer() noexcept override = default;
         
         // TODO add pmin and pmax here !
         void init(const Eigen::Ref<const RealVect> & generators_p,
@@ -198,7 +198,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             turnedoff_gen_pv_=true;  // turned off generators are pv. This is the default.
             }  
         bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
-        void update_slack_weights(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+        void update_slack_weights(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & could_be_slack,
                                   DualAlgoControl & solver_control);
         void update_slack_weights_by_id(Eigen::Ref<const IntVect> gen_slack_id, DualAlgoControl & solver_control);
         

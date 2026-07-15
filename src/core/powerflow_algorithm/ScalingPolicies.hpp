@@ -51,8 +51,8 @@ template<class NRSystem>
 class LS2G_API NoScalingPolicy final : public ScalingPolicy<NRSystem>
 {
     public:
-        ScalingPolicyType type() const override final {return ScalingPolicyType::NoScaling;}
-        real_type scale(const NRSystem& /*system*/, const RealVect & /*F*/) override final
+        ScalingPolicyType type() const override {return ScalingPolicyType::NoScaling;}
+        real_type scale(const NRSystem& /*system*/, const RealVect & /*F*/) override
         {
             return 1.;
         }
@@ -63,8 +63,8 @@ template<class NRSystem>
 class LS2G_API MaxVoltageChangeScalingPolicy final : public ScalingPolicy<NRSystem>
 {
     public:
-        ScalingPolicyType type() const override final {return ScalingPolicyType::MaxVoltageChange;}
-        real_type scale(const NRSystem& system, const RealVect & F) override final
+        ScalingPolicyType type() const override {return ScalingPolicyType::MaxVoltageChange;}
+        real_type scale(const NRSystem& system, const RealVect & F) override
         {
             real_type alpha = static_cast<real_type>(1.0);
             // max_abs_dtheta / max_abs_dvm account for both the base block and any
@@ -96,9 +96,9 @@ template<class NRSystem>
 class LS2G_API LineSearchScalingPolicy final : public ScalingPolicy<NRSystem>
 {
     public:
-        ScalingPolicyType type() const override final {return ScalingPolicyType::LineSearch;}
+        ScalingPolicyType type() const override {return ScalingPolicyType::LineSearch;}
 
-        real_type scale(const NRSystem& system, const RealVect & F) override final
+        real_type scale(const NRSystem& system, const RealVect & F) override
         {
             // Current merit (||mismatch(x)||^2 before the step). By the time scale()
             // runs, F has already been overwritten in place by the linear solve
@@ -151,9 +151,9 @@ template<class NRSystem>
 class IwamotoScalingPolicy final : public ScalingPolicy<NRSystem>
 {
     public:
-        ScalingPolicyType type() const override final {return ScalingPolicyType::Iwamoto;}
+        ScalingPolicyType type() const override {return ScalingPolicyType::Iwamoto;}
 
-        real_type scale(const NRSystem& system, const RealVect & F) override final
+        real_type scale(const NRSystem& system, const RealVect & F) override
         {
             // g0 = ||mismatch(x)||^2 (current state, BEFORE the step) -- see the
             // identical note in LineSearchScalingPolicy::scale: F is already dx by

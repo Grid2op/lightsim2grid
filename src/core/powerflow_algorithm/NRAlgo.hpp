@@ -52,7 +52,7 @@ public:
         timer_scale_(0.),
         timer_mismatch_(0.) {}
 
-    virtual ~NRAlgo() noexcept = default;
+    ~NRAlgo() noexcept override = default;
 
     // ----- Jacobian accessor ---------------------------------------------------
 

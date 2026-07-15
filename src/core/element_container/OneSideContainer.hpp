@@ -156,7 +156,7 @@ class OneSideContainer : public GenericContainer
 
     public:
         OneSideContainer() noexcept = default;
-        virtual ~OneSideContainer() noexcept = default;
+        ~OneSideContainer() noexcept override = default;
         // OneSideInfo get_osc_info(int id_) {return OneSideInfo(*this, id_);}
 
         // public generic API

@@ -26,7 +26,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
             _status(1), // 1: success, 0: failure
             _compute_flows(true)
             {}
-        ~TimeSeries() noexcept = default;
+        ~TimeSeries() noexcept override = default;
 
         TimeSeries(const TimeSeries&) = delete;
         TimeSeries(TimeSeries&&) = delete;

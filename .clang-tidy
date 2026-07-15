@@ -17,14 +17,16 @@
 # style in an initial run. Rather than suppress the check, the redundant
 # `virtual` was dropped codebase-wide (virtual is implied by `override`, and
 # by `final` on an actual override) as part of the same final/override sweep,
-# bringing this down to ~40 residual warnings, all in two explainable
-# buckets: (1) destructors not annotated `override`/`final` -- valid C++ to
-# add, but this codebase doesn't follow that particular style and it wasn't
-# worth changing here; (2) `override final` used together for defensive
+# and every destructor overriding a base's virtual destructor was annotated
+# `override` too, bringing this down to 2 residual warnings, both the same
+# explainable case: `override final` used together for defensive
 # compile-time checking (marks BOTH "this really overrides something" and
-# "no further overrides") -- the check prefers `final` alone since it
-# implies `override`, but the pair is intentional in a few places and left
-# as-is.
+# "no further overrides") on a method in a class that ISN'T itself `final`
+# (OneSideContainer::disconnect_if_not_in_main_component,
+# TwoSidesContainer::nb_line_end) -- the check prefers `final` alone since it
+# implies `override`, but the pair is intentional there and left as-is.
+# (Classes that are themselves `final` don't repeat `final` on their
+# methods -- redundant, since the class already can't be subclassed at all.)
 #
 # Known false-positive class: performance-unnecessary-value-param flags every
 # `Eigen::Ref<...>` parameter passed by value (the idiom used throughout this

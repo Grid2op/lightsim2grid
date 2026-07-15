@@ -65,7 +65,7 @@ class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorA
            >;
         
         SGenContainer() noexcept = default;
-        virtual ~SGenContainer() noexcept = default;
+        ~SGenContainer() noexcept override = default;
         
         // pickle (python)
         SGenContainer::StateRes get_state() const;
