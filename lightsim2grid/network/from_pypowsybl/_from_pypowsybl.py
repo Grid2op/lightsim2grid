@@ -90,6 +90,14 @@ def _aux_dangling_lines_fictitious(net, sort_index):
     ``None`` and ``df_dl`` is empty if the grid has no dangling line.
     ``df_dl`` carries two extra columns, ``boundary_bus_id`` /
     ``boundary_vl_id``, used later to attach the equivalent branch + load.
+
+    Deliberately built from ``net`` (physical units), not ``net_pu``: every
+    field actually read off ``df_dl`` downstream is unit-agnostic (ids,
+    ``connected``) or physical on purpose (``p0``/``q0`` in MW/MVAr, matching
+    every other load in this module). The per-unit-sensitive series
+    impedance (r/x/g/b) is read separately, from ``net_pu.get_dangling_lines()``
+    (see the ``df_dl_pu`` fetch further down) -- ``net``/``df_dl`` is never
+    used for those.
     """
     df_dl = net.get_dangling_lines()
     if sort_index:
@@ -1283,6 +1291,11 @@ def init(net : pypo.network.Network,
 
         # optional voltage/reactive-power slope ("droop"), in kV/MVar:
         #   s_pu = slope[kV/MVar] * sn_mva / vn_kv(regulated bus)   (Phase 0 probe #1)
+        # Read from `net` (not `net_pu`): pypowsybl's per-unit view (native
+        # `per_unit=True` and the legacy `PerUnitView`) does not per-unit this
+        # extension at all -- `slope` comes back numerically identical whether
+        # or not `per_unit` is set (checked empirically) -- so there is no
+        # `net_pu` value to defer to here; the conversion has to be done by hand.
         try:
             df_slope = net.get_extensions("voltagePerReactivePowerControl")
         except Exception:
@@ -1307,6 +1320,12 @@ def init(net : pypo.network.Network,
         # (or, since check_solution never enforces SVC Q limits, silently hits a "hard"
         # voltage pin at its own target_vm_pu regardless of what Q that would truly take)
         # long before the real device would.
+        # This CANNOT be replaced by reading `net_pu.get_static_var_compensators()`
+        # instead: checked empirically that pypowsybl's per-unit view (native
+        # `per_unit=True` and the legacy `PerUnitView`) leaves `b_min`/`b_max`
+        # in SIEMENS even under `per_unit=True` -- it only per-units `target_v`
+        # (and, generically, elements it fully models) -- so relying on it here
+        # would silently reintroduce this exact bug.
         b_min = df_svc["b_min"].values.astype(float) * (svc_reg_vn ** 2) / sn_mva_used
         b_max = df_svc["b_max"].values.astype(float) * (svc_reg_vn ** 2) / sn_mva_used
     else:
