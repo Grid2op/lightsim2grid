@@ -65,7 +65,7 @@ def mpc_to_powermodels(bus, gen, branch, dcline, baseMVA) -> dict:
             "pmin": float(gen[i, PMIN]),
         }
 
-    n_weird_shift = 0
+    weird_shift_rows = []
     for i in range(branch.shape[0]):
         key = str(i + 1)
         tap = float(branch[i, TAP])
@@ -75,7 +75,7 @@ def mpc_to_powermodels(bus, gen, branch, dcline, baseMVA) -> dict:
             # matpower's own convention: a non-transformer (TAP == 0) branch has no
             # meaningful phase shift; `from_matpower`'s legacy array-based loader
             # silently dropped it too (it never passed SHIFT to `init_powerlines`)
-            n_weird_shift += 1
+            weird_shift_rows.append(i)
             shift_degree = 0.
         network["branch"][key] = {
             "f_bus": int(branch[i, F_BUS]),
@@ -90,8 +90,9 @@ def mpc_to_powermodels(bus, gen, branch, dcline, baseMVA) -> dict:
             "rate_a": float(branch[i, RATE_A]),
             "br_status": int(branch[i, BR_STATUS]),
         }
-    if n_weird_shift:
-        warnings.warn(f"{n_weird_shift} branch(es) have `TAP == 0` (so are treated as a plain "
+    if weird_shift_rows:
+        warnings.warn(f"{len(weird_shift_rows)} branch(es) (0-based mpc `branch` row ids: "
+                      f"{weird_shift_rows}) have `TAP == 0` (so are treated as a plain "
                       "powerline) but a non-zero `SHIFT`, which is not physically meaningful "
                       "for a plain line. The `SHIFT` will be ignored for these branches.")
 

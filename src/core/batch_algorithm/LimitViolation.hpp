@@ -39,9 +39,10 @@ struct LS2G_API LimitViolation {
     LimitViolationType violation_type;
     real_type value;  // value reached ; unused (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type limit;  // limit that was violated ; unused (NaN) for NOT_SIMULATED / DIVERGENCE
-    // element name (LINE / TRAFO only, from LSGrid::set_line_names / set_trafo_names) ; empty
-    // string if the grid never had names set for this element type, or for BUS / GRID (no
-    // per-bus name exists in LSGrid, only per-substation ones)
+    // element name: LINE / TRAFO (from LSGrid::set_line_names / set_trafo_names) or, for BUS,
+    // the name of the *substation* the violating bus belongs to (from
+    // LSGrid::set_substation_names) -- there is no per-bus name in LSGrid, only per-substation
+    // ones. Empty string if the grid never had names set for the relevant kind, or for GRID.
     std::string name{};
 };
 

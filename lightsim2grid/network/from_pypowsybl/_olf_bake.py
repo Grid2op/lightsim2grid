@@ -16,9 +16,10 @@ Why this exists
 lightsim2grid solves a single power-flow problem: it does not run the discrete
 "outer loops" that OLF runs (distributed slack, reactive-limit PV<->PQ
 switching, transformer/shunt voltage control, phase control, ...). Those loops
-change the *inputs* of the power flow between inner solves: a generator that
-hits its Q limit becomes a fixed-Q (PQ) injection, a tap changer settles on a
-discrete position, the slack mismatch is spread over participating units, etc.
+change the input of the inner solves (*eg* the input of the inner Newton
+Raphson) between iterations: a generator that hits its Q limit becomes a
+fixed-Q (PQ) injection, a tap changer settles on a discrete position, the
+slack mismatch is spread over participating units, etc.
 
 If you take the raw network, run OLF *with* outer loops, and then hand the same
 raw network to lightsim2grid, the two engines disagree -- not because the
@@ -27,8 +28,10 @@ solvers differ, but because they are solving different problems.
 ``bake_outer_loops`` rewrites the network's input setpoints to the values the
 outer loops settled on, and disables the corresponding regulation, so the
 problem becomes a plain power flow. After baking, OLF (loop-free) and
-lightsim2grid agree to solver tolerance, and they keep agreeing through
-topology changes (line/transformer outages) applied identically to both.
+lightsim2grid *should* agree to solver tolerance, and keep agreeing through
+topology changes (line/transformer outages) applied identically to both --
+this does not always hold in practice (see e.g. multi-root / basin-boundary
+cases where the two engines land on different, both-valid, roots).
 
 The loop-free OLF parameters that reproduce the baked operating point are
 available as :func:`lightsim2grid.network.get_pypowsybl_loopfree_parameters`.
@@ -697,7 +700,7 @@ def _bake_remote_voltage_control(network, keep_only_main_comp=True):
         gen = _keep_only_main_comp(gen, df_bus)
     if not len(gen):
         return
-    # "remote" matches the converter's own test (see _from_pypowsybl.init): a non-empty
+    # "remote" matches the converter's own test (see _aux_add_generators.py): a non-empty
     # regulated element that is not the generator's own id.
     reg = gen["regulated_element_id"].fillna("")
     remote = gen["voltage_regulator_on"] & gen["connected"] & (reg != "") & (reg != gen.index)

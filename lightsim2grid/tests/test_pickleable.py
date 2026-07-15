@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 from pathlib import Path
+import sys
 import tempfile
 import pickle
 import os
@@ -17,6 +18,10 @@ import numpy as np
 
 import grid2op
 from lightsim2grid.lightSimBackend import LightSimBackend
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _exotic_elements_fixture import build_exotic_elements_grid  # noqa: E402
+
 from lightsim2grid.network.compare_lsgrid import (
     compare_network_input,
     _compare_loads,
@@ -189,12 +194,21 @@ class TestPickle(unittest.TestCase):
             with open(tmpdir / "test_pickle_2.pickle", "rb") as f:
                 pickle.load(f)
                         
-    def _aux_test_pickle(self, fun_name, fun_comp, check_old_version=True):
+    def _aux_test_pickle(self, fun_name, fun_comp, check_old_version=True, grid=None):
+        """`grid` defaults to a full l2rpn_idf_2023 grid2op env's LSGrid; pass one
+        explicitly (eg `build_exotic_elements_grid()`) to test an element type
+        l2rpn_idf_2023 does not carry any of (SVC, HVDC -- see
+        `_exotic_elements_fixture.py`). Only meaningful with `check_old_version=False`:
+        the `old_pickle/` legacy fixtures below were generated from an
+        l2rpn_idf_2023 grid and have nothing to do with `grid`.
+        """
         # test I can reload if saved some the same ls version
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
-        els = getattr(self.env.backend._grid, fun_name)()
+        if grid is None:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore")
+                self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
+            grid = self.env.backend._grid
+        els = getattr(grid, fun_name)()
         with tempfile.TemporaryDirectory() as tmpdir:
             with open(os.path.join(tmpdir, f"test_pickle_{fun_name}.pickle"), "wb") as f:
                 pickle.dump(els, f)
@@ -204,7 +218,7 @@ class TestPickle(unittest.TestCase):
         class Struct:
             pass
         setattr(Struct, fun_name, lambda self: els_reloaded)
-        diff_ = fun_comp(Struct(), self.env.backend._grid)
+        diff_ = fun_comp(Struct(), grid)
         assert len(diff_) == 0
 
         if not check_old_version:
@@ -248,10 +262,15 @@ class TestPickle(unittest.TestCase):
         self._aux_test_pickle("get_static_generators", _compare_static_generators, check_old_version=False)
 
     def test_pickle_hvdc(self):
-        self._aux_test_pickle("get_dclines", _compare_dclines, check_old_version=False)
+        # l2rpn_idf_2023 carries no HVDC line at all -- use the exotic-elements
+        # fixture instead, which has 3 (VSC droop, VSC no-droop, LCC).
+        self._aux_test_pickle("get_dclines", _compare_dclines, check_old_version=False,
+                              grid=build_exotic_elements_grid())
 
     def test_pickle_svcs(self):
-        self._aux_test_pickle("get_svcs", _compare_svcs, check_old_version=False)
+        # l2rpn_idf_2023 carries no SVC at all -- use the exotic-elements fixture.
+        self._aux_test_pickle("get_svcs", _compare_svcs, check_old_version=False,
+                              grid=build_exotic_elements_grid())
 
 
 if __name__ == "__main__":

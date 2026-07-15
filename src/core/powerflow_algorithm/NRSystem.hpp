@@ -320,6 +320,9 @@ class LS2G_API MultiSlack   // distributed-slack extension
             const Eigen::Ref<const IntVect> &              /*pq*/
         ) {
             my_size_ = static_cast<int>(slack_ids.size());
+            // `slack_ids[0]` is the reference bus by convention, shared with every other
+            // algorithm family -- see BaseAlgo::retrieve_pv_with_slack's doc comment for why
+            // getting this wrong is silent and hard to debug, not a crash.
             ref_slack_id_ = slack_ids[0];
             // slack buses in registration order: non-ref slacks sorted by bus
             // id, then the ref slack last

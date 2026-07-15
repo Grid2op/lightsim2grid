@@ -7,7 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 """Malformed reactive capability curve data (min_q/max_q effectively "swapped" at
-one of the curve points) was found on a real RTE grid snapshot: pypowsybl's
+one of the curve points) was found on a real grid snapshot: pypowsybl's
 "at target p" interpolation then yields min_q > max_q, which OpenLoadFlow
 tolerates silently but which used to make lightsim2grid's
 ``GeneratorContainer::init`` hard-crash with ``RuntimeError: ... min_q being

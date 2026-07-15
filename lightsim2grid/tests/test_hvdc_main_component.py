@@ -16,8 +16,8 @@ different components only one of them is in the main (solved) one.
 OpenLoadFlow keeps that in-main converter as a fixed boundary injection (it still
 imports / exports its scheduled HVDC power). lightsim2grid used to deactivate the
 WHOLE line as soon as one side was out of the main component, silently dropping
-that injection (hundreds of MW on real RTE grids -- see HVDC_OLF_FINDINGS.md).
-These tests pin the fixed behaviour: keep the line connected, keep the in-main
+that injection (hundreds of MW on real grids). These tests pin the fixed
+behaviour: keep the line connected, keep the in-main
 converter injecting, open only the out-of-main converter.
 """
 

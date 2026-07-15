@@ -15,14 +15,14 @@ result column names/units as the real ``pypowsybl.network.Network``, so
 analysis code written against a solved pypowsybl network runs unmodified
 against a solved lightsim2grid one.
 
-Only supports grids built by :func:`_from_pypowsybl.init` (``init_from_pypowsybl``):
+Only supports grids built by :func:`initLSGrid.init` (``init_from_pypowsybl``):
 it relies on that function's invariants -- every non-bus element's ``.name`` set
 verbatim to its pypowsybl id, and the grid's ``_init_kwargs``/``_orig_to_ls``
 properties -- which do not hold for pandapower- or powermodels-built grids.
 
 Sign conventions (lightsim2grid vs pypowsybl's post-solve ``p``/``q``, both in
 the "load convention": positive = power flowing *into* the equipment):
-loads, shunts and storage units already match (no flip needed: `_from_pypowsybl`
+loads, shunts and storage units already match (no flip needed: `_aux_add_storage.py`
 feeds storages a load-convention target_p/target_q, negating IIDM's own
 generator-convention target_p on the way in). Generators and HVDC converter
 stations use lightsim2grid's generation convention internally (positive =
@@ -57,6 +57,39 @@ class LightsimResultNetwork:
     it accepts an optional ``attributes`` list and returns a DataFrame
     indexed by the pypowsybl element id, built lazily on first call and
     cached afterwards.
+
+    **Supported element types** (one ``get_*`` method each): buses, lines,
+    2-winding transformers, generators, loads, shunt compensators, static var
+    compensators, batteries/storage units, HVDC lines, and VSC / LCC
+    converter stations.
+
+    **Not exposed here**, even when present on ``net`` (or, for dangling
+    lines, on the ``LSGrid`` itself): dangling lines -- no ``get_dangling_lines``
+    method, including when the grid was built with
+    ``init_from_pypowsybl(..., convert_dangling_lines=True)`` -- and
+    three-winding transformers, which `initLSGrid.init` does not model
+    at all (not just unexposed here).
+
+    **Column provenance**, for every ``get_*`` method's DataFrame:
+
+    - power-flow *results* (``p``/``q``/``i``/``i1``/``i2``/``p1``/``p2``/
+      ``q1``/``q2``/``v_mag``/``v_angle``) are read off the *solved* ``LSGrid``
+      -- this specific powerflow's outcome, not the original ``net``'s.
+    - topology / metadata columns (``bus_id``/``bus1_id``/``bus2_id``,
+      ``connected``/``connected1``/``connected2``,
+      ``voltage_level_id``/``voltage_level1_id``/``voltage_level2_id``,
+      ``is_lcc``) reflect ``LSGrid``'s *current* state, which mirrors ``net``
+      only as long as nothing changed the grid (topology, connectivity, ...)
+      after ``init_from_pypowsybl`` built it -- they are not re-read from
+      ``net`` on every call.
+    - a handful of columns are read verbatim from the original ``net`` and
+      frozen at construction time, never from ``LSGrid``: currently only
+      ``converter_station1_id`` / ``converter_station2_id`` on
+      :meth:`get_hvdc_lines`.
+    - every DataFrame's index (``id``) mirrors the element's pypowsybl id by
+      construction (`initLSGrid.init` sets every non-bus element's
+      lightsim2grid ``name`` verbatim to it, see the module docstring), even
+      though it is technically sourced from ``LSGrid``, not read from ``net``.
     """
 
     def __init__(self, ls_grid: LSGrid, net: "pypo.network.Network"):
@@ -124,7 +157,7 @@ class LightsimResultNetwork:
         id. Since the grid was built with ``buses_for_sub`` not ``True`` (enforced
         in ``__init__``), a lightsim2grid substation *is* a pypowsybl voltage
         level, and ``LSGrid.get_substations()[k].name`` is exactly the string
-        `_from_pypowsybl.init()` set it to (``model.set_substation_names(...)``).
+        `_aux_add_buses.py` set it to (``model.set_substation_names(...)``).
         """
         if self._sub_names is None:
             self._sub_names = [s.name for s in self._grid.get_substations()]
@@ -136,6 +169,10 @@ class LightsimResultNetwork:
     # buses
     # ------------------------------------------------------------------ #
     def get_buses(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
+        """Columns: ``v_mag`` (kV, solved result), ``v_angle`` (degree, solved
+        result, offset-aligned to ``net``'s own angle datum -- see
+        :meth:`_build_buses`), ``voltage_level_id`` (topology, from ``net``).
+        """
         if "buses" not in self._cache:
             self._cache["buses"] = self._build_buses()
         return self._maybe_select(self._cache["buses"], attributes)
@@ -152,7 +189,7 @@ class LightsimResultNetwork:
         # `_olf_compare.py::lightsim_bus_to_iidm`.
         orig_to_ls = np.asarray(grid._orig_to_ls)[:n_bus]
 
-        # a bus fused away by `fuse_zero_impedance_branches` (see `_from_pypowsybl.py`)
+        # a bus fused away by `fuse_zero_impedance_branches` (see `_aux_add_buses.py`)
         # keeps its own row here (fixed-size bus containers) but lost every element to
         # its representative, so it is disconnected with no solved voltage of its own
         # -- redirect it to the representative bus, which is electrically the same node
@@ -173,13 +210,31 @@ class LightsimResultNetwork:
         # a uniform angle offset across every bus is just a difference of
         # reference-datum convention (lightsim2grid's slack bus needs not be
         # at the same angle-datum as whatever `net` last held), not physical:
-        # remove it by aligning medians, mirroring the "offset-removed" angle
-        # metric already used by `_olf_compare.py::compare_baked`.
+        # remove it. Preferred: compare the two engines' own angle at the
+        # *same* bus -- lightsim2grid's actual solved reference slack,
+        # `get_slack_ids()[0]` (see `ContingencyAnalysis.cpp`'s "index 0 is
+        # the NR angle reference" invariant) -- which is exact, unlike a
+        # median across all buses. Falls back to the median-based estimate
+        # (mirroring the "offset-removed" angle metric already used by
+        # `_olf_compare.py::compare_baked`) when the reference bus can't be
+        # resolved on either side (eg fused away, disconnected, or the grid
+        # has no slack at all).
         orig_angle = self._net.get_buses()["v_angle"]
-        mask_orig = np.isfinite(orig_angle.to_numpy()) & (orig_angle.abs() > 1e-6)
-        mask_new = np.isfinite(res["v_angle"].to_numpy()) & (res["v_angle"].abs() > 1e-6)
-        if mask_orig.any() and mask_new.any():
-            offset = res.loc[mask_new, "v_angle"].median() - orig_angle.loc[mask_orig].median()
+        offset = None
+        slack_ids = np.asarray(grid.get_slack_ids())
+        if slack_ids.shape[0] and slack_ids[0] >= 0:
+            ref_pypo_id = self._ls_bus_to_pypo(int(slack_ids[0]))
+            if ref_pypo_id is not None and ref_pypo_id in res.index and ref_pypo_id in orig_angle.index:
+                new_ref_angle = res.at[ref_pypo_id, "v_angle"]
+                orig_ref_angle = orig_angle.at[ref_pypo_id]
+                if np.isfinite(new_ref_angle) and np.isfinite(orig_ref_angle):
+                    offset = new_ref_angle - orig_ref_angle
+        if offset is None:
+            mask_orig = np.isfinite(orig_angle.to_numpy()) & (orig_angle.abs() > 1e-6)
+            mask_new = np.isfinite(res["v_angle"].to_numpy()) & (res["v_angle"].abs() > 1e-6)
+            if mask_orig.any() and mask_new.any():
+                offset = res.loc[mask_new, "v_angle"].median() - orig_angle.loc[mask_orig].median()
+        if offset is not None:
             res["v_angle"] = res["v_angle"] - offset
 
         return res
@@ -188,10 +243,19 @@ class LightsimResultNetwork:
     # lines / transformers
     # ------------------------------------------------------------------ #
     def get_lines(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
+        """Columns: ``p1``/``q1``/``i1``/``p2``/``q2``/``i2`` (solved results,
+        MW/MVAr/A), ``bus1_id``/``bus2_id``/``connected1``/``connected2``/
+        ``voltage_level1_id``/``voltage_level2_id`` (topology, from the
+        *current* ``LSGrid`` state, see the class docstring). See
+        :meth:`_reconstruct_fused_branches` for how a fused (near-zero-impedance)
+        line's flow is recovered where possible, instead of reporting 0.
+        """
         self._ensure_lines_trafos()
         return self._maybe_select(self._cache["lines"], attributes)
 
     def get_2_windings_transformers(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
+        """Same columns as :meth:`get_lines` (this class does not expose tap
+        position / ratio / phase-shift columns)."""
         self._ensure_lines_trafos()
         return self._maybe_select(self._cache["trafos"], attributes)
 
@@ -235,7 +299,7 @@ class LightsimResultNetwork:
     def _fused_ids(self):
         """(fused_line_ids, fused_trafo_ids): ids of the branches
         `fuse_zero_impedance_branches` fused away when the grid was built (see
-        `_from_pypowsybl.py`), stashed by that function into `_init_kwargs` as
+        `_aux_add_buses.py`), stashed by that function into `_init_kwargs` as
         `"\\x1f"`-joined strings. Empty frozensets for a grid built without
         fusion (or not through `init_from_pypowsybl` at all).
         """
@@ -284,7 +348,7 @@ class LightsimResultNetwork:
 
     def _reconstruct_fused_branches(self, lines_df, trafos_df, fused_line_ids, fused_trafo_ids) -> None:
         """Recover the flow through a fused (near-)zero-impedance branch (see
-        `_from_pypowsybl.py`'s `fuse_zero_impedance_branches`) wherever the
+        `_aux_add_buses.py`'s `fuse_zero_impedance_branches`) wherever the
         physics make it unambiguous, and patch `lines_df`/`trafos_df` in place.
 
         A fused branch is deactivated in the lightsim2grid model (its two
@@ -389,27 +453,48 @@ class LightsimResultNetwork:
     # ------------------------------------------------------------------ #
     # generators / loads / shunts / svc / batteries: one-sided elements
     # ------------------------------------------------------------------ #
+    # Shared by every one-sided `get_*` below -- columns: ``p``/``q`` (solved
+    # results, MW/MVAr, sign per the module docstring's convention discussion),
+    # ``bus_id``/``connected``/``voltage_level_id`` (topology, from the
+    # *current* ``LSGrid`` state, see the class docstring).
+
     def get_generators(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
+        """See the one-sided column list above ``get_generators``. ``p``/``q``
+        use the generation sign convention, negated from lightsim2grid's
+        internal convention (see the module docstring)."""
         if "generators" not in self._cache:
             self._cache["generators"] = self._build_one_sided(self._grid.get_generators(), flip_sign=True)
         return self._maybe_select(self._cache["generators"], attributes)
 
     def get_loads(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
+        """See the one-sided column list above :meth:`get_generators`. ``p``/``q``
+        already match pypowsybl's convention, no sign flip (see the module
+        docstring)."""
         if "loads" not in self._cache:
             self._cache["loads"] = self._build_one_sided(self._grid.get_loads(), flip_sign=False)
         return self._maybe_select(self._cache["loads"], attributes)
 
     def get_shunt_compensators(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
+        """See the one-sided column list above :meth:`get_generators`. No sign
+        flip, same as :meth:`get_loads`. Does not expose section count /
+        susceptance columns."""
         if "shunts" not in self._cache:
             self._cache["shunts"] = self._build_one_sided(self._grid.get_shunts(), flip_sign=False)
         return self._maybe_select(self._cache["shunts"], attributes)
 
     def get_static_var_compensators(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
+        """See the one-sided column list above :meth:`get_generators`. Assumed
+        to use the same generation sign convention as generators (see the
+        module docstring's caveat: not independently double-checked against a
+        converged real grid). Does not expose the regulation mode / slope /
+        b_min / b_max columns."""
         if "svcs" not in self._cache:
             self._cache["svcs"] = self._build_one_sided(self._grid.get_svcs(), flip_sign=True)
         return self._maybe_select(self._cache["svcs"], attributes)
 
     def get_batteries(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
+        """See the one-sided column list above :meth:`get_generators`. No sign
+        flip, same as :meth:`get_loads`."""
         if "batteries" not in self._cache:
             self._cache["batteries"] = self._build_one_sided(self._grid.get_storages(), flip_sign=False)
         return self._maybe_select(self._cache["batteries"], attributes)
@@ -432,16 +517,29 @@ class LightsimResultNetwork:
     # hvdc lines / converter stations
     # ------------------------------------------------------------------ #
     def get_hvdc_lines(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
+        """Columns: ``p1``/``q1``/``p2``/``q2`` (solved results, MW/MVAr,
+        generation sign convention, negated from lightsim2grid's internal
+        convention), ``connected1``/``connected2`` (topology, from the
+        *current* ``LSGrid`` state), ``converter_station1_id`` /
+        ``converter_station2_id`` (the only columns in this whole class read
+        verbatim from the original ``net`` and frozen at construction time --
+        see the class docstring)."""
         if "hvdc_lines" not in self._cache:
             self._build_hvdc()
         return self._maybe_select(self._cache["hvdc_lines"], attributes)
 
     def get_vsc_converter_stations(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
+        """Columns: ``p``/``q`` (solved results, MW/MVAr, generation sign
+        convention), ``bus_id``/``connected``/``voltage_level_id`` (topology,
+        from the *current* ``LSGrid`` state, see the class docstring). Does
+        not expose ``target_v``/``target_q``/``voltage_regulator_on``."""
         if "vsc_stations" not in self._cache:
             self._build_hvdc()
         return self._maybe_select(self._cache["vsc_stations"], attributes)
 
     def get_lcc_converter_stations(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
+        """Same columns as :meth:`get_vsc_converter_stations` (this class does
+        not expose ``power_factor``)."""
         if "lcc_stations" not in self._cache:
             self._build_hvdc()
         return self._maybe_select(self._cache["lcc_stations"], attributes)
@@ -452,7 +550,7 @@ class LightsimResultNetwork:
         # only stores them as numeric bus references), so they are recovered
         # here from the original network, keyed by the hvdc line's own `.name`
         # (== its pypowsybl id). Side 1 pairs with `converter_station1_id` and
-        # side 2 with `converter_station2_id`: `_from_pypowsybl.init()` builds
+        # side 2 with `converter_station2_id`: `_aux_add_hvdc.py` builds
         # its per-side station data from those two columns in that same order.
         orig_hvdc = self._net.get_hvdc_lines()
 

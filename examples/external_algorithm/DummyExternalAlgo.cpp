@@ -30,11 +30,11 @@ public:
     bool compute_pf(
         const Eigen::SparseMatrix<ls2g::cplx_type>& /*Ybus*/,
         ls2g::CplxVect& V,
-        Eigen::Ref<const ls2g::CplxVect> /*Sbus*/,
-        Eigen::Ref<const ls2g::IntVect> /*slack_ids*/,
-        Eigen::Ref<const ls2g::RealVect> /*slack_weights*/,
-        Eigen::Ref<const ls2g::IntVect> /*pv*/,
-        Eigen::Ref<const ls2g::IntVect> /*pq*/,
+        const Eigen::Ref<const ls2g::CplxVect> & /*Sbus*/,
+        const Eigen::Ref<const ls2g::IntVect> & /*slack_ids*/,
+        const Eigen::Ref<const ls2g::RealVect> & /*slack_weights*/,
+        const Eigen::Ref<const ls2g::IntVect> & /*pv*/,
+        const Eigen::Ref<const ls2g::IntVect> & /*pq*/,
         int /*max_iter*/,
         ls2g::real_type /*tol*/) override
     {

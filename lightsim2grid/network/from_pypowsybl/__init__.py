@@ -16,7 +16,8 @@ __all__ = ["init",
            "ComparisonResult",
            "LightsimResultNetwork"]
 
-from ._from_pypowsybl import init, dangling_line_boundary_bus
+from .initLSGrid import init
+from ._aux_add_buses import dangling_line_boundary_bus
 from ._olf_bake import bake_outer_loops
 from ._olf_params import (
     remove_outer_loops,
