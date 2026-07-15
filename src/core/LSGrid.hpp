@@ -95,7 +95,10 @@ class LS2G_API LSGrid final
                 // a string->string map flattened into parallel key/value vectors (appended;
                 // old pickles are version-gated). See get_init_kwargs()/set_init_kwargs().
                 std::vector<std::string>,  // init_kwargs keys
-                std::vector<std::string>   // init_kwargs values
+                std::vector<std::string>,  // init_kwargs values
+                // fused-bus representative lookup (appended; old pickles/binary
+                // formats are version-gated). See get_bus_fusion_rep().
+                std::vector<int>  // bus_fusion_rep
                 >;
 
         // named indices into the StateRes tuple above (get_state()/set_state()
@@ -124,6 +127,7 @@ class LS2G_API LSGrid final
         static const std::size_t DC_ALGO_CONFIG_ID = 20;
         static const std::size_t INIT_KWARGS_KEYS_ID = 21;
         static const std::size_t INIT_KWARGS_VALUES_ID = 22;
+        static const std::size_t BUS_FUSION_REP_ID = 23;
 
         LSGrid():
           timer_last_ac_pf_(0.),
@@ -1681,6 +1685,28 @@ class LS2G_API LSGrid final
         [[nodiscard]] const std::map<std::string, std::string> & get_init_kwargs() const { return init_kwargs_;}
         void set_init_kwargs(const std::map<std::string, std::string> & init_kwargs) { init_kwargs_ = init_kwargs;}
 
+        /**
+         * Fused-bus lookup, size `total_bus()` (empty if unset / not built with bus
+         * fusion). For each ls bus id, gives the ls bus id of the "representative" bus
+         * it was merged into by `fuse_zero_impedance_branches` (identity for a bus not
+         * involved in any fusion). Set by the Python-side converter (`init_from_pypowsybl`,
+         * see `_from_pypowsybl.py`); never read by any C++ powerflow logic -- purely so a
+         * downstream Python consumer (eg `LightsimResultNetwork`) can recover the voltage
+         * of a bus whose own lightsim bus ended up with no elements (and so disconnected)
+         * after fusion, by redirecting to its representative, which carries the real
+         * solved voltage.
+         */
+        [[nodiscard]] const IntVect & get_bus_fusion_rep() const { return _bus_fusion_rep;}
+        void set_bus_fusion_rep(const IntVect & bus_fusion_rep){
+            if(bus_fusion_rep.size() != 0 && static_cast<size_t>(bus_fusion_rep.size()) != total_bus()){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::set_bus_fusion_rep: the provided vector has size ";
+                exc_ << bus_fusion_rep.size() << " but this grid counts " << total_bus() << " buses.";
+                throw std::runtime_error(exc_.str());
+            }
+            _bus_fusion_rep = bus_fusion_rep;
+        }
+
         void fillSbus_other(CplxVect & res, bool ac, const SolverBusIdVect& id_me_to_solver){
             fillSbus_me(res, ac, id_me_to_solver);
         }
@@ -1991,6 +2017,7 @@ class LS2G_API LSGrid final
          * between 0 and `n_sub_ * max_nb_bus_per_sub_`
          */
         IntVect _orig_to_ls;
+        IntVect _bus_fusion_rep;  // see get_bus_fusion_rep()
 
         // member of the grid
         double timer_last_ac_pf_;

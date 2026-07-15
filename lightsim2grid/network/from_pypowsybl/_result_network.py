@@ -74,6 +74,7 @@ class LightsimResultNetwork:
         self._cache: Dict[str, pd.DataFrame] = {}
         self._bus_id_lookup: Optional[np.ndarray] = None  # see _ls_bus_to_pypo
         self._sub_names: Optional[List[str]] = None  # see _ls_sub_to_vl
+        self._fused_ids_cache = None  # see _fused_ids
 
     def _bus_df(self) -> pd.DataFrame:
         net = self._net
@@ -150,7 +151,18 @@ class LightsimResultNetwork:
         # `net.get_buses()`, so they are dropped here -- same guard as
         # `_olf_compare.py::lightsim_bus_to_iidm`.
         orig_to_ls = np.asarray(grid._orig_to_ls)[:n_bus]
-        v_cplx = np.asarray(grid.get_V())[orig_to_ls]
+
+        # a bus fused away by `fuse_zero_impedance_branches` (see `_from_pypowsybl.py`)
+        # keeps its own row here (fixed-size bus containers) but lost every element to
+        # its representative, so it is disconnected with no solved voltage of its own
+        # -- redirect it to the representative bus, which is electrically the same node
+        # and carries the real solved voltage. `_bus_fusion_rep` is empty for a grid
+        # built without fusion (or not through `init_from_pypowsybl` at all), in which
+        # case this is a no-op.
+        fusion_rep = np.asarray(grid._bus_fusion_rep)
+        orig_to_ls_v = fusion_rep[orig_to_ls] if fusion_rep.shape[0] else orig_to_ls
+
+        v_cplx = np.asarray(grid.get_V())[orig_to_ls_v]
         vn_kv = np.asarray(grid.get_bus_vn_kv())[orig_to_ls]
 
         res = pd.DataFrame(index=bus_df.index)
@@ -176,13 +188,11 @@ class LightsimResultNetwork:
     # lines / transformers
     # ------------------------------------------------------------------ #
     def get_lines(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
-        if "lines" not in self._cache:
-            self._cache["lines"] = self._build_two_sided(self._grid.get_lines())
+        self._ensure_lines_trafos()
         return self._maybe_select(self._cache["lines"], attributes)
 
     def get_2_windings_transformers(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
-        if "trafos" not in self._cache:
-            self._cache["trafos"] = self._build_two_sided(self._grid.get_trafos())
+        self._ensure_lines_trafos()
         return self._maybe_select(self._cache["trafos"], attributes)
 
     _TWO_SIDED_COLUMNS = ["id", "p1", "q1", "i1", "p2", "q2", "i2",
@@ -202,6 +212,179 @@ class LightsimResultNetwork:
                 "voltage_level2_id": self._ls_sub_to_vl(el.voltage_level2_id),
             })
         return self._records_to_frame(records, self._TWO_SIDED_COLUMNS)
+
+    def _ensure_lines_trafos(self) -> None:
+        """Build (and cache) `lines`/`trafos` together, then patch in the flow
+        through any *fused* (near-zero-impedance) branch where recoverable --
+        see :meth:`_reconstruct_fused_branches`. Built jointly (rather than each
+        lazily on its own first call) because reconstructing a fused line may
+        need an already-built *trafos* frame to sum up a shared bus's other
+        elements, and vice versa; done as a raw build + a patch pass, rather than
+        interleaving, to avoid the two triggering each other recursively.
+        """
+        if "lines" in self._cache and "trafos" in self._cache:
+            return
+        lines_df = self._build_two_sided(self._grid.get_lines())
+        trafos_df = self._build_two_sided(self._grid.get_trafos())
+        fused_line_ids, fused_trafo_ids = self._fused_ids()
+        if fused_line_ids or fused_trafo_ids:
+            self._reconstruct_fused_branches(lines_df, trafos_df, fused_line_ids, fused_trafo_ids)
+        self._cache["lines"] = lines_df
+        self._cache["trafos"] = trafos_df
+
+    def _fused_ids(self):
+        """(fused_line_ids, fused_trafo_ids): ids of the branches
+        `fuse_zero_impedance_branches` fused away when the grid was built (see
+        `_from_pypowsybl.py`), stashed by that function into `_init_kwargs` as
+        `"\\x1f"`-joined strings. Empty frozensets for a grid built without
+        fusion (or not through `init_from_pypowsybl` at all).
+        """
+        if self._fused_ids_cache is None:
+            kwargs = self._grid._init_kwargs
+            line_ids = frozenset(kwargs.get("fused_line_ids", "").split("\x1f")) - {""}
+            trafo_ids = frozenset(kwargs.get("fused_trafo_ids", "").split("\x1f")) - {""}
+            self._fused_ids_cache = (line_ids, trafo_ids)
+        return self._fused_ids_cache
+
+    def _bus_balance(self, bus_id, one_sided_topo, two_sided_topo, exclude):
+        """Sum, in the common load-convention sign (positive = power flows
+        *from* the bus *into* the element -- matching every `get_*` method here,
+        see the module docstring), of every element attached to `bus_id`,
+        excluding the branch id `exclude` on either of its sides. By Kirchhoff's
+        current law this equals the negative of `exclude`'s own flow at this
+        bus once every *other* element is accounted for -- see
+        :meth:`_reconstruct_fused_branches`.
+
+        ``one_sided_topo``/``two_sided_topo`` (built once by
+        :meth:`_reconstruct_fused_branches`, not per bus) pair each element
+        type's *true, pre-fusion* bus assignment -- read from ``self._net``'s
+        own static topology -- with this view's own already-computed result
+        frame. The true assignment must come from ``self._net``, NOT from this
+        view's own ``bus_id``/``bus1_id``/``bus2_id`` columns: an element
+        originally on a bus fused away by `fuse_zero_impedance_branches`
+        reports the *fusion representative's* pypowsybl id there instead (see
+        `_ls_bus_to_pypo`), which would silently hide it from this sum.
+        """
+        p = q = 0.0
+        for orig_bus, df in one_sided_topo:
+            common = df.index.intersection(orig_bus.index[orig_bus == bus_id])
+            if len(common):
+                p += df.loc[common, "p"].sum()
+                q += df.loc[common, "q"].sum()
+        for orig_bus1, orig_bus2, df in two_sided_topo:
+            c1 = df.index.intersection(orig_bus1.index[(orig_bus1 == bus_id) & (orig_bus1.index != exclude)])
+            c2 = df.index.intersection(orig_bus2.index[(orig_bus2 == bus_id) & (orig_bus2.index != exclude)])
+            if len(c1):
+                p += df.loc[c1, "p1"].sum()
+                q += df.loc[c1, "q1"].sum()
+            if len(c2):
+                p += df.loc[c2, "p2"].sum()
+                q += df.loc[c2, "q2"].sum()
+        return p, q
+
+    def _reconstruct_fused_branches(self, lines_df, trafos_df, fused_line_ids, fused_trafo_ids) -> None:
+        """Recover the flow through a fused (near-)zero-impedance branch (see
+        `_from_pypowsybl.py`'s `fuse_zero_impedance_branches`) wherever the
+        physics make it unambiguous, and patch `lines_df`/`trafos_df` in place.
+
+        A fused branch is deactivated in the lightsim2grid model (its two
+        terminal buses were merged into one, see `_build_buses`), so
+        `lines_df`/`trafos_df` initially carry it as disconnected with 0 flow --
+        correct for the *reduced* network lightsim2grid actually solved, but not
+        what a caller comparing against the original (unfused) topology expects.
+
+        The true flow is recoverable by Kirchhoff's current law at an original
+        endpoint bus that has EXACTLY ONE fused branch attached (a "leaf" of the
+        fused sub-graph): every other element at that bus already has its
+        correct flow (see :meth:`_bus_balance`), and their sum must be exactly
+        zero, so the fused branch's own flow at that side is minus that sum.
+
+        A bus where 2+ fused branches meet (an internal node of a longer fused
+        chain/star, eg two zero-impedance lines in series) has no such single
+        equation -- how the combined flow splits between those branches is
+        genuinely indeterminate from the solved state alone, so it is left
+        as-is (disconnected, 0 flow) rather than guessed at.
+
+        Since these branches are (near-)zero-impedance by construction (the
+        fusion precondition), a side reconstructed this way is mirrored,
+        lossless, to the other side (p/q negated, current magnitude unchanged)
+        when that other side is not itself independently reconstructable.
+        """
+        orig_lines = self._net.get_lines(
+            attributes=["bus1_id", "bus2_id", "voltage_level1_id", "voltage_level2_id"]
+        )
+        orig_trafos = self._net.get_2_windings_transformers(
+            attributes=["bus1_id", "bus2_id", "voltage_level1_id", "voltage_level2_id"]
+        )
+
+        # degree, in the fused sub-graph, of every original bus touched by ANY
+        # fused branch (lines and trafos together)
+        touches = []
+        for ids, orig in ((fused_line_ids, orig_lines), (fused_trafo_ids, orig_trafos)):
+            if not ids:
+                continue
+            sub = orig.loc[orig.index.intersection(list(ids))]
+            touches.append(sub["bus1_id"])
+            touches.append(sub["bus2_id"])
+        if not touches:
+            return
+        degree = pd.concat(touches).value_counts()
+
+        bus_v = self.get_buses(attributes=["v_mag"])["v_mag"]
+
+        # true (pre-fusion) bus assignment of every element, straight from the
+        # original network's own static topology -- built once here, not per bus,
+        # see :meth:`_bus_balance` for why this must be `self._net`, not this
+        # view's own bus_id/bus1_id/bus2_id columns.
+        net = self._net
+        one_sided_topo = [
+            (net.get_loads(attributes=["bus_id"])["bus_id"], self.get_loads()),
+            (net.get_generators(attributes=["bus_id"])["bus_id"], self.get_generators()),
+            (net.get_shunt_compensators(attributes=["bus_id"])["bus_id"], self.get_shunt_compensators()),
+            (net.get_static_var_compensators(attributes=["bus_id"])["bus_id"], self.get_static_var_compensators()),
+            (net.get_batteries(attributes=["bus_id"])["bus_id"], self.get_batteries()),
+            (net.get_vsc_converter_stations(attributes=["bus_id"])["bus_id"], self.get_vsc_converter_stations()),
+            (net.get_lcc_converter_stations(attributes=["bus_id"])["bus_id"], self.get_lcc_converter_stations()),
+        ]
+        two_sided_topo = [
+            (orig_lines["bus1_id"], orig_lines["bus2_id"], lines_df),
+            (orig_trafos["bus1_id"], orig_trafos["bus2_id"], trafos_df),
+        ]
+
+        for ids, orig, df in ((fused_line_ids, orig_lines, lines_df),
+                              (fused_trafo_ids, orig_trafos, trafos_df)):
+            for br_id in ids:
+                if br_id not in orig.index:
+                    continue
+                bus1, bus2 = orig.loc[br_id, "bus1_id"], orig.loc[br_id, "bus2_id"]
+                vl1, vl2 = orig.loc[br_id, "voltage_level1_id"], orig.loc[br_id, "voltage_level2_id"]
+                leaf1 = degree.get(bus1, 0) == 1
+                leaf2 = degree.get(bus2, 0) == 1
+                if not leaf1 and not leaf2:
+                    continue  # genuinely indeterminate, leave as-is
+
+                p1 = q1 = p2 = q2 = None
+                if leaf1:
+                    other_p, other_q = self._bus_balance(bus1, one_sided_topo, two_sided_topo, exclude=br_id)
+                    p1, q1 = -other_p, -other_q
+                if leaf2:
+                    other_p, other_q = self._bus_balance(bus2, one_sided_topo, two_sided_topo, exclude=br_id)
+                    p2, q2 = -other_p, -other_q
+                if p1 is None:
+                    p1, q1 = -p2, -q2
+                if p2 is None:
+                    p2, q2 = -p1, -q1
+
+                v1 = bus_v.get(bus1, np.nan)
+                v2 = bus_v.get(bus2, np.nan)
+                i1 = np.hypot(p1, q1) / (np.sqrt(3) * v1) * 1000. if v1 else np.nan
+                i2 = np.hypot(p2, q2) / (np.sqrt(3) * v2) * 1000. if v2 else np.nan
+
+                df.loc[br_id, "p1"], df.loc[br_id, "q1"], df.loc[br_id, "i1"] = p1, q1, i1
+                df.loc[br_id, "p2"], df.loc[br_id, "q2"], df.loc[br_id, "i2"] = p2, q2, i2
+                df.loc[br_id, "bus1_id"], df.loc[br_id, "bus2_id"] = bus1, bus2
+                df.loc[br_id, "voltage_level1_id"], df.loc[br_id, "voltage_level2_id"] = vl1, vl2
+                df.loc[br_id, "connected1"], df.loc[br_id, "connected2"] = True, True
 
     # ------------------------------------------------------------------ #
     # generators / loads / shunts / svc / batteries: one-sided elements
