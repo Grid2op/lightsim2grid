@@ -52,6 +52,16 @@ dict (str -> str) of the relevant kwargs this grid was built with (eg by
 `init_from_pypowsybl`), for example {"sort_index": "True", "buses_for_sub": "False"}.
 Empty for a grid not built that way, or a default-constructed one.
 )mydelimiter")
+        .def_property("_bus_fusion_rep",
+                      &LSGrid::get_bus_fusion_rep,
+                      &LSGrid::set_bus_fusion_rep,
+                      R"mydelimiter(
+Fused-bus lookup, size `total_bus()` (empty if unset / not built with bus fusion).
+For each ls bus id, gives the ls bus id of the "representative" bus it was merged
+into by `fuse_zero_impedance_branches` (identity for a bus not involved in any
+fusion). Set by `init_from_pypowsybl`; only ever read by downstream Python result
+views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
+)mydelimiter")
         .def_property_readonly("timer_last_ac_pf", &LSGrid::timer_last_ac_pf, "TODO")
         .def_property_readonly("timer_last_dc_pf", &LSGrid::timer_last_dc_pf, "TODO");
     add_pickle(lsgrid_cls, "LSGrid");

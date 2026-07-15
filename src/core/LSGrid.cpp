@@ -21,6 +21,7 @@ LSGrid::LSGrid(const LSGrid & other)
     sn_mva_ = other.sn_mva_;
     compute_results_ = other.compute_results_;
     init_kwargs_ = other.init_kwargs_;
+    _bus_fusion_rep = other._bus_fusion_rep;
 
     // copy the powersystem representation
     // 1. bus
@@ -101,6 +102,7 @@ LSGrid::StateRes LSGrid::get_state() const
         init_kwargs_keys.push_back(kv.first);
         init_kwargs_values.push_back(kv.second);
     }
+    std::vector<int> bus_fusion_rep(_bus_fusion_rep.begin(), _bus_fusion_rep.end());
 
     LSGrid::StateRes res(version_major,
                             version_medium,
@@ -124,7 +126,8 @@ LSGrid::StateRes LSGrid::get_state() const
                             res_ac_algo_cfg,
                             res_dc_algo_cfg,
                             init_kwargs_keys,
-                            init_kwargs_values
+                            init_kwargs_values,
+                            bus_fusion_rep
                             );
     return res;
 };
@@ -183,6 +186,8 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     // relevant kwargs the grid was built with (eg by init_from_pypowsybl)
     const std::vector<std::string> & init_kwargs_keys = std::get<INIT_KWARGS_KEYS_ID>(my_state);
     const std::vector<std::string> & init_kwargs_values = std::get<INIT_KWARGS_VALUES_ID>(my_state);
+    // fused-bus representative lookup (see get_bus_fusion_rep())
+    const std::vector<int> & bus_fusion_rep = std::get<BUS_FUSION_REP_ID>(my_state);
 
     // substations
     last_bus_status_saved_ = last_bus_status_saved;
@@ -241,6 +246,10 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     for (std::size_t i = 0; i < init_kwargs_keys.size(); ++i) {
         init_kwargs_[init_kwargs_keys[i]] = init_kwargs_values[i];
     }
+
+    // fused-bus representative lookup -- must run after substations_ is restored
+    // above, same reasoning as set_ls_to_orig() (validates against total_bus()).
+    set_bus_fusion_rep(IntVect::Map(bus_fusion_rep.data(), bus_fusion_rep.size()));
 };
 
 void LSGrid::save_binary(const std::string & path, bool atomic) const {

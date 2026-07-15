@@ -33,6 +33,23 @@ Change Log
   bake_outer_loops`` (see ``_bake_generator_not_started`` in ``_olf_bake.py``),
   which rewrites ``voltage_regulator_on=False`` in the IIDM network for such
   generators before conversion, rather than relying on this C++ mechanism.
+- ``fuse_zero_impedance_branches`` (``from_pypowsybl.init()``) deactivates a fused
+  branch and leaves its "loser" bus with no elements, so the *reduced* network
+  lightsim2grid actually solves no longer knows that bus's voltage or that
+  branch's flow. This is invisible to the C++ solve itself (the reduced problem
+  is solved correctly), but it means ``LSGrid.get_V()``/``get_lines()`` alone
+  cannot answer "what is bus X's voltage" / "what flows through branch Y" for a
+  fused-away bus or branch -- only ``LightsimResultNetwork``
+  (``_result_network.py``) currently reconstructs these (fused-bus voltage via
+  the new ``LSGrid._bus_fusion_rep``; a leaf-endpoint branch's flow via
+  Kirchhoff's current law, see ``_reconstruct_fused_branches``), so anyone
+  reading the grid directly through the C++ API (or another Python wrapper)
+  still sees ``v_mag=0`` / 0 flow. What's implemented is fine for now, but at
+  some point this should be pushed down into the C++ core itself (eg have
+  ``LSGrid`` report a fused-away bus's voltage as its representative's
+  directly, and/or not deactivate a fused branch attached to only one other
+  fused branch) so every consumer benefits, not just callers that go through
+  ``LightsimResultNetwork``.
 
 TODO: speed directly update the pv, pq, Sbus and Ybus part when updating the elements
       (less error prone and faster to recompute). Then what is passed to the solver 
@@ -117,6 +134,24 @@ TODO: speed: `BaseBatchSolverSynch::compute_amps_flows` / `compute_active_power_
 - [BREAKING] (pickle) the HVDC / DC lines are now stored in a dedicated, richer
   `HvdcLineContainer` (with converter stations and droop control). Grids pickled with a
   previous version of lightsim2grid can no longer be unpickled.
+- [ADDED] `LSGrid._bus_fusion_rep`: a property (get/set, persisted through pickle and
+  ``save_binary``/``load_binary``) set by ``init_from_pypowsybl(...,
+  fuse_zero_impedance_branches=True)``, giving for each lightsim2grid bus id the id of
+  the "representative" bus it was fused into (identity for a bus not involved in any
+  fusion). Used by ``LightsimResultNetwork`` to fix the bug below.
+- [FIXED] `LightsimResultNetwork` (`lightsim2grid.network.LightsimResultNetwork`, built
+  on a grid loaded with `fuse_zero_impedance_branches=True`) reported `v_mag=0` for a
+  bus fused away by a (near-)zero-impedance branch: that bus's own lightsim2grid bus
+  ends up with no elements after fusion (they were all repointed to the fusion
+  representative), hence disconnected with no solved voltage of its own. It is now
+  reported as its representative's voltage (the two are electrically the same node).
+  The fused branch itself similarly read 0 flow / disconnected; its flow is now
+  reconstructed via Kirchhoff's current law wherever an endpoint bus has exactly one
+  fused branch attached (see `_reconstruct_fused_branches` in `_result_network.py`);
+  a bus where 2+ fused branches meet is left as-is, the split being genuinely
+  indeterminate from the solved state alone. Found on a real RTE grid
+  (`PtFige-20241018-0355`, see the `[TODO]` entry at the top of this file for the
+  follow-up C++ work this points at).
 - [FIXED] `LSGrid.id_me_to_ac_solver()` returned the AC *solver -> gridmodel* mapping
   (a duplicate of `id_ac_solver_to_me()`) instead of the *gridmodel -> AC solver*
   mapping. It now returns the correct direction (the DC counterparts were already fine).
