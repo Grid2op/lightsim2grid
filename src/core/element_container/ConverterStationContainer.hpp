@@ -101,7 +101,7 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
                       "ConverterStationContainer::StateRes and StateResIdx do not match");
 
         ConverterStationContainer() noexcept = default;
-        virtual ~ConverterStationContainer() noexcept = default;
+        ~ConverterStationContainer() noexcept override = default;
 
         void init(const std::vector<int> & type,
                   const Eigen::Ref<const RealVect> & loss_factor,

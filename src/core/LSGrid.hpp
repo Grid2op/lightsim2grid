@@ -197,7 +197,7 @@ class LS2G_API LSGrid final
             generators_.turnedoff_pv(algo_controler_);
         }
         [[nodiscard]] bool get_turnedoff_gen_pv() const {return generators_.get_turnedoff_gen_pv();}
-        void update_slack_weights(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack){
+        void update_slack_weights(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & could_be_slack){
             generators_.update_slack_weights(could_be_slack, algo_controler_);
         }
         void update_slack_weights_by_id(Eigen::Ref<const IntVect> slack_ids){
@@ -1563,16 +1563,16 @@ class LS2G_API LSGrid final
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage within grid2op !
-        void update_gens_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                           Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_sgens_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                           Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_gens_v(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                           Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_loads_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                            Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_loads_q(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                            Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_gens_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                           const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
+        void update_sgens_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                           const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
+        void update_gens_v(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                           const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
+        void update_loads_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                            const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
+        void update_loads_q(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                            const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
         /**
          * Update the topology based on the topology vector id.
          *
@@ -1581,8 +1581,8 @@ class LS2G_API LSGrid final
          */
         void update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                          Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_storages_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                               Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_storages_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                               const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
 
         void set_load_pos_topo_vect(Eigen::Ref<const IntVect> load_pos_topo_vect)
         {
@@ -1940,8 +1940,8 @@ class LS2G_API LSGrid final
         optimization for grid2op
         **/
         template<class T>
-        void update_continuous_values(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                                      Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values,
+        void update_continuous_values(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                                      const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
                                       T fun)
         {
             // new_values is indexed by has_changed's length below; a shorter new_values

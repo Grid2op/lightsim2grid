@@ -48,7 +48,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             clear();
         }
 
-        ~ContingencyAnalysis() noexcept = default;
+        ~ContingencyAnalysis() noexcept override = default;
         ContingencyAnalysis(const ContingencyAnalysis&) = delete;
         ContingencyAnalysis(ContingencyAnalysis&&) = delete;
         ContingencyAnalysis & operator=(ContingencyAnalysis&&) = delete;

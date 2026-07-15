@@ -82,7 +82,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                >;
 
         TrafoContainer() noexcept = default;
-        virtual ~TrafoContainer() noexcept = default;
+        ~TrafoContainer() noexcept override = default;
 
         void init(const Eigen::Ref<const RealVect> & trafo_r,
                   const Eigen::Ref<const RealVect> & trafo_x,

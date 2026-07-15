@@ -18,7 +18,7 @@ class LS2G_API GaussSeidelAlgo : public BaseAlgo
     public:
         GaussSeidelAlgo() noexcept :BaseAlgo(true) {};
 
-        virtual ~GaussSeidelAlgo() noexcept = default;
+        ~GaussSeidelAlgo() noexcept override = default;
 
         // todo  can be factorized
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const override {

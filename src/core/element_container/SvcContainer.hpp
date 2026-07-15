@@ -94,7 +94,7 @@ class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorA
                       "SvcContainer::StateRes and StateResIdx do not match");
 
         SvcContainer() noexcept = default;
-        virtual ~SvcContainer() noexcept = default;
+        ~SvcContainer() noexcept override = default;
 
         void init(const std::vector<int> & regulation_mode,
                   const Eigen::Ref<const RealVect> & target_vm_pu,

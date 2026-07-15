@@ -57,7 +57,7 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
            > ;
         
         LoadContainer() noexcept = default;
-        virtual ~LoadContainer() noexcept = default;
+        ~LoadContainer() noexcept override = default;
         
         // pickle (python)
         LoadContainer::StateRes get_state() const;

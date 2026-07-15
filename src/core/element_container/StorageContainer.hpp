@@ -59,7 +59,7 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
            > ;
 
         StorageContainer() noexcept = default;
-        virtual ~StorageContainer() noexcept = default;
+        ~StorageContainer() noexcept override = default;
 
         // pickle (python)
         StorageContainer::StateRes get_state() const;
