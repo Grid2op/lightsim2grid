@@ -76,26 +76,14 @@ from typing import Iterable, Optional, Union
 
 import pypowsybl as _pp
 import pypowsybl.loadflow as _lf
-
-
-def _ver_tuple(v: str):
-    out = []
-    for part in str(v).split("."):
-        num = ""
-        for ch in part:
-            if ch.isdigit():
-                num += ch
-            else:
-                break
-        out.append(int(num) if num else 0)
-    return tuple(out)
+from packaging import version as _version
 
 
 _PARAM_SIG = set(inspect.signature(_lf.Parameters.__init__).parameters)
-_PYPOWSYBL_VER = _ver_tuple(_pp.__version__)
+_PYPOWSYBL_VER = _version.parse(_pp.__version__)
 # OLF rejects an empty ``outerLoopNames`` value before 1.4.0 (and the parameter
 # does not exist at all in 1.0.0); only use the allow-list where it is accepted.
-_OUTERLOOP_EMPTY_OK = _PYPOWSYBL_VER >= (1, 4)
+_OUTERLOOP_EMPTY_OK = _PYPOWSYBL_VER >= _version.parse("1.4")
 
 # Lazily-computed cache of the OLF provider parameter metadata
 # ({name: set(possible_values) or None}); ``False`` means "not yet computed".
@@ -148,7 +136,15 @@ def _olf_provider_params():
 # Outer loops with an inline (inner-Newton-Raphson) alternative: switching the
 # mode keeps the modeled control active while removing the separate outer-loop
 # pass. Works on every pypowsybl version, so these are always applied unless
-# the caller explicitly asks to ``keep`` the outer-loop-based mode.
+# the caller explicitly asks to ``keep`` the outer-loop-based mode. This *is*
+# a deliberate override of whatever mode ``parameters`` already had -- not a
+# bug: this whole function's job is to make OLF solve the same single-shot,
+# outer-loop-free problem lightsim2grid solves (see module docstring), so an
+# input that requests an outer-loop-based mode is exactly what gets changed
+# by default. Yes, that can in principle move OLF to a different NR root than
+# the caller's original (with-loops) parameters would have (see
+# ``_olf_bake.py``'s "should agree" caveat); pass the loop's name in ``keep``
+# if that is not acceptable for a given comparison.
 _INLINE_MODE = {
     "TransformerVoltageControl": ("transformerVoltageControlMode", "WITH_GENERATOR_VOLTAGE_CONTROL"),
     "ShuntVoltageControl": ("shuntVoltageControlMode", "WITH_GENERATOR_VOLTAGE_CONTROL"),
