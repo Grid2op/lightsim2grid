@@ -15,14 +15,14 @@ result column names/units as the real ``pypowsybl.network.Network``, so
 analysis code written against a solved pypowsybl network runs unmodified
 against a solved lightsim2grid one.
 
-Only supports grids built by :func:`_from_pypowsybl.init` (``init_from_pypowsybl``):
+Only supports grids built by :func:`initLSGrid.init` (``init_from_pypowsybl``):
 it relies on that function's invariants -- every non-bus element's ``.name`` set
 verbatim to its pypowsybl id, and the grid's ``_init_kwargs``/``_orig_to_ls``
 properties -- which do not hold for pandapower- or powermodels-built grids.
 
 Sign conventions (lightsim2grid vs pypowsybl's post-solve ``p``/``q``, both in
 the "load convention": positive = power flowing *into* the equipment):
-loads, shunts and storage units already match (no flip needed: `_from_pypowsybl`
+loads, shunts and storage units already match (no flip needed: `_aux_add_storage.py`
 feeds storages a load-convention target_p/target_q, negating IIDM's own
 generator-convention target_p on the way in). Generators and HVDC converter
 stations use lightsim2grid's generation convention internally (positive =
@@ -67,7 +67,7 @@ class LightsimResultNetwork:
     lines, on the ``LSGrid`` itself): dangling lines -- no ``get_dangling_lines``
     method, including when the grid was built with
     ``init_from_pypowsybl(..., convert_dangling_lines=True)`` -- and
-    three-winding transformers, which `_from_pypowsybl.init` does not model
+    three-winding transformers, which `initLSGrid.init` does not model
     at all (not just unexposed here).
 
     **Column provenance**, for every ``get_*`` method's DataFrame:
@@ -87,7 +87,7 @@ class LightsimResultNetwork:
       ``converter_station1_id`` / ``converter_station2_id`` on
       :meth:`get_hvdc_lines`.
     - every DataFrame's index (``id``) mirrors the element's pypowsybl id by
-      construction (`_from_pypowsybl.init` sets every non-bus element's
+      construction (`initLSGrid.init` sets every non-bus element's
       lightsim2grid ``name`` verbatim to it, see the module docstring), even
       though it is technically sourced from ``LSGrid``, not read from ``net``.
     """
@@ -157,7 +157,7 @@ class LightsimResultNetwork:
         id. Since the grid was built with ``buses_for_sub`` not ``True`` (enforced
         in ``__init__``), a lightsim2grid substation *is* a pypowsybl voltage
         level, and ``LSGrid.get_substations()[k].name`` is exactly the string
-        `_from_pypowsybl.init()` set it to (``model.set_substation_names(...)``).
+        `_aux_add_buses.py` set it to (``model.set_substation_names(...)``).
         """
         if self._sub_names is None:
             self._sub_names = [s.name for s in self._grid.get_substations()]
@@ -189,7 +189,7 @@ class LightsimResultNetwork:
         # `_olf_compare.py::lightsim_bus_to_iidm`.
         orig_to_ls = np.asarray(grid._orig_to_ls)[:n_bus]
 
-        # a bus fused away by `fuse_zero_impedance_branches` (see `_from_pypowsybl.py`)
+        # a bus fused away by `fuse_zero_impedance_branches` (see `_aux_add_buses.py`)
         # keeps its own row here (fixed-size bus containers) but lost every element to
         # its representative, so it is disconnected with no solved voltage of its own
         # -- redirect it to the representative bus, which is electrically the same node
@@ -299,7 +299,7 @@ class LightsimResultNetwork:
     def _fused_ids(self):
         """(fused_line_ids, fused_trafo_ids): ids of the branches
         `fuse_zero_impedance_branches` fused away when the grid was built (see
-        `_from_pypowsybl.py`), stashed by that function into `_init_kwargs` as
+        `_aux_add_buses.py`), stashed by that function into `_init_kwargs` as
         `"\\x1f"`-joined strings. Empty frozensets for a grid built without
         fusion (or not through `init_from_pypowsybl` at all).
         """
@@ -348,7 +348,7 @@ class LightsimResultNetwork:
 
     def _reconstruct_fused_branches(self, lines_df, trafos_df, fused_line_ids, fused_trafo_ids) -> None:
         """Recover the flow through a fused (near-)zero-impedance branch (see
-        `_from_pypowsybl.py`'s `fuse_zero_impedance_branches`) wherever the
+        `_aux_add_buses.py`'s `fuse_zero_impedance_branches`) wherever the
         physics make it unambiguous, and patch `lines_df`/`trafos_df` in place.
 
         A fused branch is deactivated in the lightsim2grid model (its two
@@ -550,7 +550,7 @@ class LightsimResultNetwork:
         # only stores them as numeric bus references), so they are recovered
         # here from the original network, keyed by the hvdc line's own `.name`
         # (== its pypowsybl id). Side 1 pairs with `converter_station1_id` and
-        # side 2 with `converter_station2_id`: `_from_pypowsybl.init()` builds
+        # side 2 with `converter_station2_id`: `_aux_add_hvdc.py` builds
         # its per-side station data from those two columns in that same order.
         orig_hvdc = self._net.get_hvdc_lines()
 

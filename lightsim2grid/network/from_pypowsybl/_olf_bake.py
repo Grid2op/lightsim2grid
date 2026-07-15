@@ -700,7 +700,7 @@ def _bake_remote_voltage_control(network, keep_only_main_comp=True):
         gen = _keep_only_main_comp(gen, df_bus)
     if not len(gen):
         return
-    # "remote" matches the converter's own test (see _from_pypowsybl.init): a non-empty
+    # "remote" matches the converter's own test (see _aux_add_generators.py): a non-empty
     # regulated element that is not the generator's own id.
     reg = gen["regulated_element_id"].fillna("")
     remote = gen["voltage_regulator_on"] & gen["connected"] & (reg != "") & (reg != gen.index)

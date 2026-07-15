@@ -41,7 +41,7 @@ import pandas as pd
 import pypowsybl as pp
 import pypowsybl.loadflow as lf
 
-from ._from_pypowsybl import init as init_from_pypowsybl
+from .initLSGrid import init as init_from_pypowsybl
 from ._olf_bake import bake_outer_loops
 from ._olf_params import remove_outer_loops
 
