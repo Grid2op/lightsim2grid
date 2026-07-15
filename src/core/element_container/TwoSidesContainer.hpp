@@ -116,7 +116,7 @@ class TwoSidesContainer : public GenericContainer
 
     public:
         TwoSidesContainer() noexcept :ignore_status_global_(false), synch_status_both_side_(true){}
-        virtual ~TwoSidesContainer() noexcept = default;
+        ~TwoSidesContainer() noexcept override = default;
 
         // public generic API
         size_t nb() const { return side_1_.nb(); }

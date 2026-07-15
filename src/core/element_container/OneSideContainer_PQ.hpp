@@ -55,7 +55,7 @@ class OneSideContainer_PQ : public OneSideContainer
     // regular implementation
     public:
         OneSideContainer_PQ() noexcept = default;
-        virtual ~OneSideContainer_PQ() noexcept = default;
+        ~OneSideContainer_PQ() noexcept override = default;
 
         // public generic API
 

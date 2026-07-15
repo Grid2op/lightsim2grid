@@ -1592,38 +1592,38 @@ void LSGrid::remove_gen_slackbus(int gen_id){
 }
 
 /** GRID2OP SPECIFIC REPRESENTATION **/
-void LSGrid::update_gens_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_gens_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_p_gen);
 }
 
-void LSGrid::update_sgens_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_sgens_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_p_sgen);
 }
 
-void LSGrid::update_gens_v(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_gens_v(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_v_gen);
 }
 
-void LSGrid::update_loads_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_loads_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_p_load);
 }
 
-void LSGrid::update_loads_q(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_loads_q(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_q_load);
 }
 
-void LSGrid::update_storages_p(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_storages_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_p_storage);
 }

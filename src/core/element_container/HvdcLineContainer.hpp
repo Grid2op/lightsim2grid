@@ -110,7 +110,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // TwoSidesContainer's generic default (mirror both sides), HVDC lines default
         // to independent sides.
         HvdcLineContainer() noexcept { synch_status_both_side_ = false; }
-        virtual ~HvdcLineContainer() noexcept = default;
+        ~HvdcLineContainer() noexcept override = default;
 
         // pickle
         // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)

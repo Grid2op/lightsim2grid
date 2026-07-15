@@ -63,7 +63,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
     public:
         OneSideContainer_ForBranch() noexcept = default;
         explicit OneSideContainer_ForBranch(bool /*is_trafo*/) noexcept{};
-        virtual ~OneSideContainer_ForBranch() noexcept = default;
+        ~OneSideContainer_ForBranch() noexcept override = default;
 
         // public generic API
 

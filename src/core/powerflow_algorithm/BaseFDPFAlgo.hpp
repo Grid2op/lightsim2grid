@@ -21,7 +21,7 @@ class BaseFDPFAlgo final: public BaseAlgo
 {
     public:
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
-        virtual ~BaseFDPFAlgo() noexcept = default;
+        ~BaseFDPFAlgo() noexcept override = default;
 
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
