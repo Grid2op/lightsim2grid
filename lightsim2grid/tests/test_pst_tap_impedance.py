@@ -11,8 +11,8 @@
 pypowsybl exposes the transformer r/x/g/b at the *neutral* tap and only folds the
 tap position into ``rho`` / ``alpha``. The per-step r/x/g/b deltas (in percent)
 must be applied on top, otherwise the (phase-shifting) transformer impedance --
-and hence its through-flow -- is wrong. On real RTE grids this caused tens of MW
-of disagreement with PowSyBl Open Load Flow (see HVDC_OLF_FINDINGS.md).
+and hence its through-flow -- is wrong. On real grids this caused tens of MW
+of disagreement with PowSyBl Open Load Flow.
 
 The ``four_substations`` pypowsybl test network carries a phase-shifting
 transformer ``TWT`` whose phase-tap step applies a ~-28.8% r/x correction, which

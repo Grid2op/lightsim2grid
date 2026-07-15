@@ -7,7 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 """A *connected* generator (or SVC) can remotely regulate the voltage of a
-terminal that is itself disconnected (found on a real RTE grid snapshot: two
+terminal that is itself disconnected (found on a real grid snapshot: two
 generators remotely regulate busbar sections in a de-energized voltage
 level). pypowsybl's bus-view id for a disconnected element is `''`, not NaN,
 which used to crash `from_pypowsybl.init()` with
