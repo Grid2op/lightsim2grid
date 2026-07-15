@@ -147,6 +147,56 @@ This feature only relies on the C++ standard library (``std::thread``): no addit
     ``nb_thread`` is also available on the lower-level ``ContingencyAnalysisCPP`` class (same
     semantics).
 
+Benchmarks (``nb_thread`` scaling)
++++++++++++++++++++++++++++++++++++
+
+The script below scans ``nb_thread`` from 1 to 8 on a single, reasonably large real-topology
+grid (``case6515rte``, up to 1001 n-1 contingencies), and is available by running, from the
+root of the lightsim2grid repository:
+
+.. code-block:: bash
+
+    cd benchmarks
+    python3 benchmark_ca_nb_threads.py
+
+Results, made with:
+
+- date: 2026-07-15 15:55 CEST
+- system: Linux 6.8.0-60-generic
+- OS: ubuntu 22.04
+- processor: 13th Gen Intel(R) Core(TM) i7-13700H
+- python version: 3.12.8.final.0 (64 bit)
+- numpy version: 2.0.2
+- pandas version: 2.3.3
+- pandapower version: 3.4.0
+- grid2op version: 1.12.5.dev0
+- lightsim2grid version: 1.0.0.rc2
+- lightsim2grid extra information:
+
+	- klu_solver_available: True
+	- nicslu_solver_available: False
+	- cktso_solver_available: False
+	- compiled_march_native: False
+	- compiled_o3_optim: False
+
+===========  ===========  ===========  ========  ======================
+  nb_thread    nb solved    time (ms)    pf / s  speed-up vs 1 thread
+===========  ===========  ===========  ========  ======================
+          1          703      4213.12       167  1.00x
+          2          703      2367.70       297  1.78x
+          3          703      1791.98       392  2.35x
+          4          703      1451.98       484  2.90x
+          5          703      1276.28       551  3.30x
+          6          703      1250.20       562  3.37x
+          7          703      1230.02       572  3.43x
+          8          703      1184.67       593  3.56x
+===========  ===========  ===========  ========  ======================
+
+As documented above, speed-up is sub-linear (the per-thread set-up cost, plus the
+already-fast single-thread baseline, both eat into the theoretical ``nb_thread``-x
+speed-up): most of the gain is captured by 4-5 threads, with diminishing returns beyond
+that on this grid / contingency count.
+
 Reporting limit violations
 ---------------------------
 
