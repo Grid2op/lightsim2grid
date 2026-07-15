@@ -48,7 +48,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             clear();
         }
 
-        ~ContingencyAnalysis() noexcept = default;
+        ~ContingencyAnalysis() noexcept override = default;
         ContingencyAnalysis(const ContingencyAnalysis&) = delete;
         ContingencyAnalysis(ContingencyAnalysis&&) = delete;
         ContingencyAnalysis & operator=(ContingencyAnalysis&&) = delete;
@@ -84,7 +84,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         }
 
         // utilities to remove defaults to simulate (TODO)
-        virtual void clear(){
+        void clear() override {
             BaseBatchSolverSynch::clear();
             _li_defaults.clear();
             _li_coeffs.clear();

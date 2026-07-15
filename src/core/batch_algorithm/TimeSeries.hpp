@@ -26,7 +26,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
             _status(1), // 1: success, 0: failure
             _compute_flows(true)
             {}
-        ~TimeSeries() noexcept = default;
+        ~TimeSeries() noexcept override = default;
 
         TimeSeries(const TimeSeries&) = delete;
         TimeSeries(TimeSeries&&) = delete;
@@ -58,7 +58,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
                        const int max_iter,
                        const real_type tol);
                        
-        virtual void clear(){
+        void clear() override {
             BaseBatchSolverSynch::clear();
             _Sbuses = CplxMat();
             _status = 1;

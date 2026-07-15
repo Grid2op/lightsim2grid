@@ -877,9 +877,9 @@ public:
 
     // ----- NR iteration primitives -----------------------------------------------
 
-    virtual RealVect   mismatch()                           const;
-    virtual void       apply_step(const RealVect& dx);
-    virtual real_type  mismatch_sq_norm_at(const RealVect& dx) const;
+    RealVect   mismatch()                           const;
+    void       apply_step(const RealVect& dx);
+    real_type  mismatch_sq_norm_at(const RealVect& dx) const;
 
     // ----- Housekeeping ----------------------------------------------------------
 
