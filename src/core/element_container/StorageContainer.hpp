@@ -59,7 +59,7 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
            > ;
 
         StorageContainer() noexcept = default;
-        virtual ~StorageContainer() noexcept = default;
+        ~StorageContainer() noexcept override = default;
 
         // pickle (python)
         StorageContainer::StateRes get_state() const;
@@ -82,10 +82,10 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
             reset_results();
         }
 
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const;
+        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
     protected:
-        virtual void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+        void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
                                     const Eigen::Ref<const RealVect> & /*Vm*/,
                                     const Eigen::Ref<const CplxVect> & /*V*/,
                                     const SolverBusIdVect & /*id_grid_to_solver*/,

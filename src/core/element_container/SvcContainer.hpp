@@ -52,7 +52,7 @@ IIDM model of powsybl: three regulation modes
 `b_min_` / `b_max_` are stored for introspection but NEVER enforced (no outer
 loop, no limit check), mirroring the generator Qmin/Qmax handling.
 **/
-class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<SvcContainer, SvcInfo>
+class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorAdder<SvcContainer, SvcInfo>
 {
     friend class SvcInfo;
 
@@ -94,7 +94,7 @@ class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<S
                       "SvcContainer::StateRes and StateResIdx do not match");
 
         SvcContainer() noexcept = default;
-        virtual ~SvcContainer() noexcept = default;
+        ~SvcContainer() noexcept override = default;
 
         void init(const std::vector<int> & regulation_mode,
                   const Eigen::Ref<const RealVect> & target_vm_pu,
@@ -136,12 +136,12 @@ class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<S
         void set_voltage_control_q(int svc_id, real_type q_mvar) {res_q_(svc_id) = q_mvar;}
 
         // solver interface
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
         void get_vm_for_dc(RealVect & Vm);
         void set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const;
 
     protected:
-        virtual void _compute_results(
+        void _compute_results(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,
