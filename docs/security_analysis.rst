@@ -254,12 +254,16 @@ Each ``LimitViolation`` reports:
 - ``violation_type``: :class:`lightsim2grid.contingencyAnalysis.LimitViolationType`
   (``LOW_VOLTAGE``, ``HIGH_VOLTAGE``, ``CURRENT``, ``NOT_SIMULATED`` or ``DIVERGENCE``, see below);
 - ``value`` / ``limit``: the value reached and the limit that was violated; unused (``NaN``) for
-  ``NOT_SIMULATED`` / ``DIVERGENCE``.
+  ``NOT_SIMULATED`` / ``DIVERGENCE``;
+- ``name``: for ``LINE`` / ``TRAFO``, the element's own name (see ``LSGrid.set_line_names`` /
+  ``set_trafo_names``); for ``BUS``, the name of the *substation* the violating bus belongs to
+  (see ``LSGrid.set_substation_names`` -- there is no per-bus name, only per-substation ones);
+  empty string if names were never set on the grid for the relevant kind, or for ``GRID``.
 
 Each ``ContingencyResult`` reports ``element_ids`` (the branch ids disconnected by this
-contingency -- always present, even without a ``name``), the optional user-supplied
-``contingency_name`` (set via ``add_single_contingency(..., name=...)``), whether the
-contingency ``converged``, and its ``limit_violations``.
+contingency -- always present, even without a ``name``) and the corresponding ``element_names``,
+the optional user-supplied ``contingency_name`` (set via ``add_single_contingency(..., name=...)``),
+whether the contingency ``converged``, and its ``limit_violations``.
 
 .. warning::
 

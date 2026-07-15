@@ -24,18 +24,22 @@ namespace {
 // numbering). `masked_solver_ids` is nullptr for the base ("n") case; in "handle disconnected
 // grid" mode it is this contingency's masked solver-bus-id list -- those buses are forced to
 // V=0 post-solve and must never be checked (else every one of them would spuriously report a
-// LOW_VOLTAGE violation).
+// LOW_VOLTAGE violation). `subs` is used to resolve the violating bus's substation name (see
+// LimitViolation::name); its names are empty strings if never set on the grid.
 void check_bus_voltage_violations(
     const CplxVect & V,
     const SolverBusIdVect & id_me_to_solver,
     Eigen::Ref<const RealVect> bus_vmin_kv,
     Eigen::Ref<const RealVect> bus_vmax_kv,
     Eigen::Ref<const RealVect> bus_vn_kv,
+    const SubstationContainer & subs,
     const std::vector<int> * masked_solver_ids,
     std::vector<LimitViolation> & out)
 {
     const Eigen::Index nb_bus = bus_vmin_kv.size();
     if(nb_bus == 0) return;  // voltage limits never configured on this grid
+
+    const std::vector<std::string> & sub_names = subs.get_sub_names();  // empty if never set
 
     std::vector<bool> is_masked;
     if(masked_solver_ids != nullptr && !masked_solver_ids->empty()){
@@ -56,11 +60,15 @@ void check_bus_voltage_violations(
 
         const real_type vm_kv = std::abs(V(solver_id)) * bus_vn_kv(grid_id);
         if(!isnan(vmin) && vm_kv < vmin){
+            const int sub_id = subs.sub_id_of_bus(static_cast<int>(grid_id));
+            const std::string sub_name = static_cast<size_t>(sub_id) < sub_names.size() ? sub_names[sub_id] : std::string();
             out.push_back(LimitViolation{ViolationElementType::BUS, static_cast<int>(grid_id), 0,
-                                          LimitViolationType::LOW_VOLTAGE, vm_kv, vmin});
+                                          LimitViolationType::LOW_VOLTAGE, vm_kv, vmin, sub_name});
         } else if(!isnan(vmax) && vm_kv > vmax){
+            const int sub_id = subs.sub_id_of_bus(static_cast<int>(grid_id));
+            const std::string sub_name = static_cast<size_t>(sub_id) < sub_names.size() ? sub_names[sub_id] : std::string();
             out.push_back(LimitViolation{ViolationElementType::BUS, static_cast<int>(grid_id), 0,
-                                          LimitViolationType::HIGH_VOLTAGE, vm_kv, vmax});
+                                          LimitViolationType::HIGH_VOLTAGE, vm_kv, vmax, sub_name});
         }
     }
 }
@@ -637,7 +645,8 @@ void ContingencyAnalysis::compute(const Eigen::Ref<const CplxVect> & Vinit, int 
         const std::vector<int> no_skip;
         check_bus_voltage_violations(V_n, id_me_to_solver_,
                                       _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
-                                      _grid_model.get_bus_vn_kv(), nullptr, _violations_n_);
+                                      _grid_model.get_bus_vn_kv(), _grid_model.get_substations(),
+                                      nullptr, _violations_n_);
         check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
                                   V_n, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
                                   ac_solver_used, sn_mva,
@@ -902,8 +911,8 @@ void ContingencyAnalysis::run_contingency_range(
                                                            ? &_li_masked[cont_id] : nullptr;
                     check_bus_voltage_violations(V, id_me_to_solver_,
                                                   _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
-                                                  _grid_model.get_bus_vn_kv(), masked_ids,
-                                                  _violations[cont_id]);
+                                                  _grid_model.get_bus_vn_kv(), _grid_model.get_substations(),
+                                                  masked_ids, _violations[cont_id]);
                     check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
                                               V, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
                                               ac_solver_used, sn_mva,
