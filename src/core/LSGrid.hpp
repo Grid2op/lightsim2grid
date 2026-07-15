@@ -990,7 +990,7 @@ class LS2G_API LSGrid final
          */
         void set_status_droop_hvdc(int dcline_id, int status) {hvdc_lines_.set_status_droop(dcline_id, status, algo_controler_); }
         [[nodiscard]] int get_status_droop_hvdc(int dcline_id) const {return hvdc_lines_.get_status_droop(dcline_id);}
-        [[nodiscard]] std::vector<int> get_status_droop_hvdc_vect() const {return hvdc_lines_.get_status_droop_vect();}
+        [[nodiscard]] Eigen::Ref<const IntVect> get_status_droop_hvdc_vect() const {return hvdc_lines_.get_status_droop_vect();}
         /**
          * Per-solve data of the connected angle-droop (AC emulation) hvdc
          * lines, in solver bus labelling and per-unit. Consumed by the Hvdc
