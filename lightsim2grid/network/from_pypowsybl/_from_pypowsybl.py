@@ -73,8 +73,7 @@ def _aux_dangling_lines_fictitious(net, sort_index):
 
     Real full grids never have any dangling line -- they only appear when
     zooming into a sub-area with
-    ``network.reduce_by_ids_and_depths(..., with_boundary_lines=True)``
-    (*eg* in ``reduce_and_compare.py`` / ``validate_olf_vs_lightsim.py``),
+    ``network.reduce_by_ids_and_depths(..., with_boundary_lines=True)``,
     which cuts the grid and represents everything beyond the cut as a
     ``DanglingLine`` (series r/x/g/b + a constant-power p0/q0 "load" at the
     boundary). Without this, ``_from_pypowsybl`` silently drops that
@@ -139,7 +138,8 @@ def _aux_phase_shift_rx_tables(trafo_index, net):
     pypowsybl exposes the transformer r / x at the *neutral* tap and only folds the
     tap into ``rho`` / ``alpha``; the per-step r/x deltas (percent) are dropped. They
     matter for phase-shifting transformers whose series impedance varies with the
-    shift (RTE PSTs: tens of MW of through-flow). On those grids ``r% == x%`` for
+    shift (phase-shifting transformers on real grids: tens of MW of through-flow).
+    On those grids ``r% == x%`` for
     every step, so a single correction table is applied to both r and x."""
     n = len(trafo_index)
     alpha = [[] for _ in range(n)]
@@ -334,7 +334,7 @@ def _default_distributed_slack(net, df_gen):
       participate. An earlier version of this function restricted participants to
       the country hosting the most buses; that was a guess, not something OLF
       actually does, and it was found to materially skew which generators absorb
-      the slack mismatch on real multi-country RTE grids -- removed;
+      the slack mismatch on real multi-country grids -- removed;
     * the per-generator weight matches OLF's default ``PROPORTIONAL_TO_GENERATION_P_MAX``
       balance type exactly (``GenerationActivePowerDistributionStep.getParticipationFactor``,
       ``MAX`` case): ``max_p / droop``, where ``droop`` is the ``activePowerControl``
@@ -952,7 +952,7 @@ def init(net : pypo.network.Network,
     # malformed source curve data (eg a reactive capability curve point entered with
     # min_q/max_q swapped) can make the "at target p" interpolation yield min_q > max_q.
     # OpenLoadFlow tolerates this silently; lightsim2grid's GeneratorContainer::init
-    # hard-rejects it (real case found on a real RTE grid snapshot). Restore a valid
+    # hard-rejects it (real case found on a real grid snapshot). Restore a valid
     # interval by sorting the pair instead of crashing -- this only ever affects the
     # (already tiny) width of the interval, never which generators get a reactive
     # constraint at all.
@@ -990,7 +990,7 @@ def init(net : pypo.network.Network,
         remote_idx = np.nonzero(mask_remote_gen)[0]
         gen_reg_bus_view = _aux_regulated_bus_view_ids(net, bus_reg[mask_remote_gen])
         # a *connected* generator can still remotely regulate a busbar section that is
-        # itself disconnected (found on a real RTE grid snapshot: a de-energized
+        # itself disconnected (found on a real grid snapshot: a de-energized
         # voltage level). pypowsybl's bus-view id for a disconnected element is '',
         # not NaN, and can't be resolved to any bus_df row. OLF converges fine on such
         # grids, so it must fall back to local voltage control in this situation;
