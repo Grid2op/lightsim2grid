@@ -309,8 +309,8 @@ class TestBusFusionResultNetwork(unittest.TestCase):
         V = model.ac_pf(Vdc, 30, 1e-8)
         self.assertGreater(V.shape[0], 0)
 
-        # `net.get_buses()` (the *bus view*, used throughout `_from_pypowsybl.py`/
-        # `_result_network.py`) computes its own ids from the voltage level for a
+        # `net.get_buses()` (the *bus view*, used throughout the `from_pypowsybl`
+        # converter / `_result_network.py`) computes its own ids from the voltage level for a
         # BUS_BREAKER-topology network -- "VL1_0", not the bus-breaker-view id
         # ("B1") passed to `create_buses`/`create_lines(bus1_id=...)` above.
         bus1, bus2 = "VL1_0", "VL2_0"
