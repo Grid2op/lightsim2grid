@@ -173,13 +173,31 @@ class LightsimResultNetwork:
         # a uniform angle offset across every bus is just a difference of
         # reference-datum convention (lightsim2grid's slack bus needs not be
         # at the same angle-datum as whatever `net` last held), not physical:
-        # remove it by aligning medians, mirroring the "offset-removed" angle
-        # metric already used by `_olf_compare.py::compare_baked`.
+        # remove it. Preferred: compare the two engines' own angle at the
+        # *same* bus -- lightsim2grid's actual solved reference slack,
+        # `get_slack_ids()[0]` (see `ContingencyAnalysis.cpp`'s "index 0 is
+        # the NR angle reference" invariant) -- which is exact, unlike a
+        # median across all buses. Falls back to the median-based estimate
+        # (mirroring the "offset-removed" angle metric already used by
+        # `_olf_compare.py::compare_baked`) when the reference bus can't be
+        # resolved on either side (eg fused away, disconnected, or the grid
+        # has no slack at all).
         orig_angle = self._net.get_buses()["v_angle"]
-        mask_orig = np.isfinite(orig_angle.to_numpy()) & (orig_angle.abs() > 1e-6)
-        mask_new = np.isfinite(res["v_angle"].to_numpy()) & (res["v_angle"].abs() > 1e-6)
-        if mask_orig.any() and mask_new.any():
-            offset = res.loc[mask_new, "v_angle"].median() - orig_angle.loc[mask_orig].median()
+        offset = None
+        slack_ids = np.asarray(grid.get_slack_ids())
+        if slack_ids.shape[0] and slack_ids[0] >= 0:
+            ref_pypo_id = self._ls_bus_to_pypo(int(slack_ids[0]))
+            if ref_pypo_id is not None and ref_pypo_id in res.index and ref_pypo_id in orig_angle.index:
+                new_ref_angle = res.at[ref_pypo_id, "v_angle"]
+                orig_ref_angle = orig_angle.at[ref_pypo_id]
+                if np.isfinite(new_ref_angle) and np.isfinite(orig_ref_angle):
+                    offset = new_ref_angle - orig_ref_angle
+        if offset is None:
+            mask_orig = np.isfinite(orig_angle.to_numpy()) & (orig_angle.abs() > 1e-6)
+            mask_new = np.isfinite(res["v_angle"].to_numpy()) & (res["v_angle"].abs() > 1e-6)
+            if mask_orig.any() and mask_new.any():
+                offset = res.loc[mask_new, "v_angle"].median() - orig_angle.loc[mask_orig].median()
+        if offset is not None:
             res["v_angle"] = res["v_angle"] - offset
 
         return res
