@@ -26,9 +26,9 @@ class LS2G_API GaussSeidelSynchAlgo final: public GaussSeidelAlgo
 
     protected:
         void one_iter(CplxVect & tmp_Sbus,
-                      const Eigen::SparseMatrix<cplx_type> & Ybus,
-                      Eigen::Ref<const IntVect> pv,
-                      Eigen::Ref<const IntVect> pq
+                      const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> & Ybus,
+                      const Eigen::Ref<const IntVect> & pv,
+                      const Eigen::Ref<const IntVect> & pq
                       ) override;
 
     private:

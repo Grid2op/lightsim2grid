@@ -204,7 +204,7 @@ class LS2G_API LSGrid final
         void update_slack_weights(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & could_be_slack){
             generators_.update_slack_weights(could_be_slack, algo_controler_);
         }
-        void update_slack_weights_by_id(Eigen::Ref<const IntVect> slack_ids){
+        void update_slack_weights_by_id(const Eigen::Ref<const IntVect> & slack_ids){
             generators_.update_slack_weights_by_id(slack_ids, algo_controler_);
         }
 
@@ -1583,69 +1583,69 @@ class LS2G_API LSGrid final
          * The new_values are given in LocalBusId (-1, 1, 2 etc.) and not in
          * SolverBusId nor GridModelBusId
          */
-        void update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                         Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_topo(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                         const Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
         void update_storages_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
                                const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
 
-        void set_load_pos_topo_vect(Eigen::Ref<const IntVect> load_pos_topo_vect)
+        void set_load_pos_topo_vect(const Eigen::Ref<const IntVect> & load_pos_topo_vect)
         {
             loads_.set_pos_topo_vect(load_pos_topo_vect);
         }
-        void set_gen_pos_topo_vect(Eigen::Ref<const IntVect> gen_pos_topo_vect)
+        void set_gen_pos_topo_vect(const Eigen::Ref<const IntVect> & gen_pos_topo_vect)
         {
             generators_.set_pos_topo_vect(gen_pos_topo_vect);
         }
-        void set_storage_pos_topo_vect(Eigen::Ref<const IntVect> sto_pos_topo_vect)
+        void set_storage_pos_topo_vect(const Eigen::Ref<const IntVect> & sto_pos_topo_vect)
         {
             storages_.set_pos_topo_vect(sto_pos_topo_vect);
         }
-        void set_line_pos1_topo_vect(Eigen::Ref<const IntVect> line_or_pos_topo_vect)
+        void set_line_pos1_topo_vect(const Eigen::Ref<const IntVect> & line_or_pos_topo_vect)
         {
             powerlines_.set_pos_topo_vect_side_1(line_or_pos_topo_vect);
         }
-        void set_line_pos2_topo_vect(Eigen::Ref<const IntVect> line_ex_pos_topo_vect)
+        void set_line_pos2_topo_vect(const Eigen::Ref<const IntVect> & line_ex_pos_topo_vect)
         {
             powerlines_.set_pos_topo_vect_side_2(line_ex_pos_topo_vect);
         }
-        void set_trafo_pos1_topo_vect(Eigen::Ref<const IntVect> trafo_hv_pos_topo_vect)
+        void set_trafo_pos1_topo_vect(const Eigen::Ref<const IntVect> & trafo_hv_pos_topo_vect)
         {
             trafos_.set_pos_topo_vect_side_1(trafo_hv_pos_topo_vect);
         }
-        void set_trafo_pos2_topo_vect(Eigen::Ref<const IntVect> trafo_lv_pos_topo_vect)
+        void set_trafo_pos2_topo_vect(const Eigen::Ref<const IntVect> & trafo_lv_pos_topo_vect)
         {
             trafos_.set_pos_topo_vect_side_2(trafo_lv_pos_topo_vect);
         }
 
-        void set_load_to_subid(Eigen::Ref<const IntVect> load_to_subid)
+        void set_load_to_subid(const Eigen::Ref<const IntVect> & load_to_subid)
         {
             loads_.set_subid(load_to_subid);
         }
-        void set_gen_to_subid(Eigen::Ref<const IntVect> gen_to_subid)
+        void set_gen_to_subid(const Eigen::Ref<const IntVect> & gen_to_subid)
         {
             generators_.set_subid(gen_to_subid);
         }
-        void set_storage_to_subid(Eigen::Ref<const IntVect> storage_to_subid)
+        void set_storage_to_subid(const Eigen::Ref<const IntVect> & storage_to_subid)
         {
             storages_.set_subid(storage_to_subid);
         }
-        void set_shunt_to_subid(Eigen::Ref<const IntVect> shunt_to_subid)
+        void set_shunt_to_subid(const Eigen::Ref<const IntVect> & shunt_to_subid)
         {
             shunts_.set_subid(shunt_to_subid);
         }
-        void set_line_to_sub1_id(Eigen::Ref<const IntVect> line_or_to_subid)
+        void set_line_to_sub1_id(const Eigen::Ref<const IntVect> & line_or_to_subid)
         {
             powerlines_.set_subid_side_1(line_or_to_subid);
         }
-        void set_line_to_sub2_id(Eigen::Ref<const IntVect> line_ex_to_subid)
+        void set_line_to_sub2_id(const Eigen::Ref<const IntVect> & line_ex_to_subid)
         {
             powerlines_.set_subid_side_2(line_ex_to_subid);
         }
-        void set_trafo_to_sub1_id(Eigen::Ref<const IntVect> trafo_hv_to_subid)
+        void set_trafo_to_sub1_id(const Eigen::Ref<const IntVect> & trafo_hv_to_subid)
         {
             trafos_.set_subid_side_1(trafo_hv_to_subid);
         }
-        void set_trafo_to_sub2_id(Eigen::Ref<const IntVect> trafo_lv_to_subid)
+        void set_trafo_to_sub2_id(const Eigen::Ref<const IntVect> & trafo_lv_to_subid)
         {
             trafos_.set_subid_side_2(trafo_lv_to_subid);
         }
@@ -1804,7 +1804,10 @@ class LS2G_API LSGrid final
          * @param relabel_row : whether to relabel also the row id
          * @return Eigen::SparseMatrix<cplx_type> 
          */
-        template<typename T>    
+        // Ybus stays a plain reference: T is deduced from the caller's argument, and
+        // Eigen::Ref<const Eigen::SparseMatrix<T>> is a non-deduced context (callers
+        // pass a concrete Eigen::SparseMatrix<T>, so deduction would fail).
+        template<typename T>
         Eigen::SparseMatrix<T> _relabel_matrix(const Eigen::SparseMatrix<T> & Ybus,
                                                const GlobalBusIdVect & id_solver_to_me,
                                                bool relabel_row=true) const {

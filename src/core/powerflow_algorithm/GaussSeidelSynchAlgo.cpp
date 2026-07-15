@@ -11,9 +11,9 @@
 namespace ls2g {
 
 void GaussSeidelSynchAlgo::one_iter(CplxVect & tmp_Sbus,
-                                      const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                      Eigen::Ref<const IntVect> pv,
-                                      Eigen::Ref<const IntVect> pq)
+                                      const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> & Ybus,
+                                      const Eigen::Ref<const IntVect> & pv,
+                                      const Eigen::Ref<const IntVect> & pq)
 {
     // do an update with all nodes being updated at the same time (different than the original GaussSeidel)
     cplx_type tmp;

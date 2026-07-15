@@ -11,13 +11,13 @@
 #include <cmath>  // for nans
 
 template<class LinearSolver>
-bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
+bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & Bbus,
                                              CplxVect & V,
-                                             Eigen::Ref<const RealVect> Pbus,
-                                             Eigen::Ref<const IntVect> slack_ids,
-                                             Eigen::Ref<const RealVect> slack_weights,
-                                             Eigen::Ref<const IntVect> pv,
-                                             Eigen::Ref<const IntVect> pq
+                                             const Eigen::Ref<const RealVect> & Pbus,
+                                             const Eigen::Ref<const IntVect> & slack_ids,
+                                             const Eigen::Ref<const RealVect> & slack_weights,
+                                             const Eigen::Ref<const IntVect> & pv,
+                                             const Eigen::Ref<const IntVect> & pq
                                              )
 {
     // V is used the following way: at pq buses it's completely ignored. For pv bus only the magnitude is used,
@@ -341,7 +341,7 @@ void BaseDCAlgo<LinearSolver>::fill_mat_bus_id(int nb_bus_solver){
 }
 
 template<class LinearSolver>
-void BaseDCAlgo<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<real_type> & ref_mat){
+void BaseDCAlgo<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & ref_mat){
     // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
     remove_slack_buses(nb_bus_solver, ref_mat, dcYbus_noslack_);
     add_droop_to_dcYbus();
@@ -405,13 +405,13 @@ void BaseDCAlgo<LinearSolver>::add_droop_to_dcSbus(){
 
 template<class LinearSolver>
 template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
-void BaseDCAlgo<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen::SparseMatrix<ref_mat_type> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat){
+void BaseDCAlgo<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat){
     res_mat = Eigen::SparseMatrix<real_type>(sizeYbus_without_slack_, sizeYbus_without_slack_);  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(ref_mat.nonZeros());
     for (int k=0; k < nb_bus_solver; ++k){
         if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
-        for (typename Eigen::SparseMatrix<ref_mat_type>::InnerIterator it(ref_mat, k); it; ++it)
+        for (typename Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>>::InnerIterator it(ref_mat, k); it; ++it)
         {
             int row_res = static_cast<int>(it.row());  // TODO Eigen::Index here ?
             row_res = mat_bus_id_(row_res);

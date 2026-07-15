@@ -156,7 +156,7 @@ class LS2G_API Base
             {}
 
         static int find_J_pos (
-            Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > J_csc,
+            const Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > & J_csc,
             int row,
             int col){
             int start = J_csc.outerIndexPtr()[col];
@@ -173,21 +173,25 @@ class LS2G_API Base
         // need a free Vm unknown + Q equation -- shared by EVERY NRSystem
         // instantiation (SingleSlackNRSystem has no MultiSlack extension to
         // do this, so Base must own it).
+        // Ybus stays a plain reference (not Eigen::Ref): this update_state
+        // caches its address (Ybus_ptr_, see below) across phases (this call
+        // -> build_J_sparsity), which needs the caller's actual, long-lived
+        // matrix, not a call-site Eigen::Ref temporary.
         void update_state(
             const LSGrid *                         lsgrid_ptr,
             const Eigen::SparseMatrix<cplx_type>&  Ybus,
-            Eigen::Ref<const CplxVect>              Sbus,
-            Eigen::Ref<const RealVect>             slack_weights
+            const Eigen::Ref<const CplxVect> &              Sbus,
+            const Eigen::Ref<const RealVect> &             slack_weights
         );
 
         // call after update_state
         // at the beginning of each solve
         // only if the topology has changed
         void init_topology(
-            Eigen::Ref<const IntVect>              /*slack_ids*/,
-            Eigen::Ref<const RealVect>              /*slack_weights*/,
-            Eigen::Ref<const IntVect>              pv,
-            Eigen::Ref<const IntVect>              pq
+            const Eigen::Ref<const IntVect> &              /*slack_ids*/,
+            const Eigen::Ref<const RealVect> &              /*slack_weights*/,
+            const Eigen::Ref<const IntVect> &              pv,
+            const Eigen::Ref<const IntVect> &              pq
         ) {
             pv_ = IntVect(pv);
             pq_ = IntVect(pq);
@@ -302,18 +306,18 @@ class LS2G_API MultiSlack   // distributed-slack extension
             const Base *                           nr_system_base_ptr,
             const LSGrid *                         lsgrid_ptr,
             const Eigen::SparseMatrix<cplx_type>&  Ybus,
-            Eigen::Ref<const CplxVect>              Sbus,
-            Eigen::Ref<const RealVect>             slack_weights
+            const Eigen::Ref<const CplxVect> &              Sbus,
+            const Eigen::Ref<const RealVect> &             slack_weights
         );
 
         // call after update_state
         // at the beginning of each solve
         // only if the topology has changed
         void init_topology(
-            Eigen::Ref<const IntVect>              slack_ids,
-            Eigen::Ref<const RealVect>              /*slack_weights*/,
-            Eigen::Ref<const IntVect>              /*pv*/,
-            Eigen::Ref<const IntVect>              /*pq*/
+            const Eigen::Ref<const IntVect> &              slack_ids,
+            const Eigen::Ref<const RealVect> &              /*slack_weights*/,
+            const Eigen::Ref<const IntVect> &              /*pv*/,
+            const Eigen::Ref<const IntVect> &              /*pq*/
         ) {
             my_size_ = static_cast<int>(slack_ids.size());
             ref_slack_id_ = slack_ids[0];
@@ -447,15 +451,15 @@ class LS2G_API Hvdc
             const Base *                           nr_system_base_ptr,
             const LSGrid *                         lsgrid_ptr,
             const Eigen::SparseMatrix<cplx_type>&  Ybus,
-            Eigen::Ref<const CplxVect>              Sbus,
-            Eigen::Ref<const RealVect>             slack_weights
+            const Eigen::Ref<const CplxVect> &              Sbus,
+            const Eigen::Ref<const RealVect> &             slack_weights
         );
 
         void init_topology(
-            Eigen::Ref<const IntVect>              /*slack_ids*/,
-            Eigen::Ref<const RealVect>              /*slack_weights*/,
-            Eigen::Ref<const IntVect>              /*pv*/,
-            Eigen::Ref<const IntVect>              /*pq*/
+            const Eigen::Ref<const IntVect> &              /*slack_ids*/,
+            const Eigen::Ref<const RealVect> &              /*slack_weights*/,
+            const Eigen::Ref<const IntVect> &              /*pv*/,
+            const Eigen::Ref<const IntVect> &              /*pq*/
         ) {}
 
         // claims nothing: only caches the rows / columns of the two end buses
@@ -615,15 +619,15 @@ class LS2G_API VoltageControl
             const Base *                           nr_system_base_ptr,
             const LSGrid *                         lsgrid_ptr,
             const Eigen::SparseMatrix<cplx_type>&  Ybus,
-            Eigen::Ref<const CplxVect>              Sbus,
-            Eigen::Ref<const RealVect>             slack_weights
+            const Eigen::Ref<const CplxVect> &              Sbus,
+            const Eigen::Ref<const RealVect> &             slack_weights
         );
 
         void init_topology(
-            Eigen::Ref<const IntVect>              /*slack_ids*/,
-            Eigen::Ref<const RealVect>              /*slack_weights*/,
-            Eigen::Ref<const IntVect>              /*pv*/,
-            Eigen::Ref<const IntVect>              /*pq*/
+            const Eigen::Ref<const IntVect> &              /*slack_ids*/,
+            const Eigen::Ref<const RealVect> &              /*slack_weights*/,
+            const Eigen::Ref<const IntVect> &              /*pv*/,
+            const Eigen::Ref<const IntVect> &              /*pq*/
         ) {}
 
         // claims, per group: N q-unknown columns, 1 voltage row, N-1 sharing rows;
@@ -839,10 +843,10 @@ public:
     // ----- Phase 1: topology init (call when pv/pq/slack topology changes) -------
 
     void init_topology(
-        Eigen::Ref<const IntVect>              slack_ids,
-        Eigen::Ref<const RealVect>             slack_weights,
-        Eigen::Ref<const IntVect>              pv,
-        Eigen::Ref<const IntVect>              pq);
+        const Eigen::Ref<const IntVect> &              slack_ids,
+        const Eigen::Ref<const RealVect> &             slack_weights,
+        const Eigen::Ref<const IntVect> &              pv,
+        const Eigen::Ref<const IntVect> &              pq);
 
     // ----- Phase 1.5: per-compute_pf state update (cheap) -----------------------
 
@@ -850,8 +854,8 @@ public:
         const LSGrid *                         lsgrid_ptr,
         const Eigen::SparseMatrix<cplx_type>&  Ybus,
         const CplxVect&                        V_init,
-        Eigen::Ref<const CplxVect>              Sbus,
-        Eigen::Ref<const RealVect>             slack_weights);
+        const Eigen::Ref<const CplxVect> &              Sbus,
+        const Eigen::Ref<const RealVect> &             slack_weights);
 
     // ----- Phase 2: build J sparsity + value maps -------------------------------
 
@@ -1083,10 +1087,10 @@ private:
     // ---- component hook fold helpers (C++14 index_sequence/dummy-array idiom) ---
     template <std::size_t... Is>
     void _init_topology_extensions(
-        Eigen::Ref<const IntVect>              slack_ids,
-        Eigen::Ref<const RealVect>             slack_weights,
-        Eigen::Ref<const IntVect>              pv,
-        Eigen::Ref<const IntVect>              pq,
+        const Eigen::Ref<const IntVect> &              slack_ids,
+        const Eigen::Ref<const RealVect> &             slack_weights,
+        const Eigen::Ref<const IntVect> &              pv,
+        const Eigen::Ref<const IntVect> &              pq,
         std::index_sequence<Is...>) {
         int dummy[] = { 0, (std::get<Is>(extensions_).init_topology(
             slack_ids,
@@ -1101,8 +1105,8 @@ private:
     void _update_state_extensions(
         const LSGrid *                         lsgrid_ptr,
         const Eigen::SparseMatrix<cplx_type>&  Ybus,
-        Eigen::Ref<const CplxVect>              Sbus,
-        Eigen::Ref<const RealVect>             slack_weights,
+        const Eigen::Ref<const CplxVect> &              Sbus,
+        const Eigen::Ref<const RealVect> &             slack_weights,
         std::index_sequence<Is...>){
         int dummy[] = { 0, (std::get<Is>(extensions_).update_state(
             &base_,

@@ -151,13 +151,15 @@ class LS2G_API AlgorithmSelector final
             get_prt_solver("reset", false)->reset();
         }
 
-        bool compute_pf(const Eigen::SparseMatrix<cplx_type>& Ybus,
+        // Ybus stays a plain reference: it must pass through to the underlying
+        // solver's compute_pf unchanged (see BaseAlgo::compute_pf_with_input_validation).
+        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect& V,
-                        Eigen::Ref<const CplxVect> Sbus,
-                        Eigen::Ref<const IntVect> slack_ids,
-                        Eigen::Ref<const RealVect> slack_weights,
-                        Eigen::Ref<const IntVect> pv,
-                        Eigen::Ref<const IntVect> pq,
+                        const Eigen::Ref<const CplxVect> & Sbus,
+                        const Eigen::Ref<const IntVect> & slack_ids,
+                        const Eigen::Ref<const RealVect> & slack_weights,
+                        const Eigen::Ref<const IntVect> & pv,
+                        const Eigen::Ref<const IntVect> & pq,
                         int max_iter,
                         real_type tol)
         {
@@ -167,13 +169,13 @@ class LS2G_API AlgorithmSelector final
         }
 
         // Native real-valued DC entry point (only valid for DC solvers).
-        bool compute_pf_dc(const Eigen::SparseMatrix<real_type>& Bbus,
+        bool compute_pf_dc(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & Bbus,
                            CplxVect& V,
-                           Eigen::Ref<const RealVect> Pbus,
-                           Eigen::Ref<const IntVect> slack_ids,
-                           Eigen::Ref<const RealVect> slack_weights,
-                           Eigen::Ref<const IntVect> pv,
-                           Eigen::Ref<const IntVect> pq)
+                           const Eigen::Ref<const RealVect> & Pbus,
+                           const Eigen::Ref<const IntVect> & slack_ids,
+                           const Eigen::Ref<const RealVect> & slack_weights,
+                           const Eigen::Ref<const IntVect> & pv,
+                           const Eigen::Ref<const IntVect> & pq)
         {
             _algo_type_used_for_nr = _algo_type;
             return get_prt_solver("compute_pf_dc", true)->compute_pf_dc(

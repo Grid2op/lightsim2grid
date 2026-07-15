@@ -1637,8 +1637,8 @@ void LSGrid::update_storages_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::
     update_continuous_values(has_changed, new_values, &LSGrid::change_p_storage);
 }
 
-void LSGrid::update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                            Eigen::Ref<const Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_topo(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                            const Eigen::Ref<const Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     loads_.update_topo(has_changed, new_values, algo_controler_, substations_);
     generators_.update_topo(has_changed, new_values, algo_controler_, substations_);

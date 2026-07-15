@@ -555,7 +555,7 @@ void GeneratorContainer::update_slack_weights(
 }
 
 void GeneratorContainer::update_slack_weights_by_id(
-    Eigen::Ref<const IntVect> gen_slack_id,
+    const Eigen::Ref<const IntVect> & gen_slack_id,
     DualAlgoControl & solver_control)
 {
     // TODO speed: the solver_control will always tell that the slacks changed

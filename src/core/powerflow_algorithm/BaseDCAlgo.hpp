@@ -81,13 +81,13 @@ class BaseDCAlgo final: public BaseAlgo
         // Native real-valued DC power flow: solves `Bbus . theta = Pbus`.
         // (the DC solver does not implement the complex `compute_pf`: it inherits the throwing
         //  default from BaseAlgo, since every DC code path goes through `compute_pf_dc`)
-        bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
+        bool compute_pf_dc(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & Bbus,
                            CplxVect & V,
-                           Eigen::Ref<const RealVect> Pbus,
-                           Eigen::Ref<const IntVect> slack_ids,
-                           Eigen::Ref<const RealVect> slack_weights,
-                           Eigen::Ref<const IntVect> pv,
-                           Eigen::Ref<const IntVect> pq
+                           const Eigen::Ref<const RealVect> & Pbus,
+                           const Eigen::Ref<const IntVect> & slack_ids,
+                           const Eigen::Ref<const RealVect> & slack_weights,
+                           const Eigen::Ref<const IntVect> & pv,
+                           const Eigen::Ref<const IntVect> & pq
                            ) override;
 
         RealMat get_ptdf() override;
@@ -131,7 +131,7 @@ class BaseDCAlgo final: public BaseAlgo
 
     protected:
         void fill_mat_bus_id(int nb_bus_solver);
-        void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<real_type> & ref_mat);
+        void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & ref_mat);
 
         // hvdc angle-droop ("AC emulation") support: in dc, the linear-mode
         // droop lines contribute `p = p0 + k * (theta1 - theta2)`: the k term
@@ -143,9 +143,10 @@ class BaseDCAlgo final: public BaseAlgo
         void add_droop_to_dcYbus();
         void add_droop_to_dcSbus();
 
-        // remove_slack_buses: res_mat is initialized and make_compressed in this function
+        // remove_slack_buses: res_mat is reset (reassigned) and setFromTriplets/makeCompressed'd
+        // from scratch in this function, so it needs a real reference, not Eigen::Ref.
         template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
-        void remove_slack_buses(int nb_bus_solver, const Eigen::SparseMatrix<ref_mat_type> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat);
+        void remove_slack_buses(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat);
 
     protected:
         LinearSolver  _linear_solver;

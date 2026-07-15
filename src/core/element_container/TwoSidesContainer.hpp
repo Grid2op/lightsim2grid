@@ -220,27 +220,27 @@ class TwoSidesContainer : public GenericContainer
             }
         }
 
-        void set_pos_topo_vect_side_1(Eigen::Ref<const IntVect> pos_topo_vect)
+        void set_pos_topo_vect_side_1(const Eigen::Ref<const IntVect> & pos_topo_vect)
         {
             side_1_.set_pos_topo_vect(pos_topo_vect);
         }
-        void set_pos_topo_vect_side_2(Eigen::Ref<const IntVect> pos_topo_vect)
+        void set_pos_topo_vect_side_2(const Eigen::Ref<const IntVect> & pos_topo_vect)
         {
             side_2_.set_pos_topo_vect(pos_topo_vect);
         }
 
-        void set_subid_side_1(Eigen::Ref<const IntVect> subid)
+        void set_subid_side_1(const Eigen::Ref<const IntVect> & subid)
         {
             side_1_.set_subid(subid);
         }
-        void set_subid_side_2(Eigen::Ref<const IntVect> subid)
+        void set_subid_side_2(const Eigen::Ref<const IntVect> & subid)
         {
             side_2_.set_subid(subid);
         }
 
         virtual void update_topo(
-            Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
-            Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+            const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+            const Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
             DualAlgoControl & solver_control,
             SubstationContainer & substations
         ) final
