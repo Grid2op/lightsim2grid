@@ -156,7 +156,7 @@ class OneSideContainer : public GenericContainer
 
     public:
         OneSideContainer() noexcept = default;
-        virtual ~OneSideContainer() noexcept = default;
+        ~OneSideContainer() noexcept override = default;
         // OneSideInfo get_osc_info(int id_) {return OneSideInfo(*this, id_);}
 
         // public generic API
@@ -175,7 +175,7 @@ class OneSideContainer : public GenericContainer
             return bus_id_.as_eigen();
         }
 
-        void reconnect_connected_buses(SubstationContainer & substation) const{
+        void reconnect_connected_buses(SubstationContainer & substation) const override{
             const int nb_els = nb();
             for(int el_id = 0; el_id < nb_els; ++el_id)
             {
@@ -193,7 +193,7 @@ class OneSideContainer : public GenericContainer
             }
         }
 
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) final {
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override final {
             const int nb_el = nb();
             DualAlgoControl unused_solver_control;
             for(int el_id = 0; el_id < nb_el; ++el_id)
@@ -245,7 +245,7 @@ class OneSideContainer : public GenericContainer
                                      const Eigen::Ref<const RealVect> & Vm,
                                      const Eigen::Ref<const CplxVect> & V,
                                      const SolverBusIdVect & id_grid_to_solver,
-                                     const RealVect & bus_vn_kv,
+                                     const Eigen::Ref<const RealVect> & bus_vn_kv,
                                      real_type sn_mva,
                                      bool ac) final
         {
@@ -396,7 +396,7 @@ class OneSideContainer : public GenericContainer
         }
         
         void init_osc(
-            const Eigen::VectorXi & els_bus_id
+            const Eigen::Ref<const Eigen::VectorXi> & els_bus_id
         )  // osc: one side container
         {
             bus_id_ = GlobalBusIdVect(els_bus_id);
@@ -440,7 +440,7 @@ class OneSideContainer : public GenericContainer
                                       const Eigen::Ref<const RealVect> & /*Vm*/,
                                       const Eigen::Ref<const CplxVect> & /*V*/,
                                       const SolverBusIdVect & /*id_grid_to_solver*/,
-                                      const RealVect & /*bus_vn_kv*/,
+                                      const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
                                       real_type /*sn_mva*/,
                                       bool /*ac*/) {
                                         // nothing to do by default

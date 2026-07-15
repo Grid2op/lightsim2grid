@@ -55,14 +55,14 @@ class OneSideContainer_PQ : public OneSideContainer
     // regular implementation
     public:
         OneSideContainer_PQ() noexcept = default;
-        virtual ~OneSideContainer_PQ() noexcept = default;
+        ~OneSideContainer_PQ() noexcept override = default;
 
         // public generic API
 
         Eigen::Ref<const RealVect> get_target_p() const {return target_p_mw_;}
 
         // base function that can be called
-        void gen_p_per_bus(std::vector<real_type> & res) const
+        void gen_p_per_bus(std::vector<real_type> & res) const override
         {
             const int nb_gen = nb();
             for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
@@ -157,9 +157,9 @@ class OneSideContainer_PQ : public OneSideContainer
             this->reset_results();
         }
         
-        void init_osc_pq(const RealVect & els_p,
-                         const RealVect & els_q,
-                         const Eigen::VectorXi & els_bus_id,
+        void init_osc_pq(const Eigen::Ref<const RealVect> & els_p,
+                         const Eigen::Ref<const RealVect> & els_q,
+                         const Eigen::Ref<const Eigen::VectorXi> & els_bus_id,
                          const std::string & name_el
                          )  // osc: one side element
         {
@@ -196,22 +196,22 @@ class OneSideContainer_PQ : public OneSideContainer
         }
 
     protected:
-        virtual void _reset_results() override {
+        void _reset_results() override {
             // nothing to do by default, as this class should be used as template for "one side" (eg loads or generators)
             // elements
         };
-        virtual void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+        void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
                                       const Eigen::Ref<const RealVect> & /*Vm*/,
                                       const Eigen::Ref<const CplxVect> & /*V*/,
                                       const SolverBusIdVect & /*id_grid_to_solver*/,
-                                      const RealVect & /*bus_vn_kv*/,
+                                      const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
                                       real_type /*sn_mva*/,
                                       bool /*ac*/) override {
             // nothing to do by default, as this class should be used as template for "one side" (eg loads or generators)
             // elements
                                       };
 
-        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
+        bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
             if(status_[el_id]){
                 solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
                 solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
@@ -219,7 +219,7 @@ class OneSideContainer_PQ : public OneSideContainer
             }
             return false;
         };
-        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
+        bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
             if(!status_[el_id]){
                 solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
                 solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
@@ -227,7 +227,7 @@ class OneSideContainer_PQ : public OneSideContainer
             }
             return false;
         };
-        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) override {
+        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) override {
             if(bus_id_(el_id) != new_bus_id){
                 solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
                 solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
@@ -235,12 +235,12 @@ class OneSideContainer_PQ : public OneSideContainer
             }
             return false;
         };
-        virtual void _change_p(int el_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control) override {
+        void _change_p(int el_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control) override {
             if (abs(target_p_mw_(el_id) - new_p) > _tol_equal_float) {
                 solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
             }
         };
-        virtual void _change_q(int el_id, real_type new_q, bool /*my_status*/,DualAlgoControl & solver_control) override {
+        void _change_q(int el_id, real_type new_q, bool /*my_status*/,DualAlgoControl & solver_control) override {
             if (abs(target_q_mvar_(el_id) - new_q) > _tol_equal_float) {
                 solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
             }

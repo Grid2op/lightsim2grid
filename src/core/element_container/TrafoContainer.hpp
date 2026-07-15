@@ -82,28 +82,28 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                >;
 
         TrafoContainer() noexcept = default;
-        virtual ~TrafoContainer() noexcept = default;
+        ~TrafoContainer() noexcept override = default;
 
-        void init(const RealVect & trafo_r,
-                  const RealVect & trafo_x,
-                  const CplxVect & trafo_b,
-                  const RealVect & trafo_tap_step_pct,
-                  const RealVect & trafo_tap_pos,
-                  const RealVect & trafo_shift_degree,
+        void init(const Eigen::Ref<const RealVect> & trafo_r,
+                  const Eigen::Ref<const RealVect> & trafo_x,
+                  const Eigen::Ref<const CplxVect> & trafo_b,
+                  const Eigen::Ref<const RealVect> & trafo_tap_step_pct,
+                  const Eigen::Ref<const RealVect> & trafo_tap_pos,
+                  const Eigen::Ref<const RealVect> & trafo_shift_degree,
                   const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                  const Eigen::VectorXi & trafo_hv_id,
-                  const Eigen::VectorXi & trafo_lv_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & trafo_hv_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & trafo_lv_id,
                   bool ignore_tap_side_for_shift
                   );
 
-        void init(const RealVect & trafo_r,
-                  const RealVect & trafo_x,
-                  const CplxVect & trafo_b,
-                  const RealVect & trafo_ratio,
-                  const RealVect & trafo_shift_degree,
+        void init(const Eigen::Ref<const RealVect> & trafo_r,
+                  const Eigen::Ref<const RealVect> & trafo_x,
+                  const Eigen::Ref<const CplxVect> & trafo_b,
+                  const Eigen::Ref<const RealVect> & trafo_ratio,
+                  const Eigen::Ref<const RealVect> & trafo_shift_degree,
                   const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                  const Eigen::VectorXi & trafo_hv_id,
-                  const Eigen::VectorXi & trafo_lv_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & trafo_hv_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & trafo_lv_id,
                   bool ignore_tap_side_for_shift
                   );
 
@@ -135,16 +135,16 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                                     const std::vector<std::vector<real_type> > & rx_corr_pct,
                                     DualAlgoControl & solver_control);
 
-        virtual void hack_Sbus_for_dc_phase_shifter(
+        void hack_Sbus_for_dc_phase_shifter(
             CplxVect & Sbus,
             bool ac,
-            const SolverBusIdVect & id_grid_to_solver);  // needed for dc mode  
+            const SolverBusIdVect & id_grid_to_solver);  // needed for dc mode
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,
                              const Eigen::Ref<const CplxVect> & V,
                              const SolverBusIdVect & id_grid_to_solver,
-                             const RealVect & bus_vn_kv,
+                             const Eigen::Ref<const RealVect> & bus_vn_kv,
                              real_type sn_mva,
                              bool ac)
         {
@@ -213,12 +213,12 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         
     protected:
         // void _update_model_coeffs();
-        virtual void _update_model_coeffs_one_el(int el_id) override;
-        virtual void _update_other_model_coeffs() override {
+        void _update_model_coeffs_one_el(int el_id) override;
+        void _update_other_model_coeffs() override {
             dc_x_tau_shift_ = RealVect::Zero(nb());
         }
 
-        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
+        bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
             bool has_been_changed = TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>:: _deactivate(el_id, solver_control);
             if(has_been_changed){
                 // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
@@ -227,7 +227,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             return has_been_changed;
         }
 
-        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
+        bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
             bool has_been_changed = TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>:: _reactivate(el_id, solver_control);
             if(has_been_changed){
                 // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
@@ -236,38 +236,38 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             return has_been_changed;
         }
 
-        virtual void _change_bus_side_1(
-            int /*el_id*/, 
-            GridModelBusId /*new_gridmodel_bus_id*/, 
-            DualAlgoControl & solver_control, 
-            const SubstationContainer & /*substation*/,
-            bool has_effectively_changed
-        ) {
-            if(has_effectively_changed){
-                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
-                solver_control.dc_algo_controler().tell_recompute_sbus();
-            }
-        }
-
-        virtual void _change_bus_side_2(
+        void _change_bus_side_1(
             int /*el_id*/,
             GridModelBusId /*new_gridmodel_bus_id*/,
             DualAlgoControl & solver_control,
             const SubstationContainer & /*substation*/,
             bool has_effectively_changed
-        ) {
+        ) override {
             if(has_effectively_changed){
                 // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
                 solver_control.dc_algo_controler().tell_recompute_sbus();
             }
         }
 
-        virtual void _update_topo(
+        void _change_bus_side_2(
+            int /*el_id*/,
+            GridModelBusId /*new_gridmodel_bus_id*/,
+            DualAlgoControl & solver_control,
+            const SubstationContainer & /*substation*/,
+            bool has_effectively_changed
+        ) override {
+            if(has_effectively_changed){
+                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
+                solver_control.dc_algo_controler().tell_recompute_sbus();
+            }
+        }
+
+        void _update_topo(
             DualAlgoControl & solver_control,
             SubstationContainer & /*substations*/,
             const std::vector<bool> & side1_changed,
             const std::vector<bool> & side2_changed
-        )
+        ) override
         {
             bool onechanged_1 = std::any_of(side1_changed.begin(), side1_changed.end(), [](bool v) { return v; });
             bool onechanged_2 = std::any_of(side2_changed.begin(), side2_changed.end(), [](bool v) { return v; });
@@ -282,8 +282,13 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
          * 
          * This is the default behaviour in pandapower, where the phase shifter
          * is always assigned to side 1.
+         *
+         * Default-initialized: a container whose init_trafo() is never called
+         * (grid without trafos) is still copied and serialized, and an
+         * indeterminate bool there is undefined behavior (found by valgrind
+         * over the C++ unit tests).
          */
-        bool ignore_tap_side_for_shift_;
+        bool ignore_tap_side_for_shift_ = false;
         
         // physical properties
         std::vector<bool> is_tap_side1_;  // whether the tap is hav side or not
@@ -296,7 +301,8 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
         // lightsim2grid has no "tap" concept: the per-step r/x correction is stored
         // as a function of the phase-shift `alpha` and looked up by the current
         // `shift_`. Disabled (flag false, empty tables) for pandapower.
-        bool shift_dependent_rx_;
+        // Default-initialized for the same reason as ignore_tap_side_for_shift_.
+        bool shift_dependent_rx_ = false;
         RealVect base_r_;  // neutral (uncorrected) r, per trafo
         RealVect base_x_;  // neutral (uncorrected) x, per trafo
         std::vector<std::vector<real_type> > rx_corr_alpha_;  // per trafo: alpha (rad), ascending
@@ -326,17 +332,17 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
 
     protected:
 
-        virtual real_type fillBf_for_PTDF_coeff(int tr_id) const override {
+        real_type fillBf_for_PTDF_coeff(int tr_id) const override {
             real_type res = x_(tr_id);
             real_type tau = is_tap_side1_[tr_id] ? ratio_(tr_id) : 1. / ratio_(tr_id);
             return res * tau;
         }
 
-        virtual int fillBf_for_PTDF_id(int tr_id, int nb_powerline) const override {
+        int fillBf_for_PTDF_id(int tr_id, int nb_powerline) const override {
             return tr_id + nb_powerline;
         }
 
-        virtual FDPFCoeffs get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const override;
+        FDPFCoeffs get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const override;
 };
 
 inline TrafoInfo::TrafoInfo(const TrafoContainer & r_data_trafo, int my_id) noexcept:

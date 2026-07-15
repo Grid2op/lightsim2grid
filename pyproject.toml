@@ -97,6 +97,11 @@ exclude = [
     "old",
     "wheelhouse",
 
+    # C++ unit tests and the Catch2 submodule they build against — never
+    # compiled by a pip / wheel build (BUILD_TESTING defaults OFF)
+    "Catch2",
+    "src/tests",
+
     # SuiteSparse submodule — only KLU and its direct dependencies are used
     # (SuiteSparse_config, AMD, BTF, COLAMD, CXSparse, KLU are kept).
     "SuiteSparse/CAMD",

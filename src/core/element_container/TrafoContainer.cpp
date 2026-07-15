@@ -15,15 +15,15 @@
 namespace ls2g {
 
 void TrafoContainer::init(
-    const RealVect & trafo_r,
-    const RealVect & trafo_x,
-    const CplxVect & trafo_b,
-    const RealVect & trafo_tap_step_pct,
-    const RealVect & trafo_tap_pos,
-    const RealVect & trafo_shift_degree,
+    const Eigen::Ref<const RealVect> & trafo_r,
+    const Eigen::Ref<const RealVect> & trafo_x,
+    const Eigen::Ref<const CplxVect> & trafo_b,
+    const Eigen::Ref<const RealVect> & trafo_tap_step_pct,
+    const Eigen::Ref<const RealVect> & trafo_tap_pos,
+    const Eigen::Ref<const RealVect> & trafo_shift_degree,
     const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-    const Eigen::VectorXi & trafo_hv_id,
-    const Eigen::VectorXi & trafo_lv_id,
+    const Eigen::Ref<const Eigen::VectorXi> & trafo_hv_id,
+    const Eigen::Ref<const Eigen::VectorXi> & trafo_lv_id,
     bool ignore_tap_side_for_shift
 ) {
     /**
@@ -42,14 +42,14 @@ void TrafoContainer::init(
 }
 
 void TrafoContainer::init(
-    const RealVect & trafo_r,
-    const RealVect & trafo_x,
-    const CplxVect & trafo_b,
-    const RealVect & trafo_ratio,
-    const RealVect & trafo_shift_degree,
+    const Eigen::Ref<const RealVect> & trafo_r,
+    const Eigen::Ref<const RealVect> & trafo_x,
+    const Eigen::Ref<const CplxVect> & trafo_b,
+    const Eigen::Ref<const RealVect> & trafo_ratio,
+    const Eigen::Ref<const RealVect> & trafo_shift_degree,
     const std::vector<bool> & trafo_tap_side1,  // is tap on high voltage (true) or low voltate
-    const Eigen::VectorXi & trafo_hv_id,
-    const Eigen::VectorXi & trafo_lv_id,
+    const Eigen::Ref<const Eigen::VectorXi> & trafo_hv_id,
+    const Eigen::Ref<const Eigen::VectorXi> & trafo_lv_id,
     bool ignore_tap_side_for_shift
 ) {
     const int size = static_cast<int>(trafo_r.size());

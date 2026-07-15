@@ -26,7 +26,7 @@ namespace ls2g {
  * not template parameters, so the same binary can switch strategy at run time.
  */
 template<class LinearSolver, class NRSystem>
-class NRAlgo : public BaseAlgo
+class NRAlgo final : public BaseAlgo
 {
 public:
     NRAlgo() noexcept :
@@ -52,16 +52,14 @@ public:
         timer_scale_(0.),
         timer_mismatch_(0.) {}
 
-    virtual ~NRAlgo() noexcept = default;
+    ~NRAlgo() noexcept override = default;
 
     // ----- Jacobian accessor ---------------------------------------------------
 
-    virtual
     Eigen::Ref<const Eigen::SparseMatrix<real_type>> get_J() const override {
         return _system.J();
     }
 
-    virtual
     Eigen::SparseMatrix<real_type> get_J_python() const {
         Eigen::SparseMatrix<real_type> res = get_J();
         return res;
@@ -71,38 +69,37 @@ public:
     // bus_id -> Jacobian column of that bus' theta / vm / q unknown (-1 if none).
     // Only meaningful after a topology has been initialised (i.e. after at least
     // one compute_pf), same lifetime as get_J.
-    virtual IntVect get_theta_to_J_col_python() const override { return _to_intvect(_system.theta_to_J_col()); }
-    virtual IntVect get_vm_to_J_col_python()    const override { return _to_intvect(_system.vm_to_J_col()); }
-    virtual IntVect get_q_to_J_col_python()     const override { return _to_intvect(_system.q_to_J_col()); }
+    IntVect get_theta_to_J_col_python() const override { return _to_intvect(_system.theta_to_J_col()); }
+    IntVect get_vm_to_J_col_python()    const override { return _to_intvect(_system.vm_to_J_col()); }
+    IntVect get_q_to_J_col_python()     const override { return _to_intvect(_system.q_to_J_col()); }
 
     // ----- row (equation) -> bus-id converters (NR-only) -----------------------
     // bus_id -> Jacobian row of that bus' P / Q mismatch equation (-1 if none).
     // Same lifetime / semantics as the *_to_J_col converters above.
-    virtual IntVect get_p_to_J_row_python() const override { return _to_intvect(_system.p_to_J_row()); }
-    virtual IntVect get_q_to_J_row_python() const override { return _to_intvect(_system.q_to_J_row()); }
+    IntVect get_p_to_J_row_python() const override { return _to_intvect(_system.p_to_J_row()); }
+    IntVect get_q_to_J_row_python() const override { return _to_intvect(_system.q_to_J_row()); }
 
     // ----- compact (bus, row/col) registration pair lists (NR-only) ------------
     // Row/col counterpart of the *_to_J_col / *_to_J_row bus-keyed maps above,
     // but preserving every registration (see NRSystem::p_buses() etc.).
-    virtual IntVect get_p_buses_python()     const override { return _to_intvect(_system.p_buses()); }
-    virtual IntVect get_p_rows_python()      const override { return _to_intvect(_system.p_rows()); }
-    virtual IntVect get_q_buses_python()     const override { return _to_intvect(_system.q_buses()); }
-    virtual IntVect get_q_rows_python()      const override { return _to_intvect(_system.q_rows()); }
-    virtual IntVect get_theta_buses_python() const override { return _to_intvect(_system.theta_buses()); }
-    virtual IntVect get_theta_cols_python()  const override { return _to_intvect(_system.theta_cols()); }
-    virtual IntVect get_vm_buses_python()    const override { return _to_intvect(_system.vm_buses()); }
-    virtual IntVect get_vm_cols_python()     const override { return _to_intvect(_system.vm_cols()); }
+    IntVect get_p_buses_python()     const override { return _to_intvect(_system.p_buses()); }
+    IntVect get_p_rows_python()      const override { return _to_intvect(_system.p_rows()); }
+    IntVect get_q_buses_python()     const override { return _to_intvect(_system.q_buses()); }
+    IntVect get_q_rows_python()      const override { return _to_intvect(_system.q_rows()); }
+    IntVect get_theta_buses_python() const override { return _to_intvect(_system.theta_buses()); }
+    IntVect get_theta_cols_python()  const override { return _to_intvect(_system.theta_cols()); }
+    IntVect get_vm_buses_python()    const override { return _to_intvect(_system.vm_buses()); }
+    IntVect get_vm_cols_python()     const override { return _to_intvect(_system.vm_cols()); }
 
     // ----- VoltageControl (remote gen + SVC) converged results -----------------
-    virtual RealVect get_controller_q()       const override { return _system.controller_q(); }
-    virtual IntVect  get_controller_kind()    const override { return _system.controller_kind(); }
-    virtual IntVect  get_controller_elem_id() const override { return _system.controller_elem_id(); }
-    virtual int      get_slack_col()          const override { return _system.slack_col(); }
-    virtual real_type get_slack_absorbed()    const override { return _system.slack_absorbed(); }
+    RealVect get_controller_q()       const override { return _system.controller_q(); }
+    IntVect  get_controller_kind()    const override { return _system.controller_kind(); }
+    IntVect  get_controller_elem_id() const override { return _system.controller_elem_id(); }
+    int      get_slack_col()          const override { return _system.slack_col(); }
+    real_type get_slack_absorbed()    const override { return _system.slack_absorbed(); }
 
     // ----- timers --------------------------------------------------------------
 
-    virtual
     TimerJac get_timers_jacobian() const override
     {
         TimerJac res;
@@ -124,28 +121,26 @@ public:
 
     // ----- powerflow -----------------------------------------------------------
 
-    virtual
     bool compute_pf(const Eigen::SparseMatrix<cplx_type>& Ybus,
                     CplxVect& V,
-                    const CplxVect& Sbus,
+                    Eigen::Ref<const CplxVect> Sbus,
                     Eigen::Ref<const IntVect> slack_ids,
-                    const RealVect& slack_weights,
+                    Eigen::Ref<const RealVect> slack_weights,
                     Eigen::Ref<const IntVect> pv,
                     Eigen::Ref<const IntVect> pq,
                     int max_iter,
                     real_type tol
                     ) override;
 
-    virtual void reset() override;
+    void reset() override;
 
     // ----- bus masking ---------------------------------------------------------
-    virtual bool supports_bus_masking() const override { return true; }
-    virtual void set_masked_buses(const std::vector<int> & solver_bus_ids) override {
+    bool supports_bus_masking() const override { return true; }
+    void set_masked_buses(const std::vector<int> & solver_bus_ids) override {
         _system.set_masked_buses(solver_bus_ids);
     }
-
+    
     // ----- scaling policy ------------------------------------------------------
-
     ScalingPolicyType get_scaling_policy_type()  const { return scaling_policy_->type(); }
     void set_scaling_policy(ScalingPolicyType t)  { 
         scaling_policy_ = create_scaling_policy<NRSystem>(t);
@@ -187,7 +182,7 @@ public:
 
     // ----- AlgoConfig serialization -------------------------------------------
 
-    virtual AlgoConfig get_config() const override {
+    AlgoConfig get_config() const override {
         AlgoConfig cfg;
         cfg.int_params  = { static_cast<int>(scaling_policy_->type()),
                             static_cast<int>(refactor_policy_),
@@ -202,7 +197,7 @@ public:
         return cfg;
     }
 
-    virtual void set_config(const AlgoConfig& cfg) override {
+    void set_config(const AlgoConfig& cfg) override {
         if (cfg.int_params.size()  < 4) throw std::runtime_error("NRAlgo::set_config: int_params must have at least 4 elements");
         if (cfg.real_params.size() < 6) throw std::runtime_error("NRAlgo::set_config: real_params must have at least 6 elements");
         max_dVa_         = static_cast<real_type>(cfg.real_params[0]);
@@ -244,7 +239,7 @@ public:
     // }
 
 protected:
-    virtual void reset_timer() override {
+    void reset_timer() override {
         BaseAlgo::reset_timer();
         timer_factor_     = 0.;
         timer_refactor_   = 0.;

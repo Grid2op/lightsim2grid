@@ -12,7 +12,7 @@ namespace ls2g {
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::init_topology(
     Eigen::Ref<const IntVect>              slack_ids,
-    const RealVect&                        slack_weights,
+    Eigen::Ref<const RealVect>             slack_weights,
     Eigen::Ref<const IntVect>              pv,
     Eigen::Ref<const IntVect>              pq)
 {
@@ -42,12 +42,13 @@ inline void NRSystem<Base, Rest...>::update_state(
     const LSGrid *                         lsgrid_ptr,
     const Eigen::SparseMatrix<cplx_type>&  Ybus,
     const CplxVect&                        V_init,
-    const CplxVect&                        Sbus,
+    Eigen::Ref<const CplxVect>              Sbus,
     Eigen::Ref<const RealVect>             slack_weights)
 {
     lsgrid_ptr_ = lsgrid_ptr;
     Ybus_ptr_ = &Ybus;
-    Sbus_ptr_ = &Sbus;
+    Sbus_data_ptr_ = Sbus.data();
+    Sbus_size_ = Sbus.size();
 
     Va_ = V_init.array().arg();
     Vm_ = V_init.array().abs();
@@ -218,7 +219,9 @@ template <typename... Rest>
 inline RealVect NRSystem<Base, Rest...>::mismatch() const
 {
     // current state: no step (dx == 0), residual evaluated at V_
-    return _residual(V_, RealVect::Zero(static_cast<Eigen::Index>(total_state_variables())));
+    const auto n = static_cast<Eigen::Index>(total_state_variables());
+    if(dx_zero_cache_.size() != n) dx_zero_cache_ = RealVect::Zero(n);
+    return _residual(V_, dx_zero_cache_);
 }
 
 template <typename... Rest>
@@ -278,7 +281,7 @@ inline RealVect NRSystem<Base, Rest...>::_residual(const CplxVect& V_t, const Re
 {
     // per-bus complex power mismatch: V .* conj(Ybus V) - Sbus
     CplxVect mis = V_t.array() * (*Ybus_ptr_ * V_t).array().conjugate()
-                   - Sbus_ptr_->array();
+                   - _Sbus_view().array();
     // components adjust the complex injection (e.g. + slack_absorbed * slack_weights,
     // + the theta-dependent hvdc droop flows)
     base_.adjust_mismatch(V_t, dx, mis);
