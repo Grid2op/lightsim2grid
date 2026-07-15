@@ -17,25 +17,24 @@ namespace ls2g {
 Base class for Fast Decoupled Powerflow based solver
 **/
 template<class LinearSolver, FDPFMethod XB_BX>
-class BaseFDPFAlgo: public BaseAlgo
+class BaseFDPFAlgo final: public BaseAlgo
 {
     public:
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
-        virtual ~BaseFDPFAlgo() noexcept = default;
+        ~BaseFDPFAlgo() noexcept override = default;
 
-        virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
-                        const CplxVect & Sbus,
+                        Eigen::Ref<const CplxVect> Sbus,
                         Eigen::Ref<const IntVect> slack_ids,
-                        const RealVect & slack_weights,
+                        Eigen::Ref<const RealVect> slack_weights,
                         Eigen::Ref<const IntVect> pv,
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
                         ) override;  // requires a gridmodel !
 
-        virtual void reset() override
+        void reset() override
         {   
             BaseAlgo::reset();
             // solution of the problem
@@ -58,16 +57,16 @@ class BaseFDPFAlgo: public BaseAlgo
         Eigen::SparseMatrix<real_type> debug_get_Bpp_python() { return Bpp_;}
 
     protected:
-        virtual void reset_timer() override {
+        void reset_timer() override {
             BaseAlgo::reset_timer();
         }
 
         CplxVect evaluate_mismatch(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                    const CplxVect & V,
-                                   const CplxVect & Sbus,
+                                   Eigen::Ref<const CplxVect> Sbus,
                                    size_t /*slack_id*/,  // id of the ref slack bus
                                    real_type slack_absorbed,
-                                   const RealVect & slack_weights)
+                                   Eigen::Ref<const RealVect> slack_weights)
         {
             // CplxVect tmp = Ybus * V;  // this is a vector
             // tmp = tmp.array().conjugate();  // i take the conjugate
@@ -77,7 +76,6 @@ class BaseFDPFAlgo: public BaseAlgo
         
         void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;  // defined in Solvers.cpp !
 
-        virtual
         void initialize() {
             auto timer = CustTimer();
             err_ = ErrorType::NoError; // reset error message
@@ -111,7 +109,6 @@ class BaseFDPFAlgo: public BaseAlgo
             timer_initialize_ += timer.duration();
         }
 
-        virtual
         void solve(LinearSolver& linear_solver,
                    RealVect & b){
             auto timer = CustTimer();
@@ -125,10 +122,10 @@ class BaseFDPFAlgo: public BaseAlgo
 
         bool has_converged(const Eigen::Ref<const CplxVect > & tmp_va,
                            const Eigen::SparseMatrix<cplx_type> & Ybus,
-                           const CplxVect & Sbus,
+                           Eigen::Ref<const CplxVect> Sbus,
                            size_t slack_bus_id,
                            real_type & slack_absorbed,
-                           const RealVect & slack_weights,
+                           Eigen::Ref<const RealVect> slack_weights,
                            const Eigen::Ref<const Eigen::VectorXi> & pvpq,
                            const Eigen::Ref<const Eigen::VectorXi> & pq,
                            real_type tol)

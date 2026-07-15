@@ -374,6 +374,16 @@ if(USE_O3_OPTIM)
 endif()
 
 if(NOT MSVC)
+    # Real (non-report-only) warnings, unlike the clang-tidy job: both are
+    # supported identically by GCC and Clang, cheap to check, and (as of this
+    # writing) clean on lightsim2grid_core -- so any future regression fails
+    # the build instead of waiting to be noticed in the advisory clang-tidy
+    # report. -Wsuggest-override catches a virtual override missing the
+    # `override`/`final` keyword; -Wnon-virtual-dtor catches a base class
+    # with virtual functions but a non-virtual (hence unsafe-to-delete-through-
+    # base-pointer) destructor.
+    target_compile_options(lightsim2grid_core PRIVATE -Wsuggest-override -Wnon-virtual-dtor)
+
     if(USE_O3_OPTIM)
         target_compile_options(lightsim2grid_core PRIVATE -O3)
     endif()

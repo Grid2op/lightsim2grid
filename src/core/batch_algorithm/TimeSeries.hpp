@@ -26,7 +26,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
             _status(1), // 1: success, 0: failure
             _compute_flows(true)
             {}
-        ~TimeSeries() noexcept = default;
+        ~TimeSeries() noexcept override = default;
 
         TimeSeries(const TimeSeries&) = delete;
         TimeSeries(TimeSeries&&) = delete;
@@ -54,11 +54,11 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
                        Eigen::Ref<const RealMat> sgen_p,
                        Eigen::Ref<const RealMat> load_p,
                        Eigen::Ref<const RealMat> load_q,
-                       const CplxVect & Vinit,
+                       const Eigen::Ref<const CplxVect> & Vinit,
                        const int max_iter,
                        const real_type tol);
                        
-        virtual void clear(){
+        void clear() override {
             BaseBatchSolverSynch::clear();
             _Sbuses = CplxMat();
             _status = 1;
@@ -81,7 +81,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
         template<class T>
         void fill_SBus_real(CplxMat & Sbuses,
                             const T & structure_data,
-                            const RealMat & temporal_data,
+                            const Eigen::Ref<const RealMat> & temporal_data,
                             const SolverBusIdVect & id_me_to_ac_solver,
                             bool add  // if true call += else calls -=
                             ) const 
@@ -118,7 +118,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
         template<class T>
         void fill_SBus_imag(CplxMat & Sbuses,
                             const T & structure_data,
-                            const RealMat & temporal_data,
+                            const Eigen::Ref<const RealMat> & temporal_data,
                             const SolverBusIdVect & id_me_to_ac_solver,
                             bool add  // if true call += else calls -=
                             ) const 

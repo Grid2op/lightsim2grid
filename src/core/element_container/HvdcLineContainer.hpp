@@ -110,7 +110,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // TwoSidesContainer's generic default (mirror both sides), HVDC lines default
         // to independent sides.
         HvdcLineContainer() noexcept { synch_status_both_side_ = false; }
-        virtual ~HvdcLineContainer() noexcept = default;
+        ~HvdcLineContainer() noexcept override = default;
 
         // pickle
         // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
@@ -160,35 +160,35 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
          * the direct API). Loss factors are fractions (0 - 1), the droop is
          * given in MW per degree (converted to MW per radian internally).
          */
-        void init(const Eigen::VectorXi & bus1_id,
-                  const Eigen::VectorXi & bus2_id,
+        void init(const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                   const std::vector<int> & type1,
                   const std::vector<int> & type2,
-                  const RealVect & loss_factor1,
-                  const RealVect & loss_factor2,
+                  const Eigen::Ref<const RealVect> & loss_factor1,
+                  const Eigen::Ref<const RealVect> & loss_factor2,
                   const std::vector<bool> & vreg1_on,
                   const std::vector<bool> & vreg2_on,
-                  const RealVect & vm1_pu,
-                  const RealVect & vm2_pu,
-                  const RealVect & q1_setpoint_mvar,
-                  const RealVect & q2_setpoint_mvar,
-                  const RealVect & min_q1,
-                  const RealVect & max_q1,
-                  const RealVect & min_q2,
-                  const RealVect & max_q2,
-                  const RealVect & power_factor1,
-                  const RealVect & power_factor2,
+                  const Eigen::Ref<const RealVect> & vm1_pu,
+                  const Eigen::Ref<const RealVect> & vm2_pu,
+                  const Eigen::Ref<const RealVect> & q1_setpoint_mvar,
+                  const Eigen::Ref<const RealVect> & q2_setpoint_mvar,
+                  const Eigen::Ref<const RealVect> & min_q1,
+                  const Eigen::Ref<const RealVect> & max_q1,
+                  const Eigen::Ref<const RealVect> & min_q2,
+                  const Eigen::Ref<const RealVect> & max_q2,
+                  const Eigen::Ref<const RealVect> & power_factor1,
+                  const Eigen::Ref<const RealVect> & power_factor2,
                   const std::vector<int> & converters_mode,
-                  const RealVect & p_setpoint_mw,
-                  const RealVect & r_ohm,
-                  const RealVect & nominal_v_kv,
-                  const RealVect & loss_percent,
-                  const RealVect & loss_mw,
+                  const Eigen::Ref<const RealVect> & p_setpoint_mw,
+                  const Eigen::Ref<const RealVect> & r_ohm,
+                  const Eigen::Ref<const RealVect> & nominal_v_kv,
+                  const Eigen::Ref<const RealVect> & loss_percent,
+                  const Eigen::Ref<const RealVect> & loss_mw,
                   const std::vector<bool> & droop_enabled,
-                  const RealVect & droop_p0_mw,
-                  const RealVect & droop_mw_per_deg,
-                  const RealVect & pmax_1to2_mw,
-                  const RealVect & pmax_2to1_mw
+                  const Eigen::Ref<const RealVect> & droop_p0_mw,
+                  const Eigen::Ref<const RealVect> & droop_mw_per_deg,
+                  const Eigen::Ref<const RealVect> & pmax_1to2_mw,
+                  const Eigen::Ref<const RealVect> & pmax_2to1_mw
                   );
 
         /**
@@ -197,26 +197,26 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
          * side-1 station active power in generator convention (the python
          * layer negates pandapower's `p_mw` before calling this).
          */
-        void init_legacy(const Eigen::VectorXi & branch_from_id,
-                         const Eigen::VectorXi & branch_to_id,
-                         const RealVect & p_mw,
-                         const RealVect & loss_percent,
-                         const RealVect & loss_mw,
-                         const RealVect & vm_or_pu,
-                         const RealVect & vm_ex_pu,
-                         const RealVect & min_q_or,
-                         const RealVect & max_q_or,
-                         const RealVect & min_q_ex,
-                         const RealVect & max_q_ex
+        void init_legacy(const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                         const Eigen::Ref<const Eigen::VectorXi> & branch_to_id,
+                         const Eigen::Ref<const RealVect> & p_mw,
+                         const Eigen::Ref<const RealVect> & loss_percent,
+                         const Eigen::Ref<const RealVect> & loss_mw,
+                         const Eigen::Ref<const RealVect> & vm_or_pu,
+                         const Eigen::Ref<const RealVect> & vm_ex_pu,
+                         const Eigen::Ref<const RealVect> & min_q_or,
+                         const Eigen::Ref<const RealVect> & max_q_or,
+                         const Eigen::Ref<const RealVect> & min_q_ex,
+                         const Eigen::Ref<const RealVect> & max_q_ex
                          );
 
         // accessor / modifiers
-        virtual void reconnect_connected_buses(SubstationContainer & substation) const override {
+        void reconnect_connected_buses(SubstationContainer & substation) const override {
             side_1_.reconnect_connected_buses(substation);
             side_2_.reconnect_connected_buses(substation);
         }
 
-        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & /*res*/) const override {
+        void get_graph(std::vector<Eigen::Triplet<real_type> > & /*res*/) const override {
             // for buses only connected through a hvdc line, i don't add them
             // they are not in the same "connected component"
         }
@@ -232,7 +232,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // NOT deactivate the whole line when a single side is outside the main
         // component: we keep the in-main converter injecting and open only the
         // out-of-main one. A line with BOTH sides outside is still fully dropped.
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override {
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override {
             const int nb_el = nb();
             DualAlgoControl unused_solver_control;
             const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
@@ -266,10 +266,10 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             }
         }
 
-        real_type get_qmin_or(int hvdc_id) {return side_1_.get_qmin(hvdc_id);}
-        real_type get_qmax_or(int hvdc_id) {return side_1_.get_qmax(hvdc_id);}
-        real_type get_qmin_ex(int hvdc_id) {return side_2_.get_qmin(hvdc_id);}
-        real_type get_qmax_ex(int hvdc_id) {return side_2_.get_qmax(hvdc_id);}
+        real_type get_qmin_or(int hvdc_id) const {return side_1_.get_qmin(hvdc_id);}
+        real_type get_qmax_or(int hvdc_id) const {return side_1_.get_qmax(hvdc_id);}
+        real_type get_qmin_ex(int hvdc_id) const {return side_2_.get_qmin(hvdc_id);}
+        real_type get_qmax_ex(int hvdc_id) const {return side_2_.get_qmax(hvdc_id);}
 
         /**
          * Change the active power of the line, legacy convention: `new_p` is
@@ -308,8 +308,8 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             _check_in_range(hvdc_id, status_droop_, "get_status_droop");
             return status_droop_(hvdc_id);
         }
-        std::vector<int> get_status_droop_vect() const {
-            return std::vector<int>(status_droop_.begin(), status_droop_.end());
+        Eigen::Ref<const IntVect> get_status_droop_vect() const {
+            return status_droop_;
         }
         const std::vector<bool> & get_droop_enabled() const {return droop_enabled_;}
         real_type get_droop_p0_mw(int hvdc_id) const {return p0_mw_(hvdc_id);}
@@ -345,9 +345,9 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         void droop_flows_mw(int hvdc_id, real_type raw_mw, real_type & p1_flow_mw, real_type & p2_flow_mw) const;
 
         // solver stuff
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
-        virtual void fillpv(std::vector<int>& bus_pv,
+        void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
                             const SolverBusIdVect & id_grid_to_solver) const override {
@@ -355,7 +355,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             side_2_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);
         }
 
-        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
+        void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
                                 std::vector<Eigen::Triplet<real_type> > & /*Bpp*/,
                                 const SolverBusIdVect & /*id_grid_to_solver*/,
                                 real_type /*sn_mva*/,
@@ -375,7 +375,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                              const Eigen::Ref<const RealVect> & Vm,
                              const Eigen::Ref<const CplxVect> & V,
                              const SolverBusIdVect & id_grid_to_solver,
-                             const RealVect & bus_vn_kv,
+                             const Eigen::Ref<const RealVect> & bus_vn_kv,
                              real_type sn_mva,
                              bool ac);
 

@@ -17,7 +17,7 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
                            Eigen::Ref<const RealMat> sgen_p,
                            Eigen::Ref<const RealMat> load_p,
                            Eigen::Ref<const RealMat> load_q,
-                           const CplxVect & Vinit,
+                           const Eigen::Ref<const CplxVect> & Vinit,
                            const int max_iter,
                            const real_type tol)
 {

@@ -70,23 +70,23 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         
         GeneratorContainer() noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(true){};
         explicit GeneratorContainer(bool turnedoff_gen_pv) noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(turnedoff_gen_pv) {};
-        virtual ~GeneratorContainer() noexcept = default;
+        ~GeneratorContainer() noexcept override = default;
         
         // TODO add pmin and pmax here !
-        void init(const RealVect & generators_p,
-                  const RealVect & generators_v,
-                  const RealVect & generators_min_q,
-                  const RealVect & generators_max_q,
-                  const Eigen::VectorXi & generators_bus_id
+        void init(const Eigen::Ref<const RealVect> & generators_p,
+                  const Eigen::Ref<const RealVect> & generators_v,
+                  const Eigen::Ref<const RealVect> & generators_min_q,
+                  const Eigen::Ref<const RealVect> & generators_max_q,
+                  const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id
                   );
-              
-        void init_full(const RealVect & generators_p,
-                       const RealVect & generators_v,
-                       const RealVect & generators_q,
+
+        void init_full(const Eigen::Ref<const RealVect> & generators_p,
+                       const Eigen::Ref<const RealVect> & generators_v,
+                       const Eigen::Ref<const RealVect> & generators_q,
                        const std::vector<bool> & voltage_regulator_on,
-                       const RealVect & generators_min_q,
-                       const RealVect & generators_max_q,
-                       const Eigen::VectorXi & generators_bus_id
+                       const Eigen::Ref<const RealVect> & generators_min_q,
+                       const Eigen::Ref<const RealVect> & generators_max_q,
+                       const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id
                        );
                    
         // pickle
@@ -151,12 +151,12 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             return res_gen_id;
         }
 
-        virtual void _compute_results(
+        void _compute_results(
             const Eigen::Ref<const RealVect> & /*Va*/,
             const Eigen::Ref<const RealVect> & /*Vm*/,
             const Eigen::Ref<const CplxVect> & /*V*/,
             const SolverBusIdVect & /*id_grid_to_solver*/,
-            const RealVect & /*bus_vn_kv*/,
+            const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
             real_type /*sn_mva*/,
             bool ac) override {
               set_osc_pq_res_p();
@@ -184,7 +184,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         RealVect get_slack_weights_solver(size_t nb_bus_solver, const SolverBusIdVect & id_grid_to_solver);
     
         GlobalBusIdVect get_slack_bus_id() const;
-        virtual void set_p_slack(const RealVect& node_mismatch, const SolverBusIdVect & id_grid_to_solver);
+        void set_p_slack(const RealVect& node_mismatch, const SolverBusIdVect & id_grid_to_solver) override;
     
         // modification
         void turnedoff_no_pv(DualAlgoControl & solver_control){
@@ -198,14 +198,11 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             turnedoff_gen_pv_=true;  // turned off generators are pv. This is the default.
             }  
         bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
-        void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+        void update_slack_weights(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & could_be_slack,
                                   DualAlgoControl & solver_control);
         void update_slack_weights_by_id(Eigen::Ref<const IntVect> gen_slack_id, DualAlgoControl & solver_control);
         
         
-        real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
-        real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
-
         // ---- remote voltage control --------------------------------------------
         // grid bus id whose voltage this generator regulates (== its own bus for
         // ordinary local control). A remote-regulating gen does NOT join the PV
@@ -257,11 +254,11 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         void change_v(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control);
         void change_v_nothrow(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control);
         
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const;
-        virtual void fillpv(std::vector<int>& bus_pv,
+        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
-                            const SolverBusIdVect & id_grid_to_solver) const;
+                            const SolverBusIdVect & id_grid_to_solver) const override;
         void init_q_vector(int nb_bus,
                            Eigen::VectorXi & total_gen_per_bus,
                            RealVect & total_q_min_per_bus,
