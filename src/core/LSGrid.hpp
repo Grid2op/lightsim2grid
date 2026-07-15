@@ -150,8 +150,8 @@ class LS2G_API LSGrid final
 
         void set_ls_to_orig(const IntVect & ls_to_orig);  // set both _ls_to_orig and _orig_to_ls
         void set_orig_to_ls(const IntVect & orig_to_ls);  // set both _orig_to_ls and _ls_to_orig
-        const IntVect & get_ls_to_orig(void) const {return _ls_to_orig;}
-        const IntVect & get_orig_to_ls(void) const {return _orig_to_ls;}
+        [[nodiscard]] const IntVect & get_ls_to_orig(void) const {return _ls_to_orig;}
+        [[nodiscard]] const IntVect & get_orig_to_ls(void) const {return _orig_to_ls;}
         double timer_last_ac_pf() const {return timer_last_ac_pf_;}
         double timer_last_dc_pf() const {return timer_last_dc_pf_;}
 
@@ -183,7 +183,7 @@ class LS2G_API LSGrid final
         }
 
         // retrieve the underlying data (raw class)
-        const GeneratorContainer & get_generators_as_data() const {return generators_;}
+        [[nodiscard]] const GeneratorContainer & get_generators_as_data() const {return generators_;}
         // turned off generators are not pv
         void turnedoff_no_pv(){
             algo_controler_.ac_algo_controler().has_pv_changed(); 
@@ -196,8 +196,8 @@ class LS2G_API LSGrid final
             algo_controler_.dc_algo_controler().has_pv_changed();
             generators_.turnedoff_pv(algo_controler_);
         }
-        bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
-        void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack){
+        [[nodiscard]] bool get_turnedoff_gen_pv() const {return generators_.get_turnedoff_gen_pv();}
+        void update_slack_weights(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & could_be_slack){
             generators_.update_slack_weights(could_be_slack, algo_controler_);
         }
         void update_slack_weights_by_id(Eigen::Ref<const IntVect> slack_ids){
@@ -216,21 +216,21 @@ class LS2G_API LSGrid final
             algo_controler_.ac_algo_controler().tell_slack_participate_changed();
             algo_controler_.dc_algo_controler().tell_slack_participate_changed();
         }
-        int get_reference_slack_bus() const {return _forced_ref_slack_bus_id;}
+        [[nodiscard]] int get_reference_slack_bus() const {return _forced_ref_slack_bus_id;}
 
-        const SGenContainer & get_static_generators_as_data() const {return sgens_;}
-        const LoadContainer & get_loads_as_data() const {return loads_;}
-        const LineContainer & get_powerlines_as_data() const {return powerlines_;}
-        const TrafoContainer & get_trafos_as_data() const {return trafos_;}
-        const HvdcLineContainer & get_dclines_as_data() const {return hvdc_lines_;}
-        Eigen::Ref<const RealVect> get_bus_vn_kv() const {return substations_.get_bus_vn_kv();}
+        [[nodiscard]] const SGenContainer & get_static_generators_as_data() const {return sgens_;}
+        [[nodiscard]] const LoadContainer & get_loads_as_data() const {return loads_;}
+        [[nodiscard]] const LineContainer & get_powerlines_as_data() const {return powerlines_;}
+        [[nodiscard]] const TrafoContainer & get_trafos_as_data() const {return trafos_;}
+        [[nodiscard]] const HvdcLineContainer & get_dclines_as_data() const {return hvdc_lines_;}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_bus_vn_kv() const {return substations_.get_bus_vn_kv();}
 
         // per-bus min/max operating voltage (kV), optional: empty if never set
         void set_bus_voltage_limits(const RealVect & bus_vmin_kv, const RealVect & bus_vmax_kv){
             substations_.init_bus_voltage_limits(bus_vmin_kv, bus_vmax_kv);
         }
-        Eigen::Ref<const RealVect> get_bus_vmin_kv() const {return substations_.get_bus_vmin_kv();}
-        Eigen::Ref<const RealVect> get_bus_vmax_kv() const {return substations_.get_bus_vmax_kv();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_bus_vmin_kv() const {return substations_.get_bus_vmin_kv();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_bus_vmax_kv() const {return substations_.get_bus_vmax_kv();}
 
         std::tuple<int, int> assign_slack_to_most_connected();
         void consider_only_main_component();
@@ -242,7 +242,7 @@ class LS2G_API LSGrid final
             powerlines_.set_ignore_status_global(ignore_status_global);
             trafos_.set_ignore_status_global(ignore_status_global);
         }
-        bool get_ignore_status_global() const{
+        [[nodiscard]] bool get_ignore_status_global() const{
             return powerlines_.get_ignore_status_global();
         }
         /**
@@ -253,7 +253,7 @@ class LS2G_API LSGrid final
             powerlines_.set_synch_status_both_side(synch_status_both_side);
             trafos_.set_synch_status_both_side(synch_status_both_side);
         }
-        bool get_synch_status_both_side() const{
+        [[nodiscard]] bool get_synch_status_both_side() const{
             return powerlines_.get_synch_status_both_side();
         }
 
@@ -290,133 +290,133 @@ class LS2G_API LSGrid final
         std::vector<std::string> available_algorithm_names() const {
             return AlgorithmRegistry::instance().available_algorithm_names();
         }
-        AlgorithmType get_algo_type() const {return _algo.get_type(); }
-        AlgorithmType get_dc_algo_type() const {return _dc_algo.get_type(); }
-        const AlgorithmSelector & get_algo() const {return _algo;}
-        const AlgorithmSelector & get_dc_algo() const {return _dc_algo;}
+        [[nodiscard]] AlgorithmType get_algo_type() const {return _algo.get_type(); }
+        [[nodiscard]] AlgorithmType get_dc_algo_type() const {return _dc_algo.get_type(); }
+        [[nodiscard]] const AlgorithmSelector & get_algo() const {return _algo;}
+        [[nodiscard]] const AlgorithmSelector & get_dc_algo() const {return _dc_algo;}
 
         // do i compute the results (in terms of P,Q,V or loads, generators and flows on lines
         void deactivate_result_computation(){compute_results_=false;}
         void reactivate_result_computation(){compute_results_=true;}
 
         // All methods to init this data model, all need to be pair unit when applicable
-        void init_bus(unsigned int n_sub, unsigned int n_busbar_per_sub, const RealVect & bus_vn_kv, int nb_line, int nb_trafo);
+        void init_bus(unsigned int n_sub, unsigned int n_busbar_per_sub, const Eigen::Ref<const RealVect> & bus_vn_kv, int nb_line, int nb_trafo);
         void set_init_vm_pu(real_type init_vm_pu) {init_vm_pu_ = init_vm_pu; }
-        real_type get_init_vm_pu() {return init_vm_pu_;}
+        [[nodiscard]] real_type get_init_vm_pu() const {return init_vm_pu_;}
         void set_sn_mva(real_type sn_mva) {sn_mva_ = sn_mva; }
-        real_type get_sn_mva() {return sn_mva_;}
+        [[nodiscard]] real_type get_sn_mva() const {return sn_mva_;}
 
-        void init_powerlines(const RealVect & branch_r,
-                             const RealVect & branch_x,
-                             const CplxVect & branch_h,
-                             const Eigen::VectorXi & branch_from_id,
-                             const Eigen::VectorXi & branch_to_id
+        void init_powerlines(const Eigen::Ref<const RealVect> & branch_r,
+                             const Eigen::Ref<const RealVect> & branch_x,
+                             const Eigen::Ref<const CplxVect> & branch_h,
+                             const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                             const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                              ){
             powerlines_.init(branch_r, branch_x, branch_h, branch_from_id, branch_to_id);
         }
-        void init_powerlines_full(const RealVect & branch_r,
-                                  const RealVect & branch_x,
-                                  const CplxVect & branch_h1,
-                                  const CplxVect & branch_h2,
-                                  const Eigen::VectorXi & branch_from_id,
-                                  const Eigen::VectorXi & branch_to_id
+        void init_powerlines_full(const Eigen::Ref<const RealVect> & branch_r,
+                                  const Eigen::Ref<const RealVect> & branch_x,
+                                  const Eigen::Ref<const CplxVect> & branch_h1,
+                                  const Eigen::Ref<const CplxVect> & branch_h2,
+                                  const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                                  const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                              ){
             powerlines_.init(branch_r, branch_x, branch_h1,
                              branch_h2, branch_from_id, 
                              branch_to_id);
         }
 
-        void init_shunt(const RealVect & shunt_p_mw,
-                        const RealVect & shunt_q_mvar,
-                        const Eigen::VectorXi & shunt_bus_id){
+        void init_shunt(const Eigen::Ref<const RealVect> & shunt_p_mw,
+                        const Eigen::Ref<const RealVect> & shunt_q_mvar,
+                        const Eigen::Ref<const Eigen::VectorXi> & shunt_bus_id){
             shunts_.init(shunt_p_mw, shunt_q_mvar, shunt_bus_id);
         }
-        void init_trafo_pandapower(const RealVect & trafo_r,
-                                   const RealVect & trafo_x,
-                                   const CplxVect & trafo_b,
-                                   const RealVect & trafo_tap_step_pct,
-                                   const RealVect & trafo_tap_pos,
-                                   const RealVect & trafo_shift_degree,
+        void init_trafo_pandapower(const Eigen::Ref<const RealVect> & trafo_r,
+                                   const Eigen::Ref<const RealVect> & trafo_x,
+                                   const Eigen::Ref<const CplxVect> & trafo_b,
+                                   const Eigen::Ref<const RealVect> & trafo_tap_step_pct,
+                                   const Eigen::Ref<const RealVect> & trafo_tap_pos,
+                                   const Eigen::Ref<const RealVect> & trafo_shift_degree,
                                    const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                                   const Eigen::VectorXi & bus1_id,
-                                   const Eigen::VectorXi & bus2_id,
+                                   const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
+                                   const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                                    bool ignore_tap_side_for_shift
                                    ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_shift_degree,
                          trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
         }
-        void init_trafo(const RealVect & trafo_r,
-                        const RealVect & trafo_x,
-                        const CplxVect & trafo_b,
-                        const RealVect & trafo_ratio,
-                        const RealVect & trafo_shift_degree,
+        void init_trafo(const Eigen::Ref<const RealVect> & trafo_r,
+                        const Eigen::Ref<const RealVect> & trafo_x,
+                        const Eigen::Ref<const CplxVect> & trafo_b,
+                        const Eigen::Ref<const RealVect> & trafo_ratio,
+                        const Eigen::Ref<const RealVect> & trafo_shift_degree,
                         const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                        const Eigen::VectorXi & bus1_id,
-                        const Eigen::VectorXi & bus2_id,
+                        const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
+                        const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                         bool ignore_tap_side_for_shift
                            ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_ratio, trafo_shift_degree,
                          trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
         }
 
-        void init_generators(const RealVect & generators_p,
-                             const RealVect & generators_v,
-                             const RealVect & generators_min_q,
-                             const RealVect & generators_max_q,
-                             const Eigen::VectorXi & generators_bus_id){
+        void init_generators(const Eigen::Ref<const RealVect> & generators_p,
+                             const Eigen::Ref<const RealVect> & generators_v,
+                             const Eigen::Ref<const RealVect> & generators_min_q,
+                             const Eigen::Ref<const RealVect> & generators_max_q,
+                             const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id){
             generators_.init(generators_p, generators_v, generators_min_q, generators_max_q, generators_bus_id);
         }
-        void init_generators_full(const RealVect & generators_p,
-                                  const RealVect & generators_v,
-                                  const RealVect & generators_q,
+        void init_generators_full(const Eigen::Ref<const RealVect> & generators_p,
+                                  const Eigen::Ref<const RealVect> & generators_v,
+                                  const Eigen::Ref<const RealVect> & generators_q,
                                   const std::vector<bool> & voltage_regulator_on,
-                                  const RealVect & generators_min_q,
-                                  const RealVect & generators_max_q,
-                                  const Eigen::VectorXi & generators_bus_id){
+                                  const Eigen::Ref<const RealVect> & generators_min_q,
+                                  const Eigen::Ref<const RealVect> & generators_max_q,
+                                  const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id){
             generators_.init_full(generators_p, generators_v, generators_q, voltage_regulator_on,
                                   generators_min_q, generators_max_q, generators_bus_id);
         }
-        void init_loads(const RealVect & loads_p,
-                        const RealVect & loads_q,
-                        const Eigen::VectorXi & loads_bus_id){
+        void init_loads(const Eigen::Ref<const RealVect> & loads_p,
+                        const Eigen::Ref<const RealVect> & loads_q,
+                        const Eigen::Ref<const Eigen::VectorXi> & loads_bus_id){
             loads_.init(loads_p, loads_q, loads_bus_id);
         }
-        void init_sgens(const RealVect & sgen_p,
-                        const RealVect & sgen_q,
-                        const RealVect & sgen_pmin,
-                        const RealVect & sgen_pmax,
-                        const RealVect & sgen_qmin,
-                        const RealVect & sgen_qmax,
-                        const Eigen::VectorXi & sgen_bus_id){
+        void init_sgens(const Eigen::Ref<const RealVect> & sgen_p,
+                        const Eigen::Ref<const RealVect> & sgen_q,
+                        const Eigen::Ref<const RealVect> & sgen_pmin,
+                        const Eigen::Ref<const RealVect> & sgen_pmax,
+                        const Eigen::Ref<const RealVect> & sgen_qmin,
+                        const Eigen::Ref<const RealVect> & sgen_qmax,
+                        const Eigen::Ref<const Eigen::VectorXi> & sgen_bus_id){
             sgens_.init(sgen_p, sgen_q, sgen_pmin, sgen_pmax, sgen_qmin, sgen_qmax, sgen_bus_id);
         }
         void init_svcs(const std::vector<int> & regulation_mode,
-                       const RealVect & target_vm_pu,
-                       const RealVect & q_setpoint_mvar,
-                       const RealVect & slope_pu,
-                       const RealVect & b_min,
-                       const RealVect & b_max,
-                       const Eigen::VectorXi & regulated_bus_id,
-                       const Eigen::VectorXi & svc_bus_id){
+                       const Eigen::Ref<const RealVect> & target_vm_pu,
+                       const Eigen::Ref<const RealVect> & q_setpoint_mvar,
+                       const Eigen::Ref<const RealVect> & slope_pu,
+                       const Eigen::Ref<const RealVect> & b_min,
+                       const Eigen::Ref<const RealVect> & b_max,
+                       const Eigen::Ref<const Eigen::VectorXi> & regulated_bus_id,
+                       const Eigen::Ref<const Eigen::VectorXi> & svc_bus_id){
             svcs_.init(regulation_mode, target_vm_pu, q_setpoint_mvar, slope_pu,
                        b_min, b_max, regulated_bus_id, svc_bus_id);
         }
-        void init_storages(const RealVect & storages_p,
-                           const RealVect & storages_q,
-                           const Eigen::VectorXi & storages_bus_id){
+        void init_storages(const Eigen::Ref<const RealVect> & storages_p,
+                           const Eigen::Ref<const RealVect> & storages_q,
+                           const Eigen::Ref<const Eigen::VectorXi> & storages_bus_id){
             storages_.init(storages_p, storages_q, storages_bus_id);
         }
-        void init_dclines(const Eigen::VectorXi & branch_from_id,
-                          const Eigen::VectorXi & branch_to_id,
-                          const RealVect & p_mw,
-                          const RealVect & loss_percent,
-                          const RealVect & loss_mw,
-                          const RealVect & vm1_pu,
-                          const RealVect & vm2_pu,
-                          const RealVect & min_q1,
-                          const RealVect & max_q1,
-                          const RealVect & min_q2,
-                          const RealVect & max_q2){
+        void init_dclines(const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                          const Eigen::Ref<const Eigen::VectorXi> & branch_to_id,
+                          const Eigen::Ref<const RealVect> & p_mw,
+                          const Eigen::Ref<const RealVect> & loss_percent,
+                          const Eigen::Ref<const RealVect> & loss_mw,
+                          const Eigen::Ref<const RealVect> & vm1_pu,
+                          const Eigen::Ref<const RealVect> & vm2_pu,
+                          const Eigen::Ref<const RealVect> & min_q1,
+                          const Eigen::Ref<const RealVect> & max_q1,
+                          const Eigen::Ref<const RealVect> & min_q2,
+                          const Eigen::Ref<const RealVect> & max_q2){
             hvdc_lines_.init_legacy(branch_from_id, branch_to_id, p_mw,
                                     loss_percent, loss_mw, vm1_pu, vm2_pu,
                                     min_q1, max_q1, min_q2, max_q2);
@@ -425,33 +425,33 @@ class LS2G_API LSGrid final
          * Full IIDM-style hvdc initialization (two converter stations - VSC or
          * LCC - per line, optional angle-droop). See HvdcLineContainer::init.
          */
-        void init_hvdc_lines(const Eigen::VectorXi & bus1_id,
-                             const Eigen::VectorXi & bus2_id,
+        void init_hvdc_lines(const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
+                             const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                              const std::vector<int> & type1,
                              const std::vector<int> & type2,
-                             const RealVect & loss_factor1,
-                             const RealVect & loss_factor2,
+                             const Eigen::Ref<const RealVect> & loss_factor1,
+                             const Eigen::Ref<const RealVect> & loss_factor2,
                              const std::vector<bool> & vreg1_on,
                              const std::vector<bool> & vreg2_on,
-                             const RealVect & vm1_pu,
-                             const RealVect & vm2_pu,
-                             const RealVect & q1_setpoint_mvar,
-                             const RealVect & q2_setpoint_mvar,
-                             const RealVect & min_q1,
-                             const RealVect & max_q1,
-                             const RealVect & min_q2,
-                             const RealVect & max_q2,
-                             const RealVect & power_factor1,
-                             const RealVect & power_factor2,
+                             const Eigen::Ref<const RealVect> & vm1_pu,
+                             const Eigen::Ref<const RealVect> & vm2_pu,
+                             const Eigen::Ref<const RealVect> & q1_setpoint_mvar,
+                             const Eigen::Ref<const RealVect> & q2_setpoint_mvar,
+                             const Eigen::Ref<const RealVect> & min_q1,
+                             const Eigen::Ref<const RealVect> & max_q1,
+                             const Eigen::Ref<const RealVect> & min_q2,
+                             const Eigen::Ref<const RealVect> & max_q2,
+                             const Eigen::Ref<const RealVect> & power_factor1,
+                             const Eigen::Ref<const RealVect> & power_factor2,
                              const std::vector<int> & converters_mode,
-                             const RealVect & p_setpoint_mw,
-                             const RealVect & r_ohm,
-                             const RealVect & nominal_v_kv,
+                             const Eigen::Ref<const RealVect> & p_setpoint_mw,
+                             const Eigen::Ref<const RealVect> & r_ohm,
+                             const Eigen::Ref<const RealVect> & nominal_v_kv,
                              const std::vector<bool> & droop_enabled,
-                             const RealVect & droop_p0_mw,
-                             const RealVect & droop_mw_per_deg,
-                             const RealVect & pmax_1to2_mw,
-                             const RealVect & pmax_2to1_mw){
+                             const Eigen::Ref<const RealVect> & droop_p0_mw,
+                             const Eigen::Ref<const RealVect> & droop_mw_per_deg,
+                             const Eigen::Ref<const RealVect> & pmax_1to2_mw,
+                             const Eigen::Ref<const RealVect> & pmax_2to1_mw){
             const RealVect no_legacy_loss = RealVect::Zero(bus1_id.size());
             hvdc_lines_.init(bus1_id, bus2_id, type1, type2,
                              loss_factor1, loss_factor2, vreg1_on, vreg2_on,
@@ -498,7 +498,7 @@ class LS2G_API LSGrid final
         void set_substation_names(const std::vector<std::string> & sub_names){
             substations_.init_sub_names(sub_names);
         }
-        const std::vector<std::string> & get_substation_names()const {
+        [[nodiscard]] const std::vector<std::string> & get_substation_names()const {
             return substations_.get_sub_names();
         }
 
@@ -524,9 +524,9 @@ class LS2G_API LSGrid final
 
         // algo config (scaling/refactor policy params) — also part of StateRes,
         // see LSGrid::get_state()/set_state()
-        AlgoConfig get_ac_algo_config() const { return _algo.get_config(); }
+        [[nodiscard]] AlgoConfig get_ac_algo_config() const { return _algo.get_config(); }
         void set_ac_algo_config(const AlgoConfig& cfg) { _algo.set_config(cfg); }
-        AlgoConfig get_dc_algo_config() const { return _dc_algo.get_config(); }
+        [[nodiscard]] AlgoConfig get_dc_algo_config() const { return _dc_algo.get_config(); }
         void set_dc_algo_config(const AlgoConfig& cfg) { _dc_algo.set_config(cfg); }
         template<class T>
         void check_size(const T& my_state)
@@ -565,11 +565,11 @@ class LS2G_API LSGrid final
             algo_controler_.dc_algo_controler().tell_solver_need_reset();
         }
         void tell_ybus_change_sparsity_pattern(){algo_controler_.ac_algo_controler().tell_ybus_change_sparsity_pattern(); algo_controler_.dc_algo_controler().tell_ybus_change_sparsity_pattern();}
-        const AlgoControl & get_ac_algo_controler() const {return algo_controler_.ac_algo_controler();}
-        const AlgoControl & get_dc_algo_controler() const {return algo_controler_.dc_algo_controler();}
+        [[nodiscard]] const AlgoControl & get_ac_algo_controler() const {return algo_controler_.ac_algo_controler();}
+        [[nodiscard]] const AlgoControl & get_dc_algo_controler() const {return algo_controler_.dc_algo_controler();}
 
         // dc powerflow
-        CplxVect dc_pf(const CplxVect & Vinit,
+        CplxVect dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
                        int max_iter,  // not used for DC
                        real_type tol  // not used for DC
                        );
@@ -610,12 +610,12 @@ class LS2G_API LSGrid final
         Eigen::SparseMatrix<real_type> get_Bf();
 
         // ac powerflow
-        CplxVect ac_pf(const CplxVect & Vinit,
+        CplxVect ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
                        int max_iter,
                        real_type tol);
 
         // check the kirchoff law
-        CplxVect check_solution(const CplxVect & V, bool check_q_limits);
+        CplxVect check_solution(const Eigen::Ref<const CplxVect> & V, bool check_q_limits);
 
         // deactivate a bus. Be careful, if a bus is deactivated, but an element is
         // still connected to it, it will throw an exception
@@ -668,23 +668,23 @@ class LS2G_API LSGrid final
         size_t nb_trafo() const {return trafos_.nb();}
 
         // read only data accessor
-        const SubstationContainer & get_substations() const {return substations_;}
-        const LineContainer & get_lines() const {return powerlines_;}
-        const HvdcLineContainer & get_dclines() const {return hvdc_lines_;}
-        const TrafoContainer & get_trafos() const {return trafos_;}
-        const GeneratorContainer & get_generators() const {return generators_;}
-        const LoadContainer & get_loads() const {return loads_;}
-        const StorageContainer & get_storages() const {return storages_;}
-        const SGenContainer & get_static_generators() const {return sgens_;}
-        const SvcContainer & get_svcs() const {return svcs_;}
-        const ShuntContainer & get_shunts() const {return shunts_;}
-        const std::vector<bool> & get_bus_status() const {return substations_.get_bus_status();}
+        [[nodiscard]] const SubstationContainer & get_substations() const {return substations_;}
+        [[nodiscard]] const LineContainer & get_lines() const {return powerlines_;}
+        [[nodiscard]] const HvdcLineContainer & get_dclines() const {return hvdc_lines_;}
+        [[nodiscard]] const TrafoContainer & get_trafos() const {return trafos_;}
+        [[nodiscard]] const GeneratorContainer & get_generators() const {return generators_;}
+        [[nodiscard]] const LoadContainer & get_loads() const {return loads_;}
+        [[nodiscard]] const StorageContainer & get_storages() const {return storages_;}
+        [[nodiscard]] const SGenContainer & get_static_generators() const {return sgens_;}
+        [[nodiscard]] const SvcContainer & get_svcs() const {return svcs_;}
+        [[nodiscard]] const ShuntContainer & get_shunts() const {return shunts_;}
+        [[nodiscard]] const std::vector<bool> & get_bus_status() const {return substations_.get_bus_status();}
         
         void set_line_names(const std::vector<std::string> & names){
             GenericContainer::check_size(names, powerlines_.nb(), "set_line_names");
             powerlines_.set_names(names);
         }
-        const std::vector<std::string> & get_line_names() const {return powerlines_.get_names();}
+        [[nodiscard]] const std::vector<std::string> & get_line_names() const {return powerlines_.get_names();}
         void set_dcline_names(const std::vector<std::string> & names){
             GenericContainer::check_size(names, hvdc_lines_.nb(), "set_dcline_names");
             hvdc_lines_.set_names(names);
@@ -693,7 +693,7 @@ class LS2G_API LSGrid final
             GenericContainer::check_size(names, trafos_.nb(), "set_trafo_names");
             trafos_.set_names(names);
         }
-        const std::vector<std::string> & get_trafo_names() const {return trafos_.get_names();}
+        [[nodiscard]] const std::vector<std::string> & get_trafo_names() const {return trafos_.get_names();}
         // per-side current limit, in kA, optional: empty if never set
         void set_line_current_limit_side1(const RealVect & limit_a1_ka){
             GenericContainer::check_size(limit_a1_ka, powerlines_.nb(), "set_line_current_limit_side1");
@@ -869,7 +869,7 @@ class LS2G_API LSGrid final
         }
         void change_p_load(int load_id, real_type new_p) {loads_.change_p_nothrow(load_id, new_p, algo_controler_); }
         void change_q_load(int load_id, real_type new_q) {loads_.change_q_nothrow(load_id, new_q, algo_controler_); }
-        int get_bus_load(int load_id) {return loads_.get_bus(load_id).cast_int();}
+        [[nodiscard]] int get_bus_load(int load_id) const {return loads_.get_bus(load_id).cast_int();}
 
         //generator
         void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, algo_controler_); }
@@ -889,7 +889,7 @@ class LS2G_API LSGrid final
         void change_p_gen(int gen_id, real_type new_p) {generators_.change_p_nothrow(gen_id, new_p, algo_controler_); }
         void change_q_gen(int gen_id, real_type new_q) {generators_.change_q_nothrow(gen_id, new_q, algo_controler_); }
         void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, algo_controler_); }
-        int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id).cast_int();}
+        [[nodiscard]] int get_bus_gen(int gen_id) const {return generators_.get_bus(gen_id).cast_int();}
 
         //static var compensator (SVC)
         void deactivate_svc(int svc_id) {svcs_.deactivate(svc_id, algo_controler_); }
@@ -900,7 +900,7 @@ class LS2G_API LSGrid final
         void change_bus_svc_python(int svc_id, int new_gridmodel_bus_id) {
             change_bus_svc(svc_id, GridModelBusId(new_gridmodel_bus_id));
         }
-        int get_bus_svc(int svc_id) {return svcs_.get_bus(svc_id).cast_int();}
+        [[nodiscard]] int get_bus_svc(int svc_id) const {return svcs_.get_bus(svc_id).cast_int();}
         void set_svc_names(const std::vector<std::string> & names){
             GenericContainer::check_size(names, svcs_.nb(), "set_svc_names");
             svcs_.set_names(names);
@@ -922,7 +922,7 @@ class LS2G_API LSGrid final
         }
         void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p_nothrow(shunt_id, new_p, algo_controler_); }
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q_nothrow(shunt_id, new_q, algo_controler_); }
-        int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id).cast_int();}
+        [[nodiscard]] int get_bus_shunt(int shunt_id) const {return shunts_.get_bus(shunt_id).cast_int();}
 
         //static gen
         void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, algo_controler_); }
@@ -940,7 +940,7 @@ class LS2G_API LSGrid final
         }
         void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p_nothrow(sgen_id, new_p, algo_controler_); }
         void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q_nothrow(sgen_id, new_q, algo_controler_); }
-        int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id).cast_int();}
+        [[nodiscard]] int get_bus_sgen(int sgen_id) const {return sgens_.get_bus(sgen_id).cast_int();}
 
         //storage units
         void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, algo_controler_); }
@@ -960,7 +960,7 @@ class LS2G_API LSGrid final
                storages_.change_p_nothrow(storage_id, new_p, algo_controler_);
             }
         void change_q_storage(int storage_id, real_type new_q) {storages_.change_q_nothrow(storage_id, new_q, algo_controler_); }
-        int get_bus_storage(int storage_id) {return storages_.get_bus(storage_id).cast_int();}
+        [[nodiscard]] int get_bus_storage(int storage_id) const {return storages_.get_bus(storage_id).cast_int();}
 
         //deactivate a powerline (disconnect it)
         void deactivate_dcline(int dcline_id) {hvdc_lines_.deactivate(dcline_id, algo_controler_); }
@@ -989,8 +989,8 @@ class LS2G_API LSGrid final
          * pmax_2to1) is meant to be run between two solves, in Python.
          */
         void set_status_droop_hvdc(int dcline_id, int status) {hvdc_lines_.set_status_droop(dcline_id, status, algo_controler_); }
-        int get_status_droop_hvdc(int dcline_id) const {return hvdc_lines_.get_status_droop(dcline_id);}
-        std::vector<int> get_status_droop_hvdc_vect() const {return hvdc_lines_.get_status_droop_vect();}
+        [[nodiscard]] int get_status_droop_hvdc(int dcline_id) const {return hvdc_lines_.get_status_droop(dcline_id);}
+        [[nodiscard]] Eigen::Ref<const IntVect> get_status_droop_hvdc_vect() const {return hvdc_lines_.get_status_droop_vect();}
         /**
          * Per-solve data of the connected angle-droop (AC emulation) hvdc
          * lines, in solver bus labelling and per-unit. Consumed by the Hvdc
@@ -1071,69 +1071,69 @@ class LS2G_API LSGrid final
         void change_bus2_dcline_python(int dcline_id, int new_gridmodel_bus_id) {
             change_bus2_dcline(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
         }
-        int get_bus1_dcline(int dcline_id) const {return hvdc_lines_.get_bus_side_1(dcline_id).cast_int();}
-        int get_bus2_dcline(int dcline_id) const {return hvdc_lines_.get_bus_side_2(dcline_id).cast_int();}
+        [[nodiscard]] int get_bus1_dcline(int dcline_id) const {return hvdc_lines_.get_bus_side_1(dcline_id).cast_int();}
+        [[nodiscard]] int get_bus2_dcline(int dcline_id) const {return hvdc_lines_.get_bus_side_2(dcline_id).cast_int();}
 
         // All results access
-        tuple3d get_loads_res() const {return loads_.get_res();}
-        const std::vector<bool>& get_loads_status() const { return loads_.get_status();}
-        tuple3d get_shunts_res() const {return shunts_.get_res();}
-        const std::vector<bool>& get_shunts_status() const { return shunts_.get_status();}
-        tuple3d get_gen_res() const {return generators_.get_res();}
-        const std::vector<bool>& get_gen_status() const { return generators_.get_status();}
-        tuple4d get_line_res1() const {return powerlines_.get_res_side_1();}
-        tuple4d get_line_res2() const {return powerlines_.get_res_side_2();}
-        const std::vector<bool>& get_lines_status() const { return powerlines_.get_status_global();}
+        [[nodiscard]] tuple3d get_loads_res() const {return loads_.get_res();}
+        [[nodiscard]] const std::vector<bool>& get_loads_status() const { return loads_.get_status();}
+        [[nodiscard]] tuple3d get_shunts_res() const {return shunts_.get_res();}
+        [[nodiscard]] const std::vector<bool>& get_shunts_status() const { return shunts_.get_status();}
+        [[nodiscard]] tuple3d get_gen_res() const {return generators_.get_res();}
+        [[nodiscard]] const std::vector<bool>& get_gen_status() const { return generators_.get_status();}
+        [[nodiscard]] tuple4d get_line_res1() const {return powerlines_.get_res_side_1();}
+        [[nodiscard]] tuple4d get_line_res2() const {return powerlines_.get_res_side_2();}
+        [[nodiscard]] const std::vector<bool>& get_lines_status() const { return powerlines_.get_status_global();}
         // per-side status (relevant for half-open lines, see `set_synch_status_both_side` /
         // `keep_half_open_lines`): `get_lines_status()` is the *global* status (both sides
         // disconnected), these report each side independently.
-        const std::vector<bool>& get_lines_status_side1() const { return powerlines_.get_status_side_1();}
-        const std::vector<bool>& get_lines_status_side2() const { return powerlines_.get_status_side_2();}
-        tuple4d get_trafo_res1() const {return trafos_.get_res_side_1();}
-        tuple4d get_trafo_res2() const {return trafos_.get_res_side_2();}
-        const std::vector<bool>& get_trafo_status() const { return trafos_.get_status_global();}
-        const std::vector<bool>& get_trafo_status_side1() const { return trafos_.get_status_side_1();}
-        const std::vector<bool>& get_trafo_status_side2() const { return trafos_.get_status_side_2();}
-        tuple3d get_storages_res() const {return storages_.get_res();}
-        const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
-        tuple3d get_sgens_res() const {return sgens_.get_res();}
-        const std::vector<bool>& get_sgens_status() const { return sgens_.get_status();}
-        tuple3d get_dcline_res1() const {return hvdc_lines_.get_res_side_1();}
-        tuple3d get_dcline_res2() const {return hvdc_lines_.get_res_side_2();}
-        const std::vector<bool>& get_dclines_status() const { return hvdc_lines_.get_status_global();}
+        [[nodiscard]] const std::vector<bool>& get_lines_status_side1() const { return powerlines_.get_status_side_1();}
+        [[nodiscard]] const std::vector<bool>& get_lines_status_side2() const { return powerlines_.get_status_side_2();}
+        [[nodiscard]] tuple4d get_trafo_res1() const {return trafos_.get_res_side_1();}
+        [[nodiscard]] tuple4d get_trafo_res2() const {return trafos_.get_res_side_2();}
+        [[nodiscard]] const std::vector<bool>& get_trafo_status() const { return trafos_.get_status_global();}
+        [[nodiscard]] const std::vector<bool>& get_trafo_status_side1() const { return trafos_.get_status_side_1();}
+        [[nodiscard]] const std::vector<bool>& get_trafo_status_side2() const { return trafos_.get_status_side_2();}
+        [[nodiscard]] tuple3d get_storages_res() const {return storages_.get_res();}
+        [[nodiscard]] const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
+        [[nodiscard]] tuple3d get_sgens_res() const {return sgens_.get_res();}
+        [[nodiscard]] const std::vector<bool>& get_sgens_status() const { return sgens_.get_status();}
+        [[nodiscard]] tuple3d get_dcline_res1() const {return hvdc_lines_.get_res_side_1();}
+        [[nodiscard]] tuple3d get_dcline_res2() const {return hvdc_lines_.get_res_side_2();}
+        [[nodiscard]] const std::vector<bool>& get_dclines_status() const { return hvdc_lines_.get_status_global();}
 
-        Eigen::Ref<const RealVect> get_gen_theta() const  {return generators_.get_theta();}
-        Eigen::Ref<const RealVect> get_load_theta() const  {return loads_.get_theta();}
-        Eigen::Ref<const RealVect> get_shunt_theta() const  {return shunts_.get_theta();}
-        Eigen::Ref<const RealVect> get_storage_theta() const  {return storages_.get_theta();}
-        Eigen::Ref<const RealVect> get_line_theta1() const {return powerlines_.get_theta_side_1();}
-        Eigen::Ref<const RealVect> get_line_theta2() const {return powerlines_.get_theta_side_2();}
-        Eigen::Ref<const RealVect> get_trafo_theta1() const {return trafos_.get_theta_side_1();}
-        Eigen::Ref<const RealVect> get_trafo_theta2() const {return trafos_.get_theta_side_2();}
-        Eigen::Ref<const RealVect> get_dcline_theta1() const {return hvdc_lines_.get_theta_side_1();}
-        Eigen::Ref<const RealVect> get_dcline_theta2() const {return hvdc_lines_.get_theta_side_2();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_gen_theta() const  {return generators_.get_theta();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_load_theta() const  {return loads_.get_theta();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_shunt_theta() const  {return shunts_.get_theta();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_storage_theta() const  {return storages_.get_theta();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_line_theta1() const {return powerlines_.get_theta_side_1();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_line_theta2() const {return powerlines_.get_theta_side_2();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_trafo_theta1() const {return trafos_.get_theta_side_1();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_trafo_theta2() const {return trafos_.get_theta_side_2();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_dcline_theta1() const {return hvdc_lines_.get_theta_side_1();}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_dcline_theta2() const {return hvdc_lines_.get_theta_side_2();}
 
-        const GlobalBusIdVect & get_all_shunt_buses() const {return shunts_.get_buses();}
-        Eigen::Ref<const IntVect> get_all_shunt_buses_numpy() const {return shunts_.get_bus_id_numpy();}
+        [[nodiscard]] const GlobalBusIdVect & get_all_shunt_buses() const {return shunts_.get_buses();}
+        [[nodiscard]] Eigen::Ref<const IntVect> get_all_shunt_buses_numpy() const {return shunts_.get_bus_id_numpy();}
 
-        Eigen::Ref<const RealVect>  get_shunt_target_p() const {return shunts_.get_target_p();}
-        Eigen::Ref<const RealVect>  get_load_target_p() const {return loads_.get_target_p();}
-        Eigen::Ref<const RealVect>  get_gen_target_p() const {return generators_.get_target_p();}
-        Eigen::Ref<const RealVect>  get_sgen_target_p() const {return sgens_.get_target_p();}
-        Eigen::Ref<const RealVect>  get_storage_target_p() const {return storages_.get_target_p();}
+        [[nodiscard]] Eigen::Ref<const RealVect>  get_shunt_target_p() const {return shunts_.get_target_p();}
+        [[nodiscard]] Eigen::Ref<const RealVect>  get_load_target_p() const {return loads_.get_target_p();}
+        [[nodiscard]] Eigen::Ref<const RealVect>  get_gen_target_p() const {return generators_.get_target_p();}
+        [[nodiscard]] Eigen::Ref<const RealVect>  get_sgen_target_p() const {return sgens_.get_target_p();}
+        [[nodiscard]] Eigen::Ref<const RealVect>  get_storage_target_p() const {return storages_.get_target_p();}
 
         // complete results (with theta)
-        tuple4d get_loads_res_full() const {return loads_.get_res_full();}
-        tuple4d get_shunts_res_full() const {return shunts_.get_res_full();}
-        tuple4d get_gen_res_full() const {return generators_.get_res_full();}
-        tuple5d get_line_res1_full() const {return powerlines_.get_res_full_side_1();}
-        tuple5d get_line_res2_full() const {return powerlines_.get_res_full_side_2();}
-        tuple5d get_trafo_res1_full() const {return trafos_.get_res_full_side_1();}
-        tuple5d get_trafo_res2_full() const {return trafos_.get_res_full_side_2();}
-        tuple4d get_storages_res_full() const {return storages_.get_res_full();}
-        tuple4d get_sgens_res_full() const {return sgens_.get_res_full();}
-        tuple4d get_dcline_res1_full() const {return hvdc_lines_.get_res_full_side_1();}
-        tuple4d get_dcline_res2_full() const {return hvdc_lines_.get_res_full_side_2();}
+        [[nodiscard]] tuple4d get_loads_res_full() const {return loads_.get_res_full();}
+        [[nodiscard]] tuple4d get_shunts_res_full() const {return shunts_.get_res_full();}
+        [[nodiscard]] tuple4d get_gen_res_full() const {return generators_.get_res_full();}
+        [[nodiscard]] tuple5d get_line_res1_full() const {return powerlines_.get_res_full_side_1();}
+        [[nodiscard]] tuple5d get_line_res2_full() const {return powerlines_.get_res_full_side_2();}
+        [[nodiscard]] tuple5d get_trafo_res1_full() const {return trafos_.get_res_full_side_1();}
+        [[nodiscard]] tuple5d get_trafo_res2_full() const {return trafos_.get_res_full_side_2();}
+        [[nodiscard]] tuple4d get_storages_res_full() const {return storages_.get_res_full();}
+        [[nodiscard]] tuple4d get_sgens_res_full() const {return sgens_.get_res_full();}
+        [[nodiscard]] tuple4d get_dcline_res1_full() const {return hvdc_lines_.get_res_full_side_1();}
+        [[nodiscard]] tuple4d get_dcline_res2_full() const {return hvdc_lines_.get_res_full_side_2();}
 
         /**
          * @brief Get the Ybus solver object (AC)
@@ -1185,7 +1185,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        Eigen::Ref<const CplxVect> get_Sbus_solver() const{
+        [[nodiscard]] Eigen::Ref<const CplxVect> get_Sbus_solver() const{
             return acSbus_;
         }
 
@@ -1203,7 +1203,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        Eigen::Ref<const RealVect> get_dcSbus_solver() const{
+        [[nodiscard]] Eigen::Ref<const RealVect> get_dcSbus_solver() const{
             return dcPbus_;  // DC power injection is real (active power P)
         }
 
@@ -1223,7 +1223,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        const Eigen::SparseMatrix<cplx_type> get_Ybus() const {
+        [[nodiscard]] const Eigen::SparseMatrix<cplx_type> get_Ybus() const {
             return _relabel_matrix(Ybus_ac_, id_ac_solver_to_me_);
         }
 
@@ -1243,7 +1243,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        const Eigen::SparseMatrix<real_type> get_dcYbus() const {
+        [[nodiscard]] const Eigen::SparseMatrix<real_type> get_dcYbus() const {
             return _relabel_matrix(Bbus_dc_, id_dc_solver_to_me_);
         }
 
@@ -1261,7 +1261,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        const CplxVect get_Sbus() const {
+        [[nodiscard]] const CplxVect get_Sbus() const {
             return _relabel_vector(acSbus_, id_ac_solver_to_me_);
         }
 
@@ -1279,7 +1279,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        const RealVect get_dcSbus() const {
+        [[nodiscard]] const RealVect get_dcSbus() const {
             return _relabel_vector(dcPbus_, id_dc_solver_to_me_);
         }
 
@@ -1290,7 +1290,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const Eigen::VectorXi> 
          */
-        const SolverBusIdVect & get_pv_solver() const{
+        [[nodiscard]] const SolverBusIdVect & get_pv_solver() const{
             return bus_pv_;
         }
         /**
@@ -1300,7 +1300,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const Eigen::VectorXi> 
          */
-        Eigen::Ref<const IntVect> get_pv_solver_numpy() const{
+        [[nodiscard]] Eigen::Ref<const IntVect> get_pv_solver_numpy() const{
             return bus_pv_.as_eigen();  // was _to_intvect()
         }
 
@@ -1311,12 +1311,12 @@ class LS2G_API LSGrid final
          * 
          * @return const Eigen::VectorXi
          */
-        const GlobalBusIdVect get_pv() const{
+        [[nodiscard]] const GlobalBusIdVect get_pv() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pv_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pv_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_pv: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
-        const IntVect get_pv_numpy() const{
+        [[nodiscard]] const IntVect get_pv_numpy() const{
             return get_pv().as_eigen();  // was _to_intvect()
         }
 
@@ -1327,7 +1327,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const Eigen::VectorXi> 
          */
-        const SolverBusIdVect & get_pq_solver() const{
+        [[nodiscard]] const SolverBusIdVect & get_pq_solver() const{
             return bus_pq_;
         }
         /**
@@ -1337,7 +1337,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const Eigen::VectorXi> 
          */
-        const Eigen::Ref<const IntVect> get_pq_solver_numpy() const{
+        [[nodiscard]] const Eigen::Ref<const IntVect> get_pq_solver_numpy() const{
             return bus_pq_.as_eigen();  // was _to_intvect()
         }
 
@@ -1348,12 +1348,12 @@ class LS2G_API LSGrid final
          * 
          * @return const Eigen::VectorXi
          */
-        const GlobalBusIdVect get_pq() const{
+        [[nodiscard]] const GlobalBusIdVect get_pq() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pq_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pq_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_pq: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
-        const IntVect get_pq_numpy() const{
+        [[nodiscard]] const IntVect get_pq_numpy() const{
             return get_pq().as_eigen();  // was _to_intvect()
         }
 
@@ -1362,7 +1362,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const Eigen::VectorXi> 
          */
-        const SolverBusIdVect & get_slack_ids_solver() const{
+        [[nodiscard]] const SolverBusIdVect & get_slack_ids_solver() const{
             return slack_bus_id_ac_solver_;
         }
         /**
@@ -1372,7 +1372,7 @@ class LS2G_API LSGrid final
          * 
          * @return const Eigen::VectorXi
          */
-        Eigen::Ref<const IntVect> get_slack_ids_solver_numpy() const{
+        [[nodiscard]] Eigen::Ref<const IntVect> get_slack_ids_solver_numpy() const{
             return slack_bus_id_ac_solver_.as_eigen();  // was _to_intvect()
         }
 
@@ -1381,10 +1381,10 @@ class LS2G_API LSGrid final
          * 
          * @return const Eigen::VectorXi 
          */
-        const GlobalBusIdVect get_slack_ids() const {
+        [[nodiscard]] const GlobalBusIdVect get_slack_ids() const {
             return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(slack_bus_id_ac_solver_, id_ac_solver_to_me_);
         }
-        const IntVect get_slack_ids_numpy() const {
+        [[nodiscard]] const IntVect get_slack_ids_numpy() const {
             return get_slack_ids().as_eigen();  // was _to_intvect()
         }
 
@@ -1393,7 +1393,7 @@ class LS2G_API LSGrid final
          * 
          * @return const SolverBusIdVect &
          */
-        const SolverBusIdVect & get_slack_ids_dc_solver() const{
+        [[nodiscard]] const SolverBusIdVect & get_slack_ids_dc_solver() const{
             return slack_bus_id_dc_solver_;
         }
         /**
@@ -1401,11 +1401,11 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const IntVect> 
          */
-        Eigen::Ref<const IntVect> get_slack_ids_dc_solver_numpy() const{
+        [[nodiscard]] Eigen::Ref<const IntVect> get_slack_ids_dc_solver_numpy() const{
             return slack_bus_id_dc_solver_.as_eigen();  // was _to_intvect()
         }
 
-        const GlobalBusIdVect get_slack_ids_dc() const{
+        [[nodiscard]] const GlobalBusIdVect get_slack_ids_dc() const{
             return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(
                 slack_bus_id_dc_solver_, 
                 id_dc_solver_to_me_);
@@ -1415,7 +1415,7 @@ class LS2G_API LSGrid final
          * 
          * @return const Eigen::VectorXi 
          */
-        const IntVect get_slack_ids_dc_numpy() const{
+        [[nodiscard]] const IntVect get_slack_ids_dc_numpy() const{
             return get_slack_ids_dc().as_eigen();  // was _to_intvect()
         }
 
@@ -1426,7 +1426,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const RealVect> 
          */
-        Eigen::Ref<const RealVect> get_slack_weights_solver() const{
+        [[nodiscard]] Eigen::Ref<const RealVect> get_slack_weights_solver() const{
             return slack_weights_;
         }
 
@@ -1437,7 +1437,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const RealVect> 
          */
-        const RealVect get_slack_weights() const{
+        [[nodiscard]] const RealVect get_slack_weights() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_slack_weights_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_slack_weights_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_slack_weights: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
@@ -1448,7 +1448,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect> 
          */
-        Eigen::Ref<const CplxVect> get_V_solver() const{
+        [[nodiscard]] Eigen::Ref<const CplxVect> get_V_solver() const{
             return _algo.get_V();
         }
 
@@ -1457,7 +1457,7 @@ class LS2G_API LSGrid final
          * 
          * @return CplxVect
          */
-        const CplxVect get_V() const{
+        [[nodiscard]] const CplxVect get_V() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_V_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_V_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_V: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
@@ -1468,7 +1468,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const RealVect> 
          */
-        Eigen::Ref<const RealVect> get_Va_solver() const{
+        [[nodiscard]] Eigen::Ref<const RealVect> get_Va_solver() const{
             return _algo.get_Va();
         }
 
@@ -1477,7 +1477,7 @@ class LS2G_API LSGrid final
          * 
          * @return const RealVect
          */
-        const RealVect get_Va() const{
+        [[nodiscard]] const RealVect get_Va() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_Va_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_Va_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_Va: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
@@ -1488,7 +1488,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const RealVect> 
          */
-        Eigen::Ref<const RealVect> get_Vm_solver() const{
+        [[nodiscard]] Eigen::Ref<const RealVect> get_Vm_solver() const{
             return _algo.get_Vm();
         }
 
@@ -1497,13 +1497,13 @@ class LS2G_API LSGrid final
          * 
          * @return const RealVect
          */
-        const RealVect get_Vm() const{
+        [[nodiscard]] const RealVect get_Vm() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_Vm_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_Vm_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_Vm: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
-        Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J_solver() const{
+        [[nodiscard]] Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J_solver() const{
             return _algo.get_J();
         }
 
@@ -1512,7 +1512,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::SparseMatrix<real_type> 
          */
-        Eigen::SparseMatrix<real_type> get_J_python_solver() const{
+        [[nodiscard]] Eigen::SparseMatrix<real_type> get_J_python_solver() const{
             return _algo.get_J_python();  // This is copied to python
         }
 
@@ -1522,11 +1522,11 @@ class LS2G_API LSGrid final
         // gpusim2grid) rebuild the dS scatter / residual layout without
         // re-deriving it from Ybus. Only valid for Newton-Raphson algorithms
         // after a solve; throw otherwise (via the active algo).
-        IntVect get_theta_to_J_col_solver() const { return _algo.get_theta_to_J_col_python(); }
-        IntVect get_vm_to_J_col_solver()    const { return _algo.get_vm_to_J_col_python(); }
-        IntVect get_q_to_J_col_solver()     const { return _algo.get_q_to_J_col_python(); }
-        IntVect get_p_to_J_row_solver()     const { return _algo.get_p_to_J_row_python(); }
-        IntVect get_q_to_J_row_solver()     const { return _algo.get_q_to_J_row_python(); }
+        [[nodiscard]] IntVect get_theta_to_J_col_solver() const { return _algo.get_theta_to_J_col_python(); }
+        [[nodiscard]] IntVect get_vm_to_J_col_solver()    const { return _algo.get_vm_to_J_col_python(); }
+        [[nodiscard]] IntVect get_q_to_J_col_solver()     const { return _algo.get_q_to_J_col_python(); }
+        [[nodiscard]] IntVect get_p_to_J_row_solver()     const { return _algo.get_p_to_J_row_python(); }
+        [[nodiscard]] IntVect get_q_to_J_row_solver()     const { return _algo.get_q_to_J_row_python(); }
 
         // Compact (bus, row/col) registration pair lists -- the row/col
         // counterpart of the *_to_J_col / *_to_J_row maps above, but preserving
@@ -1536,53 +1536,53 @@ class LS2G_API LSGrid final
         // rules"). NRSystem::_residual() itself iterates these, not the
         // bus-keyed maps; external batched solvers must do the same to
         // reproduce every contribution.
-        IntVect get_p_buses_solver()     const { return _algo.get_p_buses_python(); }
-        IntVect get_p_rows_solver()      const { return _algo.get_p_rows_python(); }
-        IntVect get_q_buses_solver()     const { return _algo.get_q_buses_python(); }
-        IntVect get_q_rows_solver()      const { return _algo.get_q_rows_python(); }
-        IntVect get_theta_buses_solver() const { return _algo.get_theta_buses_python(); }
-        IntVect get_theta_cols_solver()  const { return _algo.get_theta_cols_python(); }
-        IntVect get_vm_buses_solver()    const { return _algo.get_vm_buses_python(); }
-        IntVect get_vm_cols_solver()     const { return _algo.get_vm_cols_python(); }
+        [[nodiscard]] IntVect get_p_buses_solver()     const { return _algo.get_p_buses_python(); }
+        [[nodiscard]] IntVect get_p_rows_solver()      const { return _algo.get_p_rows_python(); }
+        [[nodiscard]] IntVect get_q_buses_solver()     const { return _algo.get_q_buses_python(); }
+        [[nodiscard]] IntVect get_q_rows_solver()      const { return _algo.get_q_rows_python(); }
+        [[nodiscard]] IntVect get_theta_buses_solver() const { return _algo.get_theta_buses_python(); }
+        [[nodiscard]] IntVect get_theta_cols_solver()  const { return _algo.get_theta_cols_python(); }
+        [[nodiscard]] IntVect get_vm_buses_solver()    const { return _algo.get_vm_buses_python(); }
+        [[nodiscard]] IntVect get_vm_cols_solver()     const { return _algo.get_vm_cols_python(); }
         // MultiSlack slack_absorbed J column (-1 when distributed slack inactive).
-        int     get_slack_col_solver()      const { return _algo.get_slack_col(); }
+        [[nodiscard]] int     get_slack_col_solver()      const { return _algo.get_slack_col(); }
         // MultiSlack converged slack_absorbed VALUE (pu; 0 when inactive). This
         // is the ground-truth state after convergence -- NOT the 0 initial
         // guess an external solver's own linearized derivation starts from.
-        real_type get_slack_absorbed_solver() const { return _algo.get_slack_absorbed(); }
+        [[nodiscard]] real_type get_slack_absorbed_solver() const { return _algo.get_slack_absorbed(); }
         // VoltageControl (remote gen + SVC) converged reactive injection per
         // controller (pu), + its (kind: 0=GEN,1=SVC; element id) identity, in
         // controller registration order (empty when the extension is inactive).
         // Ground truth for external solvers deriving their own controller_q.
-        RealVect get_controller_q_solver()       const { return _algo.get_controller_q(); }
-        IntVect  get_controller_kind_solver()    const { return _algo.get_controller_kind(); }
-        IntVect  get_controller_elem_id_solver() const { return _algo.get_controller_elem_id(); }
+        [[nodiscard]] RealVect get_controller_q_solver()       const { return _algo.get_controller_q(); }
+        [[nodiscard]] IntVect  get_controller_kind_solver()    const { return _algo.get_controller_kind(); }
+        [[nodiscard]] IntVect  get_controller_elem_id_solver() const { return _algo.get_controller_elem_id(); }
 
-        real_type get_computation_time() const{ return _algo.get_computation_time();}
-        real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}
+        [[nodiscard]] real_type get_computation_time() const{ return _algo.get_computation_time();}
+        [[nodiscard]] real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage within grid2op !
-        void update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                           Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_sgens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                           Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_gens_v(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                           Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_loads_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                            Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_loads_q(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                            Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_gens_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                           const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
+        void update_sgens_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                           const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
+        void update_gens_v(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                           const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
+        void update_loads_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                            const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
+        void update_loads_q(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                            const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
         /**
          * Update the topology based on the topology vector id.
-         * 
+         *
          * The new_values are given in LocalBusId (-1, 1, 2 etc.) and not in
          * SolverBusId nor GridModelBusId
          */
         void update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                          Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_storages_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                               const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
 
         void set_load_pos_topo_vect(Eigen::Ref<const IntVect> load_pos_topo_vect)
         {
@@ -1667,7 +1667,7 @@ class LS2G_API LSGrid final
             }
             max_nb_bus_per_sub_ = max_nb_bus_per_sub;
         }
-        int get_max_nb_bus_per_sub() const { return max_nb_bus_per_sub_;}
+        [[nodiscard]] int get_max_nb_bus_per_sub() const { return max_nb_bus_per_sub_;}
 
         /**
          * Relevant kwargs the grid was built with (eg by `init_from_pypowsybl`), as a
@@ -1678,7 +1678,7 @@ class LS2G_API LSGrid final
          * pypowsybl-shaped result view) to recover conversion-time settings that are
          * otherwise plain Python arguments lost after `init()` returns.
          */
-        const std::map<std::string, std::string> & get_init_kwargs() const { return init_kwargs_;}
+        [[nodiscard]] const std::map<std::string, std::string> & get_init_kwargs() const { return init_kwargs_;}
         void set_init_kwargs(const std::map<std::string, std::string> & init_kwargs) { init_kwargs_ = init_kwargs;}
 
         void fillSbus_other(CplxVect & res, bool ac, const SolverBusIdVect& id_me_to_solver){
@@ -1702,7 +1702,7 @@ class LS2G_API LSGrid final
         // physically-correct gap between that voltage and the local target (the
         // regulator doing its job) can look like a large spurious power mismatch at a
         // strongly-meshed bus.
-        CplxVect pre_process_solver(const CplxVect & Vinit,
+        CplxVect pre_process_solver(const Eigen::Ref<const CplxVect> & Vinit,
                                     CplxVect & Sbus,
                                     Eigen::SparseMatrix<cplx_type> & Ybus,
                                     SolverBusIdVect & id_me_to_solver,
@@ -1716,7 +1716,7 @@ class LS2G_API LSGrid final
         // DC-specific pre processing: builds the real Bbus (admittance) matrix and the
         // real Pbus (active power) vector, reusing the shared bus-mapping helpers. Mirrors
         // pre_process_solver but keeps the whole DC path real (no complex Ybus / Sbus).
-        CplxVect pre_process_dc_solver(const CplxVect & Vinit,
+        CplxVect pre_process_dc_solver(const Eigen::Ref<const CplxVect> & Vinit,
                                        RealVect & Pbus,
                                        Eigen::SparseMatrix<real_type> & Bbus,
                                        SolverBusIdVect & id_me_to_solver,
@@ -1884,7 +1884,7 @@ class LS2G_API LSGrid final
         // family (cplx_type => AC, real_type => DC); the type-specific steps (matrix init / fill,
         // injection assembly) are tag-dispatched to the overloads just below.
         template<class MatScalar, class InjVect>
-        CplxVect _pre_process_solver_impl(const CplxVect & Vinit,
+        CplxVect _pre_process_solver_impl(const Eigen::Ref<const CplxVect> & Vinit,
                                           InjVect & inj,
                                           Eigen::SparseMatrix<MatScalar> & mat,
                                           SolverBusIdVect & id_me_to_solver,
@@ -1919,7 +1919,7 @@ class LS2G_API LSGrid final
         // results
         /**process the results from the solver to this instance
         **/
-        void process_results(bool conv, CplxVect & res, const CplxVect & Vinit, bool ac,
+        void process_results(bool conv, CplxVect & res, const Eigen::Ref<const CplxVect> & Vinit, bool ac,
                              SolverBusIdVect & id_me_to_solver);
 
         /**
@@ -1940,8 +1940,8 @@ class LS2G_API LSGrid final
         optimization for grid2op
         **/
         template<class T>
-        void update_continuous_values(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
-                                      Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+        void update_continuous_values(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                                      const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
                                       T fun)
         {
             // new_values is indexed by has_changed's length below; a shorter new_values
@@ -1961,7 +1961,7 @@ class LS2G_API LSGrid final
             }
         }
 
-        CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp,
+        CplxVect _get_results_back_to_orig_nodes(const Eigen::Ref<const CplxVect> & res_tmp,
                                                  SolverBusIdVect & id_me_to_solver,
                                                  int size);
 

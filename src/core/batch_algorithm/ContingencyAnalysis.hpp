@@ -48,7 +48,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             clear();
         }
 
-        ~ContingencyAnalysis() noexcept = default;
+        ~ContingencyAnalysis() noexcept override = default;
         ContingencyAnalysis(const ContingencyAnalysis&) = delete;
         ContingencyAnalysis(ContingencyAnalysis&&) = delete;
         ContingencyAnalysis & operator=(ContingencyAnalysis&&) = delete;
@@ -84,7 +84,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         }
 
         // utilities to remove defaults to simulate (TODO)
-        virtual void clear(){
+        void clear() override {
             BaseBatchSolverSynch::clear();
             _li_defaults.clear();
             _li_coeffs.clear();
@@ -158,7 +158,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         // make the computation. Throws if the pre-contingency ("n", no disconnection) powerflow
         // itself does not converge -- every contingency is solved starting from / relative to
         // that base case, so a diverging base case makes the whole analysis meaningless.
-        void compute(const CplxVect & Vinit, int max_iter, real_type tol);
+        void compute(const Eigen::Ref<const CplxVect> & Vinit, int max_iter, real_type tol);
         IntVect is_grid_connected_after_contingency();
 
         // Choose, over the currently-registered contingencies, the reference slack

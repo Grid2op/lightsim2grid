@@ -16,7 +16,10 @@ namespace ls2g {
 const int GenericContainer::_deactivated_bus_id = BaseConstants::_deactivated_bus_id;
 
 // TODO all functions bellow are generic ! Make a base class for that
-void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v) const {
+void GenericContainer::_get_amps(Eigen::Ref<RealVect> a,
+                                  const Eigen::Ref<const RealVect> & p,
+                                  const Eigen::Ref<const RealVect> & q,
+                                  const Eigen::Ref<const RealVect> & v) const {
     RealVect p2q2 = p.array() * p.array() + q.array() * q.array();
     p2q2 = p2q2.array().cwiseSqrt();
 
@@ -115,7 +118,7 @@ void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & /*Va*/,
                                      int nb_element,
                                      const GlobalBusIdVect & bus_me_id,
                                      const SolverBusIdVect & id_grid_to_solver,
-                                     const RealVect & bus_vn_kv,
+                                     const Eigen::Ref<const RealVect> & bus_vn_kv,
                                      RealVect & v) const
 {
     for(int el_id = 0; el_id < nb_element; ++el_id){
@@ -153,7 +156,7 @@ void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
                                      int nb_element,
                                      const GlobalBusIdVect & bus_me_id,
                                      const SolverBusIdVect & id_grid_to_solver,
-                                     const RealVect & /*bus_vn_kv*/,
+                                     const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
                                      RealVect & theta) const
 {
     for(int el_id = 0; el_id < nb_element; ++el_id){

@@ -59,7 +59,7 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
            > ;
 
         StorageContainer() noexcept = default;
-        virtual ~StorageContainer() noexcept = default;
+        ~StorageContainer() noexcept override = default;
 
         // pickle (python)
         StorageContainer::StateRes get_state() const;
@@ -70,9 +70,9 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
         static StorageContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "StorageContainer"; }  // written into / checked against the binary file header
 
-        void init(const RealVect & storage_p_mw,
-                  const RealVect & storage_q_mvar,
-                  const Eigen::VectorXi & storage_bus_id
+        void init(const Eigen::Ref<const RealVect> & storage_p_mw,
+                  const Eigen::Ref<const RealVect> & storage_q_mvar,
+                  const Eigen::Ref<const Eigen::VectorXi> & storage_bus_id
                   )
         {
             init_osc_pq(storage_p_mw,
@@ -82,14 +82,14 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
             reset_results();
         }
 
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const;
+        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
     protected:
-        virtual void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+        void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
                                     const Eigen::Ref<const RealVect> & /*Vm*/,
                                     const Eigen::Ref<const CplxVect> & /*V*/,
                                     const SolverBusIdVect & /*id_grid_to_solver*/,
-                                    const RealVect & /*bus_vn_kv*/,
+                                    const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
                                     real_type /*sn_mva*/,
                                     bool ac) override
                                     {
