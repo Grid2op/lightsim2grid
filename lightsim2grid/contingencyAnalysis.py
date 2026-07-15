@@ -55,6 +55,7 @@ class ContingencyResult:
         solver ran but did not converge).
     """
     element_ids: List[int]  #: branch ids (lines then trafos) disconnected by this contingency
+    element_names: List[str]  #: names (`env.name_line`) of the elements disconnected by this contingency
     contingency_name: Optional[str]  #: user-supplied name, see `add_single_contingency`
     converged: bool
     limit_violations: List[LimitViolation]
@@ -487,6 +488,7 @@ class __ContingencyAnalysis(object):
                 ...
             for cont in res.post_contingency_results:  # a list, ordered like `add_single_contingency` calls
                 cont.element_ids       # branch ids disconnected by this contingency (always present)
+                cont.element_names     # names (env.name_line) of these same elements (always present)
                 cont.contingency_name  # optional, user-supplied via add_single_contingency(..., name=...)
                 cont.converged
                 cont.limit_violations
@@ -525,6 +527,7 @@ class __ContingencyAnalysis(object):
         post_contingency_results = [
             ContingencyResult(
                 element_ids=list(all_defaults[id_cpp]),
+                element_names=[str(self._ls_backend.name_line[el_id]) for el_id in all_defaults[id_cpp]],
                 contingency_name=self._contingency_names.get(self._all_contingencies[id_me]),
                 converged=bool(converged[id_cpp]),
                 limit_violations=list(violations[id_cpp]),

@@ -219,6 +219,7 @@ class TestBasicViolations(unittest.TestCase):
         assert (ViolationElementType.BUS, LimitViolationType.LOW_VOLTAGE) in types_seen
         assert (ViolationElementType.LINE, LimitViolationType.CURRENT) in types_seen
         assert (ViolationElementType.TRAFO, LimitViolationType.CURRENT) in types_seen
+        sub_names = self.env.backend._grid.get_substation_names()
         for v in viol_n:
             assert np.isfinite(v.value)
             assert np.isfinite(v.limit)
@@ -226,6 +227,10 @@ class TestBasicViolations(unittest.TestCase):
                 assert v.value < v.limit
             else:
                 assert v.value > v.limit
+            if v.element_type == ViolationElementType.BUS:
+                # `name` is the *substation* the violating bus belongs to (no per-bus name
+                # exists in LSGrid), not the bus id itself
+                assert v.name == sub_names[v.element_id]
 
         violations = SA.get_violations()
         assert sum(len(v) for v in violations) > 0
@@ -392,6 +397,7 @@ class TestPythonWrapperRun(unittest.TestCase):
         for cont, exp_ids, exp_name in zip(res.post_contingency_results, expected_ids, expected_names):
             assert isinstance(cont, ContingencyResult)
             assert cont.element_ids == exp_ids
+            assert cont.element_names == [str(self.env.name_line[el_id]) for el_id in exp_ids]
             assert cont.contingency_name == exp_name
             assert cont.converged is True
             assert len(cont.limit_violations) > 0
