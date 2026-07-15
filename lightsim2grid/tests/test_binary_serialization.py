@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import struct
+import sys
 import tempfile
 import os
 import unittest
@@ -16,6 +17,10 @@ import numpy as np
 
 import grid2op
 from lightsim2grid.lightSimBackend import LightSimBackend
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _exotic_elements_fixture import build_exotic_elements_grid  # noqa: E402
+
 from lightsim2grid.network.compare_lsgrid import (
     compare_network_input,
     _compare_loads,
@@ -142,11 +147,17 @@ class TestBinarySerialization(unittest.TestCase):
             self.aux_test_2sides(grid, grid_1, True)
             self.aux_test_1side(grid, grid_1, True)
 
-    def _aux_test_binary(self, fun_name, fun_comp):
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
-        els = getattr(self.env.backend._grid, fun_name)()
+    def _aux_test_binary(self, fun_name, fun_comp, grid=None):
+        """`grid` defaults to a full l2rpn_idf_2023 grid2op env's LSGrid; pass one
+        explicitly (eg `build_exotic_elements_grid()`) to test an element type
+        l2rpn_idf_2023 does not carry any of (SVC, HVDC -- see
+        `_exotic_elements_fixture.py`)."""
+        if grid is None:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore")
+                self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
+            grid = self.env.backend._grid
+        els = getattr(grid, fun_name)()
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, f"test_binary_{fun_name}.lsb")
             els.save_binary(path)
@@ -155,7 +166,7 @@ class TestBinarySerialization(unittest.TestCase):
         class Struct:
             pass
         setattr(Struct, fun_name, lambda self: els_reloaded)
-        diff_ = fun_comp(Struct(), self.env.backend._grid)
+        diff_ = fun_comp(Struct(), grid)
         assert len(diff_) == 0
 
     def test_binary_loads(self):
@@ -183,10 +194,13 @@ class TestBinarySerialization(unittest.TestCase):
         self._aux_test_binary("get_static_generators", _compare_static_generators)
 
     def test_binary_hvdc(self):
-        self._aux_test_binary("get_dclines", _compare_dclines)
+        # l2rpn_idf_2023 carries no HVDC line at all -- use the exotic-elements
+        # fixture instead, which has 3 (VSC droop, VSC no-droop, LCC).
+        self._aux_test_binary("get_dclines", _compare_dclines, grid=build_exotic_elements_grid())
 
     def test_binary_svcs(self):
-        self._aux_test_binary("get_svcs", _compare_svcs)
+        # l2rpn_idf_2023 carries no SVC at all -- use the exotic-elements fixture.
+        self._aux_test_binary("get_svcs", _compare_svcs, grid=build_exotic_elements_grid())
 
     def test_binary_algo_config(self):
         with warnings.catch_warnings():
