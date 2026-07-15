@@ -904,6 +904,25 @@ def init(net : pypo.network.Network,
 
         rep = np.array([_uf_find(i) for i in range(parent.shape[0])])
         bus_df["bus_global_id"] = rep[bus_df["bus_global_id"].values]
+        # a fused-away ("loser") bus keeps its own row in the lightsim2grid model
+        # (fixed-size bus containers) but loses every element to its representative,
+        # so it ends up disconnected with no solved voltage of its own. Stash the
+        # representative lookup so a downstream result view (eg
+        # `LightsimResultNetwork`) can report that bus's voltage as its
+        # representative's -- the two are electrically the same node -- instead of
+        # the disconnected bus's stale/zero value. See `LSGrid._bus_fusion_rep`.
+        model._bus_fusion_rep = rep.astype(int)
+        if fused_line_ids or fused_trafo_ids:
+            # ids of the fused-away branches themselves, so a downstream result view
+            # (eg `LightsimResultNetwork`) can tell "deactivated because fused" apart
+            # from "deactivated because genuinely out of service" and, where the
+            # physics allow it, reconstruct the flow through it (see
+            # `LightsimResultNetwork._reconstruct_fused_branches`). "\x1f" (ASCII unit
+            # separator) is used as delimiter: pypowsybl element ids never contain it.
+            kwargs = dict(model._init_kwargs)
+            kwargs["fused_line_ids"] = "\x1f".join(sorted(str(i) for i in fused_line_ids))
+            kwargs["fused_trafo_ids"] = "\x1f".join(sorted(str(i) for i in fused_trafo_ids))
+            model._init_kwargs = kwargs
 
     # do the generators
     gen_attrs = [
