@@ -11,11 +11,11 @@
 template<class LinearSolver, FDPFMethod XB_BX>
 bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                    CplxVect & V,
-                                                   Eigen::Ref<const CplxVect> Sbus,
-                                                   Eigen::Ref<const IntVect> slack_ids,
-                                                   Eigen::Ref<const RealVect> slack_weights,
-                                                   Eigen::Ref<const IntVect> pv,
-                                                   Eigen::Ref<const IntVect> pq,
+                                                   const Eigen::Ref<const CplxVect> & Sbus,
+                                                   const Eigen::Ref<const IntVect> & slack_ids,
+                                                   const Eigen::Ref<const RealVect> & slack_weights,
+                                                   const Eigen::Ref<const IntVect> & pv,
+                                                   const Eigen::Ref<const IntVect> & pq,
                                                    int max_iter,
                                                    real_type tol
                                                    )
@@ -154,8 +154,8 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
 }
 
 template<class LinearSolver, FDPFMethod XB_BX>
-void BaseFDPFAlgo<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp,
-                                                             const Eigen::SparseMatrix<real_type> & grid_Bpp,
+void BaseFDPFAlgo<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & grid_Bp,
+                                                             const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & grid_Bpp,
                                                              const std::vector<int> & pvpq_inv,
                                                              const std::vector<int> & pq_inv,
                                                              size_t n_pvpq,
@@ -171,7 +171,7 @@ void BaseFDPFAlgo<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::Sparse
 }
 
 template<class LinearSolver, FDPFMethod XB_BX>
-void BaseFDPFAlgo<LinearSolver, XB_BX>::aux_fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp_Bpp,
+void BaseFDPFAlgo<LinearSolver, XB_BX>::aux_fill_sparse_matrices(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & grid_Bp_Bpp,
                                                                  const std::vector<int> & ind_inv,
                                                                  size_t mat_dim,
                                                                  Eigen::SparseMatrix<real_type> & res)
@@ -182,7 +182,7 @@ void BaseFDPFAlgo<LinearSolver, XB_BX>::aux_fill_sparse_matrices(const Eigen::Sp
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(grid_Bp_Bpp.nonZeros());
     for (int k = 0; k < grid_Bp_Bpp.outerSize(); ++k){
-        for (Eigen::SparseMatrix<real_type>::InnerIterator it(grid_Bp_Bpp, k); it; ++it){
+        for (Eigen::Ref<const Eigen::SparseMatrix<real_type>>::InnerIterator it(grid_Bp_Bpp, k); it; ++it){
             if ((ind_inv[it.row()] >= 0) && (ind_inv[it.col()] >= 0)){
                 auto tmp = Eigen::Triplet<real_type>(ind_inv[it.row()], ind_inv[it.col()], it.value());
                 tripletList.push_back(tmp);

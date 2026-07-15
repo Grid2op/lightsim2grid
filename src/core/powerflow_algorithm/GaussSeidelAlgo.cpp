@@ -12,11 +12,11 @@ namespace ls2g {
 
 bool GaussSeidelAlgo::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
-                                   Eigen::Ref<const CplxVect> Sbus,
-                                   Eigen::Ref<const IntVect> slack_ids,
-                                   Eigen::Ref<const RealVect> /*slack_weights*/,  // currently unused
-                                   Eigen::Ref<const IntVect> pv,
-                                   Eigen::Ref<const IntVect> pq,
+                                   const Eigen::Ref<const CplxVect> & Sbus,
+                                   const Eigen::Ref<const IntVect> & slack_ids,
+                                   const Eigen::Ref<const RealVect> & /*slack_weights*/,  // currently unused
+                                   const Eigen::Ref<const IntVect> & pv,
+                                   const Eigen::Ref<const IntVect> & pq,
                                    int max_iter,
                                    real_type tol
                                    )
@@ -81,9 +81,9 @@ bool GaussSeidelAlgo::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
 }
 
 void GaussSeidelAlgo::one_iter(CplxVect & tmp_Sbus,
-                                 const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                 Eigen::Ref<const IntVect> pv,
-                                 Eigen::Ref<const IntVect> pq)
+                                 const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> & Ybus,
+                                 const Eigen::Ref<const IntVect> & pv,
+                                 const Eigen::Ref<const IntVect> & pq)
 {
     // do an update with the standard GS algorithm
     cplx_type tmp;

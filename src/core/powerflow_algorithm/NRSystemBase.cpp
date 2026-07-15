@@ -23,8 +23,8 @@ namespace ls2g {
 void Base::update_state(
     const LSGrid *                         lsgrid_ptr,
     const Eigen::SparseMatrix<cplx_type>&  /*Ybus*/,
-    Eigen::Ref<const CplxVect>              /*Sbus*/,
-    Eigen::Ref<const RealVect>             /*slack_weights*/
+    const Eigen::Ref<const CplxVect> &              /*Sbus*/,
+    const Eigen::Ref<const RealVect> &             /*slack_weights*/
 )
 {
     // Slack buses not pinned by a LOCAL voltage-regulating generator need a

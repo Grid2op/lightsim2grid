@@ -200,7 +200,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
         void update_slack_weights(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & could_be_slack,
                                   DualAlgoControl & solver_control);
-        void update_slack_weights_by_id(Eigen::Ref<const IntVect> gen_slack_id, DualAlgoControl & solver_control);
+        void update_slack_weights_by_id(const Eigen::Ref<const IntVect> & gen_slack_id, DualAlgoControl & solver_control);
         
         
         // ---- remote voltage control --------------------------------------------

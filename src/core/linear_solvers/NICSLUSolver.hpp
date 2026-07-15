@@ -70,9 +70,9 @@ class LS2G_API NICSLULinearSolver final
 
         // public api
         ErrorType reset();
-        ErrorType analyze(const Eigen::SparseMatrix<real_type> & J);   // reordering + symbolic factorization (may use values for MC64 scaling)
-        ErrorType factorize(const Eigen::SparseMatrix<real_type> & J); // numeric factorization (requires values)
-        ErrorType refactorize(const Eigen::SparseMatrix<real_type> & J);  // re-numeric factorization, reuses symbolic
+        ErrorType analyze(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & J);   // reordering + symbolic factorization (may use values for MC64 scaling)
+        ErrorType factorize(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & J); // numeric factorization (requires values)
+        ErrorType refactorize(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & J);  // re-numeric factorization, reuses symbolic
         ErrorType solve(RealVect & b);
 
         // can this linear solver solve problem where RHS is a matrix

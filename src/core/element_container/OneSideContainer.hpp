@@ -259,13 +259,13 @@ class OneSideContainer : public GenericContainer
             reset_osc_results();
         }
 
-        void set_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
+        void set_pos_topo_vect(const Eigen::Ref<const IntVect> & pos_topo_vect)
         {
             check_size(pos_topo_vect, nb(), "pos_topo_vect");
             pos_topo_vect_.array() = pos_topo_vect;
         }
 
-        void set_subid(Eigen::Ref<const IntVect> subid)
+        void set_subid(const Eigen::Ref<const IntVect> & subid)
         {
             check_size(subid, nb(), "subid");
             subid_.array() = subid;
@@ -277,8 +277,8 @@ class OneSideContainer : public GenericContainer
          * The bus labelling in "new_values" are local bus (between 1 and n_max_busbar_per_sub).
          */
         virtual std::vector<bool> update_topo(
-            Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
-            Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+            const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+            const Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
             DualAlgoControl & solver_control,
             SubstationContainer & substations
         ) final

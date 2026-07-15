@@ -265,13 +265,16 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
 
         // sometimes, when i perform some disconnection, I make the graph non connexe
         // in this case, well, i don't use the results of the simulation
-        bool check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const;
+        bool check_invertible(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> & Ybus) const;
 
         // ----- "handle disconnected grid" mode helpers (mask mode only) -----------
         // connected-component labelling of the admittance matrix: returns the solver
         // bus ids that are NOT part of the largest connected component (empty if it is
         // connected). Templated on the scalar type so it works on both the AC (complex
         // Ybus_) and the DC (real Bbus_) matrices. Explicitly instantiated in the .cpp.
+        // mat stays a plain reference: T is deduced from the caller's argument, and
+        // Eigen::Ref<const Eigen::SparseMatrix<T>> is a non-deduced context (callers
+        // pass a concrete Eigen::SparseMatrix<T>, so deduction would fail).
         template<typename T>
         std::vector<int> disconnected_buses(const Eigen::SparseMatrix<T> & mat) const;
         // pre-pass run before the (n-)powerflow: fills _li_masked (the masked bus set

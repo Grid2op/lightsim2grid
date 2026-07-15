@@ -23,13 +23,16 @@ class BaseFDPFAlgo final: public BaseAlgo
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
         ~BaseFDPFAlgo() noexcept override = default;
 
+        // Ybus stays a plain reference: compute_pf is the same shared virtual
+        // signature as NRAlgo's (see BaseAlgo::compute_pf) even though FDPF itself
+        // has no pointer-caching need.
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
-                        Eigen::Ref<const CplxVect> Sbus,
-                        Eigen::Ref<const IntVect> slack_ids,
-                        Eigen::Ref<const RealVect> slack_weights,
-                        Eigen::Ref<const IntVect> pv,
-                        Eigen::Ref<const IntVect> pq,
+                        const Eigen::Ref<const CplxVect> & Sbus,
+                        const Eigen::Ref<const IntVect> & slack_ids,
+                        const Eigen::Ref<const RealVect> & slack_weights,
+                        const Eigen::Ref<const IntVect> & pv,
+                        const Eigen::Ref<const IntVect> & pq,
                         int max_iter,
                         real_type tol
                         ) override;  // requires a gridmodel !
@@ -61,12 +64,12 @@ class BaseFDPFAlgo final: public BaseAlgo
             BaseAlgo::reset_timer();
         }
 
-        CplxVect evaluate_mismatch(const Eigen::SparseMatrix<cplx_type> &  Ybus,
+        CplxVect evaluate_mismatch(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> &  Ybus,
                                    const CplxVect & V,
-                                   Eigen::Ref<const CplxVect> Sbus,
+                                   const Eigen::Ref<const CplxVect> & Sbus,
                                    size_t /*slack_id*/,  // id of the ref slack bus
                                    real_type slack_absorbed,
-                                   Eigen::Ref<const RealVect> slack_weights)
+                                   const Eigen::Ref<const RealVect> & slack_weights)
         {
             // CplxVect tmp = Ybus * V;  // this is a vector
             // tmp = tmp.array().conjugate();  // i take the conjugate
@@ -121,11 +124,11 @@ class BaseFDPFAlgo final: public BaseAlgo
         }
 
         bool has_converged(const Eigen::Ref<const CplxVect > & tmp_va,
-                           const Eigen::SparseMatrix<cplx_type> & Ybus,
-                           Eigen::Ref<const CplxVect> Sbus,
+                           const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> & Ybus,
+                           const Eigen::Ref<const CplxVect> & Sbus,
                            size_t slack_bus_id,
                            real_type & slack_absorbed,
-                           Eigen::Ref<const RealVect> slack_weights,
+                           const Eigen::Ref<const RealVect> & slack_weights,
                            const Eigen::Ref<const Eigen::VectorXi> & pvpq,
                            const Eigen::Ref<const Eigen::VectorXi> & pq,
                            real_type tol)
@@ -172,14 +175,16 @@ class BaseFDPFAlgo final: public BaseAlgo
             return _check_for_convergence(p_, q_, tol);
         }
 
-        void fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp,
-                                  const Eigen::SparseMatrix<real_type> & grid_Bpp,
+        void fill_sparse_matrices(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & grid_Bp,
+                                  const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & grid_Bpp,
                                   const std::vector<int> & pvpq_inv,
                                   const std::vector<int> & pq_inv,
                                   size_t n_pvpq,
                                   size_t n_pq);
 
-        void aux_fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp_Bpp,
+        // res is reset (reassigned) and setFromTriplets'd from scratch, so it needs
+        // a real reference, not Eigen::Ref.
+        void aux_fill_sparse_matrices(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & grid_Bp_Bpp,
                                       const std::vector<int> & ind_inv,
                                       size_t mat_dim,
                                       Eigen::SparseMatrix<real_type> & res);

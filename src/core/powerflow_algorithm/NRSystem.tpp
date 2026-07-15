@@ -11,10 +11,10 @@ namespace ls2g {
 // ---- Phase 1: topology init --------------------------------------------------
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::init_topology(
-    Eigen::Ref<const IntVect>              slack_ids,
-    Eigen::Ref<const RealVect>             slack_weights,
-    Eigen::Ref<const IntVect>              pv,
-    Eigen::Ref<const IntVect>              pq)
+    const Eigen::Ref<const IntVect> &              slack_ids,
+    const Eigen::Ref<const RealVect> &             slack_weights,
+    const Eigen::Ref<const IntVect> &              pv,
+    const Eigen::Ref<const IntVect> &              pq)
 {
     // init the sparsity pattern of the dS matrices (values do not matter yet)
     dS_dVm_ = *Ybus_ptr_;
@@ -42,8 +42,8 @@ inline void NRSystem<Base, Rest...>::update_state(
     const LSGrid *                         lsgrid_ptr,
     const Eigen::SparseMatrix<cplx_type>&  Ybus,
     const CplxVect&                        V_init,
-    Eigen::Ref<const CplxVect>              Sbus,
-    Eigen::Ref<const RealVect>             slack_weights)
+    const Eigen::Ref<const CplxVect> &              Sbus,
+    const Eigen::Ref<const RealVect> &             slack_weights)
 {
     lsgrid_ptr_ = lsgrid_ptr;
     Ybus_ptr_ = &Ybus;

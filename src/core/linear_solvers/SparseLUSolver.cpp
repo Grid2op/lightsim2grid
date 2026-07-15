@@ -14,19 +14,19 @@ namespace ls2g {
 
 const bool SparseLULinearSolver::CAN_SOLVE_MAT = true;
 
-ErrorType SparseLULinearSolver::analyze(const Eigen::SparseMatrix<real_type> & J){
+ErrorType SparseLULinearSolver::analyze(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & J){
     solver_.analyzePattern(J);
     // analyzePattern does not set solver_.info() to Success, so no check here
     return ErrorType::NoError;
 }
 
-ErrorType SparseLULinearSolver::factorize(const Eigen::SparseMatrix<real_type> & J){
+ErrorType SparseLULinearSolver::factorize(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & J){
     solver_.factorize(J);
     if(solver_.info() != Eigen::Success) return ErrorType::SolverFactor;
     return ErrorType::NoError;
 }
 
-ErrorType SparseLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type> & J){
+ErrorType SparseLULinearSolver::refactorize(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & J){
     solver_.factorize(J);
     if(solver_.info() != Eigen::Success) return ErrorType::SolverFactor;
     return ErrorType::NoError;

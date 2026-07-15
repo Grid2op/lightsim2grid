@@ -295,13 +295,15 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
         // member version: forwards to the explicit overload below using the
         // member solver / control / accumulators (single-threaded path).
+        // Ybus stays a plain reference: it forwards into algo.compute_pf(Ybus, ...),
+        // whose Ybus must stay plain too (see BaseAlgo::compute_pf).
         bool compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
-                                   Eigen::Ref<const CplxVect> Sbus,
-                                   Eigen::Ref<const IntVect> slack_ids,
-                                   Eigen::Ref<const RealVect> slack_weights,
-                                   Eigen::Ref<const IntVect> bus_pv,
-                                   Eigen::Ref<const IntVect> bus_pq,
+                                   const Eigen::Ref<const CplxVect> & Sbus,
+                                   const Eigen::Ref<const IntVect> & slack_ids,
+                                   const Eigen::Ref<const RealVect> & slack_weights,
+                                   const Eigen::Ref<const IntVect> & bus_pv,
+                                   const Eigen::Ref<const IntVect> & bus_pq,
                                    int max_iter,
                                    double tol
                                    );
@@ -310,17 +312,18 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // its book-keeping into the passed accumulators. This is what the
         // multi-threaded ContingencyAnalysis uses (one solver per thread). The
         // read-only member Bbus_ is only read here (safe to share across threads).
+        // Ybus stays a plain reference for the same reason as the overload above.
         bool compute_one_powerflow(AlgorithmSelector & algo,
                                    AlgoControl & control,
                                    int & nb_solved,
                                    double & timer_solver,
                                    const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
-                                   Eigen::Ref<const CplxVect> Sbus,
-                                   Eigen::Ref<const IntVect> slack_ids,
-                                   Eigen::Ref<const RealVect> slack_weights,
-                                   Eigen::Ref<const IntVect> bus_pv,
-                                   Eigen::Ref<const IntVect> bus_pq,
+                                   const Eigen::Ref<const CplxVect> & Sbus,
+                                   const Eigen::Ref<const IntVect> & slack_ids,
+                                   const Eigen::Ref<const RealVect> & slack_weights,
+                                   const Eigen::Ref<const IntVect> & bus_pv,
+                                   const Eigen::Ref<const IntVect> & bus_pq,
                                    int max_iter,
                                    double tol
                                    );

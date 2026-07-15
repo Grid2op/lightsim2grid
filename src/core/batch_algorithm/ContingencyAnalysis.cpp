@@ -28,9 +28,9 @@ namespace {
 void check_bus_voltage_violations(
     const CplxVect & V,
     const SolverBusIdVect & id_me_to_solver,
-    Eigen::Ref<const RealVect> bus_vmin_kv,
-    Eigen::Ref<const RealVect> bus_vmax_kv,
-    Eigen::Ref<const RealVect> bus_vn_kv,
+    const Eigen::Ref<const RealVect> & bus_vmin_kv,
+    const Eigen::Ref<const RealVect> & bus_vmax_kv,
+    const Eigen::Ref<const RealVect> & bus_vn_kv,
     const std::vector<int> * masked_solver_ids,
     std::vector<LimitViolation> & out)
 {
@@ -79,11 +79,11 @@ void check_current_violations(
     ViolationElementType el_type,
     const CplxVect & V,
     const SolverBusIdVect & id_me_to_solver,
-    Eigen::Ref<const RealVect> bus_vn_kv,
+    const Eigen::Ref<const RealVect> & bus_vn_kv,
     bool ac_solver_used,
     real_type sn_mva,
-    Eigen::Ref<const RealVect> limit1,
-    Eigen::Ref<const RealVect> limit2,
+    const Eigen::Ref<const RealVect> & limit1,
+    const Eigen::Ref<const RealVect> & limit2,
     const std::vector<int> & skip_ids,
     std::vector<LimitViolation> & out)
 {
@@ -211,15 +211,15 @@ void check_current_violations(
 
 }  // anonymous namespace
 
-bool ContingencyAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const{
-    std::vector<bool> visited(Ybus.cols(), false); 
+bool ContingencyAnalysis::check_invertible(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> & Ybus) const{
+    std::vector<bool> visited(Ybus.cols(), false);
     std::vector<bool> already_added(Ybus.cols(), false);
     std::queue<Eigen::Index> neighborhood;
     size_t col_id = 0;  // start by node 0, why not
     while (true)
     {
         visited[col_id] = true;
-        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(Ybus, col_id); it; ++it)
+        for (Eigen::Ref<const Eigen::SparseMatrix<cplx_type>>::InnerIterator it(Ybus, col_id); it; ++it)
         {
             // add in the queue all my neighbor (if the coefficient is big enough)
             if(!visited[it.row()] && !already_added[it.row()] && abs(it.value()) > 1e-8){
