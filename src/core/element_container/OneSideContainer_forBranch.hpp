@@ -63,7 +63,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
     public:
         OneSideContainer_ForBranch() noexcept = default;
         explicit OneSideContainer_ForBranch(bool /*is_trafo*/) noexcept{};
-        virtual ~OneSideContainer_ForBranch() noexcept = default;
+        ~OneSideContainer_ForBranch() noexcept override = default;
 
         // public generic API
 
@@ -108,11 +108,11 @@ class OneSideContainer_ForBranch : public OneSideContainer
         }
 
     protected:
-        virtual void _reset_results() override {
+        void _reset_results() override {
             // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos)
             // elements
         };
-        virtual void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+        void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
                                       const Eigen::Ref<const RealVect> & /*Vm*/,
                                       const Eigen::Ref<const CplxVect> & /*V*/,
                                       const SolverBusIdVect & /*id_grid_to_solver*/,
@@ -124,7 +124,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
             // elements
             };
 
-        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
+        bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
             if(status_[el_id]){
                 solver_control.ac_algo_controler().tell_ybus_some_coeffs_zero(); solver_control.dc_algo_controler().tell_ybus_some_coeffs_zero();
                 solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
@@ -134,7 +134,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
             }
             return false;
         };
-        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
+        bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
             if(!status_[el_id]){
                 solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
                 // solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // only for trafo in DC
@@ -144,7 +144,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
             }
             return false;
         };
-        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) override {
+        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) override {
             const GridModelBusId & bus_me_id = bus_id_(el_id);
             
             if(bus_me_id != new_bus_id) {

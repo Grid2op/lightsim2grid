@@ -47,7 +47,7 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
                    >;
         
         LineContainer() noexcept = default;
-        virtual ~LineContainer() noexcept = default;
+        ~LineContainer() noexcept override = default;
         
         void init(const Eigen::Ref<const RealVect> & branch_r,
                   const Eigen::Ref<const RealVect> & branch_x,
