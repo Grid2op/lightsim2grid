@@ -63,9 +63,24 @@ Individual element containers work the same way:
     bytes are all rejected. ``save_binary`` on the other hand is **atomic by default**: it writes to a
     temporary file that only replaces the destination once fully written, so an interrupted save never
     destroys a previously saved file. Pass ``atomic=False`` to write the destination directly instead
-    (marginally faster -- it skips one temporary file and rename -- but without that protection). Note that the format stores raw native data: files are meant to be written
-    and read by builds sharing the same data layout (same endianness, ``real_type``, ...) -- there is
-    no checksum nor cross-platform migration, pickle remains the portable format.
+    (marginally faster -- it skips one temporary file and rename -- but without that protection).
+
+.. danger::
+    Not even pickle is a *portable* format, and this binary format is even less so. Two
+    rules to follow:
+
+    - **Never load a binary file from a source you do not trust.** ``load_binary``
+      rejects structurally ill-formed input (see above), but it cannot tell a
+      legitimate grid from a maliciously crafted one that happens to be well-formed --
+      loading it still means trusting its content outright, the same way loading a
+      pickle file does.
+    - **Generate the file on the machine that will consume it, with the same
+      lightsim2grid version.** The format stores raw native data (same endianness,
+      ``real_type``, ...) with no checksum and no cross-platform migration; the
+      binary-format-version check (see above) only catches layout changes the
+      lightsim2grid authors explicitly bumped it for, not every possible mismatch.
+      Use pickle instead if you need to move a grid across machines, python versions,
+      or lightsim2grid versions.
 
 .. note::
     The binary format walks the exact same internal state (``get_state`` / ``set_state``) that pickle
