@@ -84,17 +84,16 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
 
     protected:
         void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
-                                    const Eigen::Ref<const RealVect> & /*Vm*/,
-                                    const Eigen::Ref<const CplxVect> & /*V*/,
-                                    const SolverBusIdVect & /*id_grid_to_solver*/,
-                                    const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
-                                    real_type /*sn_mva*/,
-                                    bool ac) override
-                                    {
-
-                                            set_osc_pq_res_p();
-                                            set_osc_pq_res_q(ac);
-                                    }
+                              const Eigen::Ref<const RealVect> & /*Vm*/,
+                              const Eigen::Ref<const CplxVect> & /*V*/,
+                              const SolverBusIdVect & /*id_grid_to_solver*/,
+                              const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
+                              real_type /*sn_mva*/,
+                              bool ac) override
+                              {
+                                set_osc_pq_res_p();
+                                set_osc_pq_res_q(ac);
+                              }
 };
 
 inline LoadInfo::LoadInfo(const LoadContainer & r_data_load, int my_id) noexcept: 

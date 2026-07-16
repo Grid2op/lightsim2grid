@@ -348,20 +348,20 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
         void fillpv(std::vector<int>& bus_pv,
-                            std::vector<bool> & has_bus_been_added,
-                            const SolverBusIdVect & slack_bus_id_solver,
-                            const SolverBusIdVect & id_grid_to_solver) const override {
+                    std::vector<bool> & has_bus_been_added,
+                    const SolverBusIdVect & slack_bus_id_solver,
+                    const SolverBusIdVect & id_grid_to_solver) const override {
             side_1_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);
             side_2_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);
         }
 
         void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
-                                std::vector<Eigen::Triplet<real_type> > & /*Bpp*/,
-                                const SolverBusIdVect & /*id_grid_to_solver*/,
-                                real_type /*sn_mva*/,
-                                FDPFMethod /*xb_or_bx*/) const override {
-                                    // no Bp coeffs for hvdc lines
-                                }
+                        std::vector<Eigen::Triplet<real_type> > & /*Bpp*/,
+                        const SolverBusIdVect & /*id_grid_to_solver*/,
+                        real_type /*sn_mva*/,
+                        FDPFMethod /*xb_or_bx*/) const override {
+                            // no Bp coeffs for hvdc lines
+                        }
 
         void init_q_vector(int nb_bus,
                            Eigen::VectorXi & total_gen_per_bus,

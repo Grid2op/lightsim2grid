@@ -32,6 +32,7 @@ void check_bus_voltage_violations(
     const Eigen::Ref<const RealVect> & bus_vmin_kv,
     const Eigen::Ref<const RealVect> & bus_vmax_kv,
     const Eigen::Ref<const RealVect> & bus_vn_kv,
+    const SubstationContainer & subs,
     const std::vector<int> * masked_solver_ids,
     std::vector<LimitViolation> & out)
 {
