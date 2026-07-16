@@ -17,11 +17,11 @@ namespace ls2g {
 bool BaseBatchSolverSynch::compute_one_powerflow(
     const Eigen::SparseMatrix<cplx_type> & Ybus,
     CplxVect & V,
-    Eigen::Ref<const CplxVect> Sbus,
-    Eigen::Ref<const IntVect> slack_ids,
-    Eigen::Ref<const RealVect> slack_weights,
-    Eigen::Ref<const IntVect> bus_pv,
-    Eigen::Ref<const IntVect> bus_pq,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & bus_pv,
+    const Eigen::Ref<const IntVect> & bus_pq,
     int max_iter,
     double tol
 )
@@ -43,11 +43,11 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
     double & timer_solver,
     const Eigen::SparseMatrix<cplx_type> & Ybus,
     CplxVect & V,
-    Eigen::Ref<const CplxVect> Sbus,
-    Eigen::Ref<const IntVect> slack_ids,
-    Eigen::Ref<const RealVect> slack_weights,
-    Eigen::Ref<const IntVect> bus_pv,
-    Eigen::Ref<const IntVect> bus_pq,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & bus_pv,
+    const Eigen::Ref<const IntVect> & bus_pq,
     int max_iter,
     double tol
 )

@@ -152,12 +152,12 @@ class LS2G_API AlgorithmSelector final
         }
 
         bool compute_pf(const Eigen::SparseMatrix<cplx_type>& Ybus,
-                        CplxVect& V,
-                        Eigen::Ref<const CplxVect> Sbus,
-                        Eigen::Ref<const IntVect> slack_ids,
-                        Eigen::Ref<const RealVect> slack_weights,
-                        Eigen::Ref<const IntVect> pv,
-                        Eigen::Ref<const IntVect> pq,
+                        const Eigen::Ref<const CplxVect> & V,
+                        const Eigen::Ref<const CplxVect> & Sbus,
+                        const Eigen::Ref<const IntVect> & slack_ids,
+                        const Eigen::Ref<const RealVect> & slack_weights,
+                        const Eigen::Ref<const IntVect> & pv,
+                        const Eigen::Ref<const IntVect> & pq,
                         int max_iter,
                         real_type tol)
         {
@@ -167,13 +167,14 @@ class LS2G_API AlgorithmSelector final
         }
 
         // Native real-valued DC entry point (only valid for DC solvers).
+        // V stays plain: forwards into ->compute_pf_dc, which resizes/reassigns it.
         bool compute_pf_dc(const Eigen::SparseMatrix<real_type>& Bbus,
                            CplxVect& V,
-                           Eigen::Ref<const RealVect> Pbus,
-                           Eigen::Ref<const IntVect> slack_ids,
-                           Eigen::Ref<const RealVect> slack_weights,
-                           Eigen::Ref<const IntVect> pv,
-                           Eigen::Ref<const IntVect> pq)
+                           const Eigen::Ref<const RealVect> & Pbus,
+                           const Eigen::Ref<const IntVect> & slack_ids,
+                           const Eigen::Ref<const RealVect> & slack_weights,
+                           const Eigen::Ref<const IntVect> & pv,
+                           const Eigen::Ref<const IntVect> & pq)
         {
             _algo_type_used_for_nr = _algo_type;
             return get_prt_solver("compute_pf_dc", true)->compute_pf_dc(
@@ -202,7 +203,7 @@ class LS2G_API AlgorithmSelector final
             return get_prt_solver("get_ptdf", true)->get_ptdf();
         }
 
-        RealMat get_lodf(const IntVect& from_bus, const IntVect& to_bus) {
+        RealMat get_lodf(const Eigen::Ref<const IntVect>& from_bus, const Eigen::Ref<const IntVect>& to_bus) {
             if (!is_dc(_algo_type)) {
                 throw std::runtime_error("AlgorithmSelector::get_lodf: cannot get lodf for a solver that is not DC.");
             }

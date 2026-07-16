@@ -128,15 +128,17 @@ public:
         outer_iter_ = 0;
     }
 
-    bool compute_pf(const Eigen::SparseMatrix<cplx_type>& Ybus,
-                     CplxVect& V,
-                     Eigen::Ref<const CplxVect> Sbus,
-                     Eigen::Ref<const IntVect> slack_ids,
-                     Eigen::Ref<const RealVect> slack_weights,
-                     Eigen::Ref<const IntVect> pv,
-                     Eigen::Ref<const IntVect> pq,
-                     int max_iter,
-                     real_type tol) override
+    bool compute_pf(
+        const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
+        const Eigen::Ref<const CplxVect>                        & V,
+        const Eigen::Ref<const CplxVect>                        & Sbus,
+        const Eigen::Ref<const IntVect>                         & slack_ids,
+        const Eigen::Ref<const RealVect>                        & slack_weights,
+        const Eigen::Ref<const IntVect>                         & pv,
+        const Eigen::Ref<const IntVect>                         & pq,
+        int                                                     max_iter,
+        real_type                                               tol
+    ) override
     {
         err_ = ErrorType::NoError;
         slack_absorbed_accum_ = static_cast<real_type>(0.);

@@ -225,7 +225,7 @@ void TrafoContainer::_update_model_coeffs_one_el(int el_id)
 }
 
 void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
-    CplxVect & Sbus,
+    Eigen::Ref<CplxVect> Sbus,
     bool ac,
     const SolverBusIdVect & id_grid_to_solver)
 {

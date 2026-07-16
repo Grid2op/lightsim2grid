@@ -50,10 +50,10 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
 
         Each line of `Sbuses` will be a time step, and each column with 
         **/
-        int compute_Vs(Eigen::Ref<const RealMat> gen_p,
-                       Eigen::Ref<const RealMat> sgen_p,
-                       Eigen::Ref<const RealMat> load_p,
-                       Eigen::Ref<const RealMat> load_q,
+        int compute_Vs(const Eigen::Ref<const RealMat> & gen_p,
+                       const Eigen::Ref<const RealMat> & sgen_p,
+                       const Eigen::Ref<const RealMat> & load_p,
+                       const Eigen::Ref<const RealMat> & load_q,
                        const Eigen::Ref<const CplxVect> & Vinit,
                        const int max_iter,
                        const real_type tol);
@@ -79,7 +79,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
 
     protected:
         template<class T>
-        void fill_SBus_real(CplxMat & Sbuses,
+        void fill_SBus_real(Eigen::Ref<CplxMat> Sbuses,
                             const T & structure_data,
                             const Eigen::Ref<const RealMat> & temporal_data,
                             const SolverBusIdVect & id_me_to_ac_solver,
@@ -116,7 +116,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
         }
 
         template<class T>
-        void fill_SBus_imag(CplxMat & Sbuses,
+        void fill_SBus_imag(Eigen::Ref<CplxMat> Sbuses,
                             const T & structure_data,
                             const Eigen::Ref<const RealMat> & temporal_data,
                             const SolverBusIdVect & id_me_to_ac_solver,

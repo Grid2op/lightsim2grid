@@ -80,7 +80,7 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
             reset_results();
         }
     
-        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
     protected:
         void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,

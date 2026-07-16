@@ -107,13 +107,16 @@ class LS2G_API BaseAlgo : public BaseConstants
         // Throws std::out_of_range (python IndexError) for any id of
         // slack_ids / pv / pq outside [0, n).
         // `caller` names the solver in the error message (eg "NRAlgo::compute_pf").
-        static void check_pf_inputs(const std::string & caller,
-                                    Eigen::Index ybus_rows, Eigen::Index ybus_cols,
-                                    Eigen::Index v_size, Eigen::Index sbus_size,
-                                    Eigen::Ref<const IntVect> slack_ids,
-                                    Eigen::Ref<const RealVect> slack_weights,
-                                    Eigen::Ref<const IntVect> pv,
-                                    Eigen::Ref<const IntVect> pq);
+        static void check_pf_inputs(
+            const std::string & caller,
+            Eigen::Index ybus_rows,
+            Eigen::Index ybus_cols,
+            Eigen::Index v_size,
+            Eigen::Index sbus_size,
+            const Eigen::Ref<const IntVect> & slack_ids,
+            const Eigen::Ref<const RealVect> & slack_weights,
+            const Eigen::Ref<const IntVect> & pv,
+            const Eigen::Ref<const IntVect> & pq);
 
         // Throws std::runtime_error unless max_iter >= 0 (0 is a legitimate,
         // well-defined call: every solver builds its initial state / first
@@ -123,7 +126,10 @@ class LS2G_API BaseAlgo : public BaseConstants
         // negative values are nonsensical) and tol is a finite
         // strictly positive number (NaN and infinity are rejected). AC only:
         // DC is a single linear solve without iterations / tolerance.
-        static void check_iter_tol(const std::string & caller, int max_iter, real_type tol);
+        static void check_iter_tol(
+            const std::string & caller,
+            int max_iter,
+            real_type tol);
 
         // Checked wrapper around the (virtual) compute_pf: validates with
         // check_pf_inputs + check_iter_tol, then dispatches to compute_pf on
@@ -133,31 +139,44 @@ class LS2G_API BaseAlgo : public BaseConstants
         // the method actually bound to python's Solver.compute_pf / .solve
         // (see binding_solvers.cpp) -- the raw compute_pf keeps its name and
         // stays reachable only from C++.
+        // V is read-only here (see compute_pf's declaration above): this changes the
+        // python-facing Solver.compute_pf/.solve parameter from a mutable numpy array
+        // to a read-only one -- nothing in-tree relied on in-place mutation.
+        // Ybus is a bare (non-Ref) Eigen::SparseMatrix, unlike every other Ybus/Bbus
+        // parameter in this file: this is the one signature pybind11 actually binds
+        // (see binding_solvers.cpp), and pybind11's Eigen support has no type_caster
+        // for Eigen::Ref<const SparseMatrix<...>> (only for a concrete, owning
+        // SparseMatrix -- see TODO in CHANGELOG.rst about writing one to avoid this
+        // copy). Internally this is still cheap: it just forwards into the
+        // Ref-taking compute_pf below, a single C++-side (not python-side) bind.
         bool compute_pf_with_input_validation(
             const Eigen::SparseMatrix<cplx_type> & Ybus,
-            CplxVect & V,
-            Eigen::Ref<const CplxVect> Sbus,
-            Eigen::Ref<const IntVect> slack_ids,
-            Eigen::Ref<const RealVect> slack_weights,
-            Eigen::Ref<const IntVect> pv,
-            Eigen::Ref<const IntVect> pq,
-            int max_iter,
-            real_type tol);
+            const Eigen::Ref<const CplxVect> & V,
+            const Eigen::Ref<const CplxVect> & Sbus,
+            const Eigen::Ref<const IntVect>  & slack_ids,
+            const Eigen::Ref<const RealVect> & slack_weights,
+            const Eigen::Ref<const IntVect>  & pv,
+            const Eigen::Ref<const IntVect>  & pq,
+            int                              max_iter,
+            real_type                        tol);
 
         // Same idea for the DC entry point (validates, then calls the
         // virtual compute_pf_dc). Not bound to python today -- compute_pf_dc
         // itself isn't exposed under any name -- kept symmetric with the AC
         // wrapper above and ready if that binding gap is ever closed.
+        // V stays plain: see the comment on the virtual compute_pf_dc above (resized).
+        // Bbus is a bare (non-Ref) Eigen::SparseMatrix for the same pybind11 reason as
+        // Ybus in compute_pf_with_input_validation above.
         bool compute_pf_dc_with_input_validation(
             const Eigen::SparseMatrix<real_type> & Bbus,
-            CplxVect & V,
-            Eigen::Ref<const RealVect> Pbus,
-            Eigen::Ref<const IntVect> slack_ids,
-            Eigen::Ref<const RealVect> slack_weights,
-            Eigen::Ref<const IntVect> pv,
-            Eigen::Ref<const IntVect> pq);
+            const Eigen::Ref<const CplxVect> & V,
+            const Eigen::Ref<const RealVect> & Pbus,
+            const Eigen::Ref<const IntVect> & slack_ids,
+            const Eigen::Ref<const RealVect> & slack_weights,
+            const Eigen::Ref<const IntVect> & pv,
+            const Eigen::Ref<const IntVect> & pq);
 
-        virtual Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const {
+        virtual EigenRefConstRealSpMat get_J() const {
             throw std::runtime_error("AlgorithmSelector::get_J: There is not Jacobian matrix for this solver type.");
         }
 
@@ -311,14 +330,23 @@ class LS2G_API BaseAlgo : public BaseConstants
         // Complex AC entry point: solves V . (Ybus . V)* = Sbus.
         // Every AC solver overrides this; the DC solver does not (it uses `compute_pf_dc`) and
         // therefore inherits this throwing default (symmetric with `compute_pf_dc` below).
+        // Ybus stays a plain reference (not Eigen::Ref): NRSystem::update_state caches
+        // its address (Ybus_ptr_) across phases (update_state -> build_J_sparsity),
+        // which needs the caller's actual, long-lived matrix, not a call-site Ref
+        // temporary. Since compute_pf is one shared virtual signature (BaseAlgo,
+        // NRAlgo, GaussSeidelAlgo, BaseFDPFAlgo all share it), every Ybus/Ybus-forwarding
+        // parameter in this family must stay plain for the same reason.
+        // V is the Vinit on input; none of the AC overriders write back into it (the
+        // converged result is retrieved via get_V()), so it's read-only in practice --
+        // unlike compute_pf_dc's V (BaseDCAlgo resizes/reassigns it), which stays plain.
         virtual
-        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & /*Ybus*/,
-                        CplxVect & /*V*/,  // store the results of the powerflow and the Vinit !
-                        Eigen::Ref<const CplxVect> /*Sbus*/,
-                        Eigen::Ref<const IntVect> /*slack_ids*/,
-                        Eigen::Ref<const RealVect> /*slack_weights*/,
-                        Eigen::Ref<const IntVect> /*pv*/,
-                        Eigen::Ref<const IntVect> /*pq*/,
+        bool compute_pf(const EigenRefConstCplxSpMat     & /*Ybus*/,
+                        const Eigen::Ref<const CplxVect> & /*V*/,
+                        const Eigen::Ref<const CplxVect> & /*Sbus*/,
+                        const Eigen::Ref<const IntVect>  & /*slack_ids*/,
+                        const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                        const Eigen::Ref<const IntVect>  & /*pv*/,
+                        const Eigen::Ref<const IntVect>  & /*pq*/,
                         int /*max_iter*/,
                         real_type /*tol*/
                         ){
@@ -329,14 +357,19 @@ class LS2G_API BaseAlgo : public BaseConstants
         // Only the DC solver overrides this; every other solver type throws.
         // `V` carries the complex initial voltage (slack angle + voltage setpoints) on input
         // and the complex result on output. There is no max_iter / tol: DC is a single linear solve.
+        // V stays a plain reference (not Eigen::Ref): BaseDCAlgo::compute_pf_dc
+        // resizes/reassigns it (V.resize(...), V = CplxVect() on the early-error
+        // path) -- unlike compute_pf's V (AC family), which is read-only and was
+        // converted to Eigen::Ref. compute_pf/compute_pf_dc are independent virtual
+        // chains (different overrider sets), so there's no need for them to match.
         virtual
-        bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & /*Bbus*/,
-                           CplxVect & /*V*/,
-                           Eigen::Ref<const RealVect> /*Pbus*/,
-                           Eigen::Ref<const IntVect> /*slack_ids*/,
-                           Eigen::Ref<const RealVect> /*slack_weights*/,
-                           Eigen::Ref<const IntVect> /*pv*/,
-                           Eigen::Ref<const IntVect> /*pq*/){
+        bool compute_pf_dc(const EigenRefConstRealSpMat     & /*Bbus*/,
+                           const Eigen::Ref<const CplxVect> & /*V*/,
+                           const Eigen::Ref<const RealVect> & /*Pbus*/,
+                           const Eigen::Ref<const IntVect>  & /*slack_ids*/,
+                           const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                           const Eigen::Ref<const IntVect>  & /*pv*/,
+                           const Eigen::Ref<const IntVect>  & /*pq*/){
             throw std::runtime_error("compute_pf_dc is only available for DC solvers.");
         }
 
@@ -344,11 +377,13 @@ class LS2G_API BaseAlgo : public BaseConstants
             _solver_control = solver_control;
         }
         virtual void reset();
+        // TODO speed: prevent copy and use Eigen::Ref here
         virtual RealMat get_ptdf(){
             throw std::runtime_error("Impossible to get the PTDF matrix with this solver type.");
         }
-        virtual RealMat get_lodf(const IntVect & /*from_bus*/,
-                                 const IntVect & /*to_bus*/){  // TODO interface is likely to change
+        // TODO speed: prevent copy and use Eigen::Ref here
+        virtual RealMat get_lodf(const Eigen::Ref<const IntVect> & /*from_bus*/,
+                                 const Eigen::Ref<const IntVect> & /*to_bus*/){  // TODO interface is likely to change
             throw std::runtime_error("Impossible to get the LODF matrix with this solver type.");
         }
         virtual Eigen::SparseMatrix<real_type> get_bsdf(){  // TODO interface is likely to change
@@ -384,30 +419,30 @@ class LS2G_API BaseAlgo : public BaseConstants
             // return res;
             return (err_ != ErrorType::LicenseError);
         }
-        RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
-                              const CplxVect & V,
-                              Eigen::Ref<const CplxVect> Sbus,
-                              size_t slack_id,  // id of the slack bus
-                              real_type slack_absorbed,
-                              Eigen::Ref<const RealVect> slack_weights,
-                              Eigen::Ref<const IntVect> pv,
-                              Eigen::Ref<const IntVect> pq);
+        RealVect _evaluate_Fx(const EigenRefConstCplxSpMat     & Ybus,
+                              const Eigen::Ref<const CplxVect> & V,
+                              const Eigen::Ref<const CplxVect> & Sbus,
+                              size_t                           slack_id,  // id of the slack bus
+                              real_type                        slack_absorbed,
+                              const Eigen::Ref<const RealVect> & slack_weights,
+                              const Eigen::Ref<const IntVect>  & pv,
+                              const Eigen::Ref<const IntVect>  & pq);
 
-        RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
-                              const CplxVect & V,
-                              Eigen::Ref<const CplxVect> Sbus,
-                              Eigen::Ref<const IntVect> pv,
-                              Eigen::Ref<const IntVect> pq);
+        RealVect _evaluate_Fx(const EigenRefConstCplxSpMat     & Ybus,
+                              const Eigen::Ref<const CplxVect> & V,
+                              const Eigen::Ref<const CplxVect> & Sbus,
+                              const Eigen::Ref<const IntVect>  & pv,
+                              const Eigen::Ref<const IntVect>  & pq);
 
-        bool _check_for_convergence(const RealVect & F,
+        bool _check_for_convergence(const Eigen::Ref<const RealVect> & F,
                                     real_type tol);
 
-        bool _check_for_convergence(const RealVect & p,
-                                    const RealVect & q,
+        bool _check_for_convergence(const Eigen::Ref<const RealVect> & p,
+                                    const Eigen::Ref<const RealVect> & q,
                                     real_type tol);
 
-        Eigen::VectorXi extract_slack_bus_id(Eigen::Ref<const IntVect> pv,
-                                             Eigen::Ref<const IntVect> pq,
+        Eigen::VectorXi extract_slack_bus_id(const Eigen::Ref<const IntVect> & pv,
+                                             const Eigen::Ref<const IntVect> & pq,
                                              unsigned int nb_bus);
 
         /**
@@ -424,8 +459,8 @@ class LS2G_API BaseAlgo : public BaseConstants
         not a crash, just wrong (or non-reproducible) results that are miserable to debug back to
         this assumption.
         **/
-        Eigen::VectorXi retrieve_pv_with_slack(Eigen::Ref<const IntVect> slack_ids,
-                                               Eigen::Ref<const IntVect> pv) const {
+        Eigen::VectorXi retrieve_pv_with_slack(const Eigen::Ref<const IntVect> & slack_ids,
+                                               const Eigen::Ref<const IntVect> & pv) const {
             if(slack_ids.size() > 1){
                 const auto nb_slack_added = slack_ids.size() - 1;
                 Eigen::VectorXi my_pv = Eigen::VectorXi(pv.size() + nb_slack_added);
@@ -444,15 +479,15 @@ class LS2G_API BaseAlgo : public BaseConstants
         /**
         When there are multiple slacks, add the other "slack buses" in the PV buses indexes
         **/
-        Eigen::VectorXi add_slack_to_pv(Eigen::Ref<const IntVect> slack_ids,
-                                        Eigen::Ref<const IntVect> pv) const {
+        Eigen::VectorXi add_slack_to_pv(const Eigen::Ref<const IntVect> & slack_ids,
+                                        const Eigen::Ref<const IntVect> & pv) const {
             Eigen::VectorXi my_pv = Eigen::VectorXi(slack_ids.size() + pv.size());
             my_pv << slack_ids, pv;
             return my_pv;
         }
         
         // terribly inefficient way to know if an element is in a vector
-        bool isin(int k, Eigen::Ref<const Eigen::VectorXi> vect) const{
+        bool isin(int k, const Eigen::Ref<const Eigen::VectorXi> & vect) const{
             for(auto el : vect){
                 if(el == k) return true;
             }

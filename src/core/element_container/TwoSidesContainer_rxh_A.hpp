@@ -173,11 +173,11 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
         // current limit, in kA, per side -- input, not a powerflow result.
         // Optional: empty (size 0) if never set (e.g. pandapower-origin grids).
-        void set_limit_a1_ka(const RealVect & limit_a1_ka){
+        void set_limit_a1_ka(const Eigen::Ref<const RealVect> & limit_a1_ka){
             check_size(limit_a1_ka, nb(), "TwoSidesContainer_rxh_A::set_limit_a1_ka");
             limit_a1_ka_ = limit_a1_ka;
         }
-        void set_limit_a2_ka(const RealVect & limit_a2_ka){
+        void set_limit_a2_ka(const Eigen::Ref<const RealVect> & limit_a2_ka){
             check_size(limit_a2_ka, nb(), "TwoSidesContainer_rxh_A::set_limit_a2_ka");
             limit_a2_ka_ = limit_a2_ka;
         }

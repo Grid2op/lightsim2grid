@@ -84,7 +84,7 @@ ErrorType NICSLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type> &
     return ErrorType::NoError;
 }
 
-ErrorType NICSLULinearSolver::solve(RealVect & b){
+ErrorType NICSLULinearSolver::solve(Eigen::Ref<RealVect> b){
     RealVect x(b.size());
     int ret = solver_.Solve(&b(0), &x(0));
     if(ret < 0){

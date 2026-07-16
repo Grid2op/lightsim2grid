@@ -165,7 +165,7 @@ RealVect GeneratorContainer::get_slack_weights_solver(
     return res;
 }
 
-void GeneratorContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const {
+void GeneratorContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const {
     const int nb_gen = nb();
     GlobalBusId bus_id_me;
     SolverBusId bus_id_solver;
@@ -255,7 +255,7 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
     }
 }
 
-void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
+void GeneratorContainer::get_vm_for_dc(Eigen::Ref<RealVect> Vm){
     const int nb_gen = nb();
     GlobalBusId bus_id_me;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
@@ -369,7 +369,7 @@ bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualA
     // return true;
 };
 
-void GeneratorContainer::set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const
+void GeneratorContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const
 {
     const int nb_gen = nb();
     SolverBusId bus_id_solver;
@@ -433,7 +433,7 @@ GlobalBusIdVect GeneratorContainer::get_slack_bus_id() const{
     return res;
 }
 
-void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
+void GeneratorContainer::set_p_slack(const Eigen::Ref<const RealVect>& node_mismatch,
                                      const SolverBusIdVect & id_grid_to_solver)
 {
     if(bus_slack_weight_.size() == 0){
@@ -456,9 +456,9 @@ void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
 }
 
 void GeneratorContainer::init_q_vector(int /*nb_bus*/,
-                                       Eigen::VectorXi & total_gen_per_bus,
-                                       RealVect & total_q_min_per_bus,
-                                       RealVect & total_q_max_per_bus) const
+                                       Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
+                                       Eigen::Ref<RealVect> total_q_min_per_bus,
+                                       Eigen::Ref<RealVect> total_q_max_per_bus) const
 {
     const int nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
@@ -479,12 +479,12 @@ void GeneratorContainer::init_q_vector(int /*nb_bus*/,
 }
 
 void GeneratorContainer::set_q(
-    const RealVect & reactive_mismatch,
+    const Eigen::Ref<const RealVect> & reactive_mismatch,
     const SolverBusIdVect & id_grid_to_solver,
     bool ac,
-    const Eigen::VectorXi & total_gen_per_bus,
-    const RealVect & total_q_min_per_bus,
-    const RealVect & total_q_max_per_bus)
+    const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
+    const Eigen::Ref<const RealVect> & total_q_min_per_bus,
+    const Eigen::Ref<const RealVect> & total_q_max_per_bus)
 {
     const int nb_gen = nb();
     if(!ac){
@@ -555,7 +555,7 @@ void GeneratorContainer::update_slack_weights(
 }
 
 void GeneratorContainer::update_slack_weights_by_id(
-    Eigen::Ref<const IntVect> gen_slack_id,
+    const Eigen::Ref<const IntVect> & gen_slack_id,
     DualAlgoControl & solver_control)
 {
     // TODO speed: the solver_control will always tell that the slacks changed
