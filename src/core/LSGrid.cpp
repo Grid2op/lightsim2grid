@@ -400,7 +400,7 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
         throw std::runtime_error(exc_.str());
     }
     BaseAlgo::check_iter_tol("LSGrid::ac_pf", max_iter, tol);
-    if(hvdc_lines_.has_droop_active() && !_algo.supports_hvdc_droop(_algo.get_type())){
+    if(hvdc_lines_.has_droop_active() && !_algo.supports_hvdc_droop()){
         std::ostringstream exc_;
         exc_ << "LSGrid::ac_pf: the grid counts hvdc lines with the angle-droop (AC emulation) enabled, ";
         exc_ << "which is only supported by the Newton-Raphson algorithms (not by the Gauss-Seidel / ";

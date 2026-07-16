@@ -40,6 +40,9 @@ class BaseDCAlgo final: public BaseAlgo
 
         ~BaseDCAlgo() noexcept override = default;
 
+        static constexpr bool IS_DC = true;
+        bool is_dc() const noexcept override { return IS_DC; }
+
         void reset() override;
         void reset_timer() override{
             BaseAlgo::reset_timer();

@@ -250,7 +250,8 @@ def _aux_add_buses(model, net, net_pu, sort_index, buses_for_sub, n_busbar_per_s
                 bus_df.loc[added_bus_nm] = to_add.loc[added_bus_nm]
             for vl_bus_added in nm_vl_without_bus.index:
                 first_bus_per_vl.loc[vl_bus_added, "first_bus_name"] = vl_bus_added + "added_bus"
-
+    # import pdb
+    # pdb.set_trace()
     # all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
     model.init_bus(n_sub_ls,
                    n_busbar_per_sub_ls,

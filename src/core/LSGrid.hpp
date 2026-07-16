@@ -1841,14 +1841,22 @@ class LS2G_API LSGrid final
         }
 
         /**
-         * @brief Build the Sbus (or any other vector labelled using the gridmodel convention) 
+         * @brief Build the Sbus (or any other vector labelled using the gridmodel convention)
          * from the same vector (input) that uses the solver convention.
-         * 
-         * TODO copy paste from below, find a better way !
-         * 
+         *
+         * Overloaded on purpose (not "copy paste, find a better way"): callers pass either
+         * a genuine Eigen::Matrix<T,...> lvalue (eg `acSbus_`) or an Eigen::Ref<const
+         * Matrix<T,...>> prvalue returned by a `get_..._solver()` accessor (eg
+         * `get_V_solver()`). Both need their own overload because T only appears deduced
+         * from the argument's own type: a Ref argument cannot deduce T through this
+         * plain-Matrix parameter (Ref isn't-a Matrix), and conversely a genuine Matrix
+         * argument cannot deduce T through the other overload's Eigen::Ref<const
+         * Matrix<T,...>> parameter (a non-deduced context) -- confirmed by deleting this
+         * overload and observing every `get_..._solver()`-fed call site fail to compile.
+         *
          * @param Sbus : Sbus with the solver convention, the one used by the solver
          * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
-         * @return CplxVect 
+         * @return CplxVect
          */
         template<class T>
         Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1> > & Sbus,
@@ -1864,14 +1872,17 @@ class LS2G_API LSGrid final
         }
 
         /**
-         * @brief Build the Sbus (or any other vector labelled using the gridmodel convention) 
+         * @brief Build the Sbus (or any other vector labelled using the gridmodel convention)
          * from the same vector (input) that uses the solver convention.
-         * 
-         * TODO copy paste from above, find a better way !
-         * 
+         *
+         * Sibling overload of the one above, for callers passing a genuine Eigen::Matrix<T,...>
+         * lvalue instead of an Eigen::Ref -- see the comment above for why both are needed.
+         * Kept as a plain reference (not Eigen::Ref): T is deduced from this argument, and
+         * Eigen::Ref<const Eigen::Matrix<T,...>> is a non-deduced context here.
+         *
          * @param Sbus : Sbus with the solver convention, the one used by the solver
          * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
-         * @return CplxVect 
+         * @return CplxVect
          */
         template<class T>
         Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Matrix<T, Eigen::Dynamic, 1> & Sbus,
