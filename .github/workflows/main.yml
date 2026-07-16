@@ -802,6 +802,56 @@ jobs:
           print('Strategy 1 OK: KLU available')
           "
 
+  test_march_native:
+    # -march=native is a supported opt-in build flag (see benchmarks/env_compile_all.sh)
+    # that release wheels do not use, so plain CI builds never exercise it. It changes
+    # which SIMD ISA Eigen sees enabled (__AVX__, __AVX2__, ...) in each translation
+    # unit; lightsim2grid_core and lightsim2grid_cpp (the pybind11 bindings) are two
+    # separate shared libraries, so both must see the identical flag -- otherwise an
+    # Eigen object allocated in one and freed in the other computes a different
+    # alignment offset, corrupting the heap ("double free or corruption") the first
+    # time a function's return value crosses the module boundary (e.g. any pandapower
+    # -> LightSimBackend conversion, or a forecast-backend copy). Regression test for
+    # that class of bug: env creation reliably crashed within seconds before the fix.
+    name: Test -march=native build (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_compile_ci.txt
+          python -m pip install grid2op pandapower lxml
+
+      - name: Build lightsim2grid with -march=native
+        run: __COMPILE_MARCHNATIVE=1 __O3_OPTIM=1 python -m pip install -v . --no-build-isolation
+
+      - name: Create + reset a LightSimBackend env (exercises the core<->bindings Eigen boundary)
+        run: |
+          mkdir -p _march_native_check
+          cd _march_native_check
+          python -c "
+          import warnings
+          from grid2op import make
+          from grid2op.Parameters import Parameters
+          from lightsim2grid import LightSimBackend
+
+          param = Parameters()
+          param.init_from_dict({'NO_OVERFLOW_DISCONNECTION': True, 'ENV_DC': True, 'FORECAST_DC': True})
+          with warnings.catch_warnings():
+              warnings.filterwarnings('ignore')
+              env = make('l2rpn_case14_sandbox', backend=LightSimBackend(), param=param, test=True)
+          env.reset()
+          print('OK: env created and reset under -march=native without crashing')
+          "
+
   package:
     name: Package wheels
     runs-on: ubuntu-latest
