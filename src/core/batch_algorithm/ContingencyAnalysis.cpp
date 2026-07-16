@@ -27,11 +27,11 @@ namespace {
 // LOW_VOLTAGE violation). `subs` is used to resolve the violating bus's substation name (see
 // LimitViolation::name); its names are empty strings if never set on the grid.
 void check_bus_voltage_violations(
-    const CplxVect & V,
+    const Eigen::Ref<const CplxVect> & V,
     const SolverBusIdVect & id_me_to_solver,
-    Eigen::Ref<const RealVect> bus_vmin_kv,
-    Eigen::Ref<const RealVect> bus_vmax_kv,
-    Eigen::Ref<const RealVect> bus_vn_kv,
+    const Eigen::Ref<const RealVect> & bus_vmin_kv,
+    const Eigen::Ref<const RealVect> & bus_vmax_kv,
+    const Eigen::Ref<const RealVect> & bus_vn_kv,
     const SubstationContainer & subs,
     const std::vector<int> * masked_solver_ids,
     std::vector<LimitViolation> & out)
@@ -85,13 +85,13 @@ template<class T>
 void check_current_violations(
     const T & structure_data,
     ViolationElementType el_type,
-    const CplxVect & V,
+    const Eigen::Ref<const CplxVect> & V,
     const SolverBusIdVect & id_me_to_solver,
-    Eigen::Ref<const RealVect> bus_vn_kv,
+    const Eigen::Ref<const RealVect> & bus_vn_kv,
     bool ac_solver_used,
     real_type sn_mva,
-    Eigen::Ref<const RealVect> limit1,
-    Eigen::Ref<const RealVect> limit2,
+    const Eigen::Ref<const RealVect> & limit1,
+    const Eigen::Ref<const RealVect> & limit2,
     const std::vector<int> & skip_ids,
     std::vector<LimitViolation> & out)
 {
@@ -772,7 +772,7 @@ void ContingencyAnalysis::run_contingency_range(
     AlgorithmSelector & algo,
     AlgoControl & control,
     Eigen::SparseMatrix<cplx_type> & Ybus,
-    const CplxVect & Vinit_solver,
+    const Eigen::Ref<const CplxVect> & Vinit_solver,
     bool ac_solver_used,
     bool mask_mode,
     int max_iter,

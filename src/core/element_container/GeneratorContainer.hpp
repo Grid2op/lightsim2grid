@@ -184,7 +184,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         RealVect get_slack_weights_solver(size_t nb_bus_solver, const SolverBusIdVect & id_grid_to_solver);
     
         GlobalBusIdVect get_slack_bus_id() const;
-        void set_p_slack(const RealVect& node_mismatch, const SolverBusIdVect & id_grid_to_solver) override;
+        void set_p_slack(const Eigen::Ref<const RealVect>& node_mismatch, const SolverBusIdVect & id_grid_to_solver) override;
     
         // modification
         void turnedoff_no_pv(DualAlgoControl & solver_control){
@@ -200,7 +200,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
         void update_slack_weights(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & could_be_slack,
                                   DualAlgoControl & solver_control);
-        void update_slack_weights_by_id(Eigen::Ref<const IntVect> gen_slack_id, DualAlgoControl & solver_control);
+        void update_slack_weights_by_id(const Eigen::Ref<const IntVect> & gen_slack_id, DualAlgoControl & solver_control);
         
         
         // ---- remote voltage control --------------------------------------------
@@ -254,30 +254,30 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         void change_v(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control);
         void change_v_nothrow(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control);
         
-        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
         void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
                             const SolverBusIdVect & id_grid_to_solver) const override;
         void init_q_vector(int nb_bus,
-                           Eigen::VectorXi & total_gen_per_bus,
-                           RealVect & total_q_min_per_bus,
-                           RealVect & total_q_max_per_bus) const; // delta_q_per_gen_
-        
-        void set_q(const RealVect & reactive_mismatch,
+                           Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
+                           Eigen::Ref<RealVect> total_q_min_per_bus,
+                           Eigen::Ref<RealVect> total_q_max_per_bus) const; // delta_q_per_gen_
+
+        void set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
                    const SolverBusIdVect & id_grid_to_solver,
                    bool ac,
-                   const Eigen::VectorXi & total_gen_per_bus,
-                   const RealVect & total_q_min_per_bus,
-                   const RealVect & total_q_max_per_bus);
+                   const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
+                   const Eigen::Ref<const RealVect> & total_q_min_per_bus,
+                   const Eigen::Ref<const RealVect> & total_q_max_per_bus);
         
-        void get_vm_for_dc(RealVect & Vm);
+        void get_vm_for_dc(Eigen::Ref<RealVect> Vm);
         
         /**
         this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
         the ac powerflow
         **/
-        void set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const;
+        void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const;
         
         void cout_v(){
             for(const auto & el : target_vm_pu_){

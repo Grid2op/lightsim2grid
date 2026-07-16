@@ -166,7 +166,7 @@ public:
     }
 
     // Construct from an IntVect (eigen vector of int)
-    explicit TaggedIdStdVec(const IntVect & v) {
+    explicit TaggedIdStdVec(const Eigen::Ref<const IntVect> & v) {
         data_= std::vector<int>(v.begin(), v.end());
     }
 

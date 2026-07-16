@@ -95,7 +95,7 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             for(auto i = 0; i < n_bus_max_; ++ i) bus_status_[i] = false;
         }
 
-        void init_sub(const RealVect & sub_vn_kv){
+        void init_sub(const Eigen::Ref<const RealVect> & sub_vn_kv){
             if(sub_vn_kv.size() != n_sub_){
                 throw std::range_error("SubstationContainer::init_sub: sub_vn_kv should have the size of the number of substations on the grid.");
             }
@@ -145,7 +145,7 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         Eigen::Ref<const RealVect> get_bus_vn_kv() const {return bus_vn_kv_;}
 
         // per-bus min/max operating voltage (kV), optional: empty if never set (e.g. pandapower-origin grids)
-        void init_bus_voltage_limits(const RealVect & bus_vmin_kv, const RealVect & bus_vmax_kv){
+        void init_bus_voltage_limits(const Eigen::Ref<const RealVect> & bus_vmin_kv, const Eigen::Ref<const RealVect> & bus_vmax_kv){
             if(static_cast<size_t>(bus_vmin_kv.size()) != nb_bus()){
                 throw std::runtime_error("SubstationContainer::init_bus_voltage_limits: bus_vmin_kv does not have the proper size.");
             }

@@ -13,10 +13,10 @@
 
 namespace ls2g {
 
-int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
-                           Eigen::Ref<const RealMat> sgen_p,
-                           Eigen::Ref<const RealMat> load_p,
-                           Eigen::Ref<const RealMat> load_q,
+int TimeSeries::compute_Vs(const Eigen::Ref<const RealMat> & gen_p,
+                           const Eigen::Ref<const RealMat> & sgen_p,
+                           const Eigen::Ref<const RealMat> & load_p,
+                           const Eigen::Ref<const RealMat> & load_q,
                            const Eigen::Ref<const CplxVect> & Vinit,
                            const int max_iter,
                            const real_type tol)
@@ -48,7 +48,7 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     // temporal_data.col(el_id) (unchecked Eigen .col()), so a matrix with too few
     // columns over-reads; and _Sbuses is sized with gen_p.rows(), so mismatched row
     // counts turn the `Sbuses.col(...) += tmp` into an out-of-bounds read/write.
-    const auto check_mat = [nb_steps](Eigen::Ref<const RealMat> mat, Eigen::Index nb_expected_cols,
+    const auto check_mat = [nb_steps](const Eigen::Ref<const RealMat> & mat, Eigen::Index nb_expected_cols,
                                       const std::string & name){
         if(static_cast<size_t>(mat.rows()) != nb_steps){
             std::ostringstream exc_;

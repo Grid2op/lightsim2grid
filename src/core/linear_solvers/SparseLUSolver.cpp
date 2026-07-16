@@ -32,7 +32,7 @@ ErrorType SparseLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type>
     return ErrorType::NoError;
 }
 
-ErrorType SparseLULinearSolver::solve(RealVect & b){
+ErrorType SparseLULinearSolver::solve(Eigen::Ref<RealVect> b){
     ErrorType err = ErrorType::NoError;
     RealVect Va = solver_.solve(b);
     // std::cout << "\t\tSparseLUSolver.cpp: solver_.info: " << solver_.info() << std::endl;  // TODO DEBUG WINDOWS

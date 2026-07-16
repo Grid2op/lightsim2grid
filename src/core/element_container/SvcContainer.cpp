@@ -85,7 +85,7 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     reset_results();
 }
 
-void SvcContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const
+void SvcContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const
 {
     const int nb_svc = nb();
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
@@ -113,7 +113,7 @@ void SvcContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_
     }
 }
 
-void SvcContainer::get_vm_for_dc(RealVect & Vm)
+void SvcContainer::get_vm_for_dc(Eigen::Ref<RealVect> Vm)
 {
     const int nb_svc = nb();
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
@@ -125,7 +125,7 @@ void SvcContainer::get_vm_for_dc(RealVect & Vm)
     }
 }
 
-void SvcContainer::set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const
+void SvcContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const
 {
     const int nb_svc = nb();
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){

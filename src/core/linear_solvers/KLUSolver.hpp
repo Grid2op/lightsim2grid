@@ -54,7 +54,7 @@ class LS2G_API KLULinearSolver final
         ErrorType analyze(const Eigen::SparseMatrix<real_type>& J);   // reordering + symbolic factorization (structure only)
         ErrorType factorize(const Eigen::SparseMatrix<real_type>& J); // numeric factorization (requires values)
         ErrorType refactorize(const Eigen::SparseMatrix<real_type>& J);  // re-numeric factorization, reuses symbolic
-        ErrorType solve(RealVect & b);
+        ErrorType solve(Eigen::Ref<RealVect> b);
 
         // can this linear solver solve problem where RHS is a matrix
         static const bool CAN_SOLVE_MAT;

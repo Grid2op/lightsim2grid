@@ -144,7 +144,7 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
          * (it is handled by the HVDC droop extension of the NR system, or by
          * the DC algorithm): only the reactive personality is stamped then.
          */
-        void fillSbus_station(CplxVect & Sbus,
+        void fillSbus_station(Eigen::Ref<CplxVect> Sbus,
                               const SolverBusIdVect & id_grid_to_solver,
                               bool ac,
                               const std::vector<bool> & skip_p) const;
@@ -153,17 +153,17 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
                             const SolverBusIdVect & slack_bus_id_solver,
                             const SolverBusIdVect & id_grid_to_solver) const override;
         void init_q_vector(int nb_bus,
-                           Eigen::VectorXi & total_gen_per_bus,
-                           RealVect & total_q_min_per_bus,
-                           RealVect & total_q_max_per_bus) const;
-        void set_q(const RealVect & reactive_mismatch,
+                           Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
+                           Eigen::Ref<RealVect> total_q_min_per_bus,
+                           Eigen::Ref<RealVect> total_q_max_per_bus) const;
+        void set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
                    const SolverBusIdVect & id_grid_to_solver,
                    bool ac,
-                   const Eigen::VectorXi & total_gen_per_bus,
-                   const RealVect & total_q_min_per_bus,
-                   const RealVect & total_q_max_per_bus);
-        void get_vm_for_dc(RealVect & Vm);
-        void set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const;
+                   const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
+                   const Eigen::Ref<const RealVect> & total_q_min_per_bus,
+                   const Eigen::Ref<const RealVect> & total_q_max_per_bus);
+        void get_vm_for_dc(Eigen::Ref<RealVect> Vm);
+        void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const;
 
     protected:
         void _compute_results(

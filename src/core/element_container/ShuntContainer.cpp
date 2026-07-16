@@ -102,7 +102,7 @@ void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/
     }
 }
 
-void ShuntContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const  // in DC i need that
+void ShuntContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const  // in DC i need that
 {
     if(ac) return;  // in AC I do not do that
     // std::cout << " ok i use this function" << std::endl;

@@ -96,7 +96,7 @@ ErrorType CKTSOLinearSolver::refactorize(const Eigen::SparseMatrix<real_type> & 
     return ErrorType::NoError;
 }
 
-ErrorType CKTSOLinearSolver::solve(RealVect & b){
+ErrorType CKTSOLinearSolver::solve(Eigen::Ref<RealVect> b){
     RealVect x(b.size());
     int ret = solver_->Solve(&b(0), &x(0), false, 1);
     if(ret < 0){

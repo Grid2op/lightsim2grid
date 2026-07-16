@@ -80,7 +80,7 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
                                 const SolverBusIdVect & id_grid_to_solver,
                                 real_type sn_mva,
                                 FDPFMethod xb_or_bx) const override;
-        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;  // in DC i need that
+        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;  // in DC i need that
         
     protected:
         void _change_p(int shunt_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control) override

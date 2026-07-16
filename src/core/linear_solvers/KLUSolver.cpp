@@ -63,7 +63,7 @@ ErrorType KLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type>& J){
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::solve(RealVect & b){
+ErrorType KLULinearSolver::solve(Eigen::Ref<RealVect> b){
     const int n = static_cast<int>(b.size());
     int ok = klu_solve(symbolic_.get(), numeric_.get(), n, 1, &b(0), &common_);
     if(ok != 1){
