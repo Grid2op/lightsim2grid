@@ -230,6 +230,36 @@ class LS2G_API BaseAlgo : public BaseConstants
         // initial guess of 0 -- this is the ground truth after convergence.
         virtual real_type get_slack_absorbed()     const { return static_cast<real_type>(0.); }
 
+        // ---- capability flags -------------------------------------------------
+        // Each concrete solver family declares its own `static constexpr bool`
+        // (queryable at compile time even without an instance, e.g.
+        // `NRAlgo<SparseLULinearSolver, SingleSlackNRSystem>::SUPPORTS_HVDC_DROOP`)
+        // and overrides the matching virtual accessor below with `return
+        // ITS_OWN_CONSTANT;` so that code holding only a `unique_ptr<BaseAlgo>`
+        // (AlgorithmSelector, including plugin/Custom solvers) can query the
+        // capability polymorphically. Defaults here are the conservative
+        // "capability absent" value -- a plugin that does not override stays
+        // maximally restricted, exactly like today's built-in Gauss-Seidel.
+        static constexpr bool IS_DC = false;
+        static constexpr bool SUPPORTS_HVDC_DROOP = false;
+        static constexpr bool IS_FDPF = false;
+        static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = false;
+
+        virtual bool is_dc() const noexcept { return IS_DC; }
+        // Only the Newton-Raphson algorithms implement the hvdc angle-droop
+        // ("AC emulation") equations (their NRSystem includes the Hvdc
+        // extension); Gauss-Seidel / Fast-Decoupled do not, and a plugin
+        // (Custom) solver defaults to `false` unless it overrides this --
+        // see LSGrid::ac_pf's angle-droop guard.
+        virtual bool supports_hvdc_droop() const noexcept { return SUPPORTS_HVDC_DROOP; }
+        virtual bool is_fdpf() const noexcept { return IS_FDPF; }
+        // Only the Newton-Raphson algorithms implement remote voltage control
+        // (generators/SVCs regulating a bus other than their own -- their
+        // NRSystem includes the VoltageControl extension, see
+        // LSGrid::fill_voltage_control_solver_data). Gauss-Seidel /
+        // Fast-Decoupled / DC do not consume that data at all.
+        virtual bool supports_remote_voltage_control() const noexcept { return SUPPORTS_REMOTE_VOLTAGE_CONTROL; }
+
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;
         }

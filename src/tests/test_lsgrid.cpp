@@ -25,6 +25,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "LSGrid.hpp"
+#include "case_exotic_elements.hpp"
 #include "test_helpers.hpp"
 
 using Catch::Approx;
@@ -269,15 +270,19 @@ TEST_CASE("get_state / set_state round-trips the whole grid", "[LSGrid]")
 
 TEST_CASE("save_binary / load_binary round-trips the whole grid", "[LSGrid]")
 {
-    LSGrid grid = make_three_bus_grid();
+    // the exotic-elements case (IEEE14 + SVC + storage + 3 HVDC lines + a
+    // phase-shifting transformer, see src/tests/case_exotic_elements.hpp) rather
+    // than the 3-bus skeleton, so this round trip actually exercises every
+    // element type LSGrid knows how to serialize, not just lines/loads/a slack gen.
+    LSGrid grid = ls2g_test::make_exotic_elements_grid();
     ls2g_test::TempFile file;
     grid.save_binary(file.str());
 
     LSGrid loaded = LSGrid::load_binary(file.str());
     const CplxVect V = solve_ac(grid);
     const CplxVect V_loaded = solve_ac(loaded);
-    REQUIRE(V.size() == 3);
-    REQUIRE(V_loaded.size() == 3);
+    REQUIRE(V.size() == 14);
+    REQUIRE(V_loaded.size() == 14);
     CHECK((V - V_loaded).norm() < 1e-10);
 }
 
