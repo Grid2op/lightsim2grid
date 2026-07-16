@@ -23,6 +23,10 @@ class BaseFDPFAlgo final: public BaseAlgo
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
         ~BaseFDPFAlgo() noexcept override = default;
 
+
+        static constexpr bool IS_FDPF = true;
+        bool is_fdpf() const noexcept override { return IS_FDPF; }
+        
         // Ybus stays a plain reference: compute_pf is the same shared virtual
         // signature as NRAlgo's (see BaseAlgo::compute_pf) even though FDPF itself
         // has no pointer-caching need.
