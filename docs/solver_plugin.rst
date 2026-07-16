@@ -571,6 +571,18 @@ directly from Python::
     >>> lightsim2grid.compilation_options.compiled_o3_optim
     True
 
+As defense-in-depth on top of the CMake-level matching above, this is also
+checked **at runtime**: every plugin solver registration compares an "ABI
+tag" (``EIGEN_MAX_ALIGN_BYTES``, the resolved ``EIGEN_VECTORIZE_*`` flags,
+and the Eigen version) computed in the plugin's own translation unit against
+the one ``lightsim2grid_core`` was actually compiled with, and rejects the
+registration with a clear error if they differ — instead of registering it
+and letting the heap corrupt later. The same comparison runs once between
+``lightsim2grid_core`` and ``lightsim2grid_cpp`` themselves at import time.
+This does not replace matching the build flags (a rejected plugin is still a
+plugin you can't use), but it turns a silent, far-away heap corruption into
+an immediate, actionable error at load time. See ``src/core/Ls2gAbiTag.hpp``.
+
 
 Worked example (``examples/external_algorithm/``)
 -------------------------------------------------
