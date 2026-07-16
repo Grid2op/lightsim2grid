@@ -299,7 +299,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // algo.compute_pf(Ybus, V, ...) (AC) and algo.compute_pf_dc(Bbus, V, ...) (DC)
         // depending on ac_solver_used(), and the DC path resizes/reassigns V -- so it
         // can't become Eigen::Ref even though the AC path alone would allow it.
-        bool compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
+        bool compute_one_powerflow(const EigenRefConstCplxSpMat     & Ybus,
                                    CplxVect & V,
                                    const Eigen::Ref<const CplxVect> & Sbus,
                                    const Eigen::Ref<const IntVect> & slack_ids,
@@ -319,7 +319,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                                    AlgoControl & control,
                                    int & nb_solved,
                                    double & timer_solver,
-                                   const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                   const EigenRefConstCplxSpMat     &  Ybus,
                                    CplxVect & V,
                                    const Eigen::Ref<const CplxVect> & Sbus,
                                    const Eigen::Ref<const IntVect> & slack_ids,
@@ -338,7 +338,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // subsequent per-contingency solves reuse the factorization.
         bool warmup_solver(AlgorithmSelector & algo,
                            AlgoControl & control,
-                           CplxVect Vinit_solver,
+                           const Eigen::Ref<const CplxVect> & Vinit_solver,
                            int max_iter,
                            real_type tol);
 

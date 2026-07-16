@@ -319,6 +319,44 @@ development without a full ``pip install``.
     add_library(my_solver MODULE my_solver_plugin.cpp)
     target_link_libraries(my_solver PRIVATE lightsim2grid::core)
 
+    # Match lightsim2grid_core's -march=native / -O3. This is required, not
+    # just a performance nicety: lightsim2grid_core and my_solver are two
+    # *separate* shared libraries, and -march=native changes which SIMD ISA
+    # Eigen sees enabled, which changes EIGEN_MAX_ALIGN_BYTES -- an Eigen
+    # object (RealVect, CplxVect, ...) allocated under one alignment
+    # assumption and freed under another (possible the moment such an object
+    # crosses the BaseAlgo interface) silently corrupts the heap. See the
+    # "Matching build flags" section below.
+    if(lightsim2grid_core_FOUND)
+        # Installed package: it exports the flags it was actually built
+        # with -- no guessing needed.
+        set(_ls2g_march_native "${lightsim2grid_core_MARCH_NATIVE}")
+        set(_ls2g_o3_optim     "${lightsim2grid_core_O3_OPTIM}")
+    else()
+        # Source tree: no installed package to query -- fall back to the
+        # same env vars lightsim2grid itself reads.
+        if("$ENV{__COMPILE_MARCHNATIVE}" STREQUAL "1" OR "$ENV{__COMPILE_MARCHNATIVE}" STREQUAL "True")
+            set(_ls2g_march_native ON)
+        else()
+            set(_ls2g_march_native OFF)
+        endif()
+        if("$ENV{__O3_OPTIM}" STREQUAL "1" OR "$ENV{__O3_OPTIM}" STREQUAL "True")
+            set(_ls2g_o3_optim ON)
+        else()
+            set(_ls2g_o3_optim OFF)
+        endif()
+    endif()
+    if(NOT MSVC)
+        if(_ls2g_march_native)
+            message(STATUS "my_solver: lightsim2grid_core was built with -march=native -- matching it")
+            target_compile_options(my_solver PRIVATE -march=native)
+        endif()
+        if(_ls2g_o3_optim)
+            message(STATUS "my_solver: lightsim2grid_core was built with -O3 -- matching it")
+            target_compile_options(my_solver PRIVATE -O3)
+        endif()
+    endif()
+
     if(WIN32)
         # find_package provides the import lib via the IMPORTED target.
     elseif(UNIX AND NOT APPLE)
@@ -472,6 +510,66 @@ Python API reference
     On Windows the plugin also links against ``lightsim2grid_cpp.lib``.  This
     import library must match the ``lightsim2grid_cpp.pyd`` that will be loaded
     at runtime — i.e. both must come from the same lightsim2grid build.
+
+.. _solver_plugin_march_native:
+
+Matching build flags (``-march=native`` / ``-O3``)
+----------------------------------------------------
+
+``lightsim2grid_core`` supports two opt-in build flags, set as environment
+variables *before* building lightsim2grid (see ``benchmarks/env_compile_all.sh``):
+
+* ``__COMPILE_MARCHNATIVE=1`` — adds ``-march=native``
+* ``__O3_OPTIM=1`` — adds ``-O3`` (on by default, actually)
+
+A plugin **must** be compiled with the identical ``-march=native`` setting as
+the ``lightsim2grid_core`` it links against, and this is a correctness
+requirement, not a performance one. ``lightsim2grid_core`` and a plugin
+module are two *separate* shared libraries. ``-march=native`` changes which
+SIMD instruction sets Eigen sees enabled (``__AVX__``, ``__AVX2__``, ...),
+which changes ``EIGEN_MAX_ALIGN_BYTES`` and thus how Eigen aligns / allocates
+/ frees its dynamic-size matrices (``RealVect``, ``CplxVect``, ...). If the
+two libraries disagree, an Eigen object allocated under one alignment
+assumption and freed under another silently corrupts the heap — surfacing
+later, and far away, as ``free(): invalid size`` or ``double free or
+corruption``. This is a real, previously-hit bug (see the CHANGELOG entry
+for the ``lightsim2grid_core`` / ``lightsim2grid_cpp`` split) — not a
+hypothetical one. (``-O3`` alone does not affect ABI/alignment, so a mismatch
+there is only a lost optimization, not a correctness risk — but the two
+builds should still track each other to avoid surprising perf differences.)
+
+Both example plugins in this repository (``examples/dist_slack_algorithm/``,
+``examples/external_algorithm/``) handle this automatically, and log an
+``-- my_solver: lightsim2grid_core was built with -march=native -- matching
+it`` status message when they do:
+
+* When linking against an **installed** ``lightsim2grid_core`` (``pip
+  install lightsim2grid``, ``find_package(lightsim2grid_core CONFIG)``), the
+  installed CMake package exports ``lightsim2grid_core_MARCH_NATIVE`` /
+  ``lightsim2grid_core_O3_OPTIM`` — the flags it was *actually* built with —
+  so the plugin build queries them directly, no guessing or separate Python
+  call needed.
+* When falling back to a **source-tree** build (no installed package), there
+  is nothing to query, so the plugin build instead reads the same
+  ``__COMPILE_MARCHNATIVE`` / ``__O3_OPTIM`` env vars lightsim2grid itself
+  reads — set them identically for both builds.
+
+The shared logic lives in
+``examples/cmake/MatchLightsim2gridBuildFlags.cmake`` as the
+``ls2g_match_core_build_flags(<target>)`` function; ``include()`` it and call
+it on your plugin's target right after ``target_link_libraries(<target>
+PRIVATE lightsim2grid::core)`` if you are building inside this repository.
+The "Writing a solver plugin" CMakeLists.txt template above inlines the same
+logic for third-party projects that do not have access to that file.
+
+You can also check what a given lightsim2grid install was built with
+directly from Python::
+
+    >>> import lightsim2grid
+    >>> lightsim2grid.compilation_options.compiled_march_native
+    True
+    >>> lightsim2grid.compilation_options.compiled_o3_optim
+    True
 
 
 Worked example (``examples/external_algorithm/``)

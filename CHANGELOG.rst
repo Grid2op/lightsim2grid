@@ -691,6 +691,39 @@ TODO: speed: `BaseBatchSolverSynch::compute_amps_flows` / `compute_active_power_
   need to separately pass `sort_index` back in) and raises `NotImplementedError` for a grid
   built with the legacy `buses_for_sub=True` mode. See the "Inspecting results in a
   pypowsybl-like way" section of the documentation.
+- [FIXED] a build with ``__COMPILE_MARCHNATIVE=1`` (see ``benchmarks/env_compile_all.sh``)
+  reliably corrupted the heap and crashed (``free(): invalid size`` / ``double free or
+  corruption``) as soon as any C++ function's return value crossed from
+  ``lightsim2grid_core`` into ``lightsim2grid_cpp`` (the pybind11 bindings) -- for
+  example on the very first ``grid2op.make(...)`` with a pandapower-backed grid, well
+  before any solver is even selected. Root cause: ``lightsim2grid_core`` and
+  ``lightsim2grid_cpp`` are two separate shared libraries (a recent split), and
+  ``-march=native``/``-O3`` were only ever applied (as ``PRIVATE`` compile options) to
+  ``lightsim2grid_core``. ``-march=native`` changes which SIMD instruction sets Eigen
+  sees enabled (``__AVX__``/``__AVX2__``/...), which changes ``EIGEN_MAX_ALIGN_BYTES``
+  and thus how Eigen aligns/allocates/frees its dynamic-size matrices; since both
+  libraries instantiate the same ``Eigen::Matrix<...>`` types (every pybind11 Eigen
+  return-value cast does), an object allocated under one alignment assumption and freed
+  under another silently computed the wrong original-allocation offset. Fixed by
+  mirroring ``-march=native``/``-O3`` onto ``lightsim2grid_cpp`` in
+  ``src/bindings/python/CMakeLists.txt``, the same way ``__SANITIZE``/``__DEBUG_ASSERTS``
+  were already mirrored there. Added a regression test,
+  ``.github/workflows/main.yml``'s ``test_march_native`` job, since release wheels do
+  not use ``-march=native`` and so never exercised this.
+- [FIXED] ``lightsim2grid.compilation_options.compiled_march_native`` /
+  ``compiled_o3_optim`` always reported ``False``, regardless of
+  ``__COMPILE_MARCHNATIVE``/``__O3_OPTIM``, because ``binding_module.cpp`` (compiled
+  into ``lightsim2grid_cpp``) checks the ``__COMPILE_MARCHNATIVE``/``__O3_OPTIM``
+  *preprocessor macros*, which were never defined for that target: ``__O3_OPTIM`` was
+  only ``target_compile_definitions``'d as ``PRIVATE`` on ``lightsim2grid_core`` (so it
+  did not propagate across the library boundary, unlike ``KLU_SOLVER_AVAILABLE`` and
+  friends, which are ``PUBLIC``), and ``__COMPILE_MARCHNATIVE`` was never defined as a
+  macro anywhere at all -- only used to conditionally add the ``-march=native`` compiler
+  *flag* (a separate thing from the macro). This was a pre-existing, purely cosmetic gap
+  (the actual ``-march=native``/``-O3`` compiler flags were, and are, applied correctly);
+  it just happened to surface right after the fix above, when checking that the build
+  driving a benchmark actually had ``-march=native`` active. Fixed alongside the ABI fix
+  above, in the same ``src/bindings/python/CMakeLists.txt`` block.
 
 [0.13.1]  2026-04-21
 --------------------

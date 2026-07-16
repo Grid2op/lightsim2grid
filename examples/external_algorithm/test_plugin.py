@@ -7,6 +7,16 @@ Build the plugin first:
     cmake ..
     make  (or: cmake --build . --config Release on Windows)
 
+The plugin's CMakeLists.txt automatically matches whatever -march=native /
+-O3 the installed lightsim2grid_core was built with (see
+examples/cmake/MatchLightsim2gridBuildFlags.cmake and
+docs/solver_plugin.rst) -- this is required, not just a performance nicety:
+lightsim2grid_core and this plugin are separate shared libraries, and a
+mismatched -march=native changes Eigen's alignment assumptions, so an Eigen
+object allocated in one and freed in the other silently corrupts the heap.
+Nothing to do here unless you're hand-rolling your own build system instead
+of the provided CMakeLists.txt.
+
 Then run:
     python test_plugin.py
 """
