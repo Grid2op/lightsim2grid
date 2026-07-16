@@ -100,18 +100,6 @@ class LS2G_API AlgorithmSelector final
                    (type == AlgorithmType::DC_NICSLU) ||
                    (type == AlgorithmType::DC_CKTSO);
         }
-        // only the Newton-Raphson algorithms implement the hvdc angle-droop
-        // ("AC emulation") equations; plugin (Custom) solvers are assumed not to
-        bool supports_hvdc_droop(const AlgorithmType& type) const noexcept {
-            return (type == AlgorithmType::NR_SparseLU) ||
-                   (type == AlgorithmType::NR_KLU) ||
-                   (type == AlgorithmType::NR_NICSLU) ||
-                   (type == AlgorithmType::NR_CKTSO) ||
-                   (type == AlgorithmType::NRSing_SparseLU) ||
-                   (type == AlgorithmType::NRSing_KLU) ||
-                   (type == AlgorithmType::NRSing_NICSLU) ||
-                   (type == AlgorithmType::NRSing_CKTSO);
-        }
         bool is_fdpf(const AlgorithmType& type) const noexcept {
             return (type == AlgorithmType::FDPF_XB_SparseLU) ||
                    (type == AlgorithmType::FDPF_BX_SparseLU) ||
@@ -124,6 +112,18 @@ class LS2G_API AlgorithmSelector final
         }
 
         AlgorithmType get_type() const { return _algo_type; }
+
+        // Polymorphic (instance-level) capability queries: unlike the
+        // type-keyed overloads above (needed by LSGrid::change_algorithm to
+        // route BEFORE a solver is constructed), these ask the CURRENTLY
+        // active `_algo` -- so they work for plugin (Custom) solvers too,
+        // via BaseAlgo's virtual capability accessors (see BaseAlgo.hpp).
+        bool supports_hvdc_droop() const {
+            return get_prt_solver("supports_hvdc_droop", false)->supports_hvdc_droop();
+        }
+        bool supports_remote_voltage_control() const {
+            return get_prt_solver("supports_remote_voltage_control", false)->supports_remote_voltage_control();
+        }
 
         // Convenience accessors for the two FDPF SparseLU variants.
         // These exist mainly for internal diagnostic use (exposed as AlgorithmSelector.get_fdpf_*).

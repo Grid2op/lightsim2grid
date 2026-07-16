@@ -54,6 +54,18 @@ public:
 
     ~NRAlgo() noexcept override = default;
 
+    // Both SingleSlackNRSystem and MultiSlackNRSystem include the Hvdc
+    // extension (see NRSystem.hpp), so every NRAlgo instantiation supports
+    // the angle-droop ("AC emulation") equations regardless of NRSystem.
+    static constexpr bool SUPPORTS_HVDC_DROOP = true;
+    bool supports_hvdc_droop() const noexcept override { return SUPPORTS_HVDC_DROOP; }
+
+    // Both SingleSlackNRSystem and MultiSlackNRSystem also include the
+    // VoltageControl extension (remote gen / SVC regulation), so every
+    // NRAlgo instantiation supports it regardless of NRSystem.
+    static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = true;
+    bool supports_remote_voltage_control() const noexcept override { return SUPPORTS_REMOTE_VOLTAGE_CONTROL; }
+
     // ----- Jacobian accessor ---------------------------------------------------
 
     Eigen::Ref<const Eigen::SparseMatrix<real_type>> get_J() const override {

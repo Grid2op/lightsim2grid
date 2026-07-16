@@ -25,6 +25,25 @@ VSC" reading: lightsim2grid's ``HvdcLineContainer`` only supports the angle-droo
 otherwise) -- an LCC line with droop is not a configuration lightsim2grid can ever
 load. Substituted for equivalent regime coverage: HVDC VSC-VSC *with* droop, HVDC
 VSC-VSC *without* droop, and HVDC LCC-LCC (never has droop).
+
+This module itself requires pypowsybl (it builds and converts a real IIDM network).
+Two dependency-free reproductions of the *same* grid are generated from it and
+checked in, for callers that should not need pypowsybl installed:
+
+* ``lightsim2grid/tests/_exotic_elements_case_ls.py`` -- ``build_exotic_elements_case_grid()``,
+  numpy + lightsim2grid only.
+* ``src/tests/case_exotic_elements.hpp`` -- ``ls2g_test::make_exotic_elements_grid()``,
+  pure C++ (Eigen + lightsim2grid core), for the Catch2 suite.
+
+Both are produced by ``_gen_exotic_elements_case.py`` (see that module's docstring
+for how it works and how to regenerate them -- needed whenever
+``build_exotic_elements_network()`` here changes) and carry a
+"Generated on YYYY-MM-DD using ..." header stamped with the lightsim2grid /
+pypowsybl versions used. ``test_exotic_elements_case_ls.py`` checks the generated
+case stays bit-identical to this module's ``build_exotic_elements_grid()``. Prefer
+the generated case in any test that does not specifically need pypowsybl for
+something else (see ``test_binary_serialization.py`` / ``test_pickleable.py``,
+which switched to it so those files can be imported and run without pypowsybl).
 """
 
 import pandas as pd

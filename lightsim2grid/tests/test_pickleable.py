@@ -20,7 +20,10 @@ import grid2op
 from lightsim2grid.lightSimBackend import LightSimBackend
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _exotic_elements_fixture import build_exotic_elements_grid  # noqa: E402
+# generated, dependency-free reproduction of _exotic_elements_fixture's grid (see
+# _gen_exotic_elements_case.py) -- deliberately NOT `_exotic_elements_fixture` itself,
+# so this whole test module stays importable and runnable without pypowsybl installed
+from _exotic_elements_case_ls import build_exotic_elements_case_grid  # noqa: E402
 
 from lightsim2grid.network.compare_lsgrid import (
     compare_network_input,
@@ -34,6 +37,19 @@ from lightsim2grid.network.compare_lsgrid import (
     _compare_static_generators,
     _compare_dclines,
     _compare_svcs)
+
+
+def _solved_exotic_case_grid():
+    """`build_exotic_elements_case_grid()` is unsolved by construction (callers run
+    their own powerflow); the comparisons below only read input attributes, but a
+    flat-start ac_pf is run anyway to match the pypowsybl-based fixture's own
+    default (`build_exotic_elements_grid(solve=True)`) as closely as possible."""
+    grid = build_exotic_elements_case_grid()
+    v0 = np.ones(grid.total_bus(), dtype=complex)
+    conv = grid.ac_pf(v0, 20, 1e-7)
+    if len(conv) == 0:
+        raise RuntimeError("_solved_exotic_case_grid: ac_pf did not converge; this is a bug")
+    return grid
 
 
 class TestPickle(unittest.TestCase):
@@ -196,9 +212,9 @@ class TestPickle(unittest.TestCase):
                         
     def _aux_test_pickle(self, fun_name, fun_comp, check_old_version=True, grid=None):
         """`grid` defaults to a full l2rpn_idf_2023 grid2op env's LSGrid; pass one
-        explicitly (eg `build_exotic_elements_grid()`) to test an element type
+        explicitly (eg `_solved_exotic_case_grid()`) to test an element type
         l2rpn_idf_2023 does not carry any of (SVC, HVDC -- see
-        `_exotic_elements_fixture.py`). Only meaningful with `check_old_version=False`:
+        `_exotic_elements_fixture.py` / `_exotic_elements_case_ls.py`). Only meaningful with `check_old_version=False`:
         the `old_pickle/` legacy fixtures below were generated from an
         l2rpn_idf_2023 grid and have nothing to do with `grid`.
         """
@@ -263,14 +279,14 @@ class TestPickle(unittest.TestCase):
 
     def test_pickle_hvdc(self):
         # l2rpn_idf_2023 carries no HVDC line at all -- use the exotic-elements
-        # fixture instead, which has 3 (VSC droop, VSC no-droop, LCC).
+        # case grid instead, which has 3 (VSC droop, VSC no-droop, LCC).
         self._aux_test_pickle("get_dclines", _compare_dclines, check_old_version=False,
-                              grid=build_exotic_elements_grid())
+                              grid=_solved_exotic_case_grid())
 
     def test_pickle_svcs(self):
-        # l2rpn_idf_2023 carries no SVC at all -- use the exotic-elements fixture.
+        # l2rpn_idf_2023 carries no SVC at all -- use the exotic-elements case grid.
         self._aux_test_pickle("get_svcs", _compare_svcs, check_old_version=False,
-                              grid=build_exotic_elements_grid())
+                              grid=_solved_exotic_case_grid())
 
 
 if __name__ == "__main__":
