@@ -84,18 +84,23 @@ class BaseDCAlgo final: public BaseAlgo
         // Native real-valued DC power flow: solves `Bbus . theta = Pbus`.
         // (the DC solver does not implement the complex `compute_pf`: it inherits the throwing
         //  default from BaseAlgo, since every DC code path goes through `compute_pf_dc`)
-        bool compute_pf_dc(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & Bbus,
-                           CplxVect & V,
-                           const Eigen::Ref<const RealVect> & Pbus,
-                           const Eigen::Ref<const IntVect> & slack_ids,
-                           const Eigen::Ref<const RealVect> & slack_weights,
-                           const Eigen::Ref<const IntVect> & pv,
-                           const Eigen::Ref<const IntVect> & pq
-                           ) override;
+        bool compute_pf_dc(
+            const EigenRefConstRealSpMat     & Bbus,
+            const Eigen::Ref<const CplxVect> & V,
+            const Eigen::Ref<const RealVect> & Pbus,
+            const Eigen::Ref<const IntVect>  & slack_ids,
+            const Eigen::Ref<const RealVect> & slack_weights,
+            const Eigen::Ref<const IntVect>  & pv,
+            const Eigen::Ref<const IntVect>  & pq
+        ) override;
 
+        // TOOD speed optim: return refs instead of plain structure
         RealMat get_ptdf() override;
-        RealMat get_lodf(const IntVect & from_bus,
-                                 const IntVect & to_bus) override;
+        RealMat get_lodf(
+            const Eigen::Ref<const IntVect> & from_bus,
+            const Eigen::Ref<const IntVect> & to_bus
+        ) override;
+
         Eigen::SparseMatrix<real_type> get_bsdf() override;  // TODO BSDF
 
         void update_internal_Ybus(const Coeff & coeff, bool add) override{

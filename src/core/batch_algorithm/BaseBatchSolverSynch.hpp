@@ -295,8 +295,10 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
         // member version: forwards to the explicit overload below using the
         // member solver / control / accumulators (single-threaded path).
-        // Ybus stays a plain reference: it forwards into algo.compute_pf(Ybus, ...),
-        // whose Ybus must stay plain too (see BaseAlgo::compute_pf).
+        // V stays a plain reference (not Eigen::Ref): it forwards into both
+        // algo.compute_pf(Ybus, V, ...) (AC) and algo.compute_pf_dc(Bbus, V, ...) (DC)
+        // depending on ac_solver_used(), and the DC path resizes/reassigns V -- so it
+        // can't become Eigen::Ref even though the AC path alone would allow it.
         bool compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
                                    const Eigen::Ref<const CplxVect> & Sbus,
@@ -312,7 +314,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // its book-keeping into the passed accumulators. This is what the
         // multi-threaded ContingencyAnalysis uses (one solver per thread). The
         // read-only member Bbus_ is only read here (safe to share across threads).
-        // Ybus stays a plain reference for the same reason as the overload above.
+        // V stays plain -- same AC/DC forwarding reason as the member overload above.
         bool compute_one_powerflow(AlgorithmSelector & algo,
                                    AlgoControl & control,
                                    int & nb_solved,
@@ -429,10 +431,17 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             return nb_total_bus;
         }
 
+        // Vinit_solver as Eigen::Ref relies on the reassignment below
+        // (Vinit_solver = _algo.get_V()) always being same-size as the caller's
+        // Vinit_solver: both trace back to the same Ybus_/Bbus_ solver-space
+        // dimension (nb_buses_solver_) for the duration of one call, so this holds
+        // structurally, not by luck. No virtual dispatch here to enforce it --
+        // if that invariant is ever broken, Eigen::Ref's operator= will assert
+        // (debug) or corrupt memory (release), same risk as any Eigen::Ref sink.
         bool _finish_preprocessing(
             size_t nb_steps,
             size_t nb_total_bus,
-            CplxVect & Vinit_solver,  // is modified if _init_from_n_powerflow is true !
+            Eigen::Ref<CplxVect> Vinit_solver,  // is modified if _init_from_n_powerflow is true !
             size_t max_iter,
             real_type tol,
             CustTimer  & timer_preproc  // non const because double duration() is not const

@@ -10,16 +10,17 @@
 
 namespace ls2g {
 
-bool GaussSeidelAlgo::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                   CplxVect & V,
-                                   const Eigen::Ref<const CplxVect> & Sbus,
-                                   const Eigen::Ref<const IntVect> & slack_ids,
-                                   const Eigen::Ref<const RealVect> & /*slack_weights*/,  // currently unused
-                                   const Eigen::Ref<const IntVect> & pv,
-                                   const Eigen::Ref<const IntVect> & pq,
-                                   int max_iter,
-                                   real_type tol
-                                   )
+bool GaussSeidelAlgo::compute_pf(
+    const EigenRefConstCplxSpMat     & Ybus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const IntVect>  & slack_ids,
+    const Eigen::Ref<const RealVect> & /*slack_weights*/,  // currently unused
+    const Eigen::Ref<const IntVect>  & pv,
+    const Eigen::Ref<const IntVect>  & pq,
+    int                              max_iter,
+    real_type                        tol
+)
 {
     /**
     pv: id of the pv buses
@@ -80,10 +81,11 @@ bool GaussSeidelAlgo::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     return res;
 }
 
-void GaussSeidelAlgo::one_iter(CplxVect & tmp_Sbus,
-                                 const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> & Ybus,
-                                 const Eigen::Ref<const IntVect> & pv,
-                                 const Eigen::Ref<const IntVect> & pq)
+void GaussSeidelAlgo::one_iter(
+    Eigen::Ref<CplxVect> tmp_Sbus,
+    const EigenRefConstCplxSpMat & Ybus,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq)
 {
     // do an update with the standard GS algorithm
     cplx_type tmp;

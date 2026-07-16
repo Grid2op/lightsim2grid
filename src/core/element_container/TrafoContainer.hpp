@@ -136,7 +136,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                                     DualAlgoControl & solver_control);
 
         void hack_Sbus_for_dc_phase_shifter(
-            CplxVect & Sbus,
+            Eigen::Ref<CplxVect> Sbus,
             bool ac,
             const SolverBusIdVect & id_grid_to_solver);  // needed for dc mode
 

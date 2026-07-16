@@ -25,11 +25,12 @@ class LS2G_API GaussSeidelSynchAlgo final: public GaussSeidelAlgo
         ~GaussSeidelSynchAlgo() noexcept override = default;
 
     protected:
-        void one_iter(CplxVect & tmp_Sbus,
-                      const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> & Ybus,
-                      const Eigen::Ref<const IntVect> & pv,
-                      const Eigen::Ref<const IntVect> & pq
-                      ) override;
+        void one_iter(
+            Eigen::Ref<CplxVect>            tmp_Sbus,
+            const EigenRefConstCplxSpMat    & Ybus,
+            const Eigen::Ref<const IntVect> & pv,
+            const Eigen::Ref<const IntVect> & pq
+        ) override;
 
     private:
         // no copy allowed

@@ -152,8 +152,8 @@ class LS2G_API LSGrid final
         }
         ~LSGrid() noexcept = default;
 
-        void set_ls_to_orig(const IntVect & ls_to_orig);  // set both _ls_to_orig and _orig_to_ls
-        void set_orig_to_ls(const IntVect & orig_to_ls);  // set both _orig_to_ls and _ls_to_orig
+        void set_ls_to_orig(const Eigen::Ref<const IntVect> & ls_to_orig);  // set both _ls_to_orig and _orig_to_ls
+        void set_orig_to_ls(const Eigen::Ref<const IntVect> & orig_to_ls);  // set both _orig_to_ls and _ls_to_orig
         [[nodiscard]] const IntVect & get_ls_to_orig(void) const {return _ls_to_orig;}
         [[nodiscard]] const IntVect & get_orig_to_ls(void) const {return _orig_to_ls;}
         double timer_last_ac_pf() const {return timer_last_ac_pf_;}
@@ -230,7 +230,7 @@ class LS2G_API LSGrid final
         [[nodiscard]] Eigen::Ref<const RealVect> get_bus_vn_kv() const {return substations_.get_bus_vn_kv();}
 
         // per-bus min/max operating voltage (kV), optional: empty if never set
-        void set_bus_voltage_limits(const RealVect & bus_vmin_kv, const RealVect & bus_vmax_kv){
+        void set_bus_voltage_limits(const Eigen::Ref<const RealVect> & bus_vmin_kv, const Eigen::Ref<const RealVect> & bus_vmax_kv){
             substations_.init_bus_voltage_limits(bus_vmin_kv, bus_vmax_kv);
         }
         [[nodiscard]] Eigen::Ref<const RealVect> get_bus_vmin_kv() const {return substations_.get_bus_vmin_kv();}
@@ -699,19 +699,19 @@ class LS2G_API LSGrid final
         }
         [[nodiscard]] const std::vector<std::string> & get_trafo_names() const {return trafos_.get_names();}
         // per-side current limit, in kA, optional: empty if never set
-        void set_line_current_limit_side1(const RealVect & limit_a1_ka){
+        void set_line_current_limit_side1(const Eigen::Ref<const RealVect> & limit_a1_ka){
             GenericContainer::check_size(limit_a1_ka, powerlines_.nb(), "set_line_current_limit_side1");
             powerlines_.set_limit_a1_ka(limit_a1_ka);
         }
-        void set_line_current_limit_side2(const RealVect & limit_a2_ka){
+        void set_line_current_limit_side2(const Eigen::Ref<const RealVect> & limit_a2_ka){
             GenericContainer::check_size(limit_a2_ka, powerlines_.nb(), "set_line_current_limit_side2");
             powerlines_.set_limit_a2_ka(limit_a2_ka);
         }
-        void set_trafo_current_limit_side1(const RealVect & limit_a1_ka){
+        void set_trafo_current_limit_side1(const Eigen::Ref<const RealVect> & limit_a1_ka){
             GenericContainer::check_size(limit_a1_ka, trafos_.nb(), "set_trafo_current_limit_side1");
             trafos_.set_limit_a1_ka(limit_a1_ka);
         }
-        void set_trafo_current_limit_side2(const RealVect & limit_a2_ka){
+        void set_trafo_current_limit_side2(const Eigen::Ref<const RealVect> & limit_a2_ka){
             GenericContainer::check_size(limit_a2_ka, trafos_.nb(), "set_trafo_current_limit_side2");
             trafos_.set_limit_a2_ka(limit_a2_ka);
         }
@@ -1697,7 +1697,7 @@ class LS2G_API LSGrid final
          * solved voltage.
          */
         [[nodiscard]] const IntVect & get_bus_fusion_rep() const { return _bus_fusion_rep;}
-        void set_bus_fusion_rep(const IntVect & bus_fusion_rep){
+        void set_bus_fusion_rep(const Eigen::Ref<const IntVect> & bus_fusion_rep){
             if(bus_fusion_rep.size() != 0 && static_cast<size_t>(bus_fusion_rep.size()) != total_bus()){
                 std::ostringstream exc_;
                 exc_ << "LSGrid::set_bus_fusion_rep: the provided vector has size ";
@@ -1707,7 +1707,7 @@ class LS2G_API LSGrid final
             _bus_fusion_rep = bus_fusion_rep;
         }
 
-        void fillSbus_other(CplxVect & res, bool ac, const SolverBusIdVect& id_me_to_solver){
+        void fillSbus_other(Eigen::Ref<CplxVect> res, bool ac, const SolverBusIdVect& id_me_to_solver){
             fillSbus_me(res, ac, id_me_to_solver);
         }
 
@@ -1728,6 +1728,9 @@ class LS2G_API LSGrid final
         // physically-correct gap between that voltage and the local target (the
         // regulator doing its job) can look like a large spurious power mismatch at a
         // strongly-meshed bus.
+        // Sbus stays a plain reference (not Eigen::Ref): forwarded into
+        // _pre_process_solver_impl's inj, which forwards into prepare_injection,
+        // which reassigns/resizes it.
         CplxVect pre_process_solver(const Eigen::Ref<const CplxVect> & Vinit,
                                     CplxVect & Sbus,
                                     Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -1742,6 +1745,8 @@ class LS2G_API LSGrid final
         // DC-specific pre processing: builds the real Bbus (admittance) matrix and the
         // real Pbus (active power) vector, reusing the shared bus-mapping helpers. Mirrors
         // pre_process_solver but keeps the whole DC path real (no complex Ybus / Sbus).
+        // Pbus stays a plain reference (not Eigen::Ref): same resize-forwarding
+        // reason as pre_process_solver's Sbus above.
         CplxVect pre_process_dc_solver(const Eigen::Ref<const CplxVect> & Vinit,
                                        RealVect & Pbus,
                                        Eigen::SparseMatrix<real_type> & Bbus,
@@ -1777,7 +1782,7 @@ class LS2G_API LSGrid final
         }
 
     protected:
-        void set_ls_to_orig_internal(const IntVect & ls_to_orig) noexcept;  // set both _ls_to_orig and _orig_to_ls
+        void set_ls_to_orig_internal(const Eigen::Ref<const IntVect> & ls_to_orig) noexcept;  // set both _ls_to_orig and _orig_to_ls
 
         // init the Ybus matrix (its size, it is filled up elsewhere) and also the 
         // converter from "my bus id" to the "solver bus id" (id_me_to_solver and id_solver_to_me)
@@ -1923,6 +1928,10 @@ class LS2G_API LSGrid final
         // pre_process_dc_solver (DC: real Bbus / Pbus). The matrix scalar type selects the
         // family (cplx_type => AC, real_type => DC); the type-specific steps (matrix init / fill,
         // injection assembly) are tag-dispatched to the overloads just below.
+        // inj stays a plain reference (not Eigen::Ref): it is forwarded straight into
+        // prepare_injection (CplxVect&/RealVect& overload), which reassigns/resizes it
+        // -- not a template-deduction issue here (MatScalar/InjVect are always given
+        // explicitly at the two call sites below), just resize-forwarding.
         template<class MatScalar, class InjVect>
         CplxVect _pre_process_solver_impl(const Eigen::Ref<const CplxVect> & Vinit,
                                           InjVect & inj,
@@ -1950,7 +1959,7 @@ class LS2G_API LSGrid final
 
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const SolverBusIdVect& id_me_to_solver);
         void fillBdc(Eigen::SparseMatrix<real_type> & res, const SolverBusIdVect& id_me_to_solver);  // DC: real admittance matrix
-        void fillSbus_me(CplxVect & res, bool ac, const SolverBusIdVect& id_me_to_solver);
+        void fillSbus_me(Eigen::Ref<CplxVect> res, bool ac, const SolverBusIdVect& id_me_to_solver);
         void fillpv_pq(const SolverBusIdVect& id_me_to_solver,
                        const GlobalBusIdVect& id_solver_to_me,
                        const SolverBusIdVect & slack_bus_id_solver,
@@ -1959,6 +1968,9 @@ class LS2G_API LSGrid final
         // results
         /**process the results from the solver to this instance
         **/
+        // res stays a plain reference (not Eigen::Ref): it is reassigned below
+        // (res = _get_results_back_to_orig_nodes(...)) to total_bus() size, which can
+        // differ from the caller's initial (often empty) res.
         void process_results(bool conv, CplxVect & res, const Eigen::Ref<const CplxVect> & Vinit, bool ac,
                              SolverBusIdVect & id_me_to_solver);
 
@@ -2005,8 +2017,8 @@ class LS2G_API LSGrid final
                                                  SolverBusIdVect & id_me_to_solver,
                                                  int size);
 
-        void check_solution_q_values( CplxVect & res, bool check_q_limits) const;
-        void check_solution_q_values_onegen(CplxVect & res,
+        void check_solution_q_values( Eigen::Ref<CplxVect> res, bool check_q_limits) const;
+        void check_solution_q_values_onegen(Eigen::Ref<CplxVect> res,
                                             int bus_id,
                                             real_type min_q_mvar,
                                             real_type max_q_mvar,

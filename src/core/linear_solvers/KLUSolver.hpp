@@ -51,10 +51,10 @@ class LS2G_API KLULinearSolver final
 
         // public api
         ErrorType reset();
-        ErrorType analyze(const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& J);   // reordering + symbolic factorization (structure only)
-        ErrorType factorize(const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& J); // numeric factorization (requires values)
-        ErrorType refactorize(const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& J);  // re-numeric factorization, reuses symbolic
-        ErrorType solve(RealVect & b);
+        ErrorType analyze(const EigenRefConstRealSpMat & J);   // reordering + symbolic factorization (structure only)
+        ErrorType factorize(const EigenRefConstRealSpMat & J); // numeric factorization (requires values)
+        ErrorType refactorize(const EigenRefConstRealSpMat & J);  // re-numeric factorization, reuses symbolic
+        ErrorType solve(Eigen::Ref<RealVect> b);
 
         // can this linear solver solve problem where RHS is a matrix
         static const bool CAN_SOLVE_MAT;

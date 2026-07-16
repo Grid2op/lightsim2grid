@@ -361,7 +361,7 @@ void HvdcLineContainer::set_status_droop(int hvdc_id, int status, DualAlgoContro
     }
 }
 
-void HvdcLineContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const
+void HvdcLineContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const
 {
     const int nb_hvdc = static_cast<int>(nb());
     // for droop lines, the active power is NOT a fixed injection:

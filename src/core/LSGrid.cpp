@@ -269,7 +269,7 @@ void LSGrid::fixup_binary_state(LSGrid::StateRes & state) {
     std::get<VERSION_MINOR_ID>(state) = VERSION_MINOR;
 }
 
-void LSGrid::set_ls_to_orig(const IntVect & ls_to_orig){
+void LSGrid::set_ls_to_orig(const Eigen::Ref<const IntVect> & ls_to_orig){
     if(ls_to_orig.size() == 0){
         _ls_to_orig = IntVect();
         _orig_to_ls = IntVect();
@@ -281,7 +281,7 @@ void LSGrid::set_ls_to_orig(const IntVect & ls_to_orig){
     set_ls_to_orig_internal(ls_to_orig);
 }
 
-void LSGrid::set_orig_to_ls(const IntVect & orig_to_ls){
+void LSGrid::set_orig_to_ls(const Eigen::Ref<const IntVect> & orig_to_ls){
     if(orig_to_ls.size() == 0){
         _ls_to_orig = IntVect();
         _orig_to_ls = IntVect();
@@ -305,7 +305,7 @@ void LSGrid::set_orig_to_ls(const IntVect & orig_to_ls){
     }
 }
 
-void LSGrid::set_ls_to_orig_internal(const IntVect & ls_to_orig) noexcept{
+void LSGrid::set_ls_to_orig_internal(const Eigen::Ref<const IntVect> & ls_to_orig) noexcept{
     if(ls_to_orig.size() == 0){
         _ls_to_orig = IntVect();
         _orig_to_ls = IntVect();
@@ -756,7 +756,7 @@ std::set<int> LSGrid::get_free_vm_slack_solver_buses() const
     return res;
 }
 
-void LSGrid::check_solution_q_values_onegen(CplxVect & res,
+void LSGrid::check_solution_q_values_onegen(Eigen::Ref<CplxVect> res,
                                                int bus_id,
                                                real_type min_q_mvar,
                                                real_type max_q_mvar,
@@ -784,7 +784,7 @@ void LSGrid::check_solution_q_values_onegen(CplxVect & res,
     }
 }
 
-void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
+void LSGrid::check_solution_q_values(Eigen::Ref<CplxVect> res, bool check_q_limits) const{
     // test for iterator though generators
     for(const auto & gen: generators_)
     {
@@ -910,6 +910,8 @@ CplxVect LSGrid::check_solution(const Eigen::Ref<const CplxVect> & V_proposed, b
 };
 
 // AC injection: complex Sbus + the reactive-power vectors (Q limits / gen count per bus)
+// Sbus stays a plain reference (not Eigen::Ref): it is reassigned below
+// (Sbus = CplxVect::Constant(...)) to a size that can change with topology.
 void LSGrid::prepare_injection(CplxVect & Sbus, bool redo_all, bool converter_changed,
                                const SolverBusIdVect & id_me_to_solver,
                                const GlobalBusIdVect & id_solver_to_me,
@@ -942,6 +944,8 @@ void LSGrid::prepare_injection(CplxVect & Sbus, bool redo_all, bool converter_ch
 }
 
 // DC injection: real Pbus, assembled by reusing the (complex) Sbus fills and keeping the real part
+// Pbus stays a plain reference (not Eigen::Ref): it is reassigned below
+// (Pbus = Sbus_tmp.real()) to a size that can change with topology.
 void LSGrid::prepare_injection(RealVect & Pbus, bool redo_all, bool converter_changed,
                                const SolverBusIdVect & id_me_to_solver,
                                const GlobalBusIdVect & id_solver_to_me,
@@ -1264,7 +1268,7 @@ void LSGrid::fillBdc(
     res.makeCompressed();
 }
 
-void LSGrid::fillSbus_me(CplxVect & Sbus, bool ac, const SolverBusIdVect& id_me_to_solver)
+void LSGrid::fillSbus_me(Eigen::Ref<CplxVect> Sbus, bool ac, const SolverBusIdVect& id_me_to_solver)
 {
     // init the Sbus 
     Sbus.array() = 0.;  // reset to 0.

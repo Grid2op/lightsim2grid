@@ -34,7 +34,7 @@ ErrorType CKTSOLinearSolver::reset(){
     return ErrorType::NoError;
 }
 
-ErrorType CKTSOLinearSolver::analyze(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & J){
+ErrorType CKTSOLinearSolver::analyze(const EigenRefConstRealSpMat & J){
     const long long *oparm = oparm_;
     int ret_ = CKTSO_CreateSolver(&solver_, &iparm_, &oparm);
     if (ret_ < 0){
@@ -75,7 +75,7 @@ ErrorType CKTSOLinearSolver::analyze(const Eigen::Ref<const Eigen::SparseMatrix<
     return ErrorType::NoError;
 }
 
-ErrorType CKTSOLinearSolver::factorize(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & J){
+ErrorType CKTSOLinearSolver::factorize(const EigenRefConstRealSpMat & J){
     int ret = solver_->Factorize(J.valuePtr(),
                                  true // @fast: whether to use fast factorization
                                  );
@@ -86,7 +86,7 @@ ErrorType CKTSOLinearSolver::factorize(const Eigen::Ref<const Eigen::SparseMatri
     return ErrorType::NoError;
 }
 
-ErrorType CKTSOLinearSolver::refactorize(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & J){
+ErrorType CKTSOLinearSolver::refactorize(const EigenRefConstRealSpMat & J){
     int ret = solver_->Refactorize(J.valuePtr());
     if(ret < 0){
         // std::cout << "CKTSOLinearSolver::refactor solver_->Refactorize error: " << ret << std::endl;
@@ -96,7 +96,7 @@ ErrorType CKTSOLinearSolver::refactorize(const Eigen::Ref<const Eigen::SparseMat
     return ErrorType::NoError;
 }
 
-ErrorType CKTSOLinearSolver::solve(RealVect & b){
+ErrorType CKTSOLinearSolver::solve(Eigen::Ref<RealVect> b){
     RealVect x(b.size());
     int ret = solver_->Solve(&b(0), &x(0), false, 1);
     if(ret < 0){

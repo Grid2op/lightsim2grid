@@ -157,7 +157,7 @@ void ConverterStationContainer::change_v(int station_id, real_type new_v_pu, Dua
     }
 }
 
-void ConverterStationContainer::fillSbus_station(CplxVect & Sbus,
+void ConverterStationContainer::fillSbus_station(Eigen::Ref<CplxVect> Sbus,
                                                  const SolverBusIdVect & id_grid_to_solver,
                                                  bool /*ac*/,
                                                  const std::vector<bool> & skip_p) const
@@ -236,9 +236,9 @@ void ConverterStationContainer::fillpv(std::vector<int> & bus_pv,
 }
 
 void ConverterStationContainer::init_q_vector(int /*nb_bus*/,
-                                              Eigen::VectorXi & total_gen_per_bus,
-                                              RealVect & total_q_min_per_bus,
-                                              RealVect & total_q_max_per_bus) const
+                                              Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
+                                              Eigen::Ref<RealVect> total_q_min_per_bus,
+                                              Eigen::Ref<RealVect> total_q_max_per_bus) const
 {
     const int nb_station = nb();
     for(int station_id = 0; station_id < nb_station; ++station_id)
@@ -253,12 +253,12 @@ void ConverterStationContainer::init_q_vector(int /*nb_bus*/,
     }
 }
 
-void ConverterStationContainer::set_q(const RealVect & reactive_mismatch,
+void ConverterStationContainer::set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
                                       const SolverBusIdVect & id_grid_to_solver,
                                       bool ac,
-                                      const Eigen::VectorXi & total_gen_per_bus,
-                                      const RealVect & total_q_min_per_bus,
-                                      const RealVect & total_q_max_per_bus)
+                                      const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
+                                      const Eigen::Ref<const RealVect> & total_q_min_per_bus,
+                                      const Eigen::Ref<const RealVect> & total_q_max_per_bus)
 {
     const int nb_station = nb();
     if(!ac){
@@ -300,7 +300,7 @@ void ConverterStationContainer::set_q(const RealVect & reactive_mismatch,
     }
 }
 
-void ConverterStationContainer::get_vm_for_dc(RealVect & Vm)
+void ConverterStationContainer::get_vm_for_dc(Eigen::Ref<RealVect> Vm)
 {
     const int nb_station = nb();
     GlobalBusId bus_id_me;
@@ -314,7 +314,7 @@ void ConverterStationContainer::get_vm_for_dc(RealVect & Vm)
     }
 }
 
-void ConverterStationContainer::set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const
+void ConverterStationContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const
 {
     const int nb_station = nb();
     GlobalBusId bus_id_me;

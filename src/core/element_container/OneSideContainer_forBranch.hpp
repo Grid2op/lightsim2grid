@@ -98,9 +98,9 @@ class OneSideContainer_ForBranch : public OneSideContainer
         }
         
         void init_osc_forB(
-            const RealVect & /*els_p*/,
-            const RealVect & /*els_q*/,
-            const Eigen::VectorXi & els_bus_id,
+            const Eigen::Ref<const RealVect> & /*els_p*/,
+            const Eigen::Ref<const RealVect> & /*els_q*/,
+            const Eigen::Ref<const Eigen::VectorXi> & els_bus_id,
             const std::string & /*name_el*/
             )  // osc: one side element
         {

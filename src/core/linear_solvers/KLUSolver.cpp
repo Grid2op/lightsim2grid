@@ -22,7 +22,7 @@ ErrorType KLULinearSolver::reset(){
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::analyze(const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& J){
+ErrorType KLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
     // J is const here, but `klu_analyze` signature expects non-const arrays, so I const_cast
     const auto n = J.cols();
     // free any previous factorization (using the current common_) before resetting it,
@@ -38,7 +38,7 @@ ErrorType KLULinearSolver::analyze(const Eigen::Ref<const Eigen::SparseMatrix<re
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::factorize(const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& J){
+ErrorType KLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
     // J is const here, but `klu_factor` signature expects non-const arrays, so I const_cast
     // reset() frees any previous numeric factorization before storing the new one
     numeric_.reset(klu_factor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
@@ -49,7 +49,7 @@ ErrorType KLULinearSolver::factorize(const Eigen::Ref<const Eigen::SparseMatrix<
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::refactorize(const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& J){
+ErrorType KLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
     // J is const here, but `klu_refactor` signature expects arrays and not const arrays
     // so I const_cast
     int ok = klu_refactor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
@@ -63,7 +63,7 @@ ErrorType KLULinearSolver::refactorize(const Eigen::Ref<const Eigen::SparseMatri
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::solve(RealVect & b){
+ErrorType KLULinearSolver::solve(Eigen::Ref<RealVect> b){
     const int n = static_cast<int>(b.size());
     int ok = klu_solve(symbolic_.get(), numeric_.get(), n, 1, &b(0), &common_);
     if(ok != 1){

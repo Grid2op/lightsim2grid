@@ -133,18 +133,17 @@ public:
 
     // ----- powerflow -----------------------------------------------------------
 
-    // Ybus stays a plain reference: NRSystem::update_state caches its address
-    // (Ybus_ptr_) across phases, which needs a real, long-lived reference.
-    bool compute_pf(const Eigen::SparseMatrix<cplx_type>& Ybus,
-                    CplxVect& V,
-                    const Eigen::Ref<const CplxVect> & Sbus,
-                    const Eigen::Ref<const IntVect> & slack_ids,
-                    const Eigen::Ref<const RealVect> & slack_weights,
-                    const Eigen::Ref<const IntVect> & pv,
-                    const Eigen::Ref<const IntVect> & pq,
-                    int max_iter,
-                    real_type tol
-                    ) override;
+    bool compute_pf(
+        const EigenRefConstCplxSpMat     & Ybus,
+        const Eigen::Ref<const CplxVect> & V,
+        const Eigen::Ref<const CplxVect> & Sbus,
+        const Eigen::Ref<const IntVect>  & slack_ids,
+        const Eigen::Ref<const RealVect> & slack_weights,
+        const Eigen::Ref<const IntVect>  & pv,
+        const Eigen::Ref<const IntVect>  & pq,
+        int                              max_iter,
+        real_type                        tol
+    ) override;
 
     void reset() override;
 

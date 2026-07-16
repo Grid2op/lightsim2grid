@@ -50,13 +50,16 @@ void check_bus_id_array(const std::string & caller,
 
 }  // anonymous namespace
 
-void BaseAlgo::check_pf_inputs(const std::string & caller,
-                               Eigen::Index ybus_rows, Eigen::Index ybus_cols,
-                               Eigen::Index v_size, Eigen::Index sbus_size,
-                               const Eigen::Ref<const IntVect> & slack_ids,
-                               const Eigen::Ref<const RealVect> & slack_weights,
-                               const Eigen::Ref<const IntVect> & pv,
-                               const Eigen::Ref<const IntVect> & pq)
+void BaseAlgo::check_pf_inputs(
+    const std::string & caller,
+    Eigen::Index ybus_rows, 
+    Eigen::Index ybus_cols,
+    Eigen::Index v_size,
+    Eigen::Index sbus_size,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq)
 {
     if (ybus_rows != ybus_cols) {
         std::ostringstream exc_;
@@ -112,7 +115,7 @@ void BaseAlgo::check_iter_tol(const std::string & caller, int max_iter, real_typ
 
 bool BaseAlgo::compute_pf_with_input_validation(
     const Eigen::SparseMatrix<cplx_type> & Ybus,
-    CplxVect & V,
+    const Eigen::Ref<const CplxVect> & V,
     const Eigen::Ref<const CplxVect> & Sbus,
     const Eigen::Ref<const IntVect> & slack_ids,
     const Eigen::Ref<const RealVect> & slack_weights,
@@ -128,8 +131,8 @@ bool BaseAlgo::compute_pf_with_input_validation(
 }
 
 bool BaseAlgo::compute_pf_dc_with_input_validation(
-    const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & Bbus,
-    CplxVect & V,
+    const Eigen::SparseMatrix<real_type> & Bbus,
+    const Eigen::Ref<const CplxVect> & V,
     const Eigen::Ref<const RealVect> & Pbus,
     const Eigen::Ref<const IntVect> & slack_ids,
     const Eigen::Ref<const RealVect> & slack_weights,
@@ -158,11 +161,12 @@ void BaseAlgo::reset(){
 }
 
 
-RealVect BaseAlgo::_evaluate_Fx(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> &  Ybus,
-                                const CplxVect & V,
-                                const Eigen::Ref<const CplxVect> & Sbus,
-                                const Eigen::Ref<const IntVect> & pv,
-                                const Eigen::Ref<const IntVect> & pq)
+RealVect BaseAlgo::_evaluate_Fx(
+    const EigenRefConstCplxSpMat     & Ybus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const IntVect>  & pv,
+    const Eigen::Ref<const IntVect>  & pq)
 {
     auto timer = CustTimer();
     auto npv = pv.size();
@@ -184,14 +188,15 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::Ref<const Eigen::SparseMatrix<cplx_
     return res;
 }
 
-RealVect BaseAlgo::_evaluate_Fx(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> &  Ybus,
-                                  const CplxVect & V,
-                                  const Eigen::Ref<const CplxVect> & Sbus,
-                                  size_t slack_id,  // id of the ref slack bus
-                                  real_type slack_absorbed,
-                                  const Eigen::Ref<const RealVect> & slack_weights,
-                                  const Eigen::Ref<const IntVect> & pv,
-                                  const Eigen::Ref<const IntVect> & pq)
+RealVect BaseAlgo::_evaluate_Fx(
+    const EigenRefConstCplxSpMat &  Ybus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    size_t slack_id,  // id of the ref slack bus
+    real_type slack_absorbed,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq)
 {
     /**
     Remember, when this function is used:
@@ -248,8 +253,9 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::Ref<const Eigen::SparseMatrix<cplx_
     
 }
 
-bool BaseAlgo::_check_for_convergence(const RealVect & F,
-                                      real_type tol)
+bool BaseAlgo::_check_for_convergence(
+    const Eigen::Ref<const RealVect> & F,
+    real_type tol)
 {
     auto timer = CustTimer();
     const auto norm_inf = F.lpNorm<Eigen::Infinity>();
@@ -258,9 +264,10 @@ bool BaseAlgo::_check_for_convergence(const RealVect & F,
     return res;
 }
 
-bool BaseAlgo::_check_for_convergence(const RealVect & p,
-                                      const RealVect & q,
-                                      real_type tol)
+bool BaseAlgo::_check_for_convergence(
+    const Eigen::Ref<const RealVect> & p,
+    const Eigen::Ref<const RealVect> & q,
+    real_type tol)
 {
     auto timer = CustTimer();
     const auto norm_inf_p = p.lpNorm<Eigen::Infinity>();
@@ -270,9 +277,10 @@ bool BaseAlgo::_check_for_convergence(const RealVect & p,
     return res;
 }
 
-Eigen::VectorXi BaseAlgo::extract_slack_bus_id(const Eigen::Ref<const IntVect> & pv,
-                                                 const Eigen::Ref<const IntVect> & pq,
-                                                 unsigned int nb_bus)
+Eigen::VectorXi BaseAlgo::extract_slack_bus_id(
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq,
+    unsigned int nb_bus)
 {
     // pv: list of index of pv nodes
     // pq: list of index of pq nodes

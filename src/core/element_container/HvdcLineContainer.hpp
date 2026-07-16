@@ -345,7 +345,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         void droop_flows_mw(int hvdc_id, real_type raw_mw, real_type & p1_flow_mw, real_type & p2_flow_mw) const;
 
         // solver stuff
-        void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
         void fillpv(std::vector<int>& bus_pv,
                     std::vector<bool> & has_bus_been_added,
@@ -364,9 +364,9 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                         }
 
         void init_q_vector(int nb_bus,
-                           Eigen::VectorXi & total_gen_per_bus,
-                           RealVect & total_q_min_per_bus,
-                           RealVect & total_q_max_per_bus) const {
+                           Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
+                           Eigen::Ref<RealVect> total_q_min_per_bus,
+                           Eigen::Ref<RealVect> total_q_max_per_bus) const {
             side_1_.init_q_vector(nb_bus, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
             side_2_.init_q_vector(nb_bus, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
         }
@@ -383,23 +383,23 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             reset_results_tsc();
         }
 
-        void set_q(const RealVect & reactive_mismatch,
+        void set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
                    const SolverBusIdVect & id_grid_to_solver,
                    bool ac,
-                   const Eigen::VectorXi & total_gen_per_bus,
-                   const RealVect & total_q_min_per_bus,
-                   const RealVect & total_q_max_per_bus){
+                   const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
+                   const Eigen::Ref<const RealVect> & total_q_min_per_bus,
+                   const Eigen::Ref<const RealVect> & total_q_max_per_bus){
             side_1_.set_q(reactive_mismatch, id_grid_to_solver, ac, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
             side_2_.set_q(reactive_mismatch, id_grid_to_solver, ac, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
         }
-        void get_vm_for_dc(RealVect & Vm){
+        void get_vm_for_dc(Eigen::Ref<RealVect> Vm){
             side_1_.get_vm_for_dc(Vm);
             side_2_.get_vm_for_dc(Vm);
         }
-        void set_vm_or(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const{
+        void set_vm_or(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const{
             side_1_.set_vm(V, id_grid_to_solver);
         }
-        void set_vm_ex(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const{
+        void set_vm_ex(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const{
             side_2_.set_vm(V, id_grid_to_solver);
         }
 
@@ -407,7 +407,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
         the ac powerflow
         **/
-        void set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const{
+        void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const{
             side_1_.set_vm(V, id_grid_to_solver);
             side_2_.set_vm(V, id_grid_to_solver);
         }
