@@ -66,7 +66,7 @@ class LS2G_API GenericContainer : public BaseConstants
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
 
-        virtual void fillSbus(CplxVect & /*Sbus*/, const SolverBusIdVect & /*id_grid_to_solver*/, bool /*ac*/) const {
+        virtual void fillSbus(Eigen::Ref<CplxVect> /*Sbus*/, const SolverBusIdVect & /*id_grid_to_solver*/, bool /*ac*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "one side elements" (loads, generators etc.)
                                 };
@@ -83,7 +83,7 @@ class LS2G_API GenericContainer : public BaseConstants
                                 // is overriden mainly for "generators"
                                 };
         
-        virtual void set_p_slack(const RealVect& /*node_mismatch*/, const SolverBusIdVect & /*id_grid_to_solver*/) {
+        virtual void set_p_slack(const Eigen::Ref<const RealVect>& /*node_mismatch*/, const SolverBusIdVect & /*id_grid_to_solver*/) {
                                 // nothing to do by default
                                 // is overriden mainly for "generators"
                                 };
@@ -214,7 +214,7 @@ class LS2G_API GenericContainer : public BaseConstants
                            const GlobalBusIdVect & bus_me_id,
                            const SolverBusIdVect & id_grid_to_solver,
                            const Eigen::Ref<const RealVect> & bus_vn_kv,
-                           RealVect & v) const;
+                           Eigen::Ref<RealVect> v) const;
 
 
         /**
@@ -227,7 +227,7 @@ class LS2G_API GenericContainer : public BaseConstants
                            const GlobalBusIdVect & bus_me_id,
                            const SolverBusIdVect & id_grid_to_solver,
                            const Eigen::Ref<const RealVect> & bus_vn_kv,
-                           RealVect & v) const;
+                           Eigen::Ref<RealVect> v) const;
 };
 
 

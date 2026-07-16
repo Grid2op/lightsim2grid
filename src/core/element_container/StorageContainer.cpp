@@ -27,7 +27,7 @@ void StorageContainer::set_state(StorageContainer::StateRes & my_state)
     reset_results();
 }
 
-void StorageContainer::fillSbus(CplxVect & Sbus,
+void StorageContainer::fillSbus(Eigen::Ref<CplxVect> Sbus,
                                 const SolverBusIdVect & id_grid_to_solver,
                                 bool /*ac*/) const
 {

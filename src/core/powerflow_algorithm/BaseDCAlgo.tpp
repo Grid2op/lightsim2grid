@@ -11,14 +11,15 @@
 #include <cmath>  // for nans
 
 template<class LinearSolver>
-bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & Bbus,
-                                             CplxVect & V,
-                                             const Eigen::Ref<const RealVect> & Pbus,
-                                             const Eigen::Ref<const IntVect> & slack_ids,
-                                             const Eigen::Ref<const RealVect> & slack_weights,
-                                             const Eigen::Ref<const IntVect> & pv,
-                                             const Eigen::Ref<const IntVect> & pq
-                                             )
+bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
+    const EigenRefConstRealSpMat & Bbus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const RealVect> & Pbus,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq
+)
 {
     // V is used the following way: at pq buses it's completely ignored. For pv bus only the magnitude is used,
     //   and for the slack bus both the magnitude and the angle are used.
@@ -277,7 +278,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::Ref<const Eigen::Spars
         // for convergence, all values should be finite
         // and it's not realistic if some Va are too high
         err_ = ErrorType::SolverSolve;
-        V = CplxVect();
         V_ = CplxVect();
         Vm_ = RealVect();
         Va_ = RealVect();
@@ -309,9 +309,8 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::Ref<const Eigen::Spars
 
     // compute complex voltages with std::polar: uses hardware sincos, no temporaries, fills V and V_ in one pass
     V_.resize(sizeYbus_with_slack_);
-    V.resize(sizeYbus_with_slack_);
     for(int i = 0; i < sizeYbus_with_slack_; ++i){
-        V_[i] = V[i] = std::polar(Vm_[i], Va_[i]);
+        V_[i] = std::polar(Vm_[i], Va_[i]);
     }
     nr_iter_ = 1;
     need_refactor_ = false;  // no need to redo it in general cases
@@ -496,8 +495,8 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(){
 }
 
 template<class LinearSolver>
-RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
-                                           const IntVect & to_bus){
+RealMat BaseDCAlgo<LinearSolver>::get_lodf(const Eigen::Ref<const IntVect> & from_bus,
+                                           const Eigen::Ref<const IntVect> & to_bus){
     auto timer = CustTimer();
     const RealMat PTDF = get_ptdf();  // size n_line x n_bus
     RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line

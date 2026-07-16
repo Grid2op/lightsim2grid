@@ -15,6 +15,7 @@ Some typedef and other structures define here and used everywhere else
 #include <iostream>
 #include <complex>
 #include "Eigen/Core"
+#include "Eigen/Sparse"
 #include "TaggedIdVec.hpp"
 #include "ls2g_api.hpp"
 
@@ -45,6 +46,9 @@ using tuple5d = std::tuple<Eigen::Ref<const EigenPythonNumType>,
 
 using RealMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic>;
 using CplxMat = Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic> ;
+
+using EigenRefConstCplxSpMat = Eigen::Ref<const Eigen::SparseMatrix<cplx_type> >;
+using EigenRefConstRealSpMat = Eigen::Ref<const Eigen::SparseMatrix<real_type> >;
 
 // type of error in the different solvers
 enum class ErrorType {NoError,

@@ -16,6 +16,29 @@ Change Log
 - code `helm` powerflow method
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
+- pybind11's Eigen support has no ``type_caster`` for ``Eigen::Ref<const
+  Eigen::SparseMatrix<...>>`` (only for a concrete, owning ``Eigen::SparseMatrix``):
+  its generic sparse caster default-constructs a ``Type value;`` member internally,
+  which is impossible for ``Eigen::Ref`` (dense or sparse -- a ``Ref`` must be bound
+  to something at construction). pybind11 works around this for *dense* ``Eigen::Ref``
+  with a hand-written caster (delayed construction via ``std::unique_ptr``), but ships
+  no equivalent for the sparse case. Because of this, every pybind11-exported function
+  taking/returning a sparse matrix (``BaseAlgo::compute_pf_with_input_validation``'s
+  ``Ybus``/``Bbus``, ``BaseFDPFAlgo::debug_get_Bp_python``/``debug_get_Bpp_python``,
+  ``get_J_python``, etc.) uses a bare ``Eigen::SparseMatrix<...>`` instead of the
+  ``EigenRefConstCplxSpMat``/``EigenRefConstRealSpMat`` aliases used everywhere else in
+  the C++-internal API, which costs one matrix copy per python call. Eigen's
+  ``SparseRef.h`` shows the ``Ref`` *can* bind zero-copy onto an
+  ``Eigen::Map<SparseMatrix<...>>`` built straight from a scipy CSR/CSC matrix's
+  ``data``/``indices``/``indptr`` buffers (our aliases use ``Options=0``, so the
+  ``StandardCompressedFormat``-triggered copy path in ``Ref<const SparseMatrix>``'s
+  constructor never fires). A custom pybind11 ``type_caster`` specialization for
+  ``Eigen::Ref<const Eigen::SparseMatrix<Scalar,...>>`` (mirroring pybind11's own
+  dense-``Ref`` ``eigen_map_caster`` pattern: hold the three numpy buffers + a
+  ``unique_ptr<Map>``/``unique_ptr<Ref>`` built in ``load()``) would remove that copy
+  on the load (python -> C++) direction, which is what matters for ``compute_pf``'s
+  hot path. The return (C++ -> python) direction would still copy either way -- python
+  needs its own owned object there regardless.
 - `GeneratorContainer::is_pseudo_off` (used when ``turnedoff_no_pv`` /
   ``LightSimBackend(turned_off_pv=False)`` is active) is not implemented as
   originally intended: it currently only checks ``target_p == 0`` to decide a

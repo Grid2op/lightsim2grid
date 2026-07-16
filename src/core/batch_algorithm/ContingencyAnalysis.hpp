@@ -297,7 +297,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
                                    AlgorithmSelector & algo,
                                    AlgoControl & control,
                                    Eigen::SparseMatrix<cplx_type> & Ybus,
-                                   const CplxVect & Vinit_solver,
+                                   const Eigen::Ref<const CplxVect> & Vinit_solver,
                                    bool ac_solver_used,
                                    bool mask_mode,
                                    int max_iter,

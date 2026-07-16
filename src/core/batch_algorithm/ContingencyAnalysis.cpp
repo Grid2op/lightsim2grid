@@ -27,7 +27,7 @@ namespace {
 // LOW_VOLTAGE violation). `subs` is used to resolve the violating bus's substation name (see
 // LimitViolation::name); its names are empty strings if never set on the grid.
 void check_bus_voltage_violations(
-    const CplxVect & V,
+    const Eigen::Ref<const CplxVect> & V,
     const SolverBusIdVect & id_me_to_solver,
     const Eigen::Ref<const RealVect> & bus_vmin_kv,
     const Eigen::Ref<const RealVect> & bus_vmax_kv,
@@ -85,7 +85,7 @@ template<class T>
 void check_current_violations(
     const T & structure_data,
     ViolationElementType el_type,
-    const CplxVect & V,
+    const Eigen::Ref<const CplxVect> & V,
     const SolverBusIdVect & id_me_to_solver,
     const Eigen::Ref<const RealVect> & bus_vn_kv,
     bool ac_solver_used,
@@ -772,7 +772,7 @@ void ContingencyAnalysis::run_contingency_range(
     AlgorithmSelector & algo,
     AlgoControl & control,
     Eigen::SparseMatrix<cplx_type> & Ybus,
-    const CplxVect & Vinit_solver,
+    const Eigen::Ref<const CplxVect> & Vinit_solver,
     bool ac_solver_used,
     bool mask_mode,
     int max_iter,
