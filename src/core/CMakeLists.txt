@@ -288,6 +288,7 @@ add_library(lightsim2grid_core SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/LSGrid.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmSelector.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmRegistry.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Ls2gAbiTag.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmTypeNames.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/BuiltinSolversRegistration.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SolverInstantiations.cpp"

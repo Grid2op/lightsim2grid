@@ -55,6 +55,7 @@ add_executable(lightsim2grid_unit_tests
     test_binary_archive_corruption.cpp
     test_lsgrid.cpp
     test_case_exotic_elements.cpp
+    test_ls2g_abi_tag.cpp
 )
 target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
 

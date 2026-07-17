@@ -742,6 +742,19 @@ TODO: add a CI job that builds one of the example C++ algorithm plugins
   it just happened to surface right after the fix above, when checking that the build
   driving a benchmark actually had ``-march=native`` active. Fixed alongside the ABI fix
   above, in the same ``src/bindings/python/CMakeLists.txt`` block.
+- [ADDED] a runtime guard, on top of the CMake-level ``-march=native``/``-O3`` matching
+  above, against the exact class of bug those two ``[FIXED]`` entries describe.
+  ``src/core/Ls2gAbiTag.hpp`` defines an "ABI tag" (``EIGEN_MAX_ALIGN_BYTES``, the
+  resolved ``EIGEN_VECTORIZE_*`` flags, and the Eigen version) computed independently in
+  whichever translation unit calls it; comparing two independently-evaluated tags is the
+  only way to observe this kind of drift between separately-compiled binaries (a
+  ``static_assert`` cannot, since no single translation unit has visibility into another,
+  separately-compiled one's flags). Two checkpoints now compare tags and refuse to
+  proceed with a clear error instead of silently corrupting the heap: (1)
+  ``AlgorithmRegistry::register_solver`` for third-party solver plugins loaded via
+  ``load_algorithm_plugin``/``AlgorithmRegistrar``, and (2) ``lightsim2grid_cpp``'s
+  module init, comparing itself against ``lightsim2grid_core``, catching this bug's own
+  original failure mode directly at import time.
 
 [0.13.1]  2026-04-21
 --------------------
