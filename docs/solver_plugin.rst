@@ -571,6 +571,50 @@ directly from Python::
     >>> lightsim2grid.compilation_options.compiled_o3_optim
     True
 
+As defense-in-depth on top of the CMake-level matching above, this is also
+checked **at runtime**. Every plugin solver registration (``load_algorithm_plugin()``
+/ ``AlgorithmRegistrar``) computes an "ABI tag" — ``EIGEN_MAX_ALIGN_BYTES``, the
+resolved ``EIGEN_VECTORIZE_SSE``/``AVX``/``AVX2``/``AVX512``/``FMA``/``NEON``
+flags, and the full Eigen version (major.minor.patch) — in the plugin's own
+translation unit, and compares it against the tag ``lightsim2grid_core`` was
+actually compiled with. If they differ, registration is refused with an error
+naming exactly what mismatched, instead of silently registering a plugin that
+would corrupt the heap the first time one of its Eigen objects crosses the
+``BaseAlgo`` interface. The same comparison runs once between
+``lightsim2grid_core`` and ``lightsim2grid_cpp`` themselves at import time —
+this is the check that would have caught the ``lightsim2grid_core`` /
+``lightsim2grid_cpp`` split bug directly, as a clean Python ``ImportError``
+instead of a crash. This does not replace matching the build flags above (a
+rejected plugin is still a plugin you can't use), but it turns a silent,
+far-away heap corruption into an immediate, actionable error at load time.
+See ``src/core/Ls2gAbiTag.hpp``.
+
+The Eigen version is part of the tag, compared exactly (not just the major
+version): Eigen is header-only, so its semver promise
+(https://libeigen.gitlab.io/news/eigen_5.0.0_released/) is about API
+compatibility for code *using* Eigen, not about the internal aligned-malloc
+offset arithmetic this check actually cares about staying identical across
+two independently-compiled binaries — that isn't something Eigen tests or
+promises release-to-release, since there is no shared-object ABI to keep
+stable in the first place. Practically, this means **a plugin should be
+compiled against the same Eigen headers lightsim2grid itself uses**, not a
+separately-installed system Eigen:
+
+* Linking against an **installed** ``lightsim2grid_core`` (the normal case,
+  ``find_package(lightsim2grid_core CONFIG)``): the package bundles the exact
+  Eigen it was built with alongside its own headers, and
+  ``lightsim2grid_core_INCLUDE_DIRS`` already points at it — as long as your
+  plugin doesn't add a different Eigen include path ahead of that one (e.g. a
+  system ``/usr/include/eigen3``), it picks up the matching Eigen
+  automatically and this check is a non-issue.
+* Building against the **source tree**: use the ``eigen/`` submodule checked
+  out in this repository (the same one the examples' ``Eigen3_INCLUDE``
+  fallback points to), not a separately-installed copy.
+
+If you do need a different Eigen version for your plugin for some other
+reason, that's a deliberate, advanced choice this check exists specifically
+to flag — the error message tells you exactly which field(s) mismatched.
+
 
 Worked example (``examples/external_algorithm/``)
 -------------------------------------------------

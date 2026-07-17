@@ -15,7 +15,17 @@ AlgorithmRegistry& AlgorithmRegistry::instance() {
     return reg;
 }
 
-void AlgorithmRegistry::register_solver(const std::string& name, Factory f) {
+void AlgorithmRegistry::register_solver(const std::string& name, Factory f, Ls2gAbiTag caller_tag) {
+    const Ls2gAbiTag& this_core_tag = core_abi_tag();
+    if (caller_tag != this_core_tag) {
+        throw std::runtime_error(
+            "AlgorithmRegistry: refusing to register solver '" + name + "': it was compiled with "
+            "different Eigen SIMD/alignment settings than lightsim2grid_core. Loading it would silently "
+            "corrupt the heap the first time an Eigen object crosses the BaseAlgo interface. "
+            "lightsim2grid_core was built with [" + this_core_tag.describe() + "], this plugin was built "
+            "with [" + caller_tag.describe() + "]. Recompile the plugin with matching compiler/-march "
+            "flags -- see docs/solver_plugin.rst, section \"Matching build flags\".");
+    }
     if (_factories.count(name)) {
         throw std::invalid_argument("AlgorithmRegistry: a solver named '" + name + "' is already registered.");
     }
