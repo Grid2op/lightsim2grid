@@ -783,6 +783,17 @@ class LS2G_API VoltageControl
         Eigen::Ref<const RealVect>  controller_q()       const { return q_; }
         Eigen::Ref<const IntVect>   controller_kind()    const { return data_.kind; }
         Eigen::Ref<const IntVect>   controller_elem_id() const { return data_.elem_id; }
+        // J column of each controller's own Q unknown (controller registration
+        // order, matching controller_q()/controller_kind()/controller_elem_id()).
+        // NOT the same as the ledger's bus-keyed q_to_J_col (NRLedger::
+        // add_q_unknown's own doc: that map is "sugar" for introspection and
+        // only keeps the LAST controller registered at a given bus) -- callers
+        // needing the true per-controller column (e.g. an external solver
+        // rebuilding this bordered block, like gpusim2grid) whenever two
+        // controllers share a bus MUST use this, not q_to_J_col.
+        IntVect controller_q_col() const {
+            return Eigen::Map<const IntVect>(q_cols_.data(), static_cast<Eigen::Index>(q_cols_.size()));
+        }
 
     private:
         int                            my_size_;     // number of controllers
@@ -967,6 +978,10 @@ public:
     IntVect controller_elem_id() const {
         const VoltageControl* vc = _find_extension<VoltageControl>();
         return vc ? IntVect(vc->controller_elem_id()) : IntVect();
+    }
+    IntVect controller_q_col() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? IntVect(vc->controller_q_col()) : IntVect();
     }
 
     // ----- MultiSlack: slack_absorbed J column (-1 when the extension is absent) --
