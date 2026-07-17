@@ -107,6 +107,7 @@ public:
     RealVect get_controller_q()       const override { return _system.controller_q(); }
     IntVect  get_controller_kind()    const override { return _system.controller_kind(); }
     IntVect  get_controller_elem_id() const override { return _system.controller_elem_id(); }
+    IntVect  get_controller_q_col()   const override { return _system.controller_q_col(); }
     int      get_slack_col()          const override { return _system.slack_col(); }
     real_type get_slack_absorbed()    const override { return _system.slack_absorbed(); }
 

@@ -1561,6 +1561,14 @@ class LS2G_API LSGrid final
         [[nodiscard]] RealVect get_controller_q_solver()       const { return _algo.get_controller_q(); }
         [[nodiscard]] IntVect  get_controller_kind_solver()    const { return _algo.get_controller_kind(); }
         [[nodiscard]] IntVect  get_controller_elem_id_solver() const { return _algo.get_controller_elem_id(); }
+        // J column of each controller's own Q unknown, controller registration
+        // order -- NOT the bus-keyed get_q_to_J_col_solver() (that map only keeps
+        // the LAST controller registered at a given bus, see NRLedger::
+        // add_q_unknown's own doc). External solvers rebuilding this bordered
+        // block (e.g. gpusim2grid) MUST use this whenever two controllers can
+        // share a bus, exactly like p_buses()/p_rows() etc. must be used instead
+        // of the bus-keyed maps for the base P/Q block.
+        [[nodiscard]] IntVect  get_controller_q_col_solver()   const { return _algo.get_controller_q_col(); }
 
         [[nodiscard]] real_type get_computation_time() const{ return _algo.get_computation_time();}
         [[nodiscard]] real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}

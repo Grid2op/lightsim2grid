@@ -240,6 +240,10 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual RealVect get_controller_q()       const { return RealVect(); }
         virtual IntVect  get_controller_kind()    const { return IntVect(); }
         virtual IntVect  get_controller_elem_id() const { return IntVect(); }
+        // J column of each controller's own Q unknown, in controller registration
+        // order -- NOT the bus-keyed q_to_J_col (see NRSystem::controller_q_col's
+        // own doc): needed whenever two controllers share a bus.
+        virtual IntVect  get_controller_q_col()   const { return IntVect(); }
 
         // MultiSlack: J column of the slack_absorbed unknown (-1 when the
         // distributed-slack-in-Jacobian extension is not active).

@@ -301,6 +301,9 @@ class LS2G_API AlgorithmSelector final
         IntVect get_controller_elem_id() const {
             return get_prt_solver("get_controller_elem_id", false)->get_controller_elem_id();
         }
+        IntVect get_controller_q_col() const {
+            return get_prt_solver("get_controller_q_col", false)->get_controller_q_col();
+        }
         int get_slack_col() const {
             return get_prt_solver("get_slack_col", false)->get_slack_col();
         }
