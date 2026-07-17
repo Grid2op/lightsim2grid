@@ -171,20 +171,14 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
     bool factorized_now = false;
     if(need_factorize_){
         // std::cout << "\t\t\tneed to factorize\n";
-        auto timer_an = CustTimer();
         ErrorType status_init = _linear_solver.analyze(sys_mat);
-        const double dur_an = timer_an.duration();
-        timer_initialize_ += dur_an;
         if(status_init != ErrorType::NoError){
             err_ = status_init;
             timer_total_nr_ += timer.duration();
             return false;
         }
 
-        auto timer_fac = CustTimer();
         status_init = _linear_solver.factorize(sys_mat);
-        const double dur_fact = timer_fac.duration();
-        timer_factor_ += dur_fact;
         if(status_init != ErrorType::NoError){
             err_ = status_init;
             timer_total_nr_ += timer.duration();
@@ -247,10 +241,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
         // we should end-up here only in case of n-1 simulation (handled in contingency analysis)
         // set to true in update_internal_Ybus
         // std::cout << "\t\t\tneed to refactorize\n";
-        auto timer_s = CustTimer();
         ErrorType error = _linear_solver.refactorize(sys_mat);
-        const double dur_refacto = timer_s.duration();
-        timer_refactor_ += dur_refacto;
         if(error != ErrorType::NoError){
             err_ = error;
             timer_total_nr_ += timer.duration();
@@ -258,10 +249,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
         }
     }
     {
-        auto timer_s = CustTimer();
         ErrorType error = _linear_solver.solve(Va_dc_without_slack);
-        const double dur_solve = timer_s.duration();
-        timer_solve_ += dur_solve;
         if(error != ErrorType::NoError){
             err_ = error;
             timer_total_nr_ += timer.duration();

@@ -44,7 +44,7 @@ class LS2G_API KLULinearSolver final
             common_(),
             symbolic_(nullptr, SymbolicDeleter{&common_}),
             numeric_(nullptr, NumericDeleter{&common_})
-            {}
+            { klu_defaults(&common_); }
 
         // symbolic_ / numeric_ are unique_ptr with custom deleters and free themselves.
         ~KLULinearSolver() noexcept = default;

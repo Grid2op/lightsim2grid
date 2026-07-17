@@ -327,6 +327,10 @@ class LS2G_API AlgorithmSelector final
             return get_prt_solver("get_timers_ptdf_lodf", true)->get_timers_ptdf_lodf();
         }
 
+        LinearSolverStats get_linear_solver_stats() const {
+            return get_prt_solver("get_linear_solver_stats", true)->get_linear_solver_stats();
+        }
+
         ErrorType get_error() const {
             return get_prt_solver("get_error", true)->get_error();
         }

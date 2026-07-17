@@ -11,6 +11,7 @@
 
 #include "BaseAlgo.hpp"
 #include "HvdcDroopData.hpp"
+#include "linear_solvers/LinearSolverStats.hpp"
 
 namespace ls2g {
 
@@ -28,9 +29,6 @@ class BaseDCAlgo final: public BaseAlgo
             _linear_solver(),
             need_factorize_(true),
             need_refactor_(true),
-            timer_factor_(0.),
-            timer_refactor_(0.),
-            timer_initialize_(0.),
             timer_pre_proc_(0.),
             timer_mismatch_(0.),  // used for all the post processing
             timer_ptdf_(0.),
@@ -46,29 +44,33 @@ class BaseDCAlgo final: public BaseAlgo
         void reset() override;
         void reset_timer() override{
             BaseAlgo::reset_timer();
-            timer_refactor_ = 0.;
-            timer_factor_ = 0.;
-            timer_initialize_  = 0.;
+            detail::reset_stats_timers_impl(_linear_solver, 0);
             timer_pre_proc_  = 0.;
             timer_mismatch_  = 0.;
-            timer_solve_ = 0.;
             timer_ptdf_ = 0.;
             timer_lodf_ = 0.;
         }
 
         TimerJac get_timers_jacobian() const override
         {
+            const LinearSolverStats lsstats = detail::get_stats_impl(_linear_solver, 0);
             TimerJac res;
             res.timer_Fx_         = timer_Fx_;
-            res.timer_solve_      = timer_solve_;
-            res.timer_factor_     = timer_factor_;
-            res.timer_refactor_   = timer_refactor_;
-            res.timer_initialize_ = timer_initialize_;
+            res.timer_solve_      = lsstats.timer_solve_;
+            res.timer_factor_     = lsstats.timer_factor_;
+            res.timer_refactor_   = lsstats.timer_refactor_;
+            res.timer_initialize_ = lsstats.timer_initialize_;
             res.timer_check_      = timer_check_;
             res.timer_total_nr_   = timer_total_nr_;
             res.timer_pre_proc_   = timer_pre_proc_;
             res.timer_mismatch_   = timer_mismatch_;
             return res;
+        }
+
+        // Per-call counters and timings for the underlying linear solver -- see
+        // NRAlgo::get_linear_solver_stats for the full description.
+        LinearSolverStats get_linear_solver_stats() const override {
+            return detail::get_stats_impl(_linear_solver, 0);
         }
 
         TimerPTDFLODFType get_timers_ptdf_lodf() const override
@@ -161,9 +163,6 @@ class BaseDCAlgo final: public BaseAlgo
         bool need_factorize_;
         bool need_refactor_;
 
-        double timer_factor_;
-        double timer_refactor_;
-        double timer_initialize_;
         double timer_pre_proc_;
         double timer_mismatch_;  // used for all the post processing
 

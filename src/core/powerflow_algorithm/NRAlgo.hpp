@@ -13,6 +13,7 @@
 #include "NRSystem.hpp"
 #include "ScalingPolicies.hpp"
 #include "RefactorPolicies.hpp"
+#include "linear_solvers/LinearSolverStats.hpp"
 
 namespace ls2g {
   
@@ -42,9 +43,6 @@ public:
         iw_mu_min_(static_cast<real_type>(1e-4)),
         iw_mu_max_(static_cast<real_type>(1.0)),
         refactor_every_n_(4),
-        timer_factor_(0.),
-        timer_refactor_(0.),
-        timer_initialize_(0.),
         timer_dSbus_(0.),
         timer_fillJ_(0.),
         timer_Va_Vm_(0.),
@@ -115,12 +113,13 @@ public:
 
     TimerJac get_timers_jacobian() const override
     {
+        const LinearSolverStats lsstats = detail::get_stats_impl(_linear_solver, 0);
         TimerJac res;
         res.timer_Fx_         = timer_Fx_;
-        res.timer_solve_      = timer_solve_;
-        res.timer_factor_     = timer_factor_;
-        res.timer_refactor_   = timer_refactor_;
-        res.timer_initialize_ = timer_initialize_;
+        res.timer_solve_      = lsstats.timer_solve_;
+        res.timer_factor_     = lsstats.timer_factor_;
+        res.timer_refactor_   = lsstats.timer_refactor_;
+        res.timer_initialize_ = lsstats.timer_initialize_;
         res.timer_check_      = timer_check_;
         res.timer_dSbus_      = timer_dSbus_;
         res.timer_fillJ_      = timer_fillJ_;
@@ -130,6 +129,14 @@ public:
         res.timer_mismatch_   = timer_mismatch_;
         res.timer_total_nr_   = timer_total_nr_;
         return res;
+    }
+
+    // Per-call counters and timings for the underlying linear solver (factor/refactor/
+    // analyze/solve counts, refactor-failure and fallback-factor counts if the wrapped
+    // LinearSolver tracks them -- see LinearSolverPolicy/RefactorRetryLinearSolver).
+    // Returns an all-zero LinearSolverStats if LinearSolver doesn't track any.
+    LinearSolverStats get_linear_solver_stats() const override {
+        return detail::get_stats_impl(_linear_solver, 0);
     }
 
     // ----- powerflow -----------------------------------------------------------
@@ -255,13 +262,11 @@ public:
 protected:
     void reset_timer() override {
         BaseAlgo::reset_timer();
-        timer_factor_     = 0.;
-        timer_refactor_   = 0.;
+        detail::reset_stats_timers_impl(_linear_solver, 0);
         timer_dSbus_      = 0.;
         timer_fillJ_      = 0.;
         timer_Va_Vm_      = 0.;
         timer_pre_proc_   = 0.;
-        timer_initialize_ = 0.;
         timer_scale_      = 0.;
         timer_mismatch_      = 0.;
         _system.reset_timers();
@@ -307,9 +312,6 @@ private:
     int refactor_every_n_;
 
     // Timers
-    double timer_factor_;
-    double timer_refactor_;
-    double timer_initialize_;
     double timer_dSbus_;
     double timer_fillJ_;
     double timer_Va_Vm_;
