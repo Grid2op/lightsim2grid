@@ -90,6 +90,24 @@ TODO: speed: `BaseBatchSolverSynch::compute_amps_flows` / `compute_active_power_
       common type with `CplxVect::Zero(nb_steps)` for the open-side case. Removing the copy
       would need a control-flow restructure (separate open-side / closed-side code paths),
       not just a reference-type change.
+TODO: building ``examples/dist_slack_algorithm`` against a NICSLU/CKTSO-enabled
+      ``lightsim2grid_core`` fails: ``NICSLUSolver.hpp`` (pulled in transitively via
+      ``Solvers.hpp``) needs NICSLU's own SDK header ``nicslu_cpp.inl`` (and, presumably,
+      CKTSO's own headers for ``CKTSOSolver.hpp``), which are a private implementation
+      detail not exposed by an installed ``lightsim2grid_core`` CMake package. The plugin's
+      ``CMakeLists.txt`` only special-cases SuiteSparse/KLU's headers this way (see the
+      comment there), not NICSLU/CKTSO's. Found while verifying the ``-march=native``
+      matching fix below against a full ``env_compile_all.sh`` build; not fixed.
+TODO: add a CI job that builds one of the example C++ algorithm plugins
+      (``examples/dist_slack_algorithm`` or ``examples/external_algorithm``) against a
+      ``lightsim2grid_core`` built with ``__COMPILE_MARCHNATIVE=1``, and actually loads +
+      runs it (not just compiles it), to catch a regression of the ``-march=native``
+      matching mechanism (``lightsim2grid_core_MARCH_NATIVE`` export +
+      ``examples/cmake/MatchLightsim2gridBuildFlags.cmake``, see ``docs/solver_plugin.rst``).
+      ``.github/workflows/main.yml``'s ``test_march_native`` job and
+      ``test_plugin_against_installed`` job each cover half of this (the former builds
+      lightsim2grid itself with the flag but does not touch a plugin; the latter builds a
+      plugin but never with the flag) -- neither exercises the combination.
 
 [0.14.0] 2026-xx-yy
 ---------------------
