@@ -43,6 +43,15 @@ struct Ls2gAbiTag {
     unsigned eigen_world_version = EIGEN_WORLD_VERSION;
     unsigned eigen_major_version = EIGEN_MAJOR_VERSION;
     unsigned eigen_minor_version = EIGEN_MINOR_VERSION;
+    // EIGEN_PATCH_VERSION only exists since Eigen moved to real semver in 5.0.0
+    // (https://libeigen.gitlab.io/news/eigen_5.0.0_released/); older Eigen
+    // (3.x, pre-5.0) never defined it, so a plugin built against an older,
+    // separately-installed Eigen must still compile against this header.
+#ifdef EIGEN_PATCH_VERSION
+    unsigned eigen_patch_version = EIGEN_PATCH_VERSION;
+#else
+    unsigned eigen_patch_version = 0;
+#endif
 
 #ifdef EIGEN_VECTORIZE_SSE
     bool vectorize_sse = true;
@@ -75,12 +84,24 @@ struct Ls2gAbiTag {
     bool vectorize_neon = false;
 #endif
 
+    // Eigen version is compared in full (world+major+minor+patch), not just
+    // major: Eigen is header-only, so its semver promise is about *API*
+    // compatibility for user code, not about the internal aligned-malloc
+    // offset arithmetic this tag actually cares about staying byte-identical
+    // across two independently-compiled binaries -- that's simply not
+    // something Eigen tests or promises across minor/patch releases, since
+    // there is no shared-object ABI to keep stable in the first place. In
+    // normal use core/bindings/plugins all build against the one Eigen
+    // commit vendored in this repo's `eigen/` submodule, so this only ever
+    // fires for a plugin deliberately pointed at a different Eigen copy --
+    // see docs/solver_plugin.rst, section "Matching build flags".
     bool operator==(const Ls2gAbiTag& o) const {
         return tag_version == o.tag_version
             && eigen_max_align_bytes == o.eigen_max_align_bytes
             && eigen_world_version == o.eigen_world_version
             && eigen_major_version == o.eigen_major_version
             && eigen_minor_version == o.eigen_minor_version
+            && eigen_patch_version == o.eigen_patch_version
             && vectorize_sse == o.vectorize_sse
             && vectorize_avx == o.vectorize_avx
             && vectorize_avx2 == o.vectorize_avx2
@@ -91,11 +112,14 @@ struct Ls2gAbiTag {
     bool operator!=(const Ls2gAbiTag& o) const { return !(*this == o); }
 
     // Human-readable summary for error messages, e.g. "align=32 bytes,
-    // Eigen 5.0.1, SSE+AVX+AVX2+FMA".
+    // Eigen 5.0.1, SSE+AVX+AVX2+FMA". Displayed as major.minor.patch,
+    // matching Eigen's own EIGEN_VERSION_STRING convention (world_version is
+    // pinned at 3 forever per Eigen's own versioning scheme and not part of
+    // its public-facing version string, but is still compared in operator==).
     std::string describe() const {
         std::ostringstream oss;
         oss << "align=" << eigen_max_align_bytes << " bytes, Eigen "
-            << eigen_world_version << "." << eigen_major_version << "." << eigen_minor_version << ", ";
+            << eigen_major_version << "." << eigen_minor_version << "." << eigen_patch_version << ", ";
         bool first = true;
         auto add = [&](bool present, const char* name) {
             if (!present) return;
