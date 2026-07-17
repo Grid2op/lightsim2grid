@@ -19,6 +19,7 @@ ErrorType KLULinearSolver::reset(){
     numeric_.reset();
     symbolic_.reset();
     common_ = klu_common();
+    klu_defaults(&common_);
     return ErrorType::NoError;
 }
 
@@ -30,6 +31,7 @@ ErrorType KLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
     numeric_.reset();
     symbolic_.reset();
     common_ = klu_common();
+    klu_defaults(&common_);
     symbolic_.reset(klu_analyze(n,
                                 const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
                                 const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),

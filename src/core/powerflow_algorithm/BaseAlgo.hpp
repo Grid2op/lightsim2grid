@@ -25,6 +25,7 @@
 #include "CustTimer.hpp"
 #include "BaseConstants.hpp"
 #include "AlgoConfig.hpp"
+#include "linear_solvers/LinearSolverStats.hpp"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -330,6 +331,14 @@ class LS2G_API BaseAlgo : public BaseConstants
             };
             return res;
         }
+
+        // Per-call counters and timings for the underlying linear solver (see
+        // LinearSolverPolicy / RefactorRetryLinearSolver). Default: all-zero, meaning
+        // "not tracked" -- overridden by NRAlgo/BaseDCAlgo (a single LinearSolver).
+        // BaseFDPFAlgo has two linear solvers (B'/B'') and exposes them separately
+        // (get_linear_solver_stats_bp/_bpp on the concrete FDPF_* Python type instead),
+        // so it does not override this generic single-solver accessor.
+        virtual LinearSolverStats get_linear_solver_stats() const { return LinearSolverStats{}; }
 
         // Complex AC entry point: solves V . (Ybus . V)* = Sbus.
         // Every AC solver overrides this; the DC solver does not (it uses `compute_pf_dc`) and
