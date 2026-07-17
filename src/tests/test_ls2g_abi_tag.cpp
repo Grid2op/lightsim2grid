@@ -37,6 +37,13 @@ TEST_CASE("Ls2gAbiTag equality reflects every field", "[ls2g_abi_tag]")
     b = a;
     b.tag_version += 1;
     REQUIRE(a != b);
+
+    // Eigen version is compared in full: two independently-compiled TUs
+    // built against different Eigen copies (even just a patch bump apart)
+    // are treated as a mismatch -- see the comment on operator== for why.
+    b = a;
+    b.eigen_patch_version += 1;
+    REQUIRE(a != b);
 }
 
 TEST_CASE("register_solver rejects a solver registered with a mismatched ABI tag", "[ls2g_abi_tag]")
