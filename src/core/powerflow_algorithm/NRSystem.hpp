@@ -904,6 +904,19 @@ public:
     void       apply_step(const Eigen::Ref<const RealVect>& dx);
     real_type  mismatch_sq_norm_at(const Eigen::Ref<const RealVect>& dx) const;
 
+    // Direct, allocation-light update of the LAST-registered extension's
+    // `count` feature entries, identified purely by count and position (the
+    // caller -- e.g. an extension whose declare_feature_entries reserved
+    // exactly `count` trailing slots -- is responsible for knowing its own
+    // count). Adds deltas[i] into the J_.valuePtr() position already
+    // resolved (in build_J_sparsity) for feature handle
+    // `sink_.size() - count + i`, bypassing fill_internal_variables()/
+    // fill_J() entirely. For extensions whose value needs to change faster
+    // than the rest of J (e.g. Levenberg-Marquardt diagonal damping; see
+    // examples/lm_algorithm/). Not diagonal- or LM-specific: it only knows
+    // "update these already-declared feature positions."
+    void update_trailing_feature_values(int count, const Eigen::Ref<const RealVect>& deltas);
+
     // ----- Housekeeping ----------------------------------------------------------
 
     void clear_jacobian() {
