@@ -177,6 +177,16 @@ inline void NRSystem<Base, Rest...>::fill_J()
 }
 
 template <typename... Rest>
+inline void NRSystem<Base, Rest...>::update_trailing_feature_values(int count, const Eigen::Ref<const RealVect>& deltas)
+{
+    assert(deltas.size() == count);
+    const int first_h = static_cast<int>(sink_.size()) - count;
+    real_type* J_values = J_.valuePtr();
+    for (int i = 0; i < count; ++i)
+        J_values[feature_pos_[first_h + i]] += deltas(i);
+}
+
+template <typename... Rest>
 inline void NRSystem<Base, Rest...>::fill_internal_variables()
 {
     auto timer = CustTimer();
