@@ -13,7 +13,7 @@
 namespace ls2g {
 
 
-void PandaPowerConverter::_check_init(){
+void PandaPowerConverter::_check_init() const {
     if(sn_mva_ <= 0.){
         throw std::runtime_error("PandaPowerConverter::_check_init: sn_mva has not been initialized");
     }
@@ -35,7 +35,7 @@ std::tuple<RealVect,
                                                     const Eigen::Ref<const RealVect> & trafo_vkr_percent,
                                                     const Eigen::Ref<const RealVect> & trafo_sn_trafo_mva,
                                                     const Eigen::Ref<const RealVect> & trafo_pfe_kw,
-                                                    const Eigen::Ref<const RealVect> & trafo_i0_pct)
+                                                    const Eigen::Ref<const RealVect> & trafo_i0_pct) const
 {
     //TODO consistency: move this class outside of here
     _check_init();
@@ -134,7 +134,7 @@ std::tuple<RealVect,
                                                       const Eigen::Ref<const RealVect> & branch_g,
                                                       const Eigen::Ref<const RealVect> & branch_c,
                                                       const Eigen::Ref<const RealVect> & branch_from_kv,
-                                                      const Eigen::Ref<const RealVect> & /*branch_to_kv*/)
+                                                      const Eigen::Ref<const RealVect> & /*branch_to_kv*/) const
 {
     //TODO does not use c at the moment!
     _check_init();
@@ -166,7 +166,7 @@ std::tuple<RealVect,
                                         const Eigen::Ref<const RealVect> & branch_g,
                                         const Eigen::Ref<const RealVect> & branch_c,
                                         const Eigen::Ref<const RealVect> & branch_from_kv,
-                                        const Eigen::Ref<const RealVect> & /*branch_to_kv*/)
+                                        const Eigen::Ref<const RealVect> & /*branch_to_kv*/) const
 {
     _check_init();
     const int nb_line = static_cast<int>(branch_r.size());
@@ -205,7 +205,7 @@ std::tuple<RealVect,
                                                     const Eigen::Ref<const RealVect> & trafo_sn_mva,
                                                     const Eigen::Ref<const RealVect> & trafo_pfe_kw,
                                                     const Eigen::Ref<const RealVect> & trafo_i0_pct,
-                                                    bool trafo_model_is_t)
+                                                    bool trafo_model_is_t) const
 {
     //TODO consistency: move this class outside of here
     _check_init();
