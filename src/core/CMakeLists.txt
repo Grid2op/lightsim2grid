@@ -288,6 +288,7 @@ add_library(lightsim2grid_core SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/LSGrid.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmSelector.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmRegistry.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Ls2gAbiTag.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmTypeNames.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/BuiltinSolversRegistration.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SolverInstantiations.cpp"
@@ -348,7 +349,10 @@ endif()
 if(ENABLE_NICSLU)
     target_link_directories(lightsim2grid_core PRIVATE ${LIB_MAYBE_NICSLU})
     target_link_libraries(lightsim2grid_core PRIVATE nicslu)
-    target_include_directories(lightsim2grid_core PRIVATE ${PATH_NICSLU}/include)
+    # PUBLIC (BUILD_INTERFACE only): NICSLUSolver.hpp is included directly by the
+    # bindings sources (lightsim2grid_cpp target), which need this include path too.
+    # See the KLU comment above for why BUILD_INTERFACE keeps it out of the exported target.
+    target_include_directories(lightsim2grid_core PUBLIC $<BUILD_INTERFACE:${PATH_NICSLU}/include>)
     target_compile_definitions(lightsim2grid_core PUBLIC  NICSLU_SOLVER_AVAILABLE)
     target_compile_definitions(lightsim2grid_core PRIVATE NICSLU_PATH="${LIB_MAYBE_NICSLU}")
 endif()
@@ -356,7 +360,8 @@ endif()
 if(LIB_CKTSO)
     target_link_directories(lightsim2grid_core PRIVATE ${LIB_MAYBE_CKTSO})
     target_link_libraries(lightsim2grid_core PRIVATE cktso)
-    target_include_directories(lightsim2grid_core PRIVATE ${PATH_CKTSO}/include)
+    # PUBLIC (BUILD_INTERFACE only): same reason as NICSLU above.
+    target_include_directories(lightsim2grid_core PUBLIC $<BUILD_INTERFACE:${PATH_CKTSO}/include>)
     target_compile_definitions(lightsim2grid_core PUBLIC  CKTSO_SOLVER_AVAILABLE)
     target_compile_definitions(lightsim2grid_core PRIVATE CKTSO_PATH="${LIB_MAYBE_CKTSO}")
 endif()

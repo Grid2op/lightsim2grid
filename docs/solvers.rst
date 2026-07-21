@@ -65,6 +65,55 @@ LightSim2Grid supports four families of powerflow algorithms:
    Algorithms based on ``NICSLU`` and ``CKTSO`` require a compilation from source.
    CKTSO algorithms are (for now) only tested on Linux.
 
+Linear-solver diagnostics: ``LinearSolverStats``
+--------------------------------------------------
+
+Every algorithm above is backed by a linear solver (``SparseLU``, ``KLU``, ``NICSLU`` or
+``CKTSO``) whose ``analyze``/``factorize``/``refactorize``/``solve`` calls are counted and
+timed. Call ``get_linear_solver_stats()`` on a solver (e.g. ``env.backend._grid.get_solver().get_linear_solver_stats()``)
+to get a :class:`lightsim2grid.algorithm.LinearSolverStats` with:
+
+- ``nb_analyze`` / ``nb_factorize`` / ``nb_refactorize`` / ``nb_solve`` / ``nb_reset``: how
+  many times each was called. These accumulate over the whole lifetime of the solver
+  object (not reset every powerflow), so a fallback or failure that fires occasionally is
+  distinguishable from one that fires systematically.
+- ``nb_refactorize_failed`` / ``nb_fallback_factorize`` / ``nb_fallback_factorize_failed``:
+  see :class:`~lightsim2grid.algorithm.NRRefactorRetry_KLU` below.
+- ``timer_initialize`` / ``timer_factor`` / ``timer_refactor`` / ``timer_solve``: matching
+  durations, reset every ``compute_pf``/``compute_pf_dc`` call like
+  :class:`~lightsim2grid.algorithm.TimerJac` (returned by ``get_timers_jacobian()``), which
+  these numbers also feed into.
+
+The two-linear-solver Fast-Decoupled family (``FDPF_XB_*``/``FDPF_BX_*``) exposes this per
+solver instead, as ``get_linear_solver_stats_bp()`` / ``get_linear_solver_stats_bpp()``
+(for B' and B'' respectively) on the concrete solver object.
+
+Retrying a failed refactor: ``NRRefactorRetry_*``
+----------------------------------------------------
+
+:class:`lightsim2grid.algorithm.NRRefactorRetry_KLU`,
+:class:`~lightsim2grid.algorithm.NRRefactorRetry_CKTSO` and
+:class:`~lightsim2grid.algorithm.NRRefactorRetry_NICSLU` are Newton-Raphson (multi-slack)
+variants of :class:`~lightsim2grid.algorithm.NR_KLU` / ``NR_CKTSO`` / ``NR_NICSLU``: if a
+Jacobian ``refactorize()`` call fails, they fall back to a full ``factorize()`` (reusing the
+existing symbolic factorization) before reporting an error, instead of failing immediately.
+This is a defensive measure recommended by SuiteSparse's own documentation for KLU,
+generalized here to any linear solver with a real factorize/refactorize distinction.
+
+.. note::
+   There is no ``NRRefactorRetry_SparseLU``: Eigen's ``SparseLU`` has no cheaper
+   "reuse pivot order" refactor -- its ``factorize()`` and ``refactorize()`` are already
+   the same call, so the fallback would be a no-op.
+
+.. note::
+   These are registered by name only (not part of the :class:`~lightsim2grid.algorithm.AlgorithmType`
+   enum), the same way externally-loaded algorithm plugins are -- select them with
+   ``grid.change_algorithm("NRRefactorRetry_KLU")`` rather than via ``AlgorithmType``.
+
+Use :class:`~lightsim2grid.algorithm.LinearSolverStats` (``get_linear_solver_stats()``, see
+above) to inspect how often the fallback actually fires: ``nb_refactorize_failed`` and
+``nb_fallback_factorize`` stay at ``0`` on a grid where refactor never fails.
+
 Default algorithm selection
 ------------------------------
 

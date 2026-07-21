@@ -19,10 +19,11 @@ ErrorType KLULinearSolver::reset(){
     numeric_.reset();
     symbolic_.reset();
     common_ = klu_common();
+    klu_defaults(&common_);
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::analyze(const Eigen::SparseMatrix<real_type>& J){
+ErrorType KLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
     // J is const here, but `klu_analyze` signature expects non-const arrays, so I const_cast
     const auto n = J.cols();
     // free any previous factorization (using the current common_) before resetting it,
@@ -30,6 +31,7 @@ ErrorType KLULinearSolver::analyze(const Eigen::SparseMatrix<real_type>& J){
     numeric_.reset();
     symbolic_.reset();
     common_ = klu_common();
+    klu_defaults(&common_);
     symbolic_.reset(klu_analyze(n,
                                 const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
                                 const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
@@ -38,7 +40,7 @@ ErrorType KLULinearSolver::analyze(const Eigen::SparseMatrix<real_type>& J){
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::factorize(const Eigen::SparseMatrix<real_type>& J){
+ErrorType KLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
     // J is const here, but `klu_factor` signature expects non-const arrays, so I const_cast
     // reset() frees any previous numeric factorization before storing the new one
     numeric_.reset(klu_factor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
@@ -49,7 +51,7 @@ ErrorType KLULinearSolver::factorize(const Eigen::SparseMatrix<real_type>& J){
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type>& J){
+ErrorType KLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
     // J is const here, but `klu_refactor` signature expects arrays and not const arrays
     // so I const_cast
     int ok = klu_refactor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),

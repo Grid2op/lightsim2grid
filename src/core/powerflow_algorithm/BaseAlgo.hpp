@@ -25,6 +25,7 @@
 #include "CustTimer.hpp"
 #include "BaseConstants.hpp"
 #include "AlgoConfig.hpp"
+#include "linear_solvers/LinearSolverStats.hpp"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -240,6 +241,10 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual RealVect get_controller_q()       const { return RealVect(); }
         virtual IntVect  get_controller_kind()    const { return IntVect(); }
         virtual IntVect  get_controller_elem_id() const { return IntVect(); }
+        // J column of each controller's own Q unknown, in controller registration
+        // order -- NOT the bus-keyed q_to_J_col (see NRSystem::controller_q_col's
+        // own doc): needed whenever two controllers share a bus.
+        virtual IntVect  get_controller_q_col()   const { return IntVect(); }
 
         // MultiSlack: J column of the slack_absorbed unknown (-1 when the
         // distributed-slack-in-Jacobian extension is not active).
@@ -326,6 +331,14 @@ class LS2G_API BaseAlgo : public BaseConstants
             };
             return res;
         }
+
+        // Per-call counters and timings for the underlying linear solver (see
+        // LinearSolverPolicy / RefactorRetryLinearSolver). Default: all-zero, meaning
+        // "not tracked" -- overridden by NRAlgo/BaseDCAlgo (a single LinearSolver).
+        // BaseFDPFAlgo has two linear solvers (B'/B'') and exposes them separately
+        // (get_linear_solver_stats_bp/_bpp on the concrete FDPF_* Python type instead),
+        // so it does not override this generic single-solver accessor.
+        virtual LinearSolverStats get_linear_solver_stats() const { return LinearSolverStats{}; }
 
         // Complex AC entry point: solves V . (Ybus . V)* = Sbus.
         // Every AC solver overrides this; the DC solver does not (it uses `compute_pf_dc`) and
@@ -494,6 +507,8 @@ class LS2G_API BaseAlgo : public BaseConstants
             return false;
         }
 
+        // Bf / Bf_T are resized and filled from scratch by fillBf_for_PTDF: a real
+        // reference is needed, Eigen::Ref<SparseMatrix> can't resize/reserve.
         void get_Bf(Eigen::SparseMatrix<real_type> & Bf) const;
         void get_Bf_transpose(Eigen::SparseMatrix<real_type> & Bf_T) const;
         

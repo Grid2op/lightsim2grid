@@ -44,16 +44,16 @@ class LS2G_API KLULinearSolver final
             common_(),
             symbolic_(nullptr, SymbolicDeleter{&common_}),
             numeric_(nullptr, NumericDeleter{&common_})
-            {}
+            { klu_defaults(&common_); }
 
         // symbolic_ / numeric_ are unique_ptr with custom deleters and free themselves.
         ~KLULinearSolver() noexcept = default;
 
         // public api
         ErrorType reset();
-        ErrorType analyze(const Eigen::SparseMatrix<real_type>& J);   // reordering + symbolic factorization (structure only)
-        ErrorType factorize(const Eigen::SparseMatrix<real_type>& J); // numeric factorization (requires values)
-        ErrorType refactorize(const Eigen::SparseMatrix<real_type>& J);  // re-numeric factorization, reuses symbolic
+        ErrorType analyze(const EigenRefConstRealSpMat & J);   // reordering + symbolic factorization (structure only)
+        ErrorType factorize(const EigenRefConstRealSpMat & J); // numeric factorization (requires values)
+        ErrorType refactorize(const EigenRefConstRealSpMat & J);  // re-numeric factorization, reuses symbolic
         ErrorType solve(Eigen::Ref<RealVect> b);
 
         // can this linear solver solve problem where RHS is a matrix

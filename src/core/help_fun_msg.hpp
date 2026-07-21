@@ -45,18 +45,21 @@ struct LS2G_API DocSolver
     static const std::string DC_KLU;
     static const std::string FDPF_XB_KLU;
     static const std::string FDPF_BX_KLU;
+    static const std::string NRRefactorRetry_KLU;
 
     static const std::string NR_NICSLU;
     static const std::string NRSing_NICSLU;
     static const std::string DC_NICSLU;
     static const std::string FDPF_XB_NICSLU;
     static const std::string FDPF_BX_NICSLU;
+    static const std::string NRRefactorRetry_NICSLU;
 
     static const std::string NR_CKTSO;
     static const std::string NRSing_CKTSO;
     static const std::string DC_CKTSO;
     static const std::string FDPF_XB_CKTSO;
     static const std::string FDPF_BX_CKTSO;
+    static const std::string NRRefactorRetry_CKTSO;
 
     static const std::string GaussSeidelAlgo;
     static const std::string GaussSeidelSynchAlgo;

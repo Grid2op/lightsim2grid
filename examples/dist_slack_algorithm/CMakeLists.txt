@@ -44,6 +44,12 @@ endif()
 add_library(dist_slack_algorithm MODULE NRAlgoDistSlack_plugin.cpp)
 target_link_libraries(dist_slack_algorithm PRIVATE lightsim2grid::core)
 
+# Match lightsim2grid_core's -march=native / -O3 -- see docs/solver_plugin.rst
+# and examples/cmake/MatchLightsim2gridBuildFlags.cmake for why this matters
+# (skipping it is a real, silent heap-corruption risk, not just a perf loss).
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/MatchLightsim2gridBuildFlags.cmake")
+ls2g_match_core_build_flags(dist_slack_algorithm)
+
 # -----------------------------------------------------------------------
 # KLUSolver.hpp (pulled in transitively via Solvers.hpp) needs SuiteSparse's
 # own headers (cs.h, klu.h, amd.h, colamd.h, btf.h, SuiteSparse_config.h) to

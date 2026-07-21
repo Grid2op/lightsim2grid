@@ -15,7 +15,7 @@ namespace ls2g {
  Member version: single-threaded path, uses the member solver / control / accumulators.
 **/
 bool BaseBatchSolverSynch::compute_one_powerflow(
-    const Eigen::SparseMatrix<cplx_type> & Ybus,
+    const EigenRefConstCplxSpMat & Ybus,
     CplxVect & V,
     const Eigen::Ref<const CplxVect> & Sbus,
     const Eigen::Ref<const IntVect> & slack_ids,
@@ -41,8 +41,8 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
     AlgoControl & control,
     int & nb_solved,
     double & timer_solver,
-    const Eigen::SparseMatrix<cplx_type> & Ybus,
-    CplxVect & V,
+    const EigenRefConstCplxSpMat & Ybus,
+    CplxVect &  V,
     const Eigen::Ref<const CplxVect> & Sbus,
     const Eigen::Ref<const IntVect> & slack_ids,
     const Eigen::Ref<const RealVect> & slack_weights,
@@ -90,7 +90,7 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
 bool BaseBatchSolverSynch::warmup_solver(
     AlgorithmSelector & algo,
     AlgoControl & control,
-    CplxVect Vinit_solver,
+    const Eigen::Ref<const CplxVect> & Vinit_solver,
     int max_iter,
     real_type tol)
 {

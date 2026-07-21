@@ -142,14 +142,15 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(
     }
     timer_total_nr_ += timer.duration();
     #ifdef __COUT_TIMES
-        std::cout << "Computation time: " << "\n\t timer_initialize_: " << timer_initialize_
-                  << "\n\t timer_dSbus_ (called in _fillJ_): " << timer_dSbus_
-                  << "\n\t timer_fillJ_: " << timer_fillJ_
-                  << "\n\t timer_Fx_: " << timer_Fx_
-                  << "\n\t timer_check_: " << timer_check_
-                  << "\n\t timer_solve_: " << timer_solve_
-                  << "\n\t timer_total_nr_: " << timer_total_nr_
-                  << "\n\n";
+        {
+            const TimerJac tj = get_timers_jacobian();
+            std::cout << "Computation time: " << "\n\t timer_initialize_: " << tj.timer_initialize_
+                      << "\n\t timer_Fx_: " << timer_Fx_
+                      << "\n\t timer_check_: " << timer_check_
+                      << "\n\t timer_solve_: " << tj.timer_solve_
+                      << "\n\t timer_total_nr_: " << timer_total_nr_
+                      << "\n\n";
+        }
     #endif // __COUT_TIMES
     return res;
 }

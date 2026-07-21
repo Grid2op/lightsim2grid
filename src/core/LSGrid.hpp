@@ -1561,6 +1561,14 @@ class LS2G_API LSGrid final
         [[nodiscard]] RealVect get_controller_q_solver()       const { return _algo.get_controller_q(); }
         [[nodiscard]] IntVect  get_controller_kind_solver()    const { return _algo.get_controller_kind(); }
         [[nodiscard]] IntVect  get_controller_elem_id_solver() const { return _algo.get_controller_elem_id(); }
+        // J column of each controller's own Q unknown, controller registration
+        // order -- NOT the bus-keyed get_q_to_J_col_solver() (that map only keeps
+        // the LAST controller registered at a given bus, see NRLedger::
+        // add_q_unknown's own doc). External solvers rebuilding this bordered
+        // block (e.g. gpusim2grid) MUST use this whenever two controllers can
+        // share a bus, exactly like p_buses()/p_rows() etc. must be used instead
+        // of the bus-keyed maps for the base P/Q block.
+        [[nodiscard]] IntVect  get_controller_q_col_solver()   const { return _algo.get_controller_q_col(); }
 
         [[nodiscard]] real_type get_computation_time() const{ return _algo.get_computation_time();}
         [[nodiscard]] real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}
@@ -1809,7 +1817,10 @@ class LS2G_API LSGrid final
          * @param relabel_row : whether to relabel also the row id
          * @return Eigen::SparseMatrix<cplx_type> 
          */
-        template<typename T>    
+        // Ybus stays a plain reference: T is deduced from the caller's argument, and
+        // Eigen::Ref<const Eigen::SparseMatrix<T>> is a non-deduced context (callers
+        // pass a concrete Eigen::SparseMatrix<T>, so deduction would fail).
+        template<typename T>
         Eigen::SparseMatrix<T> _relabel_matrix(const Eigen::SparseMatrix<T> & Ybus,
                                                const GlobalBusIdVect & id_solver_to_me,
                                                bool relabel_row=true) const {
@@ -1843,14 +1854,22 @@ class LS2G_API LSGrid final
         }
 
         /**
-         * @brief Build the Sbus (or any other vector labelled using the gridmodel convention) 
+         * @brief Build the Sbus (or any other vector labelled using the gridmodel convention)
          * from the same vector (input) that uses the solver convention.
-         * 
-         * TODO copy paste from below, find a better way !
-         * 
+         *
+         * Overloaded on purpose (not "copy paste, find a better way"): callers pass either
+         * a genuine Eigen::Matrix<T,...> lvalue (eg `acSbus_`) or an Eigen::Ref<const
+         * Matrix<T,...>> prvalue returned by a `get_..._solver()` accessor (eg
+         * `get_V_solver()`). Both need their own overload because T only appears deduced
+         * from the argument's own type: a Ref argument cannot deduce T through this
+         * plain-Matrix parameter (Ref isn't-a Matrix), and conversely a genuine Matrix
+         * argument cannot deduce T through the other overload's Eigen::Ref<const
+         * Matrix<T,...>> parameter (a non-deduced context) -- confirmed by deleting this
+         * overload and observing every `get_..._solver()`-fed call site fail to compile.
+         *
          * @param Sbus : Sbus with the solver convention, the one used by the solver
          * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
-         * @return CplxVect 
+         * @return CplxVect
          */
         template<class T>
         Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1> > & Sbus,
@@ -1866,14 +1885,17 @@ class LS2G_API LSGrid final
         }
 
         /**
-         * @brief Build the Sbus (or any other vector labelled using the gridmodel convention) 
+         * @brief Build the Sbus (or any other vector labelled using the gridmodel convention)
          * from the same vector (input) that uses the solver convention.
-         * 
-         * TODO copy paste from above, find a better way !
-         * 
+         *
+         * Sibling overload of the one above, for callers passing a genuine Eigen::Matrix<T,...>
+         * lvalue instead of an Eigen::Ref -- see the comment above for why both are needed.
+         * Kept as a plain reference (not Eigen::Ref): T is deduced from this argument, and
+         * Eigen::Ref<const Eigen::Matrix<T,...>> is a non-deduced context here.
+         *
          * @param Sbus : Sbus with the solver convention, the one used by the solver
          * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
-         * @return CplxVect 
+         * @return CplxVect
          */
         template<class T>
         Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Matrix<T, Eigen::Dynamic, 1> & Sbus,

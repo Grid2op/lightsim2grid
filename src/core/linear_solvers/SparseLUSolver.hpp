@@ -38,10 +38,10 @@ class LS2G_API SparseLULinearSolver final
         ~SparseLULinearSolver() noexcept = default;
         
         // public api
-        ErrorType analyze(const Eigen::SparseMatrix<real_type> & J);   // reordering + symbolic factorization (structure only)
-        ErrorType factorize(const Eigen::SparseMatrix<real_type> & J); // numeric factorization (requires values)
-        ErrorType refactorize(const Eigen::SparseMatrix<real_type> & J);  // re-numeric factorization, reuses symbolic
-        ErrorType solve(Eigen::Ref<RealVect> b);
+        ErrorType analyze(const EigenRefConstRealSpMat & J);   // reordering + symbolic factorization (structure only)
+        ErrorType factorize(const EigenRefConstRealSpMat & J); // numeric factorization (requires values)
+        ErrorType refactorize(const EigenRefConstRealSpMat & J);  // re-numeric factorization, reuses symbolic
+        ErrorType solve(Eigen::Ref<RealVect> b) const;
         ErrorType reset(){
             return ErrorType::NoError;
         }
