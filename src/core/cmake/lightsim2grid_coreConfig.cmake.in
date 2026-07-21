@@ -26,4 +26,16 @@ endif()
 set(lightsim2grid_core_LIBRARIES    lightsim2grid::core)
 set(lightsim2grid_core_INCLUDE_DIRS "${lightsim2grid_core_INCLUDE_DIR}")
 
+# Whether *this* lightsim2grid_core was built with -march=native / -O3
+# (src/core/CMakeLists.txt's USE_MARCH_NATIVE / USE_O3_OPTIM, driven by the
+# __COMPILE_MARCHNATIVE / __O3_OPTIM env vars). A consumer linking against
+# lightsim2grid::core (a separate shared library) MUST use the identical
+# -march flag: -march=native changes which SIMD ISA Eigen sees enabled,
+# which changes EIGEN_MAX_ALIGN_BYTES and thus how Eigen aligns/allocates/
+# frees its dynamic-size matrices. An Eigen object allocated under one
+# alignment assumption and freed under another (e.g. crossing the BaseAlgo
+# virtual interface) silently corrupts the heap. See docs/solver_plugin.rst.
+set(lightsim2grid_core_MARCH_NATIVE @USE_MARCH_NATIVE@)
+set(lightsim2grid_core_O3_OPTIM     @USE_O3_OPTIM@)
+
 check_required_components(lightsim2grid_core)

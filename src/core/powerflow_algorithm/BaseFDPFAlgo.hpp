@@ -10,6 +10,7 @@
 #define BASEFDPFALGO_H
 
 #include "BaseAlgo.hpp"
+#include "linear_solvers/LinearSolverStats.hpp"
 
 namespace ls2g {
 
@@ -22,6 +23,7 @@ class BaseFDPFAlgo final: public BaseAlgo
     public:
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
         ~BaseFDPFAlgo() noexcept override = default;
+
 
         static constexpr bool IS_FDPF = true;
         bool is_fdpf() const noexcept override { return IS_FDPF; }
@@ -63,9 +65,38 @@ class BaseFDPFAlgo final: public BaseAlgo
         Eigen::SparseMatrix<real_type> debug_get_Bp_python()  const { return Bp_;}
         Eigen::SparseMatrix<real_type> debug_get_Bpp_python() const { return Bpp_;}
 
+        // Two linear solvers (B' and B''): reported separately rather than merged, so
+        // no information is lost (unlike timer_initialize_ below, which historically
+        // combines both for backward compatibility with get_timers_jacobian()).
+        LinearSolverStats get_linear_solver_stats_bp() const {
+            return detail::get_stats_impl(_linear_solver_Bp, 0);
+        }
+        LinearSolverStats get_linear_solver_stats_bpp() const {
+            return detail::get_stats_impl(_linear_solver_Bpp, 0);
+        }
+
+        TimerJac get_timers_jacobian() const override
+        {
+            const LinearSolverStats bp  = detail::get_stats_impl(_linear_solver_Bp, 0);
+            const LinearSolverStats bpp = detail::get_stats_impl(_linear_solver_Bpp, 0);
+            TimerJac res;
+            res.timer_Fx_         = timer_Fx_;
+            res.timer_solve_      = bp.timer_solve_ + bpp.timer_solve_;
+            // FDPF never refactorizes (B'/B'' are fixed matrices, factorized once), and
+            // historically combined analyze+factor into a single timer_initialize_ for
+            // both solvers -- preserved here for backward compatibility.
+            res.timer_initialize_ = bp.timer_initialize_ + bp.timer_factor_
+                                   + bpp.timer_initialize_ + bpp.timer_factor_;
+            res.timer_check_      = timer_check_;
+            res.timer_total_nr_   = timer_total_nr_;
+            return res;
+        }
+
     protected:
         void reset_timer() override {
             BaseAlgo::reset_timer();
+            detail::reset_stats_timers_impl(_linear_solver_Bp, 0);
+            detail::reset_stats_timers_impl(_linear_solver_Bpp, 0);
         }
 
         CplxVect evaluate_mismatch(const EigenRefConstCplxSpMat     &  Ybus,
@@ -86,7 +117,6 @@ class BaseFDPFAlgo final: public BaseAlgo
             Eigen::SparseMatrix<real_type> & Bpp) const;  // defined in Solvers.cpp !
 
         void initialize() {
-            auto timer = CustTimer();
             err_ = ErrorType::NoError; // reset error message
             // analyze (structure) + factorize (values) for Bp solver
             ErrorType init_status = _linear_solver_Bp.analyze(Bp_);
@@ -97,7 +127,6 @@ class BaseFDPFAlgo final: public BaseAlgo
                 _linear_solver_Bpp.reset();
                 err_ = init_status;
                 need_factorize_ = true;
-                timer_initialize_ += timer.duration();
                 return;
             }
             // analyze (structure) + factorize (values) for Bpp solver (if Bp succeeded)
@@ -109,24 +138,20 @@ class BaseFDPFAlgo final: public BaseAlgo
                 _linear_solver_Bpp.reset();
                 err_ = init_status;
                 need_factorize_ = true;
-                timer_initialize_ += timer.duration();
                 return;
             }
 
             // everything went well
             need_factorize_ = false;
-            timer_initialize_ += timer.duration();
         }
 
         void solve(LinearSolver& linear_solver,
                    Eigen::Ref<RealVect> b){
-            auto timer = CustTimer();
             const ErrorType solve_status = linear_solver.solve(b);
             if(solve_status != ErrorType::NoError){
                 // std::cout << "solve error: " << solve_status << std::endl;
                 err_ = solve_status;
             }
-            timer_solve_ += timer.duration();
         }
 
         bool has_converged(
@@ -209,11 +234,6 @@ class BaseFDPFAlgo final: public BaseAlgo
         RealVect p_;  // (size n_pvpq)
         RealVect q_;  // (size n_pq)
         bool need_factorize_;
-
-        // timers
-        double timer_initialize_;
-        // double timer_dSbus_;
-        // double timer_fillJ_;
 
     private:
         // no copy allowed

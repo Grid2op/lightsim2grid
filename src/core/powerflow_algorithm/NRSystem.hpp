@@ -175,6 +175,10 @@ class LS2G_API Base
         // need a free Vm unknown + Q equation -- shared by EVERY NRSystem
         // instantiation (SingleSlackNRSystem has no MultiSlack extension to
         // do this, so Base must own it).
+        // Ybus stays a plain reference (not Eigen::Ref): this update_state
+        // caches its address (Ybus_ptr_, see below) across phases (this call
+        // -> build_J_sparsity), which needs the caller's actual, long-lived
+        // matrix, not a call-site Eigen::Ref temporary.
         void update_state(
             const LSGrid                     * lsgrid_ptr,
             const EigenRefConstCplxSpMat     & Ybus,
@@ -779,6 +783,17 @@ class LS2G_API VoltageControl
         Eigen::Ref<const RealVect>  controller_q()       const { return q_; }
         Eigen::Ref<const IntVect>   controller_kind()    const { return data_.kind; }
         Eigen::Ref<const IntVect>   controller_elem_id() const { return data_.elem_id; }
+        // J column of each controller's own Q unknown (controller registration
+        // order, matching controller_q()/controller_kind()/controller_elem_id()).
+        // NOT the same as the ledger's bus-keyed q_to_J_col (NRLedger::
+        // add_q_unknown's own doc: that map is "sugar" for introspection and
+        // only keeps the LAST controller registered at a given bus) -- callers
+        // needing the true per-controller column (e.g. an external solver
+        // rebuilding this bordered block, like gpusim2grid) whenever two
+        // controllers share a bus MUST use this, not q_to_J_col.
+        IntVect controller_q_col() const {
+            return Eigen::Map<const IntVect>(q_cols_.data(), static_cast<Eigen::Index>(q_cols_.size()));
+        }
 
     private:
         int                            my_size_;     // number of controllers
@@ -889,6 +904,19 @@ public:
     void       apply_step(const Eigen::Ref<const RealVect>& dx);
     real_type  mismatch_sq_norm_at(const Eigen::Ref<const RealVect>& dx) const;
 
+    // Direct, allocation-light update of the LAST-registered extension's
+    // `count` feature entries, identified purely by count and position (the
+    // caller -- e.g. an extension whose declare_feature_entries reserved
+    // exactly `count` trailing slots -- is responsible for knowing its own
+    // count). Adds deltas[i] into the J_.valuePtr() position already
+    // resolved (in build_J_sparsity) for feature handle
+    // `sink_.size() - count + i`, bypassing fill_internal_variables()/
+    // fill_J() entirely. For extensions whose value needs to change faster
+    // than the rest of J (e.g. Levenberg-Marquardt diagonal damping; see
+    // examples/lm_algorithm/). Not diagonal- or LM-specific: it only knows
+    // "update these already-declared feature positions."
+    void update_trailing_feature_values(int count, const Eigen::Ref<const RealVect>& deltas);
+
     // ----- Housekeeping ----------------------------------------------------------
 
     void clear_jacobian() {
@@ -963,6 +991,10 @@ public:
     IntVect controller_elem_id() const {
         const VoltageControl* vc = _find_extension<VoltageControl>();
         return vc ? IntVect(vc->controller_elem_id()) : IntVect();
+    }
+    IntVect controller_q_col() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? IntVect(vc->controller_q_col()) : IntVect();
     }
 
     // ----- MultiSlack: slack_absorbed J column (-1 when the extension is absent) --

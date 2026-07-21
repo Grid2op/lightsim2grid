@@ -36,7 +36,7 @@ ErrorType NICSLULinearSolver::reset(){
     return ErrorType::NoError;
 }
 
-ErrorType NICSLULinearSolver::analyze(const Eigen::SparseMatrix<real_type> & J){
+ErrorType NICSLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
     // NICSLU Analyze may use values for MC64 value-based scaling/ordering
     const auto n = J.cols();
     const unsigned int nnz = J.nonZeros();
@@ -64,7 +64,7 @@ ErrorType NICSLULinearSolver::analyze(const Eigen::SparseMatrix<real_type> & J){
     return ErrorType::NoError;
 }
 
-ErrorType NICSLULinearSolver::factorize(const Eigen::SparseMatrix<real_type> & J){
+ErrorType NICSLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
     // solver.FactorizeMatrix(ax, 0); //use all created threads
     int ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);
     if (ret < 0){
@@ -74,7 +74,7 @@ ErrorType NICSLULinearSolver::factorize(const Eigen::SparseMatrix<real_type> & J
     return ErrorType::NoError;
 }
 
-ErrorType NICSLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type> & J){
+ErrorType NICSLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
     int ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);  // TODO maybe 0 instead of nb_thread_ here, see https://github.com/chenxm1986/nicslu/blob/master/nicslu202110/demo/demo2.cpp
     if(ret < 0){
         // std::cout << "NICSLULinearSolver::refactor solver_.FactorizeMatrix error: " << ret << std::endl;

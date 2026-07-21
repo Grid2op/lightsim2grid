@@ -171,20 +171,14 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
     bool factorized_now = false;
     if(need_factorize_){
         // std::cout << "\t\t\tneed to factorize\n";
-        auto timer_an = CustTimer();
         ErrorType status_init = _linear_solver.analyze(sys_mat);
-        const double dur_an = timer_an.duration();
-        timer_initialize_ += dur_an;
         if(status_init != ErrorType::NoError){
             err_ = status_init;
             timer_total_nr_ += timer.duration();
             return false;
         }
 
-        auto timer_fac = CustTimer();
         status_init = _linear_solver.factorize(sys_mat);
-        const double dur_fact = timer_fac.duration();
-        timer_factor_ += dur_fact;
         if(status_init != ErrorType::NoError){
             err_ = status_init;
             timer_total_nr_ += timer.duration();
@@ -247,10 +241,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
         // we should end-up here only in case of n-1 simulation (handled in contingency analysis)
         // set to true in update_internal_Ybus
         // std::cout << "\t\t\tneed to refactorize\n";
-        auto timer_s = CustTimer();
         ErrorType error = _linear_solver.refactorize(sys_mat);
-        const double dur_refacto = timer_s.duration();
-        timer_refactor_ += dur_refacto;
         if(error != ErrorType::NoError){
             err_ = error;
             timer_total_nr_ += timer.duration();
@@ -258,10 +249,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
         }
     }
     {
-        auto timer_s = CustTimer();
         ErrorType error = _linear_solver.solve(Va_dc_without_slack);
-        const double dur_solve = timer_s.duration();
-        timer_solve_ += dur_solve;
         if(error != ErrorType::NoError){
             err_ = error;
             timer_total_nr_ += timer.duration();
@@ -340,7 +328,7 @@ void BaseDCAlgo<LinearSolver>::fill_mat_bus_id(int nb_bus_solver){
 }
 
 template<class LinearSolver>
-void BaseDCAlgo<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<real_type> & ref_mat){
+void BaseDCAlgo<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & ref_mat){
     // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
     remove_slack_buses(nb_bus_solver, ref_mat, dcYbus_noslack_);
     add_droop_to_dcYbus();
@@ -404,13 +392,13 @@ void BaseDCAlgo<LinearSolver>::add_droop_to_dcSbus(){
 
 template<class LinearSolver>
 template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
-void BaseDCAlgo<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen::SparseMatrix<ref_mat_type> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat){
+void BaseDCAlgo<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat){
     res_mat = Eigen::SparseMatrix<real_type>(sizeYbus_without_slack_, sizeYbus_without_slack_);  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(ref_mat.nonZeros());
     for (int k=0; k < nb_bus_solver; ++k){
         if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
-        for (typename Eigen::SparseMatrix<ref_mat_type>::InnerIterator it(ref_mat, k); it; ++it)
+        for (typename Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>>::InnerIterator it(ref_mat, k); it; ++it)
         {
             int row_res = static_cast<int>(it.row());  // TODO Eigen::Index here ?
             row_res = mat_bus_id_(row_res);

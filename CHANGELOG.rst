@@ -90,6 +90,26 @@ TODO: speed: `BaseBatchSolverSynch::compute_amps_flows` / `compute_active_power_
       common type with `CplxVect::Zero(nb_steps)` for the open-side case. Removing the copy
       would need a control-flow restructure (separate open-side / closed-side code paths),
       not just a reference-type change.
+TODO: building ``examples/dist_slack_algorithm`` against a NICSLU/CKTSO-enabled
+      ``lightsim2grid_core`` fails: ``NICSLUSolver.hpp`` (pulled in transitively via
+      ``Solvers.hpp``) needs NICSLU's own SDK header ``nicslu_cpp.inl`` (and, presumably,
+      CKTSO's own headers for ``CKTSOSolver.hpp``), which are a private implementation
+      detail not exposed by an installed ``lightsim2grid_core`` CMake package. The plugin's
+      ``CMakeLists.txt`` only special-cases SuiteSparse/KLU's headers this way (see the
+      comment there), not NICSLU/CKTSO's. Found while verifying the ``-march=native``
+      matching fix below against a full ``env_compile_all.sh`` build; not fixed.
+TODO: add a CI job that builds one of the example C++ algorithm plugins
+      (``examples/dist_slack_algorithm`` or ``examples/external_algorithm``) against a
+      ``lightsim2grid_core`` built with ``__COMPILE_MARCHNATIVE=1``, and actually loads +
+      runs it (not just compiles it), to catch a regression of the ``-march=native``
+      matching mechanism (``lightsim2grid_core_MARCH_NATIVE`` export +
+      ``examples/cmake/MatchLightsim2gridBuildFlags.cmake``, see ``docs/solver_plugin.rst``).
+      ``.github/workflows/main.yml``'s ``test_march_native`` job and
+      ``test_plugin_against_installed`` job each cover half of this (the former builds
+      lightsim2grid itself with the flag but does not touch a plugin; the latter builds a
+      plugin but never with the flag) -- neither exercises the combination.
+TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding small decreasing 
+      lambba coefficients to the diagonal of J to improve its conditionning.
 
 [0.14.0] 2026-xx-yy
 ---------------------
@@ -691,6 +711,99 @@ TODO: speed: `BaseBatchSolverSynch::compute_amps_flows` / `compute_active_power_
   need to separately pass `sort_index` back in) and raises `NotImplementedError` for a grid
   built with the legacy `buses_for_sub=True` mode. See the "Inspecting results in a
   pypowsybl-like way" section of the documentation.
+- [FIXED] a build with ``__COMPILE_MARCHNATIVE=1`` (see ``benchmarks/env_compile_all.sh``)
+  reliably corrupted the heap and crashed (``free(): invalid size`` / ``double free or
+  corruption``) as soon as any C++ function's return value crossed from
+  ``lightsim2grid_core`` into ``lightsim2grid_cpp`` (the pybind11 bindings) -- for
+  example on the very first ``grid2op.make(...)`` with a pandapower-backed grid, well
+  before any solver is even selected. Root cause: ``lightsim2grid_core`` and
+  ``lightsim2grid_cpp`` are two separate shared libraries (a recent split), and
+  ``-march=native``/``-O3`` were only ever applied (as ``PRIVATE`` compile options) to
+  ``lightsim2grid_core``. ``-march=native`` changes which SIMD instruction sets Eigen
+  sees enabled (``__AVX__``/``__AVX2__``/...), which changes ``EIGEN_MAX_ALIGN_BYTES``
+  and thus how Eigen aligns/allocates/frees its dynamic-size matrices; since both
+  libraries instantiate the same ``Eigen::Matrix<...>`` types (every pybind11 Eigen
+  return-value cast does), an object allocated under one alignment assumption and freed
+  under another silently computed the wrong original-allocation offset. Fixed by
+  mirroring ``-march=native``/``-O3`` onto ``lightsim2grid_cpp`` in
+  ``src/bindings/python/CMakeLists.txt``, the same way ``__SANITIZE``/``__DEBUG_ASSERTS``
+  were already mirrored there. Added a regression test,
+  ``.github/workflows/main.yml``'s ``test_march_native`` job, since release wheels do
+  not use ``-march=native`` and so never exercised this.
+- [FIXED] ``lightsim2grid.compilation_options.compiled_march_native`` /
+  ``compiled_o3_optim`` always reported ``False``, regardless of
+  ``__COMPILE_MARCHNATIVE``/``__O3_OPTIM``, because ``binding_module.cpp`` (compiled
+  into ``lightsim2grid_cpp``) checks the ``__COMPILE_MARCHNATIVE``/``__O3_OPTIM``
+  *preprocessor macros*, which were never defined for that target: ``__O3_OPTIM`` was
+  only ``target_compile_definitions``'d as ``PRIVATE`` on ``lightsim2grid_core`` (so it
+  did not propagate across the library boundary, unlike ``KLU_SOLVER_AVAILABLE`` and
+  friends, which are ``PUBLIC``), and ``__COMPILE_MARCHNATIVE`` was never defined as a
+  macro anywhere at all -- only used to conditionally add the ``-march=native`` compiler
+  *flag* (a separate thing from the macro). This was a pre-existing, purely cosmetic gap
+  (the actual ``-march=native``/``-O3`` compiler flags were, and are, applied correctly);
+  it just happened to surface right after the fix above, when checking that the build
+  driving a benchmark actually had ``-march=native`` active. Fixed alongside the ABI fix
+  above, in the same ``src/bindings/python/CMakeLists.txt`` block.
+- [ADDED] a runtime guard, on top of the CMake-level ``-march=native``/``-O3`` matching
+  above, against the exact class of bug those two ``[FIXED]`` entries describe.
+  ``src/core/Ls2gAbiTag.hpp`` defines an "ABI tag" (``EIGEN_MAX_ALIGN_BYTES``, the
+  resolved ``EIGEN_VECTORIZE_*`` flags, and the Eigen version) computed independently in
+  whichever translation unit calls it; comparing two independently-evaluated tags is the
+  only way to observe this kind of drift between separately-compiled binaries (a
+  ``static_assert`` cannot, since no single translation unit has visibility into another,
+  separately-compiled one's flags). Two checkpoints now compare tags and refuse to
+  proceed with a clear error instead of silently corrupting the heap: (1)
+  ``AlgorithmRegistry::register_solver`` for third-party solver plugins loaded via
+  ``load_algorithm_plugin``/``AlgorithmRegistrar``, and (2) ``lightsim2grid_cpp``'s
+  module init, comparing itself against ``lightsim2grid_core``, catching this bug's own
+  original failure mode directly at import time.
+- [FIXED] ``KLULinearSolver`` never called SuiteSparse's ``klu_defaults()``, so its
+  ``klu_common`` control struct was left all-zero (from ``common_ = klu_common();``)
+  instead of the library's actual defaults. In particular ``tol=0`` (should be ``0.001``)
+  disabled partial-pivoting's diagonal-preference safety, ``scale=0`` (should be ``2``)
+  disabled row scaling, ``btf=0`` (should be ``TRUE``) disabled block-triangular
+  preordering, and critically ``halt_if_singular=FALSE`` (should be ``TRUE``) made
+  ``klu_factor``/``klu_refactor`` silently return ``KLU_OK`` even on a numerically
+  singular factorization (found with ``rcond=0``). This caused ``NR_KLU`` to diverge
+  (``InifiniteValue``, one Newton step after a degenerate factorization) on a real grid
+  (``PtFige-20240807-2300``) where ``NR_SparseLU`` converges fine from the same seed --
+  previously misdiagnosed as an inherent SparseLU-vs-KLU numerical-sensitivity artifact.
+  ``klu_defaults(&common_)`` is now called in the constructor, ``reset()`` and
+  ``analyze()``. Tested in ``test_KLUSolver.py``.
+- [BREAKING] (cpp only) every built-in solver's ``LinearSolver`` template parameter
+  (``NR_*``/``DC_*``/``FDPF_*``, see ``Solvers.hpp``) is now wrapped in
+  ``LinearSolverPolicy<...>`` (``src/core/linear_solvers/LinearSolverPolicy.hpp``): a
+  transparent, non-virtual pass-through that counts and times every
+  analyze/factorize/refactorize/solve call. ``NRAlgo``/``BaseDCAlgo``/``BaseFDPFAlgo`` no
+  longer keep their own ``timer_factor_``/``timer_refactor_``/``timer_initialize_``
+  members -- ``get_timers_jacobian()`` now reads those ``TimerJac`` fields live from the
+  wrapper instead, with identical externally-observable semantics (still reset every
+  ``compute_pf``/``compute_pf_dc`` call). A C++ plugin subclassing ``NRAlgo``/
+  ``BaseDCAlgo`` and referencing those protected members directly needs updating; a
+  plugin only using the public ``LinearSolver`` API (``analyze``/``factorize``/
+  ``refactorize``/``solve``/``reset``, e.g. ``examples/dist_slack_algorithm/``) is
+  unaffected.
+- [ADDED] ``LinearSolverStats`` (``src/core/linear_solvers/LinearSolverStats.hpp``,
+  exported to python): per-call counters (``nb_analyze``/``nb_factorize``/
+  ``nb_refactorize``/``nb_refactorize_failed``/``nb_fallback_factorize``/
+  ``nb_fallback_factorize_failed``/``nb_solve``/``nb_reset``) and matching durations
+  (``timer_initialize_``/``timer_factor_``/``timer_refactor_``/``timer_solve_``) for the
+  linear solver backing a solver instance. Counters accumulate over the algorithm's whole
+  lifetime (so an occasionally-firing fallback is distinguishable from a systematic one);
+  the timer fields reset every call, like ``get_timers_jacobian()``. Available as
+  ``solver.get_linear_solver_stats()`` on any solver (``model.get_solver()``, or the
+  concrete ``NR_KLU``/``DC_KLU``/... type), and as ``get_linear_solver_stats_bp()`` /
+  ``get_linear_solver_stats_bpp()`` on the two-linear-solver ``FDPF_*`` family.
+- [ADDED] ``RefactorRetryLinearSolver<LinearSolver>``
+  (``src/core/linear_solvers/RefactorRetryLinearSolver.hpp``, ``final``, derives from
+  ``LinearSolverPolicy<LinearSolver>``): if a ``refactorize()`` call fails, falls back to
+  a full ``factorize()`` (reusing the existing symbolic factorization) before reporting an
+  error, tracked separately via ``LinearSolverStats.nb_fallback_factorize`` /
+  ``nb_refactorize_failed``. A SuiteSparse-recommended defensive measure for KLU,
+  generalized here to any solver with a real factorize/refactorize distinction. New
+  built-in algorithms ``NRRefactorRetry_KLU``, ``NRRefactorRetry_CKTSO`` and
+  ``NRRefactorRetry_NICSLU`` use it (``SparseLU`` is skipped: its ``factorize()`` and
+  ``refactorize()`` are already the same call, so the fallback would be a no-op).
 
 [0.13.1]  2026-04-21
 --------------------

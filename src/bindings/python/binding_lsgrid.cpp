@@ -346,6 +346,13 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
         .def("get_controller_elem_id_solver", &LSGrid::get_controller_elem_id_solver, py::return_value_policy::reference,
              "Element id (generator id if GEN, svc id if SVC) of each "
              "VoltageControl controller, same order as get_controller_q_solver().")
+        .def("get_controller_q_col_solver", &LSGrid::get_controller_q_col_solver, py::return_value_policy::reference,
+             "J column of each VoltageControl controller's own Q unknown, same "
+             "order as get_controller_q_solver(). NOT the same as the bus-keyed "
+             "get_q_to_J_col_solver(): that map only keeps the LAST controller "
+             "registered at a given bus, so it silently collides whenever two "
+             "controllers regulate reactive power from the same bus. External "
+             "solvers rebuilding this bordered block must use this instead.")
 
         .def("get_p_buses_solver", &LSGrid::get_p_buses_solver, py::return_value_policy::reference,
              "Compact (bus, row) pair list for P equations -- the row/col "

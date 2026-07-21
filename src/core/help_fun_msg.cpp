@@ -294,6 +294,17 @@ const std::string DocSolver::NRSing_KLU = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::NRRefactorRetry_KLU = R"mydelimiter(
+    Same as :class:`lightsim2grid.solver.NR_KLU` (Newton Raphson, distributed slack, KLU
+    linear solver), except that if a Jacobian refactorize() fails it falls back to a full
+    factorize() (reusing the existing symbolic factorization) before giving up, rather
+    than reporting an error immediately.
+
+    Use `get_linear_solver_stats()` on the solver to inspect how often factor/refactor
+    calls happen and how often the fallback fires (see :class:`lightsim2grid.solver.LinearSolverStats`).
+
+)mydelimiter";
+
 const std::string DocSolver::DC_KLU = R"mydelimiter(
     Alternative implementation of the DC solver, it uses the faster KLU solver available in the SuiteSparse library to solve for the DC voltage given the DC admitance matrix and
     the power injected at each nodes (can be unavailable if you build lightsim2grid from source).
@@ -373,7 +384,21 @@ const std::string DocSolver::NR_NICSLU = R"mydelimiter(
     .. note::
 
         NICSLU is available at https://github.com/chenxm1986/nicslu
-        
+
+)mydelimiter";
+
+const std::string DocSolver::NRRefactorRetry_NICSLU = R"mydelimiter(
+    Same as :class:`lightsim2grid.solver.NR_NICSLU` (Newton Raphson, distributed slack,
+    NICSLU linear solver), except that if a Jacobian refactorize() fails it falls back to
+    a full factorize() before giving up, rather than reporting an error immediately. For
+    NICSLU, factorize() and refactorize() call the same underlying routine, so this
+    fallback is effectively a no-op retry -- included mainly for API symmetry with
+    :class:`lightsim2grid.solver.NRRefactorRetry_KLU` and
+    :class:`lightsim2grid.solver.NRRefactorRetry_CKTSO`.
+
+    Use `get_linear_solver_stats()` on the solver to inspect how often factor/refactor
+    calls happen and how often the fallback fires (see :class:`lightsim2grid.solver.LinearSolverStats`).
+
 )mydelimiter";
 
 const std::string DocSolver::NRSing_NICSLU = R"mydelimiter(
@@ -500,7 +525,18 @@ const std::string DocSolver::NR_CKTSO = R"mydelimiter(
     .. note::
 
         CKTSO is available at https://github.com/chenxm1986/cktso
- 
+
+)mydelimiter";
+
+const std::string DocSolver::NRRefactorRetry_CKTSO = R"mydelimiter(
+    Same as :class:`lightsim2grid.solver.NR_CKTSO` (Newton Raphson, distributed slack,
+    CKTSO linear solver), except that if a Jacobian refactorize() fails it falls back to
+    a full factorize() (reusing the existing symbolic factorization) before giving up,
+    rather than reporting an error immediately.
+
+    Use `get_linear_solver_stats()` on the solver to inspect how often factor/refactor
+    calls happen and how often the fallback fires (see :class:`lightsim2grid.solver.LinearSolverStats`).
+
 )mydelimiter";
 
 const std::string DocSolver::NRSing_CKTSO = R"mydelimiter(

@@ -219,15 +219,15 @@ void check_current_violations(
 
 }  // anonymous namespace
 
-bool ContingencyAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const{
-    std::vector<bool> visited(Ybus.cols(), false); 
+bool ContingencyAnalysis::check_invertible(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>> & Ybus) const{
+    std::vector<bool> visited(Ybus.cols(), false);
     std::vector<bool> already_added(Ybus.cols(), false);
     std::queue<Eigen::Index> neighborhood;
     size_t col_id = 0;  // start by node 0, why not
     while (true)
     {
         visited[col_id] = true;
-        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(Ybus, col_id); it; ++it)
+        for (Eigen::Ref<const Eigen::SparseMatrix<cplx_type>>::InnerIterator it(Ybus, col_id); it; ++it)
         {
             // add in the queue all my neighbor (if the coefficient is big enough)
             if(!visited[it.row()] && !already_added[it.row()] && abs(it.value()) > 1e-8){

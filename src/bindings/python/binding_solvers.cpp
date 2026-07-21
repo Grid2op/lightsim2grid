@@ -85,6 +85,29 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
         ;
 }
 
+// Bind get_linear_solver_stats() for solvers holding a single LinearSolver (NR_*/DC_*).
+// FDPF_* has two solvers (B'/B'') and is bound separately, see bind_fdpf_linear_solver_stats.
+template<typename Solver>
+void bind_linear_solver_stats(py::class_<Solver>& cls) {
+    cls.def("get_linear_solver_stats", &Solver::get_linear_solver_stats,
+            "Per-call counters and timings for the underlying linear solver: "
+            "factor/refactor/analyze/solve counts, refactor-failure and "
+            "fallback-factor counts, and matching durations (LinearSolverStats). "
+            "Counters accumulate over the algorithm's whole lifetime; the timer_* "
+            "fields reset every compute_pf call, like get_timers_jacobian().");
+}
+
+// Bind the two-solver (B'/B'') equivalent for FDPF_* types.
+template<typename Solver>
+void bind_fdpf_linear_solver_stats(py::class_<Solver>& cls) {
+    cls
+        .def("get_linear_solver_stats_bp",  &Solver::get_linear_solver_stats_bp,
+            "Per-call counters and timings for the B' linear solver (LinearSolverStats)")
+        .def("get_linear_solver_stats_bpp", &Solver::get_linear_solver_stats_bpp,
+            "Per-call counters and timings for the B'' linear solver (LinearSolverStats)")
+        ;
+}
+
 void bind_solvers(py::module_& m) {
     // ---- TimerJac ----
     py::class_<TimerJac>(m, "TimerJac",
@@ -133,6 +156,32 @@ void bind_solvers(py::module_& m) {
                    ", ...)";
         });
 
+    // ---- LinearSolverStats ----
+    py::class_<LinearSolverStats>(m, "LinearSolverStats",
+        "Per-call counters and timings for a linear solver, as tracked by "
+        "LinearSolverPolicy (every built-in solver) and RefactorRetryLinearSolver "
+        "(NRRefactorRetry_* solvers). Counters accumulate over the algorithm's whole "
+        "lifetime; the timer_* fields reset every compute_pf call.")
+        .def_readonly("nb_reset",                      &LinearSolverStats::nb_reset)
+        .def_readonly("nb_analyze",                     &LinearSolverStats::nb_analyze)
+        .def_readonly("nb_factorize",                   &LinearSolverStats::nb_factorize)
+        .def_readonly("nb_refactorize",                 &LinearSolverStats::nb_refactorize)
+        .def_readonly("nb_refactorize_failed",          &LinearSolverStats::nb_refactorize_failed)
+        .def_readonly("nb_fallback_factorize",          &LinearSolverStats::nb_fallback_factorize)
+        .def_readonly("nb_fallback_factorize_failed",   &LinearSolverStats::nb_fallback_factorize_failed)
+        .def_readonly("nb_solve",                       &LinearSolverStats::nb_solve)
+        .def_readonly("timer_initialize",               &LinearSolverStats::timer_initialize_)
+        .def_readonly("timer_factor",                   &LinearSolverStats::timer_factor_)
+        .def_readonly("timer_refactor",                 &LinearSolverStats::timer_refactor_)
+        .def_readonly("timer_solve",                    &LinearSolverStats::timer_solve_)
+        .def("__repr__", [](const LinearSolverStats& s) {
+            return "LinearSolverStats(nb_factorize=" + std::to_string(s.nb_factorize) +
+                   ", nb_refactorize=" + std::to_string(s.nb_refactorize) +
+                   ", nb_refactorize_failed=" + std::to_string(s.nb_refactorize_failed) +
+                   ", nb_fallback_factorize=" + std::to_string(s.nb_fallback_factorize) +
+                   ", ...)";
+        });
+
     // ---- SparseLU ----
     {
         auto cls = py::class_<NR_SparseLU>(m, "NR_SparseLU", DocSolver::NR_SparseLU.c_str())
@@ -140,6 +189,7 @@ void bind_solvers(py::module_& m) {
             .def("get_J", &NR_SparseLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NRSing_SparseLU>(m, "NRSing_SparseLU", DocSolver::NRSing_SparseLU.c_str())
@@ -147,11 +197,13 @@ void bind_solvers(py::module_& m) {
             .def("get_J", &NRSing_SparseLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<DC_SparseLU>(m, "DC_SparseLU", DocSolver::DC_SparseLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<FDPF_XB_SparseLU>(m, "FDPF_XB_SparseLU", DocSolver::FDPF_XB_SparseLU.c_str())
@@ -159,6 +211,7 @@ void bind_solvers(py::module_& m) {
             .def("debug_get_Bp_python",  &FDPF_XB_SparseLU::debug_get_Bp_python,  DocLSGrid::_internal_do_not_use.c_str())
             .def("debug_get_Bpp_python", &FDPF_XB_SparseLU::debug_get_Bpp_python, DocLSGrid::_internal_do_not_use.c_str());
         bind_algo_methods(cls);
+        bind_fdpf_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<FDPF_BX_SparseLU>(m, "FDPF_BX_SparseLU", DocSolver::FDPF_BX_SparseLU.c_str())
@@ -166,6 +219,7 @@ void bind_solvers(py::module_& m) {
             .def("debug_get_Bp_python",  &FDPF_BX_SparseLU::debug_get_Bp_python,  DocLSGrid::_internal_do_not_use.c_str())
             .def("debug_get_Bpp_python", &FDPF_BX_SparseLU::debug_get_Bpp_python, DocLSGrid::_internal_do_not_use.c_str());
         bind_algo_methods(cls);
+        bind_fdpf_linear_solver_stats(cls);
     }
 
 #if defined(KLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -175,6 +229,7 @@ void bind_solvers(py::module_& m) {
             .def("get_J", &NR_KLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NRSing_KLU>(m, "NRSing_KLU", DocSolver::NRSing_KLU.c_str())
@@ -182,21 +237,33 @@ void bind_solvers(py::module_& m) {
             .def("get_J", &NRSing_KLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<DC_KLU>(m, "DC_KLU", DocSolver::DC_KLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<FDPF_XB_KLU>(m, "FDPF_XB_KLU", DocSolver::FDPF_XB_KLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
+        bind_fdpf_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<FDPF_BX_KLU>(m, "FDPF_BX_KLU", DocSolver::FDPF_BX_KLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
+        bind_fdpf_linear_solver_stats(cls);
+    }
+    {
+        auto cls = py::class_<NRRefactorRetry_KLU>(m, "NRRefactorRetry_KLU", DocSolver::NRRefactorRetry_KLU.c_str())
+            .def(py::init<>())
+            .def("get_J", &NRRefactorRetry_KLU::get_J_python, DocSolver::get_J_python.c_str());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
     }
 #endif  // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
@@ -207,6 +274,7 @@ void bind_solvers(py::module_& m) {
             .def("get_J", &NR_NICSLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NRSing_NICSLU>(m, "NRSing_NICSLU", DocSolver::NRSing_NICSLU.c_str())
@@ -214,21 +282,33 @@ void bind_solvers(py::module_& m) {
             .def("get_J", &NRSing_NICSLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<DC_NICSLU>(m, "DC_NICSLU", DocSolver::DC_NICSLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<FDPF_XB_NICSLU>(m, "FDPF_XB_NICSLU", DocSolver::FDPF_XB_NICSLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
+        bind_fdpf_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<FDPF_BX_NICSLU>(m, "FDPF_BX_NICSLU", DocSolver::FDPF_BX_NICSLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
+        bind_fdpf_linear_solver_stats(cls);
+    }
+    {
+        auto cls = py::class_<NRRefactorRetry_NICSLU>(m, "NRRefactorRetry_NICSLU", DocSolver::NRRefactorRetry_NICSLU.c_str())
+            .def(py::init<>())
+            .def("get_J", &NRRefactorRetry_NICSLU::get_J_python, DocSolver::get_J_python.c_str());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
     }
 #endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
@@ -239,6 +319,7 @@ void bind_solvers(py::module_& m) {
             .def("get_J", &NR_CKTSO::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NRSing_CKTSO>(m, "NRSing_CKTSO", DocSolver::NRSing_CKTSO.c_str())
@@ -246,21 +327,33 @@ void bind_solvers(py::module_& m) {
             .def("get_J", &NRSing_CKTSO::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<DC_CKTSO>(m, "DC_CKTSO", DocSolver::DC_CKTSO.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
+        bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<FDPF_XB_CKTSO>(m, "FDPF_XB_CKTSO", DocSolver::FDPF_XB_CKTSO.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
+        bind_fdpf_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<FDPF_BX_CKTSO>(m, "FDPF_BX_CKTSO", DocSolver::FDPF_BX_CKTSO.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
+        bind_fdpf_linear_solver_stats(cls);
+    }
+    {
+        auto cls = py::class_<NRRefactorRetry_CKTSO>(m, "NRRefactorRetry_CKTSO", DocSolver::NRRefactorRetry_CKTSO.c_str())
+            .def(py::init<>())
+            .def("get_J", &NRRefactorRetry_CKTSO::get_J_python, DocSolver::get_J_python.c_str());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
     }
 #endif  // CKTSO_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
@@ -293,6 +386,11 @@ void bind_solvers(py::module_& m) {
         .def("get_timers",           &AlgorithmSelector::get_timers,           "TODO")
         .def("get_timers_jacobian",  &AlgorithmSelector::get_timers_jacobian,  "TODO")
         .def("get_timers_ptdf_lodf", &AlgorithmSelector::get_timers_ptdf_lodf, "TODO")
+        .def("get_linear_solver_stats", &AlgorithmSelector::get_linear_solver_stats,
+            "Per-call counters and timings for the underlying linear solver (LinearSolverStats). "
+            "All-zero if the active solver doesn't track them (e.g. GaussSeidel, or the "
+            "FDPF family which exposes get_linear_solver_stats_bp/_bpp on its own concrete "
+            "Python type instead, since it holds two linear solvers).")
         .def("get_fdpf_xb_lu",       &AlgorithmSelector::get_fdpf_xb_lu,  py::return_value_policy::reference, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_fdpf_bx_lu",       &AlgorithmSelector::get_fdpf_bx_lu,  py::return_value_policy::reference, DocLSGrid::_internal_do_not_use.c_str());
 }

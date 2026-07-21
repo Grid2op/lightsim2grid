@@ -151,13 +151,13 @@ class LS2G_API AlgorithmSelector final
             get_prt_solver("reset", false)->reset();
         }
 
-        bool compute_pf(const Eigen::SparseMatrix<cplx_type>& Ybus,
+        bool compute_pf(const EigenRefConstCplxSpMat     & Ybus,
                         const Eigen::Ref<const CplxVect> & V,
                         const Eigen::Ref<const CplxVect> & Sbus,
-                        const Eigen::Ref<const IntVect> & slack_ids,
+                        const Eigen::Ref<const IntVect>  & slack_ids,
                         const Eigen::Ref<const RealVect> & slack_weights,
-                        const Eigen::Ref<const IntVect> & pv,
-                        const Eigen::Ref<const IntVect> & pq,
+                        const Eigen::Ref<const IntVect>  & pv,
+                        const Eigen::Ref<const IntVect>  & pq,
                         int max_iter,
                         real_type tol)
         {
@@ -168,13 +168,13 @@ class LS2G_API AlgorithmSelector final
 
         // Native real-valued DC entry point (only valid for DC solvers).
         // V stays plain: forwards into ->compute_pf_dc, which resizes/reassigns it.
-        bool compute_pf_dc(const Eigen::SparseMatrix<real_type>& Bbus,
-                           CplxVect& V,
+        bool compute_pf_dc(const EigenRefConstRealSpMat     & Bbus,
+                           const Eigen::Ref<const CplxVect> & V,
                            const Eigen::Ref<const RealVect> & Pbus,
-                           const Eigen::Ref<const IntVect> & slack_ids,
+                           const Eigen::Ref<const IntVect>  & slack_ids,
                            const Eigen::Ref<const RealVect> & slack_weights,
-                           const Eigen::Ref<const IntVect> & pv,
-                           const Eigen::Ref<const IntVect> & pq)
+                           const Eigen::Ref<const IntVect>  & pv,
+                           const Eigen::Ref<const IntVect>  & pq)
         {
             _algo_type_used_for_nr = _algo_type;
             return get_prt_solver("compute_pf_dc", true)->compute_pf_dc(
@@ -301,6 +301,9 @@ class LS2G_API AlgorithmSelector final
         IntVect get_controller_elem_id() const {
             return get_prt_solver("get_controller_elem_id", false)->get_controller_elem_id();
         }
+        IntVect get_controller_q_col() const {
+            return get_prt_solver("get_controller_q_col", false)->get_controller_q_col();
+        }
         int get_slack_col() const {
             return get_prt_solver("get_slack_col", false)->get_slack_col();
         }
@@ -322,6 +325,10 @@ class LS2G_API AlgorithmSelector final
 
         TimerPTDFLODFType get_timers_ptdf_lodf() const {
             return get_prt_solver("get_timers_ptdf_lodf", true)->get_timers_ptdf_lodf();
+        }
+
+        LinearSolverStats get_linear_solver_stats() const {
+            return get_prt_solver("get_linear_solver_stats", true)->get_linear_solver_stats();
         }
 
         ErrorType get_error() const {

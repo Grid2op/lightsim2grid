@@ -24,15 +24,16 @@ inline real_type MultiSlackPolicy::initial_slack_absorbed(const Eigen::Ref<const
 }
 
 template<class NRAlgoT>
-RealVect MultiSlackPolicy::evaluate_Fx(NRAlgoT& algo,
-                                        const Eigen::SparseMatrix<cplx_type>& Ybus,
-                                        const Eigen::Ref<const CplxVect>& V,
-                                        const Eigen::Ref<const CplxVect>& Sbus,
-                                        size_t slack_bus_id,
-                                        real_type slack_absorbed,
-                                        const Eigen::Ref<const RealVect>& slack_weights,
-                                        const Eigen::Ref<const Eigen::VectorXi>& my_pv,
-                                        const Eigen::Ref<const IntVect> & pq)
+RealVect MultiSlackPolicy::evaluate_Fx(
+    NRAlgoT                                 & algo,
+    const EigenRefConstCplxSpMat            & Ybus,
+    const Eigen::Ref<const CplxVect>        & V,
+    const Eigen::Ref<const CplxVect>        & Sbus,
+    size_t                                  slack_bus_id,
+    real_type                               slack_absorbed,
+    const Eigen::Ref<const RealVect>        & slack_weights,
+    const Eigen::Ref<const Eigen::VectorXi> & my_pv,
+    const Eigen::Ref<const IntVect>         & pq)
 {
     return algo._evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
 }
@@ -46,15 +47,16 @@ void MultiSlackPolicy::update_slack_absorbed(NRAlgoT& algo,
 }
 
 template<class NRAlgoT>
-void MultiSlackPolicy::fill_jacobian_matrix(NRAlgoT& algo,
-                                             const Eigen::SparseMatrix<cplx_type>& Ybus,
-                                             const Eigen::Ref<const CplxVect>& V,
-                                             size_t slack_bus_id,
-                                             const Eigen::Ref<const RealVect>& slack_weights,
-                                             const Eigen::Ref<const Eigen::VectorXi>& pq,
-                                             const Eigen::Ref<const Eigen::VectorXi>& pvpq,
-                                             const std::vector<int>& pq_inv,
-                                             const std::vector<int>& pvpq_inv)
+void MultiSlackPolicy::fill_jacobian_matrix(
+    NRAlgoT                                 & algo,
+    const EigenRefConstCplxSpMat            & Ybus,
+    const Eigen::Ref<const CplxVect>        & V,
+    size_t                                  slack_bus_id,
+    const Eigen::Ref<const RealVect>        & slack_weights,
+    const Eigen::Ref<const Eigen::VectorXi> & pq,
+    const Eigen::Ref<const Eigen::VectorXi> & pvpq,
+    const std::vector<int>                  & pq_inv,
+    const std::vector<int>                  & pvpq_inv)
 {
     algo._dSbus_dV(Ybus, V);
 
@@ -77,15 +79,16 @@ void MultiSlackPolicy::fill_jacobian_matrix(NRAlgoT& algo,
 }
 
 template<class NRAlgoT>
-void MultiSlackPolicy::fill_jac_unknown_sparsity(NRAlgoT& algo,
-                                                   const Eigen::SparseMatrix<cplx_type>& Ybus,
-                                                   const Eigen::Ref<const CplxVect>& V,
-                                                   size_t slack_bus_id,
-                                                   const Eigen::Ref<const RealVect>& slack_weights,
-                                                   const Eigen::Ref<const Eigen::VectorXi>& pq,
-                                                   const Eigen::Ref<const Eigen::VectorXi>& pvpq,
-                                                   const std::vector<int>& pq_inv,
-                                                   const std::vector<int>& pvpq_inv)
+void MultiSlackPolicy::fill_jac_unknown_sparsity(
+    NRAlgoT& algo,
+    const EigenRefConstCplxSpMat & Ybus,
+    const Eigen::Ref<const CplxVect>& V,
+    size_t slack_bus_id,
+    const Eigen::Ref<const RealVect>& slack_weights,
+    const Eigen::Ref<const Eigen::VectorXi>& pq,
+    const Eigen::Ref<const Eigen::VectorXi>& pvpq,
+    const std::vector<int>& pq_inv,
+    const std::vector<int>& pvpq_inv)
 {
     using StorageIndex = Eigen::SparseMatrix<cplx_type>::StorageIndex;
 
@@ -298,15 +301,16 @@ inline real_type SingleSlackPolicy::initial_slack_absorbed(const Eigen::Ref<cons
 }
 
 template<class NRAlgoT>
-RealVect SingleSlackPolicy::evaluate_Fx(NRAlgoT& algo,
-                                         const Eigen::SparseMatrix<cplx_type>& Ybus,
-                                         const Eigen::Ref<const CplxVect>& V,
-                                         const Eigen::Ref<const CplxVect>& Sbus,
-                                         size_t slack_bus_id,
-                                         real_type slack_absorbed,
-                                         const Eigen::Ref<const RealVect>& slack_weights,
-                                         const Eigen::Ref<const Eigen::VectorXi>& my_pv,
-                                         const Eigen::Ref<const IntVect> & pq)
+RealVect SingleSlackPolicy::evaluate_Fx(
+    NRAlgoT& algo,
+    const EigenRefConstCplxSpMat & Ybus,
+    const Eigen::Ref<const CplxVect>& V,
+    const Eigen::Ref<const CplxVect>& Sbus,
+    size_t slack_bus_id,
+    real_type slack_absorbed,
+    const Eigen::Ref<const RealVect>& slack_weights,
+    const Eigen::Ref<const Eigen::VectorXi>& my_pv,
+    const Eigen::Ref<const IntVect> & pq)
 {
     return algo._evaluate_Fx(Ybus, V, Sbus, my_pv, pq);
 }
@@ -321,7 +325,7 @@ void SingleSlackPolicy::update_slack_absorbed(NRAlgoT& algo,
 
 template<class NRAlgoT>
 void SingleSlackPolicy::fill_jacobian_matrix(NRAlgoT& algo,
-                                              const Eigen::SparseMatrix<cplx_type>& Ybus,
+                                              const EigenRefConstCplxSpMat & Ybus,
                                               const Eigen::Ref<const CplxVect>& V,
                                               size_t slack_bus_id,
                                               const Eigen::Ref<const RealVect>& slack_weights,
@@ -352,7 +356,7 @@ void SingleSlackPolicy::fill_jacobian_matrix(NRAlgoT& algo,
 
 template<class NRAlgoT>
 void SingleSlackPolicy::fill_jac_unknown_sparsity(NRAlgoT& algo,
-                                                    const Eigen::SparseMatrix<cplx_type>& Ybus,
+                                                    const EigenRefConstCplxSpMat & Ybus,
                                                     const Eigen::Ref<const CplxVect>& V,
                                                     const Eigen::Ref<const Eigen::VectorXi>& pq,
                                                     const Eigen::Ref<const Eigen::VectorXi>& pvpq,

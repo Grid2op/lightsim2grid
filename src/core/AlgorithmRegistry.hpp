@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "powerflow_algorithm/BaseAlgo.hpp"
+#include "Ls2gAbiTag.hpp"
 
 namespace ls2g {
 
@@ -26,7 +27,14 @@ public:
 
     static AlgorithmRegistry& instance();
 
-    void register_solver(const std::string& name, Factory f);
+    // `caller_tag` defaults to `ls2g_current_abi_tag()` evaluated at the call
+    // site: since AlgorithmRegistrar's constructor below is defined inline,
+    // that default is compiled fresh into whichever plugin instantiates it,
+    // so it automatically captures the plugin's own Eigen SIMD/alignment
+    // settings with no change needed on the plugin author's side. Throws if
+    // it disagrees with lightsim2grid_core's own tag -- see Ls2gAbiTag.hpp.
+    void register_solver(const std::string& name, Factory f,
+                          Ls2gAbiTag caller_tag = ls2g_current_abi_tag());
     std::unique_ptr<BaseAlgo> make(const std::string& name) const;
     bool is_registered(const std::string& name) const;
     std::vector<std::string> available_algorithm_names() const;

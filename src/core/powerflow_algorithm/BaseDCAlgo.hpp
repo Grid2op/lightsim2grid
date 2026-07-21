@@ -11,6 +11,7 @@
 
 #include "BaseAlgo.hpp"
 #include "HvdcDroopData.hpp"
+#include "linear_solvers/LinearSolverStats.hpp"
 
 namespace ls2g {
 
@@ -28,9 +29,6 @@ class BaseDCAlgo final: public BaseAlgo
             _linear_solver(),
             need_factorize_(true),
             need_refactor_(true),
-            timer_factor_(0.),
-            timer_refactor_(0.),
-            timer_initialize_(0.),
             timer_pre_proc_(0.),
             timer_mismatch_(0.),  // used for all the post processing
             timer_ptdf_(0.),
@@ -46,29 +44,33 @@ class BaseDCAlgo final: public BaseAlgo
         void reset() override;
         void reset_timer() override{
             BaseAlgo::reset_timer();
-            timer_refactor_ = 0.;
-            timer_factor_ = 0.;
-            timer_initialize_  = 0.;
+            detail::reset_stats_timers_impl(_linear_solver, 0);
             timer_pre_proc_  = 0.;
             timer_mismatch_  = 0.;
-            timer_solve_ = 0.;
             timer_ptdf_ = 0.;
             timer_lodf_ = 0.;
         }
 
         TimerJac get_timers_jacobian() const override
         {
+            const LinearSolverStats lsstats = detail::get_stats_impl(_linear_solver, 0);
             TimerJac res;
             res.timer_Fx_         = timer_Fx_;
-            res.timer_solve_      = timer_solve_;
-            res.timer_factor_     = timer_factor_;
-            res.timer_refactor_   = timer_refactor_;
-            res.timer_initialize_ = timer_initialize_;
+            res.timer_solve_      = lsstats.timer_solve_;
+            res.timer_factor_     = lsstats.timer_factor_;
+            res.timer_refactor_   = lsstats.timer_refactor_;
+            res.timer_initialize_ = lsstats.timer_initialize_;
             res.timer_check_      = timer_check_;
             res.timer_total_nr_   = timer_total_nr_;
             res.timer_pre_proc_   = timer_pre_proc_;
             res.timer_mismatch_   = timer_mismatch_;
             return res;
+        }
+
+        // Per-call counters and timings for the underlying linear solver -- see
+        // NRAlgo::get_linear_solver_stats for the full description.
+        LinearSolverStats get_linear_solver_stats() const override {
+            return detail::get_stats_impl(_linear_solver, 0);
         }
 
         TimerPTDFLODFType get_timers_ptdf_lodf() const override
@@ -84,8 +86,6 @@ class BaseDCAlgo final: public BaseAlgo
         // Native real-valued DC power flow: solves `Bbus . theta = Pbus`.
         // (the DC solver does not implement the complex `compute_pf`: it inherits the throwing
         //  default from BaseAlgo, since every DC code path goes through `compute_pf_dc`)
-        // V stays a plain reference (not Eigen::Ref): it is resized/reassigned below
-        // (V.resize(...), V = CplxVect() on the early-error path).
         bool compute_pf_dc(
             const EigenRefConstRealSpMat     & Bbus,
             const Eigen::Ref<const CplxVect> & V,
@@ -96,6 +96,7 @@ class BaseDCAlgo final: public BaseAlgo
             const Eigen::Ref<const IntVect>  & pq
         ) override;
 
+        // TOOD speed optim: return refs instead of plain structure
         RealMat get_ptdf() override;
         RealMat get_lodf(
             const Eigen::Ref<const IntVect> & from_bus,
@@ -140,7 +141,7 @@ class BaseDCAlgo final: public BaseAlgo
 
     protected:
         void fill_mat_bus_id(int nb_bus_solver);
-        void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<real_type> & ref_mat);
+        void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & ref_mat);
 
         // hvdc angle-droop ("AC emulation") support: in dc, the linear-mode
         // droop lines contribute `p = p0 + k * (theta1 - theta2)`: the k term
@@ -152,18 +153,16 @@ class BaseDCAlgo final: public BaseAlgo
         void add_droop_to_dcYbus();
         void add_droop_to_dcSbus();
 
-        // remove_slack_buses: res_mat is initialized and make_compressed in this function
+        // remove_slack_buses: res_mat is reset (reassigned) and setFromTriplets/makeCompressed'd
+        // from scratch in this function, so it needs a real reference, not Eigen::Ref.
         template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
-        void remove_slack_buses(int nb_bus_solver, const Eigen::SparseMatrix<ref_mat_type> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat);
+        void remove_slack_buses(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat);
 
     protected:
         LinearSolver  _linear_solver;
         bool need_factorize_;
         bool need_refactor_;
 
-        double timer_factor_;
-        double timer_refactor_;
-        double timer_initialize_;
         double timer_pre_proc_;
         double timer_mismatch_;  // used for all the post processing
 

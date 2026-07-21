@@ -39,6 +39,8 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<FDPF_XB_KLU>(); });
     reg.register_solver("FDPF_BX_KLU",
         []{ return std::make_unique<FDPF_BX_KLU>(); });
+    reg.register_solver("NRRefactorRetry_KLU",
+        []{ return std::make_unique<NRRefactorRetry_KLU>(); });
 #endif // KLU_SOLVER_AVAILABLE
 
 #ifdef NICSLU_SOLVER_AVAILABLE
@@ -52,6 +54,8 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<FDPF_XB_NICSLU>(); });
     reg.register_solver("FDPF_BX_NICSLU",
         []{ return std::make_unique<FDPF_BX_NICSLU>(); });
+    reg.register_solver("NRRefactorRetry_NICSLU",
+        []{ return std::make_unique<NRRefactorRetry_NICSLU>(); });
 #endif // NICSLU_SOLVER_AVAILABLE
 
 #ifdef CKTSO_SOLVER_AVAILABLE
@@ -65,6 +69,8 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<FDPF_XB_CKTSO>(); });
     reg.register_solver("FDPF_BX_CKTSO",
         []{ return std::make_unique<FDPF_BX_CKTSO>(); });
+    reg.register_solver("NRRefactorRetry_CKTSO",
+        []{ return std::make_unique<NRRefactorRetry_CKTSO>(); });
 #endif // CKTSO_SOLVER_AVAILABLE
 }
 

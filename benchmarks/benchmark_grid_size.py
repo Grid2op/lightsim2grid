@@ -355,7 +355,7 @@ if __name__ == "__main__":
         computer = time_serie.computer
         computer_ts = time_serie.computer
         v_init = env_lightsim.backend.V
-        status = computer.compute_Vs(gen_p,
+        status = computer.compute_Vs(gen_p_g2op,
                                      sgen_p,
                                      load_p,
                                      load_q,
