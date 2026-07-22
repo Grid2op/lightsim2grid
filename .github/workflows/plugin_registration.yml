@@ -1,0 +1,57 @@
+# Builds lightsim2grid, builds the example out-of-tree solver plugin against
+# the *installed* package (so the plugin picks up the exact Eigen / build flags
+# lightsim2grid_core was compiled with -- the ABI-match the plugin mechanism
+# requires), then runs the end-to-end load_algorithm_plugin() tests. Those
+# assert that a bad plugin load raises a catchable Python exception instead of
+# aborting the interpreter -- something the C++ Catch2 suite (cpp_unit_tests)
+# cannot cover because it never crosses the real dlopen/ctypes boundary.
+
+name: Plugin registration
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  plugin_registration:
+    name: build + load an out-of-tree solver plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_compile_ci.txt
+
+      - name: Build and install lightsim2grid
+        run: python -m pip install . -v
+
+      - name: Build the example solver plugin (against the installed package)
+        run: |
+          LS2G_CMAKE=$(python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
+          echo "lightsim2grid cmake dir: $LS2G_CMAKE"
+          cmake -S examples/external_algorithm -B examples/external_algorithm/build \
+            -DCMAKE_BUILD_TYPE=Release -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE"
+          cmake --build examples/external_algorithm/build -j"$(nproc)"
+
+      - name: Run plugin-registration tests
+        # Run from a scratch dir (via unittest, not a file-path pytest run) so
+        # `import lightsim2grid` resolves to the *installed* package and the
+        # source-tree package -- which has no compiled extension -- cannot
+        # shadow it on sys.path.
+        working-directory: ${{ runner.temp }}
+        env:
+          LS2G_TEST_PLUGIN: ${{ github.workspace }}/examples/external_algorithm/build/libdummy_solver.so
+        run: python -m unittest -v lightsim2grid.tests.test_plugin_registration

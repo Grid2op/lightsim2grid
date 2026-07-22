@@ -21,25 +21,36 @@ All solvers are stored in a process-wide singleton called
 ``AlgorithmRegistry``.  On startup the built-in algorithm (NR_SparseLU, NR_KLU,
 GaussSeidel, DC_KLU, …) are registered.  
 
-A plugin library extends this table at
-``dlopen``/``LoadLibrary`` time by placing a static ``SolverRegistrar``
-object in one of its translation units.  The registrar's constructor fires
-automatically when the library is mapped into the process, calling
-``SolverRegistry::instance().register_solver(name, factory)`` before any
-Python code can observe the new library.
+A plugin library extends this table through an exported entry point named
+``ls2g_register_plugin``.  You do not write that function by hand: the
+``LS2G_PLUGIN_ENTRY`` macro generates it from a small registration function you
+supply.  When ``load_algorithm_plugin()`` loads the library it looks the entry
+point up (``dlsym``/``GetProcAddress``) and calls it, staging your solvers and
+committing them to the registry atomically.
+
+This deliberately does **not** register from a static constructor firing during
+``dlopen``.  Registration can fail — an ABI mismatch, or a solver name that is
+already taken — and an exception thrown out of a static constructor while the
+dynamic loader is running its init routines cannot be caught: it unwinds into C
+loader frames and calls ``std::terminate()``, aborting the interpreter.  Running
+registration from an explicitly-called entry point instead means every failure
+comes back as a normal, catchable Python exception.
 
 The lookup flow is:
 
 .. code-block:: text
 
     Python: lightsim2grid.load_algorithm_plugin("path/to/plugin.so")
-      └─ ctypes.CDLL(..., RTLD_GLOBAL)          # dlopen fires static ctors
-           └─ SolverRegistrar { "MySolver", factory }
-                └─ SolverRegistry::instance().register_solver(...)
+      └─ C++ _load_algorithm_plugin(path)        # a pybind11 function (try/catch)
+           ├─ dlopen(path) / LoadLibrary(path)
+           ├─ dlsym("ls2g_register_plugin")      # the LS2G_PLUGIN_ENTRY function
+           └─ entry(&AlgorithmRegistry::instance(), errbuf, len)
+                └─ AlgorithmRegistry::register_all(...)   # atomic; ABI-checked
+                                                          # failure → return code → Python exception
 
     Python: grid.change_algorithm("MySolver")
       └─ AlgorithmSelector::change_algorithm("MySolver")
-           └─ SolverRegistry::instance().make("MySolver")
+           └─ AlgorithmRegistry::instance().make("MySolver")
                 └─ factory()  →  unique_ptr<BaseAlgo>
 
 The ``AlgorithmRegistry`` C++ API (defined in ``AlgorithmRegistry.hpp``, installed to ``include/lightsim2grid/``):
@@ -51,8 +62,14 @@ The ``AlgorithmRegistry`` C++ API (defined in ``AlgorithmRegistry.hpp``, install
         // Meyers singleton — one instance per process.
         static AlgorithmRegistry& instance();
 
-        // Register a factory under a name.  Called by SolverRegistrar.
+        // Register a single factory under a name (used for the built-ins).
         void register_solver(const std::string& name, Factory f);
+
+        // Register a whole batch atomically: all names are added, or none is
+        // and the registry is left unchanged. This is what a plugin goes
+        // through. Throws (registry untouched) on an ABI mismatch or a name
+        // that is already registered.
+        void register_all(FactoryMap batch, Ls2gAbiTag caller_tag = ls2g_current_abi_tag());
 
         // Instantiate a solver by name.  Throws std::invalid_argument if
         // the name is unknown.
@@ -61,14 +78,15 @@ The ``AlgorithmRegistry`` C++ API (defined in ``AlgorithmRegistry.hpp``, install
         bool is_registered(const std::string& name) const;
 
         // List of all registered names (built-in + plugins).
-        std::vector<std::string> available_algorithms() const;
+        std::vector<std::string> available_algorithm_names() const;
     };
 
-    // Drop a static instance of this in an anonymous namespace to
-    // register your solver when the .so is loaded — no macro needed.
-    class AlgorithmRegistrar {
+    // Staging area handed to your registration function; add() one solver per
+    // name. The LS2G_PLUGIN_ENTRY macro turns your function into the exported
+    // ls2g_register_plugin entry point and commits the batch atomically.
+    class PluginRegistrar {
     public:
-        AlgorithmRegistrar(const std::string& name, SolverRegistry::Factory f);
+        void add(const std::string& name, AlgorithmRegistry::Factory f);
     };
 
 
@@ -228,8 +246,9 @@ Writing a solver plugin
 
 **1 — Create the solver class and register it**
 
-Place this in a single ``.cpp`` file.  The anonymous-namespace static
-object ensures the registration fires exactly once, at ``dlopen`` time.
+Place this in a single ``.cpp`` file.  Write a small registration function and
+hand it to ``LS2G_PLUGIN_ENTRY``, which generates the exported
+``ls2g_register_plugin`` entry point ``load_algorithm_plugin()`` calls.
 
 .. code-block:: cpp
 
@@ -265,13 +284,14 @@ object ensures the registration fires exactly once, at ``dlopen`` time.
         }
     };
 
-    // Self-registration — fires when the .so is dlopen'd.
-    namespace {
-        ls2g::ALgorithmRegistrar _reg(
-            "MySolver",
-            []{ return std::unique_ptr<ls2g::BaseAlgo>(new MySolver()); }
-        );
+    // Registration: load_algorithm_plugin() calls this (via the generated
+    // ls2g_register_plugin entry point) after loading the library. Add one
+    // solver per name; register a whole batch and they commit atomically.
+    static void register_plugin(ls2g::PluginRegistrar& reg) {
+        reg.add("MySolver",
+                []{ return std::unique_ptr<ls2g::BaseAlgo>(new MySolver()); });
     }
+    LS2G_PLUGIN_ENTRY(register_plugin)
 
 **2 — Write a CMakeLists.txt**
 
@@ -302,7 +322,7 @@ development without a full ``pip install``.
         if(NOT DEFINED Eigen3_INCLUDE)
             set(Eigen3_INCLUDE "/path/to/lightsim2grid/eigen")
         endif()
-        if(NOT EXISTS "${LIGHTSIM2GRID_SRC}/SolverRegistry.hpp")
+        if(NOT EXISTS "${LIGHTSIM2GRID_SRC}/AlgorithmRegistry.hpp")
             message(FATAL_ERROR
                 "lightsim2grid_core not found.\n"
                 "Install lightsim2grid and pass:\n"
@@ -416,8 +436,10 @@ Loading and using the plugin from Python
     import lightsim2grid
     from lightsim2grid.lightsim2grid_cpp import LSGrid
 
-    # 1. Load the plugin — this fires the C++ static constructors, which
-    #    register "MySolver" into the SolverRegistry singleton.
+    # 1. Load the plugin — this loads the library, calls its
+    #    ls2g_register_plugin entry point, and registers "MySolver" into the
+    #    AlgorithmRegistry singleton. A registration failure (ABI mismatch,
+    #    duplicate name, ...) raises a catchable exception here.
     lightsim2grid.load_algorithm_plugin("build/libmy_solver.so")
 
     # 2. Confirm the solver is available.
@@ -440,18 +462,27 @@ Python API reference
     Load a shared library containing one or more lightsim2grid solver / algorithm
     plugins.
 
-    The library must contain at least one static ``AlgorithmRegistrar``
-    object in an anonymous namespace (see the example above).  Its
-    constructor fires at ``dlopen`` time, registering the new solver name
-    into the ``AlgorithmRegistry`` singleton.
+    The library must export a ``ls2g_register_plugin`` entry point, which the
+    ``LS2G_PLUGIN_ENTRY`` macro generates from your registration function (see
+    the example above).  The library is loaded, the entry point is called, and
+    the solver name(s) it declares are registered into the ``AlgorithmRegistry``
+    singleton.
 
     After this call the new solver is usable via
     ``grid.change_algorithm("MyAlgoName")`` and will appear in
     ``grid.available_algorithm_names()``.
 
+    Because registration runs from an explicitly-called entry point rather than
+    a static constructor during ``dlopen``, every failure is raised here as a
+    normal, catchable exception instead of aborting the interpreter.  Loading a
+    plugin whose name collides with an already-registered one — including
+    loading the same plugin twice — is rejected the same way, and the registry
+    is left unchanged (registration is atomic).
+
     :param path: Absolute or relative path to the ``.so`` / ``.dll`` file.
-    :raises OSError: If the library cannot be loaded (missing file,
-        ABI mismatch, unresolved symbols, …).
+    :raises RuntimeError: If the library cannot be loaded (missing file,
+        unresolved symbols), does not export the ``ls2g_register_plugin`` entry
+        point, or its registration is refused (ABI mismatch, duplicate name).
 
 .. py:method:: LSGrid.change_algorithm(name: str) -> None
 
@@ -468,7 +499,7 @@ Python API reference
 .. py:method:: LSGrid.available_algorithm_names() -> list[str]
 
     Return all solver names currently registered, including any that were
-    added via :func:`~lightsim2grid.load_solver_plugin`.
+    added via :func:`~lightsim2grid.load_algorithm_plugin`.
 
     .. code-block:: python
 
@@ -573,7 +604,7 @@ directly from Python::
 
 As defense-in-depth on top of the CMake-level matching above, this is also
 checked **at runtime**. Every plugin solver registration (``load_algorithm_plugin()``
-/ ``AlgorithmRegistrar``) computes an "ABI tag" — ``EIGEN_MAX_ALIGN_BYTES``, the
+/ ``LS2G_PLUGIN_ENTRY``) computes an "ABI tag" — ``EIGEN_MAX_ALIGN_BYTES``, the
 resolved ``EIGEN_VECTORIZE_SSE``/``AVX``/``AVX2``/``AVX512``/``FMA``/``NEON``
 flags, and the full Eigen version (major.minor.patch) — in the plugin's own
 translation unit, and compares it against the tag ``lightsim2grid_core`` was
