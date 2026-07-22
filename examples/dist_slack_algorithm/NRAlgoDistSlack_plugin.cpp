@@ -1,7 +1,7 @@
 // NRAlgoDistSlack plugin registration.
 //
-// Registers two names with the C++ AlgorithmRegistry at dlopen() time (via a
-// static AlgorithmRegistrar in an anonymous namespace -- same mechanism as
+// Registers two names with the C++ AlgorithmRegistry through the exported
+// ls2g_register_plugin entry point (LS2G_PLUGIN_ENTRY -- same mechanism as
 // examples/external_algorithm/DummyExternalAlgo.cpp):
 //   "NRDistSlack_SparseLU" -> NRAlgoDistSlack<SparseLULinearSolver>
 //   "NRDistSlack_KLU"      -> NRAlgoDistSlack<KLULinearSolver>  (only if KLU is available)
@@ -20,16 +20,13 @@
 
 #include "NRAlgoDistSlack.hpp"
 
-namespace {
-    ls2g::AlgorithmRegistrar _dist_slack_sparselu_registrar(
-        "NRDistSlack_SparseLU",
-        []{ return std::unique_ptr<ls2g::BaseAlgo>(new ls2g::NRAlgoDistSlack<ls2g::SparseLULinearSolver>()); }
-    );
+static void register_plugin(ls2g::PluginRegistrar& reg) {
+    reg.add("NRDistSlack_SparseLU",
+        []{ return std::unique_ptr<ls2g::BaseAlgo>(new ls2g::NRAlgoDistSlack<ls2g::SparseLULinearSolver>()); });
 
 #ifdef KLU_SOLVER_AVAILABLE
-    ls2g::AlgorithmRegistrar _dist_slack_klu_registrar(
-        "NRDistSlack_KLU",
-        []{ return std::unique_ptr<ls2g::BaseAlgo>(new ls2g::NRAlgoDistSlack<ls2g::KLULinearSolver>()); }
-    );
+    reg.add("NRDistSlack_KLU",
+        []{ return std::unique_ptr<ls2g::BaseAlgo>(new ls2g::NRAlgoDistSlack<ls2g::KLULinearSolver>()); });
 #endif
 }
+LS2G_PLUGIN_ENTRY(register_plugin)

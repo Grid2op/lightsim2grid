@@ -32,6 +32,36 @@ void AlgorithmRegistry::register_solver(const std::string& name, Factory f, Ls2g
     _factories[name] = std::move(f);
 }
 
+void AlgorithmRegistry::register_all(FactoryMap batch, Ls2gAbiTag caller_tag) {
+    const Ls2gAbiTag& this_core_tag = core_abi_tag();
+    if (caller_tag != this_core_tag) {
+        throw std::runtime_error(
+            "AlgorithmRegistry: refusing to register a solver plugin: it was compiled with "
+            "different Eigen SIMD/alignment settings than lightsim2grid_core. Loading it would silently "
+            "corrupt the heap the first time an Eigen object crosses the BaseAlgo interface. "
+            "lightsim2grid_core was built with [" + this_core_tag.describe() + "], this plugin was built "
+            "with [" + caller_tag.describe() + "]. Recompile the plugin with matching compiler/-march "
+            "flags -- see docs/solver_plugin.rst, section \"Matching build flags\".");
+    }
+    // Reject the whole batch if any name is already taken, *before* touching
+    // the live registry, so a rejected plugin never half-registers.
+    for (const auto& kv : batch) {
+        if (_factories.count(kv.first)) {
+            throw std::invalid_argument(
+                "AlgorithmRegistry: a solver named '" + kv.first + "' is already registered.");
+        }
+    }
+    // Strong exception guarantee: assemble the merged table off to the side,
+    // then commit it with a noexcept swap. If anything above or in the merge
+    // throws (e.g. std::bad_alloc), _factories is left exactly as it was.
+    FactoryMap merged = _factories;
+    merged.reserve(_factories.size() + batch.size());
+    for (auto& kv : batch) {
+        merged.emplace(kv.first, std::move(kv.second));
+    }
+    _factories.swap(merged);
+}
+
 std::unique_ptr<BaseAlgo> AlgorithmRegistry::make(const std::string& name) const {
     auto it = _factories.find(name);
     if (it == _factories.end()) {

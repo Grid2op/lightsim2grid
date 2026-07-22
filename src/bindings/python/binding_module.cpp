@@ -8,8 +8,16 @@
 
 #include "binding_declarations.hpp"
 #include "Ls2gAbiTag.hpp"
+#include "AlgorithmRegistry.hpp"
 
 #include <stdexcept>
+#include <string>
+
+#if defined(_WIN32)
+#  include <windows.h>
+#else
+#  include <dlfcn.h>
+#endif
 
 #ifndef KLU_SOLVER_AVAILABLE
 #define this_KLU_SOLVER_AVAILABLE 0
@@ -47,6 +55,66 @@
 #ifdef CKTSO_PATH
 #define this_CKTSO_PATH CKTSO_PATH
 #endif
+
+// Behind lightsim2grid.load_algorithm_plugin(). Load the shared library, look
+// up its exported ls2g_register_plugin entry point, and call it -- all from a
+// real C++ frame that pybind11 wraps in a try/catch, so any registration
+// failure (ABI mismatch, duplicate solver name, missing entry point, missing
+// file) surfaces as a normal Python exception. This is the whole safety
+// improvement over dlopen'ing the plugin directly from ctypes: there, an
+// exception thrown by a static-constructor registration would unwind into the
+// C loader frames and std::terminate() the interpreter. A rejected plugin is
+// unloaded again so it leaves no trace; a successfully-registered one is
+// intentionally kept mapped for the life of the process, since the registry now
+// holds factories whose code lives in it.
+static void load_algorithm_plugin_impl(const std::string& path)
+{
+    char errbuf[512];
+    errbuf[0] = '\0';
+#if defined(_WIN32)
+    HMODULE handle = ::LoadLibraryA(path.c_str());
+    if (handle == nullptr) {
+        throw std::runtime_error("lightsim2grid.load_algorithm_plugin: could not load '" + path +
+                                 "' (LoadLibrary failed, error code " + std::to_string(::GetLastError()) + ").");
+    }
+    auto entry = reinterpret_cast<ls2g::ls2g_plugin_entry_fn>(
+        ::GetProcAddress(handle, "ls2g_register_plugin"));
+    if (entry == nullptr) {
+        ::FreeLibrary(handle);
+        throw std::runtime_error("lightsim2grid.load_algorithm_plugin: '" + path +
+                                 "' is not a lightsim2grid plugin (no 'ls2g_register_plugin' entry point).");
+    }
+    int rc = entry(&ls2g::AlgorithmRegistry::instance(), errbuf, sizeof(errbuf));
+    if (rc != 0) {
+        ::FreeLibrary(handle);
+        throw std::runtime_error("lightsim2grid.load_algorithm_plugin: '" + path +
+                                 "' failed to register: " + errbuf);
+    }
+#else
+    ::dlerror();  // clear any stale error state
+    void* handle = ::dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    if (handle == nullptr) {
+        const char* e = ::dlerror();
+        throw std::runtime_error("lightsim2grid.load_algorithm_plugin: could not load '" + path +
+                                 "': " + (e != nullptr ? e : "unknown dlopen error"));
+    }
+    ::dlerror();
+    auto entry = reinterpret_cast<ls2g::ls2g_plugin_entry_fn>(
+        ::dlsym(handle, "ls2g_register_plugin"));
+    const char* sym_err = ::dlerror();
+    if (entry == nullptr || sym_err != nullptr) {
+        ::dlclose(handle);
+        throw std::runtime_error("lightsim2grid.load_algorithm_plugin: '" + path +
+                                 "' is not a lightsim2grid plugin (no 'ls2g_register_plugin' entry point).");
+    }
+    int rc = entry(&ls2g::AlgorithmRegistry::instance(), errbuf, sizeof(errbuf));
+    if (rc != 0) {
+        ::dlclose(handle);  // reject: unload so a failed plugin leaves nothing behind
+        throw std::runtime_error("lightsim2grid.load_algorithm_plugin: '" + path +
+                                 "' failed to register: " + errbuf);
+    }
+#endif
+}
 
 PYBIND11_MODULE(lightsim2grid_cpp, m)
 {
@@ -87,6 +155,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     #ifdef CKTSO_PATH
     m.attr("cktso_lib") = py::str(this_CKTSO_PATH);
     #endif
+
+    m.def("_load_algorithm_plugin", &load_algorithm_plugin_impl, py::arg("path"),
+          "Internal helper behind lightsim2grid.load_algorithm_plugin(): load the given "
+          "shared library, run its 'ls2g_register_plugin' entry point, and raise a Python "
+          "exception (rather than crashing the interpreter) if registration fails.");
 
     bind_enums(m);
     bind_solvers(m);
