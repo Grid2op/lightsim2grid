@@ -33,6 +33,10 @@ ls2g::AlgorithmRegistry::Factory null_factory() {
     return []() -> std::unique_ptr<ls2g::BaseAlgo> { return nullptr; };
 }
 
+// Referenced from the captureless registration lambda in the overflow test
+// below (a function pointer cannot capture, but may read a static).
+std::string g_long_solver_name;
+
 } // namespace
 
 TEST_CASE("register_all commits every name on success", "[plugin]")
@@ -131,6 +135,31 @@ TEST_CASE("plugin entry helper: a short error buffer is never overflowed", "[plu
     REQUIRE(rc != 0);
     REQUIRE(errbuf[N - 1] == '\0');          // always NUL-terminated within the bound
     REQUIRE(std::strlen(errbuf) <= N - 1);   // never wrote past the buffer
+}
+
+TEST_CASE("plugin entry helper: a solver name longer than the buffer cannot overflow it", "[plugin]")
+{
+    // The scenario from the review: a plugin registers a name so long that the
+    // resulting error message far exceeds the host's fixed 512-byte diagnostic
+    // buffer. The bounded write must truncate it, never overflow. Under valgrind
+    // (cpp_unit_tests workflow) this also proves there is no out-of-bounds write.
+    g_long_solver_name = std::string(1000, 'x');  // >> 512
+    ls2g::AlgorithmRegistry::instance().register_solver(g_long_solver_name, null_factory());
+
+    constexpr std::size_t host_buf_size = 512;  // matches load_algorithm_plugin_impl
+    char errbuf[host_buf_size];
+    std::memset(errbuf, 'Z', sizeof(errbuf));  // start with no NUL anywhere
+
+    int rc = ls2g::detail::ls2g_run_plugin_entry(
+        &ls2g::AlgorithmRegistry::instance(), errbuf, host_buf_size,
+        // staging the (already-registered) long name triggers the long
+        // "... is already registered" message, which contains the 1000-char name
+        +[](ls2g::PluginRegistrar& r) { r.add(g_long_solver_name, null_factory()); },
+        ls2g::ls2g_current_abi_tag());
+
+    REQUIRE(rc != 0);
+    REQUIRE(errbuf[host_buf_size - 1] == '\0');          // terminated within bounds
+    REQUIRE(std::strlen(errbuf) <= host_buf_size - 1);   // never wrote past the buffer
 }
 
 TEST_CASE("plugin entry helper: a null / zero-length buffer is handled safely", "[plugin]")

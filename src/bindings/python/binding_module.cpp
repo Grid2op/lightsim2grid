@@ -10,6 +10,8 @@
 #include "Ls2gAbiTag.hpp"
 #include "AlgorithmRegistry.hpp"
 
+#include <cstddef>
+#include <functional>
 #include <stdexcept>
 #include <string>
 
@@ -67,29 +69,28 @@
 // unloaded again so it leaves no trace; a successfully-registered one is
 // intentionally kept mapped for the life of the process, since the registry now
 // holds factories whose code lives in it.
+// Size of the stack diagnostic buffer handed to a plugin's entry point. The
+// entry point is told this size and its contract is to write at most this many
+// bytes, NUL included; plugins built with LS2G_PLUGIN_ENTRY honour it by
+// construction (the bounded write in ls2g::detail::ls2g_run_plugin_entry).
+static const std::size_t max_errbuf_size = 512;
+
 static void load_algorithm_plugin_impl(const std::string& path)
 {
-    char errbuf[512];
-    errbuf[0] = '\0';
+    // Platform-specific load + symbol lookup. Both branches leave `entry` set
+    // to the resolved entry point (or null) and `unload` able to undo the load,
+    // so the entry call and all buffer handling below happen exactly once.
+    ls2g::ls2g_plugin_entry_fn entry = nullptr;
+    std::function<void()> unload;
 #if defined(_WIN32)
     HMODULE handle = ::LoadLibraryA(path.c_str());
     if (handle == nullptr) {
         throw std::runtime_error("lightsim2grid.load_algorithm_plugin: could not load '" + path +
                                  "' (LoadLibrary failed, error code " + std::to_string(::GetLastError()) + ").");
     }
-    auto entry = reinterpret_cast<ls2g::ls2g_plugin_entry_fn>(
+    unload = [handle]{ ::FreeLibrary(handle); };
+    entry = reinterpret_cast<ls2g::ls2g_plugin_entry_fn>(
         ::GetProcAddress(handle, "ls2g_register_plugin"));
-    if (entry == nullptr) {
-        ::FreeLibrary(handle);
-        throw std::runtime_error("lightsim2grid.load_algorithm_plugin: '" + path +
-                                 "' is not a lightsim2grid plugin (no 'ls2g_register_plugin' entry point).");
-    }
-    int rc = entry(&ls2g::AlgorithmRegistry::instance(), errbuf, sizeof(errbuf));
-    if (rc != 0) {
-        ::FreeLibrary(handle);
-        throw std::runtime_error("lightsim2grid.load_algorithm_plugin: '" + path +
-                                 "' failed to register: " + errbuf);
-    }
 #else
     ::dlerror();  // clear any stale error state
     void* handle = ::dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
@@ -98,22 +99,35 @@ static void load_algorithm_plugin_impl(const std::string& path)
         throw std::runtime_error("lightsim2grid.load_algorithm_plugin: could not load '" + path +
                                  "': " + (e != nullptr ? e : "unknown dlopen error"));
     }
+    unload = [handle]{ ::dlclose(handle); };
     ::dlerror();
-    auto entry = reinterpret_cast<ls2g::ls2g_plugin_entry_fn>(
+    entry = reinterpret_cast<ls2g::ls2g_plugin_entry_fn>(
         ::dlsym(handle, "ls2g_register_plugin"));
-    const char* sym_err = ::dlerror();
-    if (entry == nullptr || sym_err != nullptr) {
-        ::dlclose(handle);
+    if (::dlerror() != nullptr) entry = nullptr;
+#endif
+    if (entry == nullptr) {
+        unload();
         throw std::runtime_error("lightsim2grid.load_algorithm_plugin: '" + path +
                                  "' is not a lightsim2grid plugin (no 'ls2g_register_plugin' entry point).");
     }
-    int rc = entry(&ls2g::AlgorithmRegistry::instance(), errbuf, sizeof(errbuf));
+
+    // errbuf is written only by `entry`, which is told its full size and must
+    // not exceed it. Force a NUL into the last slot afterwards regardless: even
+    // a misbehaving plugin that ignored the size contract then cannot make the
+    // C-string read below run past the buffer -- the host side cannot over-read
+    // by construction, independently of what the plugin wrote.
+    char errbuf[max_errbuf_size];
+    errbuf[0] = '\0';
+    const int rc = entry(&ls2g::AlgorithmRegistry::instance(), errbuf, max_errbuf_size);
+    errbuf[max_errbuf_size - 1] = '\0';
+
     if (rc != 0) {
-        ::dlclose(handle);  // reject: unload so a failed plugin leaves nothing behind
+        unload();  // reject: unload so a failed plugin leaves nothing behind
         throw std::runtime_error("lightsim2grid.load_algorithm_plugin: '" + path +
                                  "' failed to register: " + errbuf);
     }
-#endif
+    // success: keep the library mapped for the life of the process, since the
+    // registry now holds factories whose code lives in it.
 }
 
 PYBIND11_MODULE(lightsim2grid_cpp, m)
