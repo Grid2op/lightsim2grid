@@ -28,24 +28,34 @@ import tempfile
 import unittest
 
 
+def _candidates_in(build_dir):
+    if sys.platform == "win32":
+        names = ["Release/dummy_solver.dll", "Debug/dummy_solver.dll", "dummy_solver.dll"]
+    else:
+        names = ["libdummy_solver.so"]  # .so on macOS too (see the plugin CMakeLists)
+    return [os.path.join(build_dir, n) for n in names]
+
+
 def _find_plugin():
+    # Full path to the built plugin, when known (set by CI).
     env = os.environ.get("LS2G_TEST_PLUGIN")
     if env and os.path.exists(env):
         return os.path.abspath(env)
-    base = os.path.join(os.path.dirname(__file__), "..", "..",
-                        "examples", "external_algorithm", "build")
-    if sys.platform == "win32":
-        candidates = [
-            os.path.join(base, "Release", "dummy_solver.dll"),
-            os.path.join(base, "Debug", "dummy_solver.dll"),
-            os.path.join(base, "dummy_solver.dll"),
-        ]
-    else:
-        candidates = [os.path.join(base, "libdummy_solver.so")]
-    for cand in candidates:
-        cand = os.path.abspath(cand)
-        if os.path.exists(cand):
-            return cand
+
+    build_dirs = []
+    env_dir = os.environ.get("LS2G_TEST_PLUGIN_DIR")
+    if env_dir:
+        build_dirs.append(env_dir)
+    # source-tree fallback (in-repo dev run, not the installed package, whose
+    # __file__ is in site-packages and cannot reach the source-tree examples/).
+    build_dirs.append(os.path.join(os.path.dirname(__file__), "..", "..",
+                                   "examples", "external_algorithm", "build"))
+
+    for build_dir in build_dirs:
+        for cand in _candidates_in(build_dir):
+            cand = os.path.abspath(cand)
+            if os.path.exists(cand):
+                return cand
     return None
 
 

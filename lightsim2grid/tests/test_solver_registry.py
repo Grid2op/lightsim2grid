@@ -130,38 +130,59 @@ class TestKLUSolver(unittest.TestCase):
 
 
 class TestPluginLoading(unittest.TestCase):
-    """Plugin loading via load_solver_plugin (skipped if example not built)."""
+    """Plugin loading via load_algorithm_plugin (skipped if example not built).
+
+    The DummyExternal solver lives in examples/external_algorithm/. Point the
+    test at the built plugin with either ``LS2G_TEST_PLUGIN`` (full path to the
+    .so/.dll) or ``LS2G_TEST_PLUGIN_DIR`` (its build directory) -- needed when
+    running against the *installed* package, whose __file__ is in site-packages
+    and cannot reach the source-tree examples/ by relative path. Without either,
+    a source-tree relative path is tried, and the test skips if nothing is found.
+    """
+
+    @staticmethod
+    def _candidates_in(build_dir):
+        import sys
+        if sys.platform == "win32":
+            names = ["Release/dummy_solver.dll", "Debug/dummy_solver.dll", "dummy_solver.dll"]
+        else:
+            names = ["libdummy_solver.so"]  # .so on macOS too (see the plugin CMakeLists)
+        return [os.path.join(build_dir, n) for n in names]
 
     def _get_plugin_path(self):
-        import sys
-        base = os.path.join(os.path.dirname(__file__), "../../examples/external_solver")
-        if sys.platform == "win32":
-            candidates = [
-                os.path.join(base, "build/Release/dummy_solver.dll"),
-                os.path.join(base, "build/Debug/dummy_solver.dll"),
-                os.path.join(base, "build/dummy_solver.dll"),
-            ]
-        else:
-            candidates = [
-                os.path.join(base, "build/libdummy_solver.so"),
-                os.path.join(base, "libdummy_solver.so"),
-            ]
-        for p in candidates:
-            if os.path.exists(os.path.abspath(p)):
-                return os.path.abspath(p)
+        env_file = os.environ.get("LS2G_TEST_PLUGIN")
+        if env_file and os.path.exists(env_file):
+            return os.path.abspath(env_file)
+
+        build_dirs = []
+        env_dir = os.environ.get("LS2G_TEST_PLUGIN_DIR")
+        if env_dir:
+            build_dirs.append(env_dir)
+        # source-tree fallback (in-repo dev run, not the installed package)
+        build_dirs.append(os.path.join(
+            os.path.dirname(__file__), "..", "..", "examples", "external_algorithm", "build"))
+
+        for build_dir in build_dirs:
+            for p in self._candidates_in(build_dir):
+                if os.path.exists(os.path.abspath(p)):
+                    return os.path.abspath(p)
         return None
 
     def test_load_plugin_and_change_solver(self):
         path = self._get_plugin_path()
         if path is None:
             self.skipTest(
-                "Example plugin not built. "
-                "Build examples/external_solver/ first to run this test.")
-        from lightsim2grid import load_solver_plugin
-        load_solver_plugin(path)
+                "Example plugin not built. Build examples/external_algorithm/ (or set "
+                "LS2G_TEST_PLUGIN / LS2G_TEST_PLUGIN_DIR) to run this test.")
+        from lightsim2grid import load_algorithm_plugin
+
+        # Idempotent: another test module in the same process may already have
+        # loaded it, and loading a plugin whose name is registered now raises.
+        if "DummyExternal" not in _make_grid().available_algorithm_names():
+            load_algorithm_plugin(path)
 
         gm = _make_grid()
-        names = gm.available_solver_names()
+        names = gm.available_algorithm_names()
         self.assertIn("DummyExternal", names)
         gm.change_algorithm("DummyExternal")
         self.assertEqual(gm.get_algo_type(), AlgorithmType.Custom)
