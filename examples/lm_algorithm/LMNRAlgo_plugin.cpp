@@ -1,11 +1,14 @@
 // LMNRAlgo plugin registration.
 //
-// Registers two names with the C++ AlgorithmRegistry at dlopen() time (via a
-// static AlgorithmRegistrar in an anonymous namespace -- same mechanism as
+// Registers two names with the C++ AlgorithmRegistry through the exported
+// ls2g_register_plugin entry point (LS2G_PLUGIN_ENTRY -- same mechanism as
 // examples/dist_slack_algorithm/NRAlgoDistSlack_plugin.cpp and
 // examples/external_algorithm/DummyExternalAlgo.cpp):
 //   "NR_LM_SparseLU" -> LMNRAlgo<LinearSolverPolicy<SparseLULinearSolver>, SingleSlackNRSystem>
 //   "NR_LM_KLU"      -> LMNRAlgo<LinearSolverPolicy<KLULinearSolver>, SingleSlackNRSystem>  (only if KLU is available)
+//
+// Both names are registered atomically: if either is already taken, neither is
+// added and load_algorithm_plugin() raises instead of half-registering.
 //
 // Single-slack only for this first cut; LMNRAlgo is generic over its
 // NRSystem template parameter, so registering MultiSlackNRSystem variants
@@ -25,18 +28,15 @@
 
 #include "LMNRAlgo.hpp"
 
-namespace {
-    ls2g::AlgorithmRegistrar _lm_sparselu_registrar(
-        "NR_LM_SparseLU",
+static void register_plugin(ls2g::PluginRegistrar& reg) {
+    reg.add("NR_LM_SparseLU",
         []{ return std::unique_ptr<ls2g::BaseAlgo>(
-            new ls2g::LMNRAlgo<ls2g::LinearSolverPolicy<ls2g::SparseLULinearSolver>, ls2g::SingleSlackNRSystem>()); }
-    );
+            new ls2g::LMNRAlgo<ls2g::LinearSolverPolicy<ls2g::SparseLULinearSolver>, ls2g::SingleSlackNRSystem>()); });
 
 #ifdef KLU_SOLVER_AVAILABLE
-    ls2g::AlgorithmRegistrar _lm_klu_registrar(
-        "NR_LM_KLU",
+    reg.add("NR_LM_KLU",
         []{ return std::unique_ptr<ls2g::BaseAlgo>(
-            new ls2g::LMNRAlgo<ls2g::LinearSolverPolicy<ls2g::KLULinearSolver>, ls2g::SingleSlackNRSystem>()); }
-    );
+            new ls2g::LMNRAlgo<ls2g::LinearSolverPolicy<ls2g::KLULinearSolver>, ls2g::SingleSlackNRSystem>()); });
 #endif
 }
+LS2G_PLUGIN_ENTRY(register_plugin)

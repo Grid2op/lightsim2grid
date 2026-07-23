@@ -723,6 +723,20 @@ jobs:
       - name: Run plugin test
         run: python examples/external_algorithm/test_plugin.py
 
+      - name: Run plugin registration unittests (against the installed package)
+        shell: bash
+        # Run from the scratch dir so `import lightsim2grid` resolves to the
+        # pip-installed package, not the source tree (which has no built
+        # extension). LS2G_TEST_PLUGIN_DIR points the tests at the plugin built
+        # above; the finders pick the right per-platform file name themselves.
+        working-directory: _tmp_cmake_dir
+        env:
+          LS2G_TEST_PLUGIN_DIR: ${{ github.workspace }}/examples/external_algorithm/build
+        run: |
+          python -m unittest -v \
+            lightsim2grid.tests.test_solver_registry \
+            lightsim2grid.tests.test_plugin_registration
+
   test_klu_strategies:
     name: Test KLU detection strategies (Ubuntu)
     runs-on: ubuntu-latest

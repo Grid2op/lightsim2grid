@@ -73,7 +73,7 @@ print("Plugin loaded successfully.")
 # Verify registration
 # ------------------------------------------------------------------
 gm = _make_grid()
-names = gm.available_solver_names()
+names = gm.available_algorithm_names()
 assert "NR_LM_SparseLU" in names, f"NR_LM_SparseLU not in {names}"
 print(f"Registered solvers: {sorted(names)}")
 

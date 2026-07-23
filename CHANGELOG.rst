@@ -113,6 +113,22 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [0.14.0] 2026-xx-yy
 ---------------------
+- [BREAKING] For plugin developers (C++ side): solver plugins no longer self-register
+  from a static ``AlgorithmRegistrar`` constructor firing during ``dlopen``. Instead a
+  plugin writes a ``void(ls2g::PluginRegistrar&)`` registration function and exposes it
+  with the new ``LS2G_PLUGIN_ENTRY(...)`` macro, which generates the exported
+  ``ls2g_register_plugin`` entry point that ``load_algorithm_plugin()`` calls explicitly
+  after loading the library. See ``examples/external_algorithm/`` and ``docs/solver_plugin.rst``.
+- [FIXED] ``load_algorithm_plugin()`` no longer risks aborting the interpreter: previously
+  a registration failure (ABI mismatch, or a solver name already registered) threw a C++
+  exception out of a static constructor running inside ``dlopen``, which is uncatchable and
+  calls ``std::terminate()``. Registration now runs from an explicitly-called entry point
+  wrapped in ``try/catch`` on the C++ side, so every failure surfaces as a catchable Python
+  ``RuntimeError``. Plugin registration is also atomic (a plugin exposing several solvers
+  either registers all of them or none) and the loader unloads a rejected plugin.
+- [BREAKING] ``lightsim2grid.load_algorithm_plugin()`` now raises ``RuntimeError`` (instead
+  of ``OSError``) on failure, and rejects loading a plugin whose solver name is already
+  registered — which includes loading the same plugin twice.
 - [BREAKING] drop python 3.8 support (end of life end back in 2024)
 - [BREAKING] `lightsim2grid.SolverType` enum is no more accessible. You can migrate 
   (for now, deprecation pending) to `from lightsim2grid.solver import SolverType` 

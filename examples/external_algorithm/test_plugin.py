@@ -2,7 +2,7 @@
 """Smoke-test for the DummyExternal solver plugin.
 
 Build the plugin first:
-    cd examples/external_solver
+    cd examples/external_algorithm
     mkdir build && cd build
     cmake ..
     make  (or: cmake --build . --config Release on Windows)
@@ -56,7 +56,7 @@ print("Plugin loaded successfully.")
 # Verify registration
 # ------------------------------------------------------------------
 gm = LSGrid()
-names = gm.available_solver_names()
+names = gm.available_algorithm_names()
 assert "DummyExternal" in names, f"DummyExternal not in {names}"
 print(f"Registered solvers: {sorted(names)}")
 
@@ -66,6 +66,6 @@ print(f"Registered solvers: {sorted(names)}")
 gm.change_algorithm("DummyExternal")
 assert gm.get_algo_type() == AlgorithmType.Custom, \
     f"Expected AlgorithmType.Custom, got {gm.get_algo_type()}"
-print("change_solver('DummyExternal') OK — solver type is Custom as expected.")
+print("change_algorithm('DummyExternal') OK — solver type is Custom as expected.")
 
 print("All checks passed.")
