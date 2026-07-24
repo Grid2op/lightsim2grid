@@ -9,6 +9,10 @@
 #ifndef NR_ALGO_H
 #define NR_ALGO_H
 
+#include <cmath>     // std::isfinite (policy parameter validation)
+#include <sstream>
+#include <stdexcept>
+
 #include "BaseAlgo.hpp"
 #include "NRSystem.hpp"
 #include "ScalingPolicies.hpp"
@@ -173,25 +177,76 @@ public:
         );
     }
 
+    // ----- policy parameter validation ----------------------------------------
+    // These parameters reach the solver from two untrusted-ish directions: the
+    // python setters below (exposed by `lightsim2grid.algorithm`, ie the
+    // `newtonpf` entry point) and set_config(), which is fed by an AlgoConfig --
+    // part of the serialized grid state, so it also arrives from a pickle or a
+    // binary file. They must be validated on the way in: `refactor_every_n_` in
+    // particular is used as `iter % refactor_every_n_` (see
+    // should_refactor_policy), where 0 is an integer division by zero -- a
+    // SIGFPE that kills the process instead of raising a catchable error.
+    static int _checked_refactor_every_n(int v) {
+        if (v < 1) {
+            std::ostringstream exc_;
+            exc_ << "NRAlgo: refactor_every_n must be >= 1, got " << v
+                 << " (it is used as `iter % refactor_every_n`, so 0 would be a division by zero).";
+            throw std::runtime_error(exc_.str());
+        }
+        return v;
+    }
+    static real_type _checked_in_0_1(real_type v, const char * name) {
+        if (!std::isfinite(v) || (v <= 0.) || (v >= 1.)) {
+            std::ostringstream exc_;
+            exc_ << "NRAlgo: " << name << " must be a finite number in (0, 1), got " << v << ".";
+            throw std::runtime_error(exc_.str());
+        }
+        return v;
+    }
+    static real_type _checked_positive(real_type v, const char * name) {
+        if (!std::isfinite(v) || (v <= 0.)) {
+            std::ostringstream exc_;
+            exc_ << "NRAlgo: " << name << " must be a finite, strictly positive number, got " << v << ".";
+            throw std::runtime_error(exc_.str());
+        }
+        return v;
+    }
+    static real_type _checked_finite(real_type v, const char * name) {
+        if (!std::isfinite(v)) {
+            std::ostringstream exc_;
+            exc_ << "NRAlgo: " << name << " must be a finite number, got " << v << ".";
+            throw std::runtime_error(exc_.str());
+        }
+        return v;
+    }
+    static int _checked_non_negative(int v, const char * name) {
+        if (v < 0) {
+            std::ostringstream exc_;
+            exc_ << "NRAlgo: " << name << " must be >= 0, got " << v << ".";
+            throw std::runtime_error(exc_.str());
+        }
+        return v;
+    }
+
     // MaxVoltageChange params
     real_type get_max_dVa() const { return max_dVa_; }
-    void      set_max_dVa(real_type v) { max_dVa_ = v; }
+    void      set_max_dVa(real_type v) { max_dVa_ = _checked_positive(v, "max_dVa"); }
     real_type get_max_dVm() const { return max_dVm_; }
-    void      set_max_dVm(real_type v) { max_dVm_ = v; }
+    void      set_max_dVm(real_type v) { max_dVm_ = _checked_positive(v, "max_dVm"); }
 
     // LineSearch (Armijo) params
     real_type get_ls_c()       const { return ls_c_; }
-    void      set_ls_c(real_type v)  { ls_c_ = v; }
+    void      set_ls_c(real_type v)  { ls_c_ = _checked_in_0_1(v, "ls_c"); }
     real_type get_ls_rho()     const { return ls_rho_; }
-    void      set_ls_rho(real_type v){ ls_rho_ = v; }
+    void      set_ls_rho(real_type v){ ls_rho_ = _checked_in_0_1(v, "ls_rho"); }
     int       get_ls_max_iter()const { return ls_max_iter_; }
-    void      set_ls_max_iter(int v) { ls_max_iter_ = v; }
+    void      set_ls_max_iter(int v) { ls_max_iter_ = _checked_non_negative(v, "ls_max_iter"); }
 
     // Iwamoto params
     real_type get_iw_mu_min() const { return iw_mu_min_; }
-    void      set_iw_mu_min(real_type v) { iw_mu_min_ = v; }
+    void      set_iw_mu_min(real_type v) { iw_mu_min_ = _checked_finite(v, "iw_mu_min"); }
     real_type get_iw_mu_max() const { return iw_mu_max_; }
-    void      set_iw_mu_max(real_type v) { iw_mu_max_ = v; }
+    void      set_iw_mu_max(real_type v) { iw_mu_max_ = _checked_finite(v, "iw_mu_max"); }
 
     // ----- refactor policy -----------------------------------------------------
 
@@ -199,7 +254,7 @@ public:
     void set_refactor_policy(RefactorPolicyType t)  { refactor_policy_ = t; }
 
     int  get_refactor_every_n() const { return refactor_every_n_; }
-    void set_refactor_every_n(int v)  { refactor_every_n_ = v; }
+    void set_refactor_every_n(int v)  { refactor_every_n_ = _checked_refactor_every_n(v); }
 
     // ----- AlgoConfig serialization -------------------------------------------
 
@@ -221,14 +276,17 @@ public:
     void set_config(const AlgoConfig& cfg) override {
         if (cfg.int_params.size()  < 4) throw std::runtime_error("NRAlgo::set_config: int_params must have at least 4 elements");
         if (cfg.real_params.size() < 6) throw std::runtime_error("NRAlgo::set_config: real_params must have at least 6 elements");
-        max_dVa_         = static_cast<real_type>(cfg.real_params[0]);
-        max_dVm_         = static_cast<real_type>(cfg.real_params[1]);
-        ls_c_            = static_cast<real_type>(cfg.real_params[2]);
-        ls_rho_          = static_cast<real_type>(cfg.real_params[3]);
-        iw_mu_min_       = static_cast<real_type>(cfg.real_params[4]);
-        iw_mu_max_       = static_cast<real_type>(cfg.real_params[5]);
-        ls_max_iter_     = cfg.int_params[2];
-        refactor_every_n_= cfg.int_params[3];
+        // NB an AlgoConfig is part of the serialized grid state, so these values
+        // can come straight from a pickle or a binary file: validate them exactly
+        // like the setters do (see the note on _checked_refactor_every_n).
+        max_dVa_         = _checked_positive(static_cast<real_type>(cfg.real_params[0]), "max_dVa");
+        max_dVm_         = _checked_positive(static_cast<real_type>(cfg.real_params[1]), "max_dVm");
+        ls_c_            = _checked_in_0_1(static_cast<real_type>(cfg.real_params[2]), "ls_c");
+        ls_rho_          = _checked_in_0_1(static_cast<real_type>(cfg.real_params[3]), "ls_rho");
+        iw_mu_min_       = _checked_finite(static_cast<real_type>(cfg.real_params[4]), "iw_mu_min");
+        iw_mu_max_       = _checked_finite(static_cast<real_type>(cfg.real_params[5]), "iw_mu_max");
+        ls_max_iter_     = _checked_non_negative(cfg.int_params[2], "ls_max_iter");
+        refactor_every_n_= _checked_refactor_every_n(cfg.int_params[3]);
         refactor_policy_ = static_cast<RefactorPolicyType>(cfg.int_params[1]);
         set_scaling_policy(static_cast<ScalingPolicyType>(cfg.int_params[0]));
     }
