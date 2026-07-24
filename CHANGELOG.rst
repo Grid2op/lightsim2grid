@@ -124,12 +124,13 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   / ``init_from_powermodels``). A well-formed but inconsistent state (e.g. an
   out-of-range bus id in a crafted binary file) now raises a clean exception instead
   of causing an out-of-bounds access during the next powerflow.
-- [ADDED] a sanity check on the voltages returned by a (possibly plugin / custom)
-  solver before they are consumed: a wrong-sized result raises, and a non-finite one
-  is reported as a non-converged solve instead of propagating ``NaN`` / ``Inf``.
-- [ADDED] a "Security" documentation page describing the trust boundaries (pickle and
-  solver plugins are trusted-input-only; the binary format is hardened against
-  untrusted input and validated with ``check_grid`` on load).
+- [ADDED] a sanity check on the voltages returned by an **external** (plugin) solver
+  before they are consumed: a wrong-sized result raises, and a non-finite one is
+  reported as a non-converged solve instead of propagating ``NaN`` / ``Inf``. Built-in
+  solvers skip this check entirely, so they pay nothing for it.
+- [ADDED] a "Security" documentation page describing the trust boundaries (pickle,
+  solver plugins and grid2op environments are trusted-input-only; the binary format is
+  the least dangerous channel, and is validated with ``check_grid`` on load).
 - [BREAKING] For plugin developers (C++ side): solver plugins no longer self-register
   from a static ``AlgorithmRegistrar`` constructor firing during ``dlopen``. Instead a
   plugin writes a ``void(ls2g::PluginRegistrar&)`` registration function and exposes it

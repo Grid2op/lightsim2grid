@@ -25,31 +25,43 @@ The short version
      - **Trusted code only.** A plugin is a native shared library that runs
        in-process; once loaded it can do anything the host process can. Only
        load plugins you built or otherwise trust.
+   * - Creating a grid2op environment (``grid2op.make``)
+     - **Trusted input only.** An environment is not just data: grid2op reads
+       and executes python code shipped with it (its ``config.py``, the classes
+       it points to, ...). Only use environments you trust.
    * - Loading a grid from the fast binary format (``save_binary`` /
        ``load_binary``)
-     - **Hardened against untrusted input.** See below.
+     - **Least dangerous, still not a safe channel.** See below.
    * - Building a grid from a source file (pandapower, pypowsybl, matpower,
-       powermodels)
+       powermodels — including through a grid2op environment)
      - **Validated on load.** See below.
 
-Pickle and plugins are trusted-input-only by design
----------------------------------------------------
+Pickle, plugins and grid2op environments are trusted-input-only by design
+------------------------------------------------------------------------
 
-Unpickling arbitrary data and loading a native plugin are both, fundamentally,
-ways of running code chosen by whoever produced the input. No amount of
-validation inside lightsim2grid changes that, so the only safe rule is: **do not
-load a pickle or a plugin from a source you do not trust.** This is the same
-posture as ``numpy``, ``pandas`` (``read_pickle``), ``torch.load`` and any other
-library that supports pickling.
+Unpickling arbitrary data, loading a native plugin or using a grid2op
+environment are all, fundamentally, ways of running code chosen by whoever
+produced the input. No amount of validation inside lightsim2grid changes that,
+so the only safe rule is: **do not load a pickle or a plugin, nor call**
+``grid2op.make``\ **, on something coming from a source you do not trust.** This
+is the same posture as ``numpy``, ``pandas`` (``read_pickle``), ``torch.load``
+and any other library that supports pickling.
 
 The version string embedded in a pickled grid is a *compatibility* check (it
 refuses to load a grid saved by a different lightsim2grid version); it is **not**
 a security control.
 
-The binary format is the channel to use for untrusted data
-----------------------------------------------------------
+The binary format is the least dangerous channel
+-------------------------------------------------
 
-The fast binary format (:ref:`binary-serialization`) was designed as a safe,
+.. warning::
+    "Least dangerous" is not "safe": loading data you do not trust is a bad
+    idea whatever the format, and none of the validation described here makes
+    it a good one. The point below is only that this format gives an attacker
+    strictly less to work with than pickle does — not that it is meant for
+    untrusted input.
+
+The fast binary format (:ref:`binary-serialization`) was designed as an
 additive alternative to pickle. Loading a binary file never executes code from
 the file, and it is validated at two levels:
 
@@ -67,7 +79,7 @@ the file, and it is validated at two levels:
 ``check_grid()``: whole-grid consistency validation
 ---------------------------------------------------
 
-:py:meth:`LSGrid.check_grid` (also available as ``GridModel.check_grid``) verifies that a grid
+:py:meth:`LSGrid.check_grid` verifies that a grid
 is internally consistent and safe to run a powerflow on. It checks that every
 index the grid carries is in range — the bus id of every element, the substation
 id and the position in the topology vector (both optional), and the generator
@@ -83,23 +95,25 @@ You normally do not need to call it yourself:
   ``init_from_matpower``, ``init_from_powermodels``) calls it before returning.
 
 It is exposed so you can validate a grid you built or modified by hand. It runs
-in time proportional to the number of elements in the grid, so it is cheap
-compared to a powerflow.
+in time proportional to the number of elements in the grid, so it is relatively
+cheap compared to a powerflow.
 
 .. note::
 
    Release wheels are compiled with ``-O3 -DNDEBUG``, which removes Eigen's and
    the standard library's own bounds checks. ``check_grid()`` (and the size /
-   finiteness check applied to the voltages a solver returns) are deliberately
-   *not* gated behind that flag: they always run, because they are what turns a
-   malformed input into a clean exception rather than an out-of-bounds access.
+   finiteness check applied to the voltages an *external* solver returns) are
+   deliberately *not* gated behind that flag: they always run, because they are
+   what turns a malformed input into a clean exception rather than an
+   out-of-bounds access.
 
 A note for solver-plugin authors
 ---------------------------------
 
 A solver plugin is trusted code, so lightsim2grid does not try to sandbox it.
 It does, however, sanity-check the voltages your ``compute_pf`` returns before
-using them: if you report convergence but return a voltage vector of the wrong
+using them — for *external* solvers only, so the built-in ones pay nothing for
+it: if you report convergence but return a voltage vector of the wrong
 size, the powerflow raises ``RuntimeError`` (this would otherwise be an
 out-of-bounds read); if you return non-finite values, the solve is reported as
 non-converged rather than propagating ``NaN`` / ``Inf`` into the results. Writing

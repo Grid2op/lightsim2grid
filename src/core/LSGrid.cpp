@@ -1200,11 +1200,16 @@ void LSGrid::process_results(bool conv,
                                 SolverBusIdVect & id_me_to_solver)
 {
     if (conv){
-        // A (possibly plugin / custom) solver can claim convergence but return
-        // malformed voltages. Validate their size/finiteness before we index them
-        // below (compute_results / _get_results_back_to_orig_nodes both index the
-        // solver vectors with an unchecked operator()).
-        conv = _check_solver_output(ac);
+        // An external (plugin) solver can claim convergence but return malformed
+        // voltages. Validate their size/finiteness before we index them below
+        // (compute_results / _get_results_back_to_orig_nodes both index the solver
+        // vectors with an unchecked operator()).
+        // Only external solvers are checked: AlgorithmType::Custom is precisely
+        // "not one of the built-in solvers" (see name_to_algo_type), and the
+        // built-in ones are covered by the test suite, so they pay nothing here.
+        const bool is_external_algo =
+            (ac ? _algo.get_type() : _dc_algo.get_type()) == AlgorithmType::Custom;
+        if (is_external_algo) conv = _check_solver_output(ac);
     }
     if (conv){
         if(compute_results_){
