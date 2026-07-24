@@ -67,6 +67,9 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
     add_pickle(lsgrid_cls, "LSGrid");
     add_binary_serialization(lsgrid_cls);
     lsgrid_cls
+        // whole-grid consistency validation
+        .def("check_grid", &LSGrid::check_grid, DocLSGrid::check_grid.c_str())
+
         // algo config (scaling/refactor policy params)
         .def("get_ac_algo_config", &LSGrid::get_ac_algo_config,
             "Return the AC solver's AlgoConfig (scaling/refactor policy type and parameters).")

@@ -181,6 +181,8 @@ struct LS2G_API DocLSGrid
     
     static const std::string LSGrid;
 
+    static const std::string check_grid;
+
     static const std::string change_algorithm;
     static const std::string available_algorithm_names;
     static const std::string available_default_algorithms;
