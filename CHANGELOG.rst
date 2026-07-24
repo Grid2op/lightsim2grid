@@ -113,6 +113,24 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [0.14.0] 2026-xx-yy
 ---------------------
+- [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
+  consistency check that verifies every index the grid carries (element bus ids,
+  substation ids, position in the topology vector, generator slack and
+  remote-regulated bus references) is in range, and that the physical input arrays
+  contain no ``NaN`` / ``Inf``. It raises ``IndexError`` / ``RuntimeError`` on an
+  inconsistency.
+- [ADDED] the grid is now validated automatically with ``check_grid()`` when it is
+  loaded (from a pickle or the binary format, via ``set_state``) and by every grid
+  loader (``init_from_pandapower`` / ``init_from_pypowsybl`` / ``init_from_matpower``
+  / ``init_from_powermodels``). A well-formed but inconsistent state (e.g. an
+  out-of-range bus id in a crafted binary file) now raises a clean exception instead
+  of causing an out-of-bounds access during the next powerflow.
+- [ADDED] a sanity check on the voltages returned by a (possibly plugin / custom)
+  solver before they are consumed: a wrong-sized result raises, and a non-finite one
+  is reported as a non-converged solve instead of propagating ``NaN`` / ``Inf``.
+- [ADDED] a "Security" documentation page describing the trust boundaries (pickle and
+  solver plugins are trusted-input-only; the binary format is hardened against
+  untrusted input and validated with ``check_grid`` on load).
 - [BREAKING] For plugin developers (C++ side): solver plugins no longer self-register
   from a static ``AlgorithmRegistrar`` constructor firing during ``dlopen``. Instead a
   plugin writes a ``void(ls2g::PluginRegistrar&)`` registration function and exposes it
