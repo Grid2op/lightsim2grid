@@ -21,7 +21,11 @@ namespace py = pybind11;
 // Files are readable by any lightsim2grid version sharing the same
 // BINARY_FORMAT_VERSION (see BinaryArchive.hpp), and ill-formed input
 // (garbage, truncation, corrupted sizes, wrong object type, trailing bytes)
-// raises RuntimeError instead of crashing or over-allocating.
+// raises RuntimeError instead of crashing or over-allocating. Loading a whole
+// grid additionally runs LSGrid::check_grid() (via set_state), so a byte-wise
+// well-formed but inconsistent grid -- an out-of-range bus / substation /
+// topology-vector index, or a non-finite value -- is rejected with an
+// IndexError (out-of-range index) or a RuntimeError (structural inconsistency).
 //
 // These lambdas call ls2g::save_binary_generic/load_binary_generic directly
 // (rather than T::save_binary/T::load_binary): VERSION_MAJOR/MEDIUM/MINOR are
@@ -46,7 +50,10 @@ void add_binary_serialization(py::class_<T>& cls) {
        "Load an object previously saved with save_binary(). Raises RuntimeError on "
        "an incompatible binary format, a wrong object type, or a corrupted / "
        "truncated file (including corrupted internal sizes: no attempt is made to "
-       "allocate more data than the file actually contains).");
+       "allocate more data than the file actually contains). Loading a whole grid "
+       "additionally validates its consistency (see check_grid): a byte-wise "
+       "well-formed but inconsistent grid raises IndexError (out-of-range index) "
+       "or RuntimeError (structural inconsistency).");
 }
 
 #endif // BINARY_HELPERS_HPP
