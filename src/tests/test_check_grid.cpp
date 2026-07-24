@@ -104,6 +104,17 @@ std::vector<real_type>& gen_slack_weight(LSGrid::StateRes & st)
 {
     return std::get<7>(std::get<LSGrid::GEN_ID>(st));
 }
+// AC_ALGO_CONFIG_ID -> tuple<int_params, real_params> (an AlgoConfig)
+// int_params  = {scaling_policy, refactor_policy, ls_max_iter, refactor_every_n}
+// real_params = {max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max}
+std::vector<int>& ac_algo_int_params(LSGrid::StateRes & st)
+{
+    return std::get<0>(std::get<LSGrid::AC_ALGO_CONFIG_ID>(st));
+}
+std::vector<double>& ac_algo_real_params(LSGrid::StateRes & st)
+{
+    return std::get<1>(std::get<LSGrid::AC_ALGO_CONFIG_ID>(st));
+}
 std::vector<int>& gen_regulated_bus(LSGrid::StateRes & st)
 {
     return std::get<8>(std::get<LSGrid::GEN_ID>(st));
@@ -156,6 +167,7 @@ public:
         return true;
     }
 };
+
 
 } // namespace
 
@@ -251,6 +263,61 @@ TEST_CASE("check_grid rejects an out-of-range pos_topo_vect entry", "[check_grid
     grid.set_load_pos_topo_vect(load_pos);
     grid.set_gen_pos_topo_vect(gen_pos);
     CHECK_THROWS_AS(grid.check_grid(), std::out_of_range);
+}
+
+// --- solver policy parameters carried by the serialized state ----------------
+// AlgoConfig is part of StateRes, so these values arrive from a pickle / binary
+// file. refactor_every_n == 0 used to reach `iter % refactor_every_n` and kill
+// the process with SIGFPE (integer division by zero); it must be rejected on the
+// way in instead.
+
+TEST_CASE("a state with refactor_every_n = 0 is rejected, not divided by", "[check_grid][algo_config]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    REQUIRE(ac_algo_int_params(st).size() >= 4);
+    ac_algo_int_params(st)[3] = 0;  // refactor_every_n
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("a state with a negative refactor_every_n is rejected", "[check_grid][algo_config]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    ac_algo_int_params(st)[3] = -3;
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("a state with an out-of-range line-search parameter is rejected", "[check_grid][algo_config]")
+{
+    LSGrid grid = make_valid_grid();
+
+    SECTION("ls_rho outside (0, 1)") {
+        LSGrid::StateRes st = grid.get_state();
+        REQUIRE(ac_algo_real_params(st).size() >= 6);
+        ac_algo_real_params(st)[3] = 1.5;  // ls_rho
+        LSGrid restored;
+        CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+    }
+    SECTION("non-finite max_dVa") {
+        LSGrid::StateRes st = grid.get_state();
+        ac_algo_real_params(st)[0] = std::numeric_limits<double>::quiet_NaN();
+        LSGrid restored;
+        CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+    }
+}
+
+TEST_CASE("a valid algo config still round-trips", "[check_grid][algo_config]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    LSGrid restored;
+    CHECK_NOTHROW(restored.set_state(st));
+    CHECK(restored.get_ac_algo_config().int_params[3] == grid.get_ac_algo_config().int_params[3]);
 }
 
 TEST_CASE("a solver returning a wrong-sized voltage vector is rejected, not indexed", "[check_grid][plugin]")

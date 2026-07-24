@@ -115,6 +115,45 @@ class TestCheckGrid(unittest.TestCase):
         self.grid.set_load_to_subid(np.full(self.n_load, self.n_sub - 1, dtype=np.int32))
         self.assertIsNone(self.grid.check_grid())
 
+    # ------------------------------------------------------------------
+    # solver policy parameters (the `lightsim2grid.algorithm` / newtonpf entry
+    # point, and the AlgoConfig carried by the serialized grid state)
+    # ------------------------------------------------------------------
+    def test_refactor_every_n_zero_is_rejected(self):
+        # `refactor_every_n` is used as `iter % refactor_every_n`: 0 used to be an
+        # integer division by zero, ie a SIGFPE that killed the interpreter.
+        from lightsim2grid.algorithm import NR_SparseLU
+        solver = NR_SparseLU()
+        for bad in (0, -1):
+            with self.subTest(bad):
+                with self.assertRaises(RuntimeError):
+                    solver.set_refactor_every_n(bad)
+        solver.set_refactor_every_n(3)  # a sane value still works
+        self.assertEqual(solver.get_refactor_every_n(), 3)
+
+    def test_line_search_params_are_validated(self):
+        from lightsim2grid.algorithm import NR_SparseLU
+        solver = NR_SparseLU()
+        for name, bad_values in [("set_ls_rho", (0.0, 1.0, 1.5, float("nan"))),
+                                 ("set_ls_c", (0.0, 1.0, float("inf"))),
+                                 ("set_ls_max_iter", (-1,)),
+                                 ("set_max_dVa", (0.0, -1.0, float("nan"))),
+                                 ("set_max_dVm", (0.0, float("inf")))]:
+            for bad in bad_values:
+                with self.subTest(f"{name}({bad})"):
+                    with self.assertRaises(RuntimeError):
+                        getattr(solver, name)(bad)
+
+    def test_poisoned_algo_config_is_rejected(self):
+        # AlgoConfig is part of the serialized grid state, so this value can come
+        # straight from a pickle or a binary file.
+        cfg = self.grid.get_ac_algo_config()
+        int_params = list(cfg.int_params)
+        int_params[3] = 0  # refactor_every_n
+        cfg.int_params = int_params
+        with self.assertRaises(RuntimeError):
+            self.grid.set_ac_algo_config(cfg)
+
     def test_pickle_roundtrip_of_valid_grid(self):
         # pickling goes through set_state on load, which runs check_grid(); a valid
         # grid must round-trip cleanly.
