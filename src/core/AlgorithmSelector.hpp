@@ -335,6 +335,10 @@ class LS2G_API AlgorithmSelector final
             return get_prt_solver("get_error", true)->get_error();
         }
 
+        void set_error(ErrorType error) {
+            get_prt_solver("set_error", true)->set_error(error);
+        }
+
         int get_nb_iter() const {
             return get_prt_solver("get_nb_iter", true)->get_nb_iter();
         }
