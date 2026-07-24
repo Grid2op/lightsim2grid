@@ -1200,6 +1200,13 @@ void LSGrid::process_results(bool conv,
                                 SolverBusIdVect & id_me_to_solver)
 {
     if (conv){
+        // A (possibly plugin / custom) solver can claim convergence but return
+        // malformed voltages. Validate their size/finiteness before we index them
+        // below (compute_results / _get_results_back_to_orig_nodes both index the
+        // solver vectors with an unchecked operator()).
+        conv = _check_solver_output(ac);
+    }
+    if (conv){
         if(compute_results_){
             // compute the results of the flows, P,Q,V of loads etc.
             compute_results(ac);
@@ -1219,6 +1226,37 @@ void LSGrid::process_results(bool conv,
         reset_results();
         // TODO solver control ??? something to do here ?
     }
+}
+
+bool LSGrid::_check_solver_output(bool ac)
+{
+    const Eigen::Ref<const CplxVect> V  = ac ? _algo.get_V()  : _dc_algo.get_V();
+    const Eigen::Ref<const RealVect> Va = ac ? _algo.get_Va() : _dc_algo.get_Va();
+    const Eigen::Ref<const RealVect> Vm = ac ? _algo.get_Vm() : _dc_algo.get_Vm();
+    const int nb_bus_solver = ac ? static_cast<int>(id_ac_solver_to_me_.size())
+                                 : static_cast<int>(id_dc_solver_to_me_.size());
+    const char * algo_name = ac ? "AC" : "DC";
+
+    if((V.size() != nb_bus_solver) || (Va.size() != nb_bus_solver) || (Vm.size() != nb_bus_solver))
+    {
+        // wrong size = the solver broke its contract. This would cause an
+        // out-of-bounds read in compute_results / _get_results_back_to_orig_nodes.
+        std::ostringstream exc_;
+        exc_ << "LSGrid::process_results: the " << algo_name << " algorithm reported convergence but "
+             << "returned voltage vectors of an unexpected size (V: " << V.size() << ", Va: " << Va.size()
+             << ", Vm: " << Vm.size() << ", while the solver problem has " << nb_bus_solver
+             << " buses). This is a bug in the (possibly plugin) solver.";
+        throw std::runtime_error(exc_.str());
+    }
+    if((!V.allFinite()) || (!Va.allFinite()) || (!Vm.allFinite()))
+    {
+        // Non-finite voltage: a well-behaved solver reports this itself
+        // (ErrorType::InifiniteValue, non-convergence); a misbehaving one may not.
+        // Treat it as a non-converged solve so no NaN/Inf propagates to the results.
+        (ac ? _algo : _dc_algo).set_error(ErrorType::InifiniteValue);
+        return false;
+    }
+    return true;
 }
 
 void LSGrid::init_converter_bus_id(SolverBusIdVect& id_me_to_solver,

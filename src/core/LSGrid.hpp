@@ -1997,6 +1997,14 @@ class LS2G_API LSGrid final
         void process_results(bool conv, CplxVect & res, const Eigen::Ref<const CplxVect> & Vinit, bool ac,
                              SolverBusIdVect & id_me_to_solver);
 
+        // Sanity-check the voltages a (possibly plugin) solver returned before they
+        // are consumed. A wrong-sized V/Va/Vm is a contract violation -> throws
+        // std::runtime_error. Non-finite values -> the solve is marked as
+        // non-converged (ErrorType::InifiniteValue) and this returns false, so no
+        // NaN/Inf propagates and no out-of-bounds access happens downstream.
+        // Returns true when the outputs are usable.
+        bool _check_solver_output(bool ac);
+
         /**
         Compute the results vector from the Va, Vm post powerflow
         **/
