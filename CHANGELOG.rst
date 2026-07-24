@@ -116,9 +116,8 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and
-  remote-regulated bus references) is in range, and that the physical input arrays
-  contain no ``NaN`` / ``Inf``. It raises ``IndexError`` / ``RuntimeError`` on an
-  inconsistency.
+  remote-regulated bus references) is in range. It raises ``IndexError`` /
+  ``RuntimeError`` on an inconsistency.
 - [ADDED] the grid is now validated automatically with ``check_grid()`` when it is
   loaded (from a pickle or the binary format, via ``set_state``) and by every grid
   loader (``init_from_pandapower`` / ``init_from_pypowsybl`` / ``init_from_matpower``

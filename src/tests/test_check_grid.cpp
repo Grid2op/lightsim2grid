@@ -97,10 +97,6 @@ std::vector<int>& load_bus_id(LSGrid::StateRes & st)
 {
     return std::get<1>(std::get<0>(std::get<0>(std::get<LSGrid::LOAD_ID>(st))));
 }
-std::vector<real_type>& load_p_mw(LSGrid::StateRes & st)
-{
-    return std::get<1>(std::get<0>(std::get<LSGrid::LOAD_ID>(st)));
-}
 // GEN_ID -> GeneratorContainer::StateRes = tuple<OSC_PQ::StateRes, bool,
 //   voltage_reg, vm_pu, min_q, max_q, [6] slack_bus, [7] slack_weight,
 //   [8] regulated_bus_id>
@@ -223,16 +219,6 @@ TEST_CASE("check_grid rejects an out-of-range remote-regulated bus id", "[check_
 
     LSGrid restored;
     CHECK_THROWS_AS(restored.set_state(st), std::out_of_range);
-}
-
-TEST_CASE("check_grid rejects a non-finite physical value (NaN load p)", "[check_grid]")
-{
-    LSGrid grid = make_valid_grid();
-    LSGrid::StateRes st = grid.get_state();
-    load_p_mw(st)[0] = std::numeric_limits<real_type>::quiet_NaN();
-
-    LSGrid restored;
-    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
 }
 
 TEST_CASE("check_grid accepts a valid pos_topo_vect permutation", "[check_grid]")

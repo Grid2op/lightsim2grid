@@ -516,9 +516,8 @@ class LS2G_API LSGrid final
         // Whole-grid consistency check. Verifies that every index the grid carries
         // (element bus ids, substation ids, position in the topology vector,
         // generator slack and remote-regulated bus references) is in range for this
-        // grid, and that the physical input arrays contain no NaN / +-Inf. Throws
-        // std::out_of_range on an out-of-range index and std::runtime_error on a
-        // structural / finiteness error.
+        // grid. Throws std::out_of_range on an out-of-range index and
+        // std::runtime_error on a structural error.
         //
         // Called automatically at the end of set_state() (so loading a pickle or a
         // binary file cannot leave an out-of-range index that would later cause an

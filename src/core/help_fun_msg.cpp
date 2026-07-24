@@ -1850,9 +1850,7 @@ const std::string DocLSGrid::check_grid = R"mydelimiter(
     element (load, generator, static generator, storage, shunt, line, transformer,
     hvdc line, static var compensator), the substation id and the position in the
     topology vector (both optional), and the generator slack / remote-regulated bus
-    references. It also checks that the physical input arrays (line/transformer r,
-    x and shunt values, thermal limits, and the p / q / voltage set-points) contain
-    no ``NaN`` nor infinite value.
+    references.
 
     This is called automatically when a grid is loaded (from a pickle or from the
     fast binary format), and by the grid loaders (from pandapower, pypowsybl,
@@ -1862,8 +1860,8 @@ const std::string DocLSGrid::check_grid = R"mydelimiter(
     Raises
     ------
     An ``IndexError`` (C++ ``std::out_of_range``) if an index is out of range, or a
-    ``RuntimeError`` (C++ ``std::runtime_error``) on a structural inconsistency or a
-    non-finite physical value. Returns ``None`` if the grid is consistent.
+    ``RuntimeError`` (C++ ``std::runtime_error``) on a structural inconsistency.
+    Returns ``None`` if the grid is consistent.
 
     Notes
     -----
