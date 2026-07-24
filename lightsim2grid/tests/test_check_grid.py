@@ -44,6 +44,8 @@ class TestCheckGrid(unittest.TestCase):
             net = pn.case14()
             self.grid = init_from_pandapower(net)  # the loader calls check_grid()
         self.n_load = len(self.grid.get_loads())
+        self.n_gen = len(self.grid.get_generators())
+        self.n_sub = self.grid.get_n_sub()
         self.assertGreater(self.n_load, 1)  # case14 has several loads
 
     def test_loader_accepts_valid_grid(self):
@@ -72,6 +74,46 @@ class TestCheckGrid(unittest.TestCase):
         self.grid.set_load_pos_topo_vect(pos)
         with self.assertRaises(IndexError):
             self.grid.check_grid()
+
+    # ------------------------------------------------------------------
+    # substation ids (`*_to_subid`), same treatment as pos_topo_vect above
+    # ------------------------------------------------------------------
+    def test_out_of_range_subid_is_rejected(self):
+        # one element sits on a substation id far above the substation count.
+        for name, n in [("set_load_to_subid", self.n_load),
+                        ("set_gen_to_subid", self.n_gen)]:
+            with self.subTest(name):
+                sub = np.zeros(n, dtype=np.int32)
+                sub[-1] = BIG
+                getattr(self.grid, name)(sub)
+                with self.assertRaises(IndexError):
+                    self.grid.check_grid()
+                # restore a valid mapping so the next subTest starts clean
+                getattr(self.grid, name)(np.zeros(n, dtype=np.int32))
+
+    def test_negative_subid_is_rejected(self):
+        for name, n in [("set_load_to_subid", self.n_load),
+                        ("set_gen_to_subid", self.n_gen)]:
+            with self.subTest(name):
+                sub = np.zeros(n, dtype=np.int32)
+                sub[0] = -1
+                getattr(self.grid, name)(sub)
+                with self.assertRaises(IndexError):
+                    self.grid.check_grid()
+                getattr(self.grid, name)(np.zeros(n, dtype=np.int32))
+
+    def test_subid_just_out_of_range_is_rejected(self):
+        # off-by-one: `n_sub` itself is the first invalid substation id.
+        sub = np.zeros(self.n_load, dtype=np.int32)
+        sub[-1] = self.n_sub
+        self.grid.set_load_to_subid(sub)
+        with self.assertRaises(IndexError):
+            self.grid.check_grid()
+
+    def test_valid_subid_is_accepted(self):
+        # every element on the last valid substation: in range, must not raise.
+        self.grid.set_load_to_subid(np.full(self.n_load, self.n_sub - 1, dtype=np.int32))
+        self.assertIsNone(self.grid.check_grid())
 
     def test_pickle_roundtrip_of_valid_grid(self):
         # pickling goes through set_state on load, which runs check_grid(); a valid

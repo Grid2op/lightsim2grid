@@ -261,6 +261,10 @@ TEST_CASE("a solver returning a wrong-sized voltage vector is rejected, not inde
 
     LSGrid grid = make_valid_grid();
     grid.change_algorithm("__check_grid_wrong_size__");
+    // the name is not one of the built-ins, so this solver is an *external* one
+    // (AlgorithmType::Custom) -- which is exactly the case the output check
+    // guards; built-in solvers deliberately skip it.
+    REQUIRE(grid.get_algo_type() == ls2g::AlgorithmType::Custom);
     CHECK_THROWS_AS(grid.ac_pf(flat_start(grid), 20, 1e-8), std::runtime_error);
 }
 
@@ -272,6 +276,7 @@ TEST_CASE("a solver returning non-finite voltages is reported as non-converged",
 
     LSGrid grid = make_valid_grid();
     grid.change_algorithm("__check_grid_nan__");
+    REQUIRE(grid.get_algo_type() == ls2g::AlgorithmType::Custom);  // external solver
     CplxVect res;
     CHECK_NOTHROW(res = grid.ac_pf(flat_start(grid), 20, 1e-8));
     CHECK(res.size() == 0);                       // diverged => empty result
