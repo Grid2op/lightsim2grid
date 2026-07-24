@@ -61,6 +61,15 @@ class OneSideContainer_PQ : public OneSideContainer
 
         Eigen::Ref<const RealVect> get_target_p() const {return target_p_mw_;}
 
+        // Whole-grid semantic validation (see GenericContainer::check_valid).
+        void check_valid(int nb_bus,
+                         int nb_sub,
+                         const SubstationContainer & substations,
+                         std::vector<int> & all_pos_topo_vect) const override
+        {
+            check_valid_osc_pq(nb_bus, nb_sub, substations, all_pos_topo_vect, "element");
+        }
+
         // base function that can be called
         void gen_p_per_bus(std::vector<real_type> & res) const override
         {
@@ -124,6 +133,19 @@ class OneSideContainer_PQ : public OneSideContainer
             >;
 
     protected:
+        // check_valid() for elements carrying (p, q) targets: the OneSideContainer
+        // index checks plus finiteness of the target_p / target_q input arrays.
+        void check_valid_osc_pq(int nb_bus,
+                                int nb_sub,
+                                const SubstationContainer & substations,
+                                std::vector<int> & all_pos_topo_vect,
+                                const std::string & el_name) const
+        {
+            check_valid_osc(nb_bus, nb_sub, substations, all_pos_topo_vect, el_name);
+            check_all_finite(target_p_mw_, el_name + " target_p_mw");
+            check_all_finite(target_q_mvar_, el_name + " target_q_mvar");
+        }
+
         OneSideContainer_PQ::StateRes get_osc_pq_state() const  // osc: one side element
         {
             std::vector<real_type> target_p_mw(target_p_mw_.begin(), target_p_mw_.end());

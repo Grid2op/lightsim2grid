@@ -250,7 +250,64 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     // fused-bus representative lookup -- must run after substations_ is restored
     // above, same reasoning as set_ls_to_orig() (validates against total_bus()).
     set_bus_fusion_rep(IntVect::Map(bus_fusion_rep.data(), bus_fusion_rep.size()));
+
+    // Now that every container has been restored, validate the whole grid: a
+    // pickle or binary file is only length-checked while being read, so an
+    // out-of-range bus / substation / topo-vector index (or a NaN electrical
+    // value) would otherwise slip through and cause an out-of-bounds access on
+    // the next powerflow. check_grid() turns that into a clean exception here.
+    check_grid();
 };
+
+void LSGrid::check_grid() const
+{
+    const int nb_bus = static_cast<int>(substations_.nb_bus());
+    const int nb_sub = substations_.nb_sub();
+
+    // Per-container range + finiteness checks. Each container appends the
+    // pos_topo_vect entries it carries (an optional field) to all_pos_topo_vect
+    // for the global permutation check below.
+    std::vector<int> all_pos_topo_vect;
+    powerlines_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    trafos_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    shunts_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    generators_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    loads_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    sgens_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    storages_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    hvdc_lines_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    svcs_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+
+    // pos_topo_vect is grid2op-specific and optional: it is either set on every
+    // topology-participating element or on none. When set, the collected values
+    // must be a permutation of [0, dim_topo) -- that is exactly what makes it
+    // safe to index the (dim_topo-sized) arrays passed to update_topo(). K here
+    // is dim_topo; K distinct values all in [0, K) is precisely a permutation.
+    if(!all_pos_topo_vect.empty())
+    {
+        const int dim_topo = static_cast<int>(all_pos_topo_vect.size());
+        std::vector<char> seen(dim_topo, 0);
+        for(int pos : all_pos_topo_vect)
+        {
+            if((pos < 0) || (pos >= dim_topo))
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: a position in the topology vector (" << pos
+                     << ") is out of range [0, " << dim_topo << "). The pos_topo_vect of all "
+                     << "elements must form a permutation of [0, dim_topo).";
+                throw std::out_of_range(exc_.str());
+            }
+            if(seen[pos])
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: the position " << pos << " in the topology vector is "
+                     << "assigned to more than one element (pos_topo_vect values must be unique).";
+                throw std::runtime_error(exc_.str());
+            }
+            seen[pos] = 1;
+        }
+    }
+}
 
 void LSGrid::save_binary(const std::string & path, bool atomic) const {
     ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
