@@ -513,6 +513,21 @@ class LS2G_API LSGrid final
         LSGrid::StateRes get_state() const ;
         void set_state(LSGrid::StateRes & my_state) ;
 
+        // Whole-grid consistency check. Verifies that every index the grid carries
+        // (element bus ids, substation ids, position in the topology vector,
+        // generator slack and remote-regulated bus references) is in range for this
+        // grid, and that the physical input arrays contain no NaN / +-Inf. Throws
+        // std::out_of_range on an out-of-range index and std::runtime_error on a
+        // structural / finiteness error.
+        //
+        // Called automatically at the end of set_state() (so loading a pickle or a
+        // binary file cannot leave an out-of-range index that would later cause an
+        // out-of-bounds read/write during a powerflow), and exposed to Python so the
+        // grid loaders (pandapower / pypowsybl / matpower / powermodels) can call it
+        // right after building a grid. Runs in O(number of elements), off the solver
+        // hot path.
+        void check_grid() const;
+
         // fast binary serialization (additive alternative to pickle, see
         // BinaryArchive.hpp -- readable by any lightsim2grid version sharing
         // the same BINARY_FORMAT_VERSION)

@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <sstream>
+#include <cmath>  // for std::isfinite (check_valid)
 
 namespace ls2g {
 
@@ -124,6 +125,64 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     gen_slack_weight_ = slack_weight;
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
     reset_results();
+}
+
+void GeneratorContainer::check_valid(int nb_bus,
+                                     int nb_sub,
+                                     const SubstationContainer & substations,
+                                     std::vector<int> & all_pos_topo_vect) const
+{
+    // one-side (bus / subid / pos_topo_vect) + (p, q) finiteness checks
+    check_valid_osc_pq(nb_bus, nb_sub, substations, all_pos_topo_vect, "generator");
+
+    // generator-specific electrical inputs must be finite
+    check_all_finite(target_vm_pu_, "generator target_vm_pu");
+    check_all_finite(min_q_, "generator min_q");
+    check_all_finite(max_q_, "generator max_q");
+
+    // slack coherence + remote-regulated bus id range
+    const int nb_gen = nb();
+    const bool has_slack_info = !gen_slackbus_.empty();
+    const bool has_reg_info = regulated_bus_id_.size() > 0;
+    bool any_slack = false;
+    bool any_connected_slack = false;
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+    {
+        if(has_reg_info)
+        {
+            // regulated bus may be -1 (no remote regulation / disconnected)
+            const int reg = regulated_bus_id_(gen_id);
+            if((reg != _deactivated_bus_id) && ((reg < 0) || (reg >= nb_bus)))
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: generator id " << gen_id << " regulates bus id "
+                     << reg << " which is out of range [0, " << nb_bus << ").";
+                throw std::out_of_range(exc_.str());
+            }
+        }
+        if(has_slack_info && gen_slackbus_[gen_id])
+        {
+            any_slack = true;
+            const real_type w = gen_slack_weight_[gen_id];
+            if((!std::isfinite(w)) || (w <= _tol_equal_float))
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: generator id " << gen_id
+                     << " is flagged as a slack but has a non-positive or non-finite slack weight ("
+                     << w << ").";
+                throw std::runtime_error(exc_.str());
+            }
+            if(status_[gen_id]) any_connected_slack = true;
+        }
+    }
+    // if a slack is declared at all, at least one slack generator must be connected
+    // (the powerflow cannot solve otherwise). We do NOT require a slack to exist:
+    // that stays the solver's responsibility, exactly as before.
+    if(any_slack && !any_connected_slack)
+    {
+        throw std::runtime_error("LSGrid::check_grid: at least one generator is flagged as a "
+                                 "slack, but none of the slack generators is connected.");
+    }
 }
 
 RealVect GeneratorContainer::get_slack_weights_solver(

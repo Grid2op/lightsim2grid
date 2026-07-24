@@ -467,6 +467,15 @@ class OneSideContainer : public GenericContainer
             // nothing to do by default
         };
 
+        // Whole-grid semantic validation (see GenericContainer::check_valid / LSGrid::check_grid).
+        void check_valid(int nb_bus,
+                         int nb_sub,
+                         const SubstationContainer & substations,
+                         std::vector<int> & all_pos_topo_vect) const override
+        {
+            check_valid_osc(nb_bus, nb_sub, substations, all_pos_topo_vect, "element");
+        }
+
         void _check_pos_topo_vect_filled(){
             if((nb() > 0) && (pos_topo_vect_.size() == 0)){
                 // TODO DEBUG MODE: only check in debug mode
@@ -492,6 +501,77 @@ class OneSideContainer : public GenericContainer
         Eigen::Ref<RealVect> get_res_p() {return res_p_;}
         Eigen::Ref<RealVect> get_res_q() {return res_q_;}
         Eigen::Ref<RealVect> get_res_v() {return res_v_;}
+
+        // Range-checks bus_id_ / subid_ / pos_topo_vect_ for a grid with `nb_bus`
+        // buses and `nb_sub` substations, and appends the (optional) pos_topo_vect
+        // entries to `all_pos_topo_vect`. `el_name` is used only in error messages.
+        // NB subid_ and pos_topo_vect_ are optional (may be empty) -- they are only
+        // checked when populated.
+        void check_valid_osc(int nb_bus,
+                             int nb_sub,
+                             const SubstationContainer & substations,
+                             std::vector<int> & all_pos_topo_vect,
+                             const std::string & el_name) const
+        {
+            const int nb_el = nb();
+            const bool has_subid = subid_.size() > 0;          // optional
+            const bool has_topo  = pos_topo_vect_.size() > 0;  // optional
+            for(int el_id = 0; el_id < nb_el; ++el_id)
+            {
+                const int bus = bus_id_(el_id).cast_int();
+                const bool connected = status_[el_id];
+                if((bus != _deactivated_bus_id) && ((bus < 0) || (bus >= nb_bus)))
+                {
+                    std::ostringstream exc_;
+                    exc_ << "LSGrid::check_grid: " << el_name << " id " << el_id;
+                    if(el_id < static_cast<int>(names_.size())) exc_ << " ('" << names_[el_id] << "')";
+                    exc_ << " is on bus id " << bus << " which is out of range [0, " << nb_bus
+                         << ") (only " << _deactivated_bus_id << " is allowed, meaning disconnected).";
+                    throw std::out_of_range(exc_.str());
+                }
+                if(connected)
+                {
+                    if(bus == _deactivated_bus_id)
+                    {
+                        std::ostringstream exc_;
+                        exc_ << "LSGrid::check_grid: " << el_name << " id " << el_id
+                             << " is marked as connected (its status is true) but its bus id is "
+                             << _deactivated_bus_id << " (meaning disconnected).";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    if(!substations.is_bus_connected(GridModelBusId(bus)))
+                    {
+                        std::ostringstream exc_;
+                        exc_ << "LSGrid::check_grid: " << el_name << " id " << el_id
+                             << " is connected to bus id " << bus << " which is not an active bus.";
+                        throw std::runtime_error(exc_.str());
+                    }
+                }
+                if(has_subid)
+                {
+                    const int sub = subid_(el_id);
+                    if((sub < 0) || (sub >= nb_sub))
+                    {
+                        std::ostringstream exc_;
+                        exc_ << "LSGrid::check_grid: " << el_name << " id " << el_id
+                             << " has substation id " << sub << " out of range [0, " << nb_sub << ").";
+                        throw std::out_of_range(exc_.str());
+                    }
+                }
+                if(has_topo)
+                {
+                    const int pos = pos_topo_vect_(el_id);
+                    if(pos < 0)
+                    {
+                        std::ostringstream exc_;
+                        exc_ << "LSGrid::check_grid: " << el_name << " id " << el_id
+                             << " has a negative position in the topology vector (" << pos << ").";
+                        throw std::out_of_range(exc_.str());
+                    }
+                    all_pos_topo_vect.push_back(pos);
+                }
+            }
+        }
 
     protected:
         // physical properties
