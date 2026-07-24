@@ -1843,6 +1843,35 @@ const std::string DocLSGrid::LSGrid = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::check_grid = R"mydelimiter(
+    Check that the grid is internally consistent and safe to run a powerflow on.
+
+    It verifies that every index the grid carries is in range: the bus id of each
+    element (load, generator, static generator, storage, shunt, line, transformer,
+    hvdc line, static var compensator), the substation id and the position in the
+    topology vector (both optional), and the generator slack / remote-regulated bus
+    references. It also checks that the physical input arrays (line/transformer r,
+    x and shunt values, thermal limits, and the p / q / voltage set-points) contain
+    no ``NaN`` nor infinite value.
+
+    This is called automatically when a grid is loaded (from a pickle or from the
+    fast binary format), and by the grid loaders (from pandapower, pypowsybl,
+    matpower or powermodels). You normally do not need to call it yourself; it is
+    exposed so you can validate a grid you built or modified by hand.
+
+    Raises
+    ------
+    An ``IndexError`` (C++ ``std::out_of_range``) if an index is out of range, or a
+    ``RuntimeError`` (C++ ``std::runtime_error``) on a structural inconsistency or a
+    non-finite physical value. Returns ``None`` if the grid is consistent.
+
+    Notes
+    -----
+    Runs in time proportional to the number of elements in the grid, so it is cheap
+    compared to a powerflow.
+
+)mydelimiter";
+
 const std::string DocLSGrid::change_algorithm =  R"mydelimiter(
     This function allows to control which solver is used during the powerflow. See the section :ref:`available-powerflow-solvers` for 
     more information about them.

@@ -305,6 +305,11 @@ def init(net : pypo.network.Network,
     model.set_line_to_sub2_id(lex_sub["sub_id"].values)
     model.set_trafo_to_sub1_id(tor_sub["sub_id"].values)
     model.set_trafo_to_sub2_id(tex_sub["sub_id"].values)
+
+    # make sure the grid we just built is internally consistent (bus / substation
+    # / topology-vector indices in range, no NaN/Inf in the physical inputs)
+    model.check_grid()
+
     if not return_sub_id:
         return model
     else:
