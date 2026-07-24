@@ -159,24 +159,6 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         TwoSidesContainer_rxh_A() noexcept = default;
         ~TwoSidesContainer_rxh_A() noexcept override = default;
 
-        // Whole-grid semantic validation (see GenericContainer::check_valid): the
-        // two-sides (bus / subid / pos_topo_vect) checks plus finiteness of the
-        // branch electrical inputs (r, x, half-line shunts and thermal limits).
-        void check_valid(int nb_bus,
-                         int nb_sub,
-                         const SubstationContainer & substations,
-                         std::vector<int> & all_pos_topo_vect) const override
-        {
-            TwoSidesContainer<OneSideType>::check_valid(nb_bus, nb_sub, substations, all_pos_topo_vect);
-            this->check_all_finite(r_, "branch r");
-            this->check_all_finite(x_, "branch x");
-            this->check_all_finite(h_side_1_, "branch h_side_1");
-            this->check_all_finite(h_side_2_, "branch h_side_2");
-            // thermal limits are optional (may be empty)
-            if(limit_a1_ka_.size() > 0) this->check_all_finite(limit_a1_ka_, "branch limit_a1_ka");
-            if(limit_a2_ka_.size() > 0) this->check_all_finite(limit_a2_ka_, "branch limit_a2_ka");
-        }
-
         // pickle
         // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<

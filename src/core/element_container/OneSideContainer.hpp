@@ -467,6 +467,7 @@ class OneSideContainer : public GenericContainer
             // nothing to do by default
         };
 
+    public:
         // Whole-grid semantic validation (see GenericContainer::check_valid / LSGrid::check_grid).
         void check_valid(int nb_bus,
                          int nb_sub,
@@ -476,6 +477,7 @@ class OneSideContainer : public GenericContainer
             check_valid_osc(nb_bus, nb_sub, substations, all_pos_topo_vect, "element");
         }
 
+    protected:
         void _check_pos_topo_vect_filled(){
             if((nb() > 0) && (pos_topo_vect_.size() == 0)){
                 // TODO DEBUG MODE: only check in debug mode

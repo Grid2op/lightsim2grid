@@ -24,8 +24,8 @@ namespace py = pybind11;
 // raises RuntimeError instead of crashing or over-allocating. Loading a whole
 // grid additionally runs LSGrid::check_grid() (via set_state), so a byte-wise
 // well-formed but inconsistent grid -- an out-of-range bus / substation /
-// topology-vector index, or a non-finite value -- is rejected with an
-// IndexError (out-of-range index) or a RuntimeError (structural inconsistency).
+// topology-vector index -- is rejected with an IndexError (out-of-range index)
+// or a RuntimeError (structural inconsistency).
 //
 // These lambdas call ls2g::save_binary_generic/load_binary_generic directly
 // (rather than T::save_binary/T::load_binary): VERSION_MAJOR/MEDIUM/MINOR are

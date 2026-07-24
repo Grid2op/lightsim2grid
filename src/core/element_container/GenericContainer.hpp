@@ -10,7 +10,6 @@
 #define GENERIC_CONTAINER_H
 
 #include <algorithm>  // for std::find
-#include <cmath>      // for std::isfinite (see check_all_finite)
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -116,9 +115,8 @@ class LS2G_API GenericContainer : public BaseConstants
 
         Checks that every index this container carries (bus ids, substation ids,
         position in the topology vector, slack references...) is in range for a
-        grid with `nb_bus` buses and `nb_sub` substations, and that the physical
-        (electrical) input arrays contain no NaN / +-Inf. Throws std::out_of_range
-        on a bad index and std::runtime_error on a structural / finiteness error.
+        grid with `nb_bus` buses and `nb_sub` substations. Throws std::out_of_range
+        on a bad index and std::runtime_error on a structural error.
 
         `all_pos_topo_vect` is an accumulator: each container appends the
         `pos_topo_vect` values it actually carries (the field is optional and may
@@ -152,31 +150,6 @@ class LS2G_API GenericContainer : public BaseConstants
         static void check_size(const T & container, intType size, const std::string & container_name)
         {
             if(static_cast<intType>(container.size()) != size) throw std::runtime_error(container_name + " do not have the proper size");
-        }
-
-        /**
-        check that every element of `v` is a finite number (no NaN, no +-Inf).
-        Works for real vectors (Eigen or std) and complex vectors (both real and
-        imaginary parts must be finite). Throws std::runtime_error otherwise.
-        Used by check_valid() to keep NaN / Inf out of the physical input arrays.
-        **/
-        static bool _is_finite_val(real_type v) noexcept { return std::isfinite(v); }
-        static bool _is_finite_val(const cplx_type & v) noexcept {
-            return std::isfinite(v.real()) && std::isfinite(v.imag());
-        }
-        template<class VectCLS>  // a std::vector or an Eigen vector, real or complex
-        static void check_all_finite(const VectCLS & v, const std::string & name)
-        {
-            auto sz = v.size();
-            for(decltype(sz) i = 0; i < sz; ++i)
-            {
-                if(!_is_finite_val(v[i]))
-                {
-                    std::ostringstream exc_;
-                    exc_ << name << " contains a non-finite value (NaN or +-Inf) at position " << i << ".";
-                    throw std::runtime_error(exc_.str());
-                }
-            }
         }
 
         /**

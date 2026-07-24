@@ -71,11 +71,9 @@ the file, and it is validated at two levels:
 is internally consistent and safe to run a powerflow on. It checks that every
 index the grid carries is in range — the bus id of every element, the substation
 id and the position in the topology vector (both optional), and the generator
-slack and remote-regulated bus references — and that the physical input arrays
-(line / transformer ``r``, ``x`` and shunt values, thermal limits, and the
-``p`` / ``q`` / voltage set-points) contain no ``NaN`` or infinite value. It
-raises ``IndexError`` (an out-of-range index) or ``RuntimeError`` (a structural
-inconsistency or a non-finite value), and returns ``None`` for a consistent grid.
+slack and remote-regulated bus references. It raises ``IndexError`` (an
+out-of-range index) or ``RuntimeError`` (a structural inconsistency), and returns
+``None`` for a consistent grid.
 
 You normally do not need to call it yourself:
 

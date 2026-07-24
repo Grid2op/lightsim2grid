@@ -132,13 +132,8 @@ void GeneratorContainer::check_valid(int nb_bus,
                                      const SubstationContainer & substations,
                                      std::vector<int> & all_pos_topo_vect) const
 {
-    // one-side (bus / subid / pos_topo_vect) + (p, q) finiteness checks
-    check_valid_osc_pq(nb_bus, nb_sub, substations, all_pos_topo_vect, "generator");
-
-    // generator-specific electrical inputs must be finite
-    check_all_finite(target_vm_pu_, "generator target_vm_pu");
-    check_all_finite(min_q_, "generator min_q");
-    check_all_finite(max_q_, "generator max_q");
+    // one-side index checks (bus / subid / pos_topo_vect)
+    check_valid_osc(nb_bus, nb_sub, substations, all_pos_topo_vect, "generator");
 
     // slack coherence + remote-regulated bus id range
     const int nb_gen = nb();
