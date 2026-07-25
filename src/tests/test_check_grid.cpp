@@ -145,6 +145,29 @@ public:
     }
 };
 
+// The DC counterpart of PluginLikeAlgo: IS_AC == false, so LSGrid routes it to
+// the DC slot (see LSGrid::change_algorithm, which dispatches on IS_AC).
+class DcPluginLikeAlgo : public ls2g::BaseAlgo {
+public:
+    DcPluginLikeAlgo() : ls2g::BaseAlgo(/*is_ac=*/false) {}
+    bool compute_pf_dc(const ls2g::EigenRefConstRealSpMat & /*Bbus*/,
+                       const Eigen::Ref<const CplxVect> & V,
+                       const Eigen::Ref<const RealVect> & /*Pbus*/,
+                       const Eigen::Ref<const ls2g::IntVect> & /*slack_ids*/,
+                       const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                       const Eigen::Ref<const ls2g::IntVect> & /*pv*/,
+                       const Eigen::Ref<const ls2g::IntVect> & /*pq*/) override
+    {
+        V_ = V;
+        Va_ = V.array().arg();
+        Vm_ = V.array().abs();
+        n_ = static_cast<int>(V.size());
+        nr_iter_ = 1;
+        err_ = ls2g::ErrorType::NoError;
+        return true;
+    }
+};
+
 // A BaseAlgo that claims convergence but returns V/Va/Vm one entry too long.
 class WrongSizeAlgo : public ls2g::BaseAlgo {
 public:
@@ -398,7 +421,7 @@ TEST_CASE("a grid using a plugin solver round-trips through get_state/set_state"
     CHECK(restored.get_algo().get_name() == "__roundtrip_plugin_algo__");
 }
 
-TEST_CASE("a grid using a plugin solver can be copied", "[check_grid][plugin]")
+TEST_CASE("a grid using a plugin solver can be copied, and the copy uses that solver", "[check_grid][plugin]")
 {
     ls2g::AlgorithmRegistry::instance().register_solver(
         "__copy_plugin_algo__",
@@ -408,7 +431,60 @@ TEST_CASE("a grid using a plugin solver can be copied", "[check_grid][plugin]")
     grid.change_algorithm("__copy_plugin_algo__");
 
     LSGrid copied = grid.copy();
+
+    // the copy is on the same solver...
     CHECK(copied.get_algo().get_name() == "__copy_plugin_algo__");
+    CHECK(copied.get_algo_type() == ls2g::AlgorithmType::Custom);
+    // ... and it is a real, working instance of it, not just the name carried
+    // over: the factory has to have been called for this powerflow to run.
+    // PluginLikeAlgo returns the input voltages, so convergence means it ran.
+    const CplxVect V = copied.ac_pf(flat_start(copied), 20, 1e-8);
+    REQUIRE(V.size() > 0);
+    CHECK(copied.get_algo().converged());
+
+    // the copy is independent: re-selecting on the copy leaves the original be
+    copied.change_algorithm("NR_SparseLU");
+    CHECK(copied.get_algo().get_name() == "NR_SparseLU");
+    CHECK(grid.get_algo().get_name() == "__copy_plugin_algo__");
+    CHECK(grid.get_algo_type() == ls2g::AlgorithmType::Custom);
+}
+
+TEST_CASE("a grid using a DC plugin solver can be copied, and the copy uses that solver", "[check_grid][plugin]")
+{
+    // DC plugins land in the other selector (LSGrid routes on BaseAlgo::IS_AC),
+    // so copy() has to carry that one across by name too.
+    ls2g::AlgorithmRegistry::instance().register_solver(
+        "__copy_dc_plugin_algo__",
+        [] { return std::unique_ptr<ls2g::BaseAlgo>(new DcPluginLikeAlgo()); });
+
+    LSGrid grid = make_valid_grid();
+    grid.change_algorithm("__copy_dc_plugin_algo__");
+    REQUIRE(grid.get_dc_algo().get_name() == "__copy_dc_plugin_algo__");
+    REQUIRE(grid.get_algo().get_name() == "NR_SparseLU");  // AC slot untouched
+
+    LSGrid copied = grid.copy();
+    CHECK(copied.get_dc_algo().get_name() == "__copy_dc_plugin_algo__");
+    CHECK(copied.get_dc_algo_type() == ls2g::AlgorithmType::Custom);
+    // again: a live instance, proven by running a DC powerflow with it
+    const CplxVect V = copied.dc_pf(flat_start(copied), 1, 1e-8);
+    REQUIRE(V.size() > 0);
+    CHECK(copied.get_dc_algo().converged());
+}
+
+TEST_CASE("a grid using a DC plugin solver round-trips through get_state/set_state", "[check_grid][plugin]")
+{
+    ls2g::AlgorithmRegistry::instance().register_solver(
+        "__roundtrip_dc_plugin_algo__",
+        [] { return std::unique_ptr<ls2g::BaseAlgo>(new DcPluginLikeAlgo()); });
+
+    LSGrid grid = make_valid_grid();
+    grid.change_algorithm("__roundtrip_dc_plugin_algo__");
+
+    LSGrid::StateRes st = grid.get_state();
+    LSGrid restored;
+    REQUIRE_NOTHROW(restored.set_state(st));
+    CHECK(restored.get_dc_algo().get_name() == "__roundtrip_dc_plugin_algo__");
+    CHECK(restored.get_dc_algo_type() == ls2g::AlgorithmType::Custom);
 }
 
 TEST_CASE("loading a grid whose solver is not registered names it and how to get it", "[check_grid][plugin]")
