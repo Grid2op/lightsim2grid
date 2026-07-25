@@ -120,6 +120,31 @@ std::vector<int>& gen_regulated_bus(LSGrid::StateRes & st)
     return std::get<8>(std::get<LSGrid::GEN_ID>(st));
 }
 
+// A well-behaved AC solver (returns the input voltages, claims convergence).
+// Registered under a non-built-in name it stands in for a plugin solver, whose
+// AlgorithmType is the catch-all AlgorithmType::Custom.
+class PluginLikeAlgo : public ls2g::BaseAlgo {
+public:
+    PluginLikeAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
+    bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
+                    const Eigen::Ref<const CplxVect> & V,
+                    const Eigen::Ref<const CplxVect> & /*Sbus*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*slack_ids*/,
+                    const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pv*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pq*/,
+                    int /*max_iter*/, real_type /*tol*/) override
+    {
+        V_ = V;
+        Va_ = V.array().arg();
+        Vm_ = V.array().abs();
+        n_ = static_cast<int>(V.size());
+        nr_iter_ = 1;
+        err_ = ls2g::ErrorType::NoError;
+        return true;
+    }
+};
+
 // A BaseAlgo that claims convergence but returns V/Va/Vm one entry too long.
 class WrongSizeAlgo : public ls2g::BaseAlgo {
 public:
@@ -348,4 +373,111 @@ TEST_CASE("a solver returning non-finite voltages is reported as non-converged",
     CHECK_NOTHROW(res = grid.ac_pf(flat_start(grid), 20, 1e-8));
     CHECK(res.size() == 0);                       // diverged => empty result
     CHECK_FALSE(grid.get_algo().converged());     // marked non-converged, no NaN leaked
+}
+
+// --- a grid using an external (plugin) solver survives serialization ---------
+// The algorithm is stored by registry name, so a plugin solver round-trips (and
+// a grid using one can be copied). Storing AlgorithmType instead collapsed every
+// plugin onto AlgorithmType::Custom, which made both operations throw.
+
+TEST_CASE("a grid using a plugin solver round-trips through get_state/set_state", "[check_grid][plugin]")
+{
+    ls2g::AlgorithmRegistry::instance().register_solver(
+        "__roundtrip_plugin_algo__",
+        [] { return std::unique_ptr<ls2g::BaseAlgo>(new PluginLikeAlgo()); });
+
+    LSGrid grid = make_valid_grid();
+    grid.change_algorithm("__roundtrip_plugin_algo__");
+    REQUIRE(grid.get_algo_type() == ls2g::AlgorithmType::Custom);
+
+    LSGrid::StateRes st = grid.get_state();
+    LSGrid restored;
+    REQUIRE_NOTHROW(restored.set_state(st));
+    // the *same* plugin solver is selected again, not a silent fallback
+    CHECK(restored.get_algo_type() == ls2g::AlgorithmType::Custom);
+    CHECK(restored.get_algo().get_name() == "__roundtrip_plugin_algo__");
+}
+
+TEST_CASE("a grid using a plugin solver can be copied", "[check_grid][plugin]")
+{
+    ls2g::AlgorithmRegistry::instance().register_solver(
+        "__copy_plugin_algo__",
+        [] { return std::unique_ptr<ls2g::BaseAlgo>(new PluginLikeAlgo()); });
+
+    LSGrid grid = make_valid_grid();
+    grid.change_algorithm("__copy_plugin_algo__");
+
+    LSGrid copied = grid.copy();
+    CHECK(copied.get_algo().get_name() == "__copy_plugin_algo__");
+}
+
+TEST_CASE("loading a grid whose solver is not registered names it and how to get it", "[check_grid][plugin]")
+{
+    ls2g::AlgorithmRegistry::instance().register_solver(
+        "__vanishing_plugin_algo__",
+        [] { return std::unique_ptr<ls2g::BaseAlgo>(new PluginLikeAlgo()); });
+
+    LSGrid grid = make_valid_grid();
+    grid.change_algorithm("__vanishing_plugin_algo__");
+    LSGrid::StateRes st = grid.get_state();
+
+    // simulate loading in a process where that plugin was never loaded
+    std::get<LSGrid::AC_ALGO_NAME_ID>(st) = "__a_plugin_nobody_loaded__";
+
+    LSGrid restored;
+    REQUIRE_THROWS_AS(restored.set_state(st), std::runtime_error);
+    try {
+        LSGrid again;
+        again.set_state(st);
+    } catch (const std::runtime_error & e) {
+        const std::string msg = e.what();
+        CHECK(msg.find("__a_plugin_nobody_loaded__") != std::string::npos);   // names the solver
+        CHECK(msg.find("load_algorithm_plugin") != std::string::npos);        // says what to do
+    }
+}
+
+TEST_CASE("a grid whose solver is unavailable still loads without the algorithm", "[check_grid][plugin]")
+{
+    ls2g::AlgorithmRegistry::instance().register_solver(
+        "__escape_hatch_plugin_algo__",
+        [] { return std::unique_ptr<ls2g::BaseAlgo>(new PluginLikeAlgo()); });
+
+    LSGrid grid = make_valid_grid();
+    grid.change_algorithm("__escape_hatch_plugin_algo__");
+    LSGrid::StateRes st = grid.get_state();
+    std::get<LSGrid::AC_ALGO_NAME_ID>(st) = "__not_loaded_here__";
+
+    // strict load refuses...
+    LSGrid strict;
+    CHECK_THROWS_AS(strict.set_state(st), std::runtime_error);
+
+    // ... but the grid data itself loads fine when the solver is not restored,
+    // keeping this object's default solver.
+    LSGrid lenient;
+    REQUIRE_NOTHROW(lenient.set_state(st, /*restore_algorithm=*/false));
+    CHECK(lenient.get_algo().get_name() == "NR_SparseLU");   // the default
+    CHECK(lenient.get_loads().nb() == grid.get_loads().nb());  // data is there
+    CHECK_NOTHROW(lenient.check_grid());
+    // and it can still run a powerflow with that default solver
+    const CplxVect V = lenient.ac_pf(flat_start(lenient), 20, 1e-8);
+    CHECK(V.size() > 0);
+}
+
+TEST_CASE("a corrupted solver name is escaped in the error message", "[check_grid][plugin]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    // raw bytes, as a corrupted file would hold: they must not reach what() as-is
+    // (pybind11 would raise UnicodeDecodeError instead of our RuntimeError).
+    std::get<LSGrid::AC_ALGO_NAME_ID>(st) = std::string("\xff\xfe bad", 7);
+
+    LSGrid restored;
+    try {
+        restored.set_state(st);
+        FAIL("expected set_state to throw");
+    } catch (const std::runtime_error & e) {
+        const std::string msg = e.what();
+        CHECK(msg.find("\xff") == std::string::npos);   // escaped, not raw
+        CHECK(msg.find("\\xff") != std::string::npos);
+    }
 }

@@ -45,11 +45,10 @@ std::string supported_formats_str()
     return oss.str();
 }
 
-// Strings read from a (possibly corrupted) file must be escaped before being
-// embedded in an exception message: pybind11 converts what() to a python str
-// as UTF-8, and raw garbage bytes would turn the intended RuntimeError into a
-// UnicodeDecodeError (found by the corruption-sweep test). Also truncated,
-// so a corrupted length cannot produce a message megabytes long.
+}  // anonymous namespace
+
+// (declared in BinaryArchive.hpp -- also used by LSGrid::set_state, which
+// embeds the solver name read from the file in its error message)
 std::string printable(const std::string & s)
 {
     const std::size_t max_len = 64;
@@ -67,8 +66,6 @@ std::string printable(const std::string & s)
     if (s.size() > max_len) oss << "... (" << s.size() << " chars)";
     return oss.str();
 }
-
-}  // anonymous namespace
 
 BinaryArchive::BinaryArchive(const std::string & path, Mode mode, bool atomic_write):
     mode_(mode),

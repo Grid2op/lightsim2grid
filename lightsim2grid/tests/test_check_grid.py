@@ -154,6 +154,22 @@ class TestCheckGrid(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.grid.set_ac_algo_config(cfg)
 
+    def test_load_binary_without_algorithm(self):
+        # the escape hatch for a grid saved with a solver that is not available
+        # here (typically a plugin that has not been loaded): the grid data loads,
+        # only the solver selection is skipped.
+        import tempfile, os
+        from lightsim2grid.lightsim2grid_cpp import LSGrid
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "grid.lsb")
+            self.grid.save_binary(path)
+            loaded = LSGrid.load_binary_without_algorithm(path)
+            self.assertIsNone(loaded.check_grid())
+            self.assertEqual(len(loaded.get_loads()), self.n_load)
+            # and it is usable: a powerflow runs with the default solver
+            V = loaded.ac_pf(np.ones(loaded.total_bus(), dtype=complex), 20, 1e-8)
+            self.assertGreater(V.shape[0], 0)
+
     def test_pickle_roundtrip_of_valid_grid(self):
         # pickling goes through set_state on load, which runs check_grid(); a valid
         # grid must round-trip cleanly.
