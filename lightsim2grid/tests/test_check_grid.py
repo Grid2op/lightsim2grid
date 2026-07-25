@@ -154,6 +154,19 @@ class TestCheckGrid(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.grid.set_ac_algo_config(cfg)
 
+    def test_every_registered_solver_name_is_valid(self):
+        # A solver name is persisted in every saved grid and re-selects the solver
+        # on load, so it is restricted to [A-Za-z_][A-Za-z0-9_.]{0,63} (rejecting
+        # non-ASCII homoglyphs of a built-in name, control characters, and
+        # unbounded lengths). Guards against a built-in ever gaining a bad name.
+        import re
+        pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,63}$")
+        names = self.grid.available_algorithm_names()
+        self.assertGreater(len(names), 0)
+        for name in names:
+            with self.subTest(name):
+                self.assertRegex(name, pattern)
+
     def test_load_binary_without_algorithm(self):
         # the escape hatch for a grid saved with a solver that is not available
         # here (typically a plugin that has not been loaded): the grid data loads,
