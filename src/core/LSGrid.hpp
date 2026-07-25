@@ -782,8 +782,8 @@ class LS2G_API LSGrid final
         void change_bus2_powerline_python(int powerline_id, int new_gridmodel_bus_id) {
             change_bus2_powerline(powerline_id, GridModelBusId(new_gridmodel_bus_id));
         }
-        int get_bus1_powerline(int powerline_id) {return powerlines_.get_bus_side_1(powerline_id).cast_int();}
-        int get_bus2_powerline(int powerline_id) {return powerlines_.get_bus_side_2(powerline_id).cast_int();}
+        int get_bus1_powerline(int powerline_id) const {return powerlines_.get_bus_side_1(powerline_id).cast_int();}
+        int get_bus2_powerline(int powerline_id) const {return powerlines_.get_bus_side_2(powerline_id).cast_int();}
 
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, algo_controler_); }
@@ -822,10 +822,10 @@ class LS2G_API LSGrid final
         void change_bus2_trafo_python(int trafo_id, int new_gridmodel_bus_id) {
             change_bus2_trafo(trafo_id, GridModelBusId(new_gridmodel_bus_id));
         }
-        int get_bus1_trafo(int trafo_id) {
+        int get_bus1_trafo(int trafo_id) const {
             return trafos_.get_bus_side_1(trafo_id).cast_int();
         }
-        int get_bus2_trafo(int trafo_id) {
+        int get_bus2_trafo(int trafo_id) const {
             return trafos_.get_bus_side_2(trafo_id).cast_int();
         }
         void change_ratio_trafo(int trafo_id, real_type new_ratio){
@@ -1153,7 +1153,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::SparseMatrix<cplx_type> 
          */
-        Eigen::SparseMatrix<cplx_type> get_Ybus_solver(){
+        Eigen::SparseMatrix<cplx_type> get_Ybus_solver() const {
             return Ybus_ac_;  // This is copied to python
         }
 
@@ -1171,7 +1171,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::SparseMatrix<cplx_type> 
          */
-        Eigen::SparseMatrix<real_type> get_dcYbus_solver(){
+        Eigen::SparseMatrix<real_type> get_dcYbus_solver() const {
             return Bbus_dc_;  // This is copied to python (DC admittance matrix is real)
         }
 
@@ -1227,7 +1227,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        [[nodiscard]] const Eigen::SparseMatrix<cplx_type> get_Ybus() const {
+        [[nodiscard]] Eigen::SparseMatrix<cplx_type> get_Ybus() const {
             return _relabel_matrix(Ybus_ac_, id_ac_solver_to_me_);
         }
 
@@ -1247,7 +1247,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        [[nodiscard]] const Eigen::SparseMatrix<real_type> get_dcYbus() const {
+        [[nodiscard]] Eigen::SparseMatrix<real_type> get_dcYbus() const {
             return _relabel_matrix(Bbus_dc_, id_dc_solver_to_me_);
         }
 
@@ -1265,7 +1265,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        [[nodiscard]] const CplxVect get_Sbus() const {
+        [[nodiscard]] CplxVect get_Sbus() const {
             return _relabel_vector(acSbus_, id_ac_solver_to_me_);
         }
 
@@ -1283,7 +1283,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        [[nodiscard]] const RealVect get_dcSbus() const {
+        [[nodiscard]] RealVect get_dcSbus() const {
             return _relabel_vector(dcPbus_, id_dc_solver_to_me_);
         }
 
@@ -1315,12 +1315,12 @@ class LS2G_API LSGrid final
          * 
          * @return const Eigen::VectorXi
          */
-        [[nodiscard]] const GlobalBusIdVect get_pv() const{
+        [[nodiscard]] GlobalBusIdVect get_pv() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pv_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pv_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_pv: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
-        [[nodiscard]] const IntVect get_pv_numpy() const{
+        [[nodiscard]] IntVect get_pv_numpy() const{
             return get_pv().as_eigen();  // was _to_intvect()
         }
 
@@ -1352,12 +1352,12 @@ class LS2G_API LSGrid final
          * 
          * @return const Eigen::VectorXi
          */
-        [[nodiscard]] const GlobalBusIdVect get_pq() const{
+        [[nodiscard]] GlobalBusIdVect get_pq() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pq_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pq_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_pq: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
-        [[nodiscard]] const IntVect get_pq_numpy() const{
+        [[nodiscard]] IntVect get_pq_numpy() const{
             return get_pq().as_eigen();  // was _to_intvect()
         }
 
@@ -1385,10 +1385,10 @@ class LS2G_API LSGrid final
          * 
          * @return const Eigen::VectorXi 
          */
-        [[nodiscard]] const GlobalBusIdVect get_slack_ids() const {
+        [[nodiscard]] GlobalBusIdVect get_slack_ids() const {
             return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(slack_bus_id_ac_solver_, id_ac_solver_to_me_);
         }
-        [[nodiscard]] const IntVect get_slack_ids_numpy() const {
+        [[nodiscard]] IntVect get_slack_ids_numpy() const {
             return get_slack_ids().as_eigen();  // was _to_intvect()
         }
 
@@ -1409,9 +1409,9 @@ class LS2G_API LSGrid final
             return slack_bus_id_dc_solver_.as_eigen();  // was _to_intvect()
         }
 
-        [[nodiscard]] const GlobalBusIdVect get_slack_ids_dc() const{
+        [[nodiscard]] GlobalBusIdVect get_slack_ids_dc() const{
             return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(
-                slack_bus_id_dc_solver_, 
+                slack_bus_id_dc_solver_,
                 id_dc_solver_to_me_);
         }
         /**
@@ -1419,7 +1419,7 @@ class LS2G_API LSGrid final
          * 
          * @return const Eigen::VectorXi 
          */
-        [[nodiscard]] const IntVect get_slack_ids_dc_numpy() const{
+        [[nodiscard]] IntVect get_slack_ids_dc_numpy() const{
             return get_slack_ids_dc().as_eigen();  // was _to_intvect()
         }
 
@@ -1441,7 +1441,7 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const RealVect> 
          */
-        [[nodiscard]] const RealVect get_slack_weights() const{
+        [[nodiscard]] RealVect get_slack_weights() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_slack_weights_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_slack_weights_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_slack_weights: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
@@ -1461,7 +1461,7 @@ class LS2G_API LSGrid final
          * 
          * @return CplxVect
          */
-        [[nodiscard]] const CplxVect get_V() const{
+        [[nodiscard]] CplxVect get_V() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_V_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_V_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_V: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
@@ -1481,7 +1481,7 @@ class LS2G_API LSGrid final
          * 
          * @return const RealVect
          */
-        [[nodiscard]] const RealVect get_Va() const{
+        [[nodiscard]] RealVect get_Va() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_Va_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_Va_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_Va: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
@@ -1501,7 +1501,7 @@ class LS2G_API LSGrid final
          * 
          * @return const RealVect
          */
-        [[nodiscard]] const RealVect get_Vm() const{
+        [[nodiscard]] RealVect get_Vm() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_Vm_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_Vm_solver(), id_dc_solver_to_me_);
             throw std::runtime_error("LSGrid::get_Vm: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");

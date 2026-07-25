@@ -52,7 +52,7 @@ class LS2G_API PandaPowerConverter final : public BaseConstants
                                const Eigen::Ref<const RealVect> & trafo_sn_trafo_mva,
                                const Eigen::Ref<const RealVect> & trafo_pfe_kw,
                                const Eigen::Ref<const RealVect> & trafo_i0_pct,
-                               bool trafo_model_is_t);
+                               bool trafo_model_is_t) const;
 
         /**
         This converts the trafo from pandapower to r, x and h (pair unit) (for legacy (<= 2.14.somthing) pandapower)
@@ -70,7 +70,7 @@ class LS2G_API PandaPowerConverter final : public BaseConstants
                                const Eigen::Ref<const RealVect> & trafo_vkr_percent,
                                const Eigen::Ref<const RealVect> & trafo_sn_trafo_mva,
                                const Eigen::Ref<const RealVect> & trafo_pfe_kw,
-                               const Eigen::Ref<const RealVect> & trafo_i0_pct);
+                               const Eigen::Ref<const RealVect> & trafo_i0_pct) const;
 
 
         /**
@@ -84,7 +84,7 @@ class LS2G_API PandaPowerConverter final : public BaseConstants
                                  const Eigen::Ref<const RealVect> & branch_g,
                                  const Eigen::Ref<const RealVect> & branch_c,
                                  const Eigen::Ref<const RealVect> & branch_from_kv,
-                                 const Eigen::Ref<const RealVect> & branch_to_kv);
+                                 const Eigen::Ref<const RealVect> & branch_to_kv) const;
         /**
         pair unit properly the powerlines (for most recent pandapower)
         **/
@@ -97,14 +97,14 @@ class LS2G_API PandaPowerConverter final : public BaseConstants
                           const Eigen::Ref<const RealVect> & branch_g,
                           const Eigen::Ref<const RealVect> & branch_c,
                           const Eigen::Ref<const RealVect> & branch_from_kv,
-                          const Eigen::Ref<const RealVect> & branch_to_kv);
+                          const Eigen::Ref<const RealVect> & branch_to_kv) const;
 
     private:
         real_type sn_mva_;
         real_type f_hz_;
 
     private:
-        void _check_init();
+        void _check_init() const;
 };
 
 // TODO have a converter from ppc !
