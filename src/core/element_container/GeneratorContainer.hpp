@@ -281,7 +281,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         
         void cout_v(){
             for(const auto & el : target_vm_pu_){
-                std::cout << "V " << el << std::endl;
+                std::cout << "V " << el << '\n';
             }
         }
 

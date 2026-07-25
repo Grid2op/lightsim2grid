@@ -426,7 +426,7 @@ class LS2G_API BaseAlgo : public BaseConstants
             timer_total_nr_ = 0.;
         }
 
-        bool is_linear_solver_valid(){
+        bool is_linear_solver_valid() const {
             // bool res = true;
             // if((err_ == ErrorType::NotInitError) || (err_ == ErrorType::LicenseError)) res = false;  // cannot use a non intialize solver
             // return res;
