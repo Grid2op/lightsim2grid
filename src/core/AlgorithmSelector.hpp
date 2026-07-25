@@ -113,6 +113,12 @@ class LS2G_API AlgorithmSelector final
 
         AlgorithmType get_type() const { return _algo_type; }
 
+        // Registry name of the currently selected algorithm. Unlike get_type(),
+        // this stays meaningful for external (plugin) solvers, whose type is the
+        // catch-all AlgorithmType::Custom: it is what gets serialized, so a grid
+        // using a plugin can be restored (see LSGrid::get_state/set_state).
+        const std::string& get_name() const { return _algo_name; }
+
         // Polymorphic (instance-level) capability queries: unlike the
         // type-keyed overloads above (needed by LSGrid::change_algorithm to
         // route BEFORE a solver is constructed), these ask the CURRENTLY
@@ -335,6 +341,10 @@ class LS2G_API AlgorithmSelector final
             return get_prt_solver("get_error", true)->get_error();
         }
 
+        void set_error(ErrorType error) {
+            get_prt_solver("set_error", true)->set_error(error);
+        }
+
         int get_nb_iter() const {
             return get_prt_solver("get_nb_iter", true)->get_nb_iter();
         }
@@ -379,6 +389,7 @@ class LS2G_API AlgorithmSelector final
 
         std::unique_ptr<BaseAlgo> _algo;
         AlgorithmType _algo_type;
+        std::string _algo_name;  // registry name; survives for plugin solvers
         AlgorithmType _algo_type_used_for_nr;
         const LSGrid* _gridmodel_ptr;
 };

@@ -481,11 +481,17 @@ class TestCorruptionSweep(unittest.TestCase):
             f.write(corrupted)
         try:
             self.grid_cls.load_binary(bad_path)
-        except RuntimeError:
-            pass  # corruption detected and rejected cleanly: fine
+        except (RuntimeError, IndexError):
+            # Corruption detected and rejected cleanly. RuntimeError comes from the
+            # byte layer (BinaryArchive: bad magic/version/type, truncation,
+            # corrupted length). IndexError comes from the semantic layer
+            # (check_grid, run on load): a file that is byte-wise well-formed but
+            # carries an out-of-range index (bus / substation / topology-vector).
+            # Either way it is a clean, catchable exception -- never a crash.
+            pass
         except BaseException as exc:
             self.fail(f"{description}: load_binary raised {type(exc).__name__} "
-                      f"instead of RuntimeError: {exc}")
+                      f"instead of RuntimeError / IndexError: {exc}")
 
     def test_single_byte_flips(self):
         """Invert one byte at every offset of the file."""
@@ -574,7 +580,7 @@ class TestSerializedEnumValues(unittest.TestCase):
 # bump) with: python -m lightsim2grid.tests.test_binary_serialization regen
 FIXTURE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "binary_format_fixture",
-                            "case14_sandbox_format3.lsb")
+                            "case14_sandbox_format4.lsb")
 FIXTURE_ENV_NAME = "l2rpn_case14_sandbox"
 FIXTURE_N_SUB = 14
 FIXTURE_N_LOAD = 11

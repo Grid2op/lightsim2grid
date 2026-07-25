@@ -158,7 +158,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
     public:
         TwoSidesContainer_rxh_A() noexcept = default;
         ~TwoSidesContainer_rxh_A() noexcept override = default;
-        
+
         // pickle
         // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<

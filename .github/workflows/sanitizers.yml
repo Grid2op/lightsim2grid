@@ -67,7 +67,9 @@ jobs:
             test_DCSecurityAnlysis \
             test_SecurityAnlysis_cpp \
             test_ContingencyAnalysis_limit_violations \
-            test_ContingencyAnalysis_split
+            test_ContingencyAnalysis_split \
+            test_check_grid \
+            test_LSGrid_out_of_bounds
 
   debug_asserts:
     # Release wheels are compiled with NDEBUG, which silences every Eigen

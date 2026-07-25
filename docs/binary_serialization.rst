@@ -60,20 +60,42 @@ Individual element containers work the same way:
     corrupted internal sizes (every count in the file is checked against the real file size *before*
     anything is allocated), files that contain an object of a different type (*eg* loading a
     ``LoadContainer`` file with ``StorageContainer.load_binary``), and files with unexpected trailing
-    bytes are all rejected. ``save_binary`` on the other hand is **atomic by default**: it writes to a
+    bytes are all rejected. On top of that byte-level validation, loading a whole grid also runs
+    :py:meth:`LSGrid.check_grid` (the same consistency check used everywhere a grid is loaded): a file
+    that is byte-wise well-formed but carries an out-of-range index (bus / substation /
+    topology-vector) is rejected with an ``IndexError`` (out-of-range index) or a ``RuntimeError``
+    (structural inconsistency) rather than being loaded into a state that would fault on the next
+    powerflow. ``save_binary`` on the other hand is **atomic by default**: it writes to a
     temporary file that only replaces the destination once fully written, so an interrupted save never
     destroys a previously saved file. Pass ``atomic=False`` to write the destination directly instead
     (marginally faster -- it skips one temporary file and rename -- but without that protection).
+
+.. note::
+    **The solver is saved by name.** A grid records the *registry name* of the AC and DC
+    algorithm it was using (``'NR_SparseLU'``, or whatever a plugin registered itself as),
+    and ``load_binary`` re-selects the solver with that name. Two consequences:
+
+    - if that solver is not registered when you load the file -- a plugin you have not
+      loaded in this process, or a built-in needing an optional backend (KLU / NICSLU /
+      CKTSO) this build lacks -- ``load_binary`` raises, naming the solver and how to get
+      it. Use ``LSGrid.load_binary_without_algorithm(path)`` to load the grid *data* and
+      keep the default solvers instead, then pick one with ``change_algorithm``;
+    - a name is **not** a strong identity. If two different plugins register the same
+      solver name, the one loaded when the file is read is the one you get -- it may be a
+      completely different algorithm from the one that was used when the file was written,
+      with no way for lightsim2grid to notice. Give your plugin solvers distinctive names
+      (a project prefix, for instance) if you exchange files between environments.
 
 .. danger::
     Not even pickle is a *portable* format, and this binary format is even less so. Two
     rules to follow:
 
     - **Never load a binary file from a source you do not trust.** ``load_binary``
-      rejects structurally ill-formed input (see above), but it cannot tell a
-      legitimate grid from a maliciously crafted one that happens to be well-formed --
-      loading it still means trusting its content outright, the same way loading a
-      pickle file does.
+      rejects structurally ill-formed input and, via ``check_grid``, a grid with
+      out-of-range indices (see above), but a well-formed, internally-consistent
+      file can still carry adversarial *values* -- loading it
+      means trusting its content, the same way loading a pickle file does. See also
+      :ref:`security`.
     - **Generate the file on the machine that will consume it, with the same
       lightsim2grid version.** The format stores raw native data (same endianness,
       ``real_type``, ...) with no checksum and no cross-platform migration; the

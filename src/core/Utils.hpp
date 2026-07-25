@@ -63,6 +63,15 @@ enum class ErrorType {NoError,
                       LicenseError};
 std::ostream& operator<<(std::ostream& out, const ErrorType & error_type);
 
+// Escape (and truncate to 64 chars) a string of untrusted origin -- read from a
+// possibly-corrupted file, or supplied by a plugin -- before embedding it in an
+// exception message. pybind11 converts what() to a python str as UTF-8, so raw
+// garbage bytes would turn the intended RuntimeError into a UnicodeDecodeError;
+// control characters would also let a name inject newlines or terminal escape
+// sequences into logs. Truncation keeps a corrupted length from producing a
+// message megabytes long.
+LS2G_API std::string printable(const std::string & s);
+
 
 struct Coeff{
     Eigen::Index row_id;

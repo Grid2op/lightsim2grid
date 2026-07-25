@@ -63,11 +63,13 @@ LSGrid::LSGrid(const LSGrid & other)
     // static var compensators
     svcs_ = other.svcs_;
 
-    // assign the right solver
+    // assign the right solver. By *name*, not by AlgorithmType: an external
+    // (plugin) solver has type AlgorithmType::Custom, which the type-based
+    // overload rejects -- copying a grid using a plugin used to throw.
     reset(true, true, true);
-    _algo.change_algorithm(other.get_algo_type());
+    _algo.change_algorithm(other._algo.get_name());
     _algo.set_config(other.get_algo().get_config());
-    _dc_algo.change_algorithm(other.get_dc_algo_type());
+    _dc_algo.change_algorithm(other._dc_algo.get_name());
     _dc_algo.set_config(other.get_dc_algo().get_config());
 }
 
@@ -121,8 +123,8 @@ LSGrid::StateRes LSGrid::get_state() const
                             res_storage,
                             res_hvdc_line,
                             res_svc,
-                            get_algo_type(),
-                            get_dc_algo_type(),
+                            _algo.get_name(),
+                            _dc_algo.get_name(),
                             res_ac_algo_cfg,
                             res_dc_algo_cfg,
                             init_kwargs_keys,
@@ -132,7 +134,7 @@ LSGrid::StateRes LSGrid::get_state() const
     return res;
 };
 
-void LSGrid::set_state(LSGrid::StateRes & my_state)
+void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
 {
     // after loading back, the instance need to be reset anyway
     // TODO see if it's worth the trouble NOT to do it
@@ -225,21 +227,24 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
 
     // handle the solver
     reset(true, true, true);
-    _algo.change_algorithm(std::get<AC_ALGO_TYPE_ID>(my_state));
-    _dc_algo.change_algorithm(std::get<DC_ALGO_TYPE_ID>(my_state));
+    if (restore_algorithm) {
+        _restore_algorithm(_algo, std::get<AC_ALGO_NAME_ID>(my_state), "AC");
+        _restore_algorithm(_dc_algo, std::get<DC_ALGO_NAME_ID>(my_state), "DC");
 
-    // algo configs -- must be restored *after* change_algorithm() above,
-    // since set_config() operates on the currently-selected concrete solver
-    // (same order as the copy constructor)
-    AlgoConfig ac_algo_cfg;
-    ac_algo_cfg.int_params = std::get<0>(state_ac_algo_cfg);
-    ac_algo_cfg.real_params = std::get<1>(state_ac_algo_cfg);
-    set_ac_algo_config(ac_algo_cfg);
+        // algo configs -- must be restored *after* change_algorithm() above,
+        // since set_config() operates on the currently-selected concrete solver
+        // (same order as the copy constructor). They describe the tuning of the
+        // solver we just re-selected, so they are skipped together with it.
+        AlgoConfig ac_algo_cfg;
+        ac_algo_cfg.int_params = std::get<0>(state_ac_algo_cfg);
+        ac_algo_cfg.real_params = std::get<1>(state_ac_algo_cfg);
+        set_ac_algo_config(ac_algo_cfg);
 
-    AlgoConfig dc_algo_cfg;
-    dc_algo_cfg.int_params = std::get<0>(state_dc_algo_cfg);
-    dc_algo_cfg.real_params = std::get<1>(state_dc_algo_cfg);
-    set_dc_algo_config(dc_algo_cfg);
+        AlgoConfig dc_algo_cfg;
+        dc_algo_cfg.int_params = std::get<0>(state_dc_algo_cfg);
+        dc_algo_cfg.real_params = std::get<1>(state_dc_algo_cfg);
+        set_dc_algo_config(dc_algo_cfg);
+    }
 
     // relevant kwargs the grid was built with (eg by init_from_pypowsybl)
     init_kwargs_.clear();
@@ -250,7 +255,114 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     // fused-bus representative lookup -- must run after substations_ is restored
     // above, same reasoning as set_ls_to_orig() (validates against total_bus()).
     set_bus_fusion_rep(IntVect::Map(bus_fusion_rep.data(), bus_fusion_rep.size()));
+
+    // Now that every container has been restored, validate the whole grid: a
+    // pickle or binary file is only length-checked while being read, so an
+    // out-of-range bus / substation / topo-vector index (or a NaN electrical
+    // value) would otherwise slip through and cause an out-of-bounds access on
+    // the next powerflow. check_grid() turns that into a clean exception here.
+    check_grid();
 };
+
+void LSGrid::_restore_algorithm(AlgorithmSelector & algo_selector,
+                                const std::string & name,
+                                const char * ac_or_dc)
+{
+    // A name that cannot even be a solver name never was one: the state is
+    // corrupted (or was not produced by lightsim2grid). Say so, rather than
+    // sending the reader looking for a plugin that never existed.
+    if (!is_valid_solver_name(name)) {
+        std::ostringstream exc_;
+        exc_ << "LSGrid::set_state: the " << ac_or_dc << " solver name read from this state, '"
+             << printable(name) << "', is not a valid solver name (" << solver_name_rule()
+             << "). This state is corrupted.";
+        throw std::runtime_error(exc_.str());
+    }
+    if (AlgorithmRegistry::instance().is_registered(name)) {
+        algo_selector.change_algorithm(name);
+        return;
+    }
+    // The name was resolvable when the grid was saved but is not now. Either the
+    // solver comes from a plugin that has not been loaded in this process, or it
+    // needs an optional linear-algebra backend (KLU / NICSLU / CKTSO) this build
+    // was not compiled with. Say so, and say what to do about it -- the grid data
+    // itself is perfectly fine, only the solver choice cannot be honoured.
+    // `name` comes straight from the file: escape it (a corrupted one can hold
+    // arbitrary bytes, which would make pybind11 raise UnicodeDecodeError while
+    // converting what() instead of the RuntimeError we mean to report).
+    std::ostringstream exc_;
+    exc_ << "LSGrid::set_state: this grid was saved using the " << ac_or_dc
+         << " solver '" << printable(name) << "', which is not available here. ";
+    if (name.rfind("NR_", 0) == 0 || name.rfind("NRSing_", 0) == 0 ||
+        name.rfind("DC_", 0) == 0 || name.rfind("FDPF_", 0) == 0) {
+        exc_ << "It looks like a built-in solver relying on an optional linear-algebra "
+             << "backend (KLU / NICSLU / CKTSO) that this build of lightsim2grid does not "
+             << "include: reinstall lightsim2grid with that support, or re-save the grid "
+             << "after selecting a solver available everywhere (eg 'NR_SparseLU'). ";
+    } else {
+        exc_ << "It is most likely provided by a solver plugin: load it first with "
+             << "lightsim2grid.load_algorithm_plugin(<path to the plugin>), then load this "
+             << "grid again. ";
+    }
+    exc_ << "Solvers currently available: ";
+    const std::vector<std::string> available = AlgorithmRegistry::instance().available_algorithm_names();
+    for (std::size_t i = 0; i < available.size(); ++i) {
+        if (i) exc_ << ", ";
+        exc_ << "'" << available[i] << "'";
+    }
+    exc_ << ".";
+    throw std::runtime_error(exc_.str());
+}
+
+void LSGrid::check_grid() const
+{
+    const int nb_bus = static_cast<int>(substations_.nb_bus());
+    const int nb_sub = substations_.nb_sub();
+
+    // Per-container range + finiteness checks. Each container appends the
+    // pos_topo_vect entries it carries (an optional field) to all_pos_topo_vect
+    // for the global permutation check below.
+    std::vector<int> all_pos_topo_vect;
+    powerlines_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    trafos_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    shunts_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    generators_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    loads_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    sgens_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    storages_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    hvdc_lines_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    svcs_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+
+    // pos_topo_vect is grid2op-specific and optional: it is either set on every
+    // topology-participating element or on none. When set, the collected values
+    // must be a permutation of [0, dim_topo) -- that is exactly what makes it
+    // safe to index the (dim_topo-sized) arrays passed to update_topo(). K here
+    // is dim_topo; K distinct values all in [0, K) is precisely a permutation.
+    if(!all_pos_topo_vect.empty())
+    {
+        const int dim_topo = static_cast<int>(all_pos_topo_vect.size());
+        std::vector<char> seen(dim_topo, 0);
+        for(int pos : all_pos_topo_vect)
+        {
+            if((pos < 0) || (pos >= dim_topo))
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: a position in the topology vector (" << pos
+                     << ") is out of range [0, " << dim_topo << "). The pos_topo_vect of all "
+                     << "elements must form a permutation of [0, dim_topo).";
+                throw std::out_of_range(exc_.str());
+            }
+            if(seen[pos])
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: the position " << pos << " in the topology vector is "
+                     << "assigned to more than one element (pos_topo_vect values must be unique).";
+                throw std::runtime_error(exc_.str());
+            }
+            seen[pos] = 1;
+        }
+    }
+}
 
 void LSGrid::save_binary(const std::string & path, bool atomic) const {
     ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
@@ -1143,6 +1255,18 @@ void LSGrid::process_results(bool conv,
                                 SolverBusIdVect & id_me_to_solver)
 {
     if (conv){
+        // An external (plugin) solver can claim convergence but return malformed
+        // voltages. Validate their size/finiteness before we index them below
+        // (compute_results / _get_results_back_to_orig_nodes both index the solver
+        // vectors with an unchecked operator()).
+        // Only external solvers are checked: AlgorithmType::Custom is precisely
+        // "not one of the built-in solvers" (see name_to_algo_type), and the
+        // built-in ones are covered by the test suite, so they pay nothing here.
+        const bool is_external_algo =
+            (ac ? _algo.get_type() : _dc_algo.get_type()) == AlgorithmType::Custom;
+        if (is_external_algo) conv = _check_solver_output(ac);
+    }
+    if (conv){
         if(compute_results_){
             // compute the results of the flows, P,Q,V of loads etc.
             compute_results(ac);
@@ -1162,6 +1286,37 @@ void LSGrid::process_results(bool conv,
         reset_results();
         // TODO solver control ??? something to do here ?
     }
+}
+
+bool LSGrid::_check_solver_output(bool ac)
+{
+    const Eigen::Ref<const CplxVect> V  = ac ? _algo.get_V()  : _dc_algo.get_V();
+    const Eigen::Ref<const RealVect> Va = ac ? _algo.get_Va() : _dc_algo.get_Va();
+    const Eigen::Ref<const RealVect> Vm = ac ? _algo.get_Vm() : _dc_algo.get_Vm();
+    const int nb_bus_solver = ac ? static_cast<int>(id_ac_solver_to_me_.size())
+                                 : static_cast<int>(id_dc_solver_to_me_.size());
+    const char * algo_name = ac ? "AC" : "DC";
+
+    if((V.size() != nb_bus_solver) || (Va.size() != nb_bus_solver) || (Vm.size() != nb_bus_solver))
+    {
+        // wrong size = the solver broke its contract. This would cause an
+        // out-of-bounds read in compute_results / _get_results_back_to_orig_nodes.
+        std::ostringstream exc_;
+        exc_ << "LSGrid::process_results: the " << algo_name << " algorithm reported convergence but "
+             << "returned voltage vectors of an unexpected size (V: " << V.size() << ", Va: " << Va.size()
+             << ", Vm: " << Vm.size() << ", while the solver problem has " << nb_bus_solver
+             << " buses). This is a bug in the (possibly plugin) solver.";
+        throw std::runtime_error(exc_.str());
+    }
+    if((!V.allFinite()) || (!Va.allFinite()) || (!Vm.allFinite()))
+    {
+        // Non-finite voltage: a well-behaved solver reports this itself
+        // (ErrorType::InifiniteValue, non-convergence); a misbehaving one may not.
+        // Treat it as a non-converged solve so no NaN/Inf propagates to the results.
+        (ac ? _algo : _dc_algo).set_error(ErrorType::InifiniteValue);
+        return false;
+    }
+    return true;
 }
 
 void LSGrid::init_converter_bus_id(SolverBusIdVect& id_me_to_solver,

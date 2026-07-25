@@ -120,6 +120,19 @@ class TwoSidesContainer : public GenericContainer
 
         // public generic API
         size_t nb() const { return side_1_.nb(); }
+
+        // Whole-grid semantic validation (see GenericContainer::check_valid):
+        // each side is a full one-side container, so validate both. Derived
+        // classes (eg TwoSidesContainer_rxh_A) add the branch electrical checks.
+        void check_valid(int nb_bus,
+                         int nb_sub,
+                         const SubstationContainer & substations,
+                         std::vector<int> & all_pos_topo_vect) const override
+        {
+            side_1_.check_valid(nb_bus, nb_sub, substations, all_pos_topo_vect);
+            side_2_.check_valid(nb_bus, nb_sub, substations, all_pos_topo_vect);
+        }
+
         GridModelBusId get_bus_side_1(int el_id) const {return side_1_.get_bus(el_id);}
         GridModelBusId get_bus_side_2(int el_id) const {return side_2_.get_bus(el_id);}
         // Per-side connectivity: an element can be `connected_global` (the

@@ -64,6 +64,7 @@ This is a work in progress at the moment
    cpp_library
    solver_plugin
    binary_serialization
+   security
 
 
 Indices and tables

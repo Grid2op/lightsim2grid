@@ -110,6 +110,27 @@ class LS2G_API GenericContainer : public BaseConstants
                                 // nothing to do by default
                                 };
 
+        /**
+        Whole-grid semantic validation (see LSGrid::check_grid).
+
+        Checks that every index this container carries (bus ids, substation ids,
+        position in the topology vector, slack references...) is in range for a
+        grid with `nb_bus` buses and `nb_sub` substations. Throws std::out_of_range
+        on a bad index and std::runtime_error on a structural error.
+
+        `all_pos_topo_vect` is an accumulator: each container appends the
+        `pos_topo_vect` values it actually carries (the field is optional and may
+        be empty), so LSGrid can afterwards check they form a valid permutation.
+
+        The default does nothing; element containers override it.
+        **/
+        virtual void check_valid(int /*nb_bus*/,
+                                 int /*nb_sub*/,
+                                 const SubstationContainer & /*substations*/,
+                                 std::vector<int> & /*all_pos_topo_vect*/) const {
+                                // nothing to validate by default
+                                };
+
         void set_names(const std::vector<std::string> & names){
             names_ = names;
         }
