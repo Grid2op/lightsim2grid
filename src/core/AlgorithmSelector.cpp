@@ -34,6 +34,7 @@ FDPF_BX_SparseLU& AlgorithmSelector::get_fdpf_bx_lu() {
 
 AlgorithmSelector::AlgorithmSelector()
     : _algo_type(AlgorithmType::NR_SparseLU),
+      _algo_name("NR_SparseLU"),
       _algo_type_used_for_nr(AlgorithmType::NR_SparseLU),
       _gridmodel_ptr(nullptr)
 {
@@ -100,6 +101,7 @@ void AlgorithmSelector::change_algorithm(const std::string& name)
 
     _algo = std::move(new_algo);
     _algo_type = type;
+    _algo_name = name;  // keeps the plugin name, which `type` (Custom) loses
     _algo_type_used_for_nr = type;
 
     if (_gridmodel_ptr) _algo->set_lsgrid(_gridmodel_ptr);

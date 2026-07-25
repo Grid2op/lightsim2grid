@@ -296,6 +296,13 @@ class LS2G_API BaseAlgo : public BaseConstants
         ErrorType get_error() const {
             return err_;
         }
+        // Force the reported error state. Used by LSGrid to mark a solve as
+        // non-converged when a (possibly plugin) solver returned non-finite
+        // voltages while still claiming convergence -- see
+        // LSGrid::process_results / LSGrid::_check_solver_output.
+        void set_error(ErrorType error) {
+            err_ = error;
+        }
         int get_nb_iter() const {
             return nr_iter_;
         }

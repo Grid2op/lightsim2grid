@@ -60,6 +60,9 @@
 
 namespace ls2g {
 
+// NB `printable()` (used to escape strings read from a corrupted file before
+// embedding them in an error message) now lives in Utils.hpp, included above.
+
 // Version of the binary *format* itself, decoupled from the lightsim2grid
 // package version: all lightsim2grid releases sharing the same format number
 // can read each other's binary files (most releases do not touch the
@@ -73,7 +76,10 @@ namespace ls2g {
 // of being silently mis-read. If a future version wants to keep reading an
 // older format, add that format number to SUPPORTED_BINARY_FORMATS (in
 // BinaryArchive.cpp) together with the required migration code.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 3;
+// v4: the AC / DC algorithm is stored as its registry *name* (std::string)
+//     instead of an AlgorithmType enum, so a grid using an external (plugin)
+//     solver can be saved and restored -- see LSGrid::StateRes.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 4;
 
 class LS2G_API BinaryArchive
 {
@@ -389,9 +395,14 @@ void save_binary_generic(const T & obj, const std::string & path,
     ar.commit();
 }
 
-template<typename T>
-T load_binary_generic(const std::string & path,
-                       const std::string & v_major, const std::string & v_medium, const std::string & v_minor) {
+// Reads a binary file and forwards `extra` to set_state(). Used by LSGrid to
+// offer a load that does NOT restore the solver the grid was saved with (see
+// LSGrid::set_state's `restore_algorithm`); with no extra argument this is the
+// plain load_binary_generic below.
+template<typename T, typename... ExtraArgs>
+T load_binary_generic_with(const std::string & path,
+                           const std::string & v_major, const std::string & v_medium, const std::string & v_minor,
+                           ExtraArgs&&... extra) {
     BinaryArchive ar(path, BinaryArchive::Mode::Read);
     ar.check_header(T::binary_type_tag(), v_major, v_medium, v_minor);
     typename T::StateRes state{};
@@ -399,8 +410,14 @@ T load_binary_generic(const std::string & path,
     ar.check_fully_consumed();
     archive_detail::BinaryLoadFixup<T>::apply(state);
     T res{};
-    res.set_state(state);
+    res.set_state(state, std::forward<ExtraArgs>(extra)...);
     return res;
+}
+
+template<typename T>
+T load_binary_generic(const std::string & path,
+                       const std::string & v_major, const std::string & v_medium, const std::string & v_minor) {
+    return load_binary_generic_with<T>(path, v_major, v_medium, v_minor);
 }
 
 }  // namespace ls2g

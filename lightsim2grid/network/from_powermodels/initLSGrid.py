@@ -135,4 +135,10 @@ def init(network: dict,
     # init the HVDC lines, if any
     _aux_add_dc_line(model, network, pm_to_ls, isolated_ls_bus)
 
+    # make sure the grid we just built is internally consistent (bus / substation
+    # / topology-vector indices in range, no NaN/Inf in the physical inputs).
+    # This also covers grids loaded from matpower, which are converted to the
+    # powermodels format and routed through this function.
+    model.check_grid()
+
     return model

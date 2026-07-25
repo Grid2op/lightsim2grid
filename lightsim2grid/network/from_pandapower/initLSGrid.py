@@ -171,4 +171,8 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
     # deal with slack bus
     _aux_add_slack(model, pp_net, pp_to_ls, pp_orig_file)
 
+    # make sure the grid we just built is internally consistent (bus / substation
+    # / topology-vector indices in range, no NaN/Inf in the physical inputs)
+    model.check_grid()
+
     return model

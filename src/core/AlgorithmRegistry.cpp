@@ -26,8 +26,15 @@ void AlgorithmRegistry::register_solver(const std::string& name, Factory f, Ls2g
             "with [" + caller_tag.describe() + "]. Recompile the plugin with matching compiler/-march "
             "flags -- see docs/solver_plugin.rst, section \"Matching build flags\".");
     }
+    if (!is_valid_solver_name(name)) {
+        throw std::invalid_argument(
+            "AlgorithmRegistry: refusing to register the solver name '" + printable(name) + "': " +
+            solver_name_rule() + ". This name is written into every grid saved while the solver is "
+            "selected, and is what picks it again on load, so it is restricted to a character set "
+            "that cannot be confused with another solver's nor corrupt an error message.");
+    }
     if (_factories.count(name)) {
-        throw std::invalid_argument("AlgorithmRegistry: a solver named '" + name + "' is already registered.");
+        throw std::invalid_argument("AlgorithmRegistry: a solver named '" + printable(name) + "' is already registered.");
     }
     _factories[name] = std::move(f);
 }
@@ -43,12 +50,19 @@ void AlgorithmRegistry::register_all(FactoryMap batch, Ls2gAbiTag caller_tag) {
             "with [" + caller_tag.describe() + "]. Recompile the plugin with matching compiler/-march "
             "flags -- see docs/solver_plugin.rst, section \"Matching build flags\".");
     }
-    // Reject the whole batch if any name is already taken, *before* touching
-    // the live registry, so a rejected plugin never half-registers.
+    // Reject the whole batch if any name is invalid or already taken, *before*
+    // touching the live registry, so a rejected plugin never half-registers.
     for (const auto& kv : batch) {
+        if (!is_valid_solver_name(kv.first)) {
+            throw std::invalid_argument(
+                "AlgorithmRegistry: refusing to register the solver name '" + printable(kv.first) + "': " +
+                solver_name_rule() + ". This name is written into every grid saved while the solver is "
+                "selected, and is what picks it again on load, so it is restricted to a character set "
+                "that cannot be confused with another solver's nor corrupt an error message.");
+        }
         if (_factories.count(kv.first)) {
             throw std::invalid_argument(
-                "AlgorithmRegistry: a solver named '" + kv.first + "' is already registered.");
+                "AlgorithmRegistry: a solver named '" + printable(kv.first) + "' is already registered.");
         }
     }
     // Strong exception guarantee: assemble the merged table off to the side,

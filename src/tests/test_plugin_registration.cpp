@@ -137,14 +137,15 @@ TEST_CASE("plugin entry helper: a short error buffer is never overflowed", "[plu
     REQUIRE(std::strlen(errbuf) <= N - 1);   // never wrote past the buffer
 }
 
-TEST_CASE("plugin entry helper: a solver name longer than the buffer cannot overflow it", "[plugin]")
+TEST_CASE("plugin entry helper: a pathologically long solver name cannot overflow the buffer", "[plugin]")
 {
-    // The scenario from the review: a plugin registers a name so long that the
-    // resulting error message far exceeds the host's fixed 512-byte diagnostic
-    // buffer. The bounded write must truncate it, never overflow. Under valgrind
+    // A plugin supplies a name far longer than both the solver-name limit and the
+    // host's fixed 512-byte diagnostic buffer. It is rejected (see
+    // is_valid_solver_name), and the rejection has to come back as a return code
+    // plus a message that fits the buffer -- never an overflow, and never an
+    // exception escaping the extern "C" entry point. Under valgrind
     // (cpp_unit_tests workflow) this also proves there is no out-of-bounds write.
-    g_long_solver_name = std::string(1000, 'x');  // >> 512
-    ls2g::AlgorithmRegistry::instance().register_solver(g_long_solver_name, null_factory());
+    g_long_solver_name = std::string(1000, 'x');  // >> 512, and >> SOLVER_NAME_MAX_LEN
 
     constexpr std::size_t host_buf_size = 512;  // matches load_algorithm_plugin_impl
     char errbuf[host_buf_size];
@@ -152,14 +153,19 @@ TEST_CASE("plugin entry helper: a solver name longer than the buffer cannot over
 
     int rc = ls2g::detail::ls2g_run_plugin_entry(
         &ls2g::AlgorithmRegistry::instance(), errbuf, host_buf_size,
-        // staging the (already-registered) long name triggers the long
-        // "... is already registered" message, which contains the 1000-char name
         +[](ls2g::PluginRegistrar& r) { r.add(g_long_solver_name, null_factory()); },
         ls2g::ls2g_current_abi_tag());
 
     REQUIRE(rc != 0);
-    REQUIRE(errbuf[host_buf_size - 1] == '\0');          // terminated within bounds
-    REQUIRE(std::strlen(errbuf) <= host_buf_size - 1);   // never wrote past the buffer
+    // The buffer holds a proper C string: a NUL somewhere within bounds. (Unlike
+    // the short-buffer case above we do not require the NUL to land on the very
+    // last byte: printable() truncates the offending name, so the message may now
+    // be shorter than the buffer -- what matters is that it is terminated and
+    // that nothing was written past the end.)
+    REQUIRE(std::memchr(errbuf, '\0', host_buf_size) != nullptr);
+    REQUIRE(std::strlen(errbuf) < host_buf_size);
+    REQUIRE(std::strlen(errbuf) > 0);                    // a diagnostic was written
+    REQUIRE_FALSE(ls2g::AlgorithmRegistry::instance().is_registered(g_long_solver_name));
 }
 
 TEST_CASE("plugin entry helper: a null / zero-length buffer is handled safely", "[plugin]")
@@ -192,4 +198,64 @@ TEST_CASE("plugin entry helper: a null registry pointer is reported, not derefer
         ls2g::ls2g_current_abi_tag());
     REQUIRE(rc == 2);
     REQUIRE(std::strlen(errbuf) > 0);
+}
+
+// --- solver-name whitelist ---------------------------------------------------
+// A solver name is an identity: it is written into every serialized grid and is
+// what re-selects the solver on load. It is restricted to
+// [A-Za-z_][A-Za-z0-9_.]{0,63} -- see is_valid_solver_name.
+
+TEST_CASE("is_valid_solver_name accepts the names actually in use", "[plugin][solver_name]")
+{
+    // every built-in, and the names the shipped example plugins register
+    for (const char * name : {"NR_SparseLU", "NRSing_SparseLU", "DC_SparseLU",
+                              "GaussSeidel", "GaussSeidelSynch", "FDPF_XB_SparseLU",
+                              "NR_KLU", "NRRefactorRetry_CKTSO",
+                              "DummyExternal", "NR_LM_SparseLU", "NRDistSlack_KLU"}) {
+        INFO(name);
+        CHECK(ls2g::is_valid_solver_name(name));
+    }
+    // and the shapes we explicitly want to allow
+    CHECK(ls2g::is_valid_solver_name("_leading_underscore"));
+    CHECK(ls2g::is_valid_solver_name("acme.NR_fast"));   // namespaced (recommended)
+    CHECK(ls2g::is_valid_solver_name("solver_v2"));      // digits, not first
+    CHECK(ls2g::is_valid_solver_name("A"));              // shortest
+    CHECK(ls2g::is_valid_solver_name(std::string(ls2g::SOLVER_NAME_MAX_LEN, 'a')));
+}
+
+TEST_CASE("is_valid_solver_name rejects names that could confuse or corrupt", "[plugin][solver_name]")
+{
+    CHECK_FALSE(ls2g::is_valid_solver_name(""));                       // empty
+    CHECK_FALSE(ls2g::is_valid_solver_name(std::string(ls2g::SOLVER_NAME_MAX_LEN + 1, 'a')));  // too long
+    CHECK_FALSE(ls2g::is_valid_solver_name("2fast"));                  // leading digit
+    CHECK_FALSE(ls2g::is_valid_solver_name(".hidden"));                // leading dot
+    CHECK_FALSE(ls2g::is_valid_solver_name("NR-SparseLU"));            // hyphen not allowed
+    CHECK_FALSE(ls2g::is_valid_solver_name("NR SparseLU"));            // space
+    CHECK_FALSE(ls2g::is_valid_solver_name("../../etc/passwd"));       // path-like
+    CHECK_FALSE(ls2g::is_valid_solver_name("NR_SparseLU\nWARNING: x"));// log injection
+    CHECK_FALSE(ls2g::is_valid_solver_name("NR\x1b[31m_SparseLU"));    // terminal escape
+    CHECK_FALSE(ls2g::is_valid_solver_name(std::string("NR\0LU", 5))); // embedded NUL
+    // a homoglyph: "NR_SparseLU" with a Cyrillic 'а' (U+0430) in place of the 'a'
+    CHECK_FALSE(ls2g::is_valid_solver_name("NR_Sp\xd0\xb0rseLU"));
+}
+
+TEST_CASE("registering an invalid solver name is refused", "[plugin][solver_name]")
+{
+    CHECK_THROWS_AS(
+        ls2g::AlgorithmRegistry::instance().register_solver("bad name!", null_factory()),
+        std::invalid_argument);
+    CHECK_FALSE(ls2g::AlgorithmRegistry::instance().is_registered("bad name!"));
+}
+
+TEST_CASE("a batch containing an invalid name is rejected whole", "[plugin][solver_name]")
+{
+    ls2g::AlgorithmRegistry::FactoryMap batch;
+    batch.emplace("__valid_name_in_bad_batch__", null_factory());
+    batch.emplace("also bad!", null_factory());
+
+    CHECK_THROWS_AS(ls2g::AlgorithmRegistry::instance().register_all(std::move(batch)),
+                    std::invalid_argument);
+    // atomic: the valid name from the rejected batch must not survive either
+    CHECK_FALSE(ls2g::AlgorithmRegistry::instance().is_registered("__valid_name_in_bad_batch__"));
+    CHECK_FALSE(ls2g::AlgorithmRegistry::instance().is_registered("also bad!"));
 }

@@ -66,7 +66,26 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
         .def_property_readonly("timer_last_dc_pf", &LSGrid::timer_last_dc_pf, "TODO");
     add_pickle(lsgrid_cls, "LSGrid");
     add_binary_serialization(lsgrid_cls);
+    // Companion to load_binary(): loads the grid *data* without re-selecting the
+    // solver it was saved with. Lets a grid saved with a solver that is not
+    // available here (a plugin that has not been loaded, or a built-in needing an
+    // optional backend this build lacks) still be loaded -- the grid keeps the
+    // default solvers, and you pick one yourself with change_algorithm().
+    lsgrid_cls.def_static("load_binary_without_algorithm", [](const std::string& path) {
+        return ls2g::load_binary_generic_with<LSGrid>(
+            path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, /*restore_algorithm=*/false);
+    }, py::arg("path"),
+       "Load a grid saved with save_binary(), WITHOUT restoring the AC / DC solver it "
+       "was saved with (nor that solver's configuration): the grid keeps the default "
+       "solvers and you select one yourself with change_algorithm(). Use this when "
+       "load_binary() reports that the saved solver is unavailable here -- typically a "
+       "solver plugin that has not been loaded in this process. Every other check "
+       "(binary format, corruption, grid consistency) is applied exactly as in "
+       "load_binary().");
     lsgrid_cls
+        // whole-grid consistency validation
+        .def("check_grid", &LSGrid::check_grid, DocLSGrid::check_grid.c_str())
+
         // algo config (scaling/refactor policy params)
         .def("get_ac_algo_config", &LSGrid::get_ac_algo_config,
             "Return the AC solver's AlgoConfig (scaling/refactor policy type and parameters).")

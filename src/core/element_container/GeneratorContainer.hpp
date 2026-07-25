@@ -93,6 +93,14 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         GeneratorContainer::StateRes get_state() const;
         void set_state(GeneratorContainer::StateRes & my_state );
 
+        // Whole-grid semantic validation (see GenericContainer::check_valid): the
+        // (p, q) one-side checks plus generator-specific ones -- slack weights and
+        // remote-regulated bus ids.
+        void check_valid(int nb_bus,
+                         int nb_sub,
+                         const SubstationContainer & substations,
+                         std::vector<int> & all_pos_topo_vect) const override;
+
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path, bool atomic = true) const;
         static GeneratorContainer load_binary(const std::string & path);

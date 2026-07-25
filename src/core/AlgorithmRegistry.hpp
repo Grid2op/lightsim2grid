@@ -23,6 +23,66 @@
 
 namespace ls2g {
 
+// Longest accepted solver name (see is_valid_solver_name). Matches the length at
+// which printable() truncates, so a name always fits whole in an error message.
+constexpr std::size_t SOLVER_NAME_MAX_LEN = 64;
+
+/**
+ * Is `name` an acceptable solver name?
+ *
+ *   first character  : A-Z a-z _
+ *   other characters : A-Z a-z 0-9 _ .
+ *   length           : 1 to SOLVER_NAME_MAX_LEN characters
+ *
+ * A solver name is an identity, not just a label: it is written into every
+ * serialized grid (see LSGrid::StateRes) and is what selects the solver again on
+ * load. Restricting it to this ASCII subset is what makes that identity
+ * trustworthy and safe to display:
+ *
+ *  - **no non-ASCII**: otherwise a plugin could register a name that is visually
+ *    identical to a built-in one (say "NR_SparseLU" with a Cyrillic 'a') and
+ *    masquerade as it in every error message, doc and available_algorithm_names()
+ *    listing, while being a different registry key;
+ *  - **no control characters**: names end up in exception messages and logs, so a
+ *    newline would allow log injection and an ESC byte terminal-escape injection;
+ *  - **bounded length**: bounds what goes into a file, into an error message and
+ *    into a plugin's diagnostic buffer;
+ *  - **'.' allowed (but not first)**: lets plugin authors namespace their solvers
+ *    ("acme.NR_fast"), which is the recommended way to avoid name collisions --
+ *    see docs/solver_plugin.rst;
+ *  - **digits allowed (but not first)**: "solver_v2" is natural, while a leading
+ *    digit would let a name look like a number.
+ *
+ * The set is deliberately minimal: it can be widened later without breaking
+ * anyone, whereas narrowing it could not.
+ */
+inline bool is_valid_solver_name(const std::string& name) noexcept {
+    if (name.empty() || name.size() > SOLVER_NAME_MAX_LEN) return false;
+    // NB explicit ranges, not std::isalpha & co: those are locale-dependent and
+    // are UB for negative char values.
+    const unsigned char first = static_cast<unsigned char>(name[0]);
+    const bool first_ok = (first >= 'A' && first <= 'Z') ||
+                          (first >= 'a' && first <= 'z') ||
+                          (first == '_');
+    if (!first_ok) return false;
+    for (std::size_t i = 1; i < name.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(name[i]);
+        const bool ok = (c >= 'A' && c <= 'Z') ||
+                        (c >= 'a' && c <= 'z') ||
+                        (c >= '0' && c <= '9') ||
+                        (c == '_') || (c == '.');
+        if (!ok) return false;
+    }
+    return true;
+}
+
+// Human-readable statement of the rule above, for error messages.
+inline std::string solver_name_rule() {
+    return "a solver name must be 1 to " + std::to_string(SOLVER_NAME_MAX_LEN) +
+           " characters, start with an ASCII letter or '_', and contain only ASCII "
+           "letters, digits, '_' or '.'";
+}
+
 class LS2G_API AlgorithmRegistry {
 public:
     using Factory = std::function<std::unique_ptr<BaseAlgo>()>;

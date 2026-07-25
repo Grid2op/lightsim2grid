@@ -113,6 +113,48 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [0.14.0] 2026-xx-yy
 ---------------------
+- [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
+  consistency check that verifies every index the grid carries (element bus ids,
+  substation ids, position in the topology vector, generator slack and
+  remote-regulated bus references) is in range. It raises ``IndexError`` /
+  ``RuntimeError`` on an inconsistency.
+- [ADDED] the grid is now validated automatically with ``check_grid()`` when it is
+  loaded (from a pickle or the binary format, via ``set_state``) and by every grid
+  loader (``init_from_pandapower`` / ``init_from_pypowsybl`` / ``init_from_matpower``
+  / ``init_from_powermodels``). A well-formed but inconsistent state (e.g. an
+  out-of-range bus id in a crafted binary file) now raises a clean exception instead
+  of causing an out-of-bounds access during the next powerflow.
+- [BREAKING] solver names are now restricted to ``[A-Za-z_][A-Za-z0-9_.]{0,63}`` (start with
+  an ASCII letter or ``_``; then ASCII letters, digits, ``_`` or ``.``; at most 64
+  characters). Registering any other name is refused. A solver name is written into every
+  serialized grid and is what re-selects the solver on load, so it has to be an identity
+  that cannot be spoofed (a non-ASCII homoglyph of a built-in name), cannot inject content
+  into an error message or a log (control characters), and is bounded in length. Every
+  built-in and every name used by the shipped example plugins already complies; a plugin
+  using an exotic name must rename its solver.
+- [BREAKING] the binary format version is bumped to 4: the AC / DC algorithm is now stored
+  as its registry **name** instead of an ``AlgorithmType`` enum. Files written by an older
+  lightsim2grid are rejected with a clear error (they were already only readable by the
+  same format version).
+- [FIXED] a grid using a solver from a plugin could be saved but never loaded back, and
+  could not even be copied: only the ``AlgorithmType`` was stored, and every external
+  solver collapses onto ``AlgorithmType::Custom``, which is not a concrete solver. The
+  solver name is now stored, so such a grid round-trips (and ``copy()`` works) as long as
+  the plugin is loaded.
+- [ADDED] when a grid is loaded whose solver is not registered here (a plugin that has not
+  been loaded, or a built-in needing an optional KLU / NICSLU / CKTSO backend this build
+  lacks), the error now names the solver, says how to obtain it, and lists the solvers
+  that *are* available -- instead of an internal message about ``AlgorithmType::Custom``.
+- [ADDED] ``LSGrid.load_binary_without_algorithm(path)``: loads the grid data without
+  re-selecting the solver it was saved with (keeping the default solvers), so a grid saved
+  with an unavailable solver can still be loaded. All other checks are unchanged.
+- [ADDED] a sanity check on the voltages returned by an **external** (plugin) solver
+  before they are consumed: a wrong-sized result raises, and a non-finite one is
+  reported as a non-converged solve instead of propagating ``NaN`` / ``Inf``. Built-in
+  solvers skip this check entirely, so they pay nothing for it.
+- [ADDED] a "Security" documentation page describing the trust boundaries (pickle,
+  solver plugins and grid2op environments are trusted-input-only; the binary format is
+  the least dangerous channel, and is validated with ``check_grid`` on load).
 - [BREAKING] For plugin developers (C++ side): solver plugins no longer self-register
   from a static ``AlgorithmRegistrar`` constructor firing during ``dlopen``. Instead a
   plugin writes a ``void(ls2g::PluginRegistrar&)`` registration function and exposes it
