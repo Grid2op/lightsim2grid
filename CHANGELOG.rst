@@ -124,6 +124,22 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   / ``init_from_powermodels``). A well-formed but inconsistent state (e.g. an
   out-of-range bus id in a crafted binary file) now raises a clean exception instead
   of causing an out-of-bounds access during the next powerflow.
+- [BREAKING] the binary format version is bumped to 4: the AC / DC algorithm is now stored
+  as its registry **name** instead of an ``AlgorithmType`` enum. Files written by an older
+  lightsim2grid are rejected with a clear error (they were already only readable by the
+  same format version).
+- [FIXED] a grid using a solver from a plugin could be saved but never loaded back, and
+  could not even be copied: only the ``AlgorithmType`` was stored, and every external
+  solver collapses onto ``AlgorithmType::Custom``, which is not a concrete solver. The
+  solver name is now stored, so such a grid round-trips (and ``copy()`` works) as long as
+  the plugin is loaded.
+- [ADDED] when a grid is loaded whose solver is not registered here (a plugin that has not
+  been loaded, or a built-in needing an optional KLU / NICSLU / CKTSO backend this build
+  lacks), the error now names the solver, says how to obtain it, and lists the solvers
+  that *are* available -- instead of an internal message about ``AlgorithmType::Custom``.
+- [ADDED] ``LSGrid.load_binary_without_algorithm(path)``: loads the grid data without
+  re-selecting the solver it was saved with (keeping the default solvers), so a grid saved
+  with an unavailable solver can still be loaded. All other checks are unchanged.
 - [ADDED] a sanity check on the voltages returned by an **external** (plugin) solver
   before they are consumed: a wrong-sized result raises, and a non-finite one is
   reported as a non-converged solve instead of propagating ``NaN`` / ``Inf``. Built-in

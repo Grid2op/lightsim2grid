@@ -84,9 +84,13 @@ class LS2G_API LSGrid final
                 HvdcLineContainer::StateRes,
                 // static var compensators (appended; old pickles are version-gated)
                 SvcContainer::StateRes,
-                // algo types
-                AlgorithmType, // ac_algo
-                AlgorithmType, // dc_algo
+                // algo *registry names* (not AlgorithmType): the enum collapses
+                // every external/plugin solver onto AlgorithmType::Custom, which
+                // loses the information needed to restore it (and made loading
+                // such a grid fail unconditionally). The name round-trips, and is
+                // also immune to a renumbering of the enum.
+                std::string, // ac_algo name
+                std::string, // dc_algo name
                 // algo config (scaling/refactor/line-search params, appended;
                 // old pickles are version-gated): int_params, real_params
                 std::tuple<std::vector<int>, std::vector<double> >,  // ac_algo_config
@@ -121,8 +125,8 @@ class LS2G_API LSGrid final
         static const std::size_t STORAGE_ID = 14;
         static const std::size_t HVDC_ID = 15;
         static const std::size_t SVC_ID = 16;
-        static const std::size_t AC_ALGO_TYPE_ID = 17;
-        static const std::size_t DC_ALGO_TYPE_ID = 18;
+        static const std::size_t AC_ALGO_NAME_ID = 17;
+        static const std::size_t DC_ALGO_NAME_ID = 18;
         static const std::size_t AC_ALGO_CONFIG_ID = 19;
         static const std::size_t DC_ALGO_CONFIG_ID = 20;
         static const std::size_t INIT_KWARGS_KEYS_ID = 21;
@@ -511,7 +515,13 @@ class LS2G_API LSGrid final
 
         //pickle
         LSGrid::StateRes get_state() const ;
-        void set_state(LSGrid::StateRes & my_state) ;
+        // `restore_algorithm == true` (the default) also re-selects the AC / DC
+        // solver the grid was saved with, and re-applies its configuration. It
+        // throws if that solver is not registered here (a plugin that has not
+        // been loaded, or a built-in needing an optional backend this build
+        // lacks). Pass false to load the grid *data* only and keep this object's
+        // current (default) solvers -- see load_binary_without_algorithm().
+        void set_state(LSGrid::StateRes & my_state, bool restore_algorithm = true) ;
 
         // Whole-grid consistency check. Verifies that every index the grid carries
         // (element bus ids, substation ids, position in the topology vector,
@@ -526,6 +536,16 @@ class LS2G_API LSGrid final
         // right after building a grid. Runs in O(number of elements), off the solver
         // hot path.
         void check_grid() const;
+
+    private:
+        // Re-select, by registry name, the algorithm a grid was saved with.
+        // Throws a message naming the missing solver (and how to get it) when it
+        // is not registered here -- typically a plugin that has not been loaded,
+        // or a built-in needing an optional backend this build lacks.
+        static void _restore_algorithm(AlgorithmSelector & algo_selector,
+                                       const std::string & name,
+                                       const char * ac_or_dc);
+    public:
 
         // fast binary serialization (additive alternative to pickle, see
         // BinaryArchive.hpp -- readable by any lightsim2grid version sharing

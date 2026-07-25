@@ -70,6 +70,22 @@ Individual element containers work the same way:
     destroys a previously saved file. Pass ``atomic=False`` to write the destination directly instead
     (marginally faster -- it skips one temporary file and rename -- but without that protection).
 
+.. note::
+    **The solver is saved by name.** A grid records the *registry name* of the AC and DC
+    algorithm it was using (``'NR_SparseLU'``, or whatever a plugin registered itself as),
+    and ``load_binary`` re-selects the solver with that name. Two consequences:
+
+    - if that solver is not registered when you load the file -- a plugin you have not
+      loaded in this process, or a built-in needing an optional backend (KLU / NICSLU /
+      CKTSO) this build lacks -- ``load_binary`` raises, naming the solver and how to get
+      it. Use ``LSGrid.load_binary_without_algorithm(path)`` to load the grid *data* and
+      keep the default solvers instead, then pick one with ``change_algorithm``;
+    - a name is **not** a strong identity. If two different plugins register the same
+      solver name, the one loaded when the file is read is the one you get -- it may be a
+      completely different algorithm from the one that was used when the file was written,
+      with no way for lightsim2grid to notice. Give your plugin solvers distinctive names
+      (a project prefix, for instance) if you exchange files between environments.
+
 .. danger::
     Not even pickle is a *portable* format, and this binary format is even less so. Two
     rules to follow:

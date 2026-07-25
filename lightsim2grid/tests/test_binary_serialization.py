@@ -580,7 +580,7 @@ class TestSerializedEnumValues(unittest.TestCase):
 # bump) with: python -m lightsim2grid.tests.test_binary_serialization regen
 FIXTURE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "binary_format_fixture",
-                            "case14_sandbox_format3.lsb")
+                            "case14_sandbox_format4.lsb")
 FIXTURE_ENV_NAME = "l2rpn_case14_sandbox"
 FIXTURE_N_SUB = 14
 FIXTURE_N_LOAD = 11

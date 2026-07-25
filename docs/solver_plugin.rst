@@ -53,6 +53,24 @@ The lookup flow is:
            └─ AlgorithmRegistry::instance().make("MySolver")
                 └─ factory()  →  unique_ptr<BaseAlgo>
 
+.. important::
+    **Choose your solver name carefully: it is an identity, and it is persisted.**
+    When a grid is saved (pickle or :ref:`binary-serialization`) it records the
+    *name* of the solver it was using, and loading re-selects the solver
+    registered under that name. So:
+
+    - a grid saved while using your plugin can only be loaded where that plugin is
+      loaded. Otherwise loading raises an error naming the missing solver; the
+      reader can fall back to ``LSGrid.load_binary_without_algorithm(path)`` to get
+      the grid data with the default solvers;
+    - the name is the *only* thing stored — there is no version, checksum or
+      identity of the plugin itself. If two plugins register the same name, a grid
+      saved with one will silently be loaded with the other, even though they may
+      be entirely different algorithms. lightsim2grid cannot detect this, so
+      **prefix your solver names** with something specific to your project
+      (``"acme_NR_fast"`` rather than ``"NR_fast"``) if your files travel between
+      environments.
+
 The ``AlgorithmRegistry`` C++ API (defined in ``AlgorithmRegistry.hpp``, installed to ``include/lightsim2grid/``):
 
 .. code-block:: cpp
