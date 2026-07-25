@@ -47,26 +47,6 @@ std::string supported_formats_str()
 
 }  // anonymous namespace
 
-// (declared in BinaryArchive.hpp -- also used by LSGrid::set_state, which
-// embeds the solver name read from the file in its error message)
-std::string printable(const std::string & s)
-{
-    const std::size_t max_len = 64;
-    std::ostringstream oss;
-    for (std::size_t i = 0; i < s.size() && i < max_len; ++i) {
-        const unsigned char c = static_cast<unsigned char>(s[i]);
-        if (c >= 0x20 && c < 0x7f) {
-            oss << static_cast<char>(c);
-        } else {
-            char buf[8];
-            std::snprintf(buf, sizeof(buf), "\\x%02x", c);
-            oss << buf;
-        }
-    }
-    if (s.size() > max_len) oss << "... (" << s.size() << " chars)";
-    return oss.str();
-}
-
 BinaryArchive::BinaryArchive(const std::string & path, Mode mode, bool atomic_write):
     mode_(mode),
     path_(path),

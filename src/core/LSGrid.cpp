@@ -268,6 +268,16 @@ void LSGrid::_restore_algorithm(AlgorithmSelector & algo_selector,
                                 const std::string & name,
                                 const char * ac_or_dc)
 {
+    // A name that cannot even be a solver name never was one: the state is
+    // corrupted (or was not produced by lightsim2grid). Say so, rather than
+    // sending the reader looking for a plugin that never existed.
+    if (!is_valid_solver_name(name)) {
+        std::ostringstream exc_;
+        exc_ << "LSGrid::set_state: the " << ac_or_dc << " solver name read from this state, '"
+             << printable(name) << "', is not a valid solver name (" << solver_name_rule()
+             << "). This state is corrupted.";
+        throw std::runtime_error(exc_.str());
+    }
     if (AlgorithmRegistry::instance().is_registered(name)) {
         algo_selector.change_algorithm(name);
         return;

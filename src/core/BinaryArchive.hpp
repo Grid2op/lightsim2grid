@@ -60,12 +60,8 @@
 
 namespace ls2g {
 
-// Escape (and truncate to 64 chars) a string that came from a possibly-corrupted
-// file, before embedding it in an exception message: pybind11 converts what() to
-// a python str as UTF-8, so raw garbage bytes would turn the intended
-// RuntimeError into a UnicodeDecodeError. Truncation keeps a corrupted length
-// from producing a message megabytes long.
-LS2G_API std::string printable(const std::string & s);
+// NB `printable()` (used to escape strings read from a corrupted file before
+// embedding them in an error message) now lives in Utils.hpp, included above.
 
 // Version of the binary *format* itself, decoupled from the lightsim2grid
 // package version: all lightsim2grid releases sharing the same format number

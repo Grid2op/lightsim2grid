@@ -57,7 +57,26 @@ The lookup flow is:
     **Choose your solver name carefully: it is an identity, and it is persisted.**
     When a grid is saved (pickle or :ref:`binary-serialization`) it records the
     *name* of the solver it was using, and loading re-selects the solver
-    registered under that name. So:
+    registered under that name.
+
+    Because of that, names are restricted to a small ASCII subset — registering
+    anything else is refused, with an error explaining the rule::
+
+        first character  : A-Z a-z _
+        other characters : A-Z a-z 0-9 _ .
+        length           : 1 to 64 characters
+
+    (``lightsim2grid.lightsim2grid_cpp``'s C++ header exposes this as
+    ``ls2g::is_valid_solver_name``.) Non-ASCII characters are excluded so that no
+    plugin can register a name that *looks* identical to another solver's — say
+    ``NR_SparseLU`` with a Cyrillic ``а`` — and masquerade as it in error
+    messages, documentation and ``available_algorithm_names()`` listings while
+    being a different registry key. Control characters are excluded because names
+    are printed into error messages and logs, where a newline or an ESC byte
+    would let a name inject content. The length bound keeps a name from
+    overflowing the diagnostic buffer a plugin is given.
+
+    Beyond the character set:
 
     - a grid saved while using your plugin can only be loaded where that plugin is
       loaded. Otherwise loading raises an error naming the missing solver; the

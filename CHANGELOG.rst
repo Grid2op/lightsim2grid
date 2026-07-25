@@ -124,6 +124,14 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   / ``init_from_powermodels``). A well-formed but inconsistent state (e.g. an
   out-of-range bus id in a crafted binary file) now raises a clean exception instead
   of causing an out-of-bounds access during the next powerflow.
+- [BREAKING] solver names are now restricted to ``[A-Za-z_][A-Za-z0-9_.]{0,63}`` (start with
+  an ASCII letter or ``_``; then ASCII letters, digits, ``_`` or ``.``; at most 64
+  characters). Registering any other name is refused. A solver name is written into every
+  serialized grid and is what re-selects the solver on load, so it has to be an identity
+  that cannot be spoofed (a non-ASCII homoglyph of a built-in name), cannot inject content
+  into an error message or a log (control characters), and is bounded in length. Every
+  built-in and every name used by the shipped example plugins already complies; a plugin
+  using an exotic name must rename its solver.
 - [BREAKING] the binary format version is bumped to 4: the AC / DC algorithm is now stored
   as its registry **name** instead of an ``AlgorithmType`` enum. Files written by an older
   lightsim2grid are rejected with a clear error (they were already only readable by the
