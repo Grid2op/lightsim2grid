@@ -431,6 +431,99 @@ TEST_CASE("check_grid rejects a sub_vn_kv that does not match n_sub", "[check_gr
     CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
 }
 
+TEST_CASE("busbars of one substation must share their nominal voltage", "[check_grid][substation]")
+{
+    // A gridmodel bus id is `sub_id + (local_bus_id - 1) * n_sub`, and LocalBusId
+    // runs 1..nmax_busbar_per_sub. The original check looped local ids
+    // [1, nmax_busbar_per_sub), so it compared the reference bus with ITSELF and
+    // stopped one busbar short -- with the usual nmax == 2 it checked nothing at
+    // all, and the invariant was silently unenforced on every path.
+    ls2g::SubstationContainer substations;
+    // 2 substations x 3 busbars: sub 0 owns bus ids 0, 2, 4 ; sub 1 owns 1, 3, 5.
+    RealVect bad(6);
+    bad << 100., 200., 100., 200., 999., 200.;  // sub 0's LAST busbar disagrees
+    CHECK_THROWS_AS(substations.init_bus(2, 3, bad), std::runtime_error);
+
+    // the nmax == 2 case, which the old loop could not catch at all
+    ls2g::SubstationContainer two_busbars;
+    RealVect bad2(4);
+    bad2 << 100., 200., 999., 200.;  // sub 0: busbar 1 = 100, busbar 2 = 999
+    CHECK_THROWS_AS(two_busbars.init_bus(2, 2, bad2), std::runtime_error);
+
+    // a uniform grid is still accepted (stride is n_sub, not nmax_busbar_per_sub)
+    ls2g::SubstationContainer ok;
+    RealVect good(6);
+    good << 225., 400., 225., 400., 225., 400.;
+    CHECK_NOTHROW(ok.init_bus(2, 3, good));
+    CHECK_NOTHROW(ok.check_valid());
+}
+
+TEST_CASE("check_grid rejects non-uniform busbar voltages restored from a state", "[check_grid][substation]")
+{
+    // set_state() bypasses init_bus() entirely, so this invariant has to be
+    // re-checked on load -- a crafted pickle / binary file could always carry it.
+    LSGrid grid = make_valid_grid();  // 3 substations, 1 busbar each
+    LSGrid::StateRes st = grid.get_state();
+    sub_n_sub(st) = 1;
+    sub_nmax_busbar(st) = 3;               // 1 substation x 3 busbars = 3 buses
+    sub_bus_vn_kv(st) = {138., 138., 400.};  // its third busbar disagrees
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("check_grid rejects a sub_vn_kv that contradicts bus_vn_kv", "[check_grid][substation]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    // sub_vn_kv is optional, but when present it must be the common nominal
+    // voltage of each substation's busbars (== bus_vn_kv on the first n_sub ids).
+    sub_sub_vn_kv(st) = {138., 400., 138.};  // substation 1 contradicts its bus
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+
+    // the consistent value is accepted
+    LSGrid::StateRes ok = grid.get_state();
+    sub_sub_vn_kv(ok) = {138., 138., 138.};
+    LSGrid restored_ok;
+    CHECK_NOTHROW(restored_ok.set_state(ok));
+}
+
+TEST_CASE("init_sub is safe on the live construction path", "[check_grid][substation]")
+{
+    // sub_vn_kv_ is only sized by the two-argument constructor, which nothing uses:
+    // the live path is the default constructor + init_bus(), which leaves it EMPTY.
+    // init_sub() wrote n_sub_ doubles into it with an unchecked operator[], ie an
+    // out-of-bounds heap write. It must size its destinations instead.
+    ls2g::SubstationContainer substations;
+    RealVect bus_vn_kv(6);
+    bus_vn_kv << 90., 90., 90., 90., 90., 90.;
+    substations.init_bus(3, 2, bus_vn_kv);
+    REQUIRE(substations.nb_bus() == 6);
+
+    RealVect sub_vn_kv(3);
+    sub_vn_kv << 225., 400., 63.;
+    REQUIRE_NOTHROW(substations.init_sub(sub_vn_kv));
+    // every busbar of a substation inherits that substation's nominal voltage
+    // (bus id == sub_id + (busbar - 1) * n_sub)
+    CHECK(substations.get_bus_vn_kv()(0) == 225.);
+    CHECK(substations.get_bus_vn_kv()(1) == 400.);
+    CHECK(substations.get_bus_vn_kv()(2) == 63.);
+    CHECK(substations.get_bus_vn_kv()(3) == 225.);
+    CHECK(substations.get_bus_vn_kv()(5) == 63.);
+    CHECK_NOTHROW(substations.check_valid());
+
+    // a wrong-sized input is still refused
+    RealVect too_short(2);
+    too_short << 225., 400.;
+    CHECK_THROWS(substations.init_sub(too_short));
+
+    // and it refuses to run at all before the substations are declared
+    ls2g::SubstationContainer fresh;
+    CHECK_THROWS_AS(fresh.init_sub(sub_vn_kv), std::runtime_error);
+}
+
 TEST_CASE("substation info is readable on a grid with no substation names", "[check_grid][substation]")
 {
     // sub_names_ is OPTIONAL (the pandapower / matpower / powermodels loaders never

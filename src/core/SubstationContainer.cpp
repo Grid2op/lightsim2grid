@@ -186,6 +186,28 @@ void SubstationContainer::check_valid() const
              << " entries for " << bus_vn_kv_.size() << " buses (it must be either empty or complete).";
         throw std::runtime_error(exc_.str());
     }
+
+    // All busbars of a substation share its nominal voltage. init_bus() is supposed
+    // to enforce this at build time, but set_state() bypasses init_bus() entirely,
+    // so a pickle / binary file could always carry a grid violating it. Re-check
+    // here, which is the point of check_grid().
+    check_bus_vn_kv_uniform_per_sub();
+
+    // sub_vn_kv_ is optional (see the note on StateRes), but when it IS present it
+    // is by definition the common nominal voltage of each substation's busbars,
+    // i.e. bus_vn_kv_ restricted to the first n_sub_ bus ids (busbar 1 of each
+    // substation). A stored value disagreeing with that is an inconsistent state.
+    if(sub_vn_kv_.size() != 0){
+        for(int sub_id = 0; sub_id < n_sub_; ++sub_id){
+            if(std::abs(sub_vn_kv_(sub_id) - bus_vn_kv_(sub_id)) > BaseConstants::_tol_equal_float){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: substation " << sub_id << " declares a nominal voltage of "
+                     << sub_vn_kv_(sub_id) << " kV but its buses carry " << bus_vn_kv_(sub_id)
+                     << " kV. Both must agree.";
+                throw std::runtime_error(exc_.str());
+            }
+        }
+    }
 }
 
 void SubstationContainer::save_binary(const std::string & path, bool atomic) const {
