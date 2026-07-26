@@ -124,6 +124,55 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   / ``init_from_powermodels``). A well-formed but inconsistent state (e.g. an
   out-of-range bus id in a crafted binary file) now raises a clean exception instead
   of causing an out-of-bounds access during the next powerflow.
+- [FIXED] ``SubstationContainer::set_state`` performed **no** validation at all, and it
+  restores the root of the grid's index space: ``nb_bus()`` (the bound ``check_grid()``
+  validates every element bus id against), ``bus_status_`` (the vector those same ids are
+  used to index) and ``n_sub_`` / ``nmax_busbar_per_sub_`` were all read from the file
+  independently of one another. A pickle or a binary file declaring, say, 4000 buses but a
+  1-entry ``bus_status`` passed ``check_grid()`` and then corrupted the heap on the next
+  ``init_bus_status()`` (``disconnect_all_buses()`` writes ``nb_bus()`` entries into it).
+  All of these are now cross-checked on load, and re-checked by ``check_grid()``.
+- [FIXED] ``n_sub_ == 0`` restored from a state reached ``sub_id_of_bus()``, which does
+  ``gridmodel_bus_id % n_sub_`` -- an integer division by zero (SIGFPE that kills the
+  process), the same class of bug as ``refactor_every_n == 0``. A grid with buses must now
+  declare a strictly positive substation count, and ``n_sub_ * nmax_busbar_per_sub_`` is
+  rejected if it overflows the ``int`` it is stored in.
+- [FIXED] ``LSGrid::set_ls_to_orig`` accepted any value: ``set_ls_to_orig_internal`` sizes
+  the reverse mapping from ``lpNorm<Infinity>()`` (the maximum **absolute** value) and then
+  indexes it with the values themselves, so an entry of ``-5`` sized the vector from 5 and
+  wrote at index ``-5`` -- an out-of-bounds heap write, reachable from the ``_ls_to_orig``
+  python property as well as from a pickle / binary file. Entries must now be ``-1`` or a
+  sane non-negative original-grid bus id. ``_orig_to_ls`` is range-checked the same way.
+- [FIXED] ``_init_kwargs`` is serialized as two parallel vectors whose lengths are stored
+  independently; ``set_state`` walked the keys and indexed the values with the same
+  counter, so a file declaring more keys than values read past the end of the values
+  vector -- constructing ``std::string`` objects from arbitrary heap contents. The two
+  lengths must now match.
+- [FIXED] iterating ``gridmodel.get_substations()`` crashed on any grid whose substation
+  names were never set (``set_substation_names`` is optional and the pandapower / matpower
+  / powermodels loaders never call it): ``SubstationInfo`` read ``sub_names_[id]``
+  unconditionally, bounded only against the *substation count*. This needed no crafted
+  input at all.
+- [FIXED] ``update_topo`` did not check the length of the ``has_changed`` / ``new_values``
+  arrays it is given. They are indexed **by position in the topology vector** with an
+  unchecked Eigen ``operator()``: the positions are validated (``check_grid()`` proves they
+  form a permutation of ``[0, dim_topo)``), but a caller-supplied array shorter than
+  ``dim_topo`` was simply read past its end. Both must now have exactly ``dim_topo``
+  entries.
+- [FIXED] ``update_slack_weights`` did not check that its ``could_be_slack`` array had one
+  entry per generator, although it indexes it by generator id.
+- [FIXED] ``check_grid()`` now also validates the substation container's own internal
+  consistency and the bus-id mapping vectors (``_ls_to_orig`` / ``_orig_to_ls`` /
+  ``_bus_fusion_rep``), which it previously ignored entirely.
+- [FIXED] an ``AlgoConfig`` (part of the serialized grid state) carrying an out-of-range
+  ``RefactorPolicyType`` / ``ScalingPolicyType`` is now rejected instead of being cast to
+  the enum, silently falling into a ``default:`` branch and round-tripping back out of
+  ``get_config()``. ``set_config`` also validates both policies *before* touching any
+  member, so a rejected config no longer leaves a half-applied one behind.
+- [FIXED] ``LSGrid::set_orig_to_ls`` did not actually build the inverse of the mapping it
+  was given: it walked only the first *n* entries (*n* = the number of non-``-1`` ones,
+  which are not necessarily at the front) and stored the lightsim bus id where the
+  original one belonged. ``_ls_to_orig`` and ``_orig_to_ls`` are now true inverses.
 - [BREAKING] solver names are now restricted to ``[A-Za-z_][A-Za-z0-9_.]{0,63}`` (start with
   an ASCII letter or ``_``; then ASCII letters, digits, ``_`` or ``.``; at most 64
   characters). Registering any other name is refused. A solver name is written into every

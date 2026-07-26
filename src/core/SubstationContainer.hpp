@@ -71,6 +71,16 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         SubstationContainer::StateRes get_state() const;
         void set_state(SubstationContainer::StateRes & my_state);
 
+        /**
+         * Whole-container consistency validation, the substation half of
+         * LSGrid::check_grid() (see there). set_state() already enforces this on
+         * anything coming from a pickle / a binary file; this is what covers a
+         * container reached the other way -- built element by element through the
+         * python API, or mutated afterwards. Throws std::runtime_error, returns
+         * normally for a consistent container.
+         */
+        void check_valid() const;
+
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path, bool atomic = true) const;
         static SubstationContainer load_binary(const std::string & path);
@@ -271,9 +281,15 @@ inline SubstationInfo::SubstationInfo(const SubstationContainer & r_data, int my
 {
     if(my_id < 0) return;
     if(my_id >= r_data.nb()) return;
-    name = r_data.sub_names_[my_id];
+    // sub_names_ is OPTIONAL (empty unless set_substation_names() was called, which
+    // eg the pandapower / matpower / powermodels loaders never do) and bus_vn_kv_ is
+    // empty on a substation container that was declared but never given its buses:
+    // both must be bounds-checked here, `my_id < nb()` only bounds them against
+    // n_sub_. Same reason as everywhere else: -O3 -DNDEBUG release wheels have no
+    // std::vector / Eigen bounds check to fall back on.
+    if(my_id < static_cast<int>(r_data.sub_names_.size())) name = r_data.sub_names_[my_id];
     nb_max_busbars = r_data.nmax_busbar_per_sub_;
-    vn_kv = r_data.bus_vn_kv_[my_id];
+    if(my_id < static_cast<int>(r_data.bus_vn_kv_.size())) vn_kv = r_data.bus_vn_kv_[my_id];
 }
 
 
