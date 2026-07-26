@@ -119,6 +119,49 @@ std::vector<int>& gen_regulated_bus(LSGrid::StateRes & st)
 {
     return std::get<8>(std::get<LSGrid::GEN_ID>(st));
 }
+// SUBSTATION_ID -> SubstationContainer::StateRes = tuple<[0] n_sub,
+//   [1] nmax_busbar_per_sub, [2] sub_vn_kv, [3] bus_status, [4] bus_vn_kv,
+//   [5] sub_names, [6] bus_vmin_kv, [7] bus_vmax_kv>
+int& sub_n_sub(LSGrid::StateRes & st)
+{
+    return std::get<0>(std::get<LSGrid::SUBSTATION_ID>(st));
+}
+int& sub_nmax_busbar(LSGrid::StateRes & st)
+{
+    return std::get<1>(std::get<LSGrid::SUBSTATION_ID>(st));
+}
+std::vector<real_type>& sub_sub_vn_kv(LSGrid::StateRes & st)
+{
+    return std::get<2>(std::get<LSGrid::SUBSTATION_ID>(st));
+}
+std::vector<bool>& sub_bus_status(LSGrid::StateRes & st)
+{
+    return std::get<3>(std::get<LSGrid::SUBSTATION_ID>(st));
+}
+std::vector<real_type>& sub_bus_vn_kv(LSGrid::StateRes & st)
+{
+    return std::get<4>(std::get<LSGrid::SUBSTATION_ID>(st));
+}
+std::vector<std::string>& sub_names(LSGrid::StateRes & st)
+{
+    return std::get<5>(std::get<LSGrid::SUBSTATION_ID>(st));
+}
+std::vector<int>& ls_to_orig(LSGrid::StateRes & st)
+{
+    return std::get<LSGrid::LS_TO_ORIG_ID>(st);
+}
+std::vector<std::string>& init_kwargs_keys(LSGrid::StateRes & st)
+{
+    return std::get<LSGrid::INIT_KWARGS_KEYS_ID>(st);
+}
+std::vector<std::string>& init_kwargs_values(LSGrid::StateRes & st)
+{
+    return std::get<LSGrid::INIT_KWARGS_VALUES_ID>(st);
+}
+std::vector<int>& bus_fusion_rep(LSGrid::StateRes & st)
+{
+    return std::get<LSGrid::BUS_FUSION_REP_ID>(st);
+}
 
 // A well-behaved AC solver (returns the input voltages, claims convergence).
 // Registered under a non-built-in name it stands in for a plugin solver, whose
@@ -313,6 +356,245 @@ TEST_CASE("check_grid rejects an out-of-range pos_topo_vect entry", "[check_grid
     CHECK_THROWS_AS(grid.check_grid(), std::out_of_range);
 }
 
+// --- the substation container: the ROOT of the grid's index space ------------
+// nb_bus() (= bus_vn_kv_.size()) is the bound every element's bus id is checked
+// against, bus_status_ is what those same ids actually index, and n_sub_ is both
+// the substation-id bound and a modulo divisor (sub_id_of_bus). Nothing
+// re-derives them from one another, so a state in which they disagree turns a
+// *validated* bus id into an out-of-bounds access -- disconnect_all_buses()
+// writes nb_bus() entries into bus_status_, which is a heap write past the end.
+// These must be rejected by set_state()/check_grid(), never reach a powerflow.
+
+TEST_CASE("check_grid rejects a bus_status shorter than the bus count", "[check_grid][substation]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    REQUIRE(sub_bus_status(st).size() == 3);
+    sub_bus_status(st).resize(1);  // 1 status for 3 buses
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("check_grid rejects a bus count that disagrees with n_sub * nmax_busbar", "[check_grid][substation]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    sub_nmax_busbar(st) = 1000;  // 3 * 1000 buses claimed, 3 actually stored
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("check_grid rejects a zero substation count (modulo divisor)", "[check_grid][substation]")
+{
+    // sub_id_of_bus() does `gridmodel_bus_id % n_sub_`: n_sub_ == 0 is an integer
+    // division by zero (SIGFPE), the same class of bug as refactor_every_n == 0.
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    sub_n_sub(st) = 0;
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("check_grid rejects an n_sub * nmax_busbar product that overflows", "[check_grid][substation]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    sub_n_sub(st) = 100000;
+    sub_nmax_busbar(st) = 100000;  // 10^10 does not fit in the int n_bus_max_
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("check_grid rejects a partially-filled substation names vector", "[check_grid][substation]")
+{
+    LSGrid grid = make_valid_grid();
+    grid.set_substation_names({"a", "b", "c"});
+    LSGrid::StateRes st = grid.get_state();
+    REQUIRE(sub_names(st).size() == 3);
+    sub_names(st).resize(2);  // names are optional, but all-or-nothing
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("check_grid rejects a sub_vn_kv that does not match n_sub", "[check_grid][substation]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    sub_sub_vn_kv(st).resize(1);
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("substation info is readable on a grid with no substation names", "[check_grid][substation]")
+{
+    // sub_names_ is OPTIONAL (the pandapower / matpower / powermodels loaders never
+    // set it), and SubstationInfo used to read sub_names_[id] unconditionally --
+    // an out-of-bounds read of a std::string on any such grid, no poisoned input
+    // needed at all.
+    LSGrid grid = make_valid_grid();
+    REQUIRE(grid.get_substation_names().empty());
+    const auto & substations = grid.get_substations();
+    for (int sub_id = 0; sub_id < 3; ++sub_id) {
+        ls2g::SubstationInfo info(substations, sub_id);
+        CHECK(info.id == sub_id);
+        CHECK(info.name.empty());
+        CHECK(info.vn_kv == 138.);
+    }
+}
+
+// --- the bus-id mapping vectors ----------------------------------------------
+
+TEST_CASE("a negative (non-sentinel) _ls_to_orig entry is rejected, not indexed", "[check_grid]")
+{
+    // set_ls_to_orig_internal sizes _orig_to_ls from lpNorm<Infinity>() (the max
+    // ABSOLUTE value) and then writes at _orig_to_ls[el]: an entry of -5 sizes the
+    // vector from 5 and writes at index -5 -- an out-of-bounds heap write.
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    ls_to_orig(st) = {-5, 1, 2};
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::out_of_range);
+}
+
+TEST_CASE("an absurdly large _ls_to_orig entry is rejected, not allocated for", "[check_grid]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    ls_to_orig(st) = {std::numeric_limits<int>::max(), 1, 2};
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::out_of_range);
+}
+
+TEST_CASE("a valid _ls_to_orig still round-trips", "[check_grid]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    ls_to_orig(st) = {2, 0, 1};
+
+    LSGrid restored;
+    REQUIRE_NOTHROW(restored.set_state(st));
+    const IntVect & back = restored.get_ls_to_orig();
+    REQUIRE(back.size() == 3);
+    CHECK(back(0) == 2);
+    CHECK(back(1) == 0);
+    CHECK(back(2) == 1);
+}
+
+TEST_CASE("_orig_to_ls and _ls_to_orig really are inverses of each other", "[check_grid]")
+{
+    // orig bus 0 has no lightsim counterpart; orig 1 -> ls 2, orig 2 -> ls 0,
+    // orig 3 -> ls 1. The inverse must therefore be ls 0 -> 2, ls 1 -> 3, ls 2 -> 1.
+    LSGrid grid = make_valid_grid();
+    IntVect orig_to_ls(4);
+    orig_to_ls << -1, 2, 0, 1;
+    REQUIRE_NOTHROW(grid.set_orig_to_ls(orig_to_ls));
+    const IntVect & back = grid.get_ls_to_orig();
+    REQUIRE(back.size() == 3);
+    CHECK(back(0) == 2);
+    CHECK(back(1) == 3);
+    CHECK(back(2) == 1);
+}
+
+TEST_CASE("an out-of-range _orig_to_ls entry is rejected, not indexed", "[check_grid]")
+{
+    LSGrid grid = make_valid_grid();
+    IntVect orig_to_ls(3);
+    orig_to_ls << 0, 1, 99;  // 99 is used to index a 3-slot _ls_to_orig
+    CHECK_THROWS_AS(grid.set_orig_to_ls(orig_to_ls), std::out_of_range);
+}
+
+TEST_CASE("an out-of-range _bus_fusion_rep entry is rejected", "[check_grid]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    bus_fusion_rep(st) = {0, 1, 9999};
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::out_of_range);
+}
+
+// --- the serialized _init_kwargs map -----------------------------------------
+
+TEST_CASE("_init_kwargs with more keys than values is rejected, not over-read", "[check_grid]")
+{
+    // the map is serialized as two parallel vectors whose lengths are stored
+    // independently: set_state used to walk the keys and index the values with the
+    // same counter, ie construct std::strings from whatever lay past the end.
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    init_kwargs_keys(st) = {"a", "b", "c"};
+    init_kwargs_values(st) = {"1"};
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("a consistent _init_kwargs still round-trips", "[check_grid]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    init_kwargs_keys(st) = {"sort_index", "buses_for_sub"};
+    init_kwargs_values(st) = {"True", "False"};
+
+    LSGrid restored;
+    REQUIRE_NOTHROW(restored.set_state(st));
+    const auto & kwargs = restored.get_init_kwargs();
+    REQUIRE(kwargs.size() == 2);
+    CHECK(kwargs.at("sort_index") == "True");
+    CHECK(kwargs.at("buses_for_sub") == "False");
+}
+
+// --- caller-supplied arrays indexed by position / by element id --------------
+
+TEST_CASE("update_topo rejects arrays that are not dim_topo long", "[check_grid]")
+{
+    // each container does has_changed(pos_topo_vect_(el_id)) with an unchecked
+    // Eigen operator(): the positions are validated, the caller's array length was
+    // not, so a short array was simply read past its end.
+    LSGrid grid = make_valid_grid();
+    IntVect load_pos(1); load_pos << 0;
+    IntVect gen_pos(1);  gen_pos  << 1;
+    IntVect line_pos1(2); line_pos1 << 2, 3;
+    IntVect line_pos2(2); line_pos2 << 4, 5;
+    grid.set_load_pos_topo_vect(load_pos);
+    grid.set_gen_pos_topo_vect(gen_pos);
+    grid.set_line_pos1_topo_vect(line_pos1);
+    grid.set_line_pos2_topo_vect(line_pos2);
+    REQUIRE_NOTHROW(grid.check_grid());  // 6 topo slots, a valid permutation
+
+    Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> too_short_flags(2);
+    too_short_flags << false, false;
+    Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> too_short_vals(2);
+    too_short_vals << 1, 1;
+    CHECK_THROWS_AS(grid.update_topo(too_short_flags, too_short_vals), std::runtime_error);
+
+    // the correctly-sized, no-op call must still work
+    Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> flags(6);
+    flags << false, false, false, false, false, false;
+    Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> vals(6);
+    vals << 1, 1, 1, 1, 1, 1;
+    CHECK_NOTHROW(grid.update_topo(flags, vals));
+}
+
+TEST_CASE("update_slack_weights rejects an array that is not nb_gen long", "[check_grid]")
+{
+    LSGrid grid = make_valid_grid();  // exactly one generator
+    Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> too_short(0);
+    CHECK_THROWS_AS(grid.update_slack_weights(too_short), std::runtime_error);
+
+    Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> ok(1);
+    ok << true;
+    CHECK_NOTHROW(grid.update_slack_weights(ok));
+}
+
 // --- solver policy parameters carried by the serialized state ----------------
 // AlgoConfig is part of StateRes, so these values arrive from a pickle / binary
 // file. refactor_every_n == 0 used to reach `iter % refactor_every_n` and kill
@@ -366,6 +648,30 @@ TEST_CASE("a valid algo config still round-trips", "[check_grid][algo_config]")
     LSGrid restored;
     CHECK_NOTHROW(restored.set_state(st));
     CHECK(restored.get_ac_algo_config().int_params[3] == grid.get_ac_algo_config().int_params[3]);
+}
+
+TEST_CASE("a state with an unknown refactor policy is rejected", "[check_grid][algo_config]")
+{
+    // int_params[1] is a RefactorPolicyType stored as a plain int. An out-of-range
+    // value used to be cast to the scoped enum, fall into should_refactor_policy's
+    // `default:` branch and round-trip back out of get_config() unchanged.
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    REQUIRE(ac_algo_int_params(st).size() >= 4);
+    ac_algo_int_params(st)[1] = 42;
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("a state with an unknown scaling policy is rejected", "[check_grid][algo_config]")
+{
+    LSGrid grid = make_valid_grid();
+    LSGrid::StateRes st = grid.get_state();
+    ac_algo_int_params(st)[0] = 42;
+
+    LSGrid restored;
+    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
 }
 
 TEST_CASE("a solver returning a wrong-sized voltage vector is rejected, not indexed", "[check_grid][plugin]")

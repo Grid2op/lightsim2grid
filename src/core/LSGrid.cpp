@@ -246,7 +246,19 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
         set_dc_algo_config(dc_algo_cfg);
     }
 
-    // relevant kwargs the grid was built with (eg by init_from_pypowsybl)
+    // relevant kwargs the grid was built with (eg by init_from_pypowsybl).
+    // The map is serialized as two parallel vectors, whose lengths are stored
+    // independently (both in a pickle and in the binary format): a file declaring
+    // more keys than values makes the loop below read past the end of
+    // init_kwargs_values -- an out-of-bounds read over std::string objects, ie
+    // constructing a std::string from whatever the heap holds there. Check first.
+    if (init_kwargs_keys.size() != init_kwargs_values.size()) {
+        std::ostringstream exc_;
+        exc_ << "LSGrid::set_state: the serialized `_init_kwargs` is inconsistent: "
+             << init_kwargs_keys.size() << " keys but " << init_kwargs_values.size()
+             << " values. They are two parallel vectors and must have the same length.";
+        throw std::runtime_error(exc_.str());
+    }
     init_kwargs_.clear();
     for (std::size_t i = 0; i < init_kwargs_keys.size(); ++i) {
         init_kwargs_[init_kwargs_keys[i]] = init_kwargs_values[i];
@@ -316,6 +328,12 @@ void LSGrid::_restore_algorithm(AlgorithmSelector & algo_selector,
 
 void LSGrid::check_grid() const
 {
+    // The substation container FIRST: it defines nb_bus / nb_sub, the bounds every
+    // per-element check below is expressed against, and it carries the vector
+    // (bus_status_) those very ids are used to index. Validating elements against a
+    // self-inconsistent substation container would prove nothing.
+    substations_.check_valid();
+
     const int nb_bus = static_cast<int>(substations_.nb_bus());
     const int nb_sub = substations_.nb_sub();
 
@@ -362,6 +380,65 @@ void LSGrid::check_grid() const
             seen[pos] = 1;
         }
     }
+
+    // Bus-id mapping vectors carried alongside the grid. They are never read by the
+    // C++ powerflow itself (only by downstream python result views), but they are
+    // part of the serialized state, they are sized against the grid, and
+    // set_ls_to_orig_internal() indexes _orig_to_ls with the *values* of
+    // _ls_to_orig -- so an inconsistent pair is exactly the kind of thing this
+    // function exists to reject rather than discover later.
+    if(_ls_to_orig.size() != 0)
+    {
+        if(static_cast<size_t>(_ls_to_orig.size()) != substations_.nb_bus())
+        {
+            std::ostringstream exc_;
+            exc_ << "LSGrid::check_grid: _ls_to_orig has " << _ls_to_orig.size()
+                 << " entries while the grid has " << substations_.nb_bus()
+                 << " buses (it is indexed by lightsim bus id).";
+            throw std::runtime_error(exc_.str());
+        }
+        check_ls_to_orig_values(_ls_to_orig);
+    }
+    if(_orig_to_ls.size() != 0)
+    {
+        const int nb_bus_ls = static_cast<int>(substations_.nb_bus());
+        for(Eigen::Index i = 0; i < _orig_to_ls.size(); ++i)
+        {
+            const int ls_id = _orig_to_ls(i);
+            if(ls_id == GenericContainer::_deactivated_bus_id) continue;
+            if((ls_id < 0) || (ls_id >= nb_bus_ls))
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: _orig_to_ls[" << i << "] = " << ls_id
+                     << " is out of range: it must be -1 or a lightsim bus id in [0, "
+                     << nb_bus_ls << ").";
+                throw std::out_of_range(exc_.str());
+            }
+        }
+    }
+    if(_bus_fusion_rep.size() != 0)
+    {
+        const int nb_bus_ls = static_cast<int>(substations_.nb_bus());
+        if(static_cast<size_t>(_bus_fusion_rep.size()) != substations_.nb_bus())
+        {
+            std::ostringstream exc_;
+            exc_ << "LSGrid::check_grid: _bus_fusion_rep has " << _bus_fusion_rep.size()
+                 << " entries while the grid has " << substations_.nb_bus() << " buses.";
+            throw std::runtime_error(exc_.str());
+        }
+        for(Eigen::Index i = 0; i < _bus_fusion_rep.size(); ++i)
+        {
+            const int rep = _bus_fusion_rep(i);
+            if((rep < 0) || (rep >= nb_bus_ls))
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: _bus_fusion_rep[" << i << "] = " << rep
+                     << " is out of range [0, " << nb_bus_ls << "): every bus must be merged into "
+                     << "an existing bus (identity for a bus involved in no fusion).";
+                throw std::out_of_range(exc_.str());
+            }
+        }
+    }
 }
 
 void LSGrid::save_binary(const std::string & path, bool atomic) const {
@@ -390,7 +467,45 @@ void LSGrid::set_ls_to_orig(const Eigen::Ref<const IntVect> & ls_to_orig){
 
     if(static_cast<size_t>(ls_to_orig.size()) != substations_.nb_bus())
         throw std::runtime_error("Impossible to set the converter ls_to_orig: the provided vector has not the same size as the number of bus on the grid.");
+    check_ls_to_orig_values(ls_to_orig);
     set_ls_to_orig_internal(ls_to_orig);
+}
+
+// Every entry of _ls_to_orig is either -1 ("this lightsim bus has no counterpart in
+// the original grid") or an original-grid bus id, which set_ls_to_orig_internal uses
+// *as an index* into the _orig_to_ls it allocates. That allocation is sized from
+// `lpNorm<Infinity>()`, ie the max ABSOLUTE value, so a negative entry other than -1
+// (say -5) sizes the vector from |−5| and then writes at index −5: an out-of-bounds
+// heap write. A huge positive entry is the other end of the same problem (`size + 1`
+// overflows int for INT_MAX, and even short of that it asks for a multi-gigabyte
+// allocation for a handful of buses). Both are rejected here, before any allocation.
+// This runs on the python property setter AND on set_state(), ie on every pickle and
+// every binary file.
+void LSGrid::check_ls_to_orig_values(const Eigen::Ref<const IntVect> & ls_to_orig)
+{
+    // an original grid can never have more buses than the biggest vector we could
+    // possibly want to allocate for it; keep the bound generous but finite.
+    constexpr int max_orig_bus_id = 100000000;  // 100M buses, ~400 MB for _orig_to_ls
+    for(Eigen::Index i = 0; i < ls_to_orig.size(); ++i){
+        const int el = ls_to_orig(i);
+        if(el == GenericContainer::_deactivated_bus_id) continue;  // -1: no counterpart, legal
+        if(el < 0){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::set_ls_to_orig: ls_to_orig[" << i << "] = " << el
+                 << " is negative. Entries must be either -1 (this bus has no counterpart in the "
+                 << "original grid) or a valid original-grid bus id >= 0 (it is used as an index "
+                 << "into the reverse mapping).";
+            throw std::out_of_range(exc_.str());
+        }
+        if(el > max_orig_bus_id){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::set_ls_to_orig: ls_to_orig[" << i << "] = " << el
+                 << " exceeds the maximum supported original-grid bus id (" << max_orig_bus_id
+                 << "). The reverse mapping is sized from the largest id, so this would ask for "
+                 << "an unreasonable allocation.";
+            throw std::out_of_range(exc_.str());
+        }
+    }
 }
 
 void LSGrid::set_orig_to_ls(const Eigen::Ref<const IntVect> & orig_to_ls){
@@ -399,21 +514,35 @@ void LSGrid::set_orig_to_ls(const Eigen::Ref<const IntVect> & orig_to_ls){
         _orig_to_ls = IntVect();
         return;
     }
-    _orig_to_ls = orig_to_ls;
     size_t nb_bus_ls = 0;
     for(const auto el : orig_to_ls){
         if (el != -1) nb_bus_ls += 1;
     }
-    if(nb_bus_ls != substations_.nb_bus()) 
+    if(nb_bus_ls != substations_.nb_bus())
         throw std::runtime_error("Impossible to set the converter orig_to_ls: the number of 'non -1' component in the provided vector does not match the number of buses on the grid.");
-    _ls_to_orig = IntVect::Constant(nb_bus_ls, -1);
-    size_t ls2or_ind = 0;
-    for(size_t or2ls_ind = 0; or2ls_ind < nb_bus_ls; ++or2ls_ind){
-        const auto my_ind = _orig_to_ls[or2ls_ind];
-        if(my_ind >= 0){
-            _ls_to_orig[ls2or_ind] = my_ind;
-            ls2or_ind++;
+    // orig_to_ls[orig_bus_id] is a LIGHTSIM bus id, used below as an index into
+    // _ls_to_orig (which has one slot per lightsim bus): validate the range before
+    // writing anything, an unchecked entry here is an out-of-bounds heap write.
+    for(Eigen::Index i = 0; i < orig_to_ls.size(); ++i){
+        const int ls_id = orig_to_ls(i);
+        if(ls_id == GenericContainer::_deactivated_bus_id) continue;  // -1: this original bus has no lightsim bus
+        if((ls_id < 0) || (static_cast<size_t>(ls_id) >= nb_bus_ls)){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::set_orig_to_ls: orig_to_ls[" << i << "] = " << ls_id
+                 << " is out of range: entries must be either -1 (this original bus has no "
+                 << "counterpart in lightsim2grid) or a lightsim bus id in [0, " << nb_bus_ls << ").";
+            throw std::out_of_range(exc_.str());
         }
+    }
+    // _ls_to_orig is the INVERSE of _orig_to_ls: _ls_to_orig[ls_id] == orig_id iff
+    // _orig_to_ls[orig_id] == ls_id. Walk the whole input (not just its first
+    // nb_bus_ls entries -- the non -1 ones are not necessarily at the front) and
+    // index the result by the lightsim id, so the two arrays really are inverses.
+    _orig_to_ls = orig_to_ls;
+    _ls_to_orig = IntVect::Constant(nb_bus_ls, -1);
+    for(Eigen::Index orig_id = 0; orig_id < _orig_to_ls.size(); ++orig_id){
+        const int ls_id = _orig_to_ls(orig_id);
+        if(ls_id >= 0) _ls_to_orig[ls_id] = static_cast<int>(orig_id);
     }
 }
 
@@ -1799,6 +1928,29 @@ void LSGrid::update_storages_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::
 void LSGrid::update_topo(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
                             const Eigen::Ref<const Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
+    // Both arrays come straight from python and are indexed BY POSITION IN THE
+    // TOPOLOGY VECTOR: each container does `has_changed(pos_topo_vect_(el_id))` /
+    // `new_values(pos_topo_vect_(el_id))` with an unchecked Eigen operator(). The
+    // positions themselves are validated (check_grid() proves they form a
+    // permutation of [0, dim_topo)), but nothing checked that the caller's arrays
+    // are dim_topo long -- a shorter one reads past its end. dim_topo is exactly
+    // the number of topology-participating element sides, so compute it and demand
+    // both arrays match it.
+    const Eigen::Index dim_topo =
+        static_cast<Eigen::Index>(loads_.nb()) +
+        static_cast<Eigen::Index>(generators_.nb()) +
+        static_cast<Eigen::Index>(storages_.nb()) +
+        2 * static_cast<Eigen::Index>(powerlines_.nb()) +
+        2 * static_cast<Eigen::Index>(trafos_.nb());
+    if((has_changed.rows() != dim_topo) || (new_values.rows() != dim_topo)){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::update_topo: 'has_changed' (size " << has_changed.rows()
+             << ") and 'new_values' (size " << new_values.rows() << ") must both have the size of "
+             << "the topology vector (" << dim_topo << " = nb loads + nb gens + nb storages + "
+             << "2 * nb lines + 2 * nb trafos). They are indexed by position in the topology "
+             << "vector, so a shorter array would be read out of bounds.";
+        throw std::runtime_error(exc_.str());
+    }
     loads_.update_topo(has_changed, new_values, algo_controler_, substations_);
     generators_.update_topo(has_changed, new_values, algo_controler_, substations_);
     storages_.update_topo(has_changed, new_values, algo_controler_, substations_);

@@ -1824,7 +1824,13 @@ class LS2G_API LSGrid final
         }
 
     protected:
-        void set_ls_to_orig_internal(const Eigen::Ref<const IntVect> & ls_to_orig) noexcept;  // set both _ls_to_orig and _orig_to_ls
+        // set both _ls_to_orig and _orig_to_ls. `noexcept`, and it indexes
+        // _orig_to_ls with the values of `ls_to_orig`: only ever call it on a vector
+        // that check_ls_to_orig_values() has already accepted (set_ls_to_orig does).
+        void set_ls_to_orig_internal(const Eigen::Ref<const IntVect> & ls_to_orig) noexcept;
+        // throws std::out_of_range unless every entry is -1 or a sane, non-negative
+        // original-grid bus id -- see the definition in LSGrid.cpp for why.
+        static void check_ls_to_orig_values(const Eigen::Ref<const IntVect> & ls_to_orig);
 
         // init the Ybus matrix (its size, it is filled up elsewhere) and also the 
         // converter from "my bus id" to the "solver bus id" (id_me_to_solver and id_solver_to_me)
