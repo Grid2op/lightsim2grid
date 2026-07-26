@@ -164,6 +164,25 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 - [FIXED] ``check_grid()`` now also validates the substation container's own internal
   consistency and the bus-id mapping vectors (``_ls_to_orig`` / ``_orig_to_ls`` /
   ``_bus_fusion_rep``), which it previously ignored entirely.
+- [FIXED] the "every bus of a substation must have the same nominal voltage" check in
+  ``init_bus`` never fired: a gridmodel bus id is ``sub_id + (local_bus_id - 1) * n_sub``
+  and ``LocalBusId`` runs ``1..nmax_busbar_per_sub``, but the loop ran local ids
+  ``[1, nmax_busbar_per_sub)`` -- so it started by comparing the reference bus with
+  *itself* and stopped one busbar short. With the usual ``nmax_busbar_per_sub == 2`` it
+  checked nothing at all, and the invariant was silently unenforced on every path. It is
+  now checked over local ids ``2..nmax_busbar_per_sub``, and re-checked by
+  ``check_grid()`` -- ``set_state`` bypasses ``init_bus``, so a pickle / binary file could
+  always carry a grid violating it.
+- [FIXED] ``SubstationContainer::init_sub`` wrote ``n_sub`` values into ``sub_vn_kv_``
+  (and into ``bus_vn_kv_``) with an unchecked ``operator[]`` without sizing them first.
+  Only the two-argument constructor sizes ``sub_vn_kv_``, and nothing uses it: the live
+  path is the default constructor followed by ``init_bus()``, which leaves ``sub_vn_kv_``
+  empty. Calling ``init_sub()`` on such a container was an out-of-bounds heap write. It is
+  currently uncalled and unbound, so this was latent rather than reachable, but it sized
+  its destinations wrongly for whoever wired it up next. ``sub_vn_kv`` is also validated
+  against ``bus_vn_kv`` by ``check_grid()`` when it is present (it stays optional: it is
+  empty on every grid produced by any loader today, and on every already-saved binary
+  file including this repo's own format-4 compatibility fixture).
 - [FIXED] an ``AlgoConfig`` (part of the serialized grid state) carrying an out-of-range
   ``RefactorPolicyType`` / ``ScalingPolicyType`` is now rejected instead of being cast to
   the enum, silently falling into a ``default:`` branch and round-tripping back out of
