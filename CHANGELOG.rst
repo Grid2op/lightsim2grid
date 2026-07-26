@@ -3,6 +3,16 @@ Change Log
 
 [TODO]
 --------
+- ``SubstationContainer::sub_vn_kv_`` is dead state: its only writers (``init_sub()``
+  and the two-argument constructor) are called from nowhere, and nothing reads it
+  back, so it is empty on every grid every loader produces and in every binary file
+  saved so far. It is also redundant -- a substation's nominal voltage is the common
+  vn_kv of its buses, i.e. ``sub_vn_kv_[I] == bus_vn_kv_[I]`` for ``I < n_sub``, which
+  ``check_valid()`` now enforces when it is present. Decide: either drop it from
+  ``StateRes`` (needs a ``BINARY_FORMAT_VERSION`` bump) or have ``init_bus()`` fill it
+  and make it mandatory (changes what newly-saved files contain, and can only become
+  mandatory once no already-saved file needs to load). See the long note on the member
+  itself in ``SubstationContainer.hpp``.
 - [refacto] have a structure in cpp for the buses
 - [refacto] have the id_grid_to_solver and id_solver_to_grid etc. directly in the solver and NOT in the gridmodel.
 - [refacto] put some method in the DataGeneric as well as some attribute (_status for example)
