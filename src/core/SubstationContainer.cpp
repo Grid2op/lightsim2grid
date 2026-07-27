@@ -60,32 +60,15 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     // no bus at all: that state must still round-trip, so it is the one case where
     // negative counts are legal.
     const bool is_empty = bus_vn_kv.empty() && bus_status.empty();
-    if(!(is_empty && (n_sub <= 0) && (nmax_busbar_per_sub <= 0)))
-    {
-        if(n_sub <= 0){
-            std::ostringstream exc_;
-            exc_ << "SubstationContainer::set_state: the number of substations must be strictly "
-                 << "positive on a grid that has buses, got " << n_sub << " (it is also used as a "
-                 << "modulo divisor in sub_id_of_bus, so 0 would be a division by zero).";
-            throw std::runtime_error(exc_.str());
-        }
-        if(nmax_busbar_per_sub <= 0){
-            std::ostringstream exc_;
-            exc_ << "SubstationContainer::set_state: the maximum number of busbars per substation "
-                 << "must be strictly positive, got " << nmax_busbar_per_sub << ".";
-            throw std::runtime_error(exc_.str());
-        }
-        // n_sub_ * nmax_busbar_per_sub_ is stored in an int: reject a product that
-        // does not fit rather than letting it overflow (UB, and a negative bus count).
-        if(nmax_busbar_per_sub > std::numeric_limits<int>::max() / n_sub){
-            std::ostringstream exc_;
-            exc_ << "SubstationContainer::set_state: n_sub (" << n_sub << ") * nmax_busbar_per_sub ("
-                 << nmax_busbar_per_sub << ") overflows the maximum number of buses representable.";
-            throw std::runtime_error(exc_.str());
-        }
-    }
-    const std::int64_t n_bus_max = static_cast<std::int64_t>(n_sub) * static_cast<std::int64_t>(nmax_busbar_per_sub);
+    // positivity + no int overflow on n_sub * nmax_busbar_per_sub, the same guarantee
+    // init_bus() / init_sub() get from the same helper.
+    const std::int64_t n_bus_max = is_empty
+        ? std::int64_t{0}
+        : static_cast<std::int64_t>(checked_nb_bus(n_sub, nmax_busbar_per_sub,
+                                                   "SubstationContainer::set_state"));
 
+    // check sizes
+    // TODO dev switches
     // bus_vn_kv_ defines nb_bus(), the bound every other index is checked against;
     // bus_status_ is indexed with those same ids and MUST match it exactly.
     const auto check_len = [](std::size_t actual, std::int64_t expected, const char * name){
@@ -186,6 +169,9 @@ void SubstationContainer::check_valid() const
              << " entries for " << bus_vn_kv_.size() << " buses (it must be either empty or complete).";
         throw std::runtime_error(exc_.str());
     }
+
+    // every nominal voltage must be a finite, strictly positive number
+    check_vn_kv_positive();
 
     // All busbars of a substation share its nominal voltage. init_bus() is supposed
     // to enforce this at build time, but set_state() bypasses init_bus() entirely,

@@ -30,6 +30,7 @@
 
 #include "LSGrid.hpp"
 #include "AlgorithmRegistry.hpp"
+#include "AlgorithmTypeNames.hpp"  // name_to_algo_type
 #include "powerflow_algorithm/BaseAlgo.hpp"
 
 using ls2g::LSGrid;
@@ -765,6 +766,67 @@ TEST_CASE("a state with an unknown scaling policy is rejected", "[check_grid][al
 
     LSGrid restored;
     CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+TEST_CASE("built-in vs plugin is decided by the registry, not by AlgorithmType", "[check_grid][plugin]")
+{
+    // AlgorithmType is a fixed enum of *serialized* solver identities; a built-in
+    // only appears in it if a member was added for it. The NRRefactorRetry_* family
+    // never got one, so name_to_algo_type() reports those three IN-TREE solvers as
+    // AlgorithmType::Custom, exactly like a plugin -- and everything gating on
+    // `== Custom` (notably the external-solver output check in
+    // LSGrid::process_results) silently mistreated them. Origin is recorded at
+    // registration time instead.
+    auto & registry = ls2g::AlgorithmRegistry::instance();
+
+    // a built-in that DOES have an AlgorithmType member
+    CHECK(registry.is_builtin("NR_SparseLU"));
+    CHECK(registry.origin_of("NR_SparseLU") == ls2g::SolverOrigin::Builtin);
+
+    // the real regression: a built-in whose name maps to AlgorithmType::Custom must
+    // still be reported as built-in. Only registered when KLU/NICSLU/CKTSO is
+    // available, so assert it for whichever of them this build has.
+    const std::vector<std::string> refactor_retry = {
+        "NRRefactorRetry_KLU", "NRRefactorRetry_NICSLU", "NRRefactorRetry_CKTSO"};
+    for (const auto & name : refactor_retry) {
+        if (!registry.is_registered(name)) continue;
+        INFO("solver " << name);
+        CHECK(ls2g::name_to_algo_type(name) == ls2g::AlgorithmType::Custom);  // no enum member
+        CHECK(registry.is_builtin(name));                                     // yet in-tree
+    }
+
+    // a solver registered the way a plugin does is External, and stays External
+    // even though its name likewise maps to Custom.
+    registry.register_solver("__origin_probe_external__",
+                             [] { return std::unique_ptr<ls2g::BaseAlgo>(new PluginLikeAlgo()); });
+    CHECK(ls2g::name_to_algo_type("__origin_probe_external__") == ls2g::AlgorithmType::Custom);
+    CHECK_FALSE(registry.is_builtin("__origin_probe_external__"));
+
+    // an unregistered name is reported External (the cautious answer)
+    CHECK_FALSE(registry.is_builtin("__never_registered__"));
+
+    // and every name the registry calls built-in really is registered
+    for (const auto & name : registry.builtin_algorithm_names()) {
+        INFO("builtin " << name);
+        CHECK(registry.is_registered(name));
+    }
+}
+
+TEST_CASE("the selector caches the origin of the algorithm it selects", "[check_grid][plugin]")
+{
+    auto & registry = ls2g::AlgorithmRegistry::instance();
+    registry.register_solver("__origin_probe_selector__",
+                             [] { return std::unique_ptr<ls2g::BaseAlgo>(new PluginLikeAlgo()); });
+
+    LSGrid grid = make_valid_grid();
+    // default solver is a built-in
+    CHECK(grid.get_algo().is_builtin_algo());
+
+    grid.change_algorithm("__origin_probe_selector__");
+    CHECK_FALSE(grid.get_algo().is_builtin_algo());
+
+    grid.change_algorithm("NR_SparseLU");
+    CHECK(grid.get_algo().is_builtin_algo());
 }
 
 TEST_CASE("a solver returning a wrong-sized voltage vector is rejected, not indexed", "[check_grid][plugin]")
