@@ -1824,10 +1824,19 @@ class LS2G_API LSGrid final
         }
 
     protected:
-        // set both _ls_to_orig and _orig_to_ls. `noexcept`, and it indexes
-        // _orig_to_ls with the values of `ls_to_orig`: only ever call it on a vector
-        // that check_ls_to_orig_values() has already accepted (set_ls_to_orig does).
-        void set_ls_to_orig_internal(const Eigen::Ref<const IntVect> & ls_to_orig) noexcept;
+        // Set both _ls_to_orig and _orig_to_ls.
+        //
+        // NOT noexcept (it used to be declared so, wrongly): it assigns one Eigen
+        // vector and allocates another, either of which throws std::bad_alloc on
+        // failure -- and a throw out of a noexcept function is not an error the
+        // caller can handle, it is an immediate std::terminate(). Nothing needs the
+        // guarantee (the only callers are the copy constructor and set_ls_to_orig,
+        // neither of them noexcept), so the honest declaration is the plain one.
+        //
+        // It indexes _orig_to_ls with the *values* of `ls_to_orig`: only ever call
+        // it on a vector check_ls_to_orig_values() has already accepted, as
+        // set_ls_to_orig does.
+        void set_ls_to_orig_internal(const Eigen::Ref<const IntVect> & ls_to_orig);
         // throws std::out_of_range unless every entry is -1 or a sane, non-negative
         // original-grid bus id -- see the definition in LSGrid.cpp for why.
         static void check_ls_to_orig_values(const Eigen::Ref<const IntVect> & ls_to_orig);

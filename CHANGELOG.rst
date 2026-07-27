@@ -174,6 +174,31 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 - [FIXED] ``check_grid()`` now also validates the substation container's own internal
   consistency and the bus-id mapping vectors (``_ls_to_orig`` / ``_orig_to_ls`` /
   ``_bus_fusion_rep``), which it previously ignored entirely.
+- [FIXED] whether a solver is one of lightsim2grid's own or comes from a plugin was
+  decided by ``AlgorithmType``, which cannot answer that question: it is a fixed enum of
+  *serialized* solver identities, and a built-in only appears in it if a member was added
+  for it. The ``NRRefactorRetry_KLU`` / ``_NICSLU`` / ``_CKTSO`` family never got one, so
+  ``name_to_algo_type()`` reported those three **built-in** solvers as
+  ``AlgorithmType::Custom`` exactly like a plugin -- and they were consequently paying for
+  the external-solver output check (voltage size + finiteness) on *every single solve*,
+  which built-in solvers are explicitly supposed to cost nothing. The registry now records
+  a ``SolverOrigin`` (``Builtin`` / ``External``) when a solver is registered, which is
+  where the answer is actually known; ``AlgorithmSelector::is_builtin_algo()`` caches it so
+  the hot path stays a bool read. ``SolverOrigin::External`` is the default, so a solver
+  registered without saying anything is treated as untrusted.
+- [FIXED] ``SubstationContainer`` did not check that a nominal voltage is a finite,
+  strictly positive number; 0, a negative value or NaN silently produced nonsense per-unit
+  conversions. NB this deliberately covers ``bus_vn_kv`` / ``sub_vn_kv`` only, never
+  ``bus_vmin_kv`` / ``bus_vmax_kv``, which use NaN as the documented "no limit set" sentinel.
+- [FIXED] ``n_sub * nmax_busbar_per_sub`` (the total bus count, stored in an ``int`` and
+  used in ``int`` index arithmetic) was computed without an overflow check in ``init_bus``
+  and ``init_sub``. All three entry points (those two plus ``set_state``) now go through a
+  single ``checked_nb_bus`` helper doing the multiplication in 64 bits and refusing a
+  product that does not fit, along with the positivity checks.
+- [FIXED] ``LSGrid::set_ls_to_orig_internal`` was declared ``noexcept`` although it assigns
+  one Eigen vector and allocates another, either of which throws ``std::bad_alloc`` on
+  failure -- which in a ``noexcept`` function is an immediate ``std::terminate()`` rather
+  than something the caller can handle. Nothing needed the guarantee, so it is gone.
 - [FIXED] the "every bus of a substation must have the same nominal voltage" check in
   ``init_bus`` never fired: a gridmodel bus id is ``sub_id + (local_bus_id - 1) * n_sub``
   and ``LocalBusId`` runs ``1..nmax_busbar_per_sub``, but the loop ran local ids

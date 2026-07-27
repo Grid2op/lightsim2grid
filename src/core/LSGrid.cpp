@@ -546,7 +546,8 @@ void LSGrid::set_orig_to_ls(const Eigen::Ref<const IntVect> & orig_to_ls){
     }
 }
 
-void LSGrid::set_ls_to_orig_internal(const Eigen::Ref<const IntVect> & ls_to_orig) noexcept{
+// NB deliberately NOT noexcept -- it allocates, see the declaration in LSGrid.hpp.
+void LSGrid::set_ls_to_orig_internal(const Eigen::Ref<const IntVect> & ls_to_orig){
     if(ls_to_orig.size() == 0){
         _ls_to_orig = IntVect();
         _orig_to_ls = IntVect();
@@ -1388,11 +1389,20 @@ void LSGrid::process_results(bool conv,
         // voltages. Validate their size/finiteness before we index them below
         // (compute_results / _get_results_back_to_orig_nodes both index the solver
         // vectors with an unchecked operator()).
-        // Only external solvers are checked: AlgorithmType::Custom is precisely
-        // "not one of the built-in solvers" (see name_to_algo_type), and the
-        // built-in ones are covered by the test suite, so they pay nothing here.
+        // Only external solvers are checked: the built-in ones are covered by the
+        // test suite, so they pay nothing here.
+        //
+        // "Is it built-in?" is asked of the REGISTRY, which records it at
+        // registration time (SolverOrigin), not of AlgorithmType. Gating on
+        // `get_type() == AlgorithmType::Custom` was wrong: AlgorithmType is a fixed
+        // enum of serialized solver identities, and a built-in only has a member
+        // there if one was added for it -- the NRRefactorRetry_* family never got
+        // one, so name_to_algo_type() reports those three built-ins as Custom
+        // exactly like a plugin, and they were paying for this check on every
+        // single solve. The flag is cached by AlgorithmSelector::change_algorithm,
+        // so this stays a bool read on the hot path.
         const bool is_external_algo =
-            (ac ? _algo.get_type() : _dc_algo.get_type()) == AlgorithmType::Custom;
+            !(ac ? _algo.is_builtin_algo() : _dc_algo.is_builtin_algo());
         if (is_external_algo) conv = _check_solver_output(ac);
     }
     if (conv){
