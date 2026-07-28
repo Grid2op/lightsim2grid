@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 
 namespace ls2g {
 
@@ -83,6 +84,39 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     b_max_ = RealVect::Map(bmax.data(), bmax.size());
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
     reset_results();
+}
+
+void SvcContainer::check_valid(int nb_bus,
+                               int nb_sub,
+                               const SubstationContainer & substations,
+                               std::vector<int> & all_pos_topo_vect) const
+{
+    // one-side index checks (bus / subid / pos_topo_vect)
+    check_valid_osc(nb_bus, nb_sub, substations, all_pos_topo_vect, "svc");
+
+    // `regulated_bus_id_` is a gridmodel bus id that the powerflow uses *as an index*
+    // without re-checking it: `id_grid_to_solver[regulated_bus_id_(svc_id)]` in
+    // SvcContainer::set_vm and in LSGrid::fill_voltage_control_solver_data, and
+    // `Vm(regulated_bus_id_(svc_id))` in get_vm_for_dc. Nothing on the way in bounds it
+    // (SvcContainer::init only checks the vector's length, and a pickle / binary file
+    // sets it verbatim), so an out-of-range value is an out-of-bounds read followed by
+    // an out-of-bounds write into V. Same check as the generator field of the same name.
+    const int nb_svc = nb();
+    const bool has_reg_info = regulated_bus_id_.size() > 0;
+    if(!has_reg_info) return;
+    for(int svc_id = 0; svc_id < nb_svc; ++svc_id)
+    {
+        // -1 is legal: this SVC regulates no bus (disconnected / no remote target)
+        const int reg = regulated_bus_id_(svc_id);
+        if(reg == _deactivated_bus_id) continue;
+        if((reg < 0) || (reg >= nb_bus))
+        {
+            std::ostringstream exc_;
+            exc_ << "LSGrid::check_grid: svc id " << svc_id << " regulates bus id " << reg
+                 << " which is out of range [0, " << nb_bus << ").";
+            throw std::out_of_range(exc_.str());
+        }
+    }
 }
 
 void SvcContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const

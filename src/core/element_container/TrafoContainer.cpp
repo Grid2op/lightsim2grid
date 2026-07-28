@@ -128,8 +128,44 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     GenericContainer::check_size(base_x, size, "base_x");
     base_r_ = RealVect::Map(base_r.data(), size);
     base_x_ = RealVect::Map(base_x.data(), size);
-    rx_corr_alpha_ = std::get<8>(my_state);
-    rx_corr_pct_ = std::get<9>(my_state);
+
+    // The two alpha -> r/x correction tables come straight from a pickle or a binary
+    // file. `_update_model_coeffs()` right below walks el_id over [0, nb()) and reads
+    // `rx_corr_alpha_[el_id]` / `rx_corr_pct_[el_id]` with an unchecked
+    // std::vector::operator[], and `_shift_rx_corr_pct` then interpolates `ys` using
+    // indices derived from `xs.size()`. So a state declaring fewer tables than
+    // transformers builds a std::vector out of whatever the heap holds past the end
+    // (and dereferences its pointers), and a state whose alpha / correction tables
+    // differ in length reads past the end of the shorter one. Neither is caught by
+    // check_grid(): this runs *before* it. Validate both shapes here, exactly the
+    // invariant init() and set_shift_dependent_rx() maintain.
+    const std::vector<std::vector<real_type> > & rx_corr_alpha = std::get<8>(my_state);
+    const std::vector<std::vector<real_type> > & rx_corr_pct = std::get<9>(my_state);
+    if(rx_corr_alpha.empty() && rx_corr_pct.empty()){
+        // no table at all: only legal when nothing would index them
+        if(shift_dependent_rx_ && (size > 0)){
+            std::ostringstream exc_;
+            exc_ << "TrafoContainer::set_state: shift-dependent r/x is enabled for " << size
+                 << " transformer(s) but the state carries no (alpha -> correction) table at all. "
+                 << "The tables are indexed by transformer id, so this state is inconsistent.";
+            throw std::runtime_error(exc_.str());
+        }
+    } else {
+        GenericContainer::check_size(rx_corr_alpha, size, "rx_corr_alpha");
+        GenericContainer::check_size(rx_corr_pct, size, "rx_corr_pct");
+        for(std::size_t el_id = 0; el_id < rx_corr_alpha.size(); ++el_id){
+            if(rx_corr_alpha[el_id].size() != rx_corr_pct[el_id].size()){
+                std::ostringstream exc_;
+                exc_ << "TrafoContainer::set_state: transformer " << el_id << " has "
+                     << rx_corr_alpha[el_id].size() << " alpha sample(s) but "
+                     << rx_corr_pct[el_id].size() << " r/x correction value(s). Both tables are "
+                     << "read together (one correction per alpha) and must have the same length.";
+                throw std::runtime_error(exc_.str());
+            }
+        }
+    }
+    rx_corr_alpha_ = rx_corr_alpha;
+    rx_corr_pct_ = rx_corr_pct;
 
     _update_model_coeffs();
     reset_results();

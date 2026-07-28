@@ -109,6 +109,16 @@ class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorA
         SvcContainer::StateRes get_state() const;
         void set_state(SvcContainer::StateRes & my_state);
 
+        // Whole-grid semantic validation (see GenericContainer::check_valid): the
+        // one-side checks, plus the range of `regulated_bus_id_`. That last one is
+        // a *grid* bus id used directly as an index (`id_grid_to_solver[...]` in
+        // set_vm / LSGrid::fill_voltage_control_solver_data, `Vm(...)` in
+        // get_vm_for_dc), exactly like the generator field of the same name.
+        void check_valid(int nb_bus,
+                         int nb_sub,
+                         const SubstationContainer & substations,
+                         std::vector<int> & all_pos_topo_vect) const override;
+
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path, bool atomic = true) const;
         static SvcContainer load_binary(const std::string & path);
