@@ -82,8 +82,13 @@ the file, and it is validated at two levels:
 :py:meth:`LSGrid.check_grid` verifies that a grid
 is internally consistent and safe to run a powerflow on. It checks that every
 index the grid carries is in range — the bus id of every element, the substation
-id and the position in the topology vector (both optional), and the generator
-slack and remote-regulated bus references. It also checks the *shape* of the grid
+id and the position in the topology vector (both optional), and the generator and
+SVC slack / remote-regulated bus references. The topology-vector positions are
+additionally required to form a permutation of ``[0, dim_topo)`` over exactly the
+elements :py:meth:`LSGrid.update_topo` drives (loads, generators, storage units,
+powerlines and transformers): that is what makes them safe to index the
+``dim_topo``-sized arrays that method is given, so a shunt, static generator, SVC
+or hvdc line claiming a position in that vector is rejected. It also checks the *shape* of the grid
 itself: that the substation container's own arrays agree with each other (the bus
 count, the per-bus status vector and ``n_sub × nmax_busbar_per_sub`` all describe
 the same set of buses), and that the bus-id mapping vectors carried alongside the

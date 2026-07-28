@@ -9,9 +9,70 @@
 #include "DataConverter.hpp"
 
 #include <iostream>
+#include <sstream>
+#include <stdexcept>
 
 namespace ls2g {
 
+void PandaPowerConverter::_check_same_size(const std::string & fun_name,
+                                           Eigen::Index expected,
+                                           const std::string & expected_name,
+                                           const std::string & name,
+                                           Eigen::Index actual)
+{
+    if(actual == expected) return;
+    std::ostringstream exc_;
+    exc_ << "PandaPowerConverter::" << fun_name << ": '" << name << "' has " << actual
+         << " element(s) while '" << expected_name << "' has " << expected
+         << ". All the inputs describe the same elements, one entry each, and are read "
+            "together element by element: they must all have the same length.";
+    throw std::runtime_error(exc_.str());
+}
+
+void PandaPowerConverter::_check_trafo_inputs(const std::string & fun_name,
+                                              const Eigen::Ref<const RealVect> & tap_step_pct,
+                                              const Eigen::Ref<const RealVect> & tap_pos,
+                                              const Eigen::Ref<const RealVect> & tap_angles,
+                                              const std::vector<bool> & is_tap_hv_side,
+                                              const Eigen::Ref<const RealVect> & vn_hv,
+                                              const Eigen::Ref<const RealVect> & vn_lv,
+                                              const Eigen::Ref<const RealVect> & trafo_vk_percent,
+                                              const Eigen::Ref<const RealVect> & trafo_vkr_percent,
+                                              const Eigen::Ref<const RealVect> & trafo_sn_trafo_mva,
+                                              const Eigen::Ref<const RealVect> & trafo_pfe_kw,
+                                              const Eigen::Ref<const RealVect> & trafo_i0_pct)
+{
+    const Eigen::Index nb_trafo = tap_step_pct.size();
+    const char * ref = "tap_step_pct";
+    _check_same_size(fun_name, nb_trafo, ref, "tap_pos", tap_pos.size());
+    _check_same_size(fun_name, nb_trafo, ref, "tap_angles", tap_angles.size());
+    _check_same_size(fun_name, nb_trafo, ref, "is_tap_hv_side",
+                     static_cast<Eigen::Index>(is_tap_hv_side.size()));
+    _check_same_size(fun_name, nb_trafo, ref, "vn_hv", vn_hv.size());
+    _check_same_size(fun_name, nb_trafo, ref, "vn_lv", vn_lv.size());
+    _check_same_size(fun_name, nb_trafo, ref, "trafo_vk_percent", trafo_vk_percent.size());
+    _check_same_size(fun_name, nb_trafo, ref, "trafo_vkr_percent", trafo_vkr_percent.size());
+    _check_same_size(fun_name, nb_trafo, ref, "trafo_sn_trafo_mva", trafo_sn_trafo_mva.size());
+    _check_same_size(fun_name, nb_trafo, ref, "trafo_pfe_kw", trafo_pfe_kw.size());
+    _check_same_size(fun_name, nb_trafo, ref, "trafo_i0_pct", trafo_i0_pct.size());
+}
+
+void PandaPowerConverter::_check_line_inputs(const std::string & fun_name,
+                                             const Eigen::Ref<const RealVect> & branch_r,
+                                             const Eigen::Ref<const RealVect> & branch_x,
+                                             const Eigen::Ref<const RealVect> & branch_g,
+                                             const Eigen::Ref<const RealVect> & branch_c,
+                                             const Eigen::Ref<const RealVect> & branch_from_kv,
+                                             const Eigen::Ref<const RealVect> & branch_to_kv)
+{
+    const Eigen::Index nb_line = branch_r.size();
+    const char * ref = "branch_r";
+    _check_same_size(fun_name, nb_line, ref, "branch_x", branch_x.size());
+    _check_same_size(fun_name, nb_line, ref, "branch_g", branch_g.size());
+    _check_same_size(fun_name, nb_line, ref, "branch_c", branch_c.size());
+    _check_same_size(fun_name, nb_line, ref, "branch_from_kv", branch_from_kv.size());
+    _check_same_size(fun_name, nb_line, ref, "branch_to_kv", branch_to_kv.size());
+}
 
 void PandaPowerConverter::_check_init() const {
     if(sn_mva_ <= 0.){
@@ -41,7 +102,9 @@ std::tuple<RealVect,
     _check_init();
 
     const int nb_trafo = static_cast<int>(tap_step_pct.size());
-    // TODO check all vectors have the same size
+    _check_trafo_inputs("get_trafo_param_pp2", tap_step_pct, tap_pos, tap_angles, is_tap_hv_side,
+                        vn_hv, vn_lv, trafo_vk_percent, trafo_vkr_percent, trafo_sn_trafo_mva,
+                        trafo_pfe_kw, trafo_i0_pct);
 
     // compute the adjusted for phase shifter and tap side
     auto tap_steps = 0.01 * tap_step_pct.array() * tap_pos.array();
@@ -134,10 +197,12 @@ std::tuple<RealVect,
                                                       const Eigen::Ref<const RealVect> & branch_g,
                                                       const Eigen::Ref<const RealVect> & branch_c,
                                                       const Eigen::Ref<const RealVect> & branch_from_kv,
-                                                      const Eigen::Ref<const RealVect> & /*branch_to_kv*/) const
+                                                      const Eigen::Ref<const RealVect> & branch_to_kv) const
 {
     //TODO does not use c at the moment!
     _check_init();
+    _check_line_inputs("get_line_param_legacy", branch_r, branch_x, branch_g, branch_c,
+                       branch_from_kv, branch_to_kv);
     const int nb_line = static_cast<int>(branch_r.size());
     RealVect branch_from_pu = branch_from_kv.array() * branch_from_kv.array() / sn_mva_;
 
@@ -166,9 +231,11 @@ std::tuple<RealVect,
                                         const Eigen::Ref<const RealVect> & branch_g,
                                         const Eigen::Ref<const RealVect> & branch_c,
                                         const Eigen::Ref<const RealVect> & branch_from_kv,
-                                        const Eigen::Ref<const RealVect> & /*branch_to_kv*/) const
+                                        const Eigen::Ref<const RealVect> & branch_to_kv) const
 {
     _check_init();
+    _check_line_inputs("get_line_param", branch_r, branch_x, branch_g, branch_c,
+                       branch_from_kv, branch_to_kv);
     const int nb_line = static_cast<int>(branch_r.size());
     RealVect branch_from_pu = branch_from_kv.array() * branch_from_kv.array() / sn_mva_;
 
@@ -212,7 +279,9 @@ std::tuple<RealVect,
     // see _calc_branch_values_from_trafo_df from pandapower.build_branch
 
     const int nb_trafo = static_cast<int>(tap_step_pct.size());
-    // TODO check all vectors have the same size
+    _check_trafo_inputs("get_trafo_param_pp3", tap_step_pct, tap_pos, tap_angles, is_tap_hv_side,
+                        vn_hv, vn_lv, trafo_vk_percent, trafo_vkr_percent, trafo_sn_mva,
+                        trafo_pfe_kw, trafo_i0_pct);
 
     // compute the adjusted for phase shifter and tap side
     auto tap_steps = 0.01 * tap_step_pct.array() * tap_pos.array();

@@ -430,6 +430,14 @@ class TwoSidesContainer : public GenericContainer
             if(names_.size() > 0) check_size(names_, size, "names");  // names are optional
             if(static_cast<size_t>(side_1_.nb()) != size) throw std::runtime_error("Side_1 do not have the proper size");
             if(static_cast<size_t>(side_2_.nb()) != size) throw std::runtime_error("Side_2 do not have the proper size");
+            // `nb()` is side_1_.nb(), NOT status_global_.size(): nothing above ties the
+            // two together, yet status_global_ is indexed with element ids bounded by
+            // nb() all over this class (resolve_status, _deactivate, fillYbus, the batch
+            // solvers...) with an unchecked operator[]. A pickle / binary file declaring
+            // a shorter (in particular empty) status_global_ therefore reads and writes
+            // past its end -- and check_grid() never sees it, it runs later and only
+            // looks at the per-side data. Demand the exact length here.
+            check_size(status_global_, size, "status_global");
         }
 
         bool resolve_status(int el_id, bool side_1_modif, DualAlgoControl & solver_control){

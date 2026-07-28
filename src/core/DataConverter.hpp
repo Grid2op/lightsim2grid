@@ -8,6 +8,7 @@
 
 #ifndef DATACONVERTER_H
 #define DATACONVERTER_H
+#include <string>
 #include <vector>
 
 #include "Utils.hpp"
@@ -105,6 +106,42 @@ class LS2G_API PandaPowerConverter final : public BaseConstants
 
     private:
         void _check_init() const;
+
+        // Every method above walks its inputs together, element by element, with
+        // unchecked accessors (`vect.coeff(i)`, `is_tap_hv_side[i]`) and combines
+        // them in coefficient-wise Eigen expressions whose result is sized from
+        // one of them. Eigen's own size assertions are compiled out of release
+        // wheels (-O3 -DNDEBUG), so a caller passing arrays of different lengths
+        // reads AND writes past the end of the shorter ones (observed as heap
+        // corruption, not a clean error). These are public python bindings
+        // (`PandaPowerConverter`), so the sizes have to be checked here.
+        static void _check_same_size(const std::string & fun_name,
+                                     Eigen::Index expected,
+                                     const std::string & expected_name,
+                                     const std::string & name,
+                                     Eigen::Index actual);
+        // the shared input-shape check of get_trafo_param_pp2 / get_trafo_param_pp3
+        // (identical argument lists)
+        static void _check_trafo_inputs(const std::string & fun_name,
+                                        const Eigen::Ref<const RealVect> & tap_step_pct,
+                                        const Eigen::Ref<const RealVect> & tap_pos,
+                                        const Eigen::Ref<const RealVect> & tap_angles,
+                                        const std::vector<bool> & is_tap_hv_side,
+                                        const Eigen::Ref<const RealVect> & vn_hv,
+                                        const Eigen::Ref<const RealVect> & vn_lv,
+                                        const Eigen::Ref<const RealVect> & trafo_vk_percent,
+                                        const Eigen::Ref<const RealVect> & trafo_vkr_percent,
+                                        const Eigen::Ref<const RealVect> & trafo_sn_trafo_mva,
+                                        const Eigen::Ref<const RealVect> & trafo_pfe_kw,
+                                        const Eigen::Ref<const RealVect> & trafo_i0_pct);
+        // ... and of get_line_param / get_line_param_legacy
+        static void _check_line_inputs(const std::string & fun_name,
+                                       const Eigen::Ref<const RealVect> & branch_r,
+                                       const Eigen::Ref<const RealVect> & branch_x,
+                                       const Eigen::Ref<const RealVect> & branch_g,
+                                       const Eigen::Ref<const RealVect> & branch_c,
+                                       const Eigen::Ref<const RealVect> & branch_from_kv,
+                                       const Eigen::Ref<const RealVect> & branch_to_kv);
 };
 
 // TODO have a converter from ppc !

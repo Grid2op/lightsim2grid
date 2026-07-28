@@ -338,18 +338,37 @@ void LSGrid::check_grid() const
     const int nb_sub = substations_.nb_sub();
 
     // Per-container range + finiteness checks. Each container appends the
-    // pos_topo_vect entries it carries (an optional field) to all_pos_topo_vect
-    // for the global permutation check below.
-    std::vector<int> all_pos_topo_vect;
+    // pos_topo_vect entries it carries (an optional field) to the accumulator it is
+    // given, for the global permutation check below.
+    //
+    // Only the containers update_topo() actually walks may contribute to
+    // `all_pos_topo_vect`: that vector's own length is the `dim_topo` the permutation
+    // is proved against, and update_topo() sizes its caller arrays as
+    // `nb loads + nb gens + nb storages + 2 * nb lines + 2 * nb trafos`. Letting a
+    // shunt / sgen / svc / hvdc position into the same pot inflates that bound, so a
+    // *validated* load position could still be >= the length of the arrays
+    // update_topo() indexes with it. Those containers have no position in the grid2op
+    // topology vector to begin with (there is no setter for one), so a state carrying
+    // one is inconsistent: collect them apart and reject.
+    std::vector<int> all_pos_topo_vect;   // elements update_topo() drives
+    std::vector<int> pos_topo_vect_not_in_topo;  // must stay empty
     powerlines_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
     trafos_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    shunts_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
     generators_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
     loads_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    sgens_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
     storages_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    hvdc_lines_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    svcs_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    shunts_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    sgens_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    hvdc_lines_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    svcs_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    if(!pos_topo_vect_not_in_topo.empty())
+    {
+        throw std::runtime_error(
+            "LSGrid::check_grid: a shunt, static generator, svc or hvdc line declares a position "
+            "in the grid2op topology vector. Only loads, generators, storage units, powerlines and "
+            "transformers are part of that vector (it is what sizes the arrays passed to "
+            "update_topo), so this state is inconsistent.");
+    }
 
     // pos_topo_vect is grid2op-specific and optional: it is either set on every
     // topology-participating element or on none. When set, the collected values
