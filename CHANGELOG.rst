@@ -3,6 +3,16 @@ Change Log
 
 [TODO]
 --------
+- ``SubstationContainer::sub_vn_kv_`` is dead state: its only writers (``init_sub()``
+  and the two-argument constructor) are called from nowhere, and nothing reads it
+  back, so it is empty on every grid every loader produces and in every binary file
+  saved so far. It is also redundant -- a substation's nominal voltage is the common
+  vn_kv of its buses, i.e. ``sub_vn_kv_[I] == bus_vn_kv_[I]`` for ``I < n_sub``, which
+  ``check_valid()`` now enforces when it is present. Decide: either drop it from
+  ``StateRes`` (needs a ``BINARY_FORMAT_VERSION`` bump) or have ``init_bus()`` fill it
+  and make it mandatory (changes what newly-saved files contain, and can only become
+  mandatory once no already-saved file needs to load). See the long note on the member
+  itself in ``SubstationContainer.hpp``.
 - [refacto] have a structure in cpp for the buses
 - [refacto] have the id_grid_to_solver and id_solver_to_grid etc. directly in the solver and NOT in the gridmodel.
 - [refacto] put some method in the DataGeneric as well as some attribute (_status for example)
@@ -124,6 +134,99 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   / ``init_from_powermodels``). A well-formed but inconsistent state (e.g. an
   out-of-range bus id in a crafted binary file) now raises a clean exception instead
   of causing an out-of-bounds access during the next powerflow.
+- [FIXED] ``SubstationContainer::set_state`` performed **no** validation at all, and it
+  restores the root of the grid's index space: ``nb_bus()`` (the bound ``check_grid()``
+  validates every element bus id against), ``bus_status_`` (the vector those same ids are
+  used to index) and ``n_sub_`` / ``nmax_busbar_per_sub_`` were all read from the file
+  independently of one another. A pickle or a binary file declaring, say, 4000 buses but a
+  1-entry ``bus_status`` passed ``check_grid()`` and then corrupted the heap on the next
+  ``init_bus_status()`` (``disconnect_all_buses()`` writes ``nb_bus()`` entries into it).
+  All of these are now cross-checked on load, and re-checked by ``check_grid()``.
+- [FIXED] ``n_sub_ == 0`` restored from a state reached ``sub_id_of_bus()``, which does
+  ``gridmodel_bus_id % n_sub_`` -- an integer division by zero (SIGFPE that kills the
+  process), the same class of bug as ``refactor_every_n == 0``. A grid with buses must now
+  declare a strictly positive substation count, and ``n_sub_ * nmax_busbar_per_sub_`` is
+  rejected if it overflows the ``int`` it is stored in.
+- [FIXED] ``LSGrid::set_ls_to_orig`` accepted any value: ``set_ls_to_orig_internal`` sizes
+  the reverse mapping from ``lpNorm<Infinity>()`` (the maximum **absolute** value) and then
+  indexes it with the values themselves, so an entry of ``-5`` sized the vector from 5 and
+  wrote at index ``-5`` -- an out-of-bounds heap write, reachable from the ``_ls_to_orig``
+  python property as well as from a pickle / binary file. Entries must now be ``-1`` or a
+  sane non-negative original-grid bus id. ``_orig_to_ls`` is range-checked the same way.
+- [FIXED] ``_init_kwargs`` is serialized as two parallel vectors whose lengths are stored
+  independently; ``set_state`` walked the keys and indexed the values with the same
+  counter, so a file declaring more keys than values read past the end of the values
+  vector -- constructing ``std::string`` objects from arbitrary heap contents. The two
+  lengths must now match.
+- [FIXED] iterating ``gridmodel.get_substations()`` crashed on any grid whose substation
+  names were never set (``set_substation_names`` is optional and the pandapower / matpower
+  / powermodels loaders never call it): ``SubstationInfo`` read ``sub_names_[id]``
+  unconditionally, bounded only against the *substation count*. This needed no crafted
+  input at all.
+- [FIXED] ``update_topo`` did not check the length of the ``has_changed`` / ``new_values``
+  arrays it is given. They are indexed **by position in the topology vector** with an
+  unchecked Eigen ``operator()``: the positions are validated (``check_grid()`` proves they
+  form a permutation of ``[0, dim_topo)``), but a caller-supplied array shorter than
+  ``dim_topo`` was simply read past its end. Both must now have exactly ``dim_topo``
+  entries.
+- [FIXED] ``update_slack_weights`` did not check that its ``could_be_slack`` array had one
+  entry per generator, although it indexes it by generator id.
+- [FIXED] ``check_grid()`` now also validates the substation container's own internal
+  consistency and the bus-id mapping vectors (``_ls_to_orig`` / ``_orig_to_ls`` /
+  ``_bus_fusion_rep``), which it previously ignored entirely.
+- [FIXED] whether a solver is one of lightsim2grid's own or comes from a plugin was
+  decided by ``AlgorithmType``, which cannot answer that question: it is a fixed enum of
+  *serialized* solver identities, and a built-in only appears in it if a member was added
+  for it. The ``NRRefactorRetry_KLU`` / ``_NICSLU`` / ``_CKTSO`` family never got one, so
+  ``name_to_algo_type()`` reported those three **built-in** solvers as
+  ``AlgorithmType::Custom`` exactly like a plugin -- and they were consequently paying for
+  the external-solver output check (voltage size + finiteness) on *every single solve*,
+  which built-in solvers are explicitly supposed to cost nothing. The registry now records
+  a ``SolverOrigin`` (``Builtin`` / ``External``) when a solver is registered, which is
+  where the answer is actually known; ``AlgorithmSelector::is_builtin_algo()`` caches it so
+  the hot path stays a bool read. ``SolverOrigin::External`` is the default, so a solver
+  registered without saying anything is treated as untrusted.
+- [FIXED] ``SubstationContainer`` did not check that a nominal voltage is a finite,
+  strictly positive number; 0, a negative value or NaN silently produced nonsense per-unit
+  conversions. NB this deliberately covers ``bus_vn_kv`` / ``sub_vn_kv`` only, never
+  ``bus_vmin_kv`` / ``bus_vmax_kv``, which use NaN as the documented "no limit set" sentinel.
+- [FIXED] ``n_sub * nmax_busbar_per_sub`` (the total bus count, stored in an ``int`` and
+  used in ``int`` index arithmetic) was computed without an overflow check in ``init_bus``
+  and ``init_sub``. All three entry points (those two plus ``set_state``) now go through a
+  single ``checked_nb_bus`` helper doing the multiplication in 64 bits and refusing a
+  product that does not fit, along with the positivity checks.
+- [FIXED] ``LSGrid::set_ls_to_orig_internal`` was declared ``noexcept`` although it assigns
+  one Eigen vector and allocates another, either of which throws ``std::bad_alloc`` on
+  failure -- which in a ``noexcept`` function is an immediate ``std::terminate()`` rather
+  than something the caller can handle. Nothing needed the guarantee, so it is gone.
+- [FIXED] the "every bus of a substation must have the same nominal voltage" check in
+  ``init_bus`` never fired: a gridmodel bus id is ``sub_id + (local_bus_id - 1) * n_sub``
+  and ``LocalBusId`` runs ``1..nmax_busbar_per_sub``, but the loop ran local ids
+  ``[1, nmax_busbar_per_sub)`` -- so it started by comparing the reference bus with
+  *itself* and stopped one busbar short. With the usual ``nmax_busbar_per_sub == 2`` it
+  checked nothing at all, and the invariant was silently unenforced on every path. It is
+  now checked over local ids ``2..nmax_busbar_per_sub``, and re-checked by
+  ``check_grid()`` -- ``set_state`` bypasses ``init_bus``, so a pickle / binary file could
+  always carry a grid violating it.
+- [FIXED] ``SubstationContainer::init_sub`` wrote ``n_sub`` values into ``sub_vn_kv_``
+  (and into ``bus_vn_kv_``) with an unchecked ``operator[]`` without sizing them first.
+  Only the two-argument constructor sizes ``sub_vn_kv_``, and nothing uses it: the live
+  path is the default constructor followed by ``init_bus()``, which leaves ``sub_vn_kv_``
+  empty. Calling ``init_sub()`` on such a container was an out-of-bounds heap write. It is
+  currently uncalled and unbound, so this was latent rather than reachable, but it sized
+  its destinations wrongly for whoever wired it up next. ``sub_vn_kv`` is also validated
+  against ``bus_vn_kv`` by ``check_grid()`` when it is present (it stays optional: it is
+  empty on every grid produced by any loader today, and on every already-saved binary
+  file including this repo's own format-4 compatibility fixture).
+- [FIXED] an ``AlgoConfig`` (part of the serialized grid state) carrying an out-of-range
+  ``RefactorPolicyType`` / ``ScalingPolicyType`` is now rejected instead of being cast to
+  the enum, silently falling into a ``default:`` branch and round-tripping back out of
+  ``get_config()``. ``set_config`` also validates both policies *before* touching any
+  member, so a rejected config no longer leaves a half-applied one behind.
+- [FIXED] ``LSGrid::set_orig_to_ls`` did not actually build the inverse of the mapping it
+  was given: it walked only the first *n* entries (*n* = the number of non-``-1`` ones,
+  which are not necessarily at the front) and stored the lightsim bus id where the
+  original one belonged. ``_ls_to_orig`` and ``_orig_to_ls`` are now true inverses.
 - [BREAKING] solver names are now restricted to ``[A-Za-z_][A-Za-z0-9_.]{0,63}`` (start with
   an ASCII letter or ``_``; then ASCII letters, digits, ``_`` or ``.``; at most 64
   characters). Registering any other name is refused. A solver name is written into every

@@ -597,6 +597,16 @@ void GeneratorContainer::update_slack_weights(
     DualAlgoControl & solver_control)
 {
     const int nb_gen = nb();
+    // `could_be_slack` comes from python and is indexed by generator id below with
+    // an unchecked Eigen operator(): a shorter array would be read out of bounds
+    // (release wheels are -O3 -DNDEBUG, so Eigen's own assert is gone).
+    if(could_be_slack.rows() != nb_gen){
+        std::ostringstream exc_;
+        exc_ << "GeneratorContainer::update_slack_weights: 'could_be_slack' has "
+             << could_be_slack.rows() << " elements but this grid has " << nb_gen
+             << " generators. It is indexed by generator id, so both must match.";
+        throw std::runtime_error(exc_.str());
+    }
     std::vector<int> gen_slack_id;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {

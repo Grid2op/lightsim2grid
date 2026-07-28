@@ -83,9 +83,16 @@ the file, and it is validated at two levels:
 is internally consistent and safe to run a powerflow on. It checks that every
 index the grid carries is in range — the bus id of every element, the substation
 id and the position in the topology vector (both optional), and the generator
-slack and remote-regulated bus references. It raises ``IndexError`` (an
-out-of-range index) or ``RuntimeError`` (a structural inconsistency), and returns
-``None`` for a consistent grid.
+slack and remote-regulated bus references. It also checks the *shape* of the grid
+itself: that the substation container's own arrays agree with each other (the bus
+count, the per-bus status vector and ``n_sub × nmax_busbar_per_sub`` all describe
+the same set of buses), and that the bus-id mapping vectors carried alongside the
+grid (``_ls_to_orig`` / ``_orig_to_ls`` / ``_bus_fusion_rep``) are in range. That
+part matters as much as the per-element checks: the bus count is the *bound* the
+element checks are expressed against, so validating elements against a grid whose
+own arrays disagree would prove nothing. It raises ``IndexError`` (an out-of-range
+index) or ``RuntimeError`` (a structural inconsistency), and returns ``None`` for
+a consistent grid.
 
 You normally do not need to call it yourself:
 

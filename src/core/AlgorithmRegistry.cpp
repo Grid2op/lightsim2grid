@@ -15,7 +15,8 @@ AlgorithmRegistry& AlgorithmRegistry::instance() {
     return reg;
 }
 
-void AlgorithmRegistry::register_solver(const std::string& name, Factory f, Ls2gAbiTag caller_tag) {
+void AlgorithmRegistry::register_solver(const std::string& name, Factory f, Ls2gAbiTag caller_tag,
+                                        SolverOrigin origin) {
     const Ls2gAbiTag& this_core_tag = core_abi_tag();
     if (caller_tag != this_core_tag) {
         throw std::runtime_error(
@@ -37,9 +38,10 @@ void AlgorithmRegistry::register_solver(const std::string& name, Factory f, Ls2g
         throw std::invalid_argument("AlgorithmRegistry: a solver named '" + printable(name) + "' is already registered.");
     }
     _factories[name] = std::move(f);
+    _origins[name] = origin;
 }
 
-void AlgorithmRegistry::register_all(FactoryMap batch, Ls2gAbiTag caller_tag) {
+void AlgorithmRegistry::register_all(FactoryMap batch, Ls2gAbiTag caller_tag, SolverOrigin origin) {
     const Ls2gAbiTag& this_core_tag = core_abi_tag();
     if (caller_tag != this_core_tag) {
         throw std::runtime_error(
@@ -70,10 +72,14 @@ void AlgorithmRegistry::register_all(FactoryMap batch, Ls2gAbiTag caller_tag) {
     // throws (e.g. std::bad_alloc), _factories is left exactly as it was.
     FactoryMap merged = _factories;
     merged.reserve(_factories.size() + batch.size());
+    std::unordered_map<std::string, SolverOrigin> merged_origins = _origins;
+    merged_origins.reserve(_origins.size() + batch.size());
     for (auto& kv : batch) {
+        merged_origins.emplace(kv.first, origin);
         merged.emplace(kv.first, std::move(kv.second));
     }
     _factories.swap(merged);
+    _origins.swap(merged_origins);
 }
 
 std::unique_ptr<BaseAlgo> AlgorithmRegistry::make(const std::string& name) const {
@@ -87,6 +93,21 @@ std::unique_ptr<BaseAlgo> AlgorithmRegistry::make(const std::string& name) const
 
 bool AlgorithmRegistry::is_registered(const std::string& name) const {
     return _factories.find(name) != _factories.end();
+}
+
+SolverOrigin AlgorithmRegistry::origin_of(const std::string& name) const {
+    auto it = _origins.find(name);
+    // an unknown name is reported External: the cautious answer (see the header)
+    if (it == _origins.end()) return SolverOrigin::External;
+    return it->second;
+}
+
+std::vector<std::string> AlgorithmRegistry::builtin_algorithm_names() const {
+    std::vector<std::string> names;
+    for (auto it = _origins.begin(); it != _origins.end(); ++it) {
+        if (it->second == SolverOrigin::Builtin) names.push_back(it->first);
+    }
+    return names;
 }
 
 std::vector<std::string> AlgorithmRegistry::available_algorithm_names() const {
