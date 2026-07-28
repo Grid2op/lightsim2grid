@@ -88,7 +88,11 @@ additionally required to form a permutation of ``[0, dim_topo)`` over exactly th
 elements :py:meth:`LSGrid.update_topo` drives (loads, generators, storage units,
 powerlines and transformers): that is what makes them safe to index the
 ``dim_topo``-sized arrays that method is given, so a shunt, static generator, SVC
-or hvdc line claiming a position in that vector is rejected. It also checks the *shape* of the grid
+or hvdc line claiming a position in that vector is rejected. It checks the two
+grid-wide per-unit scalars, ``sn_mva`` (the base power the whole grid is
+normalised against) and ``init_vm_pu``, are finite and strictly positive — a
+degenerate value there does not make a powerflow fail, it makes it silently
+*wrong*. It also checks the *shape* of the grid
 itself: that the substation container's own arrays agree with each other (the bus
 count, the per-bus status vector and ``n_sub × nmax_busbar_per_sub`` all describe
 the same set of buses), and that the bus-id mapping vectors carried alongside the
@@ -109,6 +113,37 @@ You normally do not need to call it yourself:
 It is exposed so you can validate a grid you built or modified by hand. It runs
 in time proportional to the number of elements in the grid, so it is relatively
 cheap compared to a powerflow.
+
+What it deliberately does **not** check is the *value* of the per-element
+electrical parameters: a line's ``r`` / ``x``, a transformer's tap ratio, an
+injection's ``p`` / ``q``. Values that look degenerate are usually legitimate —
+``r = 0`` is a lossless branch, a **negative reactance is a series capacitor**,
+and negative ``r`` / ``x`` also come out of three-winding-transformer star
+equivalents (pandapower's own ``case300`` and ``case9241pegase`` carry them).
+Non-finite values are legitimate too: pypowsybl encodes "no thermal limit" as a
+non-finite ``limit_a_ka``, and unbounded generator reactive limits are
+conventionally ``±Inf``. None of these can corrupt anything either — they are
+never used as indices, so they cannot cause an out-of-bounds access; they flow
+into ``Ybus`` / ``Bbus`` and the solvers' own guards report the solve as
+**non-converged**.
+
+What *is* checked are the two grid-wide scalars ``sn_mva`` and ``init_vm_pu``.
+They escape the safety net above: ``sn_mva`` scales results back to MW / MVar
+*outside* the solver, so a bad value is invisible to the solver's guards — a NaN
+there produced a DC powerflow that reported convergence and returned NaN flows.
+
+.. warning::
+    The solver's guards are not a complete safety net for the *derived* results.
+    They check the bus voltages, not the branch flows computed from them, so a
+    grid whose model is degenerate in a way that leaves the voltages finite can
+    still produce a **converged** solve with non-finite flows. A connected branch
+    with ``r == 0`` *and* ``x == 0`` is the known case: its admittance
+    ``1 / (r + j.x)`` is infinite, and in DC the flows come out non-finite while
+    the solve reports success. Such a branch is not rejected on load, because a
+    lossless branch can be perfectly legitimate (an ideal step-up transformer),
+    and ``init_from_pypowsybl(fuse_zero_impedance_branches=True)`` exists exactly
+    to fuse the buses of the ones that are not. **Check that the flows you get
+    back are finite** if your grid may contain zero-impedance branches.
 
 .. note::
 

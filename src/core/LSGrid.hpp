@@ -309,10 +309,27 @@ class LS2G_API LSGrid final
 
         // All methods to init this data model, all need to be pair unit when applicable
         void init_bus(unsigned int n_sub, unsigned int n_busbar_per_sub, const Eigen::Ref<const RealVect> & bus_vn_kv, int nb_line, int nb_trafo);
-        void set_init_vm_pu(real_type init_vm_pu) {init_vm_pu_ = init_vm_pu; }
+        // Both scalars below must be finite and strictly positive: they are physical
+        // per-unit quantities, and a degenerate value does not fail loudly, it produces
+        // a *confidently wrong* answer. `sn_mva_` is the base power of the entire
+        // per-unit system (Sbus is divided by it, every MW/MVar result multiplied back
+        // by it, and even the solver tolerance is scaled by it in ac_pf), and
+        // `init_vm_pu_` is the flat-start voltage magnitude. See check_positive_finite.
+        void set_init_vm_pu(real_type init_vm_pu) {
+            check_positive_finite(init_vm_pu, "init_vm_pu");
+            init_vm_pu_ = init_vm_pu;
+        }
         [[nodiscard]] real_type get_init_vm_pu() const {return init_vm_pu_;}
-        void set_sn_mva(real_type sn_mva) {sn_mva_ = sn_mva; }
+        void set_sn_mva(real_type sn_mva) {
+            check_positive_finite(sn_mva, "sn_mva");
+            sn_mva_ = sn_mva;
+        }
         [[nodiscard]] real_type get_sn_mva() const {return sn_mva_;}
+
+        // Throws std::runtime_error unless `value` is finite and > 0. Written as
+        // `!(value > 0.)` on purpose: `value <= 0.` is FALSE for NaN, so the naive
+        // form lets a NaN straight through.
+        static void check_positive_finite(real_type value, const char * name);
 
         void init_powerlines(const Eigen::Ref<const RealVect> & branch_r,
                              const Eigen::Ref<const RealVect> & branch_x,

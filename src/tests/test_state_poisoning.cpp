@@ -20,6 +20,8 @@
 // valgrind/ASan in the cpp_unit_tests workflow, which is what proves the
 // rejection happens *before* anything is indexed.
 
+#include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
@@ -272,6 +274,64 @@ TEST_CASE("set_state rejects a wrong-sized status_global on the hvdc lines", "[c
 
     LSGrid restored;
     CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+}
+
+// ---------------------------------------------------------------------------
+// the grid-wide per-unit scalars
+// ---------------------------------------------------------------------------
+// sn_mva_ scales the whole per-unit system (Sbus is divided by it, results are
+// multiplied back by it, ac_pf even scales the solver tolerance with it) and
+// init_vm_pu_ is the flat-start voltage magnitude. Neither was validated
+// anywhere. A degenerate value does not fail loudly: with sn_mva_ = NaN the DC
+// powerflow reported CONVERGENCE and returned NaN flows, because the built-in
+// solvers' finiteness guards only see Va (which Bbus, and so sn_mva, never
+// touches) and the finiteness check on the solver output is reserved for
+// external solvers.
+
+TEST_CASE("check_grid rejects a non-positive or non-finite sn_mva", "[check_grid][state_poisoning]")
+{
+    LSGrid grid = exotic();
+    const std::vector<real_type> bad = {0.,
+                                        -100.,
+                                        std::numeric_limits<real_type>::quiet_NaN(),
+                                        std::numeric_limits<real_type>::infinity()};
+    for(const real_type v : bad)
+    {
+        LSGrid::StateRes st = grid.get_state();
+        std::get<LSGrid::SN_MVA_ID>(st) = v;
+        LSGrid restored;
+        CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+    }
+}
+
+TEST_CASE("check_grid rejects a non-positive or non-finite init_vm_pu", "[check_grid][state_poisoning]")
+{
+    LSGrid grid = exotic();
+    const std::vector<real_type> bad = {0.,
+                                        -1.,
+                                        std::numeric_limits<real_type>::quiet_NaN(),
+                                        std::numeric_limits<real_type>::infinity()};
+    for(const real_type v : bad)
+    {
+        LSGrid::StateRes st = grid.get_state();
+        std::get<LSGrid::INIT_VM_PU_ID>(st) = v;
+        LSGrid restored;
+        CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+    }
+}
+
+TEST_CASE("the sn_mva / init_vm_pu setters reject degenerate values", "[check_grid][state_poisoning]")
+{
+    LSGrid grid = exotic();
+    CHECK_THROWS_AS(grid.set_sn_mva(0.), std::runtime_error);
+    CHECK_THROWS_AS(grid.set_sn_mva(-100.), std::runtime_error);
+    CHECK_THROWS_AS(grid.set_sn_mva(std::numeric_limits<real_type>::quiet_NaN()), std::runtime_error);
+    CHECK_THROWS_AS(grid.set_init_vm_pu(std::numeric_limits<real_type>::infinity()), std::runtime_error);
+    // and a sane value still goes through, leaving a usable grid
+    REQUIRE_NOTHROW(grid.set_sn_mva(100.));
+    REQUIRE_NOTHROW(grid.set_init_vm_pu(1.04));
+    CHECK_NOTHROW(grid.check_grid());
+    CHECK(grid.ac_pf(flat_start(grid), 20, 1e-7).size() == 14);
 }
 
 // ---------------------------------------------------------------------------

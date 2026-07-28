@@ -212,6 +212,75 @@ class TestPoisonedState(unittest.TestCase):
         grid.update_topo(np.zeros(dim_topo, dtype=bool), np.ones(dim_topo, dtype=np.int32))
 
 
+class TestDegenerateGridScalars(unittest.TestCase):
+    """``sn_mva`` is the base power of the whole per-unit system and ``init_vm_pu``
+    the flat-start voltage magnitude. Neither was validated anywhere, and a
+    degenerate value does not make the powerflow fail -- it makes it quietly
+    wrong. With ``sn_mva = nan`` the DC powerflow used to report CONVERGENCE and
+    return NaN branch flows: the built-in solvers' own finiteness guards see a
+    perfectly finite ``Va`` (Bbus does not involve sn_mva), the NaN only appears
+    later when the results are scaled back to MW, and the size/finiteness check on
+    the solver output is deliberately reserved for external solvers."""
+
+    BAD = (0.0, -100.0, float("nan"), float("inf"))
+
+    def test_set_sn_mva_rejects_degenerate_values(self):
+        grid = build_exotic_elements_case_grid()
+        for v in self.BAD:
+            with self.subTest(sn_mva=v), self.assertRaises(RuntimeError):
+                grid.set_sn_mva(v)
+
+    def test_set_init_vm_pu_rejects_degenerate_values(self):
+        grid = build_exotic_elements_case_grid()
+        for v in self.BAD:
+            with self.subTest(init_vm_pu=v), self.assertRaises(RuntimeError):
+                grid.set_init_vm_pu(v)
+
+    def test_check_grid_rejects_degenerate_sn_mva_from_a_state(self):
+        # set_state assigns sn_mva straight from the serialized state, bypassing
+        # the setter: check_grid() is the backstop for pickle / the binary format
+        state = build_exotic_elements_case_grid().__getstate__()
+        for v in self.BAD:
+            with self.subTest(sn_mva=v), self.assertRaises(RuntimeError):
+                _rebuild(_set_at(state, (3, 5), v))
+
+    def test_check_grid_rejects_degenerate_init_vm_pu_from_a_state(self):
+        state = build_exotic_elements_case_grid().__getstate__()
+        for v in self.BAD:
+            with self.subTest(init_vm_pu=v), self.assertRaises(RuntimeError):
+                _rebuild(_set_at(state, (3, 4), v))
+
+    def test_good_scalars_still_accepted(self):
+        grid = build_exotic_elements_case_grid()
+        grid.set_sn_mva(100.0)
+        grid.set_init_vm_pu(1.04)
+        self.assertIsNone(grid.check_grid())
+        v0 = np.ones(grid.total_bus(), dtype=complex)
+        self.assertNotEqual(len(grid.ac_pf(v0, 20, 1e-7)), 0)
+
+    def test_powermodels_loader_rejects_a_degenerate_baseMVA(self):
+        # init_from_matpower routes through this loader, which does
+        # `set_sn_mva(float(network["baseMVA"]))` straight from the source file
+        import copy
+        import json
+        import os
+        try:
+            from lightsim2grid.network import init_from_powermodels
+        except ImportError:
+            self.skipTest("powermodels loader not available")
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "pf_delta_case14.json")
+        if not os.path.exists(path):
+            self.skipTest("pf_delta_case14.json fixture not available")
+        with open(path) as f:
+            network = json.load(f)["network"]
+        for v in (0.0, -100.0, float("nan")):
+            bad = copy.deepcopy(network)
+            bad["baseMVA"] = v
+            with self.subTest(baseMVA=v), self.assertRaises(RuntimeError):
+                init_from_powermodels(bad)
+
+
 class TestPandaPowerConverterInputSizes(unittest.TestCase):
     """``PandaPowerConverter`` walks its inputs together element by element with
     unchecked accessors, and combines them in coefficient-wise Eigen expressions
@@ -238,6 +307,20 @@ class TestPandaPowerConverterInputSizes(unittest.TestCase):
     def test_get_trafo_param_pp3_rejects_mismatched_sizes(self):
         with self.assertRaises(RuntimeError):
             self.conv.get_trafo_param_pp3(*self._trafo_args(self.long), True)
+
+    def test_check_init_rejects_a_nan_sn_mva_or_f_hz(self):
+        # the guard was `sn_mva_ <= 0.`, and every comparison with NaN is false, so a
+        # NaN went straight through -- and it is a divisor in every method here
+        conv = PandaPowerConverter()
+        conv.set_sn_mva(float("nan"))
+        conv.set_f_hz(50.0)
+        with self.assertRaises(RuntimeError):
+            conv.get_line_param(self.one, self.one, self.one, self.one, self.one, self.one)
+        conv2 = PandaPowerConverter()
+        conv2.set_sn_mva(100.0)
+        conv2.set_f_hz(float("nan"))
+        with self.assertRaises(RuntimeError):
+            conv2.get_line_param(self.one, self.one, self.one, self.one, self.one, self.one)
 
     def test_get_trafo_param_rejects_a_short_bool_vector(self):
         args = (self.one, self.one, self.one, [],  # is_tap_hv_side empty

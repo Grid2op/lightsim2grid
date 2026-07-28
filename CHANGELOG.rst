@@ -134,6 +134,25 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   / ``init_from_powermodels``). A well-formed but inconsistent state (e.g. an
   out-of-range bus id in a crafted binary file) now raises a clean exception instead
   of causing an out-of-bounds access during the next powerflow.
+- [FIXED] ``sn_mva`` (the base power of the whole per-unit system) and ``init_vm_pu``
+  (the flat-start voltage magnitude) were validated **nowhere**: not by their python
+  setters, not by ``check_grid()``, and the loaders take them verbatim from their source
+  file (``init_from_powermodels`` / ``init_from_matpower`` do
+  ``set_sn_mva(float(network["baseMVA"]))``). A degenerate value does not make the
+  powerflow fail, it makes it *quietly wrong*: with ``sn_mva = NaN`` the **DC powerflow
+  reported convergence and returned NaN branch flows**, and with a negative one it
+  returned a plausible-looking but sign-inverted per-unit system. The built-in solvers'
+  own finiteness guards cannot catch this -- they check ``Va``, which is finite, since
+  ``Bbus`` does not involve ``sn_mva``; the NaN only appears afterwards, when the results
+  are scaled back to MW / MVar -- and the size/finiteness check on the solver output is
+  deliberately reserved for external solvers. Both scalars must now be finite and
+  strictly positive, checked by the setters and re-checked by ``check_grid()`` (which is
+  what covers pickle, the binary format and every loader, since ``set_state`` bypasses
+  the setters).
+- [FIXED] ``PandaPowerConverter::_check_init`` tested ``sn_mva_ <= 0.`` / ``f_hz_ <= 0.``.
+  Every comparison with NaN is false, so a NaN sailed through both -- and they are
+  divisors in every method of that class, so the whole converted grid came back NaN with
+  no error raised anywhere. Both are now checked as finite and strictly positive.
 - [FIXED] ``PandaPowerConverter`` (``get_trafo_param_pp2`` / ``get_trafo_param_pp3`` /
   ``get_line_param`` / ``get_line_param_legacy``, all exposed to python) never checked
   that the arrays it is given have the same length -- there was a ``TODO check all
