@@ -10,7 +10,10 @@
 #include "AlgorithmSelector.hpp"  // to avoid circular references
 #include "BinaryArchive.hpp"
 
+#include <cmath>      // std::isfinite (check_positive_finite)
 #include <queue>
+#include <sstream>
+#include <stdexcept>
 
 namespace ls2g {
 
@@ -328,6 +331,23 @@ void LSGrid::_restore_algorithm(AlgorithmSelector & algo_selector,
 
 void LSGrid::check_grid() const
 {
+    // The two grid-wide scalars, before anything else. `set_state` assigns them
+    // straight from the serialized state (bypassing the setters), and the loaders take
+    // them verbatim from their source file -- `init_from_powermodels` /
+    // `init_from_matpower` do `set_sn_mva(float(network["baseMVA"]))`, and
+    // `init_from_pandapower` `set_sn_mva(pp_net.sn_mva)`.
+    //
+    // sn_mva_ is the base power of the whole per-unit system: Sbus is divided by it,
+    // every MW / MVar result multiplied back by it, and ac_pf even scales the solver
+    // tolerance with it. A degenerate value does not make the powerflow fail, it makes
+    // it *quietly wrong*: with sn_mva_ = NaN the DC powerflow reports CONVERGENCE and
+    // hands back NaN flows (the built-in solvers' own finiteness guards see a perfectly
+    // finite Va -- Bbus does not involve sn_mva -- and the size/finiteness check on the
+    // solver output is deliberately reserved for external solvers), and with a negative
+    // one it reports a plausible-looking but sign-inverted per-unit system.
+    check_positive_finite(sn_mva_, "sn_mva");
+    check_positive_finite(init_vm_pu_, "init_vm_pu");
+
     // The substation container FIRST: it defines nb_bus / nb_sub, the bounds every
     // per-element check below is expressed against, and it carries the vector
     // (bus_status_) those very ids are used to index. Validating elements against a
@@ -338,18 +358,37 @@ void LSGrid::check_grid() const
     const int nb_sub = substations_.nb_sub();
 
     // Per-container range + finiteness checks. Each container appends the
-    // pos_topo_vect entries it carries (an optional field) to all_pos_topo_vect
-    // for the global permutation check below.
-    std::vector<int> all_pos_topo_vect;
+    // pos_topo_vect entries it carries (an optional field) to the accumulator it is
+    // given, for the global permutation check below.
+    //
+    // Only the containers update_topo() actually walks may contribute to
+    // `all_pos_topo_vect`: that vector's own length is the `dim_topo` the permutation
+    // is proved against, and update_topo() sizes its caller arrays as
+    // `nb loads + nb gens + nb storages + 2 * nb lines + 2 * nb trafos`. Letting a
+    // shunt / sgen / svc / hvdc position into the same pot inflates that bound, so a
+    // *validated* load position could still be >= the length of the arrays
+    // update_topo() indexes with it. Those containers have no position in the grid2op
+    // topology vector to begin with (there is no setter for one), so a state carrying
+    // one is inconsistent: collect them apart and reject.
+    std::vector<int> all_pos_topo_vect;   // elements update_topo() drives
+    std::vector<int> pos_topo_vect_not_in_topo;  // must stay empty
     powerlines_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
     trafos_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    shunts_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
     generators_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
     loads_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    sgens_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
     storages_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    hvdc_lines_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    svcs_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    shunts_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    sgens_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    hvdc_lines_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    svcs_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    if(!pos_topo_vect_not_in_topo.empty())
+    {
+        throw std::runtime_error(
+            "LSGrid::check_grid: a shunt, static generator, svc or hvdc line declares a position "
+            "in the grid2op topology vector. Only loads, generators, storage units, powerlines and "
+            "transformers are part of that vector (it is what sizes the arrays passed to "
+            "update_topo), so this state is inconsistent.");
+    }
 
     // pos_topo_vect is grid2op-specific and optional: it is either set on every
     // topology-participating element or on none. When set, the collected values
@@ -481,6 +520,18 @@ void LSGrid::set_ls_to_orig(const Eigen::Ref<const IntVect> & ls_to_orig){
 // allocation for a handful of buses). Both are rejected here, before any allocation.
 // This runs on the python property setter AND on set_state(), ie on every pickle and
 // every binary file.
+void LSGrid::check_positive_finite(real_type value, const char * name)
+{
+    // NB `!(value > 0.)`, not `value <= 0.`: every comparison with NaN is false, so the
+    // naive form silently accepts a NaN -- which is exactly the value that does the most
+    // damage here (see check_grid()).
+    if(std::isfinite(value) && (value > 0.)) return;
+    std::ostringstream exc_;
+    exc_ << "LSGrid: '" << name << "' is " << value
+         << "; it must be a finite, strictly positive number.";
+    throw std::runtime_error(exc_.str());
+}
+
 void LSGrid::check_ls_to_orig_values(const Eigen::Ref<const IntVect> & ls_to_orig)
 {
     // an original grid can never have more buses than the biggest vector we could

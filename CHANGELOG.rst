@@ -134,6 +134,74 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   / ``init_from_powermodels``). A well-formed but inconsistent state (e.g. an
   out-of-range bus id in a crafted binary file) now raises a clean exception instead
   of causing an out-of-bounds access during the next powerflow.
+- [FIXED] ``sn_mva`` (the base power of the whole per-unit system) and ``init_vm_pu``
+  (the flat-start voltage magnitude) were validated **nowhere**: not by their python
+  setters, not by ``check_grid()``, and the loaders take them verbatim from their source
+  file (``init_from_powermodels`` / ``init_from_matpower`` do
+  ``set_sn_mva(float(network["baseMVA"]))``). A degenerate value does not make the
+  powerflow fail, it makes it *quietly wrong*: with ``sn_mva = NaN`` the **DC powerflow
+  reported convergence and returned NaN branch flows**, and with a negative one it
+  returned a plausible-looking but sign-inverted per-unit system. The built-in solvers'
+  own finiteness guards cannot catch this -- they check ``Va``, which is finite, since
+  ``Bbus`` does not involve ``sn_mva``; the NaN only appears afterwards, when the results
+  are scaled back to MW / MVar -- and the size/finiteness check on the solver output is
+  deliberately reserved for external solvers. Both scalars must now be finite and
+  strictly positive, checked by the setters and re-checked by ``check_grid()`` (which is
+  what covers pickle, the binary format and every loader, since ``set_state`` bypasses
+  the setters).
+- [FIXED] ``PandaPowerConverter::_check_init`` tested ``sn_mva_ <= 0.`` / ``f_hz_ <= 0.``.
+  Every comparison with NaN is false, so a NaN sailed through both -- and they are
+  divisors in every method of that class, so the whole converted grid came back NaN with
+  no error raised anywhere. Both are now checked as finite and strictly positive.
+- [FIXED] ``PandaPowerConverter`` (``get_trafo_param_pp2`` / ``get_trafo_param_pp3`` /
+  ``get_line_param`` / ``get_line_param_legacy``, all exposed to python) never checked
+  that the arrays it is given have the same length -- there was a ``TODO check all
+  vectors have the same size`` where the check belonged. Their element count is taken
+  from the *first* argument, and the others are then read with unchecked accessors
+  (``vect.coeff(i)``, ``is_tap_hv_side[i]``) and combined in coefficient-wise Eigen
+  expressions whose result is sized from one of them. Eigen's own size assertions are
+  compiled out of the release wheels (``-O3 -DNDEBUG``), so a caller passing a longer
+  first array both read *and wrote* past the end of the shorter ones -- reproducible as
+  ``free(): invalid next size (fast)``, i.e. heap corruption, from a handful of lines of
+  plain python. All the input lengths are now checked up front.
+- [FIXED] ``TrafoContainer::set_state`` copied the two per-transformer
+  ``alpha -> r/x correction`` tables (the phase-shifter impedance dependency, see
+  ``set_shift_dependent_rx``) out of the state with no check at all, and then called
+  ``_update_model_coeffs()``, which indexes ``rx_corr_alpha_[el_id]`` /
+  ``rx_corr_pct_[el_id]`` for every transformer with an unchecked
+  ``std::vector::operator[]``. A pickle or binary file declaring fewer tables than
+  transformers therefore read a ``std::vector`` object out of heap memory past the end
+  of the array and dereferenced its pointers -- a segfault, or worse. Two tables of
+  *different* lengths for the same transformer had the same effect one level down
+  (``_shift_rx_corr_pct`` interpolates ``ys`` with indices derived from ``xs.size()``).
+  This ran inside ``set_state``, i.e. **before** ``check_grid()``; both shapes are now
+  validated there, exactly as ``init()`` / ``set_shift_dependent_rx()`` maintain them.
+- [FIXED] ``TwoSidesContainer::set_tsc_state`` (powerlines, transformers, hvdc lines)
+  never checked the length of ``status_global_``: ``nb()`` is ``side_1_.nb()``, so a
+  pickle or binary file could declare a shorter -- in particular empty --
+  ``status_global`` while both sides carried the real element count. That vector is then
+  indexed with element ids bounded by ``nb()`` all over the class and the batch solvers
+  (``resolve_status``, ``_deactivate``, ``fillYbus``, ``ContingencyAnalysis``...) with an
+  unchecked ``operator[]``. Its length must now match exactly.
+- [FIXED] ``check_grid()`` did not range-check ``SvcContainer``'s ``regulated_bus_id_``,
+  although it is a gridmodel bus id used *directly as an index* by the powerflow --
+  ``id_grid_to_solver[regulated_bus_id_(svc_id)]`` in ``SvcContainer::set_vm`` (followed
+  by a **write** into ``V``) and in ``LSGrid::fill_voltage_control_solver_data``. Nothing
+  bounded it: ``init_svcs`` only checks the vector's length, so an SVC regulating an
+  out-of-range bus -- from a crafted pickle / binary file, or straight from a grid file
+  through ``init_from_pypowsybl`` -- passed ``check_grid()`` and then read and wrote out
+  of bounds on the next ``ac_pf``. It is now validated like the generator field of the
+  same name (``-1``, meaning "regulates no bus", stays legal).
+- [FIXED] ``check_grid()`` collected the (optional) ``pos_topo_vect`` of *every*
+  container -- shunts, static generators, svcs and hvdc lines included -- into the set it
+  proves is a permutation of ``[0, dim_topo)``. But ``dim_topo`` there was just how many
+  positions it had collected, while ``update_topo()`` sizes its caller arrays as
+  ``nb loads + nb gens + nb storages + 2 * nb lines + 2 * nb trafos``, which excludes
+  those containers. A state putting positions on a shunt therefore inflated the bound, so
+  a *validated* load position could still be past the end of the array ``update_topo()``
+  indexes with it. Only the containers ``update_topo()`` actually drives contribute now,
+  and a shunt / sgen / svc / hvdc carrying a topology-vector position (there is no setter
+  for one: such a state can only come from a crafted file) is rejected.
 - [FIXED] ``SubstationContainer::set_state`` performed **no** validation at all, and it
   restores the root of the grid's index space: ``nb_bus()`` (the bound ``check_grid()``
   validates every element bus id against), ``bus_status_`` (the vector those same ids are
