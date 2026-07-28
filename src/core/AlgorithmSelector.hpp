@@ -119,6 +119,18 @@ class LS2G_API AlgorithmSelector final
         // using a plugin can be restored (see LSGrid::get_state/set_state).
         const std::string& get_name() const { return _algo_name; }
 
+        // Is the currently selected algorithm one shipped with lightsim2grid?
+        //
+        // Use THIS, never `get_type() == AlgorithmType::Custom`, to tell an
+        // in-tree solver from a plugin. AlgorithmType is a fixed enum of
+        // *serialized* solver identities, and a built-in only appears in it if a
+        // member was added for it: the NRRefactorRetry_* family never got one, so
+        // name_to_algo_type() reports those built-ins as Custom exactly like a
+        // plugin. The registry records the real answer at registration time (see
+        // SolverOrigin), and it is cached here at change_algorithm() time so
+        // asking costs nothing on the per-solve path.
+        bool is_builtin_algo() const { return _algo_is_builtin; }
+
         // Polymorphic (instance-level) capability queries: unlike the
         // type-keyed overloads above (needed by LSGrid::change_algorithm to
         // route BEFORE a solver is constructed), these ask the CURRENTLY
@@ -390,6 +402,8 @@ class LS2G_API AlgorithmSelector final
         std::unique_ptr<BaseAlgo> _algo;
         AlgorithmType _algo_type;
         std::string _algo_name;  // registry name; survives for plugin solvers
+        // cached SolverOrigin of _algo_name, see is_builtin_algo()
+        bool _algo_is_builtin;
         AlgorithmType _algo_type_used_for_nr;
         const LSGrid* _gridmodel_ptr;
 };

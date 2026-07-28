@@ -13,9 +13,12 @@
 #include <vector>
 // #include <set>
 #include <stdio.h>
-#include <cstdint> // for int32
+#include <cstdint> // for int32, int64
+#include <limits>
 #include <chrono>
-#include <cmath>  // for PI
+#include <cmath>  // for PI, std::abs
+#include <sstream>
+#include <stdexcept>
 
 #include "Utils.hpp"
 #include "BaseConstants.hpp"
@@ -58,7 +61,16 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         using StateRes = std::tuple<
             int,  // n_sub_
             int,  // nmax_busbar_per_sub
-            std::vector<real_type>, // sub_vn_kv_;
+            // sub_vn_kv_: OPTIONAL, and empty in practice on every grid produced
+            // today. It is only ever filled by init_sub() / the two-argument
+            // constructor, neither of which is called anywhere (the live path is
+            // the default constructor + init_bus(), which fills bus_vn_kv_ only),
+            // and nothing reads it back. It is therefore NOT valid to require it
+            // whenever bus_vn_kv_ is set: doing so rejects every grid built by
+            // init_from_pandapower / _pypowsybl / _matpower / _powermodels, and
+            // every already-saved binary file -- including this repo's own
+            // format-4 compatibility fixture (tests/binary_format_fixture).
+            std::vector<real_type>, // sub_vn_kv_ (optional, see above)
             std::vector<bool>,  // bus_status_;
             std::vector<real_type>,  // bus_vn_kv_;
             std::vector<std::string>,  // sub_names_
@@ -70,6 +82,16 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
 
         SubstationContainer::StateRes get_state() const;
         void set_state(SubstationContainer::StateRes & my_state);
+
+        /**
+         * Whole-container consistency validation, the substation half of
+         * LSGrid::check_grid() (see there). set_state() already enforces this on
+         * anything coming from a pickle / a binary file; this is what covers a
+         * container reached the other way -- built element by element through the
+         * python API, or mutated afterwards. Throws std::runtime_error, returns
+         * normally for a consistent container.
+         */
+        void check_valid() const;
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path, bool atomic = true) const;
@@ -92,13 +114,32 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         ~SubstationContainer() noexcept = default;
 
         void reset_bus_status(){
-            for(auto i = 0; i < n_bus_max_; ++ i) bus_status_[i] = false;
+            // iterate the vector actually being written, not n_bus_max_ (a separate
+            // field): set_state() now guarantees they agree, but not depending on
+            // that invariant costs nothing and cannot go wrong if it is ever broken.
+            const std::size_t nb_bus_total = bus_status_.size();
+            for(std::size_t i = 0; i < nb_bus_total; ++ i) bus_status_[i] = false;
         }
 
         void init_sub(const Eigen::Ref<const RealVect> & sub_vn_kv){
+            if((n_sub_ <= 0) || (nmax_busbar_per_sub_ <= 0)){
+                throw std::runtime_error("SubstationContainer::init_sub: the substations must be declared "
+                                         "first (see init_bus / the two-argument constructor).");
+            }
             if(sub_vn_kv.size() != n_sub_){
                 throw std::range_error("SubstationContainer::init_sub: sub_vn_kv should have the size of the number of substations on the grid.");
             }
+            // positivity + no int overflow, same guarantee as init_bus: `i + j * n_sub_`
+            // below is int arithmetic
+            const int nb_bus_checked = checked_nb_bus(n_sub_, nmax_busbar_per_sub_, "SubstationContainer::init_sub");
+            // Both destinations are written with an unchecked operator[] below, and
+            // neither is guaranteed to be sized yet: only the two-argument
+            // constructor sizes sub_vn_kv_, and the live construction path is the
+            // default constructor followed by init_bus(), which leaves sub_vn_kv_
+            // EMPTY. Writing n_sub_ doubles into it would be an out-of-bounds heap
+            // write. Size both here instead of assuming.
+            if(sub_vn_kv_.size() != n_sub_) sub_vn_kv_ = RealVect::Zero(n_sub_);
+            if(bus_vn_kv_.size() != nb_bus_checked) bus_vn_kv_ = RealVect::Zero(nb_bus_checked);
             for(int i = 0; i < n_sub_; ++i){
                 // store substation vn kv
                 sub_vn_kv_[i] = sub_vn_kv[i];
@@ -163,9 +204,74 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             return bus_status_[local_to_gridmodel(sub_id, local_bus_id).cast_int()];
         }
 
+        /**
+         * `n_sub * nmax_busbar_per_sub` -- the total bus count -- computed safely.
+         *
+         * Both factors reach us from outside the C++ core (init_bus / init_sub
+         * arguments, or a pickle / binary file via set_state), and the product is
+         * stored in an `int` (n_bus_max_) and used in `int` index arithmetic
+         * (`i + j * n_sub`). Computing it directly overflows for large inputs, which
+         * is UB and yields a negative bus count. Do the multiplication in 64 bits and
+         * refuse anything that does not fit, so no caller has to remember to.
+         * `caller` only names the function in the error message.
+         */
+        static int checked_nb_bus(int n_sub, int nmax_busbar_per_sub, const char * caller)
+        {
+            if(n_sub <= 0){
+                std::ostringstream exc_;
+                exc_ << caller << ": the number of substations must be strictly positive, got "
+                     << n_sub << " (it is also used as a modulo divisor in sub_id_of_bus, so 0 "
+                     << "would be a division by zero).";
+                throw std::runtime_error(exc_.str());
+            }
+            if(nmax_busbar_per_sub <= 0){
+                std::ostringstream exc_;
+                exc_ << caller << ": the maximum number of busbars per substation must be strictly "
+                     << "positive, got " << nmax_busbar_per_sub << ".";
+                throw std::runtime_error(exc_.str());
+            }
+            const std::int64_t total = static_cast<std::int64_t>(n_sub) *
+                                       static_cast<std::int64_t>(nmax_busbar_per_sub);
+            if(total > static_cast<std::int64_t>(std::numeric_limits<int>::max())){
+                std::ostringstream exc_;
+                exc_ << caller << ": n_sub (" << n_sub << ") * nmax_busbar_per_sub ("
+                     << nmax_busbar_per_sub << ") = " << total << " buses, which does not fit in the "
+                     << "int used to index them.";
+                throw std::runtime_error(exc_.str());
+            }
+            return static_cast<int>(total);
+        }
+
+        /**
+         * Every bus nominal voltage must be a finite, strictly positive number.
+         *
+         * NB this is deliberately only about `bus_vn_kv_` / `sub_vn_kv_`, never about
+         * bus_vmin_kv_ / bus_vmax_kv_: those use NaN as the documented "no limit set
+         * for this bus" sentinel. Same reason the element-level finiteness checks were
+         * dropped earlier (non-finite thermal limits / reactive bounds are legitimate
+         * sentinels on real grids) -- a NOMINAL voltage has no such convention, 0 or a
+         * negative value is simply meaningless and would silently produce nonsense
+         * per-unit conversions (v_kv_from_vpu multiplies by it).
+         */
+        void check_vn_kv_positive() const
+        {
+            const auto check_one = [](real_type v, int id, const char * what){
+                if(!std::isfinite(v) || (v <= 0.)){
+                    std::ostringstream exc_;
+                    exc_ << "SubstationContainer: " << what << " " << id << " has a nominal voltage of "
+                         << v << " kV; it must be a finite, strictly positive number.";
+                    throw std::runtime_error(exc_.str());
+                }
+            };
+            for(Eigen::Index i = 0; i < bus_vn_kv_.size(); ++i) check_one(bus_vn_kv_(i), static_cast<int>(i), "bus");
+            for(Eigen::Index i = 0; i < sub_vn_kv_.size(); ++i) check_one(sub_vn_kv_(i), static_cast<int>(i), "substation");
+        }
+
         void init_bus(int n_sub, int nmax_busbar_per_sub, const Eigen::Ref<const RealVect> & bus_vn_kv)
         {
-            if(bus_vn_kv.size() != n_sub * nmax_busbar_per_sub){
+            // positivity + no int overflow on n_sub * nmax_busbar_per_sub
+            const int nb_bus_total = checked_nb_bus(n_sub, nmax_busbar_per_sub, "Substation::init_bus");
+            if(bus_vn_kv.size() != nb_bus_total){
                 std::ostringstream exc_;
                 exc_ << "Substation::init_bus: ";
                 exc_ << "your model counts ";
@@ -183,20 +289,47 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             bus_status_ = std::vector<bool>(nb_bus(), true); // by default everything is connected
 
             // check that a "substation" always has the same vn_kv for all of its buses
-            for(int sub_id=0; sub_id < n_sub; sub_id++){
-                real_type ref_vn_kv = bus_vn_kv(sub_id);
-                for(int bus_id=1; bus_id < nmax_busbar_per_sub; bus_id++)
-                {
-                    real_type this_bus_vn_kv = bus_vn_kv(local_to_gridmodel(sub_id, LocalBusId(bus_id)).cast_int());
-                    if(abs(this_bus_vn_kv - ref_vn_kv) > BaseConstants::_tol_equal_float){
-                        const std::string msg = R"mydelimiter(
-                        Each bus of each substation must have the same nominal voltage. 
-                        Check substation )mydelimiter" + 
-                        std::to_string(sub_id) + 
-                        " and buses 0 and " + 
-                        std::to_string(bus_id)+".";
+            check_bus_vn_kv_uniform_per_sub();
+            check_vn_kv_positive();
+        }
 
-                        throw std::runtime_error(msg);
+        /**
+         * Every bus of a substation carries that substation's nominal voltage.
+         *
+         * With `n` = n_sub_ and `k` = nmax_busbar_per_sub_, the buses of substation
+         * `I` are the ids `I, I + n, I + 2n, ..., I + (k-1)n` -- so the invariant is
+         *
+         *     for all 0 <= i < n, for all 0 <= j < k:  bus_vn_kv[i] == bus_vn_kv[i + j*n]
+         *
+         * and that is exactly the loop below, written as plain index arithmetic on
+         * bus_vn_kv_ (the stride is `n`, NOT 1 and not `k`: consecutive entries of
+         * bus_vn_kv_ are different SUBSTATIONS, which is why eg the case14 fixture
+         * legitimately has bus_vn_kv_[4] == 138 next to bus_vn_kv_[5] == 20).
+         *
+         * NB this used to be expressed via local_to_gridmodel(sub_id, LocalBusId(..)),
+         * which is where it went wrong: LocalBusId is 1-based (bus id ==
+         * `sub_id + (local_bus_id - 1) * n`), and the loop ran local ids `[1, k)`, so
+         * it opened by comparing bus `i` with itself and stopped one busbar short.
+         * At the usual k == 2 that compared bus `i` to bus `i` and checked nothing at
+         * all -- the invariant was silently unenforced on every path.
+         */
+        void check_bus_vn_kv_uniform_per_sub() const
+        {
+            const int n = n_sub_;
+            const int k = nmax_busbar_per_sub_;
+            for(int i = 0; i < n; ++i){
+                const real_type ref_vn_kv = bus_vn_kv_(i);
+                for(int j = 1; j < k; ++j)
+                {
+                    const int bus_id = i + j * n;
+                    const real_type this_bus_vn_kv = bus_vn_kv_(bus_id);
+                    if(std::abs(this_bus_vn_kv - ref_vn_kv) > BaseConstants::_tol_equal_float){
+                        std::ostringstream exc_;
+                        exc_ << "SubstationContainer: each bus of a substation must have the same nominal "
+                             << "voltage. Substation " << i << " has " << ref_vn_kv
+                             << " kV on bus id " << i << " but " << this_bus_vn_kv
+                             << " kV on bus id " << bus_id << " (its busbar " << (j + 1) << ").";
+                        throw std::runtime_error(exc_.str());
                     }
                 }
             }
@@ -254,6 +387,37 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         int n_sub_;
         int nmax_busbar_per_sub_;
         int n_bus_max_;
+        /**
+         * TODO sub_vn_kv_ IS DEAD STATE: nothing ever sets it, and nothing reads it.
+         *
+         * The only two writers are `init_sub()` and the two-argument constructor
+         * `SubstationContainer(n_sub, nmax_busbar_per_sub)` -- and NEITHER is called
+         * anywhere in the codebase (nor exposed to python). Every grid is built by
+         * the default constructor followed by `init_bus()`, which fills bus_vn_kv_
+         * only, so this vector is EMPTY on every grid produced by
+         * init_from_pandapower / _pypowsybl / _matpower / _powermodels, and empty in
+         * every binary file saved so far (including the format-4 fixture in
+         * lightsim2grid/tests/binary_format_fixture/). It is nevertheless part of
+         * StateRes, so it is serialized -- as an empty vector -- into every pickle
+         * and every binary file.
+         *
+         * It is also fully REDUNDANT: a substation's nominal voltage is by
+         * definition the common vn_kv of its buses (see
+         * check_bus_vn_kv_uniform_per_sub), i.e. sub_vn_kv_[I] == bus_vn_kv_[I] for
+         * 0 <= I < n_sub_. check_valid() enforces exactly that whenever it is
+         * non-empty.
+         *
+         * So it must stay OPTIONAL: requiring it whenever bus_vn_kv_ is set would
+         * reject every grid and every saved file that exists today.
+         *
+         * Decide before a release which way to go, and do not leave it as is:
+         *   - either DROP it from StateRes (it is derivable from bus_vn_kv_ and read
+         *     by nobody) -- needs a BINARY_FORMAT_VERSION bump; or
+         *   - have `init_bus()` populate it (`sub_vn_kv_ = bus_vn_kv.head(n_sub)`)
+         *     and make check_valid() require it -- this changes what newly-saved
+         *     files contain, and the requirement can only be turned on once no
+         *     already-saved file needs to load.
+         */
         RealVect sub_vn_kv_;
         std::vector<bool> bus_status_;
         RealVect bus_vn_kv_;
@@ -271,9 +435,15 @@ inline SubstationInfo::SubstationInfo(const SubstationContainer & r_data, int my
 {
     if(my_id < 0) return;
     if(my_id >= r_data.nb()) return;
-    name = r_data.sub_names_[my_id];
+    // sub_names_ is OPTIONAL (empty unless set_substation_names() was called, which
+    // eg the pandapower / matpower / powermodels loaders never do) and bus_vn_kv_ is
+    // empty on a substation container that was declared but never given its buses:
+    // both must be bounds-checked here, `my_id < nb()` only bounds them against
+    // n_sub_. Same reason as everywhere else: -O3 -DNDEBUG release wheels have no
+    // std::vector / Eigen bounds check to fall back on.
+    if(my_id < static_cast<int>(r_data.sub_names_.size())) name = r_data.sub_names_[my_id];
     nb_max_busbars = r_data.nmax_busbar_per_sub_;
-    vn_kv = r_data.bus_vn_kv_[my_id];
+    if(my_id < static_cast<int>(r_data.bus_vn_kv_.size())) vn_kv = r_data.bus_vn_kv_[my_id];
 }
 
 

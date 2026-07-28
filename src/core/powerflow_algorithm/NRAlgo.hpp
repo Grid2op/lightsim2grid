@@ -227,6 +227,37 @@ public:
         }
         return v;
     }
+    // An AlgoConfig stores the two policy enums as plain ints, and it can come from
+    // a pickle or a binary file: an out-of-range value would be cast to the scoped
+    // enum and then silently fall into a `default:` branch, quietly changing the
+    // algorithm's behaviour AND round-tripping back out through get_config(). Reject
+    // it instead. (create_scaling_policy() already throws on an unknown scaling type;
+    // this makes the refactor side symmetric and gives a better message for both.)
+    static RefactorPolicyType _checked_refactor_policy(int v) {
+        if ((v < static_cast<int>(RefactorPolicyType::AlwaysRefactor)) ||
+            (v > static_cast<int>(RefactorPolicyType::Chord))) {
+            std::ostringstream exc_;
+            exc_ << "NRAlgo: unknown refactorization policy " << v << " (expected "
+                 << static_cast<int>(RefactorPolicyType::AlwaysRefactor) << " = AlwaysRefactor, "
+                 << static_cast<int>(RefactorPolicyType::EveryN) << " = EveryN or "
+                 << static_cast<int>(RefactorPolicyType::Chord) << " = Chord).";
+            throw std::runtime_error(exc_.str());
+        }
+        return static_cast<RefactorPolicyType>(v);
+    }
+    static ScalingPolicyType _checked_scaling_policy(int v) {
+        if ((v < static_cast<int>(ScalingPolicyType::NoScaling)) ||
+            (v > static_cast<int>(ScalingPolicyType::Iwamoto))) {
+            std::ostringstream exc_;
+            exc_ << "NRAlgo: unknown step-scaling policy " << v << " (expected "
+                 << static_cast<int>(ScalingPolicyType::NoScaling) << " = NoScaling, "
+                 << static_cast<int>(ScalingPolicyType::MaxVoltageChange) << " = MaxVoltageChange, "
+                 << static_cast<int>(ScalingPolicyType::LineSearch) << " = LineSearch or "
+                 << static_cast<int>(ScalingPolicyType::Iwamoto) << " = Iwamoto).";
+            throw std::runtime_error(exc_.str());
+        }
+        return static_cast<ScalingPolicyType>(v);
+    }
 
     // MaxVoltageChange params
     real_type get_max_dVa() const { return max_dVa_; }
@@ -276,6 +307,11 @@ public:
     void set_config(const AlgoConfig& cfg) override {
         if (cfg.int_params.size()  < 4) throw std::runtime_error("NRAlgo::set_config: int_params must have at least 4 elements");
         if (cfg.real_params.size() < 6) throw std::runtime_error("NRAlgo::set_config: real_params must have at least 6 elements");
+        // Validate the two policy enums BEFORE touching any member: applying a
+        // config must be all-or-nothing, otherwise a config rejected halfway
+        // through leaves the algorithm with a mix of new and old parameters.
+        const RefactorPolicyType new_refactor_policy = _checked_refactor_policy(cfg.int_params[1]);
+        const ScalingPolicyType  new_scaling_policy  = _checked_scaling_policy(cfg.int_params[0]);
         // NB an AlgoConfig is part of the serialized grid state, so these values
         // can come straight from a pickle or a binary file: validate them exactly
         // like the setters do (see the note on _checked_refactor_every_n).
@@ -287,8 +323,8 @@ public:
         iw_mu_max_       = _checked_finite(static_cast<real_type>(cfg.real_params[5]), "iw_mu_max");
         ls_max_iter_     = _checked_non_negative(cfg.int_params[2], "ls_max_iter");
         refactor_every_n_= _checked_refactor_every_n(cfg.int_params[3]);
-        refactor_policy_ = static_cast<RefactorPolicyType>(cfg.int_params[1]);
-        set_scaling_policy(static_cast<ScalingPolicyType>(cfg.int_params[0]));
+        refactor_policy_ = new_refactor_policy;
+        set_scaling_policy(new_scaling_policy);
     }
 
     // ----- debug ---------------------------------------------------------------

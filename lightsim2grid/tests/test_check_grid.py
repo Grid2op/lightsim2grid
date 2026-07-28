@@ -191,5 +191,165 @@ class TestCheckGrid(unittest.TestCase):
         self.assertIsNone(restored.check_grid())
 
 
+class TestSubstationAndMappingConsistency(unittest.TestCase):
+    """
+    The substation container and the bus-id mapping vectors.
+
+    ``SubstationContainer`` is the root of the grid's index space: ``nb_bus()``
+    is the bound ``check_grid()`` validates every element's bus id against, and
+    ``bus_status_`` is the vector those same ids are used to index. They used to
+    be restored from a pickle / binary file with no cross-check at all, so a file
+    whose two lengths disagreed passed ``check_grid()`` and then corrupted the
+    heap on the next ``init_bus_status()``. Same idea for ``_ls_to_orig``, whose
+    *values* are used as indices into the reverse mapping it allocates.
+
+    These are built by hand (no pandapower) so the checks are exercised directly.
+    """
+
+    def _grid(self, n_sub=3, n_busbar=2):
+        from lightsim2grid.lightsim2grid_cpp import LSGrid
+        grid = LSGrid()
+        grid.init_bus(n_sub, n_busbar,
+                      np.array([138.0] * (n_sub * n_busbar)), 0, 0)
+        grid.init_loads(np.array([1.0]), np.array([0.5]),
+                        np.array([0], dtype=np.int32))
+        grid.init_generators(np.array([1.0]), np.array([1.0]),
+                             np.array([-10.0]), np.array([10.0]),
+                             np.array([1], dtype=np.int32))
+        return grid
+
+    def test_hand_built_grid_is_consistent(self):
+        # the new substation / mapping checks must not reject a legitimate grid
+        # (sub_vn_kv and the substation names are optional and normally empty).
+        self.assertIsNone(self._grid().check_grid())
+
+    def test_substation_info_without_names(self):
+        # `sub_names_` is optional -- the pandapower / matpower / powermodels
+        # loaders never set it -- and SubstationInfo used to read sub_names_[id]
+        # unconditionally, ie read a std::string out of bounds. Iterating the
+        # substations of such a grid used to segfault.
+        grid = self._grid()
+        self.assertEqual(list(grid.get_substation_names()), [])
+        for sub in grid.get_substations():
+            self.assertEqual(sub.name, "")
+            self.assertEqual(sub.vn_kv, 138.0)
+
+    def test_negative_ls_to_orig_is_rejected(self):
+        # the reverse mapping is sized from max(abs(values)) and then indexed with
+        # the values themselves: -5 sizes it from 5 and writes at index -5.
+        grid = self._grid()
+        bad = np.full(grid.total_bus(), -1, dtype=np.int32)
+        bad[0] = -5
+        with self.assertRaises(IndexError):
+            grid._ls_to_orig = bad
+
+    def test_absurd_ls_to_orig_is_rejected(self):
+        grid = self._grid()
+        bad = np.full(grid.total_bus(), -1, dtype=np.int32)
+        bad[0] = np.iinfo(np.int32).max
+        with self.assertRaises(IndexError):
+            grid._ls_to_orig = bad
+
+    def test_valid_ls_to_orig_is_accepted(self):
+        grid = self._grid()
+        ok = np.arange(grid.total_bus(), dtype=np.int32)
+        grid._ls_to_orig = ok
+        np.testing.assert_array_equal(np.asarray(grid._ls_to_orig), ok)
+        self.assertIsNone(grid.check_grid())
+
+    def test_orig_to_ls_is_the_inverse_of_ls_to_orig(self):
+        # orig bus 0 has no lightsim counterpart; orig 1..6 map to ls 0..5.
+        grid = self._grid()
+        orig_to_ls = np.array([-1, 0, 1, 2, 3, 4, 5], dtype=np.int32)
+        grid._orig_to_ls = orig_to_ls
+        # the inverse: lightsim bus i corresponds to original bus i + 1
+        np.testing.assert_array_equal(np.asarray(grid._ls_to_orig),
+                                      np.arange(1, 7, dtype=np.int32))
+
+    def test_out_of_range_orig_to_ls_is_rejected(self):
+        grid = self._grid()
+        bad = np.arange(grid.total_bus(), dtype=np.int32)
+        bad[0] = BIG  # used to index a total_bus()-long _ls_to_orig
+        with self.assertRaises(IndexError):
+            grid._orig_to_ls = bad
+
+    def test_update_topo_rejects_short_arrays(self):
+        # each container indexes has_changed / new_values by position in the
+        # topology vector with an unchecked Eigen operator(): a short array was
+        # simply read past its end.
+        grid = self._grid()
+        grid.set_load_pos_topo_vect(np.array([0], dtype=np.int32))
+        grid.set_gen_pos_topo_vect(np.array([1], dtype=np.int32))
+        with self.assertRaises(RuntimeError):
+            grid.update_topo(np.zeros(0, dtype=bool), np.zeros(0, dtype=np.int32))
+        # correctly-sized (dim_topo == 2 here: one load + one gen), no-op call
+        grid.update_topo(np.zeros(2, dtype=bool), np.ones(2, dtype=np.int32))
+
+    def test_update_slack_weights_rejects_short_array(self):
+        grid = self._grid()  # exactly one generator
+        with self.assertRaises(RuntimeError):
+            grid.update_slack_weights(np.zeros(0, dtype=bool))
+        grid.update_slack_weights(np.ones(1, dtype=bool))
+
+    def test_poisoned_substation_state_is_rejected(self):
+        # go through the real pickle path: tamper with the substation block of a
+        # grid's state, then load it. Every case must raise, never corrupt memory.
+        import copyreg
+        import io
+        import pickle
+        from lightsim2grid.lightsim2grid_cpp import LSGrid
+
+        SUBSTATION_ID = 7
+        # SubstationContainer::StateRes = (n_sub, nmax_busbar, sub_vn_kv,
+        #                                  bus_status, bus_vn_kv, sub_names,
+        #                                  bus_vmin_kv, bus_vmax_kv)
+        def dump_with(grid, mutate):
+            outer = grid.__getstate__()
+            inner = list(outer[3])
+            sub = list(inner[SUBSTATION_ID])
+            mutate(sub)
+            inner[SUBSTATION_ID] = tuple(sub)
+            state = (outer[0], outer[1], outer[2], tuple(inner))
+
+            class _P(pickle.Pickler):
+                def reducer_override(self, obj):
+                    if isinstance(obj, LSGrid):
+                        return (copyreg.__newobj__, (LSGrid,), state)
+                    return NotImplemented
+
+            buf = io.BytesIO()
+            _P(buf, protocol=4).dump(grid)
+            return buf.getvalue()
+
+        def set_bus_status_short(sub):
+            sub[3] = [True]
+
+        def set_nsub_zero(sub):
+            sub[0] = 0
+
+        def set_nsub_overflow(sub):
+            sub[0] = 100000
+            sub[1] = 100000
+
+        def set_bus_vn_kv_short(sub):
+            sub[4] = [138.0]
+
+        for name, mutate in [("bus_status too short", set_bus_status_short),
+                             ("n_sub == 0", set_nsub_zero),
+                             ("n_sub * nmax overflows", set_nsub_overflow),
+                             ("bus_vn_kv too short", set_bus_vn_kv_short)]:
+            with self.subTest(name):
+                blob = dump_with(self._grid(), mutate)
+                with self.assertRaises(RuntimeError):
+                    pickle.loads(blob)
+
+    def test_pickle_roundtrip_of_hand_built_grid(self):
+        import pickle
+        grid = self._grid()
+        restored = pickle.loads(pickle.dumps(grid))
+        self.assertIsNone(restored.check_grid())
+        self.assertEqual(restored.total_bus(), grid.total_bus())
+
+
 if __name__ == "__main__":
     unittest.main()

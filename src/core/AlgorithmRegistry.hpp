@@ -83,6 +83,25 @@ inline std::string solver_name_rule() {
            "letters, digits, '_' or '.'";
 }
 
+/**
+ * Where a registered solver comes from: shipped with lightsim2grid, or brought in
+ * from outside (a plugin).
+ *
+ * This is the ONLY trustworthy answer to "is this solver ours?". `AlgorithmType`
+ * cannot answer it: it is a fixed enum of *serialized* solver identities, and a
+ * built-in solver only has a member there if someone added one -- the
+ * `NRRefactorRetry_*` family never got one, so `name_to_algo_type()` returns
+ * `AlgorithmType::Custom` for them exactly as it does for a plugin. Anything
+ * gating on `== Custom` therefore silently mistreats those built-ins (see
+ * LSGrid::process_results, which used to run the external-solver output check on
+ * them). Origin is recorded at registration time, where the truth is actually
+ * known, and cannot drift out of sync with the enum.
+ */
+enum class SolverOrigin {
+    Builtin,   // registered by BuiltinSolversRegistration.cpp, ie shipped in-tree
+    External   // registered by a plugin (or anything else at run time)
+};
+
 class LS2G_API AlgorithmRegistry {
 public:
     using Factory = std::function<std::unique_ptr<BaseAlgo>()>;
@@ -95,8 +114,14 @@ public:
     // this, the default captures that TU's own Eigen SIMD/alignment settings.
     // Throws if it disagrees with lightsim2grid_core's own tag -- see
     // Ls2gAbiTag.hpp. Used for the built-in solvers (BuiltinSolversRegistration).
+    //
+    // `origin` defaults to External on purpose: External is the *cautious*
+    // answer (it is what makes a solver's output validated before use), so a
+    // caller that does not say anything is treated as untrusted. Only
+    // BuiltinSolversRegistration.cpp passes SolverOrigin::Builtin.
     void register_solver(const std::string& name, Factory f,
-                          Ls2gAbiTag caller_tag = ls2g_current_abi_tag());
+                          Ls2gAbiTag caller_tag = ls2g_current_abi_tag(),
+                          SolverOrigin origin = SolverOrigin::External);
 
     // Register a whole batch of solvers atomically: either every name in
     // `batch` is added, or none is and the registry is left exactly as it was.
@@ -104,15 +129,27 @@ public:
     // that a plugin exposing several solvers can never half-register when a
     // later name collides with an already-registered one. Throws (leaving the
     // registry unchanged) on an ABI-tag mismatch or a name already present.
-    void register_all(FactoryMap batch, Ls2gAbiTag caller_tag = ls2g_current_abi_tag());
+    void register_all(FactoryMap batch, Ls2gAbiTag caller_tag = ls2g_current_abi_tag(),
+                      SolverOrigin origin = SolverOrigin::External);
 
     std::unique_ptr<BaseAlgo> make(const std::string& name) const;
     bool is_registered(const std::string& name) const;
     std::vector<std::string> available_algorithm_names() const;
 
+    // Origin of an already-registered solver. An unknown name is reported as
+    // External -- again the cautious answer, and it keeps callers from having to
+    // handle a third "not registered" case.
+    SolverOrigin origin_of(const std::string& name) const;
+    bool is_builtin(const std::string& name) const {
+        return origin_of(name) == SolverOrigin::Builtin;
+    }
+    // Names registered with SolverOrigin::Builtin, ie the solvers shipped in-tree.
+    std::vector<std::string> builtin_algorithm_names() const;
+
 private:
     AlgorithmRegistry() = default;
     FactoryMap _factories;
+    std::unordered_map<std::string, SolverOrigin> _origins;
 };
 
 // Staging area a plugin fills in with its solvers before they are committed to
