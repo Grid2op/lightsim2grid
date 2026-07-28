@@ -8,6 +8,7 @@
 
 #include "DataConverter.hpp"
 
+#include <cmath>      // std::isfinite (_check_init)
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -75,11 +76,22 @@ void PandaPowerConverter::_check_line_inputs(const std::string & fun_name,
 }
 
 void PandaPowerConverter::_check_init() const {
-    if(sn_mva_ <= 0.){
-        throw std::runtime_error("PandaPowerConverter::_check_init: sn_mva has not been initialized");
+    // `!(x > 0.)` rather than `x <= 0.`: every comparison with NaN is false, so the
+    // naive form let a NaN sn_mva / f_hz straight through -- and both are divisors
+    // here (`vk_percent / 100. / sn_trafo_mva * tap_lv`, `2 * f_hz * pi * c * baseR`),
+    // so the whole converted grid came back NaN with no error anywhere.
+    if(!(sn_mva_ > 0.) || !std::isfinite(sn_mva_)){
+        std::ostringstream exc_;
+        exc_ << "PandaPowerConverter::_check_init: sn_mva is " << sn_mva_
+             << "; it must be a finite, strictly positive number (it is the base power of the "
+                "per-unit system this converter produces).";
+        throw std::runtime_error(exc_.str());
     }
-    if(f_hz_ <= 0.){
-        throw std::runtime_error("PandaPowerConverter::_check_init: f_hz has not been initialized");
+    if(!(f_hz_ > 0.) || !std::isfinite(f_hz_)){
+        std::ostringstream exc_;
+        exc_ << "PandaPowerConverter::_check_init: f_hz is " << f_hz_
+             << "; it must be a finite, strictly positive number.";
+        throw std::runtime_error(exc_.str());
     }
 }
 
