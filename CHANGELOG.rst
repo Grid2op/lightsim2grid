@@ -314,6 +314,19 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   old to resolve `uv`'s own PyPI wheels ("Could not find a version that
   satisfies the requirement uv"), so ``uv`` itself is now installed with its
   standalone shell installer (``curl ... | sh``) instead of ``pip install uv``.
+  Once that got the build running, it failed a third time, further along:
+  ``cc1plus`` was OOM-killed compiling ``binding_lsgrid.cpp`` (the largest
+  pybind11 binding translation unit). The compile command showed
+  ``-flto=auto -fno-fat-lto-objects``: pybind11's CMake helpers auto-enable
+  LTO on any target where the parent project leaves
+  ``CMAKE_INTERPROCEDURAL_OPTIMIZATION`` undefined (see
+  ``pybind11NewTools.cmake``), and lightsim2grid never sets it. LTO is
+  memory-hungry and this job runs on a "medium" (RAM-constrained) resource
+  class. Passed ``-C cmake.define.CMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF``
+  for this job only -- it exists to check the package still compiles with
+  the oldest supported gcc, not to produce an optimized artifact. Verified
+  locally that this removes every ``-flto`` flag from the build and that the
+  resulting extension still imports and passes tests.
 
 - [FIXED] stale statements across the docs that were no longer true (section H
   of the doc audit):
