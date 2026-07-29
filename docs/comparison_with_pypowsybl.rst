@@ -10,7 +10,7 @@ Comparison with pypowsybl default load-flow
 ============================================
 
 In this section of the documentation we attempt to compare lightsim2grid 
-and the default implementation of pypowsybl (which is OLF - `Open Load Flow <https://github.com/powsybl/powsybl-open-loadflow>__`)
+and the default implementation of pypowsybl (which is OLF - `Open Load Flow <https://github.com/powsybl/powsybl-open-loadflow>`__)
 
 All the tests were conducted on the same laptop and on publically available grid:
 

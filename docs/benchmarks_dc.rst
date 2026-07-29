@@ -70,7 +70,7 @@ All of them has been run on a computer with a the following characteristics:
 Command to replicate the benchmark on your machine
 ----------------------------------------------------
 
-To run the benchmark `cd` in the [benchmark](./benchmarks) folder and install the dependencies
+To run the benchmark, ``cd`` into the ``benchmarks`` folder and install the dependencies
 (we suppose here that you have already installed lightsim2grid):
 
 .. code-block:: bash

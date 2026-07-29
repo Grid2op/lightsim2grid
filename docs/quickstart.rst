@@ -139,6 +139,7 @@ Once done, you can simply "install" the lightsim2grid image with:
 This step should be done only once (unless you delete the image) it will download approximately 4 or 5GB from the
 internet. The lightsim2grid image contains lightsim and grid2op python packages (as well as their
 dependencies), equivalent of what would be installed if you typed:
+
 .. code-block:: bash
 
     pip install -U grid2op[optional] pybind11

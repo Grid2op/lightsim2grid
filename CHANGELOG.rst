@@ -165,6 +165,20 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   section nesting) -- this docstring also still referenced the pre-1.0 ``DC``/``KLUDC``/
   ``NICSLUDC`` names and the deprecated ``lightsim2grid.solver`` / ``lightsim2grid.gridmodel``
   modules, both now corrected.
+- [FIXED] several documentation rendering bugs found by inspecting the built HTML rather
+  than just the source: 7 places (``benchmarks.rst``, ``benchmarks_dc.rst``,
+  ``benchmarks_grid_sizes.rst``, ``install_from_source.rst``) used Markdown
+  ``[text](url)`` links, which RST has no syntax for, so they rendered as literal
+  bracketed text -- replaced with plain prose / an actual ``:ref:``;
+  ``docs/quickstart.rst``'s docker section had a ``code-block:: bash`` directive glued
+  directly to the preceding text line with no blank line, so it never fired and
+  "code-block:: bash" rendered verbatim; ``docs/comparison_with_pypowsybl.rst``'s "Open
+  Load Flow" external link had its closing backtick before the trailing underscores
+  instead of after, so it rendered as inert text instead of a hyperlink. Also removed two
+  pieces of dead Sphinx config: ``html_experimental_html5_writer`` (removed from Sphinx
+  since version 4) and the ``recommonmark`` extension (no ``.md`` source anywhere in
+  ``docs/``, no ``source_suffix`` mapping to make it apply if there were; also dropped
+  from the ``docs`` extra in ``pyproject.toml``).
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and
