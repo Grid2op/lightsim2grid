@@ -402,10 +402,12 @@ development without a full ``pip install``.
         else()
             set(_ls2g_march_native OFF)
         endif()
-        if("$ENV{__O3_OPTIM}" STREQUAL "1" OR "$ENV{__O3_OPTIM}" STREQUAL "True")
-            set(_ls2g_o3_optim ON)
-        else()
+        # -O3 is ON by default in lightsim2grid_core: only __O3_OPTIM=0/False
+        # turns it off, an unset env var means ON.
+        if("$ENV{__O3_OPTIM}" STREQUAL "0" OR "$ENV{__O3_OPTIM}" STREQUAL "False")
             set(_ls2g_o3_optim OFF)
+        else()
+            set(_ls2g_o3_optim ON)
         endif()
     endif()
     if(NOT MSVC)
@@ -592,11 +594,12 @@ Python API reference
 Matching build flags (``-march=native`` / ``-O3``)
 ----------------------------------------------------
 
-``lightsim2grid_core`` supports two opt-in build flags, set as environment
-variables *before* building lightsim2grid (see ``benchmarks/env_compile_all.sh``):
+``lightsim2grid_core`` supports two build flags, set as environment
+variables *before* building lightsim2grid (see ``env_compile_all.sh`` at the
+repository root):
 
-* ``__COMPILE_MARCHNATIVE=1`` — adds ``-march=native``
-* ``__O3_OPTIM=1`` — adds ``-O3`` (on by default, actually)
+* ``__COMPILE_MARCHNATIVE=1`` — adds ``-march=native`` (opt-in; off by default)
+* ``__O3_OPTIM=0`` — removes ``-O3`` (opt-out; ``-O3`` is on by default)
 
 A plugin **must** be compiled with the identical ``-march=native`` setting as
 the ``lightsim2grid_core`` it links against, and this is a correctness
@@ -723,7 +726,7 @@ Or from the source tree without a pip install:
 Expected output::
 
     Plugin loaded successfully.
-    Registered solvers: ['DC', 'DummyExternal', 'FDPF_BX_SparseLU', ...]
+    Registered solvers: ['DC_KLU', 'DC_SparseLU', 'DummyExternal', 'FDPF_BX_KLU', ...]
     change_algorithm('DummyExternal') OK -- solver type is Custom as expected.
     All checks passed.
 

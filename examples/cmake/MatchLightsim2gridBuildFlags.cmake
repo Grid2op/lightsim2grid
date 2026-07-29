@@ -29,10 +29,12 @@ function(ls2g_match_core_build_flags target)
         else()
             set(_ls2g_march_native OFF)
         endif()
-        if("$ENV{__O3_OPTIM}" STREQUAL "1" OR "$ENV{__O3_OPTIM}" STREQUAL "True")
-            set(_ls2g_o3_optim ON)
-        else()
+        # -O3 is ON by default in lightsim2grid_core (src/core/CMakeLists.txt):
+        # only __O3_OPTIM=0 / False turns it off, an unset env var means ON.
+        if("$ENV{__O3_OPTIM}" STREQUAL "0" OR "$ENV{__O3_OPTIM}" STREQUAL "False")
             set(_ls2g_o3_optim OFF)
+        else()
+            set(_ls2g_o3_optim ON)
         endif()
     endif()
 
