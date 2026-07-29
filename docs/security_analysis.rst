@@ -1,10 +1,5 @@
-Contingency Analysis (doc in progress)
+Contingency Analysis
 =======================================
-
-The documentation of this section is in progress. It is rather incomplete for the moment, and only expose the most
-basic features.
-
-If you are interested in collaborating to improve this section, let us know.
 
 Goal
 -----------------
@@ -44,6 +39,14 @@ to / from other data sources.
 
     A more advanced usage is given in the `examples\\contingency_analysis.py`
     file from the lightsim2grid package.
+
+.. note::
+
+    Set `security_analysis.init_from_n_powerflow = True` **before** the computation actually runs
+    (eg before `get_flows` / `compute_V` / `run` are called -- setting it afterwards has no
+    effect) to initialize each contingency with the voltage solution of the pre-contingency
+    ("n") case instead of a flat start -- this is usually faster. See
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.init_from_n_powerflow`.
 
 Handling contingencies that split the grid
 -------------------------------------------
@@ -268,6 +271,23 @@ whether the contingency ``converged``, and its ``limit_violations``.
     default (``False``) means ``run`` / ``run_ac`` / ``run_dc`` raise a ``RuntimeError``, and
     the usual ``get_flows()`` is completely unaffected -- there is no need to pay for the extra
     per-element voltage / current checks if you only want the flows.
+
+    Setting ``compute_limit_violations`` through the property (rather than at construction time)
+    **clears any contingency already registered** (``add_single_contingency`` /
+    ``add_all_n1_contingencies`` / ``add_multiple_contingencies``) -- it is the exact same
+    reset performed by ``clear()`` / ``change_algorithm``. If you follow this page's own example
+    order (add contingencies, *then* flip the flag), you will silently end up running ``run()``
+    on zero contingencies. Either set ``compute_limit_violations=True`` at construction time (as
+    in the example above), or re-add the contingencies after setting it:
+
+    .. code-block:: python
+
+        security_analysis = ContingencyAnalysis(env)
+        security_analysis.add_all_n1_contingencies()
+        security_analysis.compute_limit_violations = True  # clears the contingencies above!
+        security_analysis.add_all_n1_contingencies()  # so they must be re-added
+
+        res = security_analysis.run()
 
     Also, if a contingency does not converge, its ``limit_violations`` contains exactly one
     ``LimitViolation`` with ``element_type == ViolationElementType.GRID`` and ``violation_type``

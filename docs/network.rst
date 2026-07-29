@@ -1,4 +1,4 @@
-LSGrid module (doc in progress)
+LSGrid module
 ====================================
 
 The main class of the lightsim2grid python package is the `LSGrid` class, that is a python class created
@@ -6,9 +6,33 @@ from the c++ `LSGrid` (thanks fo pybind11).
 
 This class basically represents a powergrid (what elements it is made for, their electro technical properties etc.)
 
-To create such class, for now the only way is to get it from a pandapower grid (and it does not model every elements there !)
+An `LSGrid` can be built from several source formats, each with a dedicated ``init_from_*`` function in
+``lightsim2grid.network`` (none of them model every element the source format itself supports):
 
-For example, you can init it like (NOT RECOMMENDED, though sometimes needed):
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Function
+     - Source format
+   * - :func:`~lightsim2grid.network.init_from_pandapower`
+     - a `pandapower <http://www.pandapower.org/>`_ network (``pandapowerNet``)
+   * - :func:`~lightsim2grid.network.init_from_pypowsybl`
+     - a `pypowsybl <https://pypowsybl.readthedocs.io/>`_ network (iidm format)
+   * - :func:`~lightsim2grid.network.init_from_matpower`
+     - a `MATPOWER <https://matpower.org/>`_ case (``.m`` or ``.mat`` file, or an
+       already-parsed dict)
+   * - :func:`~lightsim2grid.network.init_from_powermodels`
+     - a `PowerModels.jl <https://lanl-ansi.github.io/PowerModels.jl/stable/>`_ network
+       data dictionary
+   * - :func:`~lightsim2grid.network.init_from_pf_delta`
+     - a row of the PFΔ dataset (either already parsed into a dict, or a path to its
+       ``.json`` file) -- wraps a PowerModels network dict under a ``"network"`` key
+       and delegates to ``init_from_powermodels``
+
+See the "Detailed documentation" section below for the full signature and caveats of each.
+
+For example, you can init it from a pandapower grid like (NOT RECOMMENDED, though sometimes needed):
 
 .. code-block:: python
 
@@ -141,6 +165,29 @@ Which convention each "by id" method uses:
 
 Elements modeled
 ------------------
+
+Substations
++++++++++++++++++++++
+
+:func:`~lightsim2grid.network.LSGrid.get_substations` (alias ``get_voltage_levels``) returns a
+:class:`lightsim2grid.elements.SubstationContainer`: like every other ``*Container`` on this page it
+supports ``len(...)``, indexing and iteration over :class:`lightsim2grid.elements.SubstationInfo`
+objects, each with:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Field
+     - Meaning
+   * - ``id``
+     - the substation id (GridModel / global convention, see :ref:`bus-labelling`)
+   * - ``name``
+     - the substation's name
+   * - ``nb_max_busbars``
+     - the number of busbars at this substation (``n_busbar_per_sub``)
+   * - ``vn_kv``
+     - the substation's nominal voltage (kV) -- the common ``vn_kv`` of all its buses
 
 Generators (standard)
 +++++++++++++++++++++
@@ -294,6 +341,29 @@ regime can be inspected / forced with
     :members:
     :autosummary:
 
+.. _ptdf-lodf-section:
+
+PTDF / LODF
+------------
+
+As long as the topology of the grid is not modified, a DC powerflow is a *linear* function of the
+bus injections, so it can be replaced by a matrix multiplication -- much faster than solving the
+linear system again for every new injection or contingency (see :ref:`benchmark-dc-solvers` for
+numbers).
+
+- :func:`~lightsim2grid.network.LSGrid.get_ptdf` (or :func:`~lightsim2grid.network.LSGrid.get_ptdf_solver`
+  for the *solver* bus labelling) returns the Power Transfer Distribution Factor matrix: how much the
+  flow on each powerline / transformer changes for a 1 MW injection change at each bus.
+- :func:`~lightsim2grid.network.LSGrid.get_lodf` returns the Line Outage Distribution Factor matrix:
+  how much the flow on each powerline / transformer changes when another one is disconnected --
+  the tool of choice for an n-1 contingency analysis restricted to DC (see also
+  :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis` for the general AC/DC case).
+- :func:`~lightsim2grid.network.LSGrid.get_Bf` returns the sparse "bus to branch" susceptance
+  matrix these are built from.
+
+Both ``get_ptdf`` and ``get_lodf`` require a DC powerflow (``dc_pf``) to have been run first, and
+are only valid for the topology that was in place when that powerflow was solved -- any topology
+change invalidates them. See each function's own documentation below for a full worked example.
 
 Detailed documentation
 --------------------------

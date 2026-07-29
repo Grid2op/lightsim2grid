@@ -617,8 +617,9 @@ hypothetical one. (``-O3`` alone does not affect ABI/alignment, so a mismatch
 there is only a lost optimization, not a correctness risk — but the two
 builds should still track each other to avoid surprising perf differences.)
 
-Both example plugins in this repository (``examples/dist_slack_algorithm/``,
-``examples/external_algorithm/``) handle this automatically, and log an
+All three example plugins in this repository (``examples/dist_slack_algorithm/``,
+``examples/external_algorithm/``, ``examples/lm_algorithm/``) handle this
+automatically, and log an
 ``-- my_solver: lightsim2grid_core was built with -march=native -- matching
 it`` status message when they do:
 
@@ -734,6 +735,20 @@ The automated regression test is in
 ``lightsim2grid/tests/test_solver_registry.py``, class
 ``TestPluginLoading``.  It is skipped automatically when the example
 plugin has not been built, and passes once the ``.so`` is present.
+
+Other example plugins
+-----------------------
+
+Two more complete, less minimal plugins live in the repository, both following the same build /
+``load_algorithm_plugin`` / ``change_algorithm`` pattern as ``external_algorithm`` above:
+
+* ``examples/dist_slack_algorithm/`` registers ``NRDistSlack_SparseLU`` / ``NRDistSlack_KLU``: a
+  distributed-slack Newton-Raphson variant (``NRAlgoDistSlack``), with both a ``SparseLU`` and a
+  ``KLU`` linear-solver backend.
+* ``examples/lm_algorithm/`` registers ``NR_LM_SparseLU`` / ``NR_LM_KLU``: a
+  Levenberg-Marquardt-damped Newton-Raphson variant (``LMNRAlgo``), also with ``SparseLU`` and
+  ``KLU`` backends. Both names are registered atomically -- if either is already taken, neither is
+  added and ``load_algorithm_plugin`` raises instead of half-registering.
 
 
 * :ref:`genindex`

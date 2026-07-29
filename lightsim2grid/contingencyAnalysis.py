@@ -69,7 +69,7 @@ class SecurityAnalysisResult:
     post_contingency_results: List[ContingencyResult]
 
 
-class __ContingencyAnalysis(object):
+class ContingencyAnalysis(object):
     """
     This class allows to perform a "security analysis" from a given grid state.
 
@@ -178,8 +178,14 @@ class __ContingencyAnalysis(object):
 
     @property
     def init_from_n_powerflow(self):
+        """Whether to initialize the complex voltages of each contingency with the results
+        of a "n" powerflow (a powerflow without any line disconnection) instead of a flat
+        start. Default: ``False``. Must be set before the computation actually runs (eg
+        before ``get_flows`` / ``compute_V`` / ``run`` are called); it has no effect on a
+        contingency that has already been solved.
+        """
         return self.computer.init_from_n_powerflow
-    
+
     @init_from_n_powerflow.setter
     def init_from_n_powerflow(self, val: bool):
         if bool(val) != val:
@@ -188,6 +194,15 @@ class __ContingencyAnalysis(object):
 
     @property
     def handle_disconnected_grid(self):
+        """Whether a contingency that splits the grid into several connected components is
+        simulated on its largest component instead of being skipped. Default: ``False``,
+        meaning such a contingency is not simulated at all (its voltages are left at 0., see
+        the class-level note above). When ``True``, the buses of the other component(s) are
+        "masked" (their voltage reported as 0.) and the largest component is solved normally,
+        without triggering any extra matrix re-factorization. Supported by the Newton-Raphson
+        family (AC) and by the DC solver; a non Newton-Raphson AC algorithm (*eg* Gauss-Seidel
+        or Fast-Decoupled) is rejected.
+        """
         return self.computer.handle_disconnected_grid
 
     @handle_disconnected_grid.setter
@@ -647,5 +662,3 @@ class __ContingencyAnalysis(object):
         self.change_algorithm(solver_type)
         
         
-if GRID2OP_INSTALLED:
-    ContingencyAnalysis = __ContingencyAnalysis
