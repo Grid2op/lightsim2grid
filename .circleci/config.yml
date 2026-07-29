@@ -224,12 +224,14 @@ jobs:
             - checkout
             - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            - run: apt-get update && apt-get install python3-pip  cmake -y
+            - run: apt-get update && apt-get install python3-pip cmake curl ca-certificates -y
             - run:
-                name: Install uv  # this container's default python3 is 3.7, but lightsim2grid now requires python >= 3.8
-                command: python3 -m pip install uv
+                name: Install uv  # this container's pip/python3 (3.7) are too old to resolve the `uv` wheels on pypi ("No matching distribution found for uv"); use the standalone installer instead
+                command: |
+                    curl -LsSf https://astral.sh/uv/install.sh | sh
+                    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
             - run:
-                name: Setup uv venv on python 3.8  # earliest python version supported by lightsim2grid
+                name: Setup uv venv on python 3.8  # earliest python version supported by lightsim2grid; downloaded standalone by uv, does not depend on the container's python3
                 command: uv venv venv_test --python 3.8
             - run:
                 command: |
