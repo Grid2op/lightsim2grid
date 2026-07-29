@@ -66,7 +66,7 @@ try:
     CKTSOSolverSingleSlack = NRSing_CKTSO  # noqa: F405
     CKTSODCSolver = DC_CKTSO  # noqa: F405
     FDPF_XB_CKTSOSolver = FDPF_XB_CKTSO  # noqa: F405
-    FDPF_BX_CKTSOSolver = FDPF_XB_CKTSO  # noqa: F405
+    FDPF_BX_CKTSOSolver = FDPF_BX_CKTSO  # noqa: F405
 except Exception as exc_:  # noqa: F841
     # NICSLU is not available
     pass

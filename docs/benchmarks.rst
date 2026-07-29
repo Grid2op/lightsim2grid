@@ -112,11 +112,11 @@ and powerflow algorithm (*eg* "Newton Raphson", or "Fast Decoupled")):
   solver to compute the powerflows.
 - **GS synch** (Gauss Seidel synch version): the grid2op backend based on lightsim2grid that uses a
   variant of the "Gauss Seidel" method to compute the powerflows.
-- **NR single (SLU)** (Newton Raphson -single slack- with SparseLU): the grid2op backend based on lightsim2grid that uses the 
+- **NR single (SLU)** (Newton Raphson -single slack- with SparseLU): the grid2op backend based on lightsim2grid that uses the
   "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
-  Eigen c++ library (available on all platform). This solver supports distributed slack bus.
-- **NR (SLU)** (Newton Raphson -distributed slack- with SparseLU): same as above but this solver does not support distributed slack bus and
+  Eigen c++ library (available on all platform). This solver does not support distributed slack bus and
   can thus be slightly faster.
+- **NR (SLU)** (Newton Raphson -distributed slack- with SparseLU): same as above but this solver supports distributed slack bus.
 - **NR (KLU)** (Newton Raphson -distributed slack- with KLU): he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "KLU" from the `SuiteSparse` C package. This solver supports distributed slack bus.

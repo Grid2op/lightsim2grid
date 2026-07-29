@@ -66,7 +66,7 @@ method expects or returns.
    of the "user facing" matrices/vectors (``get_Ybus``, ``get_Sbus``, ``get_V``,
    ``get_pv``, …).
 
-3. **Solver bus id** — a *compact* index (``0`` … ``total_bus() - 1``) that depends
+3. **Solver bus id** — a *compact* index (``0`` … ``nb_connected_bus() - 1``) that depends
    on the current topology: only the buses actually in service get a solver id.
    It is what is passed to the linear/powerflow solver, so it is the convention of
    everything with a ``_solver`` suffix (``get_Ybus_solver``, ``get_V_solver``,
@@ -83,8 +83,8 @@ Method                              Meaning
 ``lsgrid.id_me_to_ac_solver()``     array indexed by *GridModel* bus id -> *AC solver* bus id
 ``lsgrid.id_dc_solver_to_me()``     array indexed by *DC solver* bus id -> *GridModel* bus id
 ``lsgrid.id_me_to_dc_solver()``     array indexed by *GridModel* bus id -> *DC solver* bus id
-``lsgrid.total_bus()``              number of buses currently seen by the solver
-``lsgrid.nb_connected_bus()``       number of connected buses
+``lsgrid.total_bus()``              total number of buses (``n_sub * n_busbar_per_sub``)
+``lsgrid.nb_connected_bus()``       number of buses currently seen by the solver
 ================================   ===========================================================
 
 Which convention each "by id" method uses:

@@ -18,7 +18,6 @@ independant for powersystem focus analysis. Indeed, the code provided in this pa
 developping AI focused controlers. Some of its limitations include, but are not limited to:
 
 - it does not enforce reactive power limits on generators
-- it does not model AC/DC converters
 - transformers have fixed tap ratio (though it can be changed at initialization of the solver)
 - shunts have fixed tap during the Newton-Raphson algorithm (though it can be changed at the initialization of the solver)
 - only powerflow ("steady state") can be performed

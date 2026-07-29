@@ -54,7 +54,7 @@ Importantly, this method is around **13x** faster than simulating "do nothing" (
     
     As this class calls a long c++ function, it is possible to use the python `Threading`
     module to achieve high efficient parrallelism. An example is provided in the
-    `examples\\computers_with_grid2op_multithreading.py` file.
+    `examples\\timeseries_with_grid2op_multithreading.py` file.
 
 .. _timeserie_benchmark: 
 
