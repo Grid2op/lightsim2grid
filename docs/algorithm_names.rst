@@ -191,7 +191,7 @@ Usage example
 Migration from old names
 ------------------------
 
-Before version 0.14, the enum values and class names used shorter names that
+Before version 1.0.0.rc2, the enum values and class names used shorter names that
 did not make the algorithm component explicit (``KLU``, ``SparseLU``, ``DC``,
 etc.).  These old names are kept as **deprecated aliases** in the Python enum
 so that existing code continues to work, but they will be removed in a future
