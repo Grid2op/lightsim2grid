@@ -8,7 +8,7 @@
 
 # ADVANCED USAGE
 # This files explains how to use the TimeSeriesCPP cpp class, for easier use
-# please consult the documentation of TimeSeries or the
+# please consult the documentation of TimeSerie or the
 # time_serie.py file !
 
 import grid2op

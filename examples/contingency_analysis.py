@@ -25,13 +25,13 @@ with warnings.catch_warnings():
     multi_mix_env = grid2op.make(env_name,
                                  backend=LightSimBackend(),
                                  # ignore the protection, that are NOT simulated
-                                 # by the TimeSerie module !
+                                 # by the ContingencyAnalysis module !
                                  param=param,
                                  test=test
                                  )
     multi_mix_env_pp = grid2op.make(env_name,
                                     # ignore the protection, that are NOT simulated
-                                    # by the TimeSerie module !
+                                    # by the ContingencyAnalysis module !
                                     param=param,
                                     test=test
                                     )
@@ -40,12 +40,14 @@ key_env = max([el for el in multi_mix_env.keys()])
 env = multi_mix_env[key_env]
 env_pp = multi_mix_env_pp[key_env]
 
-# Run the environment on a scenario using the TimeSerie module
+# Run the environment on a scenario using the ContingencyAnalysis module
 contingency_analysis = ContingencyAnalysis(env)
 contingency_analysis.add_all_n1_contingencies()
+# (optional, usually faster) warm-start each contingency's powerflow with the "n" case
+# voltage solution instead of a flat start
 contingency_analysis.init_from_n_powerflow = True
 p_or, a_or, voltages = contingency_analysis.get_flows()
-# the 3 lines above are the only lines you need to do to perform a security analysis !
+# the 3 lines above (ignoring the optional one) are all you need to perform a contingency analysis !
 
 computer = contingency_analysis.computer
 print(f"For environment: {env_name} ({computer.nb_solved()} n-1 simulated)")
@@ -109,3 +111,26 @@ for cont_id in range(env.n_line):
         assert np.all(np.abs(p_or[cont_id,:]) <= 1e-6), f"active power should be 0. for cont {cont_id}"
 
 print("All results match !")
+
+
+#### Advanced usage: multi-threading, disconnected grids and limit violations
+# `compute_limit_violations` must be set (either here or at construction time) to use
+# `run` / `run_ac` / `run_dc`; it makes the C++ side check every bus voltage and
+# branch/trafo current against the limits set on the grid, per contingency. Changing it
+# clears any previously registered contingency, so the n-1 list must be re-added after.
+contingency_analysis.compute_limit_violations = True
+# split the contingencies across 2 OS threads instead of solving them sequentially;
+# results do not depend on `nb_thread`
+contingency_analysis.nb_thread = 2
+# a contingency that splits the grid into several components would otherwise make that
+# component's powerflow diverge; with this set to True, only the elements that end up
+# disconnected from the slack are reported as "not simulated" instead
+contingency_analysis.handle_disconnected_grid = True
+contingency_analysis.add_all_n1_contingencies()  # re-add: compute_limit_violations cleared them above
+
+# `run_ac` (or `run_dc`) also makes sure the corresponding algorithm family is selected
+result = contingency_analysis.run_ac()
+print(f"\nPre-contingency ('n' case) converged: {result.pre_contingency_result.converged}, "
+      f"{len(result.pre_contingency_result.limit_violations)} limit violation(s)")
+nb_diverged = sum(not cont.converged for cont in result.post_contingency_results)
+print(f"Out of {len(result.post_contingency_results)} contingencies, {nb_diverged} did not converge")

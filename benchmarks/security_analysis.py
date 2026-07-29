@@ -11,8 +11,6 @@ import numpy as np
 
 import grid2op
 from grid2op.Parameters import Parameters
-from grid2op.Action import BaseAction
-from grid2op.Chronics import ChangeNothing
 import warnings
 from lightsim2grid import LightSimBackend, ContingencyAnalysis
 
@@ -27,13 +25,13 @@ with warnings.catch_warnings():
     multi_mix_env = grid2op.make(env_name,
                                  backend=LightSimBackend(),
                                  # ignore the protection, that are NOT simulated
-                                 # by the TimeSerie module !
+                                 # by the ContingencyAnalysis module !
                                  param=param,
                                  test=test
                                  )
     multi_mix_env_pp = grid2op.make(env_name,
                                     # ignore the protection, that are NOT simulated
-                                    # by the TimeSerie module !
+                                    # by the ContingencyAnalysis module !
                                     param=param,
                                     test=test
                                     )
@@ -42,7 +40,7 @@ key_env = max([el for el in multi_mix_env.keys()])
 env = multi_mix_env[key_env]
 env_pp = multi_mix_env_pp[key_env]
 
-# Run the environment on a scenario using the TimeSerie module
+# Run the environment on a scenario using the ContingencyAnalysis module
 contingency_analysis = ContingencyAnalysis(env)
 contingency_analysis.add_all_n1_contingencies()
 p_or, a_or, voltages = contingency_analysis.get_flows()

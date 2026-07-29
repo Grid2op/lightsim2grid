@@ -390,6 +390,57 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
     ``github.com/rte-france/grid2op`` instead of ``Grid2Op/grid2op``, and said
     "Eigen (optionally KLU)" instead of "Eigen and KLU". Synced to match.
 
+- [FIXED] structural issues in ``examples/`` and ``benchmarks/`` (section I of
+  the doc audit):
+
+  - ``examples/time_serie.py``: ``time_serie.init_from_n_powerflow = True`` was
+    set *after* ``time_serie.compute_V(...)`` had already run, so it had no
+    effect at all -- the flag is only read inside ``compute_V``'s underlying
+    C++ call. Verified empirically: moving it before ``compute_V`` cuts the
+    reported ``preprocessing_time()`` roughly 3x on the same scenario. Moved
+    the line and documented why the order matters.
+  - ``examples/contingency_analysis.py`` and ``benchmarks/security_analysis.py``
+    are near-duplicates that measure different things (only the example sets
+    ``init_from_n_powerflow``); both had "ignore the protection... by the
+    **TimeSerie** module" comments copy-pasted from the time-series example
+    (should say ``ContingencyAnalysis``), and the example's own "the 3 lines
+    above are the only lines you need" comment had gone stale (4 lines, one of
+    them optional) once ``init_from_n_powerflow`` was added. Also removed two
+    unused imports (``BaseAction``, ``ChangeNothing``) from the benchmark
+    script (confirmed dead with ``pyflakes``).
+  - ``docs/security_analysis.rst`` sends readers to the contingency-analysis
+    example for "a more advanced usage", but it demonstrated none of the
+    capabilities the docs advertise. Added a section exercising
+    ``nb_thread``, ``handle_disconnected_grid``, ``compute_limit_violations``
+    and ``run_ac``/``run_dc`` -- including working around the fact that
+    setting ``compute_limit_violations`` clears any already-registered
+    contingency, so the n-1 list has to be re-added afterwards (verified this
+    gotcha empirically: without the re-add, the demo silently runs on 0
+    contingencies).
+  - ``examples/timeseries_with_grid2op.py``: "consult the documentation of
+    **TimeSeries**" -- the easier-to-use Python class is ``TimeSerie`` (no
+    trailing s).
+  - ``examples/Readme.md`` listed the 4 top-level scripts but not the three
+    solver-plugin examples (``external_algorithm``, ``dist_slack_algorithm``,
+    ``lm_algorithm``) or the shared ``cmake/`` helper; added all four.
+  - ``docs/solver_plugin.rst``: fixed the path of ``env_compile_all.sh``
+    (repository root, not ``benchmarks/``); fixed a self-contradicting bullet
+    that called ``__O3_OPTIM`` one of "two opt-in build flags" and then noted
+    "(on by default, actually)" in the same sentence -- it is opt-*out*, only
+    ``__COMPILE_MARCHNATIVE`` is opt-in; fixed the expected plugin-example
+    output showing a registered solver named ``'DC'``, which does not exist
+    (real names are e.g. ``'DC_SparseLU'`` / ``'DC_KLU'``).
+  - **Real bug**, not just docs: both the inline CMake template in
+    ``docs/solver_plugin.rst`` and the shipped
+    ``examples/cmake/MatchLightsim2gridBuildFlags.cmake`` treated an *unset*
+    ``__O3_OPTIM`` as OFF when falling back to env-var detection (source-tree
+    builds only), while ``lightsim2grid_core`` itself treats unset as ON (only
+    ``__O3_OPTIM=0``/``False`` disables it). A plugin built from a source tree
+    would silently end up without ``-O3`` while the core it links against has
+    it. Fixed both copies to match the core's actual default; verified with a
+    standalone CMake project that the "matching -O3" status message now
+    prints with the env var unset, and stays silent with ``__O3_OPTIM=0``.
+
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and

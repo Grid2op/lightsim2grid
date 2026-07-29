@@ -55,8 +55,12 @@ env_pp = multi_mix_env_pp[key_env]
 
 # Run the environment on a scenario using the TimeSerie module
 time_serie = TimeSerie(env)
-time_serie.compute_V(scenario_id=scenario_id)
+# (optional, usually faster) initialize the first step of the batch with the voltage
+# solution of the current ("n") state of the grid instead of a flat start -- must be
+# set before compute_V() is called, it has no effect on a powerflow that has already
+# been solved
 time_serie.init_from_n_powerflow = True
+time_serie.compute_V(scenario_id=scenario_id)
 a_or = time_serie.compute_A()
 p_or = time_serie.compute_P()
 computer = time_serie.computer
