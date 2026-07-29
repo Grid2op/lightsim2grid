@@ -10,7 +10,7 @@ you can obtain one at http://mozilla.org/MPL/2.0/.
 
 SPDX-License-Identifier: MPL-2.0
 
-This file is part of LightSim2grid, LightSim2grid a implements a c++ backend targeting the Grid2Op platform.
+This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 Disclaimer
 ----------

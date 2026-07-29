@@ -29,7 +29,7 @@ For standard grid2op environment, you can use it like:
 
     # proceed as you would any open ai gym loop
     nb_episode = 10
-    for _ in range(nb_episde):
+    for _ in range(nb_episode):
         # you perform in this case 10 different episodes
         obs = env.reset()
         reward = env.reward_range[0]
@@ -38,7 +38,7 @@ For standard grid2op environment, you can use it like:
             # here you loop on the time steps: at each step your agent receive an observation
             # takes an action
             # and the environment computes the next observation that will be used at the next step.
-            act = agent.act(obs, reward, done)
+            act = my_agent.act(obs, reward, done)
             obs, reward, done, info = env.step(act)
             # the `LightSimBackend` will be used to carry out the powerflow computation instead
             # of the default grid2op `PandaPowerBackend`
@@ -72,7 +72,7 @@ You can customize the way the backend behaves in different ways:
 - `dist_slack_non_renew`: by default in most grid2op environment, the slack bus is "centralize" / "single slack". This parameters
   allows to bypass this restriction and use all non renewable generators (and turned on and with  > 0.) in a distributed
   slack bus setting. It might change the default `algo_type` used.
-- \* `use_static_gen`: bool=False, DO NOT USE AT THE MOMENT. When it will be available, you will be able to loader_kwargs
+- \* `use_static_gen`: bool=False, DO NOT USE AT THE MOMENT. When it will be available, you will be able to load
   both "static" generators (pq generators) and "regular" (pv generators) as generators in lightsim2grid. It does
   not work at the moment and has no effect.
 - \* `detailed_infos_for_cascading_failures`: for exhaustivity, do not modify.

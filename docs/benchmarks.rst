@@ -445,7 +445,7 @@ The results can be found in:
 
 .. toctree::
   :maxdepth: 1
-  :caption: For a laptop with a i7 of 2015 wth a frequency of 2.70 GHz
+  :caption: For a laptop with a i7 of 2015 with a frequency of 2.70 GHz
 
   benchmark_solver/ubuntu_2004_dell/ls0.8.1_glop1.10.1
   benchmark_solver/ubuntu_2004_dell/ls0.8.0_glop1.10.0
@@ -453,7 +453,7 @@ The results can be found in:
 
 .. toctree::
   :maxdepth: 1
-  :caption: For a laptop with a i7 of 2014 wth a frequency of 3.0 GHz
+  :caption: For a laptop with a i7 of 2014 with a frequency of 3.0 GHz
 
   benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.1
   benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.1_py311
@@ -461,7 +461,7 @@ The results can be found in:
 
 .. toctree::
   :maxdepth: 1
-  :caption: For a laptop with a ryzen 7 of 2020 wth a frequency of 4.2 GHz
+  :caption: For a laptop with a ryzen 7 of 2020 with a frequency of 4.2 GHz
 
   benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.7_py38
   benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.6_py38

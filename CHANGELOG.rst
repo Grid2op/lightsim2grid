@@ -179,6 +179,34 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   since version 4) and the ``recommonmark`` extension (no ``.md`` source anywhere in
   ``docs/``, no ``source_suffix`` mapping to make it apply if there were; also dropped
   from the ``docs`` extra in ``pyproject.toml``).
+- [FIXED] several dangling Python cross-references, found by temporarily enabling
+  Sphinx's ``nitpicky`` mode (off by default, so these silently rendered as plain text
+  instead of erroring): ``lightsim2grid.algorithm.SparseLULinearSolver`` doesn't exist in
+  Python (it's a C++-only type) so the reference is now plain text;
+  ``lightsim2grid.algorithm.TimerJac`` genuinely was never exported from
+  ``lightsim2grid.algorithm`` despite being documented as the return type of
+  ``get_timers_jacobian()`` -- now exported, mirroring ``LinearSolverStats``; several bare
+  (unqualified) references in ``docs/solver_plugin.rst`` and ``docs/security.rst``
+  (``change_solver``, ``get_J``, ``LSGrid.check_grid``, ``LSGrid.update_topo``, one more
+  found the same way in ``docs/binary_serialization.rst``) now use their fully-qualified
+  path, which Sphinx's python domain resolves reliably regardless of which document
+  references them; and ``docs/security_analysis.rst``'s ``automodule`` documented the
+  deprecated ``lightsim2grid.securityAnalysis`` shim instead of the real
+  ``lightsim2grid.contingencyAnalysis`` module, which also cascaded into fixing three
+  more dangling references to classes only the real module actually defines
+  (``ViolationElementType``, ``LimitViolationType``,
+  ``ContingencyAnalysisCPP.is_grid_connected_after_contingency``).
+- [FIXED] packaging metadata left over from before the 1.0 release:
+  ``Development Status :: 4 - Beta`` -> ``5 - Production/Stable``; ``requires-python``
+  said ``>=3.7`` while the README's own compatibility table and ``docs/quickstart.rst``
+  both already said 3.8 is the actual floor; ``build.verbose = true`` (a debug-only
+  setting, per its own comment) was left on for every user's ``pip install``.
+- [FIXED] about two dozen typos across the docs, README and DISCLAIMER, found while
+  auditing this branch's documentation. Two were more than cosmetic: `docs/quickstart.rst`,
+  `docs/use_with_grid2op.rst` and `docs/lightsimbackend.rst` each had an example that
+  would raise ``NameError`` if actually run (looping over the misspelled ``nb_episde``
+  instead of the ``nb_episode`` defined two lines above, and calling ``agent.act(...)``
+  when the variable actually created was ``my_agent``).
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and

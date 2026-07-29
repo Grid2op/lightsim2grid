@@ -18,7 +18,7 @@ this package should not be used for detailed power system computations or simula
     * [6.2 Profile the code](#Profile-the-code)
     * [6.3 Local testing](#Local-testing)
     * [6.4 Tests performed automatically](#Tests-performed-automatically)
-    * [5.5 Known issues](#Known-issues)
+    * [6.5 Known issues](#Known-issues)
 
 
 ## Usage
@@ -239,7 +239,7 @@ For that, you need to declare the environment variables `PATH_CKTSO` that points
 the NICSLU package (see https://github.com/chenxm1986/cktso). 
 For example: `export PATH_NICSLU=/home/user/Documents/cktso`
 
-#### Enable 03 optimization
+#### Enable O3 optimization
 By default, at least on ubuntu, only the "-O2" compiler flags is used. To use the O3 optimization flag, you need
 to specify the `__O3_OPTIM` environment variable: `set __O3_OPTIM=1` (or `$Env:__O3_OPTIM=1` in powershell) before the compilation (so before
 `python3 setup.py build` or `python -m pip install -e .`)

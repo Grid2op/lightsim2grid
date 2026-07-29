@@ -1,7 +1,7 @@
 .. _solver_plugin:
 
-External Amgorithm Plugins
-===========================
+External Algorithm Plugins
+==========================
 
 LightSim2grid supports dynamically-loaded algorithm plugins.  A plugin is a
 shared library (``.so`` / ``.dll``) that registers one or more custom
@@ -143,7 +143,7 @@ Constructor
 
 Pass ``true`` for AC solvers and ``false`` for DC solvers.  This value is
 stored in the public member ``IS_AC``, which LSGrid uses to route
-:func:`change_solver` calls to the right slot (AC or DC).
+:func:`LSGrid.change_algorithm` calls to the right slot (AC or DC).
 
 Methods to override
 ~~~~~~~~~~~~~~~~~~~~
@@ -564,7 +564,7 @@ Python API reference
     unknown respectively, or ``-1`` when the bus owns no such unknown.
 
     These are only meaningful for Newton-Raphson solvers (those that build a
-    Jacobian, see :func:`get_J`).  They mirror the ``get_J()`` accessor and let
+    Jacobian, see :func:`lightsim2grid.network.LSGrid.get_J_solver`).  They mirror the ``get_J()`` accessor and let
     you locate a given bus' rows/columns inside the augmented Jacobian.
 
     :raises RuntimeError: If the active solver does not build a Jacobian.

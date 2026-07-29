@@ -47,7 +47,7 @@ Results in the "TL;DR" section:
 - **time (TimeSerie)**: equivalent to `2e3` but when using the `TimeSerie` lightsim2grid module
 - **time (ContingencyAnalysis)**: equivalent to `2e3` but when using the `ContingencyAnalysis` lightsim2grid module.
 
-Tesults in the "Computation time using grid2op" section:
+Results in the "Computation time using grid2op" section:
 
 - **avg step duration (ms)**: average time to perform a step in grid2op, so to compute all `2`
 - **time [DC + AC] (ms / pf)** : average time taken over the 288 runs of `2e1`, `2e2` and `2e3`
