@@ -100,6 +100,7 @@ class LightSimBackend(Backend):
                  max_iter: int=10,
                  tol: float=1e-8,
                  solver_type: Optional[AlgorithmType]=None,
+                 algo_type: Optional[AlgorithmType]=None,
                  turned_off_pv : bool=True,  # are gen turned off (or with p=0) contributing to voltage or not
                  dist_slack_non_renew: bool=False,  # distribute the slack on non renewable turned on (and with P>0) generators
                  use_static_gen: bool=False, # add the static generators as generator gri2dop side
@@ -108,18 +109,19 @@ class LightSimBackend(Backend):
                  stop_if_load_disco : Optional[bool] = None,
                  stop_if_gen_disco : Optional[bool] = None,
                  stop_if_storage_disco : Optional[bool] = None,
-                 automatically_disconnect : bool = False, 
+                 automatically_disconnect : bool = False,
                  gen_slack_id=None,
                  ):
         #: ``int`` maximum number of iteration allowed for the solver
-        #: if the solver has not converge after this, it will 
+        #: if the solver has not converge after this, it will
         #: send a "divergence error"
         self.max_it = max_iter
-        
+
         #: ``float`` tolerance of the solver
         self.tol = tol  # tolerance for the solver
-        
-        real_algo_type = self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
+
+        algo_type = self._aux_merge_solver_type_algo_type(solver_type, algo_type)
+        real_algo_type = self._check_suitable_solver_type(algo_type, check_in_avail_solver=False)
         self.__current_algo_type = real_algo_type
         
         #: does the "turned off" generators (including when p=0)
@@ -215,7 +217,7 @@ class LightSimBackend(Backend):
             
         self._aux_init_super(detailed_infos_for_cascading_failures,
                              can_be_copied,
-                             solver_type,
+                             algo_type,
                              max_iter,
                              tol,
                              turned_off_pv,
@@ -429,10 +431,10 @@ class LightSimBackend(Backend):
             # (before 1.9.1)
             self._init_pp_backend = _DoNotUseAnywherePandaPowerBackend()
         
-    def _aux_init_super(self, 
+    def _aux_init_super(self,
                         detailed_infos_for_cascading_failures,
                         can_be_copied,
-                        solver_type,
+                        algo_type,
                         max_iter,
                         tol,
                         turned_off_pv,
@@ -450,7 +452,7 @@ class LightSimBackend(Backend):
             Backend.__init__(self,
                              detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
                              can_be_copied=can_be_copied,
-                             solver_type=solver_type,
+                             algo_type=algo_type,
                              max_iter=max_iter,
                              tol=tol,
                              turned_off_pv=turned_off_pv,
@@ -466,7 +468,7 @@ class LightSimBackend(Backend):
                              )
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
-                          "you cannot set max_iter, tol nor solver_type arguments.")
+                          "you cannot set max_iter, tol nor algo_type arguments.")
             Backend.__init__(self,
                              detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
         
@@ -532,18 +534,18 @@ class LightSimBackend(Backend):
             print(env.backend.get_algo_types())
             # >>> (<AlgorithmType.NRSing_KLU: 7>, <AlgorithmType.DC_KLU: 9>)  [can depend on your installation of lightsim2grid]
             
-            env2 = grid2op.make(env_name, backend=LightSimBackend(solver_type=lightsim2grid.algorithm.AlgorithmType.NR_SparseLU))
+            env2 = grid2op.make(env_name, backend=LightSimBackend(algo_type=lightsim2grid.algorithm.AlgorithmType.NR_SparseLU))
             print(env2.backend.get_algo_types())
             # >>> (<AlgorithmType.NR_SparseLU: 0>, <AlgorithmType.DC_KLU: 9>)  [can depend on your installation of lightsim2grid]
             
         """
         return self._grid.get_algo_type(), self._grid.get_dc_algo_type()
     
-    def set_solver_type(self, solver_type: AlgorithmType) -> None:
+    def set_solver_type(self, algo_type: AlgorithmType) -> None:
         """DEPRECATED use :func:`set_algo_type` instead"""
-        self.set_algo_type(solver_type)
-        
-    def set_algo_type(self, solver_type: AlgorithmType) -> None:
+        self.set_algo_type(algo_type)
+
+    def set_algo_type(self, algo_type: AlgorithmType) -> None:
         """
         Change the type of solver you want to use.
 
@@ -563,37 +565,65 @@ class LightSimBackend(Backend):
 
         Parameters
         ----------
-        solver_type: lightsim2grid.AlgorithmType
-            The new type of solver you want to use. See backend.available_default_algorithms for a list of available solver
-            on your machine.
+        algo_type: lightsim2grid.AlgorithmType
+            The new type of algorithm you want to use. See backend.available_default_algorithms for a list of available
+            algorithms on your machine.
         """
-        if solver_type is None:
-            raise BackendError("Impossible to change the solver type to None. Please enter a valid solver type.")
-        real_algo_type = self._check_suitable_solver_type(solver_type)
+        if algo_type is None:
+            raise BackendError("Impossible to change the algorithm type to None. Please enter a valid algorithm type.")
+        real_algo_type = self._check_suitable_solver_type(algo_type)
         self.__current_algo_type = copy.deepcopy(real_algo_type)
         self._grid.change_algorithm(self.__current_algo_type)
 
+    def _aux_merge_solver_type_algo_type(
+        self,
+        solver_type: Optional[Union[AlgorithmType, SolverType]],
+        algo_type: Optional[AlgorithmType]) -> Optional[AlgorithmType]:
+        """Merge the deprecated `solver_type` kwarg into the canonical `algo_type` one.
+
+        "solver" now refers specifically to the *linear* solver (KLU, SparseLU, NICSLU,
+        CKTSO), not the powerflow algorithm nor the combination of both that
+        `AlgorithmType` enumerates -- hence the rename. `solver_type` is kept only so
+        existing code keeps working.
+        """
+        if solver_type is None:
+            return algo_type
+        warnings.warn("The `solver_type` kwarg is deprecated: \"solver\" now refers to the "
+                      "linear solver only (KLU, SparseLU, NICSLU, CKTSO), not the powerflow "
+                      "algorithm. Use `algo_type` instead.",
+                      DeprecationWarning,
+                      3)
+        # normalize only for the comparison: a `SolverType` and the `AlgorithmType` it
+        # aliases are not `==` to one another (different Enum classes), even though they
+        # designate the same algorithm.
+        solver_type_normalized = solver_type.value if isinstance(solver_type, SolverType) else solver_type
+        if algo_type is not None and algo_type != solver_type_normalized:
+            raise BackendError("Both `solver_type` (deprecated) and `algo_type` were provided "
+                               "with different values. Pass only `algo_type`.")
+        return solver_type
+
     def _check_suitable_solver_type(
         self,
-        solver_type: Union[AlgorithmType, SolverType], check_in_avail_solver=True) -> AlgorithmType:
-        if solver_type is None:
+        algo_type: Union[AlgorithmType, SolverType], check_in_avail_solver=True) -> AlgorithmType:
+        if algo_type is None:
             return
 
-        if isinstance(solver_type, SolverType):
-            warnings.warn("Passing a SolverType is deprecated. Please use lightsim2grid.AlgorithmType instead.",
+        if isinstance(algo_type, SolverType):
+            warnings.warn("Passing a SolverType is deprecated. Please use lightsim2grid.AlgorithmType "
+                          "(via the `algo_type` kwarg / `set_algo_type`) instead.",
                           DeprecationWarning,
                           2)
-            solver_type = solver_type.value
-            
-        if not isinstance(solver_type, AlgorithmType):
-            raise BackendError(f"The solver type must be from type \"lightsim2grid.AlgorithmType\" and not "
-                               f"{type(solver_type)}")
-            
-        if check_in_avail_solver and solver_type not in self.available_default_algorithms:
-            raise BackendError(f"The solver type provided \"{solver_type}\" is not available on your system. Available"
-                               f"solvers are {self.available_default_algorithms}")
-        return solver_type
-            
+            algo_type = algo_type.value
+
+        if not isinstance(algo_type, AlgorithmType):
+            raise BackendError(f"The algorithm type must be from type \"lightsim2grid.AlgorithmType\" and not "
+                               f"{type(algo_type)}")
+
+        if check_in_avail_solver and algo_type not in self.available_default_algorithms:
+            raise BackendError(f"The algorithm type provided \"{algo_type}\" is not available on your system. Available"
+                               f"algorithms are {self.available_default_algorithms}")
+        return algo_type
+
     def set_solver_max_iter(self, max_iter: int) -> None:
         """
         Set the maximum number of iteration the solver is allowed to perform.
