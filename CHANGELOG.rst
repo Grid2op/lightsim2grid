@@ -135,8 +135,23 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   ``lightsim2grid.solver`` shim, whose module-level ``DeprecationWarning`` therefore fired
   on every import of ``lightsim2grid`` itself, regardless of whether the deprecated
   ``solver_type`` / ``SolverType`` were ever used. ``SolverType`` now lives in a private
-  module (``lightsim2grid/_utils/_solver_type.py``); ``lightsim2grid.solver`` still
+  module (``lightsim2grid/_solver_type.py``); ``lightsim2grid.solver`` still
   re-exports it and still warns when *it* is imported directly.
+- [FIXED] a regression from the previous entry: ``SolverType`` was first placed inside
+  ``lightsim2grid._utils`` rather than as a standalone module. Importing any submodule of
+  a package always runs that package's ``__init__.py`` first, and
+  ``lightsim2grid._utils/__init__.py`` does ``from grid2op.Backend import
+  PandaPowerBackend`` -- safe only *lazily*, well after grid2op/pandapower have finished
+  importing (see the comment at its top: "grid2op -> pandapower -> lightsim2grid ->
+  grid2op"). Importing ``SolverType`` eagerly from ``LightSimBackend``'s own top level
+  reentered that ``__init__.py`` *while* ``grid2op.Backend.pandaPowerBackend`` was itself
+  still mid-import (pandapower's own import chain probes for lightsim2grid), raising
+  ``ImportError: cannot import name 'PandaPowerBackend' from partially initialized module
+  'grid2op.Backend'`` -- silently swallowed by that file's ``except ImportError: pass``,
+  so ``_DoNotUseAnywherePandaPowerBackend`` was never defined and every
+  ``grid2op.make(..., backend=LightSimBackend())`` failed outright. Moved to the
+  standalone ``lightsim2grid/_solver_type.py`` module (see above), which has no package
+  ``__init__.py`` of its own to reenter.
 - [FIXED] the documentation now builds with zero Sphinx warnings (was 40, all coming
   from environments without a compiled ``lightsim2grid_cpp`` or without ``numba``, plus
   three real issues): switched ``sphinx.ext.imgmath`` (needs a local LaTeX install) for

@@ -14,6 +14,20 @@
 # `from lightsim2grid.solver import SolverType` still works (and still warns) exactly as
 # before -- this module is just where the class is defined now.
 #
+# Deliberately NOT under lightsim2grid._utils (or any other subpackage): importing a
+# submodule always executes its package's __init__.py first, and lightsim2grid._utils's
+# __init__.py does `from grid2op.Backend import PandaPowerBackend` -- which is only safe
+# lazily, well after grid2op/pandapower have finished importing (see the comment at the
+# top of that file: "grid2op -> pandapower -> lightsim2grid -> grid2op"). Importing this
+# module eagerly from LightSimBackend's own top level, when it lived inside
+# lightsim2grid._utils, forced that package's __init__.py to run reentrantly *while*
+# grid2op.Backend.pandaPowerBackend was itself still mid-import (pandapower's own import
+# chain probes for lightsim2grid), raising "cannot import name 'PandaPowerBackend' from
+# partially initialized module 'grid2op.Backend'" -- silently swallowed by that file's
+# `except ImportError: pass`, so `_DoNotUseAnywherePandaPowerBackend` was never defined
+# and every grid2op.make(..., backend=LightSimBackend()) failed. A plain top-level module
+# (this one) has no such package __init__.py to reenter.
+#
 # This module is internal: do not import it from anywhere except lightsim2grid.solver and
 # LightSimBackend's own back-compat bridging.
 

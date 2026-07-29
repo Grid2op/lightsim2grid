@@ -25,7 +25,7 @@ from lightsim2grid.algorithm import __all__  # noqa: E402, F401
 # defined in a private module (not here) so that other, internal, non-deprecated code
 # (LightSimBackend's solver_type / SolverType back-compat bridging) can use SolverType
 # without importing this module and triggering the warning above.
-from lightsim2grid._utils._solver_type import SolverType  # noqa: E402, F401
+from lightsim2grid._solver_type import SolverType  # noqa: E402, F401
 
 # also for backward compatibility, some alias of the old "solver" 
 # names
