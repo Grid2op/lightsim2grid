@@ -196,9 +196,9 @@ section for more information, in the example above this can look like:
 +++++++++++++++++++++++++++++++++++++++++
 
 Once everything is set-up you can execute anything you want on this container. Note that doing so, the execution
-of the code will be totally independant of your system. Only the things located in `DIR_PATH` will be visible 
+of the code will be totally independant of your system. Only the things located in `DIR_PATH` will be visible
 by your script, only the python package installed in the container will be usable, only the python interpreter
-of the containter (python 3.6 at time of writing) will be usable etc.
+of the containter will be usable etc.
 
 .. code-block:: bash
 
@@ -253,7 +253,7 @@ is distributed
     damages or losses, even if such party shall have 
     been informed of the possibility of such damages.
 
-1. Clean-up
+4. Clean-up
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Once you are done with your experiments, you can stop the docker container:

@@ -19,7 +19,7 @@ For standard grid2op environment, you can use it like:
     from grid2op.Agent import RandomAgent
 
     # create an environment
-    env_name = "rte_case14_realistic"  # for example, other environments might be usable
+    env_name = "l2rpn_case14_sandbox"  # for example, other environments might be usable
     env = grid2op.make(env_name,
                        backend=LightSimBackend()  # this is the only change you have to make!
                        )
@@ -113,8 +113,8 @@ you can load it with:
     from grid2op.Agent import RandomAgent
 
     # create an environment
-    env_with_iidm_as_the_grid_description = ...
-    env = grid2op.make(env_name,
+    env_with_iidm_as_the_grid_description = ...  # eg a path to a directory containing an iidm file
+    env = grid2op.make(env_with_iidm_as_the_grid_description,
                        backend=LightSimBackend(loader_method="pypowsybl")
                        )
 

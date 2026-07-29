@@ -10,9 +10,9 @@ The integration with grid2op is rather easy. You simply need to provide the key-
 `backend=LightSimBackend()` when building your environment using the `grid2op.make` function and you
 can use it transparently.
 
-**NB** By default, the fastest resolution method (among KLU and SparseLU linear solver is used). For now it
-is not easy to change it. If this is of any interest for you, please let us know with a
-`feature request <https://github.com/Grid2Op/lightsim2grid/issues/new?assignees=&labels=enhancement&template=feature_request.md&title=>`_
+**NB** By default, the fastest resolution method available on your system is used. You can change it with the
+`algo_type` kwarg of :class:`lightsim2grid.lightSimBackend.LightSimBackend` (see :ref:`algorithm_names` and
+:ref:`solvers_doc` for the list of available algorithms and how to select one).
 
 
 Regular environments
@@ -27,7 +27,7 @@ For standard grid2op environment, you can use it like:
     from grid2op.Agent import RandomAgent
 
     # create an environment
-    env_name = "rte_case14_realistic"  # for example, other environments might be usable
+    env_name = "l2rpn_case14_sandbox"  # for example, other environments might be usable
     env = grid2op.make(env_name,
                        backend=LightSimBackend()  # this is the only change you have to make!
                        )
@@ -70,7 +70,7 @@ also perfectly transparent once the environment is loaded.
     from grid2op.Agent import RandomAgent
     from lightsim2grid import LightSimBackend
 
-    env_name = "rte_case14_realistic"  # for example, other environments might be usable
+    env_name = "l2rpn_case14_sandbox"  # for example, other environments might be usable
     env = grid2op.make(env_name,
                        backend=LightSimBackend()  # this is the only change you have to make!
                        )
@@ -94,7 +94,7 @@ class transparently too (see their documentation
     import grid2op
     from grid2op.Environment import MultiEnvMultiProcess
     from lightsim2grid import LightSimBackend
-    env_name = "rte_case14_realistic"  # for example, other environments might be usable
+    env_name = "l2rpn_case14_sandbox"  # for example, other environments might be usable
     # create an environment
     env0 = grid2op.make(env_name,
                        backend=LightSimBackend()

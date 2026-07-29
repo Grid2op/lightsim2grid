@@ -51,7 +51,9 @@ Even more advanced usage
 --------------------------
 You can customize even more the solvers that you want to use.
 
-Lightsim2grid comes with 11 available solvers that can solver either AC or DC powerflows. We can cluster them into 3 categories.
+Lightsim2grid comes with 22 available solvers (see :class:`lightsim2grid.algorithm.AlgorithmType`, which also has a
+``Custom`` sentinel value used for solvers loaded via a plugin, see :ref:`solver_plugin`) that can solve either AC or
+DC powerflows. We can cluster them into 4 categories.
 
 If you want to stay "relatively high level", once you have a grid model, you can change the solver using
 the "enum" of the solvers you want to use as showed bellow:
@@ -139,27 +141,32 @@ python virtual machine at execution time. So we encourage you to check that:
 AC solvers using Newton Raphson
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-There are 6 solvers in this categorie. They can in turn, be split into two main sub categories. The first one allows for a
-distributed slack bus (but can be a bit slower) as the other one does not allow for such (in case of multiple slack bus, only 
+There are 8 solvers in this categorie. They can in turn, be split into two main sub categories. The first one allows for a
+distributed slack bus (but can be a bit slower) as the other one does not allow for such (in case of multiple slack bus, only
 the first one is used as a real slack bus, the other ones are converted silently to PV buses)
 
 The list is:
 
-- `NR_KLU` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the 
+- `NR_KLU` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the
   fast `KLU` implementation is used to iteratively update the jacobian matrix `J`.
-- `NR_NICSLU` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the 
+- `NR_NICSLU` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the
   fast `NICSLU` implementation is used to iteratively update the jacobian matrix `J`.
-- `NR_SparseLU`: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the 
-  Eigen default implementation is used to iteratively update the jacobian matrix `J` (instead of the faster `KLU` or `NICSLU`)
-- `NRSing_KLU` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign 
-  all elements of `ref` into `pv` except the first one], where the 
+- `NR_CKTSO` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the
+  fast `CKTSO` implementation is used to iteratively update the jacobian matrix `J`.
+- `NR_SparseLU`: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the
+  Eigen default implementation is used to iteratively update the jacobian matrix `J` (instead of the faster `KLU`, `NICSLU` or `CKTSO`)
+- `NRSing_KLU` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign
+  all elements of `ref` into `pv` except the first one], where the
   fast `KLU` implementation is used to iteratively update the jacobian matrix `J`
-- `NRSing_NICSLU` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign 
-  all elements of `ref` into `pv` except the first one], where the 
+- `NRSing_NICSLU` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign
+  all elements of `ref` into `pv` except the first one], where the
   fast `NICSLU` implementation is used to iteratively update the jacobian matrix `J`.
-- `NRSing_SparseLU`: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign 
-  all elements of `ref` into `pv` except the first one], where the 
-  Eigen default implementation is used to iteratively update the jacobian matrix `J` (instead of the faster `KLU` or `NICSLU`)
+- `NRSing_CKTSO` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign
+  all elements of `ref` into `pv` except the first one], where the
+  fast `CKTSO` implementation is used to iteratively update the jacobian matrix `J`.
+- `NRSing_SparseLU`: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign
+  all elements of `ref` into `pv` except the first one], where the
+  Eigen default implementation is used to iteratively update the jacobian matrix `J` (instead of the faster `KLU`, `NICSLU` or `CKTSO`)
 
 You can use them as:
 
@@ -173,9 +180,9 @@ You can use them as:
   # process the results as above
 
 .. note::
-  \* these 4 solvers might not be available on all platforms (`KLU` is available if installed from pypi, but not
-  necessarily when installed from source). The solvers based on `NICSLU` also requires an installation from
-  source.
+  \* these 6 solvers might not be available on all platforms (`KLU` is available if installed from pypi, but not
+  necessarily when installed from source). The solvers based on `NICSLU` or `CKTSO` also require an installation
+  from source.
 
 AC solvers using Gauss Seidel method
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -202,11 +209,12 @@ inverting a sparse matrix (or said differently solving for an equation of the so
 it's not exactly this equation as we need a slack bus, for various reasons out of the scope of this documentation). 
 In the current implementation it does not uses `slack_weight` and does not model distributed slack.
 
-There are 3 solvers of this type that are different in the way they solve `Ybus * Theta = Sbus`:
+There are 4 solvers of this type that are different in the way they solve `Ybus * Theta = Sbus`:
 
 - `DC_SparseLU` uses the default Eigen sparse LU implementation
 - `DC_KLU` uses the fast `KLU` solver
-- `DC_NICSLU` uses the fast `NICSLU` solver    
+- `DC_NICSLU` uses the fast `NICSLU` solver
+- `DC_CKTSO` uses the fast `CKTSO` solver
 
 .. code-block:: python
 
@@ -216,6 +224,36 @@ There are 3 solvers of this type that are different in the way they solve `Ybus 
   dc_solver = DC_SparseLU()
   converged = dc_solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
   # process the results as above
+
+Fast Decoupled solvers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+There are 8 solvers of this type. The "Fast Decoupled Power Flow" (FDPF) method exploits the (approximate)
+decoupling between active power / voltage angle on one side, and reactive power / voltage magnitude on the
+other, to avoid rebuilding the full Newton-Raphson jacobian at each iteration. Two variants are available,
+`XB` and `BX`, that differ in which simplifying assumption is made on the B' / B'' matrices; neither supports
+distributed slack bus [ignores `slack_weight`, assign all elements of `ref` into `pv` except the first one].
+
+The list is:
+
+- `FDPF_XB_SparseLU` / `FDPF_BX_SparseLU`: XB / BX variant, using the default Eigen sparse LU implementation.
+- `FDPF_XB_KLU` \* / `FDPF_BX_KLU` \*: XB / BX variant, using the fast `KLU` implementation.
+- `FDPF_XB_NICSLU` \* / `FDPF_BX_NICSLU` \*: XB / BX variant, using the fast `NICSLU` implementation.
+- `FDPF_XB_CKTSO` \* / `FDPF_BX_CKTSO` \*: XB / BX variant, using the fast `CKTSO` implementation.
+
+.. code-block:: python
+
+  from lightsim2grid.algorithm import FDPF_XB_SparseLU  # or any of the names above
+
+  # retrieve some Ybus, V0, etc. as above
+  solver = FDPF_XB_SparseLU()
+  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
+  # process the results as above
+
+.. note::
+  \* these 6 solvers might not be available on all platforms (`KLU` is available if installed from pypi, but not
+  necessarily when installed from source). The solvers based on `NICSLU` or `CKTSO` also require an installation
+  from source.
 
 
 Detailed documentation

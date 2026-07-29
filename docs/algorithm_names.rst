@@ -161,12 +161,40 @@ Complete table
    * - ``GaussSeidelSynch``
      - :class:`~lightsim2grid.algorithm.GaussSeidelSynchAlgo`
      - Synchronous Gauss-Seidel iterative
+   * - ``Custom``
+     - --
+     - Sentinel value reported by :func:`~lightsim2grid.lightSimBackend.LightSimBackend.get_algo_types`
+       / ``get_algo_type()`` for any solver loaded through the plugin mechanism (see
+       :ref:`solver_plugin`). It is also, incidentally, what the three built-in
+       ``NRRefactorRetry_*`` solvers below report, since they were never given their own
+       enum value either.
+
+String-only built-in solvers: ``NRRefactorRetry_*``
+----------------------------------------------------
+
+``NRRefactorRetry_KLU``, ``NRRefactorRetry_NICSLU`` and ``NRRefactorRetry_CKTSO`` are
+built-in solvers that never got their own ``AlgorithmType`` enum value, so unlike
+everything in the table above they can only be selected by their string name, not by an
+``AlgorithmType.NRRefactorRetry_*`` attribute (which does not exist):
+
+.. code-block:: python
+
+    env.backend._grid.change_algorithm("NRRefactorRetry_KLU")
+
+Each is the same algorithm as its ``NR_*`` counterpart (Newton-Raphson, distributed
+slack), except that when a Jacobian ``refactorize()`` fails it falls back to a full
+``factorize()`` (reusing the existing symbolic factorization) before giving up, instead
+of reporting an error immediately. Use ``get_linear_solver_stats()`` on the solver to
+see how often the fallback fires. Because they have no dedicated enum value,
+``get_algo_type()`` reports ``AlgorithmType.Custom`` while one of them is active -- the
+same value reported for an actual plugin solver.
 
 Usage example
 -------------
 
 .. code-block:: python
 
+    import grid2op
     import lightsim2grid
     from lightsim2grid.algorithm import AlgorithmType
 
@@ -177,7 +205,7 @@ Usage example
 
     # inspect what algorithm is currently active
     print(env.backend.get_algo_types())
-    # >>> (<AlgorithmType.NRSing_KLU: 7>, <AlgorithmType.DC_KLU: 9>)
+    # >>> (<AlgorithmType.NR_KLU: 1>, <AlgorithmType.DC_KLU: 9>)
 
     # list all algorithms available in this build
     env.backend._grid.available_algorithm_names()
