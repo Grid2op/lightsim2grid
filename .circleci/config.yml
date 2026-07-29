@@ -225,15 +225,19 @@ jobs:
             - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: apt-get update && apt-get install python3-pip  cmake -y
-            - run: python3 -m pip install virtualenv
-            - run: python3 -m virtualenv venv_test
+            - run:
+                name: Install uv  # this container's default python3 is 3.7, but lightsim2grid now requires python >= 3.8
+                command: python3 -m pip install uv
+            - run:
+                name: Setup uv venv on python 3.8  # earliest python version supported by lightsim2grid
+                command: uv venv venv_test --python 3.8
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install --upgrade pip
-                    pip install -U grid2op
+                    uv pip install --upgrade pip
+                    uv pip install -U grid2op
                     git submodule update --init
-                    CC=gcc python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
+                    CC=gcc uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
 
     compile_and_test_gcc_latest:
         executor: gcc_latest

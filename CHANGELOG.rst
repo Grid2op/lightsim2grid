@@ -293,6 +293,13 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
     *ran* despite using deprecated names.
   - ``benchmarks/test_profile.py`` imported ``AlgorithmType`` from the deprecated
     ``lightsim2grid.solver`` shim instead of ``lightsim2grid.algorithm``.
+- [FIXED] the ``compile_gcc_earliest`` CircleCI job (``gcc:8``, a Debian buster
+  based image) was failing: it built a venv against that container's default
+  ``python3``, which is 3.7, while ``requires-python`` is now ``>=3.8``. Switched
+  it to the same ``uv``-based pattern already used by ``compile_clang_earliest``
+  and ``test_legacy_grid2op`` in this file (``uv venv venv_test --python 3.8``),
+  which pins a supported interpreter regardless of what the container ships by
+  default.
 
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
