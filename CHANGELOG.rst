@@ -299,7 +299,10 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   it to the same ``uv``-based pattern already used by ``compile_clang_earliest``
   and ``test_legacy_grid2op`` in this file (``uv venv venv_test --python 3.8``),
   which pins a supported interpreter regardless of what the container ships by
-  default.
+  default. The container's ``pip``/``python3`` (3.7) turned out to also be too
+  old to resolve `uv`'s own PyPI wheels ("Could not find a version that
+  satisfies the requirement uv"), so ``uv`` itself is now installed with its
+  standalone shell installer (``curl ... | sh``) instead of ``pip install uv``.
 
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
