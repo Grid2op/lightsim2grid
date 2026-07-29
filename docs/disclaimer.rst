@@ -9,11 +9,11 @@ This disclaimer only serves as a complement to the
 replacement of this file.
 
 The simulator implemented in this package is made for speed mainly to serve as a grid2op backend (see
-https://github.com/rte-france/grid2op for more information). We recall here that grid2op is a research testbed platform
+https://github.com/Grid2Op/grid2op for more information). We recall here that grid2op is a research testbed platform
 aiming at emulating sequential decisions making in powergrids targeting mainly the "reinforcement learning"
 community (though open to anyone).
 
-This simulator is free and uses Eigen (optionally KLU) for performances optimization. It is not meant to be used as an
+This simulator is free and uses Eigen and KLU for performances optimization. It is not meant to be used as an
 independant for powersystem focus analysis. Indeed, the code provided in this package was made mainly for
 developping AI focused controlers. Some of its limitations include, but are not limited to:
 
@@ -27,6 +27,8 @@ Open source options for powerflow analysis
 To get free of these limitations and be able to perform state of the art powerflow analysis,
 while still using open source software, we kindly recommend you to have a look at:
 
+- `power-grid-model <https://github.com/PowerGridModel/power-grid-model>`_ which is an "open-source library for
+  steady-state distribution power system analysis, distributed for Python and C"
 - `Matpower <https://matpower.org/>`_ which is a "free, open-source tools for electric power system simulation and
   optimization "
 - `Pandapower <https://www.pandapower.org/>`_ that is "An easy to use open source tool for power system modeling,

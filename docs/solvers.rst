@@ -21,7 +21,7 @@ If you are interested in collaborating to improve this section, let us know.
 Types of powerflow algorithms
 ------------------------------
 
-LightSim2Grid supports four families of powerflow algorithms:
+LightSim2Grid supports five families of powerflow algorithms:
 
 - **Gauss-Seidel**: :class:`lightsim2grid.algorithm.GaussSeidelAlgo` and
   :class:`lightsim2grid.algorithm.GaussSeidelSynchAlgo`.
@@ -199,7 +199,7 @@ The preferred way to select an algorithm is to pass ``algo_type`` when creating 
     env = grid2op.make(env_name,
                        backend=LightSimBackend(algo_type=AlgorithmType.NR_KLU))
 
-You can also change the algorithm after creation (not recommended, but supported):
+You can also change the algorithm after creation, using :func:`lightsim2grid.lightSimBackend.LightSimBackend.set_algo_type`:
 
 .. code-block:: python
 
@@ -212,7 +212,7 @@ You can also change the algorithm after creation (not recommended, but supported
     env = grid2op.make(env_name, backend=LightSimBackend())
 
     # switch to Gauss-Seidel
-    env.backend._grid.change_algorithm(AlgorithmType.GaussSeidel)
+    env.backend.set_algo_type(AlgorithmType.GaussSeidel)
 
     # inspect which algorithms are available in this build
     print(env.backend._grid.available_algorithm_names())
@@ -221,7 +221,14 @@ You can also change the algorithm after creation (not recommended, but supported
     env.backend.set_solver_max_iter(10000)
     env.backend.set_tol(1e-7)
 
-    env.reset()  # apply the change
+.. warning::
+
+   Do not call ``env.backend._grid.change_algorithm(...)`` directly: ``env.reset()``
+   rebuilds ``env.backend._grid`` from scratch and re-applies whatever algorithm was
+   last set through :func:`~lightsim2grid.lightSimBackend.LightSimBackend.set_algo_type`
+   (or the ``algo_type`` kwarg at creation), so a change made directly on ``_grid`` is
+   silently reverted on the next reset. Always go through ``set_algo_type`` (or the
+   ``algo_type`` kwarg) so the change survives resets.
 
 .. note::
 

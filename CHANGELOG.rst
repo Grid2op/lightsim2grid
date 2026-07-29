@@ -304,6 +304,68 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   satisfies the requirement uv"), so ``uv`` itself is now installed with its
   standalone shell installer (``curl ... | sh``) instead of ``pip install uv``.
 
+- [FIXED] stale statements across the docs that were no longer true (section H
+  of the doc audit):
+
+  - ``docs/use_with_grid2op.rst``: dropped the "for now it is not easy to
+    change [the solver]" note -- ``algo_type`` / ``set_algo_type`` /
+    ``change_algorithm`` exist precisely for this, and are now documented.
+  - ``docs/use_solver.rst``: solver counts were wrong and CKTSO/FDPF were
+    missing from the page entirely. "11 available solvers" -> 22 (across 4
+    categories, not 3); the Newton-Raphson list went from 6 to 8 entries
+    (added ``NR_CKTSO`` / ``NRSing_CKTSO``); the DC list went from 3 to 4
+    (added ``DC_CKTSO``); added a whole missing "Fast Decoupled solvers"
+    subsection documenting the 8 ``FDPF_XB_*`` / ``FDPF_BX_*`` variants.
+  - ``docs/solvers.rst``: "four families of powerflow algorithms" followed by
+    five bullets -> "five families". The example that called
+    ``env.backend._grid.change_algorithm(...)`` directly then
+    ``env.reset()  # apply the change`` was actively wrong: ``reset()``
+    rebuilds ``_grid`` from scratch and re-applies whatever was last set
+    through ``set_algo_type``, so a direct ``_grid.change_algorithm()`` call
+    is silently reverted on the next reset (verified empirically). Rewrote the
+    example to use ``set_algo_type`` and added a warning explaining why.
+  - ``docs/algorithm_names.rst``: the "Complete table" omitted
+    ``NRRefactorRetry_KLU/NICSLU/CKTSO`` (built-in solvers selectable only by
+    string name, with no ``AlgorithmType`` enum value of their own) and
+    ``AlgorithmType.Custom``; added both. The usage example was missing
+    ``import grid2op`` and, after ``set_algo_type(AlgorithmType.NR_KLU)``,
+    showed the output as if ``NRSing_KLU`` had been set instead -- fixed to
+    match what the call actually returns (verified empirically).
+  - ``docs/security_analysis.rst``: dropped a ``.. warning::`` about a bug in
+    lightsim2grid 0.5.5 fixed in 0.6.0 -- irrelevant noise on a 1.0 release.
+  - ``docs/quickstart.rst``: dropped the "python 3.6 at time of writing" claim
+    about the docker image (impossible to keep accurate, and moot now that
+    the package requires >=3.8 anyway); fixed the "Clean-up" section number
+    (was "1.", should be "4.", the fourth top-level step after "Install
+    docker" / "Get the lightsim2grid image" / "Run a code on this container").
+  - ``docs/use_with_grid2op.rst`` and ``docs/lightsimbackend.rst``: replaced
+    the long-superseded ``env_name = "rte_case14_realistic"`` with
+    ``l2rpn_case14_sandbox``, already used by ``docs/quickstart.rst``.
+  - ``docs/lightsimbackend.rst``: fixed a code example that assigned
+    ``env_with_iidm_as_the_grid_description = ...`` then called
+    ``grid2op.make(env_name, ...)`` -- ``env_name`` was never defined in that
+    snippet; now passes the variable that was actually assigned.
+  - ``README.md``: "requires grid2op... at least version 0.7.0" immediately
+    followed by ``pip install grid2op>=1.6.4`` -- updated the stated minimum
+    to match; fixed ``python3 setup.py build`` references (there is no
+    ``setup.py``, the build is scikit-build-core driven) and windows-cmd-only
+    env var syntax used without a linux/macos equivalent alongside it; fixed
+    ``git clone .../grid2op.git`` followed by ``cd Grid2Op`` (wrong case, the
+    cloned directory is ``grid2op``).
+  - ``docs/install_from_source.rst``: removed ~70 lines of legacy "for
+    lightsim2grid < 0.13" SuiteSparse compilation instructions (make / cmake
+    option A/B) that are pure noise for a 1.0 release -- SuiteSparse is
+    compiled automatically now; removed a stale note about needing to
+    ``pip install pybind11`` manually for old versions (build isolation
+    handles it via ``pyproject.toml``'s ``[build-system]`` requires); added a
+    pointer to :ref:`cpp_library` (which already documents
+    ``-DBUILD_TESTING=ON``, scikit-build-core, and the ``lightsim2grid_core``
+    shared library) that this page previously never linked to.
+  - ``docs/disclaimer.rst``: had drifted from ``DISCLAIMER.md`` -- was missing
+    the ``power-grid-model`` entry from the list of alternative tools, linked
+    ``github.com/rte-france/grid2op`` instead of ``Grid2Op/grid2op``, and said
+    "Eigen (optionally KLU)" instead of "Eigen and KLU". Synced to match.
+
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and

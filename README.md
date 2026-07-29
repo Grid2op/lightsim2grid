@@ -27,7 +27,7 @@ above you need to load it with `source venv/bin/activate`) you can
 use it as any python package.
 
 ### 1. As a grid2op backend (preferred method)
-This functionality requires you to have grid2op installed, with at least version 0.7.0. You can install it with
+This functionality requires you to have grid2op installed, with at least version 1.6.4. You can install it with
 
 ```commandline
 pip install grid2op>=1.6.4
@@ -243,8 +243,8 @@ For example: `export PATH_CKTSO=/home/user/Documents/cktso`
 
 #### Enable O3 optimization
 The "-O3" compiler flag is now used by default. To disable it (and fall back to "-O2"), you need
-to specify the `__O3_OPTIM` environment variable: `set __O3_OPTIM=0` (or `$Env:__O3_OPTIM=0` in powershell) before the compilation (so before
-`python3 setup.py build` or `python -m pip install -e .`)
+to specify the `__O3_OPTIM` environment variable before compiling (`export __O3_OPTIM=0` on linux / macos,
+`set __O3_OPTIM=0` on windows cmd, or `$Env:__O3_OPTIM=0` in powershell), then `python -m pip install -e .`
 
 This compilation argument will increase the compilation time, but will make the package faster.
 
@@ -252,8 +252,9 @@ This compilation argument will increase the compilation time, but will make the 
 By default, for portability, we do not compile with `-march=native` flags. This lead to some error on some platform.
 If you want to further improve the performances.
 
-You can `set __COMPILE_MARCHNATIVE=1` to enable it before the compilation (so before
-`python3 setup.py build` or `python -m pip install -e .`)
+You can set the `__COMPILE_MARCHNATIVE` environment variable to `1` to enable it before compiling
+(`export __COMPILE_MARCHNATIVE=1` on linux / macos, `set __COMPILE_MARCHNATIVE=1` on windows cmd, or
+`$Env:__COMPILE_MARCHNATIVE=1` in powershell), then `python -m pip install -e .`
 
 ### Profile the code
 This is a work in progress for now. And it is far from perfect, and probably only work on linux.
@@ -281,7 +282,7 @@ using the Newton-Raphson algorithm, with a single slack bus, without enforcing q
 will fail. In order to do so you can do:
 ```
 git clone https://github.com/Grid2Op/grid2op.git
-cd Grid2Op
+cd grid2op
 pip3 install -U -e .
 cd ..
 ```
