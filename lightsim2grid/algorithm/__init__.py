@@ -10,6 +10,7 @@ __all__ = ["AlgorithmType",
            "ErrorType",
            "AlgorithmSelector",
            "LinearSolverStats",
+           "TimerJac",
            "GaussSeidelAlgo",
            "GaussSeidelSynchAlgo",
            "NR_SparseLU",
@@ -22,6 +23,7 @@ from ..lightsim2grid_cpp import AlgorithmType  # pyright: ignore[reportMissingIm
 from ..lightsim2grid_cpp import ErrorType  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import AlgorithmSelector  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import LinearSolverStats  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import TimerJac  # pyright: ignore[reportMissingImports]
 
 from ..lightsim2grid_cpp import GaussSeidelAlgo  # AlgorithmType.GaussSeidel  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import GaussSeidelSynchAlgo  # AlgorithmType.GaussSeidelSynch  # pyright: ignore[reportMissingImports]

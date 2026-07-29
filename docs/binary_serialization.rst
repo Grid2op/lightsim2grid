@@ -61,7 +61,7 @@ Individual element containers work the same way:
     anything is allocated), files that contain an object of a different type (*eg* loading a
     ``LoadContainer`` file with ``StorageContainer.load_binary``), and files with unexpected trailing
     bytes are all rejected. On top of that byte-level validation, loading a whole grid also runs
-    :py:meth:`LSGrid.check_grid` (the same consistency check used everywhere a grid is loaded): a file
+    :py:meth:`lightsim2grid.network.LSGrid.check_grid` (the same consistency check used everywhere a grid is loaded): a file
     that is byte-wise well-formed but carries an out-of-range index (bus / substation /
     topology-vector) is rejected with an ``IndexError`` (out-of-range index) or a ``RuntimeError``
     (structural inconsistency) rather than being loaded into a state that would fault on the next

@@ -16,7 +16,7 @@ they should not be confused:
 
 1. **The linear solver** — a numerical library that solves a sparse linear
    system :math:`Ax = b` *eg* at each Newton-Raphson iteration.
-   Examples: :class:`~lightsim2grid.algorithm.SparseLULinearSolver` (Eigen built-in),
+   Examples: ``SparseLULinearSolver`` (Eigen built-in),
    KLU (SuiteSparse), NICSLU, CKTSO.
    These names end in ``LinearSolver`` in C++.
 

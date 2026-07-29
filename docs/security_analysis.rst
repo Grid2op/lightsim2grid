@@ -56,7 +56,7 @@ Handling contingencies that split the grid
 By default, a contingency that splits the grid into several connected components (an "islanding")
 is **not simulated**: the corresponding row of the results is left at 0. (for the voltages) and
 ``NaN`` (for the flows). You can list which contingencies split the grid with
-:func:`ContingencyAnalysisCPP.is_grid_connected_after_contingency`.
+:func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.is_grid_connected_after_contingency`.
 
 Starting from lightsim2grid 1.0.0, you can opt in to a mode that *does* simulate these
 contingencies, on the largest connected component, by setting the ``handle_disconnected_grid``
@@ -353,7 +353,7 @@ with obs.simulate as a way to compute the outcome of a contingency)
 Detailed usage
 --------------------------
 
-.. automodule:: lightsim2grid.securityAnalysis
+.. automodule:: lightsim2grid.contingencyAnalysis
     :members:
     :autosummary:
 

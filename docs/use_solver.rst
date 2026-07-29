@@ -39,7 +39,7 @@ piece of code:
     # when pandapower version > 2.7.0
     V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options)
 
-This function uses the KLU algorithm (or the solver provided in Eigen if KLU has not been instealld) 
+This function uses the KLU algorithm (or the solver provided in Eigen if KLU has not been installed)
 and a c++ implementation of a Newton solver for speed.
 
 .. note::
@@ -93,7 +93,7 @@ All algorithms can be accessed with the same API (if you want to use the raw pyt
   solver.get_Vm()  # voltage angle
   solver.get_V()  # complex voltage
   # for compatible solvers
-  solver.get_J()  # see documentation of the `newton_pf` function for more information about the shape of J.
+  solver.get_J()  # see documentation of the `newtonpf` function for more information about the shape of J.
 
   # since lightsim2grid 1.0.0, the Jacobian rows / columns no longer follow the
   # pandapower convention. To know which column of `J` holds which unknown, use
@@ -109,14 +109,14 @@ All algorithms can be accessed with the same API (if you want to use the raw pyt
   # some other usefull information
   solver.get_nb_iter()  # return the number of iteration performed
   solver.get_timers()  # some execution times for some function (TODO DOC)
-  sovler.get_error()  # the id of the error encountered  (TODO DOC)
-  sovler.converged()  # equal to the boolean `converged` above
+  solver.get_error()  # the id of the error encountered  (TODO DOC)
+  solver.converged()  # equal to the boolean `converged` above
 
 Be carefull, there are some constraints on the data that are not necessarily checked, and might lead to hugly crash of the
 python virtual machine at execution time. So we encourage you to check that:
 
 - tol > 0.
-- maxt_it > 0
+- max_it > 0
 - Ybus is a squared sparse matrix, in CSC format (see documentation of scipy sparse for more information) **It is 
   really important that this matrix is in CSC format**
 - `Sbus` and `V0` have the same size which corresponds to the size (number of rows or columns) of `Ybus`

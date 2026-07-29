@@ -10,9 +10,9 @@ Installation from source
 
 At a glance, to install from source you will have to:
 
-- :ref:`clone_repo` clone this repository and get the code of Eigen (mandatory for compilation) and SparseSuite (optional, but recommended)
+- :ref:`clone_repo` clone this repository and get the code of Eigen (mandatory for compilation) and SuiteSparse (optional, but recommended)
 
-  - :ref:`compile_suitesparse` compile a piece of SparseSuite (lightsim2grid <= 0.13)
+  - :ref:`compile_suitesparse` compile a piece of SuiteSparse (lightsim2grid <= 0.13)
   - :ref:`include_nicslu`: retrieve and get a proper license for the NICSLU linear solver (see https://github.com/chenxm1986/nicslu)
   - :ref:`include_cktso`: retrieve and get a proper license for the CKTSO linear solver (see https://github.com/chenxm1986/cktso)
   - :ref:`other_customization` specify some compilation flags to make the package run faster on your machine see 
@@ -60,7 +60,7 @@ First, you can download it with git with:
     git clone https://github.com/Grid2Op/lightsim2grid.git
     cd lightsim2grid
 
-    # retrieve the code of SparseSuite and Eigen (dependencies, mandatory)
+    # retrieve the code of SuiteSparse and Eigen (dependencies, mandatory)
     git submodule init
     git submodule update
 
@@ -218,7 +218,7 @@ And example to do such things on a linux based machine is:
 If you want to disable them, you simply need to set their respective value to 0.
 
 .. note::
-    By default the package on pypi is compiled with 03 optimization activated.
+    By default the package on pypi is compiled with O3 optimization activated.
 
 .. _install_python:
 

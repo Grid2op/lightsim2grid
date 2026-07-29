@@ -24,7 +24,7 @@ Simply install lightsim2grid as any python package:
 Start Using LightSim2grid
 ---------------------------
 
-The preferred way to use light2im simulator is with Grid2op. And in this case, you can simply use it
+The preferred way to use lightsim2grid simulator is with Grid2op. And in this case, you can simply use it
 this way:
 
 .. code-block:: python
@@ -47,7 +47,7 @@ this way:
 
     # proceed as you would any open ai gym loop
     nb_episode = 10
-    for _ in range(nb_episde):
+    for _ in range(nb_episode):
         # you perform in this case 10 different episodes
         obs = env.reset()
         reward = env.reward_range[0]
@@ -56,7 +56,7 @@ this way:
             # here you loop on the time steps: at each step your agent receive an observation
             # takes an action
             # and the environment computes the next observation that will be used at the next step.
-            act = agent.act(obs, reward, done)
+            act = my_agent.act(obs, reward, done)
             obs, reward, done, info = env.step(act)
             # the `LightSimBackend` will be used to carry out the powerflow computation instead
             # of the default grid2op `PandaPowerBackend`

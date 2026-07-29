@@ -79,13 +79,13 @@ the file, and it is validated at two levels:
 ``check_grid()``: whole-grid consistency validation
 ---------------------------------------------------
 
-:py:meth:`LSGrid.check_grid` verifies that a grid
+:py:meth:`lightsim2grid.network.LSGrid.check_grid` verifies that a grid
 is internally consistent and safe to run a powerflow on. It checks that every
 index the grid carries is in range — the bus id of every element, the substation
 id and the position in the topology vector (both optional), and the generator and
 SVC slack / remote-regulated bus references. The topology-vector positions are
 additionally required to form a permutation of ``[0, dim_topo)`` over exactly the
-elements :py:meth:`LSGrid.update_topo` drives (loads, generators, storage units,
+elements :py:meth:`lightsim2grid.network.LSGrid.update_topo` drives (loads, generators, storage units,
 powerlines and transformers): that is what makes them safe to index the
 ``dim_topo``-sized arrays that method is given, so a shunt, static generator, SVC
 or hvdc line claiming a position in that vector is rejected. It checks the two
