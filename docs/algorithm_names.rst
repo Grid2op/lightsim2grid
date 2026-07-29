@@ -235,7 +235,7 @@ The same renaming affects two other places that predate this convention:
   ``AlgorithmType``. A ``SolverType`` value is still accepted wherever an
   ``AlgorithmType`` is expected (it is converted automatically, with a
   ``DeprecationWarning``);
-- :class:`~lightsim2grid.LightSimBackend.LightSimBackend`'s ``solver_type`` constructor
+- :class:`~lightsim2grid.lightSimBackend.LightSimBackend`'s ``solver_type`` constructor
   keyword (and its ``set_solver_type`` method) are deprecated in favour of ``algo_type`` /
   ``set_algo_type``, for the same reason: ``solver_type`` reads as if it selected the
   *linear* solver, when it in fact selects the powerflow algorithm (combined with a linear

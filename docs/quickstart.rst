@@ -30,7 +30,7 @@ this way:
 .. code-block:: python
 
     import grid2op
-    from lightsim2grid.LightSimBackend import LightSimBackend
+    from lightsim2grid import LightSimBackend
     from grid2op.Agent import RandomAgent
 
     # create an environment

@@ -15,7 +15,7 @@ For standard grid2op environment, you can use it like:
 .. code-block:: python
 
     import grid2op
-    from lightsim2grid.LightSimBackend import LightSimBackend
+    from lightsim2grid import LightSimBackend
     from grid2op.Agent import RandomAgent
 
     # create an environment
@@ -109,7 +109,7 @@ you can load it with:
 .. code-block:: python
 
     import grid2op
-    from lightsim2grid.LightSimBackend import LightSimBackend
+    from lightsim2grid import LightSimBackend
     from grid2op.Agent import RandomAgent
 
     # create an environment

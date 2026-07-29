@@ -60,9 +60,9 @@ the "enum" of the solvers you want to use as showed bellow:
 
     from lightsim2grid.algorithm import AlgorithmType
     # init the grid model
-    from lightsim2grid.gridmodel import init
+    from lightsim2grid.network import init_from_pandapower
     pp_net = ...  # any pandapower grid
-    lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+    lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
 
     # change the solver used for the powerflow
     lightsim_grid_model.change_algorithm(AlgorithmType.NR_KLU)  # change the NR solver that uses KLU

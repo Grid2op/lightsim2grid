@@ -41,7 +41,7 @@ class ___TimeSerie:
         import grid2op
         import numpy as np
         from grid2op.Parameters import Parameters
-        from lightsim2grid.LightSimBackend import LightSimBackend
+        from lightsim2grid import LightSimBackend
 
         env_name = ...
         param = Parameters()
@@ -74,7 +74,7 @@ class ___TimeSerie:
 
         from lightsim2grid import TimeSerie
         import grid2op
-        from lightsim2grid.LightSimBackend import LightSimBackend
+        from lightsim2grid import LightSimBackend
 
         env_name = ...
         env = grid2op.make(env_name, param=param, backend=LightSimBackend())

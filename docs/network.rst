@@ -2,7 +2,7 @@ LSGrid module (doc in progress)
 ====================================
 
 The main class of the lightsim2grid python package is the `LSGrid` class, that is a python class created
-from the the c++ `LSGrid` (thanks fo pybind11).
+from the c++ `LSGrid` (thanks fo pybind11).
 
 This class basically represents a powergrid (what elements it is made for, their electro technical properties etc.)
 
@@ -12,16 +12,17 @@ For example, you can init it like (NOT RECOMMENDED, though sometimes needed):
 
 .. code-block:: python
 
-    from lightsim2grid.network import init
+    from lightsim2grid.network import init_from_pandapower
     pp_net = ...  # any pandapower grid eg. pp_net = pn.case118()
 
-    lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+    lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
 
-A better initialization is through the :class:`lightsim2grid.LightSimBackend.LightSimBackend` class:
+A better initialization is through the :class:`lightsim2grid.lightSimBackend.LightSimBackend` class:
 
 .. code-block:: python
 
-    from lightsim2grid.network import init
+    import grid2op
+    from lightsim2grid import LightSimBackend
     # create a lightsim2grid "gridmodel"
     env_name = ... # eg. "l2rpn_case14_test"
     env = grid2op.make(env_name, backend=LightSimBackend())
@@ -52,7 +53,7 @@ method expects or returns.
    grid2op convention: the value you put in a ``set_bus`` action and what you read
    in grid2op's ``topo_vect``. It is the convention of
    :func:`lightsim2grid.network.LSGrid.update_topo` (the bulk topology update used
-   by :class:`lightsim2grid.LightSimBackend.LightSimBackend`), whose ``new_values``
+   by :class:`lightsim2grid.lightSimBackend.LightSimBackend`), whose ``new_values``
    array is indexed by the position in the topology vector (``pos_topo_vect``) and
    holds *local* busbar ids. An element's substation is given by its ``sub_id`` and
    its slot in ``topo_vect`` by ``pos_topo_vect``.
