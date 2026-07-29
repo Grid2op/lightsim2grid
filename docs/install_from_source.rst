@@ -86,7 +86,7 @@ SuiteSparse comes with the faster KLU linear solver.
 Since version 0.3.0 this requirement has been removed. This entails
 that on linux / macos you can still benefit from the faster KLU solver. You can still benefit from the
 speed up of lightsim (versus the default PandaPowerBackend) but this speed up will be less than if you manage
-to compile SuiteSparse (see the subsection [Benchmark](#benchmark) for more information).
+to compile SuiteSparse (see :ref:`benchmark-solvers` for more information).
 
 **NB** in both cases the algorithm to compute the powerflow is exactly the same. It is a 
 Newton-Raphson based method. But to carry out this algorithm, one need to solver some linear equations. The only
@@ -141,7 +141,7 @@ The main steps (for windows, somme commands needs to be adapted on linux / macos
 5) `cmake --build . --config Release`
 6) `cmake --build . --config Release --target install`
 
-For more information, feel free to read the dedicated [README](build_cmake/README.md).
+For more information, feel free to read the dedicated ``README`` in the ``build_cmake`` folder.
 
 .. _include_nicslu:
 

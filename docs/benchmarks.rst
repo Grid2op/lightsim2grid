@@ -4,7 +4,7 @@ Benchmarks (solvers)
 ======================
 
 In this paragraph we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
-The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
+The code to run these benchmarks are given with this package in the ``benchmarks`` folder.
 
 TODO DOC in progress
 
@@ -74,7 +74,7 @@ All of them has been run on a computer with a the following characteristics:
 	- compiled_march_native: False 
 	- compiled_o3_optim: True 
 
-To run the benchmark `cd` in the [benchmark](./benchmarks) folder and install the dependencies
+To run the benchmark, ``cd`` into the ``benchmarks`` folder and install the dependencies
 (we suppose here that you have already installed lightsim2grid):
 
 .. code-block:: bash
