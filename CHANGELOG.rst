@@ -137,6 +137,19 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   ``solver_type`` / ``SolverType`` were ever used. ``SolverType`` now lives in a private
   module (``lightsim2grid/_utils/_solver_type.py``); ``lightsim2grid.solver`` still
   re-exports it and still warns when *it* is imported directly.
+- [FIXED] the documentation now builds with zero Sphinx warnings (was 40, all coming
+  from environments without a compiled ``lightsim2grid_cpp`` or without ``numba``, plus
+  three real issues): switched ``sphinx.ext.imgmath`` (needs a local LaTeX install) for
+  ``sphinx.ext.mathjax`` (client-side, no system dependency); added ``numba`` to the
+  ``docs`` extra (``grid2op.Backend.PandaPowerBackend`` warns at import time without it,
+  regardless of whether it is used, and autodoc imports it transitively through
+  ``LightSimBackend``); fixed a short section-title underline in ``docs/security.rst``;
+  and fixed ``LSGrid.change_algorithm``'s C++-side docstring, whose "Examples" RST
+  section title broke autodoc once pybind11 concatenated it with the second overload's
+  docstring (replaced with ``.. rubric:: Examples``, which does not participate in
+  section nesting) -- this docstring also still referenced the pre-1.0 ``DC``/``KLUDC``/
+  ``NICSLUDC`` names and the deprecated ``lightsim2grid.solver`` / ``lightsim2grid.gridmodel``
+  modules, both now corrected.
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and

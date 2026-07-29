@@ -34,7 +34,8 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.coverage',
-    'sphinx.ext.imgmath',
+    'sphinx.ext.mathjax',  # client-side math rendering: no local LaTeX install needed
+                           # (unlike sphinx.ext.imgmath, which shells out to `latex`)
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
     # 'builder',

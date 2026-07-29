@@ -40,7 +40,11 @@ docs = [
     "pypowsybl",
     "pandapower",
     "scipy",
-    "matpowercaseframes"
+    "matpowercaseframes",
+    "numba",  # grid2op.Backend.PandaPowerBackend warns at import time if this is
+              # missing (regardless of whether it is actually used); autodoc imports
+              # it transitively through LightSimBackend, so every doc build without
+              # numba installed prints that warning
 ]
 
 [project.urls]
