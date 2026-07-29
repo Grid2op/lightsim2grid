@@ -42,7 +42,7 @@ class JacobianMultiSlackTester(unittest.TestCase):
     
     def new_to_old_indexes(self):
         """
-        in lightsim2grid 0.14, the Jacobian rows / columns are laid out by
+        in lightsim2grid 1.0.0.rc2, the Jacobian rows / columns are laid out by
         increasing bus index within each block: base block first (theta / P of
         sorted pvpq, then vm / Q of sorted pq), then the distributed-slack
         extension (sorted non-ref slacks, slack_absorbed / ref equation last).
