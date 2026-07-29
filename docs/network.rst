@@ -24,7 +24,7 @@ A better initialization is through the :class:`lightsim2grid.lightSimBackend.Lig
     import grid2op
     from lightsim2grid import LightSimBackend
     # create a lightsim2grid "LSGrid"
-    env_name = ... # eg. "l2rpn_case14_test"
+    env_name = ... # eg. "l2rpn_case14_sandbox"
     env = grid2op.make(env_name, backend=LightSimBackend())
     grid_model = env.backend._grid
 
