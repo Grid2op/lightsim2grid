@@ -202,23 +202,26 @@ on linux and `$CKTSO_GIT/win7_x64` on windows.
 If you bother to compile from source the package, you might also want to benefit from some
 extra speed ups.
 
-This can be achieve by specifying the `__O3_OPTIM` and `__COMPILE_MARCHNATIVE` environment variables. 
+This can be achieve by specifying the `__O3_OPTIM` and `__COMPILE_MARCHNATIVE` environment variables.
 
-The first one will compile the package using the `-O3` compiler flag (`/O2` on windows) which will tell the compiler to optimize the code for speed even more.
+The first one controls whether the package is compiled using the `-O3` compiler flag (`/O2` on windows) which tells the compiler to optimize the code for speed even more. It is **enabled by default**.
 
-The second one will compile the package using the `-march=native` flag (on macos and linux)
+The second one will compile the package using the `-march=native` flag (on macos and linux). It is **disabled by default**.
 
-And example to do such things on a linux based machine is:
+And example to enable `-march=native` on a linux based machine is:
 
 .. code-block::
 
-    export __O3_OPTIM=1
     export __COMPILE_MARCHNATIVE=1
 
-If you want to disable them, you simply need to set their respective value to 0.
+If you want to disable the O3 optimization (for example to reduce compilation time), you need to explicitly set it to 0:
+
+.. code-block::
+
+    export __O3_OPTIM=0
 
 .. note::
-    By default the package on pypi is compiled with O3 optimization activated.
+    By default the package (including the one on pypi) is compiled with O3 optimization activated.
 
 .. _install_python:
 

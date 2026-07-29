@@ -47,7 +47,7 @@ to / from other data sources.
 
 .. note::
 
-    A more advanced usage is given in the `examples\\security_analysis.py`
+    A more advanced usage is given in the `examples\\contingency_analysis.py`
     file from the lightsim2grid package.
 
 Handling contingencies that split the grid
@@ -323,7 +323,7 @@ This benchmark is available by running, from the root of the lightsim2grid repos
 
 .. code-block:: bash
 
-    cd examples
+    cd benchmarks
     python3 security_analysis.py
 
 

@@ -160,13 +160,13 @@ Gauss Seidel or the Newton-Raphson methods to perform "powerflows".
 Nothing prevents any other "solver" to be used with lightsim2grid and thus with grid2op. For this, you simply need to
 implement, in c++ a "lightsim2grid solver" which mainly consists in defining a function:
 ```c
-bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,  // the admittance matrix
-                CplxVect & V,  // store the results of the powerflow and the Vinit !
-                const CplxVect & Sbus,  // the injection vector
-                const Eigen::VectorXi & ref,  // bus id participating to the distributed slack
-                const RealVect & slack_weights,  // slack weights for each bus
-                const Eigen::VectorXi & pv,  // (might be ignored) index of the components of Sbus should be computed
-                const Eigen::VectorXi & pq,  // (might be ignored) index of the components of |V| should be computed
+bool compute_pf(const EigenRefConstCplxSpMat & Ybus,  // the admittance matrix
+                const Eigen::Ref<const CplxVect> & V,  // the Vinit on input; the converged result is retrieved via get_V()
+                const Eigen::Ref<const CplxVect> & Sbus,  // the injection vector
+                const Eigen::Ref<const IntVect> & slack_ids,  // bus id participating to the distributed slack
+                const Eigen::Ref<const RealVect> & slack_weights,  // slack weights for each bus
+                const Eigen::Ref<const IntVect> & pv,  // (might be ignored) index of the components of Sbus should be computed
+                const Eigen::Ref<const IntVect> & pq,  // (might be ignored) index of the components of |V| should be computed
                 int max_iter,  // maximum number of iteration (might be ignored)
                 real_type tol  // solver tolerance 
                 );
@@ -178,10 +178,10 @@ The types used are:
 - `cplx_type` :  std::complex<real_type> => type representing the complex number
 - `CplxVect` : Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> => type representing a vector of complex numbers
 - `RealVect` : Eigen::Matrix<real_type, Eigen::Dynamic, 1> => type representing a vector of real numbers
-- `Eigen::VectorXi` => represents a vector of integer
-- `Eigen::SparseMatrix<cplx_type>` => represents a sparse matrix
+- `IntVect` : Eigen::Matrix<int, Eigen::Dynamic, 1> => type representing a vector of integer
+- `EigenRefConstCplxSpMat` => a const reference to a sparse matrix of `cplx_type`
 
-See for example [BaseNRSolver](./src/BaseNRSolver.h) for the implementation of a Newton Raphson solver (it requires some "linear solvers", more details about that are given in the section bellow)
+See for example [NRAlgo](./src/core/powerflow_algorithm/NRAlgo.hpp) for the implementation of a Newton Raphson solver (it requires some "linear solvers", more details about that are given in the section bellow)
 
 Any contribution in this area is more than welcome.
 
@@ -201,14 +201,16 @@ In lightsim2grid (c++ part) it is also possible, thanks to the use of "template 
 not recode the Newton Raphson algorithm (or the DC powerflow algorithm) and to leverage the 
 use of a linear solver.
 
-A "linear solver" is anything that can implement 3 basic functions:
+A "linear solver" is anything that can implement these basic functions:
 
-- `initialize(const Eigen::SparseMatrix<real_type> & J)` : initialize the solver and prepare it to solve for linear systems `J.x = b` (usually called once per powerflow)
-- `ErrorType solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized)`: effectively solves `J.x = b` (usually called multiple times per powerflow)
+- `ErrorType analyze(const EigenRefConstRealSpMat & J)`: reordering + symbolic factorization of `J` (structure only, usually called once per powerflow)
+- `ErrorType factorize(const EigenRefConstRealSpMat & J)`: numeric factorization of `J` (requires values, usually called once per powerflow)
+- `ErrorType refactorize(const EigenRefConstRealSpMat & J)`: re-numeric factorization, reuses the symbolic factorization from `analyze` (usually called multiple times per powerflow, when only the values of `J` changed)
+- `ErrorType solve(Eigen::Ref<RealVect> b) const`: effectively solves `J.x = b` in place, given the previous `analyze` / `factorize` (or `refactorize`) call
 - `ErrorType reset()`: clear the state of the solver (usually performed at the end of a powerflow
   to reset the state to a "blank" / "as if it was just initialized" state)
 
-Some example are given in the c++ code "KLUSolver.h", "SparLUSolver.h" and "NICSLU.h"
+Some example are given in the c++ code "KLUSolver.hpp", "SparseLUSolver.hpp" and "NICSLUSolver.hpp" (in `src/core/linear_solvers`)
 
 This usage usually takes approximately around 20 / 30 lines of c++ code (not counting the comments, and boiler code for exception handling for example).
 
@@ -236,12 +238,12 @@ For example: `export PATH_NICSLU=/home/user/Documents/nicslu/nicslu202103`
 
 #### Enable CKTSO
 For that, you need to declare the environment variables `PATH_CKTSO` that points to a valid installation of
-the NICSLU package (see https://github.com/chenxm1986/cktso). 
-For example: `export PATH_NICSLU=/home/user/Documents/cktso`
+the CKTSO package (see https://github.com/chenxm1986/cktso). 
+For example: `export PATH_CKTSO=/home/user/Documents/cktso`
 
 #### Enable O3 optimization
-By default, at least on ubuntu, only the "-O2" compiler flags is used. To use the O3 optimization flag, you need
-to specify the `__O3_OPTIM` environment variable: `set __O3_OPTIM=1` (or `$Env:__O3_OPTIM=1` in powershell) before the compilation (so before
+The "-O3" compiler flag is now used by default. To disable it (and fall back to "-O2"), you need
+to specify the `__O3_OPTIM` environment variable: `set __O3_OPTIM=0` (or `$Env:__O3_OPTIM=0` in powershell) before the compilation (so before
 `python3 setup.py build` or `python -m pip install -e .`)
 
 This compilation argument will increase the compilation time, but will make the package faster.

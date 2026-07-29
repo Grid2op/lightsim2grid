@@ -208,6 +208,57 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   would raise ``NameError`` if actually run (looping over the misspelled ``nb_episde``
   instead of the ``nb_episode`` defined two lines above, and calling ``agent.act(...)``
   when the variable actually created was ``my_agent``).
+- [FIXED] the remaining "Wrong API" findings from the documentation audit
+  (A11-A24), on top of A1-A10 fixed earlier:
+
+  - ``docs/network.rst``: ``total_bus()`` / ``nb_connected_bus()`` were swapped in
+    both the prose describing the "solver bus id" convention and the table
+    documenting the two methods; ``total_bus()`` is the *total* number of buses,
+    ``nb_connected_bus()`` is the number currently seen by the solver.
+  - ``docs/use_solver.rst``: ``get_Va()`` / ``get_Vm()`` example comments were
+    swapped (``Va`` is the angle, ``Vm`` is the magnitude).
+  - ``docs/benchmarks.rst``: the distributed-slack support of ``NR single (SLU)``
+    and ``NR (SLU)`` was inverted (the "single" variant is the one that does
+    *not* support distributed slack).
+  - ``README.md`` / ``docs/install_from_source.rst``: corrected the stale claim
+    that ``-O2`` is used by default and ``__O3_OPTIM`` must be set to *enable*
+    O3; ``-O3`` has been the default for a while now, and the env var only
+    matters to *disable* it (``__O3_OPTIM=0``).
+  - ``README.md``: fixed dead source links (``./src/BaseNRSolver.h`` ->
+    ``./src/core/powerflow_algorithm/NRAlgo.hpp``, ``KLUSolver.h`` /
+    ``SparLUSolver.h`` / ``NICSLU.h`` -> the real ``.hpp`` filenames under
+    ``src/core/linear_solvers``); the "Enable CKTSO" section pointed at
+    ``PATH_NICSLU`` instead of ``PATH_CKTSO`` in both its prose and its example
+    (copy-paste from the NICSLU section above it); the ``compute_pf`` signature
+    shown for a custom powerflow solver was the pre-refactor one (same issue as
+    A6, just not previously caught here) and the custom-linear-solver interface
+    was documented as ``initialize`` / ``solve(J, b, bool)`` / ``reset`` instead
+    of the real ``analyze`` / ``factorize`` / ``refactorize`` / ``solve(b)`` /
+    ``reset``.
+  - ``docs/security_analysis.rst``: the "advanced usage" example pointed at
+    ``examples/security_analysis.py`` (renamed to ``examples/contingency_analysis.py``);
+    the benchmark reproduction instructions said ``cd examples`` for a script
+    that only exists under ``benchmarks/``.
+  - ``docs/time_series.rst``: pointed at the old
+    ``computers_with_grid2op_multithreading.py`` name, renamed to
+    ``timeseries_with_grid2op_multithreading.py``.
+  - ``docs/benchmarks_dive.rst``: ``gridmodel.update_topology`` -> the bound
+    method is ``update_topo``.
+  - ``DISCLAIMER.md`` / ``docs/disclaimer.rst``: dropped the "it does not model
+    AC/DC converters" limitation, which is no longer true now that HVDC lines
+    with VSC/LCC converter stations are modeled (``elements.HvdcLineContainer``,
+    ``elements.ConverterStationInfo``).
+  - ``lightsim2grid/solver/__init__.py``: ``FDPF_BX_CKTSOSolver`` (deprecated
+    alias) was mapped to ``FDPF_XB_CKTSO`` instead of ``FDPF_BX_CKTSO`` -- a
+    copy-paste bug that silently handed anyone still using this deprecated name
+    the wrong algorithm variant.
+  - ``lightsim2grid/lightSimBackend.py``: ``set_solver_max_iter``'s docstring
+    recommended ``AlgorithmType.SparseKLU``, which does not exist (``NR_KLU``);
+    ``get_algo_types``'s docstring had a typo (``from ligthsim2grid import
+    LightSimBackend``) and its return type annotation was
+    ``Union[AlgorithmType, AlgorithmType]`` where it should be
+    ``Tuple[AlgorithmType, AlgorithmType]``.
+
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and

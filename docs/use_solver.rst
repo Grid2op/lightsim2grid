@@ -89,8 +89,8 @@ All algorithms can be accessed with the same API (if you want to use the raw pyt
   converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
 
   # to retrieve the voltages related information (in case converged is True)
-  solver.get_Va()  # voltage magnitude
-  solver.get_Vm()  # voltage angle
+  solver.get_Va()  # voltage angle
+  solver.get_Vm()  # voltage magnitude
   solver.get_V()  # complex voltage
   # for compatible solvers
   solver.get_J()  # see documentation of the `newtonpf` function for more information about the shape of J.

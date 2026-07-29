@@ -524,7 +524,7 @@ class LightSimBackend(Backend):
                self.cst_1 * self.gen_theta, \
                self.cst_1 * self.storage_theta
 
-    def get_algo_types(self) -> Union[AlgorithmType, AlgorithmType]:
+    def get_algo_types(self) -> Tuple[AlgorithmType, AlgorithmType]:
         """Return the types of solver that are used in the form a tuple with 2 elements.
         
         The first one is the solver used for AC computation, the second one for DC computation (and also for
@@ -536,7 +536,7 @@ class LightSimBackend(Backend):
 
             import grid2op
             import lightsim2grid
-            from ligthsim2grid import LightSimBackend
+            from lightsim2grid import LightSimBackend
             
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
@@ -644,7 +644,7 @@ class LightSimBackend(Backend):
 
         - for AlgorithmType.NR_SparseLU: 10
         - for AlgorithmType.GaussSeidel: 10000
-        - for AlgorithmType.SparseKLU: 10
+        - for AlgorithmType.NR_KLU: 10
 
         Parameters
         ----------
