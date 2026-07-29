@@ -129,6 +129,14 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   powerflow algorithm nor the combination of both that this kwarg actually selects (see
   ``docs/algorithm_names.rst``). ``solver_type`` still works and is mapped to
   ``algo_type``; passing both with different values raises a ``BackendError``.
+- [FIXED] a plain ``import lightsim2grid`` no longer prints "lightsim2grid.solver is
+  deprecated...". ``LightSimBackend`` needed ``SolverType`` (for the ``solver_type`` /
+  ``SolverType`` back-compat bridging above) and imported it from the deprecated
+  ``lightsim2grid.solver`` shim, whose module-level ``DeprecationWarning`` therefore fired
+  on every import of ``lightsim2grid`` itself, regardless of whether the deprecated
+  ``solver_type`` / ``SolverType`` were ever used. ``SolverType`` now lives in a private
+  module (``lightsim2grid/_utils/_solver_type.py``); ``lightsim2grid.solver`` still
+  re-exports it and still warns when *it* is imported directly.
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and

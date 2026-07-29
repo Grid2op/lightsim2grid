@@ -10,8 +10,6 @@
 # This shim re-exports everything from lightsim2grid.algorithm for backward compatibility
 # and will be removed in a future release.
 
-from enum import Enum
-
 import warnings as _warnings
 _warnings.warn(
     "lightsim2grid.solver is deprecated and will be removed in a future release. "
@@ -24,38 +22,11 @@ _warnings.warn(
 from lightsim2grid.algorithm import *  # noqa: E402, F401, F403
 from lightsim2grid.algorithm import __all__  # noqa: E402, F401
 
+# defined in a private module (not here) so that other, internal, non-deprecated code
+# (LightSimBackend's solver_type / SolverType back-compat bridging) can use SolverType
+# without importing this module and triggering the warning above.
+from lightsim2grid._utils._solver_type import SolverType  # noqa: E402, F401
 
-class SolverType(Enum):
-    """For backward compatibility, please use 
-    `from lightsim2grid.algorithm import AlgorithmType` instead now.
-    """
-    GaussSeidel = AlgorithmType.GaussSeidel  # noqa: F405
-    GaussSeidelSynch = AlgorithmType.GaussSeidelSynch  # noqa: F405
-    
-    SparseLU = AlgorithmType.NR_SparseLU  # noqa: F405
-    SparseLUSingleSlack = AlgorithmType.NRSing_SparseLU  # noqa: F405
-    DC = AlgorithmType.DC_SparseLU  # noqa: F405
-    FDPF_XB_SparseLU = AlgorithmType.FDPF_XB_SparseLU  # noqa: F405
-    FDPF_BX_SparseLU = AlgorithmType.FDPF_BX_SparseLU  # noqa: F405
-    
-    KLU = AlgorithmType.NR_KLU  # noqa: F405
-    KLUSingleSlack = AlgorithmType.NRSing_KLU  # noqa: F405
-    KLUDC = AlgorithmType.DC_KLU  # noqa: F405
-    FDPF_XB_KLU = AlgorithmType.FDPF_XB_KLU  # noqa: F405
-    FDPF_BX_KLU = AlgorithmType.FDPF_BX_KLU  # noqa: F405
-    
-    NICSLU = AlgorithmType.NR_NICSLU  # noqa: F405
-    NICSLUSingleSlack = AlgorithmType.NR_NICSLU  # noqa: F405
-    NICSLUDC = AlgorithmType.NR_NICSLU  # noqa: F405
-    FDPF_XB_NICSLU = AlgorithmType.NR_NICSLU  # noqa: F405
-    FDPF_BX_NICSLU = AlgorithmType.NR_NICSLU  # noqa: F405
-    
-    CKTSO = AlgorithmType.NR_CKTSO  # noqa: F405
-    CKTSOSingleSlack = AlgorithmType.NR_CKTSO  # noqa: F405
-    CKTSODC = AlgorithmType.NR_CKTSO  # noqa: F405
-    FDPF_XB_CKTSO = AlgorithmType.NR_CKTSO  # noqa: F405
-    FDPF_BX_CKTSO = AlgorithmType.NR_CKTSO  # noqa: F405
-    
 # also for backward compatibility, some alias of the old "solver" 
 # names
 GaussSeidelSolver = GaussSeidelAlgo  # noqa: F405

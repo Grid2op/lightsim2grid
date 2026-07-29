@@ -11,7 +11,13 @@ import copy
 from typing import Any, Dict, Tuple, Optional, Union
 from packaging import version
 
-from lightsim2grid.solver import SolverType
+# NOT `from lightsim2grid.solver import SolverType`: lightsim2grid.solver is itself
+# deprecated and warns unconditionally on import, which would make every
+# `import lightsim2grid` (which imports this module) print that warning regardless of
+# whether solver_type / SolverType is ever used. SolverType itself is not deprecated to
+# reference for back-compat bridging, so it lives in this private module instead; see
+# lightsim2grid/_utils/_solver_type.py for the full rationale.
+from lightsim2grid._utils._solver_type import SolverType
 try:
     from typing import Self
 except ImportError:
