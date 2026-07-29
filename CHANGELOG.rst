@@ -129,6 +129,17 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   powerflow algorithm nor the combination of both that this kwarg actually selects (see
   ``docs/algorithm_names.rst``). ``solver_type`` still works and is mapped to
   ``algo_type``; passing both with different values raises a ``BackendError``.
+- [FIXED] ``-Wsuggest-override`` warnings on ``GeneratorContainer``,
+  ``SvcContainer`` and ``ConverterStationContainer``'s ``_change_p`` /
+  ``_deactivate`` / ``_reactivate`` / ``_change_bus`` overrides: they were
+  marked ``final`` but not ``override``, unlike every other class overriding
+  these same ``OneSideContainer_PQ`` virtuals (``ShuntContainer``,
+  ``TrafoContainer``, ...), which use ``override final`` or ``override``.
+  Harmless (the signatures already matched), but a regression against the
+  ``lightsim2grid_core`` target's "these two warnings are clean, so any
+  future one fails CI" contract (see ``src/core/CMakeLists.txt``). Verified
+  with a clean rebuild (warnings gone) and the SVC / converter-station /
+  HVDC unit test suites (22 tests, all green).
 - [FIXED] a plain ``import lightsim2grid`` no longer prints "lightsim2grid.solver is
   deprecated...". ``LightSimBackend`` needed ``SolverType`` (for the ``solver_type`` /
   ``SolverType`` back-compat bridging above) and imported it from the deprecated
