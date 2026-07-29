@@ -441,6 +441,120 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
     standalone CMake project that the "matching -O3" status message now
     prints with the env var unset, and stays silent with ``__O3_OPTIM=0``.
 
+- [FIXED] a **real bug**, found while documenting these classes: ``ContingencyAnalysis``
+  and ``TimeSerie`` were defined as ``class __ContingencyAnalysis`` /
+  ``class ___TimeSerie`` and then aliased (``ContingencyAnalysis = __ContingencyAnalysis``)
+  to their public names. Sphinx autodoc treats a name bound this way as a plain
+  alias -- it rendered a one-line "``class ContingencyAnalysis``: alias of
+  ``__ContingencyAnalysis``" stub and silently dropped every method's docstring,
+  while the real class was itself skipped as "private" (leading underscores).
+  In effect, the two main user-facing classes of the whole package had *no*
+  API reference at all, on any page, ever -- this is the actual root cause
+  behind several "documented nowhere" gaps below. Renamed both classes to their
+  public names directly and dropped the alias; verified the full methods /
+  properties of both classes (``add_all_n1_contingencies``, ``nb_thread``,
+  ``run_ac``, ``compute_V``, etc.) now render on their respective pages, and
+  re-ran the full ``ContingencyAnalysis`` / ``TimeSerie`` test suites (32
+  tests, all green) plus a direct import/usage smoke test.
+- [FIXED] ``ContingencyAnalysis.init_from_n_powerflow`` / ``handle_disconnected_grid``
+  and ``TimeSerie.init_from_n_powerflow`` had **no docstring at all** on the
+  Python wrapper class (only the underlying C++ ``*CPP`` computer object did),
+  so even after the rename above they still would not have appeared under
+  ``:members:`` (which skips undocumented members by default). Added real
+  docstrings to all three, and a usage note to ``docs/security_analysis.rst`` /
+  ``docs/time_series.rst`` explaining that ``init_from_n_powerflow`` must be
+  set *before* the computation runs.
+- [FIXED] a **real, currently-broken bug** in ``PhysicalLawChecker`` (found while
+  verifying its documented example still works): it imported
+  ``from grid2op.Environment.Environment import Environment`` and
+  ``from grid2op.Environment.MultiMixEnv import MultiMixEnvironment`` -- neither
+  submodule path exists on grid2op 1.12 (the actual files are ``environment.py``
+  / ``multiMixEnv.py``, lowercase), so construction failed outright with
+  ``ModuleNotFoundError`` on any case-sensitive filesystem. Fixed to import both
+  names directly from the ``grid2op.Environment`` package (matching the pattern
+  already used elsewhere in this codebase, e.g. ``contingencyAnalysis.py`` /
+  ``timeSerie.py``). Fixing the import surfaced a second, independent bug:
+  ``check_solution`` calls ``backend.update_from_obs(...)``, which (as of
+  grid2op 1.11.0) requires ``_load_bus_target`` / ``_gen_bus_target`` / etc to
+  have been initialized by ``Backend.load_grid_public(...)`` -- this class was
+  still calling the older, lower-level ``Backend.load_grid(...)`` directly,
+  leaving those arrays ``None``. Now calls ``load_grid_public`` when available
+  (falling back to ``load_grid`` on older grid2op) and ``assert_grid_correct()``
+  afterwards. Verified end-to-end: the documented example now runs, and
+  checking the actual converged voltage from a real powerflow gives a KCL
+  mismatch on the order of ``1e-12`` (as expected); all 8 pre-existing
+  ``test_Checker.py`` tests still pass.
+- [FIXED / DOCUMENTED] the remaining "missing documentation" findings from the
+  doc audit (section G):
+
+  - MATPOWER / PowerModels / PfΔ grid loaders (``init_from_matpower``,
+    ``init_from_powermodels``, ``init_from_pf_delta``) were already picked up
+    by ``docs/network.rst``'s ``automodule`` (so they did have real API docs),
+    but the page's own intro still said "for now the only way is to get it
+    from a pandapower grid". Replaced with a table of all five ``init_from_*``
+    loaders and what source format each expects.
+  - PTDF / LODF (``LSGrid.get_ptdf`` / ``get_ptdf_solver`` / ``get_lodf`` /
+    ``get_Bf``): ``docs/benchmarks_dc.rst`` recommends them prominently but
+    never explained what they are or linked anywhere. Added a "PTDF / LODF"
+    section to ``docs/network.rst`` and cross-linked it from both places.
+  - ``ScalingPolicyType`` / ``RefactorPolicyType`` / ``FDPFMethod`` /
+    ``AlgoConfig``: bound in C++, never re-exported from
+    ``lightsim2grid.algorithm``. Added them to its ``__all__``, and added a
+    "Fine-tuning the Newton-Raphson iteration" section to ``docs/solvers.rst``
+    covering both the raw-solver setters and ``LSGrid.get_ac_algo_config`` /
+    ``set_ac_algo_config`` -- including a real gotcha found while writing the
+    example: ``AlgoConfig.int_params`` / ``real_params`` are returned **by
+    value**, so ``config.int_params[0] = ...`` silently does nothing; the
+    whole list must be reassigned. Verified both code paths directly.
+    (``AlgoControl`` / ``PandaPowerConverter`` were left undocumented: the
+    former's own C++ bindings mark every method ``"TODO"`` and it is an
+    internal implementation detail, and the latter is only ever used
+    internally by ``init_from_pandapower``.)
+  - ``SubstationContainer`` / ``SubstationInfo``: bound but absent from
+    ``lightsim2grid.elements.__all__`` and from ``docs/network.rst``'s
+    "Elements modeled" list. Added the export and a "Substations" subsection
+    (written by hand rather than via ``automodule``, since two of
+    ``SubstationInfo``'s four fields currently share a copy-pasted, wrong C++
+    docstring -- a C++-side issue left alone per the standing "C++ docs are
+    out of scope for now" agreement).
+  - ``examples/lm_algorithm/`` (a Levenberg-Marquardt-damped Newton-Raphson
+    solver plugin) was not mentioned anywhere: ``docs/solver_plugin.rst`` said
+    "both example plugins" listing only two. Fixed to three, and added an
+    "Other example plugins" section describing ``dist_slack_algorithm`` and
+    ``lm_algorithm``.
+  - ``lightsim2grid.pandapower_compat`` (the actual home of ``newtonpf`` /
+    ``dcpf``) was never named; docs and README only ever mention the
+    ``lightsim2grid.newtonpf`` re-export shim, and its DC counterpart
+    (``pandapower_compat.dcpf``) was undocumented entirely. Added notes to
+    ``docs/use_solver.rst`` and ``README.md``.
+  - New ``LightSimBackend`` kwargs ``stop_if_storage_disco``,
+    ``automatically_disconnect``, ``gen_slack_id`` were absent from
+    ``docs/lightsimbackend.rst``; the existing ``stop_if_load_disco`` /
+    ``stop_if_gen_disco`` entries also documented the wrong default
+    (``Optional[bool] = True``; the real default is ``None``, which now
+    defers to grid2op's own ``allow_detachment``) and called the whole
+    section "not yet supported by grid2op so not really usable", which is no
+    longer true for grid2op >= 1.11.0. Rewrote the section to match the
+    actual current behaviour.
+  - README.md said nothing about the headline 1.0 features (the
+    ``lightsim2grid_core`` C++ library, the algorithm-plugin mechanism,
+    binary serialization, multi-threaded contingency analysis, PTDF/LODF, the
+    ``gridmodel``/``GridModel`` -> ``network``/``LSGrid`` rename). Added a
+    "Key features" section up top, with links to the relevant documentation
+    pages, and replaced the "Using a custom powerflow solver" section (a
+    stale predecessor of the plugin mechanism, describing embedding a solver
+    in lightsim2grid's own source rather than the actual, current
+    out-of-tree plugin API) with a short, accurate pointer to
+    ``docs/solver_plugin.rst``.
+  - Removed now-inaccurate "doc in progress" / "rather incomplete" banners
+    from ``docs/network.rst``, ``docs/security_analysis.rst``,
+    ``docs/solvers.rst``, ``docs/time_series.rst`` and ``docs/rewards.rst``
+    (each has since accumulated a full API reference and worked examples),
+    the "``TODO DOC in progress``" line from ``docs/benchmarks.rst`` /
+    ``benchmarks_dc.rst`` / ``benchmarks_grid_sizes.rst``, and the two inline
+    ``(TODO DOC)`` markers on ``use_solver.rst``'s ``get_timers`` /
+    ``get_error`` (replaced with their actual return values).
+
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and

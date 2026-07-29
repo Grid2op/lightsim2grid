@@ -5,8 +5,6 @@ This module allows to check if a given vector checks the KCL (Kirchhoff Current 
 
 It is a wrapper around the :func:`lightsim2grid.network.LSGrid.check_solution` function.
 
-TODO DOC in progress !
-
 .. warning::
     The grid2op environment is read from a `grid.json`` file. Make sure to use an environment that can be
     loaded by lightsim2grid (default environment uses pandapower and are fully compatible)

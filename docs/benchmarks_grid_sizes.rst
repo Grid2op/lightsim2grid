@@ -6,8 +6,6 @@ Benchmarks (grid size)
 In this paragraph we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
 The code to run these benchmarks are given with this package in the ``benchmarks`` folder.
 
-TODO DOC in progress
-
 If you are interested in other type of benchmarks, let us know !
 
 TL;DR

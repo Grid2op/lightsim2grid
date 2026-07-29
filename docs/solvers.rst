@@ -7,11 +7,6 @@
 Available powerflow algorithms
 ===============================
 
-The documentation of this section is in progress. It is rather incomplete for the moment, and only exposes the most
-basic features.
-
-If you are interested in collaborating to improve this section, let us know.
-
 .. seealso::
 
    :ref:`algorithm_names` — explains the three distinct meanings of "solver" in lightsim2grid,
@@ -236,6 +231,78 @@ You can also change the algorithm after creation, using :func:`lightsim2grid.lig
    For an explanation of the naming convention and the three distinct meanings of "solver", see
    :ref:`algorithm_names`.
 
+
+Fine-tuning the Newton-Raphson iteration
+------------------------------------------
+
+Every Newton-Raphson-based algorithm above (all the ``NR_*`` / ``NRSing_*`` classes) supports two
+independent, orthogonal knobs controlling *how* each iteration is taken:
+
+- :class:`~lightsim2grid.algorithm.ScalingPolicyType` -- whether/how the raw Newton step
+  ``(dVa, dVm)`` is scaled down before being applied:
+
+  - ``NoScaling`` (default): the full step is applied (fastest per iteration, but can
+    overshoot on a badly-conditioned grid).
+  - ``MaxVoltageChange``: clamps the step so it never exceeds ``max_dVa`` (rad) /
+    ``max_dVm`` (pu).
+  - ``LineSearch``: an Armijo backtracking line search (constants ``ls_c`` / ``ls_rho``).
+  - ``Iwamoto``: the Iwamoto optimal multiplier (bounded by ``iw_mu_min`` / ``iw_mu_max``).
+
+- :class:`~lightsim2grid.algorithm.RefactorPolicyType` -- whether the Jacobian is fully
+  rebuilt and refactorized every iteration:
+
+  - ``AlwaysRefactor`` (default): rebuild and refactorize ``J`` every iteration.
+  - ``EveryN``: refactorize only every ``refactor_every_n`` iterations, updating values
+    only (cheaper, at the cost of a slightly stale factorization) in between.
+  - ``Chord``: build and factorize ``J`` once, on the first iteration, then reuse that
+    factorization for every subsequent one (the "chord method").
+
+The per-policy parameters (``max_dVa``, ``max_dVm``, ``ls_c``, ``ls_rho``, ``ls_max_iter``,
+``iw_mu_min``, ``iw_mu_max``, ``refactor_every_n``) are only read by their corresponding
+policy; changing them has no effect while a different policy is active.
+
+Setting the policy on a raw solver object (see :ref:`use-solver`) is direct:
+
+.. code-block:: python
+
+    from lightsim2grid.algorithm import NR_KLU, ScalingPolicyType, RefactorPolicyType
+
+    solver = NR_KLU()
+    solver.set_scaling_policy(ScalingPolicyType.LineSearch)
+    solver.set_refactor_policy(RefactorPolicyType.EveryN)
+    solver.set_refactor_every_n(5)
+
+When going through a grid2op / :class:`~lightsim2grid.lightSimBackend.LightSimBackend` powerflow,
+use :func:`lightsim2grid.network.LSGrid.get_ac_algo_config` /
+:func:`~lightsim2grid.network.LSGrid.set_ac_algo_config` (and their ``_dc_`` counterparts for the
+DC solver) instead, which read/write a serialisable
+:class:`~lightsim2grid.algorithm.AlgoConfig`:
+
+.. code-block:: python
+
+    import grid2op
+    from lightsim2grid import LightSimBackend
+    from lightsim2grid.algorithm import ScalingPolicyType
+
+    env = grid2op.make("l2rpn_case14_sandbox", backend=LightSimBackend())
+    grid = env.backend._grid
+
+    config = grid.get_ac_algo_config()
+    # config.int_params  == [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n]
+    # config.real_params == [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max]
+
+    int_params = list(config.int_params)
+    int_params[0] = int(ScalingPolicyType.LineSearch)
+    config.int_params = int_params  # reassign the whole list, see warning below
+    grid.set_ac_algo_config(config)
+
+.. warning::
+
+   ``AlgoConfig.int_params`` / ``real_params`` are plain lists returned **by value**:
+   ``config.int_params[0] = ...`` silently does nothing, because it mutates a temporary
+   copy, not the object's actual state. You must build the new list and reassign the
+   whole attribute (``config.int_params = int_params``, as above) for the change to take
+   effect.
 
 Detailed API
 -------------

@@ -47,6 +47,13 @@ and a c++ implementation of a Newton solver for speed.
   The oldest `newtonpf` function compatible with older version of pandapower (*eg* <=2.6.0) can still be accessed with
   `from lightsim2grid.newtonpf import newtonpf_old`
 
+.. note::
+
+  `lightsim2grid.newtonpf` is a thin re-export of `lightsim2grid.pandapower_compat.newtonpf`, which is
+  its actual home. `lightsim2grid.pandapower_compat` also provides the DC counterpart, `dcpf`, a
+  drop-in replacement for pandapower's own `dcpf` function (same use case as `newtonpf` above, but
+  for DC powerflows): `from lightsim2grid.pandapower_compat import dcpf`.
+
 Even more advanced usage
 --------------------------
 You can customize even more the solvers that you want to use.
@@ -110,8 +117,8 @@ All algorithms can be accessed with the same API (if you want to use the raw pyt
 
   # some other usefull information
   solver.get_nb_iter()  # return the number of iteration performed
-  solver.get_timers()  # some execution times for some function (TODO DOC)
-  solver.get_error()  # the id of the error encountered  (TODO DOC)
+  solver.get_timers()  # timer_Fx_ / timer_solve_ / timer_check_ (seconds spent in each stage)
+  solver.get_error()  # an `ErrorType` value, eg ErrorType.NoError, .SingularMatrix, .TooManyIterations, ...
   solver.converged()  # equal to the boolean `converged` above
 
 Be carefull, there are some constraints on the data that are not necessarily checked, and might lead to hugly crash of the

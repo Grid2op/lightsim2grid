@@ -131,13 +131,20 @@ You can also customize the way lightsim2grid works with some extra options:
 Other Customization
 --------------------
 
-Here are some other extra features you can use in lightsim2grid (but that are not yet supported by grid2op
-so not really usable...) :
-
-- stop_if_load_disco : Optional[bool] = True: whether to stop the computation (returning a `DivergingPowerflow` exception)
-  if a load is disconnected.
-- stop_if_gen_disco : Optional[bool] = True: whether to stop the computation (returning a `DivergingPowerflow` exception)
-  if a generator is disconnected.
+- `stop_if_load_disco`, `stop_if_gen_disco`, `stop_if_storage_disco` : ``Optional[bool] = None``:
+  whether to raise a `BackendError` if a load / generator / (producing or absorbing) storage unit
+  ends up disconnected. The default, ``None``, defers to grid2op's own ``allow_detachment`` setting
+  (grid2op >= 1.11.0 and lightsim2grid >= 0.10.0): ``False`` (do not raise) if detachment is allowed,
+  ``True`` (raise) otherwise -- matching the legacy, pre-``allow_detachment`` behaviour. Passing an
+  explicit ``True``/``False`` that contradicts what ``allow_detachment`` would otherwise select is
+  overridden (with a warning) to stay consistent with it.
+- `automatically_disconnect` : ``bool = False``: if ``True``, automatically disconnects any load /
+  generator that ends up outside the grid's main connected component instead of raising a "grid not
+  connected" error. This should only be used together with grid2op's ``allow_detachment``.
+- `gen_slack_id` : ``Optional[int] = None``: id (or name, or a collection of either) of the
+  generator(s) that should participate to the slack. Only supported when
+  `loader_method="pypowsybl"`, and mutually exclusive with `dist_slack_non_renew` (pick one or
+  the other).
 
 Detailed documentation
 --------------------------
