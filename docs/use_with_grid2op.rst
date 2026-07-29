@@ -23,7 +23,7 @@ For standard grid2op environment, you can use it like:
 .. code-block:: python
 
     import grid2op
-    from lightsim2grid.LightSimBackend import LightSimBackend
+    from lightsim2grid import LightSimBackend
     from grid2op.Agent import RandomAgent
 
     # create an environment
@@ -68,7 +68,7 @@ also perfectly transparent once the environment is loaded.
     import grid2op
     from grid2op.Runner import Runner
     from grid2op.Agent import RandomAgent
-    from lightsim2grid.LightSimBackend import LightSimBackend
+    from lightsim2grid import LightSimBackend
 
     env_name = "rte_case14_realistic"  # for example, other environments might be usable
     env = grid2op.make(env_name,
@@ -93,7 +93,7 @@ class transparently too (see their documentation
 
     import grid2op
     from grid2op.Environment import MultiEnvMultiProcess
-    from lightsim2grid.LightSimBackend import LightSimBackend
+    from lightsim2grid import LightSimBackend
     env_name = "rte_case14_realistic"  # for example, other environments might be usable
     # create an environment
     env0 = grid2op.make(env_name,

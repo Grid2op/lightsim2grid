@@ -93,13 +93,13 @@ class __ContingencyAnalysis(object):
     .. code-block:: python
 
         import grid2op
-        from lightsim2grid import SecurityAnalysis
+        from lightsim2grid import ContingencyAnalysis
         from lightsim2grid import LightSimBackend
         env_name = ...
         env = grid2op.make(env_name, backend=LightSimBackend())
 
         0) you create
-        security_analysis = SecurityAnalysis(env)
+        security_analysis = ContingencyAnalysis(env)
         
         1) you add some contingencies to simulate
         security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
@@ -304,20 +304,20 @@ class __ContingencyAnalysis(object):
         .. code-block:: python
 
             import grid2op
-            from lightsim2grid import SecurityAnalysis
+            from lightsim2grid import ContingencyAnalysis
             from lightsim2grid import LightSimBackend
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
 
-            security_anlysis = SecurityAnalysis(env)
+            security_analysis = ContingencyAnalysis(env)
             # the single (n-1) contingency "disconnect powerline 0" is added
-            security_anlysis.add_single_contingency(0)
+            security_analysis.add_single_contingency(0)
 
             # add the single (n-1) contingency "disconnect line 1
-            security_anlysis.add_single_contingency(env.name_line[1])
+            security_analysis.add_single_contingency(env.name_line[1])
 
             # add a single contingency that disconnect powerline 2 and 3 at the same time
-            security_anlysis.add_single_contingency(env.name_line[2], 3)
+            security_analysis.add_single_contingency(env.name_line[2], 3)
 
         Notes
         -----
@@ -363,19 +363,19 @@ class __ContingencyAnalysis(object):
         .. code-block:: python
 
             import grid2op
-            from lightsim2grid import SecurityAnalysis
+            from lightsim2grid import ContingencyAnalysis
             from lightsim2grid import LightSimBackend
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
 
-            security_anlysis = SecurityAnalysis(env)
+            security_analysis = ContingencyAnalysis(env)
 
             # add a single contingency that disconnect powerline 2 and 3 at the same time
-            security_anlysis.add_single_contingency(env.name_line[2], 3)
+            security_analysis.add_single_contingency(env.name_line[2], 3)
 
             # add a multiple contingencies the first one disconnect powerline 2 and 
             # and the second one disconnect powerline 3
-            security_anlysis.add_multiple_contingencies(env.name_line[2], 3)
+            security_analysis.add_multiple_contingencies(env.name_line[2], 3)
         """     
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
@@ -420,12 +420,12 @@ class __ContingencyAnalysis(object):
         .. code-block:: python
 
             import grid2op
-            from lightsim2grid import SecurityAnalysis
+            from lightsim2grid import ContingencyAnalysis
             from lightsim2grid import LightSimBackend
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
 
-            security_analysis = SecurityAnalysis(env)
+            security_analysis = ContingencyAnalysis(env)
             security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
             res_p, res_a, res_v = security_analysis.get_flows()
 

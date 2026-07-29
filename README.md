@@ -63,7 +63,12 @@ You can define replace the `newtonpf` function of `pandapower.pandapower.newtonp
 piece of code:
 ```python
 from lightsim2grid.newtonpf import newtonpf
-V, converged, iterations, J = newtonpf(Ybus, V, Sbus, ref, weights, pv, pq, ppci, options)
+
+# when pandapower version <= 2.7.0
+# V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, pv, pq, ppci, options)
+
+# when pandapower version > 2.7.0
+V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options)
 ```
 
 This function uses the KLU algorithm (when available) and a c++ implementation of a Newton solver for speed.
