@@ -1871,30 +1871,29 @@ const std::string DocLSGrid::check_grid = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocLSGrid::change_algorithm =  R"mydelimiter(
-    This function allows to control which solver is used during the powerflow. See the section :ref:`available-powerflow-solvers` for 
+    This function allows to control which solver is used during the powerflow. See the section :ref:`available-powerflow-solvers` for
     more information about them.
 
-    .. seealso:: :attr:`lightsim2grid.solver.AlgorithmType` for a list of the available solver (NB: some solvers might not be available on all platform)
+    .. seealso:: :attr:`lightsim2grid.algorithm.AlgorithmType` for a list of the available algorithms (NB: some algorithms might not be available on all platform)
 
     .. note::
-        If the solver type entered is a `DC` solver (**eg** from :attr:`lightsim2grid.solver.AlgorithmType`, 
-        `DC`, `KLUDC` or `NICSLUDC`), it will change the `_dc_solver` otherwise the regular `_solver` 
+        If the algorithm type entered is a `DC` algorithm (**eg** from :attr:`lightsim2grid.algorithm.AlgorithmType`,
+        `DC_SparseLU`, `DC_KLU` or `DC_NICSLU`), it will change the `_dc_solver` otherwise the regular `_solver`
         is modified.
 
-    Examples
-    ---------
+    .. rubric:: Examples
 
     .. code-block:: python
-        
-        from lightsim2grid.solver import AlgorithmType
-        # init the grid model
-        from lightsim2grid.gridmodel import init
-        pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 
-        # change the solver used for the powerflow
-        # to use internally a solver based on Newton Raphson algorithme using Eigen sparse LU
-        lightsim_grid_model.change_algorithm(AlgorithmType.NR_SparseLU)  
+        from lightsim2grid.algorithm import AlgorithmType
+        # init the grid model
+        from lightsim2grid.network import init_from_pandapower
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
+
+        # change the algorithm used for the powerflow
+        # to use internally a Newton Raphson algorithm with the Eigen sparse LU linear solver
+        lightsim_grid_model.change_algorithm(AlgorithmType.NR_SparseLU)
 
 )mydelimiter";
 

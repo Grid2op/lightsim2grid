@@ -37,7 +37,7 @@ The short version
      - **Validated on load.** See below.
 
 Pickle, plugins and grid2op environments are trusted-input-only by design
-------------------------------------------------------------------------
+-------------------------------------------------------------------------
 
 Unpickling arbitrary data, loading a native plugin or using a grid2op
 environment are all, fundamentally, ways of running code chosen by whoever
