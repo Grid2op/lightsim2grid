@@ -197,10 +197,11 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   (``ViolationElementType``, ``LimitViolationType``,
   ``ContingencyAnalysisCPP.is_grid_connected_after_contingency``).
 - [FIXED] packaging metadata left over from before the 1.0 release:
-  ``Development Status :: 4 - Beta`` -> ``5 - Production/Stable``; ``requires-python``
-  said ``>=3.7`` while the README's own compatibility table and ``docs/quickstart.rst``
-  both already said 3.8 is the actual floor; ``build.verbose = true`` (a debug-only
-  setting, per its own comment) was left on for every user's ``pip install``.
+  ``requires-python`` said ``>=3.7`` while the README's own compatibility table and
+  ``docs/quickstart.rst`` both already said 3.8 is the actual floor; ``build.verbose = true``
+  (a debug-only setting, per its own comment) was left on for every user's ``pip install``.
+  ``Development Status :: 4 - Beta`` is kept as-is: even at 1.0.0 the package is not
+  considered stable yet.
 - [FIXED] about two dozen typos across the docs, README and DISCLAIMER, found while
   auditing this branch's documentation. Two were more than cosmetic: `docs/quickstart.rst`,
   `docs/use_with_grid2op.rst` and `docs/lightsimbackend.rst` each had an example that

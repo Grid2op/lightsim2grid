@@ -13,7 +13,7 @@ authors = [
   { name = "Benjamin Donnot", email = "benjamin.donnot@rte-france.com" },
 ]
 classifiers = [
-  "Development Status :: 5 - Production/Stable",
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
   "Operating System :: MacOS",
