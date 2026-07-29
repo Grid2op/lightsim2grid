@@ -58,7 +58,7 @@ is **not simulated**: the corresponding row of the results is left at 0. (for th
 ``NaN`` (for the flows). You can list which contingencies split the grid with
 :func:`ContingencyAnalysisCPP.is_grid_connected_after_contingency`.
 
-Starting from lightsim2grid 1.0.0.rc2, you can opt in to a mode that *does* simulate these
+Starting from lightsim2grid 1.0.0, you can opt in to a mode that *does* simulate these
 contingencies, on the largest connected component, by setting the ``handle_disconnected_grid``
 attribute to ``True``:
 
@@ -105,7 +105,7 @@ cases the masked buses are reported as ``0.``.
 Running the contingencies on multiple threads
 ---------------------------------------------
 
-Starting from lightsim2grid 1.0.0.rc2, the contingencies can be solved on several CPU threads
+Starting from lightsim2grid 1.0.0, the contingencies can be solved on several CPU threads
 at once. By default everything runs on a single thread (``nb_thread = 1``), reproducing the
 exact same behaviour (and results) as before. Set the ``nb_thread`` attribute to a value
 greater than ``1`` to split the work:
@@ -200,7 +200,7 @@ that on this grid / contingency count.
 Reporting limit violations
 ---------------------------
 
-Starting from lightsim2grid 1.0.0.rc2, if you have set some operating limits on the grid model
+Starting from lightsim2grid 1.0.0, if you have set some operating limits on the grid model
 (per-bus voltage bounds with :func:`lightsim2grid.network.LSGrid.set_bus_voltage_limits`,
 per-side current limits on lines / trafos with
 :func:`lightsim2grid.network.LSGrid.set_line_current_limit_side1` /

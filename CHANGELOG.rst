@@ -121,8 +121,8 @@ TODO: add a CI job that builds one of the example C++ algorithm plugins
 TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding small decreasing 
       lambba coefficients to the diagonal of J to improve its conditionning.
 
-[1.0.0.rc2] 2026-xx-yy
-------------------------
+[1.0.0] 2026-xx-yy
+--------------------
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and

@@ -95,7 +95,7 @@ All algorithms can be accessed with the same API (if you want to use the raw pyt
   # for compatible solvers
   solver.get_J()  # see documentation of the `newton_pf` function for more information about the shape of J.
 
-  # since lightsim2grid 1.0.0.rc2, the Jacobian rows / columns no longer follow the
+  # since lightsim2grid 1.0.0, the Jacobian rows / columns no longer follow the
   # pandapower convention. To know which column of `J` holds which unknown, use
   # the mappings below. Each returns a vector **indexed by the (solver) bus id**
   # -- ie the same indexing as `Ybus` / `V0` above -- giving the Jacobian column

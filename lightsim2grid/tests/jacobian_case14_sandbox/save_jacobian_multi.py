@@ -6,7 +6,7 @@ from jacobian_io import save_res
 try:
     from lightsim2grid.algorithm import NR_KLU
 except ImportError:
-    # lightsim2grid version < 1.0.0.rc2
+    # lightsim2grid version < 1.0.0
     from lightsim2grid.solver import KLUSolver as NR_KLU
     
 env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend(dist_slack_non_renew=True))
