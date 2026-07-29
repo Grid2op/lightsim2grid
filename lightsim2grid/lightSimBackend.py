@@ -15,9 +15,12 @@ from packaging import version
 # deprecated and warns unconditionally on import, which would make every
 # `import lightsim2grid` (which imports this module) print that warning regardless of
 # whether solver_type / SolverType is ever used. SolverType itself is not deprecated to
-# reference for back-compat bridging, so it lives in this private module instead; see
-# lightsim2grid/_utils/_solver_type.py for the full rationale.
-from lightsim2grid._utils._solver_type import SolverType
+# reference for back-compat bridging, so it lives in this private module instead. It is
+# deliberately a plain top-level module and NOT inside lightsim2grid._utils: see
+# lightsim2grid/_solver_type.py for why (importing it eagerly, from here, while nested
+# inside that subpackage broke grid2op.make(..., backend=LightSimBackend()) entirely by
+# reentering lightsim2grid._utils's own grid2op.Backend import mid-circular-import).
+from lightsim2grid._solver_type import SolverType
 try:
     from typing import Self
 except ImportError:
