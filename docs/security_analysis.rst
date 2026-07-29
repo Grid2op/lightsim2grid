@@ -340,13 +340,13 @@ For this setting the outputs are:
 
     Comparison with raw grid2op timings
     It took grid2op (with lightsim2grid, using obs.simulate): 0.28s to perform the same computation
-        This is a 24.2 speed up from SecurityAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
+        This is a 24.2 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
     It took grid2op (with pandapower, using obs.simulate): 9.94s to perform the same computation
-        This is a 855.2 speed up from SecurityAnalysis over raw grid2op (using obs.simulate and pandapower)
+        This is a 855.2 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)
     All results match !
 
 
-In this case then, the `SecurityAnalysis` module is more than **22** times faster than raw grid2op (
+In this case then, the `ContingencyAnalysis` module is more than **22** times faster than raw grid2op (
 with obs.simulate as a way to compute the outcome of a contingency)
 
 

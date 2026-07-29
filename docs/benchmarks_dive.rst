@@ -179,8 +179,8 @@ For example, this can mean that:
        `pp_net.res_line`, `pp_net.res_load`, etc. for read-only attribute)
      - `pypowsybl` where the "external layer" also consists of dataframes, accessible with `pp_grid.get_lines()` or `pp_grid.get_loads()`
        and the data within this model can be modified with `pp_grid.update_lines` or `pp_grid.update_loads`
-     - `lightsim2grid` where the "gridmodel" data can be inspected with *eg* `gridmodel.get_lines()` or `gridmodel.get_loads()` And
-       modified with `gridmodel.update_loads_p`, `gridmodel.update_loads_q` or `gridmodel.update_topo`
+     - `lightsim2grid` where the "LSGrid" data can be inspected with *eg* `lsgrid.get_lines()` or `lsgrid.get_loads()` And
+       modified with `lsgrid.update_loads_p`, `lsgrid.update_loads_q` or `lsgrid.update_topo`
 
 
 .. note::
