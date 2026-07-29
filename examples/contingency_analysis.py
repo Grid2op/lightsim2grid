@@ -41,13 +41,13 @@ env = multi_mix_env[key_env]
 env_pp = multi_mix_env_pp[key_env]
 
 # Run the environment on a scenario using the TimeSerie module
-security_analysis = ContingencyAnalysis(env)
-security_analysis.add_all_n1_contingencies()
-security_analysis.init_from_n_powerflow = True
-p_or, a_or, voltages = security_analysis.get_flows()
+contingency_analysis = ContingencyAnalysis(env)
+contingency_analysis.add_all_n1_contingencies()
+contingency_analysis.init_from_n_powerflow = True
+p_or, a_or, voltages = contingency_analysis.get_flows()
 # the 3 lines above are the only lines you need to do to perform a security analysis !
 
-computer = security_analysis.computer
+computer = contingency_analysis.computer
 print(f"For environment: {env_name} ({computer.nb_solved()} n-1 simulated)")
 print(f"Total time spent in \"computer\" to solve everything: {1e3*computer.total_time():.1f}ms "
       f"({computer.nb_solved() / computer.total_time():.0f} pf / s), "
@@ -85,10 +85,10 @@ print()
 print("Comparison with raw grid2op timings")
 print(f"It took grid2op (with lightsim2grid, using obs.simulate): {total_time_glop_ls:.2f}s to perform the same computation")
 print(f"\t This is a {(total_time_glop_ls) / (full_time_sa) :.1f} "
-      f"speed up from SecurityAnalysis over raw grid2op (using obs.simulate and lightsim2grid)")
+      f"speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)")
 print(f"It took grid2op (with pandapower, using obs.simulate): {total_time_glop_pp:.2f}s to perform the same computation")
 print(f"\t This is a {(total_time_glop_pp) / (full_time_sa) :.1f} "
-      f"speed up from SecurityAnalysis over raw grid2op (using obs.simulate and pandapower)")
+      f"speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)")
 
 
 #### Check that the results match

@@ -319,7 +319,7 @@ in the grid2op extra layer or in the grid2op backend in this case (~85% of the c
     the `pandapower_backend._grid["_ppc"]["et"]` (the "estimated time" of the pandapower newton raphson computation)
 
     For the lightsim backend, the "solver powerflow time" corresponds to the average of the results of
-    `gridmodel.get_computation_time()` function that, for each powerflow, returns the time spent in the solver
+    `LSGrid.get_computation_time()` function that, for each powerflow, returns the time spent in the solver
     uniquely (time inside the `basesolver.compute_pf()` function. In particular it do not count the time
     to initialize the vector `V` with the DC approximation nor the time taken to convert the lightsim2grid external modeling 
     to something that can be processed by the powerflow algorithm). This is a behaviour similar to the one of pandapower.

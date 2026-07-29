@@ -21,7 +21,7 @@ All the tests were conducted on the same laptop and on publically available grid
 - ieee 118 bus
 - ieee 300 bus
 
-In all cases, the lightsim2grid `gridmodel` (lightsim2grid internal
+In all cases, the lightsim2grid `LSGrid` (lightsim2grid internal
 representation of a powergrid) were initialized from the pypowsybl grid.
 
 Disclaimer
@@ -60,7 +60,7 @@ the same simulation (an AC powerflow) on the same grid.
 
 It will expose:
 
-- the parameters used to initialize the lightsim2grid `gridmodel`
+- the parameters used to initialize the lightsim2grid `LSGrid`
 - the parameters used to run the powerflow computation with pypowsybl
 - the time it takes to perform these powerflows in different settings
 - the mismatch of the voltage angle (in radian) 

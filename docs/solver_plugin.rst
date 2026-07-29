@@ -572,7 +572,7 @@ Python API reference
 .. note::
 
     :attr:`AlgorithmType.Custom` is the enum value assigned to any solver
-    loaded via a plugin.  ``gm.get_solver_type()`` returns
+    loaded via a plugin.  ``gm.get_algo_type()`` returns
     ``AlgorithmType.Custom`` whenever the active solver was registered
     through the plugin mechanism.
 

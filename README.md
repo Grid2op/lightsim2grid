@@ -120,7 +120,7 @@ Lightsim2grid is significantly faster than pandapower when used with grid2op for
 more than 30x faster - making 30 steps while pandapower makes one).
 
 
-If you prefer to use the dedicated lightsim2grid `SecurityAnalysis` or `TimeSerie` classes you can even expect another 10-20x
+If you prefer to use the dedicated lightsim2grid `ContingencyAnalysis` or `TimeSerie` classes you can even expect another 10-20x
 speed ups compared to grid2op with lightsim2grid (sometimes more than 300x faster than grid2op with pandapower). 
 
 For more information (including the exact way to reproduce these results, as well as the computer used), you can consult the dedicated [Benchmarks](https://lightsim2grid.readthedocs.io/en/latest/benchmarks.html) page on the documentation.

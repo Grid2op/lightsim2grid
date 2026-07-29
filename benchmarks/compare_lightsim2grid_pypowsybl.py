@@ -53,7 +53,7 @@ def main(case_name,
         buses_for_sub=True,
         n_busbar_per_sub=1
         )
-    ls_grid.change_solver("NR_KLU")
+    ls_grid.change_algorithm("NR_KLU")
     
     pypowsybl_parameters = get_pypowsybl_parameters(slack_pypowysbl)
     beg_pypow = time.perf_counter()

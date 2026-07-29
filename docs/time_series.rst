@@ -32,7 +32,7 @@ It can be used as:
     # res_v[row_id] will be the complex voltage, on all bus of the grid at step "row_id"
 
 For now this relies on grid2op, but we could imagine a version of this class that can read
-to / from other data sources (for now please use the more basic :class:`lightsim2grid.timeSerie.Computers` for such purpose)
+to / from other data sources (for now please use the more basic :class:`lightsim2grid.timeSerie.TimeSeriesCPP` for such purpose)
 
 Importantly, this method is around **13x** faster than simulating "do nothing" (or "one change then nothing") with grid2op
 (see section :ref:`timeserie_benchmark` )

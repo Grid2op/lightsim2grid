@@ -258,6 +258,41 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
     LightSimBackend``) and its return type annotation was
     ``Union[AlgorithmType, AlgorithmType]`` where it should be
     ``Tuple[AlgorithmType, AlgorithmType]``.
+- [FIXED] deprecated names still presented as the current API in prose, examples
+  and benchmark scripts (section E of the doc audit):
+
+  - ``SecurityAnalysis`` (renamed to ``ContingencyAnalysis``): dropped from
+    ``README.md`` and ``docs/security_analysis.rst`` prose, and from the printed
+    output of ``examples/contingency_analysis.py`` and ``benchmarks/security_analysis.py``
+    (both of which also had a local variable literally named ``security_analysis``,
+    renamed to ``contingency_analysis``).
+  - ``gridmodel`` / ``GridModel`` (renamed to ``network`` / ``LSGrid``): fixed in
+    ``docs/network.rst``, ``docs/benchmarks.rst``, ``docs/benchmarks_dive.rst`` and
+    ``docs/comparison_with_pypowsybl.rst``.
+  - ``Computers`` (alias of ``TimeSeriesCPP``): ``docs/time_series.rst`` presented
+    it as the low-level class to use; pointed at ``TimeSeriesCPP`` instead.
+  - ``gm.get_solver_type()`` (deprecated alias of ``get_algo_type()``):
+    ``docs/solver_plugin.rst`` used it in a code example.
+  - ``benchmarks/benchmark_ca.py``, ``benchmarks/benchmark_dc_solvers.py``,
+    ``benchmarks/benchmark_grid_size.py``: removed the dead
+    ``except ImportError: from lightsim2grid import SecurityAnalysis as
+    ContingencyAnalysis`` fallback (``SecurityAnalysis`` is not exported from
+    the top-level package on this branch, so the fallback would itself raise
+    ``ImportError`` if it were ever reached) and the unused/deprecated
+    ``from lightsim2grid.solver import SolverType`` import.
+  - ``benchmarks/benchmark_grid_size.py``: ``SolverType.KLU`` does not exist,
+    not even as a deprecated alias -- this line would raise ``AttributeError``
+    the moment the script's ``__main__`` block ran. Replaced with
+    ``AlgorithmType.NR_KLU``.
+  - ``set_solver_type`` -> ``set_algo_type``, ``change_solver`` -> ``change_algorithm``,
+    and ``.available_solvers`` -> ``.available_default_algorithms`` in
+    ``benchmarks/benchmark_gauss_seidel.py``, ``benchmarks/benchmark_solvers.py``,
+    ``benchmarks/benchmark_dc_solvers.py``, ``benchmarks/benchmark_grid_size.py``,
+    ``benchmarks/test_profile.py`` and ``benchmarks/compare_lightsim2grid_pypowsybl.py``
+    -- these are the reference scripts people copy, and all of the above still
+    *ran* despite using deprecated names.
+  - ``benchmarks/test_profile.py`` imported ``AlgorithmType`` from the deprecated
+    ``lightsim2grid.solver`` shim instead of ``lightsim2grid.algorithm``.
 
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
