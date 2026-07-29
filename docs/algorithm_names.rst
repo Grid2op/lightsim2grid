@@ -228,6 +228,20 @@ release:
    * - ``AlgorithmType.CKTSODC``
      - ``AlgorithmType.DC_CKTSO``
 
+The same renaming affects two other places that predate this convention:
+
+- the ``lightsim2grid.solver`` module (with its own, older ``SolverType`` enum, e.g.
+  ``SolverType.KLU``) is deprecated in favour of ``lightsim2grid.algorithm`` /
+  ``AlgorithmType``. A ``SolverType`` value is still accepted wherever an
+  ``AlgorithmType`` is expected (it is converted automatically, with a
+  ``DeprecationWarning``);
+- :class:`~lightsim2grid.LightSimBackend.LightSimBackend`'s ``solver_type`` constructor
+  keyword (and its ``set_solver_type`` method) are deprecated in favour of ``algo_type`` /
+  ``set_algo_type``, for the same reason: ``solver_type`` reads as if it selected the
+  *linear* solver, when it in fact selects the powerflow algorithm (combined with a linear
+  solver). ``solver_type`` is still accepted and mapped to ``algo_type``; passing both with
+  different values raises a ``BackendError``.
+
 .. seealso::
 
    :ref:`available-powerflow-solvers` for performance comparisons and

@@ -123,6 +123,12 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [DEPRECATED] ``LightSimBackend``'s ``solver_type`` constructor kwarg and its
+  ``set_solver_type`` method, in favour of ``algo_type`` / ``set_algo_type``: "solver"
+  now refers specifically to the *linear* solver (KLU, SparseLU, NICSLU, CKTSO), not the
+  powerflow algorithm nor the combination of both that this kwarg actually selects (see
+  ``docs/algorithm_names.rst``). ``solver_type`` still works and is mapped to
+  ``algo_type``; passing both with different values raises a ``BackendError``.
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and

@@ -55,14 +55,23 @@ You can customize the way the backend behaves in different ways:
   powergrid if you use a Newton Raphson based method (default)
 - `tol`: During its internal iterations, the underlying solver will say the Kirchhoff Current Laws (KCL) are matched if the 
   maximum value of the difference is lower than this. Default is `1e-8`.
-- `solver_type`: which type of "solver" you want to use. See :ref:`solvers_doc` for more information. By default it uses 
-  what it considers the fastest solver available which is likely to be :class:`lightsim2grid.algorithm.NRSing_KLU`
+- `algo_type`: which type of powerflow algorithm (combined with which linear solver) you want to use. See
+  :ref:`solvers_doc` for more information. By default it uses what it considers the fastest one available, which
+  is likely to be :class:`lightsim2grid.algorithm.NRSing_KLU`.
+
+  .. deprecated:: 1.0.0
+      This kwarg used to be called `solver_type`. That name is kept for backward
+      compatibility (it still works and is mapped to `algo_type`), but it is deprecated: "solver" now
+      refers specifically to the *linear* solver (KLU, SparseLU, NICSLU, CKTSO), not the powerflow
+      algorithm nor the combination of both that `algo_type` selects. Passing both `solver_type` and
+      `algo_type` with different values raises. See :ref:`algorithm_names` for the full naming
+      rationale.
 - `turned_off_pv` : by default (set to `turned_off_pv=True`) all generators partipate in the voltage regulation, which is not completely realistic.
   When you initialize a backend with `turned_off_pv=False` then the generators that do not produce power (*eg* "p=0.") or that are
   turned off are excluded from the voltage regulation.
 - `dist_slack_non_renew`: by default in most grid2op environment, the slack bus is "centralize" / "single slack". This parameters
   allows to bypass this restriction and use all non renewable generators (and turned on and with  > 0.) in a distributed
-  slack bus setting. It might change the default `solver_type` used.
+  slack bus setting. It might change the default `algo_type` used.
 - \* `use_static_gen`: bool=False, DO NOT USE AT THE MOMENT. When it will be available, you will be able to loader_kwargs
   both "static" generators (pq generators) and "regular" (pv generators) as generators in lightsim2grid. It does
   not work at the moment and has no effect.
