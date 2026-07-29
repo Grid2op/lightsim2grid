@@ -239,7 +239,12 @@ jobs:
                     uv pip install --upgrade pip
                     uv pip install -U grid2op
                     git submodule update --init
-                    CC=gcc uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
+                    # CMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF: pybind11 auto-enables LTO
+                    # (-flto=auto) on any target where this variable is left undefined, which
+                    # OOM-killed cc1plus on binding_lsgrid.cpp (the biggest binding TU) on this
+                    # "medium" resource class container. This job only checks that the package
+                    # still compiles with the oldest supported gcc, so it doesn't need LTO.
+                    CC=gcc uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -C "cmake.define.CMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF" -v .
 
     compile_and_test_gcc_latest:
         executor: gcc_latest
