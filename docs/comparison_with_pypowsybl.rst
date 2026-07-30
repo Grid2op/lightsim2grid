@@ -107,15 +107,52 @@ Under the hood this builds a :class:`pypowsybl.loadflow.Parameters` that disable
 distributed slack, reactive limits, transformer / shunt / phase-shifter voltage
 control, area-interchange and secondary-voltage control, automation systems, etc.
 The key mechanism is the empty ``outerLoopNames`` allow-list, which registers
-*zero* outer loops regardless of which loops a future pypowsybl release adds.
+*zero* outer loops regardless of which loops a future pypowsybl release adds --
+see :func:`~lightsim2grid.network.remove_outer_loops`, which it wraps.
 
-If you need a *raw* (un-baked) network whose outer loops would actually trigger
-to also match lightsim2grid, freeze the converged outer-loop state first with
-``lightsim2grid.network.bake_outer_loops`` before solving loop-free.
+If lightsim2grid's own distributed-slack implementation is what you want to compare
+against (rather than a single, fixed slack bus), keep OLF's ``DistributedSlack`` outer
+loop active and remove every other one with
+:func:`~lightsim2grid.network.get_pypowsybl_loopfree_distributed_slack_parameters`
+instead -- same idea, but it sets ``balance_type=PROPORTIONAL_TO_GENERATION_P_MAX``,
+what lightsim2grid's default distributed slack reproduces.
 
 .. important::
     As you notice from these parameters, a lot of the
     simulation capacity of pypowsybl are switched off when using lightsim2grid.
+
+Baking outer-loop results into the network
+*********************************************
+
+Removing the outer loops from the OLF *parameters* (above) only helps if the network
+itself does not need them: it is fine for a network you build already at its final
+operating point, but if you start from a network whose outer loops would actually
+*do* something (a generator that should hit a reactive limit, a tap changer that
+should move, a distributed slack that should spread over several units, ...), solving
+it loop-free in OLF and in lightsim2grid no longer agree -- not because the solvers
+differ, but because they are solving different problems.
+
+``bake_outer_loops`` closes that gap: run OLF *with* its outer loops enabled first,
+then call it to rewrite the network's input setpoints (tap positions, generator P/Q,
+slack participation, ...) to the values the outer loops converged on, and disable the
+corresponding regulation. Afterwards the network represents a plain power-flow
+problem, and a loop-free OLF run or a lightsim2grid run (via
+:func:`~lightsim2grid.network.init_from_pypowsybl`) should reproduce the same
+operating point:
+
+.. code-block:: python
+
+    import pypowsybl as pp
+    from lightsim2grid.network import bake_outer_loops, init_from_pypowsybl
+
+    network = pp.network.create_ieee14()
+    pp.loadflow.run_ac(network)  # solve once, with outer loops enabled
+    bake_outer_loops(network)    # freeze the converged outer-loop state into the inputs
+
+    ls_grid = init_from_pypowsybl(network)  # now a plain (loop-free) power-flow problem
+
+.. autofunction:: lightsim2grid.network.bake_outer_loops
+    :no-index:
 
 .. note::
     If you are interested in an "abalation study" on the impact of certain parameters
