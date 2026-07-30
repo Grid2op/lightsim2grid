@@ -217,7 +217,14 @@ jobs:
 
     compile_gcc_earliest:
         executor: gcc_earliest
-        resource_class: medium
+        # "medium" (4GB) still OOM-killed cc1plus on binding_lsgrid.cpp even after
+        # disabling LTO below: CMAKE_BUILD_TYPE=Release (pyproject.toml) applies
+        # CMake's own default CMAKE_CXX_FLAGS_RELEASE (-O3 -DNDEBUG) project-wide,
+        # independent of this project's USE_O3_OPTIM toggle (which only ever
+        # touches the lightsim2grid_core target, not lightsim2grid_cpp -- the
+        # target binding_lsgrid.cpp belongs to). Bumping the resource class is more
+        # robust than chasing which CMake mechanism to override to strip -O3.
+        resource_class: large
         environment:
             CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
