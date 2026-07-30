@@ -175,11 +175,15 @@ String-only built-in solvers: ``NRRefactorRetry_*``
 ``NRRefactorRetry_KLU``, ``NRRefactorRetry_NICSLU`` and ``NRRefactorRetry_CKTSO`` are
 built-in solvers that never got their own ``AlgorithmType`` enum value, so unlike
 everything in the table above they can only be selected by their string name, not by an
-``AlgorithmType.NRRefactorRetry_*`` attribute (which does not exist):
+``AlgorithmType.NRRefactorRetry_*`` attribute (which does not exist). Since lightsim2grid
+1.0, :func:`~lightsim2grid.lightSimBackend.LightSimBackend.set_algo_type` accepts such a
+string directly, and -- unlike changing the algorithm through the private
+``env.backend._grid.change_algorithm(...)`` -- remembers the choice so it is re-applied
+after every ``env.reset()`` and preserved by ``backend.copy()``:
 
 .. code-block:: python
 
-    env.backend._grid.change_algorithm("NRRefactorRetry_KLU")
+    env.backend.set_algo_type("NRRefactorRetry_KLU")
 
 Each is the same algorithm as its ``NR_*`` counterpart (Newton-Raphson, distributed
 slack), except that when a Jacobian ``refactorize()`` fails it falls back to a full
@@ -191,20 +195,10 @@ same value reported for an actual plugin solver.
 
 .. warning::
     ``env.backend._grid.change_algorithm(...)`` acts directly on the underlying
-    C++ grid model and does **not** survive ``env.reset()``: a reset always
-    re-applies whichever :class:`~lightsim2grid.algorithm.AlgorithmType` was last
-    set through :func:`~lightsim2grid.lightSimBackend.LightSimBackend.set_algo_type`
-    (:class:`~lightsim2grid.algorithm.AlgorithmType.NRSing_KLU` by default), silently
-    discarding the string-only solver choice.
-
-    Unlike the enum-based solvers, ``set_algo_type`` cannot be used as a
-    persistent alternative here: it requires an actual ``AlgorithmType`` value
-    and raises a ``BackendError`` if given anything else, so it has no way to
-    represent ``NRRefactorRetry_*`` (which have no enum value at all, see the
-    ``Custom`` entry above). At the moment there is no supported way to make a
-    string-only solver choice survive a reset: you need to call
-    ``env.backend._grid.change_algorithm(...)`` again after every
-    ``env.reset()`` if you want to keep using it.
+    C++ grid model and does **not** survive ``env.reset()`` / ``backend.copy()``: use
+    the persistent :func:`~lightsim2grid.lightSimBackend.LightSimBackend.set_algo_type`
+    shown above instead (it works the same for a plain :class:`~lightsim2grid.algorithm.AlgorithmType`
+    or a string-only / plugin name).
 
 Usage example
 -------------
