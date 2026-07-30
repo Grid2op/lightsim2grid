@@ -554,6 +554,19 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
     ``benchmarks_dc.rst`` / ``benchmarks_grid_sizes.rst``, and the two inline
     ``(TODO DOC)`` markers on ``use_solver.rst``'s ``get_timers`` /
     ``get_error`` (replaced with their actual return values).
+  - ``bake_outer_loops`` (freezes OLF's converged outer-loop state -- tap
+    positions, reactive-limit switches, slack participation, ... -- into a
+    pypowsybl network's inputs so it becomes a plain, loop-free power-flow
+    problem) already had a full API entry via ``docs/network.rst``'s
+    ``automodule``, but on ``docs/comparison_with_pypowsybl.rst`` -- the page
+    that actually motivates it -- it was only a passing prose mention, unlike
+    its siblings ``compare_baked`` / ``ComparisonResult`` which get a full
+    ``autofunction`` / ``autoclass`` treatment there. Gave it the same
+    treatment, with a worked example (verified to run) showing the full
+    "solve with outer loops -> bake -> solve loop-free" flow. Also documented
+    ``get_pypowsybl_loopfree_distributed_slack_parameters`` (loop-free except
+    OLF's own ``DistributedSlack``, matching lightsim2grid's default
+    distributed slack), which wasn't mentioned on that page at all.
 
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
