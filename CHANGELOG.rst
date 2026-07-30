@@ -123,6 +123,26 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [FIXED] ``LightSimBackend.reset()`` used to silently drop, on every ``env.reset()``:
+  (1) a plugin or string-only built-in algorithm (eg ``NRRefactorRetry_KLU``) selected
+  directly via ``env.backend._grid.change_algorithm(...)`` -- it reverted to whichever
+  ``AlgorithmType`` was last set through ``set_algo_type`` -- and (2) any ``AlgoConfig``
+  customization (``set_ac_algo_config`` / ``set_dc_algo_config``) -- it reverted to a
+  default-constructed one. Found while auditing ``docs/algorithm_names.rst`` /
+  ``docs/solvers.rst`` for PR review comments, and confirmed with a dedicated reproduction
+  (an environment using ``NRRefactorRetry_KLU`` with a custom ``ScalingPolicyType`` lost
+  both across a reset). ``reset()`` now captures the algorithm actually active on the grid
+  (by registry name, not just its ``AlgorithmType``, which is the ``Custom`` sentinel for
+  both plugins and string-only built-ins) and its ``AlgoConfig`` (AC and DC) before
+  rebuilding ``_grid``, and re-applies them afterwards -- matching what ``copy()`` already
+  did correctly (its C++ copy constructor already copied the algorithm by registry name
+  and its config). Required a new ``AlgorithmSelector.get_name()`` python binding (the
+  registry name was already tracked in C++, just not exposed) to identify the AC/DC
+  algorithm actually in use when it isn't backed by a concrete ``AlgorithmType``. Verified
+  with a direct reproduction (plugin algorithm + customized ``AlgoConfig`` surviving
+  ``env.reset()``, including a successful ``env.step()`` afterwards) and with FDPF /
+  regular enum-backed algorithms (still routed through the ``AlgorithmType`` overload, so
+  ``init_fdpf_coeffs()`` is still triggered where needed).
 - [DEPRECATED] ``LightSimBackend``'s ``solver_type`` constructor kwarg and its
   ``set_solver_type`` method, in favour of ``algo_type`` / ``set_algo_type``: "solver"
   now refers specifically to the *linear* solver (KLU, SparseLU, NICSLU, CKTSO), not the

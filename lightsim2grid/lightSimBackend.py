@@ -2133,8 +2133,28 @@ class LightSimBackend(Backend):
               grid_filename : Optional[Union[os.PathLike, str]]=None) -> None:
         self._reset_res_pointers()
         self._fill_nans()
+        # capture the AC / DC algorithm actually active on the grid about to be
+        # replaced (by registry name, so a plugin or a string-only built-in such as
+        # NRRefactorRetry_KLU -- whose AlgorithmType is the Custom sentinel -- is not
+        # lost) as well as their AlgoConfig, so a reset preserves them exactly like
+        # `copy()` already does instead of silently reverting to `__current_algo_type`
+        # / a default AlgoConfig.
+        ac_algo_type = self._grid.get_algo_type()
+        dc_algo_type = self._grid.get_dc_algo_type()
+        ac_algo_name = self._grid.get_algo().get_name()
+        dc_algo_name = self._grid.get_dc_algo().get_name()
+        ac_algo_config = self._grid.get_ac_algo_config()
+        dc_algo_config = self._grid.get_dc_algo_config()
+
         self._grid = self.__me_at_init.copy()
-        self._grid.change_algorithm(self.__current_algo_type)
+        # go through the AlgorithmType overload whenever possible (needed eg for FDPF
+        # solvers, which need extra coefficients initialized on top of the plain
+        # registry-name switch), and fall back to the name-based overload only for
+        # Custom (plugin / string-only) algorithms.
+        self._grid.change_algorithm(ac_algo_type if ac_algo_type != AlgorithmType.Custom else ac_algo_name)
+        self._grid.change_algorithm(dc_algo_type if dc_algo_type != AlgorithmType.Custom else dc_algo_name)
+        self._grid.set_ac_algo_config(ac_algo_config)
+        self._grid.set_dc_algo_config(dc_algo_config)
         self._handle_turnedoff_pv()
         self._grid.tell_solver_need_reset()
         self.comp_time = 0.
