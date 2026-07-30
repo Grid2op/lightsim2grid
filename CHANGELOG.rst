@@ -326,7 +326,16 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   for this job only -- it exists to check the package still compiles with
   the oldest supported gcc, not to produce an optimized artifact. Verified
   locally that this removes every ``-flto`` flag from the build and that the
-  resulting extension still imports and passes tests.
+  resulting extension still imports and passes tests. Disabling LTO turned out
+  not to be enough on its own: the real CircleCI run still OOM-killed
+  ``cc1plus`` on the same file, at plain ``-O3`` with no LTO flags at all.
+  ``CMAKE_BUILD_TYPE=Release`` (set in ``pyproject.toml``) makes CMake apply
+  its own default ``CMAKE_CXX_FLAGS_RELEASE`` (``-O3 -DNDEBUG``) to every
+  target project-wide, independent of this project's own ``USE_O3_OPTIM``
+  toggle (which only ever applies to the ``lightsim2grid_core`` target, not
+  ``lightsim2grid_cpp`` -- the target ``binding_lsgrid.cpp`` belongs to).
+  Rather than chase which CMake mechanism to override to strip ``-O3`` here,
+  bumped this job's ``resource_class`` from ``medium`` to ``large``.
 
 - [FIXED] stale statements across the docs that were no longer true (section H
   of the doc audit):
