@@ -189,6 +189,23 @@ see how often the fallback fires. Because they have no dedicated enum value,
 ``get_algo_type()`` reports ``AlgorithmType.Custom`` while one of them is active -- the
 same value reported for an actual plugin solver.
 
+.. warning::
+    ``env.backend._grid.change_algorithm(...)`` acts directly on the underlying
+    C++ grid model and does **not** survive ``env.reset()``: a reset always
+    re-applies whichever :class:`~lightsim2grid.algorithm.AlgorithmType` was last
+    set through :func:`~lightsim2grid.lightSimBackend.LightSimBackend.set_algo_type`
+    (:class:`~lightsim2grid.algorithm.AlgorithmType.NRSing_KLU` by default), silently
+    discarding the string-only solver choice.
+
+    Unlike the enum-based solvers, ``set_algo_type`` cannot be used as a
+    persistent alternative here: it requires an actual ``AlgorithmType`` value
+    and raises a ``BackendError`` if given anything else, so it has no way to
+    represent ``NRRefactorRetry_*`` (which have no enum value at all, see the
+    ``Custom`` entry above). At the moment there is no supported way to make a
+    string-only solver choice survive a reset: you need to call
+    ``env.backend._grid.change_algorithm(...)`` again after every
+    ``env.reset()`` if you want to keep using it.
+
 Usage example
 -------------
 

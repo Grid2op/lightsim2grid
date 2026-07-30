@@ -1505,6 +1505,41 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   built-in algorithms ``NRRefactorRetry_KLU``, ``NRRefactorRetry_CKTSO`` and
   ``NRRefactorRetry_NICSLU`` use it (``SparseLU`` is skipped: its ``factorize()`` and
   ``refactorize()`` are already the same call, so the fallback would be a no-op).
+- [FIXED] ``docs/algorithm_names.rst``: the string-only ``NRRefactorRetry_*`` example used
+  ``env.backend._grid.change_algorithm(...)`` without warning that this does not survive
+  ``env.reset()`` (verified empirically: a reset always re-applies whatever
+  ``AlgorithmType`` was last set via ``set_algo_type``), and that ``set_algo_type`` cannot
+  be used instead since it requires an actual ``AlgorithmType`` value, which these
+  string-only solvers do not have.
+- [FIXED] ``docs/solvers.rst``: documented that ``grid.set_ac_algo_config`` /
+  ``set_dc_algo_config`` customizations, just like a direct ``change_algorithm`` call,
+  do not survive ``env.reset()`` either (verified empirically: ``env.backend._grid`` is a
+  new object after reset, with a fresh default ``AlgoConfig``).
+- [FIXED] ``docs/physical_law_checker.rst``: removed the misleading suggestion that
+  lightsim2grid can only load grids compatible with its own loaders; clarified that
+  ``PhysicalLawChecker`` specifically always looks for a pandapower-format ``grid.json``
+  in the environment folder regardless of which formats lightsim2grid itself supports
+  (see the new ``network-init-formats`` cross-reference in ``docs/network.rst``).
+- [FIXED] ``docs/use_solver.rst``: documented the Jacobian row layout (P-mismatch rows
+  then Q-mismatch rows, mirroring the column layout) and how to map a solver bus id back
+  to the stable GridModel bus id with ``id_ac_solver_to_me``; rewrote the "constraints
+  not checked" warning to match what ``compute_pf_with_input_validation`` actually
+  validates now (most conditions raise a clean ``RuntimeError``/``IndexError``; only
+  "every bus covered by ref/pv/pq" and ``slack_weight`` positivity/sum-to-one are still
+  silently unchecked, and the CSC-format requirement is obsolete -- any scipy sparse
+  format is accepted); replaced "iteratively update the jacobian matrix J" with "solve
+  the linear system J.dx = mismatch" for the 8 Newton-Raphson solver descriptions;
+  documented (verified empirically) that ``NRSing_*`` solvers do **not** convert extra
+  ``ref`` buses to PV like the Gauss-Seidel and Fast-Decoupled solvers do -- they keep
+  every bus in ``ref`` fully fixed (angle and magnitude) with no distributed-slack
+  coupling; added a recommendation to remove all but one generator from the slack
+  regardless of which solver is used; clarified which 6 (out of 8) solvers are marked as
+  possibly-unavailable in each family.
+- [FIXED] renamed the ``security_analysis`` example variable to ``contingency_analysis``
+  throughout ``lightsim2grid/contingencyAnalysis.py``'s own docstrings, left over from
+  before the class was renamed from ``SecurityAnalysis``.
+- [FIXED] translated the last remaining French comments in ``pyproject.toml`` to English,
+  for consistency with the rest of the (English-only) documentation and codebase.
 
 [0.13.1]  2026-04-21
 --------------------

@@ -6,6 +6,11 @@ from the c++ `LSGrid` (thanks fo pybind11).
 
 This class basically represents a powergrid (what elements it is made for, their electro technical properties etc.)
 
+.. _network-init-formats:
+
+Supported source formats
+--------------------------
+
 An `LSGrid` can be built from several source formats, each with a dedicated ``init_from_*`` function in
 ``lightsim2grid.network`` (none of them model every element the source format itself supports):
 

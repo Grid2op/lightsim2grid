@@ -304,6 +304,18 @@ DC solver) instead, which read/write a serialisable
    whole attribute (``config.int_params = int_params``, as above) for the change to take
    effect.
 
+.. warning::
+
+   Just like ``env.backend._grid.change_algorithm(...)`` (see the warning above),
+   ``grid.set_ac_algo_config(...)`` / ``set_dc_algo_config(...)`` act directly on
+   ``env.backend._grid`` and do **not** survive ``env.reset()``: a reset rebuilds
+   ``env.backend._grid`` from scratch with a fresh, default ``AlgoConfig``, silently
+   discarding any customisation made this way. Unlike the algorithm type itself, there is
+   currently no ``LightSimBackend`` kwarg or setter that re-applies a custom
+   ``AlgoConfig`` on every reset -- you need to call ``set_ac_algo_config`` /
+   ``set_dc_algo_config`` again after every ``env.reset()`` if you want the change to
+   persist.
+
 Detailed API
 -------------
 
