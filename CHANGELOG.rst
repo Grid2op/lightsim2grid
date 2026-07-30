@@ -568,6 +568,24 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
     OLF's own ``DistributedSlack``, matching lightsim2grid's default
     distributed slack), which wasn't mentioned on that page at all.
 
+- [DOCUMENTED] ``docs/comparison_with_pypowsybl.rst``'s "Disclaimer" section listed
+  several individual gaps (reactive limits, tap ratio, ...) without naming the single
+  architectural difference behind all of them: OpenLoadFlow wraps its Newton-Raphson
+  solve in "outer loops" (solve, check a criterion, adjust an input, solve again --
+  distributed slack, PV<->PQ reactive-limit switching, discrete tap/shunt control, area
+  interchange, secondary voltage control, ...), while lightsim2grid's algorithms solve a
+  single, fixed problem with no outer-loop mechanism at all. Added a section explaining
+  this, and that the two architectures aren't simply "more features vs. fewer": distributed
+  slack is the one outer loop lightsim2grid folds directly into the same Newton-Raphson
+  Jacobian instead (``MultiSlackNRSystem``, see ``src/core/powerflow_algorithm/NRSystem.hpp``),
+  while the others (reactive limits, discrete tap changing, area interchange, secondary
+  voltage control) have neither an outer loop nor an in-Jacobian equivalent in lightsim2grid
+  today -- which is exactly the gap ``bake_outer_loops`` papers over for comparison purposes.
+  Also cross-referenced ``examples/dist_slack_algorithm/``, a solver plugin that
+  reimplements distributed slack the *other* way -- as an explicit OLF-style outer loop
+  around a single-slack inner solve -- as a concrete demonstration that lightsim2grid's
+  plugin mechanism can express an outer-loop-style algorithm at all.
+
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and

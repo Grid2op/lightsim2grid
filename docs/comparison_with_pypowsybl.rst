@@ -46,10 +46,67 @@ do many more things than lightsim2grid.
 
 .. important::
     The overall message of this page is not to show that lightsim2grid should be
-    prefered to pypowsybl. 
+    prefered to pypowsybl.
 
-    Its goal is rather to explain how to get consistent results between pypowsybl 
+    Its goal is rather to explain how to get consistent results between pypowsybl
     and lightsim2grid.
+
+Why this comparison isn't trivial: OLF's "outer loops"
+**********************************************************
+
+All the bullet points in the disclaimer above (reactive limits, tap ratio, distributed
+slack, ...) are really different faces of a single architectural difference between the
+two engines, and it is the reason a naive comparison disagrees and why the "baking"
+machinery below exists at all.
+
+OpenLoadFlow structures a powerflow as an **inner** Newton-Raphson solve wrapped in
+**outer loops**: solve, look at the result, adjust some input if a criterion is not met
+(a generator exceeds a reactive limit -> switch it from PV to fixed-Q; a tap changer is
+not at the position that would satisfy its regulation -> move it a step; the slack
+mismatch is not shared the way the model prescribes -> redistribute it; area interchange
+/ secondary voltage control targets are not met -> adjust), then solve again -- repeating
+until every outer loop is satisfied or a round limit is hit.
+
+**lightsim2grid does not have this.** Its algorithms (Newton-Raphson, Fast-Decoupled,
+Gauss-Seidel, see :ref:`available-powerflow-solvers`) solve a *single*, fixed problem: the
+topology, injections, tap positions and voltage-control targets you hand it are exactly
+what gets solved, once, with nothing adjusted in response to the result. There is no
+generic outer-loop mechanism in the lightsim2grid core.
+
+This is not simply "OLF has more features, lightsim2grid has fewer" -- the two
+architectures make a different trade-off, and where a given feature ends up depends on
+that trade-off:
+
+- **Distributed slack is the one outer loop lightsim2grid folds into the inner solve
+  instead of dropping.** ``MultiSlackNRSystem`` adds the slack-participation unknowns and
+  their weighting directly into the *same* Newton-Raphson Jacobian as the rest of the
+  problem (see ``src/core/powerflow_algorithm/NRSystem.hpp``), instead of an OLF-style
+  outer loop that re-solves a single-slack problem and redistributes the mismatch between
+  rounds. One solve, one Jacobian, no outer iteration -- faster, at the cost of a larger
+  and more coupled linear system.
+- **Reactive-limit PV<->PQ switching, discrete tap / shunt control, area interchange and
+  secondary voltage control are not implemented at all**, in either form (no outer loop,
+  and no in-Jacobian equivalent). This is precisely the gap :func:`bake_outer_loops`
+  papers over for the sake of comparison: it does not give lightsim2grid these
+  capabilities, it just freezes OLF's already-converged answer for them into fixed
+  inputs, so that what is left is a problem lightsim2grid *can* solve exactly.
+
+Whether a given outer loop could instead be folded into the inner NR formulation (like
+distributed slack was) or fundamentally needs iteration around the solve (like discrete
+tap positions, which are not differentiable) is a case-by-case question, and remains
+open for most of OLF's outer loops as far as lightsim2grid is concerned.
+
+.. seealso::
+    ``examples/dist_slack_algorithm/`` is a solver plugin (see
+    :ref:`solver_plugin`) that reimplements distributed slack the *other* way: as an
+    explicit outer loop around a single-slack inner Newton-Raphson solve, mirroring
+    OLF's own ``DistributedSlackOuterLoop`` architecture, instead of lightsim2grid's
+    default in-Jacobian ``MultiSlackNRSystem`` extension. It exists to demonstrate (and
+    test) that lightsim2grid's plugin mechanism can express an OLF-style outer loop at
+    all, not to replace the built-in distributed slack -- see the comment at the top of
+    ``examples/dist_slack_algorithm/NRAlgoDistSlack.hpp`` for the full rationale
+    (in short: it was used to investigate a step-damping / convergence interaction
+    specific to the in-Jacobian approach).
 
 
 Methodology
