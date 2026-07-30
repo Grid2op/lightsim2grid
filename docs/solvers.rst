@@ -273,9 +273,9 @@ Setting the policy on a raw solver object (see :ref:`use-solver`) is direct:
     solver.set_refactor_every_n(5)
 
 When going through a grid2op / :class:`~lightsim2grid.lightSimBackend.LightSimBackend` powerflow,
-use :func:`lightsim2grid.network.LSGrid.get_ac_algo_config` /
-:func:`~lightsim2grid.network.LSGrid.set_ac_algo_config` (and their ``_dc_`` counterparts for the
-DC solver) instead, which read/write a serialisable
+use :func:`~lightsim2grid.lightSimBackend.LightSimBackend.get_ac_algo_config` /
+:func:`~lightsim2grid.lightSimBackend.LightSimBackend.set_ac_algo_config` (and their ``_dc_``
+counterparts for the DC solver) instead, which read/write a serialisable
 :class:`~lightsim2grid.algorithm.AlgoConfig`:
 
 .. code-block:: python
@@ -285,16 +285,21 @@ DC solver) instead, which read/write a serialisable
     from lightsim2grid.algorithm import ScalingPolicyType
 
     env = grid2op.make("l2rpn_case14_sandbox", backend=LightSimBackend())
-    grid = env.backend._grid
 
-    config = grid.get_ac_algo_config()
+    config = env.backend.get_ac_algo_config()
     # config.int_params  == [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n]
     # config.real_params == [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max]
 
     int_params = list(config.int_params)
     int_params[0] = int(ScalingPolicyType.LineSearch)
     config.int_params = int_params  # reassign the whole list, see warning below
-    grid.set_ac_algo_config(config)
+    env.backend.set_ac_algo_config(config)
+
+Unlike calling ``env.backend._grid.set_ac_algo_config(...)`` directly, which is silently
+reverted on the next ``env.reset()``, going through the
+:class:`~lightsim2grid.lightSimBackend.LightSimBackend` methods above remembers the
+customization so it is re-applied after every ``env.reset()`` and preserved by
+``backend.copy()``.
 
 .. warning::
 
@@ -303,18 +308,6 @@ DC solver) instead, which read/write a serialisable
    copy, not the object's actual state. You must build the new list and reassign the
    whole attribute (``config.int_params = int_params``, as above) for the change to take
    effect.
-
-.. warning::
-
-   Just like ``env.backend._grid.change_algorithm(...)`` (see the warning above),
-   ``grid.set_ac_algo_config(...)`` / ``set_dc_algo_config(...)`` act directly on
-   ``env.backend._grid`` and do **not** survive ``env.reset()``: a reset rebuilds
-   ``env.backend._grid`` from scratch with a fresh, default ``AlgoConfig``, silently
-   discarding any customisation made this way. Unlike the algorithm type itself, there is
-   currently no ``LightSimBackend`` kwarg or setter that re-applies a custom
-   ``AlgoConfig`` on every reset -- you need to call ``set_ac_algo_config`` /
-   ``set_dc_algo_config`` again after every ``env.reset()`` if you want the change to
-   persist.
 
 Detailed API
 -------------

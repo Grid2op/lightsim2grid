@@ -372,11 +372,6 @@ void bind_solvers(py::module_& m) {
     py::class_<AlgorithmSelector>(m, "AlgorithmSelector", DocSolver::AlgorithmSelector.c_str())
         .def(py::init<>())
         .def("get_type",             &AlgorithmSelector::get_type,             DocSolver::get_type.c_str())
-        .def("get_name",             &AlgorithmSelector::get_name,
-            "Registry name of the currently active algorithm (eg \"NR_KLU\", or a plugin / "
-            "string-only built-in name such as \"NRRefactorRetry_KLU\"). Unlike get_type(), "
-            "which reports AlgorithmType.Custom for both plugins and string-only built-ins, "
-            "this always identifies the concrete algorithm.")
         .def("get_Va",               &AlgorithmSelector::get_Va,               DocSolver::get_Va.c_str())
         .def("get_Vm",               &AlgorithmSelector::get_Vm,               DocSolver::get_Vm.c_str())
         .def("get_V",                &AlgorithmSelector::get_V,                DocSolver::get_V.c_str())

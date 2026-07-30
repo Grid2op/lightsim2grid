@@ -59,7 +59,7 @@ try:
 except ImportError:
     from typing_extensions import Literal
     
-from lightsim2grid.algorithm import AlgorithmType
+from lightsim2grid.algorithm import AlgorithmType, AlgoConfig
 
 LOADER_KWARGS_TYPING = Dict[str, Any]  # TODO improve this
 grid2op_min_cls_attr_ver = version.parse("1.6.4")
@@ -109,7 +109,7 @@ class LightSimBackend(Backend):
                  max_iter: int=10,
                  tol: float=1e-8,
                  solver_type: Optional[AlgorithmType]=None,
-                 algo_type: Optional[AlgorithmType]=None,
+                 algo_type: Optional[Union[AlgorithmType, str]]=None,
                  turned_off_pv : bool=True,  # are gen turned off (or with p=0) contributing to voltage or not
                  dist_slack_non_renew: bool=False,  # distribute the slack on non renewable turned on (and with P>0) generators
                  use_static_gen: bool=False, # add the static generators as generator gri2dop side
@@ -132,7 +132,13 @@ class LightSimBackend(Backend):
         algo_type = self._aux_merge_solver_type_algo_type(solver_type, algo_type)
         real_algo_type = self._check_suitable_solver_type(algo_type, check_in_avail_solver=False)
         self.__current_algo_type = real_algo_type
-        
+
+        #: :class:`~lightsim2grid.algorithm.AlgoConfig` set through :func:`set_ac_algo_config`
+        #: / :func:`set_dc_algo_config` (``None`` if never customized), re-applied after
+        #: every `env.reset()` and preserved by `backend.copy()`.
+        self.__current_ac_algo_config = None
+        self.__current_dc_algo_config = None
+
         #: does the "turned off" generators (including when p=0)
         #: are pv buses
         self._turned_off_pv = turned_off_pv
@@ -554,9 +560,10 @@ class LightSimBackend(Backend):
         """DEPRECATED use :func:`set_algo_type` instead"""
         self.set_algo_type(algo_type)
 
-    def set_algo_type(self, algo_type: AlgorithmType) -> None:
+    def set_algo_type(self, algo_type: Union[AlgorithmType, str]) -> None:
         """
-        Change the type of solver you want to use.
+        Change the type of solver you want to use, and remember the choice so it is
+        applied again after every `env.reset()` and preserved by `backend.copy()`.
 
         Note that a powergrid should have been loaded for this function to work.
 
@@ -574,15 +581,67 @@ class LightSimBackend(Backend):
 
         Parameters
         ----------
-        algo_type: lightsim2grid.AlgorithmType
-            The new type of algorithm you want to use. See backend.available_default_algorithms for a list of available
-            algorithms on your machine.
+        algo_type: Union[lightsim2grid.AlgorithmType, str]
+            The new algorithm you want to use, either as an :class:`~lightsim2grid.algorithm.AlgorithmType`
+            enum value, or (since lightsim2grid 1.0) as a plain ``str``: the registry name of a
+            string-only built-in algorithm with no ``AlgorithmType`` enum value (eg
+            ``"NRRefactorRetry_KLU"``) or of a plugin registered through
+            ``lightsim2grid.load_algorithm_plugin`` (see :ref:`solver_plugin`). See
+            ``env.backend._grid.available_algorithm_names()`` for the list of valid names.
         """
         if algo_type is None:
             raise BackendError("Impossible to change the algorithm type to None. Please enter a valid algorithm type.")
         real_algo_type = self._check_suitable_solver_type(algo_type)
         self.__current_algo_type = copy.deepcopy(real_algo_type)
         self._grid.change_algorithm(self.__current_algo_type)
+
+    @staticmethod
+    def _aux_clone_algo_config(config: AlgoConfig) -> AlgoConfig:
+        # AlgoConfig (pybind11) supports neither pickling nor copy.deepcopy; its
+        # `int_params` / `real_params` are plain python lists though (returned by
+        # value), so rebuilding a fresh AlgoConfig from them is a real, independent
+        # clone (protects against the caller mutating `config` afterwards).
+        cloned = AlgoConfig()
+        cloned.int_params = list(config.int_params)
+        cloned.real_params = list(config.real_params)
+        return cloned
+
+    def set_ac_algo_config(self, config: AlgoConfig) -> None:
+        """
+        Change the :class:`~lightsim2grid.algorithm.AlgoConfig` (scaling / refactor
+        policy and their per-policy parameters) used by the AC algorithm, and remember
+        it so it is applied again after every `env.reset()` and preserved by
+        `backend.copy()`.
+
+        Unlike calling ``env.backend._grid.set_ac_algo_config(...)`` directly, which is
+        silently reverted on the next `env.reset()`, this is the persistent, supported
+        way to customize the AC :class:`~lightsim2grid.algorithm.AlgoConfig`. Note that
+        a powergrid should have been loaded for this function to work.
+
+        Parameters
+        ----------
+        config: lightsim2grid.algorithm.AlgoConfig
+            The new AlgoConfig to use for the AC algorithm.
+        """
+        if self._grid is None:
+            raise BackendError("Impossible to set an AlgoConfig before a powergrid has been loaded.")
+        self.__current_ac_algo_config = self._aux_clone_algo_config(config)
+        self._grid.set_ac_algo_config(self.__current_ac_algo_config)
+
+    def get_ac_algo_config(self) -> AlgoConfig:
+        """Return the :class:`~lightsim2grid.algorithm.AlgoConfig` currently used by the AC algorithm."""
+        return self._grid.get_ac_algo_config()
+
+    def set_dc_algo_config(self, config: AlgoConfig) -> None:
+        """Same as :func:`LightSimBackend.set_ac_algo_config`, for the DC algorithm."""
+        if self._grid is None:
+            raise BackendError("Impossible to set an AlgoConfig before a powergrid has been loaded.")
+        self.__current_dc_algo_config = self._aux_clone_algo_config(config)
+        self._grid.set_dc_algo_config(self.__current_dc_algo_config)
+
+    def get_dc_algo_config(self) -> AlgoConfig:
+        """Same as :func:`LightSimBackend.get_ac_algo_config`, for the DC algorithm."""
+        return self._grid.get_dc_algo_config()
 
     def _aux_merge_solver_type_algo_type(
         self,
@@ -613,7 +672,7 @@ class LightSimBackend(Backend):
 
     def _check_suitable_solver_type(
         self,
-        algo_type: Union[AlgorithmType, SolverType], check_in_avail_solver=True) -> AlgorithmType:
+        algo_type: Union[AlgorithmType, SolverType, str], check_in_avail_solver=True) -> Union[AlgorithmType, str]:
         if algo_type is None:
             return
 
@@ -624,9 +683,20 @@ class LightSimBackend(Backend):
                           2)
             algo_type = algo_type.value
 
+        if isinstance(algo_type, str):
+            # a registry name: either a string-only built-in (eg "NRRefactorRetry_KLU",
+            # which has no AlgorithmType enum value) or a plugin registered through
+            # load_algorithm_plugin(). Can only be checked once a grid is loaded.
+            if check_in_avail_solver and getattr(self, "_grid", None) is not None:
+                avail_names = self._grid.available_algorithm_names()
+                if algo_type not in avail_names:
+                    raise BackendError(f"The algorithm name \"{algo_type}\" is not available on your system "
+                                       f"(nor registered). Available algorithm names are {avail_names}")
+            return algo_type
+
         if not isinstance(algo_type, AlgorithmType):
-            raise BackendError(f"The algorithm type must be from type \"lightsim2grid.AlgorithmType\" and not "
-                               f"{type(algo_type)}")
+            raise BackendError(f"The algorithm type must be from type \"lightsim2grid.AlgorithmType\", a plain "
+                               f"`str` (a registered algorithm name), and not {type(algo_type)}")
 
         if check_in_avail_solver and algo_type not in self.available_default_algorithms:
             raise BackendError(f"The algorithm type provided \"{algo_type}\" is not available on your system. Available"
@@ -1980,6 +2050,10 @@ class LightSimBackend(Backend):
         # copy the regular attribute
         res.__has_storage = self.__has_storage
         res.__current_algo_type = self.__current_algo_type  # forced here because of special `__`
+        res.__current_ac_algo_config = (self._aux_clone_algo_config(self.__current_ac_algo_config)
+                                         if self.__current_ac_algo_config is not None else None)
+        res.__current_dc_algo_config = (self._aux_clone_algo_config(self.__current_dc_algo_config)
+                                         if self.__current_dc_algo_config is not None else None)
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
         res.cst_1 = dt_float(1.0)
@@ -2133,28 +2207,12 @@ class LightSimBackend(Backend):
               grid_filename : Optional[Union[os.PathLike, str]]=None) -> None:
         self._reset_res_pointers()
         self._fill_nans()
-        # capture the AC / DC algorithm actually active on the grid about to be
-        # replaced (by registry name, so a plugin or a string-only built-in such as
-        # NRRefactorRetry_KLU -- whose AlgorithmType is the Custom sentinel -- is not
-        # lost) as well as their AlgoConfig, so a reset preserves them exactly like
-        # `copy()` already does instead of silently reverting to `__current_algo_type`
-        # / a default AlgoConfig.
-        ac_algo_type = self._grid.get_algo_type()
-        dc_algo_type = self._grid.get_dc_algo_type()
-        ac_algo_name = self._grid.get_algo().get_name()
-        dc_algo_name = self._grid.get_dc_algo().get_name()
-        ac_algo_config = self._grid.get_ac_algo_config()
-        dc_algo_config = self._grid.get_dc_algo_config()
-
         self._grid = self.__me_at_init.copy()
-        # go through the AlgorithmType overload whenever possible (needed eg for FDPF
-        # solvers, which need extra coefficients initialized on top of the plain
-        # registry-name switch), and fall back to the name-based overload only for
-        # Custom (plugin / string-only) algorithms.
-        self._grid.change_algorithm(ac_algo_type if ac_algo_type != AlgorithmType.Custom else ac_algo_name)
-        self._grid.change_algorithm(dc_algo_type if dc_algo_type != AlgorithmType.Custom else dc_algo_name)
-        self._grid.set_ac_algo_config(ac_algo_config)
-        self._grid.set_dc_algo_config(dc_algo_config)
+        self._grid.change_algorithm(self.__current_algo_type)
+        if self.__current_ac_algo_config is not None:
+            self._grid.set_ac_algo_config(self.__current_ac_algo_config)
+        if self.__current_dc_algo_config is not None:
+            self._grid.set_dc_algo_config(self.__current_dc_algo_config)
         self._handle_turnedoff_pv()
         self._grid.tell_solver_need_reset()
         self.comp_time = 0.
