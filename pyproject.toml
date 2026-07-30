@@ -1,5 +1,5 @@
 [build-system]
-# On utilise scikit-build-core qui est fait pour piloter CMake depuis pyproject.toml
+# scikit-build-core is used to drive CMake from pyproject.toml
 requires = ["scikit-build-core>=0.5.0", "pybind11"]
 build-backend = "scikit_build_core.build"
 
@@ -50,13 +50,13 @@ docs = [
 Homepage = "https://github.com/Grid2op/lightsim2grid"
 Repository = "https://github.com/Grid2op/lightsim2grid"
 
-# Configuration spécifique à scikit-build-core
+# scikit-build-core specific configuration
 [tool.scikit-build]
-# Répertoire où CMake va chercher le CMakeLists.txt (par défaut la racine)
+# Directory where CMake looks for CMakeLists.txt (defaults to the repository root)
 cmake.source-dir = "."
-# La destination d'installation doit correspondre au nom du package importable
-wheel.packages = ["lightsim2grid"] 
-# mettre à true temporairement pour un build verbose lors du debug
+# The install destination must match the importable package name
+wheel.packages = ["lightsim2grid"]
+# set to true temporarily for a verbose build while debugging
 build.verbose = false
 
 [tool.scikit-build.metadata.version]
@@ -65,7 +65,7 @@ input = "./lightsim2grid/__init__.py"
 regex = '''^__version__\s*=\s*"(?P<version>[^"]+)"$'''
 result = "{version}"
 
-# On peut passer des arguments à CMake si nécessaire
+# CMake arguments can be passed here if needed
 [tool.scikit-build.cmake.define]
 CMAKE_BUILD_TYPE = "Release"
 

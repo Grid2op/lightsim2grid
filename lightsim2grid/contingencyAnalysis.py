@@ -99,18 +99,18 @@ class ContingencyAnalysis(object):
         env = grid2op.make(env_name, backend=LightSimBackend())
 
         0) you create
-        security_analysis = ContingencyAnalysis(env)
+        contingency_analysis = ContingencyAnalysis(env)
         
         1) you add some contingencies to simulate
-        security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
+        contingency_analysis.add_multiple_contingencies(...) # or contingency_analysis.add_single_contingency(...)
         
         2) you start the simulation (done automatically)
         3) you read back the results
-        res_p, res_a, res_v = security_analysis.get_flows()
+        res_p, res_a, res_v = contingency_analysis.get_flows()
 
         # in this results, then
         # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
-        # you can retrieve it with `security_analysis.contingency_order[row_id]`
+        # you can retrieve it with `contingency_analysis.contingency_order[row_id]`
 
     Notes
     ------
@@ -324,15 +324,15 @@ class ContingencyAnalysis(object):
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
 
-            security_analysis = ContingencyAnalysis(env)
+            contingency_analysis = ContingencyAnalysis(env)
             # the single (n-1) contingency "disconnect powerline 0" is added
-            security_analysis.add_single_contingency(0)
+            contingency_analysis.add_single_contingency(0)
 
             # add the single (n-1) contingency "disconnect line 1
-            security_analysis.add_single_contingency(env.name_line[1])
+            contingency_analysis.add_single_contingency(env.name_line[1])
 
             # add a single contingency that disconnect powerline 2 and 3 at the same time
-            security_analysis.add_single_contingency(env.name_line[2], 3)
+            contingency_analysis.add_single_contingency(env.name_line[2], 3)
 
         Notes
         -----
@@ -383,14 +383,14 @@ class ContingencyAnalysis(object):
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
 
-            security_analysis = ContingencyAnalysis(env)
+            contingency_analysis = ContingencyAnalysis(env)
 
             # add a single contingency that disconnect powerline 2 and 3 at the same time
-            security_analysis.add_single_contingency(env.name_line[2], 3)
+            contingency_analysis.add_single_contingency(env.name_line[2], 3)
 
             # add a multiple contingencies the first one disconnect powerline 2 and 
             # and the second one disconnect powerline 3
-            security_analysis.add_multiple_contingencies(env.name_line[2], 3)
+            contingency_analysis.add_multiple_contingencies(env.name_line[2], 3)
         """     
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
@@ -440,13 +440,13 @@ class ContingencyAnalysis(object):
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
 
-            security_analysis = ContingencyAnalysis(env)
-            security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
-            res_p, res_a, res_v = security_analysis.get_flows()
+            contingency_analysis = ContingencyAnalysis(env)
+            contingency_analysis.add_multiple_contingencies(...) # or contingency_analysis.add_single_contingency(...)
+            res_p, res_a, res_v = contingency_analysis.get_flows()
 
             # in this results, then
             # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
-            # you can retrieve it with `security_analysis.contingency_order[row_id]`
+            # you can retrieve it with `contingency_analysis.contingency_order[row_id]`
         """
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
@@ -498,7 +498,7 @@ class ContingencyAnalysis(object):
 
         .. code-block:: python
 
-            res = security_analysis.run()
+            res = contingency_analysis.run()
             for v in res.pre_contingency_result.limit_violations:
                 ...
             for cont in res.post_contingency_results:  # a list, ordered like `add_single_contingency` calls

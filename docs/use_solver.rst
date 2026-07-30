@@ -115,65 +115,109 @@ All algorithms can be accessed with the same API (if you want to use the raw pyt
   q_col = solver.get_q_to_J_col()           # bus id -> column of its reactive (q) unknown
   # eg. the angle unknown of (solver) bus 4 is column `theta_col[4]` of `J`
 
+  # the rows of `J` follow the same layout as its columns: the first rows are the
+  # active power (P) mismatch equations, indexed exactly like the theta / vm columns
+  # above (one row per pvpq bus), followed by the reactive power (Q) mismatch
+  # equations, one row per pq bus. So `J[theta_col[4], :]` is the P-mismatch equation
+  # of (solver) bus 4, and `J[q_col[4], :]` (when not -1) is its Q-mismatch equation.
+  # See the ``J_description`` note of :func:`lightsim2grid.network.LSGrid.get_J_solver`
+  # for the full block structure (including how the distributed-slack coupling row /
+  # column is inserted).
+
+  # all the ids above are in the *solver* bus numbering (see :ref:`bus-labelling`),
+  # which is compact (0 ... nb_connected_bus() - 1) and can change with the topology.
+  # To map a solver bus id back to the stable GridModel (global) bus id -- eg to know
+  # which substation / bus a given row or column of `J` actually corresponds to --
+  # use :func:`~lightsim2grid.network.LSGrid.id_ac_solver_to_me` (and its converse
+  # :func:`~lightsim2grid.network.LSGrid.id_me_to_ac_solver`) on the `LSGrid` object
+  # used to build the solver (not on the raw solver object itself):
+  #
+  #     lightsim_grid_model.id_ac_solver_to_me()
+  #
+  # eg. the angle unknown of (solver) bus 4 above is for GridModel bus
+  # `lightsim_grid_model.id_ac_solver_to_me()[4]`
+
   # some other usefull information
   solver.get_nb_iter()  # return the number of iteration performed
   solver.get_timers()  # timer_Fx_ / timer_solve_ / timer_check_ (seconds spent in each stage)
   solver.get_error()  # an `ErrorType` value, eg ErrorType.NoError, .SingularMatrix, .TooManyIterations, ...
   solver.converged()  # equal to the boolean `converged` above
 
-Be carefull, there are some constraints on the data that are not necessarily checked, and might lead to hugly crash of the
-python virtual machine at execution time. So we encourage you to check that:
+``solver.solve(...)`` validates most of its inputs and raises a regular python exception
+(``RuntimeError`` or ``IndexError``) instead of crashing when they are not met. lightsim2grid
+expects:
 
-- tol > 0.
-- max_it > 0
-- Ybus is a squared sparse matrix, in CSC format (see documentation of scipy sparse for more information) **It is 
-  really important that this matrix is in CSC format**
-- `Sbus` and `V0` have the same size which corresponds to the size (number of rows or columns) of `Ybus`
-- for all node id in `ref`, `slack_weight[node id] > 0.`
-- `sum(slack_weight) = 1.` and all elements of `slack_weight` are > 0.
-- all the buses are on `ref` (for slack buses) or on `pv` (for PV buses) or on `pq` (for PQ buses)
-  [informatically, this means that the ensemble `[0, len(V0) - 1]` is included in the union `ref U pv U pq` ]
-- all buses are only in one of `ref`, `pv` and `pq` [informatically an element of `[0, len(V0) - 1]` cannot be at the 
-  same time in `pv` and `pq` or in `ref` and `pv` or in `ref` and `pq`
-- there should be at least one element in `ref` (`len(ref) > 0`)
-  
+- `tol` to be a finite, strictly positive number (raises otherwise).
+- `max_it` to be a non-negative integer (raises otherwise; `max_it = 0` is accepted -- it just
+  means the solver stops immediately without converging).
+- `Ybus` to be a square matrix, with the same size as `Sbus` and `V0` (raises otherwise). `Ybus`
+  no longer needs to specifically be a `scipy.sparse.csc_matrix`: any 2D sparse format accepted
+  by `scipy.sparse` is converted internally, so this is only a (minor) performance consideration,
+  not a correctness one, if you already have it in CSC format.
+- every id appearing in `ref`, `pv` or `pq` to be a valid bus id (in ``[0, len(V0))``), and
+  `ref`, `pv` and `pq` to be pairwise disjoint (raises ``IndexError`` / ``RuntimeError`` otherwise).
+- `ref` (the list of slack buses) to be non-empty (raises otherwise).
+- `slack_weight` to have the same size as `Ybus` (raises otherwise).
+
+The following are **not** validated, and can silently produce an incorrect (but not crashing)
+result if violated:
+
+- all buses should appear in the union `ref U pv U pq` (a bus missing from all three is silently
+  dropped from the system of equations instead of raising an error).
+- `slack_weight[node id] > 0.` for all node id in `ref`, and `sum(slack_weight) = 1.` (an
+  inconsistent `slack_weight` will not raise, it will just distribute the slack power
+  differently than you might expect).
+
 .. warning::
 
-    Just to emphasize that if any of the condition above is not met, this can result in crash of the python
-    virtual machine without any exception thrown (segfault). 
-
-    This is why we do not recommend to use these solvers directly !
+    Because the two conditions above are not checked, we still do not recommend using these
+    raw solver classes directly unless you know exactly what you are doing: prefer building
+    the grid model from an :func:`~lightsim2grid.network.init_from_pandapower` (or any other
+    ``init_from_*``) call and letting :class:`~lightsim2grid.network.LSGrid` /
+    :class:`~lightsim2grid.lightSimBackend.LightSimBackend` derive `ref` / `pv` / `pq` /
+    `slack_weight` for you.
 
 
 AC solvers using Newton Raphson
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-There are 8 solvers in this categorie. They can in turn, be split into two main sub categories. The first one allows for a
-distributed slack bus (but can be a bit slower) as the other one does not allow for such (in case of multiple slack bus, only
-the first one is used as a real slack bus, the other ones are converted silently to PV buses)
+There are 8 solvers in this categorie. They can in turn, be split into two main sub categories. The first one (`NR_*`) allows
+for a distributed slack bus (but can be a bit slower); the other one (`NRSing_*`) does not distribute the slack according to
+`slack_weight` at all.
+
+.. warning::
+
+   For `NRSing_*`, if `ref` contains more than one bus id, they are **not** converted to PV buses (unlike what a
+   quick reading of "single slack" might suggest): every bus in `ref` keeps both its voltage angle **and**
+   magnitude fixed (exactly like a lone slack bus would), `slack_weight` is entirely ignored, and there is no
+   equation coupling the buses in `ref` together. In practice this means each bus in `ref` independently absorbs
+   whatever active / reactive mismatch shows up locally at that bus -- it behaves like an (uncoordinated)
+   multi-reference powerflow, not like a single-slack powerflow with the extra buses silently downgraded to PV.
+   Verified empirically: with a second bus added to `ref` for a `NRSing_KLU` solve, that bus' resulting voltage
+   angle is exactly ``0.`` (the same as the "real" slack bus), whereas the Gauss-Seidel and Fast-Decoupled solvers
+   below, running on the very same grid, converge with that second bus' angle at a genuine, non-zero, solved
+   value (*ie* they do actually convert it to a PV bus). If you rely on "single slack" behaviour, make sure `ref`
+   truly contains a single bus id -- see the general recommendation at the end of the Gauss-Seidel section below
+   about removing all but one generator from the slack in the first place.
 
 The list is:
 
 - `NR_KLU` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the
-  fast `KLU` implementation is used to iteratively update the jacobian matrix `J`.
+  fast `KLU` implementation is used to solve the linear system `J.dx = mismatch` at each iteration.
 - `NR_NICSLU` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the
-  fast `NICSLU` implementation is used to iteratively update the jacobian matrix `J`.
+  fast `NICSLU` implementation is used to solve the linear system `J.dx = mismatch` at each iteration.
 - `NR_CKTSO` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the
-  fast `CKTSO` implementation is used to iteratively update the jacobian matrix `J`.
+  fast `CKTSO` implementation is used to solve the linear system `J.dx = mismatch` at each iteration.
 - `NR_SparseLU`: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the
-  Eigen default implementation is used to iteratively update the jacobian matrix `J` (instead of the faster `KLU`, `NICSLU` or `CKTSO`)
-- `NRSing_KLU` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign
-  all elements of `ref` into `pv` except the first one], where the
-  fast `KLU` implementation is used to iteratively update the jacobian matrix `J`
-- `NRSing_NICSLU` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign
-  all elements of `ref` into `pv` except the first one], where the
-  fast `NICSLU` implementation is used to iteratively update the jacobian matrix `J`.
-- `NRSing_CKTSO` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign
-  all elements of `ref` into `pv` except the first one], where the
-  fast `CKTSO` implementation is used to iteratively update the jacobian matrix `J`.
-- `NRSing_SparseLU`: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign
-  all elements of `ref` into `pv` except the first one], where the
-  Eigen default implementation is used to iteratively update the jacobian matrix `J` (instead of the faster `KLU`, `NICSLU` or `CKTSO`)
+  Eigen default implementation is used to solve the linear system `J.dx = mismatch` at each iteration (instead of the faster `KLU`, `NICSLU` or `CKTSO`)
+- `NRSing_KLU` \*: implementation of the Newton Raphson algorithm ignoring `slack_weight` (see warning above), where the
+  fast `KLU` implementation is used to solve the linear system `J.dx = mismatch` at each iteration
+- `NRSing_NICSLU` \*: implementation of the Newton Raphson algorithm ignoring `slack_weight` (see warning above), where the
+  fast `NICSLU` implementation is used to solve the linear system `J.dx = mismatch` at each iteration.
+- `NRSing_CKTSO` \*: implementation of the Newton Raphson algorithm ignoring `slack_weight` (see warning above), where the
+  fast `CKTSO` implementation is used to solve the linear system `J.dx = mismatch` at each iteration.
+- `NRSing_SparseLU`: implementation of the Newton Raphson algorithm ignoring `slack_weight` (see warning above), where the
+  Eigen default implementation is used to solve the linear system `J.dx = mismatch` at each iteration (instead of the faster `KLU`, `NICSLU` or `CKTSO`)
 
 You can use them as:
 
@@ -187,16 +231,27 @@ You can use them as:
   # process the results as above
 
 .. note::
-  \* these 6 solvers might not be available on all platforms (`KLU` is available if installed from pypi, but not
-  necessarily when installed from source). The solvers based on `NICSLU` or `CKTSO` also require an installation
-  from source.
+  \* the 6 solvers marked above (the `KLU`, `NICSLU` and `CKTSO` variants of both `NR_*` and `NRSing_*`, the 2
+  `SparseLU` ones are not marked) might not be available on all platforms (`KLU` is available if installed from
+  pypi, but not necessarily when installed from source). The solvers based on `NICSLU` or `CKTSO` also require an
+  installation from source.
 
 AC solvers using Gauss Seidel method
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 There are 2 solvers in this categorie. Neither of them supports distributed slack bus [they both ignore `slack_weight` and
 assign all elements of `ref` into `pv` except the first one]. If a grid with more
-more than 1 slack bus is provided, only the first one will be used as a slack bus, the others will be considered as "PV" nodes.
+than 1 slack bus is provided, only the first one will be used as a slack bus, the others will be considered as "PV" nodes
+(verified empirically: unlike the `NRSing_*` solvers above, the "extra" buses in `ref` do get a genuine, non-zero solved
+voltage angle here, confirming they are indeed treated as PV and not kept fixed).
+
+.. warning::
+
+   In any case (whichever solver you use, `NRSing_*`, Gauss-Seidel or Fast-Decoupled), if your grid has more than
+   one generator tagged as slack, we advise removing all but one of them from `ref` beforehand (typically by
+   picking, among the generators tagged as slack, the one connected to a high voltage level, well connected, and
+   as "central" as possible in the powerflow graph) rather than relying on whichever of the two behaviours above
+   the algorithm you picked happens to implement.
 
 These solvers use the Gauss Seidel method to compute powerflows. This method will iteratively update the component
 of a bus based on the mismatch of the KCL. The "Gauss Seidel Synch" method is a custom implementation of this method
@@ -258,9 +313,10 @@ The list is:
   # process the results as above
 
 .. note::
-  \* these 6 solvers might not be available on all platforms (`KLU` is available if installed from pypi, but not
-  necessarily when installed from source). The solvers based on `NICSLU` or `CKTSO` also require an installation
-  from source.
+  \* the 6 solvers marked above (the `KLU`, `NICSLU` and `CKTSO` variants of both `XB` and `BX`, out of the 8 total
+  -- the 2 `SparseLU` ones are not marked) might not be available on all platforms (`KLU` is available if
+  installed from pypi, but not necessarily when installed from source). The solvers based on `NICSLU` or `CKTSO`
+  also require an installation from source.
 
 
 Detailed documentation
