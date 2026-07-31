@@ -34,7 +34,8 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.coverage',
-    'sphinx.ext.imgmath',
+    'sphinx.ext.mathjax',  # client-side math rendering: no local LaTeX install needed
+                           # (unlike sphinx.ext.imgmath, which shells out to `latex`)
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
     # 'builder',
@@ -51,10 +52,6 @@ extensions = [
 
     # for pdf
     # 'rst2pdf.pdfbuilder'
-
-    # markdown renderer
-    # 'm2r',
-    'recommonmark',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -71,7 +68,6 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_experimental_html5_writer = True
 html_theme = "sphinx_rtd_theme" #"alabaster" #'basic' # 'alabaster'
 highlight_language = 'python3'
 

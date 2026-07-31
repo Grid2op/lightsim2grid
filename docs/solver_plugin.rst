@@ -1,7 +1,7 @@
 .. _solver_plugin:
 
-External Amgorithm Plugins
-===========================
+External Algorithm Plugins
+==========================
 
 LightSim2grid supports dynamically-loaded algorithm plugins.  A plugin is a
 shared library (``.so`` / ``.dll``) that registers one or more custom
@@ -143,23 +143,24 @@ Constructor
 
 Pass ``true`` for AC solvers and ``false`` for DC solvers.  This value is
 stored in the public member ``IS_AC``, which LSGrid uses to route
-:func:`change_solver` calls to the right slot (AC or DC).
+:func:`LSGrid.change_algorithm` calls to the right slot (AC or DC).
 
 Methods to override
 ~~~~~~~~~~~~~~~~~~~~
 
-``compute_pf`` *(pure virtual — you must implement this)*
+``compute_pf`` *(virtual — override to implement your algorithm; the base
+implementation throws* ``std::runtime_error`` *if you don't)*
 
 .. code-block:: cpp
 
     virtual bool compute_pf(
-        const Eigen::SparseMatrix<cplx_type>& Ybus,
-        CplxVect& V,
-        const CplxVect& Sbus,
-        Eigen::Ref<const IntVect> slack_ids,
-        const RealVect& slack_weights,
-        Eigen::Ref<const IntVect> pv,
-        Eigen::Ref<const IntVect> pq,
+        const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>>& Ybus,
+        const Eigen::Ref<const CplxVect>& V,
+        const Eigen::Ref<const CplxVect>& Sbus,
+        const Eigen::Ref<const IntVect>& slack_ids,
+        const Eigen::Ref<const RealVect>& slack_weights,
+        const Eigen::Ref<const IntVect>& pv,
+        const Eigen::Ref<const IntVect>& pq,
         int max_iter,
         real_type tol);
 
@@ -170,8 +171,11 @@ Solve the power-flow problem ``V·(Ybus·V)* = Sbus``.
 +===================+======================================================+
 | ``Ybus``          | Complex bus admittance matrix (sparse, n×n).         |
 +-------------------+------------------------------------------------------+
-| ``V``             | On input: initial voltage phasors.  On output:       |
-|                   | solved voltage phasors (in-place update).            |
+| ``V``             | Initial voltage phasors (read-only input -- every    |
+|                   | parameter here is a ``const`` reference, so nothing  |
+|                   | is updated in place). Store your solved result in    |
+|                   | the ``V_`` protected member below instead; callers   |
+|                   | retrieve it through ``get_V()``.                     |
 +-------------------+------------------------------------------------------+
 | ``Sbus``          | Complex bus power injections (loads + generators).   |
 +-------------------+------------------------------------------------------+
@@ -298,23 +302,24 @@ hand it to ``LS2G_PLUGIN_ENTRY``, which generates the exported
         MySolver() : ls2g::BaseAlgo(/*is_ac=*/true) {}
 
         bool compute_pf(
-            const Eigen::SparseMatrix<ls2g::cplx_type>& Ybus,
-            ls2g::CplxVect& V,
-            const ls2g::CplxVect& Sbus,
-            Eigen::Ref<const ls2g::IntVect> slack_ids,
-            const ls2g::RealVect& slack_weights,
-            Eigen::Ref<const ls2g::IntVect> pv,
-            Eigen::Ref<const ls2g::IntVect> pq,
+            const Eigen::Ref<const Eigen::SparseMatrix<ls2g::cplx_type>>& Ybus,
+            const Eigen::Ref<const ls2g::CplxVect>& V,
+            const Eigen::Ref<const ls2g::CplxVect>& Sbus,
+            const Eigen::Ref<const ls2g::IntVect>& slack_ids,
+            const Eigen::Ref<const ls2g::RealVect>& slack_weights,
+            const Eigen::Ref<const ls2g::IntVect>& pv,
+            const Eigen::Ref<const ls2g::IntVect>& pq,
             int max_iter,
             ls2g::real_type tol) override
         {
-            // ... your algorithm here ...
+            // ... your algorithm here, starting from the initial guess `V` ...
+            ls2g::CplxVect V_solved = V;  // replace with your actual solved voltages
 
             // populate result fields when done:
-            V_      = V;             // solved voltages (in-place already updated)
-            Va_     = V.array().arg();
-            Vm_     = V.array().abs();
-            n_      = static_cast<int>(V.size());
+            V_      = V_solved;
+            Va_     = V_solved.array().arg();
+            Vm_     = V_solved.array().abs();
+            n_      = static_cast<int>(V_solved.size());
             nr_iter_= 1;
             err_    = ls2g::ErrorType::NoError;
             return true;
@@ -397,10 +402,12 @@ development without a full ``pip install``.
         else()
             set(_ls2g_march_native OFF)
         endif()
-        if("$ENV{__O3_OPTIM}" STREQUAL "1" OR "$ENV{__O3_OPTIM}" STREQUAL "True")
-            set(_ls2g_o3_optim ON)
-        else()
+        # -O3 is ON by default in lightsim2grid_core: only __O3_OPTIM=0/False
+        # turns it off, an unset env var means ON.
+        if("$ENV{__O3_OPTIM}" STREQUAL "0" OR "$ENV{__O3_OPTIM}" STREQUAL "False")
             set(_ls2g_o3_optim OFF)
+        else()
+            set(_ls2g_o3_optim ON)
         endif()
     endif()
     if(NOT MSVC)
@@ -471,6 +478,7 @@ Loading and using the plugin from Python
 .. code-block:: python
 
     import lightsim2grid
+    from lightsim2grid.network import init_from_pandapower
     from lightsim2grid.lightsim2grid_cpp import LSGrid
 
     # 1. Load the plugin — this loads the library, calls its
@@ -479,16 +487,18 @@ Loading and using the plugin from Python
     #    duplicate name, ...) raises a catchable exception here.
     lightsim2grid.load_algorithm_plugin("build/libmy_solver.so")
 
-    # 2. Confirm the solver is available.
-    gm = LSGrid()
-    print(gm.available_algorithm_names())   # [..., "MySolver", ...]
+    # 2. Confirm the solver is available (the registry is process-wide, so this
+    #    works even on a throwaway, empty grid).
+    print(LSGrid().available_algorithm_names())   # [..., "MySolver", ...]
 
-    # 3. Activate the solver.
+    # 3. Build a grid and activate the plugin solver on it.
+    pp_net = ...  # any pandapower grid
+    gm = init_from_pandapower(pp_net)
     gm.change_algorithm("MySolver")
 
     # 4. Run a powerflow — lightsim2grid now delegates to MySolver.compute_pf().
-    # (set up the grid first via gm.init_from_pandapower() or similar)
-    gm.run_pf(...)
+    Vinit = ...  # complex initial voltage guess, size gm.total_bus()
+    V = gm.ac_pf(Vinit, 20, 1e-8)
 
 
 Python API reference
@@ -556,7 +566,7 @@ Python API reference
     unknown respectively, or ``-1`` when the bus owns no such unknown.
 
     These are only meaningful for Newton-Raphson solvers (those that build a
-    Jacobian, see :func:`get_J`).  They mirror the ``get_J()`` accessor and let
+    Jacobian, see :func:`lightsim2grid.network.LSGrid.get_J_solver`).  They mirror the ``get_J()`` accessor and let
     you locate a given bus' rows/columns inside the augmented Jacobian.
 
     :raises RuntimeError: If the active solver does not build a Jacobian.
@@ -564,7 +574,7 @@ Python API reference
 .. note::
 
     :attr:`AlgorithmType.Custom` is the enum value assigned to any solver
-    loaded via a plugin.  ``gm.get_solver_type()`` returns
+    loaded via a plugin.  ``gm.get_algo_type()`` returns
     ``AlgorithmType.Custom`` whenever the active solver was registered
     through the plugin mechanism.
 
@@ -584,11 +594,12 @@ Python API reference
 Matching build flags (``-march=native`` / ``-O3``)
 ----------------------------------------------------
 
-``lightsim2grid_core`` supports two opt-in build flags, set as environment
-variables *before* building lightsim2grid (see ``benchmarks/env_compile_all.sh``):
+``lightsim2grid_core`` supports two build flags, set as environment
+variables *before* building lightsim2grid (see ``env_compile_all.sh`` at the
+repository root):
 
-* ``__COMPILE_MARCHNATIVE=1`` — adds ``-march=native``
-* ``__O3_OPTIM=1`` — adds ``-O3`` (on by default, actually)
+* ``__COMPILE_MARCHNATIVE=1`` — adds ``-march=native`` (opt-in; off by default)
+* ``__O3_OPTIM=0`` — removes ``-O3`` (opt-out; ``-O3`` is on by default)
 
 A plugin **must** be compiled with the identical ``-march=native`` setting as
 the ``lightsim2grid_core`` it links against, and this is a correctness
@@ -606,8 +617,9 @@ hypothetical one. (``-O3`` alone does not affect ABI/alignment, so a mismatch
 there is only a lost optimization, not a correctness risk — but the two
 builds should still track each other to avoid surprising perf differences.)
 
-Both example plugins in this repository (``examples/dist_slack_algorithm/``,
-``examples/external_algorithm/``) handle this automatically, and log an
+All three example plugins in this repository (``examples/dist_slack_algorithm/``,
+``examples/external_algorithm/``, ``examples/lm_algorithm/``) handle this
+automatically, and log an
 ``-- my_solver: lightsim2grid_core was built with -march=native -- matching
 it`` status message when they do:
 
@@ -715,7 +727,7 @@ Or from the source tree without a pip install:
 Expected output::
 
     Plugin loaded successfully.
-    Registered solvers: ['DC', 'DummyExternal', 'FDPF_BX_SparseLU', ...]
+    Registered solvers: ['DC_KLU', 'DC_SparseLU', 'DummyExternal', 'FDPF_BX_KLU', ...]
     change_algorithm('DummyExternal') OK -- solver type is Custom as expected.
     All checks passed.
 
@@ -723,6 +735,20 @@ The automated regression test is in
 ``lightsim2grid/tests/test_solver_registry.py``, class
 ``TestPluginLoading``.  It is skipped automatically when the example
 plugin has not been built, and passes once the ``.so`` is present.
+
+Other example plugins
+-----------------------
+
+Two more complete, less minimal plugins live in the repository, both following the same build /
+``load_algorithm_plugin`` / ``change_algorithm`` pattern as ``external_algorithm`` above:
+
+* ``examples/dist_slack_algorithm/`` registers ``NRDistSlack_SparseLU`` / ``NRDistSlack_KLU``: a
+  distributed-slack Newton-Raphson variant (``NRAlgoDistSlack``), with both a ``SparseLU`` and a
+  ``KLU`` linear-solver backend.
+* ``examples/lm_algorithm/`` registers ``NR_LM_SparseLU`` / ``NR_LM_KLU``: a
+  Levenberg-Marquardt-damped Newton-Raphson variant (``LMNRAlgo``), also with ``SparseLU`` and
+  ``KLU`` backends. Both names are registered atomically -- if either is already taken, neither is
+  added and ``load_algorithm_plugin`` raises instead of half-registering.
 
 
 * :ref:`genindex`

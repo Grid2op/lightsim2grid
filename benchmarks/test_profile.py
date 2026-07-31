@@ -7,7 +7,7 @@ import time
 from kiwisolver import Solver
 import grid2op
 from lightsim2grid import LightSimBackend
-from lightsim2grid.solver import AlgorithmType
+from lightsim2grid.algorithm import AlgorithmType
 import warnings
 import pandapower as pp
 import numpy as np
@@ -102,7 +102,7 @@ def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_use
         raise RuntimeError("You need to comment 'main_gridmodel(...)` in test_profile.py then uncomment `my_grid2op_env(...)`, "
                            "run it (without perf it's fine). Then uncomment `main_gridmodel` and comment `my_grid2op_env` "
                            "and run the benchkmark (with perf) again.")
-    ls_grid.change_solver(solver_used)
+    ls_grid.change_algorithm(solver_used)
     v_init = ls_grid.dc_pf(np.ones(ls_grid.get_bus_vn_kv().shape[0], dtype=complex) * 1.04, 1, 0.1)
     for _ in range(nb_ts):
         if reset_algo:

@@ -5,11 +5,15 @@ This module allows to check if a given vector checks the KCL (Kirchhoff Current 
 
 It is a wrapper around the :func:`lightsim2grid.network.LSGrid.check_solution` function.
 
-TODO DOC in progress !
-
 .. warning::
-    The grid2op environment is read from a `grid.json`` file. Make sure to use an environment that can be
-    loaded by lightsim2grid (default environment uses pandapower and are fully compatible)
+    :class:`~lightsim2grid.physical_law_checker.PhysicalLawChecker` always looks for a
+    ``grid.json`` file (the pandapower-based format used by grid2op's default
+    environments) directly inside the environment's data folder, regardless of which
+    grid format lightsim2grid itself is able to load (see :ref:`network-init-formats` for the
+    full list of supported ``init_from_*`` formats). If the environment was not created
+    from such a ``grid.json`` (for example an environment initialized from a pypowsybl
+    network), no matching file will be found and the constructor will raise a
+    ``RuntimeError``.
 
 Examples
 ---------

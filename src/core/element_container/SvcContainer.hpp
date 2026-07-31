@@ -159,9 +159,9 @@ class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorA
             const Eigen::Ref<const RealVect> & bus_vn_kv,
             real_type sn_mva,
             bool ac) override;
-        bool _deactivate(int svc_id, DualAlgoControl & solver_control) final;
-        bool _reactivate(int svc_id, DualAlgoControl & solver_control) final;
-        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) final;
+        bool _deactivate(int svc_id, DualAlgoControl & solver_control) override final;
+        bool _reactivate(int svc_id, DualAlgoControl & solver_control) override final;
+        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) override final;
 
     private:
         IntVect regulation_mode_;             // RegulationMode, per SVC

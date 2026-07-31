@@ -36,12 +36,7 @@ from grid2op.dtypes import dt_float
 
 import lightsim2grid
 from lightsim2grid.algorithm import AlgorithmType
-from lightsim2grid import LightSimBackend, TimeSerie
-try:
-    from lightsim2grid import ContingencyAnalysis
-except ImportError:
-    from lightsim2grid import SecurityAnalysis as ContingencyAnalysis
-    
+from lightsim2grid import LightSimBackend, TimeSerie, ContingencyAnalysis
 from utils_benchmark import print_res, run_env, str2bool, get_env_name_displayed, print_configuration
 TABULATE_AVAIL = False
 try:
@@ -147,13 +142,13 @@ def main(max_ts,
             time_pypow = env_pypow._time_step
     
     wst = True  # print extra info in the run_env function
-    solver_types = env_lightsim.backend.available_solvers
-    
+    solver_types = env_lightsim.backend.available_default_algorithms
+
     for solver_type in solver_types:
         if solver_type not in solver_names:
             continue
         print(f"Start using {solver_type}")
-        env_lightsim.backend.set_solver_type(solver_type)
+        env_lightsim.backend.set_algo_type(solver_type)
         if solver_type in solver_gs:
             # gauss seidel sovler => more iterations
             env_lightsim.backend.set_solver_max_iter(10000)
