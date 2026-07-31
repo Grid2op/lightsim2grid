@@ -596,15 +596,23 @@ class LightSimBackend(Backend):
         self._grid.change_algorithm(self.__current_algo_type)
 
     @staticmethod
-    def _aux_clone_algo_config(config: AlgoConfig) -> AlgoConfig:
-        # AlgoConfig (pybind11) supports neither pickling nor copy.deepcopy; its
-        # `int_params` / `real_params` are plain python lists though (returned by
-        # value), so rebuilding a fresh AlgoConfig from them is a real, independent
-        # clone (protects against the caller mutating `config` afterwards).
-        cloned = AlgoConfig()
-        cloned.int_params = list(config.int_params)
-        cloned.real_params = list(config.real_params)
-        return cloned
+    def _aux_algo_config_to_state(config: AlgoConfig) -> Tuple[list, list]:
+        # AlgoConfig (pybind11) supports neither pickling nor copy.deepcopy (it would
+        # break pickling the whole backend, see test_save_load in test_pickleable.py,
+        # if stored as an attribute directly). Its `int_params` / `real_params` are
+        # plain python lists though (returned by value), so this plain (picklable,
+        # deepcopy-able) tuple of lists is what is actually kept on the backend;
+        # `_aux_algo_config_from_state` rebuilds a real AlgoConfig from it whenever
+        # one needs to be re-applied (reset(), copy()).
+        return (list(config.int_params), list(config.real_params))
+
+    @staticmethod
+    def _aux_algo_config_from_state(state: Tuple[list, list]) -> AlgoConfig:
+        int_params, real_params = state
+        config = AlgoConfig()
+        config.int_params = list(int_params)
+        config.real_params = list(real_params)
+        return config
 
     def set_ac_algo_config(self, config: AlgoConfig) -> None:
         """
@@ -625,8 +633,8 @@ class LightSimBackend(Backend):
         """
         if self._grid is None:
             raise BackendError("Impossible to set an AlgoConfig before a powergrid has been loaded.")
-        self.__current_ac_algo_config = self._aux_clone_algo_config(config)
-        self._grid.set_ac_algo_config(self.__current_ac_algo_config)
+        self.__current_ac_algo_config = self._aux_algo_config_to_state(config)
+        self._grid.set_ac_algo_config(config)
 
     def get_ac_algo_config(self) -> AlgoConfig:
         """Return the :class:`~lightsim2grid.algorithm.AlgoConfig` currently used by the AC algorithm."""
@@ -636,8 +644,8 @@ class LightSimBackend(Backend):
         """Same as :func:`LightSimBackend.set_ac_algo_config`, for the DC algorithm."""
         if self._grid is None:
             raise BackendError("Impossible to set an AlgoConfig before a powergrid has been loaded.")
-        self.__current_dc_algo_config = self._aux_clone_algo_config(config)
-        self._grid.set_dc_algo_config(self.__current_dc_algo_config)
+        self.__current_dc_algo_config = self._aux_algo_config_to_state(config)
+        self._grid.set_dc_algo_config(config)
 
     def get_dc_algo_config(self) -> AlgoConfig:
         """Same as :func:`LightSimBackend.get_ac_algo_config`, for the DC algorithm."""
@@ -2050,10 +2058,8 @@ class LightSimBackend(Backend):
         # copy the regular attribute
         res.__has_storage = self.__has_storage
         res.__current_algo_type = self.__current_algo_type  # forced here because of special `__`
-        res.__current_ac_algo_config = (self._aux_clone_algo_config(self.__current_ac_algo_config)
-                                         if self.__current_ac_algo_config is not None else None)
-        res.__current_dc_algo_config = (self._aux_clone_algo_config(self.__current_dc_algo_config)
-                                         if self.__current_dc_algo_config is not None else None)
+        res.__current_ac_algo_config = copy.deepcopy(self.__current_ac_algo_config)
+        res.__current_dc_algo_config = copy.deepcopy(self.__current_dc_algo_config)
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
         res.cst_1 = dt_float(1.0)
@@ -2210,9 +2216,9 @@ class LightSimBackend(Backend):
         self._grid = self.__me_at_init.copy()
         self._grid.change_algorithm(self.__current_algo_type)
         if self.__current_ac_algo_config is not None:
-            self._grid.set_ac_algo_config(self.__current_ac_algo_config)
+            self._grid.set_ac_algo_config(self._aux_algo_config_from_state(self.__current_ac_algo_config))
         if self.__current_dc_algo_config is not None:
-            self._grid.set_dc_algo_config(self.__current_dc_algo_config)
+            self._grid.set_dc_algo_config(self._aux_algo_config_from_state(self.__current_dc_algo_config))
         self._handle_turnedoff_pv()
         self._grid.tell_solver_need_reset()
         self.comp_time = 0.
