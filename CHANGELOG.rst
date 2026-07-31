@@ -144,6 +144,18 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   (a backend using ``NRRefactorRetry_KLU`` with a custom ``ScalingPolicyType`` used to lose
   both across a reset). See ``test_algo_reset_copy_persistence.py`` for the regression
   tests (algo type / algo config, each across ``reset()`` and ``copy()``).
+- [FIXED] a regression from the previous entry: ``AlgoConfig`` (pybind11) supports
+  neither pickling nor ``copy.deepcopy``, so the first implementation of
+  ``set_ac_algo_config`` / ``set_dc_algo_config``, which stored the ``AlgoConfig``
+  object itself as a backend attribute, broke ``pickle.dump(env.backend, ...)`` (as
+  used by ``test_save_load`` in ``test_pickleable.py``) the moment either had ever
+  been called, with ``TypeError: cannot pickle 'lightsim2grid.lightsim2grid_cpp.AlgoConfig'
+  object``. The backend now stores the config's ``int_params`` / ``real_params`` as a
+  plain (picklable, deepcopy-able) tuple of lists instead, and rebuilds a real
+  ``AlgoConfig`` from it whenever one needs to be re-applied (``reset()``, ``copy()``).
+  Added ``test_backend_still_picklable_with_custom_algo_config`` (changes both the algo
+  type and its ``AlgoConfig``, then pickles and reloads ``env.backend``) to
+  ``test_algo_reset_copy_persistence.py``.
 - [DEPRECATED] ``LightSimBackend``'s ``solver_type`` constructor kwarg and its
   ``set_solver_type`` method, in favour of ``algo_type`` / ``set_algo_type``: "solver"
   now refers specifically to the *linear* solver (KLU, SparseLU, NICSLU, CKTSO), not the

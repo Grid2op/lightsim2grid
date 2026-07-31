@@ -22,6 +22,9 @@
     `set_dc_algo_config` are new public, persistent equivalents.
 """
 
+import os
+import pickle
+import tempfile
 import unittest
 import warnings
 
@@ -97,6 +100,29 @@ class TestAlgoAndConfigPersistence(unittest.TestCase):
 
         after = backend_copy.get_ac_algo_config()
         self.assertEqual(int(after.int_params[0]), int(ScalingPolicyType.LineSearch))
+
+    def test_backend_still_picklable_with_custom_algo_config(self):
+        """AlgoConfig (pybind11) supports neither pickling nor copy.deepcopy: storing
+        it directly as a backend attribute (instead of the plain, picklable state
+        used internally) would silently break `pickle.dump(env.backend, ...)`, as
+        used by `test_save_load` in `test_pickleable.py`, the moment
+        `set_ac_algo_config` / `set_dc_algo_config` had ever been called."""
+        self.env.backend.set_algo_type("NRRefactorRetry_KLU")
+        config = self.env.backend.get_ac_algo_config()
+        int_params = list(config.int_params)
+        int_params[0] = int(ScalingPolicyType.LineSearch)
+        config.int_params = int_params
+        self.env.backend.set_ac_algo_config(config)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pickle_path = os.path.join(tmpdir, "backend.pickle")
+            with open(pickle_path, "wb") as f:
+                pickle.dump(self.env.backend, f)
+            with open(pickle_path, "rb") as f:
+                reloaded = pickle.load(f)
+
+        self.assertEqual(reloaded._grid.get_algo_type(), AlgorithmType.Custom)
+        self.assertEqual(int(reloaded.get_ac_algo_config().int_params[0]), int(ScalingPolicyType.LineSearch))
 
 
 if __name__ == "__main__":
