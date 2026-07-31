@@ -840,20 +840,25 @@ const std::string DocIterator::target_q_mvar = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::line_model = R"mydelimiter(
-    The "line model" (also valid for transformers) is: 
-    
+    The "line model" (also valid for transformers) is:
+
     .. code-block :: none
 
-                    ior                      ________            iex
-        `or bus` o------>   -----------------|r + j.x|---------<-------o `ex bus`
+                     i1                       ________             i2
+         `bus 1` o------>   -----------------|r + j.x|---------<-------o `bus 2`
                  |       ) (            |                  |           |
                  |       ) (         |     |            |     |        |
-                 | vor   ) ( n:1     |1/2*h|            |1/2*h|        | vex
+                 | v1    ) ( n:1     |1/2*h|            |1/2*h|        | v2
                  |       ) (         |     |            |     |        |
                  \/      ) (            |                  |           \/
         ground---o-------   -------------------------------------------o---- ground
 
-    (fyi: `ior`, `iex`, `n` and `y` are all complex numbers. `r` and `x` are real numbers. `j` is a complex number such that `j^2 = -1`)
+    (fyi: `i1`, `i2`, `n` and `y` are all complex numbers. `r` and `x` are real numbers. `j` is a complex number such that `j^2 = -1`)
+
+    .. note::
+        For a powerline, side 1 / side 2 used to be called `or` (origin) / `ex` (extremity) in older
+        lightsim2grid versions; for a transformer they are `hv` (high voltage) / `lv` (low voltage)
+        instead, since which physical side is tap-side matters there (see `is_tap_side_1`).
 
 )mydelimiter";
 
@@ -1493,7 +1498,7 @@ const std::string DocIterator::LineContainer = R"mydelimiter(
         # manipulate the powerlines
         for line in grid_model.get_lines():
             # do something with line !
-            line.bus_or_id
+            line.bus1_id
 
         print(f"There are {len(grid_model.get_lines())} lines on the grid.")
 
@@ -1509,8 +1514,8 @@ const std::string DocIterator::LineInfo = R"mydelimiter(
 
     It allows to read information from each powerline of the powergrid.
 
-    Powerlines have two sides, one is "or" for "origin" and one is "ex" for "extremity" that are connected and linked to each other
-    by some equations.
+    Powerlines have two sides, "1" and "2" (called "or" for "origin" and "ex" for "extremity" in older
+    lightsim2grid versions), that are connected and linked to each other by some equations.
 
     For accessing the results, it's basically the same as having two "elements" (so you get two "voltage_magnitude" `res_v_kv`,
     two "injected power" `res_p_mw` etc.)
@@ -1535,7 +1540,7 @@ const std::string DocIterator::LineInfo = R"mydelimiter(
         first_line = grid_model.get_lines()[0]  # first line, this is a `LineInfo`
         for line in grid_model.get_lines():
             # line is a `LineInfo`
-            line.bus_or_id
+            line.bus1_id
 
     Notes
     -----
@@ -1550,77 +1555,77 @@ const std::string DocIterator::LineInfo = R"mydelimiter(
     
 )mydelimiter" + DocIterator::line_model;
 
-const std::string DocIterator::bus_or_id = R"mydelimiter(
-    Get the bus id (as an integer) at which the "or" side of the line is connected. If `-1` is returned it means
+const std::string DocIterator::bus_1_id = R"mydelimiter(
+    Get the bus id (as an integer) at which side 1 of the line is connected. If `-1` is returned it means
     that the line is disconnected.
 
 )mydelimiter";
 
-const std::string DocIterator::bus_ex_id = R"mydelimiter(
-    Get the bus id (as an integer) at which the "ex" side of the line is connected. If `-1` is returned it means
+const std::string DocIterator::bus_2_id = R"mydelimiter(
+    Get the bus id (as an integer) at which side 2 of the line is connected. If `-1` is returned it means
     that the line is disconnected.
 
 )mydelimiter";
 
-const std::string DocIterator::res_p_or_mw = R"mydelimiter(
-    Get the active power in MW for at the "or" side of the line. If it is positive it means power is absorbed by the line.
+const std::string DocIterator::res_p_1_mw = R"mydelimiter(
+    Get the active power in MW at side 1 of the line. If it is positive it means power is absorbed by the line.
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_p_ex_mw = R"mydelimiter(
-    Get the active power in MW for at the "ex" side of the line. If it is positive it means power is absorbed by the line.
+const std::string DocIterator::res_p_2_mw = R"mydelimiter(
+    Get the active power in MW at side 2 of the line. If it is positive it means power is absorbed by the line.
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_q_or_mvar = R"mydelimiter(
-    Get the reactive power in MVAr for at the "or" side of the line. If it is positive it means power is absorbed by the line.
+const std::string DocIterator::res_q_1_mvar = R"mydelimiter(
+    Get the reactive power in MVAr at side 1 of the line. If it is positive it means power is absorbed by the line.
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_q_ex_mvar = R"mydelimiter(
-    Get the reactive power in MVAr for at the "ex" side of the line. If it is positive it means power is absorbed by the line.
+const std::string DocIterator::res_q_2_mvar = R"mydelimiter(
+    Get the reactive power in MVAr at side 2 of the line. If it is positive it means power is absorbed by the line.
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_theta_or_deg = R"mydelimiter(
-    Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "or" side of the line is connected.
+const std::string DocIterator::res_theta_1_deg = R"mydelimiter(
+    Get the angle of the complex voltage (in degree, not in radian) of the bus at which side 1 of the line is connected.
 
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_theta_ex_deg = R"mydelimiter(
-    Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "ex" side of the line is connected.
+const std::string DocIterator::res_theta_2_deg = R"mydelimiter(
+    Get the angle of the complex voltage (in degree, not in radian) of the bus at which side 2 of the line is connected.
 
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_v_or_kv = R"mydelimiter(
-    Get the magnitude of the complex voltage (in kV) of the bus at which this "or" side of the line is connected.
+const std::string DocIterator::res_v_1_kv = R"mydelimiter(
+    Get the magnitude of the complex voltage (in kV) of the bus at which side 1 of the line is connected.
 
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_v_ex_kv = R"mydelimiter(
-    Get the magnitude of the complex voltage (in kV) of the bus at which this "ex" side of the line is connected.
+const std::string DocIterator::res_v_2_kv = R"mydelimiter(
+    Get the magnitude of the complex voltage (in kV) of the bus at which side 2 of the line is connected.
 
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_a_or_ka = R"mydelimiter(
-    Get the current flows (in kA) at the "or" side of the line.
+const std::string DocIterator::res_a_1_ka = R"mydelimiter(
+    Get the current flows (in kA) at side 1 of the line.
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_a_ex_ka = R"mydelimiter(
-    Get the current flows (in kA) at the "ex" side of the line.
+const std::string DocIterator::res_a_2_ka = R"mydelimiter(
+    Get the current flows (in kA) at side 2 of the line.
 
 )mydelimiter" + DocIterator::only_avail_res;
 
@@ -1671,7 +1676,7 @@ const std::string DocIterator::DCLineInfo = R"mydelimiter(
 
     Hvdc lines have two sides, "1" and "2", each with its own converter station (`station1` / `station2`,
     see :class:`lightsim2grid.elements.ConverterStationInfo`) -- the equivalent of the "origin" / "extremity"
-    naming used for AC powerlines and transformers.
+    naming used in older lightsim2grid versions for AC powerlines and transformers.
 
     For accessing the results, it's basically the same as having two "elements" (so you get two "voltage
     magnitude" `res_v1_kv` / `res_v2_kv`, two "injected power" `res_p1_mw` / `res_p2_mw`, etc.)
@@ -1707,7 +1712,7 @@ const std::string DocIterator::DCLineInfo = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::target_p1_mw_hvdc = R"mydelimiter(
+const std::string DocIterator::target_p_1_mw_dcline = R"mydelimiter(
     The active power target (in MW) of the converter station on side 1 of the hvdc line, generator sign
     convention (positive = power injected into the AC grid at side 1).
 
@@ -1723,19 +1728,19 @@ const std::string DocIterator::target_p1_mw_hvdc = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::target_p2_mw_hvdc = R"mydelimiter(
+const std::string DocIterator::target_p_2_mw_dcline = R"mydelimiter(
     The active power target (in MW) of the converter station on side 2 of the hvdc line, generator sign
     convention (positive = power injected into the AC grid at side 2). See `target_p1_mw` for the side-1
     counterpart and the loss model turning one into the other.
 
 )mydelimiter";
 
-const std::string DocIterator::target_vm_or_pu = R"mydelimiter(
+const std::string DocIterator::target_vm_1_pu_dcline = R"mydelimiter(
     The target voltage setpoint (in pu, NOT in kV) of the converter station on side 1 of the hvdc line.
 
 )mydelimiter";
 
-const std::string DocIterator::target_vm_ex_pu = R"mydelimiter(
+const std::string DocIterator::target_vm_2_pu_dcline = R"mydelimiter(
     The target voltage setpoint (in pu, NOT in kV) of the converter station on side 2 of the hvdc line.
 
 )mydelimiter";
@@ -1778,27 +1783,27 @@ const std::string DocIterator::loss_mw = R"mydelimiter(
 
 )mydelimiter" + DocIterator::dc_line_formula;
 
-const std::string DocIterator::res_p_or_mw_dcline = R"mydelimiter(
+const std::string DocIterator::res_p_1_mw_dcline = R"mydelimiter(
     The active power actually injected at side 1 of the hvdc line (in MW, generator convention).
 
 )mydelimiter" + DocIterator::only_avail_res + DocIterator::dc_line_formula;
 
-const std::string DocIterator::res_p_ex_mw_dcline = R"mydelimiter(
+const std::string DocIterator::res_p_2_mw_dcline = R"mydelimiter(
     The active power actually injected at side 2 of the hvdc line (in MW, generator convention).
 
 )mydelimiter" + DocIterator::only_avail_res + DocIterator::dc_line_formula;
 
-const std::string DocIterator::res_q_or_mvar_dcline = R"mydelimiter(
+const std::string DocIterator::res_q_1_mvar_dcline = R"mydelimiter(
     The reactive power actually injected at side 1 of the hvdc line (in MVAr, generator convention).
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_q_ex_mvar_dcline = R"mydelimiter(
+const std::string DocIterator::res_q_2_mvar_dcline = R"mydelimiter(
     The reactive power actually injected at side 2 of the hvdc line (in MVAr, generator convention).
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_v_or_kv_dcline = R"mydelimiter(
+const std::string DocIterator::res_v_1_kv_dcline = R"mydelimiter(
     Get the magnitude of the complex voltage (in kV) of the bus at which side 1 of the hvdc line is connected.
 
     .. note::
@@ -1806,7 +1811,7 @@ const std::string DocIterator::res_v_or_kv_dcline = R"mydelimiter(
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_v_ex_kv_dcline = R"mydelimiter(
+const std::string DocIterator::res_v_2_kv_dcline = R"mydelimiter(
     Get the magnitude of the complex voltage (in kV) of the bus at which side 2 of the hvdc line is connected.
 
     .. note::
@@ -1814,7 +1819,7 @@ const std::string DocIterator::res_v_ex_kv_dcline = R"mydelimiter(
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_theta_or_deg_dcline = R"mydelimiter(
+const std::string DocIterator::res_theta_1_deg_dcline = R"mydelimiter(
     Get the angle of the complex voltage (in degree, not in radian) of the bus at which side 1 of the hvdc
     line is connected.
 
@@ -1823,7 +1828,7 @@ const std::string DocIterator::res_theta_or_deg_dcline = R"mydelimiter(
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::res_theta_ex_deg_dcline = R"mydelimiter(
+const std::string DocIterator::res_theta_2_deg_dcline = R"mydelimiter(
     Get the angle of the complex voltage (in degree, not in radian) of the bus at which side 2 of the hvdc
     line is connected.
 
