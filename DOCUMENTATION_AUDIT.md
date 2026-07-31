@@ -74,7 +74,7 @@ bug unrelated to any docstring content: **the resulting module crashed on
 import** with `ImportError: generic_type: type "NR_KLU" is already
 registered!`.
 
-Root cause: `src/core/Solvers.hpp` handles a missing library, under
+Root cause: `src/core/Solvers.hpp` handled a missing library, under
 `_READ_THE_DOCS`, by making the name a plain C++ type alias of the
 corresponding SparseLU type (`using NR_KLU = NR_SparseLU;` etc.) — not a
 distinct type. But `src/bindings/python/binding_solvers.cpp` still
@@ -82,31 +82,70 @@ registered each one as its own `py::class_<>`, which pybind11 refuses for a
 C++ type that's already bound under another Python name (`NR_SparseLU` is
 bound first, unconditionally, a few lines earlier in the same function).
 
-**Fixed**: restructured the three solver-family blocks (KLU, NICSLU, CKTSO)
-in `binding_solvers.cpp` to bind normally when the real library actually is
-available, and to fall back to plain Python-level attribute aliases
-(`m.attr("NR_KLU") = m.attr("NR_SparseLU");`) when only `_READ_THE_DOCS` is
-set — pointing the name at the already-bound class object instead of
-re-registering its C++ type.
+A first fix pointed `NR_KLU` at the already-bound `NR_SparseLU` object
+(either as a plain Python attribute alias, or by trying a doc-only Python
+subclass). Both were rejected: `_READ_THE_DOCS` exists specifically so each
+solver shows its **own** documentation, and neither approach gave `NR_KLU`
+a distinct docstring, a distinct `__name__`, or (for the subclass route,
+which is also blocked by `NRAlgo`/`BaseDCAlgo`/`BaseFDPFAlgo` all being
+declared `final`) its own bound methods.
+
+**Fixed** (final design): each of the three optional linear-solver headers
+(`src/core/linear_solvers/{KLU,NICSLU,CKTSO}Solver.hpp`) now defines a
+second, mutually-exclusive branch — `#elif defined(_READ_THE_DOCS)` — with
+a header-only, no-op-bodied stand-in class of the *same name* as the real
+one (e.g. `KLULinearSolver`), implementing the same public interface
+(`reset()`/`analyze()`/`factorize()`/`refactorize()`/`solve()`/
+`CAN_SOLVE_MAT`) with trivial `{ return ErrorType::NoError; }` bodies. This
+makes `NR_KLU` (and `NRSing_KLU`/`DC_KLU`/`FDPF_XB_KLU`/`FDPF_BX_KLU`/
+`NRRefactorRetry_KLU`) genuinely distinct C++ types from `NR_SparseLU`, with
+their own documented, fully-functional-looking public interface — not
+aliases and not hollow Python stand-ins — so the original, simple
+`binding_solvers.cpp` code (one `#if defined(KLU_SOLVER_AVAILABLE) ||
+defined(_READ_THE_DOCS)` guard, one normal `py::class_<>` registration, no
+special-casing) needs no changes at all. `src/core/Solvers.hpp` merges what
+used to be three separate `#ifdef X_AVAILABLE` / `#elif _READ_THE_DOCS`
+alias blocks into one `#if defined(X_AVAILABLE) || defined(_READ_THE_DOCS)`
+block per solver family, since the real and stand-in headers now both
+define a genuine `XLinearSolver` type either way.
+
+This also surfaced a second, previously-latent linking bug: `SolverInstantiations.cpp`
+(part of `lightsim2grid_core`, always compiled) explicitly instantiates
+`BaseFDPFAlgo<LinearSolverPolicy<X>, ...>` — needed because `fillBp_Bpp`'s
+body lives out-of-line there, not in the header, since it needs the full
+`LSGrid` type — but only under the real `X_SOLVER_AVAILABLE` macros, never
+`_READ_THE_DOCS`. And `_READ_THE_DOCS`/`BUILD_DOCS_ONLY` was itself only
+ever propagated to the `lightsim2grid_cpp` (bindings) target in the
+top-level `CMakeLists.txt`, never to `lightsim2grid_core`. Fixed both:
+`SolverInstantiations.cpp`'s three `#ifdef` guards are now
+`#if defined(X_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)` (matching
+`Solvers.hpp`, including its `extern template` declarations for the
+bindings side), and the top-level `CMakeLists.txt` now also applies
+`target_compile_definitions(lightsim2grid_core PRIVATE _READ_THE_DOCS)`
+when `BUILD_DOCS_ONLY` is set and `lightsim2grid_core` was actually built
+from source (not a pre-built `IMPORTED` library, which can't be
+recompiled).
 
 **Verified both ways**, real build + real import (not just compile):
 - With `_READ_THE_DOCS=1` and none of KLU/NICSLU/CKTSO actually available:
-  `import lightsim2grid` now succeeds; `NR_KLU is NR_SparseLU` (etc.) is
-  `True`, confirming the alias.
+  `import lightsim2grid` succeeds; `NR_KLU is NR_SparseLU` is `False`;
+  `NR_KLU.__name__` is `'NR_KLU'`; `NR_KLU.__doc__` is genuinely KLU-specific
+  text, different from `NR_SparseLU.__doc__`; `NR_KLU()`, `NR_NICSLU()`,
+  `NR_CKTSO()` all instantiate and their no-op methods (`converged()`,
+  `get_Va()`) run without crashing.
 - Without `_READ_THE_DOCS` (the normal build path, still no KLU/NICSLU/CKTSO
   installed): `import lightsim2grid` still works, `NR_SparseLU` binds
-  normally, and `NR_KLU` correctly stays unbound (`ImportError`, as it
-  should for a build that genuinely doesn't have KLU) — the fix doesn't
-  change behavior for the normal build path.
-- Reran the nitpicky Sphinx pass with the `_READ_THE_DOCS` build: warnings
-  dropped from 1537 to 1483. All 16 `docs/algorithm_names.rst`
-  `py:class reference target not found: lightsim2grid.algorithm.NR_KLU`
-  (and `NRSing_KLU`/`DC_KLU`/`FDPF_XB_KLU`/`FDPF_BX_KLU`/the NICSLU and
-  CKTSO equivalents) warnings are gone — those classes now genuinely exist
-  and resolve. The 18 mentions still present in the log are all instances
-  of the pre-existing, already-logged `lightsim2grid.solver.*` vs
-  `lightsim2grid.algorithm.*` deprecated-alias issue (out of scope here),
-  not the "class doesn't exist" problem this fix targeted.
+  normally, and `NR_KLU` correctly stays absent (clean `ImportError` on
+  attribute access) — the fix doesn't change behavior for the normal build
+  path.
+- Reran the nitpicky Sphinx pass (`sphinx-build -n`) against the
+  `_READ_THE_DOCS` build: build succeeds, no warnings/errors related to
+  KLU/NICSLU/CKTSO beyond the same pre-existing `lightsim2grid.solver.*`
+  cross-reference-resolution warnings that already affect `NR_SparseLU`
+  itself (a class that's always compiled, no `_READ_THE_DOCS` involved) —
+  confirmed by grepping the log for `lightsim2grid.solver.NR_SparseLU`,
+  which shows the identical warning pattern. Nothing new introduced by this
+  fix.
 
 ## 1. Quantitative overview
 
