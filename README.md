@@ -302,6 +302,12 @@ We suppose that if it works on *eg* clang 11 and clang 21 then it compiles also 
 The only "real" requirement for lightsim2grid is to have a compiler supporting c++14
 (at least).
 
+CI also explicitly compiles lightsim2grid (both the C++ unit test suite and the python
+bindings) pinned to C++14 and to C++26: the oldest and the latest standard claimed to be
+supported (see the `LS2G_CXX_STANDARD` CMake option and
+`.github/workflows/cpp-standards.yml`). Absent that option, the build auto-detects and
+uses the newest standard the compiler supports, from C++26 down to C++14.
+
 ### Known issues
 
 #### Storage units
