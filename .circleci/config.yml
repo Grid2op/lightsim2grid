@@ -217,23 +217,41 @@ jobs:
 
     compile_gcc_earliest:
         executor: gcc_earliest
-        resource_class: medium
+        # "medium" (4GB) still OOM-killed cc1plus on binding_lsgrid.cpp even after
+        # disabling LTO below: CMAKE_BUILD_TYPE=Release (pyproject.toml) applies
+        # CMake's own default CMAKE_CXX_FLAGS_RELEASE (-O3 -DNDEBUG) project-wide,
+        # independent of this project's USE_O3_OPTIM toggle (which only ever
+        # touches the lightsim2grid_core target, not lightsim2grid_cpp -- the
+        # target binding_lsgrid.cpp belongs to). Bumping the resource class is more
+        # robust than chasing which CMake mechanism to override to strip -O3.
+        resource_class: large
         environment:
             CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
             - checkout
             - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            - run: apt-get update && apt-get install python3-pip  cmake -y
-            - run: python3 -m pip install virtualenv
-            - run: python3 -m virtualenv venv_test
+            - run: apt-get update && apt-get install python3-pip cmake curl ca-certificates -y
+            - run:
+                name: Install uv  # this container's pip/python3 (3.7) are too old to resolve the `uv` wheels on pypi ("No matching distribution found for uv"); use the standalone installer instead
+                command: |
+                    curl -LsSf https://astral.sh/uv/install.sh | sh
+                    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
+            - run:
+                name: Setup uv venv on python 3.8  # earliest python version supported by lightsim2grid; downloaded standalone by uv, does not depend on the container's python3
+                command: uv venv venv_test --python 3.8
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install --upgrade pip
-                    pip install -U grid2op
+                    uv pip install --upgrade pip
+                    uv pip install -U grid2op
                     git submodule update --init
-                    CC=gcc python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
+                    # CMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF: pybind11 auto-enables LTO
+                    # (-flto=auto) on any target where this variable is left undefined, which
+                    # OOM-killed cc1plus on binding_lsgrid.cpp (the biggest binding TU) on this
+                    # "medium" resource class container. This job only checks that the package
+                    # still compiles with the oldest supported gcc, so it doesn't need LTO.
+                    CC=gcc uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -C "cmake.define.CMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF" -v .
 
     compile_and_test_gcc_latest:
         executor: gcc_latest

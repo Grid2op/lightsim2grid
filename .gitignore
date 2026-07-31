@@ -10,6 +10,7 @@ __pycache__/
 .Python
 build/
 build_tests/
+_skbuild_build/
 develop-eggs/
 dist/
 downloads/

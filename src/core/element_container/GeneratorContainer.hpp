@@ -316,10 +316,10 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         bool turnedoff_gen_pv_;  // are turned off generators (including one with p=0) pv ?
 
     protected:
-        void _change_p(int gen_id, real_type new_p, bool my_status, DualAlgoControl & solver_control) final;
-        bool _deactivate(int gen_id, DualAlgoControl & solver_control) final;
-        bool _reactivate(int gen_id, DualAlgoControl & solver_control) final;
-        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) final; 
+        void _change_p(int gen_id, real_type new_p, bool my_status, DualAlgoControl & solver_control) override final;
+        bool _deactivate(int gen_id, DualAlgoControl & solver_control) override final;
+        bool _reactivate(int gen_id, DualAlgoControl & solver_control) override final;
+        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) override final;
         // usefull things
 
         /**

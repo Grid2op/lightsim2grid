@@ -69,7 +69,7 @@ class SecurityAnalysisResult:
     post_contingency_results: List[ContingencyResult]
 
 
-class __ContingencyAnalysis(object):
+class ContingencyAnalysis(object):
     """
     This class allows to perform a "security analysis" from a given grid state.
 
@@ -93,24 +93,24 @@ class __ContingencyAnalysis(object):
     .. code-block:: python
 
         import grid2op
-        from lightsim2grid import SecurityAnalysis
+        from lightsim2grid import ContingencyAnalysis
         from lightsim2grid import LightSimBackend
         env_name = ...
         env = grid2op.make(env_name, backend=LightSimBackend())
 
         0) you create
-        security_analysis = SecurityAnalysis(env)
+        contingency_analysis = ContingencyAnalysis(env)
         
         1) you add some contingencies to simulate
-        security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
+        contingency_analysis.add_multiple_contingencies(...) # or contingency_analysis.add_single_contingency(...)
         
         2) you start the simulation (done automatically)
         3) you read back the results
-        res_p, res_a, res_v = security_analysis.get_flows()
+        res_p, res_a, res_v = contingency_analysis.get_flows()
 
         # in this results, then
         # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
-        # you can retrieve it with `security_analysis.contingency_order[row_id]`
+        # you can retrieve it with `contingency_analysis.contingency_order[row_id]`
 
     Notes
     ------
@@ -178,8 +178,14 @@ class __ContingencyAnalysis(object):
 
     @property
     def init_from_n_powerflow(self):
+        """Whether to initialize the complex voltages of each contingency with the results
+        of a "n" powerflow (a powerflow without any line disconnection) instead of a flat
+        start. Default: ``False``. Must be set before the computation actually runs (eg
+        before ``get_flows`` / ``compute_V`` / ``run`` are called); it has no effect on a
+        contingency that has already been solved.
+        """
         return self.computer.init_from_n_powerflow
-    
+
     @init_from_n_powerflow.setter
     def init_from_n_powerflow(self, val: bool):
         if bool(val) != val:
@@ -188,6 +194,15 @@ class __ContingencyAnalysis(object):
 
     @property
     def handle_disconnected_grid(self):
+        """Whether a contingency that splits the grid into several connected components is
+        simulated on its largest component instead of being skipped. Default: ``False``,
+        meaning such a contingency is not simulated at all (its voltages are left at 0., see
+        the class-level note above). When ``True``, the buses of the other component(s) are
+        "masked" (their voltage reported as 0.) and the largest component is solved normally,
+        without triggering any extra matrix re-factorization. Supported by the Newton-Raphson
+        family (AC) and by the DC solver; a non Newton-Raphson AC algorithm (*eg* Gauss-Seidel
+        or Fast-Decoupled) is rejected.
+        """
         return self.computer.handle_disconnected_grid
 
     @handle_disconnected_grid.setter
@@ -304,20 +319,20 @@ class __ContingencyAnalysis(object):
         .. code-block:: python
 
             import grid2op
-            from lightsim2grid import SecurityAnalysis
+            from lightsim2grid import ContingencyAnalysis
             from lightsim2grid import LightSimBackend
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
 
-            security_anlysis = SecurityAnalysis(env)
+            contingency_analysis = ContingencyAnalysis(env)
             # the single (n-1) contingency "disconnect powerline 0" is added
-            security_anlysis.add_single_contingency(0)
+            contingency_analysis.add_single_contingency(0)
 
             # add the single (n-1) contingency "disconnect line 1
-            security_anlysis.add_single_contingency(env.name_line[1])
+            contingency_analysis.add_single_contingency(env.name_line[1])
 
             # add a single contingency that disconnect powerline 2 and 3 at the same time
-            security_anlysis.add_single_contingency(env.name_line[2], 3)
+            contingency_analysis.add_single_contingency(env.name_line[2], 3)
 
         Notes
         -----
@@ -363,19 +378,19 @@ class __ContingencyAnalysis(object):
         .. code-block:: python
 
             import grid2op
-            from lightsim2grid import SecurityAnalysis
+            from lightsim2grid import ContingencyAnalysis
             from lightsim2grid import LightSimBackend
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
 
-            security_anlysis = SecurityAnalysis(env)
+            contingency_analysis = ContingencyAnalysis(env)
 
             # add a single contingency that disconnect powerline 2 and 3 at the same time
-            security_anlysis.add_single_contingency(env.name_line[2], 3)
+            contingency_analysis.add_single_contingency(env.name_line[2], 3)
 
             # add a multiple contingencies the first one disconnect powerline 2 and 
             # and the second one disconnect powerline 3
-            security_anlysis.add_multiple_contingencies(env.name_line[2], 3)
+            contingency_analysis.add_multiple_contingencies(env.name_line[2], 3)
         """     
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
@@ -420,18 +435,18 @@ class __ContingencyAnalysis(object):
         .. code-block:: python
 
             import grid2op
-            from lightsim2grid import SecurityAnalysis
+            from lightsim2grid import ContingencyAnalysis
             from lightsim2grid import LightSimBackend
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
 
-            security_analysis = SecurityAnalysis(env)
-            security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
-            res_p, res_a, res_v = security_analysis.get_flows()
+            contingency_analysis = ContingencyAnalysis(env)
+            contingency_analysis.add_multiple_contingencies(...) # or contingency_analysis.add_single_contingency(...)
+            res_p, res_a, res_v = contingency_analysis.get_flows()
 
             # in this results, then
             # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
-            # you can retrieve it with `security_analysis.contingency_order[row_id]`
+            # you can retrieve it with `contingency_analysis.contingency_order[row_id]`
         """
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
@@ -483,7 +498,7 @@ class __ContingencyAnalysis(object):
 
         .. code-block:: python
 
-            res = security_analysis.run()
+            res = contingency_analysis.run()
             for v in res.pre_contingency_result.limit_violations:
                 ...
             for cont in res.post_contingency_results:  # a list, ordered like `add_single_contingency` calls
@@ -647,5 +662,3 @@ class __ContingencyAnalysis(object):
         self.change_algorithm(solver_type)
         
         
-if GRID2OP_INSTALLED:
-    ContingencyAnalysis = __ContingencyAnalysis

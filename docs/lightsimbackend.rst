@@ -15,11 +15,11 @@ For standard grid2op environment, you can use it like:
 .. code-block:: python
 
     import grid2op
-    from lightsim2grid.LightSimBackend import LightSimBackend
+    from lightsim2grid import LightSimBackend
     from grid2op.Agent import RandomAgent
 
     # create an environment
-    env_name = "rte_case14_realistic"  # for example, other environments might be usable
+    env_name = "l2rpn_case14_sandbox"  # for example, other environments might be usable
     env = grid2op.make(env_name,
                        backend=LightSimBackend()  # this is the only change you have to make!
                        )
@@ -29,7 +29,7 @@ For standard grid2op environment, you can use it like:
 
     # proceed as you would any open ai gym loop
     nb_episode = 10
-    for _ in range(nb_episde):
+    for _ in range(nb_episode):
         # you perform in this case 10 different episodes
         obs = env.reset()
         reward = env.reward_range[0]
@@ -38,7 +38,7 @@ For standard grid2op environment, you can use it like:
             # here you loop on the time steps: at each step your agent receive an observation
             # takes an action
             # and the environment computes the next observation that will be used at the next step.
-            act = agent.act(obs, reward, done)
+            act = my_agent.act(obs, reward, done)
             obs, reward, done, info = env.step(act)
             # the `LightSimBackend` will be used to carry out the powerflow computation instead
             # of the default grid2op `PandaPowerBackend`
@@ -55,15 +55,24 @@ You can customize the way the backend behaves in different ways:
   powergrid if you use a Newton Raphson based method (default)
 - `tol`: During its internal iterations, the underlying solver will say the Kirchhoff Current Laws (KCL) are matched if the 
   maximum value of the difference is lower than this. Default is `1e-8`.
-- `solver_type`: which type of "solver" you want to use. See :ref:`solvers_doc` for more information. By default it uses 
-  what it considers the fastest solver available which is likely to be :class:`lightsim2grid.algorithm.NRSing_KLU`
+- `algo_type`: which type of powerflow algorithm (combined with which linear solver) you want to use. See
+  :ref:`solvers_doc` for more information. By default it uses what it considers the fastest one available, which
+  is likely to be :class:`lightsim2grid.algorithm.NRSing_KLU`.
+
+  .. deprecated:: 1.0.0
+      This kwarg used to be called `solver_type`. That name is kept for backward
+      compatibility (it still works and is mapped to `algo_type`), but it is deprecated: "solver" now
+      refers specifically to the *linear* solver (KLU, SparseLU, NICSLU, CKTSO), not the powerflow
+      algorithm nor the combination of both that `algo_type` selects. Passing both `solver_type` and
+      `algo_type` with different values raises. See :ref:`algorithm_names` for the full naming
+      rationale.
 - `turned_off_pv` : by default (set to `turned_off_pv=True`) all generators partipate in the voltage regulation, which is not completely realistic.
   When you initialize a backend with `turned_off_pv=False` then the generators that do not produce power (*eg* "p=0.") or that are
   turned off are excluded from the voltage regulation.
 - `dist_slack_non_renew`: by default in most grid2op environment, the slack bus is "centralize" / "single slack". This parameters
   allows to bypass this restriction and use all non renewable generators (and turned on and with  > 0.) in a distributed
-  slack bus setting. It might change the default `solver_type` used.
-- \* `use_static_gen`: bool=False, DO NOT USE AT THE MOMENT. When it will be available, you will be able to loader_kwargs
+  slack bus setting. It might change the default `algo_type` used.
+- \* `use_static_gen`: bool=False, DO NOT USE AT THE MOMENT. When it will be available, you will be able to load
   both "static" generators (pq generators) and "regular" (pv generators) as generators in lightsim2grid. It does
   not work at the moment and has no effect.
 - \* `detailed_infos_for_cascading_failures`: for exhaustivity, do not modify.
@@ -100,12 +109,12 @@ you can load it with:
 .. code-block:: python
 
     import grid2op
-    from lightsim2grid.LightSimBackend import LightSimBackend
+    from lightsim2grid import LightSimBackend
     from grid2op.Agent import RandomAgent
 
     # create an environment
-    env_with_iidm_as_the_grid_description = ...
-    env = grid2op.make(env_name,
+    env_with_iidm_as_the_grid_description = ...  # eg a path to a directory containing an iidm file
+    env = grid2op.make(env_with_iidm_as_the_grid_description,
                        backend=LightSimBackend(loader_method="pypowsybl")
                        )
 
@@ -122,13 +131,20 @@ You can also customize the way lightsim2grid works with some extra options:
 Other Customization
 --------------------
 
-Here are some other extra features you can use in lightsim2grid (but that are not yet supported by grid2op
-so not really usable...) :
-
-- stop_if_load_disco : Optional[bool] = True: whether to stop the computation (returning a `DivergingPowerflow` exception)
-  if a load is disconnected.
-- stop_if_gen_disco : Optional[bool] = True: whether to stop the computation (returning a `DivergingPowerflow` exception)
-  if a generator is disconnected.
+- `stop_if_load_disco`, `stop_if_gen_disco`, `stop_if_storage_disco` : ``Optional[bool] = None``:
+  whether to raise a `BackendError` if a load / generator / (producing or absorbing) storage unit
+  ends up disconnected. The default, ``None``, defers to grid2op's own ``allow_detachment`` setting
+  (grid2op >= 1.11.0 and lightsim2grid >= 0.10.0): ``False`` (do not raise) if detachment is allowed,
+  ``True`` (raise) otherwise -- matching the legacy, pre-``allow_detachment`` behaviour. Passing an
+  explicit ``True``/``False`` that contradicts what ``allow_detachment`` would otherwise select is
+  overridden (with a warning) to stay consistent with it.
+- `automatically_disconnect` : ``bool = False``: if ``True``, automatically disconnects any load /
+  generator that ends up outside the grid's main connected component instead of raising a "grid not
+  connected" error. This should only be used together with grid2op's ``allow_detachment``.
+- `gen_slack_id` : ``Optional[int] = None``: id (or name, or a collection of either) of the
+  generator(s) that should participate to the slack. Only supported when
+  `loader_method="pypowsybl"`, and mutually exclusive with `dist_slack_non_renew` (pick one or
+  the other).
 
 Detailed documentation
 --------------------------

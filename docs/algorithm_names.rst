@@ -16,7 +16,7 @@ they should not be confused:
 
 1. **The linear solver** — a numerical library that solves a sparse linear
    system :math:`Ax = b` *eg* at each Newton-Raphson iteration.
-   Examples: :class:`~lightsim2grid.algorithm.SparseLULinearSolver` (Eigen built-in),
+   Examples: ``SparseLULinearSolver`` (Eigen built-in),
    KLU (SuiteSparse), NICSLU, CKTSO.
    These names end in ``LinearSolver`` in C++.
 
@@ -161,12 +161,51 @@ Complete table
    * - ``GaussSeidelSynch``
      - :class:`~lightsim2grid.algorithm.GaussSeidelSynchAlgo`
      - Synchronous Gauss-Seidel iterative
+   * - ``Custom``
+     - --
+     - Sentinel value reported by :func:`~lightsim2grid.lightSimBackend.LightSimBackend.get_algo_types`
+       / ``get_algo_type()`` for any solver loaded through the plugin mechanism (see
+       :ref:`solver_plugin`). It is also, incidentally, what the three built-in
+       ``NRRefactorRetry_*`` solvers below report, since they were never given their own
+       enum value either.
+
+String-only built-in solvers: ``NRRefactorRetry_*``
+----------------------------------------------------
+
+``NRRefactorRetry_KLU``, ``NRRefactorRetry_NICSLU`` and ``NRRefactorRetry_CKTSO`` are
+built-in solvers that never got their own ``AlgorithmType`` enum value, so unlike
+everything in the table above they can only be selected by their string name, not by an
+``AlgorithmType.NRRefactorRetry_*`` attribute (which does not exist). Since lightsim2grid
+1.0, :func:`~lightsim2grid.lightSimBackend.LightSimBackend.set_algo_type` accepts such a
+string directly, and -- unlike changing the algorithm through the private
+``env.backend._grid.change_algorithm(...)`` -- remembers the choice so it is re-applied
+after every ``env.reset()`` and preserved by ``backend.copy()``:
+
+.. code-block:: python
+
+    env.backend.set_algo_type("NRRefactorRetry_KLU")
+
+Each is the same algorithm as its ``NR_*`` counterpart (Newton-Raphson, distributed
+slack), except that when a Jacobian ``refactorize()`` fails it falls back to a full
+``factorize()`` (reusing the existing symbolic factorization) before giving up, instead
+of reporting an error immediately. Use ``get_linear_solver_stats()`` on the solver to
+see how often the fallback fires. Because they have no dedicated enum value,
+``get_algo_type()`` reports ``AlgorithmType.Custom`` while one of them is active -- the
+same value reported for an actual plugin solver.
+
+.. warning::
+    ``env.backend._grid.change_algorithm(...)`` acts directly on the underlying
+    C++ grid model and does **not** survive ``env.reset()`` / ``backend.copy()``: use
+    the persistent :func:`~lightsim2grid.lightSimBackend.LightSimBackend.set_algo_type`
+    shown above instead (it works the same for a plain :class:`~lightsim2grid.algorithm.AlgorithmType`
+    or a string-only / plugin name).
 
 Usage example
 -------------
 
 .. code-block:: python
 
+    import grid2op
     import lightsim2grid
     from lightsim2grid.algorithm import AlgorithmType
 
@@ -177,7 +216,7 @@ Usage example
 
     # inspect what algorithm is currently active
     print(env.backend.get_algo_types())
-    # >>> (<AlgorithmType.NRSing_KLU: 7>, <AlgorithmType.DC_KLU: 9>)
+    # >>> (<AlgorithmType.NR_KLU: 1>, <AlgorithmType.DC_KLU: 9>)
 
     # list all algorithms available in this build
     env.backend._grid.available_algorithm_names()
@@ -191,7 +230,7 @@ Usage example
 Migration from old names
 ------------------------
 
-Before version 0.14, the enum values and class names used shorter names that
+Before version 1.0.0, the enum values and class names used shorter names that
 did not make the algorithm component explicit (``KLU``, ``SparseLU``, ``DC``,
 etc.).  These old names are kept as **deprecated aliases** in the Python enum
 so that existing code continues to work, but they will be removed in a future
@@ -227,6 +266,20 @@ release:
      - ``AlgorithmType.NRSing_CKTSO``
    * - ``AlgorithmType.CKTSODC``
      - ``AlgorithmType.DC_CKTSO``
+
+The same renaming affects two other places that predate this convention:
+
+- the ``lightsim2grid.solver`` module (with its own, older ``SolverType`` enum, e.g.
+  ``SolverType.KLU``) is deprecated in favour of ``lightsim2grid.algorithm`` /
+  ``AlgorithmType``. A ``SolverType`` value is still accepted wherever an
+  ``AlgorithmType`` is expected (it is converted automatically, with a
+  ``DeprecationWarning``);
+- :class:`~lightsim2grid.lightSimBackend.LightSimBackend`'s ``solver_type`` constructor
+  keyword (and its ``set_solver_type`` method) are deprecated in favour of ``algo_type`` /
+  ``set_algo_type``, for the same reason: ``solver_type`` reads as if it selected the
+  *linear* solver, when it in fact selects the powerflow algorithm (combined with a linear
+  solver). ``solver_type`` is still accepted and mapped to ``algo_type``; passing both with
+  different values raises a ``BackendError``.
 
 .. seealso::
 

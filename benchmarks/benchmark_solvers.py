@@ -70,9 +70,6 @@ solver_names = {AlgorithmType.GaussSeidel: "GS",
                 AlgorithmType.FDPF_BX_NICSLU: "FDPF BX (NICSLU\\*)",
                 AlgorithmType.FDPF_XB_CKTSO: "FDPF XB (CKTSO\\*)",
                 AlgorithmType.FDPF_BX_CKTSO: "FDPF BX (CKTSO\\*)",
-                # lightsim2grid.SolverType.DC: "LS+DC",
-                # lightsim2grid.SolverType.KLUDC: "LS+SLU",
-                # lightsim2grid.SolverType.NICSLUDC: "LS+SLU"
                 }
 solver_gs = {AlgorithmType.GaussSeidelSynch, AlgorithmType.GaussSeidel}
 solver_fdpf = {AlgorithmType.FDPF_XB_SparseLU, AlgorithmType.FDPF_BX_SparseLU,
@@ -197,12 +194,12 @@ def main(max_ts,
             time_pypow = env_pypow._time_step
     
     wst = True  # print extra info in the run_env function
-    solver_types = env_lightsim.backend.available_solvers
+    solver_types = env_lightsim.backend.available_default_algorithms
     for solver_type in solver_types:
         if solver_type not in solver_names:
             continue
         print(f"Start using {solver_type}")
-        env_lightsim.backend.set_solver_type(solver_type)
+        env_lightsim.backend.set_algo_type(solver_type)
         if solver_type in solver_gs:
             # gauss seidel sovler => more iterations
             env_lightsim.backend.set_solver_max_iter(10000)

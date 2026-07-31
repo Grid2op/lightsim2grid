@@ -1,16 +1,6 @@
-Contingency Analysis (doc in progress)
+Contingency Analysis
 =======================================
 
-The documentation of this section is in progress. It is rather incomplete for the moment, and only expose the most
-basic features.
-
-If you are interested in collaborating to improve this section, let us know.
-
-.. warning::
-    This function might give wrong result for lightsim2grid version 0.5.5 were they were a bug : when some contingencies made the grid
-    non connex, it made all the other contingencies diverge. This bug has been fixed in version 0.6.0 and this is why we **do not recommend**
-    to use this feature with lightsim2grid version < 0.6.0 !
-    
 Goal
 -----------------
 
@@ -47,8 +37,16 @@ to / from other data sources.
 
 .. note::
 
-    A more advanced usage is given in the `examples\\security_analysis.py`
+    A more advanced usage is given in the `examples\\contingency_analysis.py`
     file from the lightsim2grid package.
+
+.. note::
+
+    Set `security_analysis.init_from_n_powerflow = True` **before** the computation actually runs
+    (eg before `get_flows` / `compute_V` / `run` are called -- setting it afterwards has no
+    effect) to initialize each contingency with the voltage solution of the pre-contingency
+    ("n") case instead of a flat start -- this is usually faster. See
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.init_from_n_powerflow`.
 
 Handling contingencies that split the grid
 -------------------------------------------
@@ -56,9 +54,9 @@ Handling contingencies that split the grid
 By default, a contingency that splits the grid into several connected components (an "islanding")
 is **not simulated**: the corresponding row of the results is left at 0. (for the voltages) and
 ``NaN`` (for the flows). You can list which contingencies split the grid with
-:func:`ContingencyAnalysisCPP.is_grid_connected_after_contingency`.
+:func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.is_grid_connected_after_contingency`.
 
-Starting from lightsim2grid 0.14.0, you can opt in to a mode that *does* simulate these
+Starting from lightsim2grid 1.0.0, you can opt in to a mode that *does* simulate these
 contingencies, on the largest connected component, by setting the ``handle_disconnected_grid``
 attribute to ``True``:
 
@@ -105,7 +103,7 @@ cases the masked buses are reported as ``0.``.
 Running the contingencies on multiple threads
 ---------------------------------------------
 
-Starting from lightsim2grid 0.14.0, the contingencies can be solved on several CPU threads
+Starting from lightsim2grid 1.0.0, the contingencies can be solved on several CPU threads
 at once. By default everything runs on a single thread (``nb_thread = 1``), reproducing the
 exact same behaviour (and results) as before. Set the ``nb_thread`` attribute to a value
 greater than ``1`` to split the work:
@@ -200,7 +198,7 @@ that on this grid / contingency count.
 Reporting limit violations
 ---------------------------
 
-Starting from lightsim2grid 0.14.0, if you have set some operating limits on the grid model
+Starting from lightsim2grid 1.0.0, if you have set some operating limits on the grid model
 (per-bus voltage bounds with :func:`lightsim2grid.network.LSGrid.set_bus_voltage_limits`,
 per-side current limits on lines / trafos with
 :func:`lightsim2grid.network.LSGrid.set_line_current_limit_side1` /
@@ -274,6 +272,23 @@ whether the contingency ``converged``, and its ``limit_violations``.
     the usual ``get_flows()`` is completely unaffected -- there is no need to pay for the extra
     per-element voltage / current checks if you only want the flows.
 
+    Setting ``compute_limit_violations`` through the property (rather than at construction time)
+    **clears any contingency already registered** (``add_single_contingency`` /
+    ``add_all_n1_contingencies`` / ``add_multiple_contingencies``) -- it is the exact same
+    reset performed by ``clear()`` / ``change_algorithm``. If you follow this page's own example
+    order (add contingencies, *then* flip the flag), you will silently end up running ``run()``
+    on zero contingencies. Either set ``compute_limit_violations=True`` at construction time (as
+    in the example above), or re-add the contingencies after setting it:
+
+    .. code-block:: python
+
+        security_analysis = ContingencyAnalysis(env)
+        security_analysis.add_all_n1_contingencies()
+        security_analysis.compute_limit_violations = True  # clears the contingencies above!
+        security_analysis.add_all_n1_contingencies()  # so they must be re-added
+
+        res = security_analysis.run()
+
     Also, if a contingency does not converge, its ``limit_violations`` contains exactly one
     ``LimitViolation`` with ``element_type == ViolationElementType.GRID`` and ``violation_type``
     either ``LimitViolationType.NOT_SIMULATED`` (a pre-check -- eg it splits the grid in multiple
@@ -323,7 +338,7 @@ This benchmark is available by running, from the root of the lightsim2grid repos
 
 .. code-block:: bash
 
-    cd examples
+    cd benchmarks
     python3 security_analysis.py
 
 
@@ -340,20 +355,20 @@ For this setting the outputs are:
 
     Comparison with raw grid2op timings
     It took grid2op (with lightsim2grid, using obs.simulate): 0.28s to perform the same computation
-        This is a 24.2 speed up from SecurityAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
+        This is a 24.2 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
     It took grid2op (with pandapower, using obs.simulate): 9.94s to perform the same computation
-        This is a 855.2 speed up from SecurityAnalysis over raw grid2op (using obs.simulate and pandapower)
+        This is a 855.2 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)
     All results match !
 
 
-In this case then, the `SecurityAnalysis` module is more than **22** times faster than raw grid2op (
+In this case then, the `ContingencyAnalysis` module is more than **22** times faster than raw grid2op (
 with obs.simulate as a way to compute the outcome of a contingency)
 
 
 Detailed usage
 --------------------------
 
-.. automodule:: lightsim2grid.securityAnalysis
+.. automodule:: lightsim2grid.contingencyAnalysis
     :members:
     :autosummary:
 

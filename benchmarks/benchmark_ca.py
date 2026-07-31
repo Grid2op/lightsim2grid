@@ -16,13 +16,7 @@ import matplotlib.pyplot as plt
 from grid2op import make, Parameters
 from grid2op.Chronics import FromNPY
 from grid2op.Backend import PandaPowerBackend
-from lightsim2grid import LightSimBackend, TimeSerie
-try:
-    from lightsim2grid import ContingencyAnalysis
-except ImportError:
-    from lightsim2grid import SecurityAnalysis as ContingencyAnalysis
-    
-from lightsim2grid.solver import SolverType
+from lightsim2grid import LightSimBackend, TimeSerie, ContingencyAnalysis
 
 from tqdm import tqdm
 import os

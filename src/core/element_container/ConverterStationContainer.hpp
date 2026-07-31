@@ -175,10 +175,10 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
             real_type sn_mva,
             bool ac) override;
 
-        void _change_p(int station_id, real_type new_p, bool my_status, DualAlgoControl & solver_control) final;
-        bool _deactivate(int station_id, DualAlgoControl & solver_control) final;
-        bool _reactivate(int station_id, DualAlgoControl & solver_control) final;
-        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) final;
+        void _change_p(int station_id, real_type new_p, bool my_status, DualAlgoControl & solver_control) override final;
+        bool _deactivate(int station_id, DualAlgoControl & solver_control) override final;
+        bool _reactivate(int station_id, DualAlgoControl & solver_control) override final;
+        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) override final;
 
     private:
         // input data

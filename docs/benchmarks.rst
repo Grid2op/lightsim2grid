@@ -4,9 +4,7 @@ Benchmarks (solvers)
 ======================
 
 In this paragraph we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
-The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
-
-TODO DOC in progress
+The code to run these benchmarks are given with this package in the ``benchmarks`` folder.
 
 If you are interested in other type of benchmark, let us know !
 
@@ -74,7 +72,7 @@ All of them has been run on a computer with a the following characteristics:
 	- compiled_march_native: False 
 	- compiled_o3_optim: True 
 
-To run the benchmark `cd` in the [benchmark](./benchmarks) folder and install the dependencies
+To run the benchmark, ``cd`` into the ``benchmarks`` folder and install the dependencies
 (we suppose here that you have already installed lightsim2grid):
 
 .. code-block:: bash
@@ -112,11 +110,11 @@ and powerflow algorithm (*eg* "Newton Raphson", or "Fast Decoupled")):
   solver to compute the powerflows.
 - **GS synch** (Gauss Seidel synch version): the grid2op backend based on lightsim2grid that uses a
   variant of the "Gauss Seidel" method to compute the powerflows.
-- **NR single (SLU)** (Newton Raphson -single slack- with SparseLU): the grid2op backend based on lightsim2grid that uses the 
+- **NR single (SLU)** (Newton Raphson -single slack- with SparseLU): the grid2op backend based on lightsim2grid that uses the
   "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
-  Eigen c++ library (available on all platform). This solver supports distributed slack bus.
-- **NR (SLU)** (Newton Raphson -distributed slack- with SparseLU): same as above but this solver does not support distributed slack bus and
+  Eigen c++ library (available on all platform). This solver does not support distributed slack bus and
   can thus be slightly faster.
+- **NR (SLU)** (Newton Raphson -distributed slack- with SparseLU): same as above but this solver supports distributed slack bus.
 - **NR (KLU)** (Newton Raphson -distributed slack- with KLU): he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "KLU" from the `SuiteSparse` C package. This solver supports distributed slack bus.
@@ -319,7 +317,7 @@ in the grid2op extra layer or in the grid2op backend in this case (~85% of the c
     the `pandapower_backend._grid["_ppc"]["et"]` (the "estimated time" of the pandapower newton raphson computation)
 
     For the lightsim backend, the "solver powerflow time" corresponds to the average of the results of
-    `gridmodel.get_computation_time()` function that, for each powerflow, returns the time spent in the solver
+    `LSGrid.get_computation_time()` function that, for each powerflow, returns the time spent in the solver
     uniquely (time inside the `basesolver.compute_pf()` function. In particular it do not count the time
     to initialize the vector `V` with the DC approximation nor the time taken to convert the lightsim2grid external modeling 
     to something that can be processed by the powerflow algorithm). This is a behaviour similar to the one of pandapower.
@@ -445,7 +443,7 @@ The results can be found in:
 
 .. toctree::
   :maxdepth: 1
-  :caption: For a laptop with a i7 of 2015 wth a frequency of 2.70 GHz
+  :caption: For a laptop with a i7 of 2015 with a frequency of 2.70 GHz
 
   benchmark_solver/ubuntu_2004_dell/ls0.8.1_glop1.10.1
   benchmark_solver/ubuntu_2004_dell/ls0.8.0_glop1.10.0
@@ -453,7 +451,7 @@ The results can be found in:
 
 .. toctree::
   :maxdepth: 1
-  :caption: For a laptop with a i7 of 2014 wth a frequency of 3.0 GHz
+  :caption: For a laptop with a i7 of 2014 with a frequency of 3.0 GHz
 
   benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.1
   benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.1_py311
@@ -461,7 +459,7 @@ The results can be found in:
 
 .. toctree::
   :maxdepth: 1
-  :caption: For a laptop with a ryzen 7 of 2020 wth a frequency of 4.2 GHz
+  :caption: For a laptop with a ryzen 7 of 2020 with a frequency of 4.2 GHz
 
   benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.7_py38
   benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.6_py38

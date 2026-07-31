@@ -98,7 +98,7 @@ if __name__ == "__main__":
                         grid_path=case_name,
                         _add_to_name=f"{case_name}",
                         )
-        env_ls.backend.set_solver_type(AlgorithmType.GaussSeidel)
+        env_ls.backend.set_algo_type(AlgorithmType.GaussSeidel)
         all_iters = [1, 3, 10, 30, 100, 300, 1_000, 3_000,
                      10_000, 30_000,
                      100_000, 300_000
@@ -177,7 +177,7 @@ if __name__ == "__main__":
 # 	- compiled_march_native: False 
 # 	- compiled_o3_optim: False 
 
-# Solver used for linear algebra: SolverType.GaussSeidel
+# Solver used for linear algebra: AlgorithmType.GaussSeidel
 
 # ====================  =======================
 #   grid size (nb bus)    gauss seidel max iter

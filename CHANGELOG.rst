@@ -121,8 +121,513 @@ TODO: add a CI job that builds one of the example C++ algorithm plugins
 TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding small decreasing 
       lambba coefficients to the diagonal of J to improve its conditionning.
 
-[0.14.0] 2026-xx-yy
----------------------
+[1.0.0] 2026-xx-yy
+--------------------
+- [FIXED] ``LightSimBackend.set_algo_type`` used to reject anything that was not an
+  ``AlgorithmType`` enum value, so a plugin or string-only built-in algorithm (eg
+  ``NRRefactorRetry_KLU``, which has no ``AlgorithmType`` enum value at all) could only
+  be selected through the private ``env.backend._grid.change_algorithm(...)`` -- which
+  does not survive ``env.reset()`` / ``backend.copy()`` (it silently reverts to whichever
+  ``AlgorithmType`` was last set through ``set_algo_type``). ``set_algo_type`` now also
+  accepts a plain ``str`` (any name returned by
+  ``env.backend._grid.available_algorithm_names()``, including string-only built-ins and
+  registered plugins), validated the same way as before, and this choice now survives both
+  ``env.reset()`` and ``backend.copy()`` -- exactly like an ``AlgorithmType`` value already
+  did. The ``algo_type`` constructor kwarg accepts a string too, for the same reason.
+- [ADDED] ``LightSimBackend.set_ac_algo_config`` / ``set_dc_algo_config`` (and their
+  ``get_*`` counterparts): the persistent, supported way to customize the AC/DC
+  ``AlgoConfig`` (scaling / refactor policy parameters). Unlike calling
+  ``env.backend._grid.set_ac_algo_config(...)`` directly, which is silently reverted on the
+  next ``env.reset()``, the customization now survives ``env.reset()`` and is preserved by
+  ``backend.copy()``. Both found and fixed while auditing ``docs/algorithm_names.rst`` /
+  ``docs/solvers.rst`` for PR review comments, and confirmed with a dedicated reproduction
+  (a backend using ``NRRefactorRetry_KLU`` with a custom ``ScalingPolicyType`` used to lose
+  both across a reset). See ``test_algo_reset_copy_persistence.py`` for the regression
+  tests (algo type / algo config, each across ``reset()`` and ``copy()``).
+- [FIXED] a regression from the previous entry: ``AlgoConfig`` (pybind11) supports
+  neither pickling nor ``copy.deepcopy``, so the first implementation of
+  ``set_ac_algo_config`` / ``set_dc_algo_config``, which stored the ``AlgoConfig``
+  object itself as a backend attribute, broke ``pickle.dump(env.backend, ...)`` (as
+  used by ``test_save_load`` in ``test_pickleable.py``) the moment either had ever
+  been called, with ``TypeError: cannot pickle 'lightsim2grid.lightsim2grid_cpp.AlgoConfig'
+  object``. The backend now stores the config's ``int_params`` / ``real_params`` as a
+  plain (picklable, deepcopy-able) tuple of lists instead, and rebuilds a real
+  ``AlgoConfig`` from it whenever one needs to be re-applied (``reset()``, ``copy()``).
+  Added ``test_backend_still_picklable_with_custom_algo_config`` (changes both the algo
+  type and its ``AlgoConfig``, then pickles and reloads ``env.backend``) to
+  ``test_algo_reset_copy_persistence.py``.
+- [DEPRECATED] ``LightSimBackend``'s ``solver_type`` constructor kwarg and its
+  ``set_solver_type`` method, in favour of ``algo_type`` / ``set_algo_type``: "solver"
+  now refers specifically to the *linear* solver (KLU, SparseLU, NICSLU, CKTSO), not the
+  powerflow algorithm nor the combination of both that this kwarg actually selects (see
+  ``docs/algorithm_names.rst``). ``solver_type`` still works and is mapped to
+  ``algo_type``; passing both with different values raises a ``BackendError``.
+- [FIXED] ``-Wsuggest-override`` warnings on ``GeneratorContainer``,
+  ``SvcContainer`` and ``ConverterStationContainer``'s ``_change_p`` /
+  ``_deactivate`` / ``_reactivate`` / ``_change_bus`` overrides: they were
+  marked ``final`` but not ``override``, unlike every other class overriding
+  these same ``OneSideContainer_PQ`` virtuals (``ShuntContainer``,
+  ``TrafoContainer``, ...), which use ``override final`` or ``override``.
+  Harmless (the signatures already matched), but a regression against the
+  ``lightsim2grid_core`` target's "these two warnings are clean, so any
+  future one fails CI" contract (see ``src/core/CMakeLists.txt``). Verified
+  with a clean rebuild (warnings gone) and the SVC / converter-station /
+  HVDC unit test suites (22 tests, all green).
+- [FIXED] a plain ``import lightsim2grid`` no longer prints "lightsim2grid.solver is
+  deprecated...". ``LightSimBackend`` needed ``SolverType`` (for the ``solver_type`` /
+  ``SolverType`` back-compat bridging above) and imported it from the deprecated
+  ``lightsim2grid.solver`` shim, whose module-level ``DeprecationWarning`` therefore fired
+  on every import of ``lightsim2grid`` itself, regardless of whether the deprecated
+  ``solver_type`` / ``SolverType`` were ever used. ``SolverType`` now lives in a private
+  module (``lightsim2grid/_solver_type.py``); ``lightsim2grid.solver`` still
+  re-exports it and still warns when *it* is imported directly.
+- [FIXED] a regression from the previous entry: ``SolverType`` was first placed inside
+  ``lightsim2grid._utils`` rather than as a standalone module. Importing any submodule of
+  a package always runs that package's ``__init__.py`` first, and
+  ``lightsim2grid._utils/__init__.py`` does ``from grid2op.Backend import
+  PandaPowerBackend`` -- safe only *lazily*, well after grid2op/pandapower have finished
+  importing (see the comment at its top: "grid2op -> pandapower -> lightsim2grid ->
+  grid2op"). Importing ``SolverType`` eagerly from ``LightSimBackend``'s own top level
+  reentered that ``__init__.py`` *while* ``grid2op.Backend.pandaPowerBackend`` was itself
+  still mid-import (pandapower's own import chain probes for lightsim2grid), raising
+  ``ImportError: cannot import name 'PandaPowerBackend' from partially initialized module
+  'grid2op.Backend'`` -- silently swallowed by that file's ``except ImportError: pass``,
+  so ``_DoNotUseAnywherePandaPowerBackend`` was never defined and every
+  ``grid2op.make(..., backend=LightSimBackend())`` failed outright. Moved to the
+  standalone ``lightsim2grid/_solver_type.py`` module (see above), which has no package
+  ``__init__.py`` of its own to reenter.
+- [FIXED] the documentation now builds with zero Sphinx warnings (was 40, all coming
+  from environments without a compiled ``lightsim2grid_cpp`` or without ``numba``, plus
+  three real issues): switched ``sphinx.ext.imgmath`` (needs a local LaTeX install) for
+  ``sphinx.ext.mathjax`` (client-side, no system dependency); added ``numba`` to the
+  ``docs`` extra (``grid2op.Backend.PandaPowerBackend`` warns at import time without it,
+  regardless of whether it is used, and autodoc imports it transitively through
+  ``LightSimBackend``); fixed a short section-title underline in ``docs/security.rst``;
+  and fixed ``LSGrid.change_algorithm``'s C++-side docstring, whose "Examples" RST
+  section title broke autodoc once pybind11 concatenated it with the second overload's
+  docstring (replaced with ``.. rubric:: Examples``, which does not participate in
+  section nesting) -- this docstring also still referenced the pre-1.0 ``DC``/``KLUDC``/
+  ``NICSLUDC`` names and the deprecated ``lightsim2grid.solver`` / ``lightsim2grid.gridmodel``
+  modules, both now corrected.
+- [FIXED] several documentation rendering bugs found by inspecting the built HTML rather
+  than just the source: 7 places (``benchmarks.rst``, ``benchmarks_dc.rst``,
+  ``benchmarks_grid_sizes.rst``, ``install_from_source.rst``) used Markdown
+  ``[text](url)`` links, which RST has no syntax for, so they rendered as literal
+  bracketed text -- replaced with plain prose / an actual ``:ref:``;
+  ``docs/quickstart.rst``'s docker section had a ``code-block:: bash`` directive glued
+  directly to the preceding text line with no blank line, so it never fired and
+  "code-block:: bash" rendered verbatim; ``docs/comparison_with_pypowsybl.rst``'s "Open
+  Load Flow" external link had its closing backtick before the trailing underscores
+  instead of after, so it rendered as inert text instead of a hyperlink. Also removed two
+  pieces of dead Sphinx config: ``html_experimental_html5_writer`` (removed from Sphinx
+  since version 4) and the ``recommonmark`` extension (no ``.md`` source anywhere in
+  ``docs/``, no ``source_suffix`` mapping to make it apply if there were; also dropped
+  from the ``docs`` extra in ``pyproject.toml``).
+- [FIXED] several dangling Python cross-references, found by temporarily enabling
+  Sphinx's ``nitpicky`` mode (off by default, so these silently rendered as plain text
+  instead of erroring): ``lightsim2grid.algorithm.SparseLULinearSolver`` doesn't exist in
+  Python (it's a C++-only type) so the reference is now plain text;
+  ``lightsim2grid.algorithm.TimerJac`` genuinely was never exported from
+  ``lightsim2grid.algorithm`` despite being documented as the return type of
+  ``get_timers_jacobian()`` -- now exported, mirroring ``LinearSolverStats``; several bare
+  (unqualified) references in ``docs/solver_plugin.rst`` and ``docs/security.rst``
+  (``change_solver``, ``get_J``, ``LSGrid.check_grid``, ``LSGrid.update_topo``, one more
+  found the same way in ``docs/binary_serialization.rst``) now use their fully-qualified
+  path, which Sphinx's python domain resolves reliably regardless of which document
+  references them; and ``docs/security_analysis.rst``'s ``automodule`` documented the
+  deprecated ``lightsim2grid.securityAnalysis`` shim instead of the real
+  ``lightsim2grid.contingencyAnalysis`` module, which also cascaded into fixing three
+  more dangling references to classes only the real module actually defines
+  (``ViolationElementType``, ``LimitViolationType``,
+  ``ContingencyAnalysisCPP.is_grid_connected_after_contingency``).
+- [FIXED] packaging metadata left over from before the 1.0 release:
+  ``requires-python`` said ``>=3.7`` while the README's own compatibility table and
+  ``docs/quickstart.rst`` both already said 3.8 is the actual floor; ``build.verbose = true``
+  (a debug-only setting, per its own comment) was left on for every user's ``pip install``.
+  ``Development Status :: 4 - Beta`` is kept as-is: even at 1.0.0 the package is not
+  considered stable yet.
+- [FIXED] about two dozen typos across the docs, README and DISCLAIMER, found while
+  auditing this branch's documentation. Two were more than cosmetic: `docs/quickstart.rst`,
+  `docs/use_with_grid2op.rst` and `docs/lightsimbackend.rst` each had an example that
+  would raise ``NameError`` if actually run (looping over the misspelled ``nb_episde``
+  instead of the ``nb_episode`` defined two lines above, and calling ``agent.act(...)``
+  when the variable actually created was ``my_agent``).
+- [FIXED] the remaining "Wrong API" findings from the documentation audit
+  (A11-A24), on top of A1-A10 fixed earlier:
+
+  - ``docs/network.rst``: ``total_bus()`` / ``nb_connected_bus()`` were swapped in
+    both the prose describing the "solver bus id" convention and the table
+    documenting the two methods; ``total_bus()`` is the *total* number of buses,
+    ``nb_connected_bus()`` is the number currently seen by the solver.
+  - ``docs/use_solver.rst``: ``get_Va()`` / ``get_Vm()`` example comments were
+    swapped (``Va`` is the angle, ``Vm`` is the magnitude).
+  - ``docs/benchmarks.rst``: the distributed-slack support of ``NR single (SLU)``
+    and ``NR (SLU)`` was inverted (the "single" variant is the one that does
+    *not* support distributed slack).
+  - ``README.md`` / ``docs/install_from_source.rst``: corrected the stale claim
+    that ``-O2`` is used by default and ``__O3_OPTIM`` must be set to *enable*
+    O3; ``-O3`` has been the default for a while now, and the env var only
+    matters to *disable* it (``__O3_OPTIM=0``).
+  - ``README.md``: fixed dead source links (``./src/BaseNRSolver.h`` ->
+    ``./src/core/powerflow_algorithm/NRAlgo.hpp``, ``KLUSolver.h`` /
+    ``SparLUSolver.h`` / ``NICSLU.h`` -> the real ``.hpp`` filenames under
+    ``src/core/linear_solvers``); the "Enable CKTSO" section pointed at
+    ``PATH_NICSLU`` instead of ``PATH_CKTSO`` in both its prose and its example
+    (copy-paste from the NICSLU section above it); the ``compute_pf`` signature
+    shown for a custom powerflow solver was the pre-refactor one (same issue as
+    A6, just not previously caught here) and the custom-linear-solver interface
+    was documented as ``initialize`` / ``solve(J, b, bool)`` / ``reset`` instead
+    of the real ``analyze`` / ``factorize`` / ``refactorize`` / ``solve(b)`` /
+    ``reset``.
+  - ``docs/security_analysis.rst``: the "advanced usage" example pointed at
+    ``examples/security_analysis.py`` (renamed to ``examples/contingency_analysis.py``);
+    the benchmark reproduction instructions said ``cd examples`` for a script
+    that only exists under ``benchmarks/``.
+  - ``docs/time_series.rst``: pointed at the old
+    ``computers_with_grid2op_multithreading.py`` name, renamed to
+    ``timeseries_with_grid2op_multithreading.py``.
+  - ``docs/benchmarks_dive.rst``: ``gridmodel.update_topology`` -> the bound
+    method is ``update_topo``.
+  - ``DISCLAIMER.md`` / ``docs/disclaimer.rst``: dropped the "it does not model
+    AC/DC converters" limitation, which is no longer true now that HVDC lines
+    with VSC/LCC converter stations are modeled (``elements.HvdcLineContainer``,
+    ``elements.ConverterStationInfo``).
+  - ``lightsim2grid/solver/__init__.py``: ``FDPF_BX_CKTSOSolver`` (deprecated
+    alias) was mapped to ``FDPF_XB_CKTSO`` instead of ``FDPF_BX_CKTSO`` -- a
+    copy-paste bug that silently handed anyone still using this deprecated name
+    the wrong algorithm variant.
+  - ``lightsim2grid/lightSimBackend.py``: ``set_solver_max_iter``'s docstring
+    recommended ``AlgorithmType.SparseKLU``, which does not exist (``NR_KLU``);
+    ``get_algo_types``'s docstring had a typo (``from ligthsim2grid import
+    LightSimBackend``) and its return type annotation was
+    ``Union[AlgorithmType, AlgorithmType]`` where it should be
+    ``Tuple[AlgorithmType, AlgorithmType]``.
+- [FIXED] deprecated names still presented as the current API in prose, examples
+  and benchmark scripts (section E of the doc audit):
+
+  - ``SecurityAnalysis`` (renamed to ``ContingencyAnalysis``): dropped from
+    ``README.md`` and ``docs/security_analysis.rst`` prose, and from the printed
+    output of ``examples/contingency_analysis.py`` and ``benchmarks/security_analysis.py``
+    (both of which also had a local variable literally named ``security_analysis``,
+    renamed to ``contingency_analysis``).
+  - ``gridmodel`` / ``GridModel`` (renamed to ``network`` / ``LSGrid``): fixed in
+    ``docs/network.rst``, ``docs/benchmarks.rst``, ``docs/benchmarks_dive.rst`` and
+    ``docs/comparison_with_pypowsybl.rst``.
+  - ``Computers`` (alias of ``TimeSeriesCPP``): ``docs/time_series.rst`` presented
+    it as the low-level class to use; pointed at ``TimeSeriesCPP`` instead.
+  - ``gm.get_solver_type()`` (deprecated alias of ``get_algo_type()``):
+    ``docs/solver_plugin.rst`` used it in a code example.
+  - ``benchmarks/benchmark_ca.py``, ``benchmarks/benchmark_dc_solvers.py``,
+    ``benchmarks/benchmark_grid_size.py``: removed the dead
+    ``except ImportError: from lightsim2grid import SecurityAnalysis as
+    ContingencyAnalysis`` fallback (``SecurityAnalysis`` is not exported from
+    the top-level package on this branch, so the fallback would itself raise
+    ``ImportError`` if it were ever reached) and the unused/deprecated
+    ``from lightsim2grid.solver import SolverType`` import.
+  - ``benchmarks/benchmark_grid_size.py``: ``SolverType.KLU`` does not exist,
+    not even as a deprecated alias -- this line would raise ``AttributeError``
+    the moment the script's ``__main__`` block ran. Replaced with
+    ``AlgorithmType.NR_KLU``.
+  - ``set_solver_type`` -> ``set_algo_type``, ``change_solver`` -> ``change_algorithm``,
+    and ``.available_solvers`` -> ``.available_default_algorithms`` in
+    ``benchmarks/benchmark_gauss_seidel.py``, ``benchmarks/benchmark_solvers.py``,
+    ``benchmarks/benchmark_dc_solvers.py``, ``benchmarks/benchmark_grid_size.py``,
+    ``benchmarks/test_profile.py`` and ``benchmarks/compare_lightsim2grid_pypowsybl.py``
+    -- these are the reference scripts people copy, and all of the above still
+    *ran* despite using deprecated names.
+  - ``benchmarks/test_profile.py`` imported ``AlgorithmType`` from the deprecated
+    ``lightsim2grid.solver`` shim instead of ``lightsim2grid.algorithm``.
+- [FIXED] the ``compile_gcc_earliest`` CircleCI job (``gcc:8``, a Debian buster
+  based image) was failing: it built a venv against that container's default
+  ``python3``, which is 3.7, while ``requires-python`` is now ``>=3.8``. Switched
+  it to the same ``uv``-based pattern already used by ``compile_clang_earliest``
+  and ``test_legacy_grid2op`` in this file (``uv venv venv_test --python 3.8``),
+  which pins a supported interpreter regardless of what the container ships by
+  default. The container's ``pip``/``python3`` (3.7) turned out to also be too
+  old to resolve `uv`'s own PyPI wheels ("Could not find a version that
+  satisfies the requirement uv"), so ``uv`` itself is now installed with its
+  standalone shell installer (``curl ... | sh``) instead of ``pip install uv``.
+  Once that got the build running, it failed a third time, further along:
+  ``cc1plus`` was OOM-killed compiling ``binding_lsgrid.cpp`` (the largest
+  pybind11 binding translation unit). The compile command showed
+  ``-flto=auto -fno-fat-lto-objects``: pybind11's CMake helpers auto-enable
+  LTO on any target where the parent project leaves
+  ``CMAKE_INTERPROCEDURAL_OPTIMIZATION`` undefined (see
+  ``pybind11NewTools.cmake``), and lightsim2grid never sets it. LTO is
+  memory-hungry and this job runs on a "medium" (RAM-constrained) resource
+  class. Passed ``-C cmake.define.CMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF``
+  for this job only -- it exists to check the package still compiles with
+  the oldest supported gcc, not to produce an optimized artifact. Verified
+  locally that this removes every ``-flto`` flag from the build and that the
+  resulting extension still imports and passes tests. Disabling LTO turned out
+  not to be enough on its own: the real CircleCI run still OOM-killed
+  ``cc1plus`` on the same file, at plain ``-O3`` with no LTO flags at all.
+  ``CMAKE_BUILD_TYPE=Release`` (set in ``pyproject.toml``) makes CMake apply
+  its own default ``CMAKE_CXX_FLAGS_RELEASE`` (``-O3 -DNDEBUG``) to every
+  target project-wide, independent of this project's own ``USE_O3_OPTIM``
+  toggle (which only ever applies to the ``lightsim2grid_core`` target, not
+  ``lightsim2grid_cpp`` -- the target ``binding_lsgrid.cpp`` belongs to).
+  Rather than chase which CMake mechanism to override to strip ``-O3`` here,
+  bumped this job's ``resource_class`` from ``medium`` to ``large``.
+
+- [FIXED] stale statements across the docs that were no longer true (section H
+  of the doc audit):
+
+  - ``docs/use_with_grid2op.rst``: dropped the "for now it is not easy to
+    change [the solver]" note -- ``algo_type`` / ``set_algo_type`` /
+    ``change_algorithm`` exist precisely for this, and are now documented.
+  - ``docs/use_solver.rst``: solver counts were wrong and CKTSO/FDPF were
+    missing from the page entirely. "11 available solvers" -> 22 (across 4
+    categories, not 3); the Newton-Raphson list went from 6 to 8 entries
+    (added ``NR_CKTSO`` / ``NRSing_CKTSO``); the DC list went from 3 to 4
+    (added ``DC_CKTSO``); added a whole missing "Fast Decoupled solvers"
+    subsection documenting the 8 ``FDPF_XB_*`` / ``FDPF_BX_*`` variants.
+  - ``docs/solvers.rst``: "four families of powerflow algorithms" followed by
+    five bullets -> "five families". The example that called
+    ``env.backend._grid.change_algorithm(...)`` directly then
+    ``env.reset()  # apply the change`` was actively wrong: ``reset()``
+    rebuilds ``_grid`` from scratch and re-applies whatever was last set
+    through ``set_algo_type``, so a direct ``_grid.change_algorithm()`` call
+    is silently reverted on the next reset (verified empirically). Rewrote the
+    example to use ``set_algo_type`` and added a warning explaining why.
+  - ``docs/algorithm_names.rst``: the "Complete table" omitted
+    ``NRRefactorRetry_KLU/NICSLU/CKTSO`` (built-in solvers selectable only by
+    string name, with no ``AlgorithmType`` enum value of their own) and
+    ``AlgorithmType.Custom``; added both. The usage example was missing
+    ``import grid2op`` and, after ``set_algo_type(AlgorithmType.NR_KLU)``,
+    showed the output as if ``NRSing_KLU`` had been set instead -- fixed to
+    match what the call actually returns (verified empirically).
+  - ``docs/security_analysis.rst``: dropped a ``.. warning::`` about a bug in
+    lightsim2grid 0.5.5 fixed in 0.6.0 -- irrelevant noise on a 1.0 release.
+  - ``docs/quickstart.rst``: dropped the "python 3.6 at time of writing" claim
+    about the docker image (impossible to keep accurate, and moot now that
+    the package requires >=3.8 anyway); fixed the "Clean-up" section number
+    (was "1.", should be "4.", the fourth top-level step after "Install
+    docker" / "Get the lightsim2grid image" / "Run a code on this container").
+  - ``docs/use_with_grid2op.rst`` and ``docs/lightsimbackend.rst``: replaced
+    the long-superseded ``env_name = "rte_case14_realistic"`` with
+    ``l2rpn_case14_sandbox``, already used by ``docs/quickstart.rst``.
+  - ``docs/lightsimbackend.rst``: fixed a code example that assigned
+    ``env_with_iidm_as_the_grid_description = ...`` then called
+    ``grid2op.make(env_name, ...)`` -- ``env_name`` was never defined in that
+    snippet; now passes the variable that was actually assigned.
+  - ``README.md``: "requires grid2op... at least version 0.7.0" immediately
+    followed by ``pip install grid2op>=1.6.4`` -- updated the stated minimum
+    to match; fixed ``python3 setup.py build`` references (there is no
+    ``setup.py``, the build is scikit-build-core driven) and windows-cmd-only
+    env var syntax used without a linux/macos equivalent alongside it; fixed
+    ``git clone .../grid2op.git`` followed by ``cd Grid2Op`` (wrong case, the
+    cloned directory is ``grid2op``).
+  - ``docs/install_from_source.rst``: removed ~70 lines of legacy "for
+    lightsim2grid < 0.13" SuiteSparse compilation instructions (make / cmake
+    option A/B) that are pure noise for a 1.0 release -- SuiteSparse is
+    compiled automatically now; removed a stale note about needing to
+    ``pip install pybind11`` manually for old versions (build isolation
+    handles it via ``pyproject.toml``'s ``[build-system]`` requires); added a
+    pointer to :ref:`cpp_library` (which already documents
+    ``-DBUILD_TESTING=ON``, scikit-build-core, and the ``lightsim2grid_core``
+    shared library) that this page previously never linked to.
+  - ``docs/disclaimer.rst``: had drifted from ``DISCLAIMER.md`` -- was missing
+    the ``power-grid-model`` entry from the list of alternative tools, linked
+    ``github.com/rte-france/grid2op`` instead of ``Grid2Op/grid2op``, and said
+    "Eigen (optionally KLU)" instead of "Eigen and KLU". Synced to match.
+
+- [FIXED] structural issues in ``examples/`` and ``benchmarks/`` (section I of
+  the doc audit):
+
+  - ``examples/time_serie.py``: ``time_serie.init_from_n_powerflow = True`` was
+    set *after* ``time_serie.compute_V(...)`` had already run, so it had no
+    effect at all -- the flag is only read inside ``compute_V``'s underlying
+    C++ call. Verified empirically: moving it before ``compute_V`` cuts the
+    reported ``preprocessing_time()`` roughly 3x on the same scenario. Moved
+    the line and documented why the order matters.
+  - ``examples/contingency_analysis.py`` and ``benchmarks/security_analysis.py``
+    are near-duplicates that measure different things (only the example sets
+    ``init_from_n_powerflow``); both had "ignore the protection... by the
+    **TimeSerie** module" comments copy-pasted from the time-series example
+    (should say ``ContingencyAnalysis``), and the example's own "the 3 lines
+    above are the only lines you need" comment had gone stale (4 lines, one of
+    them optional) once ``init_from_n_powerflow`` was added. Also removed two
+    unused imports (``BaseAction``, ``ChangeNothing``) from the benchmark
+    script (confirmed dead with ``pyflakes``).
+  - ``docs/security_analysis.rst`` sends readers to the contingency-analysis
+    example for "a more advanced usage", but it demonstrated none of the
+    capabilities the docs advertise. Added a section exercising
+    ``nb_thread``, ``handle_disconnected_grid``, ``compute_limit_violations``
+    and ``run_ac``/``run_dc`` -- including working around the fact that
+    setting ``compute_limit_violations`` clears any already-registered
+    contingency, so the n-1 list has to be re-added afterwards (verified this
+    gotcha empirically: without the re-add, the demo silently runs on 0
+    contingencies).
+  - ``examples/timeseries_with_grid2op.py``: "consult the documentation of
+    **TimeSeries**" -- the easier-to-use Python class is ``TimeSerie`` (no
+    trailing s).
+  - ``examples/Readme.md`` listed the 4 top-level scripts but not the three
+    solver-plugin examples (``external_algorithm``, ``dist_slack_algorithm``,
+    ``lm_algorithm``) or the shared ``cmake/`` helper; added all four.
+  - ``docs/solver_plugin.rst``: fixed the path of ``env_compile_all.sh``
+    (repository root, not ``benchmarks/``); fixed a self-contradicting bullet
+    that called ``__O3_OPTIM`` one of "two opt-in build flags" and then noted
+    "(on by default, actually)" in the same sentence -- it is opt-*out*, only
+    ``__COMPILE_MARCHNATIVE`` is opt-in; fixed the expected plugin-example
+    output showing a registered solver named ``'DC'``, which does not exist
+    (real names are e.g. ``'DC_SparseLU'`` / ``'DC_KLU'``).
+  - **Real bug**, not just docs: both the inline CMake template in
+    ``docs/solver_plugin.rst`` and the shipped
+    ``examples/cmake/MatchLightsim2gridBuildFlags.cmake`` treated an *unset*
+    ``__O3_OPTIM`` as OFF when falling back to env-var detection (source-tree
+    builds only), while ``lightsim2grid_core`` itself treats unset as ON (only
+    ``__O3_OPTIM=0``/``False`` disables it). A plugin built from a source tree
+    would silently end up without ``-O3`` while the core it links against has
+    it. Fixed both copies to match the core's actual default; verified with a
+    standalone CMake project that the "matching -O3" status message now
+    prints with the env var unset, and stays silent with ``__O3_OPTIM=0``.
+
+- [FIXED] a **real bug**, found while documenting these classes: ``ContingencyAnalysis``
+  and ``TimeSerie`` were defined as ``class __ContingencyAnalysis`` /
+  ``class ___TimeSerie`` and then aliased (``ContingencyAnalysis = __ContingencyAnalysis``)
+  to their public names. Sphinx autodoc treats a name bound this way as a plain
+  alias -- it rendered a one-line "``class ContingencyAnalysis``: alias of
+  ``__ContingencyAnalysis``" stub and silently dropped every method's docstring,
+  while the real class was itself skipped as "private" (leading underscores).
+  In effect, the two main user-facing classes of the whole package had *no*
+  API reference at all, on any page, ever -- this is the actual root cause
+  behind several "documented nowhere" gaps below. Renamed both classes to their
+  public names directly and dropped the alias; verified the full methods /
+  properties of both classes (``add_all_n1_contingencies``, ``nb_thread``,
+  ``run_ac``, ``compute_V``, etc.) now render on their respective pages, and
+  re-ran the full ``ContingencyAnalysis`` / ``TimeSerie`` test suites (32
+  tests, all green) plus a direct import/usage smoke test.
+- [FIXED] ``ContingencyAnalysis.init_from_n_powerflow`` / ``handle_disconnected_grid``
+  and ``TimeSerie.init_from_n_powerflow`` had **no docstring at all** on the
+  Python wrapper class (only the underlying C++ ``*CPP`` computer object did),
+  so even after the rename above they still would not have appeared under
+  ``:members:`` (which skips undocumented members by default). Added real
+  docstrings to all three, and a usage note to ``docs/security_analysis.rst`` /
+  ``docs/time_series.rst`` explaining that ``init_from_n_powerflow`` must be
+  set *before* the computation runs.
+- [FIXED] a **real, currently-broken bug** in ``PhysicalLawChecker`` (found while
+  verifying its documented example still works): it imported
+  ``from grid2op.Environment.Environment import Environment`` and
+  ``from grid2op.Environment.MultiMixEnv import MultiMixEnvironment`` -- neither
+  submodule path exists on grid2op 1.12 (the actual files are ``environment.py``
+  / ``multiMixEnv.py``, lowercase), so construction failed outright with
+  ``ModuleNotFoundError`` on any case-sensitive filesystem. Fixed to import both
+  names directly from the ``grid2op.Environment`` package (matching the pattern
+  already used elsewhere in this codebase, e.g. ``contingencyAnalysis.py`` /
+  ``timeSerie.py``). Fixing the import surfaced a second, independent bug:
+  ``check_solution`` calls ``backend.update_from_obs(...)``, which (as of
+  grid2op 1.11.0) requires ``_load_bus_target`` / ``_gen_bus_target`` / etc to
+  have been initialized by ``Backend.load_grid_public(...)`` -- this class was
+  still calling the older, lower-level ``Backend.load_grid(...)`` directly,
+  leaving those arrays ``None``. Now calls ``load_grid_public`` when available
+  (falling back to ``load_grid`` on older grid2op) and ``assert_grid_correct()``
+  afterwards. Verified end-to-end: the documented example now runs, and
+  checking the actual converged voltage from a real powerflow gives a KCL
+  mismatch on the order of ``1e-12`` (as expected); all 8 pre-existing
+  ``test_Checker.py`` tests still pass.
+- [FIXED / DOCUMENTED] the remaining "missing documentation" findings from the
+  doc audit (section G):
+
+  - MATPOWER / PowerModels / PfΔ grid loaders (``init_from_matpower``,
+    ``init_from_powermodels``, ``init_from_pf_delta``) were already picked up
+    by ``docs/network.rst``'s ``automodule`` (so they did have real API docs),
+    but the page's own intro still said "for now the only way is to get it
+    from a pandapower grid". Replaced with a table of all five ``init_from_*``
+    loaders and what source format each expects.
+  - PTDF / LODF (``LSGrid.get_ptdf`` / ``get_ptdf_solver`` / ``get_lodf`` /
+    ``get_Bf``): ``docs/benchmarks_dc.rst`` recommends them prominently but
+    never explained what they are or linked anywhere. Added a "PTDF / LODF"
+    section to ``docs/network.rst`` and cross-linked it from both places.
+  - ``ScalingPolicyType`` / ``RefactorPolicyType`` / ``FDPFMethod`` /
+    ``AlgoConfig``: bound in C++, never re-exported from
+    ``lightsim2grid.algorithm``. Added them to its ``__all__``, and added a
+    "Fine-tuning the Newton-Raphson iteration" section to ``docs/solvers.rst``
+    covering both the raw-solver setters and ``LSGrid.get_ac_algo_config`` /
+    ``set_ac_algo_config`` -- including a real gotcha found while writing the
+    example: ``AlgoConfig.int_params`` / ``real_params`` are returned **by
+    value**, so ``config.int_params[0] = ...`` silently does nothing; the
+    whole list must be reassigned. Verified both code paths directly.
+    (``AlgoControl`` / ``PandaPowerConverter`` were left undocumented: the
+    former's own C++ bindings mark every method ``"TODO"`` and it is an
+    internal implementation detail, and the latter is only ever used
+    internally by ``init_from_pandapower``.)
+  - ``SubstationContainer`` / ``SubstationInfo``: bound but absent from
+    ``lightsim2grid.elements.__all__`` and from ``docs/network.rst``'s
+    "Elements modeled" list. Added the export and a "Substations" subsection
+    (written by hand rather than via ``automodule``, since two of
+    ``SubstationInfo``'s four fields currently share a copy-pasted, wrong C++
+    docstring -- a C++-side issue left alone per the standing "C++ docs are
+    out of scope for now" agreement).
+  - ``examples/lm_algorithm/`` (a Levenberg-Marquardt-damped Newton-Raphson
+    solver plugin) was not mentioned anywhere: ``docs/solver_plugin.rst`` said
+    "both example plugins" listing only two. Fixed to three, and added an
+    "Other example plugins" section describing ``dist_slack_algorithm`` and
+    ``lm_algorithm``.
+  - ``lightsim2grid.pandapower_compat`` (the actual home of ``newtonpf`` /
+    ``dcpf``) was never named; docs and README only ever mention the
+    ``lightsim2grid.newtonpf`` re-export shim, and its DC counterpart
+    (``pandapower_compat.dcpf``) was undocumented entirely. Added notes to
+    ``docs/use_solver.rst`` and ``README.md``.
+  - New ``LightSimBackend`` kwargs ``stop_if_storage_disco``,
+    ``automatically_disconnect``, ``gen_slack_id`` were absent from
+    ``docs/lightsimbackend.rst``; the existing ``stop_if_load_disco`` /
+    ``stop_if_gen_disco`` entries also documented the wrong default
+    (``Optional[bool] = True``; the real default is ``None``, which now
+    defers to grid2op's own ``allow_detachment``) and called the whole
+    section "not yet supported by grid2op so not really usable", which is no
+    longer true for grid2op >= 1.11.0. Rewrote the section to match the
+    actual current behaviour.
+  - README.md said nothing about the headline 1.0 features (the
+    ``lightsim2grid_core`` C++ library, the algorithm-plugin mechanism,
+    binary serialization, multi-threaded contingency analysis, PTDF/LODF, the
+    ``gridmodel``/``GridModel`` -> ``network``/``LSGrid`` rename). Added a
+    "Key features" section up top, with links to the relevant documentation
+    pages, and replaced the "Using a custom powerflow solver" section (a
+    stale predecessor of the plugin mechanism, describing embedding a solver
+    in lightsim2grid's own source rather than the actual, current
+    out-of-tree plugin API) with a short, accurate pointer to
+    ``docs/solver_plugin.rst``.
+  - Removed now-inaccurate "doc in progress" / "rather incomplete" banners
+    from ``docs/network.rst``, ``docs/security_analysis.rst``,
+    ``docs/solvers.rst``, ``docs/time_series.rst`` and ``docs/rewards.rst``
+    (each has since accumulated a full API reference and worked examples),
+    the "``TODO DOC in progress``" line from ``docs/benchmarks.rst`` /
+    ``benchmarks_dc.rst`` / ``benchmarks_grid_sizes.rst``, and the two inline
+    ``(TODO DOC)`` markers on ``use_solver.rst``'s ``get_timers`` /
+    ``get_error`` (replaced with their actual return values).
+  - ``bake_outer_loops`` (freezes OLF's converged outer-loop state -- tap
+    positions, reactive-limit switches, slack participation, ... -- into a
+    pypowsybl network's inputs so it becomes a plain, loop-free power-flow
+    problem) already had a full API entry via ``docs/network.rst``'s
+    ``automodule``, but on ``docs/comparison_with_pypowsybl.rst`` -- the page
+    that actually motivates it -- it was only a passing prose mention, unlike
+    its siblings ``compare_baked`` / ``ComparisonResult`` which get a full
+    ``autofunction`` / ``autoclass`` treatment there. Gave it the same
+    treatment, with a worked example (verified to run) showing the full
+    "solve with outer loops -> bake -> solve loop-free" flow. Also documented
+    ``get_pypowsybl_loopfree_distributed_slack_parameters`` (loop-free except
+    OLF's own ``DistributedSlack``, matching lightsim2grid's default
+    distributed slack), which wasn't mentioned on that page at all.
+
+- [DOCUMENTED] ``docs/comparison_with_pypowsybl.rst``'s "Disclaimer" section listed
+  several individual gaps (reactive limits, tap ratio, ...) without naming the single
+  architectural difference behind all of them: OpenLoadFlow wraps its Newton-Raphson
+  solve in "outer loops" (solve, check a criterion, adjust an input, solve again --
+  distributed slack, PV<->PQ reactive-limit switching, discrete tap/shunt control, area
+  interchange, secondary voltage control, ...), while lightsim2grid's algorithms solve a
+  single, fixed problem with no outer-loop mechanism at all. Added a section explaining
+  this, and that the two architectures aren't simply "more features vs. fewer": distributed
+  slack is the one outer loop lightsim2grid folds directly into the same Newton-Raphson
+  Jacobian instead (``MultiSlackNRSystem``, see ``src/core/powerflow_algorithm/NRSystem.hpp``),
+  while the others (reactive limits, discrete tap changing, area interchange, secondary
+  voltage control) have neither an outer loop nor an in-Jacobian equivalent in lightsim2grid
+  today -- which is exactly the gap ``bake_outer_loops`` papers over for comparison purposes.
+  Also cross-referenced ``examples/dist_slack_algorithm/``, a solver plugin that
+  reimplements distributed slack the *other* way -- as an explicit OLF-style outer loop
+  around a single-slack inner solve -- as a concrete demonstration that lightsim2grid's
+  plugin mechanism can express an outer-loop-style algorithm at all.
+
 - [ADDED] ``GridModel.check_grid()`` (C++ ``LSGrid::check_grid()``): a whole-grid
   consistency check that verifies every index the grid carries (element bus ids,
   substation ids, position in the topology vector, generator slack and
@@ -1033,6 +1538,41 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   built-in algorithms ``NRRefactorRetry_KLU``, ``NRRefactorRetry_CKTSO`` and
   ``NRRefactorRetry_NICSLU`` use it (``SparseLU`` is skipped: its ``factorize()`` and
   ``refactorize()`` are already the same call, so the fallback would be a no-op).
+- [FIXED] ``docs/algorithm_names.rst``: the string-only ``NRRefactorRetry_*`` example used
+  ``env.backend._grid.change_algorithm(...)`` without warning that this does not survive
+  ``env.reset()`` (verified empirically: a reset always re-applies whatever
+  ``AlgorithmType`` was last set via ``set_algo_type``), and that ``set_algo_type`` cannot
+  be used instead since it requires an actual ``AlgorithmType`` value, which these
+  string-only solvers do not have.
+- [FIXED] ``docs/solvers.rst``: documented that ``grid.set_ac_algo_config`` /
+  ``set_dc_algo_config`` customizations, just like a direct ``change_algorithm`` call,
+  do not survive ``env.reset()`` either (verified empirically: ``env.backend._grid`` is a
+  new object after reset, with a fresh default ``AlgoConfig``).
+- [FIXED] ``docs/physical_law_checker.rst``: removed the misleading suggestion that
+  lightsim2grid can only load grids compatible with its own loaders; clarified that
+  ``PhysicalLawChecker`` specifically always looks for a pandapower-format ``grid.json``
+  in the environment folder regardless of which formats lightsim2grid itself supports
+  (see the new ``network-init-formats`` cross-reference in ``docs/network.rst``).
+- [FIXED] ``docs/use_solver.rst``: documented the Jacobian row layout (P-mismatch rows
+  then Q-mismatch rows, mirroring the column layout) and how to map a solver bus id back
+  to the stable GridModel bus id with ``id_ac_solver_to_me``; rewrote the "constraints
+  not checked" warning to match what ``compute_pf_with_input_validation`` actually
+  validates now (most conditions raise a clean ``RuntimeError``/``IndexError``; only
+  "every bus covered by ref/pv/pq" and ``slack_weight`` positivity/sum-to-one are still
+  silently unchecked, and the CSC-format requirement is obsolete -- any scipy sparse
+  format is accepted); replaced "iteratively update the jacobian matrix J" with "solve
+  the linear system J.dx = mismatch" for the 8 Newton-Raphson solver descriptions;
+  documented (verified empirically) that ``NRSing_*`` solvers do **not** convert extra
+  ``ref`` buses to PV like the Gauss-Seidel and Fast-Decoupled solvers do -- they keep
+  every bus in ``ref`` fully fixed (angle and magnitude) with no distributed-slack
+  coupling; added a recommendation to remove all but one generator from the slack
+  regardless of which solver is used; clarified which 6 (out of 8) solvers are marked as
+  possibly-unavailable in each family.
+- [FIXED] renamed the ``security_analysis`` example variable to ``contingency_analysis``
+  throughout ``lightsim2grid/contingencyAnalysis.py``'s own docstrings, left over from
+  before the class was renamed from ``SecurityAnalysis``.
+- [FIXED] translated the last remaining French comments in ``pyproject.toml`` to English,
+  for consistency with the rest of the (English-only) documentation and codebase.
 
 [0.13.1]  2026-04-21
 --------------------

@@ -1,10 +1,5 @@
-Time Series (doc in progress)
+Time Series
 =======================================
-
-The documentation of this section is in progress. It is rather incomplete for the moment, and only expose the most
-basic features.
-
-If you are interested in collaborating to improve this section, let us know.
 
 Goal
 --------------------------
@@ -32,7 +27,7 @@ It can be used as:
     # res_v[row_id] will be the complex voltage, on all bus of the grid at step "row_id"
 
 For now this relies on grid2op, but we could imagine a version of this class that can read
-to / from other data sources (for now please use the more basic :class:`lightsim2grid.timeSerie.Computers` for such purpose)
+to / from other data sources (for now please use the more basic :class:`lightsim2grid.timeSerie.TimeSeriesCPP` for such purpose)
 
 Importantly, this method is around **13x** faster than simulating "do nothing" (or "one change then nothing") with grid2op
 (see section :ref:`timeserie_benchmark` )
@@ -50,11 +45,18 @@ Importantly, this method is around **13x** faster than simulating "do nothing" (
     Then, the call to `time_series.compute_V(scenario_id=..., seed=...)` will only read the injections
     (productions and loads) from grid2op to compute the voltages.
 
-.. note:: 
-    
+.. note::
+
     As this class calls a long c++ function, it is possible to use the python `Threading`
     module to achieve high efficient parrallelism. An example is provided in the
-    `examples\\computers_with_grid2op_multithreading.py` file.
+    `examples\\timeseries_with_grid2op_multithreading.py` file.
+
+.. note::
+
+    Set `time_series.init_from_n_powerflow = True` **before** calling `compute_V` (setting it
+    afterwards has no effect) to initialize the first step of the batch with the voltage
+    solution of the grid's current ("n") state instead of a flat start -- this is usually
+    faster. See :func:`lightsim2grid.timeSerie.TimeSerie.init_from_n_powerflow`.
 
 .. _timeserie_benchmark: 
 
