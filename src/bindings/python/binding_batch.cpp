@@ -57,10 +57,10 @@ void bind_batch(py::module_& m) {
         .def_property("init_from_n_powerflow",
                       [](const TimeSeries & self){ return self.get_init_from_n_powerflow(); },
                       [](TimeSeries & self, bool val){ self.set_init_from_n_powerflow(val); },
-                      R"mydelim(Whether to initialize the complex voltages of "
+                      "Whether to initialize the complex voltages of "
                       "the first time series with the results of a n-powerflow "
                       "(*ie* a powerflow at the start the simulation) or not. "
-                      "Default: false)mydelim")
+                      "Default: false")
 
         // solver control
         .def("change_algorithm", &TimeSeries::change_algorithm, DocLSGrid::change_algorithm.c_str())
@@ -103,45 +103,45 @@ void bind_batch(py::module_& m) {
         .def_property("compute_limit_violations",
                       [](const ContingencyAnalysis & self){ return self.get_compute_limit_violations(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_compute_limit_violations(val); },
-                      R"mydelim(Whether limit violations are computed inline, per contingency, "
+                      "Whether limit violations are computed inline, per contingency, "
                       "during compute() (see converged / get_violations / converged_n / "
                       "get_violations_n). Default: false. Computing violations means an extra "
                       "per-element current / voltage check in every contingency's solve, so "
                       "users who only need compute_flows() / get_flows() should leave this off. "
-                      "Changing this flag clears any previously-computed results.)mydelim")
+                      "Changing this flag clears any previously-computed results.")
         .def_property("init_from_n_powerflow",
                       [](const ContingencyAnalysis & self){ return self.get_init_from_n_powerflow(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_init_from_n_powerflow(val); },
-                      R"mydelim(Whether to initialize the complex voltages of "
+                      "Whether to initialize the complex voltages of "
                       "each contingencies with the results of a n-powerflow "
                       "(*ie* a powerflow without any line disconnection) or not. "
                       "Default: false, meaning each simulation is initialized "
-                      "with the given input vector)mydelim")
+                      "with the given input vector")
         .def_property("handle_disconnected_grid",
                       [](const ContingencyAnalysis & self){ return self.get_handle_disconnected_grid(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_handle_disconnected_grid(val); },
-                      R"mydelim(Whether to simulate the contingencies that split the grid in "
+                      "Whether to simulate the contingencies that split the grid in "
                       "multiple connected components. When False (default) such contingencies "
                       "are skipped (their voltages are left at 0), reproducing the legacy "
                       "behaviour. When True, the largest connected component is solved while "
                       "the buses of the other component(s) are masked (their voltage is "
                       "reported as 0). Supported by the Newton-Raphson family (AC) and the DC "
-                      "solver; a non Newton-Raphson AC algorithm is rejected.)mydelim")
+                      "solver; a non Newton-Raphson AC algorithm is rejected.")
         .def_property("nb_thread",
                       [](const ContingencyAnalysis & self){ return self.get_nb_thread(); },
                       [](ContingencyAnalysis & self, int val){ self.set_nb_thread(val); },
-                      R"mydelim(Number of OS threads used to solve the contingencies (default: 1). "
+                      "Number of OS threads used to solve the contingencies (default: 1). "
                       "With nb_thread == 1 the behaviour is identical to the legacy sequential "
                       "computation. With nb_thread > 1 the contingency list is split into "
                       "contiguous ranges, each solved by its own thread (each with its own solver "
                       "and admittance matrix copy), writing to disjoint rows of the result matrix. "
                       "The results do not depend on the number of threads. Values < 1 are "
-                      "clamped to 1.)mydelim")
+                      "clamped to 1.")
 
         // solver control
         .def("change_algorithm", &ContingencyAnalysis::change_algorithm, DocLSGrid::change_algorithm.c_str())
         .def("change_solver", &ContingencyAnalysis::change_algorithm, "DEPRECATED: use 'change_algorithm' instead")
-        .def("available_default_algorithms", &ContingencyAnalysis::available_default_algorithms, DocLSGrid::available_algorithm_names.c_str())
+        .def("available_default_algorithms", &ContingencyAnalysis::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
         .def("get_algo_type", &ContingencyAnalysis::get_algo_type, DocLSGrid::get_algo_type.c_str())
         .def("get_algo_config", &ContingencyAnalysis::get_algo_config,
              "Config (eg ScalingPolicyType / damping parameters) of the internal solver used for "

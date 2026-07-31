@@ -99,7 +99,7 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
         // solver control
         .def("change_algorithm", py::overload_cast<const AlgorithmType&>(&LSGrid::change_algorithm), DocLSGrid::change_algorithm.c_str())
         .def("change_algorithm", py::overload_cast<const std::string&>(&LSGrid::change_algorithm), "Change the AC (or DC) algorithm by registry name. Accepts built-in names and plugin names registered via load_solver_plugin().")
-        .def("available_default_algorithms", &LSGrid::available_default_algorithms, DocLSGrid::available_algorithm_names.c_str())
+        .def("available_default_algorithms", &LSGrid::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
         .def("available_algorithm_names", &LSGrid::available_algorithm_names, "Returns names of all registered algorithms, including any loaded plugins.")
         .def("get_computation_time", &LSGrid::get_computation_time, DocLSGrid::get_computation_time.c_str())
         .def("get_dc_computation_time", &LSGrid::get_dc_computation_time, DocLSGrid::get_dc_computation_time.c_str())

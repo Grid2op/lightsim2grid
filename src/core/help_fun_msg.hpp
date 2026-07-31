@@ -99,6 +99,10 @@ struct LS2G_API DocIterator
     static const std::string x_pu;
     static const std::string h_pu;
 
+    // specific to substations
+    static const std::string nb_max_busbars;
+    static const std::string vn_kv;
+
     // specific to generators
     static const std::string GeneratorContainer;
     static const std::string GenInfo;
@@ -152,11 +156,12 @@ struct LS2G_API DocIterator
     static const std::string res_theta_or_deg;
     static const std::string res_theta_ex_deg;
 
-    // specific to dc lines
+    // specific to hvdc lines (kept under the "dc line" name for backward compatibility)
     static const std::string dc_line_formula;
     static const std::string DCLineContainer;
     static const std::string DCLineInfo;
-    static const std::string target_p_or_mw;
+    static const std::string target_p1_mw_hvdc;
+    static const std::string target_p2_mw_hvdc;
     static const std::string target_vm_or_pu;
     static const std::string target_vm_ex_pu;
     static const std::string loss_pct;
@@ -169,9 +174,7 @@ struct LS2G_API DocIterator
     static const std::string res_v_ex_kv_dcline;
     static const std::string res_theta_or_deg_dcline;
     static const std::string res_theta_ex_deg_dcline;
-    static const std::string gen_or;
-    static const std::string gen_ex;
-    
+
 };
 
 struct LS2G_API DocLSGrid

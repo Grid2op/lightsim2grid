@@ -386,8 +386,8 @@ void bind_containers(py::module_& m) {
         .def_readonly("connected2", &HvdcLineInfo::connected_2, DocIterator::connected.c_str())
         .def_readonly("bus1_id", &HvdcLineInfo::bus_1_id, DocIterator::bus_or_id.c_str())
         .def_readonly("bus2_id", &HvdcLineInfo::bus_2_id, DocIterator::bus_ex_id.c_str())
-        .def_readonly("target_p1_mw", &HvdcLineInfo::target_p_1_mw, DocIterator::target_p_or_mw.c_str())
-        .def_readonly("p2_mw", &HvdcLineInfo::p_2_mw, DocIterator::target_p_or_mw.c_str())
+        .def_readonly("target_p1_mw", &HvdcLineInfo::target_p_1_mw, DocIterator::target_p1_mw_hvdc.c_str())
+        .def_readonly("p2_mw", &HvdcLineInfo::p_2_mw, DocIterator::target_p2_mw_hvdc.c_str())
         .def_readonly("target_vm1_pu", &HvdcLineInfo::target_vm_1_pu, DocIterator::target_vm_or_pu.c_str())
         .def_readonly("target_vm2_pu", &HvdcLineInfo::target_vm_2_pu, DocIterator::target_vm_ex_pu.c_str())
         .def_readonly("loss_pct", &HvdcLineInfo::loss_pct, DocIterator::loss_pct.c_str())
@@ -428,6 +428,6 @@ void bind_containers(py::module_& m) {
     py::class_<SubstationInfo>(m, "SubstationInfo", "TODO")
         .def_readonly("id", &SubstationInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &SubstationInfo::name, DocIterator::name.c_str())
-        .def_readonly("nb_max_busbars", &SubstationInfo::nb_max_busbars, DocIterator::name.c_str())
-        .def_readonly("vn_kv", &SubstationInfo::vn_kv, DocIterator::name.c_str());
+        .def_readonly("nb_max_busbars", &SubstationInfo::nb_max_busbars, DocIterator::nb_max_busbars.c_str())
+        .def_readonly("vn_kv", &SubstationInfo::vn_kv, DocIterator::vn_kv.c_str());
 }
