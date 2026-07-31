@@ -65,6 +65,49 @@ real `sphinx-build -b html` the project uses:
   the ASCII schema inside its code block, and cross-references), no
   leftover RST artifacts.
 
+### `_READ_THE_DOCS` was silently broken — fixed
+
+Attempting to actually exercise `_READ_THE_DOCS` (the flag meant to let a
+docs build bind `NR_KLU`/`NR_NICSLU`/`NR_CKTSO` and friends without the real,
+often-proprietary, linear-solver libraries) surfaced a real, pre-existing
+bug unrelated to any docstring content: **the resulting module crashed on
+import** with `ImportError: generic_type: type "NR_KLU" is already
+registered!`.
+
+Root cause: `src/core/Solvers.hpp` handles a missing library, under
+`_READ_THE_DOCS`, by making the name a plain C++ type alias of the
+corresponding SparseLU type (`using NR_KLU = NR_SparseLU;` etc.) — not a
+distinct type. But `src/bindings/python/binding_solvers.cpp` still
+registered each one as its own `py::class_<>`, which pybind11 refuses for a
+C++ type that's already bound under another Python name (`NR_SparseLU` is
+bound first, unconditionally, a few lines earlier in the same function).
+
+**Fixed**: restructured the three solver-family blocks (KLU, NICSLU, CKTSO)
+in `binding_solvers.cpp` to bind normally when the real library actually is
+available, and to fall back to plain Python-level attribute aliases
+(`m.attr("NR_KLU") = m.attr("NR_SparseLU");`) when only `_READ_THE_DOCS` is
+set — pointing the name at the already-bound class object instead of
+re-registering its C++ type.
+
+**Verified both ways**, real build + real import (not just compile):
+- With `_READ_THE_DOCS=1` and none of KLU/NICSLU/CKTSO actually available:
+  `import lightsim2grid` now succeeds; `NR_KLU is NR_SparseLU` (etc.) is
+  `True`, confirming the alias.
+- Without `_READ_THE_DOCS` (the normal build path, still no KLU/NICSLU/CKTSO
+  installed): `import lightsim2grid` still works, `NR_SparseLU` binds
+  normally, and `NR_KLU` correctly stays unbound (`ImportError`, as it
+  should for a build that genuinely doesn't have KLU) — the fix doesn't
+  change behavior for the normal build path.
+- Reran the nitpicky Sphinx pass with the `_READ_THE_DOCS` build: warnings
+  dropped from 1537 to 1483. All 16 `docs/algorithm_names.rst`
+  `py:class reference target not found: lightsim2grid.algorithm.NR_KLU`
+  (and `NRSing_KLU`/`DC_KLU`/`FDPF_XB_KLU`/`FDPF_BX_KLU`/the NICSLU and
+  CKTSO equivalents) warnings are gone — those classes now genuinely exist
+  and resolve. The 18 mentions still present in the log are all instances
+  of the pre-existing, already-logged `lightsim2grid.solver.*` vs
+  `lightsim2grid.algorithm.*` deprecated-alias issue (out of scope here),
+  not the "class doesn't exist" problem this fix targeted.
+
 ## 1. Quantitative overview
 
 `help_fun_msg.hpp` declares 217 doc strings across 5 structs (all 217 are
