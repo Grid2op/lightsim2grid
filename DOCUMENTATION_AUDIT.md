@@ -328,6 +328,26 @@ naming consistency with the rest of the file) and rewriting the schema to use
 `hv`/`lv` instead (a real electrical distinction, not just a naming choice —
 left untouched).
 
+**[FIXED] 20. The schema's shunt-admittance term (`1/2*h`) was itself wrong,
+not just stale terminology.** `TwoSidesContainer_rxh_A::compute_yac` (in
+`src/core/element_container/TwoSidesContainer_rxh_A.hpp`, around line
+1015-1020) builds ``yac_11 = ys + h1``, ``yac_22 = ys + h2`` from two
+**independent** per-side values `h_side_1_`/`h_side_2_` (bound as
+`h1_pu`/`h2_pu`) -- not one shared `h` split symmetrically in half at each
+side, which is what the old `1/2*h` label on both sides of the schema
+claimed. They can legitimately differ (eg an asymmetric line/transformer
+imported from pypowsybl). Separately, `DocIterator::h_pu`'s own text had `g`
+(conductance) and `b` (susceptance) backwards -- it said "capacitance (real
+part) and dielectric conductance (imaginary part)", but
+`DataConverter.cpp:258-264` builds `h` as ``g + 1j * b`` (conductance from
+`branch_g` is the real part; susceptance from `branch_c`, ie the line
+charging capacitance, is the imaginary part) -- confirmed independently by
+`h_side_1_`'s imaginary part feeding the FDPF `B''` matrix
+(`TwoSidesContainer_rxh_A.hpp:929`, a susceptance-only quantity). Fixed the
+schema to show `h1`/`h2` (not `1/2*h` twice) with a note that they're
+independent, and fixed `h_pu`'s text to state the correct `g`/`b` ↔ real/
+imaginary mapping.
+
 Areas that *were* checked closely and found to still be accurate, so they
 don't need touching in the accuracy pass (only the reorganization):
 `check_grid`, `change_algorithm`'s DC/AC routing, `check_solution`'s KCL-

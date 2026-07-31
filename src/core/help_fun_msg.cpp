@@ -848,12 +848,20 @@ const std::string DocIterator::line_model = R"mydelimiter(
          `bus 1` o------>   -----------------|r + j.x|---------<-------o `bus 2`
                  |       ) (            |                  |           |
                  |       ) (         |     |            |     |        |
-                 | v1    ) ( n:1     |1/2*h|            |1/2*h|        | v2
+                 | v1    ) ( n:1      | h1  |            | h2  |        | v2
                  |       ) (         |     |            |     |        |
                  \/      ) (            |                  |           \/
         ground---o-------   -------------------------------------------o---- ground
 
-    (fyi: `i1`, `i2`, `n` and `y` are all complex numbers. `r` and `x` are real numbers. `j` is a complex number such that `j^2 = -1`)
+    (fyi: `i1`, `i2`, `n`, `h1` and `h2` are all complex numbers. `r` and `x` are real numbers. `j` is a complex number such that `j^2 = -1`)
+
+    .. note::
+        `h1` and `h2` are independent per-side shunt admittances, NOT necessarily one half of a single
+        total value each (they can differ, eg for an asymmetric line/transformer coming from pypowsybl):
+        the admittance matrix contribution of one branch is ``[[ys + h1, -ys], [-ys, ys + h2]]`` with
+        ``ys = 1 / (r + j.x)`` (see :func:`lightsim2grid.elements.LineContainer.get_yac_eff_11` and
+        friends for the coefficients actually used, including any tap-side / phase-shift correction for
+        transformers).
 
     .. note::
         For a powerline, side 1 / side 2 used to be called `or` (origin) / `ex` (extremity) in older
@@ -875,10 +883,12 @@ const std::string DocIterator::x_pu = R"mydelimiter(
 )mydelimiter" + DocIterator::line_model;
 
 const std::string DocIterator::h_pu = R"mydelimiter(
-    Retrieve the capacitance (real part) and dielectric conductance (imaginary part)
-    (given in pair unit system) of the powerlines or the transformers. 
-    
-    This is a complex number and is represented by the number `h` in the line model.
+    Retrieve the shunt admittance (in pair unit system) of one side of the powerline / transformer:
+    conductance `g` as the real part, susceptance `b` (related to the line charging capacitance) as the
+    imaginary part, ie ``h = g + 1j * b``.
+
+    This is a complex number, represented by `h1` (side 1) or `h2` (side 2) in the line model -- they are
+    independent values, not half of a single shared `h` each (see the note in the line model below).
 
 )mydelimiter" + DocIterator::line_model;
 
