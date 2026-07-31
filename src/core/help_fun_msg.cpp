@@ -75,7 +75,7 @@ const std::string DocSolver::get_V = R"mydelimiter(
 
 const std::string DocSolver::get_error = R"mydelimiter(
     Returns the error encountered by the solver during the last ``compute_pf`` / ``solve`` call,
-    as a :class:`lightsim2grid.solver.ErrorType` value (``ErrorType.NoError``, ie 0, when nothing
+    as a :class:`lightsim2grid.algorithm.ErrorType` value (``ErrorType.NoError``, ie 0, when nothing
     went wrong).
 
     .. note::
@@ -83,7 +83,7 @@ const std::string DocSolver::get_error = R"mydelimiter(
         error here (``ErrorType.TooManyIterations``), so :func:`converged` (which is exactly
         ``get_error() == ErrorType.NoError``) is ``False`` in that case too.
 
-    See :class:`lightsim2grid.solver.ErrorType` for the full list of possible values and what each
+    See :class:`lightsim2grid.algorithm.ErrorType` for the full list of possible values and what each
     one means.
 )mydelimiter";
 
@@ -152,7 +152,7 @@ const std::string DocSolver::get_timers = R"mydelimiter(
     .. note::
         This is returned as a plain ``(float, float, float, float)`` tuple, in the order below
         (there are no named attributes on it) -- for named access to a wider set of timers, see
-        :func:`get_timers_jacobian` instead, which returns a :class:`lightsim2grid.solver.TimerJac`.
+        :func:`get_timers_jacobian` instead, which returns a :class:`lightsim2grid.algorithm.TimerJac`.
 
     Returns
     ---------
@@ -178,36 +178,36 @@ const std::string DocSolver::NR_SparseLU = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NR_SparseLU`.
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `NR_SparseLU`.
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NR_SparseLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.NR_SparseLU)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.NR_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.NR_SparseLU)` at creation time    
     
     .. note::
-        Available on all plateform, this is the default solver used when :class:`lightsim2grid.solver.NRSing_KLU`
+        Available on all plateform, this is the default solver used when :class:`lightsim2grid.algorithm.NRSing_KLU`
         is not found (when a "single slack" is detected).
 
 )mydelimiter";
 
 const std::string DocSolver::NRSing_SparseLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, using the default Eigen sparse solver available in Eigen
-    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.NR_SparseLU` .
+    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.algorithm.NR_SparseLU` .
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NRSing_SparseLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `NRSing_SparseLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NRSing_SparseLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.NRSing_SparseLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.NRSing_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.NRSing_SparseLU)` at creation time
 
     .. note::
-        Available on all plateform, this is the default solver used when a distributed slack bus is detected and :class:`lightsim2grid.solver.AlgorithmType.NR_KLU`
+        Available on all plateform, this is the default solver used when a distributed slack bus is detected and :class:`lightsim2grid.algorithm.NR_KLU`
         is not found.
 
 )mydelimiter";
@@ -220,12 +220,12 @@ const std::string DocSolver::DC_SparseLU =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `DC_SparseLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `DC_SparseLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.DC_SparseLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.DC_SparseLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.DC_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.DC_SparseLU)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -243,12 +243,12 @@ const std::string DocSolver::FDPF_XB_SparseLU =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_XB_SparseLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `FDPF_XB_SparseLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_XB_SparseLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_XB_SparseLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.FDPF_XB_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.FDPF_XB_SparseLU)` at creation time
 
 )mydelimiter";
 
@@ -260,49 +260,49 @@ const std::string DocSolver::FDPF_BX_SparseLU =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_BX_SparseLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `FDPF_BX_SparseLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_BX_SparseLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_BX_SparseLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.FDPF_BX_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.FDPF_BX_SparseLU)` at creation time
 
 )mydelimiter";
 
 const std::string DocSolver::NR_KLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster KLU solver available in the SuiteSparse library
-    for the linear algebra (can be unavailable if you build lightsim2grid from source). It is usually faster than the :class:`lightsim2grid.solver.NR_SparseLU`.
+    for the linear algebra (can be unavailable if you build lightsim2grid from source). It is usually faster than the :class:`lightsim2grid.algorithm.NR_SparseLU`.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NR_KLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `NR_KLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NR_KLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.NR_KLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.NR_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.NR_KLU)` at creation time
 
     .. note::
-        This is the default solver used when a distributed slack bus is detected (when it's available, otherwise see :class:`lightsim2grid.solver.NR_SparseLU`).
+        This is the default solver used when a distributed slack bus is detected (when it's available, otherwise see :class:`lightsim2grid.algorithm.NR_SparseLU`).
 
 )mydelimiter";
 
 const std::string DocSolver::NRSing_KLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm,the faster KLU solver available in the SuiteSparse library
-    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.NR_KLU`.
+    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.algorithm.NR_KLU`.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NRSing_KLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `NRSing_KLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NRSing_KLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.NRSing_KLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.NRSing_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.NRSing_KLU)` at creation time
 
     .. note::
         This is the default solver used when available.
@@ -310,13 +310,13 @@ const std::string DocSolver::NRSing_KLU = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocSolver::NRRefactorRetry_KLU = R"mydelimiter(
-    Same as :class:`lightsim2grid.solver.NR_KLU` (Newton Raphson, distributed slack, KLU
+    Same as :class:`lightsim2grid.algorithm.NR_KLU` (Newton Raphson, distributed slack, KLU
     linear solver), except that if a Jacobian refactorize() fails it falls back to a full
     factorize() (reusing the existing symbolic factorization) before giving up, rather
     than reporting an error immediately.
 
     Use `get_linear_solver_stats()` on the solver to inspect how often factor/refactor
-    calls happen and how often the fallback fires (see :class:`lightsim2grid.solver.LinearSolverStats`).
+    calls happen and how often the fallback fires (see :class:`lightsim2grid.algorithm.LinearSolverStats`).
 
 )mydelimiter";
 
@@ -328,12 +328,12 @@ const std::string DocSolver::DC_KLU = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `DC_KLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `DC_KLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.DC_KLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.DC_KLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.DC_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.DC_KLU)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -351,12 +351,12 @@ const std::string DocSolver::FDPF_XB_KLU =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_XB_KLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `FDPF_XB_KLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_XB_KLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_XB_KLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.FDPF_XB_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.FDPF_XB_KLU)` at creation time
 
 )mydelimiter";
 
@@ -368,29 +368,29 @@ const std::string DocSolver::FDPF_BX_KLU =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_BX_KLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `FDPF_BX_KLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_BX_KLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_BX_KLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.FDPF_BX_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.FDPF_BX_KLU)` at creation time
 
 )mydelimiter";
 
 const std::string DocSolver::NR_NICSLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster NICSLU solver available in the NICSLU library
-    for the linear algebra. It is usually faster than the :class:`lightsim2grid.solver.NR_SparseLU`. (requires a build from source)
+    for the linear algebra. It is usually faster than the :class:`lightsim2grid.algorithm.NR_SparseLU`. (requires a build from source)
     
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NR_NICSLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `NR_NICSLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NR_NICSLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.NR_NICSLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.NR_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.NR_NICSLU)` at creation time
 
     .. warning::
         
@@ -403,33 +403,33 @@ const std::string DocSolver::NR_NICSLU = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocSolver::NRRefactorRetry_NICSLU = R"mydelimiter(
-    Same as :class:`lightsim2grid.solver.NR_NICSLU` (Newton Raphson, distributed slack,
+    Same as :class:`lightsim2grid.algorithm.NR_NICSLU` (Newton Raphson, distributed slack,
     NICSLU linear solver), except that if a Jacobian refactorize() fails it falls back to
     a full factorize() before giving up, rather than reporting an error immediately. For
     NICSLU, factorize() and refactorize() call the same underlying routine, so this
     fallback is effectively a no-op retry -- included mainly for API symmetry with
-    :class:`lightsim2grid.solver.NRRefactorRetry_KLU` and
-    :class:`lightsim2grid.solver.NRRefactorRetry_CKTSO`.
+    :class:`lightsim2grid.algorithm.NRRefactorRetry_KLU` and
+    :class:`lightsim2grid.algorithm.NRRefactorRetry_CKTSO`.
 
     Use `get_linear_solver_stats()` on the solver to inspect how often factor/refactor
-    calls happen and how often the fallback fires (see :class:`lightsim2grid.solver.LinearSolverStats`).
+    calls happen and how often the fallback fires (see :class:`lightsim2grid.algorithm.LinearSolverStats`).
 
 )mydelimiter";
 
 const std::string DocSolver::NRSing_NICSLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, the faster NICSLU solver available in the NICSLU library
-    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.NR_NICSLU` .
+    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.algorithm.NR_NICSLU` .
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NRSing_NICSLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `NRSing_NICSLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NRSing_NICSLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.NRSing_NICSLU)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.NRSing_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.NRSing_NICSLU)` at creation time    
 
     .. warning::
         
@@ -449,12 +449,12 @@ const std::string DocSolver::DC_NICSLU = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `DC_NICSLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `DC_NICSLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.DC_NICSLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.DC_NICSLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.DC_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.DC_NICSLU)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -480,12 +480,12 @@ const std::string DocSolver::FDPF_XB_NICSLU =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_XB_NICSLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `FDPF_XB_NICSLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_XB_NICSLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_XB_NICSLU)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.FDPF_XB_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.FDPF_XB_NICSLU)` at creation time    
 
     .. warning::
         
@@ -505,12 +505,12 @@ const std::string DocSolver::FDPF_BX_NICSLU =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_BX_NICSLU` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `FDPF_BX_NICSLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_BX_NICSLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_BX_NICSLU)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.FDPF_BX_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.FDPF_BX_NICSLU)` at creation time    
 
     .. warning::
         
@@ -530,12 +530,12 @@ const std::string DocSolver::NR_CKTSO = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NR_CKTSO` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `NR_CKTSO` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NR_CKTSO)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.NR_CKTSO)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.NR_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.NR_CKTSO)` at creation time
 
     .. note::
 
@@ -544,30 +544,30 @@ const std::string DocSolver::NR_CKTSO = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocSolver::NRRefactorRetry_CKTSO = R"mydelimiter(
-    Same as :class:`lightsim2grid.solver.NR_CKTSO` (Newton Raphson, distributed slack,
+    Same as :class:`lightsim2grid.algorithm.NR_CKTSO` (Newton Raphson, distributed slack,
     CKTSO linear solver), except that if a Jacobian refactorize() fails it falls back to
     a full factorize() (reusing the existing symbolic factorization) before giving up,
     rather than reporting an error immediately.
 
     Use `get_linear_solver_stats()` on the solver to inspect how often factor/refactor
-    calls happen and how often the fallback fires (see :class:`lightsim2grid.solver.LinearSolverStats`).
+    calls happen and how often the fallback fires (see :class:`lightsim2grid.algorithm.LinearSolverStats`).
 
 )mydelimiter";
 
 const std::string DocSolver::NRSing_CKTSO = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, the faster CKTSO solver available in the CKTSO library
-    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.NR_CKTSO` .
+    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.algorithm.NR_CKTSO` .
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NRSing_CKTSO` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `NRSing_CKTSO` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NRSing_CKTSO)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.NRSing_CKTSO)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.NRSing_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.NRSing_CKTSO)` at creation time
 
     .. note::
 
@@ -583,12 +583,12 @@ const std::string DocSolver::DC_CKTSO = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `DC_CKTSO` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `DC_CKTSO` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.DC_CKTSO)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.DC_CKTSO)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.DC_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.DC_CKTSO)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -610,12 +610,12 @@ const std::string DocSolver::FDPF_XB_CKTSO =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_XB_CKTSO` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `FDPF_XB_CKTSO` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_XB_CKTSO)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_XB_CKTSO)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.FDPF_XB_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.FDPF_XB_CKTSO)` at creation time    
 
     .. warning::
         
@@ -635,12 +635,12 @@ const std::string DocSolver::FDPF_BX_CKTSO =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_BX_CKTSO` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `FDPF_BX_CKTSO` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_BX_CKTSO)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_BX_CKTSO)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.FDPF_BX_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.FDPF_BX_CKTSO)` at creation time    
 
     .. warning::
         
@@ -660,12 +660,12 @@ const std::string DocSolver::GaussSeidelAlgo = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `GaussSeidel` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it is called `GaussSeidel` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.GaussSeidel)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.GaussSeidel)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.GaussSeidel)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.GaussSeidel)` at creation time
 
     .. warning::
         It currently does not support distributed slack.
@@ -674,19 +674,19 @@ const std::string DocSolver::GaussSeidelAlgo = R"mydelimiter(
 
 const std::string DocSolver::GaussSeidelSynchAlgo = R"mydelimiter(
     Variant implementation of the "Gauss Seidel" powerflow solver, where every buses are updated at once (can be significantly faster than the 
-    :class:`lightsim2grid.solver.GaussSeidelAlgo` for larger grid). We still do not recommend to use it as the Newton Raphson based solvers
+    :class:`lightsim2grid.algorithm.GaussSeidelAlgo` for larger grid). We still do not recommend to use it as the Newton Raphson based solvers
     are usually much (much) faster.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it called `GaussSeidelSynch` 
+        In the enum :attr:`lightsim2grid.algorithm.AlgorithmType`, it called `GaussSeidelSynch` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.GaussSeidelSynch)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.GaussSeidelSynch)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.algorithm.GaussSeidelSynch)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.algorithm.GaussSeidelSynch)` at creation time
 
     .. warning::
         It currently does not support distributed slack.
@@ -717,7 +717,7 @@ const std::string DocSolver::AlgorithmSelector = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocSolver::get_type = R"mydelimiter(
-    Retrieve the current solver used. This will return an instance of :class:`lightsim2grid.solver.AlgorithmType` indicating which
+    Retrieve the current solver used. This will return an instance of :class:`lightsim2grid.algorithm.AlgorithmType` indicating which
     is the underlying solver in use.
 
     This should be equivalent to :func:`lightsim2grid.network.LSGrid.get_algo_type()`
@@ -727,7 +727,7 @@ const std::string DocSolver::chooseSolver_get_J_python = R"mydelimiter(
     Returns the Jacobian matrix used for solving the powerflow as a scipy sparse CSC matrix matrix of real number.
 
     .. note::
-        Depending on the underlying solver used (*eg* :class:`lightsim2grid.solver.DC_SparseLU` or :class:`lightsim2grid.solver.GaussSeidelAlgo`)
+        Depending on the underlying solver used (*eg* :class:`lightsim2grid.algorithm.DC_SparseLU` or :class:`lightsim2grid.algorithm.GaussSeidelAlgo`)
         the jacobian matrix might be irrelevant and an attempt to use this function will throw a RuntimeError. 
 
 )mydelimiter";
@@ -1036,10 +1036,10 @@ const std::string DocIterator::is_slack = R"mydelimiter(
     .. note:: 
         Depending on the solver used, it is possible that a generator we asked to participate to the distributed slack bus
         do not participate to it (for example if there is a more than one generator where `is_slack` is ``True`` but the model used
-        to computed the powerflow do not support distributed slack buses - **eg** :class:`lightsim2grid.solver.NRSing_SparseLU`)
+        to computed the powerflow do not support distributed slack buses - **eg** :class:`lightsim2grid.algorithm.NRSing_SparseLU`)
 
-        This is why we recommend to use the (slower) but more accurate :class:`lightsim2grid.solver.NR_SparseLU` or 
-        :class:`lightsim2grid.solver.NR_KLU` for example.
+        This is why we recommend to use the (slower) but more accurate :class:`lightsim2grid.algorithm.NR_SparseLU` or 
+        :class:`lightsim2grid.algorithm.NR_KLU` for example.
 
 )mydelimiter";
 
@@ -1954,21 +1954,21 @@ const std::string DocLSGrid::available_algorithm_names =  R"mydelimiter(
 const std::string DocLSGrid::get_computation_time = R"mydelimiter(
     Return the total computation time (in second) spend in the solver when performing a powerflow.
 
-    This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.solver.AlgorithmSelector.get_computation_time` of
+    This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.algorithm.AlgorithmSelector.get_computation_time` of
     the solver used (:func:`lightsim2grid.network.LSGrid.get_solver`)
     
 )mydelimiter";
 const std::string DocLSGrid::get_dc_computation_time = R"mydelimiter(
     Return the total computation time (in second) spend in the solver (used to perform DC approximation) when performing a DC powerflow.
 
-    This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.solver.AlgorithmSelector.get_computation_time` of
+    This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.algorithm.AlgorithmSelector.get_computation_time` of
     the DC solver used (:func:`lightsim2grid.network.LSGrid.get_dc_solver`)
     
 )mydelimiter";
 const std::string DocLSGrid::get_algo_type = R"mydelimiter(
     Return the type of the solver currently used.
 
-    This is equivalent to the `get_type` of the :func:`lightsim2grid.solver.AlgorithmSelector.get_type` of
+    This is equivalent to the `get_type` of the :func:`lightsim2grid.algorithm.AlgorithmSelector.get_type` of
     the solver used.
 
 )mydelimiter";
@@ -1977,11 +1977,11 @@ const std::string DocLSGrid::get_dc_algo_type = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocLSGrid::get_algo = R"mydelimiter(
-    Return the solver currently in use as a :func:`lightsim2grid.solver.AlgorithmSelector` instance.
+    Return the solver currently in use as a :func:`lightsim2grid.algorithm.AlgorithmSelector` instance.
 
 )mydelimiter";
 const std::string DocLSGrid::get_dc_algo = R"mydelimiter(
-    Return the solver currently in use as a :func:`lightsim2grid.solver.AlgorithmSelector` instance for the dc powerflow.
+    Return the solver currently in use as a :func:`lightsim2grid.algorithm.AlgorithmSelector` instance for the dc powerflow.
 
 )mydelimiter";
 
@@ -2154,8 +2154,8 @@ const std::string DocLSGrid::_internal_do_not_use = R"mydelimiter(
 const std::string DocLSGrid::J_description = R"mydelimiter(
     J is NOT a fixed-shape 2x2 block anymore: it is assembled by composing a common "Base" block
     with independent extensions, and which extensions are active depends on the solver
-    (:class:`lightsim2grid.solver.NRSing_SparseLU` and friends use only ``Base`` + ``VoltageControl``
-    + ``Hvdc``; :class:`lightsim2grid.solver.NR_SparseLU` and friends additionally use
+    (:class:`lightsim2grid.algorithm.NRSing_SparseLU` and friends use only ``Base`` + ``VoltageControl``
+    + ``Hvdc``; :class:`lightsim2grid.algorithm.NR_SparseLU` and friends additionally use
     ``MultiSlack``). Each part below claims its own rows (equations) / columns (unknowns); nothing
     below is claimed twice.
 
