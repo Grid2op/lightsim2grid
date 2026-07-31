@@ -222,7 +222,7 @@ void bind_solvers(py::module_& m) {
         bind_fdpf_linear_solver_stats(cls);
     }
 
-#if defined(KLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
+#if defined(KLU_SOLVER_AVAILABLE)
     {
         auto cls = py::class_<NR_KLU>(m, "NR_KLU", DocSolver::NR_KLU.c_str())
             .def(py::init<>())
@@ -265,9 +265,24 @@ void bind_solvers(py::module_& m) {
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
+#elif defined(_READ_THE_DOCS)
+    // KLU is not available in this build: per Solvers.hpp, NR_KLU (and every
+    // sibling below) is then a plain type alias of the SparseLU family, ie
+    // literally the same C++ type as NR_SparseLU -- not a distinct class to
+    // bind. A second py::class_<> registration of an already-bound type is
+    // rejected by pybind11 at import time ("generic_type: type X is already
+    // registered!"), so expose the name as a Python-level attribute alias to
+    // the already-bound SparseLU class instead, purely so Sphinx autodoc has
+    // something importable to introspect under this name.
+    m.attr("NR_KLU") = m.attr("NR_SparseLU");
+    m.attr("NRSing_KLU") = m.attr("NRSing_SparseLU");
+    m.attr("DC_KLU") = m.attr("DC_SparseLU");
+    m.attr("FDPF_XB_KLU") = m.attr("FDPF_XB_SparseLU");
+    m.attr("FDPF_BX_KLU") = m.attr("FDPF_BX_SparseLU");
+    m.attr("NRRefactorRetry_KLU") = m.attr("NR_SparseLU");
 #endif  // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
-#if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
+#if defined(NICSLU_SOLVER_AVAILABLE)
     {
         auto cls = py::class_<NR_NICSLU>(m, "NR_NICSLU", DocSolver::NR_NICSLU.c_str())
             .def(py::init<>())
@@ -310,9 +325,20 @@ void bind_solvers(py::module_& m) {
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
+#elif defined(_READ_THE_DOCS)
+    // See the KLU block above: NICSLU unavailable means NR_NICSLU (and
+    // siblings) alias the SparseLU family at the C++ type level, so expose
+    // them as attribute aliases rather than a second py::class_<> of an
+    // already-bound type.
+    m.attr("NR_NICSLU") = m.attr("NR_SparseLU");
+    m.attr("NRSing_NICSLU") = m.attr("NRSing_SparseLU");
+    m.attr("DC_NICSLU") = m.attr("DC_SparseLU");
+    m.attr("FDPF_XB_NICSLU") = m.attr("FDPF_XB_SparseLU");
+    m.attr("FDPF_BX_NICSLU") = m.attr("FDPF_BX_SparseLU");
+    m.attr("NRRefactorRetry_NICSLU") = m.attr("NR_SparseLU");
 #endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
-#if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
+#if defined(CKTSO_SOLVER_AVAILABLE)
     {
         auto cls = py::class_<NR_CKTSO>(m, "NR_CKTSO", DocSolver::NR_CKTSO.c_str())
             .def(py::init<>())
@@ -355,6 +381,17 @@ void bind_solvers(py::module_& m) {
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
+#elif defined(_READ_THE_DOCS)
+    // See the KLU block above: CKTSO unavailable means NR_CKTSO (and
+    // siblings) alias the SparseLU family at the C++ type level, so expose
+    // them as attribute aliases rather than a second py::class_<> of an
+    // already-bound type.
+    m.attr("NR_CKTSO") = m.attr("NR_SparseLU");
+    m.attr("NRSing_CKTSO") = m.attr("NRSing_SparseLU");
+    m.attr("DC_CKTSO") = m.attr("DC_SparseLU");
+    m.attr("FDPF_XB_CKTSO") = m.attr("FDPF_XB_SparseLU");
+    m.attr("FDPF_BX_CKTSO") = m.attr("FDPF_BX_SparseLU");
+    m.attr("NRRefactorRetry_CKTSO") = m.attr("NR_SparseLU");
 #endif  // CKTSO_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
     {
