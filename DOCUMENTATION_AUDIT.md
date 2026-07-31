@@ -17,6 +17,54 @@ Sphinx pulls these docstrings directly (`autoclass`/`automodule` in
 `docs/*.rst`), so anything wrong here is wrong on the public docs site too —
 this isn't just an in-REPL `help()` problem.
 
+## 0. Full build verification (post section-3 fixes)
+
+Actually built the C++ extension (`pip install -e ".[docs]"`, after
+initializing the `eigen` submodule, which wasn't checked out) and ran the
+real `sphinx-build -b html` the project uses:
+
+- **`import lightsim2grid` succeeds**, and the compiled docstrings reflect
+  the fixes (spot-checked `get_error.__doc__` directly against the running
+  module).
+- **`sphinx-build -b html . <out>`: build succeeded, 0 warnings, 0
+  errors.** Confirmed on a clean run before *and* after the section-3 fixes.
+- Additionally ran `sphinx-build -n` (nitpicky: validates every `:class:`/
+  `:func:`/`:attr:` cross-reference, which the project's normal build does
+  not) purely as an extra check. It produced 1537 warnings — but this mode
+  isn't how the project builds its docs, and cross-checking confirmed the
+  volume is a **pre-existing, systemic baseline**, not something introduced
+  by the section-3 fixes: KLU/NICSLU/CKTSO solver classes aren't compiled
+  in this environment (no SuiteSparse) so their `:class:` refs are
+  unresolved here only; every `numpy.typing.NDArray`/`numpy.int32`/
+  `numpy.complex128` mention in pybind11-generated type stubs is
+  unresolved; and, more relevantly, **every single `:class:`/`:attr:`
+  reference to `lightsim2grid.solver.*` throughout the *entire*
+  `help_fun_msg.cpp` file (hundreds of them, not just the ones touched in
+  this pass) is unresolved**, because `lightsim2grid.solver` is a
+  deprecated alias module (`lightsim2grid.algorithm` is current) that isn't
+  exposed to autodoc under the old path. That's a real, previously
+  undiscovered issue, but it's pre-existing, systemic, and out of scope for
+  the section-3 accuracy pass — flagged here for a future decision (rename
+  every `lightsim2grid.solver.X` reference to `lightsim2grid.algorithm.X`,
+  or fix autodoc to resolve the deprecated alias too), not fixed now.
+- One nitpicky-only warning did change as a side effect of a section-3 fix:
+  `ContingencyAnalysisCPP.compute_limit_violations`'s docstring newly trips
+  a numpydoc quirk where a plain-prose property docstring's first line gets
+  misparsed as a comma-separated "type" field, generating spurious
+  unresolved-class warnings for text fragments like "per contingency".
+  Verified by rebuilding with the pre-fix (stray-quote) text reinstated:
+  the same quirk still fires on the untouched `nb_thread` property (and on
+  untouched prose in `network.rst:374` / `rewards.rst:10`), so it's the
+  same pre-existing quirk — my fix just happened to turn a docstring that
+  used to be accidentally truncated (by the stray literal newlines) into a
+  single clean line long enough to trip it too. Invisible in the actual
+  (non-nitpicky) build, both before and after.
+- Spot-checked the actual rendered HTML for the `J_description` rewrite,
+  the hvdc-line rewrite, and the line/trafo schema: all render correctly
+  (bold section headers, `Note`/`Danger`/`Added in version` admonitions,
+  the ASCII schema inside its code block, and cross-references), no
+  leftover RST artifacts.
+
 ## 1. Quantitative overview
 
 `help_fun_msg.hpp` declares 217 doc strings across 5 structs (all 217 are
