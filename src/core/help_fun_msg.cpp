@@ -74,7 +74,17 @@ const std::string DocSolver::get_V = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocSolver::get_error = R"mydelimiter(
-    Returns the error code (as an integer) encountered by the solver (0 = no error). TODO DOC explain better
+    Returns the error encountered by the solver during the last ``compute_pf`` / ``solve`` call,
+    as a :class:`lightsim2grid.solver.ErrorType` value (``ErrorType.NoError``, ie 0, when nothing
+    went wrong).
+
+    .. note::
+        Reaching ``max_iter`` without meeting the requested tolerance is itself reported as an
+        error here (``ErrorType.TooManyIterations``), so :func:`converged` (which is exactly
+        ``get_error() == ErrorType.NoError``) is ``False`` in that case too.
+
+    See :class:`lightsim2grid.solver.ErrorType` for the full list of possible values and what each
+    one means.
 )mydelimiter";
 
 const std::string DocSolver::get_nb_iter = R"mydelimiter(
@@ -139,6 +149,11 @@ const std::string DocSolver::get_timers = R"mydelimiter(
 
     Times are measured in seconds using the c++ `steady_clock <https://www.cplusplus.com/reference/chrono/steady_clock/>`_ clock.
 
+    .. note::
+        This is returned as a plain ``(float, float, float, float)`` tuple, in the order below
+        (there are no named attributes on it) -- for named access to a wider set of timers, see
+        :func:`get_timers_jacobian` instead, which returns a :class:`lightsim2grid.solver.TimerJac`.
+
     Returns
     ---------
     timer_Fx_: ``float``
@@ -150,7 +165,7 @@ const std::string DocSolver::get_timers = R"mydelimiter(
     timer_check_: ``float``
         Time spent in checking whether or not the mismatch of the KCL met the specified tolerance
 
-    timer_total_: ``float``
+    timer_total_nr_: ``float``
         Total time spent in the solver
 
 )mydelimiter";
@@ -163,7 +178,7 @@ const std::string DocSolver::NR_SparseLU = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `SparseLU`.
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NR_SparseLU`.
         
         You can use it with:
         
@@ -184,12 +199,12 @@ const std::string DocSolver::NRSing_SparseLU = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `SparseLUSingleSlack` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NRSing_SparseLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.SparseLUSingleSlack)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SparseLUSingleSlack)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NRSing_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.NRSing_SparseLU)` at creation time
 
     .. note::
         Available on all plateform, this is the default solver used when a distributed slack bus is detected and :class:`lightsim2grid.solver.AlgorithmType.NR_KLU`
@@ -205,7 +220,7 @@ const std::string DocSolver::DC_SparseLU =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `DC` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `DC_SparseLU` 
         
         You can use it with:
         
@@ -228,29 +243,29 @@ const std::string DocSolver::FDPF_XB_SparseLU =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_SparseLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_XB_SparseLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_SparseLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_SparseLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_XB_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_XB_SparseLU)` at creation time
 
 )mydelimiter";
 
 const std::string DocSolver::FDPF_BX_SparseLU =  R"mydelimiter(
-    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the default Eigen sparse lu decomposition for 
+    Default implementation of the Fast Decoupled Powerflow solver (BX version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the default Eigen sparse lu decomposition for 
     its underlying sparse matrix manipulation.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_SparseLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_BX_SparseLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_SparseLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_SparseLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_BX_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_BX_SparseLU)` at creation time
 
 )mydelimiter";
 
@@ -262,7 +277,7 @@ const std::string DocSolver::NR_KLU = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `KLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NR_KLU` 
         
         You can use it with:
         
@@ -282,12 +297,12 @@ const std::string DocSolver::NRSing_KLU = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `KLUSingleSlack` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NRSing_KLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.KLUSingleSlack)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.KLUSingleSlack)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NRSing_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.NRSing_KLU)` at creation time
 
     .. note::
         This is the default solver used when available.
@@ -313,7 +328,7 @@ const std::string DocSolver::DC_KLU = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `KLUDC` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `DC_KLU` 
         
         You can use it with:
         
@@ -329,36 +344,36 @@ const std::string DocSolver::DC_KLU = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocSolver::FDPF_XB_KLU =  R"mydelimiter(
-    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdbx"  in pypower / pandapower), it uses the fast KLU library for 
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdxb"  in pypower / pandapower), it uses the fast KLU library for 
     its underlying sparse matrix manipulation.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_KLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_XB_KLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_KLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_KLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_XB_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_XB_KLU)` at creation time
 
 )mydelimiter";
 
 const std::string DocSolver::FDPF_BX_KLU =  R"mydelimiter(
-    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdxb"  in pypower / pandapower), it uses the fast KLU library for 
+    Default implementation of the Fast Decoupled Powerflow solver (BX version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the fast KLU library for 
     its underlying sparse matrix manipulation.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_KLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_BX_KLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_KLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_KLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_BX_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_BX_KLU)` at creation time
 
 )mydelimiter";
 
@@ -370,7 +385,7 @@ const std::string DocSolver::NR_NICSLU = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NICSLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NR_NICSLU` 
         
         You can use it with:
         
@@ -409,12 +424,12 @@ const std::string DocSolver::NRSing_NICSLU = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NICSLUSingleSlack` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NRSing_NICSLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NICSLUSingleSlack)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLUSingleSlack)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NRSing_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.NRSing_NICSLU)` at creation time    
 
     .. warning::
         
@@ -434,7 +449,7 @@ const std::string DocSolver::DC_NICSLU = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NICSLUDC` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `DC_NICSLU` 
         
         You can use it with:
         
@@ -465,12 +480,12 @@ const std::string DocSolver::FDPF_XB_NICSLU =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_NICSLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_XB_NICSLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_NICSLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_NICSLU)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_XB_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_XB_NICSLU)` at creation time    
 
     .. warning::
         
@@ -483,19 +498,19 @@ const std::string DocSolver::FDPF_XB_NICSLU =  R"mydelimiter(
 )mydelimiter";
 
 const std::string DocSolver::FDPF_BX_NICSLU =  R"mydelimiter(
-    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the fast NICSLU library for 
+    Default implementation of the Fast Decoupled Powerflow solver (BX version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the fast NICSLU library for 
     its underlying sparse matrix manipulation.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_NICSLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_BX_NICSLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_NICSLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_NICSLU)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_BX_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_BX_NICSLU)` at creation time    
 
     .. warning::
         
@@ -515,7 +530,7 @@ const std::string DocSolver::NR_CKTSO = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `CKTSO` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NR_CKTSO` 
         
         You can use it with:
         
@@ -547,12 +562,12 @@ const std::string DocSolver::NRSing_CKTSO = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `CKTSOSingleSlack` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NRSing_CKTSO` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.CKTSOSingleSlack)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.CKTSOSingleSlack)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NRSing_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.NRSing_CKTSO)` at creation time
 
     .. note::
 
@@ -568,7 +583,7 @@ const std::string DocSolver::DC_CKTSO = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `CKTSODC` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `DC_CKTSO` 
         
         You can use it with:
         
@@ -595,12 +610,12 @@ const std::string DocSolver::FDPF_XB_CKTSO =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_CKTSO` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_XB_CKTSO` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_CKTSO)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_CKTSO)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_XB_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_XB_CKTSO)` at creation time    
 
     .. warning::
         
@@ -613,19 +628,19 @@ const std::string DocSolver::FDPF_XB_CKTSO =  R"mydelimiter(
 )mydelimiter";
 
 const std::string DocSolver::FDPF_BX_CKTSO =  R"mydelimiter(
-    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the fast CKTSO library for 
+    Default implementation of the Fast Decoupled Powerflow solver (BX version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the fast CKTSO library for 
     its underlying sparse matrix manipulation.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_CKTSO` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_BX_CKTSO` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_CKTSO)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_CKTSO)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_BX_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_BX_CKTSO)` at creation time    
 
     .. warning::
         
@@ -719,7 +734,8 @@ const std::string DocSolver::chooseSolver_get_J_python = R"mydelimiter(
 const std::string DocSolver::get_computation_time = R"mydelimiter(
     Return the total computation time (in second) spend in the solver when performing a powerflow.
 
-    This is equivalent to the `timer_total_` returned value of the`***.get_timers()` function.
+    This is equivalent to the last (4th) element, ``timer_total_nr_``, of the tuple returned by
+    ``***.get_timers()``.
 )mydelimiter";
 
 const std::string DocIterator::id = R"mydelimiter(
@@ -861,6 +877,20 @@ const std::string DocIterator::h_pu = R"mydelimiter(
 
 )mydelimiter" + DocIterator::line_model;
 
+const std::string DocIterator::nb_max_busbars = R"mydelimiter(
+    Maximum number of busbars (independent buses) allowed at this substation (``int``, > 0).
+
+    This is the per-substation value of what :func:`lightsim2grid.network.LSGrid.set_max_nb_bus_per_sub`
+    sets grid-wide: the substation has exactly this many candidate buses, some of which may be
+    unused (disconnected) at any given time.
+
+)mydelimiter";
+
+const std::string DocIterator::vn_kv = R"mydelimiter(
+    Nominal voltage of this substation, in kV (``float``).
+
+)mydelimiter";
+
 
 const std::string DocIterator::only_avail_res = R"mydelimiter(
     
@@ -991,7 +1021,7 @@ const std::string DocIterator::is_slack = R"mydelimiter(
     .. note:: 
         Depending on the solver used, it is possible that a generator we asked to participate to the distributed slack bus
         do not participate to it (for example if there is a more than one generator where `is_slack` is ``True`` but the model used
-        to computed the powerflow do not support distributed slack buses - **eg** :class:`lightsim2grid.solver.SparseLUSingleSlack`)
+        to computed the powerflow do not support distributed slack buses - **eg** :class:`lightsim2grid.solver.NRSing_SparseLU`)
 
         This is why we recommend to use the (slower) but more accurate :class:`lightsim2grid.solver.NR_SparseLU` or 
         :class:`lightsim2grid.solver.NR_KLU` for example.
@@ -1007,38 +1037,42 @@ const std::string DocIterator::slack_weight = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::min_q_mvar = R"mydelimiter(
-    Minimum reactive value that can be produced / absorbed by this generator given MVAr.
+    Minimum reactive value that can be produced / absorbed by this generator, in MVAr.
 
-    .. note:: 
-        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.gridmodel.check_solution` if `check_q_limits` is
-        set to ``True``
+    .. note::
+        On a :class:`lightsim2grid.elements.GenInfo` or :class:`lightsim2grid.elements.ConverterStationInfo`
+        that is locally voltage-regulating (``voltage_regulator_on`` is ``True`` and it does not regulate a
+        remote bus), this is genuinely used at every solve: when several such units share the same bus, their
+        reactive-power mismatch is split between them proportionally to ``max_q_mvar - min_q_mvar``. It is
+        also used, in the same case, by :func:`lightsim2grid.gridmodel.LSGrid.check_solution` when
+        ``check_q_limits`` is ``True``, to report any part of the mismatch that falls outside
+        ``[min_q_mvar, max_q_mvar]`` instead of masking it.
+
+        On a "PQ" generator (``voltage_regulator_on`` is ``False``), a remotely-regulating one, or a
+        :class:`lightsim2grid.elements.SGenInfo` (static generators never regulate voltage), this value is
+        NOT used anywhere by lightsim2grid: it is pure metadata carried over from the source model.
 
 )mydelimiter";
 
 const std::string DocIterator::max_q_mvar = R"mydelimiter(
-    Maximum reactive value that can be produced / absorbed by this generator given MVAr.
-
-    .. note:: 
-        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.gridmodel.check_solution` if `check_q_limits` is
-        set to ``True``
+    Maximum reactive value that can be produced / absorbed by this generator, in MVAr. See `min_q_mvar` for
+    when (and how) this is actually used.
 
 )mydelimiter";
 
 const std::string DocIterator::min_p_mw = R"mydelimiter(
-    Minimum active value that can be produced / absorbed by this generator given in MW.
+    Minimum active value that can be produced / absorbed by this static generator, in MW.
 
-    .. note:: 
-        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.gridmodel.check_solution` if `check_q_limits` is
-        set to ``True``
+    .. note::
+        This is NOT used anywhere by lightsim2grid today: it is not enforced by the solver, and
+        :func:`lightsim2grid.gridmodel.LSGrid.check_solution` does not examine static generators at all
+        (only :class:`lightsim2grid.elements.GenInfo` / :class:`lightsim2grid.elements.ConverterStationInfo`,
+        see `min_q_mvar`). It is pure metadata carried over from the source model.
 
 )mydelimiter";
 
 const std::string DocIterator::max_p_mw = R"mydelimiter(
-    Maximum active value that can be produced / absorbed by this generator given in MW.
-
-    .. note:: 
-        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.gridmodel.check_solution` if `check_q_limits` is
-        set to ``True``
+    Maximum active value that can be produced / absorbed by this static generator, in MW. See `min_p_mw`.
 
 )mydelimiter";
 
@@ -1523,7 +1557,7 @@ const std::string DocIterator::bus_or_id = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::bus_ex_id = R"mydelimiter(
-    Get the bus id (as an integer) at which the "lv" side of the line is connected. If `-1` is returned it means
+    Get the bus id (as an integer) at which the "ex" side of the line is connected. If `-1` is returned it means
     that the line is disconnected.
 
 )mydelimiter";
@@ -1592,24 +1626,17 @@ const std::string DocIterator::res_a_ex_ka = R"mydelimiter(
 
 
 const std::string DocIterator::DCLineContainer = R"mydelimiter(
-    This class allows to iterate through the dc lines of the :class:`lightsim2grid.network.LSGrid` easily, as if they were
-    in a python list.
+    This class allows to iterate through the hvdc lines of the :class:`lightsim2grid.network.LSGrid` easily,
+    as if they were in a python list. (Kept under the historical name `DCLineContainer` / `get_dclines()` for
+    backward compatibility; the legacy pandapower dc line is now just a special case of the model below.)
 
-    DC lines are modeled as in pandapower and can be represented a the 
-    `pandapower dclines <https://pandapower.readthedocs.io/en/latest/elements/dcline.html#electric-model>`_ . Basically
-    a dc line is made of 2 generators (one at each side `or` or `ex`). These
-    two generators are linked together: if one produces xx MW the other one consume yy MW (and there 
-    exists a relation between xx and yy).
-
-    To dive a bit into the modelling, the two underlying generators can be controlled independantly for the voltage
-    setpoint. But they are linked together for their active value. A dc powerline has some losses (both in MW and in 
-    percent) and the formula for computing the power injected / produced by each generator is:
-
-    - if `xx` is positive, then `yy = -1.0 * (xx - loss_mw) * (1.0 - 0.01 * loss_percent)`
-    - if `xx` is negative, then `yy = -1.0 * xx / (1.0 - 0.01 * loss_percent) + loss_mw`
-
-    The first formula directly comes from pandapower. The second one ensures that if the direction of the flow is 
-    inverted, then flows should also be inverted (`xx` becomes `yy` and reciprocally).
+    The model follows powsybl IIDM / open-loadflow: the hvdc line itself owns the active power
+    (`p_setpoint_mw`, drawn at the rectifier, and `converters_mode`, saying which side rectifies), while its
+    two embedded converter stations (`station1` / `station2`, one on each side of the line, see
+    :class:`lightsim2grid.elements.ConverterStationInfo`) own the reactive power / voltage behaviour and can
+    be controlled independently for their voltage setpoint. See :class:`lightsim2grid.elements.HvdcLineInfo`
+    for the loss model turning the setpoint at the rectifier side into the active power actually injected at
+    the other side, and for the angle-droop ("AC emulation") alternative to a fixed setpoint.
 
     Examples
     --------
@@ -1624,34 +1651,33 @@ const std::string DocIterator::DCLineContainer = R"mydelimiter(
         env = grid2op.make(env_name, backend=LightSimBackend())
         grid_model = env.backend._grid
 
-        # manipulate the dc powerlines (usually there are none...)
-        for dcline in grid_model.get_dclines():
-            # do something with line !
-            dcline.bus_or_id
+        # manipulate the hvdc lines (usually there are none...)
+        for hvdc_line in grid_model.get_dclines():
+            # do something with the line !
+            hvdc_line.bus1_id
 
-        print(f"There are {len(grid_model.get_dclines())} lines on the grid.")
+        print(f"There are {len(grid_model.get_dclines())} hvdc lines on the grid.")
 
-        // first_dcline = grid_model.get_dclines()[0]
-
-    You can have a look at :class:`lightsim2grid.elements.DCLineInfo` for properties of these elements.
+    You can have a look at :class:`lightsim2grid.elements.HvdcLineInfo` for properties of these elements.
 
 )mydelimiter";
 
 
 const std::string DocIterator::DCLineInfo = R"mydelimiter(
-    This class represents what you get from retrieving the dc powerlines from 
-    :class:`lightsim2grid.elements.DCLineContainer`.
+    This class represents what you get from retrieving the hvdc lines from
+    :class:`lightsim2grid.elements.HvdcLineContainer`.
 
-    It allows to read information from each dc powerline of the powergrid.
+    It allows to read information from each hvdc line of the powergrid.
 
-    DC Powerlines have two sides, one is "or" for "origin" and one is "ex" for "extremity" that are connected and linked to each other
-    by some equations.
+    Hvdc lines have two sides, "1" and "2", each with its own converter station (`station1` / `station2`,
+    see :class:`lightsim2grid.elements.ConverterStationInfo`) -- the equivalent of the "origin" / "extremity"
+    naming used for AC powerlines and transformers.
 
-    For accessing the results, it's basically the same as having two "elements" (so you get two "voltage_magnitude" `res_v_kv`,
-    two "injected power" `res_p_mw` etc.)
+    For accessing the results, it's basically the same as having two "elements" (so you get two "voltage
+    magnitude" `res_v1_kv` / `res_v2_kv`, two "injected power" `res_p1_mw` / `res_p2_mw`, etc.)
 
     .. warning::
-        Data ca only be accessed from this element. You cannot modify (yet) the grid using this class.
+        Data can only be read from this element. You cannot modify (yet) the grid using this class.
 
     Examples
     --------
@@ -1666,109 +1692,114 @@ const std::string DocIterator::DCLineInfo = R"mydelimiter(
         env = grid2op.make(env_name, backend=LightSimBackend())
         grid_model = env.backend._grid
 
-        # for powerlines
-        first_line = grid_model.get_dclines()[0]  # first dcline, this is a `DCLineInfo`
-        for dcline in grid_model.get_dclines():
-            # dcline is a `LineInfo`
-            dcline.bus_or_id
+        # for hvdc lines
+        first_hvdc_line = grid_model.get_dclines()[0]  # first hvdc line, this is an `HvdcLineInfo`
+        for hvdc_line in grid_model.get_dclines():
+            # hvdc_line is an `HvdcLineInfo`
+            hvdc_line.bus1_id
 
     Notes
     -----
-    DC lines are modeled by two underlying generators.
-    
-    Each of them can be controlled independantly for the voltage setpoint. 
-    
-    But they are linked together for their active value. A dc powerline has some losses (both in MW `loss_mw` and in 
-    percent `loss_percent`) and the formula for computing the power injected / produced by each generator is:
-
-    - if `xx` is positive, then `yy = -1.0 * (xx - loss_mw) * (1.0 - 0.01 * loss_percent)`
-    - if `xx` is negative, then `yy = -1.0 * xx / (1.0 - 0.01 * loss_percent) + loss_mw`
-
-    The first formula directly comes from pandapower. The second one ensures that if the direction of the flow is 
-    inverted, then flows should also be inverted (`xx` becomes `yy` and reciprocally).
-
-    For the sake of simplicity, you can only control the active value at the `or` side of the dc powerline. The
-    active value at the `ex` side is then computed by the GridModel.
+    See :func:`lightsim2grid.elements.HvdcLineInfo.target_p1_mw` for the active-power loss model turning the
+    setpoint given at the rectifier side into the active power actually injected at the other side, and
+    `droop_enabled` / `droop_p0_mw` / `droop_k_mw_per_rad` for the angle-droop ("AC emulation") alternative,
+    where the active power follows the angle difference between the two sides instead of a fixed setpoint.
 
 )mydelimiter";
 
-const std::string DocIterator::target_p_or_mw = R"mydelimiter(
-    The target active production setpoint at the `or` side of the dc powerline (in MW).
+const std::string DocIterator::target_p1_mw_hvdc = R"mydelimiter(
+    The active power target (in MW) of the converter station on side 1 of the hvdc line, generator sign
+    convention (positive = power injected into the AC grid at side 1).
 
-    .. note:: 
-        If it's positive it means that power is actually injected at the `or` side, so the
-        power flows from `ex` to `or`.
-        
+    For a line NOT in angle-droop mode, this is derived from `p_setpoint_mw` / `converters_mode` through the
+    loss model described in :class:`lightsim2grid.elements.HvdcLineInfo` -- it is the target for the AC
+    powerflow, not necessarily equal to `p_setpoint_mw` itself (which is always >= 0 and lives at the
+    rectifier side, whichever side that is). See `target_p2_mw` for the side-2 counterpart.
+
+    .. note::
+        In angle-droop mode (`droop_enabled` is True), the active power actually used by the solver instead
+        follows `p0 + k * (theta1 - theta2)` and is NOT read from this field; see `droop_p0_mw` /
+        `droop_k_mw_per_rad`.
+
+)mydelimiter";
+
+const std::string DocIterator::target_p2_mw_hvdc = R"mydelimiter(
+    The active power target (in MW) of the converter station on side 2 of the hvdc line, generator sign
+    convention (positive = power injected into the AC grid at side 2). See `target_p1_mw` for the side-1
+    counterpart and the loss model turning one into the other.
+
 )mydelimiter";
 
 const std::string DocIterator::target_vm_or_pu = R"mydelimiter(
-    The target active voltage setpoint at the `or` side of the powerline (in pu NOT in kV).
+    The target voltage setpoint (in pu, NOT in kV) of the converter station on side 1 of the hvdc line.
 
 )mydelimiter";
 
 const std::string DocIterator::target_vm_ex_pu = R"mydelimiter(
-    The target active voltage setpoint at the `ex` side of the powerline (in pu NOT in kV).
+    The target voltage setpoint (in pu, NOT in kV) of the converter station on side 2 of the hvdc line.
 
 )mydelimiter";
 
 const std::string DocIterator::dc_line_formula = R"mydelimiter(
 
     .. note::
-        A DC line is modeled by two connected generators and some losses to convert the power from one to the other.
+        The active power actually injected at one side of an hvdc line is derived from the active power
+        setpoint at the rectifier side through a loss model (mirrors open-loadflow's
+        `HvdcUtils.getConverterStationTargetP`, extended with the legacy pandapower fixed-loss term)::
 
-        Two types of losses are considered:
-        
-        - `flat` losses: `loss_mw` (in MW) 
-        - `relative` losses: `loss_percent` (no unit) 
-        
-        The formula for computing the power injected / produced by each generator is:
+            line_in   = (1 - lf_rect) * (1 - loss_pct / 100) * p_setpoint_mw
+            line_loss = r_ohm * line_in^2 / nominal_v_kv^2        (0 when nominal_v_kv == 0)
+            received  = (1 - lf_inv) * (line_in - line_loss) - loss_mw
 
-        - if `or_mw` is positive, then `ex_mw = -1.0 * (or_mw - loss_mw) * (1.0 - 0.01 * loss_percent)`
-        - if `or_mw` is negative, then `ex_mw = -1.0 * or_mw / (1.0 - 0.01 * loss_percent) + loss_mw`
-
-        Where `or_mw` denotes the power injected at the `origin` side and `ex_mw` the power injected at the `extremity`
-        side.
+        where `p_setpoint_mw` (>= 0) is drawn at the rectifier side (`converters_mode` says which side that
+        is), `lf_rect` / `lf_inv` are the rectifier / inverter converter stations' own loss factors, and
+        `received` is the target active power (generator convention) at the non-rectifier side. The legacy
+        pandapower dc line maps onto this exactly with station loss factors = 0 and `r_ohm` = 0.
 
     .. note::
-        By convention, a dc powerline adopts the `load convention`.
+        Both `target_p1_mw` and `target_p2_mw` use the **generator** sign convention: a positive value means
+        power is injected into the AC grid at that side (so a positive `target_p1_mw` means power flows from
+        side 2 to side 1 through the line).
 
-        This means that if `or_mw` is positive then power is consumed at the `or` side, so the
-        power flows from `or` to `ex` and vice versa.
+    .. note::
+        In angle-droop mode (`droop_enabled` is True), none of the above applies: the active power instead
+        follows `p0 + k * (theta1 - theta2)`; see `droop_p0_mw` / `droop_k_mw_per_rad` / `status_droop`.
 
 )mydelimiter";
 
 const std::string DocIterator::loss_pct = R"mydelimiter(
-    The value of the `loss percent` parameter for the dc line.
+    The `loss_pct` (relative loss, in percent) parameter of the hvdc line, used in the active-power loss
+    model below.
 
 )mydelimiter" + DocIterator::dc_line_formula;
 
 const std::string DocIterator::loss_mw = R"mydelimiter(
-    The value of the `loss_mw` parameter for the dc line.
+    The `loss_mw` (flat loss, in MW) parameter of the hvdc line, used in the active-power loss model below.
 
 )mydelimiter" + DocIterator::dc_line_formula;
 
 const std::string DocIterator::res_p_or_mw_dcline = R"mydelimiter(
-    The amount of active power injected at the `or` side of the dc powerline (in MW).
+    The active power actually injected at side 1 of the hvdc line (in MW, generator convention).
 
 )mydelimiter" + DocIterator::only_avail_res + DocIterator::dc_line_formula;
 
 const std::string DocIterator::res_p_ex_mw_dcline = R"mydelimiter(
-    The amount of active power injected at the `ex` side of the dc powerline (in MW).
+    The active power actually injected at side 2 of the hvdc line (in MW, generator convention).
 
 )mydelimiter" + DocIterator::only_avail_res + DocIterator::dc_line_formula;
 
 const std::string DocIterator::res_q_or_mvar_dcline = R"mydelimiter(
-    The amount of reactive power injected at the `or` side of the dc powerline (in MVAr).
+    The reactive power actually injected at side 1 of the hvdc line (in MVAr, generator convention).
 
 )mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_q_ex_mvar_dcline = R"mydelimiter(
-    The amount of reactive power injected at the `ex` side of the dc powerline (in MVAr).
+    The reactive power actually injected at side 2 of the hvdc line (in MVAr, generator convention).
 
 )mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_v_or_kv_dcline = R"mydelimiter(
-    Get the magnitude of the complex voltage (in kV) of the bus at which this "or" side of the dc line is connected.
+    Get the magnitude of the complex voltage (in kV) of the bus at which side 1 of the hvdc line is connected.
 
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
@@ -1776,7 +1807,7 @@ const std::string DocIterator::res_v_or_kv_dcline = R"mydelimiter(
 )mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_v_ex_kv_dcline = R"mydelimiter(
-    Get the magnitude of the complex voltage (in kV) of the bus at which this "ex" side of the dc line is connected.
+    Get the magnitude of the complex voltage (in kV) of the bus at which side 2 of the hvdc line is connected.
 
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
@@ -1784,7 +1815,8 @@ const std::string DocIterator::res_v_ex_kv_dcline = R"mydelimiter(
 )mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_theta_or_deg_dcline = R"mydelimiter(
-    Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "or" side of the dc line is connected.
+    Get the angle of the complex voltage (in degree, not in radian) of the bus at which side 1 of the hvdc
+    line is connected.
 
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
@@ -1792,22 +1824,14 @@ const std::string DocIterator::res_theta_or_deg_dcline = R"mydelimiter(
 )mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_theta_ex_deg_dcline = R"mydelimiter(
-    Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "ex" side of the dc line is connected.
+    Get the angle of the complex voltage (in degree, not in radian) of the bus at which side 2 of the hvdc
+    line is connected.
 
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::gen_or = R"mydelimiter(
-    Direct access to the "or" generators, directly returns a :class:`lightsim2grid.elements.GenInfo`
-
-)mydelimiter" + DocIterator::dc_line_formula;
-
-const std::string DocIterator::gen_ex = R"mydelimiter(
-    Direct access to the "ex" generators, directly returns a :class:`lightsim2grid.elements.GenInfo` 
-
-)mydelimiter" + DocIterator::dc_line_formula;
 
 const std::string DocLSGrid::LSGrid = R"mydelimiter(
     This class represent a lightsim2grid power network. All the elements that can be manipulated by
@@ -2113,40 +2137,57 @@ const std::string DocLSGrid::_internal_do_not_use = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocLSGrid::J_description = R"mydelimiter(
-    For the distributed slack, J has the shape::
-    
-        | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
-        | l |  -------  |               |            | ------------------------- |
-        | a | J11 | J12 | = dimensions: |            | (pvpq, pvpq) | (pvpq, pq) |
-        | c | --------- |               |   ------   | ------------------------- |
-        | k | J21 | J22 |               |  (pq, 1)   |  (pq, pvpq)  | (pq, pq)   |
-        
+    J is NOT a fixed-shape 2x2 block anymore: it is assembled by composing a common "Base" block
+    with independent extensions, and which extensions are active depends on the solver
+    (:class:`lightsim2grid.solver.NRSing_SparseLU` and friends use only ``Base`` + ``VoltageControl``
+    + ``Hvdc``; :class:`lightsim2grid.solver.NR_SparseLU` and friends additionally use
+    ``MultiSlack``). Each part below claims its own rows (equations) / columns (unknowns); nothing
+    below is claimed twice.
 
-    With:
-    
+    **Base** (always present) is the usual decoupled-looking core::
+
+        | J11 | J12 | = dimensions: | (pvpq, pvpq) | (pvpq, pq) |
+        | --------- |               | ------------------------ |
+        | J21 | J22 |               |  (pq, pvpq)  |  (pq, pq)  |
+
+    with:
+
     - `J11` = dS_dVa[array([pvpq]).T, pvpq].real (= real part of dS / dVa for all pv and pq buses)
     - `J12` = dS_dVm[array([pvpq]).T, pq].real
     - `J21` = dS_dVa[array([pq]).T, pvpq].imag
     - `J22` = dS_dVm[array([pq]).T, pq].imag (= imaginary part of dS / dVm for all pq buses)
-    - `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real 
-      and dS_dVm[slack_bus_id, pq].real
-    - `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
-      the remaining pq components are all 0.
 
     .. note::
-        By default (and this cannot be changed at the moment), all buses in `ref` will be pv buses except the first one.
+        A slack bus that is NOT locally pinned by its own directly-connected voltage-regulating
+        generator (a PQ distributed-slack participant, or a slack bus regulated only remotely / by
+        an SVC -- see the ``VoltageControl`` extension below) also gets a free vm unknown and a Q
+        equation added by ``Base``, exactly like an ordinary pq bus. This is NOT restricted to "all
+        but the first ref bus": it depends on how each individual slack bus is actually voltage-pinned.
+
+    **MultiSlack** (distributed-slack solvers only, ie ``NR_*``, not ``NRSing_*``): for every slack
+    bus it adds one P-equation row (including the reference bus'); for every slack bus OTHER than
+    the reference, it additionally adds a theta unknown column. On top of that, it adds exactly ONE
+    extra column, shared by the whole system, for the "slack_absorbed" unknown (the distributed
+    slack's total absorbed mismatch) -- not one extra row/column pair per slack bus.
+
+    **VoltageControl** (always present; covers both a generator remotely regulating another bus'
+    voltage and an SVC in voltage-control mode): controllers sharing the same regulated bus are
+    grouped; each group of N controllers adds N reactive-power (Q) unknown columns (one per
+    controller -- a plain, non-regulating "PQ" generator gets none), 1 voltage-setpoint row, and
+    N-1 reactive-power-sharing rows.
+
+    **Hvdc** (always present, angle-droop / "AC emulation" hvdc lines only): claims no row or column
+    of its own; it only adds extra dP/dtheta terms into the P-mismatch rows / theta columns that
+    ``Base``/``MultiSlack`` already registered for the two buses of each droop-controlled hvdc line.
 
     .. note::
-        the notation `pvpq` above means "the concatenation of the pv vector and the pq vector" 
-        (after the distributed slack is taken into account - see note just above)
-    
+        the notation `pvpq` above means "the concatenation of the pv vector and the pq vector".
+        Slack buses (participating in the distributed slack or not) are NOT part of `pvpq`: they are
+        registered by ``Base``/``MultiSlack`` as described above, independently of it.
+
     .. note::
         All notation here are notation for the solver. You should use `gridmodel.get_pq_solver()` and
         `gridmodel.get_pv_solver()` to retrieve their  value.
-
-    .. note::
-        For distributed slack, the `pvpq` here also integrate all the buses in the slack (except for the
-        first one which is the reference)
 
 )mydelimiter";
 
@@ -2491,7 +2532,7 @@ const std::string DocLSGrid::get_slack_ids = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocLSGrid::get_slack_ids_dc = R"mydelimiter(
-    Returns the ids of the buses that are part of the distributed slack (for DC, currently not taken into account).
+    Returns the ids of the buses that are part of the distributed slack. For DC, the active-power mismatch is spread across these buses proportionally to their `slack_weights` (see :func:`lightsim2grid.network.LSGrid.dc_pf`) -- distributed slack IS taken into account for the DC powerflow itself; it is only `get_ptdf` / `get_lodf` that still assume a single slack bus.
 
     It returns a vector of integer.
 
@@ -2603,7 +2644,7 @@ const std::string DocLSGrid::get_slack_ids_solver = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocLSGrid::get_slack_ids_dc_solver = R"mydelimiter(
-    Returns the ids of the buses that are part of the distributed slack (for DC, currently not taken into account).
+    Returns the ids of the buses that are part of the distributed slack. For DC, the active-power mismatch is spread across these buses proportionally to their `slack_weights` (see :func:`lightsim2grid.network.LSGrid.dc_pf`) -- distributed slack IS taken into account for the DC powerflow itself; it is only `get_ptdf` / `get_lodf` that still assume a single slack bus.
 
     It returns a vector of integer.
 
@@ -3317,9 +3358,9 @@ const std::string DocComputers::compute_Vs = R"mydelimiter(
     Compute the voltages (at each bus of the grid model) for some time series of injections (productions, loads, storage units, etc.)
 
     .. note::
-        This function must be called before :func:`lightsim2grid.timeSerie.Computers.compute_flows` and 
-        :func:`lightsim2grid.timeSerie.Computers.get_flows`, :func:`lightsim2grid.timeSerie.Computers.get_voltages` or
-        :func:`lightsim2grid.timeSerie.Computers.get_sbuses`.
+        This function must be called before :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_flows` and 
+        :func:`lightsim2grid.timeSerie.TimeSeriesCPP.get_flows`, :func:`lightsim2grid.timeSerie.TimeSeriesCPP.get_voltages` or
+        :func:`lightsim2grid.timeSerie.TimeSeriesCPP.get_sbuses`.
 
     .. note::
         During this computation, the GIL is released, allowing easier parrallel computation
@@ -3363,10 +3404,10 @@ const std::string DocComputers::compute_flows = R"mydelimiter(
     Retrieve the flows (in amps, at the origin of each powerlines / high voltage size of each transformers.
 
     .. warning::
-        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_Vs` has been called.
+        This function must be called after :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_Vs` has been called.
 
     .. note::
-        This function must be called before :func:`lightsim2grid.timeSerie.Computers.get_flows`
+        This function must be called before :func:`lightsim2grid.timeSerie.TimeSeriesCPP.get_flows`
 
     .. note::
         During this computation, the GIL is released, allowing easier parrallel computation
@@ -3377,10 +3418,10 @@ const std::string DocComputers::compute_power_flows = R"mydelimiter(
     Retrieve the active flows (in MW, at the origin of each powerlines / high voltage size of each transformers.
 
     .. warning::
-        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_Vs` has been called.
+        This function must be called after :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_Vs` has been called.
 
     .. note::
-        This function must be called before :func:`lightsim2grid.timeSerie.Computers.get_flows`
+        This function must be called before :func:`lightsim2grid.timeSerie.TimeSeriesCPP.get_flows`
 
     .. note::
         During this computation, the GIL is released, allowing easier parrallel computation
@@ -3393,8 +3434,8 @@ const std::string DocComputers::get_flows = R"mydelimiter(
     Each rows correspond to a time step, each column to a powerline / transformer
 
     .. warning::
-        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_flows` has been called.
-        (`compute_flows` also requires that :func:`lightsim2grid.timeSerie.Computers.compute_Vs` has been caleed)
+        This function must be called after :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_flows` has been called.
+        (`compute_flows` also requires that :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_Vs` has been caleed)
 
     Returns
     -------
@@ -3409,13 +3450,13 @@ const std::string DocComputers::get_power_flows = R"mydelimiter(
     Each rows correspond to a time step, each column to a powerline / transformer
 
     .. warning::
-        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_power_flows` has been called.
-        (`compute_flows` also requires that :func:`lightsim2grid.timeSerie.Computers.compute_Vs` has been caleed)
+        This function must be called after :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_power_flows` has been called.
+        (`compute_power_flows` also requires that :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_Vs` has been caleed)
 
     Returns
     -------
-    As: ``numpy.ndarry`` (matrix)
-        The flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
+    Ps: ``numpy.ndarry`` (matrix)
+        The active flows (in MW) at the origin side / high voltage side of each transformers / powerlines.
 
 )mydelimiter";
 
@@ -3425,7 +3466,7 @@ const std::string DocComputers::get_voltages = R"mydelimiter(
     Each rows correspond to a time step, each column to a bus.
 
     .. warning::
-        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_Vs`.
+        This function must be called after :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_Vs`.
 
     Returns
     -------
@@ -3443,7 +3484,7 @@ const std::string DocComputers::get_sbuses = R"mydelimiter(
     Each rows correspond to a time step, each column to a bus (bus are identified by their solver id !)
 
     .. warning::
-        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_Vs`.
+        This function must be called after :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_Vs`.
 
     Returns
     -------
@@ -3462,7 +3503,7 @@ const std::string DocSecurityAnalysis::SecurityAnalysis = R"mydelimiter(
     disconnections of some powerlines.
 
     This is a "raw" c++ class, for an easier to use interface, please refer to the python documentation of the 
-    :class:`lightsim2grid.securityAnalysis.SecurityAnalysis` class.
+    :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis` class.
 
     .. warning::
         This function might give wrong result for lightsim2grid version 0.5.5 were they were a bug : when some contingencies made the grid
@@ -3479,21 +3520,21 @@ const std::string DocSecurityAnalysis::SecurityAnalysis = R"mydelimiter(
 
     1) Modify the list of contingencies to simulate, with the functions:
 
-    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_n1`
-    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_all_n1`
-    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_nk`
-    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_multiple_n1`
-    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.clear`
-    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.remove_n1`
-    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.remove_nk`
-    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.remove_multiple_n1`
+    - :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_n1`
+    - :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_all_n1`
+    - :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_nk`
+    - :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_multiple_n1`
+    - :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.clear`
+    - :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.remove_n1`
+    - :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.remove_nk`
+    - :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.remove_multiple_n1`
 
     2) Then you can start the computation of the security analysis with 
-    :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute` then optionally
-    :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute_flows` .
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` then optionally
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute_flows` .
 
-    3) And finally inspect the results with :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_flows` and 
-    :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_voltages` .
+    3) And finally inspect the results with :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.get_flows` and 
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.get_voltages` .
 
 )mydelimiter";
 
@@ -3514,10 +3555,10 @@ const std::string DocSecurityAnalysis::modif_Ybus_time = R"mydelimiter(
 const std::string DocSecurityAnalysis::add_all_n1 = R"mydelimiter(
     This allows to add all the "n-1" in the contingency list to simulate.
 
-    .. seealso:: :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_n1` to add only a single line
+    .. seealso:: :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_n1` to add only a single line
 
     .. seealso::
-        :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_multiple_n1` to add multiple single contingencies in the same call 
+        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_multiple_n1` to add multiple single contingencies in the same call 
         (but not necessarily all)
 
 )mydelimiter";
@@ -3525,10 +3566,10 @@ const std::string DocSecurityAnalysis::add_all_n1 = R"mydelimiter(
 const std::string DocSecurityAnalysis::add_n1 = R"mydelimiter(
     This allows to add a single  "n-1" in the contingency list to simulate.
 
-    .. seealso:: :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_all_n1` to add all contingencies at the same time
+    .. seealso:: :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_all_n1` to add all contingencies at the same time
 
     .. seealso::
-        :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_multiple_n1` to add multiple single contingencies in the same call.
+        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_multiple_n1` to add multiple single contingencies in the same call.
 
     Parameters
     ----------
@@ -3553,10 +3594,10 @@ const std::string DocSecurityAnalysis::add_nk = R"mydelimiter(
 
 const std::string DocSecurityAnalysis::add_multiple_n1 = R"mydelimiter(
     This allows to add a multiple "n-1" in the contingency list to simulate (it will add as many contingency as the size of the list)
-    and is equivalent to call multiple times :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_n1`
+    and is equivalent to call multiple times :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_n1`
 
     .. seealso::
-        :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_all_n1` to add all the "n-1" contingencies.
+        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_all_n1` to add all the "n-1" contingencies.
     
     .. warning::
         A "n-k" will disconnect multiple powerlines at the same time. It's not the same as adding muliple "n-1" contingencies, where
@@ -3635,9 +3676,9 @@ const std::string DocSecurityAnalysis::compute = R"mydelimiter(
     Compute the voltages (at each bus of the grid model) for some time series of injections (productions, loads, storage units, etc.)
 
     .. note::
-        This function must be called before :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute_flows` and 
-        :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_flows` or
-        :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_voltages` .
+        This function must be called before :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute_flows` and 
+        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.get_flows` or
+        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.get_voltages` .
 
     .. note::
         During this computation, the GIL is released, allowing easier parrallel computation
@@ -3659,10 +3700,10 @@ const std::string DocSecurityAnalysis::compute_flows = R"mydelimiter(
     Compute the current flows (in amps, at the origin of each powerlines / high voltage size of each transformers.
 
     .. warning::
-        This function must be called after :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute` has been called.
+        This function must be called after :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` has been called.
 
     .. note::
-        This function must be called before :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_flows`
+        This function must be called before :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.get_flows`
 
     .. note::
         During this computation, the GIL is released, allowing easier parrallel computation
@@ -3673,10 +3714,10 @@ const std::string DocSecurityAnalysis::compute_power_flows = R"mydelimiter(
     Compute the current flows (in MW, at the origin of each powerlines / high voltage size of each transformers.
 
     .. warning::
-        This function must be called after :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute` has been called.
+        This function must be called after :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` has been called.
 
     .. note::
-        This function must be called before :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_flows`
+        This function must be called before :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.get_flows`
 
     .. note::
         During this computation, the GIL is released, allowing easier parrallel computation
@@ -3689,13 +3730,13 @@ const std::string DocSecurityAnalysis::get_flows = R"mydelimiter(
     Each rows correspond to a contingency, each column to a powerline / transformer
 
     .. warning::
-        This function must be called after :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute_flows` has been called.
-        (`compute_flows` also requires that :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute` has been caleed)
+        This function must be called after :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute_flows` has been called.
+        (`compute_flows` also requires that :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` has been caleed)
 
     .. warning::
         The order in which the contingencies are computed is **NOT** (in this c++ class) the order in which you enter them. They are computed
-        in the order given by :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.my_defaults`. For an easier, more "human readable" please
-        use the :func:`lightsim2grid.securityAnalysis.SecurityAnalysis.get_flows` method.
+        in the order given by :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.my_defaults`. For an easier, more "human readable" please
+        use the :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.get_flows` method.
 
     Returns
     -------
@@ -3710,12 +3751,12 @@ const std::string DocSecurityAnalysis::get_voltages = R"mydelimiter(
     Each rows correspond to a contingency, each column to a bus.
 
     .. warning::
-        This function must be called after :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute`.
+        This function must be called after :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute`.
 
     .. warning::
         The order in which the contingencies are computed is **NOT** (in this c++ class) the order in which you enter them. They are computed
-        in the order given by :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.my_defaults`. For an easier, more "human readable" please
-        use the :func:`lightsim2grid.securityAnalysis.SecurityAnalysis.get_flows` method.
+        in the order given by :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.my_defaults`. For an easier, more "human readable" please
+        use the :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.get_flows` method.
 
     Returns
     -------
@@ -3730,13 +3771,13 @@ const std::string DocSecurityAnalysis::get_power_flows = R"mydelimiter(
     Each rows correspond to a contingency, each column to a powerline / transformer
 
     .. warning::
-        This function must be called after :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute_power_flows` has been called.
-        (`compute_flows` also requires that :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute` has been caleed)
+        This function must be called after :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute_power_flows` has been called.
+        (`compute_flows` also requires that :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` has been caleed)
 
     .. warning::
         The order in which the contingencies are computed is **NOT** (in this c++ class) the order in which you enter them. They are computed
-        in the order given by :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.my_defaults`. For an easier, more "human readable" please
-        use the :func:`lightsim2grid.securityAnalysis.SecurityAnalysis.get_flows` method.
+        in the order given by :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.my_defaults`. For an easier, more "human readable" please
+        use the :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.get_flows` method.
 
     Returns
     -------

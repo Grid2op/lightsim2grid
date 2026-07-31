@@ -2,12 +2,16 @@
 
 Scope: `src/core/help_fun_msg.hpp` + `src/core/help_fun_msg.cpp` (the shared
 docstring library) and `src/bindings/python/*.cpp` (the pybind11 bindings that
-consume it), on branch `n1_full_compute`. This is a read-only audit — **no
-code was changed**. Goal, per the request: (1) every public, actually-used
-method should have real documentation instead of `"TODO"` / "internal, do not
-use", (2) documentation should live in `help_fun_msg.hpp/.cpp` rather than
-being duplicated/hand-written per binding, (3) flag documentation whose
-content no longer matches the current code.
+consume it), on branch `n1_full_compute`. Goal, per the request: (1) every
+public, actually-used method should have real documentation instead of
+`"TODO"` / "internal, do not use", (2) documentation should live in
+`help_fun_msg.hpp/.cpp` rather than being duplicated/hand-written per binding,
+(3) flag documentation whose content no longer matches the current code.
+
+**Status: all 18 findings in section 3 (accuracy bugs) have been fixed** —
+see the commit(s) following this audit. Sections 1, 2, 4 and 5 (placement,
+placeholders, missing docs, recommendations) are still just findings, not yet
+acted on.
 
 Sphinx pulls these docstrings directly (`autoclass`/`automodule` in
 `docs/*.rst`), so anything wrong here is wrong on the public docs site too —
@@ -113,12 +117,12 @@ These are verified against the current implementation, not just suspected —
 each is either wired to the wrong `Doc*` constant, self-contradictory, or
 references a name that no longer exists.
 
-1. **`binding_solvers.cpp:382`** — `AlgorithmSelector.get_error` is bound
+1. **[FIXED]** **`binding_solvers.cpp:382`** — `AlgorithmSelector.get_error` is bound
    with `DocSolver::get_V.c_str()` (copy-paste from the line above/below);
    it should be `DocSolver::get_error`. Right now calling `help()` on
    `get_error` describes "the complex voltage for each bus."
 
-2. **`binding_lsgrid.cpp:102`** — `LSGrid.available_default_algorithms` is
+2. **[FIXED]** **`binding_lsgrid.cpp:102`** — `LSGrid.available_default_algorithms` is
    bound with `DocLSGrid::available_algorithm_names` ("a list of string"),
    while the doc that actually matches what it returns —
    `DocLSGrid::available_default_algorithms` ("a list of
@@ -126,20 +130,20 @@ references a name that no longer exists.
    in `help_fun_msg.cpp:1900-1913` and is instead attached to nothing. The
    two docstrings exist, they're just cross-wired.
 
-3. **`binding_containers.cpp:390`** — `HvdcLineInfo.p2_mw` is documented
+3. **[FIXED]** **`binding_containers.cpp:390`** — `HvdcLineInfo.p2_mw` is documented
    with `DocIterator::target_p_or_mw`, which describes the **side-1/"or"**
    target and its sign convention ("if positive, power flows from ex to
    or"). `p2_mw` is `station_side_2.target_p_mw`
    (`HvdcLineContainer.hpp:32,479`) — the side-2 value, wrong side entirely,
    and the described sign convention doesn't apply to it.
 
-4. **`binding_containers.cpp:431-432`** — `SubstationInfo.nb_max_busbars`
+4. **[FIXED]** **`binding_containers.cpp:431-432`** — `SubstationInfo.nb_max_busbars`
    and `SubstationInfo.vn_kv` are both bound with `DocIterator::name` (a
    string-field doc). `nb_max_busbars` is an integer (max busbars per
    substation), `vn_kv` is the substation's nominal voltage in kV — neither
    has anything to do with "name."
 
-5. **`binding_batch.cpp:60,106,115,123,133`** — five `def_property`
+5. **[FIXED]** **`binding_batch.cpp:60,106,115,123,133`** — five `def_property`
    docstrings (`TimeSeries.init_from_n_powerflow`,
    `ContingencyAnalysis.compute_limit_violations`, `.init_from_n_powerflow`,
    `.handle_disconnected_grid`, `.nb_thread`) use raw-string literals
@@ -155,7 +159,7 @@ references a name that no longer exists.
                          "Default: false
    ```
 
-6. **`help_fun_msg.cpp` — all 20 `DocSolver::<Family>` solver descriptions**
+6. **[FIXED]** **`help_fun_msg.cpp` — all 20 `DocSolver::<Family>` solver descriptions**
    (`NR_SparseLU`, `NRSing_SparseLU`, `DC_SparseLU`, `FDPF_XB_SparseLU`,
    `FDPF_BX_SparseLU`, and the `_KLU`/`_NICSLU`/`_CKTSO` equivalents, lines
    ~158-670) each contain a line like *"In the enum
@@ -169,7 +173,7 @@ references a name that no longer exists.
    20 docstrings is telling users to look up an enum member that doesn't
    exist.
 
-7. **`help_fun_msg.cpp` — all of `DocComputers` (13 occurrences) and
+7. **[FIXED]** **`help_fun_msg.cpp` — all of `DocComputers` (13 occurrences) and
    `DocSecurityAnalysis` (55 occurrences)** reference the pre-rename Python
    names `lightsim2grid.timeSerie.Computers` and
    `lightsim2grid.securityAnalysis.SecurityAnalysisCPP` /
@@ -186,13 +190,13 @@ references a name that no longer exists.
    `DocContingencyAnalysis`) as part of the uniformity pass would remove the
    temptation to keep writing "security analysis" in new docs too.
 
-8. **`help_fun_msg.cpp:3406-3419` — `DocComputers::get_power_flows`** opens
+8. **[FIXED]** **`help_fun_msg.cpp:3406-3419` — `DocComputers::get_power_flows`** opens
    with "Get the **active** flows (in **MW**)…" but its own `Returns`
    section says `"The flows (in kA)…"` — copy-pasted from
    `DocComputers::get_flows` a few lines above without updating the unit.
    Self-contradictory within the same docstring.
 
-9. **`help_fun_msg.cpp:77` — `DocSolver::get_error`** ships literally as:
+9. **[FIXED]** **`help_fun_msg.cpp:77` — `DocSolver::get_error`** ships literally as:
    `"Returns the error code (as an integer) encountered by the solver (0 =
    no error). TODO DOC explain better"` — the placeholder text is in the
    compiled, user-facing docstring, not a source comment.
@@ -208,7 +212,7 @@ just the bindings) turned up more of the same class of problem,
 concentrated in `DocLSGrid::J_description`, `DocIterator`'s hvdc-line block,
 and a couple of sign-convention docs that flatly contradict each other:
 
-10. **`DocLSGrid::J_description` (`help_fun_msg.cpp:2115-2151`) describes a
+10. **[FIXED]** **`DocLSGrid::J_description` (`help_fun_msg.cpp:2115-2151`) describes a
     Jacobian shape that predates the current solver architecture.** It
     documents J as a fixed 2×2 block plus one extra row/column for the
     distributed slack. The actual builder is a composable
@@ -221,14 +225,14 @@ and a couple of sign-convention docs that flatly contradict each other:
     `DocLSGrid::get_J_python_solver` (`help_fun_msg.cpp:2221-2240`), which
     appends `J_description` verbatim.
 
-11. **The same `J_description` claims "all buses in `ref` will be pv buses
+11. **[FIXED]** **The same `J_description` claims "all buses in `ref` will be pv buses
     except the first one… this cannot be changed at the moment."** That's
     no longer true: `NRSystem.hpp`'s `Base::register_in` (~line 210-233)
     explicitly supports slack buses that are *not* locally PV-pinned (a
     `free_vm_slack_buses_` set, e.g. a slack bus that's only remotely/SVC
     regulated), giving them a free Vm unknown like an ordinary PQ bus.
 
-12. **`DocLSGrid::get_slack_ids_dc` / `get_slack_ids_dc_solver`
+12. **[FIXED]** **`DocLSGrid::get_slack_ids_dc` / `get_slack_ids_dc_solver`
     (`help_fun_msg.cpp:2493`, `2605`) say the distributed slack is
     "currently not taken into account" for DC.** `BaseDCAlgo::compute_pf_dc`
     (`powerflow_algorithm/BaseDCAlgo.tpp:108-132`) explicitly spreads the
@@ -240,7 +244,7 @@ and a couple of sign-convention docs that flatly contradict each other:
     `// TODO PTDF: distributed slack` — so don't just delete the caveat
     everywhere, narrow it to the two functions where it still applies.)
 
-13. **`DocSolver::get_timers` / `DocSolver::get_computation_time`
+13. **[FIXED]** **`DocSolver::get_timers` / `DocSolver::get_computation_time`
     (`help_fun_msg.cpp:137-156`, `~719-723`) name a return field,
     `timer_total_`, that doesn't exist.** `BaseAlgo::get_timers()`
     (`BaseAlgo.hpp:314-318`) returns the 4-tuple `(timer_Fx_, timer_solve_,
@@ -249,7 +253,7 @@ and a couple of sign-convention docs that flatly contradict each other:
     with the separate, correctly-documented 13-field `TimerJac` struct
     returned by `get_timers_jacobian()`.)
 
-14. **`DocIterator::bus_ex_id` (`help_fun_msg.cpp:1525-1529`) still says
+14. **[FIXED]** **`DocIterator::bus_ex_id` (`help_fun_msg.cpp:1525-1529`) still says
     "lv" instead of "ex."** Used for `LineInfo.bus2_id`
     (`binding_containers.cpp:299`) and `HvdcLineInfo.bus2_id` (`:388`), the
     text reads *"...at which the 'lv' side of the line is connected"* —
@@ -258,7 +262,7 @@ and a couple of sign-convention docs that flatly contradict each other:
     docstring where "transformer" → "line" was updated but "lv" → "ex" was
     missed.
 
-15. **`DocIterator::dc_line_formula` and `DocIterator::target_p_or_mw`
+15. **[FIXED]** **`DocIterator::dc_line_formula` and `DocIterator::target_p_or_mw`
     directly contradict each other on sign convention, on the same
     class.** `dc_line_formula` (`help_fun_msg.cpp:1714-1738`) says the hvdc
     line uses "load convention": positive `or_mw` means power is
@@ -269,7 +273,7 @@ and a couple of sign-convention docs that flatly contradict each other:
     convention, so `dc_line_formula`'s "load convention" claim is the
     backwards one.
 
-16. **`DocIterator::DCLineContainer`/`DCLineInfo` (`help_fun_msg.cpp:1594-1638`,
+16. **[FIXED]** **`DocIterator::DCLineContainer`/`DCLineInfo` (`help_fun_msg.cpp:1594-1638`,
     `:1641-1693`) describe a retired model, and the example code in them is
     broken.** They still describe the old pandapower-only "dc line = 2
     generators" model; none of the current IIDM converter-station
@@ -280,7 +284,7 @@ and a couple of sign-convention docs that flatly contradict each other:
     attribute is `bus1_id` (`binding_containers.cpp:387`) — so the example
     would raise `AttributeError` if a user copy-pasted it.
 
-17. **`DocIterator::min_p_mw`/`max_p_mw` and `min_q_mvar`/`max_q_mvar`
+17. **[FIXED]** **`DocIterator::min_p_mw`/`max_p_mw` and `min_q_mvar`/`max_q_mvar`
     misdescribe how (and whether) they're used.** `min_p_mw`/`max_p_mw`
     (`help_fun_msg.cpp:1027-1043`, only bound on `SGenInfo`) claim they're
     "used in `check_solution` if `check_q_limits` is set to True" — but
@@ -294,7 +298,7 @@ and a couple of sign-convention docs that flatly contradict each other:
     (`GeneratorContainer.cpp:512-593`), changing the reported `res_q_mvar`;
     only for `SGenInfo` is "not used" actually accurate.
 
-18. **`DocIterator::is_slack` (`help_fun_msg.cpp:988-999`) references a
+18. **[FIXED]** **`DocIterator::is_slack` (`help_fun_msg.cpp:988-999`) references a
     renamed solver class**, `lightsim2grid.solver.SparseLUSingleSlack` —
     same class-of-bug as finding 6 above; current name is `NRSing_SparseLU`
     (`binding_enums.cpp:30`, old name commented out at `:56`).
