@@ -12,7 +12,7 @@ if(NOT PROJECT_NAME)
 
     # LS2G_CXX_STANDARD: force a specific C++ standard instead of auto-detecting
     # the newest one the compiler supports. Used by the cpp-standards CI
-    # workflow to pin this standalone test build to C++14/C++23, e.g.:
+    # workflow to pin this standalone test build to C++14/C++26, e.g.:
     #   cmake -S src/tests -B build -DLS2G_CXX_STANDARD=14
     set(LS2G_CXX_STANDARD "" CACHE STRING "Force a specific C++ standard (14/17/20/23/26) instead of auto-detecting the newest supported")
     if(LS2G_CXX_STANDARD)
@@ -27,6 +27,8 @@ if(NOT PROJECT_NAME)
         set(CMAKE_CXX_STANDARD 26)
     elseif("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 23)
+    elseif("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+        set(CMAKE_CXX_STANDARD 20)
     elseif("cxx_std_17" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 17)
     elseif("cxx_std_14" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
