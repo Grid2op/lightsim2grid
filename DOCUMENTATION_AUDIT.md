@@ -147,6 +147,41 @@ recompiled).
   which shows the identical warning pattern. Nothing new introduced by this
   fix.
 
+### `lightsim2grid.solver.*` cross-references — fixed (stale module rename)
+
+The pre-existing warnings noted just above turned out to be fixable, not
+just pre-existing noise: `lightsim2grid.solver` is a deprecated shim module
+(`lightsim2grid/solver/__init__.py`, `DeprecationWarning` on import) that
+re-exports everything from `lightsim2grid.algorithm`, which is where these
+classes are actually documented (`docs/solvers.rst` uses
+`.. automodule:: lightsim2grid.algorithm`, registering Sphinx's targets
+under that dotted path). But 121 `:class:`/`:attr:`/`:func:` references
+across `src/core/help_fun_msg.cpp` (99) and
+`src/bindings/python/binding_enums.cpp` (22) still pointed at the old
+`lightsim2grid.solver.*` path — the same "rename not fully propagated"
+pattern as the earlier or/ex→1/2 and shunt-admittance findings, just for
+the `solver`→`algorithm` module rename instead.
+
+**Fixed**: mechanically replaced `lightsim2grid.solver.` with
+`lightsim2grid.algorithm.` across both files (every one of the 121
+occurrences was a reference to a class/enum/function that's a real,
+documented member of `lightsim2grid.algorithm` — confirmed none were
+intentional mentions of the deprecated module itself). Also fixed one
+adjacent, independent bug surfaced in the same area: `DocSolver::NRSing_SparseLU`
+referenced `:class:`lightsim2grid.algorithm.AlgorithmType.NR_KLU`` (an enum
+*member*, wrong path entirely) where every parallel sentence elsewhere
+references the solver *class* directly (`:class:`lightsim2grid.algorithm.NR_KLU``)
+— corrected to match.
+
+**Verified**: nitpicky Sphinx rebuild — `lightsim2grid.solver.*` warnings:
+121 occurrences → 0; total warning count 2352 → 2166 (185 resolved: 121 direct
+hits plus their cascading duplicates from multiple inclusion points, e.g.
+`docs/algorithm_names.rst` autosummary tables). Spot-checked the rendered
+HTML for `NR_KLU` in `solvers.html`: the `:class:` link now resolves to the
+correct in-page anchor. Remaining warnings are the pre-existing, unrelated
+numpydoc/type-hint-reference and internal `ls2g::` C++-type categories
+(out of scope for this audit).
+
 ## 1. Quantitative overview
 
 `help_fun_msg.hpp` declares 217 doc strings across 5 structs (all 217 are
