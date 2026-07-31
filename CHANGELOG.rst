@@ -123,6 +123,26 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [ADDED] a "C++ standards" GitHub Actions workflow
+  (``.github/workflows/cpp-standards.yml``) that compiles both the standalone
+  C++ unit test suite and the python bindings twice: once pinned to C++14
+  (the oldest standard the CMake auto-detection cascade claims to support)
+  and once pinned to C++26 (the latest). Every other C++ workflow lets the
+  compiler auto-pick its newest supported standard, which never actually
+  exercises the oldest end of the claimed range and only exercises "the
+  latest" by accident of whichever standard the runner's default compiler
+  happens to support that day. The pin is a new ``LS2G_CXX_STANDARD`` CMake
+  cache variable (root ``CMakeLists.txt``, ``src/core/CMakeLists.txt``,
+  ``src/tests/CMakeLists.txt``), settable via
+  ``-DLS2G_CXX_STANDARD=14`` / ``pip install -C "cmake.define.LS2G_CXX_STANDARD=14"``;
+  left empty (the default), behavior is unchanged. The C++26 job installs g++-14
+  and upgrades CMake (>= 3.30 is required for CMake to recognize C++26 support at
+  all), since ubuntu-latest's default toolchain does not reliably provide either.
+- [FIXED] the three C++14-C++2x auto-detection cascades (root ``CMakeLists.txt``,
+  ``src/core/CMakeLists.txt``, ``src/tests/CMakeLists.txt``) were inconsistent with
+  each other: only ``src/tests/CMakeLists.txt`` tried C++26 first, and
+  ``src/core/CMakeLists.txt`` skipped C++20 entirely. All three now try the same
+  sequence, C++26 down to C++14.
 - [FIXED] ``LightSimBackend.set_algo_type`` used to reject anything that was not an
   ``AlgorithmType`` enum value, so a plugin or string-only built-in algorithm (eg
   ``NRRefactorRetry_KLU``, which has no ``AlgorithmType`` enum value at all) could only

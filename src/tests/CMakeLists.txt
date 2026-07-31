@@ -10,13 +10,25 @@ if(NOT PROJECT_NAME)
     # package version file from PROJECT_VERSION
     project(lightsim2grid_tests VERSION 0.0.0 LANGUAGES CXX)
 
+    # LS2G_CXX_STANDARD: force a specific C++ standard instead of auto-detecting
+    # the newest one the compiler supports. Used by the cpp-standards CI
+    # workflow to pin this standalone test build to C++14/C++26, e.g.:
+    #   cmake -S src/tests -B build -DLS2G_CXX_STANDARD=14
+    set(LS2G_CXX_STANDARD "" CACHE STRING "Force a specific C++ standard (14/17/20/23/26) instead of auto-detecting the newest supported")
+    if(LS2G_CXX_STANDARD)
+        if(NOT "cxx_std_${LS2G_CXX_STANDARD}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+            message(FATAL_ERROR "LS2G_CXX_STANDARD=${LS2G_CXX_STANDARD} requested but the compiler does not support C++${LS2G_CXX_STANDARD}.")
+        endif()
+        set(CMAKE_CXX_STANDARD ${LS2G_CXX_STANDARD})
     # cxx_std_26 only appears in CMAKE_CXX_COMPILE_FEATURES when both CMake
     # (>= 3.30) and the compiler know C++26, so the check is safe with the
     # 3.16 minimum above: elsewhere it is simply never selected.
-    if("cxx_std_26" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    elseif("cxx_std_26" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 26)
     elseif("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 23)
+    elseif("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+        set(CMAKE_CXX_STANDARD 20)
     elseif("cxx_std_17" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 17)
     elseif("cxx_std_14" IN_LIST CMAKE_CXX_COMPILE_FEATURES)

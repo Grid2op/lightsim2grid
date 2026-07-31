@@ -1,0 +1,110 @@
+# C++ standard matrix: lightsim2grid claims support for C++14 through C++26
+# (see the auto-detection cascade in CMakeLists.txt / src/core/CMakeLists.txt
+# / src/tests/CMakeLists.txt). Every other C++ workflow lets the compiler
+# auto-pick the newest standard it supports, which never actually exercises
+# the oldest supported standard, and only exercises "the latest" by accident
+# of whatever the runner's default compiler happens to support today.
+#
+# This workflow forces the two ends of the claimed range explicitly, via the
+# LS2G_CXX_STANDARD CMake cache variable, for both halves of the build:
+#   - the standalone Catch2 suite (src/tests, no python involved)
+#   - the pybind11 extension (full python-importable install)
+# so a standard that quietly stops compiling -- at either end -- fails CI
+# instead of being noticed only when a user's older toolchain or a future
+# compiler dropping C++14 support breaks their build.
+#
+# C++26: CMake only lists "cxx_std_26" in CMAKE_CXX_COMPILE_FEATURES when
+# both CMake (>= 3.30) and the compiler (GCC >= 14) know about it, so this
+# job upgrades CMake via pip and installs g++-14 explicitly rather than
+# relying on whatever ships on ubuntu-latest that day.
+
+name: C++ standards
+
+on:
+  push:
+    branches:
+      # '**' and not '*': a single '*' does not match '/' in GitHub Actions
+      # globs, so topic branches like 'foo/bar' would silently never run
+      - '**'
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  cpp_standards:
+    name: C++${{ matrix.standard.value }} (${{ matrix.standard.label }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        standard:
+          - { value: 14, label: "oldest supported", cc: "gcc",    cxx: "g++" }
+          - { value: 26, label: "latest claimed",   cc: "gcc-14", cxx: "g++-14" }
+    env:
+      CC: ${{ matrix.standard.cc }}
+      CXX: ${{ matrix.standard.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # eigen, Catch2 (C++ test suite) and pybind11 headers
+          submodules: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ${{ matrix.standard.cxx }}
+        if: matrix.standard.value == 26
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.standard.cxx }}
+
+      - name: Install python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_compile_ci.txt
+          # CMake only recognizes cxx_std_26 (CMAKE_CXX_COMPILE_FEATURES) from
+          # version 3.30 onward; upgrade unconditionally so both jobs see the
+          # same CMake regardless of what ubuntu-latest ships that day.
+          python -m pip install --upgrade cmake
+
+      - name: Configure C++ unit tests (-DLS2G_CXX_STANDARD=${{ matrix.standard.value }})
+        # standalone test project: no python / pybind11 involved, same as the
+        # C++ unit tests workflow. Debug keeps assert() live.
+        run: |
+          cmake -S src/tests -B build_tests \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DLS2G_CXX_STANDARD=${{ matrix.standard.value }}
+
+      - name: Build C++ unit tests
+        run: cmake --build build_tests -j$(nproc)
+
+      - name: Run C++ unit tests
+        run: ctest --test-dir build_tests --output-on-failure
+
+      - name: Build + install python bindings (-DLS2G_CXX_STANDARD=${{ matrix.standard.value }})
+        # Same LS2G_CXX_STANDARD override, passed through scikit-build-core's
+        # -C cmake.define.<VAR>=<value> config-setting (the pattern already
+        # used on CircleCI, see .circleci/config.yml).
+        run: |
+          python -m pip install -v . --no-build-isolation \
+            -C "cmake.define.LS2G_CXX_STANDARD=${{ matrix.standard.value }}" \
+            -C "cmake.define.CMAKE_C_COMPILER=${{ matrix.standard.cc }}" \
+            -C "cmake.define.CMAKE_CXX_COMPILER=${{ matrix.standard.cxx }}"
+
+      - name: Check package can be imported
+        run: |
+          mkdir tmp_for_import_checking
+          cd tmp_for_import_checking
+          python -c "import lightsim2grid"
+          python -c "from lightsim2grid import *"
+          python -c "from lightsim2grid.newtonpf import newtonpf"
+          python -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
+          python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
+          python -c "from lightsim2grid.gridmodel import GridModel"
+
+      - name: Install grid2op and check LightSimBackend can be used to create env
+        run: |
+          python -m pip install grid2op pandapower lxml  # lxml missing import see https://github.com/e2nIEE/pandapower/issues/2752
+          cd tmp_for_import_checking
+          python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
