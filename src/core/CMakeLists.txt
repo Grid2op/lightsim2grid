@@ -7,7 +7,15 @@ if(NOT PROJECT_NAME)
     cmake_minimum_required(VERSION 3.15...4.99)
     project(lightsim2grid_core VERSION 0.0.0 LANGUAGES CXX)
 
-    if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    # LS2G_CXX_STANDARD: force a specific C++ standard instead of auto-detecting
+    # the newest one the compiler supports (see root CMakeLists.txt).
+    set(LS2G_CXX_STANDARD "" CACHE STRING "Force a specific C++ standard (14/17/20/23) instead of auto-detecting the newest supported")
+    if(LS2G_CXX_STANDARD)
+        if(NOT "cxx_std_${LS2G_CXX_STANDARD}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+            message(FATAL_ERROR "LS2G_CXX_STANDARD=${LS2G_CXX_STANDARD} requested but the compiler does not support C++${LS2G_CXX_STANDARD}.")
+        endif()
+        set(CMAKE_CXX_STANDARD ${LS2G_CXX_STANDARD})
+    elseif("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 23)
     elseif("cxx_std_17" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 17)
