@@ -140,40 +140,40 @@ struct LS2G_API DocIterator
     static const std::string res_theta_hv_deg;
     static const std::string res_theta_lv_deg;
 
-    // specific to powerlines
+    // specific to powerlines (also used, where noted, for hvdc lines' bus ids)
     static const std::string LineContainer;
     static const std::string LineInfo;
-    static const std::string bus_or_id;
-    static const std::string bus_ex_id;
-    static const std::string res_p_or_mw;
-    static const std::string res_q_or_mvar;
-    static const std::string res_v_or_kv;
-    static const std::string res_a_or_ka;
-    static const std::string res_p_ex_mw;
-    static const std::string res_q_ex_mvar;
-    static const std::string res_v_ex_kv;
-    static const std::string res_a_ex_ka;
-    static const std::string res_theta_or_deg;
-    static const std::string res_theta_ex_deg;
+    static const std::string bus_1_id;
+    static const std::string bus_2_id;
+    static const std::string res_p_1_mw;
+    static const std::string res_q_1_mvar;
+    static const std::string res_v_1_kv;
+    static const std::string res_a_1_ka;
+    static const std::string res_p_2_mw;
+    static const std::string res_q_2_mvar;
+    static const std::string res_v_2_kv;
+    static const std::string res_a_2_ka;
+    static const std::string res_theta_1_deg;
+    static const std::string res_theta_2_deg;
 
     // specific to hvdc lines (kept under the "dc line" name for backward compatibility)
     static const std::string dc_line_formula;
     static const std::string DCLineContainer;
     static const std::string DCLineInfo;
-    static const std::string target_p1_mw_hvdc;
-    static const std::string target_p2_mw_hvdc;
-    static const std::string target_vm_or_pu;
-    static const std::string target_vm_ex_pu;
+    static const std::string target_p_1_mw_dcline;
+    static const std::string target_p_2_mw_dcline;
+    static const std::string target_vm_1_pu_dcline;
+    static const std::string target_vm_2_pu_dcline;
     static const std::string loss_pct;
     static const std::string loss_mw;
-    static const std::string res_p_or_mw_dcline;
-    static const std::string res_p_ex_mw_dcline;
-    static const std::string res_q_or_mvar_dcline;
-    static const std::string res_q_ex_mvar_dcline;
-    static const std::string res_v_or_kv_dcline;
-    static const std::string res_v_ex_kv_dcline;
-    static const std::string res_theta_or_deg_dcline;
-    static const std::string res_theta_ex_deg_dcline;
+    static const std::string res_p_1_mw_dcline;
+    static const std::string res_p_2_mw_dcline;
+    static const std::string res_q_1_mvar_dcline;
+    static const std::string res_q_2_mvar_dcline;
+    static const std::string res_v_1_kv_dcline;
+    static const std::string res_v_2_kv_dcline;
+    static const std::string res_theta_1_deg_dcline;
+    static const std::string res_theta_2_deg_dcline;
 
 };
 

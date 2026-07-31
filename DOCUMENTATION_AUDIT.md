@@ -308,6 +308,26 @@ Corroboration note: two independent research passes over `DocIterator` and
 6) and the same `HvdcLineInfo.p2_mw` mislabeling (finding 3) that were found
 manually — increasing confidence in both.
 
+**[FIXED] 19. Follow-up: the "or"/"ex" → "1"/"2" rename wasn't actually complete.**
+Findings 3, 15 and 16 only fixed the hvdc-specific corner of a wider problem:
+`LineInfo`'s own fields (`bus_or_id`/`bus_ex_id`, `res_p_or_mw`/`res_p_ex_mw`,
+`res_q_or_mvar`/`res_q_ex_mvar`, `res_v_or_kv`/`res_v_ex_kv`,
+`res_a_or_ka`/`res_a_ex_ka`, `res_theta_or_deg`/`res_theta_ex_deg`) were still
+named and worded after the retired "or" (origin) / "ex" (extremity)
+convention, even though the bound Python attributes are `bus1_id`/`bus2_id`,
+`res_p1_mw`/`res_p2_mw`, etc. — the same mismatch as the hvdc case, just not
+flagged the first time because nothing there was *factually wrong* (unlike
+`p2_mw`), only stale terminology. The shared `line_model` ASCII schema
+(`DocIterator::line_model`, used by `r_pu`/`x_pu`/`h_pu` for both lines and
+transformers) had the same problem: it labelled its diagram `or bus`/`ex bus`,
+`ior`/`iex`, `vor`/`vex`. Fixed by renaming every affected `DocIterator`
+constant to the `_1_`/`_2_` convention (`bus_or_id` → `bus_1_id`,
+`res_p_or_mw` → `res_p_1_mw`, the hvdc `_dcline`-suffixed ones too, for
+naming consistency with the rest of the file) and rewriting the schema to use
+`bus 1`/`bus 2`, `i1`/`i2`, `v1`/`v2`, with a note that transformers keep
+`hv`/`lv` instead (a real electrical distinction, not just a naming choice —
+left untouched).
+
 Areas that *were* checked closely and found to still be accurate, so they
 don't need touching in the accuracy pass (only the reorganization):
 `check_grid`, `change_algorithm`'s DC/AC routing, `check_solution`'s KCL-
