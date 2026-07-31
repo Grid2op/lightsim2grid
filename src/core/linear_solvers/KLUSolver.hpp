@@ -101,4 +101,49 @@ class LS2G_API KLULinearSolver final
 
 } // namespace ls2g
 
-#endif // KLU_SOLVER_AVAILABLE
+#elif defined(_READ_THE_DOCS)
+#ifndef KLSOLVER_H
+#define KLSOLVER_H
+#include "Utils.hpp"
+
+#include "Eigen/Core"
+#include "Eigen/Dense"
+#include "Eigen/SparseCore"
+
+namespace ls2g {
+
+/**
+Doc-only stand-in for KLULinearSolver, used when the real KLU (SuiteSparse) library is
+not available but _READ_THE_DOCS is set: it gives NR_KLU (and its DC_KLU / FDPF_*_KLU /
+NRSing_KLU / NRRefactorRetry_KLU siblings, see Solvers.hpp) a genuine, distinct,
+fully-functional C++ type -- with the same name and public interface as the real
+KLULinearSolver -- so Sphinx can document them as real classes without requiring the
+actual library. Every method is a trivial no-op: this is never meant to actually solve
+a real system, only to be introspected.
+**/
+class LS2G_API KLULinearSolver final
+{
+    public:
+        KLULinearSolver() noexcept = default;
+        ~KLULinearSolver() noexcept = default;
+
+        ErrorType reset() { return ErrorType::NoError; }
+        ErrorType analyze(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType factorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType refactorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType solve(Eigen::Ref<RealVect> /*b*/) { return ErrorType::NoError; }
+
+        // can this linear solver solve problem where RHS is a matrix
+        static constexpr bool CAN_SOLVE_MAT = false;
+
+    private:
+        // no copy allowed (matches the real KLULinearSolver)
+        KLULinearSolver(const KLULinearSolver&) = delete;
+        KLULinearSolver(KLULinearSolver&&) = delete;
+        KLULinearSolver & operator=(KLULinearSolver&&) = delete;
+        KLULinearSolver & operator=(const KLULinearSolver&) = delete;
+};
+
+} // namespace ls2g
+#endif // KLSOLVER_H
+#endif // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
