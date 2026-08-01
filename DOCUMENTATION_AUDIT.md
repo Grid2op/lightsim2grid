@@ -938,6 +938,56 @@ each dangling-reference target rather than the full target string. Not
 fixed here since they predate and are outside this SVC-specific task; worth
 a short cleanup pass later.
 
+## Cleanup: dangling references missed by the earlier truncated diff — fixed
+
+Follow-up to the note above, done as its own pass. Rebuilding with the full
+(untruncated) unresolved-reference target set surfaced 8 real bugs, all the
+same root cause (a docstring/summary line phrased as free prose around a
+colon, which numpydoc/napoleon misparses as a `name : type` or
+`Raises`-style field, then tries to cross-reference the "type" text) plus
+one unrelated typo, none of which the earlier truncated (first-word-only)
+diffing could see:
+
+- `DocMisc::int_params` / `real_params` (`AlgoConfig.int_params` /
+  `.real_params`, introduced in the §2 pass): "Integer/Real-valued
+  parameters, as a plain list: ``[...]``" — colon right before a bracketed
+  list. Reworded to "--".
+- `DocContingencyAnalysis::element_id` (introduced in the §4 pass): "Which
+  element this violation is about: the grid-model bus id for..." — same
+  pattern. Reworded to "--".
+- `DocContingencyAnalysis::violation_name` (introduced in the §4 pass):
+  "The violating element's name: for ``LINE`` / ``TRAFO``..." — same
+  pattern. Reworded to "--".
+- `ContingencyAnalysisCPP.compute_limit_violations` and `.nb_thread`
+  (`binding_batch.cpp`, inline, predates this audit): "...(see ...).
+  Default: false." / "...(default: 1)." — reworded to "Defaults to
+  ``False``." / "(default ``1``)" to drop the colon.
+- `DocLSGrid::check_grid` (introduced in the §4 pass): its `Raises` section
+  was written as two prose sentences instead of numpydoc's expected
+  `ExceptionType` / indented-description pairs, so numpydoc treated the
+  whole paragraph as one type expression and cross-referenced fragments of
+  it (`An IndexError`, `if an index is out`, `RuntimeError\``, `on a
+  structural inconsistency`, `Returns None if the grid is consistent.`).
+  Reformatted into proper `Raises` (`IndexError` / `RuntimeError` each with
+  an indented one-line description) and a separate `Returns` section.
+- `_olf_compare.py::compare_baked`'s `network_factory` parameter (predates
+  this audit, outside `help_fun_msg`/bindings scope but a one-line, clearly
+  correct fix): `type` field was the free-text "callable returning a fresh
+  pypowsybl Network" instead of just `callable`; moved the description into
+  the description line.
+- `initLSGrid.py`'s `n_busbar_per_sub` parameter: `:type: Opional[int]` —
+  plain typo for `Optional[int]` (unrelated to the colon-parsing bug, caught
+  incidentally by the same `network.rst` warning).
+
+**Verified**: full-target diff before/after this pass — all 8 fixed
+fragments disappear, the one expected replacement (`callable returning a
+fresh pypowsybl Network` → `callable`) is the only new entry and is a
+correct, non-dangling numpydoc type keyword, and no other new dangling
+references appear. Round-tripped `AlgoConfig.int_params`/`.real_params`,
+`LimitViolation.element_id`/`.name`, `ContingencyAnalysisCPP.
+compute_limit_violations`/`.nb_thread`, and `LSGrid.check_grid` through a
+real import.
+
 ## 5. Recommendation for the rewrite pass
 
 1. Treat §3 (accuracy bugs, 18 items) as the first, independent fix — these

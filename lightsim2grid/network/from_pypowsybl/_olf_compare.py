@@ -126,8 +126,8 @@ def compare_baked(
 
     Parameters
     ----------
-    network_factory : callable returning a fresh pypowsybl Network
-        Called twice (once per engine) so the two starts are identical.
+    network_factory : callable
+        Returns a fresh pypowsybl Network. Called twice (once per engine) so the two starts are identical.
         lightsim2grid mutates/consumes the network it is built from, so a fresh
         instance is needed for each side.
     slack_gen_id : str
