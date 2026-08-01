@@ -178,9 +178,49 @@ references the solver *class* directly (`:class:`lightsim2grid.algorithm.NR_KLU`
 hits plus their cascading duplicates from multiple inclusion points, e.g.
 `docs/algorithm_names.rst` autosummary tables). Spot-checked the rendered
 HTML for `NR_KLU` in `solvers.html`: the `:class:` link now resolves to the
-correct in-page anchor. Remaining warnings are the pre-existing, unrelated
-numpydoc/type-hint-reference and internal `ls2g::` C++-type categories
-(out of scope for this audit).
+correct in-page anchor.
+
+### Remaining nitpicky warnings (2166 → 1970) — triaged and mostly fixed
+
+Broke down the 2166 remaining warnings by category:
+
+| Category | Count | Cause |
+|---|---|---|
+| numpy/scipy/pandas/stdlib type hints (`numpy.typing.NDArray`, `numpy.float64`, `scipy.sparse.csc_matrix`, `pandas.core.frame.DataFrame`, `collections.abc.Sequence`, `os.PathLike`, ...) | ~1700 | `docs/conf.py` loaded `sphinx.ext.intersphinx` but never set `intersphinx_mapping` — no external inventory at all, for anything. |
+| `grid2op.*` / `pypowsybl.*` / `pandapower.*` refs | ~340 | Same root cause — no intersphinx mapping for any of them either. |
+| `lightsim2grid.LightSimBackend.LightSimBackend` | 163 | Real bug: one shared docstring constant (`DocLSGrid::_internal_do_not_use`, reused across ~150+ bound methods, plus `DocLSGrid::LSGrid` itself) used the wrong path — `lightsim2grid.LightSimBackend.LightSimBackend` instead of the real module `lightsim2grid.lightSimBackend` (lowercase, per the actual file `lightSimBackend.py`). One wrong line, multiplied by every method that shares the boilerplate. |
+| `lightsim2grid.network.LSGrid.get_J` | 14 | Real bug: unlike `get_Va`/`get_Vm`, which each have both a gridmodel-labelled (`get_Va`) and solver-labelled (`get_Va_solver`) form on `LSGrid`, the Jacobian only ever got the solver-labelled `get_J_solver` — no gridmodel-labelled `get_J` was ever added. Three docstrings (`DocSolver::get_J_python`, `DocLSGrid::get_J_python_solver` x2) referenced a `get_J` gridmodel counterpart as if it existed. |
+| bare `get_timers_jacobian` | 25 | Real bug: `:func:`get_timers_jacobian`` with no module path at all (should be `lightsim2grid.algorithm.AlgorithmSelector.get_timers_jacobian`). |
+| `ls2g::AlgoConfig` (in `get_config`/`set_config`) | 24 | Not from our docstrings — pybind11's auto-generated signature line uses the raw C++ namespaced type name. Would need a binding/type-caster change, not a docstring fix; left as-is (out of scope). |
+
+**Fixed**:
+- Added `intersphinx_mapping` to `docs/conf.py` for `python`, `numpy`, `scipy`,
+  `pandas`, `grid2op`, `pypowsybl`.
+- Corrected `lightsim2grid.LightSimBackend.LightSimBackend` → `lightsim2grid.lightSimBackend.LightSimBackend`
+  in both source docstrings.
+- Reworded the three `get_J`-related passages to state the true (asymmetric)
+  behavior accurately instead of claiming a nonexistent gridmodel-labelled
+  `get_J` — this was a real "docs describe functionality that isn't there"
+  bug, not just a broken link, so text was rewritten, not just re-pointed.
+- Fully qualified the bare `get_timers_jacobian` reference.
+
+**Verified**: nitpicky Sphinx rebuild — all three genuine docstring bugs go
+to 0 occurrences (`LightSimBackend` 163→0, `get_J` 14→0, bare
+`get_timers_jacobian` 25→0); total warnings 2166 → 1970; normal
+(non-nitpicky, non-`_READ_THE_DOCS`) build still succeeds with only the
+same pre-existing 6 warnings. Spot-checked the rendered HTML anchor for
+`lightsim2grid.lightSimBackend.LightSimBackend` resolves correctly.
+
+The `intersphinx_mapping` addition could **not** be verified end-to-end in
+this sandbox: its network policy denies outbound access to
+`numpy.org`/`scipy.org`/`docs.python.org`/`pandas.pydata.org`/
+`grid2op.readthedocs.io`/`pypowsybl.readthedocs.io` (confirmed via
+`ProxyError: 403 Forbidden` in the Sphinx build log), so none of those
+`objects.inv` inventories could be fetched here — the ~1700-1900 numpy/
+scipy/pandas/grid2op/pypowsybl warnings persist in this environment for
+that reason, not because the config is wrong. Read the Docs' actual build
+servers have normal internet access, so the mapping should resolve there;
+this should be re-checked against a real RTD build once available.
 
 ## 1. Quantitative overview
 

@@ -19,11 +19,10 @@ const std::string DocSolver::get_J_python = R"mydelimiter(
     and we provide it only for the last computed iteration.
 
     .. note::
-        It is using the "solver" labelling, as this is accessed from the solvers.
-
-    .. seealso::
-        :func:`lightsim2grid.network.LSGrid.get_J` for the same things, but rather using 
-        the "gridmodel" labelling.
+        It is using the "solver" labelling, as this is accessed from the solvers. Unlike
+        :func:`get_Va`/:func:`get_Vm`, the Jacobian has no "gridmodel" labelled equivalent on
+        :class:`lightsim2grid.network.LSGrid` -- only :func:`lightsim2grid.network.LSGrid.get_J_solver`,
+        which keeps the solver labelling.
 
     .. seealso::
         This function should be equal to :func:`lightsim2grid.network.LSGrid.get_J_solver`
@@ -152,7 +151,8 @@ const std::string DocSolver::get_timers = R"mydelimiter(
     .. note::
         This is returned as a plain ``(float, float, float, float)`` tuple, in the order below
         (there are no named attributes on it) -- for named access to a wider set of timers, see
-        :func:`get_timers_jacobian` instead, which returns a :class:`lightsim2grid.algorithm.TimerJac`.
+        :func:`lightsim2grid.algorithm.AlgorithmSelector.get_timers_jacobian` instead, which returns
+        a :class:`lightsim2grid.algorithm.TimerJac`.
 
     Returns
     ---------
@@ -1852,7 +1852,7 @@ const std::string DocLSGrid::LSGrid = R"mydelimiter(
     This class represent a lightsim2grid power network. All the elements that can be manipulated by
     lightsim2grid are represented here.
 
-    We do not recommend to use this class directly, but rather to use a :class:`lightsim2grid.LightSimBackend.LightSimBackend`.
+    We do not recommend to use this class directly, but rather to use a :class:`lightsim2grid.lightSimBackend.LightSimBackend`.
 
     Examples
     ---------
@@ -2147,7 +2147,7 @@ const std::string DocLSGrid::_internal_do_not_use = R"mydelimiter(
 
         .. warning:: /!\\ Internal, do not use unless you know what you are doing /!\\
 
-        This is used as part of a dedicated code for :class:`lightsim2grid.LightSimBackend.LightSimBackend`
+        This is used as part of a dedicated code for :class:`lightsim2grid.lightSimBackend.LightSimBackend`
 
 )mydelimiter";
 
@@ -2281,13 +2281,14 @@ const std::string DocLSGrid::get_J_python_solver = R"mydelimiter(
     (the one based on the Newton Raphson algorithm) and we provide it only for the last computed iteration.
 
     .. danger::
-        They are labelled with the `solver` labelling, which corresponds to the previous behaviour in 
-        :func:`lightsim2grid.network.LSGrid.get_J` (before version 0.9.0)
+        They are labelled with the `solver` labelling, which corresponds to the previous (before
+        version 0.9.0) behaviour of this function, which used to be called ``get_J``.
 
     .. versionadded:: 0.9.0
-        This function replace the :func:`lightsim2grid.network.LSGrid.get_J` of earlier
-        lightsim2grid version. The new version of :func:`lightsim2grid.network.LSGrid.get_J`
-        now returns the id labelled with the gridmodel convention (for consistency).
+        This function is the renamed ``get_J`` of earlier lightsim2grid versions. Unlike
+        :func:`lightsim2grid.network.LSGrid.get_Va`/:func:`lightsim2grid.network.LSGrid.get_Vm`,
+        no gridmodel-labelled ``get_J`` was added: the Jacobian is only ever exposed with the
+        solver labelling, through this function.
 
     .. note::
         Some powerflows (*eg* DC or Gauss Seidel) do not rely on jacobian matrix, in this case, 
