@@ -57,7 +57,7 @@ void bind_containers(py::module_& m) {
         .def_readonly("res_v_kv", &GenInfo::res_v_kv, DocIterator::res_v_kv.c_str())
         .def_readonly("voltage_level_id", &GenInfo::sub_id, DocIterator::sub_id.c_str());
 
-    auto svc_cls = py::class_<SvcContainer>(m, "SvcContainer", "Container of all the Static Var Compensators (SVC) of the grid.")
+    auto svc_cls = py::class_<SvcContainer>(m, "SvcContainer", DocIterator::SvcContainer.c_str())
         .def("__len__", [](const SvcContainer & data) { return data.nb(); })
         .def("__getitem__", [](const SvcContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const SvcContainer & data)  {
@@ -67,25 +67,25 @@ void bind_containers(py::module_& m) {
     add_binary_serialization(svc_cls);
     // exposed (also) so TestSerializedEnumValues can pin the integer values,
     // which are serialized verbatim in binary files and pickles
-    py::enum_<SvcContainer::RegulationMode>(svc_cls, "RegulationMode", "Regulation mode of an SVC (values follow the IIDM model of powsybl)")
+    py::enum_<SvcContainer::RegulationMode>(svc_cls, "RegulationMode", DocIterator::RegulationMode.c_str())
         .value("OFF", SvcContainer::RegulationMode::OFF)
         .value("VOLTAGE", SvcContainer::RegulationMode::VOLTAGE)
         .value("REACTIVE_POWER", SvcContainer::RegulationMode::REACTIVE_POWER);
 
-    py::class_<SvcInfo>(m, "SvcInfo", "Information about one Static Var Compensator (SVC).")
+    py::class_<SvcInfo>(m, "SvcInfo", DocIterator::SvcInfo.c_str())
         .def_readonly("id", &SvcInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &SvcInfo::name, DocIterator::name.c_str())
         .def_readonly("sub_id", &SvcInfo::sub_id, DocIterator::sub_id.c_str())
         .def_readonly("pos_topo_vect", &SvcInfo::pos_topo_vect, DocIterator::pos_topo_vect.c_str())
         .def_readonly("connected", &SvcInfo::connected, DocIterator::connected.c_str())
         .def_readonly("bus_id", &SvcInfo::bus_id, DocIterator::bus_id.c_str())
-        .def_readonly("regulation_mode", &SvcInfo::regulation_mode, "0 = OFF, 1 = VOLTAGE, 2 = REACTIVE_POWER")
-        .def_readonly("target_vm_pu", &SvcInfo::target_vm_pu, "voltage setpoint (pu of the regulated bus), VOLTAGE mode")
-        .def_readonly("target_q_mvar", &SvcInfo::target_q_mvar, "reactive setpoint (MVAr), REACTIVE_POWER mode")
-        .def_readonly("slope_pu", &SvcInfo::slope_pu, "voltage/reactive slope (pu), 0 = no droop")
-        .def_readonly("b_min", &SvcInfo::b_min, "minimum susceptance (stored, NEVER enforced)")
-        .def_readonly("b_max", &SvcInfo::b_max, "maximum susceptance (stored, NEVER enforced)")
-        .def_readonly("regulated_bus_id", &SvcInfo::regulated_bus_id, "grid bus id whose voltage is regulated (== bus_id for local control)")
+        .def_readonly("regulation_mode", &SvcInfo::regulation_mode, DocIterator::regulation_mode.c_str())
+        .def_readonly("target_vm_pu", &SvcInfo::target_vm_pu, DocIterator::svc_target_vm_pu.c_str())
+        .def_readonly("target_q_mvar", &SvcInfo::target_q_mvar, DocIterator::svc_target_q_mvar.c_str())
+        .def_readonly("slope_pu", &SvcInfo::slope_pu, DocIterator::slope_pu.c_str())
+        .def_readonly("b_min", &SvcInfo::b_min, DocIterator::b_min.c_str())
+        .def_readonly("b_max", &SvcInfo::b_max, DocIterator::b_max.c_str())
+        .def_readonly("regulated_bus_id", &SvcInfo::regulated_bus_id, DocIterator::svc_regulated_bus_id.c_str())
         .def_readonly("has_res", &SvcInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_mw", &SvcInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &SvcInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())

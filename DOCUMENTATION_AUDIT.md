@@ -9,12 +9,10 @@ public, actually-used method should have real documentation instead of
 (3) flag documentation whose content no longer matches the current code.
 
 **Status: sections 2 (centralization), 3 (18 accuracy bugs) and 4 (missing
-docs), plus the follow-up batch of 19 remaining `LSGrid` `"TODO"`
-docstrings, are all now fixed** — see the commit(s) following this audit.
-`DocComputers`/`DocSecurityAnalysis` have been renamed to
-`DocTimeSeries`/`DocContingencyAnalysis` (§5 item 4). Only the SVC family
-(`SvcContainer`/`SvcInfo`, no `DocIterator` entries at all today) remains
-outstanding — explicitly deferred, "lots of docs missing there".
+docs) are all now fixed**, plus the follow-up batch of 19 remaining `LSGrid`
+`"TODO"` docstrings, and the SVC family (`SvcContainer`/`SvcInfo`) — see the
+commit(s) following this audit. `DocComputers`/`DocSecurityAnalysis` have
+been renamed to `DocTimeSeries`/`DocContingencyAnalysis` (§5 item 4).
 
 Sphinx pulls these docstrings directly (`autoclass`/`automodule` in
 `docs/*.rst`), so anything wrong here is wrong on the public docs site too —
@@ -872,6 +870,73 @@ of unresolved-reference targets is byte-for-byte identical before and
 after this pass (confirmed via `diff`, zero new dangling references).
 Round-tripped all 20 touched attributes through a real import to confirm
 non-empty, non-`"TODO"` docstrings.
+
+## SVC family (`SvcContainer`/`SvcInfo`) — fixed
+
+The last item explicitly deferred earlier ("SVC later, lots of docs missing
+there"). `binding_containers.cpp`'s SVC section had no `"TODO"` markers but
+was entirely inline (hand-written third-argument literals), with no
+`DocIterator` entries at all — the opposite failure mode from most of this
+audit. Added 10 new `DocIterator` constants (`SvcContainer`, `SvcInfo`,
+`RegulationMode`, `regulation_mode`, `svc_target_vm_pu`, `svc_target_q_mvar`,
+`slope_pu`, `b_min`, `b_max`, `svc_regulated_bus_id` — the `svc_` prefix on
+three of these is a C++-side disambiguation against the pre-existing
+generic `DocIterator::target_vm_pu`/`target_q_mvar`/`regulated_bus_id`
+constants used by `Gen`/`ConverterStation`; the rendered Python attribute
+names are the plain, unprefixed ones) and wired `binding_containers.cpp` to
+them.
+
+Traced the actual C++ semantics (`SvcContainer.hpp/.cpp`,
+`VoltageControlData.hpp`, the `VoltageControl` NR extension in
+`NRSystem.hpp`, and the pypowsybl import in `_aux_add_svc.py`) rather than
+paraphrasing the old inline strings:
+
+- An SVC injects reactive power only (`P` is always `0`), with three
+  `RegulationMode` values following powsybl's IIDM model: `VOLTAGE`,
+  `REACTIVE_POWER` (fixed `Q`, stamped directly into `Sbus`), `OFF`.
+- A `VOLTAGE`-mode SVC never becomes a PV bus: it is always a controller of
+  a `VoltageControl` bordered-formulation group (shared with remote-
+  regulating generators), even in the plain local, non-sloped case.
+- `b_min`/`b_max` are stored for introspection only and never enforced (no
+  outer loop, no limit check) — the same treatment as a generator's
+  `min_q_mvar`/`max_q_mvar`.
+- `regulated_bus_id` supports the same "remote voltage control" mechanism
+  as `GenInfo.regulated_bus_id`, including the same pypowsybl-import
+  resolve-once-at-import-time caveat.
+
+Per a follow-up request, added the actual voltage-regulation/droop
+equations (traced from `NRSystem.hpp`'s `VoltageControl` class comment and
+`LSGrid.cpp::fill_voltage_control_solver_data`) to `SvcContainer`'s
+docstring as rendered math: the per-group voltage constraint
+`Vm(reg) + Σ s_c·Q_c = v_set` (slope `s_c` = 0 for generators/non-sloped
+SVCs) and the proportional reactive-sharing constraint
+`Q_1/w_1 = ... = Q_N/w_N` with `w_c = b_max_c − b_min_c` for an SVC, plus
+the pypowsybl slope-unit conversion `s_pu = slope_kV/MVar · sn_mva / vn_kv(reg)`.
+
+**Bug caught during verification**: the first-drafted `slope_pu` and
+`regulated_bus_id` docstrings bare-referenced `:attr:`svc_target_vm_pu`` —
+the C++ *constant* name, not the actual bound Python attribute
+(`target_vm_pu`) — which would have been a dangling reference. Fixed
+before building.
+
+**Verified**: nitpicky Sphinx rebuild, diffing the full (untruncated)
+unresolved-reference target set before/after — confirms this pass fixed
+four pre-existing colon-parsing artifacts of its own making (`b_min`,
+`b_max`, `slope_pu`, `target_q_mvar` each opened with a short phrase +
+comma-list + colon, misparsed by numpydoc as a type field) and introduced
+zero new dangling references. Round-tripped `SvcContainer`, `SvcInfo`,
+`RegulationMode` and all 19 touched `SvcInfo` fields through a real import
+to confirm non-empty, non-`"TODO"` docstrings, and confirmed the rendered
+HTML contains correctly-typeset MathJax for the new equations section.
+
+Note (out of scope for this pass): the full-target diff also surfaced a
+handful of pre-existing colon-parsing artifacts in docstrings from earlier
+passes in this audit (`AlgoConfig.int_params`, `LimitViolation.element_id`,
+`ContingencyAnalysisCPP.compute_limit_violations`) that a prior verification
+missed because it compared only the first whitespace-delimited token of
+each dangling-reference target rather than the full target string. Not
+fixed here since they predate and are outside this SVC-specific task; worth
+a short cleanup pass later.
 
 ## 5. Recommendation for the rewrite pass
 
