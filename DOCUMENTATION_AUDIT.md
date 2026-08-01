@@ -9,9 +9,13 @@ public, actually-used method should have real documentation instead of
 (3) flag documentation whose content no longer matches the current code.
 
 **Status: all 18 findings in section 3 (accuracy bugs) have been fixed** —
-see the commit(s) following this audit. Sections 1, 2, 4 and 5 (placement,
-placeholders, missing docs, recommendations) are still just findings, not yet
-acted on.
+see the commit(s) following this audit. `DocComputers`/`DocSecurityAnalysis`
+have been renamed to `DocTimeSeries`/`DocContingencyAnalysis` (§5 item 4).
+Section 4 (missing docs) is in progress: the Gen/HVDC/converter-station
+iterator gaps are fixed (see §4 sub-section below); the remaining §4 items
+(`PandaPowerConverter`, `AlgoControl`, Line/Trafo admittance fields,
+`get_bus_id` family, `SubstationInfo`) and section 2 (centralization) are
+still just findings, not yet acted on.
 
 Sphinx pulls these docstrings directly (`autoclass`/`automodule` in
 `docs/*.rst`), so anything wrong here is wrong on the public docs site too —
@@ -581,6 +585,75 @@ hv/lv one is actually correct).
   `"TODO doc"`.
 - `SubstationContainer`/`SubstationInfo` class docstrings are themselves
   `"TODO"` (separately from the field-level bug in §3.4).
+
+### §4 progress: Gen / HVDC / converter-station iterator docs — fixed
+
+First pass at §4, scoped (per request) to `GenInfo`, `HvdcLineInfo` and
+`ConverterStationInfo` — the containers most heavily reworked recently — plus
+a survey of every other container's bindings to confirm nothing else in that
+category was hiding (result: no other container has a field bound to Python
+that isn't already covered by an existing `DocIterator` entry or a cataloged
+§4/§2 item above; SVC is intentionally deferred, see below).
+
+Every field on these three classes turned out to already be exposed to
+Python — this was purely a documentation gap, not a missing-binding one:
+
+- `GenInfo.voltage_regulator_on` / `.target_q_mvar`: were literal `"TODO"`.
+  `target_q_mvar` was a bug, not just a placeholder: the real, generic
+  `DocIterator::target_q_mvar` (used by SGen/Load/Storage/Shunt) already
+  existed and was simply never wired up for `GenInfo`.
+- `GenInfo.regulated_bus_id` ("remote voltage control"): had a one-line
+  inline string, not centralized, with no explanation of the
+  `voltage_regulator_on` interplay or the pypowsybl-import caveat that
+  `docs/network.rst` already documented in prose.
+- `ConverterStationInfo` (embedded in every HVDC line, one per side): the
+  entire class had never been added to `DocIterator` — class doc,
+  `converter_type`, `loss_factor`, `voltage_regulator_on` (TODO),
+  `target_q_mvar` (TODO), `power_factor` were all inline/terse, even though
+  the C++ header already had a good class-level comment (VSC vs LCC
+  behaviour) that had just never made it into the Python-facing docs.
+- `HvdcLineInfo`'s newer IIDM/droop fields (`converters_mode`,
+  `p_setpoint_mw`, `r_ohm`, `nominal_v_kv`, `droop_enabled`, `droop_p0_mw`,
+  `droop_k_mw_per_rad`, `pmax_1to2_mw`, `pmax_2to1_mw`, `status_droop`,
+  `station1`/`station2`): all inline one-liners, not centralized.
+
+**Fixed**: added 19 new `DocIterator` entries (`help_fun_msg.hpp`/`.cpp`) and
+wired all of the above bindings (`binding_containers.cpp`) to them.
+`voltage_regulator_on` is one shared entry covering both `GenInfo` and
+`ConverterStationInfo` (identical PV/PQ-setpoint semantics); `target_q_mvar`
+was extended (not duplicated) with a note on the voltage-regulation
+interplay, since it's now reused by 6 different classes. Every
+cross-reference inside a shared string is fully qualified
+(`lightsim2grid.elements.<Class>.<attr>`) rather than bare, since a bare
+`:attr:` role only resolves against the *current* page's class and several
+of these strings are rendered on multiple different classes' pages.
+
+While wiring `ConverterStationInfo`'s (pre-existing, generic) `min_q_mvar` /
+`max_q_mvar` docs, surfaced a second, unrelated pre-existing bug of the same
+species as the `lightsim2grid.solver.*` one fixed earlier: 14 references to
+`lightsim2grid.gridmodel.*` (`gridmodel` is *also* a deprecated shim,
+`network` is current -- same rename-not-propagated pattern, different
+module) plus 8 of those missing the `LSGrid.` class segment entirely
+(`lightsim2grid.network.get_Ybus` instead of
+`lightsim2grid.network.LSGrid.get_Ybus`) since `get_Ybus` etc. are methods,
+not module-level functions. Fixed both in the same pass.
+
+**Verified**: nitpicky Sphinx rebuild, no `_READ_THE_DOCS` (KLU/NICSLU/CKTSO
+not in scope here) -- three new dangling-reference warnings surfaced
+immediately on the first pass, all the same pre-existing numpydoc quirk
+already documented above (a docstring whose first line has an early colon
+followed by a comma-separated list gets misparsed as a type field):
+`converters_mode`, `status_droop`, `power_factor`. Reworded their first
+lines (colon -> em dash) and reran: those three warnings gone, no others
+introduced. `gridmodel`/missing-`LSGrid.` fix: 0 occurrences left (was 4 for
+`check_solution` alone, more once the other `get_*Ybus*`/`get_*Sbus*`
+references across the solver-family docstrings are counted); total warnings
+1306 -> 1273 across this whole pass. Spot-checked rendered HTML anchors for
+`GenInfo.regulated_bus_id`, `ConverterStationInfo`, and
+`HvdcLineInfo.status_droop` -- all present and correctly linked.
+Round-tripped both class doc rename usages (`TimeSeriesCPP`,
+`ContingencyAnalysisCPP`) through a real import to confirm non-empty
+docstrings post-rename.
 
 ## 5. Recommendation for the rewrite pass
 
