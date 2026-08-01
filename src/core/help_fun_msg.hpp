@@ -485,6 +485,176 @@ struct LS2G_API DocLSGrid
     static const std::string reactivate_result_computation;
     static const std::string ac_pf;
     static const std::string dc_pf;
+
+    // grid-level scalars / bus infrastructure (no per-element python class to reference)
+    static const std::string get_bus_vn_kv;
+    static const std::string get_bus_status;
+    static const std::string set_init_vm_pu;
+    static const std::string get_init_vm_pu;
+    static const std::string set_sn_mva;
+    static const std::string get_sn_mva;
+    static const std::string set_n_sub;
+    static const std::string get_n_sub;
+    static const std::string set_max_nb_bus_per_sub;
+
+    // solver-state bookkeeping
+    static const std::string unset_changes;
+    static const std::string tell_solver_need_reset;
+
+    // slack designation
+    static const std::string add_gen_slackbus;
+    static const std::string remove_gen_slackbus;
+
+    // substation names (bulk)
+    static const std::string set_substation_names;
+    static const std::string get_substation_names;
+
+    // per-element bus getters
+    static const std::string get_bus_load;
+    static const std::string get_bus_gen;
+    static const std::string get_bus_shunt;
+    static const std::string get_bus_sgen;
+    static const std::string get_bus_storage;
+    static const std::string get_bus_svc;
+    static const std::string get_bus1_powerline;
+    static const std::string get_bus2_powerline;
+    static const std::string get_bus1_trafo;
+    static const std::string get_bus2_trafo;
+    static const std::string get_bus1_dcline;
+    static const std::string get_bus2_dcline;
+
+    // per-element bus setters (topology change)
+    static const std::string change_bus_load;
+    static const std::string change_bus_gen;
+    static const std::string change_bus_svc;
+    static const std::string change_bus_shunt;
+    static const std::string change_bus_sgen;
+    static const std::string change_bus_storage;
+    static const std::string change_bus1_powerline;
+    static const std::string change_bus2_powerline;
+    static const std::string change_bus1_trafo;
+    static const std::string change_bus2_trafo;
+    static const std::string change_bus1_dcline;
+    static const std::string change_bus2_dcline;
+
+    // activation status
+    static const std::string deactivate_powerline;
+    static const std::string reactivate_powerline;
+    static const std::string deactivate_trafo;
+    static const std::string reactivate_trafo;
+    static const std::string deactivate_load;
+    static const std::string reactivate_load;
+    static const std::string deactivate_gen;
+    static const std::string reactivate_gen;
+    static const std::string deactivate_svc;
+    static const std::string reactivate_svc;
+    static const std::string deactivate_shunt;
+    static const std::string reactivate_shunt;
+    static const std::string deactivate_sgen;
+    static const std::string reactivate_sgen;
+    static const std::string deactivate_storage;
+    static const std::string reactivate_storage;
+    static const std::string deactivate_dcline;
+    static const std::string reactivate_dcline;
+
+    // setpoint setters
+    static const std::string change_p_load;
+    static const std::string change_q_load;
+    static const std::string change_p_gen;
+    static const std::string change_v_gen;
+    static const std::string change_p_shunt;
+    static const std::string change_q_shunt;
+    static const std::string change_p_sgen;
+    static const std::string change_q_sgen;
+    static const std::string change_p_storage;
+    static const std::string change_q_storage;
+    static const std::string change_p_dcline;
+    static const std::string change_v1_dcline;
+    static const std::string change_v2_dcline;
+
+    // bulk vector getters (whole-container equivalents of the per-element attributes above)
+    static const std::string get_loads_res;
+    static const std::string get_shunts_res;
+    static const std::string get_gen_res;
+    static const std::string get_storages_res;
+    static const std::string get_sgens_res;
+    static const std::string get_loads_status;
+    static const std::string get_shunts_status;
+    static const std::string get_gen_status;
+    static const std::string get_storages_status;
+    static const std::string get_sgens_status;
+    static const std::string get_lines_status;
+    static const std::string get_trafo_status;
+    static const std::string get_line_res1;
+    static const std::string get_line_res2;
+    static const std::string get_trafo_res1;
+    static const std::string get_trafo_res2;
+    static const std::string get_gen_theta;
+    static const std::string get_load_theta;
+    static const std::string get_shunt_theta;
+    static const std::string get_storage_theta;
+    static const std::string get_line_theta1;
+    static const std::string get_line_theta2;
+    static const std::string get_trafo_theta1;
+    static const std::string get_trafo_theta2;
+    static const std::string get_all_shunt_buses;
+    static const std::string get_loads_res_full;
+    static const std::string get_shunts_res_full;
+    static const std::string get_gen_res_full;
+    static const std::string get_storages_res_full;
+    static const std::string get_sgens_res_full;
+    static const std::string get_line_res1_full;
+    static const std::string get_line_res2_full;
+    static const std::string get_trafo_res1_full;
+    static const std::string get_trafo_res2_full;
+    static const std::string get_dcline_res1_full;
+    static const std::string get_dcline_res2_full;
+    static const std::string get_shunt_target_p;
+    static const std::string get_load_target_p;
+    static const std::string get_gen_target_p;
+    static const std::string get_sgen_target_p;
+    static const std::string get_storage_target_p;
+
+    // bulk vectorized setters (grid2op-backend fast path)
+    static const std::string update_gens_p;
+    static const std::string update_sgens_p;
+    static const std::string update_gens_v;
+    static const std::string update_loads_p;
+    static const std::string update_loads_q;
+    static const std::string update_storages_p;
+    static const std::string update_topo;
+
+    // structural position / substation-id setters (one-time loader setup)
+    static const std::string set_load_pos_topo_vect;
+    static const std::string set_gen_pos_topo_vect;
+    static const std::string set_line_pos1_topo_vect;
+    static const std::string set_line_pos2_topo_vect;
+    static const std::string set_trafo_pos1_topo_vect;
+    static const std::string set_trafo_pos2_topo_vect;
+    static const std::string set_storage_pos_topo_vect;
+    static const std::string set_load_to_subid;
+    static const std::string set_gen_to_subid;
+    static const std::string set_shunt_to_subid;
+    static const std::string set_line_to_sub1_id;
+    static const std::string set_line_to_sub2_id;
+    static const std::string set_trafo_to_sub1_id;
+    static const std::string set_trafo_to_sub2_id;
+    static const std::string set_storage_to_subid;
+
+    // bulk container constructors
+    static const std::string init_powerlines;
+    static const std::string init_powerlines_full;
+    static const std::string init_shunt;
+    static const std::string init_trafo_pandapower;
+    static const std::string init_trafo;
+    static const std::string init_generators;
+    static const std::string init_generators_full;
+    static const std::string init_loads;
+    static const std::string init_storages;
+    static const std::string init_sgens;
+    static const std::string init_dclines;
+    static const std::string init_hvdc_lines;
+    static const std::string init_svcs;
 };
 
 struct LS2G_API DocTimeSeries

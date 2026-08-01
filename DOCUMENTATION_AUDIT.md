@@ -10,9 +10,14 @@ public, actually-used method should have real documentation instead of
 
 **Status: sections 2 (centralization), 3 (18 accuracy bugs) and 4 (missing
 docs) are all now fixed**, plus the follow-up batch of 19 remaining `LSGrid`
-`"TODO"` docstrings, and the SVC family (`SvcContainer`/`SvcInfo`) — see the
+`"TODO"` docstrings, the SVC family (`SvcContainer`/`SvcInfo`), and 146 of
+the 155 `_internal_do_not_use`-tagged `LSGrid` methods from §6 — see the
 commit(s) following this audit. `DocComputers`/`DocSecurityAnalysis` have
-been renamed to `DocTimeSeries`/`DocContingencyAnalysis` (§5 item 4).
+been renamed to `DocTimeSeries`/`DocContingencyAnalysis` (§5 item 4). The
+remaining 9 `LSGrid` methods (bus-infrastructure primitives with no
+per-element python class, and pure solver-debug/bookkeeping calls) keep the
+`_internal_do_not_use` marker, itself rewritten to be honest and generic
+rather than LightSimBackend-specific.
 
 Sphinx pulls these docstrings directly (`autoclass`/`automodule` in
 `docs/*.rst`), so anything wrong here is wrong on the public docs site too —
@@ -987,6 +992,65 @@ references appear. Round-tripped `AlgoConfig.int_params`/`.real_params`,
 `LimitViolation.element_id`/`.name`, `ContingencyAnalysisCPP.
 compute_limit_violations`/`.nb_thread`, and `LSGrid.check_grid` through a
 real import.
+
+## §6 follow-up: 146 of the 155 `_internal_do_not_use` `LSGrid` methods — fixed
+
+Triaged every one of the 155 `LSGrid` methods flagged `_internal_do_not_use`
+in §6 (`binding_lsgrid.cpp`) by tracing its actual C++ implementation
+(`LSGrid.hpp`/`.cpp`, plus the relevant element container) rather than
+guessing from the name. Every method delegating to a single, identifiable
+attribute of a per-element container (or container family) now has a real
+docstring that says so explicitly — eg `get_bus_load` says it reads
+`LoadInfo.bus_id`, `change_p_gen` says it writes `GenInfo.target_p_mw`, and
+so on. That covers 135 methods, grouped by pattern: per-element bus
+getters/setters (24), activation status (18), setpoint setters (13), slack
+designation (2), bulk whole-container vector getters that are the
+vectorized equivalent of the same per-element attributes (43), bulk
+vectorized setters used by `LightSimBackend`'s fast path, literally the
+masked/looped form of the setpoint setters above (7), one-time structural
+position/substation-id setters used by the grid loaders (15), and bulk
+container constructors that build every attribute of every element at once
+rather than a single one (13).
+
+On top of those, per explicit follow-up request, 11 more methods got real
+docs even though they don't fit the "single container attribute" pattern:
+`get_bus_vn_kv` / `get_bus_status` (bus-level vectors -- there is no
+per-bus python class, only `SubstationInfo` which is per-*substation*, so
+these are documented in plain prose instead of an attribute reference),
+`set_init_vm_pu`/`get_init_vm_pu`, `set_sn_mva`/`get_sn_mva`,
+`set_n_sub`/`get_n_sub`, `set_max_nb_bus_per_sub` (LSGrid's own grid-sizing
+scalars, traced from the informative existing C++ comments above their
+declarations), and `unset_changes`/`tell_solver_need_reset` -- a pair the
+audit flagged as "opposites": `unset_changes` clears both solver families'
+change-tracking flags (see
+`~lightsim2grid.algorithm.AlgoControl`) and refreshes the bus-connectivity
+snapshot after a settled powerflow (a pure performance hint, never
+mandatory), while `tell_solver_need_reset` forces a full reset of both
+families and forgets that snapshot, for use after a grid mutation that
+bypasses `LSGrid`'s own `change_*`/`deactivate_*`/`reactivate_*` methods.
+
+The remaining 9 (`init_bus`, `init_bus_status`, `deactivate_bus`,
+`reactivate_bus` -- all bus-level with no per-bus python class either --
+plus the pure solver-bookkeeping/debug calls `tell_recompute_ybus`,
+`tell_recompute_sbus`, `tell_ybus_change_sparsity_pattern`,
+`debug_get_Bp_python`, `debug_get_Bpp_python`) stay `_internal_do_not_use`
+per explicit instruction. That shared constant itself was rewritten: it
+used to unconditionally claim to be "used as part of a dedicated code for
+`LightSimBackend`", which is not true of the solver-debug methods (also
+bound on `NR_SparseLU`/`FDPF_*`/`AlgorithmSelector` in `binding_solvers.cpp`)
+or of `ContingencyAnalysis.is_grid_connected_after_contingency` in
+`binding_batch.cpp`; it now describes itself generically as an internal,
+minimally-validated primitive not part of the stable API, without claiming
+a specific caller.
+
+**Verified**: full syntax check, a real build, and a real-import
+round-trip of all 146 newly-documented attributes (non-empty,
+non-`"TODO"`, no leftover `"internal, do not use"` text) plus explicit
+confirmation the remaining 9 still carry the (rewritten) internal marker.
+A nitpicky Sphinx rebuild's full (untruncated) unresolved-reference target
+set is byte-for-byte identical before and after this pass -- zero new
+dangling references from ~150 new cross-references into
+`lightsim2grid.elements.*`.
 
 ## 5. Recommendation for the rewrite pass
 
