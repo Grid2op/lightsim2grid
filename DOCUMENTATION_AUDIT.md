@@ -1052,6 +1052,86 @@ set is byte-for-byte identical before and after this pass -- zero new
 dangling references from ~150 new cross-references into
 `lightsim2grid.elements.*`.
 
+## §6 follow-up 2: reciprocal container ↔ `LSGrid` cross-references
+
+Closing the loop on the previous pass: every container attribute (`bus_id`,
+`connected`, `target_p_mw`, etc.) that now has a corresponding `LSGrid`
+getter/setter documented above gets a reciprocal note pointing back at it
+(e.g. `LoadInfo.bus_id` says it's read-only, equivalent to
+`LSGrid.get_bus_load()`, and that `LSGrid.change_bus_load()` changes it).
+Result-only fields (`res_p_mw` and friends) get a "no setter, also
+available in bulk via `LSGrid.get_*_res()`" note instead, matching the
+"some information, like flow on a powerline, only has a getter" case.
+
+The design constraint driving how this was implemented: many of these
+attribute docstrings are a single `DocIterator` constant *shared verbatim*
+across several container classes (eg `bus_id` is reused by `LoadInfo`,
+`GenInfo`, `ShuntInfo`, `SGenInfo`, `StorageInfo`, `SvcInfo`,
+`ConverterStationInfo`) -- baking a container-specific `LSGrid` method name
+into that shared text would be wrong on every page but one. The first
+design considered (a shared generic string concatenated with a small
+per-binding-site "note" suffix, `DocIterator::bus_id + DocLSGrid::
+get_bus_load_setter_note`) was rejected as error-prone: every future
+binding call would need to pick the *matching* suffix by hand, with no
+compiler check that it's the right one. Instead, each (container, field)
+pair needing a distinct cross-reference got its own fully self-contained
+`DocIterator` constant (eg `load_bus_id`, `gen_bus_id`, `svc_bus_id`, ...),
+so each `.def_readonly()` call site references exactly one constant, no
+runtime concatenation and no pairing to get wrong. Container/field
+combinations with no `LSGrid`-level counterpart to cross-reference (eg
+`ConverterStationInfo`'s fields, which have no independent top-level
+`LSGrid` method -- they follow their parent `HvdcLineInfo`) were left on
+the original shared constant, which was extended in place with a short
+note explaining that.
+
+Concretely, added 60 new `DocIterator` constants and edited 19 more
+in place, covering: `bus_id` (12 fields: 6 single-sided elements + 3
+two-sided containers × 2 sides), `connected` (15: 6 single-sided + 3
+two-sided-global + 6 per-side, reusing the half-open docs from the earlier
+`LSGrid` follow-up pass), `target_p_mw` (5) / `target_q_mvar` (4, excluding
+`GenInfo`/`SvcInfo`, which have no `LSGrid` setter for reactive power) /
+`target_vm_pu` (1, `GenInfo` only), `pos_topo_vect` (12) and `sub_id` (12,
+also covering the `voltage_level_id` pypowsybl-naming aliases, which are
+bound to the same underlying field), plus one-off edits to already-unique
+fields (`is_slack`/`slack_weight`, `GenInfo`/`SvcInfo`'s
+`regulated_bus_id`, `HvdcLineInfo`'s `p_setpoint_mw` /
+`target_vm1_pu`/`target_vm2_pu`, `TrafoInfo`'s `bus_hv_id`/`bus_lv_id`) and
+a generic "read-only, no setter, see the bulk getter" note added once to
+the shared `res_p_mw`/`res_q_mvar`/`res_v_kv`/`res_theta_deg` constants.
+
+Also, per an explicit follow-up, every new/edited `bus_id`-family
+docstring clarifies it is the "gridmodel" (aka "global") bus id, not the
+solver's internal bus numbering, with a pointer to
+`LSGrid.id_me_to_ac_solver` / `LSGrid.id_ac_solver_to_me` for converting
+between the two -- a distinction this whole audit has run into repeatedly
+(`GridModelBusId` vs `SolverBusId` in the C++ types) but that hadn't been
+spelled out on the attribute docs themselves before.
+
+The now-orphaned `bus_1_id` / `bus_2_id` constants (superseded by
+`line_bus1_id` / `line_bus2_id` / `hvdc_bus1_id` / `hvdc_bus2_id`, which
+needed to diverge since `LineInfo` and `HvdcLineInfo` have different
+`LSGrid` methods for the same field name) were deleted rather than left
+as dead code.
+
+**Bugs caught during verification** (both introduced by this pass, both
+fixed before landing): (1) `load_target_p_mw` / `gen_target_p_mw` opened
+with the same "phrase + comma-list + colon" numpydoc-misparse pattern
+fixed repeatedly earlier in this audit ("MW, load convention: positive =
+...") -- reworded to "--". (2) `hvdc_connected1` / `hvdc_connected2`
+referenced `LSGrid.reactivate_dcline_side1` / `_side2`, methods that do
+not exist -- `LSGrid` only exposes a *per-station* deactivate for HVDC
+half-open, reconnection is whole-line-only via `reactivate_dcline`
+(asymmetric, unlike powerlines/transformers which have full per-side
+deactivate *and* reactivate). Reworded to state that asymmetry instead of
+inventing a matching reactivate.
+
+**Verified**: full syntax check, a real build, a real-import round-trip
+of 82 spot-checked attributes across all 11 touched container classes,
+and a nitpicky Sphinx rebuild whose full (untruncated) unresolved-reference
+target set is byte-for-byte identical to the pre-this-pass baseline --
+zero new dangling references from roughly 80 new cross-references into
+`lightsim2grid.network.LSGrid`.
+
 ## 5. Recommendation for the rewrite pass
 
 1. Treat §3 (accuracy bugs, 18 items) as the first, independent fix — these

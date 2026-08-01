@@ -1151,6 +1151,10 @@ const std::string DocIterator::sub_id = R"mydelimiter(
     .. warning::
         Substation ids are optional and might not be set when reading the grid. In that case -1 is set for this attribute.
 
+    On :class:`~lightsim2grid.elements.ConverterStationInfo` (the only remaining user of this
+    generic docstring): read-only, no dedicated ``LSGrid`` substation-id setter -- a converter
+    station's substation follows its parent :class:`~lightsim2grid.elements.HvdcLineInfo`.
+
 )mydelimiter";
 
 const std::string DocIterator::pos_topo_vect = R"mydelimiter(
@@ -1159,16 +1163,37 @@ const std::string DocIterator::pos_topo_vect = R"mydelimiter(
     .. warning::
         Position in the "topo vector" are optional and might not be set when reading the grid. In that case -1 is set for this attribute.
 
+    On :class:`~lightsim2grid.elements.ConverterStationInfo` (the only remaining user of this
+    generic docstring): read-only, no dedicated ``LSGrid`` position setter -- HVDC lines are not
+    part of grid2op's topology vector.
+
 )mydelimiter";
 
 const std::string DocIterator::connected = R"mydelimiter(
     Get the status (True = connected, False = disconnected) of each element of a :class:`lightsim2grid.network.LSGrid`
+
+    On :class:`~lightsim2grid.elements.ConverterStationInfo` (the only remaining user of this
+    generic docstring): read-only, there is no ``LSGrid`` method to (de)activate a converter
+    station independently of its parent :class:`~lightsim2grid.elements.HvdcLineInfo` -- see
+    :func:`lightsim2grid.network.LSGrid.deactivate_dcline_side1` /
+    :func:`lightsim2grid.network.LSGrid.deactivate_dcline_side2`.
 
 )mydelimiter";
 
 const std::string DocIterator::bus_id = R"mydelimiter(
     Get the bus id (as an integer) at which each element of a :class:`lightsim2grid.network.LSGrid` is connected. If `-1` is returned it means
     that the object is disconnected.
+
+    .. note::
+        This is the "gridmodel" (aka "global") bus id, not the "solver" bus id used internally by
+        the powerflow (which only numbers *connected* buses, and renumbers them whenever the
+        topology changes) -- see
+        :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` /
+        :func:`lightsim2grid.network.LSGrid.id_ac_solver_to_me` to convert between the two.
+
+    On :class:`~lightsim2grid.elements.ConverterStationInfo` (the only remaining user of this
+    generic docstring): read-only, no dedicated ``LSGrid`` setter -- a converter station's bus
+    follows its parent :class:`~lightsim2grid.elements.HvdcLineInfo`.
 
 )mydelimiter";
 
@@ -1183,8 +1208,13 @@ const std::string DocIterator::target_p_mw = R"mydelimiter(
     Get the active production (or consumption) setpoint in MW for element of the grid supporting this feature.
 
     For generators (and static generators) it is given following the "generator convention" (positive = power is injected to the grid)
-    
+
     For loads (and storage units) it is given following the "load convention" (positive = power is absorbed from the grid)
+
+    On :class:`~lightsim2grid.elements.ConverterStationInfo` (the only remaining user of this
+    generic docstring): read-only, no dedicated ``LSGrid`` setter -- it follows its parent
+    :class:`~lightsim2grid.elements.HvdcLineInfo`'s
+    :func:`lightsim2grid.network.LSGrid.change_p_dcline`.
 
 )mydelimiter";
 
@@ -1201,6 +1231,10 @@ const std::string DocIterator::target_q_mvar = R"mydelimiter(
         :attr:`lightsim2grid.elements.ConverterStationInfo.voltage_regulator_on`), this value is
         only actually used when voltage regulation is OFF. When it is ON, the reactive power is
         computed by the powerflow instead and this setpoint is ignored.
+
+    On :class:`~lightsim2grid.elements.GenInfo` and
+    :class:`~lightsim2grid.elements.ConverterStationInfo` (the remaining users of this generic
+    docstring): read-only, there is no ``LSGrid`` method exposed to change this value directly.
 
 )mydelimiter";
 
@@ -1443,8 +1477,11 @@ const std::string DocIterator::res_p_mw = R"mydelimiter(
     Get the active production (or consumption) in MW for element of the grid supporting this feature.
 
     For generators (and static generators) it is given following the "generator convention" (positive = power is injected to the grid)
-    
+
     For loads (and storage units) it is given following the "load convention" (positive = power is absorbed from the grid)
+
+    Read-only powerflow result, no ``LSGrid`` setter -- also available in bulk, for every element
+    of this container at once, via the corresponding ``LSGrid.get_*_res()`` method.
 
 )mydelimiter" + DocIterator::only_avail_res;
 
@@ -1452,8 +1489,11 @@ const std::string DocIterator::res_q_mvar = R"mydelimiter(
     Get the reactive production (or consumption) in MVAr for element of the grid supporting this feature.
 
     For generators (and static generators) it is given following the "generator convention" (positive = power is injected to the grid)
-    
+
     For loads (and storage units) it is given following the "load convention" (positive = power is absorbed from the grid)
+
+    Read-only powerflow result, no ``LSGrid`` setter -- also available in bulk, for every element
+    of this container at once, via the corresponding ``LSGrid.get_*_res()`` method.
 
 )mydelimiter" + DocIterator::only_avail_res;
 
@@ -1463,6 +1503,9 @@ const std::string DocIterator::res_theta_deg = R"mydelimiter(
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
 
+    Read-only powerflow result, no ``LSGrid`` setter -- also available in bulk, for every element
+    of this container at once, via the corresponding ``LSGrid.get_*_theta()`` method.
+
 )mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_v_kv = R"mydelimiter(
@@ -1471,6 +1514,9 @@ const std::string DocIterator::res_v_kv = R"mydelimiter(
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
 
+    Read-only powerflow result, no ``LSGrid`` setter -- also available in bulk, for every element
+    of this container at once, via the corresponding ``LSGrid.get_*_res()`` method.
+
 )mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::target_vm_pu = R"mydelimiter(
@@ -1478,6 +1524,12 @@ const std::string DocIterator::target_vm_pu = R"mydelimiter(
 
     .. warning::
         This is given in "pair unit" (pu) system and not in kilo Volt (kV) !
+
+    On :class:`~lightsim2grid.elements.ConverterStationInfo` (the only remaining user of this
+    generic docstring): read-only, no dedicated ``LSGrid`` setter -- it follows its parent
+    :class:`~lightsim2grid.elements.HvdcLineInfo`'s
+    :func:`lightsim2grid.network.LSGrid.change_v1_dcline` /
+    :func:`lightsim2grid.network.LSGrid.change_v2_dcline`.
 
 )mydelimiter";
 
@@ -1563,16 +1615,24 @@ const std::string DocIterator::is_slack = R"mydelimiter(
         do not participate to it (for example if there is a more than one generator where `is_slack` is ``True`` but the model used
         to computed the powerflow do not support distributed slack buses - **eg** :class:`lightsim2grid.algorithm.NRSing_SparseLU`)
 
-        This is why we recommend to use the (slower) but more accurate :class:`lightsim2grid.algorithm.NR_SparseLU` or 
+        This is why we recommend to use the (slower) but more accurate :class:`lightsim2grid.algorithm.NR_SparseLU` or
         :class:`lightsim2grid.algorithm.NR_KLU` for example.
+
+    Read-only here, together with :attr:`slack_weight`. To make this generator participate (or
+    stop participating) in the distributed slack, call
+    :func:`lightsim2grid.network.LSGrid.add_gen_slackbus` /
+    :func:`lightsim2grid.network.LSGrid.remove_gen_slackbus`.
 
 )mydelimiter";
 
 const std::string DocIterator::slack_weight = R"mydelimiter(
     For each generators, gives the participation (for the distributed slack) of this particular generator.
-    
+
     .. note::
         Weights do not scale to one for this variable thus this number has no meaning by itself and should be compared with the others.
+
+    Read-only here, see :attr:`is_slack` for how to change it (the weight is set together with
+    slack participation, via :func:`lightsim2grid.network.LSGrid.add_gen_slackbus`).
 
 )mydelimiter";
 
@@ -1862,6 +1922,10 @@ const std::string DocIterator::svc_regulated_bus_id = R"mydelimiter(
         lightsim2grid grid and the original pypowsybl grid then desynchronise. Re-import the grid
         if you need to follow such a topology change.
 
+    Read-only from python: unlike :attr:`lightsim2grid.elements.GenInfo.regulated_bus_id`, there
+    is no ``LSGrid`` method to change an SVC's regulated bus after construction (only set once,
+    via :func:`lightsim2grid.network.LSGrid.init_svcs`).
+
 )mydelimiter";
 
 const std::string DocIterator::LoadContainer = R"mydelimiter(
@@ -2117,11 +2181,23 @@ const std::string DocIterator::bus_hv_id = R"mydelimiter(
     Get the bus id (as an integer) at which the "hv" side of the transformer is connected. If `-1` is returned it means
     that the transformer is disconnected.
 
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus1_trafo`. To move
+    this side to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus1_trafo`.
+
 )mydelimiter";
 
 const std::string DocIterator::bus_lv_id = R"mydelimiter(
     Get the bus id (as an integer) at which the "lv" side of the transformer is connected. If `-1` is returned it means
     that the transformer is disconnected.
+
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus2_trafo`. To move
+    this side to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus2_trafo`.
 
 )mydelimiter";
 
@@ -2266,18 +2342,6 @@ const std::string DocIterator::LineInfo = R"mydelimiter(
     "3.2 Branches" subsection, as well as the equation 3.1, 3.2 and 3.3 therein.
     
 )mydelimiter" + DocIterator::line_model;
-
-const std::string DocIterator::bus_1_id = R"mydelimiter(
-    Get the bus id (as an integer) at which side 1 of the line is connected. If `-1` is returned it means
-    that the line is disconnected.
-
-)mydelimiter";
-
-const std::string DocIterator::bus_2_id = R"mydelimiter(
-    Get the bus id (as an integer) at which side 2 of the line is connected. If `-1` is returned it means
-    that the line is disconnected.
-
-)mydelimiter";
 
 const std::string DocIterator::get_bus_id_side_1 = R"mydelimiter(
     ``bus_1_id`` for every element of this container, as a single array: element ``i`` of the
@@ -2462,10 +2526,14 @@ const std::string DocIterator::target_p_2_mw_dcline = R"mydelimiter(
 const std::string DocIterator::target_vm_1_pu_dcline = R"mydelimiter(
     The target voltage setpoint (in pu, NOT in kV) of the converter station on side 1 of the hvdc line.
 
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_v1_dcline`.
+
 )mydelimiter";
 
 const std::string DocIterator::target_vm_2_pu_dcline = R"mydelimiter(
     The target voltage setpoint (in pu, NOT in kV) of the converter station on side 2 of the hvdc line.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_v2_dcline`.
 
 )mydelimiter";
 
@@ -2583,6 +2651,9 @@ const std::string DocIterator::p_setpoint_mw = R"mydelimiter(
     .. note::
         When :attr:`droop_enabled` is ``True``, this setpoint is not used: the active power
         instead follows the angle-droop equation, see :attr:`droop_enabled`.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_p_dcline`
+    (:attr:`target_p1_mw` / :attr:`p2_mw` are then derived from it, not settable directly).
 
 )mydelimiter";
 
@@ -2731,6 +2802,557 @@ const std::string DocIterator::power_factor = R"mydelimiter(
 
 )mydelimiter";
 
+
+// ---------------------------------------------------------------------------
+// per-container specific variants of bus_id / connected / target_p_mw / target_q_mvar /
+// target_vm_pu / pos_topo_vect / sub_id, cross-referencing the LSGrid getter/setter -- see
+// the (shared, generic) definitions above for the base wording each of these starts from.
+// ---------------------------------------------------------------------------
+
+const std::string DocIterator::load_bus_id = R"mydelimiter(
+    Get the bus id (as an integer) at which this load is connected. If ``-1`` is returned it
+    means the load is disconnected.
+
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus_load`. To move
+    this load to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus_load`.
+
+)mydelimiter";
+
+const std::string DocIterator::gen_bus_id = R"mydelimiter(
+    Get the bus id (as an integer) at which this generator is connected. If ``-1`` is returned it
+    means the generator is disconnected.
+
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus_gen`. To move
+    this generator to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus_gen`.
+
+)mydelimiter";
+
+const std::string DocIterator::shunt_bus_id = R"mydelimiter(
+    Get the bus id (as an integer) at which this shunt is connected. If ``-1`` is returned it
+    means the shunt is disconnected.
+
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus_shunt`. To move
+    this shunt to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus_shunt`.
+
+)mydelimiter";
+
+const std::string DocIterator::sgen_bus_id = R"mydelimiter(
+    Get the bus id (as an integer) at which this static generator is connected. If ``-1`` is
+    returned it means the static generator is disconnected.
+
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus_sgen`. To move
+    this static generator to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus_sgen`.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_bus_id = R"mydelimiter(
+    Get the bus id (as an integer) at which this storage unit is connected. If ``-1`` is returned
+    it means the storage unit is disconnected.
+
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus_storage`. To move
+    this storage unit to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus_storage`.
+
+)mydelimiter";
+
+const std::string DocIterator::svc_bus_id = R"mydelimiter(
+    Get the bus id (as an integer) at which this SVC is connected. If ``-1`` is returned it means
+    the SVC is disconnected.
+
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus_svc`. To move
+    this SVC to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus_svc`.
+
+)mydelimiter";
+
+const std::string DocIterator::line_bus1_id = R"mydelimiter(
+    Get the bus id (as an integer) at which side 1 of the line is connected. If ``-1`` is
+    returned it means that the line is disconnected.
+
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus1_powerline`. To
+    move this side to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus1_powerline`.
+
+)mydelimiter";
+
+const std::string DocIterator::line_bus2_id = R"mydelimiter(
+    Get the bus id (as an integer) at which side 2 of the line is connected. If ``-1`` is
+    returned it means that the line is disconnected.
+
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus2_powerline`. To
+    move this side to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus2_powerline`.
+
+)mydelimiter";
+
+const std::string DocIterator::hvdc_bus1_id = R"mydelimiter(
+    Get the bus id (as an integer) at which converter station 1 of the HVDC line is connected. If
+    ``-1`` is returned it means that side is disconnected.
+
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus1_dcline`. To move
+    this converter station to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus1_dcline`.
+
+)mydelimiter";
+
+const std::string DocIterator::hvdc_bus2_id = R"mydelimiter(
+    Get the bus id (as an integer) at which converter station 2 of the HVDC line is connected. If
+    ``-1`` is returned it means that side is disconnected.
+
+    (This is the gridmodel / global bus id, not the solver bus id -- see
+    :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` to convert.)
+
+    Read-only here; equivalent to :func:`lightsim2grid.network.LSGrid.get_bus2_dcline`. To move
+    this converter station to another bus, call :func:`lightsim2grid.network.LSGrid.change_bus2_dcline`.
+
+)mydelimiter";
+
+const std::string DocIterator::load_connected = R"mydelimiter(
+    Get the status (``True`` = connected, ``False`` = disconnected) of this load.
+
+    Read-only here. To disconnect / reconnect it, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_load` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_load`.
+
+)mydelimiter";
+
+const std::string DocIterator::gen_connected = R"mydelimiter(
+    Get the status (``True`` = connected, ``False`` = disconnected) of this generator.
+
+    Read-only here. To disconnect / reconnect it, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_gen` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_gen`.
+
+)mydelimiter";
+
+const std::string DocIterator::shunt_connected = R"mydelimiter(
+    Get the status (``True`` = connected, ``False`` = disconnected) of this shunt.
+
+    Read-only here. To disconnect / reconnect it, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_shunt` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_shunt`.
+
+)mydelimiter";
+
+const std::string DocIterator::sgen_connected = R"mydelimiter(
+    Get the status (``True`` = connected, ``False`` = disconnected) of this static generator.
+
+    Read-only here. To disconnect / reconnect it, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_sgen` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_sgen`.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_connected = R"mydelimiter(
+    Get the status (``True`` = connected, ``False`` = disconnected) of this storage unit.
+
+    Read-only here. To disconnect / reconnect it, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_storage` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_storage`.
+
+)mydelimiter";
+
+const std::string DocIterator::svc_connected = R"mydelimiter(
+    Get the status (``True`` = connected, ``False`` = disconnected) of this SVC.
+
+    Read-only here. To disconnect / reconnect it, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_svc` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_svc`.
+
+)mydelimiter";
+
+const std::string DocIterator::line_connected_global = R"mydelimiter(
+    Get the *global* status (``True`` as soon as either side is connected) of this powerline.
+
+    Read-only here. To disconnect / reconnect both sides at once, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_powerline` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_powerline`; see :attr:`connected1` /
+    :attr:`connected2` and their own setters to act on a single side ("half-open").
+
+)mydelimiter";
+
+const std::string DocIterator::trafo_connected_global = R"mydelimiter(
+    Get the *global* status (``True`` as soon as either side is connected) of this transformer.
+
+    Read-only here. To disconnect / reconnect both sides at once, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_trafo` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_trafo`; see :attr:`connected1` /
+    :attr:`connected2` and their own setters to act on a single side ("half-open").
+
+)mydelimiter";
+
+const std::string DocIterator::hvdc_connected_global = R"mydelimiter(
+    Get the *global* status (``True`` as soon as either converter station is connected) of this
+    HVDC line.
+
+    Read-only here. To disconnect / reconnect both stations at once, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_dcline` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_dcline`; see :attr:`connected1` /
+    :attr:`connected2` and their own setters to act on a single station ("half-open").
+
+)mydelimiter";
+
+const std::string DocIterator::line_connected1 = R"mydelimiter(
+    Get the status of side 1 of this powerline alone (relevant for a "half-open" line, see
+    :attr:`connected_global` for the combined status).
+
+    Read-only here. To disconnect / reconnect only this side, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_powerline_side1` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_powerline_side1`.
+
+)mydelimiter";
+
+const std::string DocIterator::line_connected2 = R"mydelimiter(
+    Get the status of side 2 of this powerline alone, see :attr:`connected1`.
+
+    Read-only here. To disconnect / reconnect only this side, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_powerline_side2` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_powerline_side2`.
+
+)mydelimiter";
+
+const std::string DocIterator::trafo_connected1 = R"mydelimiter(
+    Get the status of side 1 (hv) of this transformer alone, see :attr:`connected_global`.
+
+    Read-only here. To disconnect / reconnect only this side, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_trafo_side1` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_trafo_side1`.
+
+)mydelimiter";
+
+const std::string DocIterator::trafo_connected2 = R"mydelimiter(
+    Get the status of side 2 (lv) of this transformer alone, see :attr:`connected_global`.
+
+    Read-only here. To disconnect / reconnect only this side, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_trafo_side2` /
+    :func:`lightsim2grid.network.LSGrid.reactivate_trafo_side2`.
+
+)mydelimiter";
+
+const std::string DocIterator::hvdc_connected1 = R"mydelimiter(
+    Get the status of converter station 1 of this HVDC line alone, see :attr:`connected_global`.
+
+    Read-only here. To disconnect only this station, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_dcline_side1` (there is no per-station
+    reconnect: :func:`lightsim2grid.network.LSGrid.reactivate_dcline` reconnects both stations
+    at once).
+
+)mydelimiter";
+
+const std::string DocIterator::hvdc_connected2 = R"mydelimiter(
+    Get the status of converter station 2 of this HVDC line alone, see :attr:`connected_global`.
+
+    Read-only here. To disconnect only this station, call
+    :func:`lightsim2grid.network.LSGrid.deactivate_dcline_side2` (there is no per-station
+    reconnect: :func:`lightsim2grid.network.LSGrid.reactivate_dcline` reconnects both stations
+    at once).
+
+)mydelimiter";
+
+const std::string DocIterator::load_target_p_mw = R"mydelimiter(
+    Get the active power setpoint (MW, load convention -- positive = power is absorbed from the
+    grid) of this load.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_p_load`.
+
+)mydelimiter";
+
+const std::string DocIterator::gen_target_p_mw = R"mydelimiter(
+    Get the active power setpoint (MW, generator convention -- positive = power is injected to
+    the grid) of this generator.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_p_gen`.
+
+)mydelimiter";
+
+const std::string DocIterator::shunt_target_p_mw = R"mydelimiter(
+    Get the active power (MW, load convention) of this shunt.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_p_shunt`.
+
+)mydelimiter";
+
+const std::string DocIterator::sgen_target_p_mw = R"mydelimiter(
+    Get the active power setpoint (MW, generator convention) of this static generator.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_p_sgen`.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_target_p_mw = R"mydelimiter(
+    Get the active power setpoint (MW, load convention) of this storage unit.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_p_storage`.
+
+)mydelimiter";
+
+const std::string DocIterator::load_target_q_mvar = R"mydelimiter(
+    Get the reactive power setpoint (MVAr, load convention) of this load.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_q_load`.
+
+)mydelimiter";
+
+const std::string DocIterator::shunt_target_q_mvar = R"mydelimiter(
+    Get the reactive power (MVAr, load convention) of this shunt.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_q_shunt`.
+
+)mydelimiter";
+
+const std::string DocIterator::sgen_target_q_mvar = R"mydelimiter(
+    Get the reactive power setpoint (MVAr, generator convention) of this static generator.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_q_sgen`.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_target_q_mvar = R"mydelimiter(
+    Get the reactive power setpoint (MVAr, load convention) of this storage unit.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_q_storage`.
+
+)mydelimiter";
+
+const std::string DocIterator::gen_target_vm_pu = R"mydelimiter(
+    Get the voltage magnitude setpoint (pu, NOT kV) of this generator.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_v_gen`.
+
+)mydelimiter";
+
+const std::string DocIterator::load_pos_topo_vect = R"mydelimiter(
+    Get the position of this load in the grid2op "topo_vect" vector (``-1`` if never set).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_load_pos_topo_vect`.
+
+)mydelimiter";
+
+const std::string DocIterator::gen_pos_topo_vect = R"mydelimiter(
+    Get the position of this generator in the grid2op "topo_vect" vector (``-1`` if never set).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_gen_pos_topo_vect`.
+
+)mydelimiter";
+
+const std::string DocIterator::shunt_pos_topo_vect = R"mydelimiter(
+    Get the position of this shunt in the grid2op "topo_vect" vector (``-1`` if never set).
+
+    Shunts have no dedicated ``LSGrid`` position setter -- unlike other elements, shunts are not
+    part of grid2op's topology vector.
+
+)mydelimiter";
+
+const std::string DocIterator::sgen_pos_topo_vect = R"mydelimiter(
+    Get the position of this static generator in the grid2op "topo_vect" vector (``-1`` if never
+    set).
+
+    Static generators have no dedicated ``LSGrid`` position setter -- unlike other elements, they
+    are not part of grid2op's topology vector.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_pos_topo_vect = R"mydelimiter(
+    Get the position of this storage unit in the grid2op "topo_vect" vector (``-1`` if never
+    set).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_storage_pos_topo_vect`.
+
+)mydelimiter";
+
+const std::string DocIterator::svc_pos_topo_vect = R"mydelimiter(
+    Get the position of this SVC in the grid2op "topo_vect" vector (``-1`` if never set).
+
+    SVCs have no dedicated ``LSGrid`` position setter -- unlike other elements, they are not part
+    of grid2op's topology vector.
+
+)mydelimiter";
+
+const std::string DocIterator::line_pos1_topo_vect = R"mydelimiter(
+    Get the position of side 1 of this powerline in the grid2op "topo_vect" vector (``-1`` if
+    never set).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_line_pos1_topo_vect`.
+
+)mydelimiter";
+
+const std::string DocIterator::line_pos2_topo_vect = R"mydelimiter(
+    Get the position of side 2 of this powerline in the grid2op "topo_vect" vector (``-1`` if
+    never set).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_line_pos2_topo_vect`.
+
+)mydelimiter";
+
+const std::string DocIterator::trafo_pos1_topo_vect = R"mydelimiter(
+    Get the position of side 1 (hv) of this transformer in the grid2op "topo_vect" vector (``-1``
+    if never set).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_trafo_pos1_topo_vect`.
+
+)mydelimiter";
+
+const std::string DocIterator::trafo_pos2_topo_vect = R"mydelimiter(
+    Get the position of side 2 (lv) of this transformer in the grid2op "topo_vect" vector (``-1``
+    if never set).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_trafo_pos2_topo_vect`.
+
+)mydelimiter";
+
+const std::string DocIterator::hvdc_pos1_topo_vect = R"mydelimiter(
+    Get the position of converter station 1 of this HVDC line in the grid2op "topo_vect" vector
+    (``-1`` if never set).
+
+    HVDC lines have no dedicated ``LSGrid`` position setter -- unlike AC lines and transformers,
+    they are not part of grid2op's topology vector.
+
+)mydelimiter";
+
+const std::string DocIterator::hvdc_pos2_topo_vect = R"mydelimiter(
+    Get the position of converter station 2 of this HVDC line in the grid2op "topo_vect" vector
+    (``-1`` if never set), see :attr:`pos1_topo_vect`.
+
+)mydelimiter";
+
+const std::string DocIterator::load_sub_id = R"mydelimiter(
+    Get the substation id of this load (``-1`` if never set; called "voltage level" in
+    pypowsybl).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_load_to_subid`.
+
+)mydelimiter";
+
+const std::string DocIterator::gen_sub_id = R"mydelimiter(
+    Get the substation id of this generator (``-1`` if never set; called "voltage level" in
+    pypowsybl).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_gen_to_subid`.
+
+)mydelimiter";
+
+const std::string DocIterator::shunt_sub_id = R"mydelimiter(
+    Get the substation id of this shunt (``-1`` if never set; called "voltage level" in
+    pypowsybl).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_shunt_to_subid`.
+
+)mydelimiter";
+
+const std::string DocIterator::sgen_sub_id = R"mydelimiter(
+    Get the substation id of this static generator (``-1`` if never set; called "voltage level"
+    in pypowsybl).
+
+    Static generators have no dedicated ``LSGrid`` substation-id setter.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_sub_id = R"mydelimiter(
+    Get the substation id of this storage unit (``-1`` if never set; called "voltage level" in
+    pypowsybl).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_storage_to_subid`.
+
+)mydelimiter";
+
+const std::string DocIterator::svc_sub_id = R"mydelimiter(
+    Get the substation id of this SVC (``-1`` if never set; called "voltage level" in pypowsybl).
+
+    SVCs have no dedicated ``LSGrid`` substation-id setter.
+
+)mydelimiter";
+
+const std::string DocIterator::line_sub1_id = R"mydelimiter(
+    Get the substation id of side 1 of this powerline (``-1`` if never set; called "voltage
+    level" in pypowsybl).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_line_to_sub1_id`.
+
+)mydelimiter";
+
+const std::string DocIterator::line_sub2_id = R"mydelimiter(
+    Get the substation id of side 2 of this powerline (``-1`` if never set; called "voltage
+    level" in pypowsybl).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_line_to_sub2_id`.
+
+)mydelimiter";
+
+const std::string DocIterator::trafo_sub1_id = R"mydelimiter(
+    Get the substation id of side 1 (hv) of this transformer (``-1`` if never set; called
+    "voltage level" in pypowsybl).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_trafo_to_sub1_id`.
+
+)mydelimiter";
+
+const std::string DocIterator::trafo_sub2_id = R"mydelimiter(
+    Get the substation id of side 2 (lv) of this transformer (``-1`` if never set; called
+    "voltage level" in pypowsybl).
+
+    Read-only here; this is set once, by the grid loaders, via
+    :func:`lightsim2grid.network.LSGrid.set_trafo_to_sub2_id`.
+
+)mydelimiter";
+
+const std::string DocIterator::hvdc_sub1_id = R"mydelimiter(
+    Get the substation id of converter station 1 of this HVDC line (``-1`` if never set; called
+    "voltage level" in pypowsybl).
+
+    HVDC lines have no dedicated ``LSGrid`` substation-id setter.
+
+)mydelimiter";
+
+const std::string DocIterator::hvdc_sub2_id = R"mydelimiter(
+    Get the substation id of converter station 2 of this HVDC line (``-1`` if never set; called
+    "voltage level" in pypowsybl), see :attr:`sub1_id`.
+
+)mydelimiter";
+
+const std::string DocIterator::substation_name = R"mydelimiter(
+    Get the name of this substation. Names are optional and might not be set when reading the
+    grid.
+
+    Read-only here; set in bulk (every substation at once), via
+    :func:`lightsim2grid.network.LSGrid.set_substation_names`.
+
+)mydelimiter";
 
 const std::string DocLSGrid::LSGrid = R"mydelimiter(
     This class represent a lightsim2grid power network. All the elements that can be manipulated by
