@@ -24,15 +24,10 @@ void bind_misc(py::module_& m) {
         .def("get_trafo_param_pp3", &PandaPowerConverter::get_trafo_param_pp3, DocMisc::get_trafo_param_pp3.c_str())
         .def("get_trafo_param_pp2", &PandaPowerConverter::get_trafo_param_pp2, DocMisc::get_trafo_param_pp2.c_str());
 
-    py::class_<AlgoConfig>(m, "AlgoConfig",
-        "Serialisable configuration blob for Newton-Raphson algorithm parameters.\n"
-        "Stores scaling/refactor policy type and all associated parameters.\n"
-        "Obtain via solver.get_config() or gridmodel.get_ac_algo_config().")
+    py::class_<AlgoConfig>(m, "AlgoConfig", DocMisc::AlgoConfig.c_str())
         .def(py::init<>())
-        .def_readwrite("int_params",  &AlgoConfig::int_params,
-            "Integer parameters: [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n]")
-        .def_readwrite("real_params", &AlgoConfig::real_params,
-            "Real parameters: [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max]");
+        .def_readwrite("int_params",  &AlgoConfig::int_params, DocMisc::int_params.c_str())
+        .def_readwrite("real_params", &AlgoConfig::real_params, DocMisc::real_params.c_str());
 
     py::class_<AlgoControl>(m, "AlgoControl", DocMisc::AlgoControl.c_str())
         .def(py::init<>())

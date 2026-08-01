@@ -169,7 +169,358 @@ const std::string DocSolver::get_timers = R"mydelimiter(
         Total time spent in the solver
 
 )mydelimiter";
-    
+
+const std::string DocSolver::TimerJac = R"mydelimiter(
+    Named timer record returned by
+    :func:`~lightsim2grid.algorithm.AlgorithmSelector.get_timers_jacobian`, breaking down the plain
+    ``(timer_Fx, timer_solve, timer_check, timer_total_nr)`` tuple of
+    :func:`~lightsim2grid.algorithm.NR_SparseLU.get_timers` into a finer-grained, named set of
+    phases.
+
+    All fields default to ``-1.`` when not measured by the active solver: only the
+    Newton-Raphson family (``NR_*``/``NRSing_*``/``NRRefactorRetry_*``) fills in every field;
+    Gauss-Seidel and DC solvers only ever set the handful of phases they actually go through
+    (see each field's own doc for which).
+
+    Supports tuple-style iteration, indexing and unpacking, in the field declaration order above.
+
+)mydelimiter";
+
+const std::string DocSolver::timer_Fx = R"mydelimiter(
+    Time spent computing the KCL mismatch (both active and reactive power) for each bus.
+
+)mydelimiter";
+
+const std::string DocSolver::timer_solve = R"mydelimiter(
+    Total time spent in the underlying linear solver's ``solve()`` step (same value as
+    :attr:`lightsim2grid.algorithm.LinearSolverStats.timer_solve` for NR-based solvers).
+
+)mydelimiter";
+
+const std::string DocSolver::timer_factor = R"mydelimiter(
+    Total time spent in the underlying linear solver's ``factorize()`` step (same value as
+    :attr:`lightsim2grid.algorithm.LinearSolverStats.timer_factor`). NR-only: ``-1.`` for
+    Gauss-Seidel and DC solvers.
+
+)mydelimiter";
+
+const std::string DocSolver::timer_refactor = R"mydelimiter(
+    Total time spent in the underlying linear solver's ``refactorize()`` step (same value as
+    :attr:`lightsim2grid.algorithm.LinearSolverStats.timer_refactor`). NR-only: ``-1.`` for
+    Gauss-Seidel and DC solvers.
+
+)mydelimiter";
+
+const std::string DocSolver::timer_initialize = R"mydelimiter(
+    Total time spent in the underlying linear solver's ``analyze()`` (symbolic factorization)
+    step (same value as :attr:`lightsim2grid.algorithm.LinearSolverStats.timer_initialize`).
+    NR-only: ``-1.`` for Gauss-Seidel and DC solvers.
+
+)mydelimiter";
+
+const std::string DocSolver::timer_check = R"mydelimiter(
+    Time spent checking whether the KCL mismatch met the convergence tolerance.
+
+)mydelimiter";
+
+const std::string DocSolver::timer_dSbus = R"mydelimiter(
+    NR-only -- time spent computing the bus-injection sensitivities the Jacobian is built from
+    (``-1.`` for Gauss-Seidel and DC solvers).
+
+)mydelimiter";
+
+const std::string DocSolver::timer_fillJ = R"mydelimiter(
+    NR-only -- time spent assembling the Jacobian matrix itself, from the sensitivities measured
+    by :attr:`timer_dSbus` (``-1.`` for Gauss-Seidel and DC solvers).
+
+)mydelimiter";
+
+const std::string DocSolver::timer_Va_Vm = R"mydelimiter(
+    NR-only -- time spent updating the voltage angles / magnitudes from the linear solver's solved
+    increments (``-1.`` for Gauss-Seidel and DC solvers).
+
+)mydelimiter";
+
+const std::string DocSolver::timer_pre_proc = R"mydelimiter(
+    Time spent in pre-processing (setup before the main iteration loop starts).
+
+)mydelimiter";
+
+const std::string DocSolver::timer_scale = R"mydelimiter(
+    NR-only -- time spent applying the active step-scaling policy (see
+    :func:`~lightsim2grid.algorithm.NR_SparseLU.get_scaling_policy_type`), eg the line-search
+    backtracking of the ``LineSearch`` policy (``-1.`` for Gauss-Seidel and DC solvers).
+
+)mydelimiter";
+
+const std::string DocSolver::timer_mismatch = R"mydelimiter(
+    Time spent (re)computing the mismatch, including any post-processing done once the main loop
+    has finished.
+
+)mydelimiter";
+
+const std::string DocSolver::timer_total_nr = R"mydelimiter(
+    Total time spent in the solver (the same value as
+    :func:`~lightsim2grid.algorithm.NR_SparseLU.get_timers`'s ``timer_total_nr``).
+
+)mydelimiter";
+
+const std::string DocSolver::LinearSolverStats = R"mydelimiter(
+    Per-call counters and timings for a linear solver, as tracked by every built-in solver
+    (``LinearSolverPolicy``) and by the ``NRRefactorRetry_*`` solvers' extra fallback bookkeeping
+    (``RefactorRetryLinearSolver``).
+
+    Returned by :func:`~lightsim2grid.algorithm.NR_SparseLU.get_linear_solver_stats` (or, for the
+    fast-decoupled ``FDPF_*`` family, which holds two independent linear solvers, by
+    :func:`~lightsim2grid.algorithm.FDPF_XB_SparseLU.get_linear_solver_stats_bp` /
+    :func:`~lightsim2grid.algorithm.FDPF_XB_SparseLU.get_linear_solver_stats_bpp`).
+
+    The ``nb_*`` counters accumulate over the solver's whole lifetime (across every
+    :func:`~lightsim2grid.algorithm.NR_SparseLU.compute_pf` call, not reset in between); the
+    ``timer_*`` fields reset every ``compute_pf`` call, like
+    :func:`~lightsim2grid.algorithm.AlgorithmSelector.get_timers_jacobian`'s
+    :class:`~lightsim2grid.algorithm.TimerJac`.
+
+)mydelimiter";
+
+const std::string DocSolver::nb_reset = R"mydelimiter(
+    Number of times ``reset()`` was called on the underlying linear solver (discarding any cached
+    factorization).
+
+)mydelimiter";
+
+const std::string DocSolver::nb_analyze = R"mydelimiter(
+    Number of times the underlying linear solver's ``analyze()`` (symbolic factorization) was
+    called.
+
+)mydelimiter";
+
+const std::string DocSolver::nb_factorize = R"mydelimiter(
+    Number of times the underlying linear solver's ``factorize()`` (full numeric factorization)
+    was called.
+
+)mydelimiter";
+
+const std::string DocSolver::nb_refactorize = R"mydelimiter(
+    Number of times the underlying linear solver's ``refactorize()`` (cheaper, reusing the
+    existing symbolic factorization / pivot order) was called.
+
+)mydelimiter";
+
+const std::string DocSolver::nb_refactorize_failed = R"mydelimiter(
+    Number of times a ``refactorize()`` call failed (eg the matrix became too ill-conditioned for
+    the reused pivot order).
+
+    .. seealso::
+        :attr:`nb_fallback_factorize`, on the ``NRRefactorRetry_*`` solvers: a failed refactorize
+        there is retried with a full ``factorize()`` before giving up.
+
+)mydelimiter";
+
+const std::string DocSolver::nb_fallback_factorize = R"mydelimiter(
+    ``NRRefactorRetry_*`` solvers only: number of times a failed ``refactorize()`` was retried
+    with a full ``factorize()`` (``0`` for every other solver, which does not retry).
+
+)mydelimiter";
+
+const std::string DocSolver::nb_fallback_factorize_failed = R"mydelimiter(
+    ``NRRefactorRetry_*`` solvers only: number of times that fallback ``factorize()`` retry (see
+    :attr:`nb_fallback_factorize`) itself failed (``0`` for every other solver).
+
+)mydelimiter";
+
+const std::string DocSolver::nb_solve = R"mydelimiter(
+    Number of times the underlying linear solver's ``solve()`` was called.
+
+)mydelimiter";
+
+const std::string DocSolver::get_linear_solver_stats = R"mydelimiter(
+    Per-call counters and timings for the underlying linear solver, as a
+    :class:`lightsim2grid.algorithm.LinearSolverStats`.
+
+    .. seealso::
+        :func:`~lightsim2grid.algorithm.FDPF_XB_SparseLU.get_linear_solver_stats_bp` /
+        :func:`~lightsim2grid.algorithm.FDPF_XB_SparseLU.get_linear_solver_stats_bpp`, the
+        equivalent for the fast-decoupled ``FDPF_*`` family, which holds two independent linear
+        solvers (this method does not exist there).
+
+)mydelimiter";
+
+const std::string DocSolver::get_linear_solver_stats_bp = R"mydelimiter(
+    ``FDPF_*`` solvers only: per-call counters and timings for the B' linear solver, as a
+    :class:`lightsim2grid.algorithm.LinearSolverStats`.
+
+    .. seealso::
+        :func:`get_linear_solver_stats_bpp` for the B'' linear solver;
+        :func:`~lightsim2grid.algorithm.NR_SparseLU.get_linear_solver_stats` for the
+        single-linear-solver equivalent used by every other solver family.
+
+)mydelimiter";
+
+const std::string DocSolver::get_linear_solver_stats_bpp = R"mydelimiter(
+    ``FDPF_*`` solvers only: per-call counters and timings for the B'' linear solver, as a
+    :class:`lightsim2grid.algorithm.LinearSolverStats`.
+
+    .. seealso::
+        :func:`get_linear_solver_stats_bp` for the B' linear solver;
+        :func:`~lightsim2grid.algorithm.NR_SparseLU.get_linear_solver_stats` for the
+        single-linear-solver equivalent used by every other solver family.
+
+)mydelimiter";
+
+const std::string DocSolver::get_scaling_policy_type = R"mydelimiter(
+    Return the current step-scaling policy (:class:`lightsim2grid.algorithm.ScalingPolicyType`):
+    how the Newton-Raphson step is scaled down before being applied, if at all.
+
+)mydelimiter";
+
+const std::string DocSolver::set_scaling_policy = R"mydelimiter(
+    Set the step-scaling policy (:class:`lightsim2grid.algorithm.ScalingPolicyType`). The
+    per-policy parameters below (:func:`set_max_dVa`/:func:`set_max_dVm`, :func:`set_ls_c`/
+    :func:`set_ls_rho`/:func:`set_ls_max_iter`, :func:`set_iw_mu_min`/:func:`set_iw_mu_max`) are
+    only read by their corresponding policy; changing them has no effect while a different
+    policy is active.
+
+)mydelimiter";
+
+const std::string DocSolver::get_refactor_policy = R"mydelimiter(
+    Return the current Jacobian refactorization policy
+    (:class:`lightsim2grid.algorithm.RefactorPolicyType`): when the linear solver does a cheaper
+    ``refactorize()`` instead of a full ``factorize()``.
+
+)mydelimiter";
+
+const std::string DocSolver::set_refactor_policy = R"mydelimiter(
+    Set the Jacobian refactorization policy (:class:`lightsim2grid.algorithm.RefactorPolicyType`).
+    :func:`set_refactor_every_n` is only read by the ``EveryN`` policy.
+
+)mydelimiter";
+
+const std::string DocSolver::get_max_dVa = R"mydelimiter(
+    Maximum voltage angle step (radian) allowed per iteration, for the ``MaxVoltageChange``
+    scaling policy. Only read while that policy is active (see :func:`set_scaling_policy`).
+
+)mydelimiter";
+
+const std::string DocSolver::set_max_dVa = R"mydelimiter(
+    Set :func:`get_max_dVa`.
+
+)mydelimiter";
+
+const std::string DocSolver::get_max_dVm = R"mydelimiter(
+    Maximum voltage magnitude step (pu) allowed per iteration, for the ``MaxVoltageChange``
+    scaling policy. Only read while that policy is active (see :func:`set_scaling_policy`).
+
+)mydelimiter";
+
+const std::string DocSolver::set_max_dVm = R"mydelimiter(
+    Set :func:`get_max_dVm`.
+
+)mydelimiter";
+
+const std::string DocSolver::get_ls_c = R"mydelimiter(
+    Armijo sufficient-decrease constant ``c`` for the ``LineSearch`` scaling policy. Only read
+    while that policy is active (see :func:`set_scaling_policy`).
+
+)mydelimiter";
+
+const std::string DocSolver::set_ls_c = R"mydelimiter(
+    Set :func:`get_ls_c`.
+
+)mydelimiter";
+
+const std::string DocSolver::get_ls_rho = R"mydelimiter(
+    Backtracking factor ``rho`` (in ``(0, 1)``) for the ``LineSearch`` scaling policy. Only read
+    while that policy is active (see :func:`set_scaling_policy`).
+
+)mydelimiter";
+
+const std::string DocSolver::set_ls_rho = R"mydelimiter(
+    Set :func:`get_ls_rho`.
+
+)mydelimiter";
+
+const std::string DocSolver::get_ls_max_iter = R"mydelimiter(
+    Maximum number of backtracking iterations for the ``LineSearch`` scaling policy. Only read
+    while that policy is active (see :func:`set_scaling_policy`).
+
+)mydelimiter";
+
+const std::string DocSolver::set_ls_max_iter = R"mydelimiter(
+    Set :func:`get_ls_max_iter`.
+
+)mydelimiter";
+
+const std::string DocSolver::get_iw_mu_min = R"mydelimiter(
+    Minimum optimal multiplier for the ``Iwamoto`` scaling policy. Only read while that policy is
+    active (see :func:`set_scaling_policy`).
+
+)mydelimiter";
+
+const std::string DocSolver::set_iw_mu_min = R"mydelimiter(
+    Set :func:`get_iw_mu_min`.
+
+)mydelimiter";
+
+const std::string DocSolver::get_iw_mu_max = R"mydelimiter(
+    Maximum optimal multiplier for the ``Iwamoto`` scaling policy. Only read while that policy is
+    active (see :func:`set_scaling_policy`).
+
+)mydelimiter";
+
+const std::string DocSolver::set_iw_mu_max = R"mydelimiter(
+    Set :func:`get_iw_mu_max`.
+
+)mydelimiter";
+
+const std::string DocSolver::get_refactor_every_n = R"mydelimiter(
+    Refactorize (full ``factorize()``, not the cheaper ``refactorize()``) every N-th iteration,
+    for the ``EveryN`` refactor policy. Only read while that policy is active (see
+    :func:`set_refactor_policy`).
+
+)mydelimiter";
+
+const std::string DocSolver::set_refactor_every_n = R"mydelimiter(
+    Set :func:`get_refactor_every_n`.
+
+)mydelimiter";
+
+const std::string DocSolver::get_config = R"mydelimiter(
+    Return a :class:`lightsim2grid.algorithm.AlgoConfig` capturing every scaling/refactor policy
+    type and parameter above, as a single serializable object.
+
+    .. seealso::
+        :func:`set_config` to restore it; going through a
+        :class:`~lightsim2grid.lightSimBackend.LightSimBackend` instead of a raw solver object,
+        see :func:`lightsim2grid.lightSimBackend.LightSimBackend.get_ac_algo_config`.
+
+)mydelimiter";
+
+const std::string DocSolver::set_config = R"mydelimiter(
+    Restore every scaling/refactor policy type and parameter from a
+    :class:`lightsim2grid.algorithm.AlgoConfig` previously obtained from :func:`get_config`.
+
+)mydelimiter";
+
+const std::string DocSolver::get_theta_to_J_col = R"mydelimiter(
+    ``bus_id -> Jacobian column`` for that bus's voltage-angle (theta) unknown, or ``-1`` if that
+    bus has none (eg the slack bus, or a PQ-only DC solve). Only valid after a powerflow has been
+    run.
+
+)mydelimiter";
+
+const std::string DocSolver::get_vm_to_J_col = R"mydelimiter(
+    ``bus_id -> Jacobian column`` for that bus's voltage-magnitude (Vm) unknown, or ``-1`` if that
+    bus has none (eg a PV bus). Only valid after a powerflow has been run.
+
+)mydelimiter";
+
+const std::string DocSolver::get_q_to_J_col = R"mydelimiter(
+    ``bus_id -> Jacobian column`` for that bus's reactive-power (Q) unknown -- currently always
+    ``-1``: no solver in this version stamps a reactive-power unknown as its own Jacobian column.
+
+)mydelimiter";
+
 const std::string DocSolver::NR_SparseLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the default Eigen sparse solver available in Eigen
     for the linear algebra. 
@@ -2301,9 +2652,8 @@ const std::string DocLSGrid::available_default_algorithms =  R"mydelimiter(
 
 
 const std::string DocLSGrid::available_algorithm_names =  R"mydelimiter(
-    Return the list of the names of the algorithm available on the current lightsim2grid installation.
-
-    This is a list of string.
+    Returns the names of all registered algorithms, including any loaded plugins, as a list of
+    string.
 
 )mydelimiter";
 
@@ -2362,6 +2712,402 @@ const std::string DocLSGrid::get_dc_algo_controler = R"mydelimiter(
 
     Same as :func:`get_ac_algo_controler`, but for the DC solver family: the two are tracked
     independently since a DC powerflow does not consume (and reset) the AC flags, and vice versa.
+
+)mydelimiter";
+
+const std::string DocLSGrid::_ls_to_orig = R"mydelimiter(
+    Has the size of the number of possible buses in lightsim2grid (*ie*
+    ``n_sub_ * max_nb_bus_per_sub_``) and gives the id of the corresponding bus in the original
+    grid (pandapower or pypowsybl).
+
+    If ``-1`` is present, then this bus does not exist in the original grid, it is only present
+    in the lightsim2grid gridmodel.
+
+)mydelimiter";
+
+const std::string DocLSGrid::_orig_to_ls = R"mydelimiter(
+    Opposite to :attr:`_ls_to_orig`. Has the size of the number of buses in the original grid
+    (pandapower or pypowsybl) and tells to which bus of lightsim2grid it corresponds. It should
+    be an integer ``>= 0`` and ``< n_sub_ * max_nb_bus_per_sub_``.
+
+)mydelimiter";
+
+const std::string DocLSGrid::_max_nb_bus_per_sub = R"mydelimiter(
+    Do not modify it after loading!
+
+)mydelimiter";
+
+const std::string DocLSGrid::_init_kwargs = R"mydelimiter(
+    ``dict`` (``str`` -> ``str``) of the relevant kwargs this grid was built with (eg by
+    :func:`lightsim2grid.network.init_from_pypowsybl`), for example
+    ``{"sort_index": "True", "buses_for_sub": "False"}``. Empty for a grid not built that way, or
+    a default-constructed one.
+
+)mydelimiter";
+
+const std::string DocLSGrid::_bus_fusion_rep = R"mydelimiter(
+    Fused-bus lookup, size :func:`total_bus` (empty if unset / not built with bus fusion). For
+    each ls bus id, gives the ls bus id of the "representative" bus it was merged into by
+    ``fuse_zero_impedance_branches`` (identity for a bus not involved in any fusion). Set by
+    :func:`lightsim2grid.network.init_from_pypowsybl`; only ever read by downstream Python result
+    views (eg ``LightsimResultNetwork``), never by any C++ powerflow logic.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_ac_algo_config = R"mydelimiter(
+    Return the AC solver's :class:`lightsim2grid.algorithm.AlgoConfig` (scaling/refactor policy
+    type and parameters).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_ac_algo_config = R"mydelimiter(
+    Apply a :class:`lightsim2grid.algorithm.AlgoConfig` to the AC solver (restores scaling/refactor
+    policy and parameters).
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_dc_algo_config = R"mydelimiter(
+    Return the DC solver's :class:`lightsim2grid.algorithm.AlgoConfig` (no-op for non-NR solvers,
+    returns an empty config).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_dc_algo_config = R"mydelimiter(
+    Apply a :class:`lightsim2grid.algorithm.AlgoConfig` to the DC solver.
+
+)mydelimiter";
+
+const std::string DocLSGrid::change_algorithm_by_name = R"mydelimiter(
+    Change the AC (or DC) algorithm by registry name. Accepts built-in names and plugin names
+    registered via ``load_solver_plugin()``.
+
+    .. seealso::
+        :func:`change_algorithm` to change it by :class:`lightsim2grid.algorithm.AlgorithmType`
+        instead.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_bus_voltage_limits = R"mydelimiter(
+    Set the per-bus min/max operating voltage (in kV), one value per bus (see :func:`get_bus_vn_kv`).
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_bus_vmin_kv = R"mydelimiter(
+    Per-bus min operating voltage, in kV (``NaN`` if not provided for a given bus, empty array if
+    never set).
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_bus_vmax_kv = R"mydelimiter(
+    Per-bus max operating voltage, in kV (``NaN`` if not provided for a given bus, empty array if
+    never set).
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_svcs = R"mydelimiter(
+    Get the container of all the Static Var Compensators (SVC), as a
+    :class:`lightsim2grid.elements.SvcContainer`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::turnedoff_no_pv = R"mydelimiter(
+    Turned-off generators (or generators with ``target_p_mw == 0``) will not be PV buses: they
+    will not maintain voltage.
+
+)mydelimiter";
+
+const std::string DocLSGrid::turnedoff_pv = R"mydelimiter(
+    Turned-off generators (or generators with ``target_p_mw == 0``) will be PV buses: they will
+    maintain voltage. This is the default.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_reference_slack_bus = R"mydelimiter(
+    Force a (gridmodel) bus to be the angle reference among the slack buses (reordered to
+    ``slack_ids[0]``) without changing the slack set / weights; ``-1`` clears it.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_reference_slack_bus = R"mydelimiter(
+    Forced angle-reference slack bus (gridmodel id), or ``-1`` if none.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_ignore_status_global = R"mydelimiter(
+    Ignore the ``global_status`` flags for powerlines and transformers (set to ``True`` if you
+    want to control each side of a powerline / transformer independently). Default: ``False``.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_synch_status_both_side = R"mydelimiter(
+    Synchronize the status of each side of a powerline / transformer: if you disconnect one side,
+    the other side is also disconnected. Default: ``True``.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_line_names = R"mydelimiter(
+    Names of the powerlines, as set by ``set_line_names``; empty if never set.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_trafo_names = R"mydelimiter(
+    Names of the transformers, as set by ``set_trafo_names``; empty if never set.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_line_current_limit_side1 = R"mydelimiter(
+    Set the side-1 current limit of each powerline, in kA (see
+    :attr:`lightsim2grid.elements.LineInfo.limit_a1_ka`).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_line_current_limit_side2 = R"mydelimiter(
+    Set the side-2 current limit of each powerline, in kA (see
+    :attr:`lightsim2grid.elements.LineInfo.limit_a2_ka`).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_trafo_current_limit_side1 = R"mydelimiter(
+    Set the side-1 current limit of each transformer, in kA (see
+    :attr:`lightsim2grid.elements.TrafoInfo.limit_a1_ka`).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_trafo_current_limit_side2 = R"mydelimiter(
+    Set the side-2 current limit of each transformer, in kA (see
+    :attr:`lightsim2grid.elements.TrafoInfo.limit_a2_ka`).
+
+)mydelimiter";
+
+const std::string DocLSGrid::deactivate_powerline_side1 = R"mydelimiter(
+    Disconnect only side 1 of a powerline (half-open). Needs
+    ``set_synch_status_both_side(False)`` to keep side 2 connected.
+
+)mydelimiter";
+
+const std::string DocLSGrid::deactivate_powerline_side2 = R"mydelimiter(
+    Disconnect only side 2 of a powerline (half-open). Needs
+    ``set_synch_status_both_side(False)`` to keep side 1 connected.
+
+)mydelimiter";
+
+const std::string DocLSGrid::reactivate_powerline_side1 = R"mydelimiter(
+    Reconnect only side 1 of a powerline.
+
+)mydelimiter";
+
+const std::string DocLSGrid::reactivate_powerline_side2 = R"mydelimiter(
+    Reconnect only side 2 of a powerline.
+
+)mydelimiter";
+
+const std::string DocLSGrid::deactivate_trafo_side1 = R"mydelimiter(
+    Disconnect only side 1 of a transformer (half-open). Needs
+    ``set_synch_status_both_side(False)`` to keep side 2 connected.
+
+)mydelimiter";
+
+const std::string DocLSGrid::deactivate_trafo_side2 = R"mydelimiter(
+    Disconnect only side 2 of a transformer (half-open). Needs
+    ``set_synch_status_both_side(False)`` to keep side 1 connected.
+
+)mydelimiter";
+
+const std::string DocLSGrid::reactivate_trafo_side1 = R"mydelimiter(
+    Reconnect only side 1 of a transformer.
+
+)mydelimiter";
+
+const std::string DocLSGrid::reactivate_trafo_side2 = R"mydelimiter(
+    Reconnect only side 2 of a transformer.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_lines_status_side1 = R"mydelimiter(
+    Per-side status of each powerline's side 1 (relevant for half-open lines: ``get_lines_status()``
+    is ``True`` as soon as either side is connected).
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_lines_status_side2 = R"mydelimiter(
+    Per-side status of each powerline's side 2, see :func:`get_lines_status_side1`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_trafo_status_side1 = R"mydelimiter(
+    Per-side status of each transformer's side 1, see :func:`get_lines_status_side1`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_trafo_status_side2 = R"mydelimiter(
+    Per-side status of each transformer's side 2, see :func:`get_lines_status_side1`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::deactivate_dcline_side1 = R"mydelimiter(
+    Disconnect only converter station 1 of an HVDC line; station 2 stays active (injecting /
+    regulating).
+
+)mydelimiter";
+
+const std::string DocLSGrid::deactivate_dcline_side2 = R"mydelimiter(
+    Disconnect only converter station 2 of an HVDC line; station 1 stays active (injecting /
+    regulating).
+
+)mydelimiter";
+
+const std::string DocLSGrid::change_shift_trafo = R"mydelimiter(
+    Change the phase-shift angle for a given transformer.
+
+    .. warning::
+        It should be expressed in radian (not in degree) -- see :func:`change_shift_trafo_deg`
+        for the degree variant.
+
+    If the flag ``ignore_tap_side_for_shift`` (*eg*
+    ``lightsim_grid_model.get_trafos().ignore_tap_side_for_shift``) is ``False`` (the default),
+    the angle is given at the tap side (side 1 or side 2). If this flag is ``True`` (*eg* the
+    grid comes from pandapower) the phase-shift angle should instead be given at side 1 (the hv
+    side in pandapower).
+
+)mydelimiter";
+
+const std::string DocLSGrid::change_shift_trafo_deg = R"mydelimiter(
+    Same as :func:`change_shift_trafo` but the phase-shift angle is expressed in degree, not in
+    radian.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_trafo_shift_dependent_rx = R"mydelimiter(
+    Declare that (some) transformers have a series impedance (``r``, ``x``) that depends on their
+    phase-shift angle ``alpha``, supplied as a per-transformer table of sample points
+    ``alpha (rad) -> r/x correction (%)`` (the per-step r/x deltas of a pypowsybl phase-tap-changer;
+    ``r%`` == ``x%``).
+
+    The effective ``r`` / ``x`` is then ``base * (1 + corr(shift) / 100)``, interpolated on the
+    current shift and refreshed whenever :func:`change_shift_trafo` / ``change_ratio_trafo`` is
+    called. There is NO "tap" concept here: the dependency is purely on the (continuous) shift.
+
+    Pass an empty list for a transformer without such a dependency; ``enable`` should be kept
+    ``False`` for pandapower grids, which have no such data.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_gen_regulated_bus = R"mydelimiter(
+    Set the grid bus whose voltage a generator regulates ("remote voltage control", see
+    :attr:`lightsim2grid.elements.GenInfo.regulated_bus_id`; ``bus == own bus`` for local control).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_status_droop_hvdc = R"mydelimiter(
+    Set the angle-droop regime of an HVDC line (see
+    :attr:`lightsim2grid.elements.HvdcLineInfo.status_droop`): ``0`` = linear, ``+1`` = saturated
+    side 1 to side 2, ``-1`` = saturated side 2 to side 1.
+
+    This is an INPUT of the solver, constant across one solve: the saturation logic is meant to be
+    run between two solves (a Python outer loop).
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_status_droop_hvdc = R"mydelimiter(
+    Angle-droop regime of one HVDC line, see :func:`set_status_droop_hvdc`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_status_droop_hvdc_vect = R"mydelimiter(
+    Angle-droop regimes of every HVDC line, see :func:`set_status_droop_hvdc`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_slack_col_solver = R"mydelimiter(
+    Jacobian column of the ``MultiSlack`` ``slack_absorbed`` unknown (``-1`` when distributed
+    slack is inactive).
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_slack_absorbed_solver = R"mydelimiter(
+    Converged value (pu) of the ``MultiSlack`` ``slack_absorbed`` unknown (``0`` when distributed
+    slack is inactive). This is the ground truth after convergence -- not the ``0`` initial guess
+    an external solver's own linearized derivation starts from.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_controller_q_solver = R"mydelimiter(
+    Converged reactive injection (pu) per ``VoltageControl`` controller (a remote-regulating
+    generator or a voltage-mode SVC), in controller registration order. Empty when the extension
+    is inactive.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_controller_kind_solver = R"mydelimiter(
+    Kind of each ``VoltageControl`` controller (``0`` = generator, ``1`` = SVC), same order as
+    :func:`get_controller_q_solver`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_controller_elem_id_solver = R"mydelimiter(
+    Element id of each ``VoltageControl`` controller (generator id if a generator, SVC id if an
+    SVC), same order as :func:`get_controller_q_solver`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_controller_q_col_solver = R"mydelimiter(
+    Jacobian column of each ``VoltageControl`` controller's own Q unknown, same order as
+    :func:`get_controller_q_solver`.
+
+    NOT the same as the bus-keyed ``get_q_to_J_col_solver``: that map only keeps the LAST
+    controller registered at a given bus, so it silently collides whenever two controllers
+    regulate reactive power from the same bus. External solvers rebuilding this bordered block
+    must use this instead.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_p_buses_solver = R"mydelimiter(
+    Compact ``(bus, row)`` pair list for the P equations -- the row/col counterpart of
+    ``get_p_to_J_row_solver()``, preserving EVERY registration (a bus may appear more than once;
+    see ``NRLedger``'s "Multiplicity rules"). Same length as :func:`get_p_rows_solver`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_p_rows_solver = R"mydelimiter(
+    Jacobian row of each entry in :func:`get_p_buses_solver`, same order.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_q_buses_solver = R"mydelimiter(
+    Compact ``(bus, row)`` pair list for the Q equations, see :func:`get_p_buses_solver`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_q_rows_solver = R"mydelimiter(
+    Jacobian row of each entry in :func:`get_q_buses_solver`, same order.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_theta_buses_solver = R"mydelimiter(
+    Compact ``(bus, col)`` pair list for the theta unknowns, see :func:`get_p_buses_solver`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_theta_cols_solver = R"mydelimiter(
+    Jacobian column of each entry in :func:`get_theta_buses_solver`, same order.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_vm_buses_solver = R"mydelimiter(
+    Compact ``(bus, col)`` pair list for the Vm unknowns, see :func:`get_p_buses_solver`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_vm_cols_solver = R"mydelimiter(
+    Jacobian column of each entry in :func:`get_vm_buses_solver`, same order.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_hvdc_droop_data_solver = R"mydelimiter(
+    ``(bus1, bus2, status, p0, k, lf1, lf2, r, pmax12, pmax21)``, one entry per CONNECTED
+    droop-enabled HVDC line (solver bus numbering, pu). Ground truth for external solvers
+    re-deriving the theta-dependent droop-flow contribution to F independently -- see
+    ``HvdcDroopSolverData`` for the flow formula.
 
 )mydelimiter";
 
@@ -4202,6 +4948,81 @@ const std::string DocContingencyAnalysis::get_power_flows = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocContingencyAnalysis::ViolationElementType = R"mydelimiter(
+    The kind of element on which a limit was violated: ``BUS`` (a voltage limit), ``LINE`` /
+    ``TRAFO`` (a current limit), or ``GRID`` -- the whole grid / contingency rather than a
+    specific element, used when the contingency itself could not be simulated at all (see
+    :class:`LimitViolationType`'s ``NOT_SIMULATED`` / ``DIVERGENCE``).
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
+    The kind of limit that was violated: ``LOW_VOLTAGE`` / ``HIGH_VOLTAGE`` (a bus voltage
+    magnitude limit) or ``CURRENT`` (a line / transformer thermal limit) for an ordinary,
+    element-level violation; ``NOT_SIMULATED`` or ``DIVERGENCE`` for a contingency-level one (see
+    :class:`ViolationElementType`'s ``GRID``):
+
+    - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
+      solver was never invoked for it.
+    - ``DIVERGENCE``: the solver was invoked for this contingency but did not converge.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::LimitViolation = R"mydelimiter(
+    A single limit violation, as detected by
+    :class:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP`.
+
+    .. seealso::
+        :func:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.get_violations` /
+        :func:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.get_violations_n`, which
+        return a list of these per contingency.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::element_type = R"mydelimiter(
+    The kind of element this violation is about, as a :class:`ViolationElementType`.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::element_id = R"mydelimiter(
+    Which element this violation is about: the grid-model bus id for ``BUS``; the local (0-based,
+    own-type) line / transformer id for ``LINE`` / ``TRAFO``; unused (``-1``) for ``GRID``.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::side = R"mydelimiter(
+    ``1`` or ``2`` for a ``LINE`` / ``TRAFO`` violation (which side's current limit was
+    violated); unused (``0``) for ``BUS`` / ``GRID``.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::violation_type = R"mydelimiter(
+    The kind of limit that was violated, as a :class:`LimitViolationType`.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::value = R"mydelimiter(
+    The value actually reached (the voltage magnitude or the current, matching
+    :attr:`violation_type`); unused (``NaN``) for ``NOT_SIMULATED`` / ``DIVERGENCE``.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::limit = R"mydelimiter(
+    The limit that was violated; unused (``NaN``) for ``NOT_SIMULATED`` / ``DIVERGENCE``.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::violation_name = R"mydelimiter(
+    The violating element's name: for ``LINE`` / ``TRAFO``, as set by
+    :func:`lightsim2grid.network.LSGrid.set_line_names` /
+    :func:`lightsim2grid.network.LSGrid.set_trafo_names`; for ``BUS``, the name of the substation
+    the violating bus belongs to (see
+    :func:`lightsim2grid.network.LSGrid.set_substation_names` -- there is no per-bus name in
+    ``LSGrid``, only per-substation ones). Empty string if names were never set on the grid for
+    the relevant kind, or for ``GRID``.
+
+)mydelimiter";
+
 const std::string DocMisc::PandaPowerConverter = R"mydelimiter(
     Converts electrical parameters given in the "pandapower" format (percentages, kA, kW, ...)
     into the per-unit ``r`` / ``x`` / ``h`` (and ``r`` / ``x`` / ``h1`` / ``h2``) representation
@@ -4408,6 +5229,39 @@ const std::string DocMisc::has_one_el_changed_bus = R"mydelimiter(
     Whether at least one element (a generator, a load, one side of a line, ...) changed which bus
     it is connected to -- including being reconnected or disconnected -- since the last powerflow
     of this solver family.
+
+)mydelimiter";
+
+const std::string DocMisc::AlgoConfig = R"mydelimiter(
+    Serializable configuration blob for Newton-Raphson algorithm parameters: stores the
+    scaling / refactor policy type and every associated parameter (see
+    :func:`lightsim2grid.algorithm.NR_SparseLU.get_scaling_policy_type` and friends) as a single
+    object.
+
+    Obtain via ``solver.get_config()`` or, going through a
+    :class:`~lightsim2grid.lightSimBackend.LightSimBackend`,
+    :func:`lightsim2grid.lightSimBackend.LightSimBackend.get_ac_algo_config`.
+
+    .. warning::
+        :attr:`int_params` / :attr:`real_params` are plain lists returned **by value**:
+        ``config.int_params[0] = ...`` silently does nothing, because it mutates a temporary
+        copy, not the object's actual state. You must build the new list and reassign the whole
+        attribute (``int_params = new_list; config.int_params = int_params``) for the change to
+        take effect.
+
+)mydelimiter";
+
+const std::string DocMisc::int_params = R"mydelimiter(
+    Integer parameters, as a plain list: ``[ScalingPolicyType, RefactorPolicyType, ls_max_iter,
+    refactor_every_n]`` -- see :class:`~lightsim2grid.algorithm.AlgoConfig`'s warning about
+    reassigning the whole list to mutate it.
+
+)mydelimiter";
+
+const std::string DocMisc::real_params = R"mydelimiter(
+    Real-valued parameters, as a plain list: ``[max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min,
+    iw_mu_max]`` -- see :class:`~lightsim2grid.algorithm.AlgoConfig`'s warning about reassigning
+    the whole list to mutate it.
 
 )mydelimiter";
 

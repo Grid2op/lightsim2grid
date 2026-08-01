@@ -33,6 +33,64 @@ struct LS2G_API DocSolver
     static const std::string compute_pf;
     static const std::string get_timers;
 
+    // TimerJac: returned by get_timers_jacobian()
+    static const std::string TimerJac;
+    static const std::string timer_Fx;
+    static const std::string timer_solve;
+    static const std::string timer_factor;
+    static const std::string timer_refactor;
+    static const std::string timer_initialize;
+    static const std::string timer_check;
+    static const std::string timer_dSbus;
+    static const std::string timer_fillJ;
+    static const std::string timer_Va_Vm;
+    static const std::string timer_pre_proc;
+    static const std::string timer_scale;
+    static const std::string timer_mismatch;
+    static const std::string timer_total_nr;
+
+    // LinearSolverStats: returned by get_linear_solver_stats() (and the
+    // get_linear_solver_stats_bp/bpp FDPF variants)
+    static const std::string LinearSolverStats;
+    static const std::string nb_reset;
+    static const std::string nb_analyze;
+    static const std::string nb_factorize;
+    static const std::string nb_refactorize;
+    static const std::string nb_refactorize_failed;
+    static const std::string nb_fallback_factorize;
+    static const std::string nb_fallback_factorize_failed;
+    static const std::string nb_solve;
+    static const std::string get_linear_solver_stats;
+    static const std::string get_linear_solver_stats_bp;
+    static const std::string get_linear_solver_stats_bpp;
+
+    // NR-only: scaling / refactor policy accessors (bind_nr_algo_policies)
+    static const std::string get_scaling_policy_type;
+    static const std::string set_scaling_policy;
+    static const std::string get_refactor_policy;
+    static const std::string set_refactor_policy;
+    static const std::string get_max_dVa;
+    static const std::string set_max_dVa;
+    static const std::string get_max_dVm;
+    static const std::string set_max_dVm;
+    static const std::string get_ls_c;
+    static const std::string set_ls_c;
+    static const std::string get_ls_rho;
+    static const std::string set_ls_rho;
+    static const std::string get_ls_max_iter;
+    static const std::string set_ls_max_iter;
+    static const std::string get_iw_mu_min;
+    static const std::string set_iw_mu_min;
+    static const std::string get_iw_mu_max;
+    static const std::string set_iw_mu_max;
+    static const std::string get_refactor_every_n;
+    static const std::string set_refactor_every_n;
+    static const std::string get_config;
+    static const std::string set_config;
+    static const std::string get_theta_to_J_col;
+    static const std::string get_vm_to_J_col;
+    static const std::string get_q_to_J_col;
+
     // solver description
     static const std::string NR_SparseLU;
     static const std::string NRSing_SparseLU;
@@ -261,7 +319,91 @@ struct LS2G_API DocLSGrid
     // solver-family change tracking (see DocMisc::AlgoControl)
     static const std::string get_ac_algo_controler;
     static const std::string get_dc_algo_controler;
-    
+
+    // internal bookkeeping properties (still user-visible, eg for pickling / debugging)
+    static const std::string _ls_to_orig;
+    static const std::string _orig_to_ls;
+    static const std::string _max_nb_bus_per_sub;
+    static const std::string _init_kwargs;
+    static const std::string _bus_fusion_rep;
+
+    // algo config (scaling/refactor policy params), see DocMisc::AlgoConfig
+    static const std::string get_ac_algo_config;
+    static const std::string set_ac_algo_config;
+    static const std::string get_dc_algo_config;
+    static const std::string set_dc_algo_config;
+    static const std::string change_algorithm_by_name;
+
+    // per-bus operating voltage limits
+    static const std::string set_bus_voltage_limits;
+    static const std::string get_bus_vmin_kv;
+    static const std::string get_bus_vmax_kv;
+
+    static const std::string get_svcs;
+
+    // slack / pv-pq bookkeeping
+    static const std::string turnedoff_no_pv;
+    static const std::string turnedoff_pv;
+    static const std::string set_reference_slack_bus;
+    static const std::string get_reference_slack_bus;
+    static const std::string set_ignore_status_global;
+    static const std::string set_synch_status_both_side;
+
+    // names
+    static const std::string get_line_names;
+    static const std::string get_trafo_names;
+    static const std::string set_line_current_limit_side1;
+    static const std::string set_line_current_limit_side2;
+    static const std::string set_trafo_current_limit_side1;
+    static const std::string set_trafo_current_limit_side2;
+
+    // half-open (per-side) connect / disconnect
+    static const std::string deactivate_powerline_side1;
+    static const std::string deactivate_powerline_side2;
+    static const std::string reactivate_powerline_side1;
+    static const std::string reactivate_powerline_side2;
+    static const std::string deactivate_trafo_side1;
+    static const std::string deactivate_trafo_side2;
+    static const std::string reactivate_trafo_side1;
+    static const std::string reactivate_trafo_side2;
+    static const std::string get_lines_status_side1;
+    static const std::string get_lines_status_side2;
+    static const std::string get_trafo_status_side1;
+    static const std::string get_trafo_status_side2;
+    static const std::string deactivate_dcline_side1;
+    static const std::string deactivate_dcline_side2;
+
+    // transformer tap / phase-shift
+    static const std::string change_shift_trafo;
+    static const std::string change_shift_trafo_deg;
+    static const std::string set_trafo_shift_dependent_rx;
+
+    // remote voltage control (generators)
+    static const std::string set_gen_regulated_bus;
+
+    // hvdc angle-droop regime
+    static const std::string set_status_droop_hvdc;
+    static const std::string get_status_droop_hvdc;
+    static const std::string get_status_droop_hvdc_vect;
+
+    // solver-internal state, for external solvers re-deriving the NR system
+    // (distributed slack / VoltageControl / bordered-block bookkeeping)
+    static const std::string get_slack_col_solver;
+    static const std::string get_slack_absorbed_solver;
+    static const std::string get_controller_q_solver;
+    static const std::string get_controller_kind_solver;
+    static const std::string get_controller_elem_id_solver;
+    static const std::string get_controller_q_col_solver;
+    static const std::string get_p_buses_solver;
+    static const std::string get_p_rows_solver;
+    static const std::string get_q_buses_solver;
+    static const std::string get_q_rows_solver;
+    static const std::string get_theta_buses_solver;
+    static const std::string get_theta_cols_solver;
+    static const std::string get_vm_buses_solver;
+    static const std::string get_vm_cols_solver;
+    static const std::string get_hvdc_droop_data_solver;
+
     // retrieve the results
     static const std::string get_J_python;
     static const std::string get_Va;
@@ -357,6 +499,18 @@ struct LS2G_API DocContingencyAnalysis
     static const std::string get_flows;
     static const std::string get_voltages;
     static const std::string get_power_flows;
+
+    // limit-violation results (batch_algorithm/LimitViolation.hpp)
+    static const std::string ViolationElementType;
+    static const std::string LimitViolationType;
+    static const std::string LimitViolation;
+    static const std::string element_type;
+    static const std::string element_id;
+    static const std::string side;
+    static const std::string violation_type;
+    static const std::string value;
+    static const std::string limit;
+    static const std::string violation_name;
 };
 
 struct LS2G_API DocMisc
@@ -386,6 +540,12 @@ struct LS2G_API DocMisc
     static const std::string has_v_changed;
     static const std::string has_ybus_some_coeffs_zero;
     static const std::string has_one_el_changed_bus;
+
+    // AlgoConfig: serializable NR scaling/refactor policy configuration blob,
+    // read/set via get_config()/set_config() on any NR-based solver
+    static const std::string AlgoConfig;
+    static const std::string int_params;
+    static const std::string real_params;
 };
 
 
