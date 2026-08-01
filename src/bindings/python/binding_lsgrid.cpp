@@ -17,7 +17,7 @@ using namespace ls2g;
 void bind_gridmodel(py::module_& m) {
     auto lsgrid_cls = py::class_<LSGrid>(m, "LSGrid", DocLSGrid::LSGrid.c_str())
         .def(py::init<>())
-        .def("copy", &LSGrid::copy, "TODO", py::return_value_policy::take_ownership)
+        .def("copy", &LSGrid::copy, DocLSGrid::copy.c_str(), py::return_value_policy::take_ownership)
         .def_property("_ls_to_orig",
                       &LSGrid::get_ls_to_orig,
                       &LSGrid::set_ls_to_orig,
@@ -38,8 +38,8 @@ void bind_gridmodel(py::module_& m) {
                       &LSGrid::get_bus_fusion_rep,
                       &LSGrid::set_bus_fusion_rep,
                       DocLSGrid::_bus_fusion_rep.c_str())
-        .def_property_readonly("timer_last_ac_pf", &LSGrid::timer_last_ac_pf, "TODO")
-        .def_property_readonly("timer_last_dc_pf", &LSGrid::timer_last_dc_pf, "TODO");
+        .def_property_readonly("timer_last_ac_pf", &LSGrid::timer_last_ac_pf, DocLSGrid::timer_last_ac_pf.c_str())
+        .def_property_readonly("timer_last_dc_pf", &LSGrid::timer_last_dc_pf, DocLSGrid::timer_last_dc_pf.c_str());
     add_pickle(lsgrid_cls, "LSGrid");
     add_binary_serialization(lsgrid_cls);
     // Companion to load_binary(): loads the grid *data* without re-selecting the
@@ -139,33 +139,33 @@ void bind_gridmodel(py::module_& m) {
         // modify the grid
         .def("turnedoff_no_pv", &LSGrid::turnedoff_no_pv, DocLSGrid::turnedoff_no_pv.c_str())
         .def("turnedoff_pv", &LSGrid::turnedoff_pv, DocLSGrid::turnedoff_pv.c_str())
-        .def("get_turnedoff_gen_pv", &LSGrid::get_turnedoff_gen_pv, "TODO")
-        .def("update_slack_weights", &LSGrid::update_slack_weights, "TODO")
-        .def("update_slack_weights_by_id", &LSGrid::update_slack_weights_by_id, "TODO")
-        .def("assign_slack_to_most_connected", &LSGrid::assign_slack_to_most_connected, "TODO")
+        .def("get_turnedoff_gen_pv", &LSGrid::get_turnedoff_gen_pv, DocLSGrid::get_turnedoff_gen_pv.c_str())
+        .def("update_slack_weights", &LSGrid::update_slack_weights, DocLSGrid::update_slack_weights.c_str())
+        .def("update_slack_weights_by_id", &LSGrid::update_slack_weights_by_id, DocLSGrid::update_slack_weights_by_id.c_str())
+        .def("assign_slack_to_most_connected", &LSGrid::assign_slack_to_most_connected, DocLSGrid::assign_slack_to_most_connected.c_str())
         .def("set_reference_slack_bus", &LSGrid::set_reference_slack_bus, DocLSGrid::set_reference_slack_bus.c_str())
         .def("get_reference_slack_bus", &LSGrid::get_reference_slack_bus, DocLSGrid::get_reference_slack_bus.c_str())
-        .def("consider_only_main_component", &LSGrid::consider_only_main_component, "TODO and TODO DC LINE: one side might be in the connected comp and not the other !")
+        .def("consider_only_main_component", &LSGrid::consider_only_main_component, DocLSGrid::consider_only_main_component.c_str())
         .def("set_ignore_status_global", &LSGrid::set_ignore_status_global, DocLSGrid::set_ignore_status_global.c_str())
         .def("set_synch_status_both_side", &LSGrid::set_synch_status_both_side, DocLSGrid::set_synch_status_both_side.c_str())
-        .def("get_ignore_status_global", &LSGrid::get_ignore_status_global, "TODO doc")
-        .def("get_synch_status_both_side", &LSGrid::get_synch_status_both_side, "TODO doc")
+        .def("get_ignore_status_global", &LSGrid::get_ignore_status_global, DocLSGrid::get_ignore_status_global.c_str())
+        .def("get_synch_status_both_side", &LSGrid::get_synch_status_both_side, DocLSGrid::get_synch_status_both_side.c_str())
 
         // names
-        .def("set_line_names", &LSGrid::set_line_names, "TODO")
+        .def("set_line_names", &LSGrid::set_line_names, DocLSGrid::set_line_names.c_str())
         .def("get_line_names", &LSGrid::get_line_names, DocLSGrid::get_line_names.c_str())
-        .def("set_dcline_names", &LSGrid::set_dcline_names, "TODO")
-        .def("set_trafo_names", &LSGrid::set_trafo_names, "TODO")
+        .def("set_dcline_names", &LSGrid::set_dcline_names, DocLSGrid::set_dcline_names.c_str())
+        .def("set_trafo_names", &LSGrid::set_trafo_names, DocLSGrid::set_trafo_names.c_str())
         .def("get_trafo_names", &LSGrid::get_trafo_names, DocLSGrid::get_trafo_names.c_str())
         .def("set_line_current_limit_side1", &LSGrid::set_line_current_limit_side1, DocLSGrid::set_line_current_limit_side1.c_str())
         .def("set_line_current_limit_side2", &LSGrid::set_line_current_limit_side2, DocLSGrid::set_line_current_limit_side2.c_str())
         .def("set_trafo_current_limit_side1", &LSGrid::set_trafo_current_limit_side1, DocLSGrid::set_trafo_current_limit_side1.c_str())
         .def("set_trafo_current_limit_side2", &LSGrid::set_trafo_current_limit_side2, DocLSGrid::set_trafo_current_limit_side2.c_str())
-        .def("set_gen_names", &LSGrid::set_gen_names, "TODO")
-        .def("set_load_names", &LSGrid::set_load_names, "TODO")
-        .def("set_storage_names", &LSGrid::set_storage_names, "TODO")
-        .def("set_sgen_names", &LSGrid::set_sgen_names, "TODO")
-        .def("set_shunt_names", &LSGrid::set_shunt_names, "TODO")
+        .def("set_gen_names", &LSGrid::set_gen_names, DocLSGrid::set_gen_names.c_str())
+        .def("set_load_names", &LSGrid::set_load_names, DocLSGrid::set_load_names.c_str())
+        .def("set_storage_names", &LSGrid::set_storage_names, DocLSGrid::set_storage_names.c_str())
+        .def("set_sgen_names", &LSGrid::set_sgen_names, DocLSGrid::set_sgen_names.c_str())
+        .def("set_shunt_names", &LSGrid::set_shunt_names, DocLSGrid::set_shunt_names.c_str())
         .def("set_substation_names", &LSGrid::set_substation_names, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_substation_names", &LSGrid::get_substation_names, DocLSGrid::_internal_do_not_use.c_str())
 
@@ -193,7 +193,7 @@ void bind_gridmodel(py::module_& m) {
         .def("change_bus2_trafo", &LSGrid::change_bus2_trafo_python, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_bus1_trafo", &LSGrid::get_bus1_trafo, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_bus2_trafo", &LSGrid::get_bus2_trafo, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("change_ratio_trafo", &LSGrid::change_ratio_trafo, "TODO")
+        .def("change_ratio_trafo", &LSGrid::change_ratio_trafo, DocLSGrid::change_ratio_trafo.c_str())
         .def("change_shift_trafo", &LSGrid::change_shift_trafo, DocLSGrid::change_shift_trafo.c_str())
         .def("change_shift_trafo_deg", &LSGrid::change_shift_trafo_deg, DocLSGrid::change_shift_trafo_deg.c_str())
         .def("set_trafo_shift_dependent_rx", &LSGrid::set_trafo_shift_dependent_rx,
@@ -217,7 +217,7 @@ void bind_gridmodel(py::module_& m) {
         .def("reactivate_svc", &LSGrid::reactivate_svc, DocLSGrid::_internal_do_not_use.c_str())
         .def("change_bus_svc", &LSGrid::change_bus_svc_python, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_bus_svc", &LSGrid::get_bus_svc, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_svc_names", &LSGrid::set_svc_names, "TODO")
+        .def("set_svc_names", &LSGrid::set_svc_names, DocLSGrid::set_svc_names.c_str())
 
         .def("deactivate_shunt", &LSGrid::deactivate_shunt, DocLSGrid::_internal_do_not_use.c_str())
         .def("reactivate_shunt", &LSGrid::reactivate_shunt, DocLSGrid::_internal_do_not_use.c_str())

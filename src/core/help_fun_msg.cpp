@@ -3111,6 +3111,157 @@ const std::string DocLSGrid::get_hvdc_droop_data_solver = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::copy = R"mydelimiter(
+    Return a full, independent deep copy of this grid.
+
+)mydelimiter";
+
+const std::string DocLSGrid::timer_last_ac_pf = R"mydelimiter(
+    Wall-clock time (seconds) of the last :func:`ac_pf` call, from pre-processing through
+    result storage -- the whole call, not just the solver's own internal timers (see
+    :func:`lightsim2grid.algorithm.NR_SparseLU.get_timers` /
+    :func:`~lightsim2grid.algorithm.AlgorithmSelector.get_timers_jacobian` for those). ``0.`` if
+    :func:`ac_pf` was never called.
+
+)mydelimiter";
+
+const std::string DocLSGrid::timer_last_dc_pf = R"mydelimiter(
+    Same as :attr:`timer_last_ac_pf`, but for the last :func:`dc_pf` call.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_turnedoff_gen_pv = R"mydelimiter(
+    Whether a turned-off generator (or one with ``target_p_mw == 0``) counts as a PV bus, as set
+    by :func:`turnedoff_pv` / :func:`turnedoff_no_pv` (default: ``True``, ie :func:`turnedoff_pv`).
+
+)mydelimiter";
+
+const std::string DocLSGrid::update_slack_weights = R"mydelimiter(
+    Recompute the distributed-slack weight of every generator, restricted to the ones for which
+    ``could_be_slack`` is ``True`` (a boolean array, one entry per generator): each such
+    generator's weight becomes proportional to its ``abs(target_p_mw)`` (or, if every candidate's
+    ``target_p_mw`` is ``0.``, an equal split among them). Every other generator stops
+    participating in the slack.
+
+    .. seealso::
+        :func:`update_slack_weights_by_id`, the same but taking a list of generator ids instead
+        of a boolean mask.
+
+)mydelimiter";
+
+const std::string DocLSGrid::update_slack_weights_by_id = R"mydelimiter(
+    Same as :func:`update_slack_weights`, but ``slack_ids`` is a list of candidate generator ids
+    instead of a per-generator boolean mask.
+
+)mydelimiter";
+
+const std::string DocLSGrid::assign_slack_to_most_connected = R"mydelimiter(
+    Pick a single new slack generator automatically: among the buses with at least one generator
+    producing (``target_p_mw > 0``), the one with the most powerline / transformer ends connected
+    to it: then, at that bus, the generator with the highest ``abs(target_p_mw)``.
+
+    Clears every existing slack assignment first, so the result is always a single slack
+    generator, not a distributed one.
+
+    Returns ``(bus_id, gen_id)`` (gridmodel ids) of the bus and generator picked.
+
+)mydelimiter";
+
+const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
+    Restrict the grid to its main synchronous component: starting a breadth-first search from the
+    slack bus(es) over the branch graph (powerlines, transformers, and any other connecting
+    element), find every bus reachable from them, then disconnect every element with no bus in
+    that component.
+
+    An HVDC line with only one converter station in the main component is not fully disconnected:
+    the in-main-component converter stays active (still injecting / regulating its scheduled
+    power), and only the out-of-component one is opened -- see
+    :class:`lightsim2grid.elements.HvdcLineContainer`.
+
+    Requires at least one slack bus to already be defined (see
+    :func:`assign_slack_to_most_connected`); raises otherwise.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_ignore_status_global = R"mydelimiter(
+    Current value of the ``ignore_status_global`` flag, see :func:`set_ignore_status_global`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_synch_status_both_side = R"mydelimiter(
+    Current value of the ``synch_status_both_side`` flag, see :func:`set_synch_status_both_side`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_line_names = R"mydelimiter(
+    Set the powerlines' names, one per powerline (raises if the length does not match the number
+    of powerlines).
+
+    .. seealso::
+        :func:`get_line_names` to read them back.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_dcline_names = R"mydelimiter(
+    Set the HVDC lines' names, one per HVDC line (raises if the length does not match the number
+    of HVDC lines).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_trafo_names = R"mydelimiter(
+    Set the transformers' names, one per transformer (raises if the length does not match the
+    number of transformers).
+
+    .. seealso::
+        :func:`get_trafo_names` to read them back.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_gen_names = R"mydelimiter(
+    Set the generators' names, one per generator (raises if the length does not match the number
+    of generators).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_load_names = R"mydelimiter(
+    Set the loads' names, one per load (raises if the length does not match the number of loads).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_storage_names = R"mydelimiter(
+    Set the storage units' names, one per storage unit (raises if the length does not match the
+    number of storage units).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_sgen_names = R"mydelimiter(
+    Set the static generators' names, one per static generator (raises if the length does not
+    match the number of static generators).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_shunt_names = R"mydelimiter(
+    Set the shunts' names, one per shunt (raises if the length does not match the number of
+    shunts).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_svc_names = R"mydelimiter(
+    Set the Static Var Compensators' names, one per SVC (raises if the length does not match the
+    number of SVCs).
+
+)mydelimiter";
+
+const std::string DocLSGrid::change_ratio_trafo = R"mydelimiter(
+    Change the tap ratio of a given transformer (see
+    :attr:`lightsim2grid.elements.TrafoInfo.ratio`).
+
+    .. seealso::
+        :func:`change_shift_trafo` / :func:`change_shift_trafo_deg` to change its phase-shift
+        angle instead.
+
+)mydelimiter";
+
 const std::string DocLSGrid::get_lines = R"mydelimiter(
     This function allows to retrieve the powerlines (as a 
     :class:`lightsim2grid.elements.LineContainer` object,

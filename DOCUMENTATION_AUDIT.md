@@ -9,15 +9,12 @@ public, actually-used method should have real documentation instead of
 (3) flag documentation whose content no longer matches the current code.
 
 **Status: sections 2 (centralization), 3 (18 accuracy bugs) and 4 (missing
-docs) are all now fixed** — see the commit(s) following this audit.
+docs), plus the follow-up batch of 19 remaining `LSGrid` `"TODO"`
+docstrings, are all now fixed** — see the commit(s) following this audit.
 `DocComputers`/`DocSecurityAnalysis` have been renamed to
-`DocTimeSeries`/`DocContingencyAnalysis` (§5 item 4). A handful of new,
-not-previously-cataloged findings surfaced along the way (see the §2/§4
-sub-sections below) — most fixed in the same pass, two flagged for a
-separate follow-up pass: ~15 more `"TODO"` docstrings on other `LSGrid`
-methods (out of scope for "the rest of §4" as originally cataloged), and
-the SVC family (`SvcContainer`/`SvcInfo`, no `DocIterator` entries at all
-today — explicitly deferred, "lots of docs missing there").
+`DocTimeSeries`/`DocContingencyAnalysis` (§5 item 4). Only the SVC family
+(`SvcContainer`/`SvcInfo`, no `DocIterator` entries at all today) remains
+outstanding — explicitly deferred, "lots of docs missing there".
 
 Sphinx pulls these docstrings directly (`autoclass`/`automodule` in
 `docs/*.rst`), so anything wrong here is wrong on the public docs site too —
@@ -827,6 +824,54 @@ targets before and after this pass (confirmed via diff) -- this batch
 introduced zero new dangling-reference categories despite touching ~90
 docstrings. Round-tripped ~52 of the newly-centralized attributes through
 a real import to confirm non-empty, non-placeholder `__doc__`.
+
+## Follow-up: remaining `LSGrid` `"TODO"` docstrings — fixed
+
+The ~15 (turned out to be 19) additional literal `"TODO"` / `"TODO doc"`
+docstrings on `LSGrid` found while grepping `binding_lsgrid.cpp` during the
+§4 pass, flagged there as out of scope: `copy`, `timer_last_ac_pf` /
+`timer_last_dc_pf`, `get_turnedoff_gen_pv`, `update_slack_weights` /
+`update_slack_weights_by_id`, `assign_slack_to_most_connected`,
+`consider_only_main_component`, `get_ignore_status_global` /
+`get_synch_status_both_side`, the whole `set_*_names` family (line, dcline,
+trafo, gen, load, storage, sgen, shunt, svc — 9 methods), and
+`change_ratio_trafo`.
+
+Traced each one's actual C++ implementation (`LSGrid.cpp`/`.hpp`,
+`GeneratorContainer.cpp`) rather than guessing from the name:
+
+- `assign_slack_to_most_connected` picks the bus with a producing generator
+  and the most powerline/transformer ends, then the highest-`|target_p|`
+  generator there; `update_slack_weights(_by_id)` recomputes distributed-
+  slack weights proportional to `|target_p_mw|` among a candidate set (or
+  an equal split if they all sum to zero).
+- `consider_only_main_component` restricts the grid to the slack bus(es)'
+  synchronous component via a graph BFS. Its C++ comment carried a stale
+  `// TODO DC LINE: one side might be in the connected comp and not the
+  other !` — traced the call chain and confirmed this is **already
+  handled** by `HvdcLineContainer::disconnect_if_not_in_main_component`
+  (documented in the §4 Gen/HVDC pass): an HVDC line with only one
+  converter in the main component keeps that converter active and only
+  opens the other. Documented the current (correct) behavior instead of
+  perpetuating the stale warning.
+- `timer_last_ac_pf`/`timer_last_dc_pf` measure the whole `ac_pf()`/`dc_pf()`
+  call (pre-processing through result storage), confirmed distinct from
+  the solver's own internal `get_timers()`/`get_timers_jacobian()` timers
+  documented in the §2 pass.
+- The `set_*_names` family and `change_ratio_trafo` are straightforward
+  (validate length, set; change a transformer's tap ratio) and cross-
+  reference the `get_*_names`/`ratio` docs already written.
+
+Two candidate cross-references were dropped after checking they're not
+actually reachable from Python: `GeneratorContainer::add_slackbus` /
+`remove_all_slackbus` are real C++ methods but never bound to a Python
+name at all (referencing them would have been dangling).
+
+**Verified**: nitpicky Sphinx rebuild — build succeeds, and the diffed set
+of unresolved-reference targets is byte-for-byte identical before and
+after this pass (confirmed via `diff`, zero new dangling references).
+Round-tripped all 20 touched attributes through a real import to confirm
+non-empty, non-`"TODO"` docstrings.
 
 ## 5. Recommendation for the rewrite pass
 
