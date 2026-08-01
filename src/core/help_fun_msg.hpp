@@ -221,8 +221,6 @@ struct LS2G_API DocIterator
     // specific to powerlines (also used, where noted, for hvdc lines' bus ids)
     static const std::string LineContainer;
     static const std::string LineInfo;
-    static const std::string bus_1_id;
-    static const std::string bus_2_id;
     static const std::string get_bus_id_side_1;
     static const std::string get_bus_id_side_2;
     static const std::string res_p_1_mw;
@@ -296,6 +294,76 @@ struct LS2G_API DocIterator
     static const std::string loss_factor;
     static const std::string power_factor;
 
+    // per-container specific variants of the shared fields above, cross-referencing the
+    // LSGrid getter/setter that reads / writes them (added so a bare `bus_id` etc. cannot be
+    // read from the field alone, the corresponding `LSGrid` method is always one click away)
+    static const std::string load_bus_id;
+    static const std::string gen_bus_id;
+    static const std::string shunt_bus_id;
+    static const std::string sgen_bus_id;
+    static const std::string storage_bus_id;
+    static const std::string svc_bus_id;
+    static const std::string line_bus1_id;
+    static const std::string line_bus2_id;
+    static const std::string hvdc_bus1_id;
+    static const std::string hvdc_bus2_id;
+
+    static const std::string load_connected;
+    static const std::string gen_connected;
+    static const std::string shunt_connected;
+    static const std::string sgen_connected;
+    static const std::string storage_connected;
+    static const std::string svc_connected;
+    static const std::string line_connected_global;
+    static const std::string trafo_connected_global;
+    static const std::string hvdc_connected_global;
+    static const std::string line_connected1;
+    static const std::string line_connected2;
+    static const std::string trafo_connected1;
+    static const std::string trafo_connected2;
+    static const std::string hvdc_connected1;
+    static const std::string hvdc_connected2;
+
+    static const std::string load_target_p_mw;
+    static const std::string gen_target_p_mw;
+    static const std::string shunt_target_p_mw;
+    static const std::string sgen_target_p_mw;
+    static const std::string storage_target_p_mw;
+
+    static const std::string load_target_q_mvar;
+    static const std::string shunt_target_q_mvar;
+    static const std::string sgen_target_q_mvar;
+    static const std::string storage_target_q_mvar;
+
+    static const std::string gen_target_vm_pu;
+
+    static const std::string load_pos_topo_vect;
+    static const std::string gen_pos_topo_vect;
+    static const std::string shunt_pos_topo_vect;
+    static const std::string sgen_pos_topo_vect;
+    static const std::string storage_pos_topo_vect;
+    static const std::string svc_pos_topo_vect;
+    static const std::string line_pos1_topo_vect;
+    static const std::string line_pos2_topo_vect;
+    static const std::string trafo_pos1_topo_vect;
+    static const std::string trafo_pos2_topo_vect;
+    static const std::string hvdc_pos1_topo_vect;
+    static const std::string hvdc_pos2_topo_vect;
+
+    static const std::string load_sub_id;
+    static const std::string gen_sub_id;
+    static const std::string shunt_sub_id;
+    static const std::string sgen_sub_id;
+    static const std::string storage_sub_id;
+    static const std::string svc_sub_id;
+    static const std::string line_sub1_id;
+    static const std::string line_sub2_id;
+    static const std::string trafo_sub1_id;
+    static const std::string trafo_sub2_id;
+    static const std::string hvdc_sub1_id;
+    static const std::string hvdc_sub2_id;
+
+    static const std::string substation_name;
 };
 
 struct LS2G_API DocLSGrid
