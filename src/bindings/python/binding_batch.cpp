@@ -96,7 +96,7 @@ void bind_batch(py::module_& m) {
                       [](ContingencyAnalysis & self, bool val){ self.set_compute_limit_violations(val); },
                       "Whether limit violations are computed inline, per contingency, "
                       "during compute() (see converged / get_violations / converged_n / "
-                      "get_violations_n). Default: false. Computing violations means an extra "
+                      "get_violations_n). Defaults to ``False``. Computing violations means an extra "
                       "per-element current / voltage check in every contingency's solve, so "
                       "users who only need compute_flows() / get_flows() should leave this off. "
                       "Changing this flag clears any previously-computed results.")
@@ -121,7 +121,7 @@ void bind_batch(py::module_& m) {
         .def_property("nb_thread",
                       [](const ContingencyAnalysis & self){ return self.get_nb_thread(); },
                       [](ContingencyAnalysis & self, int val){ self.set_nb_thread(val); },
-                      "Number of OS threads used to solve the contingencies (default: 1). "
+                      "Number of OS threads used to solve the contingencies (default ``1``). "
                       "With nb_thread == 1 the behaviour is identical to the legacy sequential "
                       "computation. With nb_thread > 1 the contingency list is split into "
                       "contiguous ranges, each solved by its own thread (each with its own solver "

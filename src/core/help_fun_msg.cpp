@@ -2782,9 +2782,15 @@ const std::string DocLSGrid::check_grid = R"mydelimiter(
 
     Raises
     ------
-    An ``IndexError`` (C++ ``std::out_of_range``) if an index is out of range, or a
-    ``RuntimeError`` (C++ ``std::runtime_error``) on a structural inconsistency.
-    Returns ``None`` if the grid is consistent.
+    IndexError
+        (C++ ``std::out_of_range``) if an index is out of range.
+    RuntimeError
+        (C++ ``std::runtime_error``) on a structural inconsistency.
+
+    Returns
+    -------
+    None
+        If the grid is consistent.
 
     Notes
     -----
@@ -5313,7 +5319,7 @@ const std::string DocContingencyAnalysis::element_type = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocContingencyAnalysis::element_id = R"mydelimiter(
-    Which element this violation is about: the grid-model bus id for ``BUS``; the local (0-based,
+    Which element this violation is about -- the grid-model bus id for ``BUS``; the local (0-based,
     own-type) line / transformer id for ``LINE`` / ``TRAFO``; unused (``-1``) for ``GRID``.
 
 )mydelimiter";
@@ -5341,7 +5347,7 @@ const std::string DocContingencyAnalysis::limit = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocContingencyAnalysis::violation_name = R"mydelimiter(
-    The violating element's name: for ``LINE`` / ``TRAFO``, as set by
+    The violating element's name -- for ``LINE`` / ``TRAFO``, as set by
     :func:`lightsim2grid.network.LSGrid.set_line_names` /
     :func:`lightsim2grid.network.LSGrid.set_trafo_names`; for ``BUS``, the name of the substation
     the violating bus belongs to (see
@@ -5580,14 +5586,14 @@ const std::string DocMisc::AlgoConfig = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocMisc::int_params = R"mydelimiter(
-    Integer parameters, as a plain list: ``[ScalingPolicyType, RefactorPolicyType, ls_max_iter,
+    Integer parameters, as a plain list -- ``[ScalingPolicyType, RefactorPolicyType, ls_max_iter,
     refactor_every_n]`` -- see :class:`~lightsim2grid.algorithm.AlgoConfig`'s warning about
     reassigning the whole list to mutate it.
 
 )mydelimiter";
 
 const std::string DocMisc::real_params = R"mydelimiter(
-    Real-valued parameters, as a plain list: ``[max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min,
+    Real-valued parameters, as a plain list -- ``[max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min,
     iw_mu_max]`` -- see :class:`~lightsim2grid.algorithm.AlgoConfig`'s warning about reassigning
     the whole list to mutate it.
 
