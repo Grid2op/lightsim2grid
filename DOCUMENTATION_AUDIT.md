@@ -8,15 +8,16 @@ public, actually-used method should have real documentation instead of
 `help_fun_msg.hpp/.cpp` rather than being duplicated/hand-written per binding,
 (3) flag documentation whose content no longer matches the current code.
 
-**Status: all 18 findings in section 3 (accuracy bugs) have been fixed**,
-and **section 4 (missing docs) is now fully fixed** — see the commit(s)
-following this audit. `DocComputers`/`DocSecurityAnalysis` have been renamed
-to `DocTimeSeries`/`DocContingencyAnalysis` (§5 item 4). A handful of new,
-not-previously-cataloged findings surfaced along the way (see the §4
-sub-sections below) — some fixed in the same pass, one flagged for later
-(~15 more `"TODO"` docstrings on other `LSGrid` methods, out of scope for
-"the rest of §4" as originally cataloged). Section 2 (centralization) is
-still just findings, not yet acted on.
+**Status: sections 2 (centralization), 3 (18 accuracy bugs) and 4 (missing
+docs) are all now fixed** — see the commit(s) following this audit.
+`DocComputers`/`DocSecurityAnalysis` have been renamed to
+`DocTimeSeries`/`DocContingencyAnalysis` (§5 item 4). A handful of new,
+not-previously-cataloged findings surfaced along the way (see the §2/§4
+sub-sections below) — most fixed in the same pass, two flagged for a
+separate follow-up pass: ~15 more `"TODO"` docstrings on other `LSGrid`
+methods (out of scope for "the rest of §4" as originally cataloged), and
+the SVC family (`SvcContainer`/`SvcInfo`, no `DocIterator` entries at all
+today — explicitly deferred, "lots of docs missing there").
 
 Sphinx pulls these docstrings directly (`autoclass`/`automodule` in
 `docs/*.rst`), so anything wrong here is wrong on the public docs site too —
@@ -761,6 +762,71 @@ class/method has a non-empty `__doc__` (`AlgoControl`, `PandaPowerConverter`,
 `GeneratorContainer.get_bus_id`, `LineContainer.get_yac_eff_11`). Ran the
 existing `test_DataConverter.py` suite (untouched functionally, only its
 docstrings changed) -- still passes.
+
+## Section 2 (centralization) — fixed
+
+Every item cataloged in §2 has been moved from inline binding-file strings
+into `help_fun_msg.hpp`/`.cpp`, plus the two structural gaps §2 didn't
+literally call out but which fall in the same bucket:
+
+- `TimerJac` (class + all 13 fields) and `LinearSolverStats` (class + all
+  12 fields), `binding_solvers.cpp` — previously had **zero** docstring at
+  all, not even a placeholder (`.def_readonly` with no third argument).
+  Traced the actual timer semantics through `NRAlgo.tpp` / `BaseDCAlgo.hpp`
+  / `BaseFDPFAlgo.hpp` (which fields the base class sets vs. which only
+  NR-based solvers fill in, and which linear-solver-stats field each timer
+  mirrors) to document them accurately rather than guessing from field
+  names.
+- `bind_nr_algo_policies` (19 methods: scaling/refactor policy get/set,
+  `get_config`/`set_config`, `get_theta_to_J_col`/`get_vm_to_J_col`/
+  `get_q_to_J_col`), `bind_linear_solver_stats` (1 method), and
+  `bind_fdpf_linear_solver_stats` (2 methods) — moved as-is, content was
+  already good.
+- `AlgoConfig` (class + `int_params`/`real_params`), `binding_misc.cpp` —
+  moved as-is, including the mutate-by-reassignment warning.
+- `LimitViolation`/`ViolationElementType`/`LimitViolationType` (class +
+  7 fields), `binding_batch.cpp` — moved as-is (per-enum-value docstrings,
+  eg `GRID`/`NOT_SIMULATED`/`DIVERGENCE`, were left inline: low duplication
+  risk, unlike to be reused elsewhere).
+- ~55 `LSGrid` methods/properties in `binding_lsgrid.cpp` (more than the
+  audit's original "~40" estimate) — every substantive (non-`"TODO"`,
+  non-`_internal_do_not_use`) inline docstring in the file: the
+  underscore-prefixed bookkeeping properties (`_ls_to_orig`, `_orig_to_ls`,
+  `_init_kwargs`, `_bus_fusion_rep`), algo-config accessors, per-bus voltage
+  limits, slack/PV-PQ bookkeeping, names, every half-open (per-side)
+  connect/disconnect method, transformer tap/phase-shift, remote voltage
+  control, HVDC angle-droop, and the whole family of solver-internal-state
+  getters (`get_p_buses_solver` and friends) used by external solvers
+  re-deriving the NR system. Left the ~10 short "DEPRECATED: use X
+  instead" redirect one-liners inline (not worth centralizing: minimal
+  duplication risk, conventionally kept next to the alias they redirect
+  from).
+- Found and fixed one small, genuinely dead constant along the way:
+  `DocLSGrid::available_algorithm_names` already existed with real content
+  but was never wired to any binding (`LSGrid.available_algorithm_names`
+  still used an inline literal) -- merged into it instead of creating a
+  duplicate.
+- Not touched: `add_pickle`/`add_binary_serialization` (`pickle_helpers.hpp`/
+  `binary_helpers.hpp`) -- per the audit's own note, low priority, already
+  centralized in one template header (not copy-pasted per class), just not
+  in `help_fun_msg`.
+
+**Verified**: nitpicky Sphinx rebuild after every batch (solver-family,
+misc/batch, then the full `LSGrid` sweep) -- caught and fixed several new
+dangling references before calling it done, all bare `:func:`/`:attr:`
+roles that don't resolve on the class page they're actually rendered on
+(eg `get_timers_jacobian` referenced from `TimerJac`'s own page, where it
+doesn't exist -- it's only ever bound on `AlgorithmSelector`, not on the
+individual solver classes; `get_linear_solver_stats_bp`/`_bpp` referenced
+bare from `get_linear_solver_stats`'s docstring, which renders on
+`NR_SparseLU`'s page where those FDPF-only methods don't exist), plus two
+more instances of the already-documented numpydoc colon-quirk (`"NR-only:
+..."` at the start of three `TimerJac` field docstrings). Final
+before/after comparison: the exact same *set* of unresolved-reference
+targets before and after this pass (confirmed via diff) -- this batch
+introduced zero new dangling-reference categories despite touching ~90
+docstrings. Round-tripped ~52 of the newly-centralized attributes through
+a real import to confirm non-empty, non-placeholder `__doc__`.
 
 ## 5. Recommendation for the rewrite pass
 

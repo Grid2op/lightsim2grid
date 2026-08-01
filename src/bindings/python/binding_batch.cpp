@@ -15,7 +15,7 @@
 using namespace ls2g;
 
 void bind_batch(py::module_& m) {
-    py::enum_<ViolationElementType>(m, "ViolationElementType", "The kind of element on which a limit was violated.")
+    py::enum_<ViolationElementType>(m, "ViolationElementType", DocContingencyAnalysis::ViolationElementType.c_str())
         .value("BUS", ViolationElementType::BUS)
         .value("LINE", ViolationElementType::LINE)
         .value("TRAFO", ViolationElementType::TRAFO)
@@ -23,7 +23,7 @@ void bind_batch(py::module_& m) {
                "The whole grid / contingency, not a specific element (see LimitViolationType.NOT_SIMULATED "
                "/ LimitViolationType.DIVERGENCE).");
 
-    py::enum_<LimitViolationType>(m, "LimitViolationType", "The kind of limit that was violated.")
+    py::enum_<LimitViolationType>(m, "LimitViolationType", DocContingencyAnalysis::LimitViolationType.c_str())
         .value("LOW_VOLTAGE", LimitViolationType::LOW_VOLTAGE)
         .value("HIGH_VOLTAGE", LimitViolationType::HIGH_VOLTAGE)
         .value("CURRENT", LimitViolationType::CURRENT)
@@ -34,23 +34,14 @@ void bind_batch(py::module_& m) {
                "The solver was invoked for this contingency but did not converge (element_type is "
                "ViolationElementType.GRID).");
 
-    py::class_<LimitViolation>(m, "LimitViolation", "A single limit violation, as detected by ContingencyAnalysisCPP.")
-        .def_readonly("element_type", &LimitViolation::element_type)
-        .def_readonly("element_id", &LimitViolation::element_id,
-                      "grid-model bus id for BUS ; local (0-based, own type) line / trafo id otherwise ; "
-                      "unused (-1) for GRID")
-        .def_readonly("side", &LimitViolation::side, "1 or 2 for LINE / TRAFO ; unused (0) for BUS / GRID")
-        .def_readonly("violation_type", &LimitViolation::violation_type)
-        .def_readonly("value", &LimitViolation::value,
-                      "value reached ; unused (NaN) for NOT_SIMULATED / DIVERGENCE")
-        .def_readonly("limit", &LimitViolation::limit,
-                      "limit that was violated ; unused (NaN) for NOT_SIMULATED / DIVERGENCE")
-        .def_readonly("name", &LimitViolation::name,
-                      "element name: LINE / TRAFO (see LSGrid.set_line_names / set_trafo_names) or, for "
-                      "BUS, the name of the substation the violating bus belongs to (see "
-                      "LSGrid.set_substation_names) -- there is no per-bus name in LSGrid, only "
-                      "per-substation ones. Empty string if names were never set on the grid for the "
-                      "relevant kind, or for GRID.");
+    py::class_<LimitViolation>(m, "LimitViolation", DocContingencyAnalysis::LimitViolation.c_str())
+        .def_readonly("element_type", &LimitViolation::element_type, DocContingencyAnalysis::element_type.c_str())
+        .def_readonly("element_id", &LimitViolation::element_id, DocContingencyAnalysis::element_id.c_str())
+        .def_readonly("side", &LimitViolation::side, DocContingencyAnalysis::side.c_str())
+        .def_readonly("violation_type", &LimitViolation::violation_type, DocContingencyAnalysis::violation_type.c_str())
+        .def_readonly("value", &LimitViolation::value, DocContingencyAnalysis::value.c_str())
+        .def_readonly("limit", &LimitViolation::limit, DocContingencyAnalysis::limit.c_str())
+        .def_readonly("name", &LimitViolation::name, DocContingencyAnalysis::violation_name.c_str());
 
     py::class_<TimeSeries>(m, "TimeSeriesCPP", DocTimeSeries::TimeSeries.c_str())
         .def(py::init<const LSGrid &>())
