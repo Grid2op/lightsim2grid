@@ -404,6 +404,28 @@ struct LS2G_API DocLSGrid
     static const std::string get_vm_cols_solver;
     static const std::string get_hvdc_droop_data_solver;
 
+    // misc grid-level bookkeeping (previously "TODO")
+    static const std::string copy;
+    static const std::string timer_last_ac_pf;
+    static const std::string timer_last_dc_pf;
+    static const std::string get_turnedoff_gen_pv;
+    static const std::string update_slack_weights;
+    static const std::string update_slack_weights_by_id;
+    static const std::string assign_slack_to_most_connected;
+    static const std::string consider_only_main_component;
+    static const std::string get_ignore_status_global;
+    static const std::string get_synch_status_both_side;
+    static const std::string set_line_names;
+    static const std::string set_dcline_names;
+    static const std::string set_trafo_names;
+    static const std::string set_gen_names;
+    static const std::string set_load_names;
+    static const std::string set_storage_names;
+    static const std::string set_sgen_names;
+    static const std::string set_shunt_names;
+    static const std::string set_svc_names;
+    static const std::string change_ratio_trafo;
+
     // retrieve the results
     static const std::string get_J_python;
     static const std::string get_Va;
