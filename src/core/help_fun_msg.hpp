@@ -94,6 +94,11 @@ struct LS2G_API DocIterator
     static const std::string max_p_mw;
     static const std::string min_q_mvar;
     static const std::string max_q_mvar;
+    // shared by any element that can either regulate a bus voltage (PV-like) or
+    // apply a fixed reactive setpoint (PQ-like): currently GenInfo and
+    // ConverterStationInfo (VSC only)
+    static const std::string voltage_regulator_on;
+    static const std::string regulated_bus_id;
     static const std::string line_model;
     static const std::string r_pu;
     static const std::string x_pu;
@@ -175,6 +180,28 @@ struct LS2G_API DocIterator
     static const std::string res_theta_1_deg_dcline;
     static const std::string res_theta_2_deg_dcline;
 
+    // IIDM model (powsybl-style hvdc lines)
+    static const std::string converters_mode;
+    static const std::string p_setpoint_mw;
+    static const std::string r_ohm;
+    static const std::string nominal_v_kv;
+
+    // angle-droop ("AC emulation")
+    static const std::string droop_enabled;
+    static const std::string droop_p0_mw;
+    static const std::string droop_k_mw_per_rad;
+    static const std::string pmax_1to2_mw;
+    static const std::string pmax_2to1_mw;
+    static const std::string status_droop;
+
+    // hvdc converter stations (one per side of a hvdc line)
+    static const std::string station_side_1;
+    static const std::string station_side_2;
+    static const std::string ConverterStationInfo;
+    static const std::string converter_type;
+    static const std::string loss_factor;
+    static const std::string power_factor;
+
 };
 
 struct LS2G_API DocLSGrid
@@ -255,9 +282,9 @@ struct LS2G_API DocLSGrid
     static const std::string dc_pf;
 };
 
-struct LS2G_API DocComputers
+struct LS2G_API DocTimeSeries
 {
-    static const std::string Computers;
+    static const std::string TimeSeries;
     static const std::string total_time;
     static const std::string solver_time;
     static const std::string preprocessing_time;
@@ -276,9 +303,9 @@ struct LS2G_API DocComputers
     static const std::string clear;
 };
 
-struct LS2G_API DocSecurityAnalysis
+struct LS2G_API DocContingencyAnalysis
 {
-    static const std::string SecurityAnalysis;
+    static const std::string ContingencyAnalysis;
 
     static const std::string preprocessing_time;
     static const std::string modif_Ybus_time;

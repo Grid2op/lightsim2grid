@@ -110,7 +110,7 @@ const std::string DocSolver::compute_pf = R"mydelimiter(
         the pre-iteration state, before any Newton-Raphson / Gauss-Seidel step), or a non-finite or
         non-positive ``tol`` all raise a clean ``RuntimeError`` (or ``IndexError`` for out-of-range
         ids) instead of touching the underlying solver. This validation is skipped on the internal
-        C++ code path used by :class:`lightsim2grid.gridmodel.LSGrid` and the batch solvers
+        C++ code path used by :class:`lightsim2grid.network.LSGrid` and the batch solvers
         (:class:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysis`,
         :class:`~lightsim2grid.timeSerie.TimeSerie`, security analysis), which build these arrays
         themselves and call the solver many times in a loop: paying this check on every call there
@@ -834,8 +834,60 @@ const std::string DocIterator::target_q_mvar = R"mydelimiter(
     Get the reactive production (or consumption) setpoint in MVAr for element of the grid supporting this feature.
 
     For generators (and static generators) it is given following the "generator convention" (positive = power is injected to the grid)
-    
+
     For loads (and storage units) it is given following the "load convention" (positive = power is absorbed from the grid)
+
+    .. note::
+        For elements that can regulate a voltage instead of applying a fixed reactive setpoint
+        (see :attr:`lightsim2grid.elements.GenInfo.voltage_regulator_on` /
+        :attr:`lightsim2grid.elements.ConverterStationInfo.voltage_regulator_on`), this value is
+        only actually used when voltage regulation is OFF. When it is ON, the reactive power is
+        computed by the powerflow instead and this setpoint is ignored.
+
+)mydelimiter";
+
+const std::string DocIterator::voltage_regulator_on = R"mydelimiter(
+    Whether this element tries to regulate a bus voltage (PV-like behaviour, following
+    :attr:`target_vm_pu`) or applies a fixed reactive setpoint instead (PQ-like behaviour,
+    following :attr:`target_q_mvar`).
+
+    When ``True``, the reactive power is not an independent input: it is computed by the
+    powerflow so that the regulated bus's voltage magnitude matches ``target_vm_pu`` (within
+    ``min_q_mvar`` / ``max_q_mvar``). When ``False``, ``target_q_mvar`` is used directly and
+    ``target_vm_pu`` / ``min_q_mvar`` / ``max_q_mvar`` are ignored.
+
+    .. note::
+        On a :class:`lightsim2grid.elements.GenInfo`, the regulated bus is not necessarily this
+        generator's own bus -- see :attr:`lightsim2grid.elements.GenInfo.regulated_bus_id`
+        ("remote voltage control").
+
+        On a :class:`lightsim2grid.elements.ConverterStationInfo`, this is only meaningful for
+        VSC stations (:attr:`lightsim2grid.elements.ConverterStationInfo.converter_type` ``== 0``):
+        LCC stations (``converter_type == 1``) always have it ``False`` and instead consume
+        reactive power following
+        :attr:`lightsim2grid.elements.ConverterStationInfo.power_factor`.
+
+)mydelimiter";
+
+const std::string DocIterator::regulated_bus_id = R"mydelimiter(
+    The grid bus id whose voltage this element regulates, when :attr:`voltage_regulator_on` is
+    ``True``.
+
+    Defaults to this element's own :attr:`bus_id` ("local" voltage control). When it differs
+    from ``bus_id``, the element performs "remote voltage control": instead of behaving as an
+    ordinary PV bus itself, it acts as a controller contributing (jointly with any other element
+    regulating the same bus) to holding that bus's voltage magnitude at ``target_vm_pu``.
+
+    .. seealso::
+        :func:`lightsim2grid.network.LSGrid.set_gen_regulated_bus` to change it for a generator.
+
+    .. warning::
+        When the grid is read from pypowsybl, the regulated bus is resolved **once**, at import
+        time, and stored by its (fixed) lightsim2grid global bus id. If the regulated element is
+        later moved to another bus *inside lightsim2grid* (e.g. through a ``change_bus_*`` /
+        topology change), the controller keeps regulating the bus resolved at import: the
+        lightsim2grid grid and the original pypowsybl grid then desynchronise. Re-import the grid
+        (or call ``set_gen_regulated_bus`` again) if you need to follow such a topology change.
 
 )mydelimiter";
 
@@ -1059,7 +1111,7 @@ const std::string DocIterator::min_q_mvar = R"mydelimiter(
         that is locally voltage-regulating (``voltage_regulator_on`` is ``True`` and it does not regulate a
         remote bus), this is genuinely used at every solve: when several such units share the same bus, their
         reactive-power mismatch is split between them proportionally to ``max_q_mvar - min_q_mvar``. It is
-        also used, in the same case, by :func:`lightsim2grid.gridmodel.LSGrid.check_solution` when
+        also used, in the same case, by :func:`lightsim2grid.network.LSGrid.check_solution` when
         ``check_q_limits`` is ``True``, to report any part of the mismatch that falls outside
         ``[min_q_mvar, max_q_mvar]`` instead of masking it.
 
@@ -1080,7 +1132,7 @@ const std::string DocIterator::min_p_mw = R"mydelimiter(
 
     .. note::
         This is NOT used anywhere by lightsim2grid today: it is not enforced by the solver, and
-        :func:`lightsim2grid.gridmodel.LSGrid.check_solution` does not examine static generators at all
+        :func:`lightsim2grid.network.LSGrid.check_solution` does not examine static generators at all
         (only :class:`lightsim2grid.elements.GenInfo` / :class:`lightsim2grid.elements.ConverterStationInfo`,
         see `min_q_mvar`). It is pure metadata carried over from the source model.
 
@@ -1846,6 +1898,176 @@ const std::string DocIterator::res_theta_2_deg_dcline = R"mydelimiter(
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
 
 )mydelimiter" + DocIterator::only_avail_res;
+
+const std::string DocIterator::converters_mode = R"mydelimiter(
+    Which side of the HVDC line rectifies -- ``0`` means side 1 is the rectifier (side 2 the
+    inverter), ``1`` means side 2 is the rectifier (side 1 the inverter).
+
+    Active power flows from the rectifier side to the inverter side, minus losses -- see
+    :attr:`p_setpoint_mw` and the loss model described in
+    :class:`lightsim2grid.elements.HvdcLineInfo`.
+
+)mydelimiter";
+
+const std::string DocIterator::p_setpoint_mw = R"mydelimiter(
+    Active power drawn at the rectifier side of the HVDC line (MW, always ``>= 0``): which
+    physical side that is depends on :attr:`converters_mode`.
+
+    The power actually delivered at the other (inverter) side is this value minus the resistive
+    (:attr:`r_ohm`) and converter
+    (:attr:`~lightsim2grid.elements.ConverterStationInfo.loss_factor`) losses -- see the loss
+    model described in :class:`lightsim2grid.elements.HvdcLineInfo`.
+
+    .. note::
+        When :attr:`droop_enabled` is ``True``, this setpoint is not used: the active power
+        instead follows the angle-droop equation, see :attr:`droop_enabled`.
+
+)mydelimiter";
+
+const std::string DocIterator::r_ohm = R"mydelimiter(
+    DC line resistance (Ohm), used in the resistive loss term of the loss model described in
+    :class:`lightsim2grid.elements.HvdcLineInfo`.
+
+    ``0.`` for lines that do not model a resistive loss (e.g. the legacy pandapower-shaped hvdc
+    lines).
+
+)mydelimiter";
+
+const std::string DocIterator::nominal_v_kv = R"mydelimiter(
+    DC nominal voltage (kV) of the line, used together with :attr:`r_ohm` in the resistive loss
+    term described in :class:`lightsim2grid.elements.HvdcLineInfo`.
+
+    The resistive loss term is ``0.`` when this is ``0.`` (e.g. the legacy pandapower-shaped
+    hvdc lines, which do not model DC resistive losses).
+
+)mydelimiter";
+
+const std::string DocIterator::droop_enabled = R"mydelimiter(
+    Whether angle-droop control ("AC emulation", IIDM ``HvdcAngleDroopActivePowerControl``) is
+    enabled for this HVDC line.
+
+    When ``True``, the active power is not fixed at :attr:`p_setpoint_mw` but instead follows
+    the angle difference between the two sides::
+
+        raw_mw = droop_p0_mw + droop_k_mw_per_rad * (theta_1 - theta_2)
+
+    saturated at :attr:`pmax_1to2_mw` / :attr:`pmax_2to1_mw` -- see :attr:`status_droop` for the
+    regime currently in effect.
+
+    .. note::
+        Angle-droop cannot run once either converter station is individually disconnected while
+        the line stays otherwise connected (the remote angle is no longer available): it then
+        falls back to the fixed :attr:`p_setpoint_mw` for that line, regardless of this flag.
+
+)mydelimiter";
+
+const std::string DocIterator::droop_p0_mw = R"mydelimiter(
+    Angle-droop set point ``p0`` (MW): the active power flow (side 1 to side 2) when the two
+    sides' voltage angles are equal.
+
+    Only meaningful when :attr:`droop_enabled` is ``True`` -- see :attr:`droop_enabled` for the
+    full equation.
+
+)mydelimiter";
+
+const std::string DocIterator::droop_k_mw_per_rad = R"mydelimiter(
+    Angle-droop slope ``k`` (MW per radian of angle difference between the two sides).
+
+    Only meaningful when :attr:`droop_enabled` is ``True`` -- see :attr:`droop_enabled` for the
+    full equation.
+
+)mydelimiter";
+
+const std::string DocIterator::pmax_1to2_mw = R"mydelimiter(
+    Maximum active power (MW) the angle-droop equation is allowed to deliver from side 1 to
+    side 2 before saturating -- see :attr:`droop_enabled` and :attr:`status_droop`.
+
+    Only meaningful when :attr:`droop_enabled` is ``True``.
+
+)mydelimiter";
+
+const std::string DocIterator::pmax_2to1_mw = R"mydelimiter(
+    Maximum active power (MW) the angle-droop equation is allowed to deliver from side 2 to
+    side 1 before saturating -- see :attr:`droop_enabled` and :attr:`status_droop`.
+
+    Only meaningful when :attr:`droop_enabled` is ``True``.
+
+)mydelimiter";
+
+const std::string DocIterator::status_droop = R"mydelimiter(
+    The angle-droop regime currently in effect -- ``0`` means the raw droop equation applies
+    unsaturated (linear), ``+1`` means it is saturated at :attr:`pmax_1to2_mw` (flow forced from
+    side 1 to side 2), ``-1`` means it is saturated at :attr:`pmax_2to1_mw` (flow forced from
+    side 2 to side 1).
+
+    .. note::
+        This is an INPUT to the powerflow, not something it decides on its own: switching regime
+        changes which equation is stamped in the jacobian, so which regime applies is decided by
+        an outer loop (typically in Python, between two solves), not by this solve itself. Use
+        :func:`lightsim2grid.network.LSGrid.set_status_droop_hvdc` /
+        :func:`lightsim2grid.network.LSGrid.get_status_droop_hvdc` to set / read it at the grid
+        level.
+
+    Only meaningful when :attr:`droop_enabled` is ``True``.
+
+)mydelimiter";
+
+const std::string DocIterator::station_side_1 = R"mydelimiter(
+    The converter station on side 1 of this HVDC line, as a
+    :class:`lightsim2grid.elements.ConverterStationInfo`.
+
+)mydelimiter";
+
+const std::string DocIterator::station_side_2 = R"mydelimiter(
+    The converter station on side 2 of this HVDC line, as a
+    :class:`lightsim2grid.elements.ConverterStationInfo`.
+
+)mydelimiter";
+
+const std::string DocIterator::ConverterStationInfo = R"mydelimiter(
+    This class represents what you get from retrieving one side's converter station of an
+    :class:`lightsim2grid.elements.HvdcLineInfo` (:attr:`~lightsim2grid.elements.HvdcLineInfo.station1`
+    / :attr:`~lightsim2grid.elements.HvdcLineInfo.station2`).
+
+    It follows the IIDM model of powsybl: a station is either a VSC (voltage source converter --
+    behaves like a generator, either regulating voltage or with a fixed reactive setpoint, see
+    :attr:`voltage_regulator_on`) or a LCC (line commutated converter -- behaves like a load,
+    always consuming ``Q = abs(P) * tan(acos(power_factor))``), see :attr:`converter_type`.
+
+    The active power of a station (:attr:`target_p_mw`, generator sign convention) is not an
+    independent input: it is derived from the owning HVDC line's active power setpoint (or its
+    angle-droop behaviour) and the loss model -- see :class:`lightsim2grid.elements.HvdcLineInfo`.
+
+    .. warning::
+        Data can only be read from this element. You cannot modify (yet) the grid using this
+        class directly (see :class:`lightsim2grid.elements.HvdcLineInfo` for how to act on the
+        owning HVDC line).
+
+)mydelimiter";
+
+const std::string DocIterator::converter_type = R"mydelimiter(
+    Whether this converter station is a VSC (``0``, voltage source converter) or a LCC (``1``,
+    line commutated converter).
+
+    See :class:`lightsim2grid.elements.ConverterStationInfo` for the behaviour of each.
+
+)mydelimiter";
+
+const std::string DocIterator::loss_factor = R"mydelimiter(
+    Converter loss factor (fraction, between ``0.`` and ``1.``) applied when deriving this
+    station's active power from the owning HVDC line's power flow -- see the loss model
+    described in :class:`lightsim2grid.elements.HvdcLineInfo`.
+
+)mydelimiter";
+
+const std::string DocIterator::power_factor = R"mydelimiter(
+    LCC power factor -- the reactive power consumed by the station is
+    ``Q = abs(P) * tan(acos(power_factor))``.
+
+    Only meaningful when :attr:`converter_type` is ``1`` (LCC); always ``1.`` (unused) for VSC
+    stations.
+
+)mydelimiter";
 
 
 const std::string DocLSGrid::LSGrid = R"mydelimiter(
@@ -2715,7 +2937,7 @@ const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
 
     .. seealso::
         If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 
-        :func:`lightsim2grid.gridmodel.get_Ybus`
+        :func:`lightsim2grid.network.LSGrid.get_Ybus`
 
     .. versionadded:: 0.9.0
         It was named `get_Ybus` before this version, but the name has been changed to avoid confusing AND a new
@@ -2752,7 +2974,7 @@ const std::string DocLSGrid::get_dcYbus_solver = R"mydelimiter(
 
     .. seealso::
         If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 
-        :func:`lightsim2grid.gridmodel.get_dcYbus`
+        :func:`lightsim2grid.network.LSGrid.get_dcYbus`
 
     .. versionadded:: 0.9.0
         It was named `get_dcYbus` before this version, but the name has been changed to avoid confusing AND a new
@@ -2787,7 +3009,7 @@ const std::string DocLSGrid::get_Sbus_solver = R"mydelimiter(
     The resulting vector is a vector of complex number having the size of the number of connected buses on the grid.
 
     .. seealso::
-        If you want to retrieve the Sbus with the "gridmodel" convention, you can use :func:`lightsim2grid.gridmodel.get_Sbus`
+        If you want to retrieve the Sbus with the "gridmodel" convention, you can use :func:`lightsim2grid.network.LSGrid.get_Sbus`
 
     .. versionadded:: 0.9.0
         It was named `get_Sbus` before this version, but the name has been changed to avoid confusing AND a new
@@ -2822,7 +3044,7 @@ const std::string DocLSGrid::get_dcSbus_solver = R"mydelimiter(
     The resulting vector is a vector of complex number having the size of the number of **connected** buses on the grid.
 
     .. seealso::
-        If you want to retrieve the Sbus with the "gridmodel" convention, you can use :func:`lightsim2grid.gridmodel.get_dcSbus`
+        If you want to retrieve the Sbus with the "gridmodel" convention, you can use :func:`lightsim2grid.network.LSGrid.get_dcSbus`
 
     .. versionadded:: 0.9.0
         
@@ -2858,14 +3080,14 @@ const std::string DocLSGrid::get_Ybus = R"mydelimiter(
 
     .. seealso::
         If you want to retrieve the Ybus adopting the "solver" bus labelling (old behaviour), you can use 
-        :func:`lightsim2grid.gridmodel.get_Ybus_solver`
+        :func:`lightsim2grid.network.LSGrid.get_Ybus_solver`
 
     .. danger:: 
         Major change in version 0.9.0 of lightsim2grid (see versionchanged below)
 
     .. versionchanged:: 0.9.0
         It has not the same definition as the "old" behaviour. In the old behaviour, the `get_Ybus` used the
-        solver convention. To get the "old" behaviour, you need to use :func:`lightsim2grid.gridmodel.get_Ybus_solver`
+        solver convention. To get the "old" behaviour, you need to use :func:`lightsim2grid.network.LSGrid.get_Ybus_solver`
 
     .. warning:: 
         Each row / columns of this matrix represents a "solver bus" (and not a "grid model bus"). In other word, the first row / column of this
@@ -2899,14 +3121,14 @@ const std::string DocLSGrid::get_dcYbus = R"mydelimiter(
 
     .. seealso::
         If you want to retrieve the Ybus adopting the "solver" bus labelling (old behaviour), you can use 
-        :func:`lightsim2grid.gridmodel.get_dcYbus_solver`
+        :func:`lightsim2grid.network.LSGrid.get_dcYbus_solver`
 
     .. danger:: 
         Major change in version 0.9.0 of lightsim2grid (see versionchanged below)
 
     .. versionchanged:: 0.9.0
         It has not the same definition as the "old" behaviour. In the old behaviour, the `get_dcYbus` used the
-        solver convention. To get the "old" behaviour, you need to use :func:`lightsim2grid.gridmodel.get_dcYbus_solver`
+        solver convention. To get the "old" behaviour, you need to use :func:`lightsim2grid.network.LSGrid.get_dcYbus_solver`
 
     .. warning::
         This is given in the pair unit system !
@@ -2935,14 +3157,14 @@ const std::string DocLSGrid::get_Sbus = R"mydelimiter(
 
     .. seealso::
         If you want to retrieve the Sbus with the "solver" convention, you can use 
-        :func:`lightsim2grid.gridmodel.get_Sbus_solver`
+        :func:`lightsim2grid.network.LSGrid.get_Sbus_solver`
 
     .. danger:: 
         Major change in version 0.9.0 of lightsim2grid (see versionchanged below)
 
     .. versionchanged:: 0.9.0
         It has not the same definition as the "old" behaviour. In the old behaviour, the `get_Sbus` used the
-        solver convention. To get the "old" behaviour, you need to use :func:`lightsim2grid.gridmodel.get_Sbus_solver`
+        solver convention. To get the "old" behaviour, you need to use :func:`lightsim2grid.network.LSGrid.get_Sbus_solver`
 
     .. warning::
         This is given in the pair unit system and in load convention (so generation will be negative)
@@ -2971,7 +3193,7 @@ const std::string DocLSGrid::get_dcSbus = R"mydelimiter(
 
     .. seealso::
         If you want to retrieve the Sbus with the "sovler" convention, you can use 
-        :func:`lightsim2grid.gridmodel.get_dcSbus_solver`
+        :func:`lightsim2grid.network.LSGrid.get_dcSbus_solver`
 
     .. versionadded:: 0.9.0
 
@@ -3319,7 +3541,7 @@ const std::string DocLSGrid::get_Bf_solver = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocComputers::Computers = R"mydelimiter(
+const std::string DocTimeSeries::TimeSeries = R"mydelimiter(
     Allows the computation of time series, that is, the same grid topology is used while the active / reactive power injected
     at each buse vary. The grid topology is fixed, the injections vary.
 
@@ -3328,14 +3550,14 @@ const std::string DocComputers::Computers = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocComputers::total_time = R"mydelimiter(
+const std::string DocTimeSeries::total_time = R"mydelimiter(
     Total time spent in solving the powerflows, pre processing the data, post processing them, initializing everything etc.
     
     It is given in seconds (``float``).
 
 )mydelimiter";
 
-const std::string DocComputers::solver_time = R"mydelimiter(
+const std::string DocTimeSeries::solver_time = R"mydelimiter(
     Total time spent only in solving the powerflows 
     (excluding pre processing the data, post processing them, initializing everything etc.)
     
@@ -3343,26 +3565,26 @@ const std::string DocComputers::solver_time = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocComputers::amps_computation_time = R"mydelimiter(
+const std::string DocTimeSeries::amps_computation_time = R"mydelimiter(
     Time spent in computing the flows (in amps) after the voltages have been computed at each nodes
     
     It is given in seconds (``float``).
 
 )mydelimiter";
 
-const std::string DocComputers::preprocessing_time = R"mydelimiter(
+const std::string DocTimeSeries::preprocessing_time = R"mydelimiter(
     Time spent in pre processing the data (this involves, but is not limited to the computation of the Sbus)
     
     It is given in seconds (``float``).
 
 )mydelimiter";
 
-const std::string DocComputers::nb_solved = R"mydelimiter(
+const std::string DocTimeSeries::nb_solved = R"mydelimiter(
     Total number of powerflows solved.
 
 )mydelimiter";
 
-const std::string DocComputers::get_status = R"mydelimiter(
+const std::string DocTimeSeries::get_status = R"mydelimiter(
     Status of the solvers (1: success, 0: failure).
 
     .. note::
@@ -3370,7 +3592,7 @@ const std::string DocComputers::get_status = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocComputers::compute_Vs = R"mydelimiter(
+const std::string DocTimeSeries::compute_Vs = R"mydelimiter(
     Compute the voltages (at each bus of the grid model) for some time series of injections (productions, loads, storage units, etc.)
 
     .. note::
@@ -3416,7 +3638,7 @@ const std::string DocComputers::compute_Vs = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocComputers::compute_flows = R"mydelimiter(
+const std::string DocTimeSeries::compute_flows = R"mydelimiter(
     Retrieve the flows (in amps, at the origin of each powerlines / high voltage size of each transformers.
 
     .. warning::
@@ -3430,7 +3652,7 @@ const std::string DocComputers::compute_flows = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocComputers::compute_power_flows = R"mydelimiter(
+const std::string DocTimeSeries::compute_power_flows = R"mydelimiter(
     Retrieve the active flows (in MW, at the origin of each powerlines / high voltage size of each transformers.
 
     .. warning::
@@ -3444,7 +3666,7 @@ const std::string DocComputers::compute_power_flows = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocComputers::get_flows = R"mydelimiter(
+const std::string DocTimeSeries::get_flows = R"mydelimiter(
     Get the current flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
 
     Each rows correspond to a time step, each column to a powerline / transformer
@@ -3460,7 +3682,7 @@ const std::string DocComputers::get_flows = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocComputers::get_power_flows = R"mydelimiter(
+const std::string DocTimeSeries::get_power_flows = R"mydelimiter(
     Get the active flows (in MW) at the origin side / high voltage side of each transformers / powerlines.
 
     Each rows correspond to a time step, each column to a powerline / transformer
@@ -3476,7 +3698,7 @@ const std::string DocComputers::get_power_flows = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocComputers::get_voltages = R"mydelimiter(
+const std::string DocTimeSeries::get_voltages = R"mydelimiter(
     Get the complex voltage angles at each bus of the powergrid.
 
     Each rows correspond to a time step, each column to a bus.
@@ -3491,7 +3713,7 @@ const std::string DocComputers::get_voltages = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocComputers::get_sbuses = R"mydelimiter(
+const std::string DocTimeSeries::get_sbuses = R"mydelimiter(
     Get the complex power injected at each (solver id) bus of the powergrid. Results are given in pair unit.
     We do not recommend to use it as it uses the solver id and NOT the powergrid bus id (you can refer to 
     :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` and 
@@ -3509,12 +3731,12 @@ const std::string DocComputers::get_sbuses = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocComputers::clear = R"mydelimiter(
+const std::string DocTimeSeries::clear = R"mydelimiter(
     Clear the solver and to as if the class never performed any powerflow.
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::SecurityAnalysis = R"mydelimiter(
+const std::string DocContingencyAnalysis::ContingencyAnalysis = R"mydelimiter(
     Allows the computation of "security analysis", that consists in computing the flows that would result from the disconnection of one or multiple
     disconnections of some powerlines.
 
@@ -3554,21 +3776,21 @@ const std::string DocSecurityAnalysis::SecurityAnalysis = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::preprocessing_time = R"mydelimiter(
+const std::string DocContingencyAnalysis::preprocessing_time = R"mydelimiter(
     Time spent in pre processing the data (this involves, the checking whether the grid would be still connex after the contingency for example)
     
     It is given in seconds (``float``).
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::modif_Ybus_time = R"mydelimiter(
+const std::string DocContingencyAnalysis::modif_Ybus_time = R"mydelimiter(
     Time spent to modify the Ybus matrix before simulating each contingency.
     
     It is given in seconds (``float``).
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::add_all_n1 = R"mydelimiter(
+const std::string DocContingencyAnalysis::add_all_n1 = R"mydelimiter(
     This allows to add all the "n-1" in the contingency list to simulate.
 
     .. seealso:: :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_n1` to add only a single line
@@ -3579,7 +3801,7 @@ const std::string DocSecurityAnalysis::add_all_n1 = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::add_n1 = R"mydelimiter(
+const std::string DocContingencyAnalysis::add_n1 = R"mydelimiter(
     This allows to add a single  "n-1" in the contingency list to simulate.
 
     .. seealso:: :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_all_n1` to add all contingencies at the same time
@@ -3594,7 +3816,7 @@ const std::string DocSecurityAnalysis::add_n1 = R"mydelimiter(
         
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::add_nk = R"mydelimiter(
+const std::string DocContingencyAnalysis::add_nk = R"mydelimiter(
     This allows to add a single  "n-k" in the contingency list to simulate (it will only add at most one contingency)
 
     .. warning::
@@ -3608,7 +3830,7 @@ const std::string DocSecurityAnalysis::add_nk = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::add_multiple_n1 = R"mydelimiter(
+const std::string DocContingencyAnalysis::add_multiple_n1 = R"mydelimiter(
     This allows to add a multiple "n-1" in the contingency list to simulate (it will add as many contingency as the size of the list)
     and is equivalent to call multiple times :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_n1`
 
@@ -3626,12 +3848,12 @@ const std::string DocSecurityAnalysis::add_multiple_n1 = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::clear = R"mydelimiter(
+const std::string DocContingencyAnalysis::clear = R"mydelimiter(
     Clear the list of all contingencies. After a call to this method, you will need to re add some contingencies with
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::remove_n1 = R"mydelimiter(
+const std::string DocContingencyAnalysis::remove_n1 = R"mydelimiter(
     Remove a single "n-1" contingency from the contingency list to simulate.
 
     Parameters
@@ -3646,7 +3868,7 @@ const std::string DocSecurityAnalysis::remove_n1 = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::remove_nk = R"mydelimiter(
+const std::string DocContingencyAnalysis::remove_nk = R"mydelimiter(
     Remove a single "n-k" contingency from the contingency list to simulate. This removes at much one single contingency
 
     Parameters
@@ -3661,7 +3883,7 @@ const std::string DocSecurityAnalysis::remove_nk = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::remove_multiple_n1 = R"mydelimiter(
+const std::string DocContingencyAnalysis::remove_multiple_n1 = R"mydelimiter(
     Remove multiple "n-1" contingency from the contingency list to simulate. This can remove up to `len(vect_n1)` single contingencies
     from the contingency list.
 
@@ -3677,7 +3899,7 @@ const std::string DocSecurityAnalysis::remove_multiple_n1 = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::my_defaults_vect = R"mydelimiter(
+const std::string DocContingencyAnalysis::my_defaults_vect = R"mydelimiter(
     Allows to inspect the contingency list that will be simulated.
 
     Returns
@@ -3688,7 +3910,7 @@ const std::string DocSecurityAnalysis::my_defaults_vect = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::compute = R"mydelimiter(
+const std::string DocContingencyAnalysis::compute = R"mydelimiter(
     Compute the voltages (at each bus of the grid model) for some time series of injections (productions, loads, storage units, etc.)
 
     .. note::
@@ -3712,7 +3934,7 @@ const std::string DocSecurityAnalysis::compute = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::compute_flows = R"mydelimiter(
+const std::string DocContingencyAnalysis::compute_flows = R"mydelimiter(
     Compute the current flows (in amps, at the origin of each powerlines / high voltage size of each transformers.
 
     .. warning::
@@ -3726,7 +3948,7 @@ const std::string DocSecurityAnalysis::compute_flows = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::compute_power_flows = R"mydelimiter(
+const std::string DocContingencyAnalysis::compute_power_flows = R"mydelimiter(
     Compute the current flows (in MW, at the origin of each powerlines / high voltage size of each transformers.
 
     .. warning::
@@ -3740,7 +3962,7 @@ const std::string DocSecurityAnalysis::compute_power_flows = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::get_flows = R"mydelimiter(
+const std::string DocContingencyAnalysis::get_flows = R"mydelimiter(
     Get the flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
 
     Each rows correspond to a contingency, each column to a powerline / transformer
@@ -3761,7 +3983,7 @@ const std::string DocSecurityAnalysis::get_flows = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::get_voltages = R"mydelimiter(
+const std::string DocContingencyAnalysis::get_voltages = R"mydelimiter(
     Get the complex voltage angles at each bus of the powergrid.
 
     Each rows correspond to a contingency, each column to a bus.
@@ -3781,7 +4003,7 @@ const std::string DocSecurityAnalysis::get_voltages = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSecurityAnalysis::get_power_flows = R"mydelimiter(
+const std::string DocContingencyAnalysis::get_power_flows = R"mydelimiter(
     Get the active flows (in MW) at the origin side / high voltage side of each transformers / powerlines.
 
     Each rows correspond to a contingency, each column to a powerline / transformer
