@@ -30,7 +30,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const GeneratorContainer & data)  {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &GeneratorContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
+        .def("get_bus_id", &GeneratorContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
     add_pickle(gen_cls, "GeneratorContainer");
     add_binary_serialization(gen_cls);
 
@@ -99,7 +99,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const SGenContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &SGenContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
+        .def("get_bus_id", &SGenContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
     add_pickle(sgen_cls, "SGenContainer");
     add_binary_serialization(sgen_cls);
 
@@ -129,7 +129,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const LoadContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &LoadContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
+        .def("get_bus_id", &LoadContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
     add_pickle(load_cls, "LoadContainer");
     add_binary_serialization(load_cls);
 
@@ -157,7 +157,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const StorageContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &StorageContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
+        .def("get_bus_id", &StorageContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
     add_pickle(storage_cls, "StorageContainer");
     add_binary_serialization(storage_cls);
 
@@ -183,7 +183,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const ShuntContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &ShuntContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
+        .def("get_bus_id", &ShuntContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
     add_pickle(shunt_cls, "ShuntContainer");
     add_binary_serialization(shunt_cls);
 
@@ -214,12 +214,12 @@ void bind_containers(py::module_& m) {
             Whether ignore the tap side is ignored when using the
             'shift' attribute (should be True for pandapower,
             where it is ignored and False otherwise).)mydelimiter")
-        .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_yac_eff_11", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_11(); }, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_yac_eff_12", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_12(); }, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_yac_eff_21", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_21(); }, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_yac_eff_22", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_22(); }, "TODO doc", py::keep_alive<0, 1>());
+        .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::keep_alive<0, 1>())
+        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::keep_alive<0, 1>())
+        .def("get_yac_eff_11", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_11(); }, DocIterator::get_yac_eff_11.c_str(), py::keep_alive<0, 1>())
+        .def("get_yac_eff_12", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_12(); }, DocIterator::get_yac_eff_12.c_str(), py::keep_alive<0, 1>())
+        .def("get_yac_eff_21", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_21(); }, DocIterator::get_yac_eff_21.c_str(), py::keep_alive<0, 1>())
+        .def("get_yac_eff_22", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_22(); }, DocIterator::get_yac_eff_22.c_str(), py::keep_alive<0, 1>());
     add_pickle(trafo_cls, "TrafoContainer");
     add_binary_serialization(trafo_cls);
 
@@ -255,18 +255,18 @@ void bind_containers(py::module_& m) {
         .def_readonly("limit_a2_ka", &TrafoInfo::limit_a2_ka, "Current limit, lv side, in kA (NaN if not set, see `LSGrid.set_trafo_current_limit_side2`).")
         .def_readonly("res_theta1_deg", &TrafoInfo::res_theta1_deg, DocIterator::res_theta_hv_deg.c_str())
         .def_readonly("res_theta2_deg", &TrafoInfo::res_theta2_deg, DocIterator::res_theta_lv_deg.c_str())
-        .def_readonly("yac_11", &TrafoInfo::yac_11, "TODO doc")
-        .def_readonly("yac_12", &TrafoInfo::yac_12, "TODO doc")
-        .def_readonly("yac_21", &TrafoInfo::yac_21, "TODO doc")
-        .def_readonly("yac_22", &TrafoInfo::yac_22, "TODO doc")
-        .def_readonly("yac_eff_11", &TrafoInfo::yac_eff_11, "TODO doc")
-        .def_readonly("yac_eff_12", &TrafoInfo::yac_eff_12, "TODO doc")
-        .def_readonly("yac_eff_21", &TrafoInfo::yac_eff_21, "TODO doc")
-        .def_readonly("yac_eff_22", &TrafoInfo::yac_eff_22, "TODO doc")
-        .def_readonly("ydc_11", &TrafoInfo::ydc_11, "TODO doc")
-        .def_readonly("ydc_12", &TrafoInfo::ydc_12, "TODO doc")
-        .def_readonly("ydc_21", &TrafoInfo::ydc_21, "TODO doc")
-        .def_readonly("ydc_22", &TrafoInfo::ydc_22, "TODO doc")
+        .def_readonly("yac_11", &TrafoInfo::yac_11, DocIterator::yac_11.c_str())
+        .def_readonly("yac_12", &TrafoInfo::yac_12, DocIterator::yac_12.c_str())
+        .def_readonly("yac_21", &TrafoInfo::yac_21, DocIterator::yac_21.c_str())
+        .def_readonly("yac_22", &TrafoInfo::yac_22, DocIterator::yac_22.c_str())
+        .def_readonly("yac_eff_11", &TrafoInfo::yac_eff_11, DocIterator::yac_eff_11.c_str())
+        .def_readonly("yac_eff_12", &TrafoInfo::yac_eff_12, DocIterator::yac_eff_12.c_str())
+        .def_readonly("yac_eff_21", &TrafoInfo::yac_eff_21, DocIterator::yac_eff_21.c_str())
+        .def_readonly("yac_eff_22", &TrafoInfo::yac_eff_22, DocIterator::yac_eff_22.c_str())
+        .def_readonly("ydc_11", &TrafoInfo::ydc_11, DocIterator::ydc_11.c_str())
+        .def_readonly("ydc_12", &TrafoInfo::ydc_12, DocIterator::ydc_12.c_str())
+        .def_readonly("ydc_21", &TrafoInfo::ydc_21, DocIterator::ydc_21.c_str())
+        .def_readonly("ydc_22", &TrafoInfo::ydc_22, DocIterator::ydc_22.c_str())
         .def_readonly("voltage_level1_id", &TrafoInfo::sub_1_id, DocIterator::sub_id.c_str())
         .def_readonly("voltage_level2_id", &TrafoInfo::sub_2_id, DocIterator::sub_id.c_str());
 
@@ -276,12 +276,12 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const LineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_yac_eff_11", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_11(); }, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_yac_eff_12", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_12(); }, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_yac_eff_21", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_21(); }, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_yac_eff_22", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_22(); }, "TODO doc", py::keep_alive<0, 1>());
+        .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::keep_alive<0, 1>())
+        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::keep_alive<0, 1>())
+        .def("get_yac_eff_11", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_11(); }, DocIterator::get_yac_eff_11.c_str(), py::keep_alive<0, 1>())
+        .def("get_yac_eff_12", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_12(); }, DocIterator::get_yac_eff_12.c_str(), py::keep_alive<0, 1>())
+        .def("get_yac_eff_21", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_21(); }, DocIterator::get_yac_eff_21.c_str(), py::keep_alive<0, 1>())
+        .def("get_yac_eff_22", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_22(); }, DocIterator::get_yac_eff_22.c_str(), py::keep_alive<0, 1>());
     add_pickle(line_cls, "LineContainer");
     add_binary_serialization(line_cls);
 
@@ -314,18 +314,18 @@ void bind_containers(py::module_& m) {
         .def_readonly("limit_a2_ka", &LineInfo::limit_a2_ka, "Current limit, extremity side, in kA (NaN if not set, see `LSGrid.set_line_current_limit_side2`).")
         .def_readonly("res_theta1_deg", &LineInfo::res_theta1_deg, DocIterator::res_theta_1_deg.c_str())
         .def_readonly("res_theta2_deg", &LineInfo::res_theta2_deg, DocIterator::res_theta_2_deg.c_str())
-        .def_readonly("yac_11", &LineInfo::yac_11, "TODO doc")
-        .def_readonly("yac_12", &LineInfo::yac_12, "TODO doc")
-        .def_readonly("yac_21", &LineInfo::yac_21, "TODO doc")
-        .def_readonly("yac_22", &LineInfo::yac_22, "TODO doc")
-        .def_readonly("yac_eff_11", &LineInfo::yac_eff_11, "TODO doc")
-        .def_readonly("yac_eff_12", &LineInfo::yac_eff_12, "TODO doc")
-        .def_readonly("yac_eff_21", &LineInfo::yac_eff_21, "TODO doc")
-        .def_readonly("yac_eff_22", &LineInfo::yac_eff_22, "TODO doc")
-        .def_readonly("ydc_11", &LineInfo::ydc_11, "TODO doc")
-        .def_readonly("ydc_12", &LineInfo::ydc_12, "TODO doc")
-        .def_readonly("ydc_21", &LineInfo::ydc_21, "TODO doc")
-        .def_readonly("ydc_22", &LineInfo::ydc_22, "TODO doc")
+        .def_readonly("yac_11", &LineInfo::yac_11, DocIterator::yac_11.c_str())
+        .def_readonly("yac_12", &LineInfo::yac_12, DocIterator::yac_12.c_str())
+        .def_readonly("yac_21", &LineInfo::yac_21, DocIterator::yac_21.c_str())
+        .def_readonly("yac_22", &LineInfo::yac_22, DocIterator::yac_22.c_str())
+        .def_readonly("yac_eff_11", &LineInfo::yac_eff_11, DocIterator::yac_eff_11.c_str())
+        .def_readonly("yac_eff_12", &LineInfo::yac_eff_12, DocIterator::yac_eff_12.c_str())
+        .def_readonly("yac_eff_21", &LineInfo::yac_eff_21, DocIterator::yac_eff_21.c_str())
+        .def_readonly("yac_eff_22", &LineInfo::yac_eff_22, DocIterator::yac_eff_22.c_str())
+        .def_readonly("ydc_11", &LineInfo::ydc_11, DocIterator::ydc_11.c_str())
+        .def_readonly("ydc_12", &LineInfo::ydc_12, DocIterator::ydc_12.c_str())
+        .def_readonly("ydc_21", &LineInfo::ydc_21, DocIterator::ydc_21.c_str())
+        .def_readonly("ydc_22", &LineInfo::ydc_22, DocIterator::ydc_22.c_str())
         .def_readonly("voltage_level1_id", &LineInfo::sub_1_id, DocIterator::sub_id.c_str())
         .def_readonly("voltage_level2_id", &LineInfo::sub_2_id, DocIterator::sub_id.c_str());
 
@@ -364,8 +364,8 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const HvdcLineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id_side_1", &HvdcLineContainer::get_bus_id_side_1_numpy)
-        .def("get_bus_id_side_2", &HvdcLineContainer::get_bus_id_side_2_numpy);
+        .def("get_bus_id_side_1", &HvdcLineContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str())
+        .def("get_bus_id_side_2", &HvdcLineContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str());
     add_pickle(dcline_cls, "HvdcLineContainer");
     add_binary_serialization(dcline_cls);
     // exposed (also) so TestSerializedEnumValues can pin the integer values,
@@ -416,7 +416,7 @@ void bind_containers(py::module_& m) {
         .def_readonly("voltage_level1_id", &HvdcLineInfo::sub_1_id, DocIterator::sub_id.c_str())
         .def_readonly("voltage_level2_id", &HvdcLineInfo::sub_2_id, DocIterator::sub_id.c_str());
 
-    auto sub_cls = py::class_<SubstationContainer>(m, "SubstationContainer", "TODO")
+    auto sub_cls = py::class_<SubstationContainer>(m, "SubstationContainer", DocIterator::SubstationContainer.c_str())
         .def("__len__", [](const SubstationContainer & data) { return data.nb(); })
         .def("__getitem__", [](const SubstationContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const SubstationContainer & data) {
@@ -425,7 +425,7 @@ void bind_containers(py::module_& m) {
     add_pickle(sub_cls, "SubstationContainer");
     add_binary_serialization(sub_cls);
 
-    py::class_<SubstationInfo>(m, "SubstationInfo", "TODO")
+    py::class_<SubstationInfo>(m, "SubstationInfo", DocIterator::SubstationInfo.c_str())
         .def_readonly("id", &SubstationInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &SubstationInfo::name, DocIterator::name.c_str())
         .def_readonly("nb_max_busbars", &SubstationInfo::nb_max_busbars, DocIterator::nb_max_busbars.c_str())

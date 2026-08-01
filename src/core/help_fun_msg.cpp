@@ -821,6 +821,13 @@ const std::string DocIterator::bus_id = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::get_bus_id = R"mydelimiter(
+    ``bus_id`` (see the field of the same name on this container's element type, eg
+    :class:`lightsim2grid.elements.GenInfo`) for every element of this container, as a single
+    array: element ``i`` of the result is that element's bus id, ``-1`` if disconnected.
+
+)mydelimiter";
+
 const std::string DocIterator::target_p_mw = R"mydelimiter(
     Get the active production (or consumption) setpoint in MW for element of the grid supporting this feature.
 
@@ -943,6 +950,121 @@ const std::string DocIterator::h_pu = R"mydelimiter(
     independent values, not half of a single shared `h` each (see the note in the line model below).
 
 )mydelimiter" + DocIterator::line_model;
+
+const std::string DocIterator::yac_11 = R"mydelimiter(
+    One entry of this branch's raw two-port AC admittance matrix, computed as if both sides were
+    connected (see :attr:`yac_eff_11` for the version that accounts for the actual connection
+    status).
+
+    With ``ys = 1 / (r_pu + 1j * x_pu)``, for a plain powerline (``ratio == 1``,
+    ``shift_rad == 0``): ``yac_11 = ys + h1``, ``yac_22 = ys + h2``, ``yac_12 = yac_21 = -ys`` --
+    see the note in :attr:`r_pu`'s line model. For a transformer, the tap
+    :attr:`~lightsim2grid.elements.TrafoInfo.ratio` and
+    :attr:`~lightsim2grid.elements.TrafoInfo.shift_rad` additionally fold into all four entries.
+
+)mydelimiter" + DocIterator::line_model;
+
+const std::string DocIterator::yac_12 = DocIterator::yac_11;
+const std::string DocIterator::yac_21 = DocIterator::yac_11;
+const std::string DocIterator::yac_22 = DocIterator::yac_11;
+
+const std::string DocIterator::yac_eff_11 = R"mydelimiter(
+    One entry of this branch's *effective* two-port AC admittance matrix -- :attr:`yac_11` and
+    friends, corrected for the actual connection status. This is exactly what is stamped into the
+    grid's Ybus.
+
+    - Both sides connected: equal to :attr:`yac_11` (etc) unchanged.
+    - Exactly one side connected (a "half-open" branch): Kron-reduced to a single self-admittance
+      at the connected end (the open end is eliminated); the three other entries are ``0``.
+    - Neither side connected (or the branch itself disconnected): all four entries are ``0``.
+
+)mydelimiter" + DocIterator::line_model;
+
+const std::string DocIterator::yac_eff_12 = DocIterator::yac_eff_11;
+const std::string DocIterator::yac_eff_21 = DocIterator::yac_eff_11;
+const std::string DocIterator::yac_eff_22 = DocIterator::yac_eff_11;
+
+const std::string DocIterator::get_yac_eff_11 = R"mydelimiter(
+    ``yac_eff_11`` (etc, see :class:`lightsim2grid.elements.LineInfo` /
+    :class:`lightsim2grid.elements.TrafoInfo`) for every element of this container, as a single
+    array.
+
+)mydelimiter" + DocIterator::line_model;
+
+const std::string DocIterator::get_yac_eff_12 = DocIterator::get_yac_eff_11;
+const std::string DocIterator::get_yac_eff_21 = DocIterator::get_yac_eff_11;
+const std::string DocIterator::get_yac_eff_22 = DocIterator::get_yac_eff_11;
+
+const std::string DocIterator::ydc_11 = R"mydelimiter(
+    One entry of this branch's two-port DC admittance matrix -- the DC powerflow linearization
+    only keeps the series susceptance (``1 / x_pu``), so ``ydc_11 = ydc_22 = 1 / x_pu`` and
+    ``ydc_12 = ydc_21 = -1 / x_pu`` for a plain powerline (a transformer's tap
+    :attr:`~lightsim2grid.elements.TrafoInfo.ratio` additionally divides it in). Real numbers,
+    unlike the AC :attr:`yac_11` family.
+
+    .. note::
+        Unlike :attr:`yac_eff_11`, there is no status-aware "effective" counterpart exposed for
+        the DC admittance: a disconnected side is instead handled directly by the DC solver /
+        Ybus construction.
+
+)mydelimiter" + DocIterator::line_model;
+
+const std::string DocIterator::ydc_12 = DocIterator::ydc_11;
+const std::string DocIterator::ydc_21 = DocIterator::ydc_11;
+const std::string DocIterator::ydc_22 = DocIterator::ydc_11;
+
+const std::string DocIterator::SubstationContainer = R"mydelimiter(
+    This class allows to iterate through the substations of the :class:`lightsim2grid.network.LSGrid`
+    easily, as if they were in a python list.
+
+    A substation is not itself an electrical element: it is the group of candidate buses
+    (busbars) that the elements connected "at" a given site can be assigned to (see
+    :ref:`bus-labelling` and :attr:`lightsim2grid.elements.SubstationInfo.nb_max_busbars`).
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+
+        grid_model = env.backend._grid
+
+        for sub in grid_model.get_substations():
+            # sub is a `SubstationInfo`
+            sub.vn_kv
+
+)mydelimiter";
+
+const std::string DocIterator::SubstationInfo = R"mydelimiter(
+    This class represents what you get from retrieving some elements from
+    :class:`lightsim2grid.elements.SubstationContainer`.
+
+    It allows to read information from each substation of the powergrid.
+
+    .. warning::
+        Data can only be accessed from this element. You cannot modify (yet) the grid using this class.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+
+        grid_model = env.backend._grid
+
+        first_substation = grid_model.get_substations()[0]  # first substation is a `SubstationInfo`
+
+)mydelimiter";
 
 const std::string DocIterator::nb_max_busbars = R"mydelimiter(
     Maximum number of busbars (independent buses) allowed at this substation (``int``, > 0).
@@ -1629,6 +1751,18 @@ const std::string DocIterator::bus_2_id = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::get_bus_id_side_1 = R"mydelimiter(
+    ``bus_1_id`` for every element of this container, as a single array: element ``i`` of the
+    result is that element's side-1 bus id, ``-1`` if disconnected on that side.
+
+)mydelimiter";
+
+const std::string DocIterator::get_bus_id_side_2 = R"mydelimiter(
+    ``bus_2_id`` for every element of this container, as a single array: element ``i`` of the
+    result is that element's side-2 bus id, ``-1`` if disconnected on that side.
+
+)mydelimiter";
+
 const std::string DocIterator::res_p_1_mw = R"mydelimiter(
     Get the active power in MW at side 1 of the line. If it is positive it means power is absorbed by the line.
 
@@ -2084,10 +2218,10 @@ const std::string DocLSGrid::LSGrid = R"mydelimiter(
     .. code-block:: python
 
         import lightsim2grid
-        from lightsim2grid.gridmodel import init
+        from lightsim2grid.network import init_from_pandapower
         pp_net = ...  # any pandapower network for example pp_net = pn.case118() 
 
-        grid_model = init(pp_net)
+        grid_model = init_from_pandapower(pp_net)
 
     It's better to do:
 
@@ -2207,6 +2341,30 @@ const std::string DocLSGrid::get_dc_algo = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::get_ac_algo_controler = R"mydelimiter(
+    Return the AC solver family's change-tracking flags, as a
+    :class:`lightsim2grid.algorithm.AlgoControl` instance.
+
+    A grid modification (eg. disconnecting a line, changing a setpoint) sets one or more of these
+    flags; the AC solver reads and resets them the next time it runs an AC powerflow, so it only
+    recomputes what actually changed since the last one. Mostly useful for debugging /
+    introspecting exactly what a given modification invalidated.
+
+    .. seealso::
+        :func:`get_dc_algo_controler` for the independent set of flags tracked for the DC solver
+        family.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_dc_algo_controler = R"mydelimiter(
+    Return the DC solver family's change-tracking flags, as a
+    :class:`lightsim2grid.algorithm.AlgoControl` instance.
+
+    Same as :func:`get_ac_algo_controler`, but for the DC solver family: the two are tracked
+    independently since a DC powerflow does not consume (and reset) the AC flags, and vice versa.
+
+)mydelimiter";
+
 const std::string DocLSGrid::get_lines = R"mydelimiter(
     This function allows to retrieve the powerlines (as a 
     :class:`lightsim2grid.elements.LineContainer` object,
@@ -2218,9 +2376,9 @@ const std::string DocLSGrid::get_lines = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.gridmodel import init
+        from lightsim2grid.network import init_from_pandapower
         pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+        lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
 
         # usage example: print some information about the powerlines
         print([el.x_pu for el in lightsim_grid_model.get_lines()]) # to print the "x" for each powerlines
@@ -2237,9 +2395,9 @@ const std::string DocLSGrid::get_trafos = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.gridmodel import init
+        from lightsim2grid.network import init_from_pandapower
         pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+        lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
 
         # usage example: print some information about the trafos
         print([el.x_pu for el in lightsim_grid_model.get_trafos()]) # to print the "x" for each transformer
@@ -2256,9 +2414,9 @@ const std::string DocLSGrid::get_generators = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.gridmodel import init
+        from lightsim2grid.network import init_from_pandapower
         pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+        lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
 
         # usage example: print some information about the generators
         print([el.target_p_mw for el in lightsim_grid_model.get_generators()]) # to print the active production setpoint for each generators
@@ -2275,9 +2433,9 @@ const std::string DocLSGrid::get_static_generators = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.gridmodel import init
+        from lightsim2grid.network import init_from_pandapower
         pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+        lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
 
         # usage example: print some information about the static generators
         print([el.target_p_mw for el in lightsim_grid_model.get_static_generators()]) # to print the active production setpoint for each static generator
@@ -2294,9 +2452,9 @@ const std::string DocLSGrid::get_shunts = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.gridmodel import init
+        from lightsim2grid.network import init_from_pandapower
         pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+        lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
 
         # usage example: print some information about the shunts
         print([el.target_q_mvar for el in lightsim_grid_model.get_shunts()]) # to print the reactive consumption for each shunts
@@ -2317,9 +2475,9 @@ const std::string DocLSGrid::get_storages = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.gridmodel import init
+        from lightsim2grid.network import init_from_pandapower
         pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+        lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
 
         # print the target consumption of each storage units
         print([el.target_p_mw for el in lightsim_grid_model.get_storages()]) # to print the active consumption for each storage unit
@@ -2335,9 +2493,9 @@ const std::string DocLSGrid::get_loads = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.gridmodel import init
+        from lightsim2grid.network import init_from_pandapower
         pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+        lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
 
         # print the target consumption of each loads
         print([el.target_p_mw for el in lightsim_grid_model.get_loads()]) # to print the active consumption for each load
@@ -2355,12 +2513,32 @@ const std::string DocLSGrid::get_dclines = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.gridmodel import init
+        from lightsim2grid.network import init_from_pandapower
         pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+        lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
 
         # usage example: print some information about the powerlines
         print([el.x_pu for el in lightsim_grid_model.get_dclines()]) # to print the "x" for each powerlines
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_substations = R"mydelimiter(
+    This function allows to retrieve the substations (as a
+    :class:`lightsim2grid.elements.SubstationContainer` object, see :ref:`elements-modeled` for
+    more information). Also available as ``get_voltage_levels`` (its powsybl / IIDM name).
+
+    Examples
+    ---------
+
+    .. code-block:: python
+
+        # init the grid model
+        from lightsim2grid.network import init_from_pandapower
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init_from_pandapower(pp_net)  # some warnings might be issued as well as some warnings
+
+        # usage example: print some information about the substations
+        print([el.vn_kv for el in lightsim_grid_model.get_substations()]) # to print the nominal voltage of each substation
 
 )mydelimiter";
 
@@ -4021,6 +4199,215 @@ const std::string DocContingencyAnalysis::get_power_flows = R"mydelimiter(
     -------
     As: ``numpy.ndarray`` (matrix)
         The flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
+
+)mydelimiter";
+
+const std::string DocMisc::PandaPowerConverter = R"mydelimiter(
+    Converts electrical parameters given in the "pandapower" format (percentages, kA, kW, ...)
+    into the per-unit ``r`` / ``x`` / ``h`` (and ``r`` / ``x`` / ``h1`` / ``h2``) representation
+    lightsim2grid uses internally -- see :attr:`lightsim2grid.elements.LineInfo.r_pu` and friends
+    for that representation.
+
+    This is what :func:`lightsim2grid.network.init_from_pandapower` uses under the hood to build
+    the powerlines and transformers of the grid it returns; it is not just illustrative, and is
+    not needed if you build (or read) a grid any other way.
+
+    Before calling any of the conversion methods below, :func:`set_sn_mva` and :func:`set_f_hz`
+    must both have been called with the grid's base power (MVA) and frequency (Hz): every
+    conversion method raises if either is unset, non-finite or not strictly positive.
+
+    .. note::
+        Every conversion method reads all of its array arguments together, element by element:
+        they must all have the same length (one entry per line / transformer), or the call
+        raises.
+
+)mydelimiter";
+
+const std::string DocMisc::set_f_hz = R"mydelimiter(
+    Set the grid's frequency (Hz, eg ``50.`` or ``60.``), used by the shunt-admittance (``h``)
+    computation of :func:`get_line_param` / :func:`get_line_param_legacy`.
+
+    Must be called (with a finite, strictly positive value) before any conversion method.
+
+)mydelimiter";
+
+const std::string DocMisc::set_sn_mva = R"mydelimiter(
+    Set the grid's base power (MVA), used to convert every electrical parameter to the per-unit
+    system.
+
+    Must be called (with a finite, strictly positive value) before any conversion method.
+
+)mydelimiter";
+
+const std::string DocMisc::get_line_param_legacy = R"mydelimiter(
+    Convert a powerline's electrical parameters from the pandapower format to lightsim2grid's
+    per-unit ``r`` / ``x`` / ``h`` -- the legacy variant, for pandapower versions where a line's
+    shunt admittance is not split between its two sides (see
+    :attr:`lightsim2grid.elements.LineInfo.h_pu` for the split ``h1`` / ``h2`` representation
+    used internally): the single ``h`` returned here is used, unsplit, for both sides.
+
+    Every argument is a per-line array (one entry per powerline), read together element by
+    element: ``branch_r`` / ``branch_x`` (resistance / reactance, Ohm), ``branch_g`` / ``branch_c``
+    (shunt conductance in micro-Siemens per km-equivalent / capacitance in nF-equivalent, already
+    aggregated over the line's length), ``branch_from_kv`` / ``branch_to_kv`` (nominal voltage of
+    the two end buses, kV).
+
+    Returns a ``(r_pu, x_pu, h_pu)`` tuple of per-line arrays.
+
+    .. seealso::
+        :func:`get_line_param` for the non-legacy variant, which returns the shunt admittance
+        already split per side.
+
+)mydelimiter";
+
+const std::string DocMisc::get_line_param = R"mydelimiter(
+    Convert a powerline's electrical parameters from the pandapower format to lightsim2grid's
+    per-unit ``r`` / ``x`` / ``h1`` / ``h2`` (see
+    :attr:`lightsim2grid.elements.LineInfo.h_pu`): the non-legacy variant, splitting the shunt
+    admittance between the two sides.
+
+    Takes the same arguments as :func:`get_line_param_legacy`. Returns a
+    ``(r_pu, x_pu, h1_pu, h2_pu)`` tuple of per-line arrays.
+
+    .. warning::
+        As of this version, the split is always a plain 50 / 50 share of the total shunt
+        admittance (``h1_pu == h2_pu``, each half the legacy, unsplit ``h``): this converter does
+        not yet read an asymmetric per-side split from pandapower. Grids with a genuinely
+        asymmetric line (eg imported from pypowsybl / IIDM instead) are not affected, since they
+        do not go through this converter.
+
+)mydelimiter";
+
+const std::string DocMisc::get_trafo_param_pp3 = R"mydelimiter(
+    Convert a transformer's electrical parameters from the pandapower format to lightsim2grid's
+    per-unit ``r`` / ``x`` / ``h``, for the "advanced grid model" transformer parametrization
+    introduced in pandapower 3 (``pp_net.trafo`` when the grid was built with pandapower >= 3 and
+    originates from a pandapower-3-native file).
+
+    ``tap_step_pct`` / ``tap_pos`` / ``tap_angles`` (tap angle in **radian**) / ``is_tap_hv_side``
+    describe the tap changer; ``vn_hv`` / ``vn_lv`` are the nominal voltages of the hv / lv buses
+    (kV); ``trafo_vk_percent`` / ``trafo_vkr_percent`` / ``trafo_sn_trafo_mva`` /
+    ``trafo_pfe_kw`` / ``trafo_i0_pct`` are the transformer's short-circuit / no-load test values,
+    as in pandapower. ``trafo_model_is_t`` selects the equivalent-circuit model (``True`` for the
+    "T" model, ``False`` for "pi"). Every argument other than ``trafo_model_is_t`` is a
+    per-transformer array, read together element by element.
+
+    Returns a ``(r_pu, x_pu, h_pu)`` tuple of per-transformer arrays (a single, unsplit ``h`` --
+    see :func:`get_line_param_legacy` for the equivalent caveat on powerlines).
+
+    .. seealso::
+        :func:`get_trafo_param_pp2` for the pre-pandapower-3 transformer parametrization.
+
+)mydelimiter";
+
+const std::string DocMisc::get_trafo_param_pp2 = R"mydelimiter(
+    Convert a transformer's electrical parameters from the pandapower format to lightsim2grid's
+    per-unit ``r`` / ``x`` / ``h``, for the transformer parametrization used before pandapower 3
+    (always the "T" equivalent-circuit model; there is no ``trafo_model_is_t`` argument).
+
+    Takes the same arguments as :func:`get_trafo_param_pp3`, minus ``trafo_model_is_t``. Returns
+    the same ``(r_pu, x_pu, h_pu)`` tuple of per-transformer arrays.
+
+)mydelimiter";
+
+const std::string DocMisc::AlgoControl = R"mydelimiter(
+    Change-tracking flags for one solver family (AC or DC), read via
+    :func:`lightsim2grid.network.LSGrid.get_ac_algo_controler` /
+    :func:`lightsim2grid.network.LSGrid.get_dc_algo_controler`.
+
+    A grid modification (eg. disconnecting a line, changing a setpoint) sets one or more of these
+    flags; the corresponding solver family reads and resets them the next time it runs a
+    powerflow, so it only recomputes / re-stamps what actually changed since its last run (a
+    plain change in dimension does not, by itself, imply the sparsity pattern changed, for
+    instance). Each flag answers one narrow question about what kind of change happened -- none
+    of them say *what* changed, only that *something in that category* did.
+
+    .. warning::
+        This is read-only introspection: there is no way to set these flags from Python, and
+        nothing in lightsim2grid resets them for you except the solver itself, on its next run of
+        the family this instance tracks.
+
+)mydelimiter";
+
+const std::string DocMisc::has_dimension_changed = R"mydelimiter(
+    Whether the number of buses (so the size of Ybus / Sbus) changed since the last powerflow of
+    this solver family -- eg after a topology change that changes how many buses are in use.
+
+)mydelimiter";
+
+const std::string DocMisc::has_pv_changed = R"mydelimiter(
+    Whether the set of PV buses (voltage-regulated, see
+    :attr:`lightsim2grid.elements.GenInfo.voltage_regulator_on`) changed since the last powerflow
+    of this solver family.
+
+)mydelimiter";
+
+const std::string DocMisc::has_pq_changed = R"mydelimiter(
+    Whether the set of PQ buses (fixed reactive setpoint) changed since the last powerflow of
+    this solver family -- the complement of :func:`has_pv_changed`.
+
+)mydelimiter";
+
+const std::string DocMisc::has_slack_participate_changed = R"mydelimiter(
+    Whether the set of generators participating in the distributed slack (see
+    :attr:`lightsim2grid.elements.GenInfo.is_slack`) changed since the last powerflow of this
+    solver family.
+
+)mydelimiter";
+
+const std::string DocMisc::need_reset_solver = R"mydelimiter(
+    Whether the solver needs a full reset (discarding any cached factorization / matrix) before
+    its next powerflow -- set for changes too disruptive to recompute incrementally.
+
+)mydelimiter";
+
+const std::string DocMisc::need_recompute_sbus = R"mydelimiter(
+    Whether the bus injection vector (Sbus) needs recomputing before the next powerflow of this
+    solver family -- eg a setpoint changed, but not necessarily the grid's topology.
+
+)mydelimiter";
+
+const std::string DocMisc::need_recompute_ybus = R"mydelimiter(
+    Whether the admittance matrix (Ybus) needs recomputing before the next powerflow of this
+    solver family -- some of its coefficients changed, though not necessarily its sparsity
+    pattern (see :func:`ybus_change_sparsity_pattern`).
+
+)mydelimiter";
+
+const std::string DocMisc::ybus_change_sparsity_pattern = R"mydelimiter(
+    Whether Ybus's sparsity pattern changed (which non-zero entries it has, not just their
+    values) since the last powerflow of this solver family -- eg after a topology change. This is
+    a stronger condition than :func:`need_recompute_ybus`: a changed sparsity pattern requires the
+    linear solver to redo its symbolic factorization, not just its numeric one.
+
+)mydelimiter";
+
+const std::string DocMisc::has_slack_weight_changed = R"mydelimiter(
+    Whether the distributed-slack weight (see
+    :attr:`lightsim2grid.elements.GenInfo.slack_weight`) of at least one participating generator
+    changed since the last powerflow of this solver family.
+
+)mydelimiter";
+
+const std::string DocMisc::has_v_changed = R"mydelimiter(
+    Whether at least one generator's voltage setpoint (see
+    :attr:`lightsim2grid.elements.GenInfo.target_vm_pu`) changed since the last powerflow of this
+    solver family.
+
+)mydelimiter";
+
+const std::string DocMisc::has_ybus_some_coeffs_zero = R"mydelimiter(
+    Whether at least one coefficient of Ybus may have been set to exactly ``0.`` (and Ybus
+    re-compressed to drop it) since the last powerflow of this solver family. Some solvers
+    (notably the Newton-Raphson family) may need to recompute some cached state when this
+    happens, even though it does not by itself change Ybus's sparsity pattern.
+
+)mydelimiter";
+
+const std::string DocMisc::has_one_el_changed_bus = R"mydelimiter(
+    Whether at least one element (a generator, a load, one side of a line, ...) changed which bus
+    it is connected to -- including being reconnected or disconnected -- since the last powerflow
+    of this solver family.
 
 )mydelimiter";
 
