@@ -179,6 +179,18 @@ struct LS2G_API DocIterator
     static const std::string SGenContainer;
     static const std::string SGenInfo;
 
+    // specific to SVC (Static Var Compensators)
+    static const std::string SvcContainer;
+    static const std::string SvcInfo;
+    static const std::string RegulationMode;
+    static const std::string regulation_mode;
+    static const std::string svc_target_vm_pu;
+    static const std::string svc_target_q_mvar;
+    static const std::string slope_pu;
+    static const std::string b_min;
+    static const std::string b_max;
+    static const std::string svc_regulated_bus_id;
+
     // specific to loads (and storage units)
     static const std::string LoadContainer;
     static const std::string LoadInfo;

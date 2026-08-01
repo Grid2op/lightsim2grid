@@ -1687,6 +1687,183 @@ const std::string DocIterator::SGenInfo = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::SvcContainer = R"mydelimiter(
+    This class allows to iterate through the Static Var Compensators (SVC) of the
+    :class:`lightsim2grid.network.LSGrid` easily, as if they were in a python list.
+
+    An SVC injects reactive power only (its active power is always ``0``). It follows the IIDM
+    model of powsybl, with three regulation modes (see :attr:`~lightsim2grid.elements.SvcInfo.regulation_mode`):
+
+    - ``VOLTAGE``: regulates the voltage of a bus (local or remote), optionally with a
+      voltage/reactive slope ("droop"). Stamps nothing directly in Sbus: it is never a PV bus,
+      and is always a controller of a ``VoltageControl`` group (the bordered formulation), even
+      for the local, non-sloped case.
+    - ``REACTIVE_POWER``: a fixed reactive injection (behaves like a non-regulating generator, or
+      a load): stamps Q (and P = 0) into Sbus directly.
+    - ``OFF``: behaves as if disconnected.
+
+    :attr:`~lightsim2grid.elements.SvcInfo.b_min` / :attr:`~lightsim2grid.elements.SvcInfo.b_max`
+    are stored for introspection only: they are never enforced by the powerflow (no outer loop,
+    no limit check), mirroring how a generator's ``min_q_mvar`` / ``max_q_mvar`` is handled.
+
+    Voltage regulation equations (``VOLTAGE`` mode)
+    ------------------------------------------------
+
+    A ``VOLTAGE``-mode SVC never becomes a PV bus. Instead it is solved as a "controller" of a
+    bordered Newton-Raphson block, exactly like a remote-regulating generator (see
+    :attr:`~lightsim2grid.elements.GenInfo.regulated_bus_id`): its reactive injection
+    :math:`Q_c` (generator sign convention, per unit) becomes an extra unknown of the powerflow,
+    solved for jointly with the bus voltages and angles.
+
+    All controllers (generators and/or SVCs) that regulate the same bus form one "group". For a
+    group regulating bus ``reg`` at setpoint :math:`v_{set}`, with controllers :math:`c = 1..N`:
+
+    - voltage constraint (one equation for the whole group):
+
+      .. math::
+
+          V_m(reg) + \sum_{c=1}^{N} s_c \, Q_c = v_{set}
+
+      where :math:`s_c` is the slope (:attr:`~lightsim2grid.elements.SvcInfo.slope_pu`) of
+      controller :math:`c`, ``0`` for a generator or a non-sloped (``slope_pu = 0``) SVC. With a
+      single non-sloped controller in the group this reduces to the usual PV-like
+      :math:`V_m(reg) = v_{set}`, only enforced through this bordered :math:`Q_c` unknown rather
+      than by reclassifying the bus.
+    - reactive sharing (:math:`N-1` equations, only when the group has more than one controller):
+
+      .. math::
+
+          \frac{Q_1}{w_1} = \frac{Q_2}{w_2} = \dots = \frac{Q_N}{w_N}
+
+      i.e. controllers share the group's total reactive effort in proportion to their weight
+      :math:`w_c`, with :math:`w_c` = :attr:`~lightsim2grid.elements.SvcInfo.b_max` :math:`-`
+      :attr:`~lightsim2grid.elements.SvcInfo.b_min` for an SVC (``qmax - qmin`` for a generator).
+
+    :attr:`~lightsim2grid.elements.SvcInfo.slope_pu` is expressed directly in per-unit (a pu
+    voltage deviation per pu of :math:`Q_c`). When importing from a pypowsybl grid, the slope is
+    read from the ``voltagePerReactivePowerControl`` extension in kV/MVar and converted as
+
+    .. math::
+
+          s_{pu} = slope_{kV/MVar} \cdot \frac{s_{n,mva}}{v_{n,kv}(reg)}
+
+    with :math:`v_{n,kv}(reg)` the nominal voltage of the regulated bus.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        for svc in grid_model.get_svcs():
+            # svc is a `SvcInfo`
+            svc.bus_id
+
+)mydelimiter";
+
+const std::string DocIterator::SvcInfo = R"mydelimiter(
+    This class represents what you get from retrieving some elements from
+    :class:`lightsim2grid.elements.SvcContainer`.
+
+    It allows to read information from each Static Var Compensator (SVC) of the powergrid.
+
+    .. warning::
+        Data can only be accessed from this element. You cannot modify (yet) the grid using this class.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        first_svc = grid_model.get_svcs()[0]  # first SVC is a `SvcInfo`
+
+        for svc in grid_model.get_svcs():
+            # svc is a `SvcInfo`
+            svc.bus_id
+
+)mydelimiter";
+
+const std::string DocIterator::RegulationMode = R"mydelimiter(
+    The regulation mode of a Static Var Compensator (values follow the IIDM model of powsybl):
+    ``OFF`` (``0``), ``VOLTAGE`` (``1``), or ``REACTIVE_POWER`` (``2``) -- see
+    :class:`lightsim2grid.elements.SvcContainer` for what each means.
+
+)mydelimiter";
+
+const std::string DocIterator::regulation_mode = R"mydelimiter(
+    This SVC's regulation mode, as a :class:`~lightsim2grid.elements.SvcContainer.RegulationMode`
+    (``0`` = ``OFF``, ``1`` = ``VOLTAGE``, ``2`` = ``REACTIVE_POWER``) -- see
+    :class:`lightsim2grid.elements.SvcContainer` for what each means.
+
+)mydelimiter";
+
+const std::string DocIterator::svc_target_vm_pu = R"mydelimiter(
+    Voltage setpoint (pu of the regulated bus). Only meaningful in ``VOLTAGE`` mode (see
+    :attr:`regulation_mode`).
+
+)mydelimiter";
+
+const std::string DocIterator::svc_target_q_mvar = R"mydelimiter(
+    Reactive power setpoint (MVAr, generator sign convention -- positive injects into the grid).
+    Only meaningful in ``REACTIVE_POWER`` mode (see :attr:`regulation_mode`).
+
+)mydelimiter";
+
+const std::string DocIterator::slope_pu = R"mydelimiter(
+    Voltage/reactive slope ("droop", pu) -- in ``VOLTAGE`` mode, ``0.`` means the SVC holds
+    :attr:`target_vm_pu` exactly; a non-zero slope lets the regulated voltage deviate from
+    the setpoint in proportion to the reactive power delivered. Unused (but still stored) outside
+    ``VOLTAGE`` mode. See :class:`~lightsim2grid.elements.SvcContainer` for the exact voltage
+    regulation equations.
+
+)mydelimiter";
+
+const std::string DocIterator::b_min = R"mydelimiter(
+    Minimum susceptance (pu) -- stored for introspection only, it is never enforced by the
+    powerflow (no outer loop, no limit check).
+
+)mydelimiter";
+
+const std::string DocIterator::b_max = R"mydelimiter(
+    Maximum susceptance (pu) -- stored for introspection only, it is never enforced by the
+    powerflow (no outer loop, no limit check).
+
+)mydelimiter";
+
+const std::string DocIterator::svc_regulated_bus_id = R"mydelimiter(
+    The grid bus id whose voltage this SVC regulates, when :attr:`regulation_mode` is
+    ``VOLTAGE``.
+
+    Defaults to this element's own :attr:`bus_id` ("local" voltage control). When it differs
+    from ``bus_id``, the SVC performs "remote voltage control": instead of behaving as an
+    ordinary PV bus itself, it acts as a controller contributing (jointly with any other element
+    regulating the same bus, eg a remote-regulating generator) to holding that bus's voltage
+    magnitude at :attr:`target_vm_pu`. Same mechanism as
+    :attr:`lightsim2grid.elements.GenInfo.regulated_bus_id`.
+
+    .. warning::
+        When the grid is read from pypowsybl, the regulated bus is resolved **once**, at import
+        time, and stored by its (fixed) lightsim2grid global bus id. If the regulated element is
+        later moved to another bus *inside lightsim2grid* (e.g. through a ``change_bus_*`` /
+        topology change), the controller keeps regulating the bus resolved at import: the
+        lightsim2grid grid and the original pypowsybl grid then desynchronise. Re-import the grid
+        if you need to follow such a topology change.
+
+)mydelimiter";
+
 const std::string DocIterator::LoadContainer = R"mydelimiter(
     This class allows to iterate through the loads **and storage units** of the :class:`lightsim2grid.network.LSGrid` easily, as if they were
     in a python list.
