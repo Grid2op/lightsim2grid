@@ -82,6 +82,7 @@ struct LS2G_API DocIterator
     static const std::string pos_topo_vect;
     static const std::string connected;
     static const std::string bus_id;
+    static const std::string get_bus_id;
     static const std::string target_p_mw;
     static const std::string target_vm_pu;
     static const std::string target_q_mvar;
@@ -105,6 +106,8 @@ struct LS2G_API DocIterator
     static const std::string h_pu;
 
     // specific to substations
+    static const std::string SubstationContainer;
+    static const std::string SubstationInfo;
     static const std::string nb_max_busbars;
     static const std::string vn_kv;
 
@@ -150,6 +153,8 @@ struct LS2G_API DocIterator
     static const std::string LineInfo;
     static const std::string bus_1_id;
     static const std::string bus_2_id;
+    static const std::string get_bus_id_side_1;
+    static const std::string get_bus_id_side_2;
     static const std::string res_p_1_mw;
     static const std::string res_q_1_mvar;
     static const std::string res_v_1_kv;
@@ -160,6 +165,25 @@ struct LS2G_API DocIterator
     static const std::string res_a_2_ka;
     static const std::string res_theta_1_deg;
     static const std::string res_theta_2_deg;
+
+    // shared by LineInfo and TrafoInfo (the two-port pi-model admittance
+    // matrix, see `line_model`)
+    static const std::string yac_11;
+    static const std::string yac_12;
+    static const std::string yac_21;
+    static const std::string yac_22;
+    static const std::string yac_eff_11;
+    static const std::string yac_eff_12;
+    static const std::string yac_eff_21;
+    static const std::string yac_eff_22;
+    static const std::string get_yac_eff_11;
+    static const std::string get_yac_eff_12;
+    static const std::string get_yac_eff_21;
+    static const std::string get_yac_eff_22;
+    static const std::string ydc_11;
+    static const std::string ydc_12;
+    static const std::string ydc_21;
+    static const std::string ydc_22;
 
     // specific to hvdc lines (kept under the "dc line" name for backward compatibility)
     static const std::string dc_line_formula;
@@ -232,6 +256,11 @@ struct LS2G_API DocLSGrid
     static const std::string get_storages;
     static const std::string get_loads;
     static const std::string get_dclines;
+    static const std::string get_substations;
+
+    // solver-family change tracking (see DocMisc::AlgoControl)
+    static const std::string get_ac_algo_controler;
+    static const std::string get_dc_algo_controler;
     
     // retrieve the results
     static const std::string get_J_python;
@@ -328,6 +357,35 @@ struct LS2G_API DocContingencyAnalysis
     static const std::string get_flows;
     static const std::string get_voltages;
     static const std::string get_power_flows;
+};
+
+struct LS2G_API DocMisc
+{
+    // PandaPowerConverter: pandapower per-unit data conversion, used by the
+    // pandapower grid loader (network/from_pandapower)
+    static const std::string PandaPowerConverter;
+    static const std::string set_f_hz;
+    static const std::string set_sn_mva;
+    static const std::string get_line_param_legacy;
+    static const std::string get_line_param;
+    static const std::string get_trafo_param_pp3;
+    static const std::string get_trafo_param_pp2;
+
+    // AlgoControl: per-solver-family (AC / DC) change-tracking flags, read by
+    // LSGrid.get_ac_algo_controler() / get_dc_algo_controler()
+    static const std::string AlgoControl;
+    static const std::string has_dimension_changed;
+    static const std::string has_pv_changed;
+    static const std::string has_pq_changed;
+    static const std::string has_slack_participate_changed;
+    static const std::string need_reset_solver;
+    static const std::string need_recompute_sbus;
+    static const std::string need_recompute_ybus;
+    static const std::string ybus_change_sparsity_pattern;
+    static const std::string has_slack_weight_changed;
+    static const std::string has_v_changed;
+    static const std::string has_ybus_some_coeffs_zero;
+    static const std::string has_one_el_changed_bus;
 };
 
 

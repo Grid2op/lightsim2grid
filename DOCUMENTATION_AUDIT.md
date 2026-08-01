@@ -8,13 +8,14 @@ public, actually-used method should have real documentation instead of
 `help_fun_msg.hpp/.cpp` rather than being duplicated/hand-written per binding,
 (3) flag documentation whose content no longer matches the current code.
 
-**Status: all 18 findings in section 3 (accuracy bugs) have been fixed** —
-see the commit(s) following this audit. `DocComputers`/`DocSecurityAnalysis`
-have been renamed to `DocTimeSeries`/`DocContingencyAnalysis` (§5 item 4).
-Section 4 (missing docs) is in progress: the Gen/HVDC/converter-station
-iterator gaps are fixed (see §4 sub-section below); the remaining §4 items
-(`PandaPowerConverter`, `AlgoControl`, Line/Trafo admittance fields,
-`get_bus_id` family, `SubstationInfo`) and section 2 (centralization) are
+**Status: all 18 findings in section 3 (accuracy bugs) have been fixed**,
+and **section 4 (missing docs) is now fully fixed** — see the commit(s)
+following this audit. `DocComputers`/`DocSecurityAnalysis` have been renamed
+to `DocTimeSeries`/`DocContingencyAnalysis` (§5 item 4). A handful of new,
+not-previously-cataloged findings surfaced along the way (see the §4
+sub-sections below) — some fixed in the same pass, one flagged for later
+(~15 more `"TODO"` docstrings on other `LSGrid` methods, out of scope for
+"the rest of §4" as originally cataloged). Section 2 (centralization) is
 still just findings, not yet acted on.
 
 Sphinx pulls these docstrings directly (`autoclass`/`automodule` in
@@ -654,6 +655,112 @@ references across the solver-family docstrings are counted); total warnings
 Round-tripped both class doc rename usages (`TimeSeriesCPP`,
 `ContingencyAnalysisCPP`) through a real import to confirm non-empty
 docstrings post-rename.
+
+### §4 completed: the rest of the catalog
+
+The remaining five §4 items are now all fixed:
+
+- **`PandaPowerConverter`** (`set_f_hz`, `set_sn_mva`, `get_line_param_legacy`,
+  `get_line_param`, `get_trafo_param_pp3`, `get_trafo_param_pp2` + the class
+  itself): all had zero docstring. Corrected two things the class's own
+  `.hpp` comment got wrong along the way: it calls itself "provided as
+  examples", but it's actually what `lightsim2grid.network.init_from_pandapower`
+  uses for every real pandapower grid load (`network/from_pandapower/initLSGrid.py`
+  / `_aux_add_line.py` / `_aux_add_trafo.py`); and `get_trafo_param_pp3`'s own
+  comment called itself "for legacy (<= 2.14ish) pandapower" when it's
+  actually the opposite -- the *newer* pandapower-3 "advanced grid model"
+  path (confirmed against `_aux_add_trafo.py`'s actual version-gated call
+  site). Also surfaced, and documented honestly rather than glossed over: `get_line_param`
+  (the non-legacy, "returns h1/h2 separately" variant) is marked `// TODO` in
+  `DataConverter.cpp` and currently just does a plain 50/50 split of the
+  legacy unsplit `h` -- it does not yet read a genuinely asymmetric per-side
+  split from pandapower, unlike the `h1`/`h2` model itself (which does support
+  it, eg for pypowsybl-imported grids that don't go through this converter
+  at all). This is a real, pre-existing implementation gap, not just a
+  docstring one -- flagged here rather than fixed, since implementing it is
+  a separate task from documenting current behavior accurately.
+- **`AlgoControl`** (class + its 12 boolean flags): were all literal `"TODO"`.
+  Also fixed two adjacent, previously-uncaught `"TODO"` docstrings on
+  `LSGrid.get_ac_algo_controler` / `get_dc_algo_controler` (the only way to
+  actually obtain an `AlgoControl` from Python) -- without these two, the
+  new `AlgoControl` docs would have been unreachable from the class most
+  users would start from. `AlgoControl` also was not previously re-exported
+  under `lightsim2grid.algorithm` (unlike its neighbor `AlgoConfig`) nor
+  autodoc'd anywhere, so `:class:` references to it would have been
+  dangling; added it to `lightsim2grid/algorithm/__init__.py`'s imports and
+  `__all__` (mirroring `AlgoConfig` exactly) so the existing
+  `.. automodule:: lightsim2grid.algorithm` in `docs/solvers.rst` picks it
+  up automatically.
+- **`TrafoInfo`/`LineInfo` admittance fields** (`yac_11/12/21/22`,
+  `yac_eff_11/12/21/22`, `ydc_11/12/21/22`, 8 fields x 2 classes, plus the 4
+  `get_yac_eff_*` container accessor methods x 2 containers): all `"TODO
+  doc"`. These are the raw / Kron-reduced-effective / DC-approximation
+  two-port admittance matrix entries behind the `line_model` schema fixed
+  earlier in this audit (§3 items 15-16) -- traced the actual formulas in
+  `TwoSidesContainer_rxh_A.hpp` / `TrafoContainer.cpp` (MATPOWER-manual-
+  referenced pi-model + Kron reduction for a half-open branch) to document
+  them accurately rather than guessing from the field names.
+- **`get_bus_id` / `get_bus_id_side_1` / `get_bus_id_side_2`** (container
+  accessor methods, 7 one-sided containers + 2 two-sided): all `"TODO doc"`,
+  except `HvdcLineContainer`'s two, which had **no docstring argument
+  passed at all** (not even a placeholder) -- the most severe gap found in
+  this whole pass. All now share one `DocIterator` entry per
+  one-sided/two-sided shape.
+- **`SubstationContainer`/`SubstationInfo`** class docstrings: were
+  `"TODO"`. Also fixed `LSGrid.get_substations` / `get_voltage_levels`
+  (`"TODO"`, not in the original catalog but the only way to reach a
+  `SubstationContainer` from Python). Surfaced a real, pre-existing gap
+  while fixing this: `:class:`lightsim2grid.elements.SubstationContainer` /
+  `SubstationInfo`` were referenced from `docs/network.rst` prose but never
+  actually `autoclass`'d anywhere, so both references were dangling; added
+  the `.. autoclass::` entries (replacing a hand-written field table that's
+  now redundant with the real, `DocIterator`-backed field docs).
+
+Also fixed while in the area (not separately cataloged, but the same
+"rename not fully propagated" species as the `solver`/`gridmodel` fixes
+above, hit by grep while touching the surrounding accessor docstrings): 9
+occurrences of a **fully broken** code example, `from lightsim2grid.gridmodel
+import init` / `init(pp_net)`, across `get_lines`/`get_trafos`/`get_generators`/
+`get_static_generators`/`get_shunts`/`get_storages`/`get_loads`/`get_dclines`
+and one `check_grid`-adjacent docstring. `lightsim2grid.gridmodel.init`
+does not exist at all (confirmed by import) -- this is not cosmetic, a user
+copy-pasting any of these nine examples would hit an `ImportError`. Fixed to
+`from lightsim2grid.network import init_from_pandapower` /
+`init_from_pandapower(pp_net)` throughout.
+
+**Not fixed, flagged for a future pass** (found while grepping
+`binding_lsgrid.cpp` for the `get_substations` fix, but out of scope for
+"the rest of §4" as cataloged): roughly 15 more literal `"TODO"` /
+`"TODO doc"` docstrings on other `LSGrid` methods (`timer_last_ac_pf`,
+`timer_last_dc_pf`, `get_turnedoff_gen_pv`, `update_slack_weights`,
+`update_slack_weights_by_id`, `assign_slack_to_most_connected`,
+`get_ignore_status_global`, `get_synch_status_both_side`,
+`set_line_names`/`set_dcline_names`/`set_trafo_names`/`set_gen_names`/
+`set_load_names`/`set_storage_names`/`set_sgen_names`/`set_shunt_names`/
+`set_svc_names`, `change_ratio_trafo`). A new, separate finding, not part of
+the original 5-item §4 catalog.
+
+**Verified**: nitpicky Sphinx rebuild (no `_READ_THE_DOCS`) -- caught and
+fixed two new dangling-reference-causing issues before reporting done: a
+bare `:attr:`line_model`` reference (`line_model` is a shared text fragment
+appended to `r_pu`/`x_pu`/`h_pu`'s docstrings, not itself a bound
+attribute -- reworded to reference `:attr:`r_pu`` instead, a real
+attribute whose docstring includes that text), and one more instance of the
+already-documented numpydoc colon-quirk in `ydc_11`'s first line (reworded,
+colon -> em dash, same fix as before). After both fixes: 0 new dangling
+references from any of this section's additions; total warnings
+1273 -> 1267 (net decrease despite substantial new content, since fixing a
+`"TODO doc"` placeholder removes zero warnings on its own but the several
+newly-added cross-references that DO resolve slightly outweigh the small
+number of pre-existing numpy-typing warnings now also visible on methods
+that previously had so little docstring content they may not have been
+fully processed). Confirmed via real import that every newly-documented
+class/method has a non-empty `__doc__` (`AlgoControl`, `PandaPowerConverter`,
+`SubstationContainer`/`SubstationInfo`, `LSGrid.get_substations` /
+`get_ac_algo_controler`, `LineInfo`/`TrafoInfo`'s `yac_11`/`ydc_11`,
+`GeneratorContainer.get_bus_id`, `LineContainer.get_yac_eff_11`). Ran the
+existing `test_DataConverter.py` suite (untouched functionally, only its
+docstrings changed) -- still passes.
 
 ## 5. Recommendation for the rewrite pass
 

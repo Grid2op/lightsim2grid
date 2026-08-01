@@ -153,7 +153,7 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
              py::return_value_policy::reference)
 
         // inspect the grid
-        .def("get_substations", &LSGrid::get_substations, "TODO", py::return_value_policy::reference)
+        .def("get_substations", &LSGrid::get_substations, DocLSGrid::get_substations.c_str(), py::return_value_policy::reference)
         .def("get_lines", &LSGrid::get_lines, DocLSGrid::get_lines.c_str(), py::return_value_policy::reference)
         .def("get_dclines", &LSGrid::get_dclines, DocLSGrid::get_dclines.c_str(), py::return_value_policy::reference)
         .def("get_trafos", &LSGrid::get_trafos, DocLSGrid::get_trafos.c_str(), py::return_value_policy::reference)
@@ -165,7 +165,7 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
         .def("get_loads", &LSGrid::get_loads, DocLSGrid::get_loads.c_str(), py::return_value_policy::reference)
 
         // pypowsybl compat names
-        .def("get_voltage_levels", &LSGrid::get_substations, "TODO", py::return_value_policy::reference)
+        .def("get_voltage_levels", &LSGrid::get_substations, DocLSGrid::get_substations.c_str(), py::return_value_policy::reference)
         .def("get_2_windings_transformers", &LSGrid::get_trafos, DocLSGrid::get_trafos.c_str(), py::return_value_policy::reference)
         .def("get_shunt_compensators", &LSGrid::get_shunts, DocLSGrid::get_shunts.c_str(), py::return_value_policy::reference)
 
@@ -478,8 +478,8 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
         .def("tell_recompute_sbus", &LSGrid::tell_recompute_sbus, DocLSGrid::_internal_do_not_use.c_str())
         .def("tell_solver_need_reset", &LSGrid::tell_solver_need_reset, DocLSGrid::_internal_do_not_use.c_str())
         .def("tell_ybus_change_sparsity_pattern", &LSGrid::tell_ybus_change_sparsity_pattern, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_ac_algo_controler", &LSGrid::get_ac_algo_controler, "TODO", py::return_value_policy::reference)
-        .def("get_dc_algo_controler", &LSGrid::get_dc_algo_controler, "TODO", py::return_value_policy::reference)
+        .def("get_ac_algo_controler", &LSGrid::get_ac_algo_controler, DocLSGrid::get_ac_algo_controler.c_str(), py::return_value_policy::reference)
+        .def("get_dc_algo_controler", &LSGrid::get_dc_algo_controler, DocLSGrid::get_dc_algo_controler.c_str(), py::return_value_policy::reference)
         // .def("get_solver_control",  &LSGrid::get_algo_controler, "DEPRECATED use 'get_algo_controler'", py::return_value_policy::reference)
         .def("compute_newton", &LSGrid::ac_pf, DocLSGrid::ac_pf.c_str())
         // get_ptdf/get_ptdf_solver/get_lodf/get_Bf/get_Bf_solver all return their
