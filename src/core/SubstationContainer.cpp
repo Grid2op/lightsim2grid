@@ -169,6 +169,19 @@ void SubstationContainer::check_valid() const
              << " entries for " << bus_vn_kv_.size() << " buses (it must be either empty or complete).";
         throw std::runtime_error(exc_.str());
     }
+    // vmin_ and vmax_ are consumed together, one indexed by the other's length
+    // (ContingencyAnalysis::check_bus_voltage_violations loops to vmin.size() then
+    // reads vmax(grid_id)). Each is individually allowed to be empty-or-complete
+    // above, but one present while the other is empty makes that loop read past the
+    // end of the empty one. They must have the same presence.
+    if((bus_vmin_kv_.size() == 0) != (bus_vmax_kv_.size() == 0)){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::check_grid: the per-bus min and max voltage vectors must both be set or "
+             << "both be empty (min has " << bus_vmin_kv_.size() << " entries, max has "
+             << bus_vmax_kv_.size() << "). They are consumed together, one indexed by the other's "
+             << "length, so a mismatch would cause an out-of-bounds read.";
+        throw std::runtime_error(exc_.str());
+    }
 
     // every nominal voltage must be a finite, strictly positive number
     check_vn_kv_positive();
