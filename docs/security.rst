@@ -154,6 +154,34 @@ there produced a DC powerflow that reported convergence and returned NaN flows.
    what turns a malformed input into a clean exception rather than an
    out-of-bounds access.
 
+The memory-safety invariant: raise, never corrupt
+--------------------------------------------------
+
+Underneath all of the above is a single design rule the C++ core holds itself
+to: **a** :py:class:`~lightsim2grid.network.LSGrid` **must never corrupt process
+memory.** Whatever it is handed — a malformed pickle or binary file, a grid
+loaded from a source file, or a perfectly ordinary Python API call made in the
+wrong order or with an out-of-range id — the worst it is allowed to do is raise
+a clean Python exception (``IndexError`` / ``RuntimeError`` / ``ValueError`` /
+...). It must not read or write out of bounds, use freed memory, or leave the
+grid in a state that makes the *next* call do so. C++ is not a memory-safe
+language and release wheels are built ``-O3 -DNDEBUG`` (so neither Eigen's nor
+the standard library's own bounds checks are compiled in), so this is enforced
+by explicit validation on every entry point rather than by the language: an id
+or size that reaches the core from outside is range-checked *before* it is used
+to index anything, and a grid restored from a serialized state is put through
+``check_grid()`` before it is usable.
+
+This invariant is about *safety*, not *correctness of the answer*: a grid you
+built with nonsensical (but in-range and consistent) parameters can still return
+a wrong or non-converged powerflow — see the ``check_grid()`` notes above on the
+values it deliberately does not police. It is also independent of the trust
+boundaries above: those tell you which *inputs* are safe to accept; this tells
+you that whatever you do accept, a bug in it surfaces as an exception you can
+catch, not as silent heap corruption. If you ever observe a genuine crash
+(segfault, ``malloc``/``free`` abort, ASan/UBSan report) instead of an
+exception, that is a bug in lightsim2grid — please report it.
+
 A note for solver-plugin authors
 ---------------------------------
 
