@@ -147,6 +147,14 @@ std::vector<std::string>& sub_names(LSGrid::StateRes & st)
 {
     return std::get<5>(std::get<LSGrid::SUBSTATION_ID>(st));
 }
+std::vector<real_type>& sub_bus_vmin_kv(LSGrid::StateRes & st)
+{
+    return std::get<6>(std::get<LSGrid::SUBSTATION_ID>(st));
+}
+std::vector<real_type>& sub_bus_vmax_kv(LSGrid::StateRes & st)
+{
+    return std::get<7>(std::get<LSGrid::SUBSTATION_ID>(st));
+}
 std::vector<int>& ls_to_orig(LSGrid::StateRes & st)
 {
     return std::get<LSGrid::LS_TO_ORIG_ID>(st);
@@ -489,6 +497,45 @@ TEST_CASE("check_grid rejects a sub_vn_kv that contradicts bus_vn_kv", "[check_g
     sub_sub_vn_kv(ok) = {138., 138., 138.};
     LSGrid restored_ok;
     CHECK_NOTHROW(restored_ok.set_state(ok));
+}
+
+TEST_CASE("check_grid rejects vmin/vmax with mismatched presence", "[check_grid][substation]")
+{
+    // bus_vmin_kv_ and bus_vmax_kv_ are each individually optional (empty OR one
+    // entry per bus), but they are consumed *together*:
+    // ContingencyAnalysis::check_bus_voltage_violations loops to vmin.size() and
+    // then reads vmax(grid_id). One present while the other is empty passes each
+    // per-field length check yet makes that loop read past the end of the empty
+    // vector (out-of-bounds read on release wheels). check_grid must reject it.
+    LSGrid grid = make_valid_grid();  // 3 buses
+
+    // vmin full, vmax empty -> rejected
+    LSGrid::StateRes only_min = grid.get_state();
+    sub_bus_vmin_kv(only_min) = {90., 90., 90.};
+    sub_bus_vmax_kv(only_min) = {};
+    LSGrid r1;
+    CHECK_THROWS_AS(r1.set_state(only_min), std::runtime_error);
+
+    // vmax full, vmin empty -> rejected
+    LSGrid::StateRes only_max = grid.get_state();
+    sub_bus_vmin_kv(only_max) = {};
+    sub_bus_vmax_kv(only_max) = {160., 160., 160.};
+    LSGrid r2;
+    CHECK_THROWS_AS(r2.set_state(only_max), std::runtime_error);
+
+    // both present -> accepted
+    LSGrid::StateRes both = grid.get_state();
+    sub_bus_vmin_kv(both) = {90., 90., 90.};
+    sub_bus_vmax_kv(both) = {160., 160., 160.};
+    LSGrid r3;
+    CHECK_NOTHROW(r3.set_state(both));
+
+    // both empty (the common case, e.g. pandapower-origin grids) -> accepted
+    LSGrid::StateRes neither = grid.get_state();
+    sub_bus_vmin_kv(neither) = {};
+    sub_bus_vmax_kv(neither) = {};
+    LSGrid r4;
+    CHECK_NOTHROW(r4.set_state(neither));
 }
 
 TEST_CASE("init_sub is safe on the live construction path", "[check_grid][substation]")

@@ -172,12 +172,14 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         int pick_reference_slack();
 
         Eigen::Ref<RealMat > compute_flows() {
+            _check_results_match_defaults("compute_flows");
             compute_flows_from_Vs();
             clean_flows();
             return _amps_flows;
         }
 
         Eigen::Ref<RealMat > compute_power_flows() {
+            _check_results_match_defaults("compute_power_flows");
             compute_flows_from_Vs(false);
             clean_flows(false);
             return _active_power_flows;
@@ -237,6 +239,26 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
                 std::ostringstream exc_;
                 exc_ << "SecurityAnalysis: cannot add the contingency with id ";
                 exc_ << el << " because the grid counts only " << n_total_ << " powerlines / trafos.";
+                throw std::runtime_error(exc_.str());
+            }
+        }
+        // raises if the registered contingency set no longer matches the last
+        // computed results. `compute()` sizes `_voltages` (and therefore the flow
+        // matrices derived from it) with one row per contingency in `_li_defaults`
+        // at the time it ran. Adding / removing contingencies afterwards without
+        // recomputing leaves `_voltages` shorter than `_li_defaults`, and both
+        // `clean_flows()` and the per-contingency violation loop walk `_li_defaults`
+        // while indexing the (shorter) result matrices -- an out-of-bounds write
+        // (heap corruption) on release wheels (-O3 -DNDEBUG, no bounds checks). Fail
+        // loudly instead, before any result matrix is indexed.
+        void _check_results_match_defaults(const std::string & fun_name) const {
+            const size_t nb_res = static_cast<size_t>(_voltages.rows());
+            if(nb_res != _li_defaults.size()){
+                std::ostringstream exc_;
+                exc_ << "ContingencyAnalysis::" << fun_name << ": the results were computed for "
+                     << nb_res << " contingency(ies) but the object now holds " << _li_defaults.size()
+                     << ". The contingency set was modified (add_n1 / remove_n1 / ...) after the last "
+                     << "compute(); call compute() again before reading the flows.";
                 throw std::runtime_error(exc_.str());
             }
         }

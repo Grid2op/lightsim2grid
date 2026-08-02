@@ -285,9 +285,24 @@ class OneSideContainer : public GenericContainer
         {
             std::vector<bool> res(nb(), false);
             _check_pos_topo_vect_filled();
+            const int nb_topo = static_cast<int>(has_changed.rows());
             for(int el_id = 0; el_id < nb(); ++el_id)
             {
                 int el_pos = pos_topo_vect_(el_id);
+                // `el_pos` indexes has_changed / new_values with an unchecked Eigen
+                // operator(). check_grid() proves the stored positions form a
+                // permutation of [0, dim_topo), but the set_pos_topo_vect() setters
+                // only check the vector's *length*, not its values -- so a position
+                // written straight through a setter (bypassing check_grid) would read
+                // past the caller arrays here. Release wheels are -O3 -DNDEBUG, so
+                // neither Eigen nor the STL catches it: validate before indexing.
+                if((el_pos < 0) || (el_pos >= nb_topo)){
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::update_topo: element " << el_id << " has position "
+                         << el_pos << " in the topology vector, out of range [0, " << nb_topo
+                         << "). The stored pos_topo_vect is inconsistent (run check_grid()).";
+                    throw std::out_of_range(exc_.str());
+                }
                 if(!has_changed(el_pos)) continue;
                 LocalBusId new_bus = LocalBusId(new_values(el_pos));  // it is a LocalBusId
                 if(new_bus.cast_int() < _deactivated_bus_id){
