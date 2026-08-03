@@ -123,6 +123,14 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [ADDED] ``benchmarks/benchmark_solvers.py`` now generates, from the numbers measured during the run
+  itself, the descriptive text that comments on the "computation time" and "differences" tables
+  (``generate_narrative`` function). Previously this text lived only in ``docs/benchmarks.rst``, hand
+  written and hand updated after each run, which routinely drifted out of sync with the tables above it
+  (wrong speed ups, stale percentages, and a unit mistake -- some durations were labelled "ns" while
+  actually being microseconds). The script now prints this text (and saves it next to the other
+  ``--save_results`` outputs, as ``description.rst``) so updating the docs after a benchmark run is a
+  copy / paste instead of manual float formatting.
 - [ADDED] a "C++ standards" GitHub Actions workflow
   (``.github/workflows/cpp-standards.yml``) that compiles both the standalone
   C++ unit test suite and the python bindings twice: once pinned to C++14

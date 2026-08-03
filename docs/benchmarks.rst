@@ -91,6 +91,13 @@ and then you can start the benchmark with the following commands:
   The first time you execute them, some data might be downloaded. These data comes from the grid2op
   package and contains the time series (how each load and generation behaves) for different steps.
 
+Each of these commands prints two tables ("computation time" and "differences", reproduced below)
+followed by the descriptive text that comments on them ("Description (computation time)" and
+"Description (differences)"). This text is generated from the numbers actually measured during the run
+(it is not written by hand), so the tables and the paragraphs below them are always in sync: to update this
+page after a new run, just copy / paste the tables and the generated text, there is no float formatting
+or computation to do by hand anymore.
+
 (results may vary depending on the hard drive, the ram etc. and are presented here for illustration only)
 
 (we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
