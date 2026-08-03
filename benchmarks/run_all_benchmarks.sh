@@ -7,11 +7,14 @@ echo "DC solver..."
 ./benchmarks_dc.sh > res_benchmarks/benchmarks_dc.txt
 echo "... done \n"
 echo "Grid size..."
-./benchmarks_grid_size.sh > res_benchmarks/benchmarks_grid_size.txt
+./benchmark_grid_size.sh > res_benchmarks/benchmarks_grid_size.txt
 echo "... done \n"
 echo "Comparison with pypowsybl..."
 ./benchmark_pypowysbl.sh > res_benchmarks/benchmarks_pypowsybl.txt
 echo "... done \n"
 echo "Time serie and Contingency analysis..."
 ./benchmark_ts_ca.sh > res_benchmarks/benchmark_ts_ca.txt
+echo "... done \n"
+echo "Binary serialization..."
+python3 benchmark_binary_serialization.py > res_benchmarks/benchmark_binary_serialization.txt
 echo "... done \n"

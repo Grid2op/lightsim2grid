@@ -123,6 +123,16 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [FIXED] the orchestration layer under ``benchmarks/`` had drifted from the scripts it is supposed to
+  run: ``benchmarks/security_analysis.py`` was renamed to ``benchmarks/contingency_analysis.py`` (its
+  ``examples/`` counterpart was already renamed in a previous fix, this one was missed --
+  ``ContingencyAnalysis`` has been the class name for a while, the benchmark script's filename was the
+  last place still carrying the old ``SecurityAnalysis`` name); ``benchmarks/benchmark_ts_ca.sh`` now
+  calls that new name, and also runs ``benchmark_ca_nb_threads.py`` (the ``nb_thread``-scaling benchmark
+  used in ``docs/security_analysis.rst``), which it previously skipped entirely;
+  ``benchmarks/run_all_benchmarks.sh`` had a stale ``./benchmarks_grid_size.sh`` (that file has never
+  existed -- the real one is ``benchmark_grid_size.sh``, singular) and never ran
+  ``benchmark_binary_serialization.py`` at all; both are now fixed / added.
 - [ADDED] ``benchmarks/benchmark_solvers.py`` now generates, from the numbers measured during the run
   itself, the descriptive text that comments on the "computation time" and "differences" tables
   (``generate_narrative`` function). Previously this text lived only in ``docs/benchmarks.rst``, hand

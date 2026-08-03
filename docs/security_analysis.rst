@@ -339,7 +339,7 @@ This benchmark is available by running, from the root of the lightsim2grid repos
 .. code-block:: bash
 
     cd benchmarks
-    python3 security_analysis.py
+    python3 contingency_analysis.py
 
 
 For this setting the outputs are:
@@ -364,7 +364,7 @@ For this setting the outputs are:
     All results match !
 
 .. note::
-  The last "In this case then, ..." line above is now printed directly by ``security_analysis.py`` (computed
+  The last "In this case then, ..." line above is now printed directly by ``contingency_analysis.py`` (computed
   from ``total_time_glop_ls`` / ``total_time_glop_pp`` and ``full_time_sa``), instead of being a separate,
   hand-rounded restatement kept below the pasted output -- which is how it used to read "more than **22**
   times faster", inconsistent with the 24.2 / 855.2 figures printed just above it.
