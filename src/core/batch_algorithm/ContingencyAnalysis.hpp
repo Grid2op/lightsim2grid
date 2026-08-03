@@ -54,8 +54,19 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         ContingencyAnalysis & operator=(ContingencyAnalysis&&) = delete;
         ContingencyAnalysis & operator=(const ContingencyAnalysis&) = delete;
 
-        // utilities to add defaults to simulate
+        // utilities to add defaults to simulate. Every one of these clears any
+        // previously computed results (see clear_results_only() below): a size-only
+        // staleness check in compute_flows() / compute_power_flows() cannot catch a
+        // remove-then-add-a-different-one sequence that leaves `_li_defaults` the same
+        // SIZE it was at the last compute() but with different membership -- the
+        // returned flows would silently correspond to the wrong contingencies rather
+        // than raising. Invalidating eagerly, on every mutation, closes that gap
+        // instead of relying on a reactive check to catch every possible sequence.
+        // Validation (check_ok_el) always runs to completion before `_li_defaults` is
+        // touched, so a rejected id leaves both `_li_defaults` and any existing
+        // results untouched.
         void add_all_n1(){
+            clear_results_only();
             for(int l_id = 0; l_id < static_cast<int>(n_total_); ++l_id){
                 std::set<int> this_default = {l_id};
                 _li_defaults.insert(this_default);
@@ -63,12 +74,14 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         }
         void add_n1(int line_id){
             check_ok_el(line_id);
+            clear_results_only();
             std::set<int> this_default = {line_id};
             _li_defaults.insert(this_default);
         }
         void add_multiple_n1(const std::vector<int> & vect_n1s){
+            for(const auto line_id : vect_n1s) check_ok_el(line_id);  // validate all before mutating anything
+            clear_results_only();
             for(const auto line_id : vect_n1s){
-                check_ok_el(line_id);
                 std::set<int> this_default = {line_id};
                 _li_defaults.insert(this_default);
             }
@@ -78,8 +91,9 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             for(const auto line_id : vect_nk)
             {
                 check_ok_el(line_id);
-                this_default.insert(line_id);
+                this_default.insert(line_id);  // local set, not yet _li_defaults: no side effect if a later id throws
             }
+            clear_results_only();
             _li_defaults.insert(this_default);
         }
 
@@ -115,14 +129,16 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         
         bool remove_n1(int line_id){
             check_ok_el(line_id);
+            clear_results_only();  // see the comment on add_all_n1() above
             std::set<int> this_default = {line_id};
             auto nb_removed = _li_defaults.erase(this_default);
             return nb_removed >= 1;
         }
         size_t remove_multiple_n1(const std::vector<int> & vect_n1s){
+            for(const auto line_id : vect_n1s) check_ok_el(line_id);  // validate all before mutating anything
+            clear_results_only();
             size_t nb_removed = 0;
             for(const auto line_id : vect_n1s){
-                check_ok_el(line_id);
                 std::set<int> this_default = {line_id};
                 nb_removed += _li_defaults.erase(this_default);
             }
@@ -133,8 +149,9 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             for(const auto line_id : vect_nk)
             {
                 check_ok_el(line_id);
-                this_default.insert(line_id);
+                this_default.insert(line_id);  // local set, not yet _li_defaults: no side effect if a later id throws
             }
+            clear_results_only();
             auto nb_removed = _li_defaults.erase(this_default);
             return nb_removed >= 1;
         }
@@ -172,12 +189,14 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         int pick_reference_slack();
 
         Eigen::Ref<RealMat > compute_flows() {
+            _check_results_match_defaults("compute_flows");
             compute_flows_from_Vs();
             clean_flows();
             return _amps_flows;
         }
 
         Eigen::Ref<RealMat > compute_power_flows() {
+            _check_results_match_defaults("compute_power_flows");
             compute_flows_from_Vs(false);
             clean_flows(false);
             return _active_power_flows;
@@ -237,6 +256,26 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
                 std::ostringstream exc_;
                 exc_ << "SecurityAnalysis: cannot add the contingency with id ";
                 exc_ << el << " because the grid counts only " << n_total_ << " powerlines / trafos.";
+                throw std::runtime_error(exc_.str());
+            }
+        }
+        // raises if the registered contingency set no longer matches the last
+        // computed results. `compute()` sizes `_voltages` (and therefore the flow
+        // matrices derived from it) with one row per contingency in `_li_defaults`
+        // at the time it ran. Adding / removing contingencies afterwards without
+        // recomputing leaves `_voltages` shorter than `_li_defaults`, and both
+        // `clean_flows()` and the per-contingency violation loop walk `_li_defaults`
+        // while indexing the (shorter) result matrices -- an out-of-bounds write
+        // (heap corruption) on release wheels (-O3 -DNDEBUG, no bounds checks). Fail
+        // loudly instead, before any result matrix is indexed.
+        void _check_results_match_defaults(const std::string & fun_name) const {
+            const size_t nb_res = static_cast<size_t>(_voltages.rows());
+            if(nb_res != _li_defaults.size()){
+                std::ostringstream exc_;
+                exc_ << "ContingencyAnalysis::" << fun_name << ": the results were computed for "
+                     << nb_res << " contingency(ies) but the object now holds " << _li_defaults.size()
+                     << ". The contingency set was modified (add_n1 / remove_n1 / ...) after the last "
+                     << "compute(); call compute() again before reading the flows.";
                 throw std::runtime_error(exc_.str());
             }
         }

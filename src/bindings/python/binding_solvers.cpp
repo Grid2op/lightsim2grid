@@ -372,6 +372,6 @@ void bind_solvers(py::module_& m) {
             "All-zero if the active solver doesn't track them (e.g. GaussSeidel, or the "
             "FDPF family which exposes get_linear_solver_stats_bp/_bpp on its own concrete "
             "Python type instead, since it holds two linear solvers).")
-        .def("get_fdpf_xb_lu",       &AlgorithmSelector::get_fdpf_xb_lu,  py::return_value_policy::reference, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_fdpf_bx_lu",       &AlgorithmSelector::get_fdpf_bx_lu,  py::return_value_policy::reference, DocLSGrid::_internal_do_not_use.c_str());
+        .def("get_fdpf_xb_lu",       &AlgorithmSelector::get_fdpf_xb_lu,  py::return_value_policy::reference_internal, DocLSGrid::_internal_do_not_use.c_str())
+        .def("get_fdpf_bx_lu",       &AlgorithmSelector::get_fdpf_bx_lu,  py::return_value_policy::reference_internal, DocLSGrid::_internal_do_not_use.c_str());
 }

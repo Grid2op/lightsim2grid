@@ -262,12 +262,38 @@ class OneSideContainer : public GenericContainer
         void set_pos_topo_vect(const Eigen::Ref<const IntVect> & pos_topo_vect)
         {
             check_size(pos_topo_vect, nb(), "pos_topo_vect");
+            // The upper bound (dim_topo) is the sum of every topology-participating
+            // container's element count, not just this one's -- it is not known here
+            // (see update_topo(), which validates the full [0, dim_topo) range with
+            // that context). A negative position, though, is never valid regardless of
+            // dim_topo, so reject it immediately rather than only at the point of use.
+            for(Eigen::Index i = 0; i < pos_topo_vect.size(); ++i){
+                if(pos_topo_vect(i) < 0){
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::set_pos_topo_vect: element " << i
+                         << " has a negative position in the topology vector ("
+                         << pos_topo_vect(i) << ").";
+                    throw std::out_of_range(exc_.str());
+                }
+            }
             pos_topo_vect_.array() = pos_topo_vect;
         }
 
         void set_subid(const Eigen::Ref<const IntVect> & subid)
         {
             check_size(subid, nb(), "subid");
+            // The upper bound (n_sub) is owned by SubstationContainer, not available
+            // here (see update_topo(), which validates the full [0, n_sub) range with
+            // that context). A negative substation id, though, is never valid
+            // regardless of n_sub, so reject it immediately.
+            for(Eigen::Index i = 0; i < subid.size(); ++i){
+                if(subid(i) < 0){
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::set_subid: element " << i
+                         << " has a negative substation id (" << subid(i) << ").";
+                    throw std::out_of_range(exc_.str());
+                }
+            }
             subid_.array() = subid;
         }
 
@@ -285,9 +311,24 @@ class OneSideContainer : public GenericContainer
         {
             std::vector<bool> res(nb(), false);
             _check_pos_topo_vect_filled();
+            const int nb_topo = static_cast<int>(has_changed.rows());
             for(int el_id = 0; el_id < nb(); ++el_id)
             {
                 int el_pos = pos_topo_vect_(el_id);
+                // `el_pos` indexes has_changed / new_values with an unchecked Eigen
+                // operator(). check_grid() proves the stored positions form a
+                // permutation of [0, dim_topo), but the set_pos_topo_vect() setters
+                // only check the vector's *length*, not its values -- so a position
+                // written straight through a setter (bypassing check_grid) would read
+                // past the caller arrays here. Release wheels are -O3 -DNDEBUG, so
+                // neither Eigen nor the STL catches it: validate before indexing.
+                if((el_pos < 0) || (el_pos >= nb_topo)){
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::update_topo: element " << el_id << " has position "
+                         << el_pos << " in the topology vector, out of range [0, " << nb_topo
+                         << "). The stored pos_topo_vect is inconsistent (run check_grid()).";
+                    throw std::out_of_range(exc_.str());
+                }
                 if(!has_changed(el_pos)) continue;
                 LocalBusId new_bus = LocalBusId(new_values(el_pos));  // it is a LocalBusId
                 if(new_bus.cast_int() < _deactivated_bus_id){
@@ -313,7 +354,46 @@ class OneSideContainer : public GenericContainer
 
                 if(new_bus.cast_int() > 0){
                     // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
+                    if(subid_.size() == 0){
+                        std::ostringstream exc_;
+                        exc_ << "OneSideContainer::update_topo: cannot reconnect element " << el_id
+                             << " to a bus: no substation id was ever set for this container "
+                             << "(set_subid was never called).";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    // subid_ is only ever assigned by set_subid() (checked against nb() at the
+                    // time of the call) or set_osc_state(); neither is re-run when the container
+                    // is re-initialized with a different element count (init() does not touch
+                    // subid_), so a container whose element count grew after set_subid() was last
+                    // called leaves subid_ shorter than the CURRENT nb() -- indexing el_id below
+                    // would read past its end. Same class of bug _check_pos_topo_vect_filled()
+                    // already guards against for pos_topo_vect_ (its size() != nb() check); mirror
+                    // it here.
+                    if(subid_.size() != nb()){
+                        std::ostringstream exc_;
+                        exc_ << "OneSideContainer::update_topo: cannot reconnect element " << el_id
+                             << " to a bus: subid_ has " << subid_.size() << " entries but this "
+                             << "container currently has " << nb() << " elements (set_subid was "
+                             << "called for a different element count -- call it again after "
+                             << "re-initializing this container).";
+                        throw std::runtime_error(exc_.str());
+                    }
                     int sub_id = subid_(el_id);
+                    // `sub_id` feeds local_to_gridmodel's arithmetic (sub_id + (busbar-1)*n_sub),
+                    // whose OUTPUT is bounds-checked before being stored as this element's bus id
+                    // -- but an out-of-range `sub_id` can still combine with a valid busbar to land
+                    // BY COINCIDENCE on another substation's legitimate bus id, silently reconnecting
+                    // this element to the WRONG bus instead of raising. set_subid() only rejects
+                    // negative ids (it has no access to n_sub); validate the full range here, where
+                    // `substations` gives us that context.
+                    if((sub_id < 0) || (sub_id >= substations.nb_sub())){
+                        std::ostringstream exc_;
+                        exc_ << "OneSideContainer::update_topo: element " << el_id
+                             << " has substation id " << sub_id << ", out of range [0, "
+                             << substations.nb_sub() << "). The stored subid is inconsistent "
+                             << "(run check_grid()).";
+                        throw std::out_of_range(exc_.str());
+                    }
                     GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
                     bool change_effective = reactivate(el_id, solver_control); // eg reactivate_load(load_id);
                     change_effective = change_bus(el_id, new_bus_backend, solver_control, substations) || change_effective; // eg change_bus_load(load_id, new_bus_backend);
