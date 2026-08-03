@@ -8,28 +8,16 @@
 
 template<class LinearSolver, class NRSystem>
 bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
-        const Eigen::SparseMatrix<cplx_type>& Ybus,
-        CplxVect& V,
-        const CplxVect& Sbus,
-        Eigen::Ref<const IntVect> slack_ids,
-        const RealVect& slack_weights,
-        Eigen::Ref<const IntVect> pv,
-        Eigen::Ref<const IntVect> pq,
-        int max_iter,
-        real_type tol)
+        const EigenRefConstCplxSpMat     & Ybus,
+        const Eigen::Ref<const CplxVect> & V,
+        const Eigen::Ref<const CplxVect> & Sbus,
+        const Eigen::Ref<const IntVect>  & slack_ids,
+        const Eigen::Ref<const RealVect> & slack_weights,
+        const Eigen::Ref<const IntVect>  & pv,
+        const Eigen::Ref<const IntVect>  & pq,
+        int                              max_iter,
+        real_type                        tol)
 {
-    if (Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols()) {
-        std::ostringstream exc_;
-        exc_ << "NRAlgo::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
-        exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.cols() << ").";
-        throw std::runtime_error(exc_.str());
-    }
-    if (V.size() != Ybus.rows() || V.size() != Ybus.cols()) {
-        std::ostringstream exc_;
-        exc_ << "NRAlgo::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
-        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.cols() << ").";
-        throw std::runtime_error(exc_.str());
-    }
     if (!is_linear_solver_valid()) return false;
 
     reset_timer();
@@ -105,22 +93,14 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
 
             if (need_init) {
                 // New sparsity pattern: analyze (structure) then factorize (values).
-                {
-                    auto timer_i = CustTimer();
-                    err_ = _linear_solver.analyze(_system.J());
-                    timer_initialize_ += timer_i.duration();
-                }
+                err_ = _linear_solver.analyze(_system.J());
                 if (err_ == ErrorType::NoError) {
-                    auto timer_f = CustTimer();
                     err_ = _linear_solver.factorize(_system.J());
-                    timer_factor_ += timer_f.duration();
                 }
                 need_init = false;
                 need_factorize_ = false;
             } else {
-                auto timer_r = CustTimer();
                 err_ = _linear_solver.refactorize(_system.J());
-                timer_refactor_ += timer_r.duration();
             }
             if (err_ != ErrorType::NoError) { res = false; break; }
             need_factorize = false;
@@ -128,12 +108,8 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
 
         // Solve J * dx = F  (F = mismatch, negated convention; F overwritten with dx)
         // std::cout << "_linear_solver.solve(F);\n";
-        {
-            auto timer_s = CustTimer();
-            err_ = _linear_solver.solve(F);
-            timer_solve_ += timer_s.duration();
-        }
-        if (err_ != ErrorType::NoError) { 
+        err_ = _linear_solver.solve(F);
+        if (err_ != ErrorType::NoError) {
             res = false; break;
         }
 
@@ -176,15 +152,18 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     timer_total_nr_ += timer.duration();
 
     #ifdef __COUT_TIMES
-        std::cout << "Computation time: "
-                  << "\n\t timer_initialize_: " << timer_initialize_
-                  << "\n\t timer_dSbus_: " << timer_dSbus_
-                  << "\n\t timer_fillJ_: " << timer_fillJ_
-                  << "\n\t timer_Fx_: " << timer_Fx_
-                  << "\n\t timer_check_: " << timer_check_
-                  << "\n\t timer_solve_: " << timer_solve_
-                  << "\n\t timer_total_nr_: " << timer_total_nr_
-                  << "\n\n";
+        {
+            const LinearSolverStats lsstats = detail::get_stats_impl(_linear_solver, 0);
+            std::cout << "Computation time: "
+                      << "\n\t timer_initialize_: " << lsstats.timer_initialize_
+                      << "\n\t timer_dSbus_: " << timer_dSbus_
+                      << "\n\t timer_fillJ_: " << timer_fillJ_
+                      << "\n\t timer_Fx_: " << timer_Fx_
+                      << "\n\t timer_check_: " << timer_check_
+                      << "\n\t timer_solve_: " << lsstats.timer_solve_
+                      << "\n\t timer_total_nr_: " << timer_total_nr_
+                      << "\n\n";
+        }
     #endif
     return res;
 }

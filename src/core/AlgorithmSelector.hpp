@@ -22,6 +22,12 @@
 
 namespace ls2g {
 
+// /!\ the integer values of this enum are serialized verbatim (binary
+// save_binary files and pickles, via LSGrid::StateRes): only APPEND new
+// members at the end (before Custom is NOT safe either: Custom's value
+// would shift). Renumbering existing members requires bumping
+// BINARY_FORMAT_VERSION (BinaryArchive.hpp). Guarded python side by
+// TestSerializedEnumValues in test_binary_serialization.py.
 enum class LS2G_API AlgorithmType {NR_SparseLU, NR_KLU, GaussSeidel, DC_SparseLU, GaussSeidelSynch, NR_NICSLU,
                        NRSing_SparseLU, NRSing_KLU, NRSing_NICSLU,
                        DC_KLU, DC_NICSLU,
@@ -94,18 +100,6 @@ class LS2G_API AlgorithmSelector final
                    (type == AlgorithmType::DC_NICSLU) ||
                    (type == AlgorithmType::DC_CKTSO);
         }
-        // only the Newton-Raphson algorithms implement the hvdc angle-droop
-        // ("AC emulation") equations; plugin (Custom) solvers are assumed not to
-        bool supports_hvdc_droop(const AlgorithmType& type) const noexcept {
-            return (type == AlgorithmType::NR_SparseLU) ||
-                   (type == AlgorithmType::NR_KLU) ||
-                   (type == AlgorithmType::NR_NICSLU) ||
-                   (type == AlgorithmType::NR_CKTSO) ||
-                   (type == AlgorithmType::NRSing_SparseLU) ||
-                   (type == AlgorithmType::NRSing_KLU) ||
-                   (type == AlgorithmType::NRSing_NICSLU) ||
-                   (type == AlgorithmType::NRSing_CKTSO);
-        }
         bool is_fdpf(const AlgorithmType& type) const noexcept {
             return (type == AlgorithmType::FDPF_XB_SparseLU) ||
                    (type == AlgorithmType::FDPF_BX_SparseLU) ||
@@ -118,6 +112,36 @@ class LS2G_API AlgorithmSelector final
         }
 
         AlgorithmType get_type() const { return _algo_type; }
+
+        // Registry name of the currently selected algorithm. Unlike get_type(),
+        // this stays meaningful for external (plugin) solvers, whose type is the
+        // catch-all AlgorithmType::Custom: it is what gets serialized, so a grid
+        // using a plugin can be restored (see LSGrid::get_state/set_state).
+        const std::string& get_name() const { return _algo_name; }
+
+        // Is the currently selected algorithm one shipped with lightsim2grid?
+        //
+        // Use THIS, never `get_type() == AlgorithmType::Custom`, to tell an
+        // in-tree solver from a plugin. AlgorithmType is a fixed enum of
+        // *serialized* solver identities, and a built-in only appears in it if a
+        // member was added for it: the NRRefactorRetry_* family never got one, so
+        // name_to_algo_type() reports those built-ins as Custom exactly like a
+        // plugin. The registry records the real answer at registration time (see
+        // SolverOrigin), and it is cached here at change_algorithm() time so
+        // asking costs nothing on the per-solve path.
+        bool is_builtin_algo() const { return _algo_is_builtin; }
+
+        // Polymorphic (instance-level) capability queries: unlike the
+        // type-keyed overloads above (needed by LSGrid::change_algorithm to
+        // route BEFORE a solver is constructed), these ask the CURRENTLY
+        // active `_algo` -- so they work for plugin (Custom) solvers too,
+        // via BaseAlgo's virtual capability accessors (see BaseAlgo.hpp).
+        bool supports_hvdc_droop() const {
+            return get_prt_solver("supports_hvdc_droop", false)->supports_hvdc_droop();
+        }
+        bool supports_remote_voltage_control() const {
+            return get_prt_solver("supports_remote_voltage_control", false)->supports_remote_voltage_control();
+        }
 
         // Convenience accessors for the two FDPF SparseLU variants.
         // These exist mainly for internal diagnostic use (exposed as AlgorithmSelector.get_fdpf_*).
@@ -145,13 +169,13 @@ class LS2G_API AlgorithmSelector final
             get_prt_solver("reset", false)->reset();
         }
 
-        bool compute_pf(const Eigen::SparseMatrix<cplx_type>& Ybus,
-                        CplxVect& V,
-                        const CplxVect& Sbus,
-                        Eigen::Ref<const IntVect> slack_ids,
-                        const RealVect& slack_weights,
-                        Eigen::Ref<const IntVect> pv,
-                        Eigen::Ref<const IntVect> pq,
+        bool compute_pf(const EigenRefConstCplxSpMat     & Ybus,
+                        const Eigen::Ref<const CplxVect> & V,
+                        const Eigen::Ref<const CplxVect> & Sbus,
+                        const Eigen::Ref<const IntVect>  & slack_ids,
+                        const Eigen::Ref<const RealVect> & slack_weights,
+                        const Eigen::Ref<const IntVect>  & pv,
+                        const Eigen::Ref<const IntVect>  & pq,
                         int max_iter,
                         real_type tol)
         {
@@ -161,13 +185,14 @@ class LS2G_API AlgorithmSelector final
         }
 
         // Native real-valued DC entry point (only valid for DC solvers).
-        bool compute_pf_dc(const Eigen::SparseMatrix<real_type>& Bbus,
-                           CplxVect& V,
-                           const RealVect& Pbus,
-                           Eigen::Ref<const IntVect> slack_ids,
-                           const RealVect& slack_weights,
-                           Eigen::Ref<const IntVect> pv,
-                           Eigen::Ref<const IntVect> pq)
+        // V stays plain: forwards into ->compute_pf_dc, which resizes/reassigns it.
+        bool compute_pf_dc(const EigenRefConstRealSpMat     & Bbus,
+                           const Eigen::Ref<const CplxVect> & V,
+                           const Eigen::Ref<const RealVect> & Pbus,
+                           const Eigen::Ref<const IntVect>  & slack_ids,
+                           const Eigen::Ref<const RealVect> & slack_weights,
+                           const Eigen::Ref<const IntVect>  & pv,
+                           const Eigen::Ref<const IntVect>  & pq)
         {
             _algo_type_used_for_nr = _algo_type;
             return get_prt_solver("compute_pf_dc", true)->compute_pf_dc(
@@ -196,7 +221,7 @@ class LS2G_API AlgorithmSelector final
             return get_prt_solver("get_ptdf", true)->get_ptdf();
         }
 
-        RealMat get_lodf(const IntVect& from_bus, const IntVect& to_bus) {
+        RealMat get_lodf(const Eigen::Ref<const IntVect>& from_bus, const Eigen::Ref<const IntVect>& to_bus) {
             if (!is_dc(_algo_type)) {
                 throw std::runtime_error("AlgorithmSelector::get_lodf: cannot get lodf for a solver that is not DC.");
             }
@@ -212,6 +237,14 @@ class LS2G_API AlgorithmSelector final
 
         void tell_solver_control(const AlgoControl& solver_control) {
             get_prt_solver("tell_solver_control", false)->tell_solver_control(solver_control);
+        }
+
+        // bus masking (ContingencyAnalysis "handle disconnected grid" mode)
+        bool supports_bus_masking() const {
+            return get_prt_solver("supports_bus_masking", false)->supports_bus_masking();
+        }
+        void set_masked_buses(const std::vector<int>& solver_bus_ids) {
+            get_prt_solver("set_masked_buses", false)->set_masked_buses(solver_bus_ids);
         }
 
         Eigen::SparseMatrix<real_type> get_J_python() const {
@@ -231,6 +264,47 @@ class LS2G_API AlgorithmSelector final
             check_right_solver("get_q_to_J_col");
             return get_prt_solver("get_q_to_J_col", false)->get_q_to_J_col_python();
         }
+        IntVect get_p_to_J_row_python() const {
+            check_right_solver("get_p_to_J_row");
+            return get_prt_solver("get_p_to_J_row", false)->get_p_to_J_row_python();
+        }
+        IntVect get_q_to_J_row_python() const {
+            check_right_solver("get_q_to_J_row");
+            return get_prt_solver("get_q_to_J_row", false)->get_q_to_J_row_python();
+        }
+
+        IntVect get_p_buses_python() const {
+            check_right_solver("get_p_buses");
+            return get_prt_solver("get_p_buses", false)->get_p_buses_python();
+        }
+        IntVect get_p_rows_python() const {
+            check_right_solver("get_p_rows");
+            return get_prt_solver("get_p_rows", false)->get_p_rows_python();
+        }
+        IntVect get_q_buses_python() const {
+            check_right_solver("get_q_buses");
+            return get_prt_solver("get_q_buses", false)->get_q_buses_python();
+        }
+        IntVect get_q_rows_python() const {
+            check_right_solver("get_q_rows");
+            return get_prt_solver("get_q_rows", false)->get_q_rows_python();
+        }
+        IntVect get_theta_buses_python() const {
+            check_right_solver("get_theta_buses");
+            return get_prt_solver("get_theta_buses", false)->get_theta_buses_python();
+        }
+        IntVect get_theta_cols_python() const {
+            check_right_solver("get_theta_cols");
+            return get_prt_solver("get_theta_cols", false)->get_theta_cols_python();
+        }
+        IntVect get_vm_buses_python() const {
+            check_right_solver("get_vm_buses");
+            return get_prt_solver("get_vm_buses", false)->get_vm_buses_python();
+        }
+        IntVect get_vm_cols_python() const {
+            check_right_solver("get_vm_cols");
+            return get_prt_solver("get_vm_cols", false)->get_vm_cols_python();
+        }
 
         // VoltageControl (remote gen + SVC) converged reactive injection per
         // controller (pu) + identity, in controller registration order. Empty
@@ -244,6 +318,15 @@ class LS2G_API AlgorithmSelector final
         }
         IntVect get_controller_elem_id() const {
             return get_prt_solver("get_controller_elem_id", false)->get_controller_elem_id();
+        }
+        IntVect get_controller_q_col() const {
+            return get_prt_solver("get_controller_q_col", false)->get_controller_q_col();
+        }
+        int get_slack_col() const {
+            return get_prt_solver("get_slack_col", false)->get_slack_col();
+        }
+        real_type get_slack_absorbed() const {
+            return get_prt_solver("get_slack_absorbed", false)->get_slack_absorbed();
         }
 
         double get_computation_time() const {
@@ -262,8 +345,16 @@ class LS2G_API AlgorithmSelector final
             return get_prt_solver("get_timers_ptdf_lodf", true)->get_timers_ptdf_lodf();
         }
 
+        LinearSolverStats get_linear_solver_stats() const {
+            return get_prt_solver("get_linear_solver_stats", true)->get_linear_solver_stats();
+        }
+
         ErrorType get_error() const {
             return get_prt_solver("get_error", true)->get_error();
+        }
+
+        void set_error(ErrorType error) {
+            get_prt_solver("set_error", true)->set_error(error);
         }
 
         int get_nb_iter() const {
@@ -310,6 +401,9 @@ class LS2G_API AlgorithmSelector final
 
         std::unique_ptr<BaseAlgo> _algo;
         AlgorithmType _algo_type;
+        std::string _algo_name;  // registry name; survives for plugin solvers
+        // cached SolverOrigin of _algo_name, see is_builtin_algo()
+        bool _algo_is_builtin;
         AlgorithmType _algo_type_used_for_nr;
         const LSGrid* _gridmodel_ptr;
 };

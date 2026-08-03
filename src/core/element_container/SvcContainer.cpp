@@ -7,20 +7,22 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "SvcContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 
 namespace ls2g {
 
 void SvcContainer::init(const std::vector<int> & regulation_mode,
-                        const RealVect & target_vm_pu,
-                        const RealVect & q_setpoint_mvar,
-                        const RealVect & slope_pu,
-                        const RealVect & b_min,
-                        const RealVect & b_max,
-                        const Eigen::VectorXi & regulated_bus_id,
-                        const Eigen::VectorXi & bus_id)
+                        const Eigen::Ref<const RealVect> & target_vm_pu,
+                        const Eigen::Ref<const RealVect> & q_setpoint_mvar,
+                        const Eigen::Ref<const RealVect> & slope_pu,
+                        const Eigen::Ref<const RealVect> & b_min,
+                        const Eigen::Ref<const RealVect> & b_max,
+                        const Eigen::Ref<const Eigen::VectorXi> & regulated_bus_id,
+                        const Eigen::Ref<const Eigen::VectorXi> & bus_id)
 {
     const int size = static_cast<int>(bus_id.size());
     // an SVC has NO active power
@@ -75,16 +77,49 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     check_size(bmax, size, "b_max");
     check_size(regulated_bus, size, "regulated_bus");
 
-    regulation_mode_ = IntVect::Map(&mode[0], mode.size());
-    target_vm_pu_ = RealVect::Map(&vm_pu[0], vm_pu.size());
-    slope_pu_ = RealVect::Map(&slope[0], slope.size());
-    b_min_ = RealVect::Map(&bmin[0], bmin.size());
-    b_max_ = RealVect::Map(&bmax[0], bmax.size());
-    regulated_bus_id_ = Eigen::VectorXi::Map(&regulated_bus[0], regulated_bus.size());
+    regulation_mode_ = IntVect::Map(mode.data(), mode.size());
+    target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
+    slope_pu_ = RealVect::Map(slope.data(), slope.size());
+    b_min_ = RealVect::Map(bmin.data(), bmin.size());
+    b_max_ = RealVect::Map(bmax.data(), bmax.size());
+    regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
     reset_results();
 }
 
-void SvcContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const
+void SvcContainer::check_valid(int nb_bus,
+                               int nb_sub,
+                               const SubstationContainer & substations,
+                               std::vector<int> & all_pos_topo_vect) const
+{
+    // one-side index checks (bus / subid / pos_topo_vect)
+    check_valid_osc(nb_bus, nb_sub, substations, all_pos_topo_vect, "svc");
+
+    // `regulated_bus_id_` is a gridmodel bus id that the powerflow uses *as an index*
+    // without re-checking it: `id_grid_to_solver[regulated_bus_id_(svc_id)]` in
+    // SvcContainer::set_vm and in LSGrid::fill_voltage_control_solver_data, and
+    // `Vm(regulated_bus_id_(svc_id))` in get_vm_for_dc. Nothing on the way in bounds it
+    // (SvcContainer::init only checks the vector's length, and a pickle / binary file
+    // sets it verbatim), so an out-of-range value is an out-of-bounds read followed by
+    // an out-of-bounds write into V. Same check as the generator field of the same name.
+    const int nb_svc = nb();
+    const bool has_reg_info = regulated_bus_id_.size() > 0;
+    if(!has_reg_info) return;
+    for(int svc_id = 0; svc_id < nb_svc; ++svc_id)
+    {
+        // -1 is legal: this SVC regulates no bus (disconnected / no remote target)
+        const int reg = regulated_bus_id_(svc_id);
+        if(reg == _deactivated_bus_id) continue;
+        if((reg < 0) || (reg >= nb_bus))
+        {
+            std::ostringstream exc_;
+            exc_ << "LSGrid::check_grid: svc id " << svc_id << " regulates bus id " << reg
+                 << " which is out of range [0, " << nb_bus << ").";
+            throw std::out_of_range(exc_.str());
+        }
+    }
+}
+
+void SvcContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const
 {
     const int nb_svc = nb();
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
@@ -112,7 +147,7 @@ void SvcContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_
     }
 }
 
-void SvcContainer::get_vm_for_dc(RealVect & Vm)
+void SvcContainer::get_vm_for_dc(Eigen::Ref<RealVect> Vm)
 {
     const int nb_svc = nb();
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
@@ -124,7 +159,7 @@ void SvcContainer::get_vm_for_dc(RealVect & Vm)
     }
 }
 
-void SvcContainer::set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const
+void SvcContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const
 {
     const int nb_svc = nb();
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
@@ -154,7 +189,7 @@ void SvcContainer::_compute_results(
     const Eigen::Ref<const RealVect> & /*Vm*/,
     const Eigen::Ref<const CplxVect> & /*V*/,
     const SolverBusIdVect & /*id_grid_to_solver*/,
-    const RealVect & /*bus_vn_kv*/,
+    const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
     real_type /*sn_mva*/,
     bool ac)
 {
@@ -211,7 +246,7 @@ bool SvcContainer::_reactivate(int svc_id, DualAlgoControl & solver_control)
     return false;
 }
 
-bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus)
+bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/)
 {
     // el_id is validated (and the proper IndexError raised) by `_generic_change_bus`,
     // which the caller runs *after* this function. Bail out here on an out-of-range
@@ -233,6 +268,14 @@ bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoCo
         solver_control.dc_algo_controler().tell_pv_changed();
     }
     return true;
+}
+
+void SvcContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
+}
+
+SvcContainer SvcContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<SvcContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

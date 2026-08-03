@@ -6,8 +6,6 @@ Benchmarks (dc solvers)
 In this paragraph we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings when
 performing DC powerflow.
 
-TODO DOC in progress
-
 If you are interested in other type of benchmark, let us know !
 
 .. note::
@@ -22,7 +20,7 @@ TL;DR
 .. danger::
     If you want to perform only DC powerflow (a linear model as long as the topology is not modified)
     then you should probably avoid doing some powerflow directly, but rather use linear algebra and the PTDF and LODF
-    matrices. They can be obtained with lightsim2grid and allow to perform much more powerflow.
+    matrices (see :ref:`ptdf-lodf-section` for what they are and how to get them with lightsim2grid).
 
 When using grid2op, for these small environment, the difference in computation time for an AC or a DC powerflow 
 is neglectible. Because the Newton-Raphson algorithm has been much more optimized, it is even faster to run
@@ -37,8 +35,8 @@ Lightsim2grid is still much faster than pandapower (*eg* for case 118, 2000 step
 pandapower) and pypowsybl (*eg* for case 118: 650 steps per second for pypowsybl and 2000 for lightsim2grid).
 
 Last, but not least, if you want to perform DC computations and knows in advance the generations and loads
-and the topology of the grid, then you probably should use the PTDF and LODF matrices. With them, 
-using a matrix multiplication (and numpy) you can run (on one CPU core) multiple millions of 
+and the topology of the grid, then you probably should use the PTDF and LODF matrices (:ref:`ptdf-lodf-section`).
+With them, using a matrix multiplication (and numpy) you can run (on one CPU core) multiple millions of
 DC powerflows each second.
 
 Machine used on the benchmarks
@@ -70,7 +68,7 @@ All of them has been run on a computer with a the following characteristics:
 Command to replicate the benchmark on your machine
 ----------------------------------------------------
 
-To run the benchmark `cd` in the [benchmark](./benchmarks) folder and install the dependencies
+To run the benchmark, ``cd`` into the ``benchmarks`` folder and install the dependencies
 (we suppose here that you have already installed lightsim2grid):
 
 .. code-block:: bash

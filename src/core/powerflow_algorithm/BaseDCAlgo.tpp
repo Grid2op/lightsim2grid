@@ -11,18 +11,18 @@
 #include <cmath>  // for nans
 
 template<class LinearSolver>
-bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
-                                             CplxVect & V,
-                                             const RealVect & Pbus,
-                                             Eigen::Ref<const IntVect> slack_ids,
-                                             const RealVect & slack_weights,
-                                             Eigen::Ref<const IntVect> pv,
-                                             Eigen::Ref<const IntVect> pq
-                                             )
+bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
+    const EigenRefConstRealSpMat & Bbus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const RealVect> & Pbus,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq
+)
 {
     // V is used the following way: at pq buses it's completely ignored. For pv bus only the magnitude is used,
     //   and for the slack bus both the magnitude and the angle are used.
-
     if(!is_linear_solver_valid()) {
         return false;
     }
@@ -45,6 +45,12 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type
     }
 
     sizeYbus_with_slack_ = static_cast<int>(Bbus.rows());
+
+    // "handle disconnected grid" mode: when masked_buses_ is non-empty the rhs and the
+    // factorized matrix are built in a masked-aware way (see below). We never touch the
+    // persistent dcYbus_noslack_ / dcSbus_noslack_ members so the next (possibly
+    // un-masked) contingency keeps reusing them as today.
+    const bool has_mask = !masked_buses_.empty();
 
     // hvdc angle-droop: refresh the droop data; a change (eg a `status_droop`
     // flip between two solves) modifies the dc matrix values, so it forces a
@@ -97,7 +103,9 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type
     #endif // __COUT_TIMES
 
     // remove the slack bus from Pbus
-    if(need_factorize_ || _solver_control.need_recompute_sbus() || _solver_control.has_slack_weight_changed()){
+    // (skipped in mask mode: a masked-aware rhs is built into a local vector further
+    //  down, leaving the persistent dcSbus_noslack_ untouched for un-masked solves)
+    if(!has_mask && (need_factorize_ || _solver_control.need_recompute_sbus() || _solver_control.has_slack_weight_changed())){
         // std::cout << "\t\t\tneed to dcSbus_noslack_\n";
         auto timer_pre = CustTimer();
         dcSbus_noslack_ = RealVect::Constant(sizeYbus_without_slack_, my_zero_);
@@ -126,23 +134,51 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type
         timer_pre_proc_ += timer_pre.duration();
     }
 
+    // "handle disconnected grid" mode: build the masked working matrix (identity rows
+    // for the masked buses) on a copy, so the persistent dcYbus_noslack_ is untouched.
+    // Identity rows only overwrite *existing* structural entries (the diagonal and the
+    // within-island off-diagonals), so the sparsity pattern -- and thus the symbolic
+    // factorization -- is unchanged (a numeric refactorize is enough, never analyze).
+    std::vector<char> is_masked;  // size sizeYbus_with_slack_ when has_mask
+    Eigen::SparseMatrix<real_type> masked_mat;
+    if(has_mask){
+        is_masked.assign(sizeYbus_with_slack_, 0);
+        for(int b : masked_buses_) if(b >= 0 && b < sizeYbus_with_slack_) is_masked[b] = 1;
+        // which *reduced* rows are masked (the reference slack maps to -1 and is skipped)
+        std::vector<char> masked_row(sizeYbus_without_slack_, 0);
+        for(int b : masked_buses_){
+            if(b < 0 || b >= sizeYbus_with_slack_) continue;
+            const int mr = mat_bus_id_(b);
+            if(mr != -1) masked_row[mr] = 1;
+        }
+        masked_mat = dcYbus_noslack_;  // copy, leaving the persistent matrix intact
+        // single in-place pass over the (column-major) copy: every masked row becomes
+        // the identity row e_mr (off-diagonals -> 0, diagonal -> 1). Only *existing*
+        // structural entries are written (via valueRef), so the sparsity pattern -- and
+        // therefore the symbolic factorization -- is left unchanged (refactorize only).
+        for(int col = 0; col < masked_mat.outerSize(); ++col){
+            for(typename Eigen::SparseMatrix<real_type>::InnerIterator it(masked_mat, col); it; ++it){
+                const int row = static_cast<int>(it.row());
+                if(!masked_row[row]) continue;
+                it.valueRef() = (row == col) ? 1. : 0.;
+            }
+        }
+    }
+    // the system matrix actually handed to the linear solver
+    Eigen::SparseMatrix<real_type> & sys_mat = has_mask ? masked_mat : dcYbus_noslack_;
+
     // analyze (structure) + factorize (values) if topology changed
+    bool factorized_now = false;
     if(need_factorize_){
         // std::cout << "\t\t\tneed to factorize\n";
-        auto timer_an = CustTimer();
-        ErrorType status_init = _linear_solver.analyze(dcYbus_noslack_);
-        const double dur_an = timer_an.duration();
-        timer_initialize_ += dur_an;
+        ErrorType status_init = _linear_solver.analyze(sys_mat);
         if(status_init != ErrorType::NoError){
             err_ = status_init;
             timer_total_nr_ += timer.duration();
             return false;
         }
 
-        auto timer_fac = CustTimer();
-        status_init = _linear_solver.factorize(dcYbus_noslack_);
-        const double dur_fact = timer_fac.duration();
-        timer_factor_ += dur_fact;
+        status_init = _linear_solver.factorize(sys_mat);
         if(status_init != ErrorType::NoError){
             err_ = status_init;
             timer_total_nr_ += timer.duration();
@@ -150,28 +186,62 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type
         }
         need_factorize_ = false;  // done just above
         need_refactor_ = false;  // no need to refactor as a factor as been called just now
-        // std::cout << "need_factorize_ 3\n"; 
+        factorized_now = true;
+        // std::cout << "need_factorize_ 3\n";
     }
 
     // solve for theta: Sbus = dcY . theta (make a copy to keep dcSbus_noslack_)
     auto timer_pre = CustTimer();
-    RealVect Va_dc_without_slack = dcSbus_noslack_;      
-    timer_pre_proc_ += timer_pre.duration(); 
-    
-    // std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_ (max): " << dcYbus_noslack_.coeffs().maxCoeff() << std::endl;  // TODO DEBUG WINDOWS
-    // std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_ (sum): " << dcYbus_noslack_.coeffs().abs().sum() << std::endl;  // TODO DEBUG WINDOWS
-    // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (inf norm): " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
-    // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (l1 norm): " << Va_dc_without_slack.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
-    // std::cout << "\t\tBaseDCAlgo.tpp:  V (l1 norm): " <<  V.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
-    // std::cout << "\t\tBaseDCAlgo.tpp:  Sbus (l1 norm): " <<  Sbus.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
-    if(need_refactor_){
+    RealVect Va_dc_without_slack;
+    if(has_mask){
+        // masked-aware rhs: the masked island is not simulated, so its buses inject
+        // nothing and are excluded from the slack imbalance; their (identity) rows get a
+        // 0 rhs => theta = 0. Built locally so dcSbus_noslack_ stays valid for un-masked
+        // contingencies.
+        Va_dc_without_slack = RealVect::Constant(sizeYbus_without_slack_, my_zero_);
+        for(int k = 0; k < sizeYbus_with_slack_; ++k){
+            if(is_masked[k]) continue;
+            const int col_res = mat_bus_id_(k);
+            if(col_res == -1) continue;  // reference slack: removed from the system
+            Va_dc_without_slack(col_res) = Pbus(k);
+        }
+        if(slack_weights.size() == sizeYbus_with_slack_){
+            real_type imbalance = my_zero_;
+            for(int k = 0; k < sizeYbus_with_slack_; ++k){
+                if(!is_masked[k]) imbalance -= Pbus(k);  // -sum(Pbus) over live buses only
+            }
+            for(int k = 0; k < sizeYbus_with_slack_; ++k){
+                if(is_masked[k] || slack_weights(k) <= my_zero_) continue;
+                const int col_res = mat_bus_id_(k);
+                if(col_res == -1) continue;  // reference slack: share is implicit
+                Va_dc_without_slack(col_res) += slack_weights(k) * imbalance;
+            }
+        }
+        // angle-droop hvdc: only lines fully inside the live component are stamped (a
+        // droop line crossing into a masked island is out of scope for v1, see header).
+        const int nb_droop_m = hvdc_droop_data_.size();
+        for(int kk = 0; kk < nb_droop_m; ++kk){
+            if(hvdc_droop_data_.status(kk) != 0) continue;  // saturated: fixed injection (in Pbus)
+            const int b1 = hvdc_droop_data_.bus1(kk);
+            const int b2 = hvdc_droop_data_.bus2(kk);
+            if(is_masked[b1] || is_masked[b2]) continue;
+            const int m1 = mat_bus_id_(b1);
+            const int m2 = mat_bus_id_(b2);
+            if(m1 != -1) Va_dc_without_slack(m1) -= hvdc_droop_data_.p0(kk);
+            if(m2 != -1) Va_dc_without_slack(m2) += hvdc_droop_data_.p0(kk);
+        }
+    } else {
+        Va_dc_without_slack = dcSbus_noslack_;
+    }
+    timer_pre_proc_ += timer_pre.duration();
+
+    // refactorize (numeric only) when Ybus changed (n-1) or in mask mode (the working
+    // matrix differs from the one currently factorized). Skipped right after a factorize.
+    if(!factorized_now && (need_refactor_ || has_mask)){
         // we should end-up here only in case of n-1 simulation (handled in contingency analysis)
         // set to true in update_internal_Ybus
         // std::cout << "\t\t\tneed to refactorize\n";
-        auto timer_s = CustTimer();
-        ErrorType error = _linear_solver.refactorize(dcYbus_noslack_);
-        const double dur_refacto = timer_s.duration();
-        timer_refactor_ += dur_refacto;
+        ErrorType error = _linear_solver.refactorize(sys_mat);
         if(error != ErrorType::NoError){
             err_ = error;
             timer_total_nr_ += timer.duration();
@@ -179,10 +249,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type
         }
     }
     {
-        auto timer_s = CustTimer();
         ErrorType error = _linear_solver.solve(Va_dc_without_slack);
-        const double dur_solve = timer_s.duration();
-        timer_solve_ += dur_solve;
         if(error != ErrorType::NoError){
             err_ = error;
             timer_total_nr_ += timer.duration();
@@ -199,7 +266,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type
         // for convergence, all values should be finite
         // and it's not realistic if some Va are too high
         err_ = ErrorType::SolverSolve;
-        V = CplxVect();
         V_ = CplxVect();
         Vm_ = RealVect();
         Va_ = RealVect();
@@ -231,9 +297,8 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type
 
     // compute complex voltages with std::polar: uses hardware sincos, no temporaries, fills V and V_ in one pass
     V_.resize(sizeYbus_with_slack_);
-    V.resize(sizeYbus_with_slack_);
     for(int i = 0; i < sizeYbus_with_slack_; ++i){
-        V_[i] = V[i] = std::polar(Vm_[i], Va_[i]);
+        V_[i] = std::polar(Vm_[i], Va_[i]);
     }
     nr_iter_ = 1;
     need_refactor_ = false;  // no need to redo it in general cases
@@ -263,7 +328,7 @@ void BaseDCAlgo<LinearSolver>::fill_mat_bus_id(int nb_bus_solver){
 }
 
 template<class LinearSolver>
-void BaseDCAlgo<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<real_type> & ref_mat){
+void BaseDCAlgo<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & ref_mat){
     // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
     remove_slack_buses(nb_bus_solver, ref_mat, dcYbus_noslack_);
     add_droop_to_dcYbus();
@@ -327,17 +392,17 @@ void BaseDCAlgo<LinearSolver>::add_droop_to_dcSbus(){
 
 template<class LinearSolver>
 template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
-void BaseDCAlgo<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen::SparseMatrix<ref_mat_type> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat){
+void BaseDCAlgo<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat){
     res_mat = Eigen::SparseMatrix<real_type>(sizeYbus_without_slack_, sizeYbus_without_slack_);  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(ref_mat.nonZeros());
-    for (size_t k=0; k < nb_bus_solver; ++k){
+    for (int k=0; k < nb_bus_solver; ++k){
         if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
-        for (typename Eigen::SparseMatrix<ref_mat_type>::InnerIterator it(ref_mat, k); it; ++it)
+        for (typename Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>>::InnerIterator it(ref_mat, k); it; ++it)
         {
-            size_t row_res = static_cast<size_t>(it.row());  // TODO Eigen::Index here ?
+            int row_res = static_cast<int>(it.row());  // TODO Eigen::Index here ?
             row_res = mat_bus_id_(row_res);
-            size_t col_res = static_cast<size_t>(it.col());  // should be k   // TODO Eigen::Index here ?
+            int col_res = static_cast<int>(it.col());  // should be k   // TODO Eigen::Index here ?
             col_res = mat_bus_id_(col_res);
             if(row_res == -1) continue;
             if(col_res == -1) continue;
@@ -363,6 +428,7 @@ void BaseDCAlgo<LinearSolver>::reset(){
     mat_bus_id_ = Eigen::VectorXi();
     nonslack_ybus_ids_ = Eigen::VectorXi();
     hvdc_droop_data_.clear();
+    masked_buses_.clear();
 }
 
 template<class LinearSolver>
@@ -417,18 +483,23 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(){
 }
 
 template<class LinearSolver>
-RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
-                                           const IntVect & to_bus){
+RealMat BaseDCAlgo<LinearSolver>::get_lodf(const Eigen::Ref<const IntVect> & from_bus,
+                                           const Eigen::Ref<const IntVect> & to_bus){
     auto timer = CustTimer();
     const RealMat PTDF = get_ptdf();  // size n_line x n_bus
     RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line
     const real_type tol_equal_float = _tol_equal_float;
-    for(size_t line_id=0; line_id < from_bus.size(); ++line_id){
+    for(Eigen::Index line_id=0; line_id < from_bus.size(); ++line_id){
         auto f_bus = from_bus(line_id);
         auto t_bus = to_bus(line_id);
         if ((f_bus == BaseConstants::_deactivated_bus_id) || (t_bus == BaseConstants::_deactivated_bus_id)){
-            // element is disconnected
-            LODF.col(line_id).array() = std::numeric_limits<real_type>::quiet_NaN();
+            // element carries no DC flow (disconnected, or half-open -- see
+            // TwoSidesContainer_rxh_A::fillBdc's "disco on one side == disco on
+            // both sides" convention): "outaging" it has no effect anywhere in
+            // the grid, i.e. an identity column. Its own row is already all-0
+            // too, since its PTDF row is 0 (fillBf_for_PTDF excludes it from Bf).
+            LODF(line_id, line_id) = 1.;
+            continue;
         }
         LODF.col(line_id).array() = PTDF.col(f_bus).array() - PTDF.col(t_bus).array();
         const real_type diag_coeff = LODF(line_id, line_id);

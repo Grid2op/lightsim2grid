@@ -11,6 +11,7 @@
 
 #include "BaseAlgo.hpp"
 #include "HvdcDroopData.hpp"
+#include "linear_solvers/LinearSolverStats.hpp"
 
 namespace ls2g {
 
@@ -28,9 +29,6 @@ class BaseDCAlgo final: public BaseAlgo
             _linear_solver(),
             need_factorize_(true),
             need_refactor_(true),
-            timer_factor_(0.),
-            timer_refactor_(0.),
-            timer_initialize_(0.),
             timer_pre_proc_(0.),
             timer_mismatch_(0.),  // used for all the post processing
             timer_ptdf_(0.),
@@ -38,29 +36,30 @@ class BaseDCAlgo final: public BaseAlgo
             sizeYbus_with_slack_(0),
             sizeYbus_without_slack_(0){};
 
-        virtual ~BaseDCAlgo() noexcept = default;
+        ~BaseDCAlgo() noexcept override = default;
 
-        virtual void reset() final;
-        virtual void reset_timer() final{
+        static constexpr bool IS_DC = true;
+        bool is_dc() const noexcept override { return IS_DC; }
+
+        void reset() override;
+        void reset_timer() override{
             BaseAlgo::reset_timer();
-            timer_refactor_ = 0.;
-            timer_factor_ = 0.;
-            timer_initialize_  = 0.;
+            detail::reset_stats_timers_impl(_linear_solver, 0);
             timer_pre_proc_  = 0.;
             timer_mismatch_  = 0.;
-            timer_solve_ = 0.;
             timer_ptdf_ = 0.;
             timer_lodf_ = 0.;
         }
 
-        virtual TimerJac get_timers_jacobian() const final
+        TimerJac get_timers_jacobian() const override
         {
+            const LinearSolverStats lsstats = detail::get_stats_impl(_linear_solver, 0);
             TimerJac res;
             res.timer_Fx_         = timer_Fx_;
-            res.timer_solve_      = timer_solve_;
-            res.timer_factor_     = timer_factor_;
-            res.timer_refactor_   = timer_refactor_;
-            res.timer_initialize_ = timer_initialize_;
+            res.timer_solve_      = lsstats.timer_solve_;
+            res.timer_factor_     = lsstats.timer_factor_;
+            res.timer_refactor_   = lsstats.timer_refactor_;
+            res.timer_initialize_ = lsstats.timer_initialize_;
             res.timer_check_      = timer_check_;
             res.timer_total_nr_   = timer_total_nr_;
             res.timer_pre_proc_   = timer_pre_proc_;
@@ -68,7 +67,13 @@ class BaseDCAlgo final: public BaseAlgo
             return res;
         }
 
-        virtual TimerPTDFLODFType get_timers_ptdf_lodf() const final
+        // Per-call counters and timings for the underlying linear solver -- see
+        // NRAlgo::get_linear_solver_stats for the full description.
+        LinearSolverStats get_linear_solver_stats() const override {
+            return detail::get_stats_impl(_linear_solver, 0);
+        }
+
+        TimerPTDFLODFType get_timers_ptdf_lodf() const override
         {
             TimerPTDFLODFType res = {
                 timer_ptdf_,  
@@ -81,22 +86,26 @@ class BaseDCAlgo final: public BaseAlgo
         // Native real-valued DC power flow: solves `Bbus . theta = Pbus`.
         // (the DC solver does not implement the complex `compute_pf`: it inherits the throwing
         //  default from BaseAlgo, since every DC code path goes through `compute_pf_dc`)
-        virtual
-        bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
-                           CplxVect & V,
-                           const RealVect & Pbus,
-                           Eigen::Ref<const IntVect> slack_ids,
-                           const RealVect & slack_weights,
-                           Eigen::Ref<const IntVect> pv,
-                           Eigen::Ref<const IntVect> pq
-                           ) final;
+        bool compute_pf_dc(
+            const EigenRefConstRealSpMat     & Bbus,
+            const Eigen::Ref<const CplxVect> & V,
+            const Eigen::Ref<const RealVect> & Pbus,
+            const Eigen::Ref<const IntVect>  & slack_ids,
+            const Eigen::Ref<const RealVect> & slack_weights,
+            const Eigen::Ref<const IntVect>  & pv,
+            const Eigen::Ref<const IntVect>  & pq
+        ) override;
 
-        virtual RealMat get_ptdf() final;
-        virtual RealMat get_lodf(const IntVect & from_bus,
-                                 const IntVect & to_bus) final;
-        virtual Eigen::SparseMatrix<real_type> get_bsdf() final;  // TODO BSDF
-        
-        virtual void update_internal_Ybus(const Coeff & coeff, bool add) final{
+        // TOOD speed optim: return refs instead of plain structure
+        RealMat get_ptdf() override;
+        RealMat get_lodf(
+            const Eigen::Ref<const IntVect> & from_bus,
+            const Eigen::Ref<const IntVect> & to_bus
+        ) override;
+
+        Eigen::SparseMatrix<real_type> get_bsdf() override;  // TODO BSDF
+
+        void update_internal_Ybus(const Coeff & coeff, bool add) override{
             int row_res = static_cast<int>(coeff.row_id);
             row_res = mat_bus_id_(row_res);
             if(row_res == -1) return;
@@ -110,6 +119,19 @@ class BaseDCAlgo final: public BaseAlgo
             if(!add) need_refactor_ = true;
         }
 
+        // ----- bus masking ("handle disconnected grid" mode) -----------------------
+        // ContingencyAnalysis can ask the DC solver to "mask" the buses of a
+        // disconnected island: their reduced-system row becomes identity (theta = 0)
+        // and their injection is dropped, so the largest connected component still
+        // solves while the masked buses are reported as 0. The masking is applied to
+        // a working copy of dcYbus_noslack_, so the (incrementally maintained)
+        // persistent matrix and the symbolic factorization are left untouched (only a
+        // numeric refactorize is needed). See compute_pf_dc.
+        bool supports_bus_masking() const override { return true; }
+        void set_masked_buses(const std::vector<int> & solver_bus_ids) override{
+            masked_buses_ = solver_bus_ids;
+        }
+
     private:
         // no copy allowed
         BaseDCAlgo(const BaseDCAlgo&) = delete;
@@ -119,7 +141,7 @@ class BaseDCAlgo final: public BaseAlgo
 
     protected:
         void fill_mat_bus_id(int nb_bus_solver);
-        void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<real_type> & ref_mat);
+        void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<real_type>> & ref_mat);
 
         // hvdc angle-droop ("AC emulation") support: in dc, the linear-mode
         // droop lines contribute `p = p0 + k * (theta1 - theta2)`: the k term
@@ -131,18 +153,16 @@ class BaseDCAlgo final: public BaseAlgo
         void add_droop_to_dcYbus();
         void add_droop_to_dcSbus();
 
-        // remove_slack_buses: res_mat is initialized and make_compressed in this function
+        // remove_slack_buses: res_mat is reset (reassigned) and setFromTriplets/makeCompressed'd
+        // from scratch in this function, so it needs a real reference, not Eigen::Ref.
         template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
-        void remove_slack_buses(int nb_bus_solver, const Eigen::SparseMatrix<ref_mat_type> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat);
+        void remove_slack_buses(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat);
 
     protected:
         LinearSolver  _linear_solver;
         bool need_factorize_;
         bool need_refactor_;
 
-        double timer_factor_;
-        double timer_refactor_;
-        double timer_initialize_;
         double timer_pre_proc_;
         double timer_mismatch_;  // used for all the post processing
 
@@ -164,6 +184,10 @@ class BaseDCAlgo final: public BaseAlgo
         // connected angle-droop hvdc lines (solver bus ids, pu), refreshed at
         // every compute_pf; a change forces a rebuild of dcYbus / dcSbus
         HvdcDroopSolverData hvdc_droop_data_;
+
+        // solver bus ids (with-slack indexing) masked by the "handle disconnected
+        // grid" mode (empty by default => no masking). See set_masked_buses.
+        std::vector<int> masked_buses_;
 };
 
 #include "BaseDCAlgo.tpp"

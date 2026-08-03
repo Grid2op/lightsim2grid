@@ -12,23 +12,50 @@ namespace ls2g {
 
 /**
  V is modified at each call !
+ Member version: single-threaded path, uses the member solver / control / accumulators.
 **/
 bool BaseBatchSolverSynch::compute_one_powerflow(
-    const Eigen::SparseMatrix<cplx_type> & Ybus,
+    const EigenRefConstCplxSpMat & Ybus,
     CplxVect & V,
-    const CplxVect & Sbus,
-    Eigen::Ref<const IntVect> slack_ids,
-    const RealVect & slack_weights,
-    Eigen::Ref<const IntVect> bus_pv,
-    Eigen::Ref<const IntVect> bus_pq,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & bus_pv,
+    const Eigen::Ref<const IntVect> & bus_pq,
     int max_iter,
     double tol
 )
 {
-    _algo.tell_solver_control(_algo_controler);
+    return compute_one_powerflow(
+        _algo, _algo_controler, _nb_solved, _timer_solver,
+        Ybus, V, Sbus, slack_ids, slack_weights, bus_pv, bus_pq, max_iter, tol);
+}
+
+/**
+ V is modified at each call !
+ Explicit version: operates on the passed solver / control / accumulators so it
+ can run concurrently (one solver per thread). The member Bbus_ is read-only here.
+**/
+bool BaseBatchSolverSynch::compute_one_powerflow(
+    AlgorithmSelector & algo,
+    AlgoControl & control,
+    int & nb_solved,
+    double & timer_solver,
+    const EigenRefConstCplxSpMat & Ybus,
+    CplxVect &  V,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & bus_pv,
+    const Eigen::Ref<const IntVect> & bus_pq,
+    int max_iter,
+    double tol
+)
+{
+    algo.tell_solver_control(control);
     bool conv;
-    if(_algo.ac_solver_used()){
-        conv = _algo.compute_pf(
+    if(algo.ac_solver_used()){
+        conv = algo.compute_pf(
             Ybus,
             V,
             Sbus,
@@ -40,22 +67,60 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
             tol);
     } else {
         // native real DC entry point: Bbus_ is the (constant) real admittance built in
-        // prepare_solver_input_base; Pbus is the real part of the (possibly per-step) injection
-        const RealVect Pbus = Sbus.real();
-        conv = _algo.compute_pf_dc(
-            Bbus_,
-            V,
-            Pbus,
-            slack_ids,
-            slack_weights,
-            bus_pv,
-            bus_pq);
+        // prepare_solver_input_base; Pbus is the real part of the (possibly per-step)
+        // injection. ContingencyAnalysis leaves Sbus_ empty in DC (it relies on the
+        // member Pbus_ built once), so fall back to Pbus_ when no complex Sbus is given.
+        // Split into two branches (rather than a ternary) so the common/no-Sbus case
+        // binds Pbus_ directly instead of unifying both branches into a fresh copy.
+        if(Sbus.size() == 0){
+            conv = algo.compute_pf_dc(Bbus_, V, Pbus_, slack_ids, slack_weights, bus_pv, bus_pq);
+        } else {
+            const RealVect Pbus = Sbus.real();
+            conv = algo.compute_pf_dc(Bbus_, V, Pbus, slack_ids, slack_weights, bus_pv, bus_pq);
+        }
     }
     if(conv){
-        V = _algo.get_V().array();
+        V = algo.get_V().array();
     }
-    ++_nb_solved;
-    _timer_solver += _algo.get_computation_time(); 
+    ++nb_solved;
+    timer_solver += algo.get_computation_time();
+    return conv;
+}
+
+bool BaseBatchSolverSynch::warmup_solver(
+    AlgorithmSelector & algo,
+    AlgoControl & control,
+    const Eigen::Ref<const CplxVect> & Vinit_solver,
+    int max_iter,
+    real_type tol)
+{
+    algo.reset();
+    control.tell_all_changed();
+    algo.tell_solver_control(control);
+    bool conv;
+    if(algo.ac_solver_used()){
+        conv = algo.compute_pf(
+            Ybus_,
+            Vinit_solver,
+            Sbus_,
+            slack_ids_solver_.as_eigen(),
+            slack_weights_,
+            bus_pv_.as_eigen(),
+            bus_pq_.as_eigen(),
+            max_iter,
+            tol);
+    } else {
+        conv = algo.compute_pf_dc(
+            Bbus_,
+            Vinit_solver,
+            Pbus_,
+            slack_ids_solver_.as_eigen(),
+            slack_weights_,
+            bus_pv_.as_eigen(),
+            bus_pq_.as_eigen());
+    }
+    // subsequent per-contingency solves reuse the factorization
+    control.tell_none_changed();
     return conv;
 }
 

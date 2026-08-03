@@ -10,6 +10,8 @@
 #ifndef CKTSOSOLVER_H
 #define CKTSOSOLVER_H
 
+#include <memory>
+
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
 #include "Utils.hpp"
@@ -52,13 +54,12 @@ class LS2G_API CKTSOLinearSolver final
         ~CKTSOLinearSolver() noexcept
         {
            if(solver_!= nullptr) solver_->DestroySolver();
-           if(ai_!= nullptr) delete [] ai_;
-           if(ap_!= nullptr) delete [] ap_;
-           
+           // ai_ / ap_ are std::unique_ptr and free themselves.
+
            // should not be deleted, see https://github.com/Grid2Op/lightsim2grid/issues/52#issuecomment-1333565959
            // if(iparm_!= nullptr) delete iparm_;
            // if(oparm_!= nullptr) delete oparm_;
-           
+
         }
         // CKTSOLinearSolver(CKTSOLinearSolver && other) noexcept: nb_thread_(ohter.nb_thread_){
         // TODO !
@@ -82,10 +83,10 @@ class LS2G_API CKTSOLinearSolver final
 
         // public api
         ErrorType reset();
-        ErrorType analyze(const Eigen::SparseMatrix<real_type> & J);   // creates solver + reordering + symbolic factorization
-        ErrorType factorize(const Eigen::SparseMatrix<real_type> & J); // numeric factorization (requires values)
-        ErrorType refactorize(const Eigen::SparseMatrix<real_type> & J);  // re-numeric factorization, reuses symbolic
-        ErrorType solve(RealVect & b);
+        ErrorType analyze(const EigenRefConstRealSpMat & J);   // creates solver + reordering + symbolic factorization
+        ErrorType factorize(const EigenRefConstRealSpMat & J); // numeric factorization (requires values)
+        ErrorType refactorize(const EigenRefConstRealSpMat & J);  // re-numeric factorization, reuses symbolic
+        ErrorType solve(Eigen::Ref<RealVect> b);
 
         // can this linear solver solve problem where RHS is a matrix
         static const bool CAN_SOLVE_MAT;
@@ -100,10 +101,12 @@ class LS2G_API CKTSOLinearSolver final
         // solver initialization
         ICktSo solver_;
         const unsigned int nb_thread_;
-        int * ai_;
-        int * ap_;
-        int * iparm_;
-        long long * oparm_;
+        // ai_ / ap_ own the CSC index buffers passed to CKTSO's Analyze; they must
+        // stay alive until reset() / destruction, which std::unique_ptr handles.
+        std::unique_ptr<int[]> ai_;
+        std::unique_ptr<int[]> ap_;
+        int * iparm_;   // owned by CKTSO, not freed here
+        long long * oparm_;  // owned by CKTSO, not freed here
 
 };
 
@@ -111,4 +114,47 @@ class LS2G_API CKTSOLinearSolver final
 
 } // namespace ls2g
 
-#endif  // CKTSO_SOLVER_AVAILABLE
+#elif defined(_READ_THE_DOCS)
+#ifndef CKTSOSOLVER_H
+#define CKTSOSOLVER_H
+#include "Utils.hpp"
+#include "Eigen/Core"
+#include "Eigen/Dense"
+#include "Eigen/SparseCore"
+
+namespace ls2g {
+
+/**
+Doc-only stand-in for CKTSOLinearSolver, used when the real (licensed) CKTSO library is
+not available but _READ_THE_DOCS is set: it gives NR_CKTSO (and its DC_CKTSO /
+FDPF_*_CKTSO / NRSing_CKTSO / NRRefactorRetry_CKTSO siblings, see Solvers.hpp) a
+genuine, distinct, fully-functional C++ type -- with the same name and public interface
+as the real CKTSOLinearSolver -- so Sphinx can document them as real classes without
+requiring the actual library. Every method is a trivial no-op: this is never meant to
+actually solve a real system, only to be introspected.
+**/
+class LS2G_API CKTSOLinearSolver final
+{
+    public:
+        CKTSOLinearSolver() noexcept = default;
+        ~CKTSOLinearSolver() noexcept = default;
+
+        ErrorType reset() { return ErrorType::NoError; }
+        ErrorType analyze(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType factorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType refactorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType solve(Eigen::Ref<RealVect> /*b*/) { return ErrorType::NoError; }
+
+        // can this linear solver solve problem where RHS is a matrix
+        static constexpr bool CAN_SOLVE_MAT = false;
+
+        // prevent copy and assignment (matches the real CKTSOLinearSolver)
+        CKTSOLinearSolver(const CKTSOLinearSolver&) = delete;
+        CKTSOLinearSolver(CKTSOLinearSolver&&) = delete;
+        CKTSOLinearSolver & operator=(CKTSOLinearSolver&&) = delete;
+        CKTSOLinearSolver & operator=(const CKTSOLinearSolver&) = delete;
+};
+
+} // namespace ls2g
+#endif // CKTSOSOLVER_H
+#endif  // CKTSO_SOLVER_AVAILABLE (or _READ_THE_DOCS)

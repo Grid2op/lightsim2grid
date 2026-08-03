@@ -15,43 +15,49 @@ namespace ls2g {
 const bool KLULinearSolver::CAN_SOLVE_MAT = false;
 
 ErrorType KLULinearSolver::reset(){
-    if(symbolic_ != nullptr) klu_free_symbolic(&symbolic_, &common_);
-    if(numeric_ != nullptr) klu_free_numeric(&numeric_, &common_);
+    // release both handles (their deleters use common_) before resetting common_
+    numeric_.reset();
+    symbolic_.reset();
     common_ = klu_common();
-    symbolic_ = nullptr;
-    numeric_ = nullptr;
+    klu_defaults(&common_);
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::analyze(const Eigen::SparseMatrix<real_type>& J){
+ErrorType KLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
     // J is const here, but `klu_analyze` signature expects non-const arrays, so I const_cast
     const auto n = J.cols();
+    // free any previous factorization (using the current common_) before resetting it,
+    // so re-analyzing without a prior reset() no longer leaks the old handles
+    numeric_.reset();
+    symbolic_.reset();
     common_ = klu_common();
-    symbolic_ = klu_analyze(n,
-                            const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
-                            const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
-                            &common_);
+    klu_defaults(&common_);
+    symbolic_.reset(klu_analyze(n,
+                                const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
+                                const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
+                                &common_));
     if(common_.status != KLU_OK) return ErrorType::SolverAnalyze;
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::factorize(const Eigen::SparseMatrix<real_type>& J){
+ErrorType KLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
     // J is const here, but `klu_factor` signature expects non-const arrays, so I const_cast
-    numeric_ = klu_factor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
-                          const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
-                          const_cast<real_type*>(J.valuePtr()),
-                          symbolic_, &common_);
+    // reset() frees any previous numeric factorization before storing the new one
+    numeric_.reset(klu_factor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
+                              const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
+                              const_cast<real_type*>(J.valuePtr()),
+                              symbolic_.get(), &common_));
     if(common_.status != KLU_OK) return ErrorType::SolverFactor;
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type>& J){
+ErrorType KLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
     // J is const here, but `klu_refactor` signature expects arrays and not const arrays
     // so I const_cast
     int ok = klu_refactor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
                           const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
                           const_cast<real_type*>(J.valuePtr()),
-                          symbolic_, numeric_, &common_);
+                          symbolic_.get(), numeric_.get(), &common_);
     if(ok != 1){
         // std::cout << "\t KLU: refactor error" << std::endl;
         return ErrorType::SolverReFactor;
@@ -59,9 +65,9 @@ ErrorType KLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type>& J){
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::solve(RealVect & b){
+ErrorType KLULinearSolver::solve(Eigen::Ref<RealVect> b){
     const int n = static_cast<int>(b.size());
-    int ok = klu_solve(symbolic_, numeric_, n, 1, &b(0), &common_);
+    int ok = klu_solve(symbolic_.get(), numeric_.get(), n, 1, &b(0), &common_);
     if(ok != 1){
         // std::cout << "\t KLU: klu_solve error" << std::endl;
         return ErrorType::SolverSolve;

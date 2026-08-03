@@ -8,8 +8,12 @@
 
 #include "LSGrid.hpp"
 #include "AlgorithmSelector.hpp"  // to avoid circular references
+#include "BinaryArchive.hpp"
 
+#include <cmath>      // std::isfinite (check_positive_finite)
 #include <queue>
+#include <sstream>
+#include <stdexcept>
 
 namespace ls2g {
 
@@ -19,6 +23,8 @@ LSGrid::LSGrid(const LSGrid & other)
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
     compute_results_ = other.compute_results_;
+    init_kwargs_ = other.init_kwargs_;
+    _bus_fusion_rep = other._bus_fusion_rep;
 
     // copy the powersystem representation
     // 1. bus
@@ -60,10 +66,14 @@ LSGrid::LSGrid(const LSGrid & other)
     // static var compensators
     svcs_ = other.svcs_;
 
-    // assign the right solver
+    // assign the right solver. By *name*, not by AlgorithmType: an external
+    // (plugin) solver has type AlgorithmType::Custom, which the type-based
+    // overload rejects -- copying a grid using a plugin used to throw.
     reset(true, true, true);
-    _algo.change_algorithm(other.get_algo_type());
-    _dc_algo.change_algorithm(other.get_dc_algo_type());
+    _algo.change_algorithm(other._algo.get_name());
+    _algo.set_config(other.get_algo().get_config());
+    _dc_algo.change_algorithm(other._dc_algo.get_name());
+    _dc_algo.set_config(other.get_dc_algo().get_config());
 }
 
 //pickle
@@ -84,6 +94,21 @@ LSGrid::StateRes LSGrid::get_state() const
     auto res_hvdc_line = hvdc_lines_.get_state();
     auto res_svc = svcs_.get_state();
 
+    AlgoConfig ac_algo_cfg = get_ac_algo_config();
+    AlgoConfig dc_algo_cfg = get_dc_algo_config();
+    auto res_ac_algo_cfg = std::make_tuple(ac_algo_cfg.int_params, ac_algo_cfg.real_params);
+    auto res_dc_algo_cfg = std::make_tuple(dc_algo_cfg.int_params, dc_algo_cfg.real_params);
+
+    std::vector<std::string> init_kwargs_keys;
+    std::vector<std::string> init_kwargs_values;
+    init_kwargs_keys.reserve(init_kwargs_.size());
+    init_kwargs_values.reserve(init_kwargs_.size());
+    for (const auto & kv : init_kwargs_) {
+        init_kwargs_keys.push_back(kv.first);
+        init_kwargs_values.push_back(kv.second);
+    }
+    std::vector<int> bus_fusion_rep(_bus_fusion_rep.begin(), _bus_fusion_rep.end());
+
     LSGrid::StateRes res(version_major,
                             version_medium,
                             version_minor,
@@ -100,14 +125,19 @@ LSGrid::StateRes LSGrid::get_state() const
                             res_sgen,
                             res_storage,
                             res_hvdc_line,
-                            get_algo_type(),
-                            get_dc_algo_type(),
-                            res_svc
+                            res_svc,
+                            _algo.get_name(),
+                            _dc_algo.get_name(),
+                            res_ac_algo_cfg,
+                            res_dc_algo_cfg,
+                            init_kwargs_keys,
+                            init_kwargs_values,
+                            bus_fusion_rep
                             );
     return res;
 };
 
-void LSGrid::set_state(LSGrid::StateRes & my_state)
+void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
 {
     // after loading back, the instance need to be reset anyway
     // TODO see if it's worth the trouble NOT to do it
@@ -116,9 +146,9 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     compute_results_ = true;
 
     // extract data from the state
-    std::string version_major = std::get<0>(my_state);
-    std::string version_medium = std::get<1>(my_state);
-    std::string version_minor = std::get<2>(my_state);
+    std::string version_major = std::get<VERSION_MAJOR_ID>(my_state);
+    std::string version_medium = std::get<VERSION_MEDIUM_ID>(my_state);
+    std::string version_minor = std::get<VERSION_MINOR_ID>(my_state);
     if((version_major != VERSION_MAJOR )| (version_medium != VERSION_MEDIUM) | (version_minor != VERSION_MINOR))
     {
         std::ostringstream exc_;
@@ -129,42 +159,53 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
         exc_ << "It is not possible. Please reinstall it.";
         throw std::runtime_error(exc_.str());
     }
-    const std::vector<int> & ls_to_pp = std::get<3>(my_state);
-    init_vm_pu_ = std::get<4>(my_state);
-    sn_mva_ = std::get<5>(my_state);
-    // const std::vector<real_type> & bus_vn_kv = std::get<6>(my_state);
-    const std::vector<bool> & last_bus_status_saved = std::get<6>(my_state);
-    SubstationContainer::StateRes & state_substations = std::get<7>(my_state);
+    const std::vector<int> & ls_to_pp = std::get<LS_TO_ORIG_ID>(my_state);
+    init_vm_pu_ = std::get<INIT_VM_PU_ID>(my_state);
+    sn_mva_ = std::get<SN_MVA_ID>(my_state);
+    const std::vector<bool> & last_bus_status_saved = std::get<BUS_STATUS_ID>(my_state);
+    SubstationContainer::StateRes & state_substations = std::get<SUBSTATION_ID>(my_state);
     // powerlines
-    LineContainer::StateRes & state_lines = std::get<8>(my_state);
+    LineContainer::StateRes & state_lines = std::get<LINE_ID>(my_state);
     // shunts
-    ShuntContainer::StateRes & state_shunts = std::get<9>(my_state);
+    ShuntContainer::StateRes & state_shunts = std::get<SHUNT_ID>(my_state);
     // trafos
-    TrafoContainer::StateRes & state_trafos = std::get<10>(my_state);
+    TrafoContainer::StateRes & state_trafos = std::get<TRAFO_ID>(my_state);
     // generators
     // total_q_min_per_bus_;
     // total_q_max_per_bus_;
     // total_gen_per_bus_;
-    GeneratorContainer::StateRes & state_gens = std::get<11>(my_state);
+    GeneratorContainer::StateRes & state_gens = std::get<GEN_ID>(my_state);
     // loads
-    LoadContainer::StateRes & state_loads = std::get<12>(my_state);
+    LoadContainer::StateRes & state_loads = std::get<LOAD_ID>(my_state);
     // static gen
-    SGenContainer::StateRes & state_sgens= std::get<13>(my_state);
+    SGenContainer::StateRes & state_sgens= std::get<SGEN_ID>(my_state);
     // storage units
-    StorageContainer::StateRes & state_storages = std::get<14>(my_state);
+    StorageContainer::StateRes & state_storages = std::get<STORAGE_ID>(my_state);
     // hvdc lines
-    HvdcLineContainer::StateRes & state_hvdc_lines = std::get<15>(my_state);
-    // static var compensators (index 16/17 are the ac/dc algo types)
-    SvcContainer::StateRes & state_svcs = std::get<18>(my_state);
-
-    // assign it to this instance
-    set_ls_to_orig(IntVect::Map(ls_to_pp.data(), ls_to_pp.size()));  // set also _orig_to_ls
+    HvdcLineContainer::StateRes & state_hvdc_lines = std::get<HVDC_ID>(my_state);
+    // static var compensators
+    SvcContainer::StateRes & state_svcs = std::get<SVC_ID>(my_state);
+    // algo configs (scaling/refactor/line-search params)
+    auto & state_ac_algo_cfg = std::get<AC_ALGO_CONFIG_ID>(my_state);
+    auto & state_dc_algo_cfg = std::get<DC_ALGO_CONFIG_ID>(my_state);
+    // relevant kwargs the grid was built with (eg by init_from_pypowsybl)
+    const std::vector<std::string> & init_kwargs_keys = std::get<INIT_KWARGS_KEYS_ID>(my_state);
+    const std::vector<std::string> & init_kwargs_values = std::get<INIT_KWARGS_VALUES_ID>(my_state);
+    // fused-bus representative lookup (see get_bus_fusion_rep())
+    const std::vector<int> & bus_fusion_rep = std::get<BUS_FUSION_REP_ID>(my_state);
 
     // substations
     last_bus_status_saved_ = last_bus_status_saved;
     substations_.set_state(state_substations);
     max_nb_bus_per_sub_ = substations_.nmax_busbar_per_sub();
     n_sub_ = substations_.nb_sub();
+
+    // assign it to this instance -- must run *after* substations_ is restored above,
+    // since set_ls_to_orig() validates the vector size against substations_.nb_bus()
+    // (on a freshly default-constructed LSGrid, as pickle/binary restore does, that
+    // would otherwise still be 0 and any non-empty ls_to_orig would wrongly be
+    // rejected as a size mismatch).
+    set_ls_to_orig(IntVect::Map(ls_to_pp.data(), ls_to_pp.size()));  // set also _orig_to_ls
 
     // elements
     // 1. powerlines
@@ -189,47 +230,375 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
 
     // handle the solver
     reset(true, true, true);
-    _algo.change_algorithm(std::get<16>(my_state));
-    _dc_algo.change_algorithm(std::get<17>(my_state));
+    if (restore_algorithm) {
+        _restore_algorithm(_algo, std::get<AC_ALGO_NAME_ID>(my_state), "AC");
+        _restore_algorithm(_dc_algo, std::get<DC_ALGO_NAME_ID>(my_state), "DC");
+
+        // algo configs -- must be restored *after* change_algorithm() above,
+        // since set_config() operates on the currently-selected concrete solver
+        // (same order as the copy constructor). They describe the tuning of the
+        // solver we just re-selected, so they are skipped together with it.
+        AlgoConfig ac_algo_cfg;
+        ac_algo_cfg.int_params = std::get<0>(state_ac_algo_cfg);
+        ac_algo_cfg.real_params = std::get<1>(state_ac_algo_cfg);
+        set_ac_algo_config(ac_algo_cfg);
+
+        AlgoConfig dc_algo_cfg;
+        dc_algo_cfg.int_params = std::get<0>(state_dc_algo_cfg);
+        dc_algo_cfg.real_params = std::get<1>(state_dc_algo_cfg);
+        set_dc_algo_config(dc_algo_cfg);
+    }
+
+    // relevant kwargs the grid was built with (eg by init_from_pypowsybl).
+    // The map is serialized as two parallel vectors, whose lengths are stored
+    // independently (both in a pickle and in the binary format): a file declaring
+    // more keys than values makes the loop below read past the end of
+    // init_kwargs_values -- an out-of-bounds read over std::string objects, ie
+    // constructing a std::string from whatever the heap holds there. Check first.
+    if (init_kwargs_keys.size() != init_kwargs_values.size()) {
+        std::ostringstream exc_;
+        exc_ << "LSGrid::set_state: the serialized `_init_kwargs` is inconsistent: "
+             << init_kwargs_keys.size() << " keys but " << init_kwargs_values.size()
+             << " values. They are two parallel vectors and must have the same length.";
+        throw std::runtime_error(exc_.str());
+    }
+    init_kwargs_.clear();
+    for (std::size_t i = 0; i < init_kwargs_keys.size(); ++i) {
+        init_kwargs_[init_kwargs_keys[i]] = init_kwargs_values[i];
+    }
+
+    // fused-bus representative lookup -- must run after substations_ is restored
+    // above, same reasoning as set_ls_to_orig() (validates against total_bus()).
+    set_bus_fusion_rep(IntVect::Map(bus_fusion_rep.data(), bus_fusion_rep.size()));
+
+    // Now that every container has been restored, validate the whole grid: a
+    // pickle or binary file is only length-checked while being read, so an
+    // out-of-range bus / substation / topo-vector index (or a NaN electrical
+    // value) would otherwise slip through and cause an out-of-bounds access on
+    // the next powerflow. check_grid() turns that into a clean exception here.
+    check_grid();
 };
 
-void LSGrid::set_ls_to_orig(const IntVect & ls_to_orig){
+void LSGrid::_restore_algorithm(AlgorithmSelector & algo_selector,
+                                const std::string & name,
+                                const char * ac_or_dc)
+{
+    // A name that cannot even be a solver name never was one: the state is
+    // corrupted (or was not produced by lightsim2grid). Say so, rather than
+    // sending the reader looking for a plugin that never existed.
+    if (!is_valid_solver_name(name)) {
+        std::ostringstream exc_;
+        exc_ << "LSGrid::set_state: the " << ac_or_dc << " solver name read from this state, '"
+             << printable(name) << "', is not a valid solver name (" << solver_name_rule()
+             << "). This state is corrupted.";
+        throw std::runtime_error(exc_.str());
+    }
+    if (AlgorithmRegistry::instance().is_registered(name)) {
+        algo_selector.change_algorithm(name);
+        return;
+    }
+    // The name was resolvable when the grid was saved but is not now. Either the
+    // solver comes from a plugin that has not been loaded in this process, or it
+    // needs an optional linear-algebra backend (KLU / NICSLU / CKTSO) this build
+    // was not compiled with. Say so, and say what to do about it -- the grid data
+    // itself is perfectly fine, only the solver choice cannot be honoured.
+    // `name` comes straight from the file: escape it (a corrupted one can hold
+    // arbitrary bytes, which would make pybind11 raise UnicodeDecodeError while
+    // converting what() instead of the RuntimeError we mean to report).
+    std::ostringstream exc_;
+    exc_ << "LSGrid::set_state: this grid was saved using the " << ac_or_dc
+         << " solver '" << printable(name) << "', which is not available here. ";
+    if (name.rfind("NR_", 0) == 0 || name.rfind("NRSing_", 0) == 0 ||
+        name.rfind("DC_", 0) == 0 || name.rfind("FDPF_", 0) == 0) {
+        exc_ << "It looks like a built-in solver relying on an optional linear-algebra "
+             << "backend (KLU / NICSLU / CKTSO) that this build of lightsim2grid does not "
+             << "include: reinstall lightsim2grid with that support, or re-save the grid "
+             << "after selecting a solver available everywhere (eg 'NR_SparseLU'). ";
+    } else {
+        exc_ << "It is most likely provided by a solver plugin: load it first with "
+             << "lightsim2grid.load_algorithm_plugin(<path to the plugin>), then load this "
+             << "grid again. ";
+    }
+    exc_ << "Solvers currently available: ";
+    const std::vector<std::string> available = AlgorithmRegistry::instance().available_algorithm_names();
+    for (std::size_t i = 0; i < available.size(); ++i) {
+        if (i) exc_ << ", ";
+        exc_ << "'" << available[i] << "'";
+    }
+    exc_ << ".";
+    throw std::runtime_error(exc_.str());
+}
+
+void LSGrid::check_grid() const
+{
+    // The two grid-wide scalars, before anything else. `set_state` assigns them
+    // straight from the serialized state (bypassing the setters), and the loaders take
+    // them verbatim from their source file -- `init_from_powermodels` /
+    // `init_from_matpower` do `set_sn_mva(float(network["baseMVA"]))`, and
+    // `init_from_pandapower` `set_sn_mva(pp_net.sn_mva)`.
+    //
+    // sn_mva_ is the base power of the whole per-unit system: Sbus is divided by it,
+    // every MW / MVar result multiplied back by it, and ac_pf even scales the solver
+    // tolerance with it. A degenerate value does not make the powerflow fail, it makes
+    // it *quietly wrong*: with sn_mva_ = NaN the DC powerflow reports CONVERGENCE and
+    // hands back NaN flows (the built-in solvers' own finiteness guards see a perfectly
+    // finite Va -- Bbus does not involve sn_mva -- and the size/finiteness check on the
+    // solver output is deliberately reserved for external solvers), and with a negative
+    // one it reports a plausible-looking but sign-inverted per-unit system.
+    check_positive_finite(sn_mva_, "sn_mva");
+    check_positive_finite(init_vm_pu_, "init_vm_pu");
+
+    // The substation container FIRST: it defines nb_bus / nb_sub, the bounds every
+    // per-element check below is expressed against, and it carries the vector
+    // (bus_status_) those very ids are used to index. Validating elements against a
+    // self-inconsistent substation container would prove nothing.
+    substations_.check_valid();
+
+    const int nb_bus = static_cast<int>(substations_.nb_bus());
+    const int nb_sub = substations_.nb_sub();
+
+    // Per-container range + finiteness checks. Each container appends the
+    // pos_topo_vect entries it carries (an optional field) to the accumulator it is
+    // given, for the global permutation check below.
+    //
+    // Only the containers update_topo() actually walks may contribute to
+    // `all_pos_topo_vect`: that vector's own length is the `dim_topo` the permutation
+    // is proved against, and update_topo() sizes its caller arrays as
+    // `nb loads + nb gens + nb storages + 2 * nb lines + 2 * nb trafos`. Letting a
+    // shunt / sgen / svc / hvdc position into the same pot inflates that bound, so a
+    // *validated* load position could still be >= the length of the arrays
+    // update_topo() indexes with it. Those containers have no position in the grid2op
+    // topology vector to begin with (there is no setter for one), so a state carrying
+    // one is inconsistent: collect them apart and reject.
+    std::vector<int> all_pos_topo_vect;   // elements update_topo() drives
+    std::vector<int> pos_topo_vect_not_in_topo;  // must stay empty
+    powerlines_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    trafos_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    generators_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    loads_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    storages_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
+    shunts_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    sgens_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    hvdc_lines_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    svcs_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    if(!pos_topo_vect_not_in_topo.empty())
+    {
+        throw std::runtime_error(
+            "LSGrid::check_grid: a shunt, static generator, svc or hvdc line declares a position "
+            "in the grid2op topology vector. Only loads, generators, storage units, powerlines and "
+            "transformers are part of that vector (it is what sizes the arrays passed to "
+            "update_topo), so this state is inconsistent.");
+    }
+
+    // pos_topo_vect is grid2op-specific and optional: it is either set on every
+    // topology-participating element or on none. When set, the collected values
+    // must be a permutation of [0, dim_topo) -- that is exactly what makes it
+    // safe to index the (dim_topo-sized) arrays passed to update_topo(). K here
+    // is dim_topo; K distinct values all in [0, K) is precisely a permutation.
+    if(!all_pos_topo_vect.empty())
+    {
+        const int dim_topo = static_cast<int>(all_pos_topo_vect.size());
+        std::vector<char> seen(dim_topo, 0);
+        for(int pos : all_pos_topo_vect)
+        {
+            if((pos < 0) || (pos >= dim_topo))
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: a position in the topology vector (" << pos
+                     << ") is out of range [0, " << dim_topo << "). The pos_topo_vect of all "
+                     << "elements must form a permutation of [0, dim_topo).";
+                throw std::out_of_range(exc_.str());
+            }
+            if(seen[pos])
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: the position " << pos << " in the topology vector is "
+                     << "assigned to more than one element (pos_topo_vect values must be unique).";
+                throw std::runtime_error(exc_.str());
+            }
+            seen[pos] = 1;
+        }
+    }
+
+    // Bus-id mapping vectors carried alongside the grid. They are never read by the
+    // C++ powerflow itself (only by downstream python result views), but they are
+    // part of the serialized state, they are sized against the grid, and
+    // set_ls_to_orig_internal() indexes _orig_to_ls with the *values* of
+    // _ls_to_orig -- so an inconsistent pair is exactly the kind of thing this
+    // function exists to reject rather than discover later.
+    if(_ls_to_orig.size() != 0)
+    {
+        if(static_cast<size_t>(_ls_to_orig.size()) != substations_.nb_bus())
+        {
+            std::ostringstream exc_;
+            exc_ << "LSGrid::check_grid: _ls_to_orig has " << _ls_to_orig.size()
+                 << " entries while the grid has " << substations_.nb_bus()
+                 << " buses (it is indexed by lightsim bus id).";
+            throw std::runtime_error(exc_.str());
+        }
+        check_ls_to_orig_values(_ls_to_orig);
+    }
+    if(_orig_to_ls.size() != 0)
+    {
+        const int nb_bus_ls = static_cast<int>(substations_.nb_bus());
+        for(Eigen::Index i = 0; i < _orig_to_ls.size(); ++i)
+        {
+            const int ls_id = _orig_to_ls(i);
+            if(ls_id == GenericContainer::_deactivated_bus_id) continue;
+            if((ls_id < 0) || (ls_id >= nb_bus_ls))
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: _orig_to_ls[" << i << "] = " << ls_id
+                     << " is out of range: it must be -1 or a lightsim bus id in [0, "
+                     << nb_bus_ls << ").";
+                throw std::out_of_range(exc_.str());
+            }
+        }
+    }
+    if(_bus_fusion_rep.size() != 0)
+    {
+        const int nb_bus_ls = static_cast<int>(substations_.nb_bus());
+        if(static_cast<size_t>(_bus_fusion_rep.size()) != substations_.nb_bus())
+        {
+            std::ostringstream exc_;
+            exc_ << "LSGrid::check_grid: _bus_fusion_rep has " << _bus_fusion_rep.size()
+                 << " entries while the grid has " << substations_.nb_bus() << " buses.";
+            throw std::runtime_error(exc_.str());
+        }
+        for(Eigen::Index i = 0; i < _bus_fusion_rep.size(); ++i)
+        {
+            const int rep = _bus_fusion_rep(i);
+            if((rep < 0) || (rep >= nb_bus_ls))
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: _bus_fusion_rep[" << i << "] = " << rep
+                     << " is out of range [0, " << nb_bus_ls << "): every bus must be merged into "
+                     << "an existing bus (identity for a bus involved in no fusion).";
+                throw std::out_of_range(exc_.str());
+            }
+        }
+    }
+}
+
+void LSGrid::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
+}
+
+LSGrid LSGrid::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<LSGrid>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
+}
+
+void LSGrid::fixup_binary_state(LSGrid::StateRes & state) {
+    // must be defined in this translation unit: the VERSION_* macros here are
+    // exactly the ones get_state()/set_state() above are compiled with, so
+    // the rewritten fields always pass set_state()'s equality check
+    std::get<VERSION_MAJOR_ID>(state) = VERSION_MAJOR;
+    std::get<VERSION_MEDIUM_ID>(state) = VERSION_MEDIUM;
+    std::get<VERSION_MINOR_ID>(state) = VERSION_MINOR;
+}
+
+void LSGrid::set_ls_to_orig(const Eigen::Ref<const IntVect> & ls_to_orig){
     if(ls_to_orig.size() == 0){
         _ls_to_orig = IntVect();
         _orig_to_ls = IntVect();
         return;
     }
 
-    if(ls_to_orig.size() != substations_.nb_bus()) 
+    if(static_cast<size_t>(ls_to_orig.size()) != substations_.nb_bus())
         throw std::runtime_error("Impossible to set the converter ls_to_orig: the provided vector has not the same size as the number of bus on the grid.");
+    check_ls_to_orig_values(ls_to_orig);
     set_ls_to_orig_internal(ls_to_orig);
 }
 
-void LSGrid::set_orig_to_ls(const IntVect & orig_to_ls){
+// Every entry of _ls_to_orig is either -1 ("this lightsim bus has no counterpart in
+// the original grid") or an original-grid bus id, which set_ls_to_orig_internal uses
+// *as an index* into the _orig_to_ls it allocates. That allocation is sized from
+// `lpNorm<Infinity>()`, ie the max ABSOLUTE value, so a negative entry other than -1
+// (say -5) sizes the vector from |−5| and then writes at index −5: an out-of-bounds
+// heap write. A huge positive entry is the other end of the same problem (`size + 1`
+// overflows int for INT_MAX, and even short of that it asks for a multi-gigabyte
+// allocation for a handful of buses). Both are rejected here, before any allocation.
+// This runs on the python property setter AND on set_state(), ie on every pickle and
+// every binary file.
+void LSGrid::check_positive_finite(real_type value, const char * name)
+{
+    // NB `!(value > 0.)`, not `value <= 0.`: every comparison with NaN is false, so the
+    // naive form silently accepts a NaN -- which is exactly the value that does the most
+    // damage here (see check_grid()).
+    if(std::isfinite(value) && (value > 0.)) return;
+    std::ostringstream exc_;
+    exc_ << "LSGrid: '" << name << "' is " << value
+         << "; it must be a finite, strictly positive number.";
+    throw std::runtime_error(exc_.str());
+}
+
+void LSGrid::check_ls_to_orig_values(const Eigen::Ref<const IntVect> & ls_to_orig)
+{
+    // an original grid can never have more buses than the biggest vector we could
+    // possibly want to allocate for it; keep the bound generous but finite.
+    constexpr int max_orig_bus_id = 100000000;  // 100M buses, ~400 MB for _orig_to_ls
+    for(Eigen::Index i = 0; i < ls_to_orig.size(); ++i){
+        const int el = ls_to_orig(i);
+        if(el == GenericContainer::_deactivated_bus_id) continue;  // -1: no counterpart, legal
+        if(el < 0){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::set_ls_to_orig: ls_to_orig[" << i << "] = " << el
+                 << " is negative. Entries must be either -1 (this bus has no counterpart in the "
+                 << "original grid) or a valid original-grid bus id >= 0 (it is used as an index "
+                 << "into the reverse mapping).";
+            throw std::out_of_range(exc_.str());
+        }
+        if(el > max_orig_bus_id){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::set_ls_to_orig: ls_to_orig[" << i << "] = " << el
+                 << " exceeds the maximum supported original-grid bus id (" << max_orig_bus_id
+                 << "). The reverse mapping is sized from the largest id, so this would ask for "
+                 << "an unreasonable allocation.";
+            throw std::out_of_range(exc_.str());
+        }
+    }
+}
+
+void LSGrid::set_orig_to_ls(const Eigen::Ref<const IntVect> & orig_to_ls){
     if(orig_to_ls.size() == 0){
         _ls_to_orig = IntVect();
         _orig_to_ls = IntVect();
         return;
     }
-    _orig_to_ls = orig_to_ls;
     size_t nb_bus_ls = 0;
     for(const auto el : orig_to_ls){
         if (el != -1) nb_bus_ls += 1;
     }
-    if(nb_bus_ls != substations_.nb_bus()) 
+    if(nb_bus_ls != substations_.nb_bus())
         throw std::runtime_error("Impossible to set the converter orig_to_ls: the number of 'non -1' component in the provided vector does not match the number of buses on the grid.");
-    _ls_to_orig = IntVect::Constant(nb_bus_ls, -1);
-    size_t ls2or_ind = 0;
-    for(auto or2ls_ind = 0; or2ls_ind < nb_bus_ls; ++or2ls_ind){
-        const auto my_ind = _orig_to_ls[or2ls_ind];
-        if(my_ind >= 0){
-            _ls_to_orig[ls2or_ind] = my_ind;
-            ls2or_ind++;
+    // orig_to_ls[orig_bus_id] is a LIGHTSIM bus id, used below as an index into
+    // _ls_to_orig (which has one slot per lightsim bus): validate the range before
+    // writing anything, an unchecked entry here is an out-of-bounds heap write.
+    for(Eigen::Index i = 0; i < orig_to_ls.size(); ++i){
+        const int ls_id = orig_to_ls(i);
+        if(ls_id == GenericContainer::_deactivated_bus_id) continue;  // -1: this original bus has no lightsim bus
+        if((ls_id < 0) || (static_cast<size_t>(ls_id) >= nb_bus_ls)){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::set_orig_to_ls: orig_to_ls[" << i << "] = " << ls_id
+                 << " is out of range: entries must be either -1 (this original bus has no "
+                 << "counterpart in lightsim2grid) or a lightsim bus id in [0, " << nb_bus_ls << ").";
+            throw std::out_of_range(exc_.str());
         }
+    }
+    // _ls_to_orig is the INVERSE of _orig_to_ls: _ls_to_orig[ls_id] == orig_id iff
+    // _orig_to_ls[orig_id] == ls_id. Walk the whole input (not just its first
+    // nb_bus_ls entries -- the non -1 ones are not necessarily at the front) and
+    // index the result by the lightsim id, so the two arrays really are inverses.
+    _orig_to_ls = orig_to_ls;
+    _ls_to_orig = IntVect::Constant(nb_bus_ls, -1);
+    for(Eigen::Index orig_id = 0; orig_id < _orig_to_ls.size(); ++orig_id){
+        const int ls_id = _orig_to_ls(orig_id);
+        if(ls_id >= 0) _ls_to_orig[ls_id] = static_cast<int>(orig_id);
     }
 }
 
-void LSGrid::set_ls_to_orig_internal(const IntVect & ls_to_orig) noexcept{
+// NB deliberately NOT noexcept -- it allocates, see the declaration in LSGrid.hpp.
+void LSGrid::set_ls_to_orig_internal(const Eigen::Ref<const IntVect> & ls_to_orig){
     if(ls_to_orig.size() == 0){
         _ls_to_orig = IntVect();
         _orig_to_ls = IntVect();
@@ -249,9 +618,9 @@ void LSGrid::set_ls_to_orig_internal(const IntVect & ls_to_orig) noexcept{
 //init
 void LSGrid::init_bus(unsigned int n_sub,
                          unsigned int n_busbar_per_sub,
-                         const RealVect & bus_vn_kv,
-                         int nb_line,
-                         int nb_trafo){
+                         const Eigen::Ref<const RealVect> & bus_vn_kv,
+                         int /*nb_line*/,
+                         int /*nb_trafo*/){
     /**
     initialize the bus_vn_kv_ member
     and
@@ -310,7 +679,7 @@ void LSGrid::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     }
 }
 
-CplxVect LSGrid::ac_pf(const CplxVect & Vinit,
+CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
                           int max_iter,
                           real_type tol)
 {
@@ -323,7 +692,8 @@ CplxVect LSGrid::ac_pf(const CplxVect & Vinit,
         exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
         throw std::runtime_error(exc_.str());
     }
-    if(hvdc_lines_.has_droop_active() && !_algo.supports_hvdc_droop(_algo.get_type())){
+    BaseAlgo::check_iter_tol("LSGrid::ac_pf", max_iter, tol);
+    if(hvdc_lines_.has_droop_active() && !_algo.supports_hvdc_droop()){
         std::ostringstream exc_;
         exc_ << "LSGrid::ac_pf: the grid counts hvdc lines with the angle-droop (AC emulation) enabled, ";
         exc_ << "which is only supported by the Newton-Raphson algorithms (not by the Gauss-Seidel / ";
@@ -393,8 +763,25 @@ void LSGrid::fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) co
     data.r = RealVect(nb_droop);
     data.pmax12 = RealVect(nb_droop);
     data.pmax21 = RealVect(nb_droop);
+    data.connected1.assign(nb_droop, true);
+    data.connected2.assign(nb_droop, true);
     for(int pos = 0; pos < nb_droop; ++pos){
         const int hvdc_id = indices[pos];
+        // angle-droop ("AC emulation") needs both remote angles: this must never
+        // happen (both call sites that can half-open an hvdc line --
+        // LSGrid::deactivate_dcline_side1/2 and
+        // HvdcLineContainer::disconnect_if_not_in_main_component -- call
+        // disable_droop at the same time), but enforce it explicitly rather than
+        // silently indexing id_me_to_solver with the open side's bus id (-1) below.
+        if(!hvdc_lines_.get_connected_side_1(hvdc_id) || !hvdc_lines_.get_connected_side_2(hvdc_id)){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_hvdc_droop_solver_data: hvdc line with id ";
+            exc_ << hvdc_id;
+            exc_ << " has angle-droop enabled while half-open (one side "
+                    "disconnected) -- this should never happen, disable_droop "
+                    "must be called whenever a side is opened.";
+            throw std::runtime_error(exc_.str());
+        }
         const GlobalBusId bus_1 = hvdc_lines_.get_bus_side_1(hvdc_id);
         const GlobalBusId bus_2 = hvdc_lines_.get_bus_side_2(hvdc_id);
         const SolverBusId bus_1_solver = id_me_to_solver[bus_1.cast_int()];
@@ -418,6 +805,14 @@ void LSGrid::fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) co
         data.r(pos) = (v_nom > 0.) ? hvdc_lines_.get_r_ohm(hvdc_id) * sn_mva_ / (v_nom * v_nom) : 0.;
         data.pmax12(pos) = hvdc_lines_.get_pmax_1to2_mw(hvdc_id) / sn_mva_;
         data.pmax21(pos) = hvdc_lines_.get_pmax_2to1_mw(hvdc_id) / sn_mva_;
+        // status_global[hvdc_id] being true only guarantees at least ONE side
+        // is in the main synchronous component (see
+        // disconnect_if_not_in_main_component) -- the OTHER side may be
+        // individually open. bus1/bus2 solver ids stay valid either way (the
+        // AC bus itself, not the converter, is what id_me_to_solver maps),
+        // but the theta-dependent flow into an open side is meaningless.
+        data.connected1[pos] = hvdc_lines_.get_connected_side_1(hvdc_id);
+        data.connected2[pos] = hvdc_lines_.get_connected_side_2(hvdc_id);
     }
 }
 
@@ -441,6 +836,22 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     for(int k = 0; k < static_cast<int>(bus_pq_.size()); ++k){
         const int b = bus_pq_(k).cast_int();
         if(b >= 0 && b < nb_bus_solver) is_pq[b] = true;
+    }
+    // Slack buses are not PQ in the base block, but a slack bus that is not pinned
+    // by a local PV generator is given a Q equation + free Vm by the MultiSlack
+    // extension (see LSGrid::get_free_vm_slack_solver_buses), so a controller on
+    // such a slack bus is supported even though `is_pq` is false there. A slack
+    // bus that IS locally pinned (another generator regulates it directly) gets
+    // no such Q equation at all -- checking membership of the whole `slack_bus_
+    // id_ac_solver_` list here (as opposed to just this "free" subset) would
+    // wrongly accept that case: its Q equation lookup then resolves to -1, the
+    // controller's own reactive-injection column ends up with no Jacobian entry
+    // anywhere, and the factorization fails with ErrorType::SolverFactor instead
+    // of this function's own clear error.
+    const std::set<int> free_vm_slack = get_free_vm_slack_solver_buses();
+    std::vector<bool> has_free_q(nb_bus_solver, false);
+    for(int b : free_vm_slack){
+        if(b >= 0 && b < nb_bus_solver) has_free_q[b] = true;
     }
 
     // 1. collect the active voltage-mode controllers (remote-regulating gens for
@@ -469,11 +880,13 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
                  << " regulates a disconnected bus.";
             throw std::runtime_error(exc_.str());
         }
-        if(!is_pq[ctrl_solver]){
+        if(!is_pq[ctrl_solver] && !has_free_q[ctrl_solver]){
             std::ostringstream exc_;
             exc_ << "LSGrid::fill_voltage_control_solver_data: generator " << gen_id
                  << " regulates a remote bus but its OWN bus has no reactive (Q) equation"
-                    " (it is a slack or PV bus). This is not supported in v1.";
+                    " (it is a PV bus that is not a slack, or a slack bus already locally"
+                    " pinned by another voltage-regulating generator). This is not supported"
+                    " in v1.";
             throw std::runtime_error(exc_.str());
         }
         if(!is_pq[reg_solver]){
@@ -603,7 +1016,40 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     }
 }
 
-void LSGrid::check_solution_q_values_onegen(CplxVect & res,
+std::set<int> LSGrid::get_free_vm_slack_solver_buses() const
+{
+    std::set<int> res;
+    // solver-bus ids of the slack buses
+    std::set<int> slack;
+    for(int k = 0; k < static_cast<int>(slack_bus_id_ac_solver_.size()); ++k){
+        slack.insert(slack_bus_id_ac_solver_(k).cast_int());
+    }
+    if(slack.empty()) return res;
+
+    // A slack bus is Vm-fixed (PV-like, no Q equation) only when a LOCAL
+    // voltage-regulating generator pins its magnitude. Collect those buses.
+    std::set<int> locally_vfixed;
+    const SolverBusIdVect & id_me_to_solver = id_me_to_ac_solver_;
+    const int nb_gen = static_cast<int>(generators_.nb());
+    const GlobalBusIdVect & gen_buses = generators_.get_buses();
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if(!generators_.gen_is_local_voltage_controller(gen_id)) continue;
+        const int ctrl_grid = gen_buses(gen_id).cast_int();
+        const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
+        if(ctrl_solver == GenericContainer::_deactivated_bus_id) continue;
+        locally_vfixed.insert(ctrl_solver);
+    }
+
+    // Every slack bus whose magnitude is NOT pinned locally needs a free Vm
+    // unknown + Q equation: distributed-slack PQ participants (the common case),
+    // remote-voltage controllers, and SVC-regulated slack buses all fall here.
+    for(int b : slack){
+        if(!locally_vfixed.count(b)) res.insert(b);
+    }
+    return res;
+}
+
+void LSGrid::check_solution_q_values_onegen(Eigen::Ref<CplxVect> res,
                                                int bus_id,
                                                real_type min_q_mvar,
                                                real_type max_q_mvar,
@@ -631,7 +1077,7 @@ void LSGrid::check_solution_q_values_onegen(CplxVect & res,
     }
 }
 
-void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
+void LSGrid::check_solution_q_values(Eigen::Ref<CplxVect> res, bool check_q_limits) const{
     // test for iterator though generators
     for(const auto & gen: generators_)
     {
@@ -640,7 +1086,15 @@ void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
             // the generator is disconnected, I do nothing
             continue;
         }
-        check_solution_q_values_onegen(res, gen.bus_id, gen.min_q_mvar, gen.max_q_mvar, check_q_limits);
+        // Only a voltage-regulating generator has a genuinely FREE Q at its own bus in
+        // the real NR system (GeneratorContainer::fillSbus never stamps Q there, local
+        // or remote control alike -- see fillpv / the VoltageControl extension). A
+        // non-regulating (fixed PQ) generator's Q is deterministic and already part of
+        // Sbus, so masking it here would hide a real mismatch instead of correctly
+        // reporting "this bus's Q is free, don't judge it".
+        if(gen.voltage_regulator_on){
+            check_solution_q_values_onegen(res, gen.bus_id, gen.min_q_mvar, gen.max_q_mvar, check_q_limits);
+        }
 
         // if(gen.id == gen_slackbus_)
         if(gen.is_slack)
@@ -661,8 +1115,16 @@ void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
         }
         const auto & station_1 = hvdc.station_side_1;
         const auto & station_2 = hvdc.station_side_2;
-        check_solution_q_values_onegen(res, station_1.bus_id, station_1.min_q_mvar, station_1.max_q_mvar, check_q_limits);
-        check_solution_q_values_onegen(res, station_2.bus_id, station_2.min_q_mvar, station_2.max_q_mvar, check_q_limits);
+        // a side may be open while the line is still connected_global (a line whose
+        // remote converter is in another synchronous component, see
+        // HvdcLineContainer::disconnect_if_not_in_main_component): skip the open side.
+        // Same "only mask a genuinely free Q" reasoning as for generators above: a
+        // fixed-Q / power-factor (LCC) station's Q is real Sbus data, not a free
+        // variable -- see ConverterStationContainer::fillSbus_station.
+        if(station_1.connected && station_1.voltage_regulator_on)
+            check_solution_q_values_onegen(res, station_1.bus_id, station_1.min_q_mvar, station_1.max_q_mvar, check_q_limits);
+        if(station_2.connected && station_2.voltage_regulator_on)
+            check_solution_q_values_onegen(res, station_2.bus_id, station_2.min_q_mvar, station_2.max_q_mvar, check_q_limits);
     }
 
     // ... and the VOLTAGE-mode static var compensators: their reactive injection is
@@ -676,21 +1138,31 @@ void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
     }
 }
 
-CplxVect LSGrid::check_solution(const CplxVect & V_proposed, bool check_q_limits)
+CplxVect LSGrid::check_solution(const Eigen::Ref<const CplxVect> & V_proposed, bool check_q_limits)
 {
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     const int nb_bus = static_cast<int>(V_proposed.size());
     bool is_ac = true;
     AlgoControl reset_solver;
-    reset_solver.tell_none_changed();  // TODO reset solver
-    CplxVect V = pre_process_solver(V_proposed, 
+    // `AlgoControl`'s own default constructor already asks for a full rebuild
+    // (`need_reset_solver_=true`) -- only downgrade that to "nothing changed" once the
+    // AC solver bus mapping has actually been built at least once (by a prior
+    // `ac_pf`/`dc_pf`/`check_solution` call). Calling `check_solution` as the very
+    // first operation on a freshly-built model with `tell_none_changed()`
+    // unconditionally used to leave `id_me_to_ac_solver_`/`Ybus_ac_` at their
+    // default-constructed (empty) size, and `fill_hvdc_droop_solver_data`'s
+    // `id_me_to_solver[bus_id]` lookup (bus ids in the hundreds/thousands) then read
+    // out of bounds -- a silent, hard-to-reproduce segfault instead of a clean rebuild.
+    if(id_me_to_ac_solver_.size() > 0) reset_solver.tell_none_changed();
+    CplxVect V = pre_process_solver(V_proposed,
                                     acSbus_,
-                                    Ybus_ac_, 
+                                    Ybus_ac_,
                                     id_me_to_ac_solver_,
                                     id_ac_solver_to_me_,
                                     slack_bus_id_ac_me_,
                                     slack_bus_id_ac_solver_,
-                                    is_ac, reset_solver);
+                                    is_ac, reset_solver,
+                                    false);  // do NOT snap regulated buses to their target: we are testing V_proposed as-is
 
     // compute the mismatch
     CplxVect tmp = Ybus_ac_ * V;  // this is a vector
@@ -731,6 +1203,8 @@ CplxVect LSGrid::check_solution(const CplxVect & V_proposed, bool check_q_limits
 };
 
 // AC injection: complex Sbus + the reactive-power vectors (Q limits / gen count per bus)
+// Sbus stays a plain reference (not Eigen::Ref): it is reassigned below
+// (Sbus = CplxVect::Constant(...)) to a size that can change with topology.
 void LSGrid::prepare_injection(CplxVect & Sbus, bool redo_all, bool converter_changed,
                                const SolverBusIdVect & id_me_to_solver,
                                const GlobalBusIdVect & id_solver_to_me,
@@ -763,6 +1237,8 @@ void LSGrid::prepare_injection(CplxVect & Sbus, bool redo_all, bool converter_ch
 }
 
 // DC injection: real Pbus, assembled by reusing the (complex) Sbus fills and keeping the real part
+// Pbus stays a plain reference (not Eigen::Ref): it is reassigned below
+// (Pbus = Sbus_tmp.real()) to a size that can change with topology.
 void LSGrid::prepare_injection(RealVect & Pbus, bool redo_all, bool converter_changed,
                                const SolverBusIdVect & id_me_to_solver,
                                const GlobalBusIdVect & id_solver_to_me,
@@ -781,14 +1257,15 @@ void LSGrid::prepare_injection(RealVect & Pbus, bool redo_all, bool converter_ch
 
 template<class MatScalar, class InjVect>
 CplxVect LSGrid::_pre_process_solver_impl(
-    const CplxVect & Vinit,
+    const Eigen::Ref<const CplxVect> & Vinit,
     InjVect & inj,
     Eigen::SparseMatrix<MatScalar> & mat,
     SolverBusIdVect & id_me_to_solver,
     GlobalBusIdVect & id_solver_to_me,
     GlobalBusIdVect & slack_bus_id_me,
     SolverBusIdVect & slack_bus_id_solver,
-    const AlgoControl & solver_control)
+    const AlgoControl & solver_control,
+    bool init_pv_vm_targets)
 {
     // cplx_type matrix => AC solver family, real_type matrix => DC solver family
     const bool is_ac = std::is_same<MatScalar, cplx_type>::value;
@@ -805,6 +1282,22 @@ CplxVect LSGrid::_pre_process_solver_impl(
         slack_bus_id_me = generators_.get_slack_bus_id();
         // this is the slack bus ids with the gridmodel ordering, not the solver ordering.
         // conversion to solver ordering is done in init_slack_bus
+
+        // Optional forced angle reference: move the requested (gridmodel) bus to
+        // the front so the NR uses it as slack_ids[0] (the reference) without
+        // changing the slack set or weights. See LSGrid::set_reference_slack_bus.
+        if (_forced_ref_slack_bus_id >= 0){
+            std::vector<int> sids = slack_bus_id_me.to_int_vector();
+            for (std::size_t i = 1; i < sids.size(); ++i){
+                if (sids[i] == _forced_ref_slack_bus_id){
+                    const int ref = sids[i];
+                    sids.erase(sids.begin() + static_cast<std::ptrdiff_t>(i));
+                    sids.insert(sids.begin(), ref);
+                    slack_bus_id_me = GlobalBusIdVect(sids);
+                    break;
+                }
+            }
+        }
     }
     if (redo_all || solver_control.has_one_el_changed_bus()){
         init_bus_status();
@@ -849,9 +1342,15 @@ CplxVect LSGrid::_pre_process_solver_impl(
         }
         V(bus_solver_id) = Vinit(bus_me_id.cast_int());
     }
-    generators_.set_vm(V, id_me_to_solver);
-    hvdc_lines_.set_vm(V, id_me_to_solver);
-    svcs_.set_vm(V, id_me_to_solver);  // VOLTAGE-mode SVCs (init quality at the regulated bus)
+    if(init_pv_vm_targets){
+        // NR-initialization heuristic only: snaps regulated buses with no droop/slope
+        // to their own target voltage magnitude. Skipped by check_solution, which must
+        // evaluate the caller-supplied voltage as given (see the `init_pv_vm_targets`
+        // doc on `pre_process_solver`).
+        generators_.set_vm(V, id_me_to_solver);
+        hvdc_lines_.set_vm(V, id_me_to_solver);
+        svcs_.set_vm(V, id_me_to_solver);  // VOLTAGE-mode SVCs (init quality at the regulated bus)
+    }
 
     if(solver_control.need_reset_solver() ||
        solver_control.has_dimension_changed() ||
@@ -878,23 +1377,24 @@ CplxVect LSGrid::_pre_process_solver_impl(
 }
 
 CplxVect LSGrid::pre_process_solver(
-    const CplxVect & Vinit,
+    const Eigen::Ref<const CplxVect> & Vinit,
     CplxVect & Sbus,
     Eigen::SparseMatrix<cplx_type> & Ybus,
     SolverBusIdVect & id_me_to_solver,
     GlobalBusIdVect & id_solver_to_me,
     GlobalBusIdVect & slack_bus_id_me,
     SolverBusIdVect & slack_bus_id_solver,
-    bool is_ac,  // kept for API compatibility; DC now goes through pre_process_dc_solver
-    const AlgoControl & solver_control)
+    bool /*is_ac*/,  // kept for API compatibility; DC now goes through pre_process_dc_solver
+    const AlgoControl & solver_control,
+    bool init_pv_vm_targets)
 {
     return _pre_process_solver_impl<cplx_type>(
         Vinit, Sbus, Ybus, id_me_to_solver, id_solver_to_me,
-        slack_bus_id_me, slack_bus_id_solver, solver_control);
+        slack_bus_id_me, slack_bus_id_solver, solver_control, init_pv_vm_targets);
 }
 
 CplxVect LSGrid::pre_process_dc_solver(
-    const CplxVect & Vinit,
+    const Eigen::Ref<const CplxVect> & Vinit,
     RealVect & Pbus,
     Eigen::SparseMatrix<real_type> & Bbus,
     SolverBusIdVect & id_me_to_solver,
@@ -905,10 +1405,10 @@ CplxVect LSGrid::pre_process_dc_solver(
 {
     return _pre_process_solver_impl<real_type>(
         Vinit, Pbus, Bbus, id_me_to_solver, id_solver_to_me,
-        slack_bus_id_me, slack_bus_id_solver, solver_control);
+        slack_bus_id_me, slack_bus_id_solver, solver_control, true);
 }
 
-CplxVect LSGrid::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
+CplxVect LSGrid::_get_results_back_to_orig_nodes(const Eigen::Ref<const CplxVect> & res_tmp,
                                                     SolverBusIdVect & id_me_to_solver,
                                                     int size)
 {
@@ -931,17 +1431,41 @@ CplxVect LSGrid::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
 
 void LSGrid::process_results(bool conv,
                                 CplxVect & res,
-                                const CplxVect & Vinit,
+                                const Eigen::Ref<const CplxVect> & Vinit,
                                 bool ac,
                                 SolverBusIdVect & id_me_to_solver)
 {
+    if (conv){
+        // An external (plugin) solver can claim convergence but return malformed
+        // voltages. Validate their size/finiteness before we index them below
+        // (compute_results / _get_results_back_to_orig_nodes both index the solver
+        // vectors with an unchecked operator()).
+        // Only external solvers are checked: the built-in ones are covered by the
+        // test suite, so they pay nothing here.
+        //
+        // "Is it built-in?" is asked of the REGISTRY, which records it at
+        // registration time (SolverOrigin), not of AlgorithmType. Gating on
+        // `get_type() == AlgorithmType::Custom` was wrong: AlgorithmType is a fixed
+        // enum of serialized solver identities, and a built-in only has a member
+        // there if one was added for it -- the NRRefactorRetry_* family never got
+        // one, so name_to_algo_type() reports those three built-ins as Custom
+        // exactly like a plugin, and they were paying for this check on every
+        // single solve. The flag is cached by AlgorithmSelector::change_algorithm,
+        // so this stays a bool read on the hot path.
+        const bool is_external_algo =
+            !(ac ? _algo.is_builtin_algo() : _dc_algo.is_builtin_algo());
+        if (is_external_algo) conv = _check_solver_output(ac);
+    }
     if (conv){
         if(compute_results_){
             // compute the results of the flows, P,Q,V of loads etc.
             compute_results(ac);
         }
         // solver_control_.tell_none_changed();  // todo automatically set for ac / dc the `tell_none_changed()`
-        const CplxVect & res_tmp = ac ? _algo.get_V(): _dc_algo.get_V() ;
+        // was `const CplxVect & res_tmp = ...`: get_V() already returns Eigen::Ref<const
+        // CplxVect>, so binding that to a concrete CplxVect& forced a full-vector copy
+        // here on every single solve.
+        const Eigen::Ref<const CplxVect> res_tmp = ac ? _algo.get_V(): _dc_algo.get_V() ;
 
         // convert back the results to "big" vector
         res = _get_results_back_to_orig_nodes(res_tmp,
@@ -952,6 +1476,37 @@ void LSGrid::process_results(bool conv,
         reset_results();
         // TODO solver control ??? something to do here ?
     }
+}
+
+bool LSGrid::_check_solver_output(bool ac)
+{
+    const Eigen::Ref<const CplxVect> V  = ac ? _algo.get_V()  : _dc_algo.get_V();
+    const Eigen::Ref<const RealVect> Va = ac ? _algo.get_Va() : _dc_algo.get_Va();
+    const Eigen::Ref<const RealVect> Vm = ac ? _algo.get_Vm() : _dc_algo.get_Vm();
+    const int nb_bus_solver = ac ? static_cast<int>(id_ac_solver_to_me_.size())
+                                 : static_cast<int>(id_dc_solver_to_me_.size());
+    const char * algo_name = ac ? "AC" : "DC";
+
+    if((V.size() != nb_bus_solver) || (Va.size() != nb_bus_solver) || (Vm.size() != nb_bus_solver))
+    {
+        // wrong size = the solver broke its contract. This would cause an
+        // out-of-bounds read in compute_results / _get_results_back_to_orig_nodes.
+        std::ostringstream exc_;
+        exc_ << "LSGrid::process_results: the " << algo_name << " algorithm reported convergence but "
+             << "returned voltage vectors of an unexpected size (V: " << V.size() << ", Va: " << Va.size()
+             << ", Vm: " << Vm.size() << ", while the solver problem has " << nb_bus_solver
+             << " buses). This is a bug in the (possibly plugin) solver.";
+        throw std::runtime_error(exc_.str());
+    }
+    if((!V.allFinite()) || (!Va.allFinite()) || (!Vm.allFinite()))
+    {
+        // Non-finite voltage: a well-behaved solver reports this itself
+        // (ErrorType::InifiniteValue, non-convergence); a misbehaving one may not.
+        // Treat it as a non-converged solve so no NaN/Inf propagates to the results.
+        (ac ? _algo : _dc_algo).set_error(ErrorType::InifiniteValue);
+        return false;
+    }
+    return true;
 }
 
 void LSGrid::init_converter_bus_id(SolverBusIdVect& id_me_to_solver,
@@ -988,7 +1543,7 @@ void LSGrid::init_Bbus(Eigen::SparseMatrix<real_type> & Bbus,
 }
 
 void LSGrid::init_slack_bus(const SolverBusIdVect& id_me_to_solver,
-                               const GlobalBusIdVect& id_solver_to_me,
+                               const GlobalBusIdVect& /*id_solver_to_me*/,
                                const GlobalBusIdVect & slack_bus_id_me,
                                SolverBusIdVect & slack_bus_id_solver)
 {
@@ -1058,7 +1613,7 @@ void LSGrid::fillBdc(
     res.makeCompressed();
 }
 
-void LSGrid::fillSbus_me(CplxVect & Sbus, bool ac, const SolverBusIdVect& id_me_to_solver)
+void LSGrid::fillSbus_me(Eigen::Ref<CplxVect> Sbus, bool ac, const SolverBusIdVect& id_me_to_solver)
 {
     // init the Sbus 
     Sbus.array() = 0.;  // reset to 0.
@@ -1079,7 +1634,7 @@ void LSGrid::fillSbus_me(CplxVect & Sbus, bool ac, const SolverBusIdVect& id_me_
 void LSGrid::fillpv_pq(const SolverBusIdVect& id_me_to_solver,
                           const GlobalBusIdVect& id_solver_to_me,
                           const SolverBusIdVect & slack_bus_id_solver,
-                          const AlgoControl & solver_control)
+                          const AlgoControl & /*solver_control*/)
 {
     // Nothing to do if neither pv, nor pq nor the dimension of the problem has changed
 
@@ -1211,9 +1766,9 @@ void LSGrid::reset_results(){
     svcs_.reset_results();
 }
 
-CplxVect LSGrid::dc_pf(const CplxVect & Vinit,
-                          int max_iter,  // not used for DC
-                          real_type tol  // not used for DC
+CplxVect LSGrid::dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
+                          int max_iter,  // only validated: not used for DC (single linear solve)
+                          real_type tol  // only validated: not used for DC (single linear solve)
                           )
 {
     //TODO SLACK: improve distributed slack for DC mode !
@@ -1231,6 +1786,9 @@ CplxVect LSGrid::dc_pf(const CplxVect & Vinit,
         exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
         throw std::runtime_error(exc_.str());
     }
+    // DC ignores max_iter / tol, but nonsensical values still indicate a bug
+    // at the call site: reject them the same way ac_pf does
+    BaseAlgo::check_iter_tol("LSGrid::dc_pf", max_iter, tol);
     bool conv = false;
     CplxVect res = CplxVect();
 
@@ -1265,8 +1823,10 @@ RealMat LSGrid::get_ptdf_solver(){
     if(Bbus_dc_.size() == 0){
         throw std::runtime_error("LSGrid::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
-    const RealMat & PTDF_solver = _dc_algo.get_ptdf();
-    return PTDF_solver;
+    // return the freshly-computed matrix directly (RVO/move) instead of binding it
+    // to a local const-ref first: `const RealMat& x = ...; return x;` defeats RVO
+    // and forces an extra full-matrix copy, since a reference can't be moved from.
+    return _dc_algo.get_ptdf();
 }
 
 
@@ -1288,15 +1848,35 @@ RealMat LSGrid::get_lodf(){
     if(Bbus_dc_.size() == 0){
         throw std::runtime_error("LSGrid::get_lodf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
-    const size_t nb_el = powerlines_.nb() + trafos_.nb();
+    const size_t n_line = powerlines_.nb();
+    const size_t nb_el = n_line + trafos_.nb();
     // retrieve the from_bus / to_bus from the grid
     GlobalBusIdVect from_bus = GlobalBusIdVect::concat(powerlines_.get_bus_id_side_1(), trafos_.get_bus_id_side_1());
     GlobalBusIdVect to_bus   = GlobalBusIdVect::concat(powerlines_.get_bus_id_side_2(), trafos_.get_bus_id_side_2());
+    const auto & status1_line = powerlines_.get_status_side_1();
+    const auto & status2_line = powerlines_.get_status_side_2();
+    const auto & status1_trafo = trafos_.get_status_side_1();
+    const auto & status2_trafo = trafos_.get_status_side_2();
 
     // convert it to solver bus id
     IntVect from_bus_solver(nb_el);  // TODO : SolverBusIdVect here
     IntVect to_bus_solver(nb_el);
-    for(int el_id = 0; el_id < nb_el; ++el_id){
+    for(size_t el_id = 0; el_id < nb_el; ++el_id){
+        const bool is_dc_connected = el_id < n_line
+            ? (status1_line[el_id] && status2_line[el_id])
+            : (status1_trafo[el_id - n_line] && status2_trafo[el_id - n_line]);
+        if(!is_dc_connected){
+            // half-open (see keep_half_open_lines) or fully disconnected: this
+            // branch carries no DC flow at all (TwoSidesContainer_rxh_A::fillBdc
+            // drops it from Bbus entirely -- "disco on one side == disco on both
+            // sides"), and its open/stale bus id must not index
+            // id_me_to_dc_solver_ -- propagate the deactivated sentinel instead,
+            // so BaseDCAlgo::get_lodf gives it the identity treatment (its
+            // "outage" changes nothing, anywhere).
+            from_bus_solver[el_id] = BaseConstants::_deactivated_bus_id;
+            to_bus_solver[el_id] = BaseConstants::_deactivated_bus_id;
+            continue;
+        }
         // from side
         GlobalBusId f_grid_bus = from_bus[el_id];
         SolverBusId f_solver_bus = id_me_to_dc_solver_[f_grid_bus.cast_int()];
@@ -1370,45 +1950,68 @@ void LSGrid::remove_gen_slackbus(int gen_id){
 }
 
 /** GRID2OP SPECIFIC REPRESENTATION **/
-void LSGrid::update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_gens_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_p_gen);
 }
 
-void LSGrid::update_sgens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_sgens_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_p_sgen);
 }
 
-void LSGrid::update_gens_v(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_gens_v(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_v_gen);
 }
 
-void LSGrid::update_loads_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_loads_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_p_load);
 }
 
-void LSGrid::update_loads_q(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_loads_q(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_q_load);
 }
 
-void LSGrid::update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                              Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_storages_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                              const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
     update_continuous_values(has_changed, new_values, &LSGrid::change_p_storage);
 }
 
-void LSGrid::update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                            Eigen::Ref<const Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void LSGrid::update_topo(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                            const Eigen::Ref<const Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > & new_values)
 {
+    // Both arrays come straight from python and are indexed BY POSITION IN THE
+    // TOPOLOGY VECTOR: each container does `has_changed(pos_topo_vect_(el_id))` /
+    // `new_values(pos_topo_vect_(el_id))` with an unchecked Eigen operator(). The
+    // positions themselves are validated (check_grid() proves they form a
+    // permutation of [0, dim_topo)), but nothing checked that the caller's arrays
+    // are dim_topo long -- a shorter one reads past its end. dim_topo is exactly
+    // the number of topology-participating element sides, so compute it and demand
+    // both arrays match it.
+    const Eigen::Index dim_topo =
+        static_cast<Eigen::Index>(loads_.nb()) +
+        static_cast<Eigen::Index>(generators_.nb()) +
+        static_cast<Eigen::Index>(storages_.nb()) +
+        2 * static_cast<Eigen::Index>(powerlines_.nb()) +
+        2 * static_cast<Eigen::Index>(trafos_.nb());
+    if((has_changed.rows() != dim_topo) || (new_values.rows() != dim_topo)){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::update_topo: 'has_changed' (size " << has_changed.rows()
+             << ") and 'new_values' (size " << new_values.rows() << ") must both have the size of "
+             << "the topology vector (" << dim_topo << " = nb loads + nb gens + nb storages + "
+             << "2 * nb lines + 2 * nb trafos). They are indexed by position in the topology "
+             << "vector, so a shorter array would be read out of bounds.";
+        throw std::runtime_error(exc_.str());
+    }
     loads_.update_topo(has_changed, new_values, algo_controler_, substations_);
     generators_.update_topo(has_changed, new_values, algo_controler_, substations_);
     storages_.update_topo(has_changed, new_values, algo_controler_, substations_);

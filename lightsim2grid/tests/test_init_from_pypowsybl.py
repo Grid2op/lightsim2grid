@@ -518,13 +518,46 @@ class TestBusesForSub_nosort(TestBusesForSub_dosort):
         
     def get_sub_names_b4s(self):
         return np.asarray(
-            ['VL1_0', 'VL2_0', 'VL3_0', 'VL4_0', 'VL5_0', 'VL6_0', 
-             'VL7_0', 'VL8_0', 
+            ['VL1_0', 'VL2_0', 'VL3_0', 'VL4_0', 'VL5_0', 'VL6_0',
+             'VL7_0', 'VL8_0',
              'VL9_0', 'VL10_0', 'VL11_0', 'VL12_0', 'VL13_0', 'VL14_0'],
             dtype=str
         )
-        
-    
+
+
+class TestPickleFromPypo(unittest.TestCase):
+    """A pypowsybl-sourced LSGrid sets a non-empty `_ls_to_orig` (unlike a grid built
+    directly through `init_bus`/etc, whose `_ls_to_orig` stays empty). `LSGrid.set_state`
+    used to call `set_ls_to_orig` (which validates the vector size against
+    `substations_.nb_bus()`) *before* `substations_.set_state(...)` had restored the
+    real bus count on the freshly default-constructed instance pickle/binary restore
+    into -- so `substations_.nb_bus()` was still 0 and any non-empty `_ls_to_orig` was
+    wrongly rejected as a size mismatch. Fixed by restoring `substations_` first."""
+
+    def test_pickle_roundtrip(self):
+        net = pp.network.create_ieee14()
+        model = init_from_pypowsybl(net)
+        model2 = pickle.loads(pickle.dumps(model))
+        np.testing.assert_array_equal(np.asarray(model._ls_to_orig), np.asarray(model2._ls_to_orig))
+        np.testing.assert_allclose(np.asarray(model.get_bus_vn_kv()), np.asarray(model2.get_bus_vn_kv()))
+        nb_bus = len(model.get_bus_status())
+        v_init = np.ones(nb_bus, dtype=np.complex128)
+        v1 = model.ac_pf(v_init, 30, 1e-10)
+        v2 = model2.ac_pf(v_init, 30, 1e-10)
+        np.testing.assert_allclose(v1, v2)
+
+    def test_binary_roundtrip(self):
+        import os
+        import tempfile
+        net = pp.network.create_ieee14()
+        model = init_from_pypowsybl(net)
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "model.bin")
+            model.save_binary(path)
+            model2 = LSGrid.load_binary(path)
+        np.testing.assert_array_equal(np.asarray(model._ls_to_orig), np.asarray(model2._ls_to_orig))
+
+
 if __name__ == "__main__":
     unittest.main()
     

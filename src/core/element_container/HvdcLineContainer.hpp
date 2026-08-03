@@ -94,15 +94,26 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
     public:
         using DataInfo = HvdcLineInfo;
 
+        // /!\ these integer values are serialized verbatim (binary files and
+        // pickles, as converters_mode_): renumbering requires bumping
+        // BINARY_FORMAT_VERSION (BinaryArchive.hpp). Guarded python side by
+        // TestSerializedEnumValues in test_binary_serialization.py.
         enum ConvertersMode {
             SIDE_1_RECTIFIER = 0,
             SIDE_2_RECTIFIER = 1
         };
 
-        HvdcLineContainer() noexcept = default;
-        virtual ~HvdcLineContainer() noexcept = default;
+        // Unlike a normal branch, the two converter stations of an HVDC line are NOT
+        // synchronous partners: disconnecting one (its DC partner switched off) does
+        // not electrically justify tripping the other, which OpenLoadFlow keeps
+        // active as a local reactive/voltage-support device. So, unlike
+        // TwoSidesContainer's generic default (mirror both sides), HVDC lines default
+        // to independent sides.
+        HvdcLineContainer() noexcept { synch_status_both_side_ = false; }
+        ~HvdcLineContainer() noexcept override = default;
 
         // pickle
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
                 TwoSidesContainer<ConverterStationContainer>::StateRes,
                 std::vector<real_type>, // loss_percent_
@@ -139,40 +150,45 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         HvdcLineContainer::StateRes get_state() const;
         void set_state(HvdcLineContainer::StateRes & my_state);
 
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path, bool atomic = true) const;
+        static HvdcLineContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "HvdcLineContainer"; }  // written into / checked against the binary file header
+
         /**
          * Full IIDM-style initialization (used by the pypowsybl converter and
          * the direct API). Loss factors are fractions (0 - 1), the droop is
          * given in MW per degree (converted to MW per radian internally).
          */
-        void init(const Eigen::VectorXi & bus1_id,
-                  const Eigen::VectorXi & bus2_id,
+        void init(const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                   const std::vector<int> & type1,
                   const std::vector<int> & type2,
-                  const RealVect & loss_factor1,
-                  const RealVect & loss_factor2,
+                  const Eigen::Ref<const RealVect> & loss_factor1,
+                  const Eigen::Ref<const RealVect> & loss_factor2,
                   const std::vector<bool> & vreg1_on,
                   const std::vector<bool> & vreg2_on,
-                  const RealVect & vm1_pu,
-                  const RealVect & vm2_pu,
-                  const RealVect & q1_setpoint_mvar,
-                  const RealVect & q2_setpoint_mvar,
-                  const RealVect & min_q1,
-                  const RealVect & max_q1,
-                  const RealVect & min_q2,
-                  const RealVect & max_q2,
-                  const RealVect & power_factor1,
-                  const RealVect & power_factor2,
+                  const Eigen::Ref<const RealVect> & vm1_pu,
+                  const Eigen::Ref<const RealVect> & vm2_pu,
+                  const Eigen::Ref<const RealVect> & q1_setpoint_mvar,
+                  const Eigen::Ref<const RealVect> & q2_setpoint_mvar,
+                  const Eigen::Ref<const RealVect> & min_q1,
+                  const Eigen::Ref<const RealVect> & max_q1,
+                  const Eigen::Ref<const RealVect> & min_q2,
+                  const Eigen::Ref<const RealVect> & max_q2,
+                  const Eigen::Ref<const RealVect> & power_factor1,
+                  const Eigen::Ref<const RealVect> & power_factor2,
                   const std::vector<int> & converters_mode,
-                  const RealVect & p_setpoint_mw,
-                  const RealVect & r_ohm,
-                  const RealVect & nominal_v_kv,
-                  const RealVect & loss_percent,
-                  const RealVect & loss_mw,
+                  const Eigen::Ref<const RealVect> & p_setpoint_mw,
+                  const Eigen::Ref<const RealVect> & r_ohm,
+                  const Eigen::Ref<const RealVect> & nominal_v_kv,
+                  const Eigen::Ref<const RealVect> & loss_percent,
+                  const Eigen::Ref<const RealVect> & loss_mw,
                   const std::vector<bool> & droop_enabled,
-                  const RealVect & droop_p0_mw,
-                  const RealVect & droop_mw_per_deg,
-                  const RealVect & pmax_1to2_mw,
-                  const RealVect & pmax_2to1_mw
+                  const Eigen::Ref<const RealVect> & droop_p0_mw,
+                  const Eigen::Ref<const RealVect> & droop_mw_per_deg,
+                  const Eigen::Ref<const RealVect> & pmax_1to2_mw,
+                  const Eigen::Ref<const RealVect> & pmax_2to1_mw
                   );
 
         /**
@@ -181,34 +197,79 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
          * side-1 station active power in generator convention (the python
          * layer negates pandapower's `p_mw` before calling this).
          */
-        void init_legacy(const Eigen::VectorXi & branch_from_id,
-                         const Eigen::VectorXi & branch_to_id,
-                         const RealVect & p_mw,
-                         const RealVect & loss_percent,
-                         const RealVect & loss_mw,
-                         const RealVect & vm_or_pu,
-                         const RealVect & vm_ex_pu,
-                         const RealVect & min_q_or,
-                         const RealVect & max_q_or,
-                         const RealVect & min_q_ex,
-                         const RealVect & max_q_ex
+        void init_legacy(const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                         const Eigen::Ref<const Eigen::VectorXi> & branch_to_id,
+                         const Eigen::Ref<const RealVect> & p_mw,
+                         const Eigen::Ref<const RealVect> & loss_percent,
+                         const Eigen::Ref<const RealVect> & loss_mw,
+                         const Eigen::Ref<const RealVect> & vm_or_pu,
+                         const Eigen::Ref<const RealVect> & vm_ex_pu,
+                         const Eigen::Ref<const RealVect> & min_q_or,
+                         const Eigen::Ref<const RealVect> & max_q_or,
+                         const Eigen::Ref<const RealVect> & min_q_ex,
+                         const Eigen::Ref<const RealVect> & max_q_ex
                          );
 
         // accessor / modifiers
-        virtual void reconnect_connected_buses(SubstationContainer & substation) const override {
+        void reconnect_connected_buses(SubstationContainer & substation) const override {
             side_1_.reconnect_connected_buses(substation);
             side_2_.reconnect_connected_buses(substation);
         }
 
-        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const override {
+        void get_graph(std::vector<Eigen::Triplet<real_type> > & /*res*/) const override {
             // for buses only connected through a hvdc line, i don't add them
             // they are not in the same "connected component"
         }
 
-        real_type get_qmin_or(int hvdc_id) {return side_1_.get_qmin(hvdc_id);}
-        real_type get_qmax_or(int hvdc_id) {return side_1_.get_qmax(hvdc_id);}
-        real_type get_qmin_ex(int hvdc_id) {return side_2_.get_qmin(hvdc_id);}
-        real_type get_qmax_ex(int hvdc_id) {return side_2_.get_qmax(hvdc_id);}
+        // An HVDC line bridges two AC grids that are NOT synchronous (no edge is
+        // added in `get_graph`), so the connectivity BFS of
+        // `LSGrid::consider_only_main_component` is really splitting the grid into
+        // *synchronous* components. When the two converters land in different
+        // components, only one of them can be in the main (solved) synchronous
+        // component. OpenLoadFlow keeps that in-main converter as a fixed boundary
+        // injection (it still imports / exports its scheduled HVDC power); dropping
+        // it would silently lose hundreds of MW. So, unlike a normal branch, we do
+        // NOT deactivate the whole line when a single side is outside the main
+        // component: we keep the in-main converter injecting and open only the
+        // out-of-main one. A line with BOTH sides outside is still fully dropped.
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override {
+            const int nb_el = nb();
+            DualAlgoControl unused_solver_control;
+            const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
+            const GlobalBusIdVect & bus_side_2_id_ = get_buses_side_2();
+            for(int i = 0; i < nb_el; ++i){
+                if(!status_global_[i]){
+                    side_1_.deactivate(i, unused_solver_control);
+                    side_2_.deactivate(i, unused_solver_control);
+                    continue;
+                }
+                const int b1 = bus_side_1_id_(i).cast_int();
+                const int b2 = bus_side_2_id_(i).cast_int();
+                const bool s1_outside = (b1 != _deactivated_bus_id) && !busbar_in_main_component[b1];
+                const bool s2_outside = (b2 != _deactivated_bus_id) && !busbar_in_main_component[b2];
+                if(s1_outside && s2_outside){
+                    // both converters in (an)other synchronous component: drop it all
+                    side_1_.deactivate(i, unused_solver_control);
+                    side_2_.deactivate(i, unused_solver_control);
+                    if(!ignore_status_global_) status_global_[i] = false;
+                } else if(s1_outside || s2_outside){
+                    // exactly one converter in the main synchronous component: keep
+                    // the HVDC line active and that converter injecting its scheduled
+                    // power, open only the converter that is out of the main component.
+                    // Angle-droop ("AC emulation") cannot run across the cut (the
+                    // remote angle is gone) -> fall back to the fixed power setpoint.
+                    droop_enabled_[i] = false;
+                    if(s1_outside) side_1_.deactivate(i, unused_solver_control);
+                    else           side_2_.deactivate(i, unused_solver_control);
+                    // status_global_[i] stays true: the line still injects in-main
+                }
+            }
+        }
+
+        real_type get_qmin_or(int hvdc_id) const {return side_1_.get_qmin(hvdc_id);}
+        real_type get_qmax_or(int hvdc_id) const {return side_1_.get_qmax(hvdc_id);}
+        real_type get_qmin_ex(int hvdc_id) const {return side_2_.get_qmin(hvdc_id);}
+        real_type get_qmax_ex(int hvdc_id) const {return side_2_.get_qmax(hvdc_id);}
 
         /**
          * Change the active power of the line, legacy convention: `new_p` is
@@ -227,14 +288,28 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         bool is_droop_active(int hvdc_id) const {
             return droop_enabled_[hvdc_id] && status_global_[hvdc_id];
         }
+        // Angle-droop ("AC emulation") needs both remote angles: cannot run once either
+        // converter is individually opened while the line stays connected_global (a
+        // "half-open" HVDC, see deactivate_side_1/2 and
+        // disconnect_if_not_in_main_component, which does the same for the
+        // main-component case) -- fall back to the fixed power setpoint. Called by
+        // LSGrid::deactivate_dcline_side1/2; without it, fill_hvdc_droop_solver_data
+        // would try to resolve the now-disconnected (-1) side's bus and read out of
+        // bounds.
+        void disable_droop(int hvdc_id) { droop_enabled_[hvdc_id] = false; }
         bool has_droop_active() const {
             const int nb_hvdc = static_cast<int>(nb());
             for(int i = 0; i < nb_hvdc; ++i) if(is_droop_active(i)) return true;
             return false;
         }
-        int get_status_droop(int hvdc_id) const {return status_droop_(hvdc_id);}
-        std::vector<int> get_status_droop_vect() const {
-            return std::vector<int>(status_droop_.begin(), status_droop_.end());
+        int get_status_droop(int hvdc_id) const {
+            // hvdc_id indexes status_droop_ with an unchecked Eigen operator() (OOB read);
+            // the matching setter set_status_droop already guards the same way.
+            _check_in_range(hvdc_id, status_droop_, "get_status_droop");
+            return status_droop_(hvdc_id);
+        }
+        Eigen::Ref<const IntVect> get_status_droop_vect() const {
+            return status_droop_;
         }
         const std::vector<bool> & get_droop_enabled() const {return droop_enabled_;}
         real_type get_droop_p0_mw(int hvdc_id) const {return p0_mw_(hvdc_id);}
@@ -270,28 +345,28 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         void droop_flows_mw(int hvdc_id, real_type raw_mw, real_type & p1_flow_mw, real_type & p2_flow_mw) const;
 
         // solver stuff
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
-        virtual void fillpv(std::vector<int>& bus_pv,
-                            std::vector<bool> & has_bus_been_added,
-                            const SolverBusIdVect & slack_bus_id_solver,
-                            const SolverBusIdVect & id_grid_to_solver) const override {
+        void fillpv(std::vector<int>& bus_pv,
+                    std::vector<bool> & has_bus_been_added,
+                    const SolverBusIdVect & slack_bus_id_solver,
+                    const SolverBusIdVect & id_grid_to_solver) const override {
             side_1_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);
             side_2_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);
         }
 
-        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                                std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const SolverBusIdVect & id_grid_to_solver,
-                                real_type sn_mva,
-                                FDPFMethod xb_or_bx) const override {
-                                    // no Bp coeffs for hvdc lines
-                                }
+        void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
+                        std::vector<Eigen::Triplet<real_type> > & /*Bpp*/,
+                        const SolverBusIdVect & /*id_grid_to_solver*/,
+                        real_type /*sn_mva*/,
+                        FDPFMethod /*xb_or_bx*/) const override {
+                            // no Bp coeffs for hvdc lines
+                        }
 
         void init_q_vector(int nb_bus,
-                           Eigen::VectorXi & total_gen_per_bus,
-                           RealVect & total_q_min_per_bus,
-                           RealVect & total_q_max_per_bus) const {
+                           Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
+                           Eigen::Ref<RealVect> total_q_min_per_bus,
+                           Eigen::Ref<RealVect> total_q_max_per_bus) const {
             side_1_.init_q_vector(nb_bus, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
             side_2_.init_q_vector(nb_bus, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
         }
@@ -300,7 +375,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                              const Eigen::Ref<const RealVect> & Vm,
                              const Eigen::Ref<const CplxVect> & V,
                              const SolverBusIdVect & id_grid_to_solver,
-                             const RealVect & bus_vn_kv,
+                             const Eigen::Ref<const RealVect> & bus_vn_kv,
                              real_type sn_mva,
                              bool ac);
 
@@ -308,23 +383,23 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             reset_results_tsc();
         }
 
-        void set_q(const RealVect & reactive_mismatch,
+        void set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
                    const SolverBusIdVect & id_grid_to_solver,
                    bool ac,
-                   const Eigen::VectorXi & total_gen_per_bus,
-                   const RealVect & total_q_min_per_bus,
-                   const RealVect & total_q_max_per_bus){
+                   const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
+                   const Eigen::Ref<const RealVect> & total_q_min_per_bus,
+                   const Eigen::Ref<const RealVect> & total_q_max_per_bus){
             side_1_.set_q(reactive_mismatch, id_grid_to_solver, ac, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
             side_2_.set_q(reactive_mismatch, id_grid_to_solver, ac, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
         }
-        void get_vm_for_dc(RealVect & Vm){
+        void get_vm_for_dc(Eigen::Ref<RealVect> Vm){
             side_1_.get_vm_for_dc(Vm);
             side_2_.get_vm_for_dc(Vm);
         }
-        void set_vm_or(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const{
+        void set_vm_or(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const{
             side_1_.set_vm(V, id_grid_to_solver);
         }
-        void set_vm_ex(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const{
+        void set_vm_ex(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const{
             side_2_.set_vm(V, id_grid_to_solver);
         }
 
@@ -332,7 +407,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
         the ac powerflow
         **/
-        void set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const{
+        void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const{
             side_1_.set_vm(V, id_grid_to_solver);
             side_2_.set_vm(V, id_grid_to_solver);
         }

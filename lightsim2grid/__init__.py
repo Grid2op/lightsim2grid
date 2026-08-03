@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__version__ = "0.13.2.dev0"
+__version__ = "1.0.0.rc2"
 
 __all__ = [
     "newtonpf",
@@ -19,7 +19,6 @@ __all__ = [
     "get_include",
     "get_cmake_dir"]
 
-import ctypes as _ctypes
 import os as _os
 import sys as _sys
 
@@ -49,10 +48,19 @@ else:
 def load_algorithm_plugin(path: str) -> None:
     """Load a shared library containing a lightsim2grid algorithm plugin.
 
-    The library must contain at least one static ``AlgorithmRegistrar`` object
-    in an anonymous namespace (see ``examples/external_solver/`` for a minimal
-    example).  Its constructor fires when the library is loaded, which
-    registers the new algorithm / solver into the C++ ``AlgorithmRegistry`` singleton.
+    The library must export a ``ls2g_register_plugin`` entry point, which the
+    ``LS2G_PLUGIN_ENTRY`` macro generates from the plugin's registration
+    function (see ``examples/external_algorithm/`` for a minimal example).  The
+    library is loaded, the entry point is looked up and called, and the new
+    algorithm(s) it declares are registered into the C++ ``AlgorithmRegistry``
+    singleton.
+
+    Registration happens through a function the loader calls explicitly, *not*
+    inside a static constructor during ``dlopen``, so any failure -- an ABI
+    mismatch, a solver name that is already registered (which includes loading
+    the same plugin twice), a library that is not a plugin, a missing file --
+    is raised here as a normal, catchable Python exception instead of aborting
+    the interpreter.
 
     After this call the new solver name is usable via::
 
@@ -64,8 +72,15 @@ def load_algorithm_plugin(path: str) -> None:
     ----------
     path:
         Absolute or relative path to the ``.so`` / ``.dll`` file.
+
+    Raises
+    ------
+    RuntimeError
+        If the library cannot be loaded, does not export the plugin entry
+        point, or its registration is refused (ABI mismatch, duplicate name).
     """
-    _ctypes.CDLL(path, mode=_ctypes.RTLD_GLOBAL)
+    from lightsim2grid.lightsim2grid_cpp import _load_algorithm_plugin
+    _load_algorithm_plugin(str(path))
 
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend  # noqa: F401

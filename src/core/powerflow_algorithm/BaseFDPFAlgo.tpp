@@ -9,40 +9,23 @@
 // inspired from pypower https://github.com/rwl/PYPOWER/blob/master/pypower/fdpf.py
 
 template<class LinearSolver, FDPFMethod XB_BX>
-bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                                   CplxVect & V,
-                                                   const CplxVect & Sbus,
-                                                   Eigen::Ref<const IntVect> slack_ids,
-                                                   const RealVect & slack_weights,
-                                                   Eigen::Ref<const IntVect> pv,
-                                                   Eigen::Ref<const IntVect> pq,
-                                                   int max_iter,
-                                                   real_type tol
-                                                   )
+bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(
+    const EigenRefConstCplxSpMat     & Ybus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const IntVect>  & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect>  & pv,
+    const Eigen::Ref<const IntVect>  & pq,
+    int                              max_iter,
+    real_type                        tol
+)
 {
     /**
     This method uses the newton raphson algorithm to compute voltage angles and magnitudes at each bus
     of the system.
     If the Ybus matrix changed, please uses the appropriate method to recomptue it!
     **/
-    // TODO DEBUG MODE check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
-    // TODO DEBUG MODE Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
-    // TODO DEBUG MODE: check that all nodes is either pv, pq or slack
-    // TODO DEBUG MODE: check that the slack_weights sum to 1.0
-    if(Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols() ){
-        // TODO DEBUG MODE
-        std::ostringstream exc_;
-        exc_ << "BaseFDPFAlgo::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
-        exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.cols() << ").";
-        throw std::runtime_error(exc_.str());
-    }
-    if(V.size() != Ybus.rows() || V.size() != Ybus.cols() ){
-        // TODO DEBUG MODE
-        std::ostringstream exc_;
-        exc_ << "BaseFDPFAlgo::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
-        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<< ", " << Ybus.cols() << ").";
-        throw std::runtime_error(exc_.str());
-    }
     reset_timer();
     if(!is_linear_solver_valid()) return false;
     if(_solver_control.need_reset_solver() || 
@@ -131,14 +114,13 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
         }
 
         // do the P iteration (for Va)
-        RealVect x = p_;
-        solve(_linear_solver_Bp, x);  //  dVa = -Bp_solver.solve(P)
+        solve(_linear_solver_Bp, p_);  //  dVa = -Bp_solver.solve(P)  (solved in place, like the Q iteration below)
         if(err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
             res = false;
             break;
         }
-        Va_(pvpq) -= x;  // Va[pvpq] = Va[pvpq] + dVa
+        Va_(pvpq) -= p_;  // Va[pvpq] = Va[pvpq] + dVa
         tmp_va.array() = (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>() );  // reused for Q iteration
         if(has_converged(tmp_va, Ybus, Sbus, slack_bus_id, slack_absorbed, slack_weights, pvpq, pq, tol)){
             converged = true;
@@ -160,25 +142,27 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
     }
     timer_total_nr_ += timer.duration();
     #ifdef __COUT_TIMES
-        std::cout << "Computation time: " << "\n\t timer_initialize_: " << timer_initialize_
-                  << "\n\t timer_dSbus_ (called in _fillJ_): " << timer_dSbus_
-                  << "\n\t timer_fillJ_: " << timer_fillJ_
-                  << "\n\t timer_Fx_: " << timer_Fx_
-                  << "\n\t timer_check_: " << timer_check_
-                  << "\n\t timer_solve_: " << timer_solve_
-                  << "\n\t timer_total_nr_: " << timer_total_nr_
-                  << "\n\n";
+        {
+            const TimerJac tj = get_timers_jacobian();
+            std::cout << "Computation time: " << "\n\t timer_initialize_: " << tj.timer_initialize_
+                      << "\n\t timer_Fx_: " << timer_Fx_
+                      << "\n\t timer_check_: " << timer_check_
+                      << "\n\t timer_solve_: " << tj.timer_solve_
+                      << "\n\t timer_total_nr_: " << timer_total_nr_
+                      << "\n\n";
+        }
     #endif // __COUT_TIMES
     return res;
 }
 
 template<class LinearSolver, FDPFMethod XB_BX>
-void BaseFDPFAlgo<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp,
-                                                             const Eigen::SparseMatrix<real_type> & grid_Bpp,
-                                                             const std::vector<int> & pvpq_inv,
-                                                             const std::vector<int> & pq_inv,
-                                                             size_t n_pvpq,
-                                                             size_t n_pq)
+void BaseFDPFAlgo<LinearSolver, XB_BX>::fill_sparse_matrices(
+    const EigenRefConstRealSpMat & grid_Bp,
+    const EigenRefConstRealSpMat & grid_Bpp,
+    const std::vector<int>       & pvpq_inv,
+    const std::vector<int>       & pq_inv,
+    size_t                       n_pvpq,
+    size_t                       n_pq)
 {
   /**
    Init Bp_ and Bpp_ such that:
@@ -190,10 +174,11 @@ void BaseFDPFAlgo<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::Sparse
 }
 
 template<class LinearSolver, FDPFMethod XB_BX>
-void BaseFDPFAlgo<LinearSolver, XB_BX>::aux_fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp_Bpp,
-                                                                 const std::vector<int> & ind_inv,
-                                                                 size_t mat_dim,
-                                                                 Eigen::SparseMatrix<real_type> & res)
+void BaseFDPFAlgo<LinearSolver, XB_BX>::aux_fill_sparse_matrices(
+    const EigenRefConstRealSpMat   & grid_Bp_Bpp,
+    const std::vector<int>         & ind_inv,
+    size_t                         mat_dim,
+    Eigen::SparseMatrix<real_type> & res)
 {
     // clear previous matrix
     res = Eigen::SparseMatrix<real_type>(mat_dim, mat_dim);
@@ -201,7 +186,7 @@ void BaseFDPFAlgo<LinearSolver, XB_BX>::aux_fill_sparse_matrices(const Eigen::Sp
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(grid_Bp_Bpp.nonZeros());
     for (int k = 0; k < grid_Bp_Bpp.outerSize(); ++k){
-        for (Eigen::SparseMatrix<real_type>::InnerIterator it(grid_Bp_Bpp, k); it; ++it){
+        for (EigenRefConstRealSpMat::InnerIterator it(grid_Bp_Bpp, k); it; ++it){
             if ((ind_inv[it.row()] >= 0) && (ind_inv[it.col()] >= 0)){
                 auto tmp = Eigen::Triplet<real_type>(ind_inv[it.row()], ind_inv[it.col()], it.value());
                 tripletList.push_back(tmp);

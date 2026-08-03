@@ -10,7 +10,7 @@ Comparison with pypowsybl default load-flow
 ============================================
 
 In this section of the documentation we attempt to compare lightsim2grid 
-and the default implementation of pypowsybl (which is OLF - `Open Load Flow <https://github.com/powsybl/powsybl-open-loadflow>__`)
+and the default implementation of pypowsybl (which is OLF - `Open Load Flow <https://github.com/powsybl/powsybl-open-loadflow>`__)
 
 All the tests were conducted on the same laptop and on publically available grid:
 
@@ -21,7 +21,7 @@ All the tests were conducted on the same laptop and on publically available grid
 - ieee 118 bus
 - ieee 300 bus
 
-In all cases, the lightsim2grid `gridmodel` (lightsim2grid internal
+In all cases, the lightsim2grid `LSGrid` (lightsim2grid internal
 representation of a powergrid) were initialized from the pypowsybl grid.
 
 Disclaimer
@@ -46,10 +46,67 @@ do many more things than lightsim2grid.
 
 .. important::
     The overall message of this page is not to show that lightsim2grid should be
-    prefered to pypowsybl. 
+    prefered to pypowsybl.
 
-    Its goal is rather to explain how to get consistent results between pypowsybl 
+    Its goal is rather to explain how to get consistent results between pypowsybl
     and lightsim2grid.
+
+Why this comparison isn't trivial: OLF's "outer loops"
+**********************************************************
+
+All the bullet points in the disclaimer above (reactive limits, tap ratio, distributed
+slack, ...) are really different faces of a single architectural difference between the
+two engines, and it is the reason a naive comparison disagrees and why the "baking"
+machinery below exists at all.
+
+OpenLoadFlow structures a powerflow as an **inner** Newton-Raphson solve wrapped in
+**outer loops**: solve, look at the result, adjust some input if a criterion is not met
+(a generator exceeds a reactive limit -> switch it from PV to fixed-Q; a tap changer is
+not at the position that would satisfy its regulation -> move it a step; the slack
+mismatch is not shared the way the model prescribes -> redistribute it; area interchange
+/ secondary voltage control targets are not met -> adjust), then solve again -- repeating
+until every outer loop is satisfied or a round limit is hit.
+
+**lightsim2grid does not have this.** Its algorithms (Newton-Raphson, Fast-Decoupled,
+Gauss-Seidel, see :ref:`available-powerflow-solvers`) solve a *single*, fixed problem: the
+topology, injections, tap positions and voltage-control targets you hand it are exactly
+what gets solved, once, with nothing adjusted in response to the result. There is no
+generic outer-loop mechanism in the lightsim2grid core.
+
+This is not simply "OLF has more features, lightsim2grid has fewer" -- the two
+architectures make a different trade-off, and where a given feature ends up depends on
+that trade-off:
+
+- **Distributed slack is the one outer loop lightsim2grid folds into the inner solve
+  instead of dropping.** ``MultiSlackNRSystem`` adds the slack-participation unknowns and
+  their weighting directly into the *same* Newton-Raphson Jacobian as the rest of the
+  problem (see ``src/core/powerflow_algorithm/NRSystem.hpp``), instead of an OLF-style
+  outer loop that re-solves a single-slack problem and redistributes the mismatch between
+  rounds. One solve, one Jacobian, no outer iteration -- faster, at the cost of a larger
+  and more coupled linear system.
+- **Reactive-limit PV<->PQ switching, discrete tap / shunt control, area interchange and
+  secondary voltage control are not implemented at all**, in either form (no outer loop,
+  and no in-Jacobian equivalent). This is precisely the gap :func:`bake_outer_loops`
+  papers over for the sake of comparison: it does not give lightsim2grid these
+  capabilities, it just freezes OLF's already-converged answer for them into fixed
+  inputs, so that what is left is a problem lightsim2grid *can* solve exactly.
+
+Whether a given outer loop could instead be folded into the inner NR formulation (like
+distributed slack was) or fundamentally needs iteration around the solve (like discrete
+tap positions, which are not differentiable) is a case-by-case question, and remains
+open for most of OLF's outer loops as far as lightsim2grid is concerned.
+
+.. seealso::
+    ``examples/dist_slack_algorithm/`` is a solver plugin (see
+    :ref:`solver_plugin`) that reimplements distributed slack the *other* way: as an
+    explicit outer loop around a single-slack inner Newton-Raphson solve, mirroring
+    OLF's own ``DistributedSlackOuterLoop`` architecture, instead of lightsim2grid's
+    default in-Jacobian ``MultiSlackNRSystem`` extension. It exists to demonstrate (and
+    test) that lightsim2grid's plugin mechanism can express an OLF-style outer loop at
+    all, not to replace the built-in distributed slack -- see the comment at the top of
+    ``examples/dist_slack_algorithm/NRAlgoDistSlack.hpp`` for the full rationale
+    (in short: it was used to investigate a step-damping / convergence interaction
+    specific to the in-Jacobian approach).
 
 
 Methodology
@@ -60,7 +117,7 @@ the same simulation (an AC powerflow) on the same grid.
 
 It will expose:
 
-- the parameters used to initialize the lightsim2grid `gridmodel`
+- the parameters used to initialize the lightsim2grid `LSGrid`
 - the parameters used to run the powerflow computation with pypowsybl
 - the time it takes to perform these powerflows in different settings
 - the mismatch of the voltage angle (in radian) 
@@ -88,46 +145,157 @@ For example:
 Load-flow parameters
 **********************
 
-The parameters used to compute the powerflow in these examples are:
+The parameters used to compute the powerflow in these examples are the canonical
+"every outer loop disabled" parameters shipped with lightsim2grid, exported as
+``get_pypowsybl_loopfree_parameters``. lightsim2grid solves a single power-flow
+problem (no outer loops), so to get consistent results pypowsybl must be told to
+run no outer loop either:
 
 .. code-block:: python
 
-    import pypowsybl.loadflow as pypow_lf
+    from lightsim2grid.network import get_pypowsybl_loopfree_parameters
 
-    params = pypow_lf.Parameters(
-    voltage_init_mode=pypow._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
-    transformer_voltage_control_on=False,
-    use_reactive_limits=False,
-    phase_shifter_regulation_on=False,
-    twt_split_shunt_admittance=True,
-    shunt_compensator_voltage_control_on=False,
-    read_slack_bus=False,
-    write_slack_bus=True,
-    distributed_slack=False,
-    dc_use_transformer_ratio=True,
-    hvdc_ac_emulation=False,
-    dc_power_factor=1.,
-    provider_parameters={
-        "useActiveLimits": "false",
-        "useReactiveLimits": "false",
-        "svcVoltageMonitoring": "false",
-        "voltageRemoteControl": "false",
-        "writeReferenceTerminals": "false",
-        "slackBusSelectionMode" : "NAME",
-        "slackBusesIds" : "VL69_0",  # DEPENDS ON CASE_NAME: for case 118
-        "voltagePerReactivePowerControl": "false",
-        "generatorReactivePowerRemoteControl": "false",
-        "secondaryVoltageControl": "false",
-        }
-    )
+    # pin the slack on the same bus lightsim2grid uses (depends on the case,
+    # e.g. "VL69_0" for ieee118); omit slack_bus_ids to read the slack from
+    # the network instead.
+    params = get_pypowsybl_loopfree_parameters(slack_bus_ids="VL69_0")
+
+Under the hood this builds a :class:`pypowsybl.loadflow.Parameters` that disables
+distributed slack, reactive limits, transformer / shunt / phase-shifter voltage
+control, area-interchange and secondary-voltage control, automation systems, etc.
+The key mechanism is the empty ``outerLoopNames`` allow-list, which registers
+*zero* outer loops regardless of which loops a future pypowsybl release adds --
+see :func:`~lightsim2grid.network.remove_outer_loops`, which it wraps.
+
+If lightsim2grid's own distributed-slack implementation is what you want to compare
+against (rather than a single, fixed slack bus), keep OLF's ``DistributedSlack`` outer
+loop active and remove every other one with
+:func:`~lightsim2grid.network.get_pypowsybl_loopfree_distributed_slack_parameters`
+instead -- same idea, but it sets ``balance_type=PROPORTIONAL_TO_GENERATION_P_MAX``,
+what lightsim2grid's default distributed slack reproduces.
 
 .. important::
     As you notice from these parameters, a lot of the
     simulation capacity of pypowsybl are switched off when using lightsim2grid.
 
+Baking outer-loop results into the network
+*********************************************
+
+Removing the outer loops from the OLF *parameters* (above) only helps if the network
+itself does not need them: it is fine for a network you build already at its final
+operating point, but if you start from a network whose outer loops would actually
+*do* something (a generator that should hit a reactive limit, a tap changer that
+should move, a distributed slack that should spread over several units, ...), solving
+it loop-free in OLF and in lightsim2grid no longer agree -- not because the solvers
+differ, but because they are solving different problems.
+
+``bake_outer_loops`` closes that gap: run OLF *with* its outer loops enabled first,
+then call it to rewrite the network's input setpoints (tap positions, generator P/Q,
+slack participation, ...) to the values the outer loops converged on, and disable the
+corresponding regulation. Afterwards the network represents a plain power-flow
+problem, and a loop-free OLF run or a lightsim2grid run (via
+:func:`~lightsim2grid.network.init_from_pypowsybl`) should reproduce the same
+operating point:
+
+.. code-block:: python
+
+    import pypowsybl as pp
+    from lightsim2grid.network import bake_outer_loops, init_from_pypowsybl
+
+    network = pp.network.create_ieee14()
+    pp.loadflow.run_ac(network)  # solve once, with outer loops enabled
+    bake_outer_loops(network)    # freeze the converged outer-loop state into the inputs
+
+    ls_grid = init_from_pypowsybl(network)  # now a plain (loop-free) power-flow problem
+
+.. autofunction:: lightsim2grid.network.bake_outer_loops
+    :no-index:
+
 .. note::
     If you are interested in an "abalation study" on the impact of certain parameters
     above, let us know, for example with a github issue or by reaching out on discord.
+
+
+Comparing the two engines
+**************************
+
+To check that lightsim2grid reproduces an OLF operating point you can use the
+``compare_baked`` helper. It solves the network *with* outer loops in OLF, bakes
+the converged outer-loop state into the inputs (so the problem becomes a plain
+power flow), optionally applies the same outages to both engines, then solves
+loop-free in OLF and in lightsim2grid and compares the bus voltages:
+
+.. code-block:: python
+
+    from lightsim2grid.network import compare_baked
+    import pypowsybl as pp
+
+    res = compare_baked(
+        pp.network.create_ieee14,   # a callable returning a fresh network
+        slack_gen_id="B1-G",
+        line_outages=["L1-2-1"],    # optional, applied to both engines
+    )
+    print(res)                      # ComparisonResult(max |dV| = ..., ...)
+    print(res.max_dvm_pu)           # largest |Vmag| mismatch (pu)
+    print(res.table)                # per-bus detail
+
+The call returns a :class:`lightsim2grid.network.ComparisonResult` summarising the
+largest voltage-magnitude and voltage-angle mismatches (plus a per-bus table):
+
+.. autoclass:: lightsim2grid.network.ComparisonResult
+    :members:
+    :no-index:
+
+.. autofunction:: lightsim2grid.network.compare_baked
+    :no-index:
+
+Inspecting results in a pypowsybl-like way
+********************************************
+
+``compare_baked`` above only compares bus voltages. If you want to inspect (or write
+generic analysis code against) the *full* result of a lightsim2grid powerflow -- lines,
+transformers, generators, loads, shunts, HVDC lines, ... -- with the exact same API and
+DataFrame shape as a solved pypowsybl :class:`pypowsybl.network.Network`, use
+:class:`lightsim2grid.network.LightsimResultNetwork`. It wraps a converged ``LSGrid``
+(built by ``init_from_pypowsybl``) and the pypowsybl network it was built from, and
+exposes ``get_buses`` / ``get_lines`` / ``get_2_windings_transformers`` /
+``get_generators`` / ``get_loads`` / ``get_shunt_compensators`` /
+``get_static_var_compensators`` / ``get_batteries`` / ``get_hvdc_lines`` /
+``get_vsc_converter_stations`` / ``get_lcc_converter_stations``, each returning a pandas
+DataFrame indexed by the pypowsybl element id, with pypowsybl's own column names and
+sign conventions (post-solve ``p`` / ``q`` in the load convention):
+
+.. code-block:: python
+
+    import pypowsybl as pp
+    from lightsim2grid.network import init_from_pypowsybl, LightsimResultNetwork
+
+    net = pp.network.create_ieee14()
+    grid = init_from_pypowsybl(net, gen_slack_id="B1-G")
+    V = grid.ac_pf(..., 10, 1e-7)
+    assert len(V) > 0  # converged
+
+    res_net = LightsimResultNetwork(grid, net)
+    res_net.get_generators()  # same shape/columns as net.get_generators() after a solve
+    res_net.get_lines(attributes=["p1", "q1", "i1"])
+
+.. autoclass:: lightsim2grid.network.LightsimResultNetwork
+    :members:
+    :no-index:
+
+.. warning::
+    Only powerflow *results* (post-solve quantities such as ``p`` / ``q`` / ``i`` / bus
+    voltage) are actually read from the solved ``LSGrid`` and mapped back onto
+    pypowsybl's DataFrame shape. Everything else in the returned DataFrame -- topology,
+    ratings, static per-element metadata, ... -- is read from the original pypowsybl
+    ``net``, not recomputed by lightsim2grid.
+
+.. note::
+    ``LightsimResultNetwork`` is a convenience wrapper for pypowsybl-shaped analysis
+    code, not the fast path: building each DataFrame has real overhead (id alignment,
+    column renaming, sign-convention conversion) on top of the powerflow itself. If you
+    only need raw arrays for performance-sensitive code, use lightsim2grid's own
+    accessors on ``LSGrid`` directly instead.
 
 Results
 -----------------------------------

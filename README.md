@@ -6,20 +6,47 @@ the world of power system.
 See the [Disclaimer](DISCLAIMER.md) to have a more detailed view on what is and what is not this package. For example
 this package should not be used for detailed power system computations or simulations.
 
-*   [1 Usage](#Usage)
-    *   [1.1. As a grid2op backend (preferred method)](#1-as-a-grid2op-backend-preferred-method)
-    *   [1.2. replacement of pandapower "newtonpf" method (advanced method)](#2-replacement-of-pandapower-newtonpf-method-advanced-method)
-*   [2 Installation (from pypi official repository, recommended)](#Installation-from-pypi-official-repository-recommended)
-*   [3 Installation (from source, for more advanced user)](#Installation-from-source-for-more-advanced-user)
-*   [4. Benchmarks](#Benchmarks)
-*   [5. Philosophy](#Philosophy)
-*   [6. Miscellaneous](#Miscellaneous)
-    * [6.1 Customization of the compilation](#Customization-of-the-compilation)
-    * [6.2 Profile the code](#Profile-the-code)
-    * [6.3 Local testing](#Local-testing)
-    * [6.4 Tests performed automatically](#Tests-performed-automatically)
-    * [5.5 Known issues](#Known-issues)
+*   [1 Key features](#Key-features)
+*   [2 Usage](#Usage)
+    *   [2.1. As a grid2op backend (preferred method)](#1-as-a-grid2op-backend-preferred-method)
+    *   [2.2. replacement of pandapower "newtonpf" method (advanced method)](#2-replacement-of-pandapower-newtonpf-method-advanced-method)
+*   [3 Installation (from pypi official repository, recommended)](#Installation-from-pypi-official-repository-recommended)
+*   [4 Installation (from source, for more advanced user)](#Installation-from-source-for-more-advanced-user)
+*   [5. Benchmarks](#Benchmarks)
+*   [6. Philosophy](#Philosophy)
+*   [7. Miscellaneous](#Miscellaneous)
+    * [7.1 Customization of the compilation](#Customization-of-the-compilation)
+    * [7.2 Profile the code](#Profile-the-code)
+    * [7.3 Local testing](#Local-testing)
+    * [7.4 Tests performed automatically](#Tests-performed-automatically)
+    * [7.5 Known issues](#Known-issues)
 
+## Key features
+
+- **Multiple powerflow algorithms**: Newton-Raphson (single or distributed slack), Fast-Decoupled and
+  Gauss-Seidel, each selectable with a choice of linear solver (Eigen SparseLU, SuiteSparse KLU, NICSLU
+  or CKTSO) via the `lightsim2grid.algorithm` module -- see the
+  [Available powerflow algorithms](https://lightsim2grid.readthedocs.io/en/latest/solvers.html) and
+  [Naming conventions](https://lightsim2grid.readthedocs.io/en/latest/algorithm_names.html) pages
+  (`lightsim2grid.solver` is the older, deprecated name for this same module).
+- **Load your own solver as a plugin** at runtime, without forking or recompiling lightsim2grid -- see
+  [External Algorithm Plugins](https://lightsim2grid.readthedocs.io/en/latest/solver_plugin.html).
+- **Multiple grid source formats**: pandapower, pypowsybl (iidm), MATPOWER and PowerModels.jl, in
+  addition to grid2op's own environments -- see
+  [LSGrid module](https://lightsim2grid.readthedocs.io/en/latest/network.html) (`lightsim2grid.gridmodel`
+  / `GridModel` are the older, deprecated names for `lightsim2grid.network` / `LSGrid`).
+- **Multi-threaded contingency (n-1) analysis** and time-series computation, both much faster than
+  stepping through grid2op one scenario / contingency at a time -- see
+  [Contingency Analysis](https://lightsim2grid.readthedocs.io/en/latest/security_analysis.html) and
+  [Time series](https://lightsim2grid.readthedocs.io/en/latest/time_series.html).
+- **Fast binary serialization** (`save_binary` / `load_binary`) of a grid, in addition to the standard
+  pickle support -- see
+  [Fast binary serialization](https://lightsim2grid.readthedocs.io/en/latest/binary_serialization.html).
+- **PTDF / LODF matrices** for near-instant linear (DC) sensitivity analysis -- see the
+  [LSGrid module](https://lightsim2grid.readthedocs.io/en/latest/network.html#ptdf-lodf-section) page.
+- A standalone `lightsim2grid_core` **C++ library** (no python required) for embedding the solver in a
+  pure C++ project -- see the
+  [C++ library](https://lightsim2grid.readthedocs.io/en/latest/cpp_library.html) page.
 
 ## Usage
 Once installed (don't forget, if you used the optional virtual env
@@ -27,7 +54,7 @@ above you need to load it with `source venv/bin/activate`) you can
 use it as any python package.
 
 ### 1. As a grid2op backend (preferred method)
-This functionality requires you to have grid2op installed, with at least version 0.7.0. You can install it with
+This functionality requires you to have grid2op installed, with at least version 1.6.4. You can install it with
 
 ```commandline
 pip install grid2op>=1.6.4
@@ -63,10 +90,19 @@ You can define replace the `newtonpf` function of `pandapower.pandapower.newtonp
 piece of code:
 ```python
 from lightsim2grid.newtonpf import newtonpf
-V, converged, iterations, J = newtonpf(Ybus, V, Sbus, ref, weights, pv, pq, ppci, options)
+
+# when pandapower version <= 2.7.0
+# V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, pv, pq, ppci, options)
+
+# when pandapower version > 2.7.0
+V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options)
 ```
 
 This function uses the KLU algorithm (when available) and a c++ implementation of a Newton solver for speed.
+
+`lightsim2grid.newtonpf` is a re-export of `lightsim2grid.pandapower_compat.newtonpf`, which also provides a
+DC counterpart, `dcpf` (`from lightsim2grid.pandapower_compat import dcpf`). See the ["Use as Pandapower
+Solver"](https://lightsim2grid.readthedocs.io/en/latest/use_solver.html) page of the documentation for more.
 
 ## Installation (from pypi official repository, recommended)
 
@@ -115,7 +151,7 @@ Lightsim2grid is significantly faster than pandapower when used with grid2op for
 more than 30x faster - making 30 steps while pandapower makes one).
 
 
-If you prefer to use the dedicated lightsim2grid `SecurityAnalysis` or `TimeSerie` classes you can even expect another 10-20x
+If you prefer to use the dedicated lightsim2grid `ContingencyAnalysis` or `TimeSerie` classes you can even expect another 10-20x
 speed ups compared to grid2op with lightsim2grid (sometimes more than 300x faster than grid2op with pandapower). 
 
 For more information (including the exact way to reproduce these results, as well as the computer used), you can consult the dedicated [Benchmarks](https://lightsim2grid.readthedocs.io/en/latest/benchmarks.html) page on the documentation.
@@ -149,46 +185,18 @@ Step 1, 2 and 4 are done in the [LSGrid](https://lightsim2grid.readthedocs.io/en
 Step 3 is performed thanks to a "powerflow solver".
 
 ### Using a custom powerflow solver
-For now some basic "solver" (*eg* the program that performs points `3.` above) are available, based on the
-Gauss Seidel or the Newton-Raphson methods to perform "powerflows". 
+Several "solvers" (*eg* the program that performs point `3.` above) are available out of the box, based on
+Gauss-Seidel, Newton-Raphson or Fast-Decoupled Power Flow methods, each combined with a choice of linear
+solver (Eigen's SparseLU, SuiteSparse KLU, NICSLU or CKTSO) -- see the
+[Available powerflow algorithms](https://lightsim2grid.readthedocs.io/en/latest/solvers.html) page.
 
-Nothing prevents any other "solver" to be used with lightsim2grid and thus with grid2op. For this, you simply need to
-implement, in c++ a "lightsim2grid solver" which mainly consists in defining a function:
-```c
-bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,  // the admittance matrix
-                CplxVect & V,  // store the results of the powerflow and the Vinit !
-                const CplxVect & Sbus,  // the injection vector
-                const Eigen::VectorXi & ref,  // bus id participating to the distributed slack
-                const RealVect & slack_weights,  // slack weights for each bus
-                const Eigen::VectorXi & pv,  // (might be ignored) index of the components of Sbus should be computed
-                const Eigen::VectorXi & pq,  // (might be ignored) index of the components of |V| should be computed
-                int max_iter,  // maximum number of iteration (might be ignored)
-                real_type tol  // solver tolerance 
-                );
-```
-
-The types used are:
-
-- `real_type`: double => type representing the real number
-- `cplx_type` :  std::complex<real_type> => type representing the complex number
-- `CplxVect` : Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> => type representing a vector of complex numbers
-- `RealVect` : Eigen::Matrix<real_type, Eigen::Dynamic, 1> => type representing a vector of real numbers
-- `Eigen::VectorXi` => represents a vector of integer
-- `Eigen::SparseMatrix<cplx_type>` => represents a sparse matrix
-
-See for example [BaseNRSolver](./src/BaseNRSolver.h) for the implementation of a Newton Raphson solver (it requires some "linear solvers", more details about that are given in the section bellow)
-
-Any contribution in this area is more than welcome.
-
-**NB** For now the "solver" only uses these above information to perform the powerflow. If a more
-"in depth" solution needs to be implemented, let us know with a github issue. For example, it could be totally fine that a proposed "solver" uses direct information about the elements (powerline, topology etc.) of the grid in order to perform some powerflow.
-
-**NB** It is not mandatory to "embed" all the code of the solver in lightsim2grid. Thanks to different customization, 
-it is perfectly possible to install a given "lightsim solver" only if certain conditions are met. For example, on
-windows based machine, the SuiteSparse library cannot be easily compiled, and the KLUSolver is then not available.
-
-**NB** It would be totally fine if some "lightsim2grid" solvers are available only if some packages are installed on the
-machine for example.
+Beyond that, lightsim2grid also supports loading your **own** solver at runtime as a plugin, without
+having to fork or recompile lightsim2grid itself: implement a C++ class deriving from `BaseAlgo`, build it
+as a separate shared library against an installed lightsim2grid, then load it with
+`lightsim2grid.load_algorithm_plugin(...)` and select it with `grid.change_algorithm("YourSolverName")`.
+See the [External Algorithm Plugins](https://lightsim2grid.readthedocs.io/en/latest/solver_plugin.html)
+page of the documentation for the full mechanism, worked examples (`examples/external_algorithm/`,
+`examples/dist_slack_algorithm/`, `examples/lm_algorithm/`), and the build-flag pitfalls to avoid.
 
 ### Using custom linear solvers to solve powerflows
 
@@ -196,14 +204,16 @@ In lightsim2grid (c++ part) it is also possible, thanks to the use of "template 
 not recode the Newton Raphson algorithm (or the DC powerflow algorithm) and to leverage the 
 use of a linear solver.
 
-A "linear solver" is anything that can implement 3 basic functions:
+A "linear solver" is anything that can implement these basic functions:
 
-- `initialize(const Eigen::SparseMatrix<real_type> & J)` : initialize the solver and prepare it to solve for linear systems `J.x = b` (usually called once per powerflow)
-- `ErrorType solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized)`: effectively solves `J.x = b` (usually called multiple times per powerflow)
+- `ErrorType analyze(const EigenRefConstRealSpMat & J)`: reordering + symbolic factorization of `J` (structure only, usually called once per powerflow)
+- `ErrorType factorize(const EigenRefConstRealSpMat & J)`: numeric factorization of `J` (requires values, usually called once per powerflow)
+- `ErrorType refactorize(const EigenRefConstRealSpMat & J)`: re-numeric factorization, reuses the symbolic factorization from `analyze` (usually called multiple times per powerflow, when only the values of `J` changed)
+- `ErrorType solve(Eigen::Ref<RealVect> b) const`: effectively solves `J.x = b` in place, given the previous `analyze` / `factorize` (or `refactorize`) call
 - `ErrorType reset()`: clear the state of the solver (usually performed at the end of a powerflow
   to reset the state to a "blank" / "as if it was just initialized" state)
 
-Some example are given in the c++ code "KLUSolver.h", "SparLUSolver.h" and "NICSLU.h"
+Some example are given in the c++ code "KLUSolver.hpp", "SparseLUSolver.hpp" and "NICSLUSolver.hpp" (in `src/core/linear_solvers`)
 
 This usage usually takes approximately around 20 / 30 lines of c++ code (not counting the comments, and boiler code for exception handling for example).
 
@@ -231,13 +241,13 @@ For example: `export PATH_NICSLU=/home/user/Documents/nicslu/nicslu202103`
 
 #### Enable CKTSO
 For that, you need to declare the environment variables `PATH_CKTSO` that points to a valid installation of
-the NICSLU package (see https://github.com/chenxm1986/cktso). 
-For example: `export PATH_NICSLU=/home/user/Documents/cktso`
+the CKTSO package (see https://github.com/chenxm1986/cktso). 
+For example: `export PATH_CKTSO=/home/user/Documents/cktso`
 
-#### Enable 03 optimization
-By default, at least on ubuntu, only the "-O2" compiler flags is used. To use the O3 optimization flag, you need
-to specify the `__O3_OPTIM` environment variable: `set __O3_OPTIM=1` (or `$Env:__O3_OPTIM=1` in powershell) before the compilation (so before
-`python3 setup.py build` or `python -m pip install -e .`)
+#### Enable O3 optimization
+The "-O3" compiler flag is now used by default. To disable it (and fall back to "-O2"), you need
+to specify the `__O3_OPTIM` environment variable before compiling (`export __O3_OPTIM=0` on linux / macos,
+`set __O3_OPTIM=0` on windows cmd, or `$Env:__O3_OPTIM=0` in powershell), then `python -m pip install -e .`
 
 This compilation argument will increase the compilation time, but will make the package faster.
 
@@ -245,8 +255,9 @@ This compilation argument will increase the compilation time, but will make the 
 By default, for portability, we do not compile with `-march=native` flags. This lead to some error on some platform.
 If you want to further improve the performances.
 
-You can `set __COMPILE_MARCHNATIVE=1` to enable it before the compilation (so before
-`python3 setup.py build` or `python -m pip install -e .`)
+You can set the `__COMPILE_MARCHNATIVE` environment variable to `1` to enable it before compiling
+(`export __COMPILE_MARCHNATIVE=1` on linux / macos, `set __COMPILE_MARCHNATIVE=1` on windows cmd, or
+`$Env:__COMPILE_MARCHNATIVE=1` in powershell), then `python -m pip install -e .`
 
 ### Profile the code
 This is a work in progress for now. And it is far from perfect, and probably only work on linux.
@@ -274,7 +285,7 @@ using the Newton-Raphson algorithm, with a single slack bus, without enforcing q
 will fail. In order to do so you can do:
 ```
 git clone https://github.com/Grid2Op/grid2op.git
-cd Grid2Op
+cd grid2op
 pip3 install -U -e .
 cd ..
 ```
@@ -290,6 +301,12 @@ We suppose that if it works on *eg* clang 11 and clang 21 then it compiles also 
 **NB** Package might work (we never tested it) on earlier version of these compilers. 
 The only "real" requirement for lightsim2grid is to have a compiler supporting c++14
 (at least).
+
+CI also explicitly compiles lightsim2grid (both the C++ unit test suite and the python
+bindings) pinned to C++14 and to C++26: the oldest and the latest standard claimed to be
+supported (see the `LS2G_CXX_STANDARD` CMake option and
+`.github/workflows/cpp-standards.yml`). Absent that option, the build auto-detects and
+uses the newest standard the compiler supports, from C++26 down to C++14.
 
 ### Known issues
 

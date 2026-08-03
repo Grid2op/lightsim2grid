@@ -41,26 +41,27 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         using DataInfo = LineInfo;
 
     public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes =  std::tuple<
                    TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes
                    >;
         
         LineContainer() noexcept = default;
-        virtual ~LineContainer() noexcept = default;
+        ~LineContainer() noexcept override = default;
         
-        void init(const RealVect & branch_r,
-                  const RealVect & branch_x,
-                  const CplxVect & branch_h,
-                  const Eigen::VectorXi & branch_from_id,
-                  const Eigen::VectorXi & branch_to_id
+        void init(const Eigen::Ref<const RealVect> & branch_r,
+                  const Eigen::Ref<const RealVect> & branch_x,
+                  const Eigen::Ref<const CplxVect> & branch_h,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                   );
-              
-        void init(const RealVect & branch_r,
-                  const RealVect & branch_x,
-                  const CplxVect & branch_h_or,
-                  const CplxVect & branch_h_ex,
-                  const Eigen::VectorXi & branch_from_id,
-                  const Eigen::VectorXi & branch_to_id
+
+        void init(const Eigen::Ref<const RealVect> & branch_r,
+                  const Eigen::Ref<const RealVect> & branch_x,
+                  const Eigen::Ref<const CplxVect> & branch_h_or,
+                  const Eigen::Ref<const CplxVect> & branch_h_ex,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                   );
               
         // pickle
@@ -75,12 +76,17 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
             _update_model_coeffs();
             reset_results();
         }
-        
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path, bool atomic = true) const;
+        static LineContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "LineContainer"; }  // written into / checked against the binary file header
+
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,
                              const Eigen::Ref<const CplxVect> & V,
                              const SolverBusIdVect & id_grid_to_solver,
-                             const RealVect & bus_vn_kv,
+                             const Eigen::Ref<const RealVect> & bus_vn_kv,
                              real_type sn_mva,
                              bool ac){
             compute_results_tsc_rxha(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
@@ -89,7 +95,13 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         void reset_results() {reset_results_tsc_rxha();}
 
         // for consistency with trafo, when used for example in BaseMultiplePowerflow...
-        Eigen::Ref<const RealVect> dc_x_tau_shift() const {return RealVect();}
+        // lines never have a phase shift: the Ref must point at something with a
+        // lifetime that outlives the call, not a temporary (a plain `return RealVect();`
+        // would bind the Ref to a temporary destroyed before the caller sees it).
+        Eigen::Ref<const RealVect> dc_x_tau_shift() const {
+            static const RealVect empty_dc_x_tau_shift{};
+            return empty_dc_x_tau_shift;
+        }
 
     protected:
         // physical properties

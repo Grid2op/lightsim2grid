@@ -17,10 +17,8 @@ const bool NICSLULinearSolver::CAN_SOLVE_MAT = false;
 ErrorType NICSLULinearSolver::reset(){
     // free everything
     solver_.Free();
-    if(ai_ != nullptr) delete [] ai_;  // created in NICSLUSolver::initialize
-    if(ap_ != nullptr) delete [] ap_;  // created in NICSLUSolver::initialize
-    ai_ = nullptr;
-    ap_ = nullptr;
+    ai_.reset();  // created in NICSLUSolver::analyze
+    ap_.reset();  // created in NICSLUSolver::analyze
 
     solver_ = CNicsLU();
     int ret = solver_.Initialize();
@@ -38,26 +36,26 @@ ErrorType NICSLULinearSolver::reset(){
     return ErrorType::NoError;
 }
 
-ErrorType NICSLULinearSolver::analyze(const Eigen::SparseMatrix<real_type> & J){
+ErrorType NICSLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
     // NICSLU Analyze may use values for MC64 value-based scaling/ordering
     const auto n = J.cols();
     const unsigned int nnz = J.nonZeros();
 
-    ai_ = new unsigned int [nnz];  // deleted in destructor and NICSLUSolver::reset
+    ai_ = std::make_unique<unsigned int[]>(nnz);  // freed in destructor and NICSLUSolver::reset
     const int * ref_ai = J.innerIndexPtr();
     for(unsigned int i = 0; i < nnz; ++i){
         ai_[i] = static_cast<unsigned int>(ref_ai[i]);
     }
 
-    ap_ = new unsigned int [n+1];  // deleted in destructor and NICSLUSolver::reset
+    ap_ = std::make_unique<unsigned int[]>(n+1);  // freed in destructor and NICSLUSolver::reset
     const int * ref_ap = J.outerIndexPtr();
     for(int i = 0; i < n+1; ++i){
         ap_[i] = static_cast<unsigned int>(ref_ap[i]);
     }
     int ret = solver_.Analyze(n,
                               J.valuePtr(),
-                              ai_,
-                              ap_,
+                              ai_.get(),
+                              ap_.get(),
                               MATRIX_COLUMN_REAL);  // MATRIX_COLUMN_REAL, MATRIX_ROW_REAL
     if (ret < 0){
         // https://github.com/chenxm1986/nicslu/blob/master/nicslu202103/include/nicslu.h for error info
@@ -66,7 +64,7 @@ ErrorType NICSLULinearSolver::analyze(const Eigen::SparseMatrix<real_type> & J){
     return ErrorType::NoError;
 }
 
-ErrorType NICSLULinearSolver::factorize(const Eigen::SparseMatrix<real_type> & J){
+ErrorType NICSLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
     // solver.FactorizeMatrix(ax, 0); //use all created threads
     int ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);
     if (ret < 0){
@@ -76,7 +74,7 @@ ErrorType NICSLULinearSolver::factorize(const Eigen::SparseMatrix<real_type> & J
     return ErrorType::NoError;
 }
 
-ErrorType NICSLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type> & J){
+ErrorType NICSLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
     int ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);  // TODO maybe 0 instead of nb_thread_ here, see https://github.com/chenxm1986/nicslu/blob/master/nicslu202110/demo/demo2.cpp
     if(ret < 0){
         // std::cout << "NICSLULinearSolver::refactor solver_.FactorizeMatrix error: " << ret << std::endl;
@@ -86,7 +84,7 @@ ErrorType NICSLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type> &
     return ErrorType::NoError;
 }
 
-ErrorType NICSLULinearSolver::solve(RealVect & b){
+ErrorType NICSLULinearSolver::solve(Eigen::Ref<RealVect> b){
     RealVect x(b.size());
     int ret = solver_.Solve(&b(0), &x(0));
     if(ret < 0){

@@ -4,7 +4,22 @@ project(lightsim2grid
         VERSION "${SKBUILD_PROJECT_VERSION}"
         LANGUAGES CXX)
 
-if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+# LS2G_CXX_STANDARD: force a specific C++ standard instead of auto-detecting
+# the newest one the compiler supports. Used by CI to pin builds to the
+# oldest (14) and latest claimed (26) supported standards -- see
+# .github/workflows/cpp-standards.yml -- e.g.:
+#   pip install -C "cmake.define.LS2G_CXX_STANDARD=14" .
+set(LS2G_CXX_STANDARD "" CACHE STRING "Force a specific C++ standard (14/17/20/23/26) instead of auto-detecting the newest supported")
+if(LS2G_CXX_STANDARD)
+    if(NOT "cxx_std_${LS2G_CXX_STANDARD}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+        message(FATAL_ERROR "LS2G_CXX_STANDARD=${LS2G_CXX_STANDARD} requested but the compiler does not support C++${LS2G_CXX_STANDARD}.")
+    endif()
+    set(CMAKE_CXX_STANDARD ${LS2G_CXX_STANDARD})
+# cxx_std_26 only appears in CMAKE_CXX_COMPILE_FEATURES when both CMake
+# (>= 3.30) and the compiler know C++26; elsewhere it is simply never selected.
+elseif("cxx_std_26" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 26)
+elseif("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
     set(CMAKE_CXX_STANDARD 23)
 elseif("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
     set(CMAKE_CXX_STANDARD 20)
@@ -19,7 +34,7 @@ message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# lightsim2grid does not use C++20/23 modules. With MSVC + C++23 (/std:c++latest)
+# lightsim2grid does not use C++20/23/26 modules. With MSVC + C++23 (/std:c++latest)
 # CMake otherwise enables module dependency scanning and tries to build the
 # `import std` library modules (std.ixx / std.compat.ixx), which is fragile and
 # breaks the Windows build (notably the ARM64 cross-compile). Turn it off.
@@ -71,11 +86,31 @@ endif()
 # pybind11 extension.
 add_subdirectory("src/bindings/python")
 
+# --- C++ unit tests (Catch2) ---
+# OFF by default so pip / wheel builds are unaffected. The tests can also be
+# configured standalone, without python or pybind11: cmake -S src/tests
+option(BUILD_TESTING "Build the C++ unit tests (src/tests, Catch2)" OFF)
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory("src/tests")
+endif()
+
 # --- Python-only compile definitions (applied after targets exist) ---
 
-# Read The Docs — only affects binding stubs
+# Read The Docs: lets Sphinx document KLU/NICSLU/CKTSO solver classes without the
+# real (proprietary/licensed) libraries, via doc-only no-op stand-in classes (see
+# src/core/linear_solvers/*.hpp). Those stand-ins -- and the explicit template
+# instantiations of BaseFDPFAlgo<...> that go with them in SolverInstantiations.cpp --
+# live in lightsim2grid_core, not just the bindings, so the definition must reach
+# both targets. lightsim2grid_core is only actually (re)compiled here when it was
+# built from source via add_subdirectory above; when a pre-built (IMPORTED) library
+# was found instead, its compile definitions can no longer change what was baked in.
 if(BUILD_DOCS_ONLY)
     target_compile_definitions(lightsim2grid_cpp PRIVATE _READ_THE_DOCS)
+    get_target_property(_ls2g_core_imported lightsim2grid_core IMPORTED)
+    if(NOT _ls2g_core_imported)
+        target_compile_definitions(lightsim2grid_core PRIVATE _READ_THE_DOCS)
+    endif()
 endif()
 
 # Version macros — used in pickle_helpers.hpp (binding side only)

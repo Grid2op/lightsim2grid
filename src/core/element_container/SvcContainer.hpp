@@ -52,18 +52,24 @@ IIDM model of powsybl: three regulation modes
 `b_min_` / `b_max_` are stored for introspection but NEVER enforced (no outer
 loop, no limit check), mirroring the generator Qmin/Qmax handling.
 **/
-class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<SvcContainer, SvcInfo>
+class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorAdder<SvcContainer, SvcInfo>
 {
     friend class SvcInfo;
 
     public:
         using DataInfo = SvcInfo;
 
+        // /!\ these integer values are serialized verbatim (binary files and
+        // pickles, as regulation_mode_): renumbering requires bumping
+        // BINARY_FORMAT_VERSION (BinaryArchive.hpp). Guarded python side by
+        // TestSerializedEnumValues in test_binary_serialization.py.
         enum RegulationMode {
             OFF = 0,
             VOLTAGE = 1,
             REACTIVE_POWER = 2
         };
+
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
 
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes,
@@ -88,20 +94,35 @@ class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<S
                       "SvcContainer::StateRes and StateResIdx do not match");
 
         SvcContainer() noexcept = default;
-        virtual ~SvcContainer() noexcept = default;
+        ~SvcContainer() noexcept override = default;
 
         void init(const std::vector<int> & regulation_mode,
-                  const RealVect & target_vm_pu,
-                  const RealVect & q_setpoint_mvar,
-                  const RealVect & slope_pu,
-                  const RealVect & b_min,
-                  const RealVect & b_max,
-                  const Eigen::VectorXi & regulated_bus_id,
-                  const Eigen::VectorXi & bus_id);
+                  const Eigen::Ref<const RealVect> & target_vm_pu,
+                  const Eigen::Ref<const RealVect> & q_setpoint_mvar,
+                  const Eigen::Ref<const RealVect> & slope_pu,
+                  const Eigen::Ref<const RealVect> & b_min,
+                  const Eigen::Ref<const RealVect> & b_max,
+                  const Eigen::Ref<const Eigen::VectorXi> & regulated_bus_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & bus_id);
 
         // pickle
         SvcContainer::StateRes get_state() const;
         void set_state(SvcContainer::StateRes & my_state);
+
+        // Whole-grid semantic validation (see GenericContainer::check_valid): the
+        // one-side checks, plus the range of `regulated_bus_id_`. That last one is
+        // a *grid* bus id used directly as an index (`id_grid_to_solver[...]` in
+        // set_vm / LSGrid::fill_voltage_control_solver_data, `Vm(...)` in
+        // get_vm_for_dc), exactly like the generator field of the same name.
+        void check_valid(int nb_bus,
+                         int nb_sub,
+                         const SubstationContainer & substations,
+                         std::vector<int> & all_pos_topo_vect) const override;
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path, bool atomic = true) const;
+        static SvcContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "SvcContainer"; }  // written into / checked against the binary file header
 
         // accessors
         int get_regulation_mode(int svc_id) const {return regulation_mode_(svc_id);}
@@ -125,22 +146,22 @@ class LS2G_API SvcContainer : public OneSideContainer_PQ, public IteratorAdder<S
         void set_voltage_control_q(int svc_id, real_type q_mvar) {res_q_(svc_id) = q_mvar;}
 
         // solver interface
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
-        void get_vm_for_dc(RealVect & Vm);
-        void set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const;
+        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void get_vm_for_dc(Eigen::Ref<RealVect> Vm);
+        void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const;
 
     protected:
-        virtual void _compute_results(
+        void _compute_results(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,
             const SolverBusIdVect & id_grid_to_solver,
-            const RealVect & bus_vn_kv,
+            const Eigen::Ref<const RealVect> & bus_vn_kv,
             real_type sn_mva,
             bool ac) override;
-        bool _deactivate(int svc_id, DualAlgoControl & solver_control) final;
-        bool _reactivate(int svc_id, DualAlgoControl & solver_control) final;
-        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) final;
+        bool _deactivate(int svc_id, DualAlgoControl & solver_control) override final;
+        bool _reactivate(int svc_id, DualAlgoControl & solver_control) override final;
+        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) override final;
 
     private:
         IntVect regulation_mode_;             // RegulationMode, per SVC

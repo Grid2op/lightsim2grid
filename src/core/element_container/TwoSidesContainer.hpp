@@ -77,7 +77,7 @@ class TwoSidesContainer : public GenericContainer
                 res_theta2_deg(0.)
                 {
                     if (my_id < 0) return;
-                    if (my_id >= r_data_two_sides.nb()) return;
+                    if (static_cast<size_t>(my_id) >= r_data_two_sides.nb()) return;
                     id = my_id;
 
                     if(r_data_two_sides.names_.size()){
@@ -116,16 +116,40 @@ class TwoSidesContainer : public GenericContainer
 
     public:
         TwoSidesContainer() noexcept :ignore_status_global_(false), synch_status_both_side_(true){}
-        virtual ~TwoSidesContainer() noexcept = default;
+        ~TwoSidesContainer() noexcept override = default;
 
         // public generic API
         size_t nb() const { return side_1_.nb(); }
+
+        // Whole-grid semantic validation (see GenericContainer::check_valid):
+        // each side is a full one-side container, so validate both. Derived
+        // classes (eg TwoSidesContainer_rxh_A) add the branch electrical checks.
+        void check_valid(int nb_bus,
+                         int nb_sub,
+                         const SubstationContainer & substations,
+                         std::vector<int> & all_pos_topo_vect) const override
+        {
+            side_1_.check_valid(nb_bus, nb_sub, substations, all_pos_topo_vect);
+            side_2_.check_valid(nb_bus, nb_sub, substations, all_pos_topo_vect);
+        }
+
         GridModelBusId get_bus_side_1(int el_id) const {return side_1_.get_bus(el_id);}
         GridModelBusId get_bus_side_2(int el_id) const {return side_2_.get_bus(el_id);}
+        // Per-side connectivity: an element can be `connected_global` (the
+        // TwoSidesContainer-level status, e.g. an HVDC line kept active
+        // because at least one converter is in the main synchronous
+        // component -- see disconnect_if_not_in_main_component) while ONE
+        // side is individually open (real RTE grids: a half-open HVDC line
+        // with its remote converter in another synchronous island). Callers
+        // that pull per-side data (e.g. droop flows, Q-limit masking) MUST
+        // check these, not just nb()/connected_global, or they will silently
+        // treat an open side as a normal, both-ends-connected element.
+        bool get_connected_side_1(int el_id) const {return side_1_.get_status(el_id);}
+        bool get_connected_side_2(int el_id) const {return side_2_.get_status(el_id);}
 
         void init_tsc(
-            const Eigen::VectorXi & els_bus1_id,
-            const Eigen::VectorXi & els_bus2_id,
+            const Eigen::Ref<const Eigen::VectorXi> & els_bus1_id,
+            const Eigen::Ref<const Eigen::VectorXi> & els_bus2_id,
             const std::string & name_elements
         )  // tsc: two sides container
         {
@@ -158,7 +182,7 @@ class TwoSidesContainer : public GenericContainer
         Eigen::Ref<const IntVect> get_bus_id_side_1_numpy() const {return side_1_.get_bus_id_numpy();}
         Eigen::Ref<const IntVect> get_bus_id_side_2_numpy() const {return side_2_.get_bus_id_numpy();}
 
-        void reconnect_connected_buses(SubstationContainer & substation) const{
+        void reconnect_connected_buses(SubstationContainer & substation) const override{
             side_1_.reconnect_connected_buses(substation);
             side_2_.reconnect_connected_buses(substation);
             // TODO think about status here !
@@ -166,7 +190,7 @@ class TwoSidesContainer : public GenericContainer
             // (in this case this can do nothing if side_1 or side_2 is not connected)
         }
 
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) final {
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override {
             const int nb_el = nb();
             DualAlgoControl unused_solver_control;
             const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
@@ -177,24 +201,26 @@ class TwoSidesContainer : public GenericContainer
                     side_2_.deactivate(i, unused_solver_control);
                     continue;
                 }
-                GlobalBusId bus_side_1 = bus_side_1_id_(i);
-                GlobalBusId bus_side_2 = bus_side_2_id_(i);
-                if(!busbar_in_main_component[bus_side_1.cast_int()])
-                {
+                // A side is "outside the main component" only if it is CONNECTED
+                // (its bus is a real bus, not the deactivated/open marker) AND that
+                // bus is not flagged in the main component. An open side (bus ==
+                // _deactivated_bus_id, e.g. a half-open line) imposes no constraint:
+                // such a branch stays as long as its connected side(s) are in main.
+                const int b1 = bus_side_1_id_(i).cast_int();
+                const int b2 = bus_side_2_id_(i).cast_int();
+                const bool s1_outside = (b1 != _deactivated_bus_id) && !busbar_in_main_component[b1];
+                const bool s2_outside = (b2 != _deactivated_bus_id) && !busbar_in_main_component[b2];
+                if(s1_outside || s2_outside){
+                    // island, boundary, or (defensively) a branch straddling two
+                    // components: drop the whole element rather than throw. Keeping
+                    // the main component well-posed is the goal of this function.
                     side_1_.deactivate(i, unused_solver_control);
                     side_2_.deactivate(i, unused_solver_control);
                     if(!ignore_status_global_) status_global_[i] = false;
-                    if(busbar_in_main_component[bus_side_2.cast_int()]){
-                        // a powerline is connected, both its ends should be on the same connected component
-                        throw std::runtime_error("A connected line has an end connected to a given connected component, and another one in another. This should not happen.");
-                    }
-                }
-                if(!busbar_in_main_component[bus_side_2.cast_int()] && busbar_in_main_component[bus_side_1.cast_int()]){
-                    throw std::runtime_error("A connected line has an end connected to a given connected component, and another one in another. This should not happen.");
                 }
             }
         }
-        virtual void nb_line_end(std::vector<int> & res) const final {
+        void nb_line_end(std::vector<int> & res) const override final {
             const int nb_el = nb();
             for(int el_id = 0; el_id < nb_el; ++el_id){
                 // don't do anything if the element is disconnected
@@ -207,27 +233,27 @@ class TwoSidesContainer : public GenericContainer
             }
         }
 
-        void set_pos_topo_vect_side_1(Eigen::Ref<const IntVect> pos_topo_vect)
+        void set_pos_topo_vect_side_1(const Eigen::Ref<const IntVect> & pos_topo_vect)
         {
             side_1_.set_pos_topo_vect(pos_topo_vect);
         }
-        void set_pos_topo_vect_side_2(Eigen::Ref<const IntVect> pos_topo_vect)
+        void set_pos_topo_vect_side_2(const Eigen::Ref<const IntVect> & pos_topo_vect)
         {
             side_2_.set_pos_topo_vect(pos_topo_vect);
         }
 
-        void set_subid_side_1(Eigen::Ref<const IntVect> subid)
+        void set_subid_side_1(const Eigen::Ref<const IntVect> & subid)
         {
             side_1_.set_subid(subid);
         }
-        void set_subid_side_2(Eigen::Ref<const IntVect> subid)
+        void set_subid_side_2(const Eigen::Ref<const IntVect> & subid)
         {
             side_2_.set_subid(subid);
         }
 
         virtual void update_topo(
-            Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
-            Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+            const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+            const Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
             DualAlgoControl & solver_control,
             SubstationContainer & substations
         ) final
@@ -283,6 +309,32 @@ class TwoSidesContainer : public GenericContainer
             }
         }
 
+        // Per-side (de)activation: open / close a single terminal of the element.
+        // `resolve_status` enforces the synch_status_both_side_ policy (when true the
+        // other side follows, reproducing the whole-element behaviour; when false the
+        // element stays "half-open" with the other side untouched). Mirrors the
+        // change_bus_side_1 / change_bus_side_2 pattern below.
+        virtual void deactivate_side_1(int el_id, DualAlgoControl & solver_control) final {
+            bool one_changed = side_1_.deactivate(el_id, solver_control);
+            one_changed = resolve_status(el_id, true, solver_control) || one_changed;
+            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
+        }
+        virtual void deactivate_side_2(int el_id, DualAlgoControl & solver_control) final {
+            bool one_changed = side_2_.deactivate(el_id, solver_control);
+            one_changed = resolve_status(el_id, false, solver_control) || one_changed;
+            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
+        }
+        virtual void reactivate_side_1(int el_id, DualAlgoControl & solver_control) final {
+            bool one_changed = side_1_.reactivate(el_id, solver_control);
+            one_changed = resolve_status(el_id, true, solver_control) || one_changed;
+            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
+        }
+        virtual void reactivate_side_2(int el_id, DualAlgoControl & solver_control) final {
+            bool one_changed = side_2_.reactivate(el_id, solver_control);
+            one_changed = resolve_status(el_id, false, solver_control) || one_changed;
+            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
+        }
+
         void reset_results_tsc(){
             side_1_.reset_results();
             side_2_.reset_results();
@@ -318,6 +370,8 @@ class TwoSidesContainer : public GenericContainer
                 this->_update_effective_coeffs_one_el(el_id);
             }
         }
+
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
 
         using StateRes = std::tuple<
             bool,  // ignore_status_global_
@@ -374,8 +428,16 @@ class TwoSidesContainer : public GenericContainer
             side_2_.set_state(std::get<5>(my_state));
             auto size = nb();
             if(names_.size() > 0) check_size(names_, size, "names");  // names are optional
-            if(side_1_.nb() != size) throw std::runtime_error("Side_1 do not have the proper size");
-            if(side_2_.nb() != size) throw std::runtime_error("Side_2 do not have the proper size");
+            if(static_cast<size_t>(side_1_.nb()) != size) throw std::runtime_error("Side_1 do not have the proper size");
+            if(static_cast<size_t>(side_2_.nb()) != size) throw std::runtime_error("Side_2 do not have the proper size");
+            // `nb()` is side_1_.nb(), NOT status_global_.size(): nothing above ties the
+            // two together, yet status_global_ is indexed with element ids bounded by
+            // nb() all over this class (resolve_status, _deactivate, fillYbus, the batch
+            // solvers...) with an unchecked operator[]. A pickle / binary file declaring
+            // a shorter (in particular empty) status_global_ therefore reads and writes
+            // past its end -- and check_grid() never sees it, it runs later and only
+            // looks at the per-side data. Demand the exact length here.
+            check_size(status_global_, size, "status_global");
         }
 
         bool resolve_status(int el_id, bool side_1_modif, DualAlgoControl & solver_control){
@@ -407,45 +469,45 @@ class TwoSidesContainer : public GenericContainer
         // hook when disconnecting or changing the bus a given element
         // for example used when disconnecting a powerline on only one side
         // to update yac_eff_12_, yac_eff_21_ etc. in TwoSidesContainer_rxh_A
-        virtual void _update_effective_coeffs_one_el(int el_id) {
+        virtual void _update_effective_coeffs_one_el(int /*el_id*/) {
             // nothing to do by default
         }
 
-        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) {
+        virtual bool _deactivate(int el_id, DualAlgoControl & /*solver_control*/) {
             // nothing to do by default: handled in derived class
             if(status_global_[el_id]) return true;
             return false;
         }
-        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) {
+        virtual bool _reactivate(int el_id, DualAlgoControl & /*solver_control*/) {
             // nothing to do by default: handled in derived class
             if(!status_global_[el_id]) return true;
             return false;
         }
 
         virtual void _change_bus_side_1(
-            int el_id, 
-            GridModelBusId new_gridmodel_bus_id, 
-            DualAlgoControl & solver_control, 
-            const SubstationContainer & substation,
-            bool has_effectively_changed
+            int /*el_id*/, 
+            GridModelBusId /*new_gridmodel_bus_id*/, 
+            DualAlgoControl & /*solver_control*/, 
+            const SubstationContainer & /*substation*/,
+            bool /*has_effectively_changed*/
         ) {
             // nothing to do by default: handled in derived class
         }
         virtual void _change_bus_side_2(
-            int el_id,
-            GridModelBusId new_gridmodel_bus_id,
-            DualAlgoControl & solver_control,
-            const SubstationContainer & substation,
-            bool has_effectively_changed
+            int /*el_id*/,
+            GridModelBusId /*new_gridmodel_bus_id*/,
+            DualAlgoControl & /*solver_control*/,
+            const SubstationContainer & /*substation*/,
+            bool /*has_effectively_changed*/
         ) {
             // nothing to do by default: handled in derived class
         }
 
         virtual void _update_topo(
-            DualAlgoControl & solver_control,
-            SubstationContainer & substations,
-            const std::vector<bool> & side1_changed,
-            const std::vector<bool> & side2_changed
+            DualAlgoControl & /*solver_control*/,
+            SubstationContainer & /*substations*/,
+            const std::vector<bool> & /*side1_changed*/,
+            const std::vector<bool> & /*side2_changed*/
         )
         {
             // nothing to do by default: handled in derived class

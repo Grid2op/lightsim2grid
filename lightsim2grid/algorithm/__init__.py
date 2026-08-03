@@ -9,6 +9,13 @@
 __all__ = ["AlgorithmType",
            "ErrorType",
            "AlgorithmSelector",
+           "LinearSolverStats",
+           "TimerJac",
+           "ScalingPolicyType",
+           "RefactorPolicyType",
+           "FDPFMethod",
+           "AlgoConfig",
+           "AlgoControl",
            "GaussSeidelAlgo",
            "GaussSeidelSynchAlgo",
            "NR_SparseLU",
@@ -20,6 +27,13 @@ __all__ = ["AlgorithmType",
 from ..lightsim2grid_cpp import AlgorithmType  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import ErrorType  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import AlgorithmSelector  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import LinearSolverStats  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import TimerJac  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import ScalingPolicyType  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import RefactorPolicyType  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import FDPFMethod  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import AlgoConfig  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import AlgoControl  # pyright: ignore[reportMissingImports]
 
 from ..lightsim2grid_cpp import GaussSeidelAlgo  # AlgorithmType.GaussSeidel  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import GaussSeidelSynchAlgo  # AlgorithmType.GaussSeidelSynch  # pyright: ignore[reportMissingImports]
@@ -35,11 +49,13 @@ try:
     from ..lightsim2grid_cpp import DC_KLU  # AlgorithmType.DC_KLU  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import FDPF_XB_KLU  # AlgorithmType.FDPF_XB_KLU  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import FDPF_BX_KLU  # AlgorithmType.FDPF_BX_KLU  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NRRefactorRetry_KLU  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     __all__.append("NR_KLU")
     __all__.append("NRSing_KLU")
     __all__.append("DC_KLU")
     __all__.append("FDPF_XB_KLU")
     __all__.append("FDPF_BX_KLU")
+    __all__.append("NRRefactorRetry_KLU")
 except Exception as exc_:  # noqa: F841
     # KLU is not available
     pass
@@ -50,11 +66,13 @@ try:
     from ..lightsim2grid_cpp import DC_NICSLU  # AlgorithmType.DC_NICSLU  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import FDPF_XB_NICSLU  # AlgorithmType.FDPF_XB_NICSLU  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import FDPF_BX_NICSLU  # AlgorithmType.FDPF_BX_NICSLU  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NRRefactorRetry_NICSLU  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     __all__.append("NR_NICSLU")
     __all__.append("NRSing_NICSLU")
     __all__.append("DC_NICSLU")
     __all__.append("FDPF_XB_NICSLU")
     __all__.append("FDPF_BX_NICSLU")
+    __all__.append("NRRefactorRetry_NICSLU")
 except Exception as exc_:  # noqa: F841
     # NICSLU is not available
     pass
@@ -65,11 +83,13 @@ try:
     from ..lightsim2grid_cpp import DC_CKTSO  # AlgorithmType.DC_CKTSO  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import FDPF_XB_CKTSO  # AlgorithmType.FDPF_XB_CKTSO  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import FDPF_BX_CKTSO  # AlgorithmType.FDPF_BX_CKTSO  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NRRefactorRetry_CKTSO  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     __all__.append("NR_CKTSO")
     __all__.append("NRSing_CKTSO")
     __all__.append("DC_CKTSO")
     __all__.append("FDPF_XB_CKTSO")
     __all__.append("FDPF_BX_CKTSO")
+    __all__.append("NRRefactorRetry_CKTSO")
 except Exception as exc_:  # noqa: F841
     # CKTSO is not available
     pass

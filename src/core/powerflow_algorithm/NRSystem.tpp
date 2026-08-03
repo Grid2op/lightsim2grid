@@ -11,14 +11,15 @@ namespace ls2g {
 // ---- Phase 1: topology init --------------------------------------------------
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::init_topology(
-    Eigen::Ref<const IntVect>              slack_ids,
-    const RealVect&                        slack_weights,
-    Eigen::Ref<const IntVect>              pv,
-    Eigen::Ref<const IntVect>              pq)
+    const Eigen::Ref<const IntVect> &              slack_ids,
+    const Eigen::Ref<const RealVect> &             slack_weights,
+    const Eigen::Ref<const IntVect> &              pv,
+    const Eigen::Ref<const IntVect> &              pq)
 {
     // init the sparsity pattern of the dS matrices (values do not matter yet)
-    dS_dVm_ = *Ybus_ptr_;
-    dS_dVa_ = *Ybus_ptr_;
+    // TODO speed: copy only the sparsity pattern and not the values
+    dS_dVm_ = Ybus_ref_;  // Ybus_ref_ is a reference, dS_dVm_ is a plain struct, this forces a copy
+    dS_dVa_ = Ybus_ref_;
     map_dsdva_r_.clear();
     map_dsdva_i_.clear();
     map_dsdvm_r_.clear();
@@ -30,7 +31,7 @@ inline void NRSystem<Base, Rest...>::init_topology(
 
     // then claim their equations / unknowns in the ledger
     // (allocation order defines the J layout)
-    const int n_bus = static_cast<int>(Ybus_ptr_->rows());
+    const int n_bus = static_cast<int>(Ybus_ref_.rows());
     ledger_.reset(n_bus);
     base_.register_in(ledger_);
     _register_in_extensions(ledger_, std::make_index_sequence<sizeof...(Rest)>{});
@@ -39,15 +40,16 @@ inline void NRSystem<Base, Rest...>::init_topology(
 // ---- Phase 1.5: per-compute_pf state update ----------------------------------
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::update_state(
-    const LSGrid *                         lsgrid_ptr,
-    const Eigen::SparseMatrix<cplx_type>&  Ybus,
-    const CplxVect&                        V_init,
-    const CplxVect&                        Sbus,
-    Eigen::Ref<const RealVect>             slack_weights)
+    const LSGrid                     * lsgrid_ptr,
+    const EigenRefConstCplxSpMat     & Ybus,
+    const Eigen::Ref<const CplxVect> & V_init,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const RealVect> & slack_weights)
 {
     lsgrid_ptr_ = lsgrid_ptr;
-    Ybus_ptr_ = &Ybus;
-    Sbus_ptr_ = &Sbus;
+    Ybus_ref_ = Ybus;
+    Sbus_data_ptr_ = Sbus.data();
+    Sbus_size_ = Sbus.size();
 
     Va_ = V_init.array().arg();
     Vm_ = V_init.array().abs();
@@ -64,17 +66,17 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
 {
     J_ = Eigen::SparseMatrix<real_type, Eigen::ColMajor>();
 
-    const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>& Ybus = *Ybus_ptr_;
-    const int nnz_Y = static_cast<int>(Ybus.nonZeros());
+    // const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>& Ybus = *Ybus_ptr_;
+    const int nnz_Y = static_cast<int>(Ybus_ref_.nonZeros());
 
     // generic dS pass: ONE loop over the Ybus nonzeros generates every
     // dS-derived entry, for all components at once. k is the running nnz index.
     std::vector<Contrib> cntrb;
     cntrb.reserve(4 * nnz_Y);  // pessimistic upper bound
     int k = 0;
-    for (int outer = 0; outer < Ybus.outerSize(); ++outer) {
-        for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator
-            it(Ybus, outer); it; ++it, ++k)
+    for (int outer = 0; outer < Ybus_ref_.outerSize(); ++outer) {
+        for (EigenRefConstCplxSpMat::InnerIterator
+            it(Ybus_ref_, outer); it; ++it, ++k)
         {
             const int i = static_cast<int>(it.row()), j = static_cast<int>(it.col());
             const int pr = ledger_.p_row(i),     qr = ledger_.q_row(i);
@@ -162,25 +164,44 @@ inline void NRSystem<Base, Rest...>::fill_J()
     base_.fill_feature_values(writer, Va_);
     _fill_feature_values_extensions(writer, std::make_index_sequence<sizeof...(Rest)>{});
 
+    // bus masking: overwrite the masked buses' rows with the identity (zero the
+    // whole row, then set the diagonal to 1 -- ones last, since the diagonal is
+    // itself part of a masked row). Pure value-level edit, J sparsity unchanged.
+    if (!masked_buses_.empty()) {
+        if (masked_dirty_) _recompute_mask_positions();
+        for (int p : masked_zero_pos_) J_values[p] = static_cast<real_type>(0.);
+        for (int p : masked_one_pos_)  J_values[p] = static_cast<real_type>(1.);
+    }
+
     timer_fillJ_ += timer.duration();
+}
+
+template <typename... Rest>
+inline void NRSystem<Base, Rest...>::update_trailing_feature_values(int count, const Eigen::Ref<const RealVect>& deltas)
+{
+    assert(deltas.size() == count);
+    const int first_h = static_cast<int>(sink_.size()) - count;
+    real_type* J_values = J_.valuePtr();
+    for (int i = 0; i < count; ++i)
+        J_values[feature_pos_[first_h + i]] += deltas(i);
 }
 
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::fill_internal_variables()
 {
     auto timer = CustTimer();
-    const Eigen::SparseMatrix<cplx_type>& Ybus = *Ybus_ptr_;
+    // const Eigen::SparseMatrix<cplx_type>& Ybus = *Ybus_ptr_;
     const auto size_dS = V_.size();
     const CplxVect Vnorm = V_.array() / V_.array().abs();
-    const CplxVect Ibus  = Ybus * V_;
+    const CplxVect Ibus  = Ybus_ref_ * V_;
     const CplxVect conjIbus_Vnorm = Ibus.array().conjugate() * Vnorm.array();
 
     cplx_type * ds_dvm_val_ptr = dS_dVm_.valuePtr();
     cplx_type * ds_dva_val_ptr = dS_dVa_.valuePtr();
 
     size_t pos = 0;
-    for (size_t col_id = 0; col_id < size_dS; ++col_id) {
-        for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator it(Ybus, col_id); it; ++it) {
+    for (size_t col_id = 0; col_id < static_cast<size_t>(size_dS); ++col_id) {
+        for (EigenRefConstCplxSpMat::InnerIterator it(Ybus_ref_, col_id); it; ++it) {
             const size_t row_id = static_cast<size_t>(it.row());
             const cplx_type el_ybus = it.value();
 
@@ -209,11 +230,13 @@ template <typename... Rest>
 inline RealVect NRSystem<Base, Rest...>::mismatch() const
 {
     // current state: no step (dx == 0), residual evaluated at V_
-    return _residual(V_, RealVect::Zero(static_cast<Eigen::Index>(total_state_variables())));
+    const auto n = static_cast<Eigen::Index>(total_state_variables());
+    if(dx_zero_cache_.size() != n) dx_zero_cache_ = RealVect::Zero(n);
+    return _residual(V_, dx_zero_cache_);
 }
 
 template <typename... Rest>
-inline void NRSystem<Base, Rest...>::apply_step(const RealVect& dx)
+inline void NRSystem<Base, Rest...>::apply_step(const Eigen::Ref<const RealVect>& dx)
 {
     // generic voltage updates, driven by the ledger's (bus, col) pair lists
     const std::vector<int>& theta_buses = ledger_.theta_buses();
@@ -235,13 +258,13 @@ inline void NRSystem<Base, Rest...>::apply_step(const RealVect& dx)
 }
 
 template <typename... Rest>
-inline real_type NRSystem<Base, Rest...>::mismatch_sq_norm_at(const RealVect& dx) const
+inline real_type NRSystem<Base, Rest...>::mismatch_sq_norm_at(const Eigen::Ref<const RealVect>& dx) const
 {
     return _residual(_compute_trial_V(dx), dx).squaredNorm();
 }
 
 template <typename... Rest>
-inline CplxVect NRSystem<Base, Rest...>::_reconstruct_V(const RealVect& Va, const RealVect& Vm)
+inline CplxVect NRSystem<Base, Rest...>::_reconstruct_V(const Eigen::Ref<const RealVect>& Va, const Eigen::Ref<const RealVect>& Vm)
 {
     const cplx_type m_i = BaseConstants::my_i;
     return Vm.array() * (Va.array().cos().template cast<cplx_type>()
@@ -249,7 +272,7 @@ inline CplxVect NRSystem<Base, Rest...>::_reconstruct_V(const RealVect& Va, cons
 }
 
 template <typename... Rest>
-inline CplxVect NRSystem<Base, Rest...>::_compute_trial_V(const RealVect& dx) const
+inline CplxVect NRSystem<Base, Rest...>::_compute_trial_V(const Eigen::Ref<const RealVect>& dx) const
 {
     // same voltage loops as apply_step, on local copies; the components' extra
     // state is handled through the dx argument of adjust_mismatch / fill_custom_rows
@@ -265,11 +288,11 @@ inline CplxVect NRSystem<Base, Rest...>::_compute_trial_V(const RealVect& dx) co
 }
 
 template <typename... Rest>
-inline RealVect NRSystem<Base, Rest...>::_residual(const CplxVect& V_t, const RealVect& dx) const
+inline RealVect NRSystem<Base, Rest...>::_residual(const Eigen::Ref<const CplxVect>& V_t, const Eigen::Ref<const RealVect>& dx) const
 {
     // per-bus complex power mismatch: V .* conj(Ybus V) - Sbus
-    CplxVect mis = V_t.array() * (*Ybus_ptr_ * V_t).array().conjugate()
-                   - Sbus_ptr_->array();
+    CplxVect mis = V_t.array() * (Ybus_ref_ * V_t).array().conjugate()
+                   - _Sbus_view().array();
     // components adjust the complex injection (e.g. + slack_absorbed * slack_weights,
     // + the theta-dependent hvdc droop flows)
     base_.adjust_mismatch(V_t, dx, mis);
@@ -288,6 +311,17 @@ inline RealVect NRSystem<Base, Rest...>::_residual(const CplxVect& V_t, const Re
     // component-owned custom rows (none for Base / MultiSlack)
     base_.fill_custom_rows(res, Va_, Vm_, dx);
     _fill_custom_rows_extensions(res, Va_, Vm_, dx, std::make_index_sequence<sizeof...(Rest)>{});
+
+    // bus masking: the masked buses' P/Q residuals are forced to 0 so the trivial
+    // identity rows of J (see fill_J) yield dx == 0 on those buses.
+    if (!masked_buses_.empty()) {
+        for (int b : masked_buses_) {
+            const int pr = ledger_.p_row(b);
+            if (pr >= 0) res(pr) = static_cast<real_type>(0.);
+            const int qr = ledger_.q_row(b);
+            if (qr >= 0) res(qr) = static_cast<real_type>(0.);
+        }
+    }
     return res;
 }
 

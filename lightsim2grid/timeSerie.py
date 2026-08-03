@@ -30,7 +30,7 @@ from .lightsim2grid_cpp import TimeSeriesCPP
 Computers = TimeSeriesCPP
 
 
-class ___TimeSerie:
+class TimeSerie:
     """
     This helper class, that only works with grid2op when using a LightSimBackend allows to compute
     the flows (at the origin side of the powerline / transformers). It is roughly equivalent to the
@@ -41,7 +41,7 @@ class ___TimeSerie:
         import grid2op
         import numpy as np
         from grid2op.Parameters import Parameters
-        from lightsim2grid.LightSimBackend import LightSimBackend
+        from lightsim2grid import LightSimBackend
 
         env_name = ...
         param = Parameters()
@@ -74,7 +74,7 @@ class ___TimeSerie:
 
         from lightsim2grid import TimeSerie
         import grid2op
-        from lightsim2grid.LightSimBackend import LightSimBackend
+        from lightsim2grid import LightSimBackend
 
         env_name = ...
         env = grid2op.make(env_name, param=param, backend=LightSimBackend())
@@ -111,8 +111,14 @@ class ___TimeSerie:
     
     @property
     def init_from_n_powerflow(self):
+        """Whether to initialize the complex voltages of the first step of the batch with
+        the results of a "n" powerflow (a powerflow at the current state of the grid)
+        instead of a flat start. Default: ``False``. Must be set before the computation
+        actually runs (eg before ``compute_V`` is called); it has no effect on a powerflow
+        that has already been solved.
+        """
         return self.computer.init_from_n_powerflow
-    
+
     @init_from_n_powerflow.setter
     def init_from_n_powerflow(self, val: bool):
         if bool(val) != val:
@@ -289,6 +295,3 @@ class ___TimeSerie:
         return self.prod_p, self.load_p, self.load_q
 
 
-if GRID2OP_INSTALLED:
-    TimeSerie = ___TimeSerie
-    

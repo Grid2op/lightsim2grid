@@ -4,9 +4,7 @@ Benchmarks (grid size)
 ======================
 
 In this paragraph we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
-The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
-
-TODO DOC in progress
+The code to run these benchmarks are given with this package in the ``benchmarks`` folder.
 
 If you are interested in other type of benchmarks, let us know !
 
@@ -41,7 +39,7 @@ For detailed explanation about each column as well as the hardware used, please 
 - benchmark were run on python 3.12 with a laptop (see section :ref:`bench_grid_size_hardware`
   and page :ref:`benchmark-deep-dive` for more information about the exact definition of the timers ):
 - `time (recycling)` indicates the average time it took to run 1 powerflow (with consecutive run of 288 powerflows)
-  while allowing lighsim2grid to re use some basic previous computation from one powerflow to another. This is the most consommations
+  while allowing lighsim2grid to re use some basic previous computation from one powerflow to another. This is the most common
   usecase in grid2op for example (default behaviour). See :ref:`bench_grid_size_glop` for more information
 - `time (no recycling)` indicates the same average time as aboved but lightsim2grid is forced to restart the 
   computation from scratch each time, as if it was a completely different grid on a completely different computers. 
@@ -87,7 +85,7 @@ All of them has been run on a computer with a the following characteristics:
 Solver used for linear algebra: NR single (KLU)
 
 
-To run the benchmark `cd` in the [benchmark](./benchmarks) folder and type:
+To run the benchmark, ``cd`` into the ``benchmarks`` folder and type:
 
 .. code-block:: bash
 
@@ -248,7 +246,7 @@ is focused on the `ContingencyAnalysis` lightsim2grid module.
 A "contingency analysis" is often carried out in power system. The objective is
 to assess whether or not the current grid state is safe if one (or more)
 powerline would be disconnected. It uses the same 
-productions / consommations for each computation. Each time it disconnects
+productions / consumptions for each computation. Each time it disconnects
 one or more powerlines, run the powerflow and then stores the results.
 
 For this benchmark we focus on disconnecting only one powerline (though 

@@ -7,41 +7,42 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "HvdcLineContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <cmath>
 #include <sstream>
 
 namespace ls2g {
 
-void HvdcLineContainer::init(const Eigen::VectorXi & bus1_id,
-                             const Eigen::VectorXi & bus2_id,
+void HvdcLineContainer::init(const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
+                             const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                              const std::vector<int> & type1,
                              const std::vector<int> & type2,
-                             const RealVect & loss_factor1,
-                             const RealVect & loss_factor2,
+                             const Eigen::Ref<const RealVect> & loss_factor1,
+                             const Eigen::Ref<const RealVect> & loss_factor2,
                              const std::vector<bool> & vreg1_on,
                              const std::vector<bool> & vreg2_on,
-                             const RealVect & vm1_pu,
-                             const RealVect & vm2_pu,
-                             const RealVect & q1_setpoint_mvar,
-                             const RealVect & q2_setpoint_mvar,
-                             const RealVect & min_q1,
-                             const RealVect & max_q1,
-                             const RealVect & min_q2,
-                             const RealVect & max_q2,
-                             const RealVect & power_factor1,
-                             const RealVect & power_factor2,
+                             const Eigen::Ref<const RealVect> & vm1_pu,
+                             const Eigen::Ref<const RealVect> & vm2_pu,
+                             const Eigen::Ref<const RealVect> & q1_setpoint_mvar,
+                             const Eigen::Ref<const RealVect> & q2_setpoint_mvar,
+                             const Eigen::Ref<const RealVect> & min_q1,
+                             const Eigen::Ref<const RealVect> & max_q1,
+                             const Eigen::Ref<const RealVect> & min_q2,
+                             const Eigen::Ref<const RealVect> & max_q2,
+                             const Eigen::Ref<const RealVect> & power_factor1,
+                             const Eigen::Ref<const RealVect> & power_factor2,
                              const std::vector<int> & converters_mode,
-                             const RealVect & p_setpoint_mw,
-                             const RealVect & r_ohm,
-                             const RealVect & nominal_v_kv,
-                             const RealVect & loss_percent,
-                             const RealVect & loss_mw,
+                             const Eigen::Ref<const RealVect> & p_setpoint_mw,
+                             const Eigen::Ref<const RealVect> & r_ohm,
+                             const Eigen::Ref<const RealVect> & nominal_v_kv,
+                             const Eigen::Ref<const RealVect> & loss_percent,
+                             const Eigen::Ref<const RealVect> & loss_mw,
                              const std::vector<bool> & droop_enabled,
-                             const RealVect & droop_p0_mw,
-                             const RealVect & droop_mw_per_deg,
-                             const RealVect & pmax_1to2_mw,
-                             const RealVect & pmax_2to1_mw
+                             const Eigen::Ref<const RealVect> & droop_p0_mw,
+                             const Eigen::Ref<const RealVect> & droop_mw_per_deg,
+                             const Eigen::Ref<const RealVect> & pmax_1to2_mw,
+                             const Eigen::Ref<const RealVect> & pmax_2to1_mw
                              )
 {
     init_tsc(bus1_id, bus2_id, "hvdc lines");
@@ -117,17 +118,17 @@ void HvdcLineContainer::init(const Eigen::VectorXi & bus1_id,
     }
 }
 
-void HvdcLineContainer::init_legacy(const Eigen::VectorXi & branch_from_id,
-                                    const Eigen::VectorXi & branch_to_id,
-                                    const RealVect & p_mw,
-                                    const RealVect & loss_percent,
-                                    const RealVect & loss_mw,
-                                    const RealVect & vm_or_pu,
-                                    const RealVect & vm_ex_pu,
-                                    const RealVect & min_q_or,
-                                    const RealVect & max_q_or,
-                                    const RealVect & min_q_ex,
-                                    const RealVect & max_q_ex)
+void HvdcLineContainer::init_legacy(const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                                    const Eigen::Ref<const Eigen::VectorXi> & branch_to_id,
+                                    const Eigen::Ref<const RealVect> & p_mw,
+                                    const Eigen::Ref<const RealVect> & loss_percent,
+                                    const Eigen::Ref<const RealVect> & loss_mw,
+                                    const Eigen::Ref<const RealVect> & vm_or_pu,
+                                    const Eigen::Ref<const RealVect> & vm_ex_pu,
+                                    const Eigen::Ref<const RealVect> & min_q_or,
+                                    const Eigen::Ref<const RealVect> & max_q_or,
+                                    const Eigen::Ref<const RealVect> & min_q_ex,
+                                    const Eigen::Ref<const RealVect> & max_q_ex)
 {
     const int size = static_cast<int>(p_mw.size());
     const std::vector<int> type_vsc(size, ConverterStationContainer::ConverterType::VSC);
@@ -215,18 +216,18 @@ void HvdcLineContainer::set_state(HvdcLineContainer::StateRes & my_state)
     check_size(pmax_2to1_mw, size, "pmax_2to1_mw");
     check_size(status_droop, size, "status_droop");
 
-    loss_percent_ = RealVect::Map(&loss_percent[0], loss_percent.size());
-    loss_mw_ = RealVect::Map(&loss_mw[0], loss_mw.size());
-    converters_mode_ = IntVect::Map(&converters_mode[0], converters_mode.size());
-    p_setpoint_mw_ = RealVect::Map(&p_setpoint_mw[0], p_setpoint_mw.size());
-    r_ohm_ = RealVect::Map(&r_ohm[0], r_ohm.size());
-    nominal_v_kv_ = RealVect::Map(&nominal_v_kv[0], nominal_v_kv.size());
+    loss_percent_ = RealVect::Map(loss_percent.data(), loss_percent.size());
+    loss_mw_ = RealVect::Map(loss_mw.data(), loss_mw.size());
+    converters_mode_ = IntVect::Map(converters_mode.data(), converters_mode.size());
+    p_setpoint_mw_ = RealVect::Map(p_setpoint_mw.data(), p_setpoint_mw.size());
+    r_ohm_ = RealVect::Map(r_ohm.data(), r_ohm.size());
+    nominal_v_kv_ = RealVect::Map(nominal_v_kv.data(), nominal_v_kv.size());
     droop_enabled_ = droop_enabled;
-    p0_mw_ = RealVect::Map(&p0_mw[0], p0_mw.size());
-    k_mw_per_rad_ = RealVect::Map(&k_mw_per_rad[0], k_mw_per_rad.size());
-    pmax_1to2_mw_ = RealVect::Map(&pmax_1to2_mw[0], pmax_1to2_mw.size());
-    pmax_2to1_mw_ = RealVect::Map(&pmax_2to1_mw[0], pmax_2to1_mw.size());
-    status_droop_ = IntVect::Map(&status_droop[0], status_droop.size());
+    p0_mw_ = RealVect::Map(p0_mw.data(), p0_mw.size());
+    k_mw_per_rad_ = RealVect::Map(k_mw_per_rad.data(), k_mw_per_rad.size());
+    pmax_1to2_mw_ = RealVect::Map(pmax_1to2_mw.data(), pmax_1to2_mw.size());
+    pmax_2to1_mw_ = RealVect::Map(pmax_2to1_mw.data(), pmax_2to1_mw.size());
+    status_droop_ = IntVect::Map(status_droop.data(), status_droop.size());
     reset_results();
 }
 
@@ -360,7 +361,7 @@ void HvdcLineContainer::set_status_droop(int hvdc_id, int status, DualAlgoContro
     }
 }
 
-void HvdcLineContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const
+void HvdcLineContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const
 {
     const int nb_hvdc = static_cast<int>(nb());
     // for droop lines, the active power is NOT a fixed injection:
@@ -378,6 +379,21 @@ void HvdcLineContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_gri
         for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
             if(!droop_enabled_[hvdc_id] || !status_global_[hvdc_id]) continue;
             if(status_droop_(hvdc_id) == 0) continue;  // linear: theta-dependent, handled by the DC algorithm
+            // angle-droop ("AC emulation") needs both remote angles: this must
+            // never happen (both call sites that can half-open an hvdc line --
+            // LSGrid::deactivate_dcline_side1/2 and
+            // disconnect_if_not_in_main_component -- call disable_droop at the
+            // same time), but enforce it explicitly rather than silently
+            // indexing id_grid_to_solver with the open side's bus id (-1) below.
+            if(!get_connected_side_1(hvdc_id) || !get_connected_side_2(hvdc_id)){
+                std::ostringstream exc_;
+                exc_ << "HvdcLineContainer::fillSbus: hvdc line with id ";
+                exc_ << hvdc_id;
+                exc_ << " has angle-droop enabled while half-open (one side "
+                        "disconnected) -- this should never happen, disable_droop "
+                        "must be called whenever a side is opened.";
+                throw std::runtime_error(exc_.str());
+            }
             real_type p1_flow, p2_flow;
             droop_flows_mw(hvdc_id, 0., p1_flow, p2_flow);  // raw unused when saturated
             const GlobalBusId bus_1 = get_bus_side_1(hvdc_id);
@@ -403,7 +419,7 @@ void HvdcLineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
                                         const Eigen::Ref<const RealVect> & Vm,
                                         const Eigen::Ref<const CplxVect> & V,
                                         const SolverBusIdVect & id_grid_to_solver,
-                                        const RealVect & bus_vn_kv,
+                                        const Eigen::Ref<const RealVect> & bus_vn_kv,
                                         real_type sn_mva,
                                         bool ac)
 {
@@ -418,12 +434,30 @@ void HvdcLineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
     Eigen::Ref<RealVect> res_p_2 = get_res_p_side_2();
     for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
         if(!droop_enabled_[hvdc_id] || !status_global_[hvdc_id]) continue;
+        // same invariant as HvdcLineContainer::fillSbus: a droop-enabled line
+        // must never be half-open (disable_droop is called wherever a side can
+        // be opened) -- enforce it rather than silently indexing with -1 below.
+        if(!get_connected_side_1(hvdc_id) || !get_connected_side_2(hvdc_id)){
+            std::ostringstream exc_;
+            exc_ << "HvdcLineContainer::compute_results: hvdc line with id ";
+            exc_ << hvdc_id;
+            exc_ << " has angle-droop enabled while half-open (one side "
+                    "disconnected) -- this should never happen, disable_droop "
+                    "must be called whenever a side is opened.";
+            throw std::runtime_error(exc_.str());
+        }
         const GlobalBusId bus_1 = get_bus_side_1(hvdc_id);
         const GlobalBusId bus_2 = get_bus_side_2(hvdc_id);
         const SolverBusId bus_1_solver = id_grid_to_solver[bus_1.cast_int()];
         const SolverBusId bus_2_solver = id_grid_to_solver[bus_2.cast_int()];
         if((bus_1_solver.cast_int() == _deactivated_bus_id) ||
-           (bus_2_solver.cast_int() == _deactivated_bus_id)) continue;
+           (bus_2_solver.cast_int() == _deactivated_bus_id)){
+            std::ostringstream exc_;
+            exc_ << "HvdcLineContainer::compute_results: hvdc line with id ";
+            exc_ << hvdc_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
         const real_type theta_1 = Va(bus_1_solver.cast_int());
         const real_type theta_2 = Va(bus_2_solver.cast_int());
         const real_type raw = p0_mw_(hvdc_id) + k_mw_per_rad_(hvdc_id) * (theta_1 - theta_2);
@@ -443,6 +477,14 @@ void HvdcLineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
         res_p_1(hvdc_id) = -p1_flow;
         res_p_2(hvdc_id) = -p2_flow;
     }
+}
+
+void HvdcLineContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
+}
+
+HvdcLineContainer HvdcLineContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<HvdcLineContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

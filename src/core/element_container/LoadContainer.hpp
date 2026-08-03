@@ -51,20 +51,26 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
 
     // regular implementation
     public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes  // state of the base class 
            > ;
         
         LoadContainer() noexcept = default;
-        virtual ~LoadContainer() noexcept = default;
+        ~LoadContainer() noexcept override = default;
         
         // pickle (python)
         LoadContainer::StateRes get_state() const;
         void set_state(LoadContainer::StateRes & my_state);
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path, bool atomic = true) const;
+        static LoadContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "LoadContainer"; }  // written into / checked against the binary file header
         
-        void init(const RealVect & load_p_mw,
-                  const RealVect & load_q_mvar,
-                  const Eigen::VectorXi & load_bus_id
+        void init(const Eigen::Ref<const RealVect> & load_p_mw,
+                  const Eigen::Ref<const RealVect> & load_q_mvar,
+                  const Eigen::Ref<const Eigen::VectorXi> & load_bus_id
                   )
         {
             init_osc_pq(load_p_mw,
@@ -74,21 +80,20 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
             reset_results();
         }
     
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const;
+        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
     protected:
-        virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
-                                    const Eigen::Ref<const RealVect> & Vm,
-                                    const Eigen::Ref<const CplxVect> & V,
-                                    const SolverBusIdVect & id_grid_to_solver,
-                                    const RealVect & bus_vn_kv,
-                                    real_type sn_mva,
-                                    bool ac) override
-                                    {
-
-                                            set_osc_pq_res_p();
-                                            set_osc_pq_res_q(ac);
-                                    }
+        void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+                              const Eigen::Ref<const RealVect> & /*Vm*/,
+                              const Eigen::Ref<const CplxVect> & /*V*/,
+                              const SolverBusIdVect & /*id_grid_to_solver*/,
+                              const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
+                              real_type /*sn_mva*/,
+                              bool ac) override
+                              {
+                                set_osc_pq_res_p();
+                                set_osc_pq_res_q(ac);
+                              }
 };
 
 inline LoadInfo::LoadInfo(const LoadContainer & r_data_load, int my_id) noexcept: 

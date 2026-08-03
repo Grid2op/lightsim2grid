@@ -61,7 +61,10 @@ This is a work in progress at the moment
    algorithm_names
    time_series
    security_analysis
+   cpp_library
    solver_plugin
+   binary_serialization
+   security
 
 
 Indices and tables

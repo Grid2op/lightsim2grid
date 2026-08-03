@@ -7,18 +7,19 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "SGenContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <iostream>
 
 namespace ls2g {
 
-void SGenContainer::init(const RealVect & sgen_p,
-                         const RealVect & sgen_q,
-                         const RealVect & sgen_pmin,
-                         const RealVect & sgen_pmax,
-                         const RealVect & sgen_qmin,
-                         const RealVect & sgen_qmax,
-                         const Eigen::VectorXi & sgen_bus_id)
+void SGenContainer::init(const Eigen::Ref<const RealVect> & sgen_p,
+                         const Eigen::Ref<const RealVect> & sgen_q,
+                         const Eigen::Ref<const RealVect> & sgen_pmin,
+                         const Eigen::Ref<const RealVect> & sgen_pmax,
+                         const Eigen::Ref<const RealVect> & sgen_qmin,
+                         const Eigen::Ref<const RealVect> & sgen_qmax,
+                         const Eigen::Ref<const Eigen::VectorXi> & sgen_bus_id)
 {
     init_osc_pq(sgen_p, sgen_q, sgen_bus_id, "static_generators");
     
@@ -60,14 +61,14 @@ void SGenContainer::set_state(SGenContainer::StateRes & my_state )
     GenericContainer::check_size(q_min, size, "q_min");
     GenericContainer::check_size(q_max, size, "q_max");
 
-    p_min_mw_ = RealVect::Map(&p_min[0], size);
-    p_max_mw_ = RealVect::Map(&p_max[0], size);
-    q_min_mvar_ = RealVect::Map(&q_min[0], size);
-    q_max_mvar_ = RealVect::Map(&q_max[0], size);
+    p_min_mw_ = RealVect::Map(p_min.data(), size);
+    p_max_mw_ = RealVect::Map(p_max.data(), size);
+    q_min_mvar_ = RealVect::Map(q_min.data(), size);
+    q_max_mvar_ = RealVect::Map(q_max.data(), size);
     reset_results();
 }
 
-void SGenContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const {
+void SGenContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const {
     const int nb_sgen = nb();
     GlobalBusId bus_id_me;
     SolverBusId bus_id_solver;
@@ -95,6 +96,14 @@ void SGenContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to
         tmp = {target_p_mw_(sgen_id), target_q_mvar_(sgen_id)};
         Sbus.coeffRef(bus_id_solver.cast_int()) += tmp;
     }
+}
+
+void SGenContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
+}
+
+SGenContainer SGenContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<SGenContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

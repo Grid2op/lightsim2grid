@@ -20,10 +20,37 @@ except ImportError:
 
 try:
     from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl  # noqa
+    from lightsim2grid.network.from_pypowsybl import bake_outer_loops  # noqa
+    from lightsim2grid.network.from_pypowsybl import remove_outer_loops  # noqa
+    from lightsim2grid.network.from_pypowsybl import get_pypowsybl_loopfree_parameters  # noqa
+    from lightsim2grid.network.from_pypowsybl import get_pypowsybl_loopfree_distributed_slack_parameters  # noqa
+    from lightsim2grid.network.from_pypowsybl import compare_baked, ComparisonResult  # noqa
+    from lightsim2grid.network.from_pypowsybl import LightsimResultNetwork  # noqa
     __all__.append("init_from_pypowsybl")
+    __all__.append("bake_outer_loops")
+    __all__.append("remove_outer_loops")
+    __all__.append("get_pypowsybl_loopfree_parameters")
+    __all__.append("get_pypowsybl_loopfree_distributed_slack_parameters")
+    __all__.append("compare_baked")
+    __all__.append("ComparisonResult")
+    __all__.append("LightsimResultNetwork")
 except ImportError:
     # pypowsybl is not installed
     pass
+
+try:
+    from lightsim2grid.network.from_matpower import init as init_from_matpower  # noqa
+    __all__.append("init_from_matpower")
+except ImportError:
+    # should not happen: from_matpower has no hard dependency beyond numpy,
+    # matpowercaseframes/scipy are only imported lazily when actually reading
+    # a ".m"/".mat" file
+    pass
+
+from lightsim2grid.network.from_powermodels import init as init_from_powermodels  # noqa
+from lightsim2grid.network.from_powermodels import init_from_pfdelta as init_from_pf_delta  # noqa
+__all__.append("init_from_powermodels")
+__all__.append("init_from_pf_delta")
 
 try:
     from lightsim2grid.network.compare_lsgrid import compare_lsgrid  # noqa

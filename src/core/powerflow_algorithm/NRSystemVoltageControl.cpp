@@ -15,11 +15,11 @@
 namespace ls2g {
 
 void VoltageControl::update_state(
-    const Base *                           /*nr_system_base_ptr*/,
-    const LSGrid *                         lsgrid_ptr,
-    const Eigen::SparseMatrix<cplx_type>&  /*Ybus*/,
-    const CplxVect&                        /*Sbus*/,
-    const RealVect&                        /*slack_weights*/
+    const Base                       * /*nr_system_base_ptr*/,
+    const LSGrid                     * lsgrid_ptr,
+    const EigenRefConstCplxSpMat     & /*Ybus*/,
+    const Eigen::Ref<const CplxVect> & /*Sbus*/,
+    const Eigen::Ref<const RealVect> & /*slack_weights*/
 )
 {
     data_.clear();

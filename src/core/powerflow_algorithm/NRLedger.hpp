@@ -120,6 +120,13 @@ class LS2G_API NRLedger
         const std::vector<int>& vm_col_of_bus()    const { return vm_col_of_bus_; }
         const std::vector<int>& q_col_of_bus()     const { return q_col_of_bus_; }
 
+        // bus_id -> Jacobian row converters (-1 when the bus owns no such
+        // equation); the row counterpart of the *_col_of_bus maps. Consumed by
+        // external solvers (e.g. gpusim2grid) that re-derive the dS scatter and
+        // residual layout of the augmented J from the ledger.
+        const std::vector<int>& p_row_of_bus() const { return p_row_of_bus_; }
+        const std::vector<int>& q_row_of_bus() const { return q_row_of_bus_; }
+
         int size() const {
             assert(n_rows_ == n_cols_);
             return n_rows_;

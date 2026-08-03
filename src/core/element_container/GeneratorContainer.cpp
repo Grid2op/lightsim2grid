@@ -7,17 +7,19 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "GeneratorContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <iostream>
 #include <sstream>
+#include <cmath>  // for std::isfinite (check_valid)
 
 namespace ls2g {
 
-void GeneratorContainer::init(const RealVect & generators_p,
-                              const RealVect & generators_v,
-                              const RealVect & generators_min_q,
-                              const RealVect & generators_max_q,
-                              const Eigen::VectorXi & generators_bus_id)
+void GeneratorContainer::init(const Eigen::Ref<const RealVect> & generators_p,
+                              const Eigen::Ref<const RealVect> & generators_v,
+                              const Eigen::Ref<const RealVect> & generators_min_q,
+                              const Eigen::Ref<const RealVect> & generators_max_q,
+                              const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id)
 {
     const auto generators_q = RealVect::Zero(generators_p.size());
     const auto voltage_regulator_on = std::vector<bool>(generators_p.size(), true);
@@ -31,13 +33,13 @@ void GeneratorContainer::init(const RealVect & generators_p,
         generators_bus_id);
 }
 
-void GeneratorContainer::init_full(const RealVect & generators_p,
-                                   const RealVect & generators_v,
-                                   const RealVect & generators_q,
+void GeneratorContainer::init_full(const Eigen::Ref<const RealVect> & generators_p,
+                                   const Eigen::Ref<const RealVect> & generators_v,
+                                   const Eigen::Ref<const RealVect> & generators_q,
                                    const std::vector<bool> & voltage_regulator_on,
-                                   const RealVect & generators_min_q,
-                                   const RealVect & generators_max_q,
-                                   const Eigen::VectorXi & generators_bus_id
+                                   const Eigen::Ref<const RealVect> & generators_min_q,
+                                   const Eigen::Ref<const RealVect> & generators_max_q,
+                                   const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id
                                    )
 {
     init_osc_pq(generators_p, generators_q, generators_bus_id, "generators");
@@ -116,13 +118,66 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
 
     // assign data
     voltage_regulator_on_ = voltage_regulator_on;
-    target_vm_pu_ = RealVect::Map(&vm_pu[0], vm_pu.size());
-    min_q_ = RealVect::Map(&min_q[0], min_q.size());
-    max_q_ = RealVect::Map(&max_q[0], max_q.size());
+    target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
+    min_q_ = RealVect::Map(min_q.data(), min_q.size());
+    max_q_ = RealVect::Map(max_q.data(), max_q.size());
     gen_slackbus_ = slack_bus;
     gen_slack_weight_ = slack_weight;
-    regulated_bus_id_ = Eigen::VectorXi::Map(&regulated_bus[0], regulated_bus.size());
+    regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
     reset_results();
+}
+
+void GeneratorContainer::check_valid(int nb_bus,
+                                     int nb_sub,
+                                     const SubstationContainer & substations,
+                                     std::vector<int> & all_pos_topo_vect) const
+{
+    // one-side index checks (bus / subid / pos_topo_vect)
+    check_valid_osc(nb_bus, nb_sub, substations, all_pos_topo_vect, "generator");
+
+    // slack coherence + remote-regulated bus id range
+    const int nb_gen = nb();
+    const bool has_slack_info = !gen_slackbus_.empty();
+    const bool has_reg_info = regulated_bus_id_.size() > 0;
+    bool any_slack = false;
+    bool any_connected_slack = false;
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+    {
+        if(has_reg_info)
+        {
+            // regulated bus may be -1 (no remote regulation / disconnected)
+            const int reg = regulated_bus_id_(gen_id);
+            if((reg != _deactivated_bus_id) && ((reg < 0) || (reg >= nb_bus)))
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: generator id " << gen_id << " regulates bus id "
+                     << reg << " which is out of range [0, " << nb_bus << ").";
+                throw std::out_of_range(exc_.str());
+            }
+        }
+        if(has_slack_info && gen_slackbus_[gen_id])
+        {
+            any_slack = true;
+            const real_type w = gen_slack_weight_[gen_id];
+            if((!std::isfinite(w)) || (w <= _tol_equal_float))
+            {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: generator id " << gen_id
+                     << " is flagged as a slack but has a non-positive or non-finite slack weight ("
+                     << w << ").";
+                throw std::runtime_error(exc_.str());
+            }
+            if(status_[gen_id]) any_connected_slack = true;
+        }
+    }
+    // if a slack is declared at all, at least one slack generator must be connected
+    // (the powerflow cannot solve otherwise). We do NOT require a slack to exist:
+    // that stays the solver's responsibility, exactly as before.
+    if(any_slack && !any_connected_slack)
+    {
+        throw std::runtime_error("LSGrid::check_grid: at least one generator is flagged as a "
+                                 "slack, but none of the slack generators is connected.");
+    }
 }
 
 RealVect GeneratorContainer::get_slack_weights_solver(
@@ -164,7 +219,7 @@ RealVect GeneratorContainer::get_slack_weights_solver(
     return res;
 }
 
-void GeneratorContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const {
+void GeneratorContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const {
     const int nb_gen = nb();
     GlobalBusId bus_id_me;
     SolverBusId bus_id_solver;
@@ -254,7 +309,7 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
     }
 }
 
-void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
+void GeneratorContainer::get_vm_for_dc(Eigen::Ref<RealVect> Vm){
     const int nb_gen = nb();
     GlobalBusId bus_id_me;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
@@ -271,7 +326,7 @@ void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
     }
 }
 
-void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, DualAlgoControl & solver_control)
+void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control)
 {
     if (abs(target_p_mw_(gen_id) - new_p) > _tol_equal_float) {
         solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
@@ -337,7 +392,7 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, DualAl
     }
 }
 
-bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) {
+bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) {
     // el_id is validated (and the proper IndexError raised) by `_generic_change_bus`,
     // which the caller runs *after* this function. Bail out here on an out-of-range
     // id so the `regulated_bus_id_` write below never touches memory out of bounds.
@@ -368,7 +423,7 @@ bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualA
     // return true;
 };
 
-void GeneratorContainer::set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const
+void GeneratorContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const
 {
     const int nb_gen = nb();
     SolverBusId bus_id_solver;
@@ -432,7 +487,7 @@ GlobalBusIdVect GeneratorContainer::get_slack_bus_id() const{
     return res;
 }
 
-void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
+void GeneratorContainer::set_p_slack(const Eigen::Ref<const RealVect>& node_mismatch,
                                      const SolverBusIdVect & id_grid_to_solver)
 {
     if(bus_slack_weight_.size() == 0){
@@ -454,10 +509,10 @@ void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
     }
 }
 
-void GeneratorContainer::init_q_vector(int nb_bus,
-                                       Eigen::VectorXi & total_gen_per_bus,
-                                       RealVect & total_q_min_per_bus,
-                                       RealVect & total_q_max_per_bus) const
+void GeneratorContainer::init_q_vector(int /*nb_bus*/,
+                                       Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
+                                       Eigen::Ref<RealVect> total_q_min_per_bus,
+                                       Eigen::Ref<RealVect> total_q_max_per_bus) const
 {
     const int nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
@@ -478,12 +533,12 @@ void GeneratorContainer::init_q_vector(int nb_bus,
 }
 
 void GeneratorContainer::set_q(
-    const RealVect & reactive_mismatch,
+    const Eigen::Ref<const RealVect> & reactive_mismatch,
     const SolverBusIdVect & id_grid_to_solver,
     bool ac,
-    const Eigen::VectorXi & total_gen_per_bus,
-    const RealVect & total_q_min_per_bus,
-    const RealVect & total_q_max_per_bus)
+    const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
+    const Eigen::Ref<const RealVect> & total_q_min_per_bus,
+    const Eigen::Ref<const RealVect> & total_q_max_per_bus)
 {
     const int nb_gen = nb();
     if(!ac){
@@ -538,23 +593,33 @@ void GeneratorContainer::set_q(
 }
 
 void GeneratorContainer::update_slack_weights(
-    Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+    const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & could_be_slack,
     DualAlgoControl & solver_control)
 {
     const int nb_gen = nb();
+    // `could_be_slack` comes from python and is indexed by generator id below with
+    // an unchecked Eigen operator(): a shorter array would be read out of bounds
+    // (release wheels are -O3 -DNDEBUG, so Eigen's own assert is gone).
+    if(could_be_slack.rows() != nb_gen){
+        std::ostringstream exc_;
+        exc_ << "GeneratorContainer::update_slack_weights: 'could_be_slack' has "
+             << could_be_slack.rows() << " elements but this grid has " << nb_gen
+             << " generators. It is indexed by generator id, so both must match.";
+        throw std::runtime_error(exc_.str());
+    }
     std::vector<int> gen_slack_id;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
         if(could_be_slack(gen_id)) gen_slack_id.push_back(gen_id);
     }
-    Eigen::Ref<const IntVect> gen_slack_id_ref = IntVect::Map(&gen_slack_id[0], gen_slack_id.size());
+    Eigen::Ref<const IntVect> gen_slack_id_ref = IntVect::Map(gen_slack_id.data(), gen_slack_id.size());
     update_slack_weights_by_id(
         gen_slack_id_ref,
         solver_control);
 }
 
 void GeneratorContainer::update_slack_weights_by_id(
-    Eigen::Ref<const IntVect> gen_slack_id,
+    const Eigen::Ref<const IntVect> & gen_slack_id,
     DualAlgoControl & solver_control)
 {
     // TODO speed: the solver_control will always tell that the slacks changed
@@ -563,11 +628,16 @@ void GeneratorContainer::update_slack_weights_by_id(
     int nb_gen = nb();
     std::vector<bool> maybe_slack_bus(nb_gen, false);
 
+    // validate every caller-supplied id before it is used to index status_ /
+    // maybe_slack_bus / target_p_mw_ below (raw operator[] / Eigen operator() are
+    // unchecked, and a negative id would wrap to a huge size_t -> OOB write).
+    for(int gen_id : gen_slack_id) _check_in_range(gen_id, status_, "update_slack_weights_by_id");
+
     // find which generators can be slack
     real_type total_target_p = 0.;
     for(int gen_id : gen_slack_id)
     {
-        if(status_[gen_id]) 
+        if(status_[gen_id])
         {
             maybe_slack_bus[gen_id] = true;
             total_target_p += abs(target_p_mw_(gen_id));
@@ -593,6 +663,14 @@ void GeneratorContainer::update_slack_weights_by_id(
             else remove_slackbus(gen_id, solver_control);
         }
     }
+}
+
+void GeneratorContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
+}
+
+GeneratorContainer GeneratorContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<GeneratorContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

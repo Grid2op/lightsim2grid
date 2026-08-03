@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "StorageContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <sstream>
 #include <iostream>
@@ -26,9 +27,9 @@ void StorageContainer::set_state(StorageContainer::StateRes & my_state)
     reset_results();
 }
 
-void StorageContainer::fillSbus(CplxVect & Sbus,
+void StorageContainer::fillSbus(Eigen::Ref<CplxVect> Sbus,
                                 const SolverBusIdVect & id_grid_to_solver,
-                                bool ac) const
+                                bool /*ac*/) const
 {
     int nb_storage = nb();
     GlobalBusId bus_id_me;
@@ -58,6 +59,14 @@ void StorageContainer::fillSbus(CplxVect & Sbus,
         tmp = {target_p_mw_(storage_id), target_q_mvar_(storage_id)};
         Sbus.coeffRef(bus_id_solver.cast_int()) -= tmp;
     }
+}
+
+void StorageContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
+}
+
+StorageContainer StorageContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<StorageContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

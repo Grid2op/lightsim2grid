@@ -44,6 +44,12 @@ endif()
 add_library(dummy_solver MODULE DummyExternalAlgo.cpp)
 target_link_libraries(dummy_solver PRIVATE lightsim2grid::core)
 
+# Match lightsim2grid_core's -march=native / -O3 -- see docs/solver_plugin.rst
+# and examples/cmake/MatchLightsim2gridBuildFlags.cmake for why this matters
+# (skipping it is a real, silent heap-corruption risk, not just a perf loss).
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/MatchLightsim2gridBuildFlags.cmake")
+ls2g_match_core_build_flags(dummy_solver)
+
 if(WIN32)
     # find_package provides the import lib via the IMPORTED target — nothing extra needed.
 elseif(UNIX AND NOT APPLE)

@@ -58,17 +58,23 @@ A station with a (derived) active power of exactly 0 MW is considered
 (this mirrors the behaviour of the legacy DC lines, whose embedded generators
 were configured with `turnedoff_no_pv`).
 **/
-class LS2G_API ConverterStationContainer : public OneSideContainer_PQ, public IteratorAdder<ConverterStationContainer, ConverterStationInfo>
+class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, public IteratorAdder<ConverterStationContainer, ConverterStationInfo>
 {
     friend class ConverterStationInfo;
 
     public:
         using DataInfo = ConverterStationInfo;
 
+        // /!\ these integer values are serialized verbatim (binary files and
+        // pickles, as type_): renumbering requires bumping
+        // BINARY_FORMAT_VERSION (BinaryArchive.hpp). Guarded python side by
+        // TestSerializedEnumValues in test_binary_serialization.py.
         enum ConverterType {
             VSC = 0,
             LCC = 1
         };
+
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
 
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes,
@@ -95,17 +101,17 @@ class LS2G_API ConverterStationContainer : public OneSideContainer_PQ, public It
                       "ConverterStationContainer::StateRes and StateResIdx do not match");
 
         ConverterStationContainer() noexcept = default;
-        virtual ~ConverterStationContainer() noexcept = default;
+        ~ConverterStationContainer() noexcept override = default;
 
         void init(const std::vector<int> & type,
-                  const RealVect & loss_factor,
+                  const Eigen::Ref<const RealVect> & loss_factor,
                   const std::vector<bool> & voltage_regulator_on,
-                  const RealVect & target_vm_pu,
-                  const RealVect & q_setpoint_mvar,
-                  const RealVect & min_q,
-                  const RealVect & max_q,
-                  const RealVect & power_factor,
-                  const Eigen::VectorXi & bus_id);
+                  const Eigen::Ref<const RealVect> & target_vm_pu,
+                  const Eigen::Ref<const RealVect> & q_setpoint_mvar,
+                  const Eigen::Ref<const RealVect> & min_q,
+                  const Eigen::Ref<const RealVect> & max_q,
+                  const Eigen::Ref<const RealVect> & power_factor,
+                  const Eigen::Ref<const Eigen::VectorXi> & bus_id);
 
         // pickle
         ConverterStationContainer::StateRes get_state() const;
@@ -138,52 +144,41 @@ class LS2G_API ConverterStationContainer : public OneSideContainer_PQ, public It
          * (it is handled by the HVDC droop extension of the NR system, or by
          * the DC algorithm): only the reactive personality is stamped then.
          */
-        void fillSbus_station(CplxVect & Sbus,
+        void fillSbus_station(Eigen::Ref<CplxVect> Sbus,
                               const SolverBusIdVect & id_grid_to_solver,
                               bool ac,
                               const std::vector<bool> & skip_p) const;
-        virtual void fillpv(std::vector<int>& bus_pv,
+        void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
-                            const SolverBusIdVect & id_grid_to_solver) const;
+                            const SolverBusIdVect & id_grid_to_solver) const override;
         void init_q_vector(int nb_bus,
-                           Eigen::VectorXi & total_gen_per_bus,
-                           RealVect & total_q_min_per_bus,
-                           RealVect & total_q_max_per_bus) const;
-        void set_q(const RealVect & reactive_mismatch,
+                           Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
+                           Eigen::Ref<RealVect> total_q_min_per_bus,
+                           Eigen::Ref<RealVect> total_q_max_per_bus) const;
+        void set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
                    const SolverBusIdVect & id_grid_to_solver,
                    bool ac,
-                   const Eigen::VectorXi & total_gen_per_bus,
-                   const RealVect & total_q_min_per_bus,
-                   const RealVect & total_q_max_per_bus);
-        void get_vm_for_dc(RealVect & Vm);
-        void set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const;
+                   const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
+                   const Eigen::Ref<const RealVect> & total_q_min_per_bus,
+                   const Eigen::Ref<const RealVect> & total_q_max_per_bus);
+        void get_vm_for_dc(Eigen::Ref<RealVect> Vm);
+        void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const;
 
     protected:
-        virtual void _compute_results(
+        void _compute_results(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,
             const SolverBusIdVect & id_grid_to_solver,
-            const RealVect & bus_vn_kv,
+            const Eigen::Ref<const RealVect> & bus_vn_kv,
             real_type sn_mva,
             bool ac) override;
 
-        void _change_p(int station_id, real_type new_p, bool my_status, DualAlgoControl & solver_control) final;
-        bool _deactivate(int station_id, DualAlgoControl & solver_control) final;
-        bool _reactivate(int station_id, DualAlgoControl & solver_control) final;
-        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) final;
-
-        /**
-         * Station with a derived active power of 0: not PV, no Sbus contribution
-         * when regulating (legacy dcline behaviour, cf `turnedoff_no_pv`).
-         */
-        bool is_pseudo_off(int station_id) const {
-            return (abs(target_p_mw_(station_id)) < _tol_equal_float);
-        }
-        bool is_regulating(int station_id) const {
-            return voltage_regulator_on_[station_id];
-        }
+        void _change_p(int station_id, real_type new_p, bool my_status, DualAlgoControl & solver_control) override final;
+        bool _deactivate(int station_id, DualAlgoControl & solver_control) override final;
+        bool _reactivate(int station_id, DualAlgoControl & solver_control) override final;
+        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) override final;
 
     private:
         // input data

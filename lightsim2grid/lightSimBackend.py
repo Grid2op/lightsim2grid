@@ -11,7 +11,16 @@ import copy
 from typing import Any, Dict, Tuple, Optional, Union
 from packaging import version
 
-from lightsim2grid.solver import SolverType
+# NOT `from lightsim2grid.solver import SolverType`: lightsim2grid.solver is itself
+# deprecated and warns unconditionally on import, which would make every
+# `import lightsim2grid` (which imports this module) print that warning regardless of
+# whether solver_type / SolverType is ever used. SolverType itself is not deprecated to
+# reference for back-compat bridging, so it lives in this private module instead. It is
+# deliberately a plain top-level module and NOT inside lightsim2grid._utils: see
+# lightsim2grid/_solver_type.py for why (importing it eagerly, from here, while nested
+# inside that subpackage broke grid2op.make(..., backend=LightSimBackend()) entirely by
+# reentering lightsim2grid._utils's own grid2op.Backend import mid-circular-import).
+from lightsim2grid._solver_type import SolverType
 try:
     from typing import Self
 except ImportError:
@@ -50,7 +59,7 @@ try:
 except ImportError:
     from typing_extensions import Literal
     
-from lightsim2grid.algorithm import AlgorithmType
+from lightsim2grid.algorithm import AlgorithmType, AlgoConfig
 
 LOADER_KWARGS_TYPING = Dict[str, Any]  # TODO improve this
 grid2op_min_cls_attr_ver = version.parse("1.6.4")
@@ -100,6 +109,7 @@ class LightSimBackend(Backend):
                  max_iter: int=10,
                  tol: float=1e-8,
                  solver_type: Optional[AlgorithmType]=None,
+                 algo_type: Optional[Union[AlgorithmType, str]]=None,
                  turned_off_pv : bool=True,  # are gen turned off (or with p=0) contributing to voltage or not
                  dist_slack_non_renew: bool=False,  # distribute the slack on non renewable turned on (and with P>0) generators
                  use_static_gen: bool=False, # add the static generators as generator gri2dop side
@@ -108,20 +118,27 @@ class LightSimBackend(Backend):
                  stop_if_load_disco : Optional[bool] = None,
                  stop_if_gen_disco : Optional[bool] = None,
                  stop_if_storage_disco : Optional[bool] = None,
-                 automatically_disconnect : bool = False, 
+                 automatically_disconnect : bool = False,
                  gen_slack_id=None,
                  ):
         #: ``int`` maximum number of iteration allowed for the solver
-        #: if the solver has not converge after this, it will 
+        #: if the solver has not converge after this, it will
         #: send a "divergence error"
         self.max_it = max_iter
-        
+
         #: ``float`` tolerance of the solver
         self.tol = tol  # tolerance for the solver
-        
-        real_algo_type = self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
+
+        algo_type = self._aux_merge_solver_type_algo_type(solver_type, algo_type)
+        real_algo_type = self._check_suitable_solver_type(algo_type, check_in_avail_solver=False)
         self.__current_algo_type = real_algo_type
-        
+
+        #: :class:`~lightsim2grid.algorithm.AlgoConfig` set through :func:`set_ac_algo_config`
+        #: / :func:`set_dc_algo_config` (``None`` if never customized), re-applied after
+        #: every `env.reset()` and preserved by `backend.copy()`.
+        self.__current_ac_algo_config = None
+        self.__current_dc_algo_config = None
+
         #: does the "turned off" generators (including when p=0)
         #: are pv buses
         self._turned_off_pv = turned_off_pv
@@ -215,7 +232,7 @@ class LightSimBackend(Backend):
             
         self._aux_init_super(detailed_infos_for_cascading_failures,
                              can_be_copied,
-                             solver_type,
+                             algo_type,
                              max_iter,
                              tol,
                              turned_off_pv,
@@ -429,10 +446,10 @@ class LightSimBackend(Backend):
             # (before 1.9.1)
             self._init_pp_backend = _DoNotUseAnywherePandaPowerBackend()
         
-    def _aux_init_super(self, 
+    def _aux_init_super(self,
                         detailed_infos_for_cascading_failures,
                         can_be_copied,
-                        solver_type,
+                        algo_type,
                         max_iter,
                         tol,
                         turned_off_pv,
@@ -450,7 +467,7 @@ class LightSimBackend(Backend):
             Backend.__init__(self,
                              detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
                              can_be_copied=can_be_copied,
-                             solver_type=solver_type,
+                             algo_type=algo_type,
                              max_iter=max_iter,
                              tol=tol,
                              turned_off_pv=turned_off_pv,
@@ -466,7 +483,7 @@ class LightSimBackend(Backend):
                              )
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
-                          "you cannot set max_iter, tol nor solver_type arguments.")
+                          "you cannot set max_iter, tol nor algo_type arguments.")
             Backend.__init__(self,
                              detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
         
@@ -513,7 +530,7 @@ class LightSimBackend(Backend):
                self.cst_1 * self.gen_theta, \
                self.cst_1 * self.storage_theta
 
-    def get_algo_types(self) -> Union[AlgorithmType, AlgorithmType]:
+    def get_algo_types(self) -> Tuple[AlgorithmType, AlgorithmType]:
         """Return the types of solver that are used in the form a tuple with 2 elements.
         
         The first one is the solver used for AC computation, the second one for DC computation (and also for
@@ -525,27 +542,28 @@ class LightSimBackend(Backend):
 
             import grid2op
             import lightsim2grid
-            from ligthsim2grid import LightSimBackend
+            from lightsim2grid import LightSimBackend
             
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
             print(env.backend.get_algo_types())
             # >>> (<AlgorithmType.NRSing_KLU: 7>, <AlgorithmType.DC_KLU: 9>)  [can depend on your installation of lightsim2grid]
             
-            env2 = grid2op.make(env_name, backend=LightSimBackend(solver_type=lightsim2grid.algorithm.AlgorithmType.NR_SparseLU))
+            env2 = grid2op.make(env_name, backend=LightSimBackend(algo_type=lightsim2grid.algorithm.AlgorithmType.NR_SparseLU))
             print(env2.backend.get_algo_types())
             # >>> (<AlgorithmType.NR_SparseLU: 0>, <AlgorithmType.DC_KLU: 9>)  [can depend on your installation of lightsim2grid]
             
         """
         return self._grid.get_algo_type(), self._grid.get_dc_algo_type()
     
-    def set_solver_type(self, solver_type: AlgorithmType) -> None:
+    def set_solver_type(self, algo_type: AlgorithmType) -> None:
         """DEPRECATED use :func:`set_algo_type` instead"""
-        self.set_algo_type(solver_type)
-        
-    def set_algo_type(self, solver_type: AlgorithmType) -> None:
+        self.set_algo_type(algo_type)
+
+    def set_algo_type(self, algo_type: Union[AlgorithmType, str]) -> None:
         """
-        Change the type of solver you want to use.
+        Change the type of solver you want to use, and remember the choice so it is
+        applied again after every `env.reset()` and preserved by `backend.copy()`.
 
         Note that a powergrid should have been loaded for this function to work.
 
@@ -563,37 +581,136 @@ class LightSimBackend(Backend):
 
         Parameters
         ----------
-        solver_type: lightsim2grid.AlgorithmType
-            The new type of solver you want to use. See backend.available_default_algorithms for a list of available solver
-            on your machine.
+        algo_type: Union[lightsim2grid.AlgorithmType, str]
+            The new algorithm you want to use, either as an :class:`~lightsim2grid.algorithm.AlgorithmType`
+            enum value, or (since lightsim2grid 1.0) as a plain ``str``: the registry name of a
+            string-only built-in algorithm with no ``AlgorithmType`` enum value (eg
+            ``"NRRefactorRetry_KLU"``) or of a plugin registered through
+            ``lightsim2grid.load_algorithm_plugin`` (see :ref:`solver_plugin`). See
+            ``env.backend._grid.available_algorithm_names()`` for the list of valid names.
         """
-        if solver_type is None:
-            raise BackendError("Impossible to change the solver type to None. Please enter a valid solver type.")
-        real_algo_type = self._check_suitable_solver_type(solver_type)
+        if algo_type is None:
+            raise BackendError("Impossible to change the algorithm type to None. Please enter a valid algorithm type.")
+        real_algo_type = self._check_suitable_solver_type(algo_type)
         self.__current_algo_type = copy.deepcopy(real_algo_type)
         self._grid.change_algorithm(self.__current_algo_type)
 
+    @staticmethod
+    def _aux_algo_config_to_state(config: AlgoConfig) -> Tuple[list, list]:
+        # AlgoConfig (pybind11) supports neither pickling nor copy.deepcopy (it would
+        # break pickling the whole backend, see test_save_load in test_pickleable.py,
+        # if stored as an attribute directly). Its `int_params` / `real_params` are
+        # plain python lists though (returned by value), so this plain (picklable,
+        # deepcopy-able) tuple of lists is what is actually kept on the backend;
+        # `_aux_algo_config_from_state` rebuilds a real AlgoConfig from it whenever
+        # one needs to be re-applied (reset(), copy()).
+        return (list(config.int_params), list(config.real_params))
+
+    @staticmethod
+    def _aux_algo_config_from_state(state: Tuple[list, list]) -> AlgoConfig:
+        int_params, real_params = state
+        config = AlgoConfig()
+        config.int_params = list(int_params)
+        config.real_params = list(real_params)
+        return config
+
+    def set_ac_algo_config(self, config: AlgoConfig) -> None:
+        """
+        Change the :class:`~lightsim2grid.algorithm.AlgoConfig` (scaling / refactor
+        policy and their per-policy parameters) used by the AC algorithm, and remember
+        it so it is applied again after every `env.reset()` and preserved by
+        `backend.copy()`.
+
+        Unlike calling ``env.backend._grid.set_ac_algo_config(...)`` directly, which is
+        silently reverted on the next `env.reset()`, this is the persistent, supported
+        way to customize the AC :class:`~lightsim2grid.algorithm.AlgoConfig`. Note that
+        a powergrid should have been loaded for this function to work.
+
+        Parameters
+        ----------
+        config: lightsim2grid.algorithm.AlgoConfig
+            The new AlgoConfig to use for the AC algorithm.
+        """
+        if self._grid is None:
+            raise BackendError("Impossible to set an AlgoConfig before a powergrid has been loaded.")
+        self.__current_ac_algo_config = self._aux_algo_config_to_state(config)
+        self._grid.set_ac_algo_config(config)
+
+    def get_ac_algo_config(self) -> AlgoConfig:
+        """Return the :class:`~lightsim2grid.algorithm.AlgoConfig` currently used by the AC algorithm."""
+        return self._grid.get_ac_algo_config()
+
+    def set_dc_algo_config(self, config: AlgoConfig) -> None:
+        """Same as :func:`LightSimBackend.set_ac_algo_config`, for the DC algorithm."""
+        if self._grid is None:
+            raise BackendError("Impossible to set an AlgoConfig before a powergrid has been loaded.")
+        self.__current_dc_algo_config = self._aux_algo_config_to_state(config)
+        self._grid.set_dc_algo_config(config)
+
+    def get_dc_algo_config(self) -> AlgoConfig:
+        """Same as :func:`LightSimBackend.get_ac_algo_config`, for the DC algorithm."""
+        return self._grid.get_dc_algo_config()
+
+    def _aux_merge_solver_type_algo_type(
+        self,
+        solver_type: Optional[Union[AlgorithmType, SolverType]],
+        algo_type: Optional[AlgorithmType]) -> Optional[AlgorithmType]:
+        """Merge the deprecated `solver_type` kwarg into the canonical `algo_type` one.
+
+        "solver" now refers specifically to the *linear* solver (KLU, SparseLU, NICSLU,
+        CKTSO), not the powerflow algorithm nor the combination of both that
+        `AlgorithmType` enumerates -- hence the rename. `solver_type` is kept only so
+        existing code keeps working.
+        """
+        if solver_type is None:
+            return algo_type
+        warnings.warn("The `solver_type` kwarg is deprecated: \"solver\" now refers to the "
+                      "linear solver only (KLU, SparseLU, NICSLU, CKTSO), not the powerflow "
+                      "algorithm. Use `algo_type` instead.",
+                      DeprecationWarning,
+                      3)
+        # normalize only for the comparison: a `SolverType` and the `AlgorithmType` it
+        # aliases are not `==` to one another (different Enum classes), even though they
+        # designate the same algorithm.
+        solver_type_normalized = solver_type.value if isinstance(solver_type, SolverType) else solver_type
+        if algo_type is not None and algo_type != solver_type_normalized:
+            raise BackendError("Both `solver_type` (deprecated) and `algo_type` were provided "
+                               "with different values. Pass only `algo_type`.")
+        return solver_type
+
     def _check_suitable_solver_type(
         self,
-        solver_type: Union[AlgorithmType, SolverType], check_in_avail_solver=True) -> AlgorithmType:
-        if solver_type is None:
+        algo_type: Union[AlgorithmType, SolverType, str], check_in_avail_solver=True) -> Union[AlgorithmType, str]:
+        if algo_type is None:
             return
 
-        if isinstance(solver_type, SolverType):
-            warnings.warn("Passing a SolverType is deprecated. Please use lightsim2grid.AlgorithmType instead.",
+        if isinstance(algo_type, SolverType):
+            warnings.warn("Passing a SolverType is deprecated. Please use lightsim2grid.AlgorithmType "
+                          "(via the `algo_type` kwarg / `set_algo_type`) instead.",
                           DeprecationWarning,
                           2)
-            solver_type = solver_type.value
-            
-        if not isinstance(solver_type, AlgorithmType):
-            raise BackendError(f"The solver type must be from type \"lightsim2grid.AlgorithmType\" and not "
-                               f"{type(solver_type)}")
-            
-        if check_in_avail_solver and solver_type not in self.available_default_algorithms:
-            raise BackendError(f"The solver type provided \"{solver_type}\" is not available on your system. Available"
-                               f"solvers are {self.available_default_algorithms}")
-        return solver_type
-            
+            algo_type = algo_type.value
+
+        if isinstance(algo_type, str):
+            # a registry name: either a string-only built-in (eg "NRRefactorRetry_KLU",
+            # which has no AlgorithmType enum value) or a plugin registered through
+            # load_algorithm_plugin(). Can only be checked once a grid is loaded.
+            if check_in_avail_solver and getattr(self, "_grid", None) is not None:
+                avail_names = self._grid.available_algorithm_names()
+                if algo_type not in avail_names:
+                    raise BackendError(f"The algorithm name \"{algo_type}\" is not available on your system "
+                                       f"(nor registered). Available algorithm names are {avail_names}")
+            return algo_type
+
+        if not isinstance(algo_type, AlgorithmType):
+            raise BackendError(f"The algorithm type must be from type \"lightsim2grid.AlgorithmType\", a plain "
+                               f"`str` (a registered algorithm name), and not {type(algo_type)}")
+
+        if check_in_avail_solver and algo_type not in self.available_default_algorithms:
+            raise BackendError(f"The algorithm type provided \"{algo_type}\" is not available on your system. Available"
+                               f"algorithms are {self.available_default_algorithms}")
+        return algo_type
+
     def set_solver_max_iter(self, max_iter: int) -> None:
         """
         Set the maximum number of iteration the solver is allowed to perform.
@@ -605,7 +722,7 @@ class LightSimBackend(Backend):
 
         - for AlgorithmType.NR_SparseLU: 10
         - for AlgorithmType.GaussSeidel: 10000
-        - for AlgorithmType.SparseKLU: 10
+        - for AlgorithmType.NR_KLU: 10
 
         Parameters
         ----------
@@ -1941,6 +2058,8 @@ class LightSimBackend(Backend):
         # copy the regular attribute
         res.__has_storage = self.__has_storage
         res.__current_algo_type = self.__current_algo_type  # forced here because of special `__`
+        res.__current_ac_algo_config = copy.deepcopy(self.__current_ac_algo_config)
+        res.__current_dc_algo_config = copy.deepcopy(self.__current_dc_algo_config)
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
         res.cst_1 = dt_float(1.0)
@@ -2096,6 +2215,10 @@ class LightSimBackend(Backend):
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
         self._grid.change_algorithm(self.__current_algo_type)
+        if self.__current_ac_algo_config is not None:
+            self._grid.set_ac_algo_config(self._aux_algo_config_from_state(self.__current_ac_algo_config))
+        if self.__current_dc_algo_config is not None:
+            self._grid.set_dc_algo_config(self._aux_algo_config_from_state(self.__current_dc_algo_config))
         self._handle_turnedoff_pv()
         self._grid.tell_solver_need_reset()
         self.comp_time = 0.

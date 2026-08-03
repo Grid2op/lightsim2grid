@@ -15,6 +15,7 @@ Some typedef and other structures define here and used everywhere else
 #include <iostream>
 #include <complex>
 #include "Eigen/Core"
+#include "Eigen/Sparse"
 #include "TaggedIdVec.hpp"
 #include "ls2g_api.hpp"
 
@@ -46,6 +47,9 @@ using tuple5d = std::tuple<Eigen::Ref<const EigenPythonNumType>,
 using RealMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic>;
 using CplxMat = Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic> ;
 
+using EigenRefConstCplxSpMat = Eigen::Ref<const Eigen::SparseMatrix<cplx_type> >;
+using EigenRefConstRealSpMat = Eigen::Ref<const Eigen::SparseMatrix<real_type> >;
+
 // type of error in the different solvers
 enum class ErrorType {NoError,
                       SingularMatrix,
@@ -58,6 +62,15 @@ enum class ErrorType {NoError,
                       NotInitError,
                       LicenseError};
 std::ostream& operator<<(std::ostream& out, const ErrorType & error_type);
+
+// Escape (and truncate to 64 chars) a string of untrusted origin -- read from a
+// possibly-corrupted file, or supplied by a plugin -- before embedding it in an
+// exception message. pybind11 converts what() to a python str as UTF-8, so raw
+// garbage bytes would turn the intended RuntimeError into a UnicodeDecodeError;
+// control characters would also let a name inject newlines or terminal escape
+// sequences into logs. Truncation keeps a corrupted length from producing a
+// message megabytes long.
+LS2G_API std::string printable(const std::string & s);
 
 
 struct Coeff{

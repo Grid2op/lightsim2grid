@@ -14,14 +14,14 @@
 namespace ls2g {
 
 void ConverterStationContainer::init(const std::vector<int> & type,
-                                     const RealVect & loss_factor,
+                                     const Eigen::Ref<const RealVect> & loss_factor,
                                      const std::vector<bool> & voltage_regulator_on,
-                                     const RealVect & target_vm_pu,
-                                     const RealVect & q_setpoint_mvar,
-                                     const RealVect & min_q,
-                                     const RealVect & max_q,
-                                     const RealVect & power_factor,
-                                     const Eigen::VectorXi & bus_id)
+                                     const Eigen::Ref<const RealVect> & target_vm_pu,
+                                     const Eigen::Ref<const RealVect> & q_setpoint_mvar,
+                                     const Eigen::Ref<const RealVect> & min_q,
+                                     const Eigen::Ref<const RealVect> & max_q,
+                                     const Eigen::Ref<const RealVect> & power_factor,
+                                     const Eigen::Ref<const Eigen::VectorXi> & bus_id)
 {
     // active power is derived (owned by the HvdcLineContainer), it starts at 0
     const auto p_init = RealVect::Zero(bus_id.size());
@@ -110,13 +110,13 @@ void ConverterStationContainer::set_state(ConverterStationContainer::StateRes & 
     check_size(max_q, size, "max_q");
     check_size(power_factor, size, "power_factor");
 
-    type_ = IntVect::Map(&type[0], type.size());
-    loss_factor_ = RealVect::Map(&loss_factor[0], loss_factor.size());
+    type_ = IntVect::Map(type.data(), type.size());
+    loss_factor_ = RealVect::Map(loss_factor.data(), loss_factor.size());
     voltage_regulator_on_ = voltage_regulator_on;
-    target_vm_pu_ = RealVect::Map(&vm_pu[0], vm_pu.size());
-    min_q_ = RealVect::Map(&min_q[0], min_q.size());
-    max_q_ = RealVect::Map(&max_q[0], max_q.size());
-    power_factor_ = RealVect::Map(&power_factor[0], power_factor.size());
+    target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
+    min_q_ = RealVect::Map(min_q.data(), min_q.size());
+    max_q_ = RealVect::Map(max_q.data(), max_q.size());
+    power_factor_ = RealVect::Map(power_factor.data(), power_factor.size());
     reset_results();
 }
 
@@ -157,9 +157,9 @@ void ConverterStationContainer::change_v(int station_id, real_type new_v_pu, Dua
     }
 }
 
-void ConverterStationContainer::fillSbus_station(CplxVect & Sbus,
+void ConverterStationContainer::fillSbus_station(Eigen::Ref<CplxVect> Sbus,
                                                  const SolverBusIdVect & id_grid_to_solver,
-                                                 bool ac,
+                                                 bool /*ac*/,
                                                  const std::vector<bool> & skip_p) const
 {
     const int nb_station = nb();
@@ -169,9 +169,6 @@ void ConverterStationContainer::fillSbus_station(CplxVect & Sbus,
     for(int station_id = 0; station_id < nb_station; ++station_id){
         //  i don't do anything if the station is disconnected
         if(!status_[station_id]) continue;
-
-        // a regulating station that is "pseudo off" is considered turned off (legacy dcline behaviour)
-        if (is_pseudo_off(station_id) && is_regulating(station_id)) continue;
 
         bus_id_me = bus_id_(station_id);
         if(bus_id_me.cast_int() == _deactivated_bus_id){
@@ -211,7 +208,6 @@ void ConverterStationContainer::fillpv(std::vector<int> & bus_pv,
     for(int station_id = 0; station_id < nb_station; ++station_id){
         if(!status_[station_id]) continue;
         if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-        if (is_pseudo_off(station_id)) continue;  // turned off stations are not pv (legacy dcline behaviour)
 
         bus_id_me = bus_id_(station_id);
         if(bus_id_me.cast_int() == _deactivated_bus_id){
@@ -239,17 +235,16 @@ void ConverterStationContainer::fillpv(std::vector<int> & bus_pv,
     }
 }
 
-void ConverterStationContainer::init_q_vector(int nb_bus,
-                                              Eigen::VectorXi & total_gen_per_bus,
-                                              RealVect & total_q_min_per_bus,
-                                              RealVect & total_q_max_per_bus) const
+void ConverterStationContainer::init_q_vector(int /*nb_bus*/,
+                                              Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
+                                              Eigen::Ref<RealVect> total_q_min_per_bus,
+                                              Eigen::Ref<RealVect> total_q_max_per_bus) const
 {
     const int nb_station = nb();
     for(int station_id = 0; station_id < nb_station; ++station_id)
     {
         if(!status_[station_id]) continue;
         if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-        if (is_pseudo_off(station_id)) continue;  // turned off stations are not pv (legacy dcline behaviour)
 
         const GlobalBusId bus_id = bus_id_(station_id);
         total_q_min_per_bus(bus_id.cast_int()) += min_q_(station_id);
@@ -258,12 +253,12 @@ void ConverterStationContainer::init_q_vector(int nb_bus,
     }
 }
 
-void ConverterStationContainer::set_q(const RealVect & reactive_mismatch,
+void ConverterStationContainer::set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
                                       const SolverBusIdVect & id_grid_to_solver,
                                       bool ac,
-                                      const Eigen::VectorXi & total_gen_per_bus,
-                                      const RealVect & total_q_min_per_bus,
-                                      const RealVect & total_q_max_per_bus)
+                                      const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
+                                      const Eigen::Ref<const RealVect> & total_q_min_per_bus,
+                                      const Eigen::Ref<const RealVect> & total_q_max_per_bus)
 {
     const int nb_station = nb();
     if(!ac){
@@ -285,12 +280,6 @@ void ConverterStationContainer::set_q(const RealVect & reactive_mismatch,
             res_q_(station_id) = target_q_mvar_(station_id);
             continue;
         }
-        if (is_pseudo_off(station_id)) {
-            // it's as if the station were turned off (legacy dcline behaviour)
-            res_q_(station_id) = 0.;
-            continue;
-        }
-
         const GlobalBusId bus_id = bus_id_(station_id);
         const SolverBusId bus_solver = id_grid_to_solver[bus_id.cast_int()];
         // TODO DEBUG MODE: check that the bus is correct!
@@ -311,14 +300,13 @@ void ConverterStationContainer::set_q(const RealVect & reactive_mismatch,
     }
 }
 
-void ConverterStationContainer::get_vm_for_dc(RealVect & Vm)
+void ConverterStationContainer::get_vm_for_dc(Eigen::Ref<RealVect> Vm)
 {
     const int nb_station = nb();
     GlobalBusId bus_id_me;
     for(int station_id = 0; station_id < nb_station; ++station_id){
         if(!status_[station_id]) continue;
         if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-        if (is_pseudo_off(station_id)) continue;  // turned off stations are not pv (legacy dcline behaviour)
 
         bus_id_me = bus_id_(station_id);
         real_type tmp = target_vm_pu_(station_id);
@@ -326,7 +314,7 @@ void ConverterStationContainer::get_vm_for_dc(RealVect & Vm)
     }
 }
 
-void ConverterStationContainer::set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const
+void ConverterStationContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const
 {
     const int nb_station = nb();
     GlobalBusId bus_id_me;
@@ -334,7 +322,6 @@ void ConverterStationContainer::set_vm(CplxVect & V, const SolverBusIdVect & id_
     for(int station_id = 0; station_id < nb_station; ++station_id){
         if(!status_[station_id]) continue;
         if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-        if (is_pseudo_off(station_id)) continue;  // turned off stations are not pv (legacy dcline behaviour)
 
         bus_id_me = bus_id_(station_id);
         if(bus_id_me.cast_int() == _deactivated_bus_id){
@@ -373,7 +360,7 @@ void ConverterStationContainer::_compute_results(
     const Eigen::Ref<const RealVect> & /*Vm*/,
     const Eigen::Ref<const CplxVect> & /*V*/,
     const SolverBusIdVect & /*id_grid_to_solver*/,
-    const RealVect & /*bus_vn_kv*/,
+    const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
     real_type /*sn_mva*/,
     bool ac)
 {
