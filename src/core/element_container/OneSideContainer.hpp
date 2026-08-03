@@ -361,6 +361,23 @@ class OneSideContainer : public GenericContainer
                              << "(set_subid was never called).";
                         throw std::runtime_error(exc_.str());
                     }
+                    // subid_ is only ever assigned by set_subid() (checked against nb() at the
+                    // time of the call) or set_osc_state(); neither is re-run when the container
+                    // is re-initialized with a different element count (init() does not touch
+                    // subid_), so a container whose element count grew after set_subid() was last
+                    // called leaves subid_ shorter than the CURRENT nb() -- indexing el_id below
+                    // would read past its end. Same class of bug _check_pos_topo_vect_filled()
+                    // already guards against for pos_topo_vect_ (its size() != nb() check); mirror
+                    // it here.
+                    if(subid_.size() != nb()){
+                        std::ostringstream exc_;
+                        exc_ << "OneSideContainer::update_topo: cannot reconnect element " << el_id
+                             << " to a bus: subid_ has " << subid_.size() << " entries but this "
+                             << "container currently has " << nb() << " elements (set_subid was "
+                             << "called for a different element count -- call it again after "
+                             << "re-initializing this container).";
+                        throw std::runtime_error(exc_.str());
+                    }
                     int sub_id = subid_(el_id);
                     // `sub_id` feeds local_to_gridmodel's arithmetic (sub_id + (busbar-1)*n_sub),
                     // whose OUTPUT is bounds-checked before being stored as this element's bus id
