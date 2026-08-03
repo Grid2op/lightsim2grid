@@ -414,7 +414,19 @@ class TestPosTopoVectSetterBounds(unittest.TestCase):
     range-checked in check_grid(), which the setters do not call. update_topo()
     then indexes its caller arrays with the stored positions (unchecked Eigen
     operator()), so a position written straight through a setter -- bypassing
-    check_grid -- read out of bounds before the fix (segfault)."""
+    check_grid -- read out of bounds before the fix (segfault). The setter itself
+    now also rejects a negative position immediately (the only bound it can check
+    locally: the upper bound, dim_topo, depends on every other topology-participating
+    container's element count too, so it can only be enforced where that context is
+    available -- update_topo(), tested below)."""
+
+    def test_negative_position_is_rejected_by_the_setter_itself(self):
+        grid = build_exotic_elements_case_grid()
+        n_load = len(grid.get_loads())
+        bad = np.arange(n_load, dtype=np.int32)
+        bad[0] = -5
+        with self.assertRaises((IndexError, RuntimeError)):
+            grid.set_load_pos_topo_vect(bad)
 
     def _grid_with_topo(self):
         grid = build_exotic_elements_case_grid()
@@ -450,12 +462,96 @@ class TestPosTopoVectSetterBounds(unittest.TestCase):
             grid.update_topo(has_changed, new_values)
 
 
+class TestSubidSetterBounds(unittest.TestCase):
+    """set_*_to_subid() only length-checks its argument; the *values* are
+    range-checked in check_grid(), which the setters do not call. update_topo()
+    reads the stored subid and feeds it to SubstationContainer::local_to_gridmodel's
+    unchecked arithmetic (sub_id + (busbar - 1) * n_sub) to resolve the target bus --
+    an out-of-range (but small enough) sub_id can land BY COINCIDENCE on another
+    substation's legitimate bus id, silently reconnecting the element to the WRONG
+    bus instead of raising, before the fix. The setter itself now rejects a negative
+    id immediately (the only bound it can check locally: n_sub is owned by
+    SubstationContainer, not available here); update_topo() enforces the full range
+    where that context (the `substations` parameter) is available."""
+
+    def _grid_with_topo_and_subid(self):
+        grid = build_exotic_elements_case_grid()
+        n_load = len(grid.get_loads())
+        n_gen = len(grid.get_generators())
+        n_sto = len(grid.get_storages())
+        n_line = len(grid.get_lines())
+        n_trafo = len(grid.get_trafos())
+        dim_topo = n_load + n_gen + n_sto + 2 * n_line + 2 * n_trafo
+        pos = np.arange(dim_topo, dtype=np.int32)
+        off = 0
+        for setter, nb in ((grid.set_load_pos_topo_vect, n_load),
+                           (grid.set_gen_pos_topo_vect, n_gen),
+                           (grid.set_storage_pos_topo_vect, n_sto),
+                           (grid.set_line_pos1_topo_vect, n_line),
+                           (grid.set_line_pos2_topo_vect, n_line),
+                           (grid.set_trafo_pos1_topo_vect, n_trafo),
+                           (grid.set_trafo_pos2_topo_vect, n_trafo)):
+            setter(pos[off:off + nb])
+            off += nb
+        n_sub = grid.get_n_sub()
+        grid.set_load_to_subid(np.zeros(n_load, dtype=np.int32))
+        grid.set_gen_to_subid(np.zeros(n_gen, dtype=np.int32))
+        grid.set_storage_to_subid(np.zeros(n_sto, dtype=np.int32))
+        grid.set_line_to_sub1_id(np.zeros(n_line, dtype=np.int32))
+        grid.set_line_to_sub2_id(np.zeros(n_line, dtype=np.int32))
+        grid.set_trafo_to_sub1_id(np.zeros(n_trafo, dtype=np.int32))
+        grid.set_trafo_to_sub2_id(np.zeros(n_trafo, dtype=np.int32))
+        return grid, dim_topo, n_load, n_sub
+
+    def test_negative_subid_is_rejected_by_the_setter_itself(self):
+        grid = build_exotic_elements_case_grid()
+        n_load = len(grid.get_loads())
+        bad = np.zeros(n_load, dtype=np.int32)
+        bad[0] = -1
+        with self.assertRaises((IndexError, RuntimeError)):
+            grid.set_load_to_subid(bad)
+
+    def test_out_of_range_subid_from_setter_is_rejected_by_update_topo(self):
+        grid, dim_topo, n_load, n_sub = self._grid_with_topo_and_subid()
+        self.assertIsNone(grid.check_grid())  # honest layout validates
+        # poison a load's subid AFTER validation; the setter accepts it silently
+        # (it is non-negative, so the setter's own local check does not catch it)
+        bad = np.zeros(n_load, dtype=np.int32)
+        bad[0] = n_sub + 3
+        grid.set_load_to_subid(bad)
+        has_changed = np.zeros(dim_topo, dtype=bool)
+        has_changed[0] = True  # only reconnect load 0
+        new_values = np.ones(dim_topo, dtype=np.int32)
+        with self.assertRaises((IndexError, RuntimeError)):
+            grid.update_topo(has_changed, new_values)
+
+    def test_reconnecting_without_ever_setting_subid_is_rejected(self):
+        grid = build_exotic_elements_case_grid()
+        n_load = len(grid.get_loads())
+        dim_topo = (n_load + len(grid.get_generators()) + len(grid.get_storages())
+                    + 2 * len(grid.get_lines()) + 2 * len(grid.get_trafos()))
+        grid.set_load_pos_topo_vect(np.arange(n_load, dtype=np.int32))
+        # subid was never set for loads at all (subid_ stays empty)
+        has_changed = np.zeros(dim_topo, dtype=bool)
+        has_changed[0] = True
+        new_values = np.ones(dim_topo, dtype=np.int32)
+        with self.assertRaises(RuntimeError):
+            grid.update_topo(has_changed, new_values)
+
+
 class TestContingencyResultsMatchDefaults(unittest.TestCase):
     """compute() sizes the result matrices with one row per registered contingency.
     Adding / removing contingencies afterwards without recomputing left the flow
     computation (clean_flows) walking the new, longer contingency set while indexing
     the old, shorter matrices -- an out-of-bounds write / heap corruption before the
-    fix. compute_flows() / compute_power_flows() now refuse the stale state."""
+    fix. compute_flows() / compute_power_flows() now refuse the stale state.
+
+    A pure size comparison is not enough, though: remove_n1(x) followed by add_n1(y)
+    (y != x) restores the SAME contingency count, so a size-only check can't tell the
+    results are stale -- compute_flows() would silently return flows that correspond
+    to the wrong contingencies instead of raising. Every mutating method (add_*/
+    remove_*) now eagerly clears any previously computed results, closing that gap
+    regardless of the exact sequence of add/remove calls."""
 
     def _sa(self):
         grid = build_exotic_elements_case_grid()
@@ -490,6 +586,42 @@ class TestContingencyResultsMatchDefaults(unittest.TestCase):
         sa.compute(np.ones(grid.total_bus(), dtype=complex), 20, 1e-7)
         flows = sa.compute_flows()  # no longer stale
         self.assertEqual(flows.shape[0], 2)
+
+    def test_remove_then_add_a_different_one_is_rejected(self):
+        # same contingency COUNT as at compute() time, different MEMBERSHIP: a
+        # size-only staleness check would miss this.
+        grid = build_exotic_elements_case_grid()
+        sa = ContingencyAnalysisCPP(grid)
+        sa.add_n1(0)
+        sa.add_n1(1)
+        sa.compute(np.ones(grid.total_bus(), dtype=complex), 20, 1e-7)
+        sa.remove_n1(0)
+        sa.add_n1(2)
+        self.assertEqual(len(sa.my_defaults()), 2)  # same size as at compute() time
+        with self.assertRaises(RuntimeError):
+            sa.compute_flows()
+
+    def test_remove_invalidates_results_even_when_the_count_stays_put(self):
+        # _sa() computes for exactly 1 contingency (id 0); add a 2nd, then remove a
+        # DIFFERENT one (id 0) so the count is back to 1 -- same size as at compute()
+        # time, but the surviving row corresponds to a contingency that was never
+        # actually solved for this composition.
+        sa = self._sa()
+        sa.add_n1(1)
+        sa.remove_n1(0)
+        self.assertEqual(len(sa.my_defaults()), 1)  # same size as after _sa()'s compute()
+        with self.assertRaises(RuntimeError):
+            sa.compute_flows()
+
+    def test_a_rejected_id_does_not_clear_valid_results(self):
+        sa = self._sa()
+        flows_before = sa.compute_flows().copy()
+        n_total = len(sa.my_defaults())
+        with self.assertRaises(RuntimeError):
+            sa.add_n1(-1)  # invalid: rejected before any mutation / clearing
+        self.assertEqual(len(sa.my_defaults()), n_total)  # unchanged
+        flows_after = sa.compute_flows()  # still valid, no RuntimeError
+        np.testing.assert_array_equal(flows_before, flows_after)
 
 
 class TestSubObjectGettersKeepGridAlive(unittest.TestCase):
