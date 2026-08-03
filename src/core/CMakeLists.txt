@@ -7,8 +7,22 @@ if(NOT PROJECT_NAME)
     cmake_minimum_required(VERSION 3.15...4.99)
     project(lightsim2grid_core VERSION 0.0.0 LANGUAGES CXX)
 
-    if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    # LS2G_CXX_STANDARD: force a specific C++ standard instead of auto-detecting
+    # the newest one the compiler supports (see root CMakeLists.txt).
+    set(LS2G_CXX_STANDARD "" CACHE STRING "Force a specific C++ standard (14/17/20/23/26) instead of auto-detecting the newest supported")
+    if(LS2G_CXX_STANDARD)
+        if(NOT "cxx_std_${LS2G_CXX_STANDARD}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+            message(FATAL_ERROR "LS2G_CXX_STANDARD=${LS2G_CXX_STANDARD} requested but the compiler does not support C++${LS2G_CXX_STANDARD}.")
+        endif()
+        set(CMAKE_CXX_STANDARD ${LS2G_CXX_STANDARD})
+    # cxx_std_26 only appears in CMAKE_CXX_COMPILE_FEATURES when both CMake
+    # (>= 3.30) and the compiler know C++26; elsewhere it is simply never selected.
+    elseif("cxx_std_26" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+        set(CMAKE_CXX_STANDARD 26)
+    elseif("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 23)
+    elseif("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+        set(CMAKE_CXX_STANDARD 20)
     elseif("cxx_std_17" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 17)
     elseif("cxx_std_14" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
@@ -23,6 +37,12 @@ if(NOT PROJECT_NAME)
     include_directories("${CMAKE_CURRENT_SOURCE_DIR}/../../eigen")
 endif()
 
+
+# =============================================================================
+# Threads (std::thread) — used by the multi-threaded ContingencyAnalysis
+# =============================================================================
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 
 # =============================================================================
 # KLU (SuiteSparse) detection — 4 strategies, same logic as historical root
@@ -248,6 +268,24 @@ else()
     option(USE_O3_OPTIM "Enable O3 optimization" ON)
 endif()
 
+# CI hardening builds (see .github/workflows/sanitizers.yml), not meant for
+# distributed wheels. __SANITIZE=1 compiles with ASan+UBSan; __DEBUG_ASSERTS=1
+# re-enables the assertions Release builds silence with NDEBUG (Eigen bounds
+# checks) plus the ABI-safe libstdc++ hardening checks.
+set(ENV_SANITIZE "$ENV{__SANITIZE}")
+if(ENV_SANITIZE STREQUAL "1" OR ENV_SANITIZE STREQUAL "True")
+    option(USE_SANITIZERS "Compile with AddressSanitizer + UBSan" ON)
+else()
+    option(USE_SANITIZERS "Compile with AddressSanitizer + UBSan" OFF)
+endif()
+
+set(ENV_DEBUG_ASSERTS "$ENV{__DEBUG_ASSERTS}")
+if(ENV_DEBUG_ASSERTS STREQUAL "1" OR ENV_DEBUG_ASSERTS STREQUAL "True")
+    option(USE_DEBUG_ASSERTS "Re-enable NDEBUG-silenced assertions (Eigen bounds checks, _GLIBCXX_ASSERTIONS)" ON)
+else()
+    option(USE_DEBUG_ASSERTS "Re-enable NDEBUG-silenced assertions (Eigen bounds checks, _GLIBCXX_ASSERTIONS)" OFF)
+endif()
+
 
 # =============================================================================
 # Core library sources
@@ -261,15 +299,17 @@ add_subdirectory(powerflow_algorithm)
 add_library(lightsim2grid_core SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/help_fun_msg.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/BaseConstants.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/GridModel.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/ChooseSolver.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/SolverRegistry.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/SolverTypeNames.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/LSGrid.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmSelector.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmRegistry.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Ls2gAbiTag.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmTypeNames.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/BuiltinSolversRegistration.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SolverInstantiations.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Utils.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DataConverter.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SubstationContainer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/BinaryArchive.cpp"
     ${SOURCES}
 )
 
@@ -296,6 +336,10 @@ target_include_directories(lightsim2grid_core
 
 target_compile_definitions(lightsim2grid_core PRIVATE LS2G_BUILDING_CORE)
 
+# std::thread support (multi-threaded ContingencyAnalysis). PUBLIC so the
+# lightsim2grid_cpp binding target inherits the threading flags / link.
+target_link_libraries(lightsim2grid_core PUBLIC Threads::Threads)
+
 
 # =============================================================================
 # Link optional solvers
@@ -319,7 +363,10 @@ endif()
 if(ENABLE_NICSLU)
     target_link_directories(lightsim2grid_core PRIVATE ${LIB_MAYBE_NICSLU})
     target_link_libraries(lightsim2grid_core PRIVATE nicslu)
-    target_include_directories(lightsim2grid_core PRIVATE ${PATH_NICSLU}/include)
+    # PUBLIC (BUILD_INTERFACE only): NICSLUSolver.hpp is included directly by the
+    # bindings sources (lightsim2grid_cpp target), which need this include path too.
+    # See the KLU comment above for why BUILD_INTERFACE keeps it out of the exported target.
+    target_include_directories(lightsim2grid_core PUBLIC $<BUILD_INTERFACE:${PATH_NICSLU}/include>)
     target_compile_definitions(lightsim2grid_core PUBLIC  NICSLU_SOLVER_AVAILABLE)
     target_compile_definitions(lightsim2grid_core PRIVATE NICSLU_PATH="${LIB_MAYBE_NICSLU}")
 endif()
@@ -327,7 +374,8 @@ endif()
 if(LIB_CKTSO)
     target_link_directories(lightsim2grid_core PRIVATE ${LIB_MAYBE_CKTSO})
     target_link_libraries(lightsim2grid_core PRIVATE cktso)
-    target_include_directories(lightsim2grid_core PRIVATE ${PATH_CKTSO}/include)
+    # PUBLIC (BUILD_INTERFACE only): same reason as NICSLU above.
+    target_include_directories(lightsim2grid_core PUBLIC $<BUILD_INTERFACE:${PATH_CKTSO}/include>)
     target_compile_definitions(lightsim2grid_core PUBLIC  CKTSO_SOLVER_AVAILABLE)
     target_compile_definitions(lightsim2grid_core PRIVATE CKTSO_PATH="${LIB_MAYBE_CKTSO}")
 endif()
@@ -345,11 +393,33 @@ if(USE_O3_OPTIM)
 endif()
 
 if(NOT MSVC)
+    # Real (non-report-only) warnings, unlike the clang-tidy job: both are
+    # supported identically by GCC and Clang, cheap to check, and (as of this
+    # writing) clean on lightsim2grid_core -- so any future regression fails
+    # the build instead of waiting to be noticed in the advisory clang-tidy
+    # report. -Wsuggest-override catches a virtual override missing the
+    # `override`/`final` keyword; -Wnon-virtual-dtor catches a base class
+    # with virtual functions but a non-virtual (hence unsafe-to-delete-through-
+    # base-pointer) destructor.
+    target_compile_options(lightsim2grid_core PRIVATE -Wsuggest-override -Wnon-virtual-dtor)
+
     if(USE_O3_OPTIM)
         target_compile_options(lightsim2grid_core PRIVATE -O3)
     endif()
     if(USE_MARCH_NATIVE)
         target_compile_options(lightsim2grid_core PRIVATE -march=native)
+    endif()
+    if(USE_SANITIZERS)
+        # placed after the -O3 block on purpose: the later -O1 wins, keeping
+        # ASan stack traces / line info usable
+        target_compile_options(lightsim2grid_core PRIVATE
+            -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1)
+        target_link_options(lightsim2grid_core PRIVATE -fsanitize=address,undefined)
+    endif()
+    if(USE_DEBUG_ASSERTS)
+        # -UNDEBUG comes after CMAKE_CXX_FLAGS_RELEASE's -DNDEBUG on the
+        # command line, so Eigen's bounds assertions come back to life
+        target_compile_options(lightsim2grid_core PRIVATE -UNDEBUG -D_GLIBCXX_ASSERTIONS)
     endif()
 else()
     if(USE_O3_OPTIM)

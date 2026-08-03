@@ -7,70 +7,86 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "BuiltinSolversRegistration.hpp"
-#include "SolverRegistry.hpp"
+#include "AlgorithmRegistry.hpp"
 #include "Solvers.hpp"   // all concrete solver typedefs + #ifdef guards
 
 namespace ls2g {
 
-void register_builtin_solvers(SolverRegistry& reg) {
-    reg.register_solver("SparseLU",
-        []{ return std::make_unique<SparseLUSolver>(); });
-    reg.register_solver("SparseLUSingleSlack",
-        []{ return std::make_unique<SparseLUSolverSingleSlack>(); });
-    reg.register_solver("DC",
-        []{ return std::make_unique<DCSolver>(); });
-    reg.register_solver("GaussSeidel",
+void register_builtin_solvers(AlgorithmRegistry& reg) {
+    // Every solver registered here is shipped in-tree, so it is tagged
+    // SolverOrigin::Builtin. That tag -- NOT AlgorithmType -- is what tells
+    // lightsim2grid apart from a plugin at run time: AlgorithmType is a fixed enum
+    // of serialized solver identities and the NRRefactorRetry_* family has no
+    // member there, so name_to_algo_type() reports them as AlgorithmType::Custom
+    // exactly like a plugin. Going through this helper means a built-in added later
+    // cannot silently be treated as external by forgetting the tag.
+    const auto add_builtin = [&reg](const std::string& name, AlgorithmRegistry::Factory f) {
+        reg.register_solver(name, std::move(f), ls2g_current_abi_tag(), SolverOrigin::Builtin);
+    };
+    add_builtin("NR_SparseLU",
+        []{ return std::make_unique<NR_SparseLU>(); });
+    add_builtin("NRSing_SparseLU",
+        []{ return std::make_unique<NRSing_SparseLU>(); });
+    add_builtin("DC_SparseLU",
+        []{ return std::make_unique<DC_SparseLU>(); });
+    add_builtin("GaussSeidel",
         []{ return std::make_unique<GaussSeidelAlgo>(); });
-    reg.register_solver("GaussSeidelSynch",
+    add_builtin("GaussSeidelSynch",
         []{ return std::make_unique<GaussSeidelSynchAlgo>(); });
-    reg.register_solver("FDPF_XB_SparseLU",
-        []{ return std::make_unique<FDPF_XB_SparseLUSolver>(); });
-    reg.register_solver("FDPF_BX_SparseLU",
-        []{ return std::make_unique<FDPF_BX_SparseLUSolver>(); });
+    add_builtin("FDPF_XB_SparseLU",
+        []{ return std::make_unique<FDPF_XB_SparseLU>(); });
+    add_builtin("FDPF_BX_SparseLU",
+        []{ return std::make_unique<FDPF_BX_SparseLU>(); });
 
 #ifdef KLU_SOLVER_AVAILABLE
-    reg.register_solver("KLU",
-        []{ return std::make_unique<KLUSolver>(); });
-    reg.register_solver("KLUSingleSlack",
-        []{ return std::make_unique<KLUSolverSingleSlack>(); });
-    reg.register_solver("KLUDC",
-        []{ return std::make_unique<KLUDCSolver>(); });
-    reg.register_solver("FDPF_XB_KLU",
-        []{ return std::make_unique<FDPF_XB_KLUSolver>(); });
-    reg.register_solver("FDPF_BX_KLU",
-        []{ return std::make_unique<FDPF_BX_KLUSolver>(); });
+    add_builtin("NR_KLU",
+        []{ return std::make_unique<NR_KLU>(); });
+    add_builtin("NRSing_KLU",
+        []{ return std::make_unique<NRSing_KLU>(); });
+    add_builtin("DC_KLU",
+        []{ return std::make_unique<DC_KLU>(); });
+    add_builtin("FDPF_XB_KLU",
+        []{ return std::make_unique<FDPF_XB_KLU>(); });
+    add_builtin("FDPF_BX_KLU",
+        []{ return std::make_unique<FDPF_BX_KLU>(); });
+    add_builtin("NRRefactorRetry_KLU",
+        []{ return std::make_unique<NRRefactorRetry_KLU>(); });
 #endif // KLU_SOLVER_AVAILABLE
 
 #ifdef NICSLU_SOLVER_AVAILABLE
-    reg.register_solver("NICSLU",
-        []{ return std::make_unique<NICSLUSolver>(); });
-    reg.register_solver("NICSLUSingleSlack",
-        []{ return std::make_unique<NICSLUSolverSingleSlack>(); });
-    reg.register_solver("NICSLUDC",
-        []{ return std::make_unique<NICSLUDCSolver>(); });
-    reg.register_solver("FDPF_XB_NICSLU",
-        []{ return std::make_unique<FDPF_XB_NICSLUSolver>(); });
-    reg.register_solver("FDPF_BX_NICSLU",
-        []{ return std::make_unique<FDPF_BX_NICSLUSolver>(); });
+    add_builtin("NR_NICSLU",
+        []{ return std::make_unique<NR_NICSLU>(); });
+    add_builtin("NRSing_NICSLU",
+        []{ return std::make_unique<NRSing_NICSLU>(); });
+    add_builtin("DC_NICSLU",
+        []{ return std::make_unique<DC_NICSLU>(); });
+    add_builtin("FDPF_XB_NICSLU",
+        []{ return std::make_unique<FDPF_XB_NICSLU>(); });
+    add_builtin("FDPF_BX_NICSLU",
+        []{ return std::make_unique<FDPF_BX_NICSLU>(); });
+    add_builtin("NRRefactorRetry_NICSLU",
+        []{ return std::make_unique<NRRefactorRetry_NICSLU>(); });
 #endif // NICSLU_SOLVER_AVAILABLE
 
 #ifdef CKTSO_SOLVER_AVAILABLE
-    reg.register_solver("CKTSO",
-        []{ return std::make_unique<CKTSOSolver>(); });
-    reg.register_solver("CKTSOSingleSlack",
-        []{ return std::make_unique<CKTSOSolverSingleSlack>(); });
-    reg.register_solver("CKTSODC",
-        []{ return std::make_unique<CKTSODCSolver>(); });
-    reg.register_solver("FDPF_XB_CKTSO",
-        []{ return std::make_unique<FDPF_XB_CKTSOSolver>(); });
-    reg.register_solver("FDPF_BX_CKTSO",
-        []{ return std::make_unique<FDPF_BX_CKTSOSolver>(); });
+    add_builtin("NR_CKTSO",
+        []{ return std::make_unique<NR_CKTSO>(); });
+    add_builtin("NRSing_CKTSO",
+        []{ return std::make_unique<NRSing_CKTSO>(); });
+    add_builtin("DC_CKTSO",
+        []{ return std::make_unique<DC_CKTSO>(); });
+    add_builtin("FDPF_XB_CKTSO",
+        []{ return std::make_unique<FDPF_XB_CKTSO>(); });
+    add_builtin("FDPF_BX_CKTSO",
+        []{ return std::make_unique<FDPF_BX_CKTSO>(); });
+    add_builtin("NRRefactorRetry_CKTSO",
+        []{ return std::make_unique<NRRefactorRetry_CKTSO>(); });
 #endif // CKTSO_SOLVER_AVAILABLE
 }
 
 namespace {
     struct _AutoRegister {
-        _AutoRegister() { register_builtin_solvers(SolverRegistry::instance()); }
+        _AutoRegister() { register_builtin_solvers(AlgorithmRegistry::instance()); }
     };
     static const _AutoRegister _auto_reg;
 }

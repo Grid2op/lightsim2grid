@@ -9,6 +9,8 @@
 #ifndef TWO_SIDES_CONTAINER_RXH_A_H
 #define TWO_SIDES_CONTAINER_RXH_A_H
 
+#include <limits>
+
 #include "TwoSidesContainer.hpp"
 
 namespace ls2g {
@@ -73,6 +75,11 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 real_type res_a1_ka;
                 real_type res_a2_ka;
 
+                // thermal (current) limit, in kA -- input, not a powerflow result;
+                // NaN if not provided when the grid was built
+                real_type limit_a1_ka;
+                real_type limit_a2_ka;
+
                 cplx_type yac_11;
                 cplx_type yac_12;
                 cplx_type yac_21;
@@ -95,6 +102,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 has_res(false),
                 res_a1_ka(0.),
                 res_a2_ka(0.),
+                limit_a1_ka(std::numeric_limits<real_type>::quiet_NaN()),
+                limit_a2_ka(std::numeric_limits<real_type>::quiet_NaN()),
                 yac_11(0., 0.),
                 yac_12(0., 0.),
                 yac_21(0., 0.),
@@ -109,7 +118,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 ydc_22(0., 0.)
                 {
                     if(my_id < 0) return;
-                    if(my_id >= r_data.nb()) return;
+                    if(static_cast<size_t>(my_id) >= r_data.nb()) return;
                     r_pu = r_data.r_.coeff(my_id);
                     x_pu = r_data.x_.coeff(my_id);
                     h1_pu = r_data.h_side_1_.coeff(my_id);
@@ -121,6 +130,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                         res_a1_ka = r_data.res_a_side_1_.coeff(my_id);
                         res_a2_ka = r_data.res_a_side_2_.coeff(my_id);
                     }
+
+                    if(r_data.limit_a1_ka_.size() > 0) limit_a1_ka = r_data.limit_a1_ka_.coeff(my_id);
+                    if(r_data.limit_a2_ka_.size() > 0) limit_a2_ka = r_data.limit_a2_ka_.coeff(my_id);
 
                     // coeffs
                     yac_11 = r_data.yac_11_.coeff(my_id);
@@ -145,16 +157,32 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
     public:
         TwoSidesContainer_rxh_A() noexcept = default;
-        virtual ~TwoSidesContainer_rxh_A() noexcept = default;
-        
+        ~TwoSidesContainer_rxh_A() noexcept override = default;
+
         // pickle
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
                    StateResSuper,
                    std::vector<real_type>,  // branch_r
                    std::vector<real_type>,  // branch_x
                    std::vector<cplx_type>,   // branch_h1
-                   std::vector<cplx_type>   // branch_h2
+                   std::vector<cplx_type>,   // branch_h2
+                   std::vector<real_type>,  // limit_a1_ka (optional, empty if unset)
+                   std::vector<real_type>  // limit_a2_ka (optional, empty if unset)
                >;
+
+        // current limit, in kA, per side -- input, not a powerflow result.
+        // Optional: empty (size 0) if never set (e.g. pandapower-origin grids).
+        void set_limit_a1_ka(const Eigen::Ref<const RealVect> & limit_a1_ka){
+            check_size(limit_a1_ka, nb(), "TwoSidesContainer_rxh_A::set_limit_a1_ka");
+            limit_a1_ka_ = limit_a1_ka;
+        }
+        void set_limit_a2_ka(const Eigen::Ref<const RealVect> & limit_a2_ka){
+            check_size(limit_a2_ka, nb(), "TwoSidesContainer_rxh_A::set_limit_a2_ka");
+            limit_a2_ka_ = limit_a2_ka;
+        }
+        Eigen::Ref<const RealVect> get_limit_a1_ka() const {return limit_a1_ka_;}
+        Eigen::Ref<const RealVect> get_limit_a2_ka() const {return limit_a2_ka_;}
 
         // getter (results)
         tuple4d get_res_side_1() const {
@@ -197,7 +225,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             
             BX_fpdf_coeffs_.init(nb());
             XB_fpdf_coeffs_.init(nb());
-            for(int el_id = 0; el_id < nb(); ++el_id){
+            for(int el_id = 0; el_id < static_cast<int>(nb()); ++el_id){
                 BX_fpdf_coeffs_.assign_el(el_id, this->get_fdpf_coeffs(el_id, FDPFMethod::BX));
                 XB_fpdf_coeffs_.assign_el(el_id, this->get_fdpf_coeffs(el_id, FDPFMethod::XB));
             }
@@ -210,7 +238,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,
             const SolverBusIdVect & id_grid_to_solver,
-            const RealVect & bus_vn_kv,
+            const Eigen::Ref<const RealVect> & bus_vn_kv,
             real_type sn_mva,
             bool ac
             )
@@ -339,8 +367,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     if(status1[el_id] && status2[el_id]){
                         real_type Va_hv = Va(bus_hv_solver_id.cast_int());
                         real_type Va_lv = Va(bus_lv_solver_id.cast_int());
-                        res_p_side_1(el_id) = (std::real(ydc_11_(el_id)) * Va_hv + std::real(ydc_12_(el_id)) * Va_lv) * sn_mva;
-                        res_p_side_2(el_id) = (std::real(ydc_22_(el_id)) * Va_lv + std::real(ydc_21_(el_id)) * Va_hv) * sn_mva;
+                        res_p_side_1(el_id) = (ydc_11_(el_id) * Va_hv + ydc_12_(el_id) * Va_lv) * sn_mva;
+                        res_p_side_2(el_id) = (ydc_22_(el_id) * Va_lv + ydc_21_(el_id) * Va_hv) * sn_mva;
                     }else{
                         res_p_side_1(el_id) = 0.;
                         res_p_side_2(el_id) = 0.;
@@ -368,7 +396,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                                       const Eigen::Ref<const RealVect> & Vm,
                                       const Eigen::Ref<const CplxVect> & V,
                                       const SolverBusIdVect & id_grid_to_solver,
-                                      const RealVect & bus_vn_kv,
+                                      const Eigen::Ref<const RealVect> & bus_vn_kv,
                                       real_type sn_mva,
                                       bool ac
                                       )
@@ -378,7 +406,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             compute_amps_after_all_set();
         }
         
-        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
+        void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const override
         {
             const auto my_size = nb();
             for(size_t el_id = 0; el_id < my_size; ++el_id){
@@ -406,10 +434,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         Eigen::Ref<const CplxVect> yac_eff_21() const {return yac_eff_21_;}
         Eigen::Ref<const CplxVect> yac_eff_22() const {return yac_eff_22_;}
 
-        Eigen::Ref<const CplxVect> ydc_11() const {return ydc_11_;}
-        Eigen::Ref<const CplxVect> ydc_12() const {return ydc_12_;}
-        Eigen::Ref<const CplxVect> ydc_21() const {return ydc_21_;}
-        Eigen::Ref<const CplxVect> ydc_22() const {return ydc_22_;}
+        Eigen::Ref<const RealVect> ydc_11() const {return ydc_11_;}
+        Eigen::Ref<const RealVect> ydc_12() const {return ydc_12_;}
+        Eigen::Ref<const RealVect> ydc_21() const {return ydc_21_;}
+        Eigen::Ref<const RealVect> ydc_22() const {return ydc_22_;}
 
         // connection status accessors (explicit, needed by external Ybus builders)
         const std::vector<bool>& get_status_side_1() const { return side_1_.get_status(); }
@@ -417,11 +445,11 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         const std::vector<bool>& get_status_global()  const { return status_global_; }
 
         // solver interface
-        virtual void fillYbus(
+        void fillYbus(
             std::vector<Eigen::Triplet<cplx_type> > & res,
             bool ac,
             const SolverBusIdVect & id_grid_to_solver,
-            real_type sn_mva) const
+            real_type /*sn_mva*/) const override
         {
             const size_t nb_els = nb();
             const std::vector<bool> & status1 = side_1_.get_status();
@@ -502,11 +530,52 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
         }
 
-        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+        // Real DC equivalent of fillYbus (DC branch): pushes the real susceptance coefficients
+        // directly into a real triplet list (no complex temporary).
+        void fillBdc(
+            std::vector<Eigen::Triplet<real_type> > & res,
+            const SolverBusIdVect & id_grid_to_solver,
+            real_type /*sn_mva*/) const override
+        {
+            const size_t nb_els = nb();
+            const std::vector<bool> & status1 = side_1_.get_status();
+            const std::vector<bool> & status2 = side_2_.get_status();
+
+            for(size_t el_id =0; el_id < nb_els; ++el_id){
+                // i don't do anything if the branch is disconnected
+                if(!status_global_[el_id]  || (!status1[el_id] && !status2[el_id])) continue;
+                // In DC disconnected on one side == disco on both sides
+                if((!status1[el_id]) || (!status2[el_id])) continue;
+
+                const GlobalBusId bus_side1_id_me = get_bus_side_1(el_id);
+                const GlobalBusId bus_side2_id_me = get_bus_side_2(el_id);
+                if(bus_side1_id_me.cast_int() == _deactivated_bus_id || bus_side2_id_me.cast_int() == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TwoSidesContainer_rxh_A::fillBdc: (GlobalID) the branch with id ";
+                    exc_ << el_id << " is connected to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
+                const SolverBusId bus_side1_solver_id = id_grid_to_solver[bus_side1_id_me.cast_int()];
+                const SolverBusId bus_side2_solver_id = id_grid_to_solver[bus_side2_id_me.cast_int()];
+                if(bus_side1_solver_id.cast_int() == _deactivated_bus_id || bus_side2_solver_id.cast_int() == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TwoSidesContainer_rxh_A::fillBdc: (SolverID) the branch with id ";
+                    exc_ << el_id << " is connected to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
+
+                res.push_back(Eigen::Triplet<real_type> (bus_side1_solver_id.cast_int(), bus_side1_solver_id.cast_int(), ydc_11_(el_id)));
+                res.push_back(Eigen::Triplet<real_type> (bus_side2_solver_id.cast_int(), bus_side2_solver_id.cast_int(), ydc_22_(el_id)));
+                res.push_back(Eigen::Triplet<real_type> (bus_side1_solver_id.cast_int(), bus_side2_solver_id.cast_int(), ydc_12_(el_id)));
+                res.push_back(Eigen::Triplet<real_type> (bus_side2_solver_id.cast_int(), bus_side1_solver_id.cast_int(), ydc_21_(el_id)));
+            }
+        }
+
+        void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
                                 const SolverBusIdVect & id_grid_to_solver,
-                                real_type sn_mva,
-                                FDPFMethod xb_or_bx) const
+                                real_type /*sn_mva*/,
+                                FDPFMethod xb_or_bx) const override
         {
 
             // For Bp
@@ -602,9 +671,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
         void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
                              const SolverBusIdVect & id_grid_to_solver,
-                             real_type sn_mva,
+                             real_type /*sn_mva*/,
                              int nb_powerline,
-                             bool transpose) const
+                             bool transpose) const override
         {
             const size_t nb_line = nb();
             const std::vector<bool> & side1_conn = side_1_.get_status();
@@ -614,7 +683,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 if(!status_global_[line_id]) continue;
                 if(!side1_conn[line_id]) continue;
                 if(!side2_conn[line_id]) continue;
-                
+
                 // get the from / to bus id
                 GlobalBusId bus_or_id_me = get_bus_side_1(line_id);
                 if(bus_or_id_me.cast_int() == _deactivated_bus_id){
@@ -666,7 +735,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         }
 
         // gridmodel utilities
-        void reconnect_connected_buses(SubstationContainer & substation) const{
+        void reconnect_connected_buses(SubstationContainer & substation) const override{
             const size_t nb_els = nb();
             const std::vector<bool>& status_side_1_ = get_status_side_1();
             const std::vector<bool>& status_side_2_ = get_status_side_2();
@@ -751,12 +820,16 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             std::vector<real_type> branch_x(x_.begin(), x_.end());
             std::vector<cplx_type> branch_h1(h_side_1_.begin(), h_side_1_.end());
             std::vector<cplx_type> branch_h2(h_side_2_.begin(), h_side_2_.end());
+            std::vector<real_type> limit_a1_ka(limit_a1_ka_.begin(), limit_a1_ka_.end());
+            std::vector<real_type> limit_a2_ka(limit_a2_ka_.begin(), limit_a2_ka_.end());
             StateRes res(
                 get_tsc_state(),
                 branch_r,
                 branch_x,
                 branch_h1,
-                branch_h2
+                branch_h2,
+                limit_a1_ka,
+                limit_a2_ka
             );
             return res;
         }
@@ -775,10 +848,25 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             check_size(branch_h1, size, "branch h (=g+j.b), side 1");
             check_size(branch_h2, size, "branch h (=g+j.b), side 2");
 
-            r_ = RealVect::Map(&branch_r[0], size);
-            x_ = RealVect::Map(&branch_x[0], size);
-            h_side_1_ = CplxVect::Map(&branch_h1[0], size);
-            h_side_2_ = CplxVect::Map(&branch_h2[0], size);
+            r_ = RealVect::Map(branch_r.data(), size);
+            x_ = RealVect::Map(branch_x.data(), size);
+            h_side_1_ = CplxVect::Map(branch_h1.data(), size);
+            h_side_2_ = CplxVect::Map(branch_h2.data(), size);
+
+            const std::vector<real_type> & limit_a1_ka = std::get<5>(my_state);
+            const std::vector<real_type> & limit_a2_ka = std::get<6>(my_state);
+            if(limit_a1_ka.size() > 0){
+                check_size(limit_a1_ka, size, "limit_a1_ka");
+                limit_a1_ka_ = RealVect::Map(limit_a1_ka.data(), size);
+            } else {
+                limit_a1_ka_ = RealVect();
+            }
+            if(limit_a2_ka.size() > 0){
+                check_size(limit_a2_ka, size, "limit_a2_ka");
+                limit_a2_ka_ = RealVect::Map(limit_a2_ka.data(), size);
+            } else {
+                limit_a2_ka_ = RealVect();
+            }
         }
 
         void reset_results_tsc_rxha(){
@@ -787,23 +875,23 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             res_a_side_2_ = RealVect(nb());  // in kA
         }
 
-        virtual bool _deactivate(int el_id, SolverControl & solver_control) override {
+        bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
             if(status_global_[el_id]){
                 // update solver control
-                solver_control.tell_recompute_ybus();
+                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
                 // but sparsity pattern do not change here (possibly one more coeff at 0.)
-                solver_control.tell_ybus_some_coeffs_zero();
-                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.ac_algo_controler().tell_ybus_some_coeffs_zero(); solver_control.dc_algo_controler().tell_ybus_some_coeffs_zero();
+                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
                 return true;
             }
             return false;
         }
-        virtual bool _reactivate(int el_id, SolverControl & solver_control) override {
+        bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
             if(!status_global_[el_id]){
                 // update solver control
-                solver_control.tell_recompute_ybus();
-                solver_control.tell_ybus_change_sparsity_pattern();  // this might change
-                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                solver_control.ac_algo_controler().tell_ybus_change_sparsity_pattern(); solver_control.dc_algo_controler().tell_ybus_change_sparsity_pattern();  // this might change
+                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
                 return true;
             }
             return false;
@@ -813,7 +901,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             return x_(el_id);
         }
 
-        virtual int fillBf_for_PTDF_id(int el_id, int nb_powerline) const{
+        virtual int fillBf_for_PTDF_id(int el_id, int /*nb_powerline*/) const{
             return el_id;
         }
 
@@ -859,10 +947,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             yac_eff_21_ = CplxVect::Zero(my_size);
             yac_eff_22_ = CplxVect::Zero(my_size);
 
-            ydc_11_ = CplxVect::Zero(my_size);
-            ydc_12_ = CplxVect::Zero(my_size);
-            ydc_21_ = CplxVect::Zero(my_size);
-            ydc_22_ = CplxVect::Zero(my_size);
+            ydc_11_ = RealVect::Zero(my_size);
+            ydc_12_ = RealVect::Zero(my_size);
+            ydc_21_ = RealVect::Zero(my_size);
+            ydc_22_ = RealVect::Zero(my_size);
             this->_update_other_model_coeffs();
             for(size_t i = 0; i < my_size; ++i)
             {
@@ -897,7 +985,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
          * This requires that status_global, status of side 1 and status of side 2 
          * are set correctly
          */
-        virtual void _update_effective_coeffs_one_el(int el_id) override {
+        void _update_effective_coeffs_one_el(int el_id) override {
             const bool s1 = side_1_.get_status(el_id);
             const bool s2 = side_2_.get_status(el_id);
             if (!status_global_[el_id] || (!s1 && !s2)) {
@@ -933,20 +1021,24 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
             // for DC
             // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
-            // except here I only care about the real part, so I remove the "1/j"
-            cplx_type tmp = 1. / cplx_type(x_(el_id), 0.);
+            // except here I only care about the real part (1/x), so I remove the "1/j"
+            const real_type tmp = 1. / x_(el_id);
             ydc_11_(el_id) = tmp;
             ydc_22_(el_id) = tmp;
             ydc_21_(el_id) = -tmp;
             ydc_12_(el_id) = -tmp;
         }
 
-    protected:        
+    protected:
         // physical properties
         RealVect r_;  // in pu
         RealVect x_;  // in pu
         CplxVect h_side_1_;  // in pu
         CplxVect h_side_2_;  // in pu
+
+        // input data (optional, empty if unset)
+        RealVect limit_a1_ka_;  // thermal (current) limit, side 1, in kA
+        RealVect limit_a2_ka_;  // thermal (current) limit, side 2, in kA
 
         //output data
         RealVect res_a_side_1_;  // in kA
@@ -964,10 +1056,11 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         CplxVect yac_eff_21_;
         CplxVect yac_eff_22_;
 
-        CplxVect ydc_11_;
-        CplxVect ydc_12_;
-        CplxVect ydc_21_;
-        CplxVect ydc_22_;
+        // DC admittance coefficients: real (DC only uses the real susceptance 1/x), see _update_model_coeffs_one_el
+        RealVect ydc_11_;
+        RealVect ydc_12_;
+        RealVect ydc_21_;
+        RealVect ydc_22_;
 
         // For FDPF
         FDPFCoeffsContainer BX_fpdf_coeffs_;

@@ -10,6 +10,7 @@
 #define BASEFDPFALGO_H
 
 #include "BaseAlgo.hpp"
+#include "linear_solvers/LinearSolverStats.hpp"
 
 namespace ls2g {
 
@@ -17,25 +18,28 @@ namespace ls2g {
 Base class for Fast Decoupled Powerflow based solver
 **/
 template<class LinearSolver, FDPFMethod XB_BX>
-class BaseFDPFAlgo: public BaseAlgo
+class BaseFDPFAlgo final: public BaseAlgo
 {
     public:
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
-        virtual ~BaseFDPFAlgo() noexcept = default;
+        ~BaseFDPFAlgo() noexcept override = default;
 
-        virtual
-        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                        CplxVect & V,
-                        const CplxVect & Sbus,
-                        Eigen::Ref<const IntVect> slack_ids,
-                        const RealVect & slack_weights,
-                        Eigen::Ref<const IntVect> pv,
-                        Eigen::Ref<const IntVect> pq,
-                        int max_iter,
-                        real_type tol
+
+        static constexpr bool IS_FDPF = true;
+        bool is_fdpf() const noexcept override { return IS_FDPF; }
+
+        bool compute_pf(const EigenRefConstCplxSpMat     & Ybus,
+                        const Eigen::Ref<const CplxVect> & V,
+                        const Eigen::Ref<const CplxVect> & Sbus,
+                        const Eigen::Ref<const IntVect>  & slack_ids,
+                        const Eigen::Ref<const RealVect> & slack_weights,
+                        const Eigen::Ref<const IntVect>  & pv,
+                        const Eigen::Ref<const IntVect>  & pq,
+                        int                              max_iter,
+                        real_type                        tol
                         ) override;  // requires a gridmodel !
 
-        virtual void reset() override
+        void reset() override
         {   
             BaseAlgo::reset();
             // solution of the problem
@@ -54,20 +58,53 @@ class BaseFDPFAlgo: public BaseAlgo
             if((reset_status != ErrorType::NoError) && (err_ != ErrorType::NotInitError)) err_ = reset_status;
         }
 
-        Eigen::SparseMatrix<real_type> debug_get_Bp_python() { return Bp_;}
-        Eigen::SparseMatrix<real_type> debug_get_Bpp_python() { return Bpp_;}
+        // bare (non-Ref) return type: these are bound directly to python
+        // (binding_solvers.cpp), and pybind11's Eigen support has no type_caster for
+        // Eigen::Ref<const SparseMatrix<...>> (only for a concrete, owning
+        // SparseMatrix -- see TODO in CHANGELOG.rst), same reason as get_J_python.
+        Eigen::SparseMatrix<real_type> debug_get_Bp_python()  const { return Bp_;}
+        Eigen::SparseMatrix<real_type> debug_get_Bpp_python() const { return Bpp_;}
 
-    protected:
-        virtual void reset_timer() override {
-            BaseAlgo::reset_timer();
+        // Two linear solvers (B' and B''): reported separately rather than merged, so
+        // no information is lost (unlike timer_initialize_ below, which historically
+        // combines both for backward compatibility with get_timers_jacobian()).
+        LinearSolverStats get_linear_solver_stats_bp() const {
+            return detail::get_stats_impl(_linear_solver_Bp, 0);
+        }
+        LinearSolverStats get_linear_solver_stats_bpp() const {
+            return detail::get_stats_impl(_linear_solver_Bpp, 0);
         }
 
-        CplxVect evaluate_mismatch(const Eigen::SparseMatrix<cplx_type> &  Ybus,
-                                   const CplxVect & V,
-                                   const CplxVect & Sbus,
-                                   size_t slack_id,  // id of the ref slack bus
+        TimerJac get_timers_jacobian() const override
+        {
+            const LinearSolverStats bp  = detail::get_stats_impl(_linear_solver_Bp, 0);
+            const LinearSolverStats bpp = detail::get_stats_impl(_linear_solver_Bpp, 0);
+            TimerJac res;
+            res.timer_Fx_         = timer_Fx_;
+            res.timer_solve_      = bp.timer_solve_ + bpp.timer_solve_;
+            // FDPF never refactorizes (B'/B'' are fixed matrices, factorized once), and
+            // historically combined analyze+factor into a single timer_initialize_ for
+            // both solvers -- preserved here for backward compatibility.
+            res.timer_initialize_ = bp.timer_initialize_ + bp.timer_factor_
+                                   + bpp.timer_initialize_ + bpp.timer_factor_;
+            res.timer_check_      = timer_check_;
+            res.timer_total_nr_   = timer_total_nr_;
+            return res;
+        }
+
+    protected:
+        void reset_timer() override {
+            BaseAlgo::reset_timer();
+            detail::reset_stats_timers_impl(_linear_solver_Bp, 0);
+            detail::reset_stats_timers_impl(_linear_solver_Bpp, 0);
+        }
+
+        CplxVect evaluate_mismatch(const EigenRefConstCplxSpMat     &  Ybus,
+                                   const Eigen::Ref<const CplxVect> & V,
+                                   const Eigen::Ref<const CplxVect> & Sbus,
+                                   size_t /*slack_id*/,  // id of the ref slack bus
                                    real_type slack_absorbed,
-                                   const RealVect & slack_weights)
+                                   const Eigen::Ref<const RealVect> & slack_weights)
         {
             // CplxVect tmp = Ybus * V;  // this is a vector
             // tmp = tmp.array().conjugate();  // i take the conjugate
@@ -75,59 +112,58 @@ class BaseFDPFAlgo: public BaseAlgo
             return mis;
         }
         
-        void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;  // defined in Solvers.cpp !
+        void fillBp_Bpp(
+            Eigen::SparseMatrix<real_type> & Bp, 
+            Eigen::SparseMatrix<real_type> & Bpp) const;  // defined in Solvers.cpp !
 
-        virtual
         void initialize() {
-            auto timer = CustTimer();
             err_ = ErrorType::NoError; // reset error message
-            // init Bp solver
-            ErrorType init_status = _linear_solver_Bp.initialize(Bp_);
+            // analyze (structure) + factorize (values) for Bp solver
+            ErrorType init_status = _linear_solver_Bp.analyze(Bp_);
+            if(init_status == ErrorType::NoError)
+                init_status = _linear_solver_Bp.factorize(Bp_);
             if(init_status != ErrorType::NoError){
                 _linear_solver_Bp.reset();
                 _linear_solver_Bpp.reset();
                 err_ = init_status;
                 need_factorize_ = true;
-                timer_initialize_ += timer.duration();
                 return;
             }
-            // init Bpp solver (if Bp is sucesfull of course)
-            init_status = _linear_solver_Bpp.initialize(Bpp_);
+            // analyze (structure) + factorize (values) for Bpp solver (if Bp succeeded)
+            init_status = _linear_solver_Bpp.analyze(Bpp_);
+            if(init_status == ErrorType::NoError)
+                init_status = _linear_solver_Bpp.factorize(Bpp_);
             if(init_status != ErrorType::NoError){
                 _linear_solver_Bp.reset();
                 _linear_solver_Bpp.reset();
                 err_ = init_status;
                 need_factorize_ = true;
-                timer_initialize_ += timer.duration();
                 return;
             }
 
             // everything went well
             need_factorize_ = false;
-            timer_initialize_ += timer.duration();
         }
 
-        virtual
         void solve(LinearSolver& linear_solver,
-                   RealVect & b){
-            auto timer = CustTimer();
+                   Eigen::Ref<RealVect> b){
             const ErrorType solve_status = linear_solver.solve(b);
             if(solve_status != ErrorType::NoError){
                 // std::cout << "solve error: " << solve_status << std::endl;
                 err_ = solve_status;
             }
-            timer_solve_ += timer.duration();
         }
 
-        bool has_converged(const Eigen::Ref<const CplxVect > & tmp_va,
-                           const Eigen::SparseMatrix<cplx_type> & Ybus,
-                           const CplxVect & Sbus,
-                           size_t slack_bus_id,
-                           real_type & slack_absorbed,
-                           const RealVect & slack_weights,
-                           const Eigen::Ref<const Eigen::VectorXi> & pvpq,
-                           const Eigen::Ref<const Eigen::VectorXi> & pq,
-                           real_type tol)
+        bool has_converged(
+            const Eigen::Ref<const CplxVect >       & tmp_va,
+            const EigenRefConstCplxSpMat            & Ybus,
+            const Eigen::Ref<const CplxVect>        & Sbus,
+            size_t                                  slack_bus_id,
+            real_type                               & slack_absorbed,
+            const Eigen::Ref<const RealVect>        & slack_weights,
+            const Eigen::Ref<const Eigen::VectorXi> & pvpq,
+            const Eigen::Ref<const Eigen::VectorXi> & pq,
+            real_type                               tol)
         {
             /**
             It is suppose to implement the python code bellow (so it updates p_, q_, v_, va_ and vm_):
@@ -171,17 +207,19 @@ class BaseFDPFAlgo: public BaseAlgo
             return _check_for_convergence(p_, q_, tol);
         }
 
-        void fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp,
-                                  const Eigen::SparseMatrix<real_type> & grid_Bpp,
-                                  const std::vector<int> & pvpq_inv,
-                                  const std::vector<int> & pq_inv,
-                                  size_t n_pvpq,
-                                  size_t n_pq);
+        void fill_sparse_matrices(
+            const EigenRefConstRealSpMat & grid_Bp,
+            const EigenRefConstRealSpMat & grid_Bpp,
+            const std::vector<int>       & pvpq_inv,
+            const std::vector<int>       & pq_inv,
+            size_t                       n_pvpq,
+            size_t                       n_pq);
 
-        void aux_fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp_Bpp,
-                                      const std::vector<int> & ind_inv,
-                                      size_t mat_dim,
-                                      Eigen::SparseMatrix<real_type> & res);
+        void aux_fill_sparse_matrices(
+            const EigenRefConstRealSpMat   & grid_Bp_Bpp,
+            const std::vector<int>         & ind_inv,
+            size_t                         mat_dim,
+            Eigen::SparseMatrix<real_type> & res);
 
     protected:
         // use 2 linear solvers
@@ -196,11 +234,6 @@ class BaseFDPFAlgo: public BaseAlgo
         RealVect p_;  // (size n_pvpq)
         RealVect q_;  // (size n_pq)
         bool need_factorize_;
-
-        // timers
-        double timer_initialize_;
-        // double timer_dSbus_;
-        // double timer_fillJ_;
 
     private:
         // no copy allowed

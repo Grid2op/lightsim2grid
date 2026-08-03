@@ -1,0 +1,50 @@
+# C++ unit tests: builds the Catch2 suite under src/tests/ (the archive layer
+# compiled straight into a small test binary -- no python, no pip, no solver
+# deps) and runs it twice: once through ctest, once under valgrind. Being a
+# plain binary makes valgrind practical here (--error-exitcode=1 turns any
+# memory error into a CI failure), which it is not over the python test suite
+# (10-50x slowdown plus CPython suppressions). Complements the Sanitizers
+# workflow, which exercises the full python extension.
+
+name: C++ unit tests
+
+on:
+  push:
+    branches:
+      # '**' and not '*': a single '*' does not match '/' in GitHub Actions
+      # globs, so topic branches like 'foo/bar' would silently never run
+      - '**'
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  cpp_unit_tests:
+    name: Catch2 + valgrind
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # eigen (transitive include of the core headers) and Catch2
+          submodules: true
+
+      - name: Install valgrind
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y valgrind
+
+      - name: Configure
+        # standalone test project: no python, pybind11 or KLU involved.
+        # Debug keeps assert() live and gives valgrind full line info.
+        run: cmake -S src/tests -B build_tests -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build_tests -j$(nproc)
+
+      - name: Run tests
+        run: ctest --test-dir build_tests --output-on-failure
+
+      - name: Run tests under valgrind
+        run: |
+          cd build_tests
+          valgrind --error-exitcode=1 --leak-check=full --track-origins=yes \
+            ./lightsim2grid_unit_tests

@@ -7,17 +7,18 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "LineContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <sstream>
 
 namespace ls2g {
 
 void LineContainer::init(
-    const RealVect & branch_r,
-    const RealVect & branch_x,
-    const CplxVect & branch_h,
-    const Eigen::VectorXi & branch_from_id,
-    const Eigen::VectorXi & branch_to_id
+    const Eigen::Ref<const RealVect> & branch_r,
+    const Eigen::Ref<const RealVect> & branch_x,
+    const Eigen::Ref<const CplxVect> & branch_h,
+    const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+    const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
 )
 {
     /**
@@ -35,12 +36,12 @@ void LineContainer::init(
     branch_to_id);
 }
 
-void LineContainer::init(const RealVect & branch_r,
-                         const RealVect & branch_x,
-                         const CplxVect & branch_h_or,
-                         const CplxVect & branch_h_ex,
-                         const Eigen::VectorXi & branch_from_id,
-                         const Eigen::VectorXi & branch_to_id
+void LineContainer::init(const Eigen::Ref<const RealVect> & branch_r,
+                         const Eigen::Ref<const RealVect> & branch_x,
+                         const Eigen::Ref<const CplxVect> & branch_h_or,
+                         const Eigen::Ref<const CplxVect> & branch_h_ex,
+                         const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                         const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                          )
 {
     /**
@@ -70,6 +71,14 @@ void LineContainer::init(const RealVect & branch_r,
     init_tsc(branch_from_id, branch_to_id, "trafo");
     _update_model_coeffs();
     reset_results();
+}
+
+void LineContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
+}
+
+LineContainer LineContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<LineContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

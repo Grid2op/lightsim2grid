@@ -15,6 +15,7 @@ Some typedef and other structures define here and used everywhere else
 #include <iostream>
 #include <complex>
 #include "Eigen/Core"
+#include "Eigen/Sparse"
 #include "TaggedIdVec.hpp"
 #include "ls2g_api.hpp"
 
@@ -46,6 +47,9 @@ using tuple5d = std::tuple<Eigen::Ref<const EigenPythonNumType>,
 using RealMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic>;
 using CplxMat = Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic> ;
 
+using EigenRefConstCplxSpMat = Eigen::Ref<const Eigen::SparseMatrix<cplx_type> >;
+using EigenRefConstRealSpMat = Eigen::Ref<const Eigen::SparseMatrix<real_type> >;
+
 // type of error in the different solvers
 enum class ErrorType {NoError,
                       SingularMatrix,
@@ -58,6 +62,15 @@ enum class ErrorType {NoError,
                       NotInitError,
                       LicenseError};
 std::ostream& operator<<(std::ostream& out, const ErrorType & error_type);
+
+// Escape (and truncate to 64 chars) a string of untrusted origin -- read from a
+// possibly-corrupted file, or supplied by a plugin -- before embedding it in an
+// exception message. pybind11 converts what() to a python str as UTF-8, so raw
+// garbage bytes would turn the intended RuntimeError into a UnicodeDecodeError;
+// control characters would also let a name inject newlines or terminal escape
+// sequences into logs. Truncation keeps a corrupted length from producing a
+// message megabytes long.
+LS2G_API std::string printable(const std::string & s);
 
 
 struct Coeff{
@@ -79,10 +92,10 @@ struct Coeff{
 #define VERSION_MINOR "-1"
 #endif
 
-class SolverControl final
+class AlgoControl final
 {
     public:
-        SolverControl() noexcept: 
+        AlgoControl() noexcept:
             change_dimension_(true),
             pv_changed_(true),
             pq_changed_(true),
@@ -97,7 +110,7 @@ class SolverControl final
             one_el_change_bus_(true)
             {};
 
-        ~SolverControl() noexcept = default; 
+        ~AlgoControl() noexcept = default;
 
         void tell_all_changed(){
             change_dimension_ = true;
@@ -129,7 +142,7 @@ class SolverControl final
             one_el_change_bus_ = false;
         }
 
-        // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes) 
+        // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes)
         void tell_dimension_changed(){change_dimension_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
         // some pv generators are now pq or the opposite
         void tell_pv_changed(){pv_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
@@ -149,7 +162,7 @@ class SolverControl final
         void tell_v_changed(){v_changed_ = true;}
         // at least one generator has changed its slack participation
         void tell_slack_weight_changed(){slack_weight_changed_ = true;}
-        // tells that some coeff of ybus might have been set to 0. 
+        // tells that some coeff of ybus might have been set to 0.
         // (and ybus compressed again, so these coeffs are really completely hidden)
         // might need to trigger some recomputation of some solvers (eg NR based ones)
         void tell_ybus_some_coeffs_zero(){ybus_some_coeffs_zero_ = true;}
@@ -181,6 +194,36 @@ class SolverControl final
         bool ybus_some_coeffs_zero_;  // tells that some coeff of ybus might have been set to 0. (and ybus compressed again, so these coeffs are really completely hidden)
         bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
         bool one_el_change_bus_;  // whether one element has change of bus (or being reconnected / disconnected)
+};
+
+/**
+Change-tracking control for both solver families (AC and DC).
+
+A grid modification (eg. disconnecting a line, changing a setpoint) invalidates the cached
+matrices of *both* the AC and the DC solver. `DualAlgoControl` simply holds one independent
+`AlgoControl` per family so each solver keeps its own change tracking (the AC solver consumes
+and resets `ac_algo_controler()` on an AC powerflow, the DC solver consumes and resets
+`dc_algo_controler()` on a DC powerflow, without clobbering each other).
+
+It is a plain composition (no inheritance, no virtual dispatch): callers forward a change to
+both families explicitly, eg.
+    dual.ac_algo_controler().tell_v_changed();
+    dual.dc_algo_controler().tell_v_changed();
+**/
+class DualAlgoControl final
+{
+    public:
+        DualAlgoControl() noexcept = default;
+        ~DualAlgoControl() noexcept = default;
+
+        AlgoControl & ac_algo_controler() noexcept {return ac_algo_controler_;}
+        AlgoControl & dc_algo_controler() noexcept {return dc_algo_controler_;}
+        const AlgoControl & ac_algo_controler() const noexcept {return ac_algo_controler_;}
+        const AlgoControl & dc_algo_controler() const noexcept {return dc_algo_controler_;}
+
+    private:
+        AlgoControl ac_algo_controler_;  // change tracking consumed by the AC solver
+        AlgoControl dc_algo_controler_;  // change tracking consumed by the DC solver
 };
 
 template<int U>

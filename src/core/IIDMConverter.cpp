@@ -19,8 +19,8 @@
 
 namespace ls2g {
 
-GridModel GridModelFromIIDM::get_grid_model() const {
-    GridModel res;
+LSGrid GridModelFromIIDM::get_grid_model() const {
+    LSGrid res;
 
     const auto & bus_view = init_bus(res);
     res.set_init_vm_pu(1.04);  // by default i will initialize the voltage magnitudes at 1.04 pu
@@ -30,7 +30,7 @@ GridModel GridModelFromIIDM::get_grid_model() const {
     return res;
 }
 
-powsybl::iidm::network::BusView GridModelFromIIDM::init_bus(GridModel & grid_model) const{
+powsybl::iidm::network::BusView GridModelFromIIDM::init_bus(LSGrid & grid_model) const{
     // init the buses
 
     // TODO I need to change that... Trafo are within a substation
@@ -50,7 +50,7 @@ powsybl::iidm::network::BusView GridModelFromIIDM::init_bus(GridModel & grid_mod
     return bus_view;
 }
 
-void GridModelFromIIDM::init_powerlines(GridModel & grid_model,
+void GridModelFromIIDM::init_powerlines(LSGrid & grid_model,
                                         const powsybl::iidm::network::BusView & bus_view) const{
     const int nb_line = network_.getLineCount();
     RealVect branch_r = RealVect(nb_line);
@@ -103,7 +103,7 @@ void GridModelFromIIDM::init_powerlines(GridModel & grid_model,
                                );
 }
 
-void GridModelFromIIDM::init_trafos(GridModel & grid_model,
+void GridModelFromIIDM::init_trafos(LSGrid & grid_model,
                                     const powsybl::iidm::network::BusView & bus_view) const{
     if(network_.getThreeWindingsTransformerCount() > 0){
         std::cout << "WARNING: there are some 3 windings transformer on the grid, they will be discarded by GridModelFromIIDM" << std::endl;

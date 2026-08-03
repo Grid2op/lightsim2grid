@@ -62,10 +62,12 @@ class OneSideContainer_ForBranch : public OneSideContainer
     // regular implementation
     public:
         OneSideContainer_ForBranch() noexcept = default;
-        explicit OneSideContainer_ForBranch(bool is_trafo) noexcept{};
-        virtual ~OneSideContainer_ForBranch() noexcept = default;
+        explicit OneSideContainer_ForBranch(bool /*is_trafo*/) noexcept{};
+        ~OneSideContainer_ForBranch() noexcept override = default;
 
         // public generic API
+
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
 
         using StateRes = std::tuple<
             OneSideContainer::StateRes
@@ -96,63 +98,63 @@ class OneSideContainer_ForBranch : public OneSideContainer
         }
         
         void init_osc_forB(
-            const RealVect & els_p,
-            const RealVect & els_q,
-            const Eigen::VectorXi & els_bus_id,
-            const std::string & name_el
+            const Eigen::Ref<const RealVect> & /*els_p*/,
+            const Eigen::Ref<const RealVect> & /*els_q*/,
+            const Eigen::Ref<const Eigen::VectorXi> & els_bus_id,
+            const std::string & /*name_el*/
             )  // osc: one side element
         {
             init_osc(els_bus_id);
         }
 
     protected:
-        virtual void _reset_results() override {
+        void _reset_results() override {
             // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos)
             // elements
         };
-        virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
-                                      const Eigen::Ref<const RealVect> & Vm,
-                                      const Eigen::Ref<const CplxVect> & V,
-                                      const SolverBusIdVect & id_grid_to_solver,
-                                      const RealVect & bus_vn_kv,
-                                      real_type sn_mva,
-                                      bool ac) override {
+        void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+                                      const Eigen::Ref<const RealVect> & /*Vm*/,
+                                      const Eigen::Ref<const CplxVect> & /*V*/,
+                                      const SolverBusIdVect & /*id_grid_to_solver*/,
+                                      const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
+                                      real_type /*sn_mva*/,
+                                      bool /*ac*/) override {
 
             // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos)
             // elements
             };
 
-        virtual bool _deactivate(int el_id, SolverControl & solver_control) override {
+        bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
             if(status_[el_id]){
-                solver_control.tell_ybus_some_coeffs_zero();
-                solver_control.tell_recompute_ybus();
-                solver_control.tell_recompute_sbus();  // only for trafo in DC
-                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.ac_algo_controler().tell_ybus_some_coeffs_zero(); solver_control.dc_algo_controler().tell_ybus_some_coeffs_zero();
+                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                // solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // only for trafo in DC
+                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
                 return true;
             }
             return false;
         };
-        virtual bool _reactivate(int el_id, SolverControl & solver_control) override {
+        bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
             if(!status_[el_id]){
-                solver_control.tell_recompute_ybus();
-                solver_control.tell_recompute_sbus();  // only for trafo in DC
-                solver_control.tell_ybus_change_sparsity_pattern();
-                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                // solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // only for trafo in DC
+                solver_control.ac_algo_controler().tell_ybus_change_sparsity_pattern(); solver_control.dc_algo_controler().tell_ybus_change_sparsity_pattern();
+                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
                 return true;
             }
             return false;
         };
-        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) override {
+        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) override {
             const GridModelBusId & bus_me_id = bus_id_(el_id);
             
             if(bus_me_id != new_bus_id) {
                 // TODO speed: here the dimension changed only if nothing was connected before
-                solver_control.tell_one_el_changed_bus();  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
+                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
                 
                 // TODO speed: sparsity pattern might not change if something is already there  
-                solver_control.tell_ybus_change_sparsity_pattern();
-                solver_control.tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
-                solver_control.tell_recompute_sbus();  // only for trafo in DC
+                solver_control.ac_algo_controler().tell_ybus_change_sparsity_pattern(); solver_control.dc_algo_controler().tell_ybus_change_sparsity_pattern();
+                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
+                // solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // only for trafo in DC
                 return true;
             }
             return false;

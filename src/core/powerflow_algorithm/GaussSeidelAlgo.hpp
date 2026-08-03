@@ -18,34 +18,35 @@ class LS2G_API GaussSeidelAlgo : public BaseAlgo
     public:
         GaussSeidelAlgo() noexcept :BaseAlgo(true) {};
 
-        virtual ~GaussSeidelAlgo() noexcept = default;
+        ~GaussSeidelAlgo() noexcept override = default;
 
         // todo  can be factorized
-        virtual Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const override {
+        Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const override {
             throw std::runtime_error("get_J: There is no jacobian in the Gauss Seidel method");
         }
 
         // todo change the name!
-        virtual
-        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                        CplxVect & V,
-                        const CplxVect & Sbus,
-                        Eigen::Ref<const IntVect> slack_ids,
-                        const RealVect & slack_weights,  // currently unused
-                        Eigen::Ref<const IntVect> pv,
-                        Eigen::Ref<const IntVect> pq,
-                        int max_iter,
-                        real_type tol
-                        ) override;
+        bool compute_pf(
+            const EigenRefConstCplxSpMat     & Ybus,
+            const Eigen::Ref<const CplxVect> & V,
+            const Eigen::Ref<const CplxVect> & Sbus,
+            const Eigen::Ref<const IntVect>  & slack_ids,
+            const Eigen::Ref<const RealVect> & slack_weights,  // currently unused
+            const Eigen::Ref<const IntVect>  & pv,
+            const Eigen::Ref<const IntVect>  & pq,
+            int                              max_iter,
+            real_type                        tol
+        ) override;
 
     protected:
 
         virtual
-        void one_iter(CplxVect & tmp_Sbus,
-                      const Eigen::SparseMatrix<cplx_type> & Ybus,
-                      const Eigen::VectorXi & pv,
-                      const Eigen::VectorXi & pq
-                      );
+        void one_iter(
+            Eigen::Ref<CplxVect>            tmp_Sbus,
+            const EigenRefConstCplxSpMat    & Ybus,
+            const Eigen::Ref<const IntVect> & pv,
+            const Eigen::Ref<const IntVect> & pq
+        );
 
     private:
         // no copy allowed

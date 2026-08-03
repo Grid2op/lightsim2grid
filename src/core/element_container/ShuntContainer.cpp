@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "ShuntContainer.hpp"
+#include "BinaryArchive.hpp"
 
 #include <iostream>
 
@@ -63,11 +64,11 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
-void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
                                 const SolverBusIdVect & id_grid_to_solver,
                                 real_type sn_mva,
-                                FDPFMethod xb_or_bx) const
+                                FDPFMethod /*xb_or_bx*/) const
 {
     const int nb_shunt = nb();
     real_type tmp;
@@ -101,7 +102,7 @@ void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
     }
 }
 
-void ShuntContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const  // in DC i need that
+void ShuntContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const  // in DC i need that
 {
     if(ac) return;  // in AC I do not do that
     // std::cout << " ok i use this function" << std::endl;
@@ -123,17 +124,17 @@ void ShuntContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_t
         }
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver.cast_int() == _deactivated_bus_id){
-            throw std::runtime_error("GridModel::fillSbus: A shunt is connected to a disconnected bus.");
+            throw std::runtime_error("LSGrid::fillSbus: A shunt is connected to a disconnected bus.");
         }
         Sbus.coeffRef(bus_id_solver.cast_int()) -= target_p_mw_(shunt_id);  // TODO : check the - here, it is suspicious !
     }
 }
 
-void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
-                                      const Eigen::Ref<const RealVect> & Vm,
+void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+                                      const Eigen::Ref<const RealVect> & /*Vm*/,
                                       const Eigen::Ref<const CplxVect> & V,
                                       const SolverBusIdVect & id_grid_to_solver,
-                                      const RealVect & bus_vn_kv,
+                                      const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
                                       real_type sn_mva,
                                       bool ac)
 {
@@ -165,6 +166,14 @@ void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
         if(ac) res_q_(shunt_id) = std::imag(s) * sn_mva;
         else res_q_(shunt_id) = my_zero_;
     }
+}
+
+void ShuntContainer::save_binary(const std::string & path, bool atomic) const {
+    ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
+}
+
+ShuntContainer ShuntContainer::load_binary(const std::string & path) {
+    return ls2g::load_binary_generic<ShuntContainer>(path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR);
 }
 
 } // namespace ls2g

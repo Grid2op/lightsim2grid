@@ -4,9 +4,7 @@ Benchmarks (solvers)
 ======================
 
 In this paragraph we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
-The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
-
-TODO DOC in progress
+The code to run these benchmarks are given with this package in the ``benchmarks`` folder.
 
 If you are interested in other type of benchmark, let us know !
 
@@ -74,10 +72,11 @@ All of them has been run on a computer with a the following characteristics:
 	- compiled_march_native: False 
 	- compiled_o3_optim: True 
 
-To run the benchmark `cd` in the [benchmark](./benchmarks) folder and install the dependencies
+To run the benchmark, ``cd`` into the ``benchmarks`` folder and install the dependencies
 (we suppose here that you have already installed lightsim2grid):
 
 .. code-block:: bash
+
   pip install -r req_benchmarks.txt
 
 This will install the required packages to run the benchmark smoothly (most notably `grid2op` and `numba`)
@@ -111,27 +110,27 @@ and powerflow algorithm (*eg* "Newton Raphson", or "Fast Decoupled")):
   solver to compute the powerflows.
 - **GS synch** (Gauss Seidel synch version): the grid2op backend based on lightsim2grid that uses a
   variant of the "Gauss Seidel" method to compute the powerflows.
-- **NR single (SLU)** (Newton Raphson -single slack- with SparseLU): the grid2op backend based on lightsim2grid that uses the 
+- **NR single (SLU)** (Newton Raphson -single slack- with SparseLU): the grid2op backend based on lightsim2grid that uses the
   "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
-  Eigen c++ library (available on all platform). This solver supports distributed slack bus.
-- **NR (SLU)** (Newton Raphson -distributed slack- with SparseLU): same as above but this solver does not support distributed slack bus and
+  Eigen c++ library (available on all platform). This solver does not support distributed slack bus and
   can thus be slightly faster.
+- **NR (SLU)** (Newton Raphson -distributed slack- with SparseLU): same as above but this solver supports distributed slack bus.
 - **NR (KLU)** (Newton Raphson -distributed slack- with KLU): he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "KLU" from the `SuiteSparse` C package. This solver supports distributed slack bus.
 - **NR single (KLU)** (Newton Raphson -single slack- with KLU): same as above but this solver does not support distributed slack bus and
   can thus be slightly faster.
-- **NR (NICSLU *)** (Newton Raphson -distributed slack- with NICSLU): he grid2op backend based on lightsim2grid that uses the 
+- **NR (NICSLU\*)** (Newton Raphson -distributed slack- with NICSLU): he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "NICSLU". [**NB** NICSLU is a free software but not open source, in order to use
   it with lightsim2grid, you need to install lightsim2grid from source for such solver]
-- **NR single (NICSLU *)** (Newton Raphson -single slack- with NICSLU): same as above but this solver does not support distributed slack bus and
+- **NR single (NICSLU\*)** (Newton Raphson -single slack- with NICSLU): same as above but this solver does not support distributed slack bus and
   can thus be slightly faster.
-- **NR (CKTSO *)** (Newton Raphson -distributed slack- with CKTSO): the grid2op backend based on lightsim2grid that uses the 
+- **NR (CKTSO\*)** (Newton Raphson -distributed slack- with CKTSO): the grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "CKTSO". [**NB** CKTSO is a free software but not open source, in order to use
   it with lightsim2grid, you need to install lightsim2grid from source for such solver]
-- **NR single (CKTSO *)** (Newton Raphson -single slack- with CKTSO): same as above but this solver does not support distributed slack bus and
+- **NR single (CKTSO\*)** (Newton Raphson -single slack- with CKTSO): same as above but this solver does not support distributed slack bus and
   can thus be slightly faster.
 - **FDPF XB (SLU)** (Fast Decoupled Powerflow, XB variant - with SparseLU linear solver): It is the lightsim2grid 
   implementation of the Fast Decoupled powerflow (in its "XB" variant) that uses the native linear solver in 
@@ -143,13 +142,13 @@ and powerflow algorithm (*eg* "Newton Raphson", or "Fast Decoupled")):
   of SparseLU
 - **FDPF BX (KLU)** (Fast Decoupled Powerflow, BX variant - with KLU linear solver) same as `FDPF BX (SLU)` but using KLU instead 
   of SparseLU
-- **FDPF XB (NICSLU *)** (Fast Decoupled Powerflow, XB variant - with NICSLU linear solver) same as `FDPF XB (SLU)` but using NICSLU instead 
+- **FDPF XB (NICSLU\*)** (Fast Decoupled Powerflow, XB variant - with NICSLU linear solver) same as `FDPF XB (SLU)` but using NICSLU instead 
   of SparseLU
-- **FDPF BX (NICSLU *)** (Fast Decoupled Powerflow, BX variant - with NICSLU linear solver) same as `FDPF BX (SLU)` but using NICSLU instead 
+- **FDPF BX (NICSLU\*)** (Fast Decoupled Powerflow, BX variant - with NICSLU linear solver) same as `FDPF BX (SLU)` but using NICSLU instead 
   of SparseLU
-- **FDPF XB (CKTSO *)** (Fast Decoupled Powerflow, XB variant - with CKTSO linear solver) same as `FDPF XB (SLU)` but using CKTSO instead 
+- **FDPF XB (CKTSO\*)** (Fast Decoupled Powerflow, XB variant - with CKTSO linear solver) same as `FDPF XB (SLU)` but using CKTSO instead 
   of SparseLU
-- **FDPF BX (CKTSO *)** (Fast Decoupled Powerflow, BX variant - with CKTSO linear solver) same as `FDPF BX (SLU)` but using CKTSO instead 
+- **FDPF BX (CKTSO\*)** (Fast Decoupled Powerflow, BX variant - with CKTSO linear solver) same as `FDPF BX (SLU)` but using CKTSO instead 
   of SparseLU
 
 **NB** all backends above (except pandapower) are implemented in lightsim2grid.
@@ -211,18 +210,18 @@ NR single (SLU)                       2680                                 0.094
 NR (SLU)                              2670                                 0.0941                      0.0344
 NR single (KLU)                       2930                                 0.0696                      0.0121
 NR (KLU)                              2920                                 0.0689                      0.0112
-NR single (NICSLU *)                  2930                                 0.0696                      0.0121
-NR (NICSLU *)                         2930                                 0.0691                      0.0111
-NR single (CKTSO *)                   2940                                 0.0689                      0.0116
-NR (CKTSO *)                          2930                                 0.0685                      0.0107
+NR single (NICSLU\*)                  2930                                 0.0696                      0.0121
+NR (NICSLU\*)                         2930                                 0.0691                      0.0111
+NR single (CKTSO\*)                   2940                                 0.0689                      0.0116
+NR (CKTSO\*)                          2930                                 0.0685                      0.0107
 FDPF XB (SLU)                         2900                                 0.073                       0.0154
 FDPF BX (SLU)                         2840                                 0.0802                      0.0225
 FDPF XB (KLU)                         2940                                 0.0696                      0.0124
 FDPF BX (KLU)                         2890                                 0.0754                      0.0183
-FDPF XB (NICSLU *)                    2930                                 0.0696                      0.0124
-FDPF BX (NICSLU *)                    2930                                 0.0744                      0.0183
-FDPF XB (CKTSO *)                     2930                                 0.0696                      0.0124
-FDPF BX (CKTSO *)                     2900                                 0.0751                      0.0182
+FDPF XB (NICSLU\*)                    2930                                 0.0696                      0.0124
+FDPF BX (NICSLU\*)                    2930                                 0.0744                      0.0183
+FDPF XB (CKTSO\*)                     2930                                 0.0696                      0.0124
+FDPF BX (CKTSO\*)                     2900                                 0.0751                      0.0182
 ====================  ======================  ===================================  ==========================
 
 From a grid2op perspective, lightsim2grid allows to compute up to ~2900 steps each second (column `grid2op speed`, rows `NR XXX`) 
@@ -268,18 +267,18 @@ NR single (SLU)                       1190                                   0.5
 NR (SLU)                              1170                                   0.512                      0.429
 NR single (KLU)                       2110                                   0.158                      0.0834
 NR (KLU)                              2160                                   0.147                      0.0712
-NR single (NICSLU *)                  2120                                   0.155                      0.0796
-NR (NICSLU *)                         2180                                   0.143                      0.0678
-NR single (CKTSO *)                   2130                                   0.153                      0.0778
-NR (CKTSO *)                          2170                                   0.141                      0.0658
+NR single (NICSLU\*)                  2120                                   0.155                      0.0796
+NR (NICSLU\*)                         2180                                   0.143                      0.0678
+NR single (CKTSO\*)                   2130                                   0.153                      0.0778
+NR (CKTSO\*)                          2170                                   0.141                      0.0658
 FDPF XB (SLU)                         1980                                   0.193                      0.12
 FDPF BX (SLU)                         1920                                   0.208                      0.135
 FDPF XB (KLU)                         2060                                   0.172                      0.0994
 FDPF BX (KLU)                         2030                                   0.183                      0.11
-FDPF XB (NICSLU *)                    2080                                   0.171                      0.0984
-FDPF BX (NICSLU *)                    2030                                   0.183                      0.111
-FDPF XB (CKTSO *)                     2070                                   0.171                      0.0984
-FDPF BX (CKTSO *)                     2020                                   0.183                      0.111
+FDPF XB (NICSLU\*)                    2080                                   0.171                      0.0984
+FDPF BX (NICSLU\*)                    2030                                   0.183                      0.111
+FDPF XB (CKTSO\*)                     2070                                   0.171                      0.0984
+FDPF BX (CKTSO\*)                     2020                                   0.183                      0.111
 =====================  ======================  ===================================  ==========================
 
 For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU) is **~21** time faster than
@@ -318,7 +317,7 @@ in the grid2op extra layer or in the grid2op backend in this case (~85% of the c
     the `pandapower_backend._grid["_ppc"]["et"]` (the "estimated time" of the pandapower newton raphson computation)
 
     For the lightsim backend, the "solver powerflow time" corresponds to the average of the results of
-    `gridmodel.get_computation_time()` function that, for each powerflow, returns the time spent in the solver
+    `LSGrid.get_computation_time()` function that, for each powerflow, returns the time spent in the solver
     uniquely (time inside the `basesolver.compute_pf()` function. In particular it do not count the time
     to initialize the vector `V` with the DC approximation nor the time taken to convert the lightsim2grid external modeling 
     to something that can be processed by the powerflow algorithm). This is a behaviour similar to the one of pandapower.
@@ -376,18 +375,18 @@ NR single (SLU)                     0.000122        7.63e-06          7.63e-06
 NR (SLU)                            0.000122        7.63e-06          7.63e-06
 NR single (KLU)                     0.000122        7.63e-06          7.63e-06
 NR (KLU)                            0.000122        7.63e-06          7.63e-06
-NR single (NICSLU *)                0.000122        7.63e-06          7.63e-06
-NR (NICSLU *)                       0.000122        7.63e-06          7.63e-06
-NR single (CKTSO *)                 0.000122        7.63e-06          7.63e-06
-NR (CKTSO *)                        0.000122        7.63e-06          7.63e-06
+NR single (NICSLU\*)                0.000122        7.63e-06          7.63e-06
+NR (NICSLU\*)                       0.000122        7.63e-06          7.63e-06
+NR single (CKTSO\*)                 0.000122        7.63e-06          7.63e-06
+NR (CKTSO\*)                        0.000122        7.63e-06          7.63e-06
 FDPF XB (SLU)                       0.000122        7.63e-06          7.63e-06
 FDPF BX (SLU)                       0.000122        7.63e-06          7.63e-06
 FDPF XB (KLU)                       0.000122        7.63e-06          7.63e-06
 FDPF BX (KLU)                       0.000122        7.63e-06          7.63e-06
-FDPF XB (NICSLU *)                  0.000122        7.63e-06          7.63e-06
-FDPF BX (NICSLU *)                  0.000122        7.63e-06          7.63e-06
-FDPF XB (CKTSO *)                   0.000122        7.63e-06          7.63e-06
-FDPF BX (CKTSO *)                   0.000122        7.63e-06          7.63e-06
+FDPF XB (NICSLU\*)                  0.000122        7.63e-06          7.63e-06
+FDPF BX (NICSLU\*)                  0.000122        7.63e-06          7.63e-06
+FDPF XB (CKTSO\*)                   0.000122        7.63e-06          7.63e-06
+FDPF BX (CKTSO\*)                   0.000122        7.63e-06          7.63e-06
 ============================  ==============  ==============  ================
 
 .. note::
@@ -408,18 +407,18 @@ NR single (SLU)                           6.1e-05        0                 1.91e
 NR (SLU)                                  6.1e-05        0                 1.91e-06
 NR single (KLU)                           6.1e-05        0                 1.91e-06
 NR (KLU)                                  6.1e-05        0                 1.91e-06
-NR single (NICSLU *)                      6.1e-05        0                 1.91e-06
-NR (NICSLU *)                             6.1e-05        0                 1.91e-06
-NR single (CKTSO *)                       6.1e-05        0                 1.91e-06
-NR (CKTSO *)                              6.1e-05        0                 1.91e-06
+NR single (NICSLU\*)                      6.1e-05        0                 1.91e-06
+NR (NICSLU\*)                             6.1e-05        0                 1.91e-06
+NR single (CKTSO\*)                       6.1e-05        0                 1.91e-06
+NR (CKTSO\*)                              6.1e-05        0                 1.91e-06
 FDPF XB (SLU)                             6.1e-05        1.91e-06          1.91e-06
 FDPF BX (SLU)                             6.1e-05        0                 3.81e-06
 FDPF XB (KLU)                             6.1e-05        1.91e-06          1.91e-06
 FDPF BX (KLU)                             6.1e-05        0                 3.81e-06
-FDPF XB (NICSLU *)                        6.1e-05        1.91e-06          1.91e-06
-FDPF BX (NICSLU *)                        6.1e-05        0                 3.81e-06
-FDPF XB (CKTSO *)                         6.1e-05        1.91e-06          1.91e-06
-FDPF BX (CKTSO *)                         6.1e-05        0                 3.81e-06
+FDPF XB (NICSLU\*)                        6.1e-05        1.91e-06          1.91e-06
+FDPF BX (NICSLU\*)                        6.1e-05        0                 3.81e-06
+FDPF XB (CKTSO\*)                         6.1e-05        1.91e-06          1.91e-06
+FDPF BX (CKTSO\*)                         6.1e-05        0                 3.81e-06
 =================================  ==============  ==============  ================
 
 As we can see on all the tables above, the difference when using lightsim and pandapower is rather
@@ -444,7 +443,7 @@ The results can be found in:
 
 .. toctree::
   :maxdepth: 1
-  :caption: For a laptop with a i7 of 2015 wth a frequency of 2.70 GHz
+  :caption: For a laptop with a i7 of 2015 with a frequency of 2.70 GHz
 
   benchmark_solver/ubuntu_2004_dell/ls0.8.1_glop1.10.1
   benchmark_solver/ubuntu_2004_dell/ls0.8.0_glop1.10.0
@@ -452,7 +451,7 @@ The results can be found in:
 
 .. toctree::
   :maxdepth: 1
-  :caption: For a laptop with a i7 of 2014 wth a frequency of 3.0 GHz
+  :caption: For a laptop with a i7 of 2014 with a frequency of 3.0 GHz
 
   benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.1
   benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.1_py311
@@ -460,7 +459,7 @@ The results can be found in:
 
 .. toctree::
   :maxdepth: 1
-  :caption: For a laptop with a ryzen 7 of 2020 wth a frequency of 4.2 GHz
+  :caption: For a laptop with a ryzen 7 of 2020 with a frequency of 4.2 GHz
 
   benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.7_py38
   benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.6_py38

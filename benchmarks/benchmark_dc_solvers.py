@@ -35,13 +35,8 @@ from grid2op.Parameters import Parameters
 from grid2op.dtypes import dt_float
 
 import lightsim2grid
-from lightsim2grid import solver
-from lightsim2grid import LightSimBackend, TimeSerie
-try:
-    from lightsim2grid import ContingencyAnalysis
-except ImportError:
-    from lightsim2grid import SecurityAnalysis as ContingencyAnalysis
-    
+from lightsim2grid.algorithm import AlgorithmType
+from lightsim2grid import LightSimBackend, TimeSerie, ContingencyAnalysis
 from utils_benchmark import print_res, run_env, str2bool, get_env_name_displayed, print_configuration
 TABULATE_AVAIL = False
 try:
@@ -52,6 +47,7 @@ except ImportError:
     
 try:
     from pypowsybl2grid import PyPowSyBlBackend
+    PyPowSyBlBackend.shunts_data_available = False
     PYPOW_ERROR = None
 except ImportError as exc_:
     PYPOW_ERROR = exc_
@@ -62,20 +58,20 @@ ENV_NAME = "rte_case14_realistic"
 DONT_SAVE = "__DONT_SAVE"
 NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nicslu.lic")
 
-solver_names = {lightsim2grid.SolverType.DC: "DC",
-                lightsim2grid.SolverType.KLUDC: "DC (KLU)",
-                lightsim2grid.SolverType.NICSLUDC: "DC (NICSLU *)",
-                lightsim2grid.SolverType.CKTSODC: "DC (CKTSO *)"
+solver_names = {AlgorithmType.DC_SparseLU: "DC (SparseLU)",
+                AlgorithmType.DC_KLU: "DC (KLU)",
+                AlgorithmType.DC_NICSLU: "DC (NICSLU\\*)",
+                AlgorithmType.DC_CKTSO: "DC (CKTSO\\*)"
                 }
 solver_gs = {}
 solver_fdpf = {}
 res_times = {}
 
 order_solver_print = [
-    lightsim2grid.SolverType.DC,
-    lightsim2grid.SolverType.KLUDC,
-    lightsim2grid.SolverType.NICSLUDC,
-    lightsim2grid.SolverType.CKTSODC,
+    AlgorithmType.DC_SparseLU,
+    AlgorithmType.DC_KLU,
+    AlgorithmType.DC_NICSLU,
+    AlgorithmType.DC_CKTSO,
     
 ]
 
@@ -101,8 +97,9 @@ def main(max_ts,
                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
             if pypow_error is None:
                 try:
+                    bk = PyPowSyBlBackend()
                     env_pypow = make(env_name_input, param=param, test=test,
-                                    backend=PyPowSyBlBackend(),
+                                    backend=bk,
                                     data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
                 except Grid2OpException as exc_:
                     pypow_error = exc_
@@ -118,45 +115,47 @@ def main(max_ts,
                                 grid_path=env_name_input)
             if pypow_error is None:
                 try:
+                    bk = PyPowSyBlBackend()
                     env_pypow = make("blank", param=param, test=True,
                                     data_feeding_kwargs={"gridvalueClass": ChangeNothing},
                                     grid_path=env_name_input,
-                                    backend=PyPowSyBlBackend())
+                                    backend=bk)
                 except Grid2OpException as exc_:
                     pypow_error = exc_
             _, env_name_input = os.path.split(env_name_input)
-
     agent = DoNothingAgent(action_space=env_pp.action_space)
     if no_pp is False:
         print("Start using Pandapower")
-        nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0)
+        nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0,
+                                                                is_dc=True)
         pp_comp_time = env_pp.backend.comp_time
         pp_time_pf = env_pp._time_powerflow
     
     if pypow_error is None:
         # also benchmark pypowsybl backend
-        nb_ts_pypow, time_pypow, aor_pypow, gen_p_pypow, gen_q_pypow = run_env(env_pypow, max_ts, agent, chron_id=0, env_seed=0)
+        nb_ts_pypow, time_pypow, aor_pypow, gen_p_pypow, gen_q_pypow = run_env(env_pypow, max_ts, agent, chron_id=0, env_seed=0,
+                                                                               is_dc=True)
         pypow_comp_time = env_pypow.backend.comp_time
         pypow_time_pf = env_pypow._time_powerflow
         if hasattr(env_pypow, "_time_step"):
             # for oldest grid2op version where this was not stored
             time_pypow = env_pypow._time_step
-            
-    wst = True  # print extra info in the run_env function
-    solver_types = env_lightsim.backend.available_solvers
     
+    wst = True  # print extra info in the run_env function
+    solver_types = env_lightsim.backend.available_default_algorithms
+
     for solver_type in solver_types:
         if solver_type not in solver_names:
             continue
         print(f"Start using {solver_type}")
-        env_lightsim.backend.set_solver_type(solver_type)
+        env_lightsim.backend.set_algo_type(solver_type)
         if solver_type in solver_gs:
             # gauss seidel sovler => more iterations
             env_lightsim.backend.set_solver_max_iter(10000)
-            if lightsim2grid.SolverType.GaussSeidel == solver_type and no_gs:
+            if AlgorithmType.GaussSeidel == solver_type and no_gs:
                 # I don't study the gauss seidel solver
                 continue
-            elif lightsim2grid.SolverType.GaussSeidelSynch  == solver_type and no_gs_synch:
+            elif AlgorithmType.GaussSeidelSynch  == solver_type and no_gs_synch:
                 # I don't study the gauss seidel synch solver
                 continue
         elif solver_type in solver_fdpf:
@@ -166,13 +165,13 @@ def main(max_ts,
             # NR based solver => less iterations
             env_lightsim.backend.set_solver_max_iter(10)
         nb_ts_gs, time_gs, aor_gs, gen_p_gs, gen_q_gs = run_env(env_lightsim, max_ts, agent, chron_id=0,
-                                                                with_type_solver=wst, env_seed=0)
+                                                                with_type_solver=wst, env_seed=0, is_dc=True)
         gs_comp_time = env_lightsim.backend.comp_time
         gs_time_pf = env_lightsim._time_powerflow
         res_times[solver_type] = (solver_names[solver_type],
                                   nb_ts_gs, time_gs, aor_gs, gen_p_gs,
                                   gen_q_gs, gs_comp_time, gs_time_pf)
-
+    # sys.exit(0)
     env_name = get_env_name_displayed(env_name_input)
 
     real_env_ls = env_lightsim
@@ -186,7 +185,7 @@ def main(max_ts,
     prod_p = 1. * real_env_ls.chronics_handler.real_data.data.prod_p[:nb_ts_gs]
     time_serie = TimeSerie(real_env_ls)
     computer_ts = time_serie.computer
-    computer_ts.change_solver(lightsim2grid.SolverType.KLUDC)
+    computer_ts.change_algorithm(AlgorithmType.DC_KLU)
     v_init = real_env_ls.backend.V
     status = computer_ts.compute_Vs(prod_p,
                                     np.zeros((nb_ts_gs, 0), dtype=dt_float),
@@ -224,8 +223,9 @@ def main(max_ts,
     # Perform a securtiy analysis (up to 1000 contingencies)
     real_env_ls.reset()
     sa = ContingencyAnalysis(real_env_ls)
+    print("BEGINNING SA")
     computer_sa = sa.computer
-    computer_sa.change_solver(lightsim2grid.SolverType.KLUDC)
+    computer_sa.change_algorithm(AlgorithmType.DC_KLU)
     for i in range(real_env_ls.n_line):
         sa.add_single_contingency(i)
         if i >= 1000:
@@ -275,10 +275,10 @@ def main(max_ts,
                     f"{nb_ts_gs/time_gs:.2e}",
                     f"{1000.*gs_time_pf/nb_ts_gs:.2e}",
                     f"{1000.*gs_comp_time/nb_ts_gs:.2e}"]) 
-    tab.append(("time serie **", None, ts_time, ts_algo_time))
-    tab.append(("PTDF **", None, time_only_ptdf + time_flow_ptdf, time_flow_ptdf))
-    tab.append(("contingency analysis ***", None, sa_time, sa_algo_time))
-    tab.append(("LODF ***", None, time_only_lodf + time_flow_lodf, time_flow_lodf))
+    tab.append(("time serie \\*\\*", None, ts_time, ts_algo_time))
+    tab.append(("PTDF \\*\\*", None, time_only_ptdf + time_flow_ptdf, time_flow_ptdf))
+    tab.append(("contingency analysis \\*\\*\\*", None, sa_time, sa_algo_time))
+    tab.append(("LODF \\*\\*\\*", None, time_only_lodf + time_flow_lodf, time_flow_lodf))
 
     if TABULATE_AVAIL:
         res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")

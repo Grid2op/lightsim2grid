@@ -7,10 +7,142 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "BaseAlgo.hpp"
-#include "GridModel.hpp"  // needs to be included here because of the forward declaration
+#include "LSGrid.hpp"  // needs to be included here because of the forward declaration
+
+#include <cmath>    // std::isfinite
+#include <sstream>
 
 namespace ls2g {
 
+namespace {
+
+// bounds + duplicate / overlap check for one of slack_ids / pv / pq.
+// `marks` holds, for each bus, 0 (unseen) or the 1-based index into
+// `array_names` of the array that already claimed it.
+void check_bus_id_array(const std::string & caller,
+                        const Eigen::Ref<const IntVect> & ids,
+                        Eigen::Index n,
+                        std::vector<char> & marks,
+                        int array_code,
+                        const char * const array_names[])
+{
+    const char * name = array_names[array_code - 1];
+    for (Eigen::Index i = 0; i < ids.size(); ++i) {
+        const int id = ids(i);
+        if (id < 0 || id >= n) {
+            std::ostringstream exc_;
+            exc_ << caller << ": " << name << "[" << i << "] = " << id
+                 << " is out of bounds: bus ids must be in [0, " << n
+                 << ") (n = size of Ybus).";
+            throw std::out_of_range(exc_.str());
+        }
+        if (marks[static_cast<std::size_t>(id)] != 0) {
+            const char * first = array_names[marks[static_cast<std::size_t>(id)] - 1];
+            std::ostringstream exc_;
+            exc_ << caller << ": bus id " << id << " appears both in " << first
+                 << " and in " << name
+                 << " (or twice in the same one): slack_ids, pv and pq must be disjoint.";
+            throw std::runtime_error(exc_.str());
+        }
+        marks[static_cast<std::size_t>(id)] = static_cast<char>(array_code);
+    }
+}
+
+}  // anonymous namespace
+
+void BaseAlgo::check_pf_inputs(
+    const std::string & caller,
+    Eigen::Index ybus_rows, 
+    Eigen::Index ybus_cols,
+    Eigen::Index v_size,
+    Eigen::Index sbus_size,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq)
+{
+    if (ybus_rows != ybus_cols) {
+        std::ostringstream exc_;
+        exc_ << caller << ": the Ybus matrix must be square. Currently: ("
+             << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    const Eigen::Index n = ybus_rows;
+    if (sbus_size != n) {
+        std::ostringstream exc_;
+        exc_ << caller << ": Size of the Sbus (or Pbus) vector should be the same as the size of Ybus. Currently: "
+             << "Sbus (" << sbus_size << ") and Ybus (" << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    if (v_size != n) {
+        std::ostringstream exc_;
+        exc_ << caller << ": Size of V (init voltages) should be the same as the size of Ybus. Currently: "
+             << "V (" << v_size << ") and Ybus (" << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    if (slack_weights.size() != n) {
+        std::ostringstream exc_;
+        exc_ << caller << ": Size of slack_weights should be the same as the size of Ybus "
+             << "(one weight per bus, indexed by bus id). Currently: slack_weights ("
+             << slack_weights.size() << ") and Ybus (" << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    if (slack_ids.size() == 0) {
+        std::ostringstream exc_;
+        exc_ << caller << ": at least one slack bus is required (slack_ids is empty).";
+        throw std::runtime_error(exc_.str());
+    }
+    static const char * const array_names[] = {"slack_ids", "pv", "pq"};
+    std::vector<char> marks(static_cast<std::size_t>(n), 0);
+    check_bus_id_array(caller, slack_ids, n, marks, 1, array_names);
+    check_bus_id_array(caller, pv, n, marks, 2, array_names);
+    check_bus_id_array(caller, pq, n, marks, 3, array_names);
+}
+
+void BaseAlgo::check_iter_tol(const std::string & caller, int max_iter, real_type tol)
+{
+    if (max_iter < 0) {
+        std::ostringstream exc_;
+        exc_ << caller << ": max_iter must be a non-negative integer, got " << max_iter << ".";
+        throw std::runtime_error(exc_.str());
+    }
+    if (!std::isfinite(tol) || !(tol > 0.)) {
+        std::ostringstream exc_;
+        exc_ << caller << ": tol must be a finite, strictly positive number, got " << tol << ".";
+        throw std::runtime_error(exc_.str());
+    }
+}
+
+bool BaseAlgo::compute_pf_with_input_validation(
+    const Eigen::SparseMatrix<cplx_type> & Ybus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq,
+    int max_iter,
+    real_type tol)
+{
+    check_pf_inputs("compute_pf", Ybus.rows(), Ybus.cols(), V.size(), Sbus.size(),
+                    slack_ids, slack_weights, pv, pq);
+    check_iter_tol("compute_pf", max_iter, tol);
+    return compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
+}
+
+bool BaseAlgo::compute_pf_dc_with_input_validation(
+    const Eigen::SparseMatrix<real_type> & Bbus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const RealVect> & Pbus,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq)
+{
+    check_pf_inputs("compute_pf_dc", Bbus.rows(), Bbus.cols(), V.size(), Pbus.size(),
+                    slack_ids, slack_weights, pv, pq);
+    return compute_pf_dc(Bbus, V, Pbus, slack_ids, slack_weights, pv, pq);
+}
 
 void BaseAlgo::reset(){
     // reset timers
@@ -24,16 +156,17 @@ void BaseAlgo::reset(){
     nr_iter_ = 0;  // number of iteration performs by the algorithm
     err_ = ErrorType::NotInitError; //error message:
 
-    _solver_control = SolverControl();
+    _solver_control = AlgoControl();
     _solver_control.tell_all_changed();
 }
 
 
-RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
-                                const CplxVect & V,
-                                const CplxVect & Sbus,
-                                Eigen::Ref<const IntVect> pv,
-                                Eigen::Ref<const IntVect> pq)
+RealVect BaseAlgo::_evaluate_Fx(
+    const EigenRefConstCplxSpMat     & Ybus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const IntVect>  & pv,
+    const Eigen::Ref<const IntVect>  & pq)
 {
     auto timer = CustTimer();
     auto npv = pv.size();
@@ -55,14 +188,15 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     return res;
 }
 
-RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
-                                  const CplxVect & V,
-                                  const CplxVect & Sbus,
-                                  size_t slack_id,  // id of the ref slack bus
-                                  real_type slack_absorbed,
-                                  const RealVect & slack_weights,
-                                  Eigen::Ref<const IntVect> pv,
-                                  Eigen::Ref<const IntVect> pq)
+RealVect BaseAlgo::_evaluate_Fx(
+    const EigenRefConstCplxSpMat &  Ybus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    size_t slack_id,  // id of the ref slack bus
+    real_type slack_absorbed,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq)
 {
     /**
     Remember, when this function is used:
@@ -110,29 +244,30 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
 
     // build and fill the result
     RealVect res(npv + 2 * npq + 1); // slack adds one component hence the '+1' also bellow)
+    res(0) = real_(slack_id);  // slack bus is first variable
     res.segment(1, npv) = real_(pv);
     res.segment(npv + 1, npq) = real_(pq);
     res.segment(npv + npq + 1, npq) = imag_(pq);
-    res(0) = real_(slack_id);  // slack bus is first variable
     timer_Fx_ += timer.duration();
     return res;
     
 }
 
-bool BaseAlgo::_check_for_convergence(const RealVect & F,
-                                      real_type tol)
+bool BaseAlgo::_check_for_convergence(
+    const Eigen::Ref<const RealVect> & F,
+    real_type tol)
 {
     auto timer = CustTimer();
     const auto norm_inf = F.lpNorm<Eigen::Infinity>();
-    // std::cout << "\t\tnorm_inf: " << norm_inf << std::endl;
     bool res =  norm_inf  < tol;
     timer_check_ += timer.duration();
     return res;
 }
 
-bool BaseAlgo::_check_for_convergence(const RealVect & p,
-                                      const RealVect & q,
-                                      real_type tol)
+bool BaseAlgo::_check_for_convergence(
+    const Eigen::Ref<const RealVect> & p,
+    const Eigen::Ref<const RealVect> & q,
+    real_type tol)
 {
     auto timer = CustTimer();
     const auto norm_inf_p = p.lpNorm<Eigen::Infinity>();
@@ -142,9 +277,10 @@ bool BaseAlgo::_check_for_convergence(const RealVect & p,
     return res;
 }
 
-Eigen::VectorXi BaseAlgo::extract_slack_bus_id(Eigen::Ref<const IntVect> pv,
-                                                 Eigen::Ref<const IntVect> pq,
-                                                 unsigned int nb_bus)
+Eigen::VectorXi BaseAlgo::extract_slack_bus_id(
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq,
+    unsigned int nb_bus)
 {
     // pv: list of index of pv nodes
     // pq: list of index of pq nodes
@@ -167,7 +303,7 @@ Eigen::VectorXi BaseAlgo::extract_slack_bus_id(Eigen::Ref<const IntVect> pv,
     {
         if(tmp[k])
         {
-            if((i_res >= nb_slacks)){
+            if((i_res >= static_cast<size_t>(nb_slacks))){
                 // TODO DEBUG MODE
                 throw std::runtime_error("BaseAlgo::extract_slack_bus_id: too many slack found. Maybe a bus is both PV and PQ ?");
             }
@@ -175,7 +311,7 @@ Eigen::VectorXi BaseAlgo::extract_slack_bus_id(Eigen::Ref<const IntVect> pv,
             ++i_res;
         }
     }
-    if(res.size() != i_res){
+    if(static_cast<size_t>(res.size()) != i_res){
         // TODO DEBUG MODE
         throw std::runtime_error("BaseAlgo::extract_slack_bus_id: Some slacks are not found in your grid.");
     }
@@ -185,12 +321,12 @@ Eigen::VectorXi BaseAlgo::extract_slack_bus_id(Eigen::Ref<const IntVect> pv,
 
 void BaseAlgo::get_Bf(Eigen::SparseMatrix<real_type> & Bf) const {
     if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
-    gridmodel_ptr_->fillBf_for_PTDF(Bf);
+    lsgrid_ptr_->fillBf_for_PTDF(Bf);
 }
 
 void BaseAlgo::get_Bf_transpose(Eigen::SparseMatrix<real_type> & Bf_T) const {
     if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
-    gridmodel_ptr_->fillBf_for_PTDF(Bf_T, true);
+    lsgrid_ptr_->fillBf_for_PTDF(Bf_T, true);
 }
 
 } // namespace ls2g

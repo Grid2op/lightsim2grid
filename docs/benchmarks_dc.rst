@@ -6,8 +6,6 @@ Benchmarks (dc solvers)
 In this paragraph we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings when
 performing DC powerflow.
 
-TODO DOC in progress
-
 If you are interested in other type of benchmark, let us know !
 
 .. note::
@@ -22,7 +20,7 @@ TL;DR
 .. danger::
     If you want to perform only DC powerflow (a linear model as long as the topology is not modified)
     then you should probably avoid doing some powerflow directly, but rather use linear algebra and the PTDF and LODF
-    matrices. They can be obtained with lightsim2grid and allow to perform much more powerflow.
+    matrices (see :ref:`ptdf-lodf-section` for what they are and how to get them with lightsim2grid).
 
 When using grid2op, for these small environment, the difference in computation time for an AC or a DC powerflow 
 is neglectible. Because the Newton-Raphson algorithm has been much more optimized, it is even faster to run
@@ -37,8 +35,8 @@ Lightsim2grid is still much faster than pandapower (*eg* for case 118, 2000 step
 pandapower) and pypowsybl (*eg* for case 118: 650 steps per second for pypowsybl and 2000 for lightsim2grid).
 
 Last, but not least, if you want to perform DC computations and knows in advance the generations and loads
-and the topology of the grid, then you probably should use the PTDF and LODF matrices. With them, 
-using a matrix multiplication (and numpy) you can run (on one CPU core) multiple millions of 
+and the topology of the grid, then you probably should use the PTDF and LODF matrices (:ref:`ptdf-lodf-section`).
+With them, using a matrix multiplication (and numpy) you can run (on one CPU core) multiple millions of
 DC powerflows each second.
 
 Machine used on the benchmarks
@@ -70,10 +68,11 @@ All of them has been run on a computer with a the following characteristics:
 Command to replicate the benchmark on your machine
 ----------------------------------------------------
 
-To run the benchmark `cd` in the [benchmark](./benchmarks) folder and install the dependencies
+To run the benchmark, ``cd`` into the ``benchmarks`` folder and install the dependencies
 (we suppose here that you have already installed lightsim2grid):
 
 .. code-block:: bash
+
   pip install -r req_benchmarks.txt
 
 This will install the required packages to run the benchmark smoothly (most notably `grid2op` and `numba`)
@@ -90,35 +89,35 @@ Results
 
 For an environment based on the IEEE case 14:
 
-========================  ======================  ========================================  ==========================
-case14_sandbox              grid2op speed (it/s)    grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
-========================  ======================  ========================================  ==========================
-PP DC                                        139                               5.89                        0.856
-DC                                          2720                               0.0544                      0.00188
-DC (KLU)                                    2730                               0.0536                      0.00132
-DC (NICSLU *)                               2740                               0.0536                      0.00138
-DC (CKTSO *)                                2750                               0.0536                      0.00138
-time serie **                                 NA                               0.00115696                  0.000367301
-PTDF **                                       NA                               0.000147484                 0.000146649
-contingency analysis ***                      NA                               0.00297345                  0.00066195
-LODF ***                                      NA                               0.00031005                  0.0002787
-========================  ======================  ========================================  ==========================
+===========================  ======================  ========================================  ==========================
+case14_sandbox               grid2op speed (it/s)      grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
+===========================  ======================  ========================================  ==========================
+PP DC                        139                                                  5.89                        0.856
+DC                           2720                                                 0.0544                      0.00188
+DC (KLU)                     2730                                                 0.0536                      0.00132
+DC (NICSLU\*)                2740                                                 0.0536                      0.00138
+DC (CKTSO\*)                 2750                                                 0.0536                      0.00138
+time serie \*\*              NA                                                   0.00115696                  0.000367301
+PTDF \*\*                    NA                                                   0.000147484                 0.000146649
+contingency analysis \*\*\*  NA                                                   0.00297345                  0.00066195
+LODF \*\*\*                  NA                                                   0.00031005                  0.0002787
+===========================  ======================  ========================================  ==========================
 
 And for an environment based on the IEEE case 118:
 
-========================  ======================  ========================================  ==========================
-neurips_2020_track2         grid2op speed (it/s)    grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
-========================  ======================  ========================================  ==========================
-PP DC                                        129                               6.41                        1.04
-DC                                          2360                               0.066                       0.00555
-DC (KLU)                                    2370                               0.0641                      0.00357
-DC (NICSLU *)                               2380                               0.0636                      0.00362
-DC (CKTSO *)                                2370                               0.0644                      0.00371
-time serie **                                 NA                               0.00990968                  0.00184535
-PTDF **                                       NA                               0.000863303                 0.000846032
-contingency analysis ***                      NA                               0.00821236                  0.00327901
-LODF ***                                      NA                               0.000400629                 0.000280521
-========================  ======================  ========================================  ==========================
+===========================  ======================  ========================================  ==========================
+neurips_2020_track2          grid2op speed (it/s)      grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
+===========================  ======================  ========================================  ==========================
+PP DC                        129                                                  6.41                        1.04
+DC                           2360                                                 0.066                       0.00555
+DC (KLU)                     2370                                                 0.0641                      0.00357
+DC (NICSLU\*)                2380                                                 0.0636                      0.00362
+DC (CKTSO\*)                 2370                                                 0.0644                      0.00371
+time serie \*\*              NA                                                   0.00990968                  0.00184535
+PTDF \*\*                    NA                                                   0.000863303                 0.000846032
+contingency analysis \*\*\*  NA                                                   0.00821236                  0.00327901
+LODF \*\*\*                  NA                                                   0.000400629                 0.000280521
+===========================  ======================  ========================================  ==========================
 
 (see the section "Comments" below for details and especially the meaning of \*, \*\* and \*\*\*)
 

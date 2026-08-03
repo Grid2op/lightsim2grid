@@ -54,13 +54,17 @@ This is a work in progress at the moment
    :maxdepth: 2
    :caption: Technical Documentation
 
-   gridmodel
+   network
    install_from_source
    lightsimbackend
    solvers
+   algorithm_names
    time_series
    security_analysis
+   cpp_library
    solver_plugin
+   binary_serialization
+   security
 
 
 Indices and tables

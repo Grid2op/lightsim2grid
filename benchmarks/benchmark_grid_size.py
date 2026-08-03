@@ -16,13 +16,8 @@ import matplotlib.pyplot as plt
 from grid2op import make, Parameters
 from grid2op.Chronics import FromNPY
 from grid2op.Backend import PandaPowerBackend
-from lightsim2grid import LightSimBackend, TimeSerie
-try:
-    from lightsim2grid import ContingencyAnalysis
-except ImportError:
-    from lightsim2grid import SecurityAnalysis as ContingencyAnalysis
-    
-from lightsim2grid.solver import SolverType
+from lightsim2grid import LightSimBackend, TimeSerie, ContingencyAnalysis
+from lightsim2grid.algorithm import AlgorithmType
 
 from tqdm import tqdm
 import os
@@ -237,7 +232,7 @@ def run_grid2op_env(env_lightsim, case, reset_solver,
         
 if __name__ == "__main__":
     prng = np.random.default_rng(42)
-    ls_solver_type = SolverType.KLU
+    ls_solver_type = AlgorithmType.NR_KLU
     case_names_displayed = [get_env_name_displayed(el) for el in case_names]
     solver_preproc_solver_time = []
     g2op_speeds = []
@@ -327,7 +322,7 @@ if __name__ == "__main__":
                                         load_q,
                                         gen_p_g2op,
                                         sgen_p)
-        env_lightsim.backend.set_solver_type(ls_solver_type)
+        env_lightsim.backend.set_algo_type(ls_solver_type)
         # Perform the computation using grid2op
         reset_solver = True  # non default
         nb_step_reset = run_grid2op_env(env_lightsim, case, reset_solver,
@@ -355,14 +350,14 @@ if __name__ == "__main__":
         computer = time_serie.computer
         computer_ts = time_serie.computer
         v_init = env_lightsim.backend.V
-        status = computer.compute_Vs(gen_p,
+        status = computer.compute_Vs(gen_p_g2op,
                                      sgen_p,
                                      load_p,
                                      load_q,
                                      v_init,
                                      env_lightsim.backend.max_it,
                                      env_lightsim.backend.tol)
-        time_serie._TimeSerie__computed = True
+        time_serie._TimeSerie__computed = True # type: ignore
         a_or = time_serie.compute_A()
         assert status or computer.nb_solved() == nb_step_pp, f"some powerflow diverge for Time Series for {case_name}: {computer.nb_solved()} "
 
@@ -520,27 +515,27 @@ if __name__ == "__main__":
         plt.plot(g2op_sizes, solver_preproc_solver_time, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Time taken (s)")
-        plt.title(f"Time to compute {g2op_sizes[0]} powerflows using Grid2Op.step (dc pf [init] + ac pf)")
+        plt.title("Time to compute {g2op_sizes[0]} powerflows using Grid2Op.step (dc pf [init] + ac pf)")
         plt.show()
 
         plt.plot(g2op_sizes, g2op_speeds, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Speed (pf / s)")
-        plt.title(f"Computation speed using Grid2Op.step (dc pf [init] + ac pf)")
+        plt.title("Computation speed using Grid2Op.step (dc pf [init] + ac pf)")
         plt.yscale("log")
         plt.show()
 
         plt.plot(g2op_sizes, ls_solver_time, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Speed (solver time)")
-        plt.title(f"Computation speed for solving the powerflow only")
+        plt.title("Computation speed for solving the powerflow only")
         plt.yscale("log")
         plt.show()
 
         plt.plot(g2op_sizes, ls_gridmodel_time, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Speed (solver time)")
-        plt.title(f"Computation speed for solving the powerflow only")
+        plt.title("Computation speed for solving the powerflow only")
         plt.yscale("log")
         plt.show()
         
@@ -554,7 +549,7 @@ if __name__ == "__main__":
         plt.plot(ts_sizes, ts_speeds, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Speed (pf / s)")
-        plt.title(f"Computation speed for TimeSeries")
+        plt.title("Computation speed for TimeSeries")
         plt.yscale("log")
         plt.show()
         
@@ -562,12 +557,12 @@ if __name__ == "__main__":
         plt.plot(sa_sizes, [1000. / el for el in sa_speeds], linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Time taken per contingency (ms)")
-        plt.title(f"Average time per contingencies")
+        plt.title("Average time per contingencies")
         plt.show()
 
         plt.plot(sa_sizes, sa_speeds, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Speed (contingency / s)")
-        plt.title(f"Computation speed for Security Analysis")
+        plt.title("Computation speed for Security Analysis")
         plt.yscale("log")
         plt.show()

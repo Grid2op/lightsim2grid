@@ -30,80 +30,115 @@ class LS2G_API GenericContainer : public BaseConstants
 {
     public:
 
-        virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
-                              bool ac,
-                              const SolverBusIdVect & id_grid_to_solver,
-                              real_type sn_mva) const {
+        virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & /*res*/,
+                              bool /*ac*/,
+                              const SolverBusIdVect & /*id_grid_to_solver*/,
+                              real_type /*sn_mva*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                               };
 
-        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                                std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const SolverBusIdVect & id_grid_to_solver,
-                                real_type sn_mva,
-                                FDPFMethod xb_or_bx) const {
+        // Real-valued DC admittance matrix (Bbus) contribution. DC only needs `Bbus . theta = Pbus`
+        // (all real), so this fills real triplets directly (no complex temporary).
+        // Only "branches" (lines, transformers) contribute to the DC Bbus.
+        virtual void fillBdc(std::vector<Eigen::Triplet<real_type> > & /*res*/,
+                             const SolverBusIdVect & /*id_grid_to_solver*/,
+                             real_type /*sn_mva*/) const {
+                                // nothing to do by default
+                                // is overriden mainly for "branches" (lines, transformers etc.)
+                             };
+
+        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
+                                std::vector<Eigen::Triplet<real_type> > & /*Bpp*/,
+                                const SolverBusIdVect & /*id_grid_to_solver*/,
+                                real_type /*sn_mva*/,
+                                FDPFMethod /*xb_or_bx*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
                                 
-        virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
-                                     const SolverBusIdVect & id_grid_to_solver,
-                                     real_type sn_mva,
-                                     int nb_line,
-                                     bool transpose) const {
+        virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & /*Bf*/,
+                                     const SolverBusIdVect & /*id_grid_to_solver*/,
+                                     real_type /*sn_mva*/,
+                                     int /*nb_line*/,
+                                     bool /*transpose*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
 
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const {
+        virtual void fillSbus(Eigen::Ref<CplxVect> /*Sbus*/, const SolverBusIdVect & /*id_grid_to_solver*/, bool /*ac*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "one side elements" (loads, generators etc.)
                                 };
-        virtual void fillpv(std::vector<int>& bus_pv,
-                            std::vector<bool> & has_bus_been_added,
-                            const SolverBusIdVect& slack_bus_id_solver,
-                            const SolverBusIdVect & id_grid_to_solver) const {
+        virtual void fillpv(std::vector<int>& /*bus_pv*/,
+                            std::vector<bool> & /*has_bus_been_added*/,
+                            const SolverBusIdVect& /*slack_bus_id_solver*/,
+                            const SolverBusIdVect & /*id_grid_to_solver*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "generators"
                             };
         
-        virtual void get_q(std::vector<real_type>& q_by_bus) {
+        virtual void get_q(std::vector<real_type>& /*q_by_bus*/) {
                                 // nothing to do by default
                                 // is overriden mainly for "generators"
                                 };
         
-        virtual void set_p_slack(const RealVect& node_mismatch, const SolverBusIdVect & id_grid_to_solver) {
+        virtual void set_p_slack(const Eigen::Ref<const RealVect>& /*node_mismatch*/, const SolverBusIdVect & /*id_grid_to_solver*/) {
                                 // nothing to do by default
                                 // is overriden mainly for "generators"
                                 };
     
         static const int _deactivated_bus_id;
-        virtual void reconnect_connected_buses(SubstationContainer & substation) const {
+        virtual void reconnect_connected_buses(SubstationContainer & /*substation*/) const {
                                 // nothing to do by default
                                 };
 
         /**computes the total amount of power for each bus (for generator only)**/
-        virtual void gen_p_per_bus(std::vector<real_type> & res) const {
+        virtual void gen_p_per_bus(std::vector<real_type> & /*res*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "one side elements" (loads, generators etc.)
                                 };
-        virtual void nb_line_end(std::vector<int> & res) const {
+        virtual void nb_line_end(std::vector<int> & /*res*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
-        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const {
+        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & /*res*/) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) {
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & /*busbar_in_main_component*/) {
                                 // nothing to do by default
+                                };
+
+        /**
+        Whole-grid semantic validation (see LSGrid::check_grid).
+
+        Checks that every index this container carries (bus ids, substation ids,
+        position in the topology vector, slack references...) is in range for a
+        grid with `nb_bus` buses and `nb_sub` substations. Throws std::out_of_range
+        on a bad index and std::runtime_error on a structural error.
+
+        `all_pos_topo_vect` is an accumulator: each container appends the
+        `pos_topo_vect` values it actually carries (the field is optional and may
+        be empty), so LSGrid can afterwards check they form a valid permutation.
+
+        The default does nothing; element containers override it.
+        **/
+        virtual void check_valid(int /*nb_bus*/,
+                                 int /*nb_sub*/,
+                                 const SubstationContainer & /*substations*/,
+                                 std::vector<int> & /*all_pos_topo_vect*/) const {
+                                // nothing to validate by default
                                 };
 
         void set_names(const std::vector<std::string> & names){
             names_ = names;
         }
-        
+        // empty if set_names() was never called on this container
+        const std::vector<std::string> & get_names() const {
+            return names_;
+        }
+
         /**"define" the destructor for compliance with clang (otherwise lots of warnings)**/
         GenericContainer() noexcept = default;
         virtual ~GenericContainer() noexcept = default;
@@ -142,7 +177,7 @@ class LS2G_API GenericContainer : public BaseConstants
         static void _check_in_range(IntType el_id, const Cont & cont, FunName fun_name="")
         {
             // TODO debug mode: only in debug mode
-            if(el_id >= cont.size())
+            if(el_id >= static_cast<IntType>(cont.size()))
             {
                 // TODO DEBUG MODE: only check in debug mode
                 std::ostringstream exc_;
@@ -178,14 +213,17 @@ class LS2G_API GenericContainer : public BaseConstants
             int el_id,
             const GridModelBusId & new_gridmodel_bus_id,
             GlobalBusIdVect &  el_bus_ids,
-            SolverControl & solver_control,
+            DualAlgoControl & solver_control,
             int nb_bus) const;
         GridModelBusId _get_bus(int el_id, const std::vector<bool> & status_, const GlobalBusIdVect & bus_id_) const;
 
         /**
         compute the amps from the p, the q and the v (v should NOT be pair unit)
         **/
-        void _get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v) const;
+        void _get_amps(Eigen::Ref<RealVect> a,
+                       const Eigen::Ref<const RealVect> & p,
+                       const Eigen::Ref<const RealVect> & q,
+                       const Eigen::Ref<const RealVect> & v) const;
 
         /**
         convert v from pu to v in kv (and assign it to the right element...)
@@ -196,8 +234,8 @@ class LS2G_API GenericContainer : public BaseConstants
                            int nb_element,
                            const GlobalBusIdVect & bus_me_id,
                            const SolverBusIdVect & id_grid_to_solver,
-                           const RealVect & bus_vn_kv,
-                           RealVect & v) const;
+                           const Eigen::Ref<const RealVect> & bus_vn_kv,
+                           Eigen::Ref<RealVect> v) const;
 
 
         /**
@@ -209,8 +247,8 @@ class LS2G_API GenericContainer : public BaseConstants
                            int nb_element,
                            const GlobalBusIdVect & bus_me_id,
                            const SolverBusIdVect & id_grid_to_solver,
-                           const RealVect & bus_vn_kv,
-                           RealVect & v) const;
+                           const Eigen::Ref<const RealVect> & bus_vn_kv,
+                           Eigen::Ref<RealVect> v) const;
 };
 
 

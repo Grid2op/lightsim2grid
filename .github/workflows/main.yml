@@ -14,14 +14,14 @@ env:
   # from being created, which in turn prevents the PyPI release workflow
   # (publish.yml) from running at all.
   #
-  #   manylinux x86_64  (cp38–cp314 × 1 container)            →  7
-  #   windows   x64     (cp38–cp314 × AMD64)                   →  7
-  #   macos     x86_64  (cp38–cp314, native on macos-15-intel) →  7
+  #   manylinux x86_64  (cp39–cp314 × 1 container)             →  6
+  #   windows   x64     (cp39–cp314 × AMD64)                   →  6
+  #   macos     x86_64  (cp39–cp314, native on macos-15-intel) →  6
   #   macos     arm64   (cp310–cp314, native on macos-14)      →  5
-  #   exotic    macos arm64  via cibuildwheel (cp38, cp39)     →  2
+  #   exotic    macos arm64  via cibuildwheel (cp39)           →  1
   #   exotic    windows ARM64 via cibuildwheel (cp39–cp314)    →  6
-  #                                                total:        34
-  EXPECTED_WHEELS: 34
+  #                                                total:        30
+  EXPECTED_WHEELS: 30
   EXPECTED_SDIST: 1
 
 jobs:
@@ -39,11 +39,11 @@ jobs:
           #   abi: cp37m,
           #   version: '3.7',
           # }
-          - {
-            name: cp38,
-            abi: cp38,
-            version: '3.8',
-          }
+          # - {
+          #   name: cp38,
+          #   abi: cp38,
+          #   version: '3.8',
+          # }
           - {
             name: cp39,
             abi: cp39,
@@ -145,12 +145,12 @@ jobs:
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
 
       - name: Check package can be imported (bare install, numpy < 2)
         if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313' && matrix.python.name != 'cp314'
         run: |
-          python3 -m pip install "numpy<2"
+          python3 -m pip install "numpy<2" scipy
           cd tmp_for_import_checking
           python3 -c "import lightsim2grid"
           python3 -c "from lightsim2grid import *"
@@ -158,7 +158,7 @@ jobs:
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -181,7 +181,7 @@ jobs:
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
           python3 -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
-          python3 -c "from lightsim2grid.gridmodel import init_from_pandapower"
+          python3 -c "from lightsim2grid.network import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
         if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
@@ -213,10 +213,10 @@ jobs:
           #   name: cp37,
           #   version: '3.7',
           # }
-          - {
-            name: cp38,
-            version: '3.8',
-          }
+          # - {
+          #   name: cp38,
+          #   version: '3.8',
+          # }
           - {
             name: cp39,
             version: '3.9',
@@ -295,12 +295,12 @@ jobs:
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
 
       - name: Check package can be imported (bare install, numpy < 2)
         if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313' && matrix.python.name != 'cp314'
         run: |
-          python3 -m pip install "numpy<2"
+          python3 -m pip install "numpy<2" scipy
           cd tmp_for_import_checking
           python3 -c "import lightsim2grid"
           python3 -c "from lightsim2grid import *"
@@ -308,7 +308,7 @@ jobs:
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
           python3 -m pip install --upgrade numpy
 
       - name: Check LightSimBackend can be imported (with grid2op)
@@ -322,7 +322,7 @@ jobs:
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
           python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
-          python -c "from lightsim2grid.gridmodel import init_from_pandapower"
+          python -c "from lightsim2grid.network import init_from_pandapower"
           
       - name: Check LightSimBackend can be used to create env
         if: matrix.python.name != 'cp314' # pandapower does not support 3.14, so grid2op does not so I cannot test that for 3.14
@@ -351,10 +351,10 @@ jobs:
           #   name: cp37,
           #   version: '3.7',
           # }
-          - {
-            name: cp38,
-            version: '3.8',
-          }
+          # - {
+          #   name: cp38,
+          #   version: '3.8',
+          # }
           - {
             name: cp39,
             version: '3.9',
@@ -447,7 +447,7 @@ jobs:
           python -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python -c "from lightsim2grid.gridmodel import GridModel"
+          python -c "from lightsim2grid.network import LSGrid"
 
       - name: Check package can be imported (bare install)
         if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38'
@@ -459,7 +459,7 @@ jobs:
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -486,7 +486,7 @@ jobs:
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
           python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
-          python -c "from lightsim2grid.gridmodel import init_from_pandapower"
+          python -c "from lightsim2grid.network import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
         if: matrix.python.name != 'cp314' || matrix.runner.arch != 'x86_64'
@@ -526,10 +526,10 @@ jobs:
           #   cibuildwheel: linux
           # }
         python:
-          - {
-            name: cp38,
-            version: '3.8',
-          }
+          # - {
+          #   name: cp38,
+          #   version: '3.8',
+          # }
           - {
             name: cp39,
             version: '3.9',
@@ -613,7 +613,7 @@ jobs:
             python -c "from lightsim2grid.timeSerie import TimeSeriesCPP, TimeSerie" &&
             python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP, ContingencyAnalysis" &&
             python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP, SecurityAnalysis" &&
-            python -c "from lightsim2grid.gridmodel import GridModel, init_from_pandapower" &&
+            python -c "from lightsim2grid.network import LSGrid, init_from_pandapower" &&
             python -c "from lightsim2grid import LightSimBackend" &&
             python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
       - name: Upload wheel
@@ -651,7 +651,7 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           ls _install/lib/*lightsim2grid_core* || ls _install/lib64/*lightsim2grid_core*
-          ls _install/include/lightsim2grid/GridModel.hpp
+          ls _install/include/lightsim2grid/LSGrid.hpp
           ls _install/lib/cmake/lightsim2grid_core/lightsim2grid_coreConfig.cmake
 
       - name: Verify installed layout (windows)
@@ -659,7 +659,7 @@ jobs:
         shell: bash
         run: |
           ls _install/lib/lightsim2grid_core* || ls _install/bin/lightsim2grid_core*
-          ls _install/include/lightsim2grid/GridModel.hpp
+          ls _install/include/lightsim2grid/LSGrid.hpp
           ls _install/lib/cmake/lightsim2grid_core/lightsim2grid_coreConfig.cmake
 
       - name: Build minimal consumer via find_package
@@ -675,8 +675,8 @@ jobs:
           target_link_libraries(consumer PRIVATE lightsim2grid::core)
           EOF
           cat > _test_consumer/consumer.cpp << 'EOF'
-          #include <SolverRegistry.hpp>
-          int main() { auto& r = ls2g::SolverRegistry::instance(); return r.available_solvers().empty() ? 1 : 0; }
+          #include <AlgorithmRegistry.hpp>
+          int main() { auto& r = ls2g::AlgorithmRegistry::instance(); return r.available_algorithm_names().empty() ? 1 : 0; }
           EOF
           cmake -S _test_consumer -B _build_consumer \
                 -DCMAKE_PREFIX_PATH="$(pwd)/_install" \
@@ -715,13 +715,27 @@ jobs:
         run: |
           mkdir -p _tmp_cmake_dir
           LS2G_CMAKE=$(cd _tmp_cmake_dir && python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
-          cmake -S examples/external_solver -B examples/external_solver/build \
+          cmake -S examples/external_algorithm -B examples/external_algorithm/build \
                 -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE" \
                 -DCMAKE_BUILD_TYPE=Release
-          cmake --build examples/external_solver/build --config Release
+          cmake --build examples/external_algorithm/build --config Release
 
       - name: Run plugin test
-        run: python examples/external_solver/test_plugin.py
+        run: python examples/external_algorithm/test_plugin.py
+
+      - name: Run plugin registration unittests (against the installed package)
+        shell: bash
+        # Run from the scratch dir so `import lightsim2grid` resolves to the
+        # pip-installed package, not the source tree (which has no built
+        # extension). LS2G_TEST_PLUGIN_DIR points the tests at the plugin built
+        # above; the finders pick the right per-platform file name themselves.
+        working-directory: _tmp_cmake_dir
+        env:
+          LS2G_TEST_PLUGIN_DIR: ${{ github.workspace }}/examples/external_algorithm/build
+        run: |
+          python -m unittest -v \
+            lightsim2grid.tests.test_solver_registry \
+            lightsim2grid.tests.test_plugin_registration
 
   test_klu_strategies:
     name: Test KLU detection strategies (Ubuntu)
@@ -800,6 +814,56 @@ jobs:
           from lightsim2grid.lightsim2grid_cpp import klu_solver_available
           assert klu_solver_available, 'KLU solver not available (strategy 1 failed)'
           print('Strategy 1 OK: KLU available')
+          "
+
+  test_march_native:
+    # -march=native is a supported opt-in build flag (see benchmarks/env_compile_all.sh)
+    # that release wheels do not use, so plain CI builds never exercise it. It changes
+    # which SIMD ISA Eigen sees enabled (__AVX__, __AVX2__, ...) in each translation
+    # unit; lightsim2grid_core and lightsim2grid_cpp (the pybind11 bindings) are two
+    # separate shared libraries, so both must see the identical flag -- otherwise an
+    # Eigen object allocated in one and freed in the other computes a different
+    # alignment offset, corrupting the heap ("double free or corruption") the first
+    # time a function's return value crosses the module boundary (e.g. any pandapower
+    # -> LightSimBackend conversion, or a forecast-backend copy). Regression test for
+    # that class of bug: env creation reliably crashed within seconds before the fix.
+    name: Test -march=native build (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_compile_ci.txt
+          python -m pip install grid2op pandapower lxml
+
+      - name: Build lightsim2grid with -march=native
+        run: __COMPILE_MARCHNATIVE=1 __O3_OPTIM=1 python -m pip install -v . --no-build-isolation
+
+      - name: Create + reset a LightSimBackend env (exercises the core<->bindings Eigen boundary)
+        run: |
+          mkdir -p _march_native_check
+          cd _march_native_check
+          python -c "
+          import warnings
+          from grid2op import make
+          from grid2op.Parameters import Parameters
+          from lightsim2grid import LightSimBackend
+
+          param = Parameters()
+          param.init_from_dict({'NO_OVERFLOW_DISCONNECTION': True, 'ENV_DC': True, 'FORECAST_DC': True})
+          with warnings.catch_warnings():
+              warnings.filterwarnings('ignore')
+              env = make('l2rpn_case14_sandbox', backend=LightSimBackend(), param=param, test=True)
+          env.reset()
+          print('OK: env created and reset under -march=native without crashing')
           "
 
   package:

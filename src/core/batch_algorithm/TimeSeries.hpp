@@ -20,13 +20,13 @@ series of injections (productions and loads) to compute powerflows/
 class LS2G_API TimeSeries final: public BaseBatchSolverSynch
 {
     public:
-        explicit TimeSeries(const GridModel & init_grid_model) noexcept:
+        explicit TimeSeries(const LSGrid & init_grid_model):
             BaseBatchSolverSynch(init_grid_model),
             _Sbuses(),
             _status(1), // 1: success, 0: failure
             _compute_flows(true)
             {}
-        ~TimeSeries() noexcept = default;
+        ~TimeSeries() noexcept override = default;
 
         TimeSeries(const TimeSeries&) = delete;
         TimeSeries(TimeSeries&&) = delete;
@@ -50,15 +50,15 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
 
         Each line of `Sbuses` will be a time step, and each column with 
         **/
-        int compute_Vs(Eigen::Ref<const RealMat> gen_p,
-                       Eigen::Ref<const RealMat> sgen_p,
-                       Eigen::Ref<const RealMat> load_p,
-                       Eigen::Ref<const RealMat> load_q,
-                       const CplxVect & Vinit,
+        int compute_Vs(const Eigen::Ref<const RealMat> & gen_p,
+                       const Eigen::Ref<const RealMat> & sgen_p,
+                       const Eigen::Ref<const RealMat> & load_p,
+                       const Eigen::Ref<const RealMat> & load_q,
+                       const Eigen::Ref<const CplxVect> & Vinit,
                        const int max_iter,
                        const real_type tol);
                        
-        virtual void clear(){
+        void clear() override {
             BaseBatchSolverSynch::clear();
             _Sbuses = CplxMat();
             _status = 1;
@@ -79,14 +79,14 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
 
     protected:
         template<class T>
-        void fill_SBus_real(CplxMat & Sbuses,
+        void fill_SBus_real(Eigen::Ref<CplxMat> Sbuses,
                             const T & structure_data,
-                            const RealMat & temporal_data,
+                            const Eigen::Ref<const RealMat> & temporal_data,
                             const SolverBusIdVect & id_me_to_ac_solver,
                             bool add  // if true call += else calls -=
                             ) const 
         {
-            auto nb_el = structure_data.nb();
+            size_t nb_el = structure_data.nb();
             const auto & el_status = structure_data.get_status();
             const auto & el_bus_id = structure_data.get_bus_id();
             SolverBusId bus_id_solver;
@@ -116,14 +116,14 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
         }
 
         template<class T>
-        void fill_SBus_imag(CplxMat & Sbuses,
+        void fill_SBus_imag(Eigen::Ref<CplxMat> Sbuses,
                             const T & structure_data,
-                            const RealMat & temporal_data,
+                            const Eigen::Ref<const RealMat> & temporal_data,
                             const SolverBusIdVect & id_me_to_ac_solver,
                             bool add  // if true call += else calls -=
                             ) const 
         {
-            auto nb_el = structure_data.nb();
+            size_t nb_el = structure_data.nb();
             const auto & el_status = structure_data.get_status();
             const auto & el_bus_id = structure_data.get_bus_id();
             SolverBusId  bus_id_solver;

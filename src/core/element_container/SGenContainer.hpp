@@ -44,7 +44,7 @@ https://pandapower.readthedocs.io/en/latest/elements/sgen.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/sgen.html#electric-model
 **/
-class LS2G_API SGenContainer: public OneSideContainer_PQ, public IteratorAdder<SGenContainer, SGenInfo>
+class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorAdder<SGenContainer, SGenInfo>
 {
     // TODO make a single class for load and shunt and just specialize the part where the
     // TODO powerflow equations are located (when i update the Y matrix)
@@ -55,6 +55,7 @@ class LS2G_API SGenContainer: public OneSideContainer_PQ, public IteratorAdder<S
         using DataInfo = SGenInfo;
 
     public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes,
            std::vector<real_type>, // p_min
@@ -64,32 +65,37 @@ class LS2G_API SGenContainer: public OneSideContainer_PQ, public IteratorAdder<S
            >;
         
         SGenContainer() noexcept = default;
-        virtual ~SGenContainer() noexcept = default;
+        ~SGenContainer() noexcept override = default;
         
         // pickle (python)
         SGenContainer::StateRes get_state() const;
         void set_state(SGenContainer::StateRes & my_state );
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path, bool atomic = true) const;
+        static SGenContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "SGenContainer"; }  // written into / checked against the binary file header
         
         
-        void init(const RealVect & sgen_p,
-                  const RealVect & sgen_q,
-                  const RealVect & sgen_pmin,
-                  const RealVect & sgen_pmax,
-                  const RealVect & sgen_qmin,
-                  const RealVect & sgen_qmax,
-                  const Eigen::VectorXi & sgen_bus_id
+        void init(const Eigen::Ref<const RealVect> & sgen_p,
+                  const Eigen::Ref<const RealVect> & sgen_q,
+                  const Eigen::Ref<const RealVect> & sgen_pmin,
+                  const Eigen::Ref<const RealVect> & sgen_pmax,
+                  const Eigen::Ref<const RealVect> & sgen_qmin,
+                  const Eigen::Ref<const RealVect> & sgen_qmax,
+                  const Eigen::Ref<const Eigen::VectorXi> & sgen_bus_id
                   );
               
-        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const ;
+        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
     protected:
-        virtual void _compute_results(
-            const Eigen::Ref<const RealVect> & Va,
-            const Eigen::Ref<const RealVect> & Vm,
-            const Eigen::Ref<const CplxVect> & V,
-            const SolverBusIdVect & id_grid_to_solver,
-            const RealVect & bus_vn_kv,
-            real_type sn_mva,
+        void _compute_results(
+            const Eigen::Ref<const RealVect> & /*Va*/,
+            const Eigen::Ref<const RealVect> & /*Vm*/,
+            const Eigen::Ref<const CplxVect> & /*V*/,
+            const SolverBusIdVect & /*id_grid_to_solver*/,
+            const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
+            real_type /*sn_mva*/,
             bool ac) override
             {
                 set_osc_pq_res_p();
