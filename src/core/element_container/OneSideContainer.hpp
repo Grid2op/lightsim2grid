@@ -262,12 +262,38 @@ class OneSideContainer : public GenericContainer
         void set_pos_topo_vect(const Eigen::Ref<const IntVect> & pos_topo_vect)
         {
             check_size(pos_topo_vect, nb(), "pos_topo_vect");
+            // The upper bound (dim_topo) is the sum of every topology-participating
+            // container's element count, not just this one's -- it is not known here
+            // (see update_topo(), which validates the full [0, dim_topo) range with
+            // that context). A negative position, though, is never valid regardless of
+            // dim_topo, so reject it immediately rather than only at the point of use.
+            for(Eigen::Index i = 0; i < pos_topo_vect.size(); ++i){
+                if(pos_topo_vect(i) < 0){
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::set_pos_topo_vect: element " << i
+                         << " has a negative position in the topology vector ("
+                         << pos_topo_vect(i) << ").";
+                    throw std::out_of_range(exc_.str());
+                }
+            }
             pos_topo_vect_.array() = pos_topo_vect;
         }
 
         void set_subid(const Eigen::Ref<const IntVect> & subid)
         {
             check_size(subid, nb(), "subid");
+            // The upper bound (n_sub) is owned by SubstationContainer, not available
+            // here (see update_topo(), which validates the full [0, n_sub) range with
+            // that context). A negative substation id, though, is never valid
+            // regardless of n_sub, so reject it immediately.
+            for(Eigen::Index i = 0; i < subid.size(); ++i){
+                if(subid(i) < 0){
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::set_subid: element " << i
+                         << " has a negative substation id (" << subid(i) << ").";
+                    throw std::out_of_range(exc_.str());
+                }
+            }
             subid_.array() = subid;
         }
 
@@ -328,7 +354,29 @@ class OneSideContainer : public GenericContainer
 
                 if(new_bus.cast_int() > 0){
                     // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
+                    if(subid_.size() == 0){
+                        std::ostringstream exc_;
+                        exc_ << "OneSideContainer::update_topo: cannot reconnect element " << el_id
+                             << " to a bus: no substation id was ever set for this container "
+                             << "(set_subid was never called).";
+                        throw std::runtime_error(exc_.str());
+                    }
                     int sub_id = subid_(el_id);
+                    // `sub_id` feeds local_to_gridmodel's arithmetic (sub_id + (busbar-1)*n_sub),
+                    // whose OUTPUT is bounds-checked before being stored as this element's bus id
+                    // -- but an out-of-range `sub_id` can still combine with a valid busbar to land
+                    // BY COINCIDENCE on another substation's legitimate bus id, silently reconnecting
+                    // this element to the WRONG bus instead of raising. set_subid() only rejects
+                    // negative ids (it has no access to n_sub); validate the full range here, where
+                    // `substations` gives us that context.
+                    if((sub_id < 0) || (sub_id >= substations.nb_sub())){
+                        std::ostringstream exc_;
+                        exc_ << "OneSideContainer::update_topo: element " << el_id
+                             << " has substation id " << sub_id << ", out of range [0, "
+                             << substations.nb_sub() << "). The stored subid is inconsistent "
+                             << "(run check_grid()).";
+                        throw std::out_of_range(exc_.str());
+                    }
                     GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
                     bool change_effective = reactivate(el_id, solver_control); // eg reactivate_load(load_id);
                     change_effective = change_bus(el_id, new_bus_backend, solver_control, substations) || change_effective; // eg change_bus_load(load_id, new_bus_backend);
