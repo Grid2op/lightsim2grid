@@ -28,7 +28,7 @@ import unittest
 
 import numpy as np
 
-from lightsim2grid.lightsim2grid_cpp import LSGrid, PandaPowerConverter
+from lightsim2grid.lightsim2grid_cpp import LSGrid, PandaPowerConverter, ContingencyAnalysisCPP
 from lightsim2grid.tests._exotic_elements_case_ls import build_exotic_elements_case_grid
 
 
@@ -361,6 +361,294 @@ class TestPandaPowerConverterInputSizes(unittest.TestCase):
         self.assertEqual(r.shape[0], n)
         lr, lx, h_or, h_ex = self.conv.get_line_param(v, v, v, v, v, v)
         self.assertEqual(lr.shape[0], n)
+
+
+class TestBusVoltageLimitSymmetry(unittest.TestCase):
+    """bus_vmin_kv_ / bus_vmax_kv_ are each optional (empty or complete), but they
+    are consumed *together* -- ContingencyAnalysis::check_bus_voltage_violations
+    loops to vmin.size() and then reads vmax(grid_id). A state with one set and the
+    other empty passes the per-field checks yet reads past the end of the empty one
+    (segfault before the fix). SUBSTATION_ID sub-state layout: n_sub(0), nmax(1),
+    sub_vn_kv(2), bus_status(3), bus_vn_kv(4), sub_names(5), bus_vmin(6), bus_vmax(7).
+    """
+
+    SUBSTATION_ID = 7
+    VMIN_FIELD = 6
+    VMAX_FIELD = 7
+
+    def _grid_with_limits(self):
+        grid = build_exotic_elements_case_grid()
+        nb_bus = len(grid.get_bus_vn_kv())
+        grid.set_bus_voltage_limits(np.full(nb_bus, 90.0), np.full(nb_bus, 160.0))
+        return grid
+
+    def test_both_set_round_trips(self):
+        grid = pickle.loads(pickle.dumps(self._grid_with_limits()))
+        self.assertIsNone(grid.check_grid())
+        self.assertEqual(len(grid.get_bus_vmin_kv()), len(grid.get_bus_vmax_kv()))
+
+    def test_vmax_empty_while_vmin_set_is_rejected(self):
+        state = self._grid_with_limits().__getstate__()
+        bad = _set_at(state, (3, self.SUBSTATION_ID, self.VMAX_FIELD), ())
+        with self.assertRaises(RuntimeError):
+            _rebuild(bad)
+
+    def test_vmin_empty_while_vmax_set_is_rejected(self):
+        state = self._grid_with_limits().__getstate__()
+        bad = _set_at(state, (3, self.SUBSTATION_ID, self.VMIN_FIELD), ())
+        with self.assertRaises(RuntimeError):
+            _rebuild(bad)
+
+    def test_contingency_voltage_violations_stay_in_bounds(self):
+        # the honest arrangement the check protects: with both vectors present the
+        # inline voltage-violation check runs without over-reading.
+        grid = self._grid_with_limits()
+        sa = ContingencyAnalysisCPP(grid, True)  # compute_limit_violations=True
+        sa.add_n1(0)
+        sa.compute(np.ones(grid.total_bus(), dtype=complex), 20, 1e-7)
+        self.assertTrue(sa.converged_n())
+
+
+class TestPosTopoVectSetterBounds(unittest.TestCase):
+    """set_*_pos_topo_vect() only length-checks its argument; the *values* are
+    range-checked in check_grid(), which the setters do not call. update_topo()
+    then indexes its caller arrays with the stored positions (unchecked Eigen
+    operator()), so a position written straight through a setter -- bypassing
+    check_grid -- read out of bounds before the fix (segfault). The setter itself
+    now also rejects a negative position immediately (the only bound it can check
+    locally: the upper bound, dim_topo, depends on every other topology-participating
+    container's element count too, so it can only be enforced where that context is
+    available -- update_topo(), tested below)."""
+
+    def test_negative_position_is_rejected_by_the_setter_itself(self):
+        grid = build_exotic_elements_case_grid()
+        n_load = len(grid.get_loads())
+        bad = np.arange(n_load, dtype=np.int32)
+        bad[0] = -5
+        with self.assertRaises((IndexError, RuntimeError)):
+            grid.set_load_pos_topo_vect(bad)
+
+    def _grid_with_topo(self):
+        grid = build_exotic_elements_case_grid()
+        n_load = len(grid.get_loads())
+        n_gen = len(grid.get_generators())
+        n_sto = len(grid.get_storages())
+        n_line = len(grid.get_lines())
+        n_trafo = len(grid.get_trafos())
+        dim_topo = n_load + n_gen + n_sto + 2 * n_line + 2 * n_trafo
+        pos = np.arange(dim_topo, dtype=np.int32)
+        off = 0
+        for setter, nb in ((grid.set_load_pos_topo_vect, n_load),
+                           (grid.set_gen_pos_topo_vect, n_gen),
+                           (grid.set_storage_pos_topo_vect, n_sto),
+                           (grid.set_line_pos1_topo_vect, n_line),
+                           (grid.set_line_pos2_topo_vect, n_line),
+                           (grid.set_trafo_pos1_topo_vect, n_trafo),
+                           (grid.set_trafo_pos2_topo_vect, n_trafo)):
+            setter(pos[off:off + nb])
+            off += nb
+        return grid, dim_topo, n_load
+
+    def test_out_of_range_position_from_setter_is_rejected_by_update_topo(self):
+        grid, dim_topo, n_load = self._grid_with_topo()
+        self.assertIsNone(grid.check_grid())  # honest layout validates
+        # poison a load position AFTER validation; the setter accepts it silently
+        bad = np.arange(n_load, dtype=np.int32)
+        bad[0] = 1 << 28
+        grid.set_load_pos_topo_vect(bad)
+        has_changed = np.ones(dim_topo, dtype=bool)
+        new_values = np.ones(dim_topo, dtype=np.int32)
+        with self.assertRaises((IndexError, RuntimeError)):
+            grid.update_topo(has_changed, new_values)
+
+
+class TestSubidSetterBounds(unittest.TestCase):
+    """set_*_to_subid() only length-checks its argument; the *values* are
+    range-checked in check_grid(), which the setters do not call. update_topo()
+    reads the stored subid and feeds it to SubstationContainer::local_to_gridmodel's
+    unchecked arithmetic (sub_id + (busbar - 1) * n_sub) to resolve the target bus --
+    an out-of-range (but small enough) sub_id can land BY COINCIDENCE on another
+    substation's legitimate bus id, silently reconnecting the element to the WRONG
+    bus instead of raising, before the fix. The setter itself now rejects a negative
+    id immediately (the only bound it can check locally: n_sub is owned by
+    SubstationContainer, not available here); update_topo() enforces the full range
+    where that context (the `substations` parameter) is available."""
+
+    def _grid_with_topo_and_subid(self):
+        grid = build_exotic_elements_case_grid()
+        n_load = len(grid.get_loads())
+        n_gen = len(grid.get_generators())
+        n_sto = len(grid.get_storages())
+        n_line = len(grid.get_lines())
+        n_trafo = len(grid.get_trafos())
+        dim_topo = n_load + n_gen + n_sto + 2 * n_line + 2 * n_trafo
+        pos = np.arange(dim_topo, dtype=np.int32)
+        off = 0
+        for setter, nb in ((grid.set_load_pos_topo_vect, n_load),
+                           (grid.set_gen_pos_topo_vect, n_gen),
+                           (grid.set_storage_pos_topo_vect, n_sto),
+                           (grid.set_line_pos1_topo_vect, n_line),
+                           (grid.set_line_pos2_topo_vect, n_line),
+                           (grid.set_trafo_pos1_topo_vect, n_trafo),
+                           (grid.set_trafo_pos2_topo_vect, n_trafo)):
+            setter(pos[off:off + nb])
+            off += nb
+        n_sub = grid.get_n_sub()
+        grid.set_load_to_subid(np.zeros(n_load, dtype=np.int32))
+        grid.set_gen_to_subid(np.zeros(n_gen, dtype=np.int32))
+        grid.set_storage_to_subid(np.zeros(n_sto, dtype=np.int32))
+        grid.set_line_to_sub1_id(np.zeros(n_line, dtype=np.int32))
+        grid.set_line_to_sub2_id(np.zeros(n_line, dtype=np.int32))
+        grid.set_trafo_to_sub1_id(np.zeros(n_trafo, dtype=np.int32))
+        grid.set_trafo_to_sub2_id(np.zeros(n_trafo, dtype=np.int32))
+        return grid, dim_topo, n_load, n_sub
+
+    def test_negative_subid_is_rejected_by_the_setter_itself(self):
+        grid = build_exotic_elements_case_grid()
+        n_load = len(grid.get_loads())
+        bad = np.zeros(n_load, dtype=np.int32)
+        bad[0] = -1
+        with self.assertRaises((IndexError, RuntimeError)):
+            grid.set_load_to_subid(bad)
+
+    def test_out_of_range_subid_from_setter_is_rejected_by_update_topo(self):
+        grid, dim_topo, n_load, n_sub = self._grid_with_topo_and_subid()
+        self.assertIsNone(grid.check_grid())  # honest layout validates
+        # poison a load's subid AFTER validation; the setter accepts it silently
+        # (it is non-negative, so the setter's own local check does not catch it)
+        bad = np.zeros(n_load, dtype=np.int32)
+        bad[0] = n_sub + 3
+        grid.set_load_to_subid(bad)
+        has_changed = np.zeros(dim_topo, dtype=bool)
+        has_changed[0] = True  # only reconnect load 0
+        new_values = np.ones(dim_topo, dtype=np.int32)
+        with self.assertRaises((IndexError, RuntimeError)):
+            grid.update_topo(has_changed, new_values)
+
+    def test_reconnecting_without_ever_setting_subid_is_rejected(self):
+        grid = build_exotic_elements_case_grid()
+        n_load = len(grid.get_loads())
+        dim_topo = (n_load + len(grid.get_generators()) + len(grid.get_storages())
+                    + 2 * len(grid.get_lines()) + 2 * len(grid.get_trafos()))
+        grid.set_load_pos_topo_vect(np.arange(n_load, dtype=np.int32))
+        # subid was never set for loads at all (subid_ stays empty)
+        has_changed = np.zeros(dim_topo, dtype=bool)
+        has_changed[0] = True
+        new_values = np.ones(dim_topo, dtype=np.int32)
+        with self.assertRaises(RuntimeError):
+            grid.update_topo(has_changed, new_values)
+
+
+class TestContingencyResultsMatchDefaults(unittest.TestCase):
+    """compute() sizes the result matrices with one row per registered contingency.
+    Adding / removing contingencies afterwards without recomputing left the flow
+    computation (clean_flows) walking the new, longer contingency set while indexing
+    the old, shorter matrices -- an out-of-bounds write / heap corruption before the
+    fix. compute_flows() / compute_power_flows() now refuse the stale state.
+
+    A pure size comparison is not enough, though: remove_n1(x) followed by add_n1(y)
+    (y != x) restores the SAME contingency count, so a size-only check can't tell the
+    results are stale -- compute_flows() would silently return flows that correspond
+    to the wrong contingencies instead of raising. Every mutating method (add_*/
+    remove_*) now eagerly clears any previously computed results, closing that gap
+    regardless of the exact sequence of add/remove calls."""
+
+    def _sa(self):
+        grid = build_exotic_elements_case_grid()
+        sa = ContingencyAnalysisCPP(grid)
+        sa.add_n1(0)
+        sa.compute(np.ones(grid.total_bus(), dtype=complex), 20, 1e-7)
+        return sa
+
+    def test_compute_flows_after_adding_contingency_is_rejected(self):
+        sa = self._sa()
+        for i in range(1, 5):
+            sa.add_n1(i)
+        with self.assertRaises(RuntimeError):
+            sa.compute_flows()
+
+    def test_compute_power_flows_after_adding_contingency_is_rejected(self):
+        sa = self._sa()
+        for i in range(1, 5):
+            sa.add_n1(i)
+        with self.assertRaises(RuntimeError):
+            sa.compute_power_flows()
+
+    def test_flows_are_fine_without_mutation(self):
+        sa = self._sa()
+        flows = sa.compute_flows()
+        self.assertEqual(flows.shape[0], 1)
+
+    def test_recomputing_clears_the_staleness(self):
+        sa = self._sa()
+        sa.add_n1(1)
+        grid = build_exotic_elements_case_grid()
+        sa.compute(np.ones(grid.total_bus(), dtype=complex), 20, 1e-7)
+        flows = sa.compute_flows()  # no longer stale
+        self.assertEqual(flows.shape[0], 2)
+
+    def test_remove_then_add_a_different_one_is_rejected(self):
+        # same contingency COUNT as at compute() time, different MEMBERSHIP: a
+        # size-only staleness check would miss this.
+        grid = build_exotic_elements_case_grid()
+        sa = ContingencyAnalysisCPP(grid)
+        sa.add_n1(0)
+        sa.add_n1(1)
+        sa.compute(np.ones(grid.total_bus(), dtype=complex), 20, 1e-7)
+        sa.remove_n1(0)
+        sa.add_n1(2)
+        self.assertEqual(len(sa.my_defaults()), 2)  # same size as at compute() time
+        with self.assertRaises(RuntimeError):
+            sa.compute_flows()
+
+    def test_remove_invalidates_results_even_when_the_count_stays_put(self):
+        # _sa() computes for exactly 1 contingency (id 0); add a 2nd, then remove a
+        # DIFFERENT one (id 0) so the count is back to 1 -- same size as at compute()
+        # time, but the surviving row corresponds to a contingency that was never
+        # actually solved for this composition.
+        sa = self._sa()
+        sa.add_n1(1)
+        sa.remove_n1(0)
+        self.assertEqual(len(sa.my_defaults()), 1)  # same size as after _sa()'s compute()
+        with self.assertRaises(RuntimeError):
+            sa.compute_flows()
+
+    def test_a_rejected_id_does_not_clear_valid_results(self):
+        sa = self._sa()
+        flows_before = sa.compute_flows().copy()
+        n_total = len(sa.my_defaults())
+        with self.assertRaises(RuntimeError):
+            sa.add_n1(-1)  # invalid: rejected before any mutation / clearing
+        self.assertEqual(len(sa.my_defaults()), n_total)  # unchanged
+        flows_after = sa.compute_flows()  # still valid, no RuntimeError
+        np.testing.assert_array_equal(flows_before, flows_after)
+
+
+class TestSubObjectGettersKeepGridAlive(unittest.TestCase):
+    """LSGrid's sub-object getters (get_lines / get_generators / get_bus_vn_kv /
+    get_V_solver / ...) return a reference / numpy view into grid-owned memory. They
+    were bound with return_value_policy::reference, which does NOT keep the parent
+    grid alive, so the wrapper dangled once the grid was collected (segfault / heap
+    disclosure). reference_internal ties their lifetime to the grid."""
+
+    def test_container_getter_outlives_grid(self):
+        lines = build_exotic_elements_case_grid().get_lines()  # grid is a temporary
+        import gc
+        gc.collect()
+        _ = [bytearray(b"\x41" * 8192) for _ in range(2000)]
+        gc.collect()
+        # reading through it must still work (the grid is kept alive)
+        buses = np.asarray(lines.get_bus_id_side_1())
+        self.assertTrue(np.all(buses >= 0))
+
+    def test_eigen_view_getter_outlives_grid(self):
+        vn = build_exotic_elements_case_grid().get_bus_vn_kv()  # numpy view
+        import gc
+        gc.collect()
+        _ = [bytearray(b"\x41" * 8192) for _ in range(2000)]
+        gc.collect()
+        self.assertIsNotNone(vn.base)          # a parent object keeps it alive
+        self.assertTrue(np.all(np.asarray(vn) > 0.))
 
 
 if __name__ == "__main__":

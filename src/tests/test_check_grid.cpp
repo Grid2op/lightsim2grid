@@ -147,6 +147,14 @@ std::vector<std::string>& sub_names(LSGrid::StateRes & st)
 {
     return std::get<5>(std::get<LSGrid::SUBSTATION_ID>(st));
 }
+std::vector<real_type>& sub_bus_vmin_kv(LSGrid::StateRes & st)
+{
+    return std::get<6>(std::get<LSGrid::SUBSTATION_ID>(st));
+}
+std::vector<real_type>& sub_bus_vmax_kv(LSGrid::StateRes & st)
+{
+    return std::get<7>(std::get<LSGrid::SUBSTATION_ID>(st));
+}
 std::vector<int>& ls_to_orig(LSGrid::StateRes & st)
 {
     return std::get<LSGrid::LS_TO_ORIG_ID>(st);
@@ -357,6 +365,27 @@ TEST_CASE("check_grid rejects an out-of-range pos_topo_vect entry", "[check_grid
     CHECK_THROWS_AS(grid.check_grid(), std::out_of_range);
 }
 
+TEST_CASE("set_pos_topo_vect rejects a negative position immediately", "[check_grid]")
+{
+    // the upper bound (dim_topo) needs every topology-participating container's
+    // element count, not available inside a single container's setter -- but a
+    // negative position is never valid regardless of dim_topo, so the setter
+    // itself now rejects it right away, rather than only at the point of use
+    // inside update_topo().
+    LSGrid grid = make_valid_grid();
+    IntVect bad(1); bad << -1;
+    CHECK_THROWS_AS(grid.set_load_pos_topo_vect(bad), std::out_of_range);
+}
+
+TEST_CASE("set_subid rejects a negative substation id immediately", "[check_grid]")
+{
+    // same reasoning as set_pos_topo_vect above: n_sub is owned by
+    // SubstationContainer, not available here, but negative is never valid.
+    LSGrid grid = make_valid_grid();
+    IntVect bad(1); bad << -1;
+    CHECK_THROWS_AS(grid.set_load_to_subid(bad), std::out_of_range);
+}
+
 // --- the substation container: the ROOT of the grid's index space ------------
 // nb_bus() (= bus_vn_kv_.size()) is the bound every element's bus id is checked
 // against, bus_status_ is what those same ids actually index, and n_sub_ is both
@@ -489,6 +518,45 @@ TEST_CASE("check_grid rejects a sub_vn_kv that contradicts bus_vn_kv", "[check_g
     sub_sub_vn_kv(ok) = {138., 138., 138.};
     LSGrid restored_ok;
     CHECK_NOTHROW(restored_ok.set_state(ok));
+}
+
+TEST_CASE("check_grid rejects vmin/vmax with mismatched presence", "[check_grid][substation]")
+{
+    // bus_vmin_kv_ and bus_vmax_kv_ are each individually optional (empty OR one
+    // entry per bus), but they are consumed *together*:
+    // ContingencyAnalysis::check_bus_voltage_violations loops to vmin.size() and
+    // then reads vmax(grid_id). One present while the other is empty passes each
+    // per-field length check yet makes that loop read past the end of the empty
+    // vector (out-of-bounds read on release wheels). check_grid must reject it.
+    LSGrid grid = make_valid_grid();  // 3 buses
+
+    // vmin full, vmax empty -> rejected
+    LSGrid::StateRes only_min = grid.get_state();
+    sub_bus_vmin_kv(only_min) = {90., 90., 90.};
+    sub_bus_vmax_kv(only_min) = {};
+    LSGrid r1;
+    CHECK_THROWS_AS(r1.set_state(only_min), std::runtime_error);
+
+    // vmax full, vmin empty -> rejected
+    LSGrid::StateRes only_max = grid.get_state();
+    sub_bus_vmin_kv(only_max) = {};
+    sub_bus_vmax_kv(only_max) = {160., 160., 160.};
+    LSGrid r2;
+    CHECK_THROWS_AS(r2.set_state(only_max), std::runtime_error);
+
+    // both present -> accepted
+    LSGrid::StateRes both = grid.get_state();
+    sub_bus_vmin_kv(both) = {90., 90., 90.};
+    sub_bus_vmax_kv(both) = {160., 160., 160.};
+    LSGrid r3;
+    CHECK_NOTHROW(r3.set_state(both));
+
+    // both empty (the common case, e.g. pandapower-origin grids) -> accepted
+    LSGrid::StateRes neither = grid.get_state();
+    sub_bus_vmin_kv(neither) = {};
+    sub_bus_vmax_kv(neither) = {};
+    LSGrid r4;
+    CHECK_NOTHROW(r4.set_state(neither));
 }
 
 TEST_CASE("init_sub is safe on the live construction path", "[check_grid][substation]")
@@ -676,6 +744,86 @@ TEST_CASE("update_topo rejects arrays that are not dim_topo long", "[check_grid]
     Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> vals(6);
     vals << 1, 1, 1, 1, 1, 1;
     CHECK_NOTHROW(grid.update_topo(flags, vals));
+}
+
+TEST_CASE("update_topo rejects an out-of-range subid, without check_grid ever running", "[check_grid]")
+{
+    // subid feeds SubstationContainer::local_to_gridmodel's unchecked arithmetic
+    // (sub_id + (busbar - 1) * n_sub) to resolve the target bus: an out-of-range
+    // (but small enough) subid can land BY COINCIDENCE on another substation's
+    // legitimate bus id, silently reconnecting the element to the WRONG bus instead
+    // of raising. set_subid() only rejects a negative id (no access to n_sub here);
+    // update_topo() must enforce the full range where that context IS available --
+    // and must do so even when check_grid() (which also catches this) was never
+    // called, exactly like the pos_topo_vect case above.
+    LSGrid grid = make_valid_grid();  // n_sub == 3
+    IntVect load_pos(1); load_pos << 0;
+    IntVect gen_pos(1);  gen_pos  << 1;
+    grid.set_load_pos_topo_vect(load_pos);
+    grid.set_gen_pos_topo_vect(gen_pos);
+    IntVect bad_subid(1); bad_subid << 99;  // non-negative, so the setter accepts it
+    grid.set_load_to_subid(bad_subid);
+
+    // dim_topo counts every topology-participating container structurally (nb loads
+    // + nb gens + nb storages + 2*nb lines + 2*nb trafos), not just the ones whose
+    // pos_topo_vect was actually set -- make_valid_grid()'s 2 powerlines make it 6,
+    // even though only the load (position 0) is exercised here.
+    Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> flags(6);
+    flags << true, false, false, false, false, false;  // reconnect the load only
+    Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> vals(6);
+    vals << 1, 1, 1, 1, 1, 1;
+    CHECK_THROWS_AS(grid.update_topo(flags, vals), std::out_of_range);
+}
+
+TEST_CASE("update_topo rejects reconnecting an element whose subid was never set", "[check_grid]")
+{
+    LSGrid grid = make_valid_grid();
+    IntVect load_pos(1); load_pos << 0;
+    IntVect gen_pos(1);  gen_pos  << 1;
+    grid.set_load_pos_topo_vect(load_pos);
+    grid.set_gen_pos_topo_vect(gen_pos);
+    // set_load_to_subid() is never called: subid_ stays empty for loads
+
+    // see the dim_topo note above: 6, not 2, even though only the load is touched.
+    Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> flags(6);
+    flags << true, false, false, false, false, false;  // reconnect the load only
+    Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> vals(6);
+    vals << 1, 1, 1, 1, 1, 1;
+    CHECK_THROWS_AS(grid.update_topo(flags, vals), std::runtime_error);
+}
+
+TEST_CASE("update_topo rejects a subid left stale after the container grew", "[check_grid]")
+{
+    // subid_ is only ever (re)assigned by set_subid() / set_osc_state(); init() does
+    // not touch it. Re-initializing a container with MORE elements after set_subid()
+    // was called for the smaller count leaves subid_ shorter than the current nb() --
+    // indexing el_id then reads past its end. Mirrors
+    // _check_pos_topo_vect_filled()'s size() != nb() check, which already guards the
+    // analogous case for pos_topo_vect_.
+    LSGrid grid = make_valid_grid();  // 1 load, bus 2
+    IntVect one_subid(1); one_subid << 0;
+    grid.set_load_to_subid(one_subid);  // subid_ sized for exactly 1 load
+
+    // re-initialize loads with 2 elements: subid_ (still size 1) is now stale
+    RealVect load_p(2), load_q(2);
+    load_p << 50., 30.;
+    load_q << 10., 5.;
+    Eigen::VectorXi load_bus(2);
+    load_bus << 2, 1;
+    grid.init_loads(load_p, load_q, load_bus);
+    REQUIRE(grid.get_loads().nb() == 2);
+
+    IntVect load_pos(2); load_pos << 0, 1;
+    IntVect gen_pos(1);  gen_pos  << 2;
+    grid.set_load_pos_topo_vect(load_pos);
+    grid.set_gen_pos_topo_vect(gen_pos);
+
+    // dim_topo = 2 loads + 1 gen + 2*2 lines = 7
+    Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> flags(7);
+    flags << false, true, false, false, false, false, false;  // reconnect load 1 only
+    Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> vals(7);
+    vals << 1, 1, 1, 1, 1, 1, 1;
+    CHECK_THROWS_AS(grid.update_topo(flags, vals), std::runtime_error);
 }
 
 TEST_CASE("update_slack_weights rejects an array that is not nb_gen long", "[check_grid]")

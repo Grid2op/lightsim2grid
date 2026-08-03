@@ -69,11 +69,15 @@ class TestCheckGrid(unittest.TestCase):
             self.grid.check_grid()
 
     def test_negative_pos_topo_vect_is_rejected(self):
+        # a negative position is rejected by the setter itself (the one bound it
+        # can check locally, unlike the upper bound -- see
+        # test_out_of_range_pos_topo_vect_is_rejected below, which still needs
+        # check_grid() since that bound needs cross-container context), so
+        # check_grid() never even gets a chance to see it here.
         pos = np.arange(self.n_load, dtype=np.int32)
         pos[0] = -1
-        self.grid.set_load_pos_topo_vect(pos)
         with self.assertRaises(IndexError):
-            self.grid.check_grid()
+            self.grid.set_load_pos_topo_vect(pos)
 
     # ------------------------------------------------------------------
     # substation ids (`*_to_subid`), same treatment as pos_topo_vect above
@@ -92,14 +96,18 @@ class TestCheckGrid(unittest.TestCase):
                 getattr(self.grid, name)(np.zeros(n, dtype=np.int32))
 
     def test_negative_subid_is_rejected(self):
+        # same reasoning as test_negative_pos_topo_vect_is_rejected above: the
+        # setter rejects a negative id immediately (n_sub, the upper bound, is
+        # not available to it), so check_grid() is never reached here.
         for name, n in [("set_load_to_subid", self.n_load),
                         ("set_gen_to_subid", self.n_gen)]:
             with self.subTest(name):
                 sub = np.zeros(n, dtype=np.int32)
                 sub[0] = -1
-                getattr(self.grid, name)(sub)
                 with self.assertRaises(IndexError):
-                    self.grid.check_grid()
+                    getattr(self.grid, name)(sub)
+                # the rejected call never mutated the container, but re-apply a
+                # valid mapping anyway so the next subTest starts from a known state
                 getattr(self.grid, name)(np.zeros(n, dtype=np.int32))
 
     def test_subid_just_out_of_range_is_rejected(self):
