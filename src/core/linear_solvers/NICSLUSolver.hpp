@@ -99,4 +99,48 @@ class LS2G_API NICSLULinearSolver final
 
 } // namespace ls2g
 
-#endif  // NICSLU_SOLVER_AVAILABLE
+#elif defined(_READ_THE_DOCS)
+#ifndef NICSLUSOLVER_H
+#define NICSLUSOLVER_H
+#include "Utils.hpp"
+
+#include "Eigen/Core"
+#include "Eigen/Dense"
+#include "Eigen/SparseCore"
+
+namespace ls2g {
+
+/**
+Doc-only stand-in for NICSLULinearSolver, used when the real (licensed) NICSLU library is
+not available but _READ_THE_DOCS is set: it gives NR_NICSLU (and its DC_NICSLU /
+FDPF_*_NICSLU / NRSing_NICSLU / NRRefactorRetry_NICSLU siblings, see Solvers.hpp) a
+genuine, distinct, fully-functional C++ type -- with the same name and public interface
+as the real NICSLULinearSolver -- so Sphinx can document them as real classes without
+requiring the actual library. Every method is a trivial no-op: this is never meant to
+actually solve a real system, only to be introspected.
+**/
+class LS2G_API NICSLULinearSolver final
+{
+    public:
+        NICSLULinearSolver() noexcept = default;
+        ~NICSLULinearSolver() noexcept = default;
+
+        ErrorType reset() { return ErrorType::NoError; }
+        ErrorType analyze(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType factorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType refactorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType solve(Eigen::Ref<RealVect> /*b*/) { return ErrorType::NoError; }
+
+        // can this linear solver solve problem where RHS is a matrix
+        static constexpr bool CAN_SOLVE_MAT = false;
+
+        // prevent copy and assignment (matches the real NICSLULinearSolver)
+        NICSLULinearSolver(const NICSLULinearSolver&) = delete;
+        NICSLULinearSolver(NICSLULinearSolver&&) = delete;
+        NICSLULinearSolver & operator=(NICSLULinearSolver&&) = delete;
+        NICSLULinearSolver & operator=(const NICSLULinearSolver&) = delete;
+};
+
+} // namespace ls2g
+#endif // NICSLUSOLVER_H
+#endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)

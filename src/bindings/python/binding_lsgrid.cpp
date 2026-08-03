@@ -17,53 +17,29 @@ using namespace ls2g;
 void bind_gridmodel(py::module_& m) {
     auto lsgrid_cls = py::class_<LSGrid>(m, "LSGrid", DocLSGrid::LSGrid.c_str())
         .def(py::init<>())
-        .def("copy", &LSGrid::copy, "TODO", py::return_value_policy::take_ownership)
+        .def("copy", &LSGrid::copy, DocLSGrid::copy.c_str(), py::return_value_policy::take_ownership)
         .def_property("_ls_to_orig",
                       &LSGrid::get_ls_to_orig,
                       &LSGrid::set_ls_to_orig,
-                      R"mydelimiter(
-_ls_to_orig: has the size of the number of possible buses in lightsim2grid
-(*ie* `n_sub_ * max_nb_bus_per_sub_` ) and gives the id of the corresponding
-bus in the original grid (pandapower or pypowsybl).
-
-If a "-1" is present, then this bus does not exist in the original grid,
-it is only present in the lightsim2grid gridmodel.
-)mydelimiter")
+                      DocLSGrid::_ls_to_orig.c_str())
         .def_property("_orig_to_ls",
                       &LSGrid::get_orig_to_ls,
                       &LSGrid::set_orig_to_ls,
-                      R"mydelimiter(
-Opposite to _ls_to_orig. The vector _orig_to_ls has the size of the number
-of buses in the original grid (pandapower or pypowsybl) and tells
-to which bus of lightsim2grid it corresponds. It should be a >= integer
-between 0 and `n_sub_ * max_nb_bus_per_sub_`
-
-)mydelimiter"
-                    )
+                      DocLSGrid::_orig_to_ls.c_str())
         .def_property("_max_nb_bus_per_sub",
                       &LSGrid::get_max_nb_bus_per_sub,
                       &LSGrid::set_max_nb_bus_per_sub,
-                      "do not modify it after loading !")
+                      DocLSGrid::_max_nb_bus_per_sub.c_str())
         .def_property("_init_kwargs",
                       &LSGrid::get_init_kwargs,
                       &LSGrid::set_init_kwargs,
-                      R"mydelimiter(
-dict (str -> str) of the relevant kwargs this grid was built with (eg by
-`init_from_pypowsybl`), for example {"sort_index": "True", "buses_for_sub": "False"}.
-Empty for a grid not built that way, or a default-constructed one.
-)mydelimiter")
+                      DocLSGrid::_init_kwargs.c_str())
         .def_property("_bus_fusion_rep",
                       &LSGrid::get_bus_fusion_rep,
                       &LSGrid::set_bus_fusion_rep,
-                      R"mydelimiter(
-Fused-bus lookup, size `total_bus()` (empty if unset / not built with bus fusion).
-For each ls bus id, gives the ls bus id of the "representative" bus it was merged
-into by `fuse_zero_impedance_branches` (identity for a bus not involved in any
-fusion). Set by `init_from_pypowsybl`; only ever read by downstream Python result
-views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
-)mydelimiter")
-        .def_property_readonly("timer_last_ac_pf", &LSGrid::timer_last_ac_pf, "TODO")
-        .def_property_readonly("timer_last_dc_pf", &LSGrid::timer_last_dc_pf, "TODO");
+                      DocLSGrid::_bus_fusion_rep.c_str())
+        .def_property_readonly("timer_last_ac_pf", &LSGrid::timer_last_ac_pf, DocLSGrid::timer_last_ac_pf.c_str())
+        .def_property_readonly("timer_last_dc_pf", &LSGrid::timer_last_dc_pf, DocLSGrid::timer_last_dc_pf.c_str());
     add_pickle(lsgrid_cls, "LSGrid");
     add_binary_serialization(lsgrid_cls);
     // Companion to load_binary(): loads the grid *data* without re-selecting the
@@ -87,20 +63,16 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
         .def("check_grid", &LSGrid::check_grid, DocLSGrid::check_grid.c_str())
 
         // algo config (scaling/refactor policy params)
-        .def("get_ac_algo_config", &LSGrid::get_ac_algo_config,
-            "Return the AC solver's AlgoConfig (scaling/refactor policy type and parameters).")
-        .def("set_ac_algo_config", &LSGrid::set_ac_algo_config, py::arg("config"),
-            "Apply an AlgoConfig to the AC solver (restores scaling/refactor policy and parameters).")
-        .def("get_dc_algo_config", &LSGrid::get_dc_algo_config,
-            "Return the DC solver's AlgoConfig (no-op for non-NR solvers, returns empty config).")
-        .def("set_dc_algo_config", &LSGrid::set_dc_algo_config, py::arg("config"),
-            "Apply an AlgoConfig to the DC solver.")
+        .def("get_ac_algo_config", &LSGrid::get_ac_algo_config, DocLSGrid::get_ac_algo_config.c_str())
+        .def("set_ac_algo_config", &LSGrid::set_ac_algo_config, py::arg("config"), DocLSGrid::set_ac_algo_config.c_str())
+        .def("get_dc_algo_config", &LSGrid::get_dc_algo_config, DocLSGrid::get_dc_algo_config.c_str())
+        .def("set_dc_algo_config", &LSGrid::set_dc_algo_config, py::arg("config"), DocLSGrid::set_dc_algo_config.c_str())
 
         // solver control
         .def("change_algorithm", py::overload_cast<const AlgorithmType&>(&LSGrid::change_algorithm), DocLSGrid::change_algorithm.c_str())
-        .def("change_algorithm", py::overload_cast<const std::string&>(&LSGrid::change_algorithm), "Change the AC (or DC) algorithm by registry name. Accepts built-in names and plugin names registered via load_solver_plugin().")
-        .def("available_default_algorithms", &LSGrid::available_default_algorithms, DocLSGrid::available_algorithm_names.c_str())
-        .def("available_algorithm_names", &LSGrid::available_algorithm_names, "Returns names of all registered algorithms, including any loaded plugins.")
+        .def("change_algorithm", py::overload_cast<const std::string&>(&LSGrid::change_algorithm), DocLSGrid::change_algorithm_by_name.c_str())
+        .def("available_default_algorithms", &LSGrid::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
+        .def("available_algorithm_names", &LSGrid::available_algorithm_names, DocLSGrid::available_algorithm_names.c_str())
         .def("get_computation_time", &LSGrid::get_computation_time, DocLSGrid::get_computation_time.c_str())
         .def("get_dc_computation_time", &LSGrid::get_dc_computation_time, DocLSGrid::get_dc_computation_time.c_str())
         .def("get_algo_type", &LSGrid::get_algo_type, DocLSGrid::get_algo_type.c_str())
@@ -120,206 +92,168 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
         // init the grid
         .def("init_bus", &LSGrid::init_bus, DocLSGrid::_internal_do_not_use.c_str())
         .def("init_bus_status", &LSGrid::init_bus_status, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_init_vm_pu", &LSGrid::set_init_vm_pu, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_init_vm_pu", &LSGrid::get_init_vm_pu, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_sn_mva", &LSGrid::set_sn_mva, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_sn_mva", &LSGrid::get_sn_mva, DocLSGrid::_internal_do_not_use.c_str())
+        .def("set_init_vm_pu", &LSGrid::set_init_vm_pu, DocLSGrid::set_init_vm_pu.c_str())
+        .def("get_init_vm_pu", &LSGrid::get_init_vm_pu, DocLSGrid::get_init_vm_pu.c_str())
+        .def("set_sn_mva", &LSGrid::set_sn_mva, DocLSGrid::set_sn_mva.c_str())
+        .def("get_sn_mva", &LSGrid::get_sn_mva, DocLSGrid::get_sn_mva.c_str())
 
         // init elements
-        .def("init_powerlines", &LSGrid::init_powerlines, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_powerlines_full", &LSGrid::init_powerlines_full, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_shunt", &LSGrid::init_shunt, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_trafo_pandapower", &LSGrid::init_trafo_pandapower, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_trafo", &LSGrid::init_trafo, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_generators", &LSGrid::init_generators, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_generators_full", &LSGrid::init_generators_full, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_loads", &LSGrid::init_loads, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_storages", &LSGrid::init_storages, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_sgens", &LSGrid::init_sgens, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_dclines", &LSGrid::init_dclines, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_hvdc_lines", &LSGrid::init_hvdc_lines, DocLSGrid::_internal_do_not_use.c_str())
-        .def("init_svcs", &LSGrid::init_svcs, DocLSGrid::_internal_do_not_use.c_str())
-        .def("add_gen_slackbus", &LSGrid::add_gen_slackbus, DocLSGrid::_internal_do_not_use.c_str())
-        .def("remove_gen_slackbus", &LSGrid::remove_gen_slackbus, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_bus_vn_kv", &LSGrid::get_bus_vn_kv, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_bus_status", &LSGrid::get_bus_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("set_bus_voltage_limits", &LSGrid::set_bus_voltage_limits,
-             "Set the per-bus min/max operating voltage (in kV), one value per bus (see `get_bus_vn_kv`).")
-        .def("get_bus_vmin_kv", &LSGrid::get_bus_vmin_kv,
-             "Per-bus min operating voltage, in kV (NaN if not provided for a given bus, empty array if never set).",
-             py::return_value_policy::reference)
-        .def("get_bus_vmax_kv", &LSGrid::get_bus_vmax_kv,
-             "Per-bus max operating voltage, in kV (NaN if not provided for a given bus, empty array if never set).",
-             py::return_value_policy::reference)
+        .def("init_powerlines", &LSGrid::init_powerlines, DocLSGrid::init_powerlines.c_str())
+        .def("init_powerlines_full", &LSGrid::init_powerlines_full, DocLSGrid::init_powerlines_full.c_str())
+        .def("init_shunt", &LSGrid::init_shunt, DocLSGrid::init_shunt.c_str())
+        .def("init_trafo_pandapower", &LSGrid::init_trafo_pandapower, DocLSGrid::init_trafo_pandapower.c_str())
+        .def("init_trafo", &LSGrid::init_trafo, DocLSGrid::init_trafo.c_str())
+        .def("init_generators", &LSGrid::init_generators, DocLSGrid::init_generators.c_str())
+        .def("init_generators_full", &LSGrid::init_generators_full, DocLSGrid::init_generators_full.c_str())
+        .def("init_loads", &LSGrid::init_loads, DocLSGrid::init_loads.c_str())
+        .def("init_storages", &LSGrid::init_storages, DocLSGrid::init_storages.c_str())
+        .def("init_sgens", &LSGrid::init_sgens, DocLSGrid::init_sgens.c_str())
+        .def("init_dclines", &LSGrid::init_dclines, DocLSGrid::init_dclines.c_str())
+        .def("init_hvdc_lines", &LSGrid::init_hvdc_lines, DocLSGrid::init_hvdc_lines.c_str())
+        .def("init_svcs", &LSGrid::init_svcs, DocLSGrid::init_svcs.c_str())
+        .def("add_gen_slackbus", &LSGrid::add_gen_slackbus, DocLSGrid::add_gen_slackbus.c_str())
+        .def("remove_gen_slackbus", &LSGrid::remove_gen_slackbus, DocLSGrid::remove_gen_slackbus.c_str())
+        .def("get_bus_vn_kv", &LSGrid::get_bus_vn_kv, DocLSGrid::get_bus_vn_kv.c_str(), py::return_value_policy::reference)
+        .def("get_bus_status", &LSGrid::get_bus_status, DocLSGrid::get_bus_status.c_str(), py::return_value_policy::reference)
+        .def("set_bus_voltage_limits", &LSGrid::set_bus_voltage_limits, DocLSGrid::set_bus_voltage_limits.c_str())
+        .def("get_bus_vmin_kv", &LSGrid::get_bus_vmin_kv, DocLSGrid::get_bus_vmin_kv.c_str(), py::return_value_policy::reference)
+        .def("get_bus_vmax_kv", &LSGrid::get_bus_vmax_kv, DocLSGrid::get_bus_vmax_kv.c_str(), py::return_value_policy::reference)
 
         // inspect the grid
-        .def("get_substations", &LSGrid::get_substations, "TODO", py::return_value_policy::reference)
+        .def("get_substations", &LSGrid::get_substations, DocLSGrid::get_substations.c_str(), py::return_value_policy::reference)
         .def("get_lines", &LSGrid::get_lines, DocLSGrid::get_lines.c_str(), py::return_value_policy::reference)
         .def("get_dclines", &LSGrid::get_dclines, DocLSGrid::get_dclines.c_str(), py::return_value_policy::reference)
         .def("get_trafos", &LSGrid::get_trafos, DocLSGrid::get_trafos.c_str(), py::return_value_policy::reference)
         .def("get_generators", &LSGrid::get_generators, DocLSGrid::get_generators.c_str(), py::return_value_policy::reference)
         .def("get_static_generators", &LSGrid::get_static_generators, DocLSGrid::get_static_generators.c_str(), py::return_value_policy::reference)
-        .def("get_svcs", &LSGrid::get_svcs, "Get the container of all the Static Var Compensators (SVC).", py::return_value_policy::reference)
+        .def("get_svcs", &LSGrid::get_svcs, DocLSGrid::get_svcs.c_str(), py::return_value_policy::reference)
         .def("get_shunts", &LSGrid::get_shunts, DocLSGrid::get_shunts.c_str(), py::return_value_policy::reference)
         .def("get_storages", &LSGrid::get_storages, DocLSGrid::get_storages.c_str(), py::return_value_policy::reference)
         .def("get_loads", &LSGrid::get_loads, DocLSGrid::get_loads.c_str(), py::return_value_policy::reference)
 
         // pypowsybl compat names
-        .def("get_voltage_levels", &LSGrid::get_substations, "TODO", py::return_value_policy::reference)
+        .def("get_voltage_levels", &LSGrid::get_substations, DocLSGrid::get_substations.c_str(), py::return_value_policy::reference)
         .def("get_2_windings_transformers", &LSGrid::get_trafos, DocLSGrid::get_trafos.c_str(), py::return_value_policy::reference)
         .def("get_shunt_compensators", &LSGrid::get_shunts, DocLSGrid::get_shunts.c_str(), py::return_value_policy::reference)
 
         // modify the grid
-        .def("turnedoff_no_pv", &LSGrid::turnedoff_no_pv, "Turned off (or generators with p = 0) generators will not be pv buses, they will not maintain voltage")
-        .def("turnedoff_pv", &LSGrid::turnedoff_pv, "Turned off (or generators with p = 0) generators will be pv buses, they will maintain voltage (default)")
-        .def("get_turnedoff_gen_pv", &LSGrid::get_turnedoff_gen_pv, "TODO")
-        .def("update_slack_weights", &LSGrid::update_slack_weights, "TODO")
-        .def("update_slack_weights_by_id", &LSGrid::update_slack_weights_by_id, "TODO")
-        .def("assign_slack_to_most_connected", &LSGrid::assign_slack_to_most_connected, "TODO")
-        .def("set_reference_slack_bus", &LSGrid::set_reference_slack_bus,
-             "Force a (gridmodel) bus to be the angle reference among the slack buses "
-             "(reordered to slack_ids[0]) without changing the slack set/weights; -1 clears it.")
-        .def("get_reference_slack_bus", &LSGrid::get_reference_slack_bus,
-             "Forced angle-reference slack bus (gridmodel id), or -1 if none.")
-        .def("consider_only_main_component", &LSGrid::consider_only_main_component, "TODO and TODO DC LINE: one side might be in the connected comp and not the other !")
-        .def("set_ignore_status_global", &LSGrid::set_ignore_status_global, "Ignore the 'global_status' flags for powerlines and trafo (set to true if you want to control independantly each side of powerlines and trafo). Default: false.")
-        .def("set_synch_status_both_side", &LSGrid::set_synch_status_both_side, "Synch the status of each side of the powerlines and trafo. It means that if you disconnect one side of a powerline / trafo, the other side will also be disconnected. Default: true.")
-        .def("get_ignore_status_global", &LSGrid::get_ignore_status_global, "TODO doc")
-        .def("get_synch_status_both_side", &LSGrid::get_synch_status_both_side, "TODO doc")
+        .def("turnedoff_no_pv", &LSGrid::turnedoff_no_pv, DocLSGrid::turnedoff_no_pv.c_str())
+        .def("turnedoff_pv", &LSGrid::turnedoff_pv, DocLSGrid::turnedoff_pv.c_str())
+        .def("get_turnedoff_gen_pv", &LSGrid::get_turnedoff_gen_pv, DocLSGrid::get_turnedoff_gen_pv.c_str())
+        .def("update_slack_weights", &LSGrid::update_slack_weights, DocLSGrid::update_slack_weights.c_str())
+        .def("update_slack_weights_by_id", &LSGrid::update_slack_weights_by_id, DocLSGrid::update_slack_weights_by_id.c_str())
+        .def("assign_slack_to_most_connected", &LSGrid::assign_slack_to_most_connected, DocLSGrid::assign_slack_to_most_connected.c_str())
+        .def("set_reference_slack_bus", &LSGrid::set_reference_slack_bus, DocLSGrid::set_reference_slack_bus.c_str())
+        .def("get_reference_slack_bus", &LSGrid::get_reference_slack_bus, DocLSGrid::get_reference_slack_bus.c_str())
+        .def("consider_only_main_component", &LSGrid::consider_only_main_component, DocLSGrid::consider_only_main_component.c_str())
+        .def("set_ignore_status_global", &LSGrid::set_ignore_status_global, DocLSGrid::set_ignore_status_global.c_str())
+        .def("set_synch_status_both_side", &LSGrid::set_synch_status_both_side, DocLSGrid::set_synch_status_both_side.c_str())
+        .def("get_ignore_status_global", &LSGrid::get_ignore_status_global, DocLSGrid::get_ignore_status_global.c_str())
+        .def("get_synch_status_both_side", &LSGrid::get_synch_status_both_side, DocLSGrid::get_synch_status_both_side.c_str())
 
         // names
-        .def("set_line_names", &LSGrid::set_line_names, "TODO")
-        .def("get_line_names", &LSGrid::get_line_names, "Names of the powerlines, as set by `set_line_names`; empty if never set.")
-        .def("set_dcline_names", &LSGrid::set_dcline_names, "TODO")
-        .def("set_trafo_names", &LSGrid::set_trafo_names, "TODO")
-        .def("get_trafo_names", &LSGrid::get_trafo_names, "Names of the transformers, as set by `set_trafo_names`; empty if never set.")
-        .def("set_line_current_limit_side1", &LSGrid::set_line_current_limit_side1,
-             "Set the side-1 current limit of each powerline, in kA (see `limit_a1_ka` on `LineInfo`).")
-        .def("set_line_current_limit_side2", &LSGrid::set_line_current_limit_side2,
-             "Set the side-2 current limit of each powerline, in kA (see `limit_a2_ka` on `LineInfo`).")
-        .def("set_trafo_current_limit_side1", &LSGrid::set_trafo_current_limit_side1,
-             "Set the side-1 current limit of each transformer, in kA (see `limit_a1_ka` on `TrafoInfo`).")
-        .def("set_trafo_current_limit_side2", &LSGrid::set_trafo_current_limit_side2,
-             "Set the side-2 current limit of each transformer, in kA (see `limit_a2_ka` on `TrafoInfo`).")
-        .def("set_gen_names", &LSGrid::set_gen_names, "TODO")
-        .def("set_load_names", &LSGrid::set_load_names, "TODO")
-        .def("set_storage_names", &LSGrid::set_storage_names, "TODO")
-        .def("set_sgen_names", &LSGrid::set_sgen_names, "TODO")
-        .def("set_shunt_names", &LSGrid::set_shunt_names, "TODO")
-        .def("set_substation_names", &LSGrid::set_substation_names, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_substation_names", &LSGrid::get_substation_names, DocLSGrid::_internal_do_not_use.c_str())
+        .def("set_line_names", &LSGrid::set_line_names, DocLSGrid::set_line_names.c_str())
+        .def("get_line_names", &LSGrid::get_line_names, DocLSGrid::get_line_names.c_str())
+        .def("set_dcline_names", &LSGrid::set_dcline_names, DocLSGrid::set_dcline_names.c_str())
+        .def("set_trafo_names", &LSGrid::set_trafo_names, DocLSGrid::set_trafo_names.c_str())
+        .def("get_trafo_names", &LSGrid::get_trafo_names, DocLSGrid::get_trafo_names.c_str())
+        .def("set_line_current_limit_side1", &LSGrid::set_line_current_limit_side1, DocLSGrid::set_line_current_limit_side1.c_str())
+        .def("set_line_current_limit_side2", &LSGrid::set_line_current_limit_side2, DocLSGrid::set_line_current_limit_side2.c_str())
+        .def("set_trafo_current_limit_side1", &LSGrid::set_trafo_current_limit_side1, DocLSGrid::set_trafo_current_limit_side1.c_str())
+        .def("set_trafo_current_limit_side2", &LSGrid::set_trafo_current_limit_side2, DocLSGrid::set_trafo_current_limit_side2.c_str())
+        .def("set_gen_names", &LSGrid::set_gen_names, DocLSGrid::set_gen_names.c_str())
+        .def("set_load_names", &LSGrid::set_load_names, DocLSGrid::set_load_names.c_str())
+        .def("set_storage_names", &LSGrid::set_storage_names, DocLSGrid::set_storage_names.c_str())
+        .def("set_sgen_names", &LSGrid::set_sgen_names, DocLSGrid::set_sgen_names.c_str())
+        .def("set_shunt_names", &LSGrid::set_shunt_names, DocLSGrid::set_shunt_names.c_str())
+        .def("set_substation_names", &LSGrid::set_substation_names, DocLSGrid::set_substation_names.c_str())
+        .def("get_substation_names", &LSGrid::get_substation_names, DocLSGrid::get_substation_names.c_str())
 
         .def("deactivate_bus", &LSGrid::deactivate_bus_python, DocLSGrid::_internal_do_not_use.c_str())
         .def("reactivate_bus", &LSGrid::reactivate_bus_python, DocLSGrid::_internal_do_not_use.c_str())
 
-        .def("deactivate_powerline", &LSGrid::deactivate_powerline, DocLSGrid::_internal_do_not_use.c_str())
-        .def("reactivate_powerline", &LSGrid::reactivate_powerline, DocLSGrid::_internal_do_not_use.c_str())
-        .def("deactivate_powerline_side1", &LSGrid::deactivate_powerline_side1, "Disconnect only side 1 of a powerline (half-open). Needs set_synch_status_both_side(False) to keep side 2 connected.")
-        .def("deactivate_powerline_side2", &LSGrid::deactivate_powerline_side2, "Disconnect only side 2 of a powerline (half-open). Needs set_synch_status_both_side(False) to keep side 1 connected.")
-        .def("reactivate_powerline_side1", &LSGrid::reactivate_powerline_side1, "Reconnect only side 1 of a powerline.")
-        .def("reactivate_powerline_side2", &LSGrid::reactivate_powerline_side2, "Reconnect only side 2 of a powerline.")
-        .def("change_bus1_powerline", &LSGrid::change_bus1_powerline_python, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_bus2_powerline", &LSGrid::change_bus2_powerline_python, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_bus1_powerline", &LSGrid::get_bus1_powerline, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_bus2_powerline", &LSGrid::get_bus2_powerline, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("deactivate_powerline", &LSGrid::deactivate_powerline, DocLSGrid::deactivate_powerline.c_str())
+        .def("reactivate_powerline", &LSGrid::reactivate_powerline, DocLSGrid::reactivate_powerline.c_str())
+        .def("deactivate_powerline_side1", &LSGrid::deactivate_powerline_side1, DocLSGrid::deactivate_powerline_side1.c_str())
+        .def("deactivate_powerline_side2", &LSGrid::deactivate_powerline_side2, DocLSGrid::deactivate_powerline_side2.c_str())
+        .def("reactivate_powerline_side1", &LSGrid::reactivate_powerline_side1, DocLSGrid::reactivate_powerline_side1.c_str())
+        .def("reactivate_powerline_side2", &LSGrid::reactivate_powerline_side2, DocLSGrid::reactivate_powerline_side2.c_str())
+        .def("change_bus1_powerline", &LSGrid::change_bus1_powerline_python, DocLSGrid::change_bus1_powerline.c_str())
+        .def("change_bus2_powerline", &LSGrid::change_bus2_powerline_python, DocLSGrid::change_bus2_powerline.c_str())
+        .def("get_bus1_powerline", &LSGrid::get_bus1_powerline, DocLSGrid::get_bus1_powerline.c_str(), py::return_value_policy::reference)
+        .def("get_bus2_powerline", &LSGrid::get_bus2_powerline, DocLSGrid::get_bus2_powerline.c_str(), py::return_value_policy::reference)
 
-        .def("deactivate_trafo", &LSGrid::deactivate_trafo, DocLSGrid::_internal_do_not_use.c_str())
-        .def("reactivate_trafo", &LSGrid::reactivate_trafo, DocLSGrid::_internal_do_not_use.c_str())
-        .def("deactivate_trafo_side1", &LSGrid::deactivate_trafo_side1, "Disconnect only side 1 of a transformer (half-open). Needs set_synch_status_both_side(False) to keep side 2 connected.")
-        .def("deactivate_trafo_side2", &LSGrid::deactivate_trafo_side2, "Disconnect only side 2 of a transformer (half-open). Needs set_synch_status_both_side(False) to keep side 1 connected.")
-        .def("reactivate_trafo_side1", &LSGrid::reactivate_trafo_side1, "Reconnect only side 1 of a transformer.")
-        .def("reactivate_trafo_side2", &LSGrid::reactivate_trafo_side2, "Reconnect only side 2 of a transformer.")
-        .def("change_bus1_trafo", &LSGrid::change_bus1_trafo_python, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_bus2_trafo", &LSGrid::change_bus2_trafo_python, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_bus1_trafo", &LSGrid::get_bus1_trafo, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_bus2_trafo", &LSGrid::get_bus2_trafo, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("change_ratio_trafo", &LSGrid::change_ratio_trafo, "TODO")
-        .def("change_shift_trafo", &LSGrid::change_shift_trafo,
-            R"mydelimiter(
-            TODO Change the phase shift ratio for a given transformer.
-
-            .. warning::
-                It should be expressed in rad (not in deg).
-
-            If the flag
-            `ignore_tap_side_for_shift` (*eg* gridmodel.get_trafos().ignore_tap_side_for_shift)
-            is set to False (should be default), then the ratio should be given
-            at the side of the tap (side1 or side2). If this
-            flag is True (*eg* the grid comes from pandapower) then the phase
-            shift ratio should be given in in the side1 (hv side in pandapower).
-            )mydelimiter")
-        .def("change_shift_trafo_deg", &LSGrid::change_shift_trafo_deg,
-            "Same as ``change_shift_trafo`` but phase shift is expressed in degree and NOT in rad.")
+        .def("deactivate_trafo", &LSGrid::deactivate_trafo, DocLSGrid::deactivate_trafo.c_str())
+        .def("reactivate_trafo", &LSGrid::reactivate_trafo, DocLSGrid::reactivate_trafo.c_str())
+        .def("deactivate_trafo_side1", &LSGrid::deactivate_trafo_side1, DocLSGrid::deactivate_trafo_side1.c_str())
+        .def("deactivate_trafo_side2", &LSGrid::deactivate_trafo_side2, DocLSGrid::deactivate_trafo_side2.c_str())
+        .def("reactivate_trafo_side1", &LSGrid::reactivate_trafo_side1, DocLSGrid::reactivate_trafo_side1.c_str())
+        .def("reactivate_trafo_side2", &LSGrid::reactivate_trafo_side2, DocLSGrid::reactivate_trafo_side2.c_str())
+        .def("change_bus1_trafo", &LSGrid::change_bus1_trafo_python, DocLSGrid::change_bus1_trafo.c_str())
+        .def("change_bus2_trafo", &LSGrid::change_bus2_trafo_python, DocLSGrid::change_bus2_trafo.c_str())
+        .def("get_bus1_trafo", &LSGrid::get_bus1_trafo, DocLSGrid::get_bus1_trafo.c_str(), py::return_value_policy::reference)
+        .def("get_bus2_trafo", &LSGrid::get_bus2_trafo, DocLSGrid::get_bus2_trafo.c_str(), py::return_value_policy::reference)
+        .def("change_ratio_trafo", &LSGrid::change_ratio_trafo, DocLSGrid::change_ratio_trafo.c_str())
+        .def("change_shift_trafo", &LSGrid::change_shift_trafo, DocLSGrid::change_shift_trafo.c_str())
+        .def("change_shift_trafo_deg", &LSGrid::change_shift_trafo_deg, DocLSGrid::change_shift_trafo_deg.c_str())
         .def("set_trafo_shift_dependent_rx", &LSGrid::set_trafo_shift_dependent_rx,
             py::arg("enable"), py::arg("alpha_rad"), py::arg("rx_corr_pct"),
-            R"mydelimiter(
-            Declare that (some) transformers have a series impedance (r, x) that depends
-            on their phase-shift angle alpha, supplied as a per-transformer table of
-            sample points ``alpha (rad) -> r/x correction (%)`` (the per-step r/x deltas
-            of a pypowsybl phase-tap-changer; r% == x%). The effective r / x is then
-            ``base * (1 + corr(shift) / 100)``, interpolated on the current shift and
-            refreshed whenever ``change_shift_trafo`` / ``change_ratio_trafo`` is called.
-            There is NO "tap" concept: the dependency is purely on the (continuous) shift.
-            Pass an empty list for a transformer without such a dependency; ``enable`` is
-            kept False for pandapower (which has no such data).
-            )mydelimiter")
-        .def("deactivate_load", &LSGrid::deactivate_load, DocLSGrid::_internal_do_not_use.c_str())
-        .def("reactivate_load", &LSGrid::reactivate_load, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_bus_load", &LSGrid::change_bus_load_python, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_bus_load", &LSGrid::get_bus_load, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("change_p_load", &LSGrid::change_p_load, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_q_load", &LSGrid::change_q_load, DocLSGrid::_internal_do_not_use.c_str())
+            DocLSGrid::set_trafo_shift_dependent_rx.c_str())
+        .def("deactivate_load", &LSGrid::deactivate_load, DocLSGrid::deactivate_load.c_str())
+        .def("reactivate_load", &LSGrid::reactivate_load, DocLSGrid::reactivate_load.c_str())
+        .def("change_bus_load", &LSGrid::change_bus_load_python, DocLSGrid::change_bus_load.c_str())
+        .def("get_bus_load", &LSGrid::get_bus_load, DocLSGrid::get_bus_load.c_str(), py::return_value_policy::reference)
+        .def("change_p_load", &LSGrid::change_p_load, DocLSGrid::change_p_load.c_str())
+        .def("change_q_load", &LSGrid::change_q_load, DocLSGrid::change_q_load.c_str())
 
-        .def("deactivate_gen", &LSGrid::deactivate_gen, DocLSGrid::_internal_do_not_use.c_str())
-        .def("reactivate_gen", &LSGrid::reactivate_gen, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_bus_gen", &LSGrid::change_bus_gen_python, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_bus_gen", &LSGrid::get_bus_gen, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("change_p_gen", &LSGrid::change_p_gen, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_v_gen", &LSGrid::change_v_gen, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_gen_regulated_bus", &LSGrid::set_gen_regulated_bus, "Set the grid bus whose voltage a generator regulates (remote voltage control; bus == own bus for local control).")
-        .def("deactivate_svc", &LSGrid::deactivate_svc, DocLSGrid::_internal_do_not_use.c_str())
-        .def("reactivate_svc", &LSGrid::reactivate_svc, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_bus_svc", &LSGrid::change_bus_svc_python, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_bus_svc", &LSGrid::get_bus_svc, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_svc_names", &LSGrid::set_svc_names, "TODO")
+        .def("deactivate_gen", &LSGrid::deactivate_gen, DocLSGrid::deactivate_gen.c_str())
+        .def("reactivate_gen", &LSGrid::reactivate_gen, DocLSGrid::reactivate_gen.c_str())
+        .def("change_bus_gen", &LSGrid::change_bus_gen_python, DocLSGrid::change_bus_gen.c_str())
+        .def("get_bus_gen", &LSGrid::get_bus_gen, DocLSGrid::get_bus_gen.c_str(), py::return_value_policy::reference)
+        .def("change_p_gen", &LSGrid::change_p_gen, DocLSGrid::change_p_gen.c_str())
+        .def("change_v_gen", &LSGrid::change_v_gen, DocLSGrid::change_v_gen.c_str())
+        .def("set_gen_regulated_bus", &LSGrid::set_gen_regulated_bus, DocLSGrid::set_gen_regulated_bus.c_str())
+        .def("deactivate_svc", &LSGrid::deactivate_svc, DocLSGrid::deactivate_svc.c_str())
+        .def("reactivate_svc", &LSGrid::reactivate_svc, DocLSGrid::reactivate_svc.c_str())
+        .def("change_bus_svc", &LSGrid::change_bus_svc_python, DocLSGrid::change_bus_svc.c_str())
+        .def("get_bus_svc", &LSGrid::get_bus_svc, DocLSGrid::get_bus_svc.c_str())
+        .def("set_svc_names", &LSGrid::set_svc_names, DocLSGrid::set_svc_names.c_str())
 
-        .def("deactivate_shunt", &LSGrid::deactivate_shunt, DocLSGrid::_internal_do_not_use.c_str())
-        .def("reactivate_shunt", &LSGrid::reactivate_shunt, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_bus_shunt", &LSGrid::change_bus_shunt_python, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_bus_shunt", &LSGrid::get_bus_shunt, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("change_p_shunt", &LSGrid::change_p_shunt, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_q_shunt", &LSGrid::change_q_shunt, DocLSGrid::_internal_do_not_use.c_str())
+        .def("deactivate_shunt", &LSGrid::deactivate_shunt, DocLSGrid::deactivate_shunt.c_str())
+        .def("reactivate_shunt", &LSGrid::reactivate_shunt, DocLSGrid::reactivate_shunt.c_str())
+        .def("change_bus_shunt", &LSGrid::change_bus_shunt_python, DocLSGrid::change_bus_shunt.c_str())
+        .def("get_bus_shunt", &LSGrid::get_bus_shunt, DocLSGrid::get_bus_shunt.c_str(), py::return_value_policy::reference)
+        .def("change_p_shunt", &LSGrid::change_p_shunt, DocLSGrid::change_p_shunt.c_str())
+        .def("change_q_shunt", &LSGrid::change_q_shunt, DocLSGrid::change_q_shunt.c_str())
 
-        .def("deactivate_sgen", &LSGrid::deactivate_sgen, DocLSGrid::_internal_do_not_use.c_str())
-        .def("reactivate_sgen", &LSGrid::reactivate_sgen, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_bus_sgen", &LSGrid::change_bus_sgen_python, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_bus_sgen", &LSGrid::get_bus_sgen, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("change_p_sgen", &LSGrid::change_p_sgen, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_q_sgen", &LSGrid::change_q_sgen, DocLSGrid::_internal_do_not_use.c_str())
+        .def("deactivate_sgen", &LSGrid::deactivate_sgen, DocLSGrid::deactivate_sgen.c_str())
+        .def("reactivate_sgen", &LSGrid::reactivate_sgen, DocLSGrid::reactivate_sgen.c_str())
+        .def("change_bus_sgen", &LSGrid::change_bus_sgen_python, DocLSGrid::change_bus_sgen.c_str())
+        .def("get_bus_sgen", &LSGrid::get_bus_sgen, DocLSGrid::get_bus_sgen.c_str(), py::return_value_policy::reference)
+        .def("change_p_sgen", &LSGrid::change_p_sgen, DocLSGrid::change_p_sgen.c_str())
+        .def("change_q_sgen", &LSGrid::change_q_sgen, DocLSGrid::change_q_sgen.c_str())
 
-        .def("deactivate_storage", &LSGrid::deactivate_storage, DocLSGrid::_internal_do_not_use.c_str())
-        .def("reactivate_storage", &LSGrid::reactivate_storage, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_bus_storage", &LSGrid::change_bus_storage_python, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_bus_storage", &LSGrid::get_bus_storage, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("change_p_storage", &LSGrid::change_p_storage, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_q_storage", &LSGrid::change_q_storage, DocLSGrid::_internal_do_not_use.c_str())
+        .def("deactivate_storage", &LSGrid::deactivate_storage, DocLSGrid::deactivate_storage.c_str())
+        .def("reactivate_storage", &LSGrid::reactivate_storage, DocLSGrid::reactivate_storage.c_str())
+        .def("change_bus_storage", &LSGrid::change_bus_storage_python, DocLSGrid::change_bus_storage.c_str())
+        .def("get_bus_storage", &LSGrid::get_bus_storage, DocLSGrid::get_bus_storage.c_str(), py::return_value_policy::reference)
+        .def("change_p_storage", &LSGrid::change_p_storage, DocLSGrid::change_p_storage.c_str())
+        .def("change_q_storage", &LSGrid::change_q_storage, DocLSGrid::change_q_storage.c_str())
 
-        .def("deactivate_dcline", &LSGrid::deactivate_dcline, DocLSGrid::_internal_do_not_use.c_str())
-        .def("deactivate_dcline_side1", &LSGrid::deactivate_dcline_side1, "Disconnect only converter station 1 of an HVDC line; station 2 stays active (injecting / regulating).")
-        .def("deactivate_dcline_side2", &LSGrid::deactivate_dcline_side2, "Disconnect only converter station 2 of an HVDC line; station 1 stays active (injecting / regulating).")
-        .def("reactivate_dcline", &LSGrid::reactivate_dcline, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_p_dcline", &LSGrid::change_p_dcline, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_v1_dcline", &LSGrid::change_v1_dcline, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_v2_dcline", &LSGrid::change_v2_dcline, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_bus1_dcline", &LSGrid::change_bus1_dcline, DocLSGrid::_internal_do_not_use.c_str())
-        .def("change_bus2_dcline", &LSGrid::change_bus2_dcline, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_bus1_dcline", &LSGrid::get_bus1_dcline, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_bus2_dcline", &LSGrid::get_bus2_dcline, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("set_status_droop_hvdc", &LSGrid::set_status_droop_hvdc,
-             "Set the droop regime of an angle-droop (AC emulation) hvdc line: 0 = linear, +1 = saturated 1->2, -1 = saturated 2->1. "
-             "This is an INPUT of the solver, constant across one solve: the saturation logic is meant to be run between two solves (python outer loop).")
-        .def("get_status_droop_hvdc", &LSGrid::get_status_droop_hvdc, "Droop regime of one hvdc line, see `set_status_droop_hvdc`")
-        .def("get_status_droop_hvdc_vect", &LSGrid::get_status_droop_hvdc_vect, "Droop regimes of all the hvdc lines, see `set_status_droop_hvdc`")
+        .def("deactivate_dcline", &LSGrid::deactivate_dcline, DocLSGrid::deactivate_dcline.c_str())
+        .def("deactivate_dcline_side1", &LSGrid::deactivate_dcline_side1, DocLSGrid::deactivate_dcline_side1.c_str())
+        .def("deactivate_dcline_side2", &LSGrid::deactivate_dcline_side2, DocLSGrid::deactivate_dcline_side2.c_str())
+        .def("reactivate_dcline", &LSGrid::reactivate_dcline, DocLSGrid::reactivate_dcline.c_str())
+        .def("change_p_dcline", &LSGrid::change_p_dcline, DocLSGrid::change_p_dcline.c_str())
+        .def("change_v1_dcline", &LSGrid::change_v1_dcline, DocLSGrid::change_v1_dcline.c_str())
+        .def("change_v2_dcline", &LSGrid::change_v2_dcline, DocLSGrid::change_v2_dcline.c_str())
+        .def("change_bus1_dcline", &LSGrid::change_bus1_dcline, DocLSGrid::change_bus1_dcline.c_str())
+        .def("change_bus2_dcline", &LSGrid::change_bus2_dcline, DocLSGrid::change_bus2_dcline.c_str())
+        .def("get_bus1_dcline", &LSGrid::get_bus1_dcline, DocLSGrid::get_bus1_dcline.c_str(), py::return_value_policy::reference)
+        .def("get_bus2_dcline", &LSGrid::get_bus2_dcline, DocLSGrid::get_bus2_dcline.c_str(), py::return_value_policy::reference)
+        .def("set_status_droop_hvdc", &LSGrid::set_status_droop_hvdc, DocLSGrid::set_status_droop_hvdc.c_str())
+        .def("get_status_droop_hvdc", &LSGrid::get_status_droop_hvdc, DocLSGrid::get_status_droop_hvdc.c_str())
+        .def("get_status_droop_hvdc_vect", &LSGrid::get_status_droop_hvdc_vect, DocLSGrid::get_status_droop_hvdc_vect.c_str())
 
         // get back the results
         .def("get_V", &LSGrid::get_V, DocLSGrid::get_V.c_str())
@@ -347,57 +281,22 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
         .def("get_slack_ids_solver", &LSGrid::get_slack_ids_solver_numpy, DocLSGrid::get_slack_ids_solver.c_str(), py::return_value_policy::reference)
         .def("get_slack_ids_dc_solver", &LSGrid::get_slack_ids_dc_solver_numpy, DocLSGrid::get_slack_ids_dc_solver.c_str(), py::return_value_policy::reference)
         .def("get_slack_weights_solver", &LSGrid::get_slack_weights_solver, DocLSGrid::get_slack_weights_solver.c_str(), py::return_value_policy::reference)
-        .def("get_slack_col_solver", &LSGrid::get_slack_col_solver,
-             "J column of the MultiSlack slack_absorbed unknown (-1 when "
-             "distributed slack is inactive).")
-        .def("get_slack_absorbed_solver", &LSGrid::get_slack_absorbed_solver,
-             "Converged value (pu) of the MultiSlack slack_absorbed unknown "
-             "(0 when distributed slack is inactive). This is the GROUND "
-             "TRUTH after convergence -- not the 0 initial guess an external "
-             "solver's own linearized derivation starts from.")
-        .def("get_controller_q_solver", &LSGrid::get_controller_q_solver, py::return_value_policy::reference,
-             "Converged reactive injection (pu) per VoltageControl controller "
-             "(remote-regulating generator or voltage-mode SVC), in controller "
-             "registration order. Empty when the extension is inactive.")
-        .def("get_controller_kind_solver", &LSGrid::get_controller_kind_solver, py::return_value_policy::reference,
-             "Kind of each VoltageControl controller (0=GEN, 1=SVC), same "
-             "order as get_controller_q_solver().")
-        .def("get_controller_elem_id_solver", &LSGrid::get_controller_elem_id_solver, py::return_value_policy::reference,
-             "Element id (generator id if GEN, svc id if SVC) of each "
-             "VoltageControl controller, same order as get_controller_q_solver().")
-        .def("get_controller_q_col_solver", &LSGrid::get_controller_q_col_solver, py::return_value_policy::reference,
-             "J column of each VoltageControl controller's own Q unknown, same "
-             "order as get_controller_q_solver(). NOT the same as the bus-keyed "
-             "get_q_to_J_col_solver(): that map only keeps the LAST controller "
-             "registered at a given bus, so it silently collides whenever two "
-             "controllers regulate reactive power from the same bus. External "
-             "solvers rebuilding this bordered block must use this instead.")
+        .def("get_slack_col_solver", &LSGrid::get_slack_col_solver, DocLSGrid::get_slack_col_solver.c_str())
+        .def("get_slack_absorbed_solver", &LSGrid::get_slack_absorbed_solver, DocLSGrid::get_slack_absorbed_solver.c_str())
+        .def("get_controller_q_solver", &LSGrid::get_controller_q_solver, py::return_value_policy::reference, DocLSGrid::get_controller_q_solver.c_str())
+        .def("get_controller_kind_solver", &LSGrid::get_controller_kind_solver, py::return_value_policy::reference, DocLSGrid::get_controller_kind_solver.c_str())
+        .def("get_controller_elem_id_solver", &LSGrid::get_controller_elem_id_solver, py::return_value_policy::reference, DocLSGrid::get_controller_elem_id_solver.c_str())
+        .def("get_controller_q_col_solver", &LSGrid::get_controller_q_col_solver, py::return_value_policy::reference, DocLSGrid::get_controller_q_col_solver.c_str())
 
-        .def("get_p_buses_solver", &LSGrid::get_p_buses_solver, py::return_value_policy::reference,
-             "Compact (bus, row) pair list for P equations -- the row/col "
-             "counterpart of get_p_to_J_row_solver(), preserving EVERY "
-             "registration (a bus may appear more than once; see NRLedger's "
-             "'Multiplicity rules'). Same length as get_p_rows_solver().")
-        .def("get_p_rows_solver", &LSGrid::get_p_rows_solver, py::return_value_policy::reference,
-             "J row of each entry in get_p_buses_solver(), same order.")
-        .def("get_q_buses_solver", &LSGrid::get_q_buses_solver, py::return_value_policy::reference,
-             "Compact (bus, row) pair list for Q equations, see get_p_buses_solver().")
-        .def("get_q_rows_solver", &LSGrid::get_q_rows_solver, py::return_value_policy::reference,
-             "J row of each entry in get_q_buses_solver(), same order.")
-        .def("get_theta_buses_solver", &LSGrid::get_theta_buses_solver, py::return_value_policy::reference,
-             "Compact (bus, col) pair list for theta unknowns, see get_p_buses_solver().")
-        .def("get_theta_cols_solver", &LSGrid::get_theta_cols_solver, py::return_value_policy::reference,
-             "J col of each entry in get_theta_buses_solver(), same order.")
-        .def("get_vm_buses_solver", &LSGrid::get_vm_buses_solver, py::return_value_policy::reference,
-             "Compact (bus, col) pair list for Vm unknowns, see get_p_buses_solver().")
-        .def("get_vm_cols_solver", &LSGrid::get_vm_cols_solver, py::return_value_policy::reference,
-             "J col of each entry in get_vm_buses_solver(), same order.")
-        .def("get_hvdc_droop_data_solver", &LSGrid::get_hvdc_droop_data_solver,
-             "(bus1, bus2, status, p0, k, lf1, lf2, r, pmax12, pmax21), one "
-             "entry per CONNECTED droop-enabled hvdc line (solver bus "
-             "numbering, pu). Ground truth for external solvers re-deriving "
-             "the theta-dependent droop flow contribution to F independently. "
-             "See HvdcDroopSolverData for the flow formula.")
+        .def("get_p_buses_solver", &LSGrid::get_p_buses_solver, py::return_value_policy::reference, DocLSGrid::get_p_buses_solver.c_str())
+        .def("get_p_rows_solver", &LSGrid::get_p_rows_solver, py::return_value_policy::reference, DocLSGrid::get_p_rows_solver.c_str())
+        .def("get_q_buses_solver", &LSGrid::get_q_buses_solver, py::return_value_policy::reference, DocLSGrid::get_q_buses_solver.c_str())
+        .def("get_q_rows_solver", &LSGrid::get_q_rows_solver, py::return_value_policy::reference, DocLSGrid::get_q_rows_solver.c_str())
+        .def("get_theta_buses_solver", &LSGrid::get_theta_buses_solver, py::return_value_policy::reference, DocLSGrid::get_theta_buses_solver.c_str())
+        .def("get_theta_cols_solver", &LSGrid::get_theta_cols_solver, py::return_value_policy::reference, DocLSGrid::get_theta_cols_solver.c_str())
+        .def("get_vm_buses_solver", &LSGrid::get_vm_buses_solver, py::return_value_policy::reference, DocLSGrid::get_vm_buses_solver.c_str())
+        .def("get_vm_cols_solver", &LSGrid::get_vm_cols_solver, py::return_value_policy::reference, DocLSGrid::get_vm_cols_solver.c_str())
+        .def("get_hvdc_droop_data_solver", &LSGrid::get_hvdc_droop_data_solver, DocLSGrid::get_hvdc_droop_data_solver.c_str())
 
         .def("get_Ybus", &LSGrid::get_Ybus, DocLSGrid::get_Ybus.c_str())
         .def("get_dcYbus", &LSGrid::get_dcYbus, DocLSGrid::get_dcYbus.c_str())
@@ -410,76 +309,67 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
 
         .def("check_solution", &LSGrid::check_solution, DocLSGrid::check_solution.c_str())
 
-        .def("get_loads_res", &LSGrid::get_loads_res, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_loads_status", &LSGrid::get_loads_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_shunts_res", &LSGrid::get_shunts_res, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_shunts_status", &LSGrid::get_shunts_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_gen_res", &LSGrid::get_gen_res, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_gen_status", &LSGrid::get_gen_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_line_res1", &LSGrid::get_line_res1, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_line_res2", &LSGrid::get_line_res2, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_lines_status", &LSGrid::get_lines_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_lines_status_side1", &LSGrid::get_lines_status_side1,
-             "Per-side status of each powerline's side 1 (relevant for half-open lines: "
-             "get_lines_status() is True as soon as either side is connected).",
-             py::return_value_policy::reference)
-        .def("get_lines_status_side2", &LSGrid::get_lines_status_side2,
-             "Per-side status of each powerline's side 2, see get_lines_status_side1().",
-             py::return_value_policy::reference)
-        .def("get_trafo_res1", &LSGrid::get_trafo_res1, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafo_res2", &LSGrid::get_trafo_res2, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafo_status", &LSGrid::get_trafo_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafo_status_side1", &LSGrid::get_trafo_status_side1,
-             "Per-side status of each transformer's side 1, see get_lines_status_side1().",
-             py::return_value_policy::reference)
-        .def("get_trafo_status_side2", &LSGrid::get_trafo_status_side2,
-             "Per-side status of each transformer's side 2, see get_lines_status_side1().",
-             py::return_value_policy::reference)
-        .def("get_storages_res", &LSGrid::get_storages_res, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_storages_status", &LSGrid::get_storages_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_sgens_res", &LSGrid::get_sgens_res, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_sgens_status", &LSGrid::get_sgens_status, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_loads_res", &LSGrid::get_loads_res, DocLSGrid::get_loads_res.c_str(), py::return_value_policy::reference)
+        .def("get_loads_status", &LSGrid::get_loads_status, DocLSGrid::get_loads_status.c_str(), py::return_value_policy::reference)
+        .def("get_shunts_res", &LSGrid::get_shunts_res, DocLSGrid::get_shunts_res.c_str(), py::return_value_policy::reference)
+        .def("get_shunts_status", &LSGrid::get_shunts_status, DocLSGrid::get_shunts_status.c_str(), py::return_value_policy::reference)
+        .def("get_gen_res", &LSGrid::get_gen_res, DocLSGrid::get_gen_res.c_str(), py::return_value_policy::reference)
+        .def("get_gen_status", &LSGrid::get_gen_status, DocLSGrid::get_gen_status.c_str(), py::return_value_policy::reference)
+        .def("get_line_res1", &LSGrid::get_line_res1, DocLSGrid::get_line_res1.c_str(), py::return_value_policy::reference)
+        .def("get_line_res2", &LSGrid::get_line_res2, DocLSGrid::get_line_res2.c_str(), py::return_value_policy::reference)
+        .def("get_lines_status", &LSGrid::get_lines_status, DocLSGrid::get_lines_status.c_str(), py::return_value_policy::reference)
+        .def("get_lines_status_side1", &LSGrid::get_lines_status_side1, DocLSGrid::get_lines_status_side1.c_str(), py::return_value_policy::reference)
+        .def("get_lines_status_side2", &LSGrid::get_lines_status_side2, DocLSGrid::get_lines_status_side2.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res1", &LSGrid::get_trafo_res1, DocLSGrid::get_trafo_res1.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res2", &LSGrid::get_trafo_res2, DocLSGrid::get_trafo_res2.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_status", &LSGrid::get_trafo_status, DocLSGrid::get_trafo_status.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_status_side1", &LSGrid::get_trafo_status_side1, DocLSGrid::get_trafo_status_side1.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_status_side2", &LSGrid::get_trafo_status_side2, DocLSGrid::get_trafo_status_side2.c_str(), py::return_value_policy::reference)
+        .def("get_storages_res", &LSGrid::get_storages_res, DocLSGrid::get_storages_res.c_str(), py::return_value_policy::reference)
+        .def("get_storages_status", &LSGrid::get_storages_status, DocLSGrid::get_storages_status.c_str(), py::return_value_policy::reference)
+        .def("get_sgens_res", &LSGrid::get_sgens_res, DocLSGrid::get_sgens_res.c_str(), py::return_value_policy::reference)
+        .def("get_sgens_status", &LSGrid::get_sgens_status, DocLSGrid::get_sgens_status.c_str(), py::return_value_policy::reference)
 
-        .def("get_gen_theta", &LSGrid::get_gen_theta, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_load_theta", &LSGrid::get_load_theta, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_shunt_theta", &LSGrid::get_shunt_theta, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_storage_theta", &LSGrid::get_storage_theta, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_line_theta1", &LSGrid::get_line_theta1, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_line_theta2", &LSGrid::get_line_theta2, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafo_theta1", &LSGrid::get_trafo_theta1, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafo_theta2", &LSGrid::get_trafo_theta2, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_gen_theta", &LSGrid::get_gen_theta, DocLSGrid::get_gen_theta.c_str(), py::return_value_policy::reference)
+        .def("get_load_theta", &LSGrid::get_load_theta, DocLSGrid::get_load_theta.c_str(), py::return_value_policy::reference)
+        .def("get_shunt_theta", &LSGrid::get_shunt_theta, DocLSGrid::get_shunt_theta.c_str(), py::return_value_policy::reference)
+        .def("get_storage_theta", &LSGrid::get_storage_theta, DocLSGrid::get_storage_theta.c_str(), py::return_value_policy::reference)
+        .def("get_line_theta1", &LSGrid::get_line_theta1, DocLSGrid::get_line_theta1.c_str(), py::return_value_policy::reference)
+        .def("get_line_theta2", &LSGrid::get_line_theta2, DocLSGrid::get_line_theta2.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_theta1", &LSGrid::get_trafo_theta1, DocLSGrid::get_trafo_theta1.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_theta2", &LSGrid::get_trafo_theta2, DocLSGrid::get_trafo_theta2.c_str(), py::return_value_policy::reference)
 
-        .def("get_all_shunt_buses", &LSGrid::get_all_shunt_buses_numpy, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_loads_res_full", &LSGrid::get_loads_res_full, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_shunts_res_full", &LSGrid::get_shunts_res_full, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_gen_res_full", &LSGrid::get_gen_res_full, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_line_res1_full", &LSGrid::get_line_res1_full, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_line_res2_full", &LSGrid::get_line_res2_full, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafo_res1_full", &LSGrid::get_trafo_res1_full, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafo_res2_full", &LSGrid::get_trafo_res2_full, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_storages_res_full", &LSGrid::get_storages_res_full, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_sgens_res_full", &LSGrid::get_sgens_res_full, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_dcline_res1_full", &LSGrid::get_dcline_res1_full, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_dcline_res2_full", &LSGrid::get_dcline_res2_full, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_all_shunt_buses", &LSGrid::get_all_shunt_buses_numpy, DocLSGrid::get_all_shunt_buses.c_str(), py::return_value_policy::reference)
+        .def("get_loads_res_full", &LSGrid::get_loads_res_full, DocLSGrid::get_loads_res_full.c_str(), py::return_value_policy::reference)
+        .def("get_shunts_res_full", &LSGrid::get_shunts_res_full, DocLSGrid::get_shunts_res_full.c_str(), py::return_value_policy::reference)
+        .def("get_gen_res_full", &LSGrid::get_gen_res_full, DocLSGrid::get_gen_res_full.c_str(), py::return_value_policy::reference)
+        .def("get_line_res1_full", &LSGrid::get_line_res1_full, DocLSGrid::get_line_res1_full.c_str(), py::return_value_policy::reference)
+        .def("get_line_res2_full", &LSGrid::get_line_res2_full, DocLSGrid::get_line_res2_full.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res1_full", &LSGrid::get_trafo_res1_full, DocLSGrid::get_trafo_res1_full.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res2_full", &LSGrid::get_trafo_res2_full, DocLSGrid::get_trafo_res2_full.c_str(), py::return_value_policy::reference)
+        .def("get_storages_res_full", &LSGrid::get_storages_res_full, DocLSGrid::get_storages_res_full.c_str(), py::return_value_policy::reference)
+        .def("get_sgens_res_full", &LSGrid::get_sgens_res_full, DocLSGrid::get_sgens_res_full.c_str(), py::return_value_policy::reference)
+        .def("get_dcline_res1_full", &LSGrid::get_dcline_res1_full, DocLSGrid::get_dcline_res1_full.c_str(), py::return_value_policy::reference)
+        .def("get_dcline_res2_full", &LSGrid::get_dcline_res2_full, DocLSGrid::get_dcline_res2_full.c_str(), py::return_value_policy::reference)
 
-        .def("get_shunt_target_p", &LSGrid::get_shunt_target_p, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_load_target_p", &LSGrid::get_load_target_p, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_gen_target_p", &LSGrid::get_gen_target_p, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_sgen_target_p", &LSGrid::get_sgen_target_p, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_storage_target_p", &LSGrid::get_storage_target_p, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_shunt_target_p", &LSGrid::get_shunt_target_p, DocLSGrid::get_shunt_target_p.c_str(), py::return_value_policy::reference)
+        .def("get_load_target_p", &LSGrid::get_load_target_p, DocLSGrid::get_load_target_p.c_str(), py::return_value_policy::reference)
+        .def("get_gen_target_p", &LSGrid::get_gen_target_p, DocLSGrid::get_gen_target_p.c_str(), py::return_value_policy::reference)
+        .def("get_sgen_target_p", &LSGrid::get_sgen_target_p, DocLSGrid::get_sgen_target_p.c_str(), py::return_value_policy::reference)
+        .def("get_storage_target_p", &LSGrid::get_storage_target_p, DocLSGrid::get_storage_target_p.c_str(), py::return_value_policy::reference)
 
         // do something with the grid
         .def("deactivate_result_computation", &LSGrid::deactivate_result_computation, DocLSGrid::deactivate_result_computation.c_str())
         .def("reactivate_result_computation", &LSGrid::reactivate_result_computation, DocLSGrid::reactivate_result_computation.c_str())
         .def("dc_pf", &LSGrid::dc_pf, DocLSGrid::dc_pf.c_str())
         .def("ac_pf", &LSGrid::ac_pf, DocLSGrid::ac_pf.c_str())
-        .def("unset_changes", &LSGrid::unset_changes, DocLSGrid::_internal_do_not_use.c_str())
+        .def("unset_changes", &LSGrid::unset_changes, DocLSGrid::unset_changes.c_str())
         .def("tell_recompute_ybus", &LSGrid::tell_recompute_ybus, DocLSGrid::_internal_do_not_use.c_str())
         .def("tell_recompute_sbus", &LSGrid::tell_recompute_sbus, DocLSGrid::_internal_do_not_use.c_str())
-        .def("tell_solver_need_reset", &LSGrid::tell_solver_need_reset, DocLSGrid::_internal_do_not_use.c_str())
+        .def("tell_solver_need_reset", &LSGrid::tell_solver_need_reset, DocLSGrid::tell_solver_need_reset.c_str())
         .def("tell_ybus_change_sparsity_pattern", &LSGrid::tell_ybus_change_sparsity_pattern, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_ac_algo_controler", &LSGrid::get_ac_algo_controler, "TODO", py::return_value_policy::reference)
-        .def("get_dc_algo_controler", &LSGrid::get_dc_algo_controler, "TODO", py::return_value_policy::reference)
+        .def("get_ac_algo_controler", &LSGrid::get_ac_algo_controler, DocLSGrid::get_ac_algo_controler.c_str(), py::return_value_policy::reference)
+        .def("get_dc_algo_controler", &LSGrid::get_dc_algo_controler, DocLSGrid::get_dc_algo_controler.c_str(), py::return_value_policy::reference)
         // .def("get_solver_control",  &LSGrid::get_algo_controler, "DEPRECATED use 'get_algo_controler'", py::return_value_policy::reference)
         .def("compute_newton", &LSGrid::ac_pf, DocLSGrid::ac_pf.c_str())
         // get_ptdf/get_ptdf_solver/get_lodf/get_Bf/get_Bf_solver all return their
@@ -496,33 +386,33 @@ views (eg `LightsimResultNetwork`), never by any C++ powerflow logic.
         .def("get_Bf_solver", &LSGrid::get_Bf_solver, DocLSGrid::get_Bf_solver.c_str())
 
         // apply action faster (optimized for grid2op representation)
-        .def("update_gens_p", &LSGrid::update_gens_p, DocLSGrid::_internal_do_not_use.c_str())
-        .def("update_sgens_p", &LSGrid::update_sgens_p, DocLSGrid::_internal_do_not_use.c_str())
-        .def("update_gens_v", &LSGrid::update_gens_v, DocLSGrid::_internal_do_not_use.c_str())
-        .def("update_loads_p", &LSGrid::update_loads_p, DocLSGrid::_internal_do_not_use.c_str())
-        .def("update_loads_q", &LSGrid::update_loads_q, DocLSGrid::_internal_do_not_use.c_str())
-        .def("update_topo", &LSGrid::update_topo, DocLSGrid::_internal_do_not_use.c_str())
-        .def("update_storages_p", &LSGrid::update_storages_p, DocLSGrid::_internal_do_not_use.c_str())
+        .def("update_gens_p", &LSGrid::update_gens_p, DocLSGrid::update_gens_p.c_str())
+        .def("update_sgens_p", &LSGrid::update_sgens_p, DocLSGrid::update_sgens_p.c_str())
+        .def("update_gens_v", &LSGrid::update_gens_v, DocLSGrid::update_gens_v.c_str())
+        .def("update_loads_p", &LSGrid::update_loads_p, DocLSGrid::update_loads_p.c_str())
+        .def("update_loads_q", &LSGrid::update_loads_q, DocLSGrid::update_loads_q.c_str())
+        .def("update_topo", &LSGrid::update_topo, DocLSGrid::update_topo.c_str())
+        .def("update_storages_p", &LSGrid::update_storages_p, DocLSGrid::update_storages_p.c_str())
 
         // auxiliary functions
-        .def("set_n_sub", &LSGrid::set_n_sub, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_n_sub", &LSGrid::get_n_sub, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_max_nb_bus_per_sub", &LSGrid::set_max_nb_bus_per_sub, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_load_pos_topo_vect", &LSGrid::set_load_pos_topo_vect, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_gen_pos_topo_vect", &LSGrid::set_gen_pos_topo_vect, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_line_pos1_topo_vect", &LSGrid::set_line_pos1_topo_vect, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_line_pos2_topo_vect", &LSGrid::set_line_pos2_topo_vect, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_trafo_pos1_topo_vect", &LSGrid::set_trafo_pos1_topo_vect, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_trafo_pos2_topo_vect", &LSGrid::set_trafo_pos2_topo_vect, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_storage_pos_topo_vect", &LSGrid::set_storage_pos_topo_vect, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_load_to_subid", &LSGrid::set_load_to_subid, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_gen_to_subid", &LSGrid::set_gen_to_subid, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_shunt_to_subid", &LSGrid::set_shunt_to_subid, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_line_to_sub1_id", &LSGrid::set_line_to_sub1_id, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_line_to_sub2_id", &LSGrid::set_line_to_sub2_id, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_trafo_to_sub1_id", &LSGrid::set_trafo_to_sub1_id, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_trafo_to_sub2_id", &LSGrid::set_trafo_to_sub2_id, DocLSGrid::_internal_do_not_use.c_str())
-        .def("set_storage_to_subid", &LSGrid::set_storage_to_subid, DocLSGrid::_internal_do_not_use.c_str())
+        .def("set_n_sub", &LSGrid::set_n_sub, DocLSGrid::set_n_sub.c_str())
+        .def("get_n_sub", &LSGrid::get_n_sub, DocLSGrid::get_n_sub.c_str())
+        .def("set_max_nb_bus_per_sub", &LSGrid::set_max_nb_bus_per_sub, DocLSGrid::set_max_nb_bus_per_sub.c_str())
+        .def("set_load_pos_topo_vect", &LSGrid::set_load_pos_topo_vect, DocLSGrid::set_load_pos_topo_vect.c_str())
+        .def("set_gen_pos_topo_vect", &LSGrid::set_gen_pos_topo_vect, DocLSGrid::set_gen_pos_topo_vect.c_str())
+        .def("set_line_pos1_topo_vect", &LSGrid::set_line_pos1_topo_vect, DocLSGrid::set_line_pos1_topo_vect.c_str())
+        .def("set_line_pos2_topo_vect", &LSGrid::set_line_pos2_topo_vect, DocLSGrid::set_line_pos2_topo_vect.c_str())
+        .def("set_trafo_pos1_topo_vect", &LSGrid::set_trafo_pos1_topo_vect, DocLSGrid::set_trafo_pos1_topo_vect.c_str())
+        .def("set_trafo_pos2_topo_vect", &LSGrid::set_trafo_pos2_topo_vect, DocLSGrid::set_trafo_pos2_topo_vect.c_str())
+        .def("set_storage_pos_topo_vect", &LSGrid::set_storage_pos_topo_vect, DocLSGrid::set_storage_pos_topo_vect.c_str())
+        .def("set_load_to_subid", &LSGrid::set_load_to_subid, DocLSGrid::set_load_to_subid.c_str())
+        .def("set_gen_to_subid", &LSGrid::set_gen_to_subid, DocLSGrid::set_gen_to_subid.c_str())
+        .def("set_shunt_to_subid", &LSGrid::set_shunt_to_subid, DocLSGrid::set_shunt_to_subid.c_str())
+        .def("set_line_to_sub1_id", &LSGrid::set_line_to_sub1_id, DocLSGrid::set_line_to_sub1_id.c_str())
+        .def("set_line_to_sub2_id", &LSGrid::set_line_to_sub2_id, DocLSGrid::set_line_to_sub2_id.c_str())
+        .def("set_trafo_to_sub1_id", &LSGrid::set_trafo_to_sub1_id, DocLSGrid::set_trafo_to_sub1_id.c_str())
+        .def("set_trafo_to_sub2_id", &LSGrid::set_trafo_to_sub2_id, DocLSGrid::set_trafo_to_sub2_id.c_str())
+        .def("set_storage_to_subid", &LSGrid::set_storage_to_subid, DocLSGrid::set_storage_to_subid.c_str())
 
         // debug functions (might disappear without further notice)
         .def("debug_get_Bp_python", &LSGrid::debug_get_Bp_python, DocLSGrid::_internal_do_not_use.c_str())

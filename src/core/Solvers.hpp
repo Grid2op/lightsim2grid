@@ -44,7 +44,11 @@ using FDPF_BX_SparseLU = BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, 
 // order" refactor), so there is deliberately no NRRefactorRetry_SparseLU -- wrapping it
 // would be a no-op retry.
 
-#ifdef KLU_SOLVER_AVAILABLE
+#if defined(KLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
+    // Under _READ_THE_DOCS without the real library, KLULinearSolver (see
+    // linear_solvers/KLUSolver.hpp) is a doc-only, no-op stand-in with the same name
+    // and interface as the real one -- so every alias below is still a genuine,
+    // distinct, fully-functional-looking C++ type, not a copy of NR_SparseLU.
     /** Newton-Raphson (multi-slack) with KLU linear solver **/
     using NR_KLU = NRAlgo<LinearSolverPolicy<KLULinearSolver>, MultiSlackNRSystem>;
     /** Newton-Raphson (single-slack) with KLU linear solver **/
@@ -58,16 +62,11 @@ using FDPF_BX_SparseLU = BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, 
     /** Newton-Raphson (multi-slack) with KLU linear solver, retrying a failed refactor
      *  with a full factorize() before giving up **/
     using NRRefactorRetry_KLU = NRAlgo<RefactorRetryLinearSolver<KLULinearSolver>, MultiSlackNRSystem>;
-#elif defined(_READ_THE_DOCS)
-    using NR_KLU = NR_SparseLU;
-    using NRSing_KLU = NRSing_SparseLU;
-    using DC_KLU = DC_SparseLU;
-    using FDPF_XB_KLU = FDPF_XB_SparseLU;
-    using FDPF_BX_KLU = FDPF_BX_SparseLU;
-    using NRRefactorRetry_KLU = NR_SparseLU;
-#endif  // KLU_SOLVER_AVAILABLE
+#endif  // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
-#ifdef NICSLU_SOLVER_AVAILABLE
+#if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
+    // See the KLU comment above: NICSLULinearSolver is a doc-only no-op stand-in under
+    // _READ_THE_DOCS without the real (licensed) library.
     /** Newton-Raphson (multi-slack) with NICSLU linear solver (requires license) **/
     using NR_NICSLU = NRAlgo<LinearSolverPolicy<NICSLULinearSolver>, MultiSlackNRSystem>;
     /** Newton-Raphson (single-slack) with NICSLU linear solver (requires license) **/
@@ -81,16 +80,11 @@ using FDPF_BX_SparseLU = BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, 
     /** Newton-Raphson (multi-slack) with NICSLU linear solver, retrying a failed refactor
      *  with a full factorize() before giving up (requires license) **/
     using NRRefactorRetry_NICSLU = NRAlgo<RefactorRetryLinearSolver<NICSLULinearSolver>, MultiSlackNRSystem>;
-#elif defined(_READ_THE_DOCS)
-    using NR_NICSLU = NR_SparseLU;
-    using NRSing_NICSLU = NRSing_SparseLU;
-    using DC_NICSLU = DC_SparseLU;
-    using FDPF_XB_NICSLU = FDPF_XB_SparseLU;
-    using FDPF_BX_NICSLU = FDPF_BX_SparseLU;
-    using NRRefactorRetry_NICSLU = NR_SparseLU;
-#endif  // NICSLU_SOLVER_AVAILABLE
+#endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
-#ifdef CKTSO_SOLVER_AVAILABLE
+#if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
+    // See the KLU comment above: CKTSOLinearSolver is a doc-only no-op stand-in under
+    // _READ_THE_DOCS without the real (licensed) library.
     /** Newton-Raphson (multi-slack) with CKTSO linear solver (requires license) **/
     using NR_CKTSO = NRAlgo<LinearSolverPolicy<CKTSOLinearSolver>, MultiSlackNRSystem>;
     /** Newton-Raphson (single-slack) with CKTSO linear solver (requires license) **/
@@ -104,14 +98,7 @@ using FDPF_BX_SparseLU = BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, 
     /** Newton-Raphson (multi-slack) with CKTSO linear solver, retrying a failed refactor
      *  with a full factorize() before giving up (requires license) **/
     using NRRefactorRetry_CKTSO = NRAlgo<RefactorRetryLinearSolver<CKTSOLinearSolver>, MultiSlackNRSystem>;
-#elif defined(_READ_THE_DOCS)
-    using NR_CKTSO = NR_SparseLU;
-    using NRSing_CKTSO = NRSing_SparseLU;
-    using DC_CKTSO = DC_SparseLU;
-    using FDPF_XB_CKTSO = FDPF_XB_SparseLU;
-    using FDPF_BX_CKTSO = FDPF_BX_SparseLU;
-    using NRRefactorRetry_CKTSO = NR_SparseLU;
-#endif  // CKTSO_SOLVER_AVAILABLE
+#endif  // CKTSO_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
 
 #ifndef LS2G_BUILDING_CORE
@@ -121,7 +108,7 @@ using FDPF_BX_SparseLU = BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, 
     extern template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, FDPFMethod::XB>;
     extern template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, FDPFMethod::BX>;
 
-#ifdef KLU_SOLVER_AVAILABLE
+#if defined(KLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
     extern template class LS2G_API NRAlgo<LinearSolverPolicy<KLULinearSolver>, MultiSlackNRSystem>;
     extern template class LS2G_API NRAlgo<LinearSolverPolicy<KLULinearSolver>, SingleSlackNRSystem>;
     extern template class LS2G_API BaseDCAlgo<LinearSolverPolicy<KLULinearSolver>>;
@@ -130,7 +117,7 @@ using FDPF_BX_SparseLU = BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, 
     extern template class LS2G_API NRAlgo<RefactorRetryLinearSolver<KLULinearSolver>, MultiSlackNRSystem>;
 #endif
 
-#ifdef NICSLU_SOLVER_AVAILABLE
+#if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
     extern template class LS2G_API NRAlgo<LinearSolverPolicy<NICSLULinearSolver>, MultiSlackNRSystem>;
     extern template class LS2G_API NRAlgo<LinearSolverPolicy<NICSLULinearSolver>, SingleSlackNRSystem>;
     extern template class LS2G_API BaseDCAlgo<LinearSolverPolicy<NICSLULinearSolver>>;
@@ -139,7 +126,7 @@ using FDPF_BX_SparseLU = BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, 
     extern template class LS2G_API NRAlgo<RefactorRetryLinearSolver<NICSLULinearSolver>, MultiSlackNRSystem>;
 #endif
 
-#ifdef CKTSO_SOLVER_AVAILABLE
+#if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
     extern template class LS2G_API NRAlgo<LinearSolverPolicy<CKTSOLinearSolver>, MultiSlackNRSystem>;
     extern template class LS2G_API NRAlgo<LinearSolverPolicy<CKTSOLinearSolver>, SingleSlackNRSystem>;
     extern template class LS2G_API BaseDCAlgo<LinearSolverPolicy<CKTSOLinearSolver>>;

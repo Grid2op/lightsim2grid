@@ -15,6 +15,7 @@ __all__ = ["AlgorithmType",
            "RefactorPolicyType",
            "FDPFMethod",
            "AlgoConfig",
+           "AlgoControl",
            "GaussSeidelAlgo",
            "GaussSeidelSynchAlgo",
            "NR_SparseLU",
@@ -32,6 +33,7 @@ from ..lightsim2grid_cpp import ScalingPolicyType  # pyright: ignore[reportMissi
 from ..lightsim2grid_cpp import RefactorPolicyType  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import FDPFMethod  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import AlgoConfig  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import AlgoControl  # pyright: ignore[reportMissingImports]
 
 from ..lightsim2grid_cpp import GaussSeidelAlgo  # AlgorithmType.GaussSeidel  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import GaussSeidelSynchAlgo  # AlgorithmType.GaussSeidelSynch  # pyright: ignore[reportMissingImports]

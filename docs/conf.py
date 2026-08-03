@@ -54,6 +54,21 @@ extensions = [
     # 'rst2pdf.pdfbuilder'
 ]
 
+# External inventories so :class:/:func:/:attr: references to third-party types
+# used throughout the docstrings (numpy/scipy/pandas type hints, grid2op and
+# pypowsybl classes) resolve instead of showing up as nitpicky "reference target
+# not found" warnings. Fetched over the network at build time (and cached) --
+# Read the Docs builds have normal internet access; a fully offline build just
+# falls back to unresolved (but non-fatal) references for these.
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/', None),
+    'pandas': ('https://pandas.pydata.org/docs/', None),
+    'grid2op': ('https://grid2op.readthedocs.io/en/latest/', None),
+    'pypowsybl': ('https://pypowsybl.readthedocs.io/en/latest/', None),
+}
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = []  # ['_templates']
 
