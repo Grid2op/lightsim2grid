@@ -792,6 +792,40 @@ TEST_CASE("update_topo rejects reconnecting an element whose subid was never set
     CHECK_THROWS_AS(grid.update_topo(flags, vals), std::runtime_error);
 }
 
+TEST_CASE("update_topo rejects a subid left stale after the container grew", "[check_grid]")
+{
+    // subid_ is only ever (re)assigned by set_subid() / set_osc_state(); init() does
+    // not touch it. Re-initializing a container with MORE elements after set_subid()
+    // was called for the smaller count leaves subid_ shorter than the current nb() --
+    // indexing el_id then reads past its end. Mirrors
+    // _check_pos_topo_vect_filled()'s size() != nb() check, which already guards the
+    // analogous case for pos_topo_vect_.
+    LSGrid grid = make_valid_grid();  // 1 load, bus 2
+    IntVect one_subid(1); one_subid << 0;
+    grid.set_load_to_subid(one_subid);  // subid_ sized for exactly 1 load
+
+    // re-initialize loads with 2 elements: subid_ (still size 1) is now stale
+    RealVect load_p(2), load_q(2);
+    load_p << 50., 30.;
+    load_q << 10., 5.;
+    Eigen::VectorXi load_bus(2);
+    load_bus << 2, 1;
+    grid.init_loads(load_p, load_q, load_bus);
+    REQUIRE(grid.get_loads().nb() == 2);
+
+    IntVect load_pos(2); load_pos << 0, 1;
+    IntVect gen_pos(1);  gen_pos  << 2;
+    grid.set_load_pos_topo_vect(load_pos);
+    grid.set_gen_pos_topo_vect(gen_pos);
+
+    // dim_topo = 2 loads + 1 gen + 2*2 lines = 7
+    Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> flags(7);
+    flags << false, true, false, false, false, false, false;  // reconnect load 1 only
+    Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> vals(7);
+    vals << 1, 1, 1, 1, 1, 1, 1;
+    CHECK_THROWS_AS(grid.update_topo(flags, vals), std::runtime_error);
+}
+
 TEST_CASE("update_slack_weights rejects an array that is not nb_gen long", "[check_grid]")
 {
     LSGrid grid = make_valid_grid();  // exactly one generator
