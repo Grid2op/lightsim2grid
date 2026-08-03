@@ -47,11 +47,18 @@ For detailed explanation about each column as well as the hardware used, please 
 - `time (TimeSerie)` reports the time it takes to run one powerflow using the lightsim2grid `TimeSerie` module, were 
   everything is in c++ and some care has been taken to improve the performance (reuse of as many things as possible, 
   carefull memory allocation, etc.). See :ref:`bench_grid_size_ts` for more information.
-- `time (ContingencyAnalysis)` reports the time it takes to run one powerflow using the lightsim2grid `ContingencyAnalysis` module, were 
-  everything is in c++ and some care has been taken to improve the performance (reuse of as many things as possible, 
-  carefull memory allocation, etc.). See :ref:`bench_grid_size_ca` for more information. **NB** on this settings, 
+- `time (ContingencyAnalysis)` reports the time it takes to run one powerflow using the lightsim2grid `ContingencyAnalysis` module, were
+  everything is in c++ and some care has been taken to improve the performance (reuse of as many things as possible,
+  carefull memory allocation, etc.). See :ref:`bench_grid_size_ca` for more information. **NB** on this settings,
   as opposed to the others, the grid production / generations stay the same, but the grid topology changes by the
   connection and disconnection of powerlines.
+
+.. note::
+  Unlike the other benchmark pages, the TL;DR table above is not hand-copied from the detailed tables further
+  down this page: ``benchmark_grid_size.py`` prints it directly, computed from the exact same run that produces
+  the 4 detailed tables below, so the two cannot drift apart from each other. The script also now prints a
+  "Description" paragraph (see the "Comments" section at the end of this page) commenting on these numbers,
+  generated the same way as on the other benchmark pages.
 
 .. _bench_grid_size_hardware:
 
@@ -271,3 +278,15 @@ case6495rte                  6495            6.15428                162.488
 case6515rte                  6515            6.27699                159.312
 case9241pegase               9241            9.95424                100.46
 ================  ===============  ===================  ===================
+
+Comments
+--------
+
+This is the text printed by ``benchmark_grid_size.py`` (see the note above the TL;DR table) for the tables
+above, computed from the numbers actually measured during that run.
+
+Allowing lightsim2grid to "recycle" previous computation (column `avg step duration (ms)`, default behaviour) instead of restarting from scratch at every step makes grid2op between **~1.2x** (on `case14`) and **~1.9x** (on `case2869pegase`) faster, depending on the grid size.
+
+Compared to a regular grid2op step (with recycling), the `TimeSerie` module is between **~2.5x** (on `case2869pegase`) and **~58.0x** (on `case14`) faster.
+
+Similarly, the `ContingencyAnalysis` module is between **~2.0x** (on `case2848rte`) and **~28.8x** (on `case14`) faster than a regular grid2op step (with recycling) to evaluate one contingency.

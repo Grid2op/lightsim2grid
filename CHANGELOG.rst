@@ -123,6 +123,19 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [ADDED] closed the last two gaps in the benchmark narrative-generation work above:
+
+  - ``benchmarks/benchmark_grid_size.py`` gained a ``generate_narrative`` (recycling vs no-recycling,
+    ``TimeSerie`` vs a regular grid2op step, ``ContingencyAnalysis`` vs a regular grid2op step, each as a
+    "between Nx and Mx" range across the grid-size scan) and prints it after its tables; the corresponding
+    "Comments" section of ``docs/benchmarks_grid_sizes.rst`` (previously absent) is filled in with the
+    generated text. The page's TL;DR table is (and always was) printed directly by the same script run
+    that produces its 4 detailed tables, so it could not actually drift against them the way it first
+    looked -- a clarifying note was added since the visual duplication invited that reading.
+  - ``benchmarks/benchmark_binary_serialization.py``'s single-grid comparison table gained a "speedup vs
+    pickle" column (computed the same way the grid-size-scan table below it already does it), replacing
+    the hand-written "``save_binary`` is **1.5x** faster..." sentence that used to sit below the table as a
+    second, independently-typed copy of the same ratio; ``docs/binary_serialization.rst`` updated to match.
 - [FIXED] the orchestration layer under ``benchmarks/`` had drifted from the scripts it is supposed to
   run: ``benchmarks/security_analysis.py`` was renamed to ``benchmarks/contingency_analysis.py`` (its
   ``examples/`` counterpart was already renamed in a previous fix, this one was missed --
