@@ -45,43 +45,38 @@ template<typename Solver>
 void bind_nr_algo_policies(py::class_<Solver>& cls) {
     cls
         // scaling policy
-        .def("get_scaling_policy_type",   &Solver::get_scaling_policy_type,   "Return the current step-scaling policy (ScalingPolicyType)")
-        .def("set_scaling_policy",   &Solver::set_scaling_policy,   "Set the step-scaling policy (ScalingPolicyType)",   py::arg("policy"))
+        .def("get_scaling_policy_type",   &Solver::get_scaling_policy_type,   DocSolver::get_scaling_policy_type.c_str())
+        .def("set_scaling_policy",   &Solver::set_scaling_policy,   DocSolver::set_scaling_policy.c_str(),   py::arg("policy"))
         // refactor policy
-        .def("get_refactor_policy",  &Solver::get_refactor_policy,  "Return the current Jacobian refactorization policy (RefactorPolicyType)")
-        .def("set_refactor_policy",  &Solver::set_refactor_policy,  "Set the Jacobian refactorization policy (RefactorPolicyType)", py::arg("policy"))
+        .def("get_refactor_policy",  &Solver::get_refactor_policy,  DocSolver::get_refactor_policy.c_str())
+        .def("set_refactor_policy",  &Solver::set_refactor_policy,  DocSolver::set_refactor_policy.c_str(), py::arg("policy"))
         // MaxVoltageChange params
-        .def("get_max_dVa",          &Solver::get_max_dVa,          "Max angle step (rad) for MaxVoltageChange policy")
-        .def("set_max_dVa",          &Solver::set_max_dVa,          py::arg("value"))
-        .def("get_max_dVm",          &Solver::get_max_dVm,          "Max magnitude step (pu) for MaxVoltageChange policy")
-        .def("set_max_dVm",          &Solver::set_max_dVm,          py::arg("value"))
+        .def("get_max_dVa",          &Solver::get_max_dVa,          DocSolver::get_max_dVa.c_str())
+        .def("set_max_dVa",          &Solver::set_max_dVa,          DocSolver::set_max_dVa.c_str(), py::arg("value"))
+        .def("get_max_dVm",          &Solver::get_max_dVm,          DocSolver::get_max_dVm.c_str())
+        .def("set_max_dVm",          &Solver::set_max_dVm,          DocSolver::set_max_dVm.c_str(), py::arg("value"))
         // LineSearch (Armijo) params
-        .def("get_ls_c",             &Solver::get_ls_c,             "Armijo sufficient-decrease constant c (LineSearch policy)")
-        .def("set_ls_c",             &Solver::set_ls_c,             py::arg("value"))
-        .def("get_ls_rho",           &Solver::get_ls_rho,           "Backtracking factor rho in (0,1) (LineSearch policy)")
-        .def("set_ls_rho",           &Solver::set_ls_rho,           py::arg("value"))
-        .def("get_ls_max_iter",      &Solver::get_ls_max_iter,      "Max backtracking iterations (LineSearch policy)")
-        .def("set_ls_max_iter",      &Solver::set_ls_max_iter,      py::arg("value"))
+        .def("get_ls_c",             &Solver::get_ls_c,             DocSolver::get_ls_c.c_str())
+        .def("set_ls_c",             &Solver::set_ls_c,             DocSolver::set_ls_c.c_str(), py::arg("value"))
+        .def("get_ls_rho",           &Solver::get_ls_rho,           DocSolver::get_ls_rho.c_str())
+        .def("set_ls_rho",           &Solver::set_ls_rho,           DocSolver::set_ls_rho.c_str(), py::arg("value"))
+        .def("get_ls_max_iter",      &Solver::get_ls_max_iter,      DocSolver::get_ls_max_iter.c_str())
+        .def("set_ls_max_iter",      &Solver::set_ls_max_iter,      DocSolver::set_ls_max_iter.c_str(), py::arg("value"))
         // Iwamoto params
-        .def("get_iw_mu_min",        &Solver::get_iw_mu_min,        "Minimum optimal multiplier (Iwamoto policy)")
-        .def("set_iw_mu_min",        &Solver::set_iw_mu_min,        py::arg("value"))
-        .def("get_iw_mu_max",        &Solver::get_iw_mu_max,        "Maximum optimal multiplier (Iwamoto policy)")
-        .def("set_iw_mu_max",        &Solver::set_iw_mu_max,        py::arg("value"))
+        .def("get_iw_mu_min",        &Solver::get_iw_mu_min,        DocSolver::get_iw_mu_min.c_str())
+        .def("set_iw_mu_min",        &Solver::set_iw_mu_min,        DocSolver::set_iw_mu_min.c_str(), py::arg("value"))
+        .def("get_iw_mu_max",        &Solver::get_iw_mu_max,        DocSolver::get_iw_mu_max.c_str())
+        .def("set_iw_mu_max",        &Solver::set_iw_mu_max,        DocSolver::set_iw_mu_max.c_str(), py::arg("value"))
         // EveryN param
-        .def("get_refactor_every_n", &Solver::get_refactor_every_n, "Refactorize every N-th iteration (EveryN policy)")
-        .def("set_refactor_every_n", &Solver::set_refactor_every_n, py::arg("value"))
+        .def("get_refactor_every_n", &Solver::get_refactor_every_n, DocSolver::get_refactor_every_n.c_str())
+        .def("set_refactor_every_n", &Solver::set_refactor_every_n, DocSolver::set_refactor_every_n.c_str(), py::arg("value"))
         // AlgoConfig serialization
-        .def("get_config", &Solver::get_config,
-            "Return an AlgoConfig capturing all scaling/refactor policy type and parameters.")
-        .def("set_config", &Solver::set_config, py::arg("config"),
-            "Restore scaling/refactor policy type and parameters from an AlgoConfig.")
+        .def("get_config", &Solver::get_config, DocSolver::get_config.c_str())
+        .def("set_config", &Solver::set_config, py::arg("config"), DocSolver::set_config.c_str())
         // column (unknown) -> bus-id converters (only valid after a powerflow)
-        .def("get_theta_to_J_col", &Solver::get_theta_to_J_col_python,
-            "bus_id -> Jacobian column of its voltage-angle (theta) unknown, -1 if none")
-        .def("get_vm_to_J_col",    &Solver::get_vm_to_J_col_python,
-            "bus_id -> Jacobian column of its voltage-magnitude (vm) unknown, -1 if none")
-        .def("get_q_to_J_col",     &Solver::get_q_to_J_col_python,
-            "bus_id -> Jacobian column of its reactive (q) unknown, currently always -1")
+        .def("get_theta_to_J_col", &Solver::get_theta_to_J_col_python, DocSolver::get_theta_to_J_col.c_str())
+        .def("get_vm_to_J_col",    &Solver::get_vm_to_J_col_python, DocSolver::get_vm_to_J_col.c_str())
+        .def("get_q_to_J_col",     &Solver::get_q_to_J_col_python, DocSolver::get_q_to_J_col.c_str())
         ;
 }
 
@@ -89,44 +84,34 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
 // FDPF_* has two solvers (B'/B'') and is bound separately, see bind_fdpf_linear_solver_stats.
 template<typename Solver>
 void bind_linear_solver_stats(py::class_<Solver>& cls) {
-    cls.def("get_linear_solver_stats", &Solver::get_linear_solver_stats,
-            "Per-call counters and timings for the underlying linear solver: "
-            "factor/refactor/analyze/solve counts, refactor-failure and "
-            "fallback-factor counts, and matching durations (LinearSolverStats). "
-            "Counters accumulate over the algorithm's whole lifetime; the timer_* "
-            "fields reset every compute_pf call, like get_timers_jacobian().");
+    cls.def("get_linear_solver_stats", &Solver::get_linear_solver_stats, DocSolver::get_linear_solver_stats.c_str());
 }
 
 // Bind the two-solver (B'/B'') equivalent for FDPF_* types.
 template<typename Solver>
 void bind_fdpf_linear_solver_stats(py::class_<Solver>& cls) {
     cls
-        .def("get_linear_solver_stats_bp",  &Solver::get_linear_solver_stats_bp,
-            "Per-call counters and timings for the B' linear solver (LinearSolverStats)")
-        .def("get_linear_solver_stats_bpp", &Solver::get_linear_solver_stats_bpp,
-            "Per-call counters and timings for the B'' linear solver (LinearSolverStats)")
+        .def("get_linear_solver_stats_bp",  &Solver::get_linear_solver_stats_bp, DocSolver::get_linear_solver_stats_bp.c_str())
+        .def("get_linear_solver_stats_bpp", &Solver::get_linear_solver_stats_bpp, DocSolver::get_linear_solver_stats_bpp.c_str())
         ;
 }
 
 void bind_solvers(py::module_& m) {
     // ---- TimerJac ----
-    py::class_<TimerJac>(m, "TimerJac",
-        "Named timer record returned by get_timers_jacobian(). "
-        "All fields default to -1.0 when not applicable to the active solver. "
-        "Supports tuple-style iteration and unpacking.")
-        .def_readonly("timer_Fx",         &TimerJac::timer_Fx_)
-        .def_readonly("timer_solve",      &TimerJac::timer_solve_)
-        .def_readonly("timer_factor",     &TimerJac::timer_factor_)
-        .def_readonly("timer_refactor",   &TimerJac::timer_refactor_)
-        .def_readonly("timer_initialize", &TimerJac::timer_initialize_)
-        .def_readonly("timer_check",      &TimerJac::timer_check_)
-        .def_readonly("timer_dSbus",      &TimerJac::timer_dSbus_)
-        .def_readonly("timer_fillJ",      &TimerJac::timer_fillJ_)
-        .def_readonly("timer_Va_Vm",      &TimerJac::timer_Va_Vm_)
-        .def_readonly("timer_pre_proc",   &TimerJac::timer_pre_proc_)
-        .def_readonly("timer_scale",      &TimerJac::timer_scale_)
-        .def_readonly("timer_mismatch",   &TimerJac::timer_mismatch_)
-        .def_readonly("timer_total_nr",   &TimerJac::timer_total_nr_)
+    py::class_<TimerJac>(m, "TimerJac", DocSolver::TimerJac.c_str())
+        .def_readonly("timer_Fx",         &TimerJac::timer_Fx_, DocSolver::timer_Fx.c_str())
+        .def_readonly("timer_solve",      &TimerJac::timer_solve_, DocSolver::timer_solve.c_str())
+        .def_readonly("timer_factor",     &TimerJac::timer_factor_, DocSolver::timer_factor.c_str())
+        .def_readonly("timer_refactor",   &TimerJac::timer_refactor_, DocSolver::timer_refactor.c_str())
+        .def_readonly("timer_initialize", &TimerJac::timer_initialize_, DocSolver::timer_initialize.c_str())
+        .def_readonly("timer_check",      &TimerJac::timer_check_, DocSolver::timer_check.c_str())
+        .def_readonly("timer_dSbus",      &TimerJac::timer_dSbus_, DocSolver::timer_dSbus.c_str())
+        .def_readonly("timer_fillJ",      &TimerJac::timer_fillJ_, DocSolver::timer_fillJ.c_str())
+        .def_readonly("timer_Va_Vm",      &TimerJac::timer_Va_Vm_, DocSolver::timer_Va_Vm.c_str())
+        .def_readonly("timer_pre_proc",   &TimerJac::timer_pre_proc_, DocSolver::timer_pre_proc.c_str())
+        .def_readonly("timer_scale",      &TimerJac::timer_scale_, DocSolver::timer_scale.c_str())
+        .def_readonly("timer_mismatch",   &TimerJac::timer_mismatch_, DocSolver::timer_mismatch.c_str())
+        .def_readonly("timer_total_nr",   &TimerJac::timer_total_nr_, DocSolver::timer_total_nr.c_str())
         .def("__len__", [](const TimerJac&) { return 13; })
         .def("__getitem__", [](const TimerJac& t, int i) -> double {
             const double vals[13] = {
@@ -157,23 +142,19 @@ void bind_solvers(py::module_& m) {
         });
 
     // ---- LinearSolverStats ----
-    py::class_<LinearSolverStats>(m, "LinearSolverStats",
-        "Per-call counters and timings for a linear solver, as tracked by "
-        "LinearSolverPolicy (every built-in solver) and RefactorRetryLinearSolver "
-        "(NRRefactorRetry_* solvers). Counters accumulate over the algorithm's whole "
-        "lifetime; the timer_* fields reset every compute_pf call.")
-        .def_readonly("nb_reset",                      &LinearSolverStats::nb_reset)
-        .def_readonly("nb_analyze",                     &LinearSolverStats::nb_analyze)
-        .def_readonly("nb_factorize",                   &LinearSolverStats::nb_factorize)
-        .def_readonly("nb_refactorize",                 &LinearSolverStats::nb_refactorize)
-        .def_readonly("nb_refactorize_failed",          &LinearSolverStats::nb_refactorize_failed)
-        .def_readonly("nb_fallback_factorize",          &LinearSolverStats::nb_fallback_factorize)
-        .def_readonly("nb_fallback_factorize_failed",   &LinearSolverStats::nb_fallback_factorize_failed)
-        .def_readonly("nb_solve",                       &LinearSolverStats::nb_solve)
-        .def_readonly("timer_initialize",               &LinearSolverStats::timer_initialize_)
-        .def_readonly("timer_factor",                   &LinearSolverStats::timer_factor_)
-        .def_readonly("timer_refactor",                 &LinearSolverStats::timer_refactor_)
-        .def_readonly("timer_solve",                    &LinearSolverStats::timer_solve_)
+    py::class_<LinearSolverStats>(m, "LinearSolverStats", DocSolver::LinearSolverStats.c_str())
+        .def_readonly("nb_reset",                      &LinearSolverStats::nb_reset, DocSolver::nb_reset.c_str())
+        .def_readonly("nb_analyze",                     &LinearSolverStats::nb_analyze, DocSolver::nb_analyze.c_str())
+        .def_readonly("nb_factorize",                   &LinearSolverStats::nb_factorize, DocSolver::nb_factorize.c_str())
+        .def_readonly("nb_refactorize",                 &LinearSolverStats::nb_refactorize, DocSolver::nb_refactorize.c_str())
+        .def_readonly("nb_refactorize_failed",          &LinearSolverStats::nb_refactorize_failed, DocSolver::nb_refactorize_failed.c_str())
+        .def_readonly("nb_fallback_factorize",          &LinearSolverStats::nb_fallback_factorize, DocSolver::nb_fallback_factorize.c_str())
+        .def_readonly("nb_fallback_factorize_failed",   &LinearSolverStats::nb_fallback_factorize_failed, DocSolver::nb_fallback_factorize_failed.c_str())
+        .def_readonly("nb_solve",                       &LinearSolverStats::nb_solve, DocSolver::nb_solve.c_str())
+        .def_readonly("timer_initialize",               &LinearSolverStats::timer_initialize_, DocSolver::timer_initialize.c_str())
+        .def_readonly("timer_factor",                   &LinearSolverStats::timer_factor_, DocSolver::timer_factor.c_str())
+        .def_readonly("timer_refactor",                 &LinearSolverStats::timer_refactor_, DocSolver::timer_refactor.c_str())
+        .def_readonly("timer_solve",                    &LinearSolverStats::timer_solve_, DocSolver::timer_solve.c_str())
         .def("__repr__", [](const LinearSolverStats& s) {
             return "LinearSolverStats(nb_factorize=" + std::to_string(s.nb_factorize) +
                    ", nb_refactorize=" + std::to_string(s.nb_refactorize) +
@@ -379,7 +360,7 @@ void bind_solvers(py::module_& m) {
         .def("get_theta_to_J_col",   &AlgorithmSelector::get_theta_to_J_col_python, "bus_id -> Jacobian column of its voltage-angle (theta) unknown, -1 if none")
         .def("get_vm_to_J_col",      &AlgorithmSelector::get_vm_to_J_col_python,    "bus_id -> Jacobian column of its voltage-magnitude (vm) unknown, -1 if none")
         .def("get_q_to_J_col",       &AlgorithmSelector::get_q_to_J_col_python,     "bus_id -> Jacobian column of its reactive (q) unknown, currently always -1")
-        .def("get_error",            &AlgorithmSelector::get_error,            DocSolver::get_V.c_str())
+        .def("get_error",            &AlgorithmSelector::get_error,            DocSolver::get_error.c_str())
         .def("get_nb_iter",          &AlgorithmSelector::get_nb_iter,          DocSolver::get_nb_iter.c_str())
         .def("converged",            &AlgorithmSelector::converged,            DocSolver::converged.c_str())
         .def("get_computation_time", &AlgorithmSelector::get_computation_time, DocSolver::get_computation_time.c_str())

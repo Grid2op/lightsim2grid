@@ -41,8 +41,9 @@ template class LS2G_API BaseDCAlgo<LinearSolverPolicy<SparseLULinearSolver>>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, FDPFMethod::XB>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, FDPFMethod::BX>;
 
-// ---- KLU (optional) ----
-#ifdef KLU_SOLVER_AVAILABLE
+// ---- KLU (optional, or a doc-only stand-in under _READ_THE_DOCS -- see
+// linear_solvers/KLUSolver.hpp) ----
+#if defined(KLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
 template class LS2G_API NRAlgo<LinearSolverPolicy<KLULinearSolver>, MultiSlackNRSystem>;
 template class LS2G_API NRAlgo<LinearSolverPolicy<KLULinearSolver>, SingleSlackNRSystem>;
 template class LS2G_API BaseDCAlgo<LinearSolverPolicy<KLULinearSolver>>;
@@ -51,8 +52,9 @@ template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<KLULinearSolver>, FDPFMe
 template class LS2G_API NRAlgo<RefactorRetryLinearSolver<KLULinearSolver>, MultiSlackNRSystem>;
 #endif
 
-// ---- NICSLU (optional) ----
-#ifdef NICSLU_SOLVER_AVAILABLE
+// ---- NICSLU (optional, or a doc-only stand-in under _READ_THE_DOCS -- see
+// linear_solvers/NICSLUSolver.hpp) ----
+#if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
 template class LS2G_API NRAlgo<LinearSolverPolicy<NICSLULinearSolver>, MultiSlackNRSystem>;
 template class LS2G_API NRAlgo<LinearSolverPolicy<NICSLULinearSolver>, SingleSlackNRSystem>;
 template class LS2G_API BaseDCAlgo<LinearSolverPolicy<NICSLULinearSolver>>;
@@ -61,8 +63,9 @@ template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<NICSLULinearSolver>, FDP
 template class LS2G_API NRAlgo<RefactorRetryLinearSolver<NICSLULinearSolver>, MultiSlackNRSystem>;
 #endif
 
-// ---- CKTSO (optional) ----
-#ifdef CKTSO_SOLVER_AVAILABLE
+// ---- CKTSO (optional, or a doc-only stand-in under _READ_THE_DOCS -- see
+// linear_solvers/CKTSOSolver.hpp) ----
+#if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
 template class LS2G_API NRAlgo<LinearSolverPolicy<CKTSOLinearSolver>, MultiSlackNRSystem>;
 template class LS2G_API NRAlgo<LinearSolverPolicy<CKTSOLinearSolver>, SingleSlackNRSystem>;
 template class LS2G_API BaseDCAlgo<LinearSolverPolicy<CKTSOLinearSolver>>;

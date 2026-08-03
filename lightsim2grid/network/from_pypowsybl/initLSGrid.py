@@ -119,7 +119,7 @@ def init(net : pypo.network.Network,
                              set with this attribute. We recommend to leave it
                              to `None` (which corresponds to the "infer it from
                              the grid" behaviour) in most cases.
-    :type n_busbar_per_sub: Opional[int]
+    :type n_busbar_per_sub: Optional[int]
 
     :param buses_for_sub: Whether the lightsim2grid substation will correspond to buses
                           of the pypowsybl grid (if buses_for_sub is `True`).

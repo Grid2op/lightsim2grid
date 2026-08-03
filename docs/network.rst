@@ -177,22 +177,15 @@ Substations
 :func:`~lightsim2grid.network.LSGrid.get_substations` (alias ``get_voltage_levels``) returns a
 :class:`lightsim2grid.elements.SubstationContainer`: like every other ``*Container`` on this page it
 supports ``len(...)``, indexing and iteration over :class:`lightsim2grid.elements.SubstationInfo`
-objects, each with:
+objects.
 
-.. list-table::
-   :header-rows: 1
-   :widths: 25 75
+.. autoclass:: lightsim2grid.elements.SubstationContainer
+    :members:
+    :autosummary:
 
-   * - Field
-     - Meaning
-   * - ``id``
-     - the substation id (GridModel / global convention, see :ref:`bus-labelling`)
-   * - ``name``
-     - the substation's name
-   * - ``nb_max_busbars``
-     - the number of busbars at this substation (``n_busbar_per_sub``)
-   * - ``vn_kv``
-     - the substation's nominal voltage (kV) -- the common ``vn_kv`` of all its buses
+.. autoclass:: lightsim2grid.elements.SubstationInfo
+    :members:
+    :autosummary:
 
 Generators (standard)
 +++++++++++++++++++++

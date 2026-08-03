@@ -97,9 +97,20 @@ endif()
 
 # --- Python-only compile definitions (applied after targets exist) ---
 
-# Read The Docs — only affects binding stubs
+# Read The Docs: lets Sphinx document KLU/NICSLU/CKTSO solver classes without the
+# real (proprietary/licensed) libraries, via doc-only no-op stand-in classes (see
+# src/core/linear_solvers/*.hpp). Those stand-ins -- and the explicit template
+# instantiations of BaseFDPFAlgo<...> that go with them in SolverInstantiations.cpp --
+# live in lightsim2grid_core, not just the bindings, so the definition must reach
+# both targets. lightsim2grid_core is only actually (re)compiled here when it was
+# built from source via add_subdirectory above; when a pre-built (IMPORTED) library
+# was found instead, its compile definitions can no longer change what was baked in.
 if(BUILD_DOCS_ONLY)
     target_compile_definitions(lightsim2grid_cpp PRIVATE _READ_THE_DOCS)
+    get_target_property(_ls2g_core_imported lightsim2grid_core IMPORTED)
+    if(NOT _ls2g_core_imported)
+        target_compile_definitions(lightsim2grid_core PRIVATE _READ_THE_DOCS)
+    endif()
 endif()
 
 # Version macros — used in pickle_helpers.hpp (binding side only)
