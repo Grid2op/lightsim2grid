@@ -131,6 +131,18 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   actually being microseconds). The script now prints this text (and saves it next to the other
   ``--save_results`` outputs, as ``description.rst``) so updating the docs after a benchmark run is a
   copy / paste instead of manual float formatting.
+- [ADDED] the same treatment as above extended to the rest of the ``benchmarks`` folder: (1)
+  ``benchmarks/benchmark_dc_solvers.py`` gained an equivalent ``generate_narrative`` and now prints /
+  saves the descriptive text for ``docs/benchmarks_dc.rst`` -- whose hand written "TL;DR" numbers had
+  drifted out of sync with (and in some cases no longer resembled) its own tables; (2)
+  ``benchmarks/compare_lightsim2grid_pypowsybl.py`` can now run several (by default all 6) ieee cases in
+  one process and prints, at the end, the 5 tables and narrative text found in
+  ``docs/comparison_with_pypowsybl.rst``, instead of requiring one invocation per case and manually
+  cherry-picking numbers into the right table cell (``benchmarks/benchmark_pypowysbl.sh`` updated
+  accordingly); (3) ``benchmarks/security_analysis.py`` and ``benchmarks/time_serie.py`` now print the
+  final "N times faster than raw grid2op" summary line themselves (computed from the same numbers printed
+  just above it), instead of leaving it to be hand-restated in ``docs/security_analysis.rst`` /
+  ``docs/time_series.rst`` -- where it had drifted to a value inconsistent with the printed figures.
 - [ADDED] a "C++ standards" GitHub Actions workflow
   (``.github/workflows/cpp-standards.yml``) that compiles both the standalone
   C++ unit test suite and the python bindings twice: once pinned to C++14

@@ -89,6 +89,13 @@ print(f"It took grid2op (with pandapower, using obs.simulate): {total_time_glop_
 print(f"\t This is a {(total_time_glop_pp) / (full_time_sa) :.1f} "
       f"speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)")
 
+speedup_ls = total_time_glop_ls / full_time_sa
+speedup_pp = total_time_glop_pp / full_time_sa
+print()
+print(f"In this case then, the `ContingencyAnalysis` module is {speedup_ls:.0f} times faster than raw "
+      f"grid2op (with obs.simulate and lightsim2grid) and {speedup_pp:.0f} times faster than raw "
+      f"grid2op (with obs.simulate and pandapower)")
+
 
 #### Check that the results match
 for cont_id in range(env.n_line):

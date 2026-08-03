@@ -325,14 +325,13 @@ The results were obtained by launching:
 
 .. code-block:: bash
 
-    python compare_lightsim2grid_pypowsybl.py --case ieee9
-    python compare_lightsim2grid_pypowsybl.py --case ieee14
-    python compare_lightsim2grid_pypowsybl.py --case ieee30
-    python compare_lightsim2grid_pypowsybl.py --case ieee57
-    python compare_lightsim2grid_pypowsybl.py --case ieee118
-    python compare_lightsim2grid_pypowsybl.py --case ieee300
+    python compare_lightsim2grid_pypowsybl.py
 
-And formatting the results in the table below.
+By default this runs all 6 cases above in a single process and prints, at the end, the 5 tables below
+together with the descriptive text that comments on them -- computed directly from the numbers measured
+during that run -- ready to copy / paste here. There is no need anymore to run the script once per
+case and manually place each number in the right table / cell. Pass one or more ``--case_name`` (*eg*
+``--case_name ieee9 ieee14``) to only benchmark a subset of the cases.
 
 
 Precision of lightsim2grid
@@ -394,8 +393,7 @@ ieee118     6.78e-01         6.11e+00
 ieee300     1.73e+00         1.15e+01
 ========== =============== ===============
 
-For this initial computation, lightsim2grid seems to be between 30 and 5x faster 
-than pypowsybl.
+For this initial computation, lightsim2grid is between **7** and **37** times faster than pypowsybl.
 
 .. warning::
     This is not fair for pypowsybl.
@@ -432,6 +430,8 @@ ieee118     3.04e-01         3.02e+00
 ieee300     1.73e+00         5.71e+00
 ========== =============== ===============
 
+For successive powerflows, lightsim2grid is between **3** and **56** times faster than pypowsybl.
+
 
 Computation times security analysis
 ************************************
@@ -457,3 +457,5 @@ ieee57      1.32e-01         1.86e-01
 ieee118     2.04e-01         3.84e-01
 ieee300     9.91e-01         1.23e+00
 ========== =============== ===============
+
+For the contingency analysis, lightsim2grid is between **1** and **16** times faster than pypowsybl.
