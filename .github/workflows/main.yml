@@ -617,12 +617,18 @@ jobs:
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products * -property installationPath
-          $versionDir = Get-ChildItem -Path (Join-Path $vsPath "VC\Redist\MSVC") -Directory |
-                        Sort-Object Name -Descending | Select-Object -First 1
-          $armCrtDir = Get-ChildItem -Path (Join-Path $versionDir.FullName "arm64") -Directory |
-                       Where-Object { $_.Name -like "Microsoft.VC*.CRT" } | Select-Object -First 1
+          # VC\Redist\MSVC contains both numbered version dirs (e.g.
+          # 14.44.35112, holding the real per-arch redist files) and a
+          # "v143"-style toolset-name dir that does NOT -- picking the
+          # "latest" dir by name (e.g. Sort-Object Name -Descending) can
+          # land on v143 (since 'v' sorts after digits) and fail, so search
+          # every dir under Redist\MSVC directly for the actual CRT folder
+          # instead of guessing which version dir is the real one by name.
+          $armCrtDir = Get-ChildItem -Path (Join-Path $vsPath "VC\Redist\MSVC") -Recurse -Directory -Filter "Microsoft.VC*.CRT" -ErrorAction SilentlyContinue |
+                       Where-Object { $_.FullName -match '\\arm64\\' } |
+                       Select-Object -First 1
           if (-not $armCrtDir) {
-            throw "Could not locate the ARM64 VC++ CRT redistributable under $($versionDir.FullName)\arm64"
+            throw "Could not locate the ARM64 VC++ CRT redistributable under $vsPath\VC\Redist\MSVC"
           }
           Write-Host "Found ARM64 CRT redist dir: $($armCrtDir.FullName)"
           "LS2G_ARM64_CRT_DIR=$($armCrtDir.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
