@@ -161,5 +161,12 @@ if(INSTALL_LEGACY_LIGHTSIM2GRID_CPP)
                 endif()
             endforeach()
         ")
+    elseif(WIN32)
+        # Windows has no rpath equivalent: the loader only searches the
+        # directory of the loading module (plus a few OS paths and PATH), so
+        # the root-level lightsim2grid_cpp.pyd cannot be redirected back to
+        # lightsim2grid/lightsim2grid_core.dll the way APPLE/UNIX are above.
+        # Copy the DLL alongside it instead.
+        install(FILES "$<TARGET_FILE:lightsim2grid_core>" DESTINATION .)
     endif()
 endif()
