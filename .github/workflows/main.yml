@@ -6,6 +6,12 @@ on:
       - '*'
     tags:
       - 'v*.*.*'
+  # NOTE: GitHub Actions branch-filter globs ('*') do not match '/', so the
+  # push trigger above never actually fires for slash-namespaced branches
+  # (e.g. claude/*). Without this, CI silently never ran on such PRs before
+  # merge -- it only ran after the merge commit landed on a slash-free
+  # branch (master/dev_0.13.2/...). pull_request covers those PRs properly.
+  pull_request:
 
 env:
   # ── Wheel count guard ─────────────────────────────────────────────────────
