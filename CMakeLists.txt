@@ -162,4 +162,11 @@ if(INSTALL_LEGACY_LIGHTSIM2GRID_CPP)
             endforeach()
         ")
     endif()
+    # No WIN32 branch: Windows has no rpath equivalent, and delvewheel's
+    # dependency search (see .github/workflows/main.yml's
+    # CIBW_REPAIR_WHEEL_COMMAND_WINDOWS) only checks directories already
+    # inside the wheel when --ignore-existing is passed, or PATH -- never
+    # "the same directory as the module being analyzed". So making the
+    # root-level lightsim2grid_cpp.pyd findable on Windows is a CI-side
+    # concern (--ignore-existing), not something CMake install rules can fix.
 endif()

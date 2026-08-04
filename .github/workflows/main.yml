@@ -6,6 +6,12 @@ on:
       - '*'
     tags:
       - 'v*.*.*'
+  # NOTE: GitHub Actions branch-filter globs ('*') do not match '/', so the
+  # push trigger above never actually fires for slash-namespaced branches
+  # (e.g. claude/*). Without this, CI silently never ran on such PRs before
+  # merge -- it only ran after the merge commit landed on a slash-free
+  # branch (master/dev_0.13.2/...). pull_request covers those PRs properly.
+  pull_request:
 
 env:
   # ── Wheel count guard ─────────────────────────────────────────────────────
@@ -595,6 +601,38 @@ jobs:
         with:
           platforms: all
 
+      # cibuildwheel cross-compiles for ARM64 on this (x64) runner without
+      # setting up an MSVC dev-shell environment itself (it either expects
+      # one already configured, or lets the build backend handle the cross
+      # target on its own) -- so nothing points delvewheel at the ARM64
+      # flavor of the VC++ runtime DLLs (msvcp140.dll etc.) it needs to
+      # vendor into the repaired wheel. The x64 copies reachable via PATH
+      # are correctly rejected by delvewheel (architecture mismatch).
+      # Locate the real ARM64 redistributable under the VS install (ships
+      # for every target arch, just not on PATH by default) via vswhere,
+      # which is present on every GitHub-hosted Windows runner.
+      - name: Locate ARM64 VC++ redistributable (for delvewheel)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -property installationPath
+          # VC\Redist\MSVC contains both numbered version dirs (e.g.
+          # 14.44.35112, holding the real per-arch redist files) and a
+          # "v143"-style toolset-name dir that does NOT -- picking the
+          # "latest" dir by name (e.g. Sort-Object Name -Descending) can
+          # land on v143 (since 'v' sorts after digits) and fail, so search
+          # every dir under Redist\MSVC directly for the actual CRT folder
+          # instead of guessing which version dir is the real one by name.
+          $armCrtDir = Get-ChildItem -Path (Join-Path $vsPath "VC\Redist\MSVC") -Recurse -Directory -Filter "Microsoft.VC*.CRT" -ErrorAction SilentlyContinue |
+                       Where-Object { $_.FullName -match '\\arm64\\' } |
+                       Select-Object -First 1
+          if (-not $armCrtDir) {
+            throw "Could not locate the ARM64 VC++ CRT redistributable under $vsPath\VC\Redist\MSVC"
+          }
+          Write-Host "Found ARM64 CRT redist dir: $($armCrtDir.FullName)"
+          "LS2G_ARM64_CRT_DIR=$($armCrtDir.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Compile with cibuildwheel
         uses: pypa/cibuildwheel@4726cd35bb13f7bde50cf2761f2499ac7b3aa32c  # v4.1.1
         env:
@@ -604,6 +642,22 @@ jobs:
           CIBW_ARCHS_MACOS: arm64 
           CIBW_ARCHS_WINDOWS: ARM64 
           CIBW_ENVIRONMENT: __O3_OPTIM=1
+          # lightsim2grid_cpp's legacy root-level copy (see
+          # INSTALL_LEGACY_LIGHTSIM2GRID_CPP in CMakeLists.txt) depends on
+          # lightsim2grid_core.dll, which lives one directory away in
+          # lightsim2grid/. delvewheel's default repair command only
+          # resolves DLL dependencies via directories already inside the
+          # wheel when --ignore-existing is passed, or PATH -- it never
+          # searches the same directory as the module being analyzed. Add
+          # --ignore-existing (cibuildwheel's default command otherwise,
+          # see delvewheel's own --ignore-existing/--ignore-in-wheel help
+          # text) so it finds the DLL already present in the wheel instead
+          # of failing with "Unable to find library: lightsim2grid_core.dll".
+          # --add-path points it at the real ARM64 VC++ runtime DLLs
+          # (msvcp140.dll etc, located by the step above) it also needs to
+          # vendor in -- otherwise it only sees the x64 copies on PATH,
+          # which it correctly refuses as an architecture mismatch.
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: "delvewheel repair --ignore-existing --add-path \"${{ env.LS2G_ARM64_CRT_DIR }}\" -w {dest_dir} -v {wheel}"
           CIBW_TEST_REQUIRES: grid2op pandapower
           CIBW_TEST_SKIP: "*-macosx_arm64 *-win_arm64" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
           CIBW_TEST_COMMAND: >
