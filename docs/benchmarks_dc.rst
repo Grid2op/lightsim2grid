@@ -22,22 +22,33 @@ TL;DR
     then you should probably avoid doing some powerflow directly, but rather use linear algebra and the PTDF and LODF
     matrices (see :ref:`ptdf-lodf-section` for what they are and how to get them with lightsim2grid).
 
-When using grid2op, for these small environment, the difference in computation time for an AC or a DC powerflow 
+When using grid2op, for these small environment, the difference in computation time for an AC or a DC powerflow
 is neglectible. Because the Newton-Raphson algorithm has been much more optimized, it is even faster to run
-AC powerflow than DC powerflow for the case 14 (2600 steps per second for AC and 2400 steps per second for DC).
-For the bigger case 118 the DC environment is slightly faster (2100 steps per second for DC vs 2000 steps per second for AC).
+AC powerflow than DC powerflow for the case 14 (~2940 steps per second for AC, see :ref:`benchmark-solvers`,
+and ~2750 steps per second for DC, see table below).
+For the bigger case 118 the DC environment is slightly faster (~2380 steps per second for DC vs ~2180 steps
+per second for AC).
 
 .. note::
-  If you want to be faster in grid2op, switching to DC powerflow instead of AC will probably not be 
+  If you want to be faster in grid2op, switching to DC powerflow instead of AC will probably not be
   a good solution if you use lightsim2grid.
 
-Lightsim2grid is still much faster than pandapower (*eg* for case 118, 2000 steps / s for lightsim2grid and 180 for
-pandapower) and pypowsybl (*eg* for case 118: 650 steps per second for pypowsybl and 2000 for lightsim2grid).
+Lightsim2grid is still much faster than pandapower (*eg* for case 118, ~2380 steps / s for lightsim2grid and
+~129 for pandapower, see table below). A comparison against the pypowsybl DC backend is not part of the current
+benchmark tables (unlike the AC comparison in :ref:`benchmark-solvers`).
 
 Last, but not least, if you want to perform DC computations and knows in advance the generations and loads
 and the topology of the grid, then you probably should use the PTDF and LODF matrices (:ref:`ptdf-lodf-section`).
 With them, using a matrix multiplication (and numpy) you can run (on one CPU core) multiple millions of
 DC powerflows each second.
+
+.. note::
+  As for :ref:`benchmark-solvers`, ``benchmark_dc_solvers.py`` (run twice by ``benchmarks_dc.sh``, once per
+  environment) now prints, right after the tables, the descriptive text ("Description (computation time)" /
+  "Description (differences)") computed from the numbers actually measured during that run. Update this page
+  (including the TL;DR above) by copy / pasting the tables and that generated text after a new run, instead of
+  re-deriving the numbers by hand -- this is what let the TL;DR above drift out of sync with its own tables in
+  the first place.
 
 Machine used on the benchmarks
 -------------------------------
@@ -183,7 +194,43 @@ community. It consists in disconnecting line one after the other and compute the
 Comments
 --------
 
-TODO
+This is the text printed by ``benchmark_dc_solvers.py`` (see the note above) for the two tables above.
+
+For the IEEE case 14:
+
+From a grid2op perspective, lightsim2grid allows to compute up to ~2750 DC steps each second (column `grid2op speed`, row `DC (CKTSO\*)`) on the case14_sandbox and "only" ~139 for the default PandaPower Backend (column `grid2op speed`, row `PP DC`), leading to a speed up of **~20** (2750 / 139) in this case.
+
+For this environment there is no sensible difference in using `KLU` linear solver (row `DC (KLU)`) compared to using the SparseLU solver of Eigen (row `DC`) (2720 vs 2730 iterations on the reported runs, might slightly vary across runs).
+
+Linear solvers `KLU`, `NICSLU` and `CKTSO` achieve almost identical performances, at least we think the observed differences are within error margins.
+
+For this environment, for lightsim2grid backend (and if we don't take into account the "agent time"), the computation time is vastly dominated by factor external to the powerflow solver. Indeed, doing a 'env.step' (column `grid2op speed (it/s)`) takes 0.364ms (`1. / 2750. * 1000.`) on average and on this 364 µs (or 0.364ms), only 1 µs are spent in the backend (column `time in 'algo' (ms / pf)`). Meaning that ~362 µs are spent in the grid2op extra layer or in the backend implementation in this case (`100%` of the computation time - `=362 / 364`- is external to the powerflow algorithm)
+
+The `TimeSerie` module performs one DC powerflow in 0.00116 ms on average (row `time serie`, column `grid2op 'backend.runpf' time`), compared to 0.0536 ms for the fastest grid2op DC backend (`DC (CKTSO\*)`), a **~46x** speed up.
+
+Similarly, the `ContingencyAnalysis` module performs one DC contingency in 0.00297 ms on average (row `contingency analysis`), a **~18x** speed up compared to the fastest grid2op DC backend.
+
+Using the PTDF matrix directly (row `PTDF`) is even faster: 0.000294 ms per powerflow, a **~182x** speed up compared to the fastest grid2op DC backend.
+
+Likewise, using the LODF matrix (row `LODF`) to perform the contingency analysis takes 0.000589 ms per contingency, a **~91x** speed up compared to the fastest grid2op DC backend.
+
+For the IEEE case 118:
+
+From a grid2op perspective, lightsim2grid allows to compute up to ~2380 DC steps each second (column `grid2op speed`, row `DC (NICSLU\*)`) on the neurips_2020_track2 and "only" ~129 for the default PandaPower Backend (column `grid2op speed`, row `PP DC`), leading to a speed up of **~18** (2380 / 129) in this case.
+
+For this environment there is no sensible difference in using `KLU` linear solver (row `DC (KLU)`) compared to using the SparseLU solver of Eigen (row `DC`) (2360 vs 2370 iterations on the reported runs, might slightly vary across runs).
+
+Linear solvers `KLU`, `NICSLU` and `CKTSO` achieve almost identical performances, at least we think the observed differences are within error margins.
+
+For this environment, for lightsim2grid backend (and if we don't take into account the "agent time"), the computation time is vastly dominated by factor external to the powerflow solver. Indeed, doing a 'env.step' (column `grid2op speed (it/s)`) takes 0.42ms (`1. / 2380. * 1000.`) on average and on this 420 µs (or 0.42ms), only 4 µs are spent in the backend (column `time in 'algo' (ms / pf)`). Meaning that ~417 µs are spent in the grid2op extra layer or in the backend implementation in this case (`99%` of the computation time - `=417 / 420`- is external to the powerflow algorithm)
+
+The `TimeSerie` module performs one DC powerflow in 0.00991 ms on average (row `time serie`, column `grid2op 'backend.runpf' time`), compared to 0.0636 ms for the fastest grid2op DC backend (`DC (NICSLU\*)`), a **~6x** speed up.
+
+Similarly, the `ContingencyAnalysis` module performs one DC contingency in 0.00821 ms on average (row `contingency analysis`), a **~8x** speed up compared to the fastest grid2op DC backend.
+
+Using the PTDF matrix directly (row `PTDF`) is even faster: 0.00171 ms per powerflow, a **~37x** speed up compared to the fastest grid2op DC backend.
+
+Likewise, using the LODF matrix (row `LODF`) to perform the contingency analysis takes 0.000681 ms per contingency, a **~93x** speed up compared to the fastest grid2op DC backend.
 
 
 See TL;DR section at the top of the file.

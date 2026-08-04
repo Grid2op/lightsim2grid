@@ -230,6 +230,69 @@ def run_grid2op_env(env_lightsim, case, reset_solver,
     return nb_step
         
         
+def generate_narrative(case_names_displayed,
+                        g2op_step_time, g2op_step_time_reset,
+                        ts_speeds, sa_speeds,
+                        g2op_speeds, g2op_speeds_reset):
+    """Generates (from the numbers actually measured in this run) the descriptive text that should go
+    under the tables of docs/benchmarks_grid_sizes.rst, the same way `generate_narrative` in
+    benchmark_solvers.py does for docs/benchmarks.rst.
+
+    All 5 tables printed by this script (TL;DR plus the 4 detailed ones) already come from the same
+    run, so unlike the other benchmark scripts there was no risk of the *tables* drifting against one
+    another here -- but there was no generated commentary at all below them either. This adds it.
+    """
+    recycling_ratios = []
+    ts_ratios = []
+    sa_ratios = []
+    for i in range(len(case_names_displayed)):
+        step_recycling = g2op_step_time[i]
+        step_no_recycling = g2op_step_time_reset[i]
+        if step_recycling and step_no_recycling:
+            recycling_ratios.append((case_names_displayed[i], step_no_recycling / step_recycling))
+        # ts_speeds / sa_speeds are in pf/s (or contingencies/s): `1. / speed` is the per-pf
+        # duration in seconds, directly comparable to `step_recycling` (also in seconds).
+        ts_speed = ts_speeds[i]
+        if step_recycling and ts_speed:
+            ts_ratios.append((case_names_displayed[i], step_recycling * ts_speed))
+        sa_speed = sa_speeds[i]
+        if step_recycling and sa_speed:
+            sa_ratios.append((case_names_displayed[i], step_recycling * sa_speed))
+
+    if not recycling_ratios:
+        return ""
+
+    paragraphs = []
+
+    lo_name, lo_val = min(recycling_ratios, key=lambda x: x[1])
+    hi_name, hi_val = max(recycling_ratios, key=lambda x: x[1])
+    paragraphs.append(
+        f"Allowing lightsim2grid to \"recycle\" previous computation (column `avg step duration (ms)`, "
+        f"default behaviour) instead of restarting from scratch at every step makes grid2op between "
+        f"**~{lo_val:.1f}x** (on `{lo_name}`) and **~{hi_val:.1f}x** (on `{hi_name}`) faster, depending on "
+        f"the grid size."
+    )
+
+    if ts_ratios:
+        lo_name, lo_val = min(ts_ratios, key=lambda x: x[1])
+        hi_name, hi_val = max(ts_ratios, key=lambda x: x[1])
+        paragraphs.append(
+            f"Compared to a regular grid2op step (with recycling), the `TimeSerie` module is between "
+            f"**~{lo_val:.1f}x** (on `{lo_name}`) and **~{hi_val:.1f}x** (on `{hi_name}`) faster."
+        )
+
+    if sa_ratios:
+        lo_name, lo_val = min(sa_ratios, key=lambda x: x[1])
+        hi_name, hi_val = max(sa_ratios, key=lambda x: x[1])
+        paragraphs.append(
+            f"Similarly, the `ContingencyAnalysis` module is between **~{lo_val:.1f}x** (on `{lo_name}`) "
+            f"and **~{hi_val:.1f}x** (on `{hi_name}`) faster than a regular grid2op step (with recycling) "
+            f"to evaluate one contingency."
+        )
+
+    return "\n\n".join(paragraphs)
+
+
 if __name__ == "__main__":
     prng = np.random.default_rng(42)
     ls_solver_type = AlgorithmType.NR_KLU
@@ -509,7 +572,17 @@ if __name__ == "__main__":
     else:
         print(tab_sa)
     print()
-        
+
+    # generate (from the numbers measured above) the descriptive text that should go under the
+    # tables in docs/benchmarks_grid_sizes.rst.
+    narrative_text = generate_narrative(case_names_displayed,
+                                        g2op_step_time, g2op_step_time_reset,
+                                        ts_speeds, sa_speeds,
+                                        g2op_speeds, g2op_speeds_reset)
+    print("Description:")
+    print(narrative_text)
+    print()
+
     if MAKE_PLOT:
         # make the plot summarizing all results
         plt.plot(g2op_sizes, solver_preproc_solver_time, linestyle='solid', marker='+', markersize=8)

@@ -29,8 +29,8 @@ It can be used as:
 For now this relies on grid2op, but we could imagine a version of this class that can read
 to / from other data sources (for now please use the more basic :class:`lightsim2grid.timeSerie.TimeSeriesCPP` for such purpose)
 
-Importantly, this method is around **13x** faster than simulating "do nothing" (or "one change then nothing") with grid2op
-(see section :ref:`timeserie_benchmark` )
+Importantly, this method is around **11x** faster than simulating "do nothing" (or "one change then nothing") with grid2op
+(and lightsim2grid, see section :ref:`timeserie_benchmark` )
 
 .. note:: 
 
@@ -109,11 +109,16 @@ For this setting the outputs are:
         This is a 11.3 speed up from TimeSerie over raw grid2op (lightsim2grid)
     It took grid2op (with pandapower): 6.47s to perform the same computation
         This is a 232.6 speed up from TimeSerie over raw grid2op (pandapower)
+
+    In this case then, the `TimeSerie` module is 11 times faster than raw grid2op (lightsim2grid) and
+    233 times faster than raw grid2op (pandapower)
     All results match !
 
-
-
-In this case then, the `TimeSerie` module is more than **15** times faster than raw grid2op.
+.. note::
+  The last "In this case then, ..." line above is now printed directly by ``time_serie.py`` (computed from
+  ``total_time_glop_ls`` / ``total_time_glop_pp`` and ``full_time_ts``), instead of being a separate,
+  hand-rounded restatement kept below the pasted output -- which is how it used to read "more than **15**
+  times faster", inconsistent with the 11.3 / 232.6 figures printed just above it.
 
 
 Detailed usage

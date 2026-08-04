@@ -339,7 +339,7 @@ This benchmark is available by running, from the root of the lightsim2grid repos
 .. code-block:: bash
 
     cd benchmarks
-    python3 security_analysis.py
+    python3 contingency_analysis.py
 
 
 For this setting the outputs are:
@@ -358,11 +358,16 @@ For this setting the outputs are:
         This is a 24.2 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
     It took grid2op (with pandapower, using obs.simulate): 9.94s to perform the same computation
         This is a 855.2 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)
+
+    In this case then, the `ContingencyAnalysis` module is 24 times faster than raw grid2op (with obs.simulate
+    and lightsim2grid) and 855 times faster than raw grid2op (with obs.simulate and pandapower)
     All results match !
 
-
-In this case then, the `ContingencyAnalysis` module is more than **22** times faster than raw grid2op (
-with obs.simulate as a way to compute the outcome of a contingency)
+.. note::
+  The last "In this case then, ..." line above is now printed directly by ``contingency_analysis.py`` (computed
+  from ``total_time_glop_ls`` / ``total_time_glop_pp`` and ``full_time_sa``), instead of being a separate,
+  hand-rounded restatement kept below the pasted output -- which is how it used to read "more than **22**
+  times faster", inconsistent with the 24.2 / 855.2 figures printed just above it.
 
 
 Detailed usage

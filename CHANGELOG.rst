@@ -123,6 +123,49 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [ADDED] closed the last two gaps in the benchmark narrative-generation work above:
+
+  - ``benchmarks/benchmark_grid_size.py`` gained a ``generate_narrative`` (recycling vs no-recycling,
+    ``TimeSerie`` vs a regular grid2op step, ``ContingencyAnalysis`` vs a regular grid2op step, each as a
+    "between Nx and Mx" range across the grid-size scan) and prints it after its tables; the corresponding
+    "Comments" section of ``docs/benchmarks_grid_sizes.rst`` (previously absent) is filled in with the
+    generated text. The page's TL;DR table is (and always was) printed directly by the same script run
+    that produces its 4 detailed tables, so it could not actually drift against them the way it first
+    looked -- a clarifying note was added since the visual duplication invited that reading.
+  - ``benchmarks/benchmark_binary_serialization.py``'s single-grid comparison table gained a "speedup vs
+    pickle" column (computed the same way the grid-size-scan table below it already does it), replacing
+    the hand-written "``save_binary`` is **1.5x** faster..." sentence that used to sit below the table as a
+    second, independently-typed copy of the same ratio; ``docs/binary_serialization.rst`` updated to match.
+- [FIXED] the orchestration layer under ``benchmarks/`` had drifted from the scripts it is supposed to
+  run: ``benchmarks/security_analysis.py`` was renamed to ``benchmarks/contingency_analysis.py`` (its
+  ``examples/`` counterpart was already renamed in a previous fix, this one was missed --
+  ``ContingencyAnalysis`` has been the class name for a while, the benchmark script's filename was the
+  last place still carrying the old ``SecurityAnalysis`` name); ``benchmarks/benchmark_ts_ca.sh`` now
+  calls that new name, and also runs ``benchmark_ca_nb_threads.py`` (the ``nb_thread``-scaling benchmark
+  used in ``docs/security_analysis.rst``), which it previously skipped entirely;
+  ``benchmarks/run_all_benchmarks.sh`` had a stale ``./benchmarks_grid_size.sh`` (that file has never
+  existed -- the real one is ``benchmark_grid_size.sh``, singular) and never ran
+  ``benchmark_binary_serialization.py`` at all; both are now fixed / added.
+- [ADDED] ``benchmarks/benchmark_solvers.py`` now generates, from the numbers measured during the run
+  itself, the descriptive text that comments on the "computation time" and "differences" tables
+  (``generate_narrative`` function). Previously this text lived only in ``docs/benchmarks.rst``, hand
+  written and hand updated after each run, which routinely drifted out of sync with the tables above it
+  (wrong speed ups, stale percentages, and a unit mistake -- some durations were labelled "ns" while
+  actually being microseconds). The script now prints this text (and saves it next to the other
+  ``--save_results`` outputs, as ``description.rst``) so updating the docs after a benchmark run is a
+  copy / paste instead of manual float formatting.
+- [ADDED] the same treatment as above extended to the rest of the ``benchmarks`` folder: (1)
+  ``benchmarks/benchmark_dc_solvers.py`` gained an equivalent ``generate_narrative`` and now prints /
+  saves the descriptive text for ``docs/benchmarks_dc.rst`` -- whose hand written "TL;DR" numbers had
+  drifted out of sync with (and in some cases no longer resembled) its own tables; (2)
+  ``benchmarks/compare_lightsim2grid_pypowsybl.py`` can now run several (by default all 6) ieee cases in
+  one process and prints, at the end, the 5 tables and narrative text found in
+  ``docs/comparison_with_pypowsybl.rst``, instead of requiring one invocation per case and manually
+  cherry-picking numbers into the right table cell (``benchmarks/benchmark_pypowysbl.sh`` updated
+  accordingly); (3) ``benchmarks/security_analysis.py`` and ``benchmarks/time_serie.py`` now print the
+  final "N times faster than raw grid2op" summary line themselves (computed from the same numbers printed
+  just above it), instead of leaving it to be hand-restated in ``docs/security_analysis.rst`` /
+  ``docs/time_series.rst`` -- where it had drifted to a value inconsistent with the printed figures.
 - [ADDED] a "C++ standards" GitHub Actions workflow
   (``.github/workflows/cpp-standards.yml``) that compiles both the standalone
   C++ unit test suite and the python bindings twice: once pinned to C++14

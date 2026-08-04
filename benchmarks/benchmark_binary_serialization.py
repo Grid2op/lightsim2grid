@@ -142,22 +142,25 @@ def run_fixed_grid_benchmark(n_repeat):
     pandapower_read_s = benchmark_init_from_pandapower(n_repeat)
     pypowsybl_read_s = benchmark_init_from_pypowsybl(n_repeat)
 
+    speedup_write = res["pickle_dump_s"] / res["save_binary_s"]
+    speedup_read = res["pickle_load_s"] / res["load_binary_s"]
+
     rows = [
-        ["save_binary (write)", f"{1000. * res['save_binary_s']:.3f}", f"{res['binary_size_bytes']} bytes"],
-        ["load_binary (read)", f"{1000. * res['load_binary_s']:.3f}", "-"],
-        ["pickle.dump (write)", f"{1000. * res['pickle_dump_s']:.3f}", f"{res['pickle_size_bytes']} bytes"],
-        ["pickle.load (read)", f"{1000. * res['pickle_load_s']:.3f}", "-"],
+        ["save_binary (write)", f"{1000. * res['save_binary_s']:.3f}", f"{speedup_write:.1f}x", f"{res['binary_size_bytes']} bytes"],
+        ["load_binary (read)", f"{1000. * res['load_binary_s']:.3f}", f"{speedup_read:.1f}x", "-"],
+        ["pickle.dump (write)", f"{1000. * res['pickle_dump_s']:.3f}", "1.0x (reference)", f"{res['pickle_size_bytes']} bytes"],
+        ["pickle.load (read)", f"{1000. * res['pickle_load_s']:.3f}", "1.0x (reference)", "-"],
     ]
     if pandapower_read_s is not None:
-        rows.append(["init_from_pandapower (case118, reference)", f"{1000. * pandapower_read_s:.3f}", "-"])
+        rows.append(["init_from_pandapower (case118, reference)", f"{1000. * pandapower_read_s:.3f}", "-", "-"])
     else:
-        rows.append(["init_from_pandapower", "pandapower not installed, skipped", "-"])
+        rows.append(["init_from_pandapower", "pandapower not installed, skipped", "-", "-"])
     if pypowsybl_read_s is not None:
-        rows.append(["init_from_pypowsybl (ieee118, reference)", f"{1000. * pypowsybl_read_s:.3f}", "-"])
+        rows.append(["init_from_pypowsybl (ieee118, reference)", f"{1000. * pypowsybl_read_s:.3f}", "-", "-"])
     else:
-        rows.append(["init_from_pypowsybl", "pypowsybl not installed, skipped", "-"])
+        rows.append(["init_from_pypowsybl", "pypowsybl not installed, skipped", "-", "-"])
 
-    headers = [f"{ENV_NAME} ({n_repeat} repeats)", "time (ms/call)", "file size"]
+    headers = [f"{ENV_NAME} ({n_repeat} repeats)", "time (ms/call)", "speedup vs pickle", "file size"]
     if TABULATE_AVAIL:
         print(tabulate(rows, headers=headers, tablefmt="rst"))
     else:
@@ -165,8 +168,6 @@ def run_fixed_grid_benchmark(n_repeat):
         for row in rows:
             print("\t".join(str(x) for x in row))
 
-    speedup_write = res["pickle_dump_s"] / res["save_binary_s"]
-    speedup_read = res["pickle_load_s"] / res["load_binary_s"]
     print(f"\nsave_binary is {speedup_write:.1f}x faster than pickle.dump")
     print(f"load_binary is {speedup_read:.1f}x faster than pickle.load")
 

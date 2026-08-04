@@ -150,17 +150,20 @@ Single grid (``l2rpn_idf_2023``)
 
 A first, direct comparison on a single mid-sized grid (the same fixture used by the test suite):
 
-====================================  ================  ===========
-l2rpn_idf_2023 (15 repeats)             time (ms/call)    file size
-====================================  ================  ===========
-save_binary (write)                             0.284      31606 B
-load_binary (read)                              0.168      -
-pickle.dump (write)                             0.418      32681 B
-pickle.load (read)                              0.293      -
-====================================  ================  ===========
+=============================  ================  ===================  ===========
+l2rpn_idf_2023 (15 repeats)      time (ms/call)  speedup vs pickle    file size
+=============================  ================  ===================  ===========
+save_binary (write)                       0.284  1.5x                 31606 B
+load_binary (read)                        0.168  1.7x                 -
+pickle.dump (write)                       0.418  1.0x (reference)     32681 B
+pickle.load (read)                        0.293  1.0x (reference)     -
+=============================  ================  ===================  ===========
 
-``save_binary`` is **1.5x** faster than ``pickle.dump`` and ``load_binary`` is **1.7x** faster than
-``pickle.load`` on this grid, while also producing a slightly smaller file.
+The "speedup vs pickle" column above is now computed and printed directly by
+``benchmark_binary_serialization.py`` (previously it was a hand-written sentence below the table,
+computed separately from the same two numbers -- a second place the ratio could have drifted out of
+sync with the table above it). ``save_binary`` / ``load_binary`` also produce a slightly smaller file
+than pickle on this grid.
 
 Grid size scan
 ++++++++++++++++++++++++++++++++++
