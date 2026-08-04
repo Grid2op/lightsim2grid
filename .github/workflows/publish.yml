@@ -71,6 +71,15 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 30
           allowed-conclusions: success
+          # Default is 60s: how long the action waits for the FIRST matching
+          # check to even appear before giving up with "the requested check
+          # was never run against this ref" -- separate from the actual wait
+          # for it to finish. CircleCI's ~10-job matrix can take longer than
+          # that to post its first status on a tag push (rarer/colder-start
+          # than a branch push), so 60s was failing the publish job before
+          # CircleCI had a chance to start, even though it does run. Give it
+          # more room to be discovered.
+          checks-discovery-timeout: 600
 
       # ── Download pre-built wheels from the main.yml run ──────────────────
       # The artifact was created (and its count validated) by the `package`
