@@ -59,28 +59,6 @@ jobs:
           fi
           echo "✓ Tag matches lightsim2grid/__init__.py version."
 
-      # ── Wait for CircleCI to be green on this commit ─────────────────────
-      # Pinned to a full commit SHA to prevent supply-chain attacks via tag
-      # mutation. Check https://github.com/lewagon/wait-on-check-action for
-      # the latest SHA if you need to upgrade.
-      - name: Wait for CircleCI checks to pass
-        uses: lewagon/wait-on-check-action@fa4138d3af36e4cf9d254075350fa0cc29fa56cb  # v1.9.0
-        with:
-          ref: ${{ github.sha }}
-          check-regexp: 'ci/circleci:.*'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 30
-          allowed-conclusions: success
-          # Default is 60s: how long the action waits for the FIRST matching
-          # check to even appear before giving up with "the requested check
-          # was never run against this ref" -- separate from the actual wait
-          # for it to finish. CircleCI's ~10-job matrix can take longer than
-          # that to post its first status on a tag push (rarer/colder-start
-          # than a branch push), so 60s was failing the publish job before
-          # CircleCI had a chance to start, even though it does run. Give it
-          # more room to be discovered.
-          checks-discovery-timeout: 600
-
       # ── Download pre-built wheels from the main.yml run ──────────────────
       # The artifact was created (and its count validated) by the `package`
       # job in main.yml when the tag was pushed. If that job failed, the
