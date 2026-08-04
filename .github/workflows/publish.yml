@@ -24,36 +24,40 @@ jobs:
       actions: read     # required to download artifacts from main.yml
 
     steps:
-      # Checkout is needed to read setup.py for the version consistency check.
+      # Checkout is needed to read lightsim2grid/__init__.py for the version
+      # consistency check.
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      # ── GUARD 1: version in setup.py must match the release tag ──────────
-      - name: Check version consistency (tag vs setup.py)
+      # ── GUARD 1: version in lightsim2grid/__init__.py must match the release tag ──
+      # Kept in sync with the regex declared in pyproject.toml's
+      # [tool.scikit-build.metadata.version], which is the actual source of
+      # truth scikit-build-core uses to stamp the built wheel/sdist version.
+      - name: Check version consistency (tag vs lightsim2grid/__init__.py)
         run: |
           TAG="${GITHUB_REF_NAME}"
-          SETUP_VERSION=$(python3 - <<'EOF'
+          PKG_VERSION=$(python3 - <<'EOF'
           import re, sys
-          content = open("setup.py").read()
-          m = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']',
+          content = open("lightsim2grid/__init__.py").read()
+          m = re.search(r'^__version__\s*=\s*"(?P<version>[^"]+)"$',
                         content, re.MULTILINE)
           if not m:
-              print("ERROR: __version__ not found in setup.py", file=sys.stderr)
+              print("ERROR: __version__ not found in lightsim2grid/__init__.py", file=sys.stderr)
               sys.exit(1)
-          print(m.group(1))
+          print(m.group("version"))
           EOF
           )
-          EXPECTED_TAG="v${SETUP_VERSION}"
-          echo "Git tag              : ${TAG}"
-          echo "setup.py __version__ : ${SETUP_VERSION}"
-          echo "Expected tag         : ${EXPECTED_TAG}"
+          EXPECTED_TAG="v${PKG_VERSION}"
+          echo "Git tag                             : ${TAG}"
+          echo "lightsim2grid/__init__.py __version__ : ${PKG_VERSION}"
+          echo "Expected tag                        : ${EXPECTED_TAG}"
           if [ "${TAG}" != "${EXPECTED_TAG}" ]; then
             echo "::error::Tag '${TAG}' does not match __version__ = \
-          '${SETUP_VERSION}' in setup.py. Did you forget to bump the version \
-          before tagging?"
+          '${PKG_VERSION}' in lightsim2grid/__init__.py. Did you forget to \
+          bump the version before tagging?"
             exit 1
           fi
-          echo "✓ Tag matches setup.py version."
+          echo "✓ Tag matches lightsim2grid/__init__.py version."
 
       # ── Wait for CircleCI to be green on this commit ─────────────────────
       # Pinned to a full commit SHA to prevent supply-chain attacks via tag
