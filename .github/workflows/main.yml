@@ -610,6 +610,18 @@ jobs:
           CIBW_ARCHS_MACOS: arm64 
           CIBW_ARCHS_WINDOWS: ARM64 
           CIBW_ENVIRONMENT: __O3_OPTIM=1
+          # lightsim2grid_cpp's legacy root-level copy (see
+          # INSTALL_LEGACY_LIGHTSIM2GRID_CPP in CMakeLists.txt) depends on
+          # lightsim2grid_core.dll, which lives one directory away in
+          # lightsim2grid/. delvewheel's default repair command only
+          # resolves DLL dependencies via directories already inside the
+          # wheel when --ignore-existing is passed, or PATH -- it never
+          # searches the same directory as the module being analyzed. Add
+          # --ignore-existing (cibuildwheel's default command otherwise,
+          # see delvewheel's own --ignore-existing/--ignore-in-wheel help
+          # text) so it finds the DLL already present in the wheel instead
+          # of failing with "Unable to find library: lightsim2grid_core.dll".
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: "delvewheel repair --ignore-existing -w {dest_dir} -v {wheel}"
           CIBW_TEST_REQUIRES: grid2op pandapower
           CIBW_TEST_SKIP: "*-macosx_arm64 *-win_arm64" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
           CIBW_TEST_COMMAND: >
