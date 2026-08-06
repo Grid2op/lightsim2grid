@@ -26,6 +26,8 @@ namespace {
 // V=0 post-solve and must never be checked (else every one of them would spuriously report a
 // LOW_VOLTAGE violation). `subs` is used to resolve the violating bus's substation name (see
 // LimitViolation::name); its names are empty strings if never set on the grid.
+// `threshold` (in ]0., 1.], see ContingencyAnalysis::set_violation_threshold) tightens both
+// checks; 1. is the "report exactly at the configured limit" default.
 void check_bus_voltage_violations(
     const Eigen::Ref<const CplxVect> & V,
     const SolverBusIdVect & id_me_to_solver,
@@ -33,6 +35,7 @@ void check_bus_voltage_violations(
     const Eigen::Ref<const RealVect> & bus_vmax_kv,
     const Eigen::Ref<const RealVect> & bus_vn_kv,
     const SubstationContainer & subs,
+    real_type threshold,
     const std::vector<int> * masked_solver_ids,
     std::vector<LimitViolation> & out)
 {
@@ -59,12 +62,70 @@ void check_bus_voltage_violations(
         if(!is_masked.empty() && is_masked[static_cast<size_t>(solver_id)]) continue;
 
         const real_type vm_kv = std::abs(V(solver_id)) * bus_vn_kv(grid_id);
-        if(!isnan(vmin) && vm_kv < vmin){
+        const bool has_min = !isnan(vmin);
+        const bool has_max = !isnan(vmax);
+
+        // Effective bounds, tightened by `threshold` (see
+        // ContingencyAnalysis::set_violation_threshold). The RAW vmin / vmax are still what
+        // gets reported: the threshold only gates the test, it never rescales what the user
+        // reads back.
+        //
+        // A voltage bound has no natural "zero" end, so scaling it directly (the way the
+        // CURRENT check scales its limit, whose range really is [0, limit]) would measure the
+        // margin against the wrong scale: at vmax ~ 1.05 pu a threshold of 0.95 would move
+        // that bound by ~0.05 pu, i.e. half of a typical 0.10 pu band. The bus's NOMINAL
+        // voltage is the right reference instead -- it is what operating limits are
+        // conventionally expressed around (+/- x% of vn) -- so each bound is moved towards
+        // it by a fraction (1 - threshold) of their distance. The acceptable interval on
+        // each side then keeps a width of exactly `threshold * |vnom - bound|`: the very same
+        // "fraction of the usable range" meaning the CURRENT check has.
+        //
+        // Anchoring each side on the nominal voltage (rather than on the opposite bound) is
+        // what keeps the two checks INDEPENDENT: the LOW_VOLTAGE verdict is a function of
+        // vmin, the anchor and the threshold alone, so configuring -- or not configuring --
+        // vmax can never change it, and vice versa.
+        //
+        // The anchor is the nominal voltage CLAMPED into [vmin, vmax]. A band is not
+        // guaranteed to bracket the nominal voltage: real IIDM data does violate it (a
+        // 380 kV level declared with an operating range of [390, 450] kV is ordinary on the
+        // European 400 kV network, and appears on ~30% of real RTE snapshots), and an anchor
+        // sitting outside the band would push a bound the wrong way -- looser as the
+        // threshold falls -- or let the two interpolated bounds cross. Clamping keeps the
+        // anchor between them, so each bound only ever moves inwards and they converge to a
+        // common interior point instead of crossing. When the band does bracket the nominal
+        // voltage -- the overwhelmingly common case -- the clamp is a no-op and the anchor
+        // is exactly vn.
+        const real_type vnom = bus_vn_kv(grid_id);
+        real_type anchor = vnom;
+        if(has_min && (anchor < vmin)) anchor = vmin;
+        if(has_max && (anchor > vmax)) anchor = vmax;
+        const real_type shrink = 1. - threshold;
+        const real_type low_eff = vmin + shrink * (anchor - vmin);
+        const real_type high_eff = vmax - shrink * (vmax - anchor);
+
+        // low_eff and high_eff each converge to the (in-band) anchor from their own side, so
+        // they stay ordered for every threshold in ]0., 1.] and no bus can be reported as
+        // both too low and too high. Reaching this means the limits themselves are
+        // inconsistent (vmin > vmax), which would otherwise surface as an arbitrary one of
+        // the two violation types instead of the input error it is.
+        if(has_min && has_max && low_eff > high_eff){
+            std::ostringstream exc_;
+            exc_ << "ContingencyAnalysis: bus " << grid_id << " has inconsistent voltage "
+                    "limits: its effective minimum (" << low_eff << " kV, from vmin = "
+                 << vmin << " kV) is above its effective maximum (" << high_eff
+                 << " kV, from vmax = " << vmax << " kV) at violation_threshold = "
+                 << threshold << ". Check the vmin_kv / vmax_kv passed to "
+                    "LSGrid::set_bus_voltage_limits (they must satisfy vmin <= vmax, and "
+                    "should bracket the bus nominal voltage of " << vnom << " kV).";
+            throw std::runtime_error(exc_.str());
+        }
+
+        if(has_min && vm_kv <= low_eff){
             const int sub_id = subs.sub_id_of_bus(static_cast<int>(grid_id));
             const std::string sub_name = static_cast<size_t>(sub_id) < sub_names.size() ? sub_names[sub_id] : std::string();
             out.push_back(LimitViolation{ViolationElementType::BUS, static_cast<int>(grid_id), 0,
                                           LimitViolationType::LOW_VOLTAGE, vm_kv, vmin, sub_name});
-        } else if(!isnan(vmax) && vm_kv > vmax){
+        } else if(has_max && vm_kv >= high_eff){
             const int sub_id = subs.sub_id_of_bus(static_cast<int>(grid_id));
             const std::string sub_name = static_cast<size_t>(sub_id) < sub_names.size() ? sub_names[sub_id] : std::string();
             out.push_back(LimitViolation{ViolationElementType::BUS, static_cast<int>(grid_id), 0,
@@ -92,6 +153,7 @@ void check_current_violations(
     real_type sn_mva,
     const Eigen::Ref<const RealVect> & limit1,
     const Eigen::Ref<const RealVect> & limit2,
+    real_type threshold,
     const std::vector<int> & skip_ids,
     std::vector<LimitViolation> & out)
 {
@@ -205,12 +267,14 @@ void check_current_violations(
             amps2 = std::abs(p_to) / (sqrt_3 * v_to_kv);
         }
 
+        // `threshold` (in ]0., 1.]) tightens both tests; the RAW amps / limit are still
+        // what gets reported (see check_bus_voltage_violations above)
         const std::string el_name = el_id < el_names.size() ? el_names[el_id] : std::string();
-        if(has_lim1 && amps1 > limit1(el_idx)){
+        if(has_lim1 && amps1 >= threshold * limit1(el_idx)){
             out.push_back(LimitViolation{el_type, static_cast<int>(el_id), 1,
                                           LimitViolationType::CURRENT, amps1, limit1(el_idx), el_name});
         }
-        if(has_lim2 && amps2 > limit2(el_idx)){
+        if(has_lim2 && amps2 >= threshold * limit2(el_idx)){
             out.push_back(LimitViolation{el_type, static_cast<int>(el_id), 2,
                                           LimitViolationType::CURRENT, amps2, limit2(el_idx), el_name});
         }
@@ -646,19 +710,19 @@ void ContingencyAnalysis::compute(const Eigen::Ref<const CplxVect> & Vinit, int 
         check_bus_voltage_violations(V_n, id_me_to_solver_,
                                       _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
                                       _grid_model.get_bus_vn_kv(), _grid_model.get_substations(),
-                                      nullptr, _violations_n_);
+                                      _violation_threshold_, nullptr, _violations_n_);
         check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
                                   V_n, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
                                   ac_solver_used, sn_mva,
                                   _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
                                   _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
-                                  no_skip, _violations_n_);
+                                  _violation_threshold_, no_skip, _violations_n_);
         check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
                                   V_n, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
                                   ac_solver_used, sn_mva,
                                   _grid_model.get_trafos_as_data().get_limit_a1_ka(),
                                   _grid_model.get_trafos_as_data().get_limit_a2_ka(),
-                                  no_skip, _violations_n_);
+                                  _violation_threshold_, no_skip, _violations_n_);
     }
 
     auto timer_thread = CustTimer();
@@ -912,19 +976,19 @@ void ContingencyAnalysis::run_contingency_range(
                     check_bus_voltage_violations(V, id_me_to_solver_,
                                                   _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
                                                   _grid_model.get_bus_vn_kv(), _grid_model.get_substations(),
-                                                  masked_ids, _violations[cont_id]);
+                                                  _violation_threshold_, masked_ids, _violations[cont_id]);
                     check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
                                               V, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
                                               ac_solver_used, sn_mva,
                                               _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
                                               _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
-                                              skip_lines, _violations[cont_id]);
+                                              _violation_threshold_, skip_lines, _violations[cont_id]);
                     check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
                                               V, id_me_to_solver_, _grid_model.get_bus_vn_kv(),
                                               ac_solver_used, sn_mva,
                                               _grid_model.get_trafos_as_data().get_limit_a1_ka(),
                                               _grid_model.get_trafos_as_data().get_limit_a2_ka(),
-                                              skip_trafos, _violations[cont_id]);
+                                              _violation_threshold_, skip_trafos, _violations[cont_id]);
                 }
             }
         }

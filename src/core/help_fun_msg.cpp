@@ -6695,6 +6695,69 @@ const std::string DocContingencyAnalysis::ContingencyAnalysis = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocContingencyAnalysis::violation_threshold = R"mydelimiter(
+    Threshold (a ``float`` in ``]0., 1.]``, default ``1.0``) applied to every limit check
+    performed when `compute_limit_violations` is ``True``. It is the fraction of the usable
+    range that is still considered acceptable, so lowering it makes every check stricter
+    (more violations are reported, never fewer).
+
+    Each of the three checks owns one interval, running from a "healthy" anchor to the limit
+    that can be violated, and the threshold simply moves that limit towards its anchor -- a
+    linear interpolation, identical for all three::
+
+        effective_limit = threshold * limit + (1 - threshold) * anchor
+
+    ==============  ========  =========  ===============================================
+    check           anchor    limit      violates when
+    ==============  ========  =========  ===============================================
+    CURRENT         0         limit_a    ``value >= threshold * limit_a``
+    LOW_VOLTAGE     vn_kv     vmin_kv    ``v <= threshold * vmin + (1 - threshold) * vn``
+    HIGH_VOLTAGE    vn_kv     vmax_kv    ``v >= threshold * vmax + (1 - threshold) * vn``
+    ==============  ========  =========  ===============================================
+
+    A line's usable range really is ``[0, limit_a]``, so its anchor is ``0`` and the rule
+    reduces to scaling the limit. A voltage bound has no such natural "zero" end, so the bus
+    NOMINAL voltage is used instead -- it is what operating limits are conventionally
+    expressed around (+/- x% of vn). Either way each acceptable interval keeps a width of
+    exactly ``threshold`` times its original one.
+
+    The voltage anchor is the nominal voltage **clamped into** ``[vmin_kv, vmax_kv]``. A band
+    is not guaranteed to bracket it: real data does violate this (a 380 kV level declared with
+    an operating range of ``[390, 450]`` kV is ordinary on the European 400 kV network), and an
+    anchor outside the band would push a bound the wrong way. Clamping keeps each bound moving
+    inwards only. Where the band does bracket the nominal voltage -- the overwhelmingly common
+    case -- the clamp does nothing and the anchor is exactly ``vn_kv``.
+
+    Anchoring both voltage checks on ``vn_kv`` -- rather than on each other -- is what keeps
+    them **independent**: the ``LOW_VOLTAGE`` verdict is a function of ``vmin_kv``, ``vn_kv``
+    and the threshold alone, so configuring ``vmax_kv`` (or leaving it at ``NaN``) can never
+    change it, and vice versa. It also means the two effective bounds each converge towards
+    ``vn_kv`` from their own side and can never cross, so no bus is ever reported as both too
+    low and too high, whatever the threshold.
+
+    A bus whose limits are inconsistent (``vmin_kv > vmax_kv`` -- the only way the two
+    effective bounds can still end up crossed) raises a ``RuntimeError`` rather than being
+    reported as an arbitrary one of the two violation types.
+
+    The reported `value` and `limit` of each violation are unaffected by the threshold: they
+    remain the value actually reached and the limit exactly as configured. Only the test
+    deciding whether to report at all is shifted.
+
+    The default ``1.0`` reproduces the previous, threshold-less behaviour exactly (modulo
+    the strict ``>`` / ``<`` comparisons becoming ``>=`` / ``<=``, which only differ when a
+    value lands exactly on its limit -- negligible in floating point).
+
+    Like `nb_thread` / `handle_disconnected_grid`, this is a plain runtime knob: it only
+    affects the next
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` .
+    *Lowering* it invalidates any already-computed results (`get_violations`,
+    `get_violations_n`, `converged`, `converged_n`), exactly as
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.clear_results_only`
+    would -- the registered contingencies are kept, so it is enough to call `compute` again.
+    *Raising* it back up does not clear anything.
+
+)mydelimiter";
+
 const std::string DocContingencyAnalysis::preprocessing_time = R"mydelimiter(
     Time spent in pre processing the data (this involves, the checking whether the grid would be still connex after the contingency for example)
     
