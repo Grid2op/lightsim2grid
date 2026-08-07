@@ -148,7 +148,7 @@ This feature only relies on the C++ standard library (``std::thread``): no addit
 Benchmarks (``nb_thread`` scaling)
 +++++++++++++++++++++++++++++++++++
 
-The script below scans ``nb_thread`` from 1 to 8 on a single, reasonably large real-topology
+The script below scans ``nb_thread`` from 1 to 8 on a single, reasonably large "real"-topology
 grid (``case6515rte``, up to 1001 n-1 contingencies), and is available by running, from the
 root of the lightsim2grid repository:
 
@@ -159,41 +159,41 @@ root of the lightsim2grid repository:
 
 Results, made with:
 
-- date: 2026-07-15 15:55 CEST
+- date: 2026-08-06 18:23  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
 - python version: 3.12.8.final.0 (64 bit)
-- numpy version: 2.0.2
+- numpy version: 2.3.5
 - pandas version: 2.3.3
 - pandapower version: 3.4.0
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.0.0.rc2
-- lightsim2grid extra information:
+- lightsim2grid version: 1.0.0.rc3
+- lightsim2grid extra information: 
 
-	- klu_solver_available: True
-	- nicslu_solver_available: False
-	- cktso_solver_available: False
-	- compiled_march_native: False
-	- compiled_o3_optim: False
+	- klu_solver_available: True 
+	- nicslu_solver_available: True 
+	- cktso_solver_available: True 
+	- compiled_march_native: True 
+	- compiled_o3_optim: True 
 
 ===========  ===========  ===========  ========  ======================
   nb_thread    nb solved    time (ms)    pf / s  speed-up vs 1 thread
 ===========  ===========  ===========  ========  ======================
-          1          703      4213.12       167  1.00x
-          2          703      2367.70       297  1.78x
-          3          703      1791.98       392  2.35x
-          4          703      1451.98       484  2.90x
-          5          703      1276.28       551  3.30x
-          6          703      1250.20       562  3.37x
-          7          703      1230.02       572  3.43x
-          8          703      1184.67       593  3.56x
+          1          703      4276.13       164  1.00x
+          2          703      2319.19       303  1.84x
+          3          703      1835.12       383  2.33x
+          4          703      1432.11       491  2.99x
+          5          703      1258.72       559  3.40x
+          6          703      1092.99       643  3.91x
+          7          703      1131.49       621  3.78x
+          8          703      1079          652  3.96x
 ===========  ===========  ===========  ========  ======================
 
 As documented above, speed-up is sub-linear (the per-thread set-up cost, plus the
 already-fast single-thread baseline, both eat into the theoretical ``nb_thread``-x
 speed-up): most of the gain is captured by 4-5 threads, with diminishing returns beyond
-that on this grid / contingency count.
+that on this grid / contingency count on the tested hardware.
 
 Reporting limit violations
 ---------------------------
@@ -315,24 +315,24 @@ Benchmarks (Contingency Analysis)
 
 Here are some benchmarks made with:
 
-- date: 2026-04-21 09:05  CEST
+- date: 2026-08-06 18:23  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
-- python version: 3.13.5.final.0 (64 bit)
+- python version: 3.12.8.final.0 (64 bit)
 - numpy version: 2.3.5
 - pandas version: 2.3.3
 - pandapower version: 3.4.0
-- pypowsybl version: 1.15.0
-- grid2op version: 1.12.4.dev0
-- lightsim2grid version: 0.13.1
+- grid2op version: 1.12.5.dev0
+- lightsim2grid version: 1.0.0.rc3
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
 	- nicslu_solver_available: True 
 	- cktso_solver_available: True 
-	- compiled_march_native: False 
+	- compiled_march_native: True 
 	- compiled_o3_optim: True 
+
 
 This benchmark is available by running, from the root of the lightsim2grid repository:
 
@@ -347,27 +347,20 @@ For this setting the outputs are:
 .. code-block:: bash
 
     For environment: l2rpn_neurips_2020_track2_small (177 n-1 simulated)
-    Total time spent in "computer" to solve everything: 11.1ms (15913 pf / s), 0.06 ms / pf)
-        - time to compute the coefficients to simulate line disconnection: 0.28ms
+    Total time spent in "computer" to solve everything: 10.3ms (17115 pf / s), 0.06 ms / pf
+        - time to compute the coefficients to simulate line disconnection: 0.30ms
         - time to pre process Ybus: 0.30ms
-        - time to perform powerflows: 10.25ms (17276 pf / s, 0.06 ms / pf)
-    In addition, it took 0.50 ms to retrieve the current from the complex voltages (in total 15229.8 pf /s, 0.07 ms / pf)
+        - time to perform powerflows: 9.70ms (18255 pf / s, 0.05 ms / pf)
+    In addition, it took 0.40 ms to retrieve the current from the complex voltages (in total 16475.6 pf /s, 0.06 ms / pf)
 
     Comparison with raw grid2op timings
-    It took grid2op (with lightsim2grid, using obs.simulate): 0.28s to perform the same computation
-        This is a 24.2 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
-    It took grid2op (with pandapower, using obs.simulate): 9.94s to perform the same computation
-        This is a 855.2 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)
+    It took grid2op (with lightsim2grid, using obs.simulate): 0.29s to perform the same computation
+        This is a 26.7 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
+    It took grid2op (with pandapower, using obs.simulate): 11.25s to perform the same computation
+        This is a 1046.8 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)
 
-    In this case then, the `ContingencyAnalysis` module is 24 times faster than raw grid2op (with obs.simulate
-    and lightsim2grid) and 855 times faster than raw grid2op (with obs.simulate and pandapower)
+    In this case then, the `ContingencyAnalysis` module is 27 times faster than raw grid2op (with obs.simulate and lightsim2grid) and 1047 times faster than raw grid2op (with obs.simulate and pandapower)
     All results match !
-
-.. note::
-  The last "In this case then, ..." line above is now printed directly by ``contingency_analysis.py`` (computed
-  from ``total_time_glop_ls`` / ``total_time_glop_pp`` and ``full_time_sa``), instead of being a separate,
-  hand-rounded restatement kept below the pasted output -- which is how it used to read "more than **22**
-  times faster", inconsistent with the 24.2 / 855.2 figures printed just above it.
 
 
 Detailed usage

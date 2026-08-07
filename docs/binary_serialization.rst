@@ -119,24 +119,24 @@ Benchmarks
 
 Here are some benchmarks made with:
 
-- date: 2026-07-02 10:21 CEST
+- date: 2026-08-06 18:23  CEST
 - system: Linux 6.8.0-60-generic
-- OS: Ubuntu 22.04.5 LTS
-- processor: x86_64
-- python version: 3.12.8
-- numpy version: 2.0.2
+- OS: ubuntu 22.04
+- processor: 13th Gen Intel(R) Core(TM) i7-13700H
+- python version: 3.12.8.final.0 (64 bit)
+- numpy version: 2.3.5
 - pandas version: 2.3.3
 - pandapower version: 3.4.0
-- pypowsybl version: 1.15.0
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.0.0.rc1
-- lightsim2grid extra information:
+- lightsim2grid version: 1.0.0.rc3
+- lightsim2grid extra information: 
 
-	- klu_solver_available: True
-	- nicslu_solver_available: False
-	- cktso_solver_available: False
-	- compiled_march_native: False
-	- compiled_o3_optim: False
+	- klu_solver_available: True 
+	- nicslu_solver_available: True 
+	- cktso_solver_available: True 
+	- compiled_march_native: True 
+	- compiled_o3_optim: True 
+
 
 This benchmark is available by running, from the root of the lightsim2grid repository:
 
@@ -150,14 +150,16 @@ Single grid (``l2rpn_idf_2023``)
 
 A first, direct comparison on a single mid-sized grid (the same fixture used by the test suite):
 
-=============================  ================  ===================  ===========
-l2rpn_idf_2023 (15 repeats)      time (ms/call)  speedup vs pickle    file size
-=============================  ================  ===================  ===========
-save_binary (write)                       0.284  1.5x                 31606 B
-load_binary (read)                        0.168  1.7x                 -
-pickle.dump (write)                       0.418  1.0x (reference)     32681 B
-pickle.load (read)                        0.293  1.0x (reference)     -
-=============================  ================  ===================  ===========
+=========================================  ================  ===================  ===========
+l2rpn_idf_2023 (20 repeats)                  time (ms/call)  speedup vs pickle    file size
+=========================================  ================  ===================  ===========
+save_binary (write)                                   0.347  1.1x                 31804 bytes
+load_binary (read)                                    0.274  1.0x                 -
+pickle.dump (write)                                   0.37   1.0x (reference)     32762 bytes
+pickle.load (read)                                    0.271  1.0x (reference)     -
+init_from_pandapower (case118, reference)             1.37   -                    -
+init_from_pypowsybl (ieee118, reference)             26.741  -                    -
+=========================================  ================  ===================  ===========
 
 The "speedup vs pickle" column above is now computed and printed directly by
 ``benchmark_binary_serialization.py`` (previously it was a hand-written sentence below the table,
@@ -177,22 +179,22 @@ this is the "no snapshot at all" baseline:
 
 .. code-block:: text
 
-    ================  ========  ==================  ==================  ===============  ==================  ==================  ==============  =================  =================  ==========================  ================================  ================================
-    grid                nb bus    save_binary (ms)    pickle.dump (ms)  write speedup      load_binary (ms)    pickle.load (ms)  read speedup      binary size (B)    pickle size (B)    pandapower json size (B)    read pandapower file (ms, ref)  load_binary speedup vs pp file
-    ================  ========  ==================  ==================  ===============  ==================  ==================  ==============  =================  =================  ==========================  ================================  ================================
-    case14                  14               0.315               0.3    1.0x                          0.206               0.273  1.3x                         3368               3054                       69741                            312.12  1515.3x
-    case118                118               0.381               0.35   0.9x                          0.271               0.231  0.9x                        19502              21654                      108962                            288.89  1065.5x
-    case_illinois200       200               0.356               0.625  1.8x                          0.243               0.279  1.1x                        25936              28600                      127041                            311.49  1280.0x
-    case300                300               0.41                0.649  1.6x                          0.212               0.415  2.0x                        43648              48446                      161723                            312.43  1475.3x
-    case1354pegase        1354               0.566               1.812  3.2x                          0.324               1.025  3.2x                       196544             229176                      514421                            320.61  989.2x
-    case1888rte           1888               0.559               2.286  4.1x                          0.436               1.393  3.2x                       235928             274971                      656133                            326.26  748.4x
-    case2848rte           2848               0.698               3.265  4.7x                          0.355               2.119  6.0x                       355939             415935                      951381                            339.28  955.4x
-    case2869pegase        2869               0.812               4.005  4.9x                          0.413               2.45   5.9x                       436746             513498                     1061979                            346.86  839.9x
-    case3120sp            3120               0.598               3.311  5.5x                          0.427               1.863  4.4x                       334367             398073                      961372                            346.68  812.3x
-    case6495rte           6495               1.271              11.11   8.7x                          0.643               5.317  8.3x                       833860             981887                     2140446                            365.18  568.1x
-    case6515rte           6515               1.09               11.233  10.3x                         0.66                4.668  7.1x                       836436             984720                     2170208                            385.7   584.7x
-    case9241pegase        9241               1.06               18.023  17.0x                         1.061               8.923  8.4x                      1497483            1763983                     3458084                            438.61  413.6x
-    ================  ========  ==================  ==================  ===============  ==================  ==================  ==============  =================  =================  ==========================  ================================  ================================
+================  ========  ==================  ==================  ===============  ==================  ==================  ==============  =================  =================  ==========================  ======================================  ========================================
+grid                nb bus    save_binary (ms)    pickle.dump (ms)  write speedup      load_binary (ms)    pickle.load (ms)  read speedup      binary size (B)    pickle size (B)    pandapower json size (B)    read pandapower file (ms, reference)  load_binary speedup vs pandapower file
+================  ========  ==================  ==================  ===============  ==================  ==================  ==============  =================  =================  ==========================  ======================================  ========================================
+case14                  14               0.24                0.215  0.9x                          0.121               0.133  1.1x                         3572               3141                       69741                                  288.21  2380.5x
+case118                118               0.454               0.3    0.7x                          0.214               0.218  1.0x                        19706              21741                      108962                                  299.38  1400.0x
+case_illinois200       200               0.298               0.309  1.0x                          0.166               0.229  1.4x                        26140              28687                      127041                                  282.34  1703.6x
+case300                300               1.732               0.652  0.4x                          0.347               0.34   1.0x                        43852              48533                      161723                                  283.36  817.2x
+case1354pegase        1354               0.363               1.708  4.7x                          0.312               1      3.2x                       196748             229263                      514421                                  306.5   982.9x
+case1888rte           1888               0.39                2.191  5.6x                          0.449               1.334  3.0x                       236132             275058                      656133                                  309.65  690.3x
+case2848rte           2848               0.763               5.625  7.4x                          0.733               1.768  2.4x                       356143             416022                      951381                                  310.53  423.9x
+case2869pegase        2869               0.619               3.646  5.9x                          0.618               2.172  3.5x                       436950             513585                     1061979                                  332.34  537.6x
+case3120sp            3120               0.44                2.82   6.4x                          0.383               1.53   4.0x                       334571             398160                      961372                                  323.28  845.0x
+case6495rte           6495               0.691               8.806  12.7x                         1.046               3.692  3.5x                       834064             981974                     2140446                                  351.54  336.2x
+case6515rte           6515               0.69                9.238  13.4x                         1.025               3.994  3.9x                       836640             984807                     2170208                                  351.43  343.0x
+case9241pegase        9241               1.095              14.695  13.4x                         1.624               7.684  4.7x                      1497687            1764070                     3458084                                  422.3   260.0x
+================  ========  ==================  ==================  ===============  ==================  ==================  ==============  =================  =================  ==========================  ======================================  ========================================
 
 Two things stand out:
 
