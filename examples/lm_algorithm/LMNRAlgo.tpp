@@ -41,7 +41,7 @@ bool LMNRAlgo<LinearSolver, NRSystemT>::compute_pf(
         return false;
     }
 
-    _system.update_state(BaseAlgo::lsgrid_ptr_, Ybus, V, Sbus, slack_weights);
+    _system.update_state(BaseAlgo::lsgrid_ptr_, Ybus, V, Sbus, slack_weights, _solver_control);
     if (need_rebuild) _system.init_topology(slack_ids, slack_weights, pv, pq);
 
     bool need_init = need_rebuild;

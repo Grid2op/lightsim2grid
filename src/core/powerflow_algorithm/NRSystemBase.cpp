@@ -24,9 +24,15 @@ void Base::update_state(
     const LSGrid                     * lsgrid_ptr,
     const EigenRefConstCplxSpMat     & /*Ybus*/,
     const Eigen::Ref<const CplxVect> & /*Sbus*/,
-    const Eigen::Ref<const RealVect> & /*slack_weights*/
+    const Eigen::Ref<const RealVect> & /*slack_weights*/,
+    const AlgoControl                & solver_control
 )
 {
+    // same caching rule as the extensions: the grid is const during a solve, so
+    // this set can only change between solves and AlgoControl says whether it
+    // did. get_free_vm_slack_solver_buses() builds a std::set every call.
+    if(!nr_extension_data_is_stale(solver_control) && free_vm_slack_cached_) return;
+    free_vm_slack_cached_ = true;
     // Slack buses not pinned by a LOCAL voltage-regulating generator need a
     // free Vm unknown + Q equation (added in register_in), exactly like an
     // ordinary PQ bus. See LSGrid::get_free_vm_slack_solver_buses for the

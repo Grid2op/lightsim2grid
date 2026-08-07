@@ -830,6 +830,27 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     const int nb_bus_solver = static_cast<int>(id_ac_solver_to_me_.size());
     if(nb_bus_solver == 0) return;
 
+    // Cheap pre-scan, before anything that allocates. Everything below --- two
+    // nb_bus_solver-sized vectors and the `free_vm_slack` set --- is only there
+    // to validate controllers, so a grid with none of them (the common case, and
+    // every grid in the benchmark suite) has nothing to do here. This function
+    // runs on EVERY solve, so without this early exit that allocation was paid
+    // per powerflow to produce an empty result.
+    {
+        bool any_controller = false;
+        const int nb_gen_scan = static_cast<int>(generators_.nb());
+        for(int gen_id = 0; gen_id < nb_gen_scan; ++gen_id){
+            if(generators_.gen_is_voltage_controller(gen_id)){ any_controller = true; break; }
+        }
+        if(!any_controller){
+            const int nb_svc_scan = static_cast<int>(svcs_.nb());
+            for(int svc_id = 0; svc_id < nb_svc_scan; ++svc_id){
+                if(svcs_.svc_is_voltage_controller(svc_id)){ any_controller = true; break; }
+            }
+        }
+        if(!any_controller) return;
+    }
+
     // PQ membership: a bus owns a Q equation AND a Vm unknown iff it is a PQ bus
     // (PV buses have only theta/P, the slack none). bus_pq_ is set by fillpv_pq.
     std::vector<bool> is_pq(nb_bus_solver, false);

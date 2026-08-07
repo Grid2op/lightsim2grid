@@ -19,14 +19,26 @@ void VoltageControl::update_state(
     const LSGrid                     * lsgrid_ptr,
     const EigenRefConstCplxSpMat     & /*Ybus*/,
     const Eigen::Ref<const CplxVect> & /*Sbus*/,
-    const Eigen::Ref<const RealVect> & /*slack_weights*/
+    const Eigen::Ref<const RealVect> & /*slack_weights*/,
+    const AlgoControl                & solver_control
 )
 {
-    data_.clear();
-    if(lsgrid_ptr != nullptr) lsgrid_ptr->fill_voltage_control_solver_data(data_, true);
-    my_size_ = data_.n_controllers();
-    // per-solve init: the reactive injection state starts at 0 (gen convention)
-    q_ = RealVect::Zero(my_size_);
+    // The controller data is expensive to rebuild (fill_voltage_control_solver_data
+    // groups the controllers in a pass quadratic in their number), and can only
+    // change between solves -- the grid is const during one. Skip it when
+    // AlgoControl reports nothing relevant changed.
+    if(nr_extension_data_is_stale(solver_control) || !data_cached_){
+        data_.clear();
+        if(lsgrid_ptr != nullptr) lsgrid_ptr->fill_voltage_control_solver_data(data_, true);
+        my_size_ = data_.n_controllers();
+        data_cached_ = true;
+    }
+    // NOT cached: the reactive injection is solver STATE, not grid data, and its
+    // per-solve initial guess is 0 (generator convention) whatever happened to
+    // the grid. setZero() rather than a fresh vector so an unchanged controller
+    // count does not reallocate.
+    if(q_.size() != my_size_) q_ = RealVect::Zero(my_size_);
+    else q_.setZero();
 }
 
 } // namespace ls2g

@@ -15,9 +15,12 @@ void MultiSlack::update_state(
     const LSGrid                     * /*lsgrid_ptr*/,
     const EigenRefConstCplxSpMat     & /*Ybus*/,
     const Eigen::Ref<const CplxVect> & Sbus,
-    const Eigen::Ref<const RealVect> & slack_weights
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const AlgoControl                & /*solver_control*/
 )
 {
+    // not cached: both quantities below are read straight off the compute_pf
+    // arguments (no grid pull, no allocation beyond the copy)
     slack_weights_ = slack_weights;
     // initial slack absorbed (see MultiSlackPolicy::initial_slack_absorbed)
     slack_absorbed_ = std::real(Sbus.sum());

@@ -110,6 +110,44 @@ class LS2G_API Contrib final
 // extension data (a handful of hvdc lines / voltage controllers) per solve,
 // against a Jacobian factorization per NR iteration.
 
+// ---- per-solve data caching -----------------------------------------------------
+//
+// The Hvdc and VoltageControl extensions rebuild their per-solve data by asking
+// the grid for it (LSGrid::fill_hvdc_droop_solver_data /
+// fill_voltage_control_solver_data), which allocates a dozen Eigen vectors and,
+// for the controllers, runs a grouping pass that is quadratic in their number.
+// The grid is const for the whole solve, so that result can only change between
+// solves -- and AlgoControl is exactly the record of what changed. When it says
+// nothing did, the previous data is still valid and the whole pull is skipped.
+//
+// The predicate is deliberately conservative: it re-pulls unless EVERY flag is
+// clear, i.e. unless the caller ran unset_changes() and then genuinely touched
+// nothing this extension could depend on. Getting this wrong does not raise, it
+// silently solves with stale setpoints, so it errs towards redoing the work.
+// The cases it does catch are the ones that matter: repeated solves of an
+// unchanged grid, and the batch algorithms, which cold-start with
+// tell_solver_need_reset() and then set only the flags for what they vary.
+inline bool nr_extension_data_is_stale(const AlgoControl & c)
+{
+    return c.need_reset_solver()
+        || c.has_dimension_changed()
+        || c.ybus_change_sparsity_pattern()
+        || c.has_ybus_some_coeffs_zero()
+        || c.need_recompute_ybus()
+        // set_status_droop (the droop regime) signals only this one, and it is
+        // part of the droop data
+        || c.need_recompute_sbus()
+        || c.has_pv_changed()
+        || c.has_pq_changed()
+        || c.has_slack_participate_changed()
+        || c.has_slack_weight_changed()
+        // generator voltage setpoints feed VoltageControlSolverData::v_set
+        || c.has_v_changed()
+        // an element moved bus: the solver bus ids in the data are stale
+        || c.has_one_el_changed_bus()
+        || c.has_hvdc_droop_changed();
+}
+
 [[noreturn]] inline void nr_state_error(const char * component, const std::string & what)
 {
     std::ostringstream exc_;
@@ -270,7 +308,8 @@ class LS2G_API Base
             const LSGrid                     * lsgrid_ptr,
             const EigenRefConstCplxSpMat     & Ybus,
             const Eigen::Ref<const CplxVect> & Sbus,
-            const Eigen::Ref<const RealVect> & slack_weights
+            const Eigen::Ref<const RealVect> & slack_weights,
+            const AlgoControl                & solver_control
         );
 
         // call after update_state
@@ -366,6 +405,7 @@ class LS2G_API Base
             nb_pq_ = 0;
             nb_pvpq_ = 0;
             free_vm_slack_buses_.clear();
+            free_vm_slack_cached_ = false;
         }
 
     private:
@@ -375,6 +415,9 @@ class LS2G_API Base
         // set by update_state (needs LSGrid, hence out-of-line), consumed by
         // register_in. Empty in the common "slack is locally PV-pinned" case.
         std::set<int> free_vm_slack_buses_;
+        // false until update_state has pulled the set at least once; reset by
+        // clear() so a reused system never trusts a previous grid's data
+        bool          free_vm_slack_cached_ = false;
 
     public:
         Eigen::Ref<const IntVect> pv() const { return pv_; }
@@ -423,7 +466,8 @@ class LS2G_API MultiSlack   // distributed-slack extension
             const LSGrid                     * lsgrid_ptr,
             const EigenRefConstCplxSpMat     & Ybus,
             const Eigen::Ref<const CplxVect> & Sbus,
-            const Eigen::Ref<const RealVect> & slack_weights
+            const Eigen::Ref<const RealVect> & slack_weights,
+            const AlgoControl                & solver_control
         );
 
         // call after update_state
@@ -602,7 +646,8 @@ class LS2G_API Hvdc
             const LSGrid                     * lsgrid_ptr,
             const EigenRefConstCplxSpMat     & Ybus,
             const Eigen::Ref<const CplxVect> & Sbus,
-            const Eigen::Ref<const RealVect> & slack_weights
+            const Eigen::Ref<const RealVect> & slack_weights,
+            const AlgoControl                & solver_control
         );
 
         void init_topology(
@@ -740,6 +785,7 @@ class LS2G_API Hvdc
 
         void clear() {
             my_size_ = 0;
+            data_cached_ = false;
             data_.clear();
             p_row_1_.clear();
             p_row_2_.clear();
@@ -753,6 +799,7 @@ class LS2G_API Hvdc
 
     private:
         int                  my_size_;
+        bool                 data_cached_ = false;  // see update_state's caching rule
         HvdcDroopSolverData  data_;
         std::vector<int>     p_row_1_, p_row_2_;          // P row of each end bus (-1 if none)
         std::vector<int>     theta_col_1_, theta_col_2_;  // theta column of each end bus (-1 if none)
@@ -826,7 +873,8 @@ class LS2G_API VoltageControl
             const LSGrid                     * lsgrid_ptr,
             const EigenRefConstCplxSpMat     & Ybus,
             const Eigen::Ref<const CplxVect> & Sbus,
-            const Eigen::Ref<const RealVect> & slack_weights
+            const Eigen::Ref<const RealVect> & slack_weights,
+            const AlgoControl                & solver_control
         );
 
         void init_topology(
@@ -1056,6 +1104,7 @@ class LS2G_API VoltageControl
 
         void clear() {
             my_size_ = 0;
+            data_cached_ = false;
             data_.clear();
             q_ = RealVect();
             q_cols_.clear();
@@ -1088,6 +1137,7 @@ class LS2G_API VoltageControl
 
     private:
         int                            my_size_;     // number of controllers
+        bool                           data_cached_ = false;  // see update_state's caching rule
         VoltageControlSolverData       data_;        // per-solve controller data (refreshed every update_state)
         RealVect                       q_;           // running reactive injection per controller (pu, gen convention)
         std::vector<int>               q_cols_;      // J column of each controller's Q unknown
@@ -1165,7 +1215,8 @@ public:
         const EigenRefConstCplxSpMat     & Ybus,
         const Eigen::Ref<const CplxVect> & V_init,
         const Eigen::Ref<const CplxVect> & Sbus,
-        const Eigen::Ref<const RealVect> & slack_weights);
+        const Eigen::Ref<const RealVect> & slack_weights,
+        const AlgoControl                & solver_control);
 
     // Opt in to the deep, per-element state validation inside init_topology
     // (bus ids of the pv / pq sets and of the extension data, group tiling, ...).
@@ -1456,17 +1507,19 @@ private:
         const EigenRefConstCplxSpMat     & Ybus,
         const Eigen::Ref<const CplxVect> & Sbus,
         const Eigen::Ref<const RealVect> & slack_weights,
+        const AlgoControl                & solver_control,
         std::index_sequence<Is...>){
         int dummy[] = { 0, (std::get<Is>(extensions_).update_state(
             &base_,
             lsgrid_ptr,
             Ybus,
             Sbus,
-            slack_weights
+            slack_weights,
+            solver_control
             ), 0)... };
         (void)dummy;
         // silence unused-parameter warnings when the extension pack is empty
-        (void)lsgrid_ptr; (void)Ybus; (void)Sbus; (void)slack_weights;
+        (void)lsgrid_ptr; (void)Ybus; (void)Sbus; (void)slack_weights; (void)solver_control;
     }
 
     // O(1) shape check of the shared vectors (Va / Vm / V / Sbus vs n_bus)

@@ -57,7 +57,7 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     }
     // std::cout << "Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).\n";
     // Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).
-    _system.update_state(BaseAlgo::lsgrid_ptr_, Ybus, V, Sbus, slack_weights);
+    _system.update_state(BaseAlgo::lsgrid_ptr_, Ybus, V, Sbus, slack_weights, _solver_control);
 
     // Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).
     // std::cout << "Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).\n";

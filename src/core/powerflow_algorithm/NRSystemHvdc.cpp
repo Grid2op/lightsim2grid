@@ -19,12 +19,17 @@ void Hvdc::update_state(
     const LSGrid                     * lsgrid_ptr,
     const EigenRefConstCplxSpMat     & /*Ybus*/,
     const Eigen::Ref<const CplxVect> & /*Sbus*/,
-    const Eigen::Ref<const RealVect> & /*slack_weights*/
+    const Eigen::Ref<const RealVect> & /*slack_weights*/,
+    const AlgoControl                & solver_control
 )
 {
+    // nothing the droop data depends on changed since the last solve: keep it
+    // (fill_hvdc_droop_solver_data allocates ten Eigen vectors per call)
+    if(!nr_extension_data_is_stale(solver_control) && data_cached_) return;
     data_.clear();
     if(lsgrid_ptr != nullptr) lsgrid_ptr->fill_hvdc_droop_solver_data(data_, true);
     my_size_ = data_.size();
+    data_cached_ = true;
 }
 
 } // namespace ls2g

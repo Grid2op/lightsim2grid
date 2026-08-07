@@ -168,6 +168,17 @@ void add_droop_hvdc(LSGrid & grid, real_type p0_mw = 10., real_type k_mw_per_deg
     grid.tell_solver_need_reset();
 }
 
+// An AlgoControl with every flag raised: "assume everything changed". The
+// extensions cache their per-solve grid data and only re-pull it when the
+// control says something moved (see nr_extension_data_is_stale), so a test
+// driving update_state by hand must say so explicitly -- otherwise it would be
+// measuring the cache, not the pull.
+const ls2g::AlgoControl & all_changed()
+{
+    static ls2g::AlgoControl c = []{ ls2g::AlgoControl a; a.tell_all_changed(); return a; }();
+    return c;
+}
+
 CplxVect flat_start(const LSGrid & grid)
 {
     return CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), cplx_type(1., 0.));
@@ -579,7 +590,7 @@ struct SolverInputs
 // the full rebuild path, in the order NRAlgo::compute_pf runs it
 void run_all_phases(MultiSlackNRSystem & sys, const LSGrid & grid, const SolverInputs & in)
 {
-    sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights);
+    sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights, all_changed());
     sys.init_topology(in.slack_ids, in.slack_weights, in.pv, in.pq);
     sys.build_J_sparsity();
     sys.validate_registration();
@@ -652,7 +663,7 @@ TEST_CASE("NRSystem: refreshing the data without a rebuild is caught", "[nr][nrs
         // follow; here we deliberately skip it, as a missing tell_pv_changed()
         // would.
         add_svc(grid, 1.01);
-        sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights);
+        sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights, all_changed());
         REQUIRE_THROWS_MATCHES(
             sys.validate_registration(), std::runtime_error,
             MessageMatches(ContainsSubstring("VoltageControl")));
@@ -663,7 +674,7 @@ TEST_CASE("NRSystem: refreshing the data without a rebuild is caught", "[nr][nrs
         REQUIRE_NOTHROW(run_all_phases(sys, grid, in));
 
         grid.set_gen_regulated_bus(1, 1);  // back to local PV: no controller left
-        sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights);
+        sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights, all_changed());
         REQUIRE_THROWS_MATCHES(
             sys.validate_registration(), std::runtime_error,
             MessageMatches(ContainsSubstring("VoltageControl")));
@@ -674,7 +685,7 @@ TEST_CASE("NRSystem: refreshing the data without a rebuild is caught", "[nr][nrs
         REQUIRE_NOTHROW(run_all_phases(sys, grid, in));
 
         grid.deactivate_dcline(0);  // no longer connected: dropped from the data
-        sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights);
+        sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights, all_changed());
         REQUIRE_THROWS_MATCHES(
             sys.validate_registration(), std::runtime_error,
             MessageMatches(ContainsSubstring("Hvdc")));
@@ -716,7 +727,7 @@ TEST_CASE("NRSystem: extension bus ids are checked against the solver size", "[n
 
     MultiSlackNRSystem sys;
     sys.set_deep_validation(true);
-    sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights);
+    sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights, all_changed());
     // init_topology validates before register_in indexes the ledger with them
     REQUIRE_THROWS_MATCHES(
         sys.init_topology(in.slack_ids, in.slack_weights, in.pv, in.pq),
@@ -735,7 +746,7 @@ TEST_CASE("NRSystem: mismatched voltage / Sbus sizes are rejected", "[nr][nrsyst
         const CplxVect V_short = full.V.head(4);
         MultiSlackNRSystem sys;
         sys.set_deep_validation(true);
-        sys.update_state(&grid, in.Ybus, V_short, in.Sbus, in.slack_weights);
+        sys.update_state(&grid, in.Ybus, V_short, in.Sbus, in.slack_weights, all_changed());
         REQUIRE_THROWS_MATCHES(
             sys.init_topology(in.slack_ids, in.slack_weights, in.pv, in.pq),
             std::runtime_error,
@@ -746,7 +757,7 @@ TEST_CASE("NRSystem: mismatched voltage / Sbus sizes are rejected", "[nr][nrsyst
         const CplxVect S_short = full.Sbus.head(4);
         MultiSlackNRSystem sys;
         sys.set_deep_validation(true);
-        sys.update_state(&grid, in.Ybus, in.V, S_short, in.slack_weights);
+        sys.update_state(&grid, in.Ybus, in.V, S_short, in.slack_weights, all_changed());
         REQUIRE_THROWS_MATCHES(
             sys.init_topology(in.slack_ids, in.slack_weights, in.pv, in.pq),
             std::runtime_error,
@@ -764,7 +775,7 @@ TEST_CASE("NRSystem: a system with no extension data is a strict no-op", "[nr][n
     const SolverInputs in(grid);
 
     SingleSlackNRSystem sys;
-    sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights);
+    sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights, all_changed());
     sys.init_topology(in.slack_ids, in.slack_weights, in.pv, in.pq);
     sys.build_J_sparsity();
     REQUIRE_NOTHROW(sys.validate_registration());
@@ -786,7 +797,7 @@ TEST_CASE("NRSystem: bus masking rewrites rows without touching the pattern", "[
     const SolverInputs in(grid);
 
     MultiSlackNRSystem sys;
-    sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights);
+    sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights, all_changed());
     sys.init_topology(in.slack_ids, in.slack_weights, in.pv, in.pq);
     sys.build_J_sparsity();
     sys.fill_internal_variables();
@@ -859,7 +870,7 @@ TEST_CASE("NRSystem: a null grid pointer yields empty extension data", "[nr][nrs
     const SolverInputs in(grid);
 
     MultiSlackNRSystem sys;
-    sys.update_state(nullptr, in.Ybus, in.V, in.Sbus, in.slack_weights);
+    sys.update_state(nullptr, in.Ybus, in.V, in.Sbus, in.slack_weights, all_changed());
     REQUIRE_NOTHROW(sys.init_topology(in.slack_ids, in.slack_weights, in.pv, in.pq));
     REQUIRE_NOTHROW(sys.build_J_sparsity());
     REQUIRE_NOTHROW(sys.validate_registration());

@@ -81,7 +81,8 @@ inline void NRSystem<Base, Rest...>::update_state(
     const EigenRefConstCplxSpMat     & Ybus,
     const Eigen::Ref<const CplxVect> & V_init,
     const Eigen::Ref<const CplxVect> & Sbus,
-    const Eigen::Ref<const RealVect> & slack_weights)
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const AlgoControl                & solver_control)
 {
     lsgrid_ptr_ = lsgrid_ptr;
     Ybus_ref_ = Ybus;
@@ -93,8 +94,8 @@ inline void NRSystem<Base, Rest...>::update_state(
     V_  = V_init;
 
     // now inform the components
-    base_.update_state(lsgrid_ptr, Ybus, Sbus, slack_weights);
-    _update_state_extensions(lsgrid_ptr, Ybus, Sbus, slack_weights, std::make_index_sequence<sizeof...(Rest)>{});
+    base_.update_state(lsgrid_ptr, Ybus, Sbus, slack_weights, solver_control);
+    _update_state_extensions(lsgrid_ptr, Ybus, Sbus, slack_weights, solver_control, std::make_index_sequence<sizeof...(Rest)>{});
     // NB: no validation here -- MultiSlack / Base only learn their index sets in
     // init_topology, which runs AFTER this. The data pulled above is checked
     // there (pre-register_in) on a rebuild, and by validate_registration()

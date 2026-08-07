@@ -41,7 +41,8 @@ public:
         const LSGrid                     * /*lsgrid_ptr*/,
         const EigenRefConstCplxSpMat     & /*Ybus*/,
         const Eigen::Ref<const CplxVect> & /*Sbus*/,
-        const Eigen::Ref<const RealVect> & /*slack_weights*/) {}
+        const Eigen::Ref<const RealVect> & /*slack_weights*/,
+        const AlgoControl                & /*solver_control*/) {}
 
     void init_topology(
         const Eigen::Ref<const IntVect>  & /*slack_ids*/,
