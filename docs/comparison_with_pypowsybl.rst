@@ -302,23 +302,23 @@ Results
 
 The benchmarks were run on:
 
-- date: 2026-04-21 09:05  CEST
+- date: 2026-08-06 18:23  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
-- python version: 3.13.5.final.0 (64 bit)
+- python version: 3.12.8.final.0 (64 bit)
 - numpy version: 2.3.5
 - pandas version: 2.3.3
 - pandapower version: 3.4.0
 - pypowsybl version: 1.15.0
-- grid2op version: 1.12.4.dev0
-- lightsim2grid version: 0.13.1
+- grid2op version: 1.12.5.dev0
+- lightsim2grid version: 1.0.0.rc3
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
 	- nicslu_solver_available: True 
 	- cktso_solver_available: True 
-	- compiled_march_native: False 
+	- compiled_march_native: True 
 	- compiled_o3_optim: True 
 
 The results were obtained by launching:
@@ -339,32 +339,33 @@ Precision of lightsim2grid
 
 On average (across all buses) the errors were:
 
-========== ============= ===============
-case name   angle (rad)  magnitude (pu)
-========== ============= ===============
-ieee9       1.82e-08        1.15e-08
-ieee14      9.70e-10        1.27e-09 
-ieee30      1.58e-09        3.55e-09 
-ieee57      1.63e-07        2.71e-07
-ieee118     1.06e-07        3.15e-09
-ieee300     3.10e-07        1.75e-08
-========== ============= ===============
+===========  =============  ================
+case name      angle (rad)    magnitude (pu)
+===========  =============  ================
+ieee9             1.82e-08          1.15e-08
+ieee14            9.7e-10           1.27e-09
+ieee30            1.58e-09          3.55e-09
+ieee57            1.63e-07          2.71e-07
+ieee118           1.06e-07          3.15e-09
+ieee300           9.45e-05          5.71e-05
+===========  =============  ================
 
 Maximum error, for all buses:
 
-========== ============= ===============
-case name   angle (rad)  magnitude (pu)
-========== ============= ===============
-ieee9       3.35e-08        2.65e-08
-ieee14      2.35e-09        2.92e-09 
-ieee30      3.23e-09        7.96e-09 
-ieee57      9.54e-07        1.20e-06
-ieee118     2.54e-07        6.92e-08
-ieee300     3.80e-07        1.59e-07
-========== ============= ===============
+===========  =============  ================
+case name      angle (rad)    magnitude (pu)
+===========  =============  ================
+ieee9             3.35e-08          2.65e-08
+ieee14            2.35e-09          2.92e-09
+ieee30            3.23e-09          7.96e-09
+ieee57            9.54e-07          1.2e-06
+ieee118           2.54e-07          6.92e-08
+ieee300           0.000511          0.0018
+===========  =============  ================
 
-As we can notice in the tables above, the results match up to the 
-solver precisions (set to 1e-6 for lightsim2grid).
+As we can notice in the tables above, the results match up to the solver precision 
+(set to 1e-06 for lightsim2grid): the largest observed mismatch, across all cases, is 5.11e-04 rad for the voltage angle
+ and 1.80e-03 pu for the voltage magnitude. 
 
 On these grids, lightsim2grid and pypowsybl give the same exact results.
 
@@ -382,18 +383,18 @@ to read back the data is excluded.
 
 Times are expressed in ms.
 
-========== =============== ===============
-case name   lightsim2grid    pypowsybl
-========== =============== ===============
-ieee9       1.10e-01         4.02e+00
-ieee14      1.48e-01         3.82e+00
-ieee30      2.61e-01         5.19e+00 
-ieee57      4.24e-01         5.28e+00 
-ieee118     6.78e-01         6.11e+00
-ieee300     1.73e+00         1.15e+01
-========== =============== ===============
+===========  ===============  ===========
+case name      lightsim2grid    pypowsybl
+===========  ===============  ===========
+ieee9                  0.103         4.48
+ieee14                 0.1           1.36
+ieee30                 0.155         1.63
+ieee57                 0.229         2
+ieee118                0.292         2.68
+ieee300                0.796         5.21
+===========  ===============  ===========
 
-For this initial computation, lightsim2grid is between **7** and **37** times faster than pypowsybl.
+For this initial computation, lightsim2grid is between **7** and **44** times faster than pypowsybl.
 
 .. warning::
     This is not fair for pypowsybl.
@@ -419,18 +420,18 @@ call when performing some factorization etc.)
 The results in the table bellow are given in ms and report the average 
 time it took to perform the 100 powerflows.
 
-========== =============== ===============
-case name   lightsim2grid    pypowsybl
-========== =============== ===============
-ieee9       1.64e-02         9.23e-01
-ieee14      2.68e-02         1.14e+00 
-ieee30      5.81e-02         1.44e+00 
-ieee57      1.37e-01         1.56e+00
-ieee118     3.04e-01         3.02e+00
-ieee300     1.73e+00         5.71e+00
-========== =============== ===============
+===========  ===============  ===========
+case name      lightsim2grid    pypowsybl
+===========  ===============  ===========
+ieee9                 0.0082         1.17
+ieee14                0.0108         1.1
+ieee30                0.0198         1.7
+ieee57                0.0372         1.82
+ieee118               0.0851         2.52
+ieee300               0.313          4.84
+===========  ===============  ===========
 
-For successive powerflows, lightsim2grid is between **3** and **56** times faster than pypowsybl.
+For successive powerflows, lightsim2grid is between **15** and **143** times faster than pypowsybl.
 
 
 Computation times security analysis
@@ -447,15 +448,15 @@ The table below provides the average time it takes to simulate the
 effect of 1 contingency in ms. We don't measure the time taken to 
 compute the flows from the resulting voltages.
 
-========== =============== ===============
-case name   lightsim2grid    pypowsybl
-========== =============== ===============
-ieee9       2.15e-02         3.47e-01
-ieee14      2.72e-02         2.01e-01
-ieee30      4.73e-02         1.45e-01
-ieee57      1.32e-01         1.86e-01
-ieee118     2.04e-01         3.84e-01
-ieee300     9.91e-01         1.23e+00
-========== =============== ===============
+===========  ===============  ===========
+case name      lightsim2grid    pypowsybl
+===========  ===============  ===========
+ieee9                 0.0132        0.349
+ieee14                0.01          0.19
+ieee30                0.0157        0.186
+ieee57                0.0316        0.182
+ieee118               0.0436        0.306
+ieee300               0.172         1.23
+===========  ===============  ===========
 
-For the contingency analysis, lightsim2grid is between **1** and **16** times faster than pypowsybl.
+For the contingency analysis, lightsim2grid is between **6** and **26** times faster than pypowsybl.

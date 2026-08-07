@@ -67,23 +67,23 @@ Benchmarks (Time Series)
 
 Here are some benchmarks made with:
 
-- date: 2026-04-21 09:05  CEST
+- date: 2026-08-06 18:23  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
-- python version: 3.13.5.final.0 (64 bit)
+- python version: 3.12.8.final.0 (64 bit)
 - numpy version: 2.3.5
 - pandas version: 2.3.3
 - pandapower version: 3.4.0
 - pypowsybl version: 1.15.0
-- grid2op version: 1.12.4.dev0
-- lightsim2grid version: 0.13.1
+- grid2op version: 1.12.5.dev0
+- lightsim2grid version: 1.0.0.rc3
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
 	- nicslu_solver_available: True 
 	- cktso_solver_available: True 
-	- compiled_march_native: False 
+	- compiled_march_native: True 
 	- compiled_o3_optim: True 
 
 This benchmark is available by running, from the root of the lightsim2grid repository:
@@ -99,26 +99,19 @@ For this setting the outputs are:
 .. code-block:: bash
 
     For environment: l2rpn_neurips_2020_track2
-    Total time spent in "computer" to solve everything: 0.03s (21834 pf / s), 0.05 ms / pf)
+    Total time spent in "computer" to solve everything: 0.03s (18523 pf / s), 0.05 ms / pf)
         - time to pre process the injections: 0.00s
-        - time to perform powerflows: 0.02s (23675 pf / s, 0.04 ms / pf)
-    In addition, it took 0.00 s to retrieve the current from the complex voltages (in total 20703.1 pf /s, 0.05 ms / pf)
+        - time to perform powerflows: 0.03s (19204 pf / s, 0.05 ms / pf)
+    In addition, it took 0.00 s to retrieve the current from the complex voltages (in total 17551.3 pf /s, 0.06 ms / pf)
 
     Comparison with raw grid2op timings
-    It took grid2op (with lightsim2grid): 0.31s to perform the same computation
-        This is a 11.3 speed up from TimeSerie over raw grid2op (lightsim2grid)
-    It took grid2op (with pandapower): 6.47s to perform the same computation
-        This is a 232.6 speed up from TimeSerie over raw grid2op (pandapower)
+    It took grid2op (with lightsim2grid): 0.40s to perform the same computation
+        This is a 12.2 speed up from TimeSerie over raw grid2op (lightsim2grid)
+    It took grid2op (with pandapower): 6.53s to perform the same computation
+        This is a 198.9 speed up from TimeSerie over raw grid2op (pandapower)
 
-    In this case then, the `TimeSerie` module is 11 times faster than raw grid2op (lightsim2grid) and
-    233 times faster than raw grid2op (pandapower)
+    In this case then, the `TimeSerie` module is 12 times faster than raw grid2op (lightsim2grid) and 199 times faster than raw grid2op (pandapower)
     All results match !
-
-.. note::
-  The last "In this case then, ..." line above is now printed directly by ``time_serie.py`` (computed from
-  ``total_time_glop_ls`` / ``total_time_glop_pp`` and ``full_time_ts``), instead of being a separate,
-  hand-rounded restatement kept below the pasted output -- which is how it used to read "more than **15**
-  times faster", inconsistent with the 11.3 / 232.6 figures printed just above it.
 
 
 Detailed usage
