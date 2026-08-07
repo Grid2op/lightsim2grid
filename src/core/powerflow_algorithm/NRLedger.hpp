@@ -131,6 +131,15 @@ class LS2G_API NRLedger
             assert(n_rows_ == n_cols_);
             return n_rows_;
         }
+        // Separate row / column counts. `size()` above collapses them into one
+        // number and only checks they agree through an `assert`, which release
+        // wheels (-DNDEBUG) compile out; a component claiming an unequal number
+        // of equations and unknowns would then silently make `size()` report the
+        // row count while a column index beyond it is used to build J -- an
+        // out-of-bounds write. NRSystem::validate_registration() compares these
+        // two unconditionally so that stays a clean exception.
+        int n_rows() const { return n_rows_; }
+        int n_cols() const { return n_cols_; }
 
     private:
         // bus-keyed maps (size n_bus, -1 when absent)

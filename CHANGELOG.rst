@@ -123,6 +123,52 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [ADDED] memory-safety hardening of the Newton-Raphson hot path
+  (``src/core/powerflow_algorithm/``), which until now had no validation of its own: the previous
+  input-validation work covers what reaches a solver through ``compute_pf``'s arguments (``Ybus``,
+  ``Sbus``, ``V``, ``slack_ids`` / ``slack_weights`` / ``pv`` / ``pq`` -- see ``BaseAlgo::
+  check_pf_inputs`` and ``docs/security.rst``), but the *extensions* (``Hvdc`` angle droop,
+  ``VoltageControl`` for remote-regulating generators and SVCs, ``MultiSlack``) pull their per-solve
+  data from the grid inside ``NRSystem::update_state`` instead, so none of it was ever range-checked.
+  Every index in that data is then used raw -- ``ledger.p_row(bus)`` is a ``std::vector::operator[]``,
+  ``Va(bus)`` an Eigen ``operator()``, and release wheels are ``-O3 -DNDEBUG``. Two hooks were added to
+  the component protocol: ``validate_data(n_bus)``, run just before ``register_in`` (its first
+  consumer) and checking that the data is self-consistent and every bus id is in ``[0, n_bus)``; and
+  ``validate_registration(dim_J)``, run once per solve by ``NRAlgo::compute_pf``, checking that the row
+  / column arrays a component cached in ``register_in`` still match the data ``update_state`` just
+  pulled and all index a ``dim_J``-square Jacobian. The second is the load-bearing one: ``update_state``
+  runs on every solve while ``register_in`` only runs on a topology rebuild, so an element-count change
+  that failed to signal one (a missing ``tell_pv_changed()`` in any element container) made
+  ``VoltageControl`` / ``Hvdc`` read their handle arrays past the end and, through ``FeatureWriter``,
+  **write out of bounds into** ``J.valuePtr()``. No public API reaches that state today -- this makes
+  the invariant enforced rather than merely upheld. Also turned ``NRLedger``'s debug-only
+  ``assert(n_rows_ == n_cols_)`` into a real check (``-DNDEBUG`` removed it, and a non-square ledger
+  means J is resized to ``(n_rows, n_rows)`` and then written at a column beyond it), and guarded the
+  ``cnt - 1`` sharing-row arithmetic in ``VoltageControl`` against an empty control group (it is a
+  ``std::size_t``, so it underflowed). Like ``check_grid()``, none of this is compiled out by
+  ``-DNDEBUG``: it is what turns the inconsistency into an exception rather than heap corruption.
+  Nothing runs per Newton iteration, and nothing on the per-solve path scales with grid size: Base's
+  ``pv`` / ``pq`` range sweep (the only O(n_bus) part) runs *only* on a topology rebuild, since that is
+  the only time those ids are used as indices (``register_in``) and a rebuild already pays for a
+  symbolic refactorization; what runs on every solve is proportional to the number of hvdc droop lines
+  and voltage controllers alone, which is a few dozen integer comparisons with every loop empty on a
+  grid using none of them -- including every grid in the benchmark suite (checked: ``case1354pegase`` /
+  ``case9241pegase`` have 0 droop hvdc, 0 SVC, 0 remote-regulating generators).
+- [ADDED] ``src/tests/test_powerflow_algorithm.cpp``: a dedicated C++ (Catch2) suite for the
+  Newton-Raphson hot path, complementing ``test_lsgrid.cpp`` (which checks that grids give the right
+  *answer*, not that the machinery underneath stays internally consistent). Covers each extension alone
+  and all of them engaged in a single Jacobian, the Jacobian layout invariants (square, every bus ->
+  row/column map in range, feature entries resolved), ``status_droop`` flips preserving the sparsity
+  pattern for KLU symbolic reuse, an hvdc droop end on a slack bus, a sloped SVC, a two-generator
+  control group (the ``cnt - 1`` sharing-row path), bus masking, ``clear_jacobian`` reuse, a null grid
+  pointer, and a 40-step mutate-and-resolve loop. It also drives ``NRSystem``'s 3-phase protocol
+  directly to reach the states ``LSGrid`` refuses to build, which is the only way to exercise the
+  validation above.
+- [ADDED] two jobs to the ``Sanitizers`` workflow running the C++ unit tests under ASan + UBSan and
+  under re-enabled Eigen / libstdc++ assertions. The suite previously ran only under valgrind (in the
+  ``C++ unit tests`` workflow) and the sanitizer jobs covered only python modules; the three find
+  different things, and an index that is wrong but still inside its allocation is invisible to both
+  valgrind and ASan.
 - [ADDED] ``TimeSeriesCPP`` / ``ContingencyAnalysisCPP`` (and so ``SecurityAnalysis``, which wraps the
   latter) gained a string-based ``change_algorithm(name)`` overload and a ``get_algo_name()`` accessor,
   matching what ``LSGrid`` already had (``AlgorithmSelector::change_algorithm(const std::string&)``) --

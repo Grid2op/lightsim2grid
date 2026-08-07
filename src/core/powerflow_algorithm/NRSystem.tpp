@@ -29,12 +29,40 @@ inline void NRSystem<Base, Rest...>::init_topology(
     base_.init_topology(slack_ids, slack_weights, pv, pq);
     _init_topology_extensions(slack_ids, slack_weights, pv, pq, std::make_index_sequence<sizeof...(Rest)>{});
 
+    // Every bus id the components are about to hand the ledger is checked HERE,
+    // because register_in is the first thing to use them as raw indices into its
+    // n_bus-sized maps (`theta_col_of_bus_[bus] = col` is an out-of-bounds WRITE
+    // for a bus id the caller never validated). This is also the earliest point
+    // at which the full picture exists: update_state has set the extension data
+    // and the component init_topology calls just above have set the pv / pq /
+    // slack index sets.
+    const int n_bus = static_cast<int>(Ybus_ref_.rows());
+    _validate_data(n_bus);
+
     // then claim their equations / unknowns in the ledger
     // (allocation order defines the J layout)
-    const int n_bus = static_cast<int>(Ybus_ref_.rows());
     ledger_.reset(n_bus);
     base_.register_in(ledger_);
     _register_in_extensions(ledger_, std::make_index_sequence<sizeof...(Rest)>{});
+}
+
+// O(1): four size comparisons, no allocation, no per-bus loop
+template <typename... Rest>
+inline void NRSystem<Base, Rest...>::_validate_shared_sizes(int n_bus) const
+{
+    if (Va_.size() != n_bus || Vm_.size() != n_bus || V_.size() != n_bus)
+        nr_state_error("NRSystem", "the voltage vectors do not have one entry per Ybus bus");
+    if (Sbus_size_ != n_bus)
+        nr_state_error("NRSystem", "Sbus does not have one entry per Ybus bus");
+}
+
+// ---- pre-register_in validation (topology rebuilds only) ---------------------
+template <typename... Rest>
+inline void NRSystem<Base, Rest...>::_validate_data(int n_bus) const
+{
+    _validate_shared_sizes(n_bus);
+    base_.validate_data(n_bus);
+    _validate_data_extensions(n_bus, std::make_index_sequence<sizeof...(Rest)>{});
 }
 
 // ---- Phase 1.5: per-compute_pf state update ----------------------------------
@@ -58,6 +86,46 @@ inline void NRSystem<Base, Rest...>::update_state(
     // now inform the components
     base_.update_state(lsgrid_ptr, Ybus, Sbus, slack_weights);
     _update_state_extensions(lsgrid_ptr, Ybus, Sbus, slack_weights, std::make_index_sequence<sizeof...(Rest)>{});
+    // NB: no validation here -- MultiSlack / Base only learn their index sets in
+    // init_topology, which runs AFTER this. The data pulled above is checked
+    // there (pre-register_in) on a rebuild, and by validate_registration()
+    // otherwise; both run before anything indexes it.
+}
+
+// ---- Phase 1.75: per-solve validation of the registered layout ----------------
+template <typename... Rest>
+inline void NRSystem<Base, Rest...>::validate_registration() const
+{
+    // Deliberately NOT _validate_data() here: that one walks Base's pv / pq
+    // index sets, which is O(n_bus), and this function runs on EVERY solve --
+    // including the ones a TimeSeries / ContingencyAnalysis loop exists to make
+    // cheap. It would also buy nothing. pv / pq arrive as compute_pf arguments
+    // (already range-checked by BaseAlgo::check_pf_inputs on the validated entry
+    // point) and are used as *indices* only by register_in, which runs only on a
+    // topology rebuild -- and init_topology validates them right before it.
+    //
+    // What does have to be re-checked every solve is the EXTENSION data, because
+    // update_state re-pulls it from the grid every solve while register_in does
+    // not re-run. That work is O(#hvdc droop lines + #voltage controllers): a
+    // handful on a grid that uses them, and exactly zero on a grid that does not
+    // (every loop below is empty), so it does not scale with grid size.
+    const int n_bus = static_cast<int>(Ybus_ref_.rows());
+    _validate_shared_sizes(n_bus);
+    _validate_data_extensions(n_bus, std::make_index_sequence<sizeof...(Rest)>{});
+
+    // `ledger_.size()` collapses the row and column counts into one number and
+    // only compares them through an assert, which -DNDEBUG removes. Do it here
+    // for real: a J built non-square would be resized to (n_rows, n_rows) and
+    // then written at a column index beyond it.
+    if (ledger_.n_rows() != ledger_.n_cols()) {
+        std::ostringstream oss;
+        oss << "the components registered " << ledger_.n_rows() << " equations for "
+            << ledger_.n_cols() << " unknowns; the Jacobian must be square";
+        nr_state_error("NRSystem", oss.str());
+    }
+    const int dim_J = ledger_.n_rows();
+    base_.validate_registration(dim_J);
+    _validate_registration_extensions(dim_J, std::make_index_sequence<sizeof...(Rest)>{});
 }
 
 // ---- Phase 2: build J sparsity + value maps -----------------------------------

@@ -69,6 +69,16 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     }
     // std::cout << "need_init " << need_init << "\n";
 
+    // Phase 1.75: the row / column indices the extensions cached in register_in
+    // must still match the data update_state pulled just above. They can only
+    // disagree if a grid change altered the number of hvdc droop lines or
+    // voltage controllers without signalling a topology rebuild through
+    // AlgoControl, in which case every loop below would index a stale handle
+    // array out of bounds. Cheap (one pass over the extension data, no
+    // allocation) and unconditional -- see NRSystem's validate_data /
+    // validate_registration. Runs before the first mismatch(), which is already
+    // a consumer of those indices.
+    _system.validate_registration();
 
     // Initial mismatch (negated: Sbus - Scomp)
     RealVect F = _system.mismatch();

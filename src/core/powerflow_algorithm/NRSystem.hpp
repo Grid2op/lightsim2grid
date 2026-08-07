@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 #include <tuple>
 #include <vector>
 #include <set>
@@ -91,6 +92,65 @@ class LS2G_API Contrib final
 
 };
 
+// ---- State-validation helpers ---------------------------------------------------
+//
+// The extensions pull their per-solve data from the LSGrid (through the raw,
+// non-owning `lsgrid_ptr_`) INSIDE update_state -- it never travels through
+// compute_pf's argument list, so BaseAlgo::check_pf_inputs, which range-checks
+// Ybus / Sbus / slack_ids / pv / pq, never sees it. Every index in that data is
+// then used raw: `ledger.p_row(bus)` is a `std::vector::operator[]`, `Va(bus)`
+// and `mis(bus)` are Eigen `operator()` calls, and release wheels are built
+// -O3 -DNDEBUG so neither carries a bounds check. The helpers below give those
+// indices a checked entry point; see `validate_data` / `validate_registration`
+// in the component protocol for when each check runs.
+//
+// They are deliberately NOT gated behind NDEBUG, exactly like LSGrid::
+// check_grid(): they are what turns an inconsistency into a clean exception
+// instead of an out-of-bounds access. The cost is one linear pass over the
+// extension data (a handful of hvdc lines / voltage controllers) per solve,
+// against a Jacobian factorization per NR iteration.
+
+[[noreturn]] inline void nr_state_error(const char * component, const std::string & what)
+{
+    std::ostringstream exc_;
+    exc_ << "NRSystem: inconsistent solver state in the '" << component
+         << "' block: " << what
+         << ". This is an internal error -- please report it, with the grid that"
+            " triggered it, at https://github.com/Grid2op/lightsim2grid/issues.";
+    throw std::runtime_error(exc_.str());
+}
+
+// `value` must be a valid index into something of length `bound`
+inline void nr_check_index(const char * component,
+                           const char * what,
+                           int value,
+                           int bound)
+{
+    if (value < 0 || value >= bound) {
+        std::ostringstream oss;
+        oss << what << " is " << value << ", outside the valid range [0, " << bound << ")";
+        nr_state_error(component, oss.str());
+    }
+}
+
+// two quantities that the component's own bookkeeping requires to be equal
+inline void nr_check_size(const char * component,
+                          const char * what,
+                          std::size_t got,
+                          std::size_t expected)
+{
+    if (got != expected) {
+        std::ostringstream oss;
+        oss << what << " holds " << got << " entries but " << expected
+            << " are expected. The per-solve data was refreshed (update_state)"
+               " without the matching topology rebuild (init_topology /"
+               " register_in): some grid modification changed the number of"
+               " elements this block handles without signalling it through"
+               " AlgoControl (tell_pv_changed / tell_dimension_changed / ...)";
+        nr_state_error(component, oss.str());
+    }
+}
+
 // ---- Component protocol --------------------------------------------------------
 //
 // The Base block and every extension implement the same interface; NRSystem
@@ -99,6 +159,33 @@ class LS2G_API Contrib final
 // columns in the NRLedger and keeps the returned indices.
 //
 //  - update_state(...)            : per-solve state refresh (cheap, always).
+//  - validate_data(n_bus)         : the component's per-solve data is
+//                                   self-consistent and every bus id it carries
+//                                   is in [0, n_bus). Runs inside init_topology,
+//                                   after every component's init_topology and
+//                                   BEFORE register_in -- late enough that the
+//                                   whole picture exists (update_state has set
+//                                   the extension data, init_topology the pv /
+//                                   pq / slack index sets), early enough that
+//                                   register_in, the first consumer of those bus
+//                                   ids (`ledger.p_row(bus)` & co), has not run
+//                                   yet. The EXTENSIONS' version of this runs on
+//                                   every solve too (update_state re-pulls their
+//                                   data every solve, so it can go out of range
+//                                   without a rebuild); Base's does not, because
+//                                   its pv / pq sweep is O(n_bus) and those ids
+//                                   are only ever used as indices by register_in.
+//  - validate_registration(dim_J) : the row / column indices cached by
+//                                   register_in still match the CURRENT data and
+//                                   all lie inside a dim_J x dim_J Jacobian. Runs
+//                                   once per solve, after register_in on a
+//                                   rebuild and on its own otherwise -- that
+//                                   second case is the point: update_state runs
+//                                   every solve but register_in only on a
+//                                   topology rebuild, so a component whose
+//                                   element count changed without one would index
+//                                   its stale handle arrays out of bounds (and,
+//                                   through FeatureWriter, WRITE out of bounds).
 //  - init_topology(...)           : computes the component's own index sets only.
 //  - register_in(NRLedger&)       : claims bus-owned rows/cols and allocates
 //                                   custom rows/cols; stores the returned indices.
@@ -235,6 +322,33 @@ class LS2G_API Base
             }
         }
 
+        // pv / pq reach Base through compute_pf's arguments, so they are already
+        // range-checked by BaseAlgo::check_pf_inputs on the validated entry
+        // point -- but NOT on LSGrid's internal one (LSGrid::ac_pf calls
+        // compute_pf directly), and free_vm_slack_buses_ comes from the grid and
+        // is never checked anywhere. All three are used to index the ledger's
+        // n_bus-sized maps in register_in, just below.
+        void validate_data(int n_bus) const
+        {
+            nr_check_size("Base", "the pv index set", static_cast<std::size_t>(pv_.size()),
+                          static_cast<std::size_t>(nb_pv_));
+            nr_check_size("Base", "the pq index set", static_cast<std::size_t>(pq_.size()),
+                          static_cast<std::size_t>(nb_pq_));
+            nr_check_size("Base", "the concatenated pv+pq index set",
+                          static_cast<std::size_t>(pvpq_.size()),
+                          static_cast<std::size_t>(nb_pv_ + nb_pq_));
+            if (nb_pvpq_ != nb_pv_ + nb_pq_)
+                nr_state_error("Base", "the cached pv+pq count disagrees with nb_pv + nb_pq");
+            for (int k = 0; k < nb_pvpq_; ++k)
+                nr_check_index("Base", "a pv/pq bus id", pvpq_(k), n_bus);
+            for (int bus : free_vm_slack_buses_)
+                nr_check_index("Base", "a free-Vm slack bus id", bus, n_bus);
+        }
+
+        // Base claims no custom row / column and caches no handle array, so
+        // there is nothing here that register_in could have left stale.
+        void validate_registration(int /*dim_J*/) const {}
+
         void declare_feature_entries(FeatureSink& /*sink*/) {}
         void fill_feature_values(FeatureWriter& /*writer*/, const Eigen::Ref<const RealVect>& /*Va*/) const {}
         void adjust_mismatch(const Eigen::Ref<const CplxVect>& /*V_t*/, const Eigen::Ref<const RealVect>& /*dx*/, Eigen::Ref<CplxVect> /*mis*/) const {}
@@ -331,6 +445,37 @@ class LS2G_API MultiSlack   // distributed-slack extension
             slack_buses_.assign(slack_ids.data() + 1, slack_ids.data() + my_size_);
             std::sort(slack_buses_.begin(), slack_buses_.end());
             slack_buses_.push_back(ref_slack_id_);
+        }
+
+        // my_size_ / slack_buses_ are set in init_topology, which always runs
+        // together with register_in, so this block cannot go stale the way Hvdc
+        // and VoltageControl can. What is still worth checking is that the slack
+        // bus ids are usable as indices: register_in indexes the ledger with
+        // them and fill_feature_values indexes slack_weights_ (an n_bus vector).
+        void validate_data(int n_bus) const
+        {
+            if (my_size_ < 1)
+                nr_state_error("MultiSlack", "no slack bus at all (at least one is required)");
+            nr_check_size("MultiSlack", "the slack bus list", slack_buses_.size(),
+                          static_cast<std::size_t>(my_size_));
+            for (int bus : slack_buses_) nr_check_index("MultiSlack", "a slack bus id", bus, n_bus);
+            // slack_weights_ is the compute_pf argument of the same name; it is
+            // indexed by bus id in fill_feature_values.
+            if (slack_weights_.size() != 0)
+                for (int bus : slack_buses_)
+                    nr_check_index("MultiSlack", "a slack bus id used to index slack_weights",
+                                   bus, static_cast<int>(slack_weights_.size()));
+        }
+
+        void validate_registration(int dim_J) const
+        {
+            nr_check_size("MultiSlack", "the cached slack P rows", slack_p_rows_.size(),
+                          static_cast<std::size_t>(my_size_));
+            nr_check_size("MultiSlack", "the cached slack feature handles", feature_handles_.size(),
+                          static_cast<std::size_t>(my_size_));
+            for (int row : slack_p_rows_) nr_check_index("MultiSlack", "a slack P row", row, dim_J);
+            // adjust_mismatch / apply_step read dx(slack_col_) unconditionally
+            nr_check_index("MultiSlack", "the slack_absorbed column", slack_col_, dim_J);
         }
 
         void register_in(NRLedger& ledger)
@@ -466,6 +611,66 @@ class LS2G_API Hvdc
             const Eigen::Ref<const IntVect> &              /*pv*/,
             const Eigen::Ref<const IntVect> &              /*pq*/
         ) {}
+
+        // The droop data is re-pulled from the grid on EVERY solve (update_state),
+        // and register_in below immediately indexes the ledger's n_bus-sized maps
+        // with bus1 / bus2. adjust_mismatch and fill_feature_values then index
+        // V_t / mis / Va with the same ids on every NR iteration.
+        void validate_data(int n_bus) const
+        {
+            nr_check_size("Hvdc", "the droop data", static_cast<std::size_t>(data_.size()),
+                          static_cast<std::size_t>(my_size_));
+            // every per-line array is indexed by the same k < my_size_
+            nr_check_size("Hvdc", "the droop 'status' array", static_cast<std::size_t>(data_.status.size()),
+                          static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the droop 'bus2' array", static_cast<std::size_t>(data_.bus2.size()),
+                          static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the droop 'p0' array", static_cast<std::size_t>(data_.p0.size()),
+                          static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the droop 'k' array", static_cast<std::size_t>(data_.k.size()),
+                          static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the droop 'lf1' array", static_cast<std::size_t>(data_.lf1.size()),
+                          static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the droop 'lf2' array", static_cast<std::size_t>(data_.lf2.size()),
+                          static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the droop 'r' array", static_cast<std::size_t>(data_.r.size()),
+                          static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the droop 'pmax12' array", static_cast<std::size_t>(data_.pmax12.size()),
+                          static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the droop 'pmax21' array", static_cast<std::size_t>(data_.pmax21.size()),
+                          static_cast<std::size_t>(my_size_));
+            for (int k = 0; k < my_size_; ++k) {
+                nr_check_index("Hvdc", "an hvdc side-1 bus id", data_.bus1(k), n_bus);
+                nr_check_index("Hvdc", "an hvdc side-2 bus id", data_.bus2(k), n_bus);
+            }
+        }
+
+        // The staleness check that matters: my_size_ follows update_state (every
+        // solve) while these arrays are (re)sized by register_in (topology
+        // rebuild only). If a grid change altered the number of connected
+        // droop-enabled hvdc lines without signalling a rebuild, the loops in
+        // fill_feature_values would read h11_[k] past the end and hand
+        // FeatureWriter a garbage handle -- an out-of-bounds WRITE into
+        // J_.valuePtr(). Catch it here instead.
+        void validate_registration(int dim_J) const
+        {
+            nr_check_size("Hvdc", "the cached side-1 P rows", p_row_1_.size(), static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the cached side-2 P rows", p_row_2_.size(), static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the cached side-1 theta columns", theta_col_1_.size(), static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the cached side-2 theta columns", theta_col_2_.size(), static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the h11 feature handles", h11_.size(), static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the h12 feature handles", h12_.size(), static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the h21 feature handles", h21_.size(), static_cast<std::size_t>(my_size_));
+            nr_check_size("Hvdc", "the h22 feature handles", h22_.size(), static_cast<std::size_t>(my_size_));
+            // a slack end legitimately owns no P row / theta column: -1 is valid
+            // here and skipped by the loops, anything else must index J
+            for (int k = 0; k < my_size_; ++k) {
+                if (p_row_1_[k]     != -1) nr_check_index("Hvdc", "a cached side-1 P row", p_row_1_[k], dim_J);
+                if (p_row_2_[k]     != -1) nr_check_index("Hvdc", "a cached side-2 P row", p_row_2_[k], dim_J);
+                if (theta_col_1_[k] != -1) nr_check_index("Hvdc", "a cached side-1 theta column", theta_col_1_[k], dim_J);
+                if (theta_col_2_[k] != -1) nr_check_index("Hvdc", "a cached side-2 theta column", theta_col_2_[k], dim_J);
+            }
+        }
 
         // claims nothing: only caches the rows / columns of the two end buses
         // (the ledger is fully populated by the previous components: Hvdc must
@@ -637,6 +842,102 @@ class LS2G_API VoltageControl
             const Eigen::Ref<const IntVect>  & /*pv*/,
             const Eigen::Ref<const IntVect>  & /*pq*/
         ) {}
+
+        // The controller data is re-pulled from the grid on EVERY solve
+        // (update_state). register_in below indexes the ledger's n_bus-sized maps
+        // with bus / reg_bus, walks the controllers of each group through
+        // grp_start / grp_count, and sizes the sharing-row vectors from
+        // `cnt - 1` -- which underflows to a huge std::size_t for an empty group,
+        // so `cnt >= 1` is a memory-safety precondition, not a nicety.
+        void validate_data(int n_bus) const
+        {
+            const int nc = data_.n_controllers();
+            const int ng = data_.n_groups();
+            if (nc < 0 || ng < 0) nr_state_error("VoltageControl", "a negative controller / group count");
+            if ((nc == 0) != (ng == 0))
+                nr_state_error("VoltageControl", "controllers without groups (or the other way round)");
+            nr_check_size("VoltageControl", "the controller 'kind' array", static_cast<std::size_t>(data_.kind.size()), static_cast<std::size_t>(nc));
+            nr_check_size("VoltageControl", "the controller 'elem_id' array", static_cast<std::size_t>(data_.elem_id.size()), static_cast<std::size_t>(nc));
+            nr_check_size("VoltageControl", "the controller 'slope' array", static_cast<std::size_t>(data_.slope.size()), static_cast<std::size_t>(nc));
+            nr_check_size("VoltageControl", "the controller 'weight' array", static_cast<std::size_t>(data_.weight.size()), static_cast<std::size_t>(nc));
+            nr_check_size("VoltageControl", "the group 'v_set' array", static_cast<std::size_t>(data_.v_set.size()), static_cast<std::size_t>(ng));
+            nr_check_size("VoltageControl", "the group 'grp_start' array", static_cast<std::size_t>(data_.grp_start.size()), static_cast<std::size_t>(ng));
+            nr_check_size("VoltageControl", "the group 'grp_count' array", static_cast<std::size_t>(data_.grp_count.size()), static_cast<std::size_t>(ng));
+            for (int j = 0; j < nc; ++j)
+                nr_check_index("VoltageControl", "a controller bus id", data_.bus(j), n_bus);
+            // the groups must tile [0, nc) exactly: that is what makes
+            // `first + off` a valid controller index everywhere below
+            int expected_start = 0;
+            for (int g = 0; g < ng; ++g) {
+                nr_check_index("VoltageControl", "a regulated bus id", data_.reg_bus(g), n_bus);
+                const int cnt = data_.grp_count(g);
+                if (cnt < 1) {
+                    std::ostringstream oss;
+                    oss << "control group " << g << " has " << cnt
+                        << " controllers; a group must own at least one";
+                    nr_state_error("VoltageControl", oss.str());
+                }
+                if (data_.grp_start(g) != expected_start) {
+                    std::ostringstream oss;
+                    oss << "control group " << g << " starts at controller " << data_.grp_start(g)
+                        << " instead of " << expected_start
+                        << "; groups must tile the controller list contiguously";
+                    nr_state_error("VoltageControl", oss.str());
+                }
+                if (cnt > nc - expected_start) {
+                    std::ostringstream oss;
+                    oss << "control group " << g << " claims " << cnt << " controllers from index "
+                        << expected_start << ", past the end of the " << nc << " declared";
+                    nr_state_error("VoltageControl", oss.str());
+                }
+                expected_start += cnt;
+            }
+            if (expected_start != nc) {
+                std::ostringstream oss;
+                oss << "the control groups cover " << expected_start << " controllers but "
+                    << nc << " are declared";
+                nr_state_error("VoltageControl", oss.str());
+            }
+        }
+
+        // Same staleness hazard as Hvdc, one step worse: here the stale index is
+        // fed straight to `dx(q_cols_[j])` / `res(v_rows_[g])` on every NR
+        // iteration, so a controller count that grew without a topology rebuild
+        // is an out-of-bounds read of q_cols_ followed by an out-of-bounds Eigen
+        // access at whatever index it happened to contain.
+        void validate_registration(int dim_J) const
+        {
+            const int nc = data_.n_controllers();
+            const int ng = data_.n_groups();
+            nr_check_size("VoltageControl", "the reactive-injection state", static_cast<std::size_t>(q_.size()), static_cast<std::size_t>(nc));
+            nr_check_size("VoltageControl", "the cached Q columns", q_cols_.size(), static_cast<std::size_t>(nc));
+            nr_check_size("VoltageControl", "the cached Q rows", q_rows_.size(), static_cast<std::size_t>(nc));
+            nr_check_size("VoltageControl", "the (q_row, q_col) feature handles", h_qrow_.size(), static_cast<std::size_t>(nc));
+            nr_check_size("VoltageControl", "the slope feature handles", h_slope_.size(), static_cast<std::size_t>(nc));
+            nr_check_size("VoltageControl", "the cached voltage rows", v_rows_.size(), static_cast<std::size_t>(ng));
+            nr_check_size("VoltageControl", "the cached regulated-bus Vm columns", vm_cols_.size(), static_cast<std::size_t>(ng));
+            nr_check_size("VoltageControl", "the cached sharing rows", share_rows_.size(), static_cast<std::size_t>(ng));
+            nr_check_size("VoltageControl", "the (v_row, vm_col) feature handles", h_vm_.size(), static_cast<std::size_t>(ng));
+            nr_check_size("VoltageControl", "the sharing feature handles (A)", h_shareA_.size(), static_cast<std::size_t>(ng));
+            nr_check_size("VoltageControl", "the sharing feature handles (B)", h_shareB_.size(), static_cast<std::size_t>(ng));
+            // q_cols_ / v_rows_ / share_rows_ come from add_q_unknown /
+            // add_custom_row and are dereferenced unconditionally, so unlike the
+            // "-1 means the bus owns none" entries they must all be real indices
+            for (int j = 0; j < nc; ++j) {
+                nr_check_index("VoltageControl", "a controller Q column", q_cols_[j], dim_J);
+                if (q_rows_[j] != -1) nr_check_index("VoltageControl", "a controller Q row", q_rows_[j], dim_J);
+            }
+            for (int g = 0; g < ng; ++g) {
+                nr_check_index("VoltageControl", "a group voltage row", v_rows_[g], dim_J);
+                if (vm_cols_[g] != -1) nr_check_index("VoltageControl", "a regulated-bus Vm column", vm_cols_[g], dim_J);
+                const std::size_t cnt = static_cast<std::size_t>(data_.grp_count(g));
+                nr_check_size("VoltageControl", "the sharing rows of a group", share_rows_[g].size(), cnt - 1);
+                nr_check_size("VoltageControl", "the sharing handles (A) of a group", h_shareA_[g].size(), cnt - 1);
+                nr_check_size("VoltageControl", "the sharing handles (B) of a group", h_shareB_[g].size(), cnt - 1);
+                for (int row : share_rows_[g])
+                    nr_check_index("VoltageControl", "a reactive-sharing row", row, dim_J);
+            }
+        }
 
         // claims, per group: N q-unknown columns, 1 voltage row, N-1 sharing rows;
         // caches the controller q rows and the regulated-bus vm columns (the ledger
@@ -875,6 +1176,18 @@ public:
         const Eigen::Ref<const CplxVect> & V_init,
         const Eigen::Ref<const CplxVect> & Sbus,
         const Eigen::Ref<const RealVect> & slack_weights);
+
+    // ----- Phase 1.75: state validation (cheap, always) -------------------------
+    //
+    // validate_data() runs at the tail of update_state() (nothing to call it
+    // for from outside). validate_registration() is the one the algorithm must
+    // call itself, once per solve, AFTER the optional init_topology /
+    // build_J_sparsity rebuild and BEFORE the first mismatch(): update_state
+    // refreshes the extension data every solve but register_in only re-derives
+    // the row / column caches on a rebuild, so this is what catches the two
+    // drifting apart before a stale index is used to read (or, through
+    // FeatureWriter, write) out of bounds. Throws std::runtime_error.
+    void validate_registration() const;
 
     // ----- Phase 2: build J sparsity + value maps -------------------------------
 
@@ -1154,6 +1467,28 @@ private:
         (void)dummy;
         // silence unused-parameter warnings when the extension pack is empty
         (void)lsgrid_ptr; (void)Ybus; (void)Sbus; (void)slack_weights;
+    }
+
+    // O(1) shape check of the shared vectors (Va / Vm / V / Sbus vs n_bus)
+    void _validate_shared_sizes(int n_bus) const;
+    // Full pre-register_in check: the shared sizes plus every component's own
+    // data, Base's O(n_bus) pv / pq sweep included. Called ONLY from
+    // init_topology (i.e. on a topology rebuild), never on the per-solve path --
+    // see validate_registration for why that is both cheaper and no weaker.
+    void _validate_data(int n_bus) const;
+
+    template <std::size_t... Is>
+    void _validate_data_extensions(int n_bus, std::index_sequence<Is...>) const {
+        int dummy[] = { 0, (std::get<Is>(extensions_).validate_data(n_bus), 0)... };
+        (void)dummy;
+        (void)n_bus;
+    }
+
+    template <std::size_t... Is>
+    void _validate_registration_extensions(int dim_J, std::index_sequence<Is...>) const {
+        int dummy[] = { 0, (std::get<Is>(extensions_).validate_registration(dim_J), 0)... };
+        (void)dummy;
+        (void)dim_J;
     }
 
     template <std::size_t... Is>

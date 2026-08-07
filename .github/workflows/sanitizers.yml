@@ -16,6 +16,69 @@ on:
       - 'v*.*.*'
 
 jobs:
+  cpp_asan_ubsan:
+    # The C++ Catch2 suite (src/tests) under ASan + UBSan. The C++ unit tests
+    # workflow already runs it under valgrind, but the two find different
+    # things: valgrind sees heap errors, ASan additionally instruments stack
+    # and globals, and UBSan catches signed overflow / bad shifts / invalid
+    # casts that neither reports. It matters most for
+    # test_powerflow_algorithm.cpp, which drives the Newton-Raphson hot path
+    # (and its hvdc / voltage-control extensions) straight from C++: the
+    # indices those extensions use are raw `operator[]` / Eigen `operator()`
+    # calls, so a stale or out-of-range one is invisible without
+    # instrumentation. No python involved, so this job is quick.
+    name: C++ unit tests (ASan + UBSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # eigen (transitive include of the core headers) and Catch2
+          submodules: true
+
+      - name: Configure with ASan + UBSan
+        # __SANITIZE=1 instruments lightsim2grid_core; the explicit flags below
+        # extend the same instrumentation to the test binary itself, which must
+        # be built and linked with it to run against a sanitized library.
+        run: |
+          __SANITIZE=1 cmake -S src/tests -B build_tests_asan \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build
+        run: cmake --build build_tests_asan -j$(nproc)
+
+      - name: Run
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ./build_tests_asan/lightsim2grid_unit_tests
+
+  cpp_debug_asserts:
+    # Same suite with the assertions that -DNDEBUG removes put back. ASan only
+    # sees accesses that leave the allocation; an index that is wrong but still
+    # inside it -- reading another bus' Jacobian column, say -- is invisible to
+    # it and caught here instead, by Eigen's own bounds checks.
+    name: C++ unit tests (Eigen/libstdc++ assertions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: true
+
+      - name: Configure with assertions re-enabled
+        run: |
+          __DEBUG_ASSERTS=1 cmake -S src/tests -B build_tests_assert \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS="-UNDEBUG -D_GLIBCXX_ASSERTIONS -g"
+
+      - name: Build
+        run: cmake --build build_tests_assert -j$(nproc)
+
+      - name: Run
+        run: ./build_tests_assert/lightsim2grid_unit_tests
+
   asan_ubsan:
     # AddressSanitizer + UndefinedBehaviorSanitizer over the untrusted-input
     # path (binary serialization) and the heaviest C++ compute paths (solver

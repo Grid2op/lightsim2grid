@@ -50,6 +50,12 @@ bool LMNRAlgo<LinearSolver, NRSystemT>::compute_pf(
         n_ = static_cast<int>(_system.J().cols());
     }
 
+    // Same contract as NRAlgo::compute_pf: update_state runs every solve but
+    // init_topology / register_in only on a rebuild, so an extension whose
+    // element count changed in between would index its stale row / column
+    // caches out of bounds. Cheap, and must come before the first mismatch().
+    _system.validate_registration();
+
     RealVect F = _system.mismatch();
     bool converged = _check_for_convergence(F, tol);
     nr_iter_ = 0;

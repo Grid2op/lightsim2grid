@@ -54,6 +54,20 @@ public:
     // after every component's register_in has run) can read its final size.
     void register_in(NRLedger& ledger) { ledger_ptr_ = &ledger; }
 
+    // Part of the component protocol (see NRSystem.hpp): every component gets
+    // asked, once per solve, whether the data it pulled and the indices it
+    // cached are still consistent and in range. Both are trivially satisfied
+    // here: this extension carries no per-element data (nothing to fall out of
+    // step with a topology rebuild that did not happen) and no bus id (nothing
+    // to range-check). Its only state is the ledger pointer, checked below --
+    // declare_feature_entries dereferences it, so a register_in that never ran
+    // would be a null dereference rather than an out-of-bounds one.
+    void validate_data(int /*n_bus*/) const {}
+    void validate_registration(int /*dim_J*/) const {
+        if (ledger_ptr_ == nullptr)
+            nr_state_error("DiagonalEntry", "register_in has not run: no ledger to size the diagonal from");
+    }
+
     // One feature slot per EXISTING unknown column (i, i). A pure numerical
     // regularization term, not tied to any bus/physical quantity -- it needs
     // nothing beyond the final unknown count.

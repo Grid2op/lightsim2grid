@@ -182,6 +182,60 @@ catch, not as silent heap corruption. If you ever observe a genuine crash
 (segfault, ``malloc``/``free`` abort, ASan/UBSan report) instead of an
 exception, that is a bug in lightsim2grid — please report it.
 
+The solver hot path holds the same invariant
+---------------------------------------------
+
+Everything above is about what enters the grid. The Newton-Raphson solver
+(``src/core/powerflow_algorithm/``) holds the same rule on its own inputs.
+
+The arrays a powerflow is called with — ``Ybus``, ``Sbus``, the initial
+voltages, ``slack_ids`` / ``slack_weights`` / ``pv`` / ``pq`` — are validated
+before the solve: the matrix must be square, the vectors must all have one entry
+per bus, at least one slack is required, and every bus id must be in ``[0,
+n_bus)`` with ``slack_ids``, ``pv`` and ``pq`` pairwise disjoint. A violation
+raises ``RuntimeError`` or ``IndexError``.
+
+The **extensions** — hvdc angle droop, remote voltage control, SVCs,
+distributed slack — need more than that, because their data does not arrive
+through those arguments at all: the solver pulls it from the grid itself at the
+start of each solve. Two properties are therefore checked explicitly, once per
+solve:
+
+* every bus id that data carries is in range *before* it is used as an index
+  (the solver indexes its bus-keyed tables with these ids directly, and a
+  release wheel has no bounds check to fall back on);
+* the per-element row / column bookkeeping the solver cached when it last
+  rebuilt its Jacobian still matches the data it just pulled. These can only
+  disagree if a grid change altered the *number* of hvdc droop lines or voltage
+  controllers without the solver being told to rebuild — in which case the
+  solve would otherwise index stale tables and write outside the Jacobian.
+
+Both raise ``RuntimeError`` naming the block that is inconsistent. The second
+one reports an internal error: reaching it means lightsim2grid failed to signal
+a topology change to its own solver, so please report it with the grid that
+triggered it.
+
+Like ``check_grid()``, these checks are **not** compiled out by ``-DNDEBUG``;
+they run in release wheels. They are placed so that nothing on the per-solve
+path scales with the size of the grid:
+
+* the range check on the bus classification (``pv`` / ``pq``) runs only when the
+  topology is rebuilt, because that is the only time those ids are used as
+  indices — and a rebuild already pays for a symbolic refactorization, which
+  dominates it by orders of magnitude;
+* what runs on *every* solve is proportional to the number of hvdc droop lines
+  and voltage controllers only. On a grid with none of them — which includes
+  every grid in the benchmark suite — that is a few dozen integer comparisons,
+  independent of the number of buses, and every loop is empty.
+
+Nothing runs per Newton iteration.
+
+Note the split, which mirrors ``check_grid()``'s: what is checked are the
+*indices and sizes*, never the electrical *values*. A droop coefficient or a
+voltage setpoint that is degenerate is not rejected here — it flows into the
+Jacobian and the solve is reported as non-converged, exactly as described in the
+``check_grid()`` section above.
+
 A note for solver-plugin authors
 ---------------------------------
 
