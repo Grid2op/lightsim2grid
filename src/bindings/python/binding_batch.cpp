@@ -100,6 +100,10 @@ void bind_batch(py::module_& m) {
                       "per-element current / voltage check in every contingency's solve, so "
                       "users who only need compute_flows() / get_flows() should leave this off. "
                       "Changing this flag clears any previously-computed results.")
+        .def_property("violation_threshold",
+                      [](const ContingencyAnalysis & self){ return self.get_violation_threshold(); },
+                      [](ContingencyAnalysis & self, real_type val){ self.set_violation_threshold(val); },
+                      DocContingencyAnalysis::violation_threshold.c_str())
         .def_property("init_from_n_powerflow",
                       [](const ContingencyAnalysis & self){ return self.get_init_from_n_powerflow(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_init_from_n_powerflow(val); },

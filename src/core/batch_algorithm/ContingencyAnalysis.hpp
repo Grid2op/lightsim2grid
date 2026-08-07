@@ -48,6 +48,32 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             clear();
         }
 
+        // threshold (in ]0., 1.]) applied to every limit check when
+        // `_compute_limit_violations_` is set -- see
+        // DocContingencyAnalysis::violation_threshold for the full formulas.
+        real_type get_violation_threshold() const noexcept {return _violation_threshold_;}
+        // lowering the threshold makes every check stricter: any already-computed
+        // `_violations` / `_violations_n_` / `_converged` were built under the previous,
+        // looser threshold and would silently UNDER-report relative to the new one if left
+        // in place, so clear_results_only() runs whenever `val` is strictly lower than the
+        // current value (the registered contingencies, `_li_defaults`, are left untouched).
+        // Raising it back up does NOT clear -- a result computed under a stricter threshold
+        // is a superset of the one a looser threshold would give, so nothing is missing;
+        // this mirrors set_nb_thread() / set_handle_disconnected_grid(), which never clear.
+        void set_violation_threshold(real_type val){
+            // negated-conjunction form: this also rejects NaN (IEEE 754 comparisons
+            // against NaN are always false, so a naive `val <= 0. || val > 1.` would
+            // let a NaN through instead)
+            if(!(val > 0. && val <= 1.)){
+                std::ostringstream exc_;
+                exc_ << "ContingencyAnalysis::set_violation_threshold: the threshold should be "
+                        "a real number in the range ]0., 1.] (got " << val << ").";
+                throw std::runtime_error(exc_.str());
+            }
+            if(val < _violation_threshold_) clear_results_only();
+            _violation_threshold_ = val;
+        }
+
         ~ContingencyAnalysis() noexcept override = default;
         ContingencyAnalysis(const ContingencyAnalysis&) = delete;
         ContingencyAnalysis(ContingencyAnalysis&&) = delete;
@@ -374,6 +400,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
 
         // limit violations (see get_compute_limit_violations() / converged() / get_violations())
         bool _compute_limit_violations_ = false;
+        real_type _violation_threshold_ = 1.0;  // see get_violation_threshold() / set_violation_threshold()
         std::vector<char> _converged;                          // per contingency, aligned with my_defaults_vect()
         std::vector<std::vector<LimitViolation> > _violations;  // per contingency, aligned with my_defaults_vect()
         bool _converged_n_ = false;                              // pre-contingency ("n") case

@@ -750,6 +750,8 @@ struct LS2G_API DocContingencyAnalysis
 {
     static const std::string ContingencyAnalysis;
 
+    static const std::string violation_threshold;
+
     static const std::string preprocessing_time;
     static const std::string modif_Ybus_time;
 

@@ -233,6 +233,72 @@ class ContingencyAnalysis(object):
         self.clear()  # keep the python-side bookkeeping (contingency order / names) in sync
 
     @property
+    def violation_threshold(self):
+        """Threshold (a ``float`` in ``]0., 1.]``, default ``1.0``) applied to every
+        limit-violation check performed when `compute_limit_violations` is `True`. It is the
+        fraction of the usable range that is still considered acceptable, so lowering it
+        makes every check stricter (more violations reported, never fewer).
+
+        Each of the three checks owns one interval, running from a "healthy" anchor to the
+        limit that can be violated, and the threshold moves that limit towards its anchor --
+        a linear interpolation, identical for all three::
+
+            effective_limit = threshold * limit + (1 - threshold) * anchor
+
+        ==============  ========  =========  ===============================================
+        check           anchor    limit      violates when
+        ==============  ========  =========  ===============================================
+        CURRENT         0         limit_a    ``value >= threshold * limit_a``
+        LOW_VOLTAGE     vn_kv     vmin_kv    ``v <= threshold * vmin + (1 - threshold) * vn``
+        HIGH_VOLTAGE    vn_kv     vmax_kv    ``v >= threshold * vmax + (1 - threshold) * vn``
+        ==============  ========  =========  ===============================================
+
+        A line's usable range really is ``[0, limit_a]``, so its anchor is ``0`` and the rule
+        reduces to scaling the limit. A voltage bound has no such natural "zero" end, so the
+        bus nominal voltage is used instead (operating limits are conventionally expressed as
+        +/- x% of it), **clamped into** ``[vmin_kv, vmax_kv]`` for the rare real-world band
+        that does not bracket it. Either way each acceptable interval keeps a width of exactly
+        ``threshold`` times its original one.
+
+        Anchoring both voltage checks on ``vn_kv`` -- rather than on each other -- keeps them
+        **independent**: the ``LOW_VOLTAGE`` verdict depends on ``vmin_kv``, ``vn_kv`` and the
+        threshold alone, so setting ``vmax_kv`` (or leaving it at ``NaN``) can never change
+        it, and vice versa. The two effective bounds also converge towards ``vn_kv`` from
+        their own side and can never cross, so no bus is ever both too low and too high.
+
+        A bus with inconsistent limits (``vmin_kv > vmax_kv``) raises a ``RuntimeError``
+        rather than being reported as an arbitrary one of the two types. The
+        reported ``value`` / ``limit`` are never rescaled by the threshold; only the test
+        deciding whether to report is shifted.
+
+        The default ``1.0`` reproduces the previous, threshold-less behaviour. Like
+        `nb_thread` / `handle_disconnected_grid`, this is a plain runtime knob: it only
+        affects the next `run` / `run_ac` / `run_dc`. *Lowering* it invalidates any
+        already-computed results (the registered contingencies are kept, so it is enough to
+        run again); *raising* it back up does not.
+        """
+        return self.computer.violation_threshold
+
+    @violation_threshold.setter
+    def violation_threshold(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `violation_threshold` attribute must be a real number.")
+        if not (0. < val <= 1.):
+            raise ValueError("The `violation_threshold` attribute must be in the range "
+                             f"]0., 1.] (got {val}).")
+        if val < self.computer.violation_threshold:
+            # mirrors the c++-side `set_violation_threshold`, which calls
+            # `clear_results_only()` when the threshold is tightened (results computed under
+            # the previous, looser threshold would silently under-report). Without resetting
+            # the python-side cache too, `self.__computed` would stay True while the c++-side
+            # results are gone, and the next `run()` would skip recomputing and then index
+            # empty result arrays. Keep the registered contingencies (with_contlist=False).
+            self.clear(with_contlist=False)
+        self.computer.violation_threshold = val
+
+    @property
     def nb_thread(self):
         """Number of OS threads used to solve the contingencies (default: 1).
 

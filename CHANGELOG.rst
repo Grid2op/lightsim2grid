@@ -1636,6 +1636,55 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   before the class was renamed from ``SecurityAnalysis``.
 - [FIXED] translated the last remaining French comments in ``pyproject.toml`` to English,
   for consistency with the rest of the (English-only) documentation and codebase.
+- [ADDED] ``ContingencyAnalysisCPP.violation_threshold`` (mirrored by the python
+  ``ContingencyAnalysis.violation_threshold``): a ``float`` in ``]0., 1.]``, default
+  ``1.0``, applied to every check performed when ``compute_limit_violations`` is ``True``,
+  so that near-limit situations can be reported before they actually breach 100% of a
+  limit. It is the fraction of the usable range still considered acceptable, so lowering it
+  makes every check stricter (more violations reported, never fewer). Each of the three
+  checks owns one interval, running from a "healthy" anchor to the limit that can be
+  violated, and the threshold moves that limit towards its anchor -- one linear
+  interpolation, ``effective_limit = threshold * limit + (1 - threshold) * anchor``, for all
+  three:
+
+  - ``CURRENT``: anchor ``0``, limit ``limit_a`` -- violates when
+    ``value >= threshold * limit_a``. A line's usable range really is ``[0, limit_a]``, so
+    this reduces to plainly scaling the limit;
+  - ``LOW_VOLTAGE``: anchor ``vn_kv``, limit ``vmin_kv`` -- violates when
+    ``v <= threshold * vmin + (1 - threshold) * vn``;
+  - ``HIGH_VOLTAGE``: anchor ``vn_kv``, limit ``vmax_kv`` -- violates when
+    ``v >= threshold * vmax + (1 - threshold) * vn``.
+
+  A voltage bound has no natural "zero" end, which is why the bus nominal voltage is used as
+  its anchor (operating limits are conventionally expressed as +/- x% of it). Anchoring both
+  voltage checks there -- rather than on each other -- keeps them independent: the
+  ``LOW_VOLTAGE`` verdict never depends on ``vmax_kv`` and vice versa. It also means the two
+  effective bounds converge towards the anchor from their own side and can never cross, so
+  no bus is ever reported as both too low and too high (the sole exception being a band
+  fully collapsed onto nominal, ``vmin == vn == vmax``, where a bus sitting exactly at
+  nominal satisfies both and is reported once, as ``LOW_VOLTAGE``). The anchor is the
+  nominal voltage *clamped into* ``[vmin_kv, vmax_kv]``: a band is not required to bracket
+  it -- a 380 kV level declared with an operating range of ``[390, 450]`` kV is ordinary
+  practice on the European 400 kV network -- and clamping keeps each bound moving inwards
+  only, without rejecting such a grid. Where the band does bracket the nominal voltage (the
+  overwhelmingly common case) the clamp does nothing.
+
+  The reported ``LimitViolation.value`` / ``.limit`` are never rescaled (still the value
+  reached and the limit as configured); only the test deciding whether to report is shifted.
+  The default ``1.0`` reproduces the previous, threshold-less behaviour (modulo the strict
+  ``>`` / ``<`` comparisons becoming ``>=`` / ``<=``, which only differ if a value lands
+  exactly on its limit). A value outside ``]0., 1.]`` (or ``NaN``) is rejected. Like
+  ``nb_thread`` / ``handle_disconnected_grid`` this is a plain runtime knob affecting only
+  the next ``compute()``, with one asymmetry: *lowering* it discards any already-computed
+  results (they would under-report), while *raising* it keeps them (a stricter result is a
+  superset of a looser one). Unlike ``compute_limit_violations``, neither case clears the
+  registered contingencies.
+- [ADDED] a bus configured with a minimum voltage above its maximum
+  (``vmin_kv > vmax_kv``, see ``LSGrid.set_bus_voltage_limits``) now raises a
+  ``RuntimeError`` during a ``ContingencyAnalysis`` limit-violation check, instead of being
+  silently reported as an arbitrary one of ``LOW_VOLTAGE`` / ``HIGH_VOLTAGE``. That is a
+  genuine input error, and the only way the two effective voltage bounds can end up crossed
+  (see ``violation_threshold`` above).
 
 [0.13.1]  2026-04-21
 --------------------

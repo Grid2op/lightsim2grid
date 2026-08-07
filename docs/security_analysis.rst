@@ -308,6 +308,106 @@ solves it** (not as a separate post-processing pass), so it does not affect the 
 performance characteristics; and masked (disconnected-island) buses are correctly excluded from
 the voltage checks.
 
+Adjusting the violation threshold
+++++++++++++++++++++++++++++++++++
+
+By default a violation is reported exactly at the configured limit. The
+``violation_threshold`` attribute (available both on ``ContingencyAnalysis`` and on the
+lower-level ``ContingencyAnalysisCPP``) lets you tighten that margin, so that situations
+approaching a limit are reported before they actually breach it. It is a ``float`` in
+``]0., 1.]`` and defaults to ``1.0``, which reproduces the behaviour described above:
+
+.. code-block:: python
+
+    security_analysis = ContingencyAnalysis(env, compute_limit_violations=True)
+    security_analysis.add_all_n1_contingencies()
+
+    # report anything that reaches 95% of its limit, instead of only actual breaches
+    security_analysis.violation_threshold = 0.95
+
+    res = security_analysis.run()
+
+Setting it below ``1.0`` makes **every** check stricter -- more violations are reported,
+never fewer. Each of the three checks owns one interval, running from a "healthy" anchor to
+the limit that can be violated, and the threshold moves that limit towards its anchor -- a
+linear interpolation, identical for all three:
+
+.. code-block:: text
+
+    effective_limit = threshold * limit + (1 - threshold) * anchor
+
+=================  =========  ===========  ================================================
+check              anchor     limit        violates when
+=================  =========  ===========  ================================================
+``CURRENT``        ``0``      ``limit_a``  ``value >= threshold * limit_a``
+``LOW_VOLTAGE``    ``vn_kv``  ``vmin_kv``  ``v <= threshold * vmin + (1 - threshold) * vn``
+``HIGH_VOLTAGE``   ``vn_kv``  ``vmax_kv``  ``v >= threshold * vmax + (1 - threshold) * vn``
+=================  =========  ===========  ================================================
+
+A line's usable range really *is* ``[0, limit_a]``, so its anchor is ``0`` and the rule
+reduces to plainly scaling the limit. A voltage bound has no such natural "zero" end -- so
+the bus **nominal** voltage is used instead, since that is what operating limits are
+conventionally expressed around (:math:`\pm x\%` of ``vn``). Either way, each acceptable
+interval keeps a width of exactly ``threshold`` times its original one. For a
+:math:`\pm 5\%` band around nominal:
+
+===============  ==========================  ==============
+``threshold``    effective band (pu)         band width
+===============  ==========================  ==============
+1.0              ``[0.9500, 1.0500]``        ``0.100``
+0.95             ``[0.9525, 1.0475]``        ``0.095``
+0.9              ``[0.9550, 1.0450]``        ``0.090``
+0.5              ``[0.9750, 1.0250]``        ``0.050``
+===============  ==========================  ==============
+
+.. note::
+
+    The voltage anchor is really ``vn_kv`` *clamped into* ``[vmin_kv, vmax_kv]``. An operating
+    band is **not** required to bracket the nominal voltage, and real data does violate it: a
+    380 kV level declared with an operating range of ``[390, 450]`` kV is ordinary practice on
+    the European 400 kV network. Such a grid loads and analyses normally; the clamp simply pins
+    the anchor to the nearer bound, so that bound has no margin left to give while the opposite
+    one still tightens as usual.
+    Where the band *does* bracket the nominal voltage -- the overwhelmingly common case -- the
+    clamp does nothing at all.
+
+.. note::
+
+    Anchoring both voltage checks on the nominal voltage -- rather than on each other -- is
+    what keeps them **independent**. The ``LOW_VOLTAGE`` verdict is a function of ``vmin_kv``,
+    the anchor and the threshold alone, so setting ``vmax_kv``, changing it, or leaving it at
+    ``NaN`` can never alter it; and symmetrically for ``HIGH_VOLTAGE``. It also means the two
+    effective bounds each converge towards the anchor from their own side and can therefore
+    never cross: no bus is ever reported as both too low and too high, whatever the
+    threshold. A useful corollary is that a bus sitting *above* its nominal voltage can never
+    be reported as ``LOW_VOLTAGE``, however small the threshold gets.
+
+The reported ``value`` and ``limit`` of each ``LimitViolation`` are unaffected by all this:
+they remain the value actually reached and the limit exactly as you configured it. Only the
+test deciding whether a violation is reported at all is shifted.
+
+.. note::
+
+    A bus whose limits are inconsistent -- ``vmin_kv > vmax_kv``, the only way the two
+    effective bounds can still end up crossed -- raises a ``RuntimeError`` rather than being
+    reported as an arbitrary one of the two violation types, which would hide a genuine
+    misconfiguration.
+
+.. note::
+
+    Like ``handle_disconnected_grid`` / ``nb_thread``, ``violation_threshold`` is a plain
+    runtime knob and only affects the *next* run. There is one asymmetry worth knowing:
+    **lowering** it discards any already-computed results (they were computed with a looser
+    threshold and would under-report), while **raising** it keeps them (a stricter result
+    still contains everything a looser one would find). Unlike ``compute_limit_violations``,
+    neither case clears the registered contingencies, so it is enough to run again:
+
+    .. code-block:: python
+
+        res = security_analysis.run()
+        security_analysis.violation_threshold = 0.9  # drops the results above ...
+        res = security_analysis.run()                # ... no need to re-add anything
+
 .. _sa_benchmarks:
 
 Benchmarks (Contingency Analysis)
