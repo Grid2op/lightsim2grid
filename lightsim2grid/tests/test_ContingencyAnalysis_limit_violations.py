@@ -746,9 +746,8 @@ class TestViolationThresholdLowVoltage(unittest.TestCase):
 class TestBandNotBracketingNominal(unittest.TestCase):
     """A band is NOT required to bracket the bus nominal voltage: real IIDM data violates it
     (a 380 kV level with an operating range of [390, 450] kV is ordinary on the European
-    400 kV network, and appears on ~30% of real RTE snapshots), so such a grid must still
-    load and still be analysable. The threshold copes by clamping its interpolation anchor
-    into [vmin, vmax]."""
+    400 kV network), so such a grid must still load and still be analysable. The threshold
+    copes by clamping its interpolation anchor into [vmin, vmax]."""
     def setUp(self):
         self.max_it, self.tol = 30, 1e-8
         net = pp.create_empty_network(sn_mva=1.)
@@ -780,7 +779,7 @@ class TestBandNotBracketingNominal(unittest.TestCase):
         return out
 
     def test_such_a_band_is_accepted_and_round_trips(self):
-        # the real 1FRASP7 shape: nominal 380, operating range [390, 450]
+        # a realistic shape: nominal 380, operating range [390, 450]
         self.grid.set_bus_voltage_limits(np.full(self.nb_bus, 390.), np.full(self.nb_bus, 450.))
         self.grid.check_grid()
         assert np.allclose(self.grid.get_bus_vmin_kv(), 390.)

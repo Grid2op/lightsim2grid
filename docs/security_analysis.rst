@@ -365,9 +365,9 @@ interval keeps a width of exactly ``threshold`` times its original one. For a
     The voltage anchor is really ``vn_kv`` *clamped into* ``[vmin_kv, vmax_kv]``. An operating
     band is **not** required to bracket the nominal voltage, and real data does violate it: a
     380 kV level declared with an operating range of ``[390, 450]`` kV is ordinary practice on
-    the European 400 kV network (it shows up on roughly a third of real RTE snapshots). Such a
-    grid loads and analyses normally; the clamp simply pins the anchor to the nearer bound, so
-    that bound has no margin left to give while the opposite one still tightens as usual.
+    the European 400 kV network. Such a grid loads and analyses normally; the clamp simply pins
+    the anchor to the nearer bound, so that bound has no margin left to give while the opposite
+    one still tightens as usual.
     Where the band *does* bracket the nominal voltage -- the overwhelmingly common case -- the
     clamp does nothing at all.
 
