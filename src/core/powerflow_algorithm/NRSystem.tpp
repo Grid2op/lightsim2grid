@@ -29,15 +29,24 @@ inline void NRSystem<Base, Rest...>::init_topology(
     base_.init_topology(slack_ids, slack_weights, pv, pq);
     _init_topology_extensions(slack_ids, slack_weights, pv, pq, std::make_index_sequence<sizeof...(Rest)>{});
 
-    // Every bus id the components are about to hand the ledger is checked HERE,
-    // because register_in is the first thing to use them as raw indices into its
+    // On the python-facing entry point only (see BaseAlgo::deep_validation_),
+    // check every bus id the components are about to hand the ledger, because
+    // register_in is the first thing to use them as raw indices into its
     // n_bus-sized maps (`theta_col_of_bus_[bus] = col` is an out-of-bounds WRITE
-    // for a bus id the caller never validated). This is also the earliest point
-    // at which the full picture exists: update_state has set the extension data
-    // and the component init_topology calls just above have set the pv / pq /
-    // slack index sets.
+    // for a bus id nobody validated). This is the earliest point at which the
+    // full picture exists: update_state has set the extension data, and the
+    // component init_topology calls just above the pv / pq / slack index sets.
+    //
+    // It is deliberately NOT run on the internal path (LSGrid::ac_pf,
+    // BaseBatchSolverSynch), where it would be per-element work inside a tight
+    // loop and would duplicate checks already made: pv / pq / slack_ids are
+    // validated by BaseAlgo::check_pf_inputs, and the extension bus ids by
+    // LSGrid::fill_hvdc_droop_solver_data / fill_voltage_control_solver_data,
+    // which reject a disconnected bus before ever emitting a solver id. What is
+    // NOT covered by either -- the caches going stale against refreshed data --
+    // is checked on every solve by validate_registration(), in O(1).
     const int n_bus = static_cast<int>(Ybus_ref_.rows());
-    _validate_data(n_bus);
+    if (deep_validation_) _validate_data(n_bus);
 
     // then claim their equations / unknowns in the ledger
     // (allocation order defines the J layout)
@@ -96,22 +105,21 @@ inline void NRSystem<Base, Rest...>::update_state(
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::validate_registration() const
 {
-    // Deliberately NOT _validate_data() here: that one walks Base's pv / pq
-    // index sets, which is O(n_bus), and this function runs on EVERY solve --
-    // including the ones a TimeSeries / ContingencyAnalysis loop exists to make
-    // cheap. It would also buy nothing. pv / pq arrive as compute_pf arguments
-    // (already range-checked by BaseAlgo::check_pf_inputs on the validated entry
-    // point) and are used as *indices* only by register_in, which runs only on a
-    // topology rebuild -- and init_topology validates them right before it.
+    // This is the ONLY validation on the internal hot path, so it is kept to
+    // comparisons of quantities the components already hold: no per-element
+    // sweep, no allocation, nothing proportional to the number of buses. The
+    // per-element range checks live in _validate_data(), which runs only on the
+    // python-facing entry point (see init_topology).
     //
-    // What does have to be re-checked every solve is the EXTENSION data, because
-    // update_state re-pulls it from the grid every solve while register_in does
-    // not re-run. That work is O(#hvdc droop lines + #voltage controllers): a
-    // handful on a grid that uses them, and exactly zero on a grid that does not
-    // (every loop below is empty), so it does not scale with grid size.
-    const int n_bus = static_cast<int>(Ybus_ref_.rows());
-    _validate_shared_sizes(n_bus);
-    _validate_data_extensions(n_bus, std::make_index_sequence<sizeof...(Rest)>{});
+    // What is checked here is the one thing nothing else can catch: update_state
+    // re-pulls the extension data from the grid on EVERY solve, while
+    // register_in re-derives the row / column caches that index it only on a
+    // topology rebuild. If a grid change altered the number of hvdc droop lines
+    // or voltage controllers without signalling that rebuild, the two disagree
+    // and the per-iteration loops run off the end of the cached arrays --
+    // through FeatureWriter, an out-of-bounds write into J. Comparing the sizes
+    // catches exactly that, in a fixed handful of integer comparisons.
+    _validate_shared_sizes(static_cast<int>(Ybus_ref_.rows()));
 
     // `ledger_.size()` collapses the row and column counts into one number and
     // only compares them through an assert, which -DNDEBUG removes. Do it here

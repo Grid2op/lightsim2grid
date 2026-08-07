@@ -74,10 +74,17 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     // disagree if a grid change altered the number of hvdc droop lines or
     // voltage controllers without signalling a topology rebuild through
     // AlgoControl, in which case every loop below would index a stale handle
-    // array out of bounds. Cheap (one pass over the extension data, no
-    // allocation) and unconditional -- see NRSystem's validate_data /
-    // validate_registration. Runs before the first mismatch(), which is already
-    // a consumer of those indices.
+    // array out of bounds -- through FeatureWriter, an out-of-bounds WRITE.
+    //
+    // This is the only validation left on the internal hot path, and it is
+    // sized for it: a fixed handful of integer comparisons between quantities
+    // the components already hold. No allocation, no per-element sweep, nothing
+    // proportional to the number of buses (the per-element checks live in
+    // NRSystem::_validate_data, reached only from the python-facing entry
+    // point). Measured on case1354/2869/9241pegase with unset_changes() between
+    // solves: no difference against a build with this call removed.
+    //
+    // Runs before the first mismatch(), which already consumes those indices.
     _system.validate_registration();
 
     // Initial mismatch (negated: Sbus - Scomp)

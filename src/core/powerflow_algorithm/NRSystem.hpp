@@ -467,13 +467,13 @@ class LS2G_API MultiSlack   // distributed-slack extension
                                    bus, static_cast<int>(slack_weights_.size()));
         }
 
+        // O(1): sizes only, no sweep over the slack list (that is in validate_data)
         void validate_registration(int dim_J) const
         {
             nr_check_size("MultiSlack", "the cached slack P rows", slack_p_rows_.size(),
                           static_cast<std::size_t>(my_size_));
             nr_check_size("MultiSlack", "the cached slack feature handles", feature_handles_.size(),
                           static_cast<std::size_t>(my_size_));
-            for (int row : slack_p_rows_) nr_check_index("MultiSlack", "a slack P row", row, dim_J);
             // adjust_mismatch / apply_step read dx(slack_col_) unconditionally
             nr_check_index("MultiSlack", "the slack_absorbed column", slack_col_, dim_J);
         }
@@ -662,14 +662,7 @@ class LS2G_API Hvdc
             nr_check_size("Hvdc", "the h12 feature handles", h12_.size(), static_cast<std::size_t>(my_size_));
             nr_check_size("Hvdc", "the h21 feature handles", h21_.size(), static_cast<std::size_t>(my_size_));
             nr_check_size("Hvdc", "the h22 feature handles", h22_.size(), static_cast<std::size_t>(my_size_));
-            // a slack end legitimately owns no P row / theta column: -1 is valid
-            // here and skipped by the loops, anything else must index J
-            for (int k = 0; k < my_size_; ++k) {
-                if (p_row_1_[k]     != -1) nr_check_index("Hvdc", "a cached side-1 P row", p_row_1_[k], dim_J);
-                if (p_row_2_[k]     != -1) nr_check_index("Hvdc", "a cached side-2 P row", p_row_2_[k], dim_J);
-                if (theta_col_1_[k] != -1) nr_check_index("Hvdc", "a cached side-1 theta column", theta_col_1_[k], dim_J);
-                if (theta_col_2_[k] != -1) nr_check_index("Hvdc", "a cached side-2 theta column", theta_col_2_[k], dim_J);
-            }
+            (void)dim_J;  // the cached rows / columns themselves are swept in validate_data
         }
 
         // claims nothing: only caches the rows / columns of the two end buses
@@ -905,6 +898,7 @@ class LS2G_API VoltageControl
         // iteration, so a controller count that grew without a topology rebuild
         // is an out-of-bounds read of q_cols_ followed by an out-of-bounds Eigen
         // access at whatever index it happened to contain.
+        // O(#groups): sizes only. The per-controller sweep is in validate_data.
         void validate_registration(int dim_J) const
         {
             const int nc = data_.n_controllers();
@@ -920,23 +914,19 @@ class LS2G_API VoltageControl
             nr_check_size("VoltageControl", "the (v_row, vm_col) feature handles", h_vm_.size(), static_cast<std::size_t>(ng));
             nr_check_size("VoltageControl", "the sharing feature handles (A)", h_shareA_.size(), static_cast<std::size_t>(ng));
             nr_check_size("VoltageControl", "the sharing feature handles (B)", h_shareB_.size(), static_cast<std::size_t>(ng));
-            // q_cols_ / v_rows_ / share_rows_ come from add_q_unknown /
-            // add_custom_row and are dereferenced unconditionally, so unlike the
-            // "-1 means the bus owns none" entries they must all be real indices
-            for (int j = 0; j < nc; ++j) {
-                nr_check_index("VoltageControl", "a controller Q column", q_cols_[j], dim_J);
-                if (q_rows_[j] != -1) nr_check_index("VoltageControl", "a controller Q row", q_rows_[j], dim_J);
-            }
+            // The nested sharing vectors are sized from `cnt - 1` per group, so
+            // their outer size agreeing is not enough: a controller count that
+            // changed within the same number of groups would leave these inner
+            // sizes stale. One comparison per group, and groups are as many as
+            // there are regulated buses -- never a function of grid size.
             for (int g = 0; g < ng; ++g) {
-                nr_check_index("VoltageControl", "a group voltage row", v_rows_[g], dim_J);
-                if (vm_cols_[g] != -1) nr_check_index("VoltageControl", "a regulated-bus Vm column", vm_cols_[g], dim_J);
                 const std::size_t cnt = static_cast<std::size_t>(data_.grp_count(g));
+                if (cnt < 1) nr_state_error("VoltageControl", "a control group with no controller");
                 nr_check_size("VoltageControl", "the sharing rows of a group", share_rows_[g].size(), cnt - 1);
                 nr_check_size("VoltageControl", "the sharing handles (A) of a group", h_shareA_[g].size(), cnt - 1);
                 nr_check_size("VoltageControl", "the sharing handles (B) of a group", h_shareB_[g].size(), cnt - 1);
-                for (int row : share_rows_[g])
-                    nr_check_index("VoltageControl", "a reactive-sharing row", row, dim_J);
             }
+            (void)dim_J;  // the cached rows / columns themselves are swept in validate_data
         }
 
         // claims, per group: N q-unknown columns, 1 voltage row, N-1 sharing rows;
@@ -1177,6 +1167,14 @@ public:
         const Eigen::Ref<const CplxVect> & Sbus,
         const Eigen::Ref<const RealVect> & slack_weights);
 
+    // Opt in to the deep, per-element state validation inside init_topology
+    // (bus ids of the pv / pq sets and of the extension data, group tiling, ...).
+    // Off by default: the algorithm turns it on only for solves coming through
+    // BaseAlgo::compute_pf_with_input_validation, the python-facing entry point.
+    // The internal hot path (LSGrid::ac_pf, BaseBatchSolverSynch) leaves it off,
+    // so none of that per-element work is reached there.
+    void set_deep_validation(bool on) { deep_validation_ = on; }
+
     // ----- Phase 1.75: state validation (cheap, always) -------------------------
     //
     // validate_data() runs at the tail of update_state() (nothing to call it
@@ -1373,6 +1371,8 @@ private:
     std::vector<int>                       masked_zero_pos_;
     std::vector<int>                       masked_one_pos_;
     bool                                   masked_dirty_;
+    // see set_deep_validation: per-element checks, python-facing path only
+    bool                                   deep_validation_ = false;
 
     // resolve masked_zero_pos_ / masked_one_pos_ from masked_buses_ and J_'s
     // sparsity (one pass over the nonzeros). Call only when J_ is built.

@@ -648,6 +648,11 @@ TEST_CASE("NRSystem: extension bus ids are checked against the solver size", "[n
     // never sees it. Handing the system a Jacobian smaller than the grid makes
     // the grid's own (valid) bus ids out of range for it, which is the shape of
     // every way this can go wrong: it must raise, not index past the ledger.
+    //
+    // This is the DEEP validation: per-element, and therefore opt-in
+    // (set_deep_validation), so that it runs on the python-facing entry point
+    // and not inside a ContingencyAnalysis / TimeSeries loop. The staleness
+    // check that does run on every solve is exercised by the test above.
     LSGrid grid = make_six_bus_skeleton();
     add_droop_hvdc(grid);       // buses 2 and 5
     add_svc(grid, 1.01);        // bus 4
@@ -670,6 +675,7 @@ TEST_CASE("NRSystem: extension bus ids are checked against the solver size", "[n
     in.pq << 1, 2;
 
     MultiSlackNRSystem sys;
+    sys.set_deep_validation(true);
     sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights);
     // init_topology validates before register_in indexes the ledger with them
     REQUIRE_THROWS_MATCHES(
@@ -688,6 +694,7 @@ TEST_CASE("NRSystem: mismatched voltage / Sbus sizes are rejected", "[nr][nrsyst
         SolverInputs in(grid);
         const CplxVect V_short = full.V.head(4);
         MultiSlackNRSystem sys;
+        sys.set_deep_validation(true);
         sys.update_state(&grid, in.Ybus, V_short, in.Sbus, in.slack_weights);
         REQUIRE_THROWS_MATCHES(
             sys.init_topology(in.slack_ids, in.slack_weights, in.pv, in.pq),
@@ -698,6 +705,7 @@ TEST_CASE("NRSystem: mismatched voltage / Sbus sizes are rejected", "[nr][nrsyst
         SolverInputs in(grid);
         const CplxVect S_short = full.Sbus.head(4);
         MultiSlackNRSystem sys;
+        sys.set_deep_validation(true);
         sys.update_state(&grid, in.Ybus, in.V, S_short, in.slack_weights);
         REQUIRE_THROWS_MATCHES(
             sys.init_topology(in.slack_ids, in.slack_weights, in.pv, in.pq),
