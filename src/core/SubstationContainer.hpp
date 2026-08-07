@@ -196,10 +196,9 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             // NB: a band is NOT required to bracket the bus nominal voltage. Real IIDM data
             // does violate it (a 380 kV level declared with an operating range of
             // [390, 450] kV is ordinary practice on the European 400 kV network, and shows
-            // up on ~30% of real RTE snapshots), so rejecting it here would refuse to load
-            // perfectly usable grids. ContingencyAnalysis's `violation_threshold` copes by
-            // clamping its interpolation anchor into [vmin, vmax] instead -- see
-            // check_bus_voltage_violations.
+            // up on real data), so rejecting it here would refuse to load perfectly usable
+            // grids. ContingencyAnalysis's `violation_threshold` copes by clamping its
+            // interpolation anchor into [vmin, vmax] instead -- see check_bus_voltage_violations.
             bus_vmin_kv_ = bus_vmin_kv;
             bus_vmax_kv_ = bus_vmax_kv;
         }
