@@ -296,7 +296,17 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // LSGrid::deactivate_dcline_side1/2; without it, fill_hvdc_droop_solver_data
         // would try to resolve the now-disconnected (-1) side's bus and read out of
         // bounds.
-        void disable_droop(int hvdc_id) { droop_enabled_[hvdc_id] = false; }
+        // Takes the solver control because this changes the SET of lines the
+        // droop equations apply to, which the NR Hvdc extension sizes its cached
+        // row/column arrays from at topology-rebuild time. Without the signal the
+        // extension would re-pull a shorter data set on the next solve while
+        // keeping arrays sized for the old one.
+        void disable_droop(int hvdc_id, DualAlgoControl & solver_control) {
+            if(!droop_enabled_[hvdc_id]) return;  // nothing to do, and nothing to signal
+            droop_enabled_[hvdc_id] = false;
+            solver_control.ac_algo_controler().tell_hvdc_droop_changed();
+            solver_control.dc_algo_controler().tell_hvdc_droop_changed();
+        }
         bool has_droop_active() const {
             const int nb_hvdc = static_cast<int>(nb());
             for(int i = 0; i < nb_hvdc; ++i) if(is_droop_active(i)) return true;
@@ -414,6 +424,30 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
 
         const ConverterStationContainer & get_stations_side_1() const {return side_1_;}
         const ConverterStationContainer & get_stations_side_2() const {return side_2_;}
+
+    protected:
+        // Connecting / disconnecting a droop-enabled line changes the SET the
+        // angle-droop equations apply to (fill_hvdc_droop_solver_data keeps only
+        // the lines that are both droop_enabled_ AND status_global_), so the NR
+        // Hvdc extension must re-derive its cached row/column arrays. Only
+        // signalled for a droop-enabled line: an ordinary hvdc line connecting or
+        // disconnecting does not concern the extension at all.
+        bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
+            const bool changed = TwoSidesContainer<ConverterStationContainer>::_deactivate(el_id, solver_control);
+            if(changed && droop_enabled_[el_id]){
+                solver_control.ac_algo_controler().tell_hvdc_droop_changed();
+                solver_control.dc_algo_controler().tell_hvdc_droop_changed();
+            }
+            return changed;
+        }
+        bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
+            const bool changed = TwoSidesContainer<ConverterStationContainer>::_reactivate(el_id, solver_control);
+            if(changed && droop_enabled_[el_id]){
+                solver_control.ac_algo_controler().tell_hvdc_droop_changed();
+                solver_control.dc_algo_controler().tell_hvdc_droop_changed();
+            }
+            return changed;
+        }
 
     private:
         /**

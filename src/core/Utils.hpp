@@ -107,7 +107,8 @@ class AlgoControl final
             slack_weight_changed_(true),
             ybus_some_coeffs_zero_(true),
             ybus_change_sparsity_pattern_(true),
-            one_el_change_bus_(true)
+            one_el_change_bus_(true),
+            hvdc_droop_changed_(true)
             {};
 
         ~AlgoControl() noexcept = default;
@@ -125,6 +126,7 @@ class AlgoControl final
             ybus_some_coeffs_zero_ = true;
             ybus_change_sparsity_pattern_ = true;
             one_el_change_bus_ = true;
+            hvdc_droop_changed_ = true;
         }
 
         void tell_none_changed(){
@@ -140,6 +142,7 @@ class AlgoControl final
             ybus_some_coeffs_zero_ = false;
             ybus_change_sparsity_pattern_ = false;
             one_el_change_bus_ = false;
+            hvdc_droop_changed_ = false;
         }
 
         // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes)
@@ -167,6 +170,21 @@ class AlgoControl final
         // might need to trigger some recomputation of some solvers (eg NR based ones)
         void tell_ybus_some_coeffs_zero(){ybus_some_coeffs_zero_ = true;}
         void tell_one_el_changed_bus(){one_el_change_bus_ = true;}
+        // The SET of hvdc lines the angle-droop ("AC emulation") equations apply
+        // to has changed: a droop-enabled line connected or disconnected, or its
+        // droop enabled / disabled. NOT the droop *regime* (`status_droop`),
+        // which is a value the Hvdc extension absorbs without touching the J
+        // sparsity pattern, and NOT `tell_pv_changed` either -- that one means
+        // "the set of PV-tagged buses changed", which says nothing about droop.
+        //
+        // This matters because the Newton-Raphson Hvdc extension re-pulls the
+        // droop data on every solve (update_state) but only re-derives the
+        // row/column arrays that index it on a topology rebuild (register_in).
+        // A count that changes without a rebuild leaves the two out of step and
+        // the per-iteration loops running off the end of those arrays, so this
+        // flag is what forces the rebuild. A VSC changing its REGULATED bus is a
+        // different matter and belongs to tell_pv_changed.
+        void tell_hvdc_droop_changed(){hvdc_droop_changed_ = true;}
 
         bool has_dimension_changed() const {return change_dimension_;}
         bool has_pv_changed() const {return pv_changed_;}
@@ -180,6 +198,7 @@ class AlgoControl final
         bool has_v_changed() const {return v_changed_;}
         bool has_ybus_some_coeffs_zero() const {return ybus_some_coeffs_zero_;}
         bool has_one_el_changed_bus() const {return one_el_change_bus_;}
+        bool has_hvdc_droop_changed() const {return hvdc_droop_changed_;}
 
     private:    
         bool change_dimension_;
@@ -194,6 +213,7 @@ class AlgoControl final
         bool ybus_some_coeffs_zero_;  // tells that some coeff of ybus might have been set to 0. (and ybus compressed again, so these coeffs are really completely hidden)
         bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
         bool one_el_change_bus_;  // whether one element has change of bus (or being reconnected / disconnected)
+        bool hvdc_droop_changed_;  // the set of angle-droop hvdc lines changed (see tell_hvdc_droop_changed)
 };
 
 /**

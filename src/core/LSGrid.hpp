@@ -1028,11 +1028,11 @@ class LS2G_API LSGrid final
         // synch_status_both_side_ defaults to false), no `keep_half_open_lines` needed.
         void deactivate_dcline_side1(int dcline_id) {
             hvdc_lines_.deactivate_side_1(dcline_id, algo_controler_);
-            hvdc_lines_.disable_droop(dcline_id);  // remote angle is gone, see disable_droop's doc
+            hvdc_lines_.disable_droop(dcline_id, algo_controler_);  // remote angle is gone, see disable_droop's doc
         }
         void deactivate_dcline_side2(int dcline_id) {
             hvdc_lines_.deactivate_side_2(dcline_id, algo_controler_);
-            hvdc_lines_.disable_droop(dcline_id);
+            hvdc_lines_.disable_droop(dcline_id, algo_controler_);
         }
         void change_p_dcline(int dcline_id, real_type new_p) {hvdc_lines_.change_p(dcline_id, new_p, algo_controler_); }
         void change_v1_dcline(int dcline_id, real_type new_v_pu) {hvdc_lines_.change_v_side_1(dcline_id, new_v_pu, algo_controler_); }

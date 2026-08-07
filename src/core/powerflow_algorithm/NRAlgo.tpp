@@ -35,7 +35,11 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         _solver_control.has_ybus_some_coeffs_zero() ||
         _solver_control.need_recompute_ybus() ||
         _solver_control.has_pv_changed() ||
-        _solver_control.has_pq_changed()
+        _solver_control.has_pq_changed() ||
+        // the SET of angle-droop hvdc lines changed: the Hvdc extension sizes
+        // its cached row / column arrays from it in register_in, so it has to
+        // re-register rather than keep arrays for a different set of lines
+        _solver_control.has_hvdc_droop_changed()
     );
 
     if (need_rebuild) {

@@ -399,6 +399,46 @@ TEST_CASE("NR hot path: repeated solves under grid mutation", "[nr][hotpath]")
     CHECK(nb_solved == 40);
 }
 
+TEST_CASE("NR hot path: connecting a droop line forces a topology rebuild", "[nr][hvdc]")
+{
+    // The set the droop equations apply to is {droop_enabled AND connected}, and
+    // the Hvdc extension sizes its cached row / column arrays from it at
+    // register_in time (topology rebuild) while re-pulling the data itself on
+    // every solve. Disconnecting and reconnecting a droop line changes that set
+    // in both directions; the GROWING one is what the caches cannot survive
+    // without a rebuild (arrays sized for 0 lines, indexed for 1).
+    //
+    // unset_changes() after every solve, as the grid2op backend does, so the
+    // solver really is on its cached path between steps rather than being saved
+    // by a stale "everything changed" flag.
+    //
+    // Measured honestly: this scenario already rebuilds today without
+    // AlgoControl::has_hvdc_droop_changed() (reconnecting an hvdc line moves
+    // Sbus and trips one of the other rebuild flags), so this test does NOT fail
+    // if that flag is removed. It is here as an end-to-end guard on the
+    // invariant -- that the droop set and the caches indexing it stay in step
+    // across a connect / disconnect cycle -- not as proof of the flag.
+    LSGrid grid = make_six_bus_skeleton();
+    add_droop_hvdc(grid);
+    REQUIRE(solve_ac(grid).size() == 6);
+    grid.unset_changes();
+
+    grid.deactivate_dcline(0);          // droop set: 1 -> 0
+    REQUIRE(solve_ac(grid).size() == 6);
+    grid.unset_changes();
+
+    grid.reactivate_dcline(0);          // droop set: 0 -> 1, arrays still sized 0
+    const CplxVect V = solve_ac(grid);
+    REQUIRE(V.size() == 6);
+    CHECK(all_finite(V));
+
+    // and the droop law is being applied again, i.e. the extension really did
+    // re-register rather than silently stay empty
+    const real_type k_per_rad = 2. * 180. / std::acos(real_type(-1.));
+    const real_type expected = 10. + k_per_rad * (std::arg(V(2)) - std::arg(V(5)));
+    CHECK(std::get<0>(grid.get_dcline_res2())(0) == Approx(expected).epsilon(1e-6));
+}
+
 TEST_CASE("NR hot path: droop status flips reuse the sparsity pattern", "[nr][hvdc]")
 {
     // Hvdc::declare_feature_entries claims its 4 dP/dtheta entries whatever the
