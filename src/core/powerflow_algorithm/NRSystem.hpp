@@ -361,28 +361,6 @@ class LS2G_API Base
             }
         }
 
-        // pv / pq reach Base through compute_pf's arguments, so they are already
-        // range-checked by BaseAlgo::check_pf_inputs on the validated entry
-        // point -- but NOT on LSGrid's internal one (LSGrid::ac_pf calls
-        // compute_pf directly), and free_vm_slack_buses_ comes from the grid and
-        // is never checked anywhere. All three are used to index the ledger's
-        // n_bus-sized maps in register_in, just below.
-        void validate_data(int n_bus) const
-        {
-            nr_check_size("Base", "the pv index set", static_cast<std::size_t>(pv_.size()),
-                          static_cast<std::size_t>(nb_pv_));
-            nr_check_size("Base", "the pq index set", static_cast<std::size_t>(pq_.size()),
-                          static_cast<std::size_t>(nb_pq_));
-            nr_check_size("Base", "the concatenated pv+pq index set",
-                          static_cast<std::size_t>(pvpq_.size()),
-                          static_cast<std::size_t>(nb_pv_ + nb_pq_));
-            if (nb_pvpq_ != nb_pv_ + nb_pq_)
-                nr_state_error("Base", "the cached pv+pq count disagrees with nb_pv + nb_pq");
-            for (int k = 0; k < nb_pvpq_; ++k)
-                nr_check_index("Base", "a pv/pq bus id", pvpq_(k), n_bus);
-            for (int bus : free_vm_slack_buses_)
-                nr_check_index("Base", "a free-Vm slack bus id", bus, n_bus);
-        }
 
         // Base claims no custom row / column and caches no handle array, so
         // there is nothing here that register_in could have left stale.
@@ -491,25 +469,6 @@ class LS2G_API MultiSlack   // distributed-slack extension
             slack_buses_.push_back(ref_slack_id_);
         }
 
-        // my_size_ / slack_buses_ are set in init_topology, which always runs
-        // together with register_in, so this block cannot go stale the way Hvdc
-        // and VoltageControl can. What is still worth checking is that the slack
-        // bus ids are usable as indices: register_in indexes the ledger with
-        // them and fill_feature_values indexes slack_weights_ (an n_bus vector).
-        void validate_data(int n_bus) const
-        {
-            if (my_size_ < 1)
-                nr_state_error("MultiSlack", "no slack bus at all (at least one is required)");
-            nr_check_size("MultiSlack", "the slack bus list", slack_buses_.size(),
-                          static_cast<std::size_t>(my_size_));
-            for (int bus : slack_buses_) nr_check_index("MultiSlack", "a slack bus id", bus, n_bus);
-            // slack_weights_ is the compute_pf argument of the same name; it is
-            // indexed by bus id in fill_feature_values.
-            if (slack_weights_.size() != 0)
-                for (int bus : slack_buses_)
-                    nr_check_index("MultiSlack", "a slack bus id used to index slack_weights",
-                                   bus, static_cast<int>(slack_weights_.size()));
-        }
 
         // O(1): sizes only, no sweep over the slack list (that is in validate_data)
         void validate_registration(int dim_J) const
@@ -657,38 +616,6 @@ class LS2G_API Hvdc
             const Eigen::Ref<const IntVect> &              /*pq*/
         ) {}
 
-        // The droop data is re-pulled from the grid on EVERY solve (update_state),
-        // and register_in below immediately indexes the ledger's n_bus-sized maps
-        // with bus1 / bus2. adjust_mismatch and fill_feature_values then index
-        // V_t / mis / Va with the same ids on every NR iteration.
-        void validate_data(int n_bus) const
-        {
-            nr_check_size("Hvdc", "the droop data", static_cast<std::size_t>(data_.size()),
-                          static_cast<std::size_t>(my_size_));
-            // every per-line array is indexed by the same k < my_size_
-            nr_check_size("Hvdc", "the droop 'status' array", static_cast<std::size_t>(data_.status.size()),
-                          static_cast<std::size_t>(my_size_));
-            nr_check_size("Hvdc", "the droop 'bus2' array", static_cast<std::size_t>(data_.bus2.size()),
-                          static_cast<std::size_t>(my_size_));
-            nr_check_size("Hvdc", "the droop 'p0' array", static_cast<std::size_t>(data_.p0.size()),
-                          static_cast<std::size_t>(my_size_));
-            nr_check_size("Hvdc", "the droop 'k' array", static_cast<std::size_t>(data_.k.size()),
-                          static_cast<std::size_t>(my_size_));
-            nr_check_size("Hvdc", "the droop 'lf1' array", static_cast<std::size_t>(data_.lf1.size()),
-                          static_cast<std::size_t>(my_size_));
-            nr_check_size("Hvdc", "the droop 'lf2' array", static_cast<std::size_t>(data_.lf2.size()),
-                          static_cast<std::size_t>(my_size_));
-            nr_check_size("Hvdc", "the droop 'r' array", static_cast<std::size_t>(data_.r.size()),
-                          static_cast<std::size_t>(my_size_));
-            nr_check_size("Hvdc", "the droop 'pmax12' array", static_cast<std::size_t>(data_.pmax12.size()),
-                          static_cast<std::size_t>(my_size_));
-            nr_check_size("Hvdc", "the droop 'pmax21' array", static_cast<std::size_t>(data_.pmax21.size()),
-                          static_cast<std::size_t>(my_size_));
-            for (int k = 0; k < my_size_; ++k) {
-                nr_check_index("Hvdc", "an hvdc side-1 bus id", data_.bus1(k), n_bus);
-                nr_check_index("Hvdc", "an hvdc side-2 bus id", data_.bus2(k), n_bus);
-            }
-        }
 
         // The staleness check that matters: my_size_ follows update_state (every
         // solve) while these arrays are (re)sized by register_in (topology
@@ -884,62 +811,6 @@ class LS2G_API VoltageControl
             const Eigen::Ref<const IntVect>  & /*pq*/
         ) {}
 
-        // The controller data is re-pulled from the grid on EVERY solve
-        // (update_state). register_in below indexes the ledger's n_bus-sized maps
-        // with bus / reg_bus, walks the controllers of each group through
-        // grp_start / grp_count, and sizes the sharing-row vectors from
-        // `cnt - 1` -- which underflows to a huge std::size_t for an empty group,
-        // so `cnt >= 1` is a memory-safety precondition, not a nicety.
-        void validate_data(int n_bus) const
-        {
-            const int nc = data_.n_controllers();
-            const int ng = data_.n_groups();
-            if (nc < 0 || ng < 0) nr_state_error("VoltageControl", "a negative controller / group count");
-            if ((nc == 0) != (ng == 0))
-                nr_state_error("VoltageControl", "controllers without groups (or the other way round)");
-            nr_check_size("VoltageControl", "the controller 'kind' array", static_cast<std::size_t>(data_.kind.size()), static_cast<std::size_t>(nc));
-            nr_check_size("VoltageControl", "the controller 'elem_id' array", static_cast<std::size_t>(data_.elem_id.size()), static_cast<std::size_t>(nc));
-            nr_check_size("VoltageControl", "the controller 'slope' array", static_cast<std::size_t>(data_.slope.size()), static_cast<std::size_t>(nc));
-            nr_check_size("VoltageControl", "the controller 'weight' array", static_cast<std::size_t>(data_.weight.size()), static_cast<std::size_t>(nc));
-            nr_check_size("VoltageControl", "the group 'v_set' array", static_cast<std::size_t>(data_.v_set.size()), static_cast<std::size_t>(ng));
-            nr_check_size("VoltageControl", "the group 'grp_start' array", static_cast<std::size_t>(data_.grp_start.size()), static_cast<std::size_t>(ng));
-            nr_check_size("VoltageControl", "the group 'grp_count' array", static_cast<std::size_t>(data_.grp_count.size()), static_cast<std::size_t>(ng));
-            for (int j = 0; j < nc; ++j)
-                nr_check_index("VoltageControl", "a controller bus id", data_.bus(j), n_bus);
-            // the groups must tile [0, nc) exactly: that is what makes
-            // `first + off` a valid controller index everywhere below
-            int expected_start = 0;
-            for (int g = 0; g < ng; ++g) {
-                nr_check_index("VoltageControl", "a regulated bus id", data_.reg_bus(g), n_bus);
-                const int cnt = data_.grp_count(g);
-                if (cnt < 1) {
-                    std::ostringstream oss;
-                    oss << "control group " << g << " has " << cnt
-                        << " controllers; a group must own at least one";
-                    nr_state_error("VoltageControl", oss.str());
-                }
-                if (data_.grp_start(g) != expected_start) {
-                    std::ostringstream oss;
-                    oss << "control group " << g << " starts at controller " << data_.grp_start(g)
-                        << " instead of " << expected_start
-                        << "; groups must tile the controller list contiguously";
-                    nr_state_error("VoltageControl", oss.str());
-                }
-                if (cnt > nc - expected_start) {
-                    std::ostringstream oss;
-                    oss << "control group " << g << " claims " << cnt << " controllers from index "
-                        << expected_start << ", past the end of the " << nc << " declared";
-                    nr_state_error("VoltageControl", oss.str());
-                }
-                expected_start += cnt;
-            }
-            if (expected_start != nc) {
-                std::ostringstream oss;
-                oss << "the control groups cover " << expected_start << " controllers but "
-                    << nc << " are declared";
-                nr_state_error("VoltageControl", oss.str());
-            }
-        }
 
         // Same staleness hazard as Hvdc, one step worse: here the stale index is
         // fed straight to `dx(q_cols_[j])` / `res(v_rows_[g])` on every NR
@@ -1218,13 +1089,6 @@ public:
         const Eigen::Ref<const RealVect> & slack_weights,
         const AlgoControl                & solver_control);
 
-    // Opt in to the deep, per-element state validation inside init_topology
-    // (bus ids of the pv / pq sets and of the extension data, group tiling, ...).
-    // Off by default: the algorithm turns it on only for solves coming through
-    // BaseAlgo::compute_pf_with_input_validation, the python-facing entry point.
-    // The internal hot path (LSGrid::ac_pf, BaseBatchSolverSynch) leaves it off,
-    // so none of that per-element work is reached there.
-    void set_deep_validation(bool on) { deep_validation_ = on; }
 
     // ----- Phase 1.75: state validation (cheap, always) -------------------------
     //
@@ -1422,8 +1286,6 @@ private:
     std::vector<int>                       masked_zero_pos_;
     std::vector<int>                       masked_one_pos_;
     bool                                   masked_dirty_;
-    // see set_deep_validation: per-element checks, python-facing path only
-    bool                                   deep_validation_ = false;
 
     // resolve masked_zero_pos_ / masked_one_pos_ from masked_buses_ and J_'s
     // sparsity (one pass over the nonzeros). Call only when J_ is built.
@@ -1524,18 +1386,7 @@ private:
 
     // O(1) shape check of the shared vectors (Va / Vm / V / Sbus vs n_bus)
     void _validate_shared_sizes(int n_bus) const;
-    // Full pre-register_in check: the shared sizes plus every component's own
-    // data, Base's O(n_bus) pv / pq sweep included. Called ONLY from
-    // init_topology (i.e. on a topology rebuild), never on the per-solve path --
-    // see validate_registration for why that is both cheaper and no weaker.
-    void _validate_data(int n_bus) const;
 
-    template <std::size_t... Is>
-    void _validate_data_extensions(int n_bus, std::index_sequence<Is...>) const {
-        int dummy[] = { 0, (std::get<Is>(extensions_).validate_data(n_bus), 0)... };
-        (void)dummy;
-        (void)n_bus;
-    }
 
     template <std::size_t... Is>
     void _validate_registration_extensions(int dim_J, std::index_sequence<Is...>) const {

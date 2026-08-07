@@ -743,6 +743,10 @@ void LSGrid::fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) co
     const int nb_hvdc = static_cast<int>(hvdc_lines_.nb());
     if(nb_hvdc == 0) return;
     const SolverBusIdVect & id_me_to_solver = ac ? id_me_to_ac_solver_ : id_me_to_dc_solver_;
+    // upper bound of the solver bus ids emitted below: they are handed straight
+    // to the solver, which uses them to index its n_bus-sized tables with no
+    // bounds check of its own (release wheels are -O3 -DNDEBUG)
+    const int nb_bus_solver = static_cast<int>((ac ? id_ac_solver_to_me_ : id_dc_solver_to_me_).size());
     const std::vector<bool> & droop_enabled = hvdc_lines_.get_droop_enabled();
     const std::vector<bool> & status_global = hvdc_lines_.get_status_global();
     std::vector<int> indices;
@@ -792,6 +796,21 @@ void LSGrid::fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) co
             exc_ << "LSGrid::fill_hvdc_droop_solver_data: hvdc line with id ";
             exc_ << hvdc_id;
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
+        // The solver indexes Va / the per-bus mismatch and its own bus-keyed
+        // row/column tables with these ids, unchecked. `id_me_to_solver` should
+        // never produce one out of range, so this is a postcondition of the bus
+        // mapping rather than an input check -- but it is the last place that
+        // can still turn a broken mapping into an exception instead of an
+        // out-of-bounds access inside the Newton loop.
+        if((bus_1_solver.cast_int() < 0) || (bus_1_solver.cast_int() >= nb_bus_solver) ||
+           (bus_2_solver.cast_int() < 0) || (bus_2_solver.cast_int() >= nb_bus_solver)){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_hvdc_droop_solver_data: hvdc line with id " << hvdc_id
+                 << " resolves to solver bus ids (" << bus_1_solver.cast_int() << ", "
+                 << bus_2_solver.cast_int() << ") outside [0, " << nb_bus_solver
+                 << "). The grid -> solver bus mapping is inconsistent.";
             throw std::runtime_error(exc_.str());
         }
         data.bus1(pos) = bus_1_solver.cast_int();
@@ -1033,6 +1052,49 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
             data.weight(cursor) = (std::abs(r.weight) > BaseConstants::_tol_equal_float) ? r.weight : BaseConstants::_tol_equal_float;
             data.group(cursor) = g;
             ++cursor;
+        }
+    }
+
+    // Postconditions of this function, checked once here rather than by the
+    // solver on every solve. The VoltageControl extension walks each group as
+    // [grp_start(g), grp_start(g) + grp_count(g)) and sizes its reactive-sharing
+    // vectors from `grp_count(g) - 1` as a std::size_t, then indexes Vm / the
+    // per-bus mismatch and its own bus-keyed tables with `bus` / `reg_bus` --
+    // all unchecked (release wheels are -O3 -DNDEBUG). An empty group would
+    // underflow that subtraction; a bus id out of range would read or write
+    // past the ledger. Neither can happen given the construction above, which is
+    // exactly why this belongs here: it is cheap, it runs only when the data is
+    // actually rebuilt (the extensions cache it otherwise), and it keeps the
+    // guarantee at the point the data is produced instead of at the point it is
+    // consumed.
+    if(cursor != nc){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::fill_voltage_control_solver_data: the control groups cover " << cursor
+             << " controllers but " << nc << " were collected.";
+        throw std::runtime_error(exc_.str());
+    }
+    for(int g = 0; g < ng; ++g){
+        if(data.grp_count(g) < 1){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: control group " << g
+                 << " has no controller.";
+            throw std::runtime_error(exc_.str());
+        }
+        if((data.reg_bus(g) < 0) || (data.reg_bus(g) >= nb_bus_solver)){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: control group " << g
+                 << " regulates solver bus " << data.reg_bus(g) << ", outside [0, "
+                 << nb_bus_solver << "). The grid -> solver bus mapping is inconsistent.";
+            throw std::runtime_error(exc_.str());
+        }
+    }
+    for(int j = 0; j < nc; ++j){
+        if((data.bus(j) < 0) || (data.bus(j) >= nb_bus_solver)){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: controller " << j
+                 << " sits on solver bus " << data.bus(j) << ", outside [0, "
+                 << nb_bus_solver << "). The grid -> solver bus mapping is inconsistent.";
+            throw std::runtime_error(exc_.str());
         }
     }
 }

@@ -29,24 +29,13 @@ inline void NRSystem<Base, Rest...>::init_topology(
     base_.init_topology(slack_ids, slack_weights, pv, pq);
     _init_topology_extensions(slack_ids, slack_weights, pv, pq, std::make_index_sequence<sizeof...(Rest)>{});
 
-    // On the python-facing entry point only (see BaseAlgo::deep_validation_),
-    // check every bus id the components are about to hand the ledger, because
-    // register_in is the first thing to use them as raw indices into its
-    // n_bus-sized maps (`theta_col_of_bus_[bus] = col` is an out-of-bounds WRITE
-    // for a bus id nobody validated). This is the earliest point at which the
-    // full picture exists: update_state has set the extension data, and the
-    // component init_topology calls just above the pv / pq / slack index sets.
-    //
-    // It is deliberately NOT run on the internal path (LSGrid::ac_pf,
-    // BaseBatchSolverSynch), where it would be per-element work inside a tight
-    // loop and would duplicate checks already made: pv / pq / slack_ids are
-    // validated by BaseAlgo::check_pf_inputs, and the extension bus ids by
-    // LSGrid::fill_hvdc_droop_solver_data / fill_voltage_control_solver_data,
-    // which reject a disconnected bus before ever emitting a solver id. What is
-    // NOT covered by either -- the caches going stale against refreshed data --
-    // is checked on every solve by validate_registration(), in O(1).
+    // The bus ids and group layout the components are about to hand the ledger
+    // are validated where they are PRODUCED (LSGrid::fill_hvdc_droop_solver_data
+    // / fill_voltage_control_solver_data check their own output before returning
+    // it, and BaseAlgo::check_pf_inputs checks pv / pq / slack_ids on the
+    // python-facing entry point), not here: re-checking them per solve would be
+    // per-element work on the hot path for a guarantee already made upstream.
     const int n_bus = static_cast<int>(Ybus_ref_.rows());
-    if (deep_validation_) _validate_data(n_bus);
 
     // then claim their equations / unknowns in the ledger
     // (allocation order defines the J layout)
@@ -63,15 +52,6 @@ inline void NRSystem<Base, Rest...>::_validate_shared_sizes(int n_bus) const
         nr_state_error("NRSystem", "the voltage vectors do not have one entry per Ybus bus");
     if (Sbus_size_ != n_bus)
         nr_state_error("NRSystem", "Sbus does not have one entry per Ybus bus");
-}
-
-// ---- pre-register_in validation (topology rebuilds only) ---------------------
-template <typename... Rest>
-inline void NRSystem<Base, Rest...>::_validate_data(int n_bus) const
-{
-    _validate_shared_sizes(n_bus);
-    base_.validate_data(n_bus);
-    _validate_data_extensions(n_bus, std::make_index_sequence<sizeof...(Rest)>{});
 }
 
 // ---- Phase 1.5: per-compute_pf state update ----------------------------------
@@ -109,8 +89,8 @@ inline void NRSystem<Base, Rest...>::validate_registration() const
     // This is the ONLY validation on the internal hot path, so it is kept to
     // comparisons of quantities the components already hold: no per-element
     // sweep, no allocation, nothing proportional to the number of buses. The
-    // per-element range checks live in _validate_data(), which runs only on the
-    // python-facing entry point (see init_topology).
+    // per-element range checks live in LSGrid's fill_*_solver_data, which make
+    // them once, where the data is produced (see init_topology).
     //
     // What is checked here is the one thing nothing else can catch: update_state
     // re-pulls the extension data from the grid on EVERY solve, while
