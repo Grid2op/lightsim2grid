@@ -123,6 +123,22 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [ADDED] ``TimeSeriesCPP`` / ``ContingencyAnalysisCPP`` (and so ``SecurityAnalysis``, which wraps the
+  latter) gained a string-based ``change_algorithm(name)`` overload and a ``get_algo_name()`` accessor,
+  matching what ``LSGrid`` already had (``AlgorithmSelector::change_algorithm(const std::string&)``) --
+  needed to select a plugin solver, or a built-in with no dedicated ``AlgorithmType`` enum member (eg
+  ``NRRefactorRetry_KLU``), for a batch computation, which was previously impossible: only the
+  enum-based overload was exposed, and ``AlgorithmType::Custom`` (what such solvers collapse onto) is
+  rejected by ``change_algorithm(AlgorithmType)``. Also bound ``available_algorithm_names()`` on both
+  classes for the same reason -- previously only ``available_default_algorithms()`` (the enum-only,
+  plugin-blind list) was exposed.
+- [FIXED] two bugs this exposed, both the same "propagate the algorithm via ``AlgorithmType`` instead of
+  by registry name" mistake: (1) ``BaseBatchSolverSynch``'s constructor inherited the source ``LSGrid``'s
+  AC algorithm via ``get_algo_type()`` (the enum), so constructing a ``TimeSeries`` /
+  ``ContingencyAnalysis`` / ``SecurityAnalysis`` from a grid running a plugin or no-enum-member solver
+  raised immediately; (2) ``ContingencyAnalysis``'s multi-threaded path (``nb_thread > 1``) rebuilt each
+  per-thread solver the same lossy way. Both now propagate by name (``get_algo_name()`` /
+  ``get_algo().get_name()``). See ``test_batch_algorithm_solver_selection.py`` for the regression tests.
 - [ADDED] closed the last two gaps in the benchmark narrative-generation work above:
 
   - ``benchmarks/benchmark_grid_size.py`` gained a ``generate_narrative`` (recycling vs no-recycling,
