@@ -757,13 +757,16 @@ void ContingencyAnalysis::compute(const Eigen::Ref<const CplxVect> & Vinit, int 
     // each worker builds its own solver / control / Ybus copy IN-THREAD so this
     // (non-trivial) setup -- in particular the full sparse Ybus_ copy -- runs in
     // parallel instead of serially on the main thread. Only reads shared state
-    // (_grid_model, _algo config, get_algo_type()); each thread writes solely its
+    // (_grid_model, _algo config, get_algo_name()); each thread writes solely its
     // own slot of the pre-sized vectors, so no locking is needed.
+    // Uses the *name*-based overload, not get_algo_type(): a plugin (or
+    // no-enum-member built-in like NRRefactorRetry_*) solver reports
+    // AlgorithmType::Custom, which change_algorithm(AlgorithmType) rejects.
     auto init_thread = [&](int t){
         algos[t] = std::make_unique<AlgorithmSelector>();
         AlgorithmSelector & algo = *algos[t];
         algo.set_lsgrid(&_grid_model);
-        algo.change_algorithm(get_algo_type());
+        algo.change_algorithm(get_algo_name());
         algo.set_config(_algo.get_config());  // match the member solver's configuration
         controls[t] = _algo_controler;
         ybus_copies[t] = Ybus_;  // thread-local working copy of the admittance

@@ -54,10 +54,16 @@ void bind_batch(py::module_& m) {
                       "Default: false")
 
         // solver control
-        .def("change_algorithm", &TimeSeries::change_algorithm, DocLSGrid::change_algorithm.c_str())
-        .def("change_solver", &TimeSeries::change_algorithm, "DEPRECATED: use 'change_algorithm' instead")
+        .def("change_algorithm", py::overload_cast<const AlgorithmType&>(&TimeSeries::change_algorithm), DocLSGrid::change_algorithm.c_str())
+        .def("change_algorithm", py::overload_cast<const std::string&>(&TimeSeries::change_algorithm), DocLSGrid::change_algorithm_by_name.c_str())
+        .def("change_solver", py::overload_cast<const AlgorithmType&>(&TimeSeries::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
+        .def("change_solver", py::overload_cast<const std::string&>(&TimeSeries::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
         .def("available_default_algorithms", &TimeSeries::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
+        .def("available_algorithm_names", &TimeSeries::available_algorithm_names, DocLSGrid::available_algorithm_names.c_str())
         .def("get_algo_type", &TimeSeries::get_algo_type, DocLSGrid::get_algo_type.c_str())
+        .def("get_algo_name", &TimeSeries::get_algo_name,
+             "Registry name of the currently selected algorithm. Unlike get_algo_type(), stays "
+             "meaningful for plugin solvers (and built-ins with no dedicated AlgorithmType member).")
         .def("get_algo_config", &TimeSeries::get_algo_config,
              "Config (eg ScalingPolicyType / damping parameters) of the internal solver used for "
              "every step. Copied once from the grid model's own get_ac_algo_config() at "
@@ -134,10 +140,16 @@ void bind_batch(py::module_& m) {
                       "clamped to 1.")
 
         // solver control
-        .def("change_algorithm", &ContingencyAnalysis::change_algorithm, DocLSGrid::change_algorithm.c_str())
-        .def("change_solver", &ContingencyAnalysis::change_algorithm, "DEPRECATED: use 'change_algorithm' instead")
+        .def("change_algorithm", py::overload_cast<const AlgorithmType&>(&ContingencyAnalysis::change_algorithm), DocLSGrid::change_algorithm.c_str())
+        .def("change_algorithm", py::overload_cast<const std::string&>(&ContingencyAnalysis::change_algorithm), DocLSGrid::change_algorithm_by_name.c_str())
+        .def("change_solver", py::overload_cast<const AlgorithmType&>(&ContingencyAnalysis::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
+        .def("change_solver", py::overload_cast<const std::string&>(&ContingencyAnalysis::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
         .def("available_default_algorithms", &ContingencyAnalysis::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
+        .def("available_algorithm_names", &ContingencyAnalysis::available_algorithm_names, DocLSGrid::available_algorithm_names.c_str())
         .def("get_algo_type", &ContingencyAnalysis::get_algo_type, DocLSGrid::get_algo_type.c_str())
+        .def("get_algo_name", &ContingencyAnalysis::get_algo_name,
+             "Registry name of the currently selected algorithm. Unlike get_algo_type(), stays "
+             "meaningful for plugin solvers (and built-ins with no dedicated AlgorithmType member).")
         .def("get_algo_config", &ContingencyAnalysis::get_algo_config,
              "Config (eg ScalingPolicyType / damping parameters) of the internal solver used for "
              "the pre-contingency ('n') and every per-contingency powerflow. Copied once from the "

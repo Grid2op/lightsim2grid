@@ -49,7 +49,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // n-1 powerflows run here can converge to a different root than
                 // (or fail to converge unlike) init_grid_model.ac_pf() -- same class
                 // of bug as the one just fixed in LSGrid's copy constructor.
-                _algo.change_algorithm(init_grid_model.get_algo_type());
+                // Inherit by *name*, not AlgorithmType: the enum collapses every
+                // plugin (and every built-in with no dedicated enum member, eg
+                // NRRefactorRetry_*) onto AlgorithmType::Custom, for which
+                // AlgorithmSelector::change_algorithm(AlgorithmType) unconditionally
+                // throws -- so a grid using such a solver could never be handed to
+                // TimeSeries / ContingencyAnalysis / SecurityAnalysis at all.
+                _algo.change_algorithm(init_grid_model.get_algo().get_name());
                 _algo.set_config(init_grid_model.get_ac_algo_config());
             }
         virtual ~BaseBatchSolverSynch() noexcept = default;  // to avoid warning about overload virtual
@@ -66,18 +72,29 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _algo.change_algorithm(type);
             this->clear();
         }
-        
+        // String-based overload: looks up the solver by registry name, so it
+        // works for plugin solvers (and built-ins with no dedicated AlgorithmType
+        // member, eg NRRefactorRetry_*) which change_algorithm(AlgorithmType)
+        // cannot reach (AlgorithmType::Custom is rejected there).
+        virtual void change_algorithm(const std::string & name){
+            _algo.change_algorithm(name);
+            this->clear();
+        }
+
         // Returns the enum-typed solvers available in this build.
         // Does not include plugin (Custom) solvers; use AlgorithmRegistry::available_default_algorithms()
         // for the full list.
         std::vector<AlgorithmType> available_default_algorithms() const {return _algo.available_default_algorithms(); }
-        
+
         // Returns all solver names currently registered (built-in + plugins).
         std::vector<std::string> available_algorithm_names() const {
             return AlgorithmRegistry::instance().available_algorithm_names();
         }
 
         AlgorithmType get_algo_type() const {return _algo.get_type(); }
+        // Registry name of the currently selected algorithm. Unlike get_algo_type(),
+        // stays meaningful for plugin / no-enum-member solvers (see AlgorithmSelector::get_name()).
+        const std::string & get_algo_name() const {return _algo.get_name(); }
 
         // the config (eg ScalingPolicyType / damping parameters) of the internal
         // solver used for every n / n-1 powerflow here. This is a fresh, independent
