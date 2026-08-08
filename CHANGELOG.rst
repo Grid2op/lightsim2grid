@@ -143,6 +143,16 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   picked up for free -- an enumeration falling behind is precisely what caused this bug.
   ``ContingencyAnalysisCPP`` (and ``SecurityAnalysis``, which wraps it) was never affected: it passes
   the gridmodel's own complete ``Sbus_`` straight to the solver.
+- [ADDED] a stale-solver-state case to ``src/tests/test_batch_voltage_control.cpp``: run ``ac_pf``,
+  then change the grid so a bus leaves the solver (which makes the AC maps stale AND too long, worse
+  than merely empty), then ``dc_pf`` (which rebuilds only the DC maps), then a batch -- which inherits
+  the grid's AC algorithm, since ``LSGrid::change_algorithm`` routes a DC type to the separate
+  ``_dc_algo`` slot and so asking the GRID for DC never switches a batch over. The batch must still
+  reproduce a clean single-shot ``ac_pf``, which it does because it works on a copy of the grid whose
+  copy constructor ``reset()`` the solver state and whose ``prepare_solver_input_base`` rebuilds it
+  under ``tell_all_changed()``. Being a C++ test it runs under the valgrind pass of the C++ suite and
+  the ASan/UBSan + Eigen-assertion builds, where a too-long index that stays inside the heap would
+  still be caught.
 - [ADDED] ``src/tests/test_timeseries_sbus.cpp`` and ``lightsim2grid/tests/test_timeseries_sbus.py``:
   a one-step time series fed the grid's OWN injections must reproduce ``ac_pf`` / ``dc_pf`` exactly.
   Covers each dropped element kind separately and all of them together, in ac and in dc, plus a

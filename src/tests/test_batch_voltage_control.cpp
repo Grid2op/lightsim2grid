@@ -42,6 +42,7 @@ using Catch::Approx;
 using ls2g::AlgorithmType;
 using ls2g::ContingencyAnalysis;
 using ls2g::CplxVect;
+using ls2g::GlobalBusId;
 using ls2g::IntVect;
 using ls2g::LSGrid;
 using ls2g::RealVect;
@@ -416,5 +417,108 @@ TEST_CASE("a contingency stranding a regulated bus is reported, not silently wro
         REQUIRE(ca.converged().size() == 1);
         CHECK(ca.converged()[0] == 0);
         for (int b = 0; b < NB_BUS; ++b) CHECK(std::abs(ca.get_voltages()(0, b)) == 0.);
+    }
+}
+
+TEST_CASE("stale solver state on the source grid cannot leak into a batch", "[batch][stale]")
+{
+    // The nastiest shape of the mapping bug this file is about is not an EMPTY
+    // member but a stale NON-empty one, sized for a grid that no longer exists:
+    //
+    //   1. ac_pf runs                -> the AC maps are built for N buses
+    //   2. the grid changes so that a bus leaves the solver
+    //                                -> the AC maps are now wrong, and still N long
+    //   3. dc_pf runs                -> the DC maps are rebuilt at N-1; AC stays stale
+    //   4. a batch is built and runs  -> it inherits the grid's AC algorithm
+    //                                   (LSGrid::change_algorithm routes a DC type to
+    //                                   the separate _dc_algo slot, so asking the GRID
+    //                                   for DC never switches a batch over)
+    //
+    // A stale map is worse than an empty one: an empty one reads as "nothing to do",
+    // while a too-long one indexes past the end of the current solver vectors. What
+    // makes this safe is that a batch never reads the source grid's solver state --
+    // BaseBatchSolverSynch copies the grid (and LSGrid's copy constructor reset()s all
+    // of it), then prepare_solver_input_base calls tell_all_changed() before
+    // pre_process_solver, rebuilding every mapping from scratch on that copy.
+    //
+    // This case is deliberately cheap and allocation-light so it also runs under the
+    // valgrind pass of the C++ suite and the ASan/UBSan + Eigen-assertion builds,
+    // where an out-of-bounds read that stays inside the heap would still be caught.
+    const int nb_bus = 5;
+    auto build = [](LSGrid & grid) {
+        grid.set_sn_mva(100.);
+        grid.set_init_vm_pu(1.0);
+        grid.init_bus(static_cast<unsigned int>(nb_bus), 1, RealVect::Constant(nb_bus, 138.), 0, 0);
+        // lines 0:0-1, 1:1-2, 2:2-3, 3:1-4 -- bus 4 hangs off bus 1 by line 3 alone
+        Eigen::VectorXi f(4), t(4);
+        f << 0, 1, 2, 1;
+        t << 1, 2, 3, 4;
+        grid.init_powerlines(RealVect::Constant(4, 0.01), RealVect::Constant(4, 0.1),
+                             CplxVect::Zero(4), f, t);
+        RealVect lp(2), lq(2);
+        lp << LOAD_P, 5.;
+        lq << LOAD_Q, 1.;
+        Eigen::VectorXi lb(2);
+        lb << 3, 4;                      // load 1 is the only element on bus 4
+        grid.init_loads(lp, lq, lb);
+
+        RealVect gp(2), gv(2), gqn(2), gqx(2);
+        Eigen::VectorXi gb(2);
+        gp << 0., 0.;
+        gv << 1.02, V_SET;
+        gqn << -1000., -1000.;
+        gqx << 1000., 1000.;
+        gb << 0, 1;
+        grid.init_generators(gp, gv, gqn, gqx, gb);
+        grid.add_gen_slackbus(0, 1.);
+        grid.set_gen_regulated_bus(1, 3);   // remote control: needs id_ac_solver_to_me_
+        grid.tell_solver_need_reset();
+    };
+    // takes bus 4 out of the solver: open its only line and its only load
+    auto strand_bus_4 = [](LSGrid & grid) {
+        grid.deactivate_powerline(3);
+        grid.deactivate_load(1);
+        grid.deactivate_bus(GlobalBusId(4));
+    };
+    const CplxVect V0 = CplxVect::Constant(nb_bus, cplx_type(1., 0.));
+
+    LSGrid grid;
+    build(grid);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    REQUIRE(grid.ac_pf(V0, 30, 1e-11).size() == nb_bus);
+    // the AC maps now describe the FULL grid
+    REQUIRE(static_cast<int>(grid.id_ac_solver_to_me().size()) == nb_bus);
+
+    strand_bus_4(grid);
+    grid.change_algorithm(AlgorithmType::DC_SparseLU);
+    REQUIRE(grid.dc_pf(V0, 30, 1e-11).size() == nb_bus);
+    // the DC maps followed the change; the AC ones are still the old, too-long ones.
+    // If they were not, this test would be vacuous.
+    REQUIRE(static_cast<int>(grid.id_dc_solver_to_me().size()) == nb_bus - 1);
+    REQUIRE(static_cast<int>(grid.id_ac_solver_to_me().size()) == nb_bus);
+
+    // the batch inherits the AC algorithm and must nonetheless reproduce a clean
+    // single-shot ac_pf of the stranded grid
+    TimeSeries ts(grid);
+    RealMat gen_p(1, 2), sgen_p(1, 0), load_p(1, 2), load_q(1, 2);
+    gen_p << 0., 0.;
+    load_p << LOAD_P, 5.;
+    load_q << LOAD_Q, 1.;
+    REQUIRE(ts.compute_Vs(gen_p, sgen_p, load_p, load_q, V0, 30, 1e-11) == 1);
+    const CplxVect Vts = ts.get_voltages().row(0);
+
+    LSGrid ref;
+    build(ref);
+    strand_bus_4(ref);
+    ref.change_algorithm(AlgorithmType::NR_SparseLU);
+    const CplxVect Vref = ref.ac_pf(V0, 30, 1e-11);
+    REQUIRE(Vref.size() == nb_bus);
+    CHECK(std::abs(Vref(3)) == Approx(V_SET).epsilon(1e-8));  // control still applied
+
+    for (int b = 0; b < nb_bus; ++b) {
+        if (b == 4) continue;  // stranded: the batch reports 0, ac_pf reports init_vm_pu
+        INFO("bus " << b);
+        CHECK(std::abs(Vts(b)) == Approx(std::abs(Vref(b))).epsilon(1e-9));
+        CHECK(std::arg(Vts(b)) == Approx(std::arg(Vref(b))).margin(1e-10));
     }
 }
