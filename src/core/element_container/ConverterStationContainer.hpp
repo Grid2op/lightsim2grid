@@ -127,21 +127,19 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
         real_type get_qmax(int station_id) const {return max_q_.coeff(station_id);}
         real_type get_target_p(int station_id) const {return target_p_mw_(station_id);}
         real_type get_target_vm_pu(int station_id) const {return target_vm_pu_(station_id);}
-        // true iff an ACTIVE voltage-regulating station of this container sits on
-        // `bus` and therefore pins its magnitude -- exactly the gating `fillpv`
-        // below uses. Read by LSGrid::fillpv_pq: a converter station is NOT a
-        // VoltageControl controller (only GEN / SVC are), so a bus it pins cannot
-        // be handed over to a control group, and the configuration has to be
-        // rejected rather than silently stripped of the station's regulation.
-        bool pins_bus_voltage(GlobalBusId bus) const {
-            const int nb_station = nb();
-            for(int station_id = 0; station_id < nb_station; ++station_id){
-                if(!status_[station_id]) continue;
-                if(!voltage_regulator_on_[station_id]) continue;
-                if(bus_id_(station_id).cast_int() == bus.cast_int()) return true;
-            }
-            return false;
+        // true iff this station is an ACTIVE voltage regulator, i.e. it pins the
+        // magnitude of its own bus -- exactly the gating `fillpv` below uses. When a
+        // control group regulates that bus instead, the station is enrolled as a
+        // member of the group (LSGrid::fill_voltage_control_solver_data) rather than
+        // pinning it, just like a generator in the same position.
+        bool is_voltage_controller(int station_id) const {
+            if(!status_[station_id]) return false;
+            if(!voltage_regulator_on_[station_id]) return false;
+            return true;
         }
+        // write the converged reactive output (MVAr) of a station that took part in a
+        // VoltageControl group, supplied by the extension (LSGrid::compute_results)
+        void set_voltage_control_q(int station_id, real_type q_mvar) {res_q_(station_id) = q_mvar;}
 
         /**
          * Set the (derived) station active power, generator convention.

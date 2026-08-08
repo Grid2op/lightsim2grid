@@ -140,9 +140,10 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   Bus classification now runs the other way round: ``LSGrid::get_group_controlled_buses`` collects
   every bus an active *remote* generator or an active voltage-mode SVC aims at, ``LSGrid::fillpv_pq``
   keeps those out of PV, and ``fill_voltage_control_solver_data`` enrols the local regulators sitting
-  on them as members of the group. Buses regulated only by generators standing on them are
-  deliberately untouched: several machines sharing a bus and all regulating it locally remains the
-  ordinary PV case, with the per-bus reactive redistribution of ``GeneratorContainer::set_q``.
+  on them -- generators and voltage-regulating hvdc converter stations alike -- as members of the
+  group. Buses regulated only by things standing on them are deliberately untouched: several machines
+  sharing a bus and all regulating it locally remains the ordinary PV case, with the per-bus reactive
+  redistribution of ``GeneratorContainer::set_q``.
   Three configurations start working as a result: a remote controller onto a locally regulated bus,
   a remote controller onto a slack bus pinned by its own generator (the slack generator joins the
   group and MultiSlack grants the free ``Vm``), and -- separately, by giving the regulated-bus check
@@ -154,9 +155,14 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   has no solution at all: whatever reactive power it injects there is absorbed one-for-one by the
   machine holding that bus' magnitude, so it has no influence on its remote target -- no
   reclassification can help, and the "its OWN bus has no reactive (Q) equation" error still fires.
-  And an hvdc converter station cannot join a control group (the group only knows ``GEN`` and ``SVC``
-  kinds), so a bus a station voltage-pins while a group also regulates it is rejected with an
-  explicit message from ``fillpv_pq`` rather than silently losing the station's regulation.
+  Voltage-regulating hvdc converter stations take part on the same footing as generators. A VSC
+  station with ``voltage_regulator_on`` pins its own bus through the very same PV path, so it is
+  enrolled into the group whenever a controller claims that bus -- two new controller kinds,
+  ``VoltageControlSolverData::HVDC_SIDE_1`` / ``HVDC_SIDE_2``, with the hvdc LINE id as ``elem_id``
+  and the solved reactive output written back to the station. Its sharing key is a reactive range in
+  MVAr, the same currency as a generator's, so a mixed generator/station group shares reactive power
+  correctly (a group of a local generator, a remote generator and a station splits ``Q`` three ways
+  by range).
   Note for voltage-mode SVCs: their regulated bus now leaves the PV path as well, which is what makes
   the classification uniform, but an SVC still has to be the only controller of its bus in v1 (its
   sharing key is a susceptance range, not a reactive range, so mixed SVC/generator sharing has no
@@ -164,9 +170,10 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   names the real limitation.
 - [ADDED] ``src/tests/test_voltage_control_reclassify.cpp`` and
   ``lightsim2grid/tests/test_voltage_control_reclassify.py``: the classification rule itself, the
-  three newly-supported configurations (including the reactive split), the two that must stay
-  refused, and a regression guard that several purely local regulators on one bus still take the
-  classical PV path and produce bit-identical voltages.
+  newly-supported configurations (including the reactive split, and hvdc stations sharing a bus with
+  generators on either end of the line), the ones that must stay refused, and regression guards that
+  several purely local regulators on one bus -- and a lone voltage-regulating station -- still take
+  the classical PV path and produce bit-identical voltages.
 - [ADDED] ``TimeSeriesCPP`` / ``ContingencyAnalysisCPP`` (and so ``SecurityAnalysis``, which wraps the
   latter) gained a string-based ``change_algorithm(name)`` overload and a ``get_algo_name()`` accessor,
   matching what ``LSGrid`` already had (``AlgorithmSelector::change_algorithm(const std::string&)``) --

@@ -355,9 +355,31 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             side_2_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);
         }
 
-        // see ConverterStationContainer::pins_bus_voltage
-        bool pins_bus_voltage(GlobalBusId bus) const {
-            return side_1_.pins_bus_voltage(bus) || side_2_.pins_bus_voltage(bus);
+        // ---- voltage-regulating converter stations as VoltageControl controllers ----
+        // A VSC station with voltage_regulator_on pins its own bus through the PV
+        // path, exactly like a local generator. When a control group regulates that
+        // bus instead, the station joins the group; its sharing key is a reactive
+        // range in MVAr, the same currency as a generator's, so a mixed
+        // generator/station group shares reactive power correctly.
+        // `side` is 1 or 2 (see VoltageControlSolverData::HVDC_SIDE_1 / _SIDE_2).
+        bool station_is_voltage_controller(int hvdc_id, int side) const {
+            return side == 1 ? side_1_.is_voltage_controller(hvdc_id)
+                             : side_2_.is_voltage_controller(hvdc_id);
+        }
+        GlobalBusId get_station_bus(int hvdc_id, int side) const {
+            return side == 1 ? get_bus_side_1(hvdc_id) : get_bus_side_2(hvdc_id);
+        }
+        real_type get_station_target_vm_pu(int hvdc_id, int side) const {
+            return side == 1 ? side_1_.get_target_vm_pu(hvdc_id)
+                             : side_2_.get_target_vm_pu(hvdc_id);
+        }
+        real_type get_station_q_range_mvar(int hvdc_id, int side) const {
+            return side == 1 ? side_1_.get_qmax(hvdc_id) - side_1_.get_qmin(hvdc_id)
+                             : side_2_.get_qmax(hvdc_id) - side_2_.get_qmin(hvdc_id);
+        }
+        void set_station_voltage_control_q(int hvdc_id, int side, real_type q_mvar) {
+            if(side == 1) side_1_.set_voltage_control_q(hvdc_id, q_mvar);
+            else          side_2_.set_voltage_control_q(hvdc_id, q_mvar);
         }
 
         void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,

@@ -10,11 +10,13 @@
 // bordered VoltageControl group?
 //
 // The rule (LSGrid::get_group_controlled_buses, applied in LSGrid::fillpv_pq): a bus
-// keeps the PV treatment as long as the only things regulating it are generators
-// sitting ON it. As soon as an ACTIVE REMOTE regulator -- or any voltage-mode SVC,
-// which is always a group controller -- aims at the bus, the bus keeps its own Vm
-// unknown and every regulator of it, local ones included, becomes a member of the
-// group.
+// keeps the PV treatment as long as the only things regulating it stand ON it --
+// generators, or voltage-regulating hvdc converter stations. As soon as an ACTIVE
+// REMOTE regulator -- or any voltage-mode SVC, which is always a group controller --
+// aims at the bus, the bus keeps its own Vm unknown and every regulator of it, the
+// local ones included, becomes a member of the group. Generators and converter
+// stations share on the same key (a reactive range in MVAr); an SVC's key is a
+// susceptance range, which is why an SVC must still be alone in its group.
 //
 // The bug this pins: fillpv only knew how to keep a controller's OWN bus out of PV.
 // A local regulator standing on somebody else's regulated bus still claimed it as
@@ -99,6 +101,36 @@ void add_voltage_svc(LSGrid & grid, int svc_bus, int reg_bus,
     grid.init_svcs({1}, tv, qs, sl, bmin, bmax, reg, bus);   // RegulationMode::VOLTAGE
 }
 
+// One VSC-VSC hvdc line between `bus_1` and `bus_2`, fixed active setpoint (no
+// droop). `vreg_1` / `vreg_2` say whether each station regulates the magnitude of
+// its own bus, at `target_vm_pu`, with +/- q_range/2 MVAr of reactive capability.
+void add_vreg_hvdc(LSGrid & grid, int bus_1, int bus_2,
+                   bool vreg_1, bool vreg_2,
+                   real_type target_vm_pu, real_type q_range_mvar,
+                   real_type p_setpoint_mw = 0.)
+{
+    Eigen::VectorXi b1(1), b2(1);
+    b1 << bus_1;
+    b2 << bus_2;
+    const std::vector<int> type1{0}, type2{0}, mode{0};   // VSC / VSC, side 1 rectifier
+    const std::vector<bool> vr1{vreg_1}, vr2{vreg_2}, droop_off{false};
+    const RealVect zero = RealVect::Zero(1);
+    RealVect vm1(1), vm2(1), qmin(1), qmax(1), pf1(1), pf2(1), pset(1), pmax(1);
+    vm1 << target_vm_pu;
+    vm2 << target_vm_pu;
+    qmin << -0.5 * q_range_mvar;
+    qmax << 0.5 * q_range_mvar;
+    pf1 << 1.;
+    pf2 << 1.;
+    pset << p_setpoint_mw;
+    pmax << 300.;
+    grid.init_hvdc_lines(b1, b2, type1, type2, zero, zero,
+                         vr1, vr2, vm1, vm2, zero, zero,
+                         qmin, qmax, qmin, qmax, pf1, pf2, mode, pset,
+                         zero, zero, droop_off, zero, zero, pmax, pmax);
+    grid.tell_solver_need_reset();
+}
+
 CplxVect flat(const LSGrid & g)
 {
     return CplxVect::Constant(static_cast<Eigen::Index>(g.total_bus()), cplx_type(1., 0.));
@@ -118,6 +150,17 @@ real_type gen_ctrl_q(const LSGrid & g, int gen_id)
     const IntVect elem = g.get_algo().get_controller_elem_id();
     for (int c = 0; c < q.size(); ++c)
         if (kind(c) == ls2g::VoltageControlSolverData::GEN && elem(c) == gen_id) return q(c);
+    return std::nan("");
+}
+
+// reactive output (pu) of the controller of the given kind and element id
+real_type ctrl_q_of(const LSGrid & g, int want_kind, int want_elem)
+{
+    const RealVect q = g.get_algo().get_controller_q();
+    const IntVect kind = g.get_algo().get_controller_kind();
+    const IntVect elem = g.get_algo().get_controller_elem_id();
+    for (int c = 0; c < q.size(); ++c)
+        if (kind(c) == want_kind && elem(c) == want_elem) return q(c);
     return std::nan("");
 }
 
@@ -301,4 +344,101 @@ TEST_CASE("an SVC alone on a locally-free bus still works", "[reclassify][svc]")
     const CplxVect V = solve(g);
     REQUIRE(V.size() == NB_BUS);
     CHECK(std::abs(V(3)) == Approx(V_SET).epsilon(1e-8));
+}
+
+TEST_CASE("a voltage-regulating hvdc station keeps the PV path when nothing else claims its bus",
+          "[reclassify][hvdc]")
+{
+    // the control: an hvdc station regulating its own bus, with no group anywhere.
+    // It pins the bus exactly as before -- no controller is built for it.
+    LSGrid g = make_skeleton();
+    add_gens(g, {0}, {1.02}, {2000.});
+    g.add_gen_slackbus(0, 1.);
+    add_vreg_hvdc(g, /*bus_1=*/1, /*bus_2=*/3, /*vreg_1=*/true, /*vreg_2=*/false,
+                  V_SET, /*q_range_mvar=*/600.);
+
+    CHECK(g.get_group_controlled_buses().empty());
+    const CplxVect V = solve(g);
+    REQUIRE(V.size() == NB_BUS);
+    CHECK(std::abs(V(1)) == Approx(V_SET).epsilon(1e-8));
+    CHECK(g.get_algo().get_controller_q().size() == 0);  // PV path, no group
+}
+
+TEST_CASE("a voltage-regulating hvdc station joins the group that claims its bus",
+          "[reclassify][hvdc]")
+{
+    // hvdc side 1 sits on bus 1 and regulates it; gen 1 (bus 2) aims at bus 1
+    // remotely with the same setpoint. Bus 1 leaves the PV path, and the station is
+    // enrolled alongside the generator instead of having its regulation dropped.
+    LSGrid g = make_skeleton();
+    add_gens(g, {0, 2}, {1.02, V_SET}, {2000., 500.});
+    g.add_gen_slackbus(0, 1.);
+    g.set_gen_regulated_bus(1, 1);          // gen 1 -> bus 1, where the station is
+    add_vreg_hvdc(g, 1, 3, true, false, V_SET, /*q_range_mvar=*/2000.);
+
+    CHECK(g.get_group_controlled_buses().count(1) == 1);
+    const CplxVect V = solve(g);
+    REQUIRE(V.size() == NB_BUS);
+    CHECK(std::abs(V(1)) == Approx(V_SET).epsilon(1e-8));
+
+    // two controllers in the group: the generator and the side-1 station, sharing
+    // reactive power in proportion to their MVAr ranges (500 against 2000)
+    REQUIRE(g.get_algo().get_controller_q().size() == 2);
+    const real_type q_gen = ctrl_q_of(g, ls2g::VoltageControlSolverData::GEN, 1);
+    const real_type q_sta = ctrl_q_of(g, ls2g::VoltageControlSolverData::HVDC_SIDE_1, 0);
+    REQUIRE(std::isfinite(q_gen));
+    REQUIRE(std::isfinite(q_sta));
+    REQUIRE(std::abs(q_gen) > 1e-6);
+    CHECK(q_gen / 500. == Approx(q_sta / 2000.).epsilon(1e-8));
+
+    // and the write-back reached the station's own result, in MVAr
+    const real_type res_q_mvar = g.get_dclines()[0].station_side_1.res_q_mvar;
+    CHECK(res_q_mvar == Approx(q_sta * 100.).epsilon(1e-8));   // sn_mva == 100
+}
+
+TEST_CASE("the far hvdc station may be the one in the group", "[reclassify][hvdc]")
+{
+    // same, on side 2, so the HVDC_SIDE_2 kind and its write-back are exercised too
+    LSGrid g = make_skeleton();
+    add_gens(g, {0, 1}, {1.02, V_SET}, {2000., 500.});
+    g.add_gen_slackbus(0, 1.);
+    g.set_gen_regulated_bus(1, 2);          // gen 1 -> bus 2, the side-2 station bus
+    add_vreg_hvdc(g, 1, 2, false, true, V_SET, /*q_range_mvar=*/2000.);
+
+    CHECK(g.get_group_controlled_buses().count(2) == 1);
+    const CplxVect V = solve(g);
+    REQUIRE(V.size() == NB_BUS);
+    CHECK(std::abs(V(2)) == Approx(V_SET).epsilon(1e-8));
+
+    REQUIRE(g.get_algo().get_controller_q().size() == 2);
+    const real_type q_sta = ctrl_q_of(g, ls2g::VoltageControlSolverData::HVDC_SIDE_2, 0);
+    REQUIRE(std::isfinite(q_sta));
+    CHECK(g.get_dclines()[0].station_side_2.res_q_mvar == Approx(q_sta * 100.).epsilon(1e-8));
+}
+
+TEST_CASE("a generator, an hvdc station and one regulated bus share it three ways",
+          "[reclassify][hvdc]")
+{
+    // a local generator AND an hvdc station on bus 1, plus a remote generator aiming
+    // at bus 1: one group of three, all keyed on MVAr ranges
+    LSGrid g = make_skeleton();
+    add_gens(g, {0, 1, 2}, {1.02, V_SET, V_SET}, {2000., 1000., 500.});
+    g.add_gen_slackbus(0, 1.);
+    g.set_gen_regulated_bus(2, 1);          // gen 2 (bus 2) -> bus 1
+    add_vreg_hvdc(g, 1, 3, true, false, V_SET, /*q_range_mvar=*/2000.);
+
+    const CplxVect V = solve(g);
+    REQUIRE(V.size() == NB_BUS);
+    CHECK(std::abs(V(1)) == Approx(V_SET).epsilon(1e-8));
+
+    REQUIRE(g.get_algo().get_controller_q().size() == 3);
+    const real_type q_local  = ctrl_q_of(g, ls2g::VoltageControlSolverData::GEN, 1);
+    const real_type q_remote = ctrl_q_of(g, ls2g::VoltageControlSolverData::GEN, 2);
+    const real_type q_sta    = ctrl_q_of(g, ls2g::VoltageControlSolverData::HVDC_SIDE_1, 0);
+    REQUIRE(std::isfinite(q_local));
+    REQUIRE(std::isfinite(q_remote));
+    REQUIRE(std::isfinite(q_sta));
+    REQUIRE(std::abs(q_remote) > 1e-6);
+    CHECK(q_local / 1000. == Approx(q_remote / 500.).epsilon(1e-8));
+    CHECK(q_sta / 2000.   == Approx(q_remote / 500.).epsilon(1e-8));
 }

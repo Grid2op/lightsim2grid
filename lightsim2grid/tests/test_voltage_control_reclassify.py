@@ -6,9 +6,10 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-"""A generator may remotely regulate a bus that another generator already regulates
-locally: the two simply form one control group, sharing the reactive duty in
-proportion to their ``qmax - qmin`` ranges.
+"""A generator may remotely regulate a bus that another generator -- or a
+voltage-regulating hvdc converter station -- already regulates locally: they simply
+form one control group, sharing the reactive duty in proportion to their
+``qmax - qmin`` ranges.
 
 That used to be refused. ``GeneratorContainer::fillpv`` only knew how to keep a
 controller's OWN bus out of the PV set; nothing stopped a local regulator from
@@ -25,12 +26,15 @@ it has no influence at all on its remote target.
 Companion C++ suite: ``src/tests/test_voltage_control_reclassify.cpp``.
 """
 
+import os
+import sys
 import warnings
 import unittest
 import numpy as np
 import pandapower as pp
 import pandapower.networks as pn
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore")
     from lightsim2grid.gridmodel import init_from_pandapower
@@ -147,6 +151,53 @@ class TestOrdinaryPVUnchanged(unittest.TestCase):
         # the added generator produces 0 MW and regulates the same bus to the same
         # value, so the operating point is unchanged
         self.assertLess(np.abs(V - Vref).max(), 1e-6)
+
+
+class TestHvdcStationInAGroup(unittest.TestCase):
+    """A voltage-regulating VSC converter station pins its bus through the very PV
+    path a local generator uses, so it belongs in the group machinery too: when a
+    remote controller claims that bus, the station has to be enrolled as a member
+    rather than quietly losing its regulation."""
+
+    # side-1 station goes on bus 2, which already carries gen 1 (a local regulator);
+    # gen 0 (bus 1) then aims at bus 2 remotely. All three must agree on the setpoint,
+    # otherwise the group's own setpoint check fires first.
+    REG_BUS = 2
+
+    def _make(self, with_remote_gen):
+        from _aux_make_hvdc import make_case14_hvdc
+        _, probe = _case14()
+        vset = probe.get_generators()[GEN_AT_BUS2].target_vm_pu   # gen 1's own setpoint
+        net, model = make_case14_hvdc(self.REG_BUS, 9, vreg1=True, vm1=vset,
+                                      droop_enabled=False, p_setpoint=0.0)
+        if with_remote_gen:
+            model.change_v_gen(GEN_AT_BUS1, vset)
+            model.set_gen_regulated_bus(GEN_AT_BUS1, self.REG_BUS)
+        model.tell_solver_need_reset()
+        return net, model, vset
+
+    def test_station_joins_the_group_and_carries_reactive_power(self):
+        net, model, vset = self._make(with_remote_gen=True)
+        V = _solve(model, net.bus.shape[0])
+        self.assertGreater(V.shape[0], 0, "ac_pf diverged")
+        self.assertLess(abs(abs(V[self.REG_BUS]) - vset), 1e-6,
+                        f"|V[{self.REG_BUS}]|={abs(V[self.REG_BUS]):.8f} != {vset:.8f}")
+
+        # the station carries reactive power, i.e. it was enrolled in the group and
+        # not silently stripped of its regulation
+        station_q = model.get_dclines()[0].res_q1_mvar
+        self.assertGreater(abs(station_q), 1e-6,
+                           "the hvdc station carries no reactive power: not enrolled")
+        # so does the remote generator, and so does the local one
+        self.assertGreater(abs(_gen_q_mvar(model, GEN_AT_BUS1)), 1e-6)
+
+    def test_station_alone_on_its_bus_keeps_the_pv_path(self):
+        # the control: no remote controller anywhere, so the station pins its bus
+        # exactly as it did before the reclassification existed
+        net, model, vset = self._make(with_remote_gen=False)
+        V = _solve(model, net.bus.shape[0])
+        self.assertGreater(V.shape[0], 0, "ac_pf diverged")
+        self.assertLess(abs(abs(V[self.REG_BUS]) - vset), 1e-6)
 
 
 if __name__ == "__main__":

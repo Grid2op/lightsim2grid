@@ -961,6 +961,45 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
         raws.push_back({ctrl_solver, reg_solver, svcs_.get_target_vm_pu(svc_id),
                         svcs_.get_slope_pu(svc_id), w, VoltageControlSolverData::SVC, svc_id});
     }
+
+    // ... and the voltage-regulating hvdc converter stations. A VSC station with
+    // voltage_regulator_on pins its own bus through the PV path, exactly like a local
+    // generator, so it is a controller only when a GROUP regulates that bus instead
+    // (fillpv_pq then kept the bus out of PV and it needs its members). Its sharing
+    // key is a reactive range in MVAr -- the same currency as a generator's -- so a
+    // mixed generator/station group shares reactive power correctly, unlike an SVC
+    // (whose key is a susceptance range; hence the SVC-alone restriction below).
+    const int nb_hvdc = static_cast<int>(hvdc_lines_.nb());
+    for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
+        for(int side = 1; side <= 2; ++side){
+            if(!hvdc_lines_.station_is_voltage_controller(hvdc_id, side)) continue;
+            const int ctrl_grid = hvdc_lines_.get_station_bus(hvdc_id, side).cast_int();
+            // not group-controlled: the station keeps pinning its bus the classical way
+            if(!group_reg.count(ctrl_grid)) continue;
+            if(ctrl_grid == GenericContainer::_deactivated_bus_id) continue;
+            const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
+            if(ctrl_solver == GenericContainer::_deactivated_bus_id){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::fill_voltage_control_solver_data: hvdc line " << hvdc_id
+                     << " side " << side << " regulates voltage but its bus is disconnected.";
+                throw std::runtime_error(exc_.str());
+            }
+            if(!is_pq[ctrl_solver] && !has_free_q[ctrl_solver]){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::fill_voltage_control_solver_data: hvdc line " << hvdc_id
+                     << " side " << side << " takes part in a voltage-control group but its"
+                        " bus has no reactive (Q) equation. This is not supported in v1.";
+                throw std::runtime_error(exc_.str());
+            }
+            const int kind = (side == 1) ? VoltageControlSolverData::HVDC_SIDE_1
+                                         : VoltageControlSolverData::HVDC_SIDE_2;
+            raws.push_back({ctrl_solver, ctrl_solver,   // a station regulates its OWN bus
+                            hvdc_lines_.get_station_target_vm_pu(hvdc_id, side),
+                            static_cast<real_type>(0.),
+                            hvdc_lines_.get_station_q_range_mvar(hvdc_id, side),
+                            kind, hvdc_id});
+        }
+    }
     if(raws.empty()) return;
 
     // 2. group by regulated solver bus (merge gens that share a regulated bus),
@@ -1731,20 +1770,9 @@ void LSGrid::fillpv_pq(const SolverBusIdVect& id_me_to_solver,
                 bus_pv_kept.push_back(bus_id_solver);
                 continue;
             }
-            // An hvdc converter station pins voltage through the same PV path but is
-            // NOT a VoltageControl controller (the group only knows GEN and SVC
-            // kinds), so it cannot be enrolled and its regulation would be silently
-            // discarded by the reclassification. Refuse loudly instead.
-            if(hvdc_lines_.pins_bus_voltage(GlobalBusId(bus_id_me))){
-                std::ostringstream exc_;
-                exc_ << "LSGrid::fillpv_pq: bus " << bus_id_me << " is regulated by a"
-                        " voltage-control group (a remote-regulating generator or a"
-                        " voltage-mode SVC aims at it) while also being voltage-pinned by"
-                        " an hvdc converter station. A converter station cannot join a"
-                        " control group, so this is not supported: either disable the"
-                        " station's voltage regulation or retarget the controller.";
-                throw std::runtime_error(exc_.str());
-            }
+            // Whatever pinned this bus through the PV path -- a local generator or a
+            // voltage-regulating hvdc converter station -- is enrolled as a member of
+            // the group by fill_voltage_control_solver_data instead.
             has_bus_been_added[bus_id_solver] = false;  // let the PQ loop take it
         }
         bus_pv.swap(bus_pv_kept);
@@ -1827,7 +1855,7 @@ void LSGrid::compute_results(bool ac){
     hvdc_lines_.set_q(reactive_mismatch, id_me_to_solver, ac,
                     total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
 
-    // VoltageControl (remote gen + SVC) write-back: the reactive output of the
+    // VoltageControl (gen / SVC / hvdc converter station) write-back: the reactive output of the
     // voltage-mode controllers is solved inside the NR system (not by the per-bus
     // redistribution above, which skips them). Pull it from the AC algorithm and
     // store it (pu -> MVAr). Empty for DC / non-NR algorithms.
@@ -1837,10 +1865,26 @@ void LSGrid::compute_results(bool ac){
         const IntVect  ctrl_elem = _algo.get_controller_elem_id();
         for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
             const real_type q_mvar = ctrl_q(i) * sn_mva_;
-            if(ctrl_kind(i) == VoltageControlSolverData::GEN){
-                generators_.set_voltage_control_q(ctrl_elem(i), q_mvar);
-            } else {  // VoltageControlSolverData::SVC
-                svcs_.set_voltage_control_q(ctrl_elem(i), q_mvar);
+            switch(ctrl_kind(i)){
+                case VoltageControlSolverData::GEN:
+                    generators_.set_voltage_control_q(ctrl_elem(i), q_mvar);
+                    break;
+                case VoltageControlSolverData::SVC:
+                    svcs_.set_voltage_control_q(ctrl_elem(i), q_mvar);
+                    break;
+                case VoltageControlSolverData::HVDC_SIDE_1:
+                    // elem_id is the hvdc LINE id for both station kinds
+                    hvdc_lines_.set_station_voltage_control_q(ctrl_elem(i), 1, q_mvar);
+                    break;
+                case VoltageControlSolverData::HVDC_SIDE_2:
+                    hvdc_lines_.set_station_voltage_control_q(ctrl_elem(i), 2, q_mvar);
+                    break;
+                default: {
+                    std::ostringstream exc_;
+                    exc_ << "LSGrid::compute_results: unknown voltage controller kind "
+                         << ctrl_kind(i) << ".";
+                    throw std::runtime_error(exc_.str());
+                }
             }
         }
     }
