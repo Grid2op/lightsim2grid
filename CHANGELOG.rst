@@ -1701,6 +1701,24 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   silently reported as an arbitrary one of ``LOW_VOLTAGE`` / ``HIGH_VOLTAGE``. That is a
   genuine input error, and the only way the two effective voltage bounds can end up crossed
   (see ``violation_threshold`` above).
+- [ADDED] ``src/tests/test_powerflow_algorithm.cpp``: a C++ (Catch2) test suite for the
+  Newton-Raphson system itself (``src/core/powerflow_algorithm/NRSystem*``) and its
+  ``MultiSlack`` / ``VoltageControl`` / ``Hvdc`` extensions. It drives an ``NRSystem``
+  phase by phase, the way ``NRAlgo::compute_pf`` does, and checks the internal
+  consistency the grid-level tests cannot see: the augmented Jacobian is square and
+  matches ``total_state_variables()``, every bus -> row / column map stays in range and
+  agrees with the ledger's registration pair lists, no Jacobian row or column is
+  structurally empty (which is how an unresolved feature entry shows up), a
+  ``status_droop`` flip changes values but not the sparsity pattern (so a linear solver
+  may reuse its symbolic factorization), bus masking is a pure value-level edit, and
+  ``clear_jacobian`` leaves a system that rebuilds bit-identically.
+- [ADDED] two jobs in ``.github/workflows/sanitizers.yml`` running the C++ (Catch2) test
+  suite under ASan + UBSan and under re-enabled Eigen / libstdc++ assertions
+  (``__SANITIZE=1`` / ``__DEBUG_ASSERTS=1``). The suite already ran under valgrind
+  (``cpp_unit_tests.yml``), but an index that is wrong while still inside its allocation
+  is invisible to both valgrind and ASan -- only the assertion build catches it. The test
+  binary itself (not just ``lightsim2grid_core``) is now compiled and linked with the
+  sanitizer flags, see ``src/tests/CMakeLists.txt``.
 
 [0.13.1]  2026-04-21
 --------------------

@@ -3,6 +3,18 @@
 # to surface memory issues (out-of-bounds, use-after-free, UB, silenced
 # assertions). Complements the functional suites on CircleCI, which run
 # against plain optimized builds.
+#
+# Two axes are covered here:
+#   - WHAT is instrumented: the python extension (asan_ubsan / debug_asserts,
+#     which need LD_PRELOAD to get the ASan runtime into an uninstrumented
+#     interpreter) and the standalone Catch2 binary of src/tests (the *_cpp
+#     jobs, natively linked against the sanitizer runtime -- no LD_PRELOAD, no
+#     CPython suppressions, and no python/grid2op install at all).
+#   - HOW it is instrumented: ASan+UBSan catches accesses OUTSIDE an allocation;
+#     the assertion builds catch accesses that are logically wrong but still
+#     INSIDE one (a wrong Eigen index into a large enough vector) -- invisible
+#     to both ASan and the valgrind run of the C++ unit tests workflow. Neither
+#     subsumes the other, hence four jobs.
 
 name: Sanitizers
 
@@ -104,3 +116,69 @@ jobs:
             test_ACPF \
             test_DCPF \
             test_solver_control
+
+  asan_ubsan_cpp:
+    # The Catch2 suite of src/tests under ASan + UBSan. The python jobs above
+    # exercise the same core through the extension module; this one adds the
+    # C++-only tests (the binary archive layer, the LSGrid / NRSystem tests)
+    # and, being a plain binary linked against the sanitizer runtime, needs
+    # neither LD_PRELOAD nor CPython suppressions.
+    name: ASan + UBSan C++ tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # eigen (transitive include of the core headers) and Catch2
+          submodules: true
+
+      - name: Configure
+        # standalone test project: no python, pybind11 or KLU involved.
+        # __SANITIZE=1 is picked up by src/core/CMakeLists.txt (for
+        # lightsim2grid_core) and by src/tests/CMakeLists.txt (for the test
+        # binary itself, which must be compiled AND linked with
+        # -fsanitize=address,undefined: ASan only instruments the translation
+        # units it compiles, and linking the executable with it is what puts
+        # the runtime first in the process).
+        run: __SANITIZE=1 cmake -S src/tests -B build_tests -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build
+        # catch_discover_tests runs the freshly built binary post-build to
+        # enumerate the TEST_CASEs, so the ASan options apply here too
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: __SANITIZE=1 cmake --build build_tests -j$(nproc)
+
+      - name: Run tests under ASan + UBSan
+        # Leak detection stays off, as in the python jobs: the Catch2 runner
+        # and the solver registry keep process-lifetime singletons alive by
+        # design. Real leaks in the tested code are covered by the valgrind
+        # run of the C++ unit tests workflow (--leak-check=full).
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ./build_tests/lightsim2grid_unit_tests
+
+  debug_asserts_cpp:
+    # The Catch2 suite of src/tests with the assertions an optimized build
+    # silences. An index that is wrong but still inside its allocation is
+    # invisible to BOTH valgrind (cpp_unit_tests.yml) and ASan (the job
+    # above): only Eigen's own bounds checks catch it, and NDEBUG turns them
+    # off. Release (not Debug) on purpose -- that is the configuration
+    # NDEBUG applies to, and the one -UNDEBUG then has to undo.
+    name: Eigen/libstdc++ assertions C++ tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: true
+
+      - name: Configure
+        # __DEBUG_ASSERTS=1 -> -UNDEBUG -D_GLIBCXX_ASSERTIONS on both
+        # lightsim2grid_core and the test binary (see src/tests/CMakeLists.txt)
+        run: __DEBUG_ASSERTS=1 cmake -S src/tests -B build_tests -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: __DEBUG_ASSERTS=1 cmake --build build_tests -j$(nproc)
+
+      - name: Run tests with assertions active
+        run: ctest --test-dir build_tests --output-on-failure
