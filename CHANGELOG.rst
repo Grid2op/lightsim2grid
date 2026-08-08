@@ -174,6 +174,40 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   generators on either end of the line), the ones that must stay refused, and regression guards that
   several purely local regulators on one bus -- and a lone voltage-regulating station -- still take
   the classical PV path and produce bit-identical voltages.
+- [FIXED] remote voltage control (remote-regulating generators and voltage-mode SVCs) and the free
+  ``Vm`` unknown of a distributed-slack participant were **silently ignored** by every batch
+  algorithm -- ``TimeSeriesCPP``, ``ContingencyAnalysisCPP`` and ``SecurityAnalysis``, ie everything
+  going through ``BaseBatchSolverSynch``. The powerflow still converged and still returned plausible
+  voltages, they were just the voltages of a grid with no such regulation: a silent wrong answer, not
+  an error. ``LSGrid::ac_pf`` was unaffected.
+  The NR extensions do not receive their data as solver arguments; they reach back into the
+  ``LSGrid`` through the algorithm's ``lsgrid_ptr`` and read its *member* solver-side labelling
+  (``LSGrid::get_free_vm_slack_solver_buses`` for ``Base``,
+  ``LSGrid::fill_hvdc_droop_solver_data`` for ``Hvdc``,
+  ``LSGrid::fill_voltage_control_solver_data`` for ``VoltageControl``).
+  ``ac_pf``/``dc_pf``/``check_solution`` pass those members straight to ``pre_process_solver``, so
+  they are always current there; the batch algorithms own local mapping vectors and pass those
+  instead, against a private *copy* of the grid whose copy constructor ``reset()`` all of it to
+  empty. ``_pre_process_solver_impl`` wrote only the FORWARD map (``id_me_to_ac_solver_``) back onto
+  the grid, so ``id_ac_solver_to_me_`` and ``slack_bus_id_ac_solver_`` stayed empty -- and empty is
+  indistinguishable from "this grid has no controller": ``fill_voltage_control_solver_data`` returns
+  on its ``nb_bus_solver == 0`` guard and ``get_free_vm_slack_solver_buses`` on its ``slack.empty()``
+  one, both without a word. The sync now covers the reverse map and both slack vectors, AC and DC.
+  The ``Hvdc`` angle-droop extension was never affected: it only ever read the forward map, the one
+  that was already synced (there is now a regression test pinning that too).
+  Two consequences worth knowing about. A grid whose voltage-control configuration is not supported
+  in v1 (eg a remote-regulating generator whose own bus carries no reactive equation) now raises from
+  ``fill_voltage_control_solver_data`` in the batch path as it always did in the single-shot one,
+  where before it was quietly accepted and solved without the regulation. And under
+  ``ContingencyAnalysis``'s ``handle_disconnected_grid`` mode, a contingency that strands a regulated
+  bus is now reported as a ``DIVERGENCE`` instead of converging with the regulation dropped: bus
+  masking is deliberately a value-only edit that must not touch the ``J`` pattern, so the bordered
+  voltage row survives against a bus the mask pins, and the system has no solution. An honest
+  non-result rather than a confident wrong one.
+- [ADDED] ``src/tests/test_batch_voltage_control.cpp``: solves the same grid single-shot through
+  ``LSGrid::ac_pf`` and through ``TimeSeries`` / ``ContingencyAnalysis``, and requires the voltages
+  to agree -- for a remote-regulating generator, a voltage-mode SVC (flat and sloped), a free-``Vm``
+  distributed-slack participant, and an hvdc angle droop.
 - [ADDED] ``TimeSeriesCPP`` / ``ContingencyAnalysisCPP`` (and so ``SecurityAnalysis``, which wraps the
   latter) gained a string-based ``change_algorithm(name)`` overload and a ``get_algo_name()`` accessor,
   matching what ``LSGrid`` already had (``AlgorithmSelector::change_algorithm(const std::string&)``) --

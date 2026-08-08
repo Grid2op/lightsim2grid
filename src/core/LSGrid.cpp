@@ -1452,15 +1452,33 @@ CplxVect LSGrid::_pre_process_solver_impl(
     if(is_ac) _algo.tell_solver_control(solver_control);
     else _dc_algo.tell_solver_control(solver_control);
 
-    // keep the member bus mapping in sync with the one we just built. The single-shot
-    // ac_pf / dc_pf pass the member itself as `id_me_to_solver` (self-assign, skipped
-    // below), but the batch algorithms (TimeSeries / ContingencyAnalysis) pass their own
-    // local vector. The hvdc droop extension reads the member through
-    // fill_hvdc_droop_solver_data(), so it must reflect the active mapping in every path.
+    // Keep the member solver-side labelling in sync with the vectors we just built.
+    // The single-shot ac_pf / dc_pf pass the members themselves (self-assign, skipped
+    // below), but the batch algorithms (TimeSeries / ContingencyAnalysis, through
+    // BaseBatchSolverSynch) own their local vectors and pass those -- while the solver
+    // still reaches back into this LSGrid through `lsgrid_ptr` to build its NR
+    // extensions:
+    //   Base           -> get_free_vm_slack_solver_buses()    (slack_bus_id_*_solver_)
+    //   Hvdc           -> fill_hvdc_droop_solver_data()       (id_me_to_*_solver_)
+    //   VoltageControl -> fill_voltage_control_solver_data()  (id_*_solver_to_me_,
+    //                       id_me_to_*_solver_, and the two above)
+    // A member left stale there does not read as an error, it reads as "nothing to
+    // do": the controller list comes back empty and the solve SILENTLY drops remote
+    // voltage control / the free Vm unknown of a distributed-slack participant. Note
+    // that the batch classes hold a *copy* of the grid, and LSGrid's copy constructor
+    // reset()s all of this, so stale here always means empty. Every member the
+    // extensions read must therefore reflect the active mapping in every path -- not
+    // just the forward map.
     if(is_ac){
         if(&id_me_to_solver != &id_me_to_ac_solver_) id_me_to_ac_solver_ = id_me_to_solver;
+        if(&id_solver_to_me != &id_ac_solver_to_me_) id_ac_solver_to_me_ = id_solver_to_me;
+        if(&slack_bus_id_me != &slack_bus_id_ac_me_) slack_bus_id_ac_me_ = slack_bus_id_me;
+        if(&slack_bus_id_solver != &slack_bus_id_ac_solver_) slack_bus_id_ac_solver_ = slack_bus_id_solver;
     } else {
         if(&id_me_to_solver != &id_me_to_dc_solver_) id_me_to_dc_solver_ = id_me_to_solver;
+        if(&id_solver_to_me != &id_dc_solver_to_me_) id_dc_solver_to_me_ = id_solver_to_me;
+        if(&slack_bus_id_me != &slack_bus_id_dc_me_) slack_bus_id_dc_me_ = slack_bus_id_me;
+        if(&slack_bus_id_solver != &slack_bus_id_dc_solver_) slack_bus_id_dc_solver_ = slack_bus_id_solver;
     }
     return V;
 }
