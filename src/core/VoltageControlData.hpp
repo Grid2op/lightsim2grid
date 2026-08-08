@@ -16,7 +16,8 @@ namespace ls2g {
 
 /**
  * Per-solve data of the ACTIVE voltage-mode controllers (remote-regulating
- * generators and voltage-mode SVCs), in SOLVER bus labelling and per-unit, as
+ * generators, voltage-mode SVCs, and voltage-regulating hvdc converter stations
+ * whose bus a group claims), in SOLVER bus labelling and per-unit, as
  * consumed by the `VoltageControl` extension of the Newton-Raphson system.
  * Built by LSGrid::fill_voltage_control_solver_data; AC only (DC ignores it).
  *
@@ -41,8 +42,12 @@ namespace ls2g {
  */
 struct LS2G_API VoltageControlSolverData
 {
-    // controller kind tag (stored per controller, used for result write-back)
-    enum Kind { GEN = 0, SVC = 1 };
+    // Controller kind tag (stored per controller, used for result write-back).
+    // HVDC_SIDE_1 / HVDC_SIDE_2 are the two converter stations of an hvdc line;
+    // `elem_id` carries the hvdc LINE id for both, the kind saying which end. A
+    // station is a controller only when a group regulates its bus -- on its own it
+    // pins that bus through the ordinary PV path, like a local generator.
+    enum Kind { GEN = 0, SVC = 1, HVDC_SIDE_1 = 2, HVDC_SIDE_2 = 3 };
 
     // ---- per controller (flat, grouped contiguously) ------------------------
     Eigen::VectorXi bus;       // controller solver bus (must own a Q equation)

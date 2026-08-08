@@ -1089,6 +1089,28 @@ class LS2G_API LSGrid final
          */
         std::set<int> get_free_vm_slack_solver_buses() const;
         /**
+         * GRID-bus ids whose voltage magnitude is set by a VoltageControl group
+         * rather than by the classical PV treatment. A bus lands here as soon as
+         * an ACTIVE remote-regulating generator or an active voltage-mode SVC aims
+         * at it, because the group's bordered voltage row needs that bus to keep a
+         * Vm unknown (and hence a Q equation).
+         *
+         * Buses regulated ONLY by things standing on them -- local generators, or
+         * voltage-regulating hvdc converter stations -- are deliberately NOT
+         * included: several machines sharing a bus and all regulating it locally is
+         * the ordinary PV case, handled exactly as before by the per-bus reactive
+         * redistribution (`GeneratorContainer::set_q`). It is the arrival of a
+         * remote controller (or an SVC, which is always a group controller) that
+         * switches the bus over to the bordered formulation -- and then every local
+         * regulator on that bus, generator or converter station, joins the group as
+         * a co-controller instead of pinning it.
+         *
+         * Works in grid ids and reads only input data, so unlike the solver-side
+         * accessors it is valid before / independently of `pre_process_solver`
+         * (`fillpv_pq` needs it while it is still building that very labelling).
+         */
+        std::set<int> get_group_controlled_buses() const;
+        /**
          * Set the grid bus whose voltage generator `gen_id` regulates (remote
          * voltage control). `bus_id` == the generator's own bus restores ordinary
          * local PV control.
@@ -1605,7 +1627,7 @@ class LS2G_API LSGrid final
         // is the ground-truth state after convergence -- NOT the 0 initial
         // guess an external solver's own linearized derivation starts from.
         [[nodiscard]] real_type get_slack_absorbed_solver() const { return _algo.get_slack_absorbed(); }
-        // VoltageControl (remote gen + SVC) converged reactive injection per
+        // VoltageControl (gen / SVC / hvdc station) converged reactive injection per
         // controller (pu), + its (kind: 0=GEN,1=SVC; element id) identity, in
         // controller registration order (empty when the extension is inactive).
         // Ground truth for external solvers deriving their own controller_q.

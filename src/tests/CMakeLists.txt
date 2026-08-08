@@ -72,6 +72,7 @@ add_executable(lightsim2grid_unit_tests
     test_check_grid.cpp
     test_state_poisoning.cpp
     test_powerflow_algorithm.cpp
+    test_voltage_control_reclassify.cpp
 )
 target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
 
