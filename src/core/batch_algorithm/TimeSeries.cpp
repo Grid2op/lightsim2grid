@@ -183,11 +183,27 @@ CplxVect TimeSeries::_constant_sbus_pu(bool ac_solver_used) const
     const auto & s_generators = _grid_model.get_static_generators_as_data();
     const auto & loads = _grid_model.get_loads_as_data();
 
+    // The gridmodel's target vectors, presented to fill_SBus_* as the single-step
+    // matrices it expects, WITHOUT copying them: a 1 x n row-major matrix has exactly
+    // the memory layout of a contiguous n-vector, so an Eigen::Map over the vector's
+    // own storage is a view. Handing `.transpose()` over instead would not be -- the
+    // transpose of a column vector is not a RealMat, so binding it to the
+    // Eigen::Ref<const RealMat> parameter has to materialise it. The Refs are held in
+    // named locals rather than being called inline: that way the Map never depends on
+    // a temporary Ref's lifetime, whatever the accessors return.
+    const Eigen::Ref<const RealVect> gen_p_v = _grid_model.get_gen_target_p();
+    const Eigen::Ref<const RealVect> sgen_p_v = _grid_model.get_sgen_target_p();
+    const Eigen::Ref<const RealVect> load_p_v = _grid_model.get_load_target_p();
+    const Eigen::Ref<const RealVect> load_q_v = loads.get_target_q();
+    const Eigen::Map<const RealMat> gen_p(gen_p_v.data(), 1, gen_p_v.size());
+    const Eigen::Map<const RealMat> sgen_p(sgen_p_v.data(), 1, sgen_p_v.size());
+    const Eigen::Map<const RealMat> load_p(load_p_v.data(), 1, load_p_v.size());
+    const Eigen::Map<const RealMat> load_q(load_q_v.data(), 1, load_q_v.size());
+
+    // `accounted` does have to be its own buffer: it is written by fill_SBus_* and
+    // then scaled by sn_mva, which must NOT touch `res` (already per-unit). One
+    // vector-sized allocation per compute_Vs call, not per step.
     CplxMat accounted = CplxMat::Zero(1, nb_buses_solver_);
-    const RealMat gen_p = _grid_model.get_gen_target_p().transpose();
-    const RealMat sgen_p = _grid_model.get_sgen_target_p().transpose();
-    const RealMat load_p = _grid_model.get_load_target_p().transpose();
-    const RealMat load_q = loads.get_target_q().transpose();
     bool add_ = true;
     fill_SBus_real(accounted, generators, gen_p, id_me_to_solver_, add_);
     fill_SBus_real(accounted, s_generators, sgen_p, id_me_to_solver_, add_);
