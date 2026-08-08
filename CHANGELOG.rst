@@ -196,9 +196,13 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   The ``Hvdc`` angle-droop extension was never affected: it only ever read the forward map, the one
   that was already synced (there is now a regression test pinning that too).
   Two consequences worth knowing about. A grid whose voltage-control configuration is not supported
-  in v1 (eg a remote-regulating generator whose own bus carries no reactive equation) now raises from
-  ``fill_voltage_control_solver_data`` in the batch path as it always did in the single-shot one,
-  where before it was quietly accepted and solved without the regulation. And under
+  in v1 now raises from ``fill_voltage_control_solver_data`` in the batch path as it always did in
+  the single-shot one, where before it was quietly accepted and solved without the regulation. The
+  restriction is on buses whose voltage magnitude is *already determined* -- a controller may not
+  regulate the slack, nor a PV bus pinned by a local regulator, since neither owns a ``Vm`` unknown
+  for the bordered row to act on; several controllers sharing one regulated bus is fine and always
+  was (one voltage row, one ``Q`` column each, plus a sharing row splitting ``Q`` by
+  ``qmax - qmin``). And under
   ``ContingencyAnalysis``'s ``handle_disconnected_grid`` mode, a contingency that strands a regulated
   bus is now reported as a ``DIVERGENCE`` instead of converging with the regulation dropped: bus
   masking is deliberately a value-only edit that must not touch the ``J`` pattern, so the bordered
@@ -206,8 +210,9 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   non-result rather than a confident wrong one.
 - [ADDED] ``src/tests/test_batch_voltage_control.cpp``: solves the same grid single-shot through
   ``LSGrid::ac_pf`` and through ``TimeSeries`` / ``ContingencyAnalysis``, and requires the voltages
-  to agree -- for a remote-regulating generator, a voltage-mode SVC (flat and sloped), a free-``Vm``
-  distributed-slack participant, and an hvdc angle droop.
+  to agree -- for a remote-regulating generator, two generators sharing one regulated bus, a
+  voltage-mode SVC (flat and sloped), a free-``Vm`` distributed-slack participant, and an hvdc angle
+  droop.
 - [ADDED] ``TimeSeriesCPP`` / ``ContingencyAnalysisCPP`` (and so ``SecurityAnalysis``, which wraps the
   latter) gained a string-based ``change_algorithm(name)`` overload and a ``get_algo_name()`` accessor,
   matching what ``LSGrid`` already had (``AlgorithmSelector::change_algorithm(const std::string&)``) --

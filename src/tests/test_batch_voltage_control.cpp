@@ -42,6 +42,7 @@ using Catch::Approx;
 using ls2g::AlgorithmType;
 using ls2g::ContingencyAnalysis;
 using ls2g::CplxVect;
+using ls2g::IntVect;
 using ls2g::LSGrid;
 using ls2g::RealVect;
 using ls2g::TimeSeries;
@@ -101,6 +102,31 @@ LSGrid make_remote_gen_grid()
 
     grid.add_gen_slackbus(0, 1.);
     grid.set_gen_regulated_bus(1, 3);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
+// slack generator at bus 0, plus TWO generators (buses 1 and 2, deliberately
+// different reactive ranges) both remotely regulating bus 3 at the same setpoint.
+// One control group of two controllers: two Q columns against one voltage row plus
+// one sharing row, splitting Q by the (qmax - qmin) key. Sharing a regulated bus is
+// supported -- what is not is regulating a bus whose magnitude is already
+// determined (the slack, or a PV bus pinned by a LOCAL regulator).
+LSGrid make_shared_reg_bus_grid()
+{
+    LSGrid grid = make_skeleton();
+    RealVect gen_p(3), gen_v(3), gen_min_q(3), gen_max_q(3);
+    Eigen::VectorXi gen_bus(3);
+    gen_p << 0., 0., 0.;
+    gen_v << 1.02, V_SET, V_SET;
+    gen_min_q << -1000., -1000., -250.;
+    gen_max_q << 1000., 1000., 250.;
+    gen_bus << 0, 1, 2;
+    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+
+    grid.add_gen_slackbus(0, 1.);
+    grid.set_gen_regulated_bus(1, 3);
+    grid.set_gen_regulated_bus(2, 3);
     grid.tell_solver_need_reset();
     return grid;
 }
@@ -288,6 +314,34 @@ TEST_CASE("a batch on an already-solved grid regulates too", "[batch][vctrl]")
     LSGrid grid = make_remote_gen_grid();
     single_shot(grid);   // solved BEFORE the batch copies it
     check_same_voltages(one_step_timeseries(grid, 2), ref);
+}
+
+TEST_CASE("two generators sharing one regulated bus share it in a batch too", "[batch][vctrl]")
+{
+    // Sharing is the supported multi-controller case (test_powerflow_algorithm.cpp
+    // pins the Q split itself, single-shot). Here: the whole group has to survive the
+    // batch path, which before the mapping sync got no controllers at all.
+    LSGrid ref_grid = make_shared_reg_bus_grid();
+    const CplxVect ref = single_shot(ref_grid);
+    REQUIRE(std::abs(ref(3)) == Approx(V_SET).epsilon(1e-8));
+    // and the sharing really is active: both controllers inject, in proportion to
+    // their (qmax - qmin) keys, 2000 MVAr against 500 MVAr
+    const RealVect q = ref_grid.get_algo().get_controller_q();
+    const IntVect elem = ref_grid.get_algo().get_controller_elem_id();
+    REQUIRE(q.size() == 2);
+    real_type q1 = 0., q2 = 0.;
+    for (int c = 0; c < q.size(); ++c) {
+        if (elem(c) == 1) q1 = q(c);
+        if (elem(c) == 2) q2 = q(c);
+    }
+    REQUIRE(std::abs(q1) > 1e-6);
+    CHECK(q1 / 2000. == Approx(q2 / 500.).epsilon(1e-8));
+
+    LSGrid ts_grid = make_shared_reg_bus_grid();
+    check_same_voltages(one_step_timeseries(ts_grid, 3), ref);
+
+    LSGrid ca_grid = make_shared_reg_bus_grid();
+    check_same_voltages(empty_contingency(ca_grid), ref);
 }
 
 TEST_CASE("a voltage-mode SVC regulates through the batch algorithms", "[batch][vctrl][svc]")

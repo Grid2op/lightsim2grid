@@ -227,13 +227,18 @@ class TestOutOfBoundsBindings(unittest.TestCase):
         self.grid.change_ratio_trafo(0, 1.0)
         self.grid.change_shift_trafo(0, 0.0)
         # gen 0 sits on bus 1; bus 9 is a PQ load bus, so this is a voltage-control
-        # configuration v1 actually supports. Bus 0 would ALSO be an in-range id --
-        # what this method bounds-checks -- but it already carries a generator, so
-        # regulating it leaves the controller with no Vm unknown to solve for and
-        # LSGrid::fill_voltage_control_solver_data rejects the whole grid. That is
-        # not the argument check under test here, and it makes the compute_Vs call
-        # below raise (it used to slip through only because the batch algorithms
-        # silently dropped voltage control entirely).
+        # configuration v1 actually supports.
+        #
+        # Bus 0 would ALSO be an in-range id -- which is all this method itself
+        # bounds-checks -- but it is case14's slack (the pandapower ext_grid), so it
+        # owns no Vm unknown and LSGrid::fill_voltage_control_solver_data rejects the
+        # grid on its `is_pq[reg_solver]` check. Note the criterion is whether the
+        # regulated bus' magnitude is already DETERMINED (slack, or a PV bus pinned by
+        # a local regulator), not whether a generator happens to sit there: several
+        # generators may perfectly well share one regulated bus, each with its own Q
+        # unknown plus a sharing row. Either way it is not the argument check under
+        # test here, and it makes the compute_Vs call below raise -- which used to slip
+        # through only because the batch algorithms silently dropped voltage control.
         self.grid.set_gen_regulated_bus(0, 9)
 
         has_changed = np.zeros(self.n_gen, dtype=bool)
