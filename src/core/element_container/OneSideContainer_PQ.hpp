@@ -60,6 +60,7 @@ class OneSideContainer_PQ : public OneSideContainer
         // public generic API
 
         Eigen::Ref<const RealVect> get_target_p() const {return target_p_mw_;}
+        Eigen::Ref<const RealVect> get_target_q() const {return target_q_mvar_;}
 
         // base function that can be called
         void gen_p_per_bus(std::vector<real_type> & res) const override

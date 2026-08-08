@@ -123,6 +123,32 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [FIXED] ``TimeSeriesCPP`` solved each step against an **incomplete injection vector**. It does not
+  use the ``Sbus`` the gridmodel builds: it rebuilds its own, per step, out of the four matrices the
+  caller passes to ``compute_Vs`` -- generator and static-generator ACTIVE power, and load active +
+  reactive power -- plus the hvdc term taken from the grid. But ``LSGrid::fillSbus_me`` stamps rather
+  more than that, and everything else was silently dropped:
+  storage units (active AND reactive: absent altogether), REACTIVE_POWER-mode SVCs (absent
+  altogether), the reactive setpoint of a generator whose ``voltage_regulator_on`` is false, a static
+  generator's reactive setpoint, and -- in DC -- the phase-shifter term
+  ``TrafoContainer::hack_Sbus_for_dc_phase_shifter``. The powerflow converged happily on an injection
+  the caller never asked for; on a 4-bus feeder the individual omissions were worth 0.032, 0.052,
+  0.066 and 0.081 pu of voltage error respectively. DC was affected too, since
+  ``compute_one_powerflow`` falls back to the gridmodel's ``Pbus_`` only when NO complex ``Sbus`` is
+  supplied, which is not the ``TimeSeries`` case.
+  The remainder is now **derived rather than enumerated**: the complete per-unit injection the
+  gridmodel just built (``Sbus_`` in ac, ``Pbus_`` in dc) minus the same reconstruction ``compute_Vs``
+  performs, evaluated at the gridmodel's own target values. What is left over is by construction
+  everything the per-step matrices do not carry, so an element type added to ``fillSbus_me`` later is
+  picked up for free -- an enumeration falling behind is precisely what caused this bug.
+  ``ContingencyAnalysisCPP`` (and ``SecurityAnalysis``, which wraps it) was never affected: it passes
+  the gridmodel's own complete ``Sbus_`` straight to the solver.
+- [ADDED] ``src/tests/test_timeseries_sbus.cpp`` and ``lightsim2grid/tests/test_timeseries_sbus.py``:
+  a one-step time series fed the grid's OWN injections must reproduce ``ac_pf`` / ``dc_pf`` exactly.
+  Covers each dropped element kind separately and all of them together, in ac and in dc, plus a
+  multi-step case (the remainder is constant, so it has to reach every row) and a control grid whose
+  whole injection the per-step matrices already covered. Eight of the nine C++ cases fail without the
+  fix.
 - [FIXED] a generator could not remotely regulate a bus that another generator already
   regulated *locally* -- the grid was refused outright with
   ``LSGrid::fill_voltage_control_solver_data: generator N regulates bus X which has no voltage (Vm)
