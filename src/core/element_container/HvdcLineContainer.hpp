@@ -355,6 +355,11 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             side_2_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);
         }
 
+        // see ConverterStationContainer::pins_bus_voltage
+        bool pins_bus_voltage(GlobalBusId bus) const {
+            return side_1_.pins_bus_voltage(bus) || side_2_.pins_bus_voltage(bus);
+        }
+
         void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
                         std::vector<Eigen::Triplet<real_type> > & /*Bpp*/,
                         const SolverBusIdVect & /*id_grid_to_solver*/,

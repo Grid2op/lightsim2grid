@@ -123,6 +123,50 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [FIXED] a generator could not remotely regulate a bus that another generator already
+  regulated *locally* -- the grid was refused outright with
+  ``LSGrid::fill_voltage_control_solver_data: generator N regulates bus X which has no voltage (Vm)
+  unknown`` -- even though the configuration is perfectly well posed. Two machines holding one bus
+  simply form a control group: one bordered voltage row, one reactive unknown each, and a sharing
+  row splitting the reactive duty in proportion to their ``qmax - qmin`` ranges, exactly as two
+  *remote* controllers on one bus already did.
+  The cause was the order in which buses are classified. ``GeneratorContainer::fillpv`` knew how to
+  keep a controller's OWN bus out of the PV set (a remote regulator leaves its own bus PQ), but
+  nothing stopped a LOCAL regulator from claiming a bus that somebody else regulated remotely. That
+  bus then had no ``Vm`` unknown, so ``VoltageControl::register_in`` got ``vm_col == -1`` for it, the
+  group's voltage row was never given its ``+1`` entry, and the row came out structurally EMPTY --
+  a singular Jacobian. The check that refused the grid was really reporting the misclassification,
+  not a property of the configuration.
+  Bus classification now runs the other way round: ``LSGrid::get_group_controlled_buses`` collects
+  every bus an active *remote* generator or an active voltage-mode SVC aims at, ``LSGrid::fillpv_pq``
+  keeps those out of PV, and ``fill_voltage_control_solver_data`` enrols the local regulators sitting
+  on them as members of the group. Buses regulated only by generators standing on them are
+  deliberately untouched: several machines sharing a bus and all regulating it locally remains the
+  ordinary PV case, with the per-bus reactive redistribution of ``GeneratorContainer::set_q``.
+  Three configurations start working as a result: a remote controller onto a locally regulated bus,
+  a remote controller onto a slack bus pinned by its own generator (the slack generator joins the
+  group and MultiSlack grants the free ``Vm``), and -- separately, by giving the regulated-bus check
+  the ``has_free_q`` escape hatch the controller-bus check already had -- a remote controller onto a
+  slack bus that nothing pins. Disagreeing setpoints between a local and a remote regulator of one
+  bus are now reported by the group's own check (``conflicting voltage setpoints``) rather than as a
+  bus-classification error.
+  Two things stay refused, on purpose. A remote regulator SHARING ITS OWN BUS with a local regulator
+  has no solution at all: whatever reactive power it injects there is absorbed one-for-one by the
+  machine holding that bus' magnitude, so it has no influence on its remote target -- no
+  reclassification can help, and the "its OWN bus has no reactive (Q) equation" error still fires.
+  And an hvdc converter station cannot join a control group (the group only knows ``GEN`` and ``SVC``
+  kinds), so a bus a station voltage-pins while a group also regulates it is rejected with an
+  explicit message from ``fillpv_pq`` rather than silently losing the station's regulation.
+  Note for voltage-mode SVCs: their regulated bus now leaves the PV path as well, which is what makes
+  the classification uniform, but an SVC still has to be the only controller of its bus in v1 (its
+  sharing key is a susceptance range, not a reactive range, so mixed SVC/generator sharing has no
+  defined semantics yet). Such a grid is therefore still refused -- now by that restriction, which
+  names the real limitation.
+- [ADDED] ``src/tests/test_voltage_control_reclassify.cpp`` and
+  ``lightsim2grid/tests/test_voltage_control_reclassify.py``: the classification rule itself, the
+  three newly-supported configurations (including the reactive split), the two that must stay
+  refused, and a regression guard that several purely local regulators on one bus still take the
+  classical PV path and produce bit-identical voltages.
 - [ADDED] ``TimeSeriesCPP`` / ``ContingencyAnalysisCPP`` (and so ``SecurityAnalysis``, which wraps the
   latter) gained a string-based ``change_algorithm(name)`` overload and a ``get_algo_name()`` accessor,
   matching what ``LSGrid`` already had (``AlgorithmSelector::change_algorithm(const std::string&)``) --
