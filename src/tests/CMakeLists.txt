@@ -71,8 +71,35 @@ add_executable(lightsim2grid_unit_tests
     test_plugin_registration.cpp
     test_check_grid.cpp
     test_state_poisoning.cpp
+    test_powerflow_algorithm.cpp
 )
 target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
+
+# CI hardening builds (see .github/workflows/sanitizers.yml). USE_SANITIZERS /
+# USE_DEBUG_ASSERTS are the cached options src/core/CMakeLists.txt derives from
+# the __SANITIZE / __DEBUG_ASSERTS environment variables; they are set there
+# (added above) before this point, and simply undefined -- hence false -- when
+# this file is consumed by a parent project that never created them.
+#
+# The core library carries the same flags already, but the test binary needs
+# its OWN copy of them: ASan/UBSan only instrument the translation units they
+# compile, so an out-of-bounds access made by test code (or by an Eigen
+# expression instantiated in a test TU) is invisible unless the test objects
+# are instrumented too -- and the executable must be LINKED with
+# -fsanitize=... so the ASan runtime is the first DSO of the process (no
+# LD_PRELOAD needed, unlike the python-extension jobs).
+if(NOT MSVC)
+    if(USE_SANITIZERS)
+        target_compile_options(lightsim2grid_unit_tests PRIVATE
+            -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1)
+        target_link_options(lightsim2grid_unit_tests PRIVATE -fsanitize=address,undefined)
+    endif()
+    if(USE_DEBUG_ASSERTS)
+        # -UNDEBUG comes after the build type's -DNDEBUG on the command line,
+        # so Eigen's bounds assertions come back to life in the test objects
+        target_compile_options(lightsim2grid_unit_tests PRIVATE -UNDEBUG -D_GLIBCXX_ASSERTIONS)
+    endif()
+endif()
 
 # one ctest entry per TEST_CASE
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Catch2/extras")
