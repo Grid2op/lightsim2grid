@@ -78,6 +78,24 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
         }
 
     protected:
+        /**
+         * Per-unit injection that the four per-step matrices of `compute_Vs` do NOT
+         * account for, and which is therefore constant across the steps: storage
+         * units, REACTIVE_POWER-mode SVCs, the reactive setpoint of a generator whose
+         * voltage regulation is off, a static generator's reactive setpoint, the hvdc
+         * injections and (dc only) the phase-shifter term.
+         *
+         * Computed as `complete - accounted_for`: the complete injection the
+         * gridmodel built in `Sbus_` (ac) / `Pbus_` (dc), minus the same
+         * reconstruction `compute_Vs` performs, evaluated at the gridmodel's own
+         * target values. Deriving it this way -- instead of listing the elements --
+         * is what keeps it from falling out of date when a new element type starts
+         * contributing to LSGrid::fillSbus_me.
+         *
+         * Only valid after prepare_solver_input_base() has run.
+         */
+        CplxVect _constant_sbus_pu(bool ac_solver_used) const;
+
         template<class T>
         void fill_SBus_real(Eigen::Ref<CplxMat> Sbuses,
                             const T & structure_data,

@@ -80,17 +80,26 @@ int TimeSeries::compute_Vs(const Eigen::Ref<const RealMat> & gen_p,
     fill_SBus_real(_Sbuses, loads, load_p, id_me_to_solver_, add_);
     fill_SBus_imag(_Sbuses, loads, load_q, id_me_to_solver_, add_);
 
-    // add the (constant accross the steps) hvdc injections: fixed-setpoint
-    // lines, station reactive setpoints / LCC consumptions and, in dc, the
-    // saturated droop lines. The angle-droop flows of the linear-mode lines
-    // are theta dependent: they are handled by the solver itself (Hvdc
-    // extension of the NR system in ac, dc matrix term in dc).
-    CplxVect hvdc_sbus = CplxVect::Zero(nb_buses_solver_);
-    _grid_model.get_dclines_as_data().fillSbus(hvdc_sbus, id_me_to_solver_, ac_solver_used);
-    _Sbuses.rowwise() += hvdc_sbus.transpose();
-
     if(abs(sn_mva - 1.0) > _tol_equal_float) _Sbuses.array() /= static_cast<cplx_type>(sn_mva);
-    // TODO trafo hack for Sbus !
+
+    // ... and then everything else the gridmodel stamps into Sbus, which the four
+    // matrices above do NOT cover. They carry generator / static-generator ACTIVE
+    // power and load active+reactive power, and nothing more -- while
+    // LSGrid::fillSbus_me also stamps storage units, REACTIVE_POWER-mode SVCs, the
+    // reactive setpoint of a generator whose voltage regulation is off, a static
+    // generator's reactive setpoint, the hvdc injections, and (dc only) the phase
+    // shifter hack. None of those is a per-step input, so all of them are constant
+    // across the steps and must come from the grid.
+    //
+    // This is derived rather than enumerated on purpose: an enumeration falling
+    // behind is exactly the bug being fixed here (only the hvdc term was listed, so
+    // storages, SVCs and every reactive setpoint were silently dropped -- worth up
+    // to ~0.08 pu of voltage error on a 4-bus test). Instead take the COMPLETE
+    // injection the gridmodel just built and subtract the share the per-step
+    // matrices are responsible for, evaluated at the gridmodel's OWN injection
+    // values. What remains is by construction everything else, so an element type
+    // added to fillSbus_me later is picked up here for free.
+    _Sbuses.rowwise() += _constant_sbus_pu(ac_solver_used).transpose();
     //////////////////////////////////////////
 
     bool init_powerflow_has_conv = _finish_preprocessing(
@@ -145,6 +154,67 @@ int TimeSeries::compute_Vs(const Eigen::Ref<const RealMat> & gen_p,
     _status = 1;
     _timer_total = timer.duration();
     return _status;
+}
+
+CplxVect TimeSeries::_constant_sbus_pu(bool ac_solver_used) const
+{
+    // the complete per-unit injection, straight from the gridmodel
+    // (`prepare_solver_input_base` filled exactly one of these two)
+    CplxVect res;
+    if(ac_solver_used){
+        res = Sbus_;
+    } else {
+        // dc keeps everything real; the imaginary part is unused downstream
+        // (compute_one_powerflow takes Sbus.real()) but must be zero so that
+        // subtracting the reconstruction below cannot invent one
+        res = Pbus_.cast<cplx_type>();
+    }
+    if(static_cast<int>(res.size()) != nb_buses_solver_){
+        std::ostringstream exc_;
+        exc_ << "TimeSeries::_constant_sbus_pu: the gridmodel injection has "
+             << res.size() << " entries while the solver has " << nb_buses_solver_
+             << " buses. prepare_solver_input_base() must run first.";
+        throw std::runtime_error(exc_.str());
+    }
+
+    // ... minus the share compute_Vs rebuilds per step, evaluated at the gridmodel's
+    // own target values, so that the two cancel and only the rest is left
+    const auto & generators = _grid_model.get_generators_as_data();
+    const auto & s_generators = _grid_model.get_static_generators_as_data();
+    const auto & loads = _grid_model.get_loads_as_data();
+
+    // The gridmodel's target vectors, presented to fill_SBus_* as the single-step
+    // matrices it expects, WITHOUT copying them: a 1 x n row-major matrix has exactly
+    // the memory layout of a contiguous n-vector, so an Eigen::Map over the vector's
+    // own storage is a view. Handing `.transpose()` over instead would not be -- the
+    // transpose of a column vector is not a RealMat, so binding it to the
+    // Eigen::Ref<const RealMat> parameter has to materialise it. The Refs are held in
+    // named locals rather than being called inline: that way the Map never depends on
+    // a temporary Ref's lifetime, whatever the accessors return.
+    const Eigen::Ref<const RealVect> gen_p_v = _grid_model.get_gen_target_p();
+    const Eigen::Ref<const RealVect> sgen_p_v = _grid_model.get_sgen_target_p();
+    const Eigen::Ref<const RealVect> load_p_v = _grid_model.get_load_target_p();
+    const Eigen::Ref<const RealVect> load_q_v = loads.get_target_q();
+    const Eigen::Map<const RealMat> gen_p(gen_p_v.data(), 1, gen_p_v.size());
+    const Eigen::Map<const RealMat> sgen_p(sgen_p_v.data(), 1, sgen_p_v.size());
+    const Eigen::Map<const RealMat> load_p(load_p_v.data(), 1, load_p_v.size());
+    const Eigen::Map<const RealMat> load_q(load_q_v.data(), 1, load_q_v.size());
+
+    // `accounted` does have to be its own buffer: it is written by fill_SBus_* and
+    // then scaled by sn_mva, which must NOT touch `res` (already per-unit). One
+    // vector-sized allocation per compute_Vs call, not per step.
+    CplxMat accounted = CplxMat::Zero(1, nb_buses_solver_);
+    bool add_ = true;
+    fill_SBus_real(accounted, generators, gen_p, id_me_to_solver_, add_);
+    fill_SBus_real(accounted, s_generators, sgen_p, id_me_to_solver_, add_);
+    add_ = false;
+    fill_SBus_real(accounted, loads, load_p, id_me_to_solver_, add_);
+    fill_SBus_imag(accounted, loads, load_q, id_me_to_solver_, add_);
+
+    const real_type sn_mva = _grid_model.get_sn_mva();
+    if(abs(sn_mva - 1.0) > _tol_equal_float) accounted.array() /= static_cast<cplx_type>(sn_mva);
+    res -= accounted.row(0).transpose();
+    return res;
 }
 
 } // namespace ls2g
