@@ -744,6 +744,19 @@ struct LS2G_API DocTimeSeries
     static const std::string get_voltages;
     static const std::string get_sbuses;
     static const std::string clear;
+
+    // shared by TimeSeriesCPP and InjectionSweepCPP (see DocInjectionSweep)
+    static const std::string nb_thread;
+    static const std::string thread_init_time;
+    static const std::string init_from_n_powerflow;
+};
+
+// InjectionSweepCPP has the very same interface as TimeSeriesCPP, so it reuses every
+// DocTimeSeries member above; only what differs is redefined here.
+struct LS2G_API DocInjectionSweep
+{
+    static const std::string InjectionSweep;
+    static const std::string init_from_n_powerflow;
 };
 
 struct LS2G_API DocContingencyAnalysis

@@ -36,7 +36,7 @@
 
 #include "LSGrid.hpp"
 #include "batch_algorithm/ContingencyAnalysis.hpp"
-#include "batch_algorithm/TimeSeries.hpp"
+#include "batch_algorithm/BaseInjectionSweep.hpp"
 
 using Catch::Approx;
 using ls2g::AlgorithmType;

@@ -7,12 +7,81 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "binding_declarations.hpp"
-#include "batch_algorithm/TimeSeries.hpp"
+#include "batch_algorithm/BaseInjectionSweep.hpp"
 #include "batch_algorithm/ContingencyAnalysis.hpp"
 #include "batch_algorithm/LimitViolation.hpp"
 #include "help_fun_msg.hpp"
 
 using namespace ls2g;
+
+namespace {
+
+/**
+ * The whole interface shared by TimeSeriesCPP and InjectionSweepCPP -- which is to say all
+ * of it, bar the class docstring and the `init_from_n_powerflow` wording (the two classes
+ * differ only in how each step is initialized, see BatchInitKind). Templated on the
+ * instantiation rather than copy-pasted so the two Python classes cannot drift apart.
+ */
+template<class T>
+void bind_injection_batch_common(py::class_<T> & cls)
+{
+    cls
+        .def(py::init<const LSGrid &>())
+
+        // solver control
+        .def("change_algorithm", py::overload_cast<const AlgorithmType&>(&T::change_algorithm), DocLSGrid::change_algorithm.c_str())
+        .def("change_algorithm", py::overload_cast<const std::string&>(&T::change_algorithm), DocLSGrid::change_algorithm_by_name.c_str())
+        .def("change_solver", py::overload_cast<const AlgorithmType&>(&T::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
+        .def("change_solver", py::overload_cast<const std::string&>(&T::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
+        .def("available_default_algorithms", &T::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
+        .def("available_algorithm_names", &T::available_algorithm_names, DocLSGrid::available_algorithm_names.c_str())
+        .def("get_algo_type", &T::get_algo_type, DocLSGrid::get_algo_type.c_str())
+        .def("get_algo_name", &T::get_algo_name,
+             "Registry name of the currently selected algorithm. Unlike get_algo_type(), stays "
+             "meaningful for plugin solvers (and built-ins with no dedicated AlgorithmType member).")
+        .def("get_algo_config", &T::get_algo_config,
+             "Config (eg ScalingPolicyType / damping parameters) of the internal solver used for "
+             "every step. Copied once from the grid model's own get_ac_algo_config() at "
+             "construction time, then independent of it; re-apply with set_algo_config() if you "
+             "change the grid model's config afterwards, or after change_algorithm().")
+        .def("set_algo_config", &T::set_algo_config, py::arg("config"),
+             "See get_algo_config().")
+
+        // timers
+        .def("total_time", &T::total_time, DocTimeSeries::total_time.c_str())
+        .def("solver_time", &T::solver_time, DocTimeSeries::solver_time.c_str())
+        .def("preprocessing_time", &T::preprocessing_time, DocTimeSeries::preprocessing_time.c_str())
+        .def("amps_computation_time", &T::amps_computation_time, DocTimeSeries::amps_computation_time.c_str())
+        .def("thread_init_time", &T::thread_init_time, DocTimeSeries::thread_init_time.c_str())
+        .def("nb_solved", &T::nb_solved, DocTimeSeries::nb_solved.c_str())
+
+        // status
+        .def("get_status", &T::get_status, DocTimeSeries::get_status.c_str())
+        .def("clear", &T::clear, DocTimeSeries::clear.c_str())
+        .def("close", &T::clear, DocTimeSeries::clear.c_str())
+
+        // perform the computations
+        .def("compute_Vs", &T::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocTimeSeries::compute_Vs.c_str())
+        .def("compute_flows", &T::compute_flows, DocTimeSeries::compute_flows.c_str())
+        .def("compute_power_flows", &T::compute_power_flows, DocTimeSeries::compute_power_flows.c_str())
+
+        // results
+        .def("get_flows", &T::get_flows, DocTimeSeries::get_flows.c_str(), py::return_value_policy::reference_internal)
+        .def("get_power_flows", &T::get_power_flows, DocTimeSeries::get_power_flows.c_str(), py::return_value_policy::reference_internal)
+        .def("get_voltages", &T::get_voltages, DocTimeSeries::get_voltages.c_str(), py::return_value_policy::reference_internal)
+        .def("get_sbuses", &T::get_sbuses, DocTimeSeries::get_sbuses.c_str(), py::return_value_policy::reference_internal)
+
+        // nb_thread is bound for both classes on purpose, even though TimeSeriesCPP
+        // rejects any value but 1 (see the warning in its docstring): a user who
+        // discovers the attribute gets an error message pointing at InjectionSweepCPP,
+        // instead of an AttributeError that explains nothing.
+        .def_property("nb_thread",
+                      [](const T & self){ return self.get_nb_thread(); },
+                      [](T & self, int val){ self.set_nb_thread(val); },
+                      DocTimeSeries::nb_thread.c_str());
+}
+
+}  // namespace
 
 void bind_batch(py::module_& m) {
     py::enum_<ViolationElementType>(m, "ViolationElementType", DocContingencyAnalysis::ViolationElementType.c_str())
@@ -43,57 +112,25 @@ void bind_batch(py::module_& m) {
         .def_readonly("limit", &LimitViolation::limit, DocContingencyAnalysis::limit.c_str())
         .def_readonly("name", &LimitViolation::name, DocContingencyAnalysis::violation_name.c_str());
 
-    py::class_<TimeSeries>(m, "TimeSeriesCPP", DocTimeSeries::TimeSeries.c_str())
-        .def(py::init<const LSGrid &>())
+    // TimeSeriesCPP and InjectionSweepCPP are two instantiations of the same C++ template
+    // (see batch_algorithm/BaseInjectionSweep.hpp): same inputs, same results, same interface --
+    // they differ only in how each step is initialized, so everything but the class
+    // docstring and `init_from_n_powerflow` is bound by the shared helper above.
+    py::class_<TimeSeries> time_series(m, "TimeSeriesCPP", DocTimeSeries::TimeSeries.c_str());
+    bind_injection_batch_common(time_series);
+    time_series
         .def_property("init_from_n_powerflow",
                       [](const TimeSeries & self){ return self.get_init_from_n_powerflow(); },
                       [](TimeSeries & self, bool val){ self.set_init_from_n_powerflow(val); },
-                      "Whether to initialize the complex voltages of "
-                      "the first time series with the results of a n-powerflow "
-                      "(*ie* a powerflow at the start the simulation) or not. "
-                      "Default: false")
+                      DocTimeSeries::init_from_n_powerflow.c_str());
 
-        // solver control
-        .def("change_algorithm", py::overload_cast<const AlgorithmType&>(&TimeSeries::change_algorithm), DocLSGrid::change_algorithm.c_str())
-        .def("change_algorithm", py::overload_cast<const std::string&>(&TimeSeries::change_algorithm), DocLSGrid::change_algorithm_by_name.c_str())
-        .def("change_solver", py::overload_cast<const AlgorithmType&>(&TimeSeries::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
-        .def("change_solver", py::overload_cast<const std::string&>(&TimeSeries::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
-        .def("available_default_algorithms", &TimeSeries::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
-        .def("available_algorithm_names", &TimeSeries::available_algorithm_names, DocLSGrid::available_algorithm_names.c_str())
-        .def("get_algo_type", &TimeSeries::get_algo_type, DocLSGrid::get_algo_type.c_str())
-        .def("get_algo_name", &TimeSeries::get_algo_name,
-             "Registry name of the currently selected algorithm. Unlike get_algo_type(), stays "
-             "meaningful for plugin solvers (and built-ins with no dedicated AlgorithmType member).")
-        .def("get_algo_config", &TimeSeries::get_algo_config,
-             "Config (eg ScalingPolicyType / damping parameters) of the internal solver used for "
-             "every step. Copied once from the grid model's own get_ac_algo_config() at "
-             "construction time, then independent of it; re-apply with set_algo_config() if you "
-             "change the grid model's config afterwards, or after change_algorithm().")
-        .def("set_algo_config", &TimeSeries::set_algo_config, py::arg("config"),
-             "See get_algo_config().")
-
-        // timers
-        .def("total_time", &TimeSeries::total_time, DocTimeSeries::total_time.c_str())
-        .def("solver_time", &TimeSeries::solver_time, DocTimeSeries::solver_time.c_str())
-        .def("preprocessing_time", &TimeSeries::preprocessing_time, DocTimeSeries::preprocessing_time.c_str())
-        .def("amps_computation_time", &TimeSeries::amps_computation_time, DocTimeSeries::amps_computation_time.c_str())
-        .def("nb_solved", &TimeSeries::nb_solved, DocTimeSeries::nb_solved.c_str())
-
-        // status
-        .def("get_status", &TimeSeries::get_status, DocTimeSeries::get_status.c_str())
-        .def("clear", &TimeSeries::clear, DocTimeSeries::clear.c_str())
-        .def("close", &TimeSeries::clear, DocTimeSeries::clear.c_str())
-
-        // perform the computations
-        .def("compute_Vs", &TimeSeries::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocTimeSeries::compute_Vs.c_str())
-        .def("compute_flows", &TimeSeries::compute_flows, DocTimeSeries::compute_flows.c_str())
-        .def("compute_power_flows", &TimeSeries::compute_power_flows, DocTimeSeries::compute_power_flows.c_str())
-
-        // results
-        .def("get_flows", &TimeSeries::get_flows, DocTimeSeries::get_flows.c_str(), py::return_value_policy::reference_internal)
-        .def("get_power_flows", &TimeSeries::get_power_flows, DocTimeSeries::get_power_flows.c_str(), py::return_value_policy::reference_internal)
-        .def("get_voltages", &TimeSeries::get_voltages, DocTimeSeries::get_voltages.c_str(), py::return_value_policy::reference_internal)
-        .def("get_sbuses", &TimeSeries::get_sbuses, DocTimeSeries::get_sbuses.c_str(), py::return_value_policy::reference_internal);
+    py::class_<InjectionSweep> injection_sweep(m, "InjectionSweepCPP", DocInjectionSweep::InjectionSweep.c_str());
+    bind_injection_batch_common(injection_sweep);
+    injection_sweep
+        .def_property("init_from_n_powerflow",
+                      [](const InjectionSweep & self){ return self.get_init_from_n_powerflow(); },
+                      [](InjectionSweep & self, bool val){ self.set_init_from_n_powerflow(val); },
+                      DocInjectionSweep::init_from_n_powerflow.c_str());
 
     py::class_<ContingencyAnalysis>(m, "ContingencyAnalysisCPP", DocContingencyAnalysis::ContingencyAnalysis.c_str())
         .def(py::init<const LSGrid &, bool>(), py::arg("grid_model"), py::arg("compute_limit_violations") = false)
@@ -223,7 +260,7 @@ void bind_batch(py::module_& m) {
         .def("preprocessing_time", &ContingencyAnalysis::preprocessing_time, DocContingencyAnalysis::preprocessing_time.c_str())
         .def("amps_computation_time", &ContingencyAnalysis::amps_computation_time, DocTimeSeries::amps_computation_time.c_str())
         .def("modif_Ybus_time", &ContingencyAnalysis::modif_Ybus_time, DocContingencyAnalysis::modif_Ybus_time.c_str())
-        .def("thread_init_time", &ContingencyAnalysis::thread_init_time, "TODO")
+        .def("thread_init_time", &ContingencyAnalysis::thread_init_time, DocTimeSeries::thread_init_time.c_str())
         .def("solve_time", &ContingencyAnalysis::solve_time, "TODO")
         .def("nb_solved", &ContingencyAnalysis::nb_solved, DocTimeSeries::nb_solved.c_str());
 }

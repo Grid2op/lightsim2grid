@@ -123,6 +123,36 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [ADDED] ``InjectionSweepCPP`` (python wrapper ``lightsim2grid.injectionSweep.InjectionSweep``), a
+  third batch algorithm. It computes exactly what ``TimeSeriesCPP`` computes -- one powerflow per row
+  of the injection matrices, on a fixed grid topology -- with exactly the same interface, and differs
+  only in how each computation is initialized: ``TimeSeriesCPP`` warm starts a step with the solution
+  of the step before it (they are consecutive instants of a *time* series), while ``InjectionSweepCPP``
+  starts every step from the same voltage -- the one given to ``compute_Vs``, or the "n" powerflow
+  result when ``init_from_n_powerflow`` is set -- exactly like ``ContingencyAnalysisCPP`` does for
+  each of its contingencies.
+  Use it when the "steps" are independent scenarios rather than consecutive instants: their results
+  then do not depend on the steps computed before them, nor on the order they are given in, and the
+  batch can be spread over several threads (``nb_thread``).
+  Both classes are two instantiations of one C++ template (``ls2g::BaseInjectionSweep<BatchInitKind>``
+  in ``batch_algorithm/BaseInjectionSweep.hpp``), so they cannot drift apart: the init policy is a
+  single compile-time parameter, and everything else -- inputs, results, bindings -- is shared.
+- [BREAKING] (c++ API only) ``batch_algorithm/TimeSeries.hpp`` / ``.cpp`` are renamed to
+  ``batch_algorithm/BaseInjectionSweep.hpp`` / ``.cpp``: the file now holds both ``ls2g::TimeSeries``
+  and ``ls2g::InjectionSweep`` (two aliases of the same template), so naming it after either one of
+  them would be misleading. C++ code including the old path must update the include; nothing changes
+  on the python side. Both class names are unchanged.
+- [ADDED] ``nb_thread`` moved up from ``ContingencyAnalysisCPP`` to the common batch base class, so
+  every batch algorithm whose computations are independent of one another gets it. It is now
+  available on ``InjectionSweepCPP`` as well, where each thread solves a contiguous range of steps
+  with its own solver (the admittance matrix is shared read-only, since the topology is fixed --
+  unlike ``ContingencyAnalysisCPP``, which needs a copy per thread to emulate the disconnections).
+  Results are bit-for-bit independent of ``nb_thread``. ``thread_init_time()`` moved up with it.
+- [BREAKING] ``TimeSeriesCPP.nb_thread = n`` now raises a ``RuntimeError`` for ``n > 1`` (the
+  attribute did not exist before, so no working code can break). Its steps are chained, so splitting
+  them into per-thread ranges would break the chain and make the voltages depend on the number of
+  threads; the error points at ``InjectionSweepCPP``, which computes the same injections in parallel.
+  ``nb_thread = 1`` (and any value below, which is clamped to 1) stays legal.
 - [FIXED] ``TimeSeriesCPP`` solved each step against an **incomplete injection vector**. It does not
   use the ``Sbus`` the gridmodel builds: it rebuilds its own, per step, out of the four matrices the
   caller passes to ``compute_Vs`` -- generator and static-generator ACTIVE power, and load active +

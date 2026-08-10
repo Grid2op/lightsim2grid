@@ -6,32 +6,72 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef COMPUTERS_H
-#define COMPUTERS_H
+#ifndef BASEINJECTIONSWEEP_H
+#define BASEINJECTIONSWEEP_H
 
 #include "BaseBatchSolverSynch.hpp"
+
+#include <exception>
 
 namespace ls2g {
 
 /**
-Allws the computation of time series, that is, the same grid topology is used along with time
-series of injections (productions and loads) to compute powerflows/
+How each element of a batch is initialized, ie which complex voltage the solver starts
+from when it solves step `i`.
+
+This is a compile time property of the algorithm, not a user setting: it is what
+distinguishes the two aliases declared at the bottom of this file. What the *seed* itself
+is (the caller's `Vinit` or the converged "n" powerflow) remains a runtime setting, shared
+by every batch algorithm: see BaseBatchSolverSynch::set_init_from_n_powerflow.
  **/
-class LS2G_API TimeSeries final: public BaseBatchSolverSynch
+enum class LS2G_API BatchInitKind
+{
+    /** warm start: step `i` starts from the solution of step `i-1` (see TimeSeries) **/
+    FromPreviousStep,
+    /** every step restarts from the same seed, so the steps are independent
+        of one another and of their ordering (see InjectionSweep) **/
+    FromSeed
+};
+
+/**
+Batch of powerflows over a *fixed grid topology* and a varying injection: one step per row
+of the (generator / static generator / load) matrices handed to `compute_Vs`.
+
+Nothing here assumes the steps are consecutive instants -- that assumption belongs to the
+`TimeSeries` alias alone, and is carried entirely by `INIT`, which selects how each step is
+initialized. Everything else -- the inputs, the results, the whole public interface -- is
+identical between the two instantiations aliased at the bottom of this file.
+ **/
+template<BatchInitKind INIT>
+class LS2G_API BaseInjectionSweep: public BaseBatchSolverSynch
 {
     public:
-        explicit TimeSeries(const LSGrid & init_grid_model):
+        explicit BaseInjectionSweep(const LSGrid & init_grid_model):
             BaseBatchSolverSynch(init_grid_model),
             _Sbuses(),
             _status(1), // 1: success, 0: failure
             _compute_flows(true)
             {}
-        ~TimeSeries() noexcept override = default;
+        ~BaseInjectionSweep() noexcept override = default;
 
-        TimeSeries(const TimeSeries&) = delete;
-        TimeSeries(TimeSeries&&) = delete;
-        TimeSeries & operator=(TimeSeries&&) = delete;
-        TimeSeries & operator=(const TimeSeries&) = delete;
+        BaseInjectionSweep(const BaseInjectionSweep&) = delete;
+        BaseInjectionSweep(BaseInjectionSweep&&) = delete;
+        BaseInjectionSweep & operator=(BaseInjectionSweep&&) = delete;
+        BaseInjectionSweep & operator=(const BaseInjectionSweep&) = delete;
+
+        // Name of this instantiation, used in the error messages below. The code is
+        // shared by both aliases, so hardcoding "TimeSeries" there would mislead an
+        // InjectionSweep user (and vice versa).
+        static const char * algo_name() {
+            return INIT == BatchInitKind::FromPreviousStep ? "TimeSeries" : "InjectionSweep";
+        }
+
+        // see BaseBatchSolverSynch::supports_multithread. Derived from INIT rather than
+        // set independently, so the two can never disagree: chaining the steps is
+        // exactly what makes them impossible to split over threads.
+        bool supports_multithread() const override {
+            return INIT != BatchInitKind::FromPreviousStep;
+        }
 
         // control on whether I compute the flows or not
         void deactivate_flow_computations() {_compute_flows = false;}
@@ -96,6 +136,35 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
          */
         CplxVect _constant_sbus_pu(bool ac_solver_used) const;
 
+        /**
+         * Solve the steps in [step_begin, step_end) with the passed solver (one per
+         * thread) and its own AlgoControl, writing directly to the (disjoint) rows of
+         * _voltages; book-keeping goes to the passed accumulators, merged by the caller
+         * once every thread has joined. This is the body shared by the single- and
+         * multi-threaded paths.
+         *
+         * Unlike ContingencyAnalysis::run_contingency_range there is no per-thread Ybus:
+         * the topology is fixed here, so every thread simply reads the member Ybus_
+         * (ac) / Bbus_ (dc), which no one modifies for the whole duration of the call.
+         *
+         * A step that does not converge stops this range (the remaining rows keep their
+         * zeros) and is reported in `first_diverging_step`; any thrown exception is
+         * captured into `err` instead of crossing the thread boundary.
+         */
+        void run_step_range(size_t step_begin,
+                            size_t step_end,
+                            AlgorithmSelector & algo,
+                            AlgoControl & control,
+                            const Eigen::Ref<const CplxVect> & Vinit_solver,
+                            bool ac_solver_used,
+                            int max_iter,
+                            real_type tol_solver,  // already divided by sn_mva
+                            int & nb_solved,
+                            double & timer_solver,
+                            int & first_diverging_step,
+                            std::exception_ptr & err,
+                            bool needs_solver_init);
+
         template<class T>
         void fill_SBus_real(Eigen::Ref<CplxMat> Sbuses,
                             const T & structure_data,
@@ -114,7 +183,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
                 bus_id_me = el_bus_id(el_id);
                 if(bus_id_me.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
-                    exc_ << "TimeSeries::fill_SBus_real: the element with id ";
+                    exc_ << algo_name() << "::fill_SBus_real: the element with id ";
                     exc_ << el_id;
                     exc_ << " is connected to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
@@ -122,7 +191,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
                 bus_id_solver = id_me_to_ac_solver[bus_id_me.cast_int()];
                 if(bus_id_solver.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
-                    exc_ << "TimeSeries::fill_SBus_real: the element with id ";
+                    exc_ << algo_name() << "::fill_SBus_real: the element with id ";
                     exc_ << el_id;
                     exc_ << " is connected to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
@@ -151,7 +220,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
                 bus_id_me = el_bus_id(el_id);
                 if(bus_id_me.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
-                    exc_ << "TimeSeries::fill_SBus_imag: the element with id ";
+                    exc_ << algo_name() << "::fill_SBus_imag: the element with id ";
                     exc_ << el_id;
                     exc_ << " is connected to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
@@ -159,7 +228,7 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
                 bus_id_solver = id_me_to_ac_solver[bus_id_me.cast_int()];
                 if(bus_id_solver.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
-                    exc_ << "TimeSeries::fill_SBus_imag: the element with id ";
+                    exc_ << algo_name() << "::fill_SBus_imag: the element with id ";
                     exc_ << el_id;
                     exc_ << " is connected to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
@@ -182,6 +251,35 @@ class LS2G_API TimeSeries final: public BaseBatchSolverSynch
 
 };
 
+/**
+Time series: the same grid topology is used along with time series of injections
+(productions and loads) to compute powerflows. Each step is warm started with the solution
+of the previous one, which is what makes a *time* series: consecutive steps are assumed to
+be close to one another, and the steps are therefore solved in order, on a single thread.
+ **/
+using TimeSeries = BaseInjectionSweep<BatchInitKind::FromPreviousStep>;
+
+/**
+Injection sweep: same inputs, same outputs and same interface as TimeSeries, but every step
+restarts from the same seed (the caller's `Vinit`, or the converged "n" powerflow when
+`init_from_n_powerflow` is set -- exactly like ContingencyAnalysis does for each of its
+contingencies).
+
+Use it when the "steps" are independent scenarios rather than consecutive instants: the
+result of a step then does not depend on the steps computed before it, nor on the order in
+which they were given, and the sweep can be split over several threads (see
+`set_nb_thread`).
+ **/
+using InjectionSweep = BaseInjectionSweep<BatchInitKind::FromSeed>;
+
+#ifndef LS2G_BUILDING_CORE
+    // both instantiations are compiled once, into the core library (see the bottom of
+    // BaseInjectionSweep.cpp); every other translation unit links against them instead of
+    // instantiating the template again.
+    extern template class LS2G_API BaseInjectionSweep<BatchInitKind::FromPreviousStep>;
+    extern template class LS2G_API BaseInjectionSweep<BatchInitKind::FromSeed>;
+#endif  // LS2G_BUILDING_CORE
+
 } // namespace ls2g
 
-#endif  //COMPUTERS_H
+#endif  //BASEINJECTIONSWEEP_H
