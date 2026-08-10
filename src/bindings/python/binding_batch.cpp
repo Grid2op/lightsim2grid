@@ -60,7 +60,11 @@ void bind_batch_sweep_common(py::class_<T> & cls)
         .def("nb_solved", &T::nb_solved, DocTimeSeries::nb_solved.c_str())
 
         // status
-        .def("get_status", &T::get_status, DocTimeSeries::get_status.c_str())
+        // `<>`: see the comment above modify_gen_p -- Clang (used for the macOS/arm64
+        // wheels) rejects `&T::get_status` outright for a member function template
+        // with no target type to deduce against, where GCC happens to accept it via
+        // the default template argument. Always spell it out explicitly.
+        .def("get_status", &T::template get_status<>, DocTimeSeries::get_status.c_str())
         .def("clear", &T::clear, DocTimeSeries::clear.c_str())
         .def("close", &T::clear, DocTimeSeries::clear.c_str())
 
@@ -283,24 +287,33 @@ void bind_batch(py::module_& m) {
              "See get_algo_config().")
 
         // add contingencies
-        .def("add_all_n1", &ContingencyAnalysis::add_all_n1, DocContingencyAnalysis::add_all_n1.c_str())
-        .def("add_n1", &ContingencyAnalysis::add_n1, DocContingencyAnalysis::add_n1.c_str())
-        .def("add_nk", &ContingencyAnalysis::add_nk, DocContingencyAnalysis::add_nk.c_str())
-        .def("add_multiple_n1", &ContingencyAnalysis::add_multiple_n1, DocContingencyAnalysis::add_multiple_n1.c_str())
+        // `<>` on every one of these below: they are member function TEMPLATES
+        // (SFINAE-gated on YbusPolicy::supports_contingency && !SbusPolicy::supports_vary,
+        // see BaseBatchSweep.hpp), and `&ContingencyAnalysis::method` (no explicit
+        // template-argument list) is only accepted by GCC, which happens to fall back to
+        // the default template argument -- Clang and MSVC both reject it outright ("no
+        // matching member function for call to 'def'" / "no matching overloaded function
+        // found"), since there is no target type here to deduce the SFINAE parameter
+        // against. `<>` forces the default template arguments explicitly, which every
+        // compiler accepts.
+        .def("add_all_n1", &ContingencyAnalysis::add_all_n1<>, DocContingencyAnalysis::add_all_n1.c_str())
+        .def("add_n1", &ContingencyAnalysis::add_n1<>, DocContingencyAnalysis::add_n1.c_str())
+        .def("add_nk", &ContingencyAnalysis::add_nk<>, DocContingencyAnalysis::add_nk.c_str())
+        .def("add_multiple_n1", &ContingencyAnalysis::add_multiple_n1<>, DocContingencyAnalysis::add_multiple_n1.c_str())
 
         // remove contingencies
         .def("reset", &ContingencyAnalysis::clear, DocContingencyAnalysis::clear.c_str())
         .def("clear", &ContingencyAnalysis::clear, DocContingencyAnalysis::clear.c_str())
-        .def("clear_results_only", &ContingencyAnalysis::clear_results_only, DocContingencyAnalysis::clear.c_str())
+        .def("clear_results_only", &ContingencyAnalysis::clear_results_only<>, DocContingencyAnalysis::clear.c_str())
         .def("close", &ContingencyAnalysis::clear, DocTimeSeries::clear.c_str())
-        .def("remove_n1", &ContingencyAnalysis::remove_n1, DocContingencyAnalysis::remove_n1.c_str())
-        .def("remove_nk", &ContingencyAnalysis::remove_nk, DocContingencyAnalysis::remove_nk.c_str())
-        .def("remove_multiple_n1", &ContingencyAnalysis::remove_multiple_n1, DocContingencyAnalysis::remove_multiple_n1.c_str())
+        .def("remove_n1", &ContingencyAnalysis::remove_n1<>, DocContingencyAnalysis::remove_n1.c_str())
+        .def("remove_nk", &ContingencyAnalysis::remove_nk<>, DocContingencyAnalysis::remove_nk.c_str())
+        .def("remove_multiple_n1", &ContingencyAnalysis::remove_multiple_n1<>, DocContingencyAnalysis::remove_multiple_n1.c_str())
 
         // inspect
-        .def("my_defaults", &ContingencyAnalysis::my_defaults_vect, DocContingencyAnalysis::my_defaults_vect.c_str())
-        .def("is_grid_connected_after_contingency", &ContingencyAnalysis::is_grid_connected_after_contingency, DocLSGrid::_internal_do_not_use.c_str())
-        .def("pick_reference_slack", &ContingencyAnalysis::pick_reference_slack,
+        .def("my_defaults", &ContingencyAnalysis::my_defaults_vect<>, DocContingencyAnalysis::my_defaults_vect.c_str())
+        .def("is_grid_connected_after_contingency", &ContingencyAnalysis::is_grid_connected_after_contingency<>, DocLSGrid::_internal_do_not_use.c_str())
+        .def("pick_reference_slack", &ContingencyAnalysis::pick_reference_slack<>,
              "Over the registered contingencies, return the slack bus (gridmodel id) "
              "stranded by the fewest of them — feed it to LSGrid.set_reference_slack_bus "
              "before ac_pf so handle_disconnected_grid skips as few contingencies as possible.")
@@ -327,16 +340,16 @@ void bind_batch(py::module_& m) {
              },
              "Per contingency (row order matches my_defaults()): whether it converged / was "
              "actually simulated (False for skipped or diverged contingencies).")
-        .def("get_violations", &ContingencyAnalysis::get_violations,
+        .def("get_violations", &ContingencyAnalysis::get_violations<>,
              "Per contingency (row order matches my_defaults()): list of LimitViolation. A "
              "non-converged contingency (converged() is False) has exactly one LimitViolation "
              "here, with element_type ViolationElementType.GRID and violation_type either "
              "LimitViolationType.NOT_SIMULATED (a pre-check skipped it, eg it splits the grid) or "
              "LimitViolationType.DIVERGENCE (the solver ran but did not converge).",
              py::return_value_policy::reference_internal)
-        .def("converged_n", &ContingencyAnalysis::converged_n,
+        .def("converged_n", &ContingencyAnalysis::converged_n<>,
              "Whether the pre-contingency ('n') powerflow converged.")
-        .def("get_violations_n", &ContingencyAnalysis::get_violations_n,
+        .def("get_violations_n", &ContingencyAnalysis::get_violations_n<>,
              "List of LimitViolation for the pre-contingency ('n') case.",
              py::return_value_policy::reference_internal)
 
@@ -345,8 +358,8 @@ void bind_batch(py::module_& m) {
         .def("solver_time", &ContingencyAnalysis::solver_time, DocTimeSeries::solver_time.c_str())
         .def("preprocessing_time", &ContingencyAnalysis::preprocessing_time, DocContingencyAnalysis::preprocessing_time.c_str())
         .def("amps_computation_time", &ContingencyAnalysis::amps_computation_time, DocTimeSeries::amps_computation_time.c_str())
-        .def("modif_Ybus_time", &ContingencyAnalysis::modif_Ybus_time, DocContingencyAnalysis::modif_Ybus_time.c_str())
+        .def("modif_Ybus_time", &ContingencyAnalysis::modif_Ybus_time<>, DocContingencyAnalysis::modif_Ybus_time.c_str())
         .def("thread_init_time", &ContingencyAnalysis::thread_init_time, DocTimeSeries::thread_init_time.c_str())
-        .def("solve_time", &ContingencyAnalysis::solve_time, "TODO")
+        .def("solve_time", &ContingencyAnalysis::solve_time<>, "TODO")
         .def("nb_solved", &ContingencyAnalysis::nb_solved, DocTimeSeries::nb_solved.c_str());
 }
