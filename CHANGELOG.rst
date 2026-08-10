@@ -21,7 +21,6 @@ Change Log
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
 - code parrallelism directly in the `Computer` and `SecurityAnalysisCPP` classes
-- a mode to do both `Computer` and `SecurityAnalysisCPP`
 - use the "multi slack hack" (see issue #50) for SecurityAnalysis or Computer for example
 - code `helm` powerflow method
 - interface with gridpack (to enforce q limits for example)
@@ -118,8 +117,16 @@ TODO: add a CI job that builds one of the example C++ algorithm plugins
       ``test_plugin_against_installed`` job each cover half of this (the former builds
       lightsim2grid itself with the flag but does not touch a plugin; the latter builds a
       plugin but never with the flag) -- neither exercises the combination.
-TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding small decreasing 
+TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding small decreasing
       lambba coefficients to the diagonal of J to improve its conditionning.
+TODO: ``ScenarioSweepCPP`` (varies both the injection and a contingency per row, see
+      ``batch_algorithm/BaseBatchSweep.hpp``) does not have ``ContingencyAnalysisCPP``'s
+      ``handle_disconnected_grid`` mode or inline limit-violation checking
+      (``compute_limit_violations`` / ``converged`` / ``get_violations``) -- deliberately
+      out of scope for the first release of this class, only ``ContingencyAnalysisCPP``
+      has them. Also TODO: a "combine mode" axis choosing between the current row-aligned
+      /  zipped semantics (row `i`'s injection paired with row `i`'s contingency) and a
+      cartesian one ("every registered contingency x every injection profile").
 
 [1.0.0] 2026-xx-yy
 --------------------
@@ -183,6 +190,45 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   under ``tell_all_changed()``. Being a C++ test it runs under the valgrind pass of the C++ suite and
   the ASan/UBSan + Eigen-assertion builds, where a too-long index that stays inside the heap would
   still be caught.
+- [BREAKING] (c++ API only) ``batch_algorithm/BaseInjectionSweep.hpp`` / ``.cpp`` and
+  ``batch_algorithm/ContingencyAnalysis.hpp`` / ``.cpp`` are removed, replaced by
+  ``batch_algorithm/BaseBatchSweep.hpp`` / ``.cpp`` (plus two new small headers,
+  ``batch_algorithm/YbusPolicy.hpp`` / ``.cpp`` and ``batch_algorithm/SbusPolicy.hpp`` /
+  ``.cpp``): a single class template ``ls2g::BaseBatchSweep<YbusPolicy, SbusPolicy,
+  BatchInitKind>``, policy-parameterized on what varies per step in the admittance
+  matrix (nothing, or a contingency) and in the injection (nothing, or per-step
+  values). ``TimeSeries``, ``InjectionSweep`` and ``ContingencyAnalysis`` are now three
+  aliases of it -- same behavior, same C++ and python public API as before (the
+  policy-only, contingency-only and injection-only methods are gated with
+  ``std::enable_if`` so each alias only exposes what it always exposed); nothing
+  changes on the python side for these three. C++ code including the old paths must
+  update its ``#include``.
+- [ADDED] ``ScenarioSweepCPP`` (python wrapper ``lightsim2grid.scenarioSweep.ScenarioSweep``),
+  the 4th instantiation of ``ls2g::BaseBatchSweep``: varies both the injection AND a
+  contingency (a line / trafo disconnection) per row, independently and row-aligned --
+  row ``i`` of the injection matrices is solved together with row ``i`` of the
+  contingency mask. Built up with a new setter-based API (see below) rather than a
+  single bundled call: ``modify_gen_p`` / ``modify_sgen_p`` / ``modify_load_p`` /
+  ``modify_load_q`` for the injection, ``set_contingency_lines`` /
+  ``set_contingency_trafos`` (dense boolean masks, shape ``(n_simul, n_line)`` /
+  ``(n_simul, n_trafo)``, ``True`` = "deactivate this branch for this row") for the
+  contingency, then ``compute(Vinit, max_iter, tol)``. Deliberately a *different* API
+  from ``ContingencyAnalysisCPP``'s ``add_n1`` / ``add_nk`` (a set of distinct
+  contingencies applied to one shared base injection) -- the two usages do not unify
+  cleanly, so ``ScenarioSweepCPP`` does not have ``add_n1`` / ``add_nk`` and
+  ``ContingencyAnalysisCPP`` does not have ``set_contingency_lines`` /
+  ``set_contingency_trafos``. See ``docs/scenario_sweep.rst``.
+- [ADDED] a new setter-based API -- ``modify_gen_p`` / ``modify_sgen_p`` /
+  ``modify_load_p`` / ``modify_load_q`` + ``compute(Vinit, max_iter, tol)`` -- is now
+  also available on ``TimeSeriesCPP`` / ``InjectionSweepCPP``, alongside their existing
+  bundled ``compute_Vs`` call (kept, not removed, deprecated via docstring only). Unlike
+  ``compute_Vs``, which requires all four matrices every call, any axis you never set
+  defaults to the grid's own current target value, broadcast across every row --
+  applies to ``ScenarioSweepCPP`` too. Every setter shares one row-count lock: the
+  first one called fixes the number of simulations, every later one (across all
+  setters, including ``set_contingency_lines`` / ``set_contingency_trafos`` on
+  ``ScenarioSweepCPP``) is checked against it immediately, instead of only at
+  ``compute()`` time as ``compute_Vs``'s equivalent check did.
 - [ADDED] ``src/tests/test_timeseries_sbus.cpp`` and ``lightsim2grid/tests/test_timeseries_sbus.py``:
   a one-step time series fed the grid's OWN injections must reproduce ``ac_pf`` / ``dc_pf`` exactly.
   Covers each dropped element kind separately and all of them together, in ac and in dc, plus a

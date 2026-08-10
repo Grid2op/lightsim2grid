@@ -7,8 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "binding_declarations.hpp"
-#include "batch_algorithm/BaseInjectionSweep.hpp"
-#include "batch_algorithm/ContingencyAnalysis.hpp"
+#include "batch_algorithm/BaseBatchSweep.hpp"
 #include "batch_algorithm/LimitViolation.hpp"
 #include "help_fun_msg.hpp"
 
@@ -17,13 +16,18 @@ using namespace ls2g;
 namespace {
 
 /**
- * The whole interface shared by TimeSeriesCPP and InjectionSweepCPP -- which is to say all
- * of it, bar the class docstring and the `init_from_n_powerflow` wording (the two classes
- * differ only in how each step is initialized, see BatchInitKind). Templated on the
- * instantiation rather than copy-pasted so the two Python classes cannot drift apart.
+ * The interface shared by TimeSeriesCPP, InjectionSweepCPP and ScenarioSweepCPP: every
+ * instantiation of BaseBatchSweep whose SbusPolicy varies (see
+ * batch_algorithm/BaseBatchSweep.hpp). Templated on the instantiation rather than
+ * copy-pasted so the three Python classes cannot drift apart.
+ *
+ * Deliberately does NOT bind compute_Vs()/get_sbuses(): those only exist on
+ * TimeSeries/InjectionSweep (see bind_legacy_compute_vs below) -- ScenarioSweep never
+ * had the old bundled-call API, so binding them unconditionally here would fail to
+ * compile for it (the C++ side gates them out via SFINAE).
  */
 template<class T>
-void bind_injection_batch_common(py::class_<T> & cls)
+void bind_batch_sweep_common(py::class_<T> & cls)
 {
     cls
         .def(py::init<const LSGrid &>())
@@ -60,25 +64,71 @@ void bind_injection_batch_common(py::class_<T> & cls)
         .def("clear", &T::clear, DocTimeSeries::clear.c_str())
         .def("close", &T::clear, DocTimeSeries::clear.c_str())
 
-        // perform the computations
-        .def("compute_Vs", &T::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocTimeSeries::compute_Vs.c_str())
-        .def("compute_flows", &T::compute_flows, DocTimeSeries::compute_flows.c_str())
-        .def("compute_power_flows", &T::compute_power_flows, DocTimeSeries::compute_power_flows.c_str())
+        // new setter-based API (replaces the bundled compute_Vs call): build up the
+        // per-step injection with as many of these as are relevant, then call
+        // compute(). Any axis never set defaults to the grid's own target value,
+        // broadcast across every row. All setters share one row-count lock: the
+        // first one called fixes the number of simulations, every later one
+        // (including set_contingency_lines/trafos on ScenarioSweep) is checked
+        // against it immediately.
+        // `&T::template modify_gen_p<>` (explicit empty template-argument list, with
+        // the `template` disambiguator since T is itself a dependent name here): a
+        // member function TEMPLATE's address cannot be taken via plain `&T::method`
+        // in a context with no target type to deduce against (which is exactly what
+        // pybind11's `.def(name, F&&, ...)` is -- it deduces `F` FROM this
+        // expression, so there is nothing to deduce the SFINAE template parameter
+        // against). `<>` forces the compiler to use the default template arguments
+        // instead.
+        .def("modify_gen_p", &T::template modify_gen_p<>, py::arg("gen_p"),
+             "Per-step active generator setpoints, shape (n_simul, n_gen). See the class "
+             "docstring: locks / checks the number of simulations against any other "
+             "modify_* / set_contingency_* call already made on this object.")
+        .def("modify_sgen_p", &T::template modify_sgen_p<>, py::arg("sgen_p"),
+             "Per-step active static generator setpoints, shape (n_simul, n_sgen). "
+             "See modify_gen_p().")
+        .def("modify_load_p", &T::template modify_load_p<>, py::arg("load_p"),
+             "Per-step active load setpoints, shape (n_simul, n_load). See modify_gen_p().")
+        .def("modify_load_q", &T::template modify_load_q<>, py::arg("load_q"),
+             "Per-step reactive load setpoints, shape (n_simul, n_load). See modify_gen_p().")
+        .def("compute", &T::compute, py::call_guard<py::gil_scoped_release>(),
+             py::arg("Vinit"), py::arg("max_iter"), py::arg("tol"),
+             "Run the batch: one powerflow per simulation, using whatever was set by "
+             "modify_* (and, on ScenarioSweep, set_contingency_lines / "
+             "set_contingency_trafos). Raises if nothing was ever set.")
 
         // results
+        .def("compute_flows", &T::compute_flows, DocTimeSeries::compute_flows.c_str())
+        .def("compute_power_flows", &T::compute_power_flows, DocTimeSeries::compute_power_flows.c_str())
         .def("get_flows", &T::get_flows, DocTimeSeries::get_flows.c_str(), py::return_value_policy::reference_internal)
         .def("get_power_flows", &T::get_power_flows, DocTimeSeries::get_power_flows.c_str(), py::return_value_policy::reference_internal)
         .def("get_voltages", &T::get_voltages, DocTimeSeries::get_voltages.c_str(), py::return_value_policy::reference_internal)
-        .def("get_sbuses", &T::get_sbuses, DocTimeSeries::get_sbuses.c_str(), py::return_value_policy::reference_internal)
 
-        // nb_thread is bound for both classes on purpose, even though TimeSeriesCPP
-        // rejects any value but 1 (see the warning in its docstring): a user who
-        // discovers the attribute gets an error message pointing at InjectionSweepCPP,
-        // instead of an AttributeError that explains nothing.
+        // nb_thread is bound for every one of these classes on purpose, even though
+        // TimeSeriesCPP rejects any value but 1 (see the warning in its docstring): a
+        // user who discovers the attribute gets an error message pointing at
+        // InjectionSweepCPP/ScenarioSweepCPP, instead of an AttributeError that
+        // explains nothing.
         .def_property("nb_thread",
                       [](const T & self){ return self.get_nb_thread(); },
                       [](T & self, int val){ self.set_nb_thread(val); },
                       DocTimeSeries::nb_thread.c_str());
+}
+
+/**
+ * compute_Vs()/get_sbuses(): the legacy bundled-call API, kept (deprecated via
+ * docstring only, not removed) on TimeSeriesCPP/InjectionSweepCPP for backwards
+ * compatibility. Internally a thin wrapper around the 4 modify_* setters + compute().
+ * NOT available on ScenarioSweepCPP -- it never had this call, see
+ * bind_batch_sweep_common's own docstring above.
+ */
+template<class T>
+void bind_legacy_compute_vs(py::class_<T> & cls)
+{
+    cls
+        .def("compute_Vs", &T::template compute_Vs<>, py::call_guard<py::gil_scoped_release>(),
+             (DocTimeSeries::compute_Vs + " DEPRECATED: prefer modify_gen_p / modify_sgen_p / "
+              "modify_load_p / modify_load_q + compute() instead.").c_str())
+        .def("get_sbuses", &T::template get_sbuses<>, DocTimeSeries::get_sbuses.c_str(), py::return_value_policy::reference_internal);
 }
 
 }  // namespace
@@ -112,12 +162,15 @@ void bind_batch(py::module_& m) {
         .def_readonly("limit", &LimitViolation::limit, DocContingencyAnalysis::limit.c_str())
         .def_readonly("name", &LimitViolation::name, DocContingencyAnalysis::violation_name.c_str());
 
-    // TimeSeriesCPP and InjectionSweepCPP are two instantiations of the same C++ template
-    // (see batch_algorithm/BaseInjectionSweep.hpp): same inputs, same results, same interface --
-    // they differ only in how each step is initialized, so everything but the class
-    // docstring and `init_from_n_powerflow` is bound by the shared helper above.
+    // TimeSeriesCPP, InjectionSweepCPP and ScenarioSweepCPP are three instantiations
+    // of the same C++ template (see batch_algorithm/BaseBatchSweep.hpp): same
+    // per-step injection inputs, same results -- they differ in how each step is
+    // initialized (TimeSeries/InjectionSweep) and in whether a contingency also
+    // varies per step (ScenarioSweep). Everything but the class docstring and
+    // `init_from_n_powerflow` is bound by the shared helpers above.
     py::class_<TimeSeries> time_series(m, "TimeSeriesCPP", DocTimeSeries::TimeSeries.c_str());
-    bind_injection_batch_common(time_series);
+    bind_batch_sweep_common(time_series);
+    bind_legacy_compute_vs(time_series);
     time_series
         .def_property("init_from_n_powerflow",
                       [](const TimeSeries & self){ return self.get_init_from_n_powerflow(); },
@@ -125,12 +178,45 @@ void bind_batch(py::module_& m) {
                       DocTimeSeries::init_from_n_powerflow.c_str());
 
     py::class_<InjectionSweep> injection_sweep(m, "InjectionSweepCPP", DocInjectionSweep::InjectionSweep.c_str());
-    bind_injection_batch_common(injection_sweep);
+    bind_batch_sweep_common(injection_sweep);
+    bind_legacy_compute_vs(injection_sweep);
     injection_sweep
         .def_property("init_from_n_powerflow",
                       [](const InjectionSweep & self){ return self.get_init_from_n_powerflow(); },
                       [](InjectionSweep & self, bool val){ self.set_init_from_n_powerflow(val); },
                       DocInjectionSweep::init_from_n_powerflow.c_str());
+
+    // ScenarioSweepCPP: the 4th instantiation -- varies both the injection AND a
+    // contingency (line/trafo disconnection) per row, independently, row-aligned.
+    py::class_<ScenarioSweep> scenario_sweep(m, "ScenarioSweepCPP",
+        "Batch powerflow varying both the injection AND a contingency per simulation, "
+        "row-aligned: row i of every modify_* input is solved together with row i of "
+        "set_contingency_lines / set_contingency_trafos. Build up the batch with "
+        "modify_gen_p / modify_sgen_p / modify_load_p / modify_load_q and "
+        "set_contingency_lines / set_contingency_trafos (any axis never set defaults "
+        "to the grid's own state for every row), then call compute(). Unlike "
+        "ContingencyAnalysisCPP's add_n1/add_nk (a set of distinct scenarios applied "
+        "to one shared base case), set_contingency_lines/trafos are dense boolean "
+        "masks of shape (n_simul, n_lines) / (n_simul, n_trafos) -- True means "
+        "'deactivate this branch for this simulation'; the two APIs are deliberately "
+        "not unified, they serve different usages.");
+    bind_batch_sweep_common(scenario_sweep);
+    scenario_sweep
+        .def("set_contingency_lines", &ScenarioSweep::set_contingency_lines<>, py::arg("mask"),
+             "Per-step powerline contingency mask, shape (n_simul, n_line), dtype bool. "
+             "True means 'deactivate this powerline for this simulation'. See the class "
+             "docstring: locks / checks the number of simulations, and is a different "
+             "API from ContingencyAnalysisCPP's add_n1/add_nk on purpose.")
+        .def("set_contingency_trafos", &ScenarioSweep::set_contingency_trafos<>, py::arg("mask"),
+             "Per-step trafo contingency mask, shape (n_simul, n_trafo), dtype bool. "
+             "See set_contingency_lines().")
+        .def_property("init_from_n_powerflow",
+                      [](const ScenarioSweep & self){ return self.get_init_from_n_powerflow(); },
+                      [](ScenarioSweep & self, bool val){ self.set_init_from_n_powerflow(val); },
+                      "Whether to initialize the complex voltages of each simulation with the "
+                      "results of a n-powerflow (ie a powerflow with no injection change and no "
+                      "contingency) or not. Default: false, meaning each simulation is "
+                      "initialized with the given input vector.");
 
     py::class_<ContingencyAnalysis>(m, "ContingencyAnalysisCPP", DocContingencyAnalysis::ContingencyAnalysis.c_str())
         .def(py::init<const LSGrid &, bool>(), py::arg("grid_model"), py::arg("compute_limit_violations") = false)

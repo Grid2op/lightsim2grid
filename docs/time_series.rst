@@ -99,6 +99,14 @@ Two things follow:
     away for independence -- and buys back much more than it costs as soon as you use
     several threads.
 
+.. note::
+
+    `TimeSerie` / `InjectionSweep` also expose a newer, setter-based API
+    (`modify_gen_p` / `modify_sgen_p` / `modify_load_p` / `modify_load_q` + `compute()`)
+    as an alternative to the single bundled `compute_V_from_inj` call -- see
+    :doc:`scenario_sweep` (which uses that same API, plus a per-step contingency) for
+    details on how it behaves when an axis is never set.
+
 .. _timeserie_benchmark:
 
 .. _ts_benchmarks:

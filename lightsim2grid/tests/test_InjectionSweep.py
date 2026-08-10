@@ -178,6 +178,23 @@ class TestInjectionSweepCPP(unittest.TestCase):
         computer_th.nb_thread = 4
         assert np.array_equal(self._compute(computer_th), Vs_dc)
 
+    def test_new_setter_api_matches_legacy_compute_vs(self):
+        """the new modify_* + compute() API must give bit-for-bit the same result as the
+        legacy bundled compute_Vs() call on the same object -- guards against the SFINAE
+        gating silently changing which code path the legacy call takes"""
+        Vs_legacy = self._compute(InjectionSweepCPP(self.grid))
+
+        computer = InjectionSweepCPP(self.grid)
+        computer.modify_gen_p(self.prod_p)
+        computer.modify_sgen_p(self.sgen_p)
+        computer.modify_load_p(self.load_p)
+        computer.modify_load_q(self.load_q)
+        computer.compute(self.Vinit, self.env.backend.max_it, self.env.backend.tol)
+        assert computer.get_status() == 1
+        Vs_new = 1.0 * computer.get_voltages()
+
+        assert np.array_equal(Vs_new, Vs_legacy)
+
     def test_timers(self):
         computer = InjectionSweepCPP(self.grid)
         self._compute(computer)

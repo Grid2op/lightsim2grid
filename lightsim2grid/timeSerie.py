@@ -194,11 +194,85 @@ class TimeSerie:
         elif status != 1:
             # only raise a warning in this case
             warnings.warn(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
-        Vs = 1.0 * self.computer.get_voltages()  # If I don't copy, lazy eval may break stuff... 
+        Vs = self.computer.get_voltages().copy()  # If I don't copy, lazy eval may break stuff... 
         # eg test_time_series_dc.py does behave stochastically
         self.__computed = True
         return Vs
         
+    def modify_gen_p(self, gen_p):
+        """Per-step active generator setpoints, shape ``(n_simul, n_gen)``. Part of the
+        new setter-based API (see :func:`compute`); an alternative to
+        :func:`compute_V_from_inj`, not required if you use that call instead."""
+        gen_p = np.asarray(gen_p)
+        if gen_p.ndim != 2:
+            raise RuntimeError("gen_p should be a matrix with rows representing time steps "
+                               "and columns representing individual production.")
+        if gen_p.shape[1] != self.grid2op_env.n_gen:
+            raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "
+                               f"differs from the number of columns of gen_p ({gen_p.shape[1]}).")
+        self.computer.modify_gen_p(gen_p)
+        self.__computed = False
+
+    def modify_sgen_p(self, sgen_p):
+        """Per-step active static generator setpoints, shape ``(n_simul, n_sgen)``. See
+        :func:`modify_gen_p`."""
+        sgen_p = np.asarray(sgen_p)
+        if sgen_p.ndim != 2:
+            raise RuntimeError("sgen_p should be a matrix with rows representing time steps "
+                               "and columns representing individual static generation.")
+        self.computer.modify_sgen_p(sgen_p)
+        self.__computed = False
+
+    def modify_load_p(self, load_p):
+        """Per-step active load setpoints, shape ``(n_simul, n_load)``. See
+        :func:`modify_gen_p`."""
+        load_p = np.asarray(load_p)
+        if load_p.ndim != 2:
+            raise RuntimeError("load_p should be a matrix with rows representing time steps "
+                               "and columns representing individual loads.")
+        if load_p.shape[1] != self.grid2op_env.n_load:
+            raise RuntimeError(f"The number of loads on the grid ({self.grid2op_env.n_load}) "
+                               f"differs from the number of columns of load_p ({load_p.shape[1]}).")
+        self.computer.modify_load_p(load_p)
+        self.__computed = False
+
+    def modify_load_q(self, load_q):
+        """Per-step reactive load setpoints, shape ``(n_simul, n_load)``. See
+        :func:`modify_gen_p`."""
+        load_q = np.asarray(load_q)
+        if load_q.ndim != 2:
+            raise RuntimeError("load_q should be a matrix with rows representing time steps "
+                               "and columns representing individual loads.")
+        if load_q.shape[1] != self.grid2op_env.n_load:
+            raise RuntimeError(f"The number of loads on the grid ({self.grid2op_env.n_load}) "
+                               f"differs from the number of columns of load_q ({load_q.shape[1]}).")
+        self.computer.modify_load_q(load_q)
+        self.__computed = False
+
+    def compute(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):
+        """
+        Run the batch using whatever was set by :func:`modify_gen_p` / :func:`modify_sgen_p`
+        / :func:`modify_load_p` / :func:`modify_load_q` (the new setter-based API -- an
+        alternative to the single bundled :func:`compute_V_from_inj` call). ``max_iter`` /
+        ``tol`` default to the backend's own values when not given.
+        """
+        if v_init is None:
+            v_init_comp = self.grid2op_env.backend.V
+        else:
+            v_init_comp = 1.0 * v_init  # make a copy !
+        if max_iter is None:
+            max_iter = self.grid2op_env.backend.max_it
+        if tol is None:
+            tol = self.grid2op_env.backend.tol
+        self.computer.compute(v_init_comp, max_iter, tol)
+        status = self.computer.get_status()
+        if status != 1 and not ignore_errors:
+            raise RuntimeError(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
+        elif status != 1:
+            warnings.warn(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
+        self.__computed = True
+        return self.computer.get_voltages().copy()
+
     def compute_V(self, scenario_id=None, seed=None, v_init=None, ignore_errors=False):
         """
         This function allows to retrieve the complex voltage at each bus of the grid for each step.

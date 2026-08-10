@@ -25,7 +25,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LSGrid.hpp"
-#include "batch_algorithm/BaseInjectionSweep.hpp"
+#include "batch_algorithm/BaseBatchSweep.hpp"
 
 using Catch::Approx;
 using ls2g::AlgorithmType;
