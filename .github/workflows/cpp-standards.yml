@@ -99,6 +99,7 @@ jobs:
           python -c "from lightsim2grid import *"
           python -c "from lightsim2grid.newtonpf import newtonpf"
           python -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python -c "from lightsim2grid.injectionSweep import InjectionSweepCPP"
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
           python -c "from lightsim2grid.gridmodel import GridModel"

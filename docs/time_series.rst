@@ -58,7 +58,48 @@ Importantly, this method is around **11x** faster than simulating "do nothing" (
     solution of the grid's current ("n") state instead of a flat start -- this is usually
     faster. See :func:`lightsim2grid.timeSerie.TimeSerie.init_from_n_powerflow`.
 
-.. _timeserie_benchmark: 
+Independent scenarios: `InjectionSweep`
+----------------------------------------
+
+`TimeSerie` initializes each step with the solution of the step before it. That is the right
+thing to do for a *time* series -- two consecutive instants are close to one another, so the
+previous solution is an excellent starting point -- but it makes the steps a chain: step `i`
+cannot be computed before step `i-1`, and its result depends on it.
+
+If your "steps" are unrelated scenarios rather than consecutive instants (a sample of load /
+generation patterns, a set of "what if" injections, a Monte-Carlo draw...), use
+:class:`lightsim2grid.injectionSweep.InjectionSweep` instead. It computes exactly the same
+thing, with exactly the same interface, but starts every step from the same voltage -- the
+one you provide, or the "n" powerflow result if `init_from_n_powerflow` is set -- just like
+:class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis` does for each contingency.
+
+Two things follow:
+
+- the results do not depend on the order the steps are given in;
+- the batch can be spread over several OS threads, in c++, with `sweep.nb_thread = ...`
+  (the results do not depend on that either). `TimeSerie` cannot: splitting a chain into
+  per-thread ranges would break it, so setting `nb_thread` to anything but 1 raises there.
+
+.. code-block:: python
+
+    import grid2op
+    from lightsim2grid import InjectionSweep, LightSimBackend
+
+    env_name = ...
+    env = grid2op.make(env_name, backend=LightSimBackend())
+
+    sweep = InjectionSweep(env)
+    sweep.nb_thread = 4
+    res_p, res_a, res_v = sweep.get_flows(scenario_id=..., seed=...)
+
+.. note::
+
+    On a genuine time series `TimeSerie` usually needs fewer solver iterations, precisely
+    because each step starts from its neighbour's solution. `InjectionSweep` trades that
+    away for independence -- and buys back much more than it costs as soon as you use
+    several threads.
+
+.. _timeserie_benchmark:
 
 .. _ts_benchmarks:
 
@@ -118,6 +159,10 @@ Detailed usage
 --------------------------
 
 .. automodule:: lightsim2grid.timeSerie
+    :members:
+    :autosummary:
+
+.. automodule:: lightsim2grid.injectionSweep
     :members:
     :autosummary:
 

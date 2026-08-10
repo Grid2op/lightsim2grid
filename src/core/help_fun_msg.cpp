@@ -6655,6 +6655,77 @@ const std::string DocTimeSeries::clear = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocTimeSeries::nb_thread = R"mydelimiter(
+    Number of OS threads used to compute the steps (default ``1``).
+
+    With ``nb_thread == 1`` the behaviour is the legacy sequential one. With
+    ``nb_thread > 1`` the steps are split into contiguous ranges, each solved by its own
+    thread (each with its own solver), writing to disjoint rows of the result matrix: the
+    results do NOT depend on the number of threads. Values ``< 1`` are clamped to ``1``.
+
+    .. warning::
+        This is only available on :class:`lightsim2grid.injectionSweep.InjectionSweepCPP`
+        (and on :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP`), whose
+        computations are independent of one another.
+
+        On :class:`lightsim2grid.timeSerie.TimeSeriesCPP` each step is initialized with
+        the result of the previous one, so the steps cannot be split over threads without
+        making the results depend on how they were split: setting it to anything but 1
+        raises a ``RuntimeError``. Use ``InjectionSweepCPP`` if you want the very same
+        injections computed in parallel.
+
+)mydelimiter";
+
+const std::string DocTimeSeries::thread_init_time = R"mydelimiter(
+    Time (in seconds, ``float``) spent building the per thread solvers. It is 0. when
+    ``nb_thread`` is 1, in which case the (already initialized) internal solver is reused.
+
+)mydelimiter";
+
+const std::string DocTimeSeries::init_from_n_powerflow = R"mydelimiter(
+    Whether to initialize the complex voltages of the first step with the results of a
+    "n" powerflow (*ie* a powerflow run at the start of the computation, on the injections
+    of the grid model) or not.
+
+    Default: ``False``, meaning the first step is initialized with the input vector given
+    to :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_Vs`. Every other step is
+    initialized with the result of the step before it either way.
+
+)mydelimiter";
+
+const std::string DocInjectionSweep::InjectionSweep = R"mydelimiter(
+    Allows the computation of many powerflows on the same grid topology while the active /
+    reactive power injected at each bus vary: exactly the same inputs, the same results and
+    the same interface as :class:`lightsim2grid.timeSerie.TimeSeriesCPP`.
+
+    The difference is how each computation is initialized. ``TimeSeriesCPP`` initializes a
+    step with the solution of the step before it (they are consecutive instants of a *time*
+    series, so they are expected to be close to one another). ``InjectionSweepCPP``
+    initializes every step with the very same voltage - the one you provide, or the result
+    of the "n" powerflow if ``init_from_n_powerflow`` is set - exactly like
+    :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP` does for each of its
+    contingencies.
+
+    Use it when the "steps" are independent scenarios rather than consecutive instants. The
+    result of a step then does not depend on the steps computed before it, nor on the order
+    in which they are given, and the computation can be spread over several threads (see
+    ``nb_thread``, which ``TimeSeriesCPP`` cannot support).
+
+    This is a "raw" c++ class, for an easier to use interface, please refer to the python
+    documentation of the :class:`lightsim2grid.injectionSweep.InjectionSweep` class.
+
+)mydelimiter";
+
+const std::string DocInjectionSweep::init_from_n_powerflow = R"mydelimiter(
+    Whether to initialize the complex voltages of **each** step with the results of a "n"
+    powerflow (*ie* a powerflow run at the start of the computation, on the injections of
+    the grid model) or not.
+
+    Default: ``False``, meaning every step is initialized with the input vector given to
+    :func:`lightsim2grid.injectionSweep.InjectionSweepCPP.compute_Vs`.
+
+)mydelimiter";
+
 const std::string DocContingencyAnalysis::ContingencyAnalysis = R"mydelimiter(
     Allows the computation of "security analysis", that consists in computing the flows that would result from the disconnection of one or multiple
     disconnections of some powerlines.

@@ -29,8 +29,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
                             _li_defaults(),
                             _li_coeffs(),
                             _compute_limit_violations_(compute_limit_violations),
-                            _timer_modif_Ybus(0.),
-                            _timer_thread_init(0.)
+                            _timer_modif_Ybus(0.)
                             { }
 
         // whether limit violations are computed (see `converged`, `get_violations`,
@@ -190,13 +189,11 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         bool get_handle_disconnected_grid() const {return _handle_disconnected_grid;}
         void set_handle_disconnected_grid(bool val) {_handle_disconnected_grid = val;}
 
-        // number of OS threads used to solve the contingencies (default: 1).
-        // With nb_thread == 1 the behaviour is identical to the legacy sequential
-        // path. With nb_thread > 1 the contingency list is split into contiguous
-        // ranges, each solved by its own thread (own solver + own Ybus copy),
-        // writing to disjoint rows of the result matrix. Values < 1 are clamped to 1.
-        int get_nb_thread() const {return _nb_thread;}
-        void set_nb_thread(int n) {_nb_thread = (n < 1 ? 1 : n);}
+        // NB: the number of OS threads used to solve the contingencies is
+        // get_nb_thread() / set_nb_thread(), inherited from BaseBatchSolverSynch (every
+        // batch algorithm whose computations are independent of one another supports it).
+        // Here each thread additionally owns its Ybus copy, since emulating a
+        // disconnection means editing that matrix.
 
         // make the computation. Throws if the pre-contingency ("n", no disconnection) powerflow
         // itself does not converge -- every contingency is solved starting from / relative to
@@ -266,8 +263,8 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         double total_time() const {return _timer_total;}
         double preprocessing_time() const {return _timer_pre_proc;}
         double modif_Ybus_time() const {return _timer_modif_Ybus;}
-        double thread_init_time() const {return _timer_thread_init;}
         double solve_time() const {return _timer_solver;}
+        // NB: thread_init_time() comes from BaseBatchSolverSynch
 
     protected:
         // prevent the insertion of "out of range" elements
@@ -390,9 +387,6 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         std::set<std::set<int> > _li_defaults;  // do not use unordered_set here, we rely on the order for different functions !
         std::vector<std::vector<Coeff> > _li_coeffs;  // for each n-k, stores the coefficients I need to modify in the Ybus
 
-        // number of OS threads used to solve the contingencies (see set_nb_thread)
-        int _nb_thread = 1;
-
         // "handle disconnected grid" mode (see set_handle_disconnected_grid)
         bool _handle_disconnected_grid = false;
         std::vector<std::vector<int> > _li_masked;  // per contingency: masked solver bus ids (mask mode)
@@ -408,9 +402,8 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
 
         //timers
         double _timer_modif_Ybus;  // time to update the Ybus between the defaults simulation
-        double _timer_thread_init;
 };
 
 } // namespace ls2g
 
-#endif  //COMPUTERS_H
+#endif  //SECURITYANALYSIS_H

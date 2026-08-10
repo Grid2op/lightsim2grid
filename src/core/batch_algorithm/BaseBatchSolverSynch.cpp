@@ -8,6 +8,8 @@
 
 #include "BaseBatchSolverSynch.hpp"
 
+#include <algorithm>
+
 namespace ls2g {
 
 /**
@@ -122,6 +124,27 @@ bool BaseBatchSolverSynch::warmup_solver(
     // subsequent per-contingency solves reuse the factorization
     control.tell_none_changed();
     return conv;
+}
+
+std::unique_ptr<AlgorithmSelector> BaseBatchSolverSynch::make_thread_algo() const
+{
+    std::unique_ptr<AlgorithmSelector> res = std::make_unique<AlgorithmSelector>();
+    // the member _grid_model has a stable address (this class is not copyable), so
+    // handing its address to a solver that outlives this call is safe
+    res->set_lsgrid(&_grid_model);
+    res->change_algorithm(get_algo_name());  // by name, see the declaration
+    res->set_config(_algo.get_config());     // match the member solver's configuration
+    return res;
+}
+
+void BaseBatchSolverSynch::split_range(size_t nb_items, int nb_thread, int t,
+                                       size_t & begin, size_t & end)
+{
+    const size_t nb_th = static_cast<size_t>(nb_thread);
+    const size_t base = nb_items / nb_th;
+    const size_t rem = nb_items % nb_th;
+    begin = static_cast<size_t>(t) * base + std::min(static_cast<size_t>(t), rem);
+    end = begin + base + (static_cast<size_t>(t) < rem ? 1 : 0);
 }
 
 void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)

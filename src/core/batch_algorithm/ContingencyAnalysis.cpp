@@ -759,15 +759,8 @@ void ContingencyAnalysis::compute(const Eigen::Ref<const CplxVect> & Vinit, int 
     // parallel instead of serially on the main thread. Only reads shared state
     // (_grid_model, _algo config, get_algo_name()); each thread writes solely its
     // own slot of the pre-sized vectors, so no locking is needed.
-    // Uses the *name*-based overload, not get_algo_type(): a plugin (or
-    // no-enum-member built-in like NRRefactorRetry_*) solver reports
-    // AlgorithmType::Custom, which change_algorithm(AlgorithmType) rejects.
     auto init_thread = [&](int t){
-        algos[t] = std::make_unique<AlgorithmSelector>();
-        AlgorithmSelector & algo = *algos[t];
-        algo.set_lsgrid(&_grid_model);
-        algo.change_algorithm(get_algo_name());
-        algo.set_config(_algo.get_config());  // match the member solver's configuration
+        algos[t] = make_thread_algo();
         controls[t] = _algo_controler;
         ybus_copies[t] = Ybus_;  // thread-local working copy of the admittance
     };
@@ -779,12 +772,8 @@ void ContingencyAnalysis::compute(const Eigen::Ref<const CplxVect> & Vinit, int 
     auto ybus_for = [&](int t) -> Eigen::SparseMatrix<cplx_type> & {
         return ybus_copies[t];
     };
-    const size_t base = nb_cont / static_cast<size_t>(nb_thread);
-    const size_t rem = nb_cont % static_cast<size_t>(nb_thread);
     auto range_of = [&](int t, size_t & b, size_t & e){
-        // contiguous split: the first `rem` threads get one extra contingency
-        b = static_cast<size_t>(t) * base + std::min(static_cast<size_t>(t), rem);
-        e = b + base + (static_cast<size_t>(t) < rem ? 1 : 0);
+        split_range(nb_cont, nb_thread, t, b, e);
     };
 
     // spawn threads 1..nb_thread-1, then run thread 0's share inline

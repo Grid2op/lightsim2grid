@@ -83,14 +83,20 @@ class TimeSerie:
         res_p, res_a, res_v = time_series.get_flows(scenario_id=..., seed=...)
 
     """
+
+    #: the c++ class this wrapper drives. Overridden by
+    #: :class:`lightsim2grid.injectionSweep.InjectionSweep`, which shares this entire
+    #: wrapper and only swaps the underlying computer.
+    _CPP_CLASS = TimeSeriesCPP
+
     def __init__(self, grid2op_env):
         if not GRID2OP_INSTALLED:
-            raise RuntimeError("Impossible to use the python wrapper `TimeSerie` "
+            raise RuntimeError(f"Impossible to use the python wrapper `{type(self).__name__}` "
                                "when grid2op is not installed. Please fall back to the "
                                "c++ version (available in python) with:\n"
-                               "\tfrom lightsim2grid.timeSerie import TimeSerieCPP\n"
+                               f"\tfrom lightsim2grid.timeSerie import {type(self)._CPP_CLASS.__name__}\n"
                                "and refer to the appropriate documentation.")
-            
+
         from grid2op.Environment import Environment  # type: ignore # otherwise i got issues...
         if not isinstance(grid2op_env.backend, LightSimBackend):
             raise RuntimeError("This class only works with LightSimBackend")
@@ -98,7 +104,7 @@ class TimeSerie:
             raise RuntimeError("Please an environment of class \"Environment\", "
                                "and not \"MultimixEnv\" or \"BaseMultiProcessEnv\"")
         self.grid2op_env = grid2op_env.copy()
-        self.computer = TimeSeriesCPP(self.grid2op_env.backend._grid)
+        self.computer = type(self)._CPP_CLASS(self.grid2op_env.backend._grid)
         self.prod_p = None
         self.load_p = None
         self.load_q = None

@@ -11,6 +11,8 @@
 
 #include "LSGrid.hpp"
 
+#include <memory>
+
 namespace ls2g {
 
 /**
@@ -67,6 +69,39 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         bool get_init_from_n_powerflow() const noexcept {return _init_from_n_powerflow;}
         void set_init_from_n_powerflow(bool do_it) noexcept {_init_from_n_powerflow = do_it;}
 
+        // Whether the elements of this batch may be solved concurrently. This is a
+        // property of the algorithm, not a user setting: it is false exactly when one
+        // element is initialized with the result of the element before it, because
+        // splitting such a batch into per-thread ranges would break that chain and make
+        // the results depend on the number of threads. Algorithms whose elements all
+        // start from the same seed (ContingencyAnalysis, InjectionSweep) are unaffected
+        // and return the default.
+        static constexpr bool _default_supports_multithread = true;
+        virtual bool supports_multithread() const {return _default_supports_multithread;}
+
+        // Number of OS threads used to solve the batch (default: 1). With nb_thread == 1
+        // the behaviour is identical to the legacy sequential path. With nb_thread > 1
+        // the batch is split into contiguous ranges, each solved by its own thread (own
+        // solver), writing to disjoint rows of the result matrix -- so the results do not
+        // depend on the number of threads. Values < 1 are clamped to 1.
+        int get_nb_thread() const {return _nb_thread;}
+        void set_nb_thread(int n) {
+            // rejected here rather than at compute time: an algorithm that chains its
+            // elements can never become parallelisable later, so there is no state in
+            // which a stored value > 1 could turn out to be legal.
+            if(n > 1 && !supports_multithread()){
+                std::ostringstream exc_;
+                exc_ << "BaseBatchSolverSynch::set_nb_thread: this algorithm initializes each "
+                        "computation with the result of the previous one, so its computations "
+                        "cannot be split over several threads (got nb_thread = " << n << "). Use "
+                        "InjectionSweep instead: it computes the very same injections, but starts "
+                        "every computation from the same voltage, which makes them independent "
+                        "of one another (and of their ordering).";
+                throw std::runtime_error(exc_.str());
+            }
+            _nb_thread = (n < 1 ? 1 : n);
+        }
+
         // solver "control"
         virtual void change_algorithm(const AlgorithmType & type){
             _algo.change_algorithm(type);
@@ -114,6 +149,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // utlities informations
         double amps_computation_time() const {return _timer_compute_A;}
         double solver_time() const {return _timer_solver;}
+        // time spent building the per-thread solvers (0. when nb_thread == 1)
+        double thread_init_time() const {return _timer_thread_init;}
         int nb_solved() const {return _nb_solved;}
         virtual void clear() {
             _algo.reset();
@@ -124,6 +161,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _timer_compute_A = 0.;
             _timer_compute_P = 0.;
             _timer_solver = 0.;
+            _timer_thread_init = 0.;
+            // NB: _nb_thread is deliberately NOT reset -- it is a setting, not a result.
         }
 
         // results 
@@ -361,6 +400,23 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
         void compute_flows_from_Vs(bool amps=true);
 
+        // ----- multi-threading helpers (shared by every batch algorithm) ------------
+        // Build a solver for one worker thread. Deliberately a FRESH AlgorithmSelector
+        // rather than a copy of `_algo`: only the algorithm identity and its config are
+        // inherited, never the member solver's (already warmed up) internal state.
+        // Selects by *name*, not by AlgorithmType: a plugin -- or a built-in with no
+        // dedicated enum member, eg NRRefactorRetry_* -- reports AlgorithmType::Custom,
+        // which change_algorithm(AlgorithmType) unconditionally rejects.
+        // Only reads shared state (_grid_model, _algo's name / config), so several
+        // threads may call it concurrently.
+        std::unique_ptr<AlgorithmSelector> make_thread_algo() const;
+
+        // Contiguous split of [0, nb_items) over `nb_thread` threads: the first
+        // `nb_items % nb_thread` threads get one extra item. Writes thread `t`'s share
+        // into [begin, end).
+        static void split_range(size_t nb_items, int nb_thread, int t,
+                                size_t & begin, size_t & end);
+
         CplxVect extract_Vsolver_from_Vinit(const Eigen::Ref<const CplxVect> & Vinit,
                                             size_t nb_buses_solver,
                                             size_t nb_total_bus,
@@ -520,9 +576,12 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
     protected:
         bool _init_from_n_powerflow = false;
+        // number of OS threads used to solve the batch (see set_nb_thread)
+        int _nb_thread = 1;
         //timers
         double _timer_total = 0.;
         double _timer_pre_proc = 0.;
+        double _timer_thread_init = 0.;
 
         // inputs
         LSGrid _grid_model;

@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__version__ = "1.0.0.rc3"
+__version__ = "1.0.0.rc4"
 
 __all__ = [
     "newtonpf",
@@ -102,6 +102,14 @@ try:
     __all__.append("timeSerie")
 except ImportError as exc_:  # noqa: F841
     # grid2op is not installed, the TimeSeries module will not be available
+    pass
+
+try:
+    from lightsim2grid.injectionSweep import InjectionSweep  # noqa: F401
+    __all__.append("InjectionSweep")
+    __all__.append("injectionSweep")
+except ImportError as exc_:  # noqa: F841
+    # grid2op is not installed, the InjectionSweep module will not be available
     pass
 
 try:
