@@ -144,7 +144,6 @@ void YbusPolicy::Contingency::init_li_coeffs_from_masks(
     bool ac_solver_used,
     const SolverBusIdVect & id_me_to_solver,
     size_t n_line,
-    size_t n_trafo,
     Eigen::Index nb_steps)
 {
     li_coeffs.clear();
@@ -152,7 +151,6 @@ void YbusPolicy::Contingency::init_li_coeffs_from_masks(
     for(Eigen::Index row = 0; row < nb_steps; ++row){
         li_coeffs.push_back(_coeffs_for_branch_ids(branch_ids_for_row(row, n_line), grid_model, ac_solver_used, id_me_to_solver, n_line));
     }
-    (void)n_trafo;  // kept for symmetry / future bounds-checking, not needed by this loop
 }
 
 bool YbusPolicy::Contingency::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,

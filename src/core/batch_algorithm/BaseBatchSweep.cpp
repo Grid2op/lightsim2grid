@@ -78,12 +78,18 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
 
             if(!conv){
                 first_diverging_step = static_cast<int>(i);
-                // a diverging/non-invertible step stops this whole range for a
-                // Vary-carrying instantiation (TimeSeries/InjectionSweep/
-                // ScenarioSweep -- their steps are otherwise reported via the
-                // aggregate status). ContingencyAnalysis instead keeps going: each
-                // contingency is independent, a skip is just one more zero row.
-                if(SbusPolicy::supports_vary) return;
+                // A diverging/non-invertible step stops this whole range for
+                // TimeSeries (chained steps: a later row's Vinit depends on this one)
+                // and InjectionSweep (independent rows, but this has always been its
+                // behavior -- the aggregate status already reports the failure).
+                // ContingencyAnalysis and ScenarioSweep instead keep going: every row
+                // is independent (BatchInitKind::FromSeed) AND carries its own
+                // contingency, which routinely islands the grid on exactly the row
+                // that fails -- aborting the whole range would silently zero out
+                // every later row too, with no distinguishing sentinel. A skip is
+                // just one more zero row / NOT_SIMULATED-or-DIVERGENCE violation,
+                // already recorded above by _store_row_status.
+                if(SbusPolicy::supports_vary && !YbusPolicy::supports_contingency) return;
                 continue;
             }
             _voltages.row(i)(id_solver_to_me_.as_eigen()) = V.array();
@@ -316,13 +322,16 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     if(!n_powerflow_has_conv){
         // a diverging base case: a Vary-carrying instantiation (TimeSeries /
-        // InjectionSweep / ScenarioSweep) reports it via the aggregate status,
-        // matching the pre-refactor BaseInjectionSweep::compute_Vs (-1 return, via
-        // the legacy compute_Vs wrapper). ContingencyAnalysis instead throws: every
-        // contingency is solved relative to this base case, so a diverging one makes
-        // the whole analysis meaningless. Both branches below are plain, generic
-        // code (no Y/S-specific member access), so this runtime `if` on a
-        // compile-time constant is safe to compile for every instantiation.
+        // InjectionSweep / ScenarioSweep) reports it via the aggregate status --
+        // _status is set to 0 and compute() returns normally, so get_status() (and
+        // the legacy compute_Vs wrapper, which just forwards it) reads 0, not the
+        // pre-refactor BaseInjectionSweep::compute_Vs's historical -1 (every existing
+        // caller only ever tests `!= 1`, so this is a difference in the exact value,
+        // not in whether the failure is reported). ContingencyAnalysis instead
+        // throws: every contingency is solved relative to this base case, so a
+        // diverging one makes the whole analysis meaningless. Both branches below are
+        // plain, generic code (no Y/S-specific member access), so this runtime `if`
+        // on a compile-time constant is safe to compile for every instantiation.
         if(SbusPolicy::supports_vary){
             _status = 0;
             // With compute_limit_violations set, a diverging "n" powerflow must NOT
@@ -340,6 +349,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
                 _violations_n_.push_back(sentinel);
                 for(auto & row : _violations) row.push_back(sentinel);
             }
+            _results_stale_ = false;
             _timer_total = timer.duration();
             return;
         }
@@ -358,6 +368,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // compute the powerflows, possibly split across several threads
     _compute_threaded(nb_steps, Vinit_solver, ac_solver_used, max_iter, tol, sn_mva, _timer_thread_init);
 
+    _results_stale_ = false;
     _timer_total = timer.duration();
 }
 

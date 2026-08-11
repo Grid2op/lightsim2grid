@@ -712,6 +712,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
         }
         void _lock_or_check_nb_steps(Eigen::Index rows, const char * setter_name){
+            _results_stale_ = true;
             if(_nb_steps_locked < 0){ _nb_steps_locked = rows; return; }
             if(rows != _nb_steps_locked){
                 std::ostringstream exc_;
@@ -895,7 +896,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
         void _prepare_ybus_varying(bool ac_solver_used, Eigen::Index nb_steps) {
-            ybus_policy_.init_li_coeffs_from_masks(_grid_model, ac_solver_used, id_me_to_solver_, n_line_, n_trafos_, nb_steps);
+            ybus_policy_.init_li_coeffs_from_masks(_grid_model, ac_solver_used, id_me_to_solver_, n_line_, nb_steps);
         }
 
         // ----- Sbus-varying preparation: 2-way --------------------------------
@@ -1199,7 +1200,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
-        void _maybe_check_results_match_defaults(const std::string &) const {}
+        void _maybe_check_results_match_defaults(const std::string & fun_name) const {
+            if(_results_stale_){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::" << fun_name << ": the injections and/or the contingency "
+                        "masks were modified (modify_gen_p / modify_sgen_p / modify_load_p / "
+                        "modify_load_q / set_contingency_lines / set_contingency_trafos) after the "
+                        "last compute(); call compute() again before reading the flows.";
+                throw std::runtime_error(exc_.str());
+            }
+        }
 
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _maybe_clean_flows(bool) {}
@@ -1256,6 +1266,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // row-count lock shared by every setter (modify_* on the Sbus side,
         // set_contingency_lines/trafos on the Ybus side): -1 = not yet established.
         Eigen::Index _nb_steps_locked = -1;
+
+        // set by every row-locked setter (_lock_or_check_nb_steps -- modify_gen_p /
+        // modify_sgen_p / modify_load_p / modify_load_q / set_contingency_lines /
+        // set_contingency_trafos), cleared on a successful compute(): guards
+        // compute_flows()/compute_power_flows() on ScenarioSweep (Contingency && Vary)
+        // against reading _voltages left over from a PREVIOUS compute() while
+        // _maybe_clean_flows zeroes flows according to a mask/injection that was
+        // re-set (same row count, different content) since -- unlike
+        // ContingencyAnalysis's own _maybe_check_results_match_defaults, a row-count
+        // comparison cannot catch this here: set_contingency_lines/trafos can only
+        // ever replace a row's content, the row-count lock already forbids changing
+        // the row count itself. Plain, always-present; only read on
+        // (Contingency, Vary) (see _maybe_check_results_match_defaults below).
+        bool _results_stale_ = false;
 
         // "handle disconnected grid" mode + limit violations: plain, always-present
         // state (SFINAE-gated methods above restrict who can reach it); empty /

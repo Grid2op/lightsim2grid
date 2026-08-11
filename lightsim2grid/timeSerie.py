@@ -220,6 +220,10 @@ class TimeSerie:
         if sgen_p.ndim != 2:
             raise RuntimeError("sgen_p should be a matrix with rows representing time steps "
                                "and columns representing individual static generation.")
+        n_sgen = len(self.grid2op_env.backend._grid.get_static_generators())
+        if sgen_p.shape[1] != n_sgen:
+            raise RuntimeError(f"The number of static generators on the grid ({n_sgen}) "
+                               f"differs from the number of columns of sgen_p ({sgen_p.shape[1]}).")
         self.computer.modify_sgen_p(sgen_p)
         self.__computed = False
 

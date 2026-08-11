@@ -96,7 +96,6 @@ struct LS2G_API YbusPolicy
                                        bool ac_solver_used,
                                        const SolverBusIdVect & id_me_to_solver,
                                        size_t n_line,
-                                       size_t n_trafo,
                                        Eigen::Index nb_steps);
 
         // per-row branch ids (gridmodel numbering, lines then trafos) implied by

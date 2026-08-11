@@ -188,8 +188,15 @@ class ScenarioSweep:
         val = bool(val)
         if val == self.computer.compute_limit_violations:
             return  # no-op, matches the C++ side (which also no-ops and does not clear)
-        self.computer.compute_limit_violations = val  # this clears the C++-side results
+        self.computer.compute_limit_violations = val  # this clear()s the whole C++ object:
+        # registered injections, contingency masks, handle_disconnected_grid, the
+        # row-count lock, everything -- not just computed results. Drop the Python-side
+        # mask cache too, or a stale non-None _line_mask/_trafo_mask survives this reset
+        # and the next run() derives element_ids/element_names from masks that no longer
+        # match what was actually registered C++-side.
         self.__computed = False
+        self._line_mask = None
+        self._trafo_mask = None
 
     @property
     def violation_threshold(self):
@@ -238,6 +245,10 @@ class ScenarioSweep:
     def modify_sgen_p(self, sgen_p):
         """Per-step active static generator setpoints, shape ``(n_simul, n_sgen)``."""
         sgen_p = self._check_2d(sgen_p, "sgen_p")
+        n_sgen = len(self.grid2op_env.backend._grid.get_static_generators())
+        if sgen_p.shape[1] != n_sgen:
+            raise RuntimeError(f"The number of static generators on the grid ({n_sgen}) "
+                               f"differs from the number of columns of sgen_p ({sgen_p.shape[1]}).")
         self.computer.modify_sgen_p(sgen_p)
         self.__computed = False
 
@@ -400,7 +411,17 @@ class ScenarioSweep:
             raise RuntimeError("`run` requires `compute_limit_violations=True`, set via "
                                "`this_instance.compute_limit_violations = True` before `compute()`.")
         if not self.__computed:
-            self.compute()
+            # a per-row failure (a contingency that islands the grid, a diverging row,
+            # ...) is exactly what this method's own sentinel-violation reporting (see
+            # get_violations()/_row_converged above) exists to surface -- do not let
+            # compute()'s default RuntimeError pre-empt that. Unlike
+            # ContingencyAnalysis (whose C++ side throws unconditionally on a
+            # diverging pre-batch "n" case, since every contingency is meaningless
+            # relative to it), a diverging "n" case here only sets status=0 like any
+            # other row failure -- ignore_errors=True lets it through too, and it is
+            # still faithfully reported: the n-divergence fix stamps a GRID/DIVERGENCE
+            # sentinel into get_violations_n() rather than leaving it an empty list.
+            self.compute(ignore_errors=True)
 
         violations_n = list(self.computer.get_violations_n())
         pre_contingency_result = PreContingencyResult(

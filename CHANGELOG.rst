@@ -244,6 +244,35 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   setters, including ``set_contingency_lines`` / ``set_contingency_trafos`` on
   ``ScenarioSweepCPP``) is checked against it immediately, instead of only at
   ``compute()`` time as ``compute_Vs``'s equivalent check did.
+- [FIXED] ``ScenarioSweepCPP`` (non-``handle_disconnected_grid`` path) used to abandon every
+  row after the first one that failed to converge (a contingency that islands the grid is a
+  routine, expected outcome for this class, not an exceptional one) -- later rows were left as
+  all-zero voltages with an empty, misleadingly "converged, nothing found"-looking violation
+  list. Each row of ``ScenarioSweepCPP`` is independent (unlike ``TimeSeriesCPP``, whose rows
+  chain), so it now keeps going past a failing row, exactly like ``ContingencyAnalysisCPP``
+  already did; ``get_status()`` still correctly reports 0 for the batch as a whole.
+- [FIXED] ``ScenarioSweep.run()`` (the python wrapper) raised on any per-row failure instead of
+  reporting it through the sentinel-violation mechanism its own docstring describes --
+  ``compute()`` is now called with ``ignore_errors=True`` internally, matching
+  ``ContingencyAnalysis.run()``'s behavior (only a diverging shared pre-batch "n" case, which
+  makes the whole result meaningless, still surfaces as an unmistakable ``GRID`` /
+  ``DIVERGENCE`` sentinel rather than a silent empty list).
+- [FIXED] ``ScenarioSweepCPP::compute_flows`` / ``compute_power_flows`` did not detect a
+  ``modify_*`` / ``set_contingency_lines`` / ``set_contingency_trafos`` call made after
+  ``compute()`` without a following ``compute()`` -- unlike ``ContingencyAnalysisCPP``'s
+  equivalent guard (a registered-contingency-count check), a count comparison cannot catch this
+  on ``ScenarioSweepCPP``, since its row-count lock already forbids changing the row count
+  itself; only the row *content* changes. Both methods now raise in that situation instead of
+  silently mixing a new mask/injection with stale voltages from the previous ``compute()``.
+- [FIXED] ``lightsim2grid.scenarioSweep.ScenarioSweep``'s ``compute_limit_violations`` setter
+  reset ``self.__computed`` but not the cached ``_line_mask`` / ``_trafo_mask`` (there is no
+  C++-side getter for them), even though it clear()s the masks C++-side -- the next ``run()``
+  could derive ``element_ids`` / ``element_names`` from a stale cache. Both are now reset too.
+- [FIXED] ``modify_sgen_p`` (on both ``lightsim2grid.timeSerie.TimeSerie`` -- and so, by
+  inheritance, ``lightsim2grid.injectionSweep.InjectionSweep`` -- and
+  ``lightsim2grid.scenarioSweep.ScenarioSweep``) validated ``ndim`` but not the column count,
+  unlike ``modify_gen_p`` / ``modify_load_p`` / ``modify_load_q``; the C++ side still caught it,
+  just with a less immediately actionable error. Consistency fix only.
 - [ADDED] ``src/tests/test_timeseries_sbus.cpp`` and ``lightsim2grid/tests/test_timeseries_sbus.py``:
   a one-step time series fed the grid's OWN injections must reproduce ``ac_pf`` / ``dc_pf`` exactly.
   Covers each dropped element kind separately and all of them together, in ac and in dc, plus a
