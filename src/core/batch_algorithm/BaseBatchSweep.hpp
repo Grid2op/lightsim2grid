@@ -22,6 +22,14 @@
 #include <sstream>
 #include <type_traits>
 #include <limits>
+// isnan / isfinite / sqrt: the C header, not <cmath>. These are used unqualified below
+// (isnan(...), not std::isnan(...)), and only math.h guarantees them in the global
+// namespace across compilers -- cmath only guarantees std::isnan / std::isfinite;
+// whether it ALSO exposes the unqualified global name is implementation-defined, which
+// is exactly why this compiled on GCC and recent Clang (both happen to expose it
+// transitively) but not on an older Clang/libc++ pairing. Mirrors the pre-refactor
+// ContingencyAnalysis.cpp's own include of this same header for the same reason.
+#include <math.h>
 
 namespace ls2g {
 
