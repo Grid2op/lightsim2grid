@@ -30,6 +30,7 @@ from lightsim2grid import LightSimBackend
 from lightsim2grid.scenarioSweep import ScenarioSweep, ScenarioSweepCPP
 from lightsim2grid.injectionSweep import InjectionSweepCPP
 from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP
+from test_ContingencyAnalysis_limit_violations import _set_tight_limits
 
 
 class TestScenarioSweepCPP(unittest.TestCase):
@@ -161,15 +162,32 @@ class TestScenarioSweepCPP(unittest.TestCase):
         assert not hasattr(ca, "set_contingency_lines")
         assert not hasattr(ca, "set_contingency_trafos")
 
-        # mask_mode / limit-violations: deliberately not on ScenarioSweep for v1
-        assert not hasattr(sweep, "handle_disconnected_grid")
-        assert not hasattr(sweep, "compute_limit_violations")
-        assert not hasattr(sweep, "converged")
-        assert not hasattr(sweep, "get_violations")
-
         # legacy bundled compute_Vs: ScenarioSweep never had it
         assert not hasattr(sweep, "compute_Vs")
         assert not hasattr(sweep, "get_sbuses")
+
+    def test_no_converged_or_converged_n_on_scenario_sweep(self):
+        """handle_disconnected_grid / compute_limit_violations / get_violations /
+        get_violations_n are now shared with ContingencyAnalysis (same names); but
+        converged() / converged_n() deliberately stay ContingencyAnalysis-only -- a
+        non-converged row's get_violations() entry already carries a GRID-type
+        NOT_SIMULATED/DIVERGENCE sentinel, so a separate convergence flag on
+        ScenarioSweep would be redundant. This is its own test, separate from the
+        general API-separation sweep above, so a future regression here is easy to
+        diagnose on its own."""
+        sweep = ScenarioSweepCPP(self.grid)
+        ca = ContingencyAnalysisCPP(self.grid)
+
+        assert hasattr(sweep, "handle_disconnected_grid")
+        assert hasattr(sweep, "compute_limit_violations")
+        assert hasattr(sweep, "violation_threshold")
+        assert hasattr(sweep, "get_violations")
+        assert hasattr(sweep, "get_violations_n")
+        assert not hasattr(sweep, "converged")
+        assert not hasattr(sweep, "converged_n")
+
+        assert hasattr(ca, "converged")
+        assert hasattr(ca, "converged_n")
 
     def test_thread_independence(self):
         computer1 = ScenarioSweepCPP(self.grid)
@@ -198,6 +216,91 @@ class TestScenarioSweepCPP(unittest.TestCase):
         computer.set_contingency_lines(self.no_line_mask)
         computer.compute(self.Vinit, self.max_it, self.tol)
         assert computer.get_status() == 1
+
+    def test_get_violations_requires_compute_limit_violations(self):
+        """mirrors ContingencyAnalysisCPP's own test_default_is_off_and_raises"""
+        computer = ScenarioSweepCPP(self.grid)
+        computer.modify_load_p(self.load_p)
+        computer.set_contingency_lines(self.no_line_mask)
+        computer.compute(self.Vinit, self.max_it, self.tol)
+        with self.assertRaises(RuntimeError):
+            computer.get_violations()
+        with self.assertRaises(RuntimeError):
+            computer.get_violations_n()
+
+    def test_violations_match_contingency_analysis(self):
+        """a row with only a contingency (injections at grid defaults) must match the
+        equivalent ContingencyAnalysis row, violations included"""
+        line_id = 3
+        ca = ContingencyAnalysisCPP(self.grid, True)
+        ca.add_n1(line_id)
+        ca.compute(self.Vinit, self.max_it, self.tol)
+        ca_violations = ca.get_violations()[0]
+
+        computer = ScenarioSweepCPP(self.grid)
+        computer.compute_limit_violations = True
+        line_mask = np.zeros((1, self.n_line), dtype=bool)
+        line_mask[0, line_id] = True
+        computer.set_contingency_lines(line_mask)
+        computer.compute(self.Vinit, self.max_it, self.tol)
+        ss_violations = computer.get_violations()[0]
+
+        assert len(ss_violations) == len(ca_violations)
+        for v_ss, v_ca in zip(ss_violations, ca_violations):
+            assert v_ss.element_type == v_ca.element_type
+            assert v_ss.violation_type == v_ca.violation_type
+            assert v_ss.element_id == v_ca.element_id
+
+    def test_violations_match_contingency_analysis_with_handle_disconnected_grid(self):
+        """same as above, with handle_disconnected_grid=True on both sides -- also
+        exercises the mask-mode _status fix (a compute() that only succeeds via
+        masking must still report get_status() == 1, not 0)"""
+        line_id = 3
+        ca = ContingencyAnalysisCPP(self.grid, True)
+        ca.handle_disconnected_grid = True
+        ca.add_n1(line_id)
+        ca.compute(self.Vinit, self.max_it, self.tol)
+        ca_violations = ca.get_violations()[0]
+        ca_voltages = 1.0 * ca.get_voltages()
+
+        computer = ScenarioSweepCPP(self.grid)
+        computer.compute_limit_violations = True
+        computer.handle_disconnected_grid = True
+        line_mask = np.zeros((1, self.n_line), dtype=bool)
+        line_mask[0, line_id] = True
+        computer.set_contingency_lines(line_mask)
+        computer.compute(self.Vinit, self.max_it, self.tol)
+        assert computer.get_status() == 1
+        ss_violations = computer.get_violations()[0]
+        ss_voltages = 1.0 * computer.get_voltages()
+
+        assert np.max(np.abs(ss_voltages - ca_voltages)) <= 1e-8
+        assert len(ss_violations) == len(ca_violations)
+
+    def test_n_divergence_stamps_violations_not_empty_lists(self):
+        """a diverging pre-batch "n" powerflow (an impossible tol forces this, with
+        just enough max_iter to actually attempt and fail rather than never running)
+        must stamp a GRID/DIVERGENCE sentinel into get_violations_n() and every row
+        of get_violations(), not leave them as empty lists indistinguishable from
+        "converged, no violations" -- there is no converged()/converged_n() escape
+        hatch on ScenarioSweep to fall back on."""
+        from lightsim2grid.lightsim2grid_cpp import ViolationElementType, LimitViolationType
+        computer = ScenarioSweepCPP(self.grid)
+        computer.compute_limit_violations = True
+        computer.modify_load_p(self.load_p)
+        computer.set_contingency_lines(self.no_line_mask)
+        computer.compute(self.Vinit, max_iter=1, tol=1e-300)
+        assert computer.get_status() == 0
+
+        violations_n = computer.get_violations_n()
+        assert len(violations_n) == 1
+        assert violations_n[0].element_type == ViolationElementType.GRID
+        assert violations_n[0].violation_type == LimitViolationType.DIVERGENCE
+
+        for row in computer.get_violations():
+            assert len(row) == 1
+            assert row[0].element_type == ViolationElementType.GRID
+            assert row[0].violation_type == LimitViolationType.DIVERGENCE
 
 
 class TestScenarioSweepGrid2op(unittest.TestCase):
@@ -256,6 +359,45 @@ class TestScenarioSweepGrid2op(unittest.TestCase):
             sweep.modify_load_p(np.zeros((3, self.env.n_load + 1)))
         with self.assertRaises(RuntimeError):
             sweep.set_contingency_lines(np.zeros((3, 2), dtype=bool))
+
+    def test_run(self):
+        """ScenarioSweep.run() -- reuses ContingencyResult/PreContingencyResult/
+        SecurityAnalysisResult from contingencyAnalysis.py, same as
+        ContingencyAnalysis.run() returns."""
+        from lightsim2grid.scenarioSweep import SecurityAnalysisResult, ContingencyResult, PreContingencyResult
+
+        _set_tight_limits(self.env.backend._grid)
+
+        n_sim = 3
+        load_p = np.tile(self.obs.load_p, (n_sim, 1))
+        n_line = len(self.env.backend._grid.get_lines())
+        line_mask = np.zeros((n_sim, n_line), dtype=bool)
+        line_mask[1:, 2] = True
+
+        sweep = ScenarioSweep(self.env)
+        sweep.compute_limit_violations = True
+        sweep.modify_load_p(load_p)
+        sweep.set_contingency_lines(line_mask)
+        res = sweep.run()
+
+        assert isinstance(res, SecurityAnalysisResult)
+        assert isinstance(res.pre_contingency_result, PreContingencyResult)
+        assert len(res.post_contingency_results) == n_sim
+        # tight limits guarantee at least one violation somewhere
+        assert len(res.pre_contingency_result.limit_violations) > 0
+        for row_id, row in enumerate(res.post_contingency_results):
+            assert isinstance(row, ContingencyResult)
+            assert row.contingency_name is None
+            assert len(row.limit_violations) > 0
+        assert res.post_contingency_results[0].element_ids == []
+        assert res.post_contingency_results[1].element_ids == [2]
+        assert res.post_contingency_results[2].element_ids == [2]
+
+    def test_run_requires_the_flag(self):
+        sweep = ScenarioSweep(self.env)
+        sweep.modify_load_p(np.tile(self.obs.load_p, (2, 1)))
+        with self.assertRaises(RuntimeError):
+            sweep.run()
 
 
 if __name__ == "__main__":

@@ -99,6 +99,15 @@ struct LS2G_API YbusPolicy
                                        size_t n_trafo,
                                        Eigen::Index nb_steps);
 
+        // per-row branch ids (gridmodel numbering, lines then trafos) implied by
+        // line_mask/trafo_mask row `row` -- the ScenarioSweep counterpart of
+        // ContingencyAnalysis's my_defaults_vect()-derived skip list (used by
+        // BaseBatchSweep::_row_skip_branch_ids to exclude a row's own disconnected
+        // branches from that row's current-limit checks), read directly off the row
+        // instead of a precomputed cache. Empty if neither mask was ever set, or if
+        // `row` has no True entry in either.
+        std::vector<int> branch_ids_for_row(Eigen::Index row, size_t n_line) const;
+
         // remove / re-add one contingency's coefficients from/to Ybus (AC) or the
         // algo's own internal Ybus (DC). Returns (remove_from_Ybus only) whether the
         // grid stays connected after removal -- see check_invertible below. Neither

@@ -342,11 +342,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _timer_pre_proc = 0.;
         }
 
-        // ContingencyAnalysis-only: like clear() but keeps the registered
-        // contingencies, only drops computed results (mirrors the pre-refactor
-        // ContingencyAnalysis::clear_results_only).
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        // Contingency-varying instantiations only (ContingencyAnalysis AND
+        // ScenarioSweep): like clear() but keeps the registered contingencies /
+        // masks, only drops computed results (mirrors the pre-refactor
+        // ContingencyAnalysis::clear_results_only). Also used by
+        // set_violation_threshold/set_compute_limit_violations below, both now
+        // shared by the same two instantiations.
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void clear_results_only() {
             BaseBatchSolverSynch::clear();
             _li_masked.clear();
@@ -497,30 +499,40 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return res;
         }
 
-        // "handle disconnected grid" mode (ContingencyAnalysis only)
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        // "handle disconnected grid" mode (ContingencyAnalysis AND ScenarioSweep --
+        // both edit Ybus per step, so a contingency can strand a component either
+        // way; TimeSeries/InjectionSweep have no notion of a contingency at all)
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         bool get_handle_disconnected_grid() const {return _handle_disconnected_grid;}
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void set_handle_disconnected_grid(bool val) {_handle_disconnected_grid = val;}
 
-        // limit violations (ContingencyAnalysis only)
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        // limit violations (ContingencyAnalysis AND ScenarioSweep -- see
+        // get_violations()/get_violations_n() below; deliberately NO
+        // converged()/converged_n() equivalent here: a non-converged row's
+        // get_violations() entry already carries a GRID/NOT_SIMULATED-or-DIVERGENCE
+        // sentinel LimitViolation, so a separate convergence flag would be
+        // redundant. converged()/converged_n() stay ContingencyAnalysis-only,
+        // unchanged, below.)
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         bool get_compute_limit_violations() const noexcept {return _compute_limit_violations_;}
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        // NOTE: toggling this flag clear()s the whole object, not just the computed
+        // results (see test_ContingencyAnalysis_limit_violations.py's
+        // test_setter_toggle_clears_and_raises_when_off -- an intentional, tested
+        // contract, not an oversight). The established convention is therefore to set
+        // this flag FIRST, before handle_disconnected_grid / registering any
+        // contingency or injection -- ContingencyAnalysis's 2-arg constructor enforces
+        // this implicitly; ScenarioSweep has no such constructor and must follow the
+        // same order explicitly (see its own tests / scenarioSweep.py).
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void set_compute_limit_violations(bool val){
             if(val == _compute_limit_violations_) return;
             _compute_limit_violations_ = val;
             clear();
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         real_type get_violation_threshold() const noexcept {return _violation_threshold_;}
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void set_violation_threshold(real_type val){
             if(!(val > 0. && val <= 1.)){
                 std::ostringstream exc_;
@@ -537,8 +549,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _check_limit_violations_enabled("converged");
             return _converged;
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         const std::vector<std::vector<LimitViolation> > & get_violations() const {
             _check_limit_violations_enabled("get_violations");
             return _violations;
@@ -549,8 +560,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _check_limit_violations_enabled("converged_n");
             return _converged_n_;
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         const std::vector<LimitViolation> & get_violations_n() const {
             _check_limit_violations_enabled("get_violations_n");
             return _violations_n_;
@@ -779,11 +789,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // pre-pass run before the (n-)powerflow: fills _li_masked (the masked bus
         // set of each contingency), chooses the reference slack that minimises the
         // number of skipped contingencies (reordering slack_ids_me_ so it is index 0)
-        // and fills _skip_mask. ContingencyAnalysis only; called from
-        // _maybe_prepare_masks() (compute()-only) and pick_reference_slack() (public,
-        // hence this too must be fully inline).
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        // and fills _skip_mask. Keyed entirely off ybus_policy_.li_coeffs, which is
+        // representation-agnostic (populated from li_defaults on ContingencyAnalysis,
+        // from line_mask/trafo_mask on ScenarioSweep) -- shared by both. Called from
+        // _maybe_prepare_masks() (compute()-only, both instantiations) and
+        // pick_reference_slack() (public, ContingencyAnalysis-only, hence this too
+        // must be fully inline).
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _select_ref_slack_and_masks(){
             const size_t nb_cont = ybus_policy_.li_coeffs.size();
             _li_masked.assign(nb_cont, std::vector<int>());
@@ -927,19 +939,35 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         CplxVect _step_sbus(size_t) const { return Sbus_; }
 
-        // ----- per-row violation recording ---------------------------------------
+        // ----- per-row "which branches did THIS row itself disconnect" ------------
+        // used by _record_row_violations below to exclude a row's own disconnected
+        // branches from that row's current-limit checks (they still look "connected"
+        // via get_status_global(), only the Ybus coefficients were edited). Two
+        // sources of truth, per instantiation: ContingencyAnalysis has a cache built
+        // once per compute() from my_defaults_vect() (the sparse, add_n1-driven
+        // representation); ScenarioSweep has no such cache (no li_defaults at all)
+        // and instead reads the row directly off line_mask/trafo_mask.
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        std::vector<int> _row_skip_branch_ids(size_t i) const {
+            return (i < _li_defaults_vect_cache_.size()) ? _li_defaults_vect_cache_[i] : std::vector<int>();
+        }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        std::vector<int> _row_skip_branch_ids(size_t i) const {
+            return ybus_policy_.branch_ids_for_row(static_cast<Eigen::Index>(i), n_line_);
+        }
+
+        // ----- per-row violation recording ---------------------------------------
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _record_row_violations(size_t i, const CplxVect & V, const std::vector<int> * masked_ids){
             const bool ac_solver_used = _algo.ac_solver_used();
             const real_type sn_mva = _grid_model.get_sn_mva();
 
             std::vector<int> skip_lines, skip_trafos;
-            if(i < _li_defaults_vect_cache_.size()){
-                for(int br_id : _li_defaults_vect_cache_[i]){
-                    if(static_cast<size_t>(br_id) < n_line_) skip_lines.push_back(br_id);
-                    else skip_trafos.push_back(static_cast<int>(br_id - static_cast<int>(n_line_)));
-                }
+            for(int br_id : _row_skip_branch_ids(i)){
+                if(static_cast<size_t>(br_id) < n_line_) skip_lines.push_back(br_id);
+                else skip_trafos.push_back(static_cast<int>(br_id - static_cast<int>(n_line_)));
             }
             const std::vector<int> * masked_ids_use = (masked_ids != nullptr && !masked_ids->empty()) ? masked_ids : nullptr;
 
@@ -957,13 +985,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, skip_trafos, _violations[i]);
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _record_row_violations_dispatch(size_t i, const CplxVect & V, const std::vector<int> * masked_ids) {
             _record_row_violations(i, V, masked_ids);
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _record_row_violations_dispatch(size_t, const CplxVect &, const std::vector<int> *) {}
 
         void _store_row_status(size_t i, bool conv, bool invertible, const CplxVect & V_solver){
@@ -989,8 +1015,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                  typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
         void _refresh_defaults_vect_cache(){}
 
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _record_n_case_violations(const CplxVect & V_n){
             if(!_compute_limit_violations_) return;
             _converged_n_ = true;
@@ -1009,12 +1034,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, no_skip, _violations_n_);
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _record_n_case_violations(const CplxVect &){}
 
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_masks(){
             if(!_handle_disconnected_grid) return;
             if(!_algo.supports_bus_masking()){
@@ -1027,8 +1050,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             _select_ref_slack_and_masks();
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_masks(){}
 
         // per-range worker: NON mask-mode path, shared by every instantiation.
@@ -1046,19 +1068,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                            int & nb_solved, double & timer_solver, double & timer_modif_ybus,
                            bool & conv, bool & invertible);
 
-        // per-range worker: mask-mode path (ContingencyAnalysis only). Only ever
-        // called from _maybe_run_range_masked below, itself only ever called from
-        // compute() (non-template, .cpp-confined) -- safe to stay declared here /
-        // defined out-of-line in BaseBatchSweep.cpp.
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        // per-range worker: mask-mode path (ContingencyAnalysis AND ScenarioSweep --
+        // shared, using _step_sbus(cont_id) instead of a hardcoded fixed Sbus_ so it
+        // picks up per-row injections on ScenarioSweep; a no-op change for
+        // ContingencyAnalysis, whose overload of _step_sbus still returns Sbus_).
+        // Only ever called from _maybe_run_range_masked below, itself only ever
+        // called from compute() (non-template, .cpp-confined) -- safe to stay
+        // declared here / defined out-of-line in BaseBatchSweep.cpp.
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _run_range_masked(size_t cont_begin, size_t cont_end,
                                AlgorithmSelector & algo, AlgoControl & control,
                                Eigen::SparseMatrix<cplx_type> & Ybus,
                                const Eigen::Ref<const CplxVect> & Vinit_solver,
                                bool ac_solver_used, int max_iter, real_type tol, real_type sn_mva,
                                double & timer_modif_ybus, int & nb_solved, double & timer_solver,
-                               std::exception_ptr & err, bool needs_solver_init)
+                               int & first_diverging_step, std::exception_ptr & err, bool needs_solver_init)
         {
             try {
                 CplxVect V;
@@ -1079,12 +1103,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         algo.set_masked_buses(masked);
                         V = Vinit_solver;
                         if(masked.empty()){
-                            conv = compute_one_powerflow(algo, control, nb_solved, timer_solver, Ybus, V, Sbus_,
+                            conv = compute_one_powerflow(algo, control, nb_solved, timer_solver, Ybus, V, _step_sbus(cont_id),
                                                          slack_ids_solver_.as_eigen(), slack_weights_,
                                                          bus_pv_.as_eigen(), bus_pq_.as_eigen(), max_iter, tol / sn_mva);
                         } else {
                             const RealVect sw = _masked_slack_weights(masked);
-                            conv = compute_one_powerflow(algo, control, nb_solved, timer_solver, Ybus, V, Sbus_,
+                            conv = compute_one_powerflow(algo, control, nb_solved, timer_solver, Ybus, V, _step_sbus(cont_id),
                                                          slack_ids_solver_.as_eigen(), sw,
                                                          bus_pv_.as_eigen(), bus_pq_.as_eigen(), max_iter, tol / sn_mva);
                         }
@@ -1106,6 +1130,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     }
 
                     if(do_store) _voltages.row(cont_id)(id_solver_to_me_.as_eigen()) = V.array();
+                    else if(first_diverging_step < 0) first_diverging_step = static_cast<int>(cont_id);
 
                     if(_compute_limit_violations_){
                         _converged[cont_id] = do_store ? 1 : 0;
@@ -1123,26 +1148,26 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 err = std::current_exception();
             }
         }
-        // dispatch into _run_range_masked only where it exists; unreachable
-        // elsewhere (_handle_disconnected_grid can never be true there).
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        // dispatch into _run_range_masked only where it exists (ContingencyAnalysis
+        // AND ScenarioSweep); unreachable on TimeSeries/InjectionSweep
+        // (_handle_disconnected_grid can never be true there -- no setter reaches it).
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _maybe_run_range_masked(size_t cont_begin, size_t cont_end,
                                      AlgorithmSelector & algo, AlgoControl & control,
                                      Eigen::SparseMatrix<cplx_type> & Ybus,
                                      const Eigen::Ref<const CplxVect> & Vinit_solver,
                                      bool ac_solver_used, int max_iter, real_type tol, real_type sn_mva,
                                      double & timer_modif_ybus, int & nb_solved, double & timer_solver,
-                                     std::exception_ptr & err, bool needs_solver_init){
+                                     int & first_diverging_step, std::exception_ptr & err, bool needs_solver_init){
             _run_range_masked(cont_begin, cont_end, algo, control, Ybus, Vinit_solver, ac_solver_used,
-                              max_iter, tol, sn_mva, timer_modif_ybus, nb_solved, timer_solver, err, needs_solver_init);
+                              max_iter, tol, sn_mva, timer_modif_ybus, nb_solved, timer_solver,
+                              first_diverging_step, err, needs_solver_init);
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _maybe_run_range_masked(size_t, size_t, AlgorithmSelector &, AlgoControl &,
                                      Eigen::SparseMatrix<cplx_type> &, const Eigen::Ref<const CplxVect> &,
                                      bool, int, real_type, real_type, double &, int &, double &,
-                                     std::exception_ptr &, bool){
+                                     int &, std::exception_ptr &, bool){
             throw std::logic_error("unreachable: handle_disconnected_grid cannot be set on this instantiation");
         }
 

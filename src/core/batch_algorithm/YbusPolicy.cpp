@@ -123,6 +123,22 @@ void YbusPolicy::Contingency::init_li_coeffs(
     }
 }
 
+std::vector<int> YbusPolicy::Contingency::branch_ids_for_row(Eigen::Index row, size_t n_line) const
+{
+    std::vector<int> branch_ids;
+    if(line_mask.rows() > 0){
+        for(Eigen::Index col = 0; col < line_mask.cols(); ++col){
+            if(line_mask(row, col)) branch_ids.push_back(static_cast<int>(col));
+        }
+    }
+    if(trafo_mask.rows() > 0){
+        for(Eigen::Index col = 0; col < trafo_mask.cols(); ++col){
+            if(trafo_mask(row, col)) branch_ids.push_back(static_cast<int>(n_line + static_cast<size_t>(col)));
+        }
+    }
+    return branch_ids;
+}
+
 void YbusPolicy::Contingency::init_li_coeffs_from_masks(
     const LSGrid & grid_model,
     bool ac_solver_used,
@@ -134,18 +150,7 @@ void YbusPolicy::Contingency::init_li_coeffs_from_masks(
     li_coeffs.clear();
     li_coeffs.reserve(static_cast<size_t>(nb_steps));
     for(Eigen::Index row = 0; row < nb_steps; ++row){
-        std::vector<int> branch_ids;
-        if(line_mask.rows() > 0){
-            for(Eigen::Index col = 0; col < line_mask.cols(); ++col){
-                if(line_mask(row, col)) branch_ids.push_back(static_cast<int>(col));
-            }
-        }
-        if(trafo_mask.rows() > 0){
-            for(Eigen::Index col = 0; col < trafo_mask.cols(); ++col){
-                if(trafo_mask(row, col)) branch_ids.push_back(static_cast<int>(n_line + static_cast<size_t>(col)));
-            }
-        }
-        li_coeffs.push_back(_coeffs_for_branch_ids(branch_ids, grid_model, ac_solver_used, id_me_to_solver, n_line));
+        li_coeffs.push_back(_coeffs_for_branch_ids(branch_ids_for_row(row, n_line), grid_model, ac_solver_used, id_me_to_solver, n_line));
     }
     (void)n_trafo;  // kept for symmetry / future bounds-checking, not needed by this loop
 }

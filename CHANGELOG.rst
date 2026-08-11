@@ -119,14 +119,10 @@ TODO: add a CI job that builds one of the example C++ algorithm plugins
       plugin but never with the flag) -- neither exercises the combination.
 TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding small decreasing
       lambba coefficients to the diagonal of J to improve its conditionning.
-TODO: ``ScenarioSweepCPP`` (varies both the injection and a contingency per row, see
-      ``batch_algorithm/BaseBatchSweep.hpp``) does not have ``ContingencyAnalysisCPP``'s
-      ``handle_disconnected_grid`` mode or inline limit-violation checking
-      (``compute_limit_violations`` / ``converged`` / ``get_violations``) -- deliberately
-      out of scope for the first release of this class, only ``ContingencyAnalysisCPP``
-      has them. Also TODO: a "combine mode" axis choosing between the current row-aligned
-      /  zipped semantics (row `i`'s injection paired with row `i`'s contingency) and a
-      cartesian one ("every registered contingency x every injection profile").
+TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the current
+      row-aligned / zipped semantics (row `i`'s injection paired with row `i`'s
+      contingency) and a cartesian one ("every registered contingency x every
+      injection profile").
 
 [1.0.0] 2026-xx-yy
 --------------------
@@ -218,6 +214,25 @@ TODO: ``ScenarioSweepCPP`` (varies both the injection and a contingency per row,
   cleanly, so ``ScenarioSweepCPP`` does not have ``add_n1`` / ``add_nk`` and
   ``ContingencyAnalysisCPP`` does not have ``set_contingency_lines`` /
   ``set_contingency_trafos``. See ``docs/scenario_sweep.rst``.
+- [ADDED] ``ScenarioSweepCPP`` now also has ``ContingencyAnalysisCPP``'s
+  ``handle_disconnected_grid`` mode and inline limit-violation checking
+  (``compute_limit_violations`` / ``violation_threshold`` / ``get_violations`` /
+  ``get_violations_n``), same names and semantics on both classes, and both return the
+  same ``LimitViolation`` objects. Deliberately **no** ``converged`` / ``converged_n`` on
+  ``ScenarioSweepCPP``: a non-converged row's ``get_violations()`` entry already carries a
+  ``GRID`` / ``NOT_SIMULATED``-or-``DIVERGENCE`` sentinel violation, so a separate
+  convergence flag would be redundant (``ContingencyAnalysisCPP``'s own ``converged`` /
+  ``converged_n`` are unchanged). A diverging pre-batch "n" powerflow (the shared base
+  case every row in the batch is solved relative to) now also stamps this same
+  ``GRID`` / ``DIVERGENCE`` sentinel into ``get_violations_n()`` and every row of
+  ``get_violations()``, instead of leaving them as empty lists indistinguishable from
+  "converged, nothing found". As on ``ContingencyAnalysisCPP``, toggling
+  ``compute_limit_violations`` clears the whole object (registered contingencies,
+  injections, ``handle_disconnected_grid``, ...) -- set it *before* configuring
+  anything else. ``lightsim2grid.scenarioSweep.ScenarioSweep`` gains a ``run()`` method
+  reusing the existing ``PreContingencyResult`` / ``ContingencyResult`` /
+  ``SecurityAnalysisResult`` dataclasses from ``lightsim2grid.contingencyAnalysis``
+  (``contingency_name`` is always ``None`` there, unlike ``ContingencyAnalysis.run()``).
 - [ADDED] a new setter-based API -- ``modify_gen_p`` / ``modify_sgen_p`` /
   ``modify_load_p`` / ``modify_load_q`` + ``compute(Vinit, max_iter, tol)`` -- is now
   also available on ``TimeSeriesCPP`` / ``InjectionSweepCPP``, alongside their existing

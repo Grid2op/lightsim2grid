@@ -6,7 +6,9 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__all__ = ["ScenarioSweepCPP"]
+__all__ = ["ScenarioSweepCPP", "LimitViolation", "ViolationElementType",
+           "LimitViolationType", "PreContingencyResult",
+           "ContingencyResult", "SecurityAnalysisResult"]
 
 import numpy as np
 import warnings
@@ -22,6 +24,13 @@ except ImportError as exc_:  # noqa: F841
 
 from lightsim2grid.algorithm import AlgorithmType
 from .lightsim2grid_cpp import ScenarioSweepCPP
+# reused as-is, not duplicated: both ContingencyAnalysis.run() and ScenarioSweep.run()
+# (below) return these same dataclasses / the same pybind11-bound LimitViolation type,
+# so a caller handling one can handle the other identically. Defined unconditionally
+# (not gated on grid2op being installed) in contingencyAnalysis.py, imported before
+# this module in lightsim2grid/__init__.py -- no circular-import risk.
+from .contingencyAnalysis import (PreContingencyResult, ContingencyResult, SecurityAnalysisResult,
+                                   LimitViolation, ViolationElementType, LimitViolationType)
 
 
 class ScenarioSweep:
@@ -90,6 +99,12 @@ class ScenarioSweep:
         self.grid2op_env = grid2op_env.copy()
         self.computer = type(self)._CPP_CLASS(self.grid2op_env.backend._grid)
         self.__computed = False
+        # ScenarioSweepCPP.set_contingency_lines/trafos are write-only (no getter) --
+        # run() needs each row's disconnected branch ids for
+        # ContingencyResult.element_ids/element_names, so this wrapper caches the last
+        # validated mask it sent down. Reset by clear() below.
+        self._line_mask = None
+        self._trafo_mask = None
 
         self.available_default_algorithms = self.computer.available_default_algorithms()
         if AlgorithmType.NR_KLU in self.available_default_algorithms:
@@ -130,6 +145,79 @@ class ScenarioSweep:
         if bool(val) != val:
             raise ValueError("The `init_from_n_powerflow` attribute must be a boolean.")
         self.computer.init_from_n_powerflow = bool(val)
+
+    @property
+    def handle_disconnected_grid(self):
+        """Whether a row whose contingency splits the grid into several connected
+        components is simulated on its largest component instead of being skipped.
+        Default: ``False``, meaning such a row is not simulated at all (its voltages
+        are left at 0.). When ``True``, the buses of the other component(s) are
+        "masked" (their voltage reported as 0.) and the largest component is solved
+        normally, without triggering any extra matrix re-factorization. Supported by
+        the Newton-Raphson family (AC) and by the DC solver; a non Newton-Raphson AC
+        algorithm (*eg* Gauss-Seidel or Fast-Decoupled) is rejected. Same
+        name/semantics as :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.handle_disconnected_grid`.
+        """
+        return self.computer.handle_disconnected_grid
+
+    @handle_disconnected_grid.setter
+    def handle_disconnected_grid(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `handle_disconnected_grid` attribute must be a boolean.")
+        self.computer.handle_disconnected_grid = bool(val)
+
+    @property
+    def compute_limit_violations(self):
+        """Whether limit violations are computed inline, per row, during ``compute()``
+        / ``run()`` (see :func:`get_violations` / :func:`get_violations_n` /
+        :func:`run` -- there is no ``converged`` / ``converged_n`` here, unlike
+        :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis`: a
+        non-converged row's violations already carry a
+        ``ViolationElementType.GRID``-typed sentinel that fully encodes that row's
+        status by itself). Default: ``False``. Computing violations means an extra
+        per-element current / voltage check in every row's solve, so leave this off
+        if you only need :func:`compute_flows` / :func:`get_flows`. Changing this
+        flag clears any previously-computed results.
+        """
+        return self.computer.compute_limit_violations
+
+    @compute_limit_violations.setter
+    def compute_limit_violations(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `compute_limit_violations` attribute must be a boolean.")
+        val = bool(val)
+        if val == self.computer.compute_limit_violations:
+            return  # no-op, matches the C++ side (which also no-ops and does not clear)
+        self.computer.compute_limit_violations = val  # this clears the C++-side results
+        self.__computed = False
+
+    @property
+    def violation_threshold(self):
+        """Threshold (a ``float`` in ``]0., 1.]``, default ``1.0``) applied to every
+        limit-violation check performed when :attr:`compute_limit_violations` is
+        ``True``. Same meaning as
+        :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.violation_threshold`
+        -- see that docstring for the full formulas. Lowering it makes every check
+        stricter (more violations reported, never fewer) and invalidates any
+        already-computed results; raising it back up does not.
+        """
+        return self.computer.violation_threshold
+
+    @violation_threshold.setter
+    def violation_threshold(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `violation_threshold` attribute must be a real number.")
+        if not (0. < val <= 1.):
+            raise ValueError("The `violation_threshold` attribute must be in the range "
+                             f"]0., 1.] (got {val}).")
+        if val < self.computer.violation_threshold:
+            # mirrors the C++ side, which calls clear_results_only() when the
+            # threshold is tightened (results computed under the previous, looser
+            # threshold would silently under-report)
+            self.__computed = False
+        self.computer.violation_threshold = val
 
     def _check_2d(self, arr, name):
         arr = np.asarray(arr)
@@ -180,6 +268,7 @@ class ScenarioSweep:
             raise RuntimeError(f"The number of powerlines on the grid ({n_line}) "
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_lines(mask)
+        self._line_mask = mask  # cached: see the note in __init__ (no C++-side getter)
         self.__computed = False
 
     def set_contingency_trafos(self, mask):
@@ -191,6 +280,7 @@ class ScenarioSweep:
             raise RuntimeError(f"The number of trafos on the grid ({n_trafo}) "
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_trafos(mask)
+        self._trafo_mask = mask  # cached: see the note in __init__ (no C++-side getter)
         self.__computed = False
 
     def compute(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):
@@ -258,10 +348,93 @@ class ScenarioSweep:
         Vs = self.get_voltages()
         return Ps, amps, Vs
 
+    def get_violations(self):
+        """Per row (same order as every ``modify_*`` / ``set_contingency_*`` input):
+        list of :class:`LimitViolation`. Requires :attr:`compute_limit_violations` to
+        be ``True`` (raises otherwise). Prefer :func:`run` for a structured result --
+        this is the raw passthrough. See
+        :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.compute_limit_violations`'s
+        note on the sentinel entry a non-converged row carries (there is no separate
+        ``converged`` here, by design -- see :attr:`compute_limit_violations`).
+        """
+        return self.computer.get_violations()
+
+    def get_violations_n(self):
+        """List of :class:`LimitViolation` for the pre-batch ("n") case (no injection
+        change, no contingency) shared by every row. Requires
+        :attr:`compute_limit_violations` to be ``True`` (raises otherwise)."""
+        return self.computer.get_violations_n()
+
+    @staticmethod
+    def _row_converged(limit_violations) -> bool:
+        """No ``converged()`` / ``converged_n()`` on ScenarioSweep by design (see
+        :attr:`compute_limit_violations`) -- recovers the same boolean from
+        :func:`get_violations` / :func:`get_violations_n` alone: a non-converged row
+        always carries exactly one ``ViolationElementType.GRID``-typed entry."""
+        return not any(v.element_type == ViolationElementType.GRID for v in limit_violations)
+
+    def run(self) -> SecurityAnalysisResult:
+        """
+        Run this batch (calling :func:`compute` if not already done) and report, for
+        the pre-batch ("n") case and for each row, the list of limit violations --
+        same return type as
+        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.run`, reusing
+        the very same :class:`PreContingencyResult` / :class:`ContingencyResult` /
+        :class:`SecurityAnalysisResult` dataclasses so callers can handle either
+        result the same way.
+
+        Requires :attr:`compute_limit_violations` to be ``True`` (set via
+        ``this_instance.compute_limit_violations = True`` -- there is no constructor
+        argument for it, unlike :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis`),
+        else a ``RuntimeError`` is raised.
+
+        Unlike :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.run`,
+        rows are already in caller-set order here (no dedup / reordering concept,
+        since ``ScenarioSweep`` rows are independent scenarios, not a *set* of
+        contingencies) -- and every ``ContingencyResult.contingency_name`` is
+        ``None`` (no such concept on ``ScenarioSweep``); ``element_ids`` /
+        ``element_names`` are instead derived from that row's own
+        ``set_contingency_lines`` / ``set_contingency_trafos`` mask.
+        """
+        if not self.computer.compute_limit_violations:
+            raise RuntimeError("`run` requires `compute_limit_violations=True`, set via "
+                               "`this_instance.compute_limit_violations = True` before `compute()`.")
+        if not self.__computed:
+            self.compute()
+
+        violations_n = list(self.computer.get_violations_n())
+        pre_contingency_result = PreContingencyResult(
+            converged=self._row_converged(violations_n),
+            limit_violations=violations_n,
+        )
+
+        n_line = len(self.grid2op_env.backend._grid.get_lines())
+        violations = self.computer.get_violations()
+        nb_steps = len(violations)
+        line_mask = self._line_mask if self._line_mask is not None else np.zeros((nb_steps, n_line), dtype=bool)
+        trafo_mask = self._trafo_mask if self._trafo_mask is not None else np.zeros(
+            (nb_steps, len(self.grid2op_env.backend._grid.get_trafos())), dtype=bool)
+
+        post_contingency_results = []
+        for row_id in range(nb_steps):
+            row_violations = list(violations[row_id])
+            element_ids = [int(el_id) for el_id in np.nonzero(line_mask[row_id])[0]]
+            element_ids += [n_line + int(el_id) for el_id in np.nonzero(trafo_mask[row_id])[0]]
+            post_contingency_results.append(ContingencyResult(
+                element_ids=element_ids,
+                element_names=[str(self.grid2op_env.name_line[el_id]) for el_id in element_ids],
+                contingency_name=None,
+                converged=self._row_converged(row_violations),
+                limit_violations=row_violations,
+            ))
+        return SecurityAnalysisResult(pre_contingency_result, post_contingency_results)
+
     def clear(self):
         """Clear everything, as if nothing had ever been set / computed."""
         self.computer.clear()
         self.__computed = False
+        self._line_mask = None
+        self._trafo_mask = None
 
     def close(self):
         """permanently close the object"""

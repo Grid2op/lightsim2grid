@@ -214,6 +214,53 @@ void bind_batch(py::module_& m) {
         .def("set_contingency_trafos", &ScenarioSweep::set_contingency_trafos<>, py::arg("mask"),
              "Per-step trafo contingency mask, shape (n_simul, n_trafo), dtype bool. "
              "See set_contingency_lines().")
+
+        // limit violations + "handle disconnected grid": same names/semantics as
+        // ContingencyAnalysisCPP (see below), now also available here. Deliberately
+        // NO converged()/converged_n() -- a non-converged row's get_violations()
+        // entry already carries a GRID-type NOT_SIMULATED/DIVERGENCE sentinel
+        // LimitViolation, so a separate convergence flag would be redundant; a
+        // diverging pre-batch "n" powerflow is likewise stamped with that same
+        // sentinel rather than left looking like "converged, no violations".
+        .def_property("compute_limit_violations",
+                      [](const ScenarioSweep & self){ return self.get_compute_limit_violations(); },
+                      [](ScenarioSweep & self, bool val){ self.set_compute_limit_violations(val); },
+                      "Whether limit violations are computed inline, per row, during compute() "
+                      "(see get_violations() / get_violations_n()). Defaults to ``False``. "
+                      "Computing violations means an extra per-element current / voltage check "
+                      "in every row's solve, so users who only need compute_flows() / get_flows() "
+                      "should leave this off. Changing this flag clears any previously-computed "
+                      "results. Unlike ContingencyAnalysisCPP, there is no converged() / "
+                      "converged_n() here: a non-converged row's get_violations() entry already "
+                      "carries a GRID-type NOT_SIMULATED / DIVERGENCE LimitViolation, which fully "
+                      "encodes that row's status by itself.")
+        .def_property("violation_threshold",
+                      [](const ScenarioSweep & self){ return self.get_violation_threshold(); },
+                      [](ScenarioSweep & self, real_type val){ self.set_violation_threshold(val); },
+                      DocContingencyAnalysis::violation_threshold.c_str())
+        .def_property("handle_disconnected_grid",
+                      [](const ScenarioSweep & self){ return self.get_handle_disconnected_grid(); },
+                      [](ScenarioSweep & self, bool val){ self.set_handle_disconnected_grid(val); },
+                      "Whether to simulate a row whose contingency splits the grid into multiple "
+                      "connected components. When False (default) such a row is skipped (its "
+                      "voltages are left at 0), reproducing the legacy behaviour. When True, the "
+                      "largest connected component is solved while the buses of the other "
+                      "component(s) are masked (their voltage is reported as 0). Supported by the "
+                      "Newton-Raphson family (AC) and the DC solver; a non Newton-Raphson AC "
+                      "algorithm is rejected.")
+        .def("get_violations", &ScenarioSweep::get_violations<>,
+             "Per row (same order as every modify_* / set_contingency_* input): list of "
+             "LimitViolation. A row that did not converge has exactly one LimitViolation here, "
+             "with element_type ViolationElementType.GRID and violation_type either "
+             "LimitViolationType.NOT_SIMULATED (a pre-check skipped it, eg it splits the grid "
+             "with handle_disconnected_grid off) or LimitViolationType.DIVERGENCE (the solver "
+             "ran but did not converge, including a diverging pre-batch \"n\" powerflow, which "
+             "stamps every row this way). Requires compute_limit_violations=True.",
+             py::return_value_policy::reference_internal)
+        .def("get_violations_n", &ScenarioSweep::get_violations_n<>,
+             "List of LimitViolation for the pre-batch (\"n\") case (no injection change, no "
+             "contingency) shared by every row. Requires compute_limit_violations=True.",
+             py::return_value_policy::reference_internal)
         .def_property("init_from_n_powerflow",
                       [](const ScenarioSweep & self){ return self.get_init_from_n_powerflow(); },
                       [](ScenarioSweep & self, bool val){ self.set_init_from_n_powerflow(val); },

@@ -183,18 +183,20 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         // single-threaded path: reuse the (already warmed-up) member solver, member
         // Ybus_ and the member accumulators -> identical to the legacy code.
         std::exception_ptr err;
+        int step_diverge = -1;
         if(mask_mode){
             _maybe_run_range_masked(0, nb_steps, _algo, _algo_controler, Ybus_, Vinit_solver,
                                     ac_solver_used, max_iter, tol, sn_mva,
-                                    _timer_modif_Ybus, _nb_solved, _timer_solver, err, false);
-            if(err) std::rethrow_exception(err);
+                                    _timer_modif_Ybus, _nb_solved, _timer_solver, step_diverge, err, false);
         } else {
-            int step_diverge = -1;
             _run_range(0, nb_steps, _algo, _algo_controler, Ybus_, Vinit_solver, ac_solver_used,
                       max_iter, tol_, _nb_solved, _timer_solver, _timer_modif_Ybus, step_diverge, err, false);
-            if(err) std::rethrow_exception(err);
-            if(SbusPolicy::supports_vary) _status = step_diverge < 0 ? 1 : 0;
         }
+        if(err) std::rethrow_exception(err);
+        // meaningful only where SbusPolicy::supports_vary (ContingencyAnalysis has no
+        // aggregate _status / get_status() -- each row is reported independently via
+        // converged()/get_violations() instead); harmless write otherwise.
+        if(SbusPolicy::supports_vary) _status = step_diverge < 0 ? 1 : 0;
         return;
     }
 
@@ -230,7 +232,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
             if(mask_mode){
                 _maybe_run_range_masked(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used,
                                         max_iter, tol, sn_mva, th_timer_modif[t], th_nb_solved[t], th_timer_solver[t],
-                                        th_err[t], true);
+                                        th_diverge[t], th_err[t], true);
             } else {
                 _run_range(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used, max_iter, tol_,
                           th_nb_solved[t], th_timer_solver[t], th_timer_modif[t], th_diverge[t], th_err[t], true);
@@ -246,7 +248,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(mask_mode){
             _maybe_run_range_masked(b, e, *algos[0], controls[0], ybus_copies[0], Vinit_solver, ac_solver_used,
                                     max_iter, tol, sn_mva, th_timer_modif[0], th_nb_solved[0], th_timer_solver[0],
-                                    th_err[0], true);
+                                    th_diverge[0], th_err[0], true);
         } else {
             _run_range(b, e, *algos[0], controls[0], ybus_copies[0], Vinit_solver, ac_solver_used, max_iter, tol_,
                       th_nb_solved[0], th_timer_solver[0], th_timer_modif[0], th_diverge[0], th_err[0], true);
@@ -323,6 +325,21 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         // compile-time constant is safe to compile for every instantiation.
         if(SbusPolicy::supports_vary){
             _status = 0;
+            // With compute_limit_violations set, a diverging "n" powerflow must NOT
+            // leave get_violations()/get_violations_n() looking like empty lists --
+            // that reads as "converged, nothing found" (ScenarioSweep has no
+            // converged()/converged_n() escape hatch; a violation list is meant to
+            // fully encode row status by itself, see BaseBatchSweep.hpp's note next
+            // to get_compute_limit_violations()). Stamp the same GRID/DIVERGENCE
+            // sentinel _store_row_status() already uses for a per-row divergence.
+            if(_compute_limit_violations_){
+                const LimitViolation sentinel{
+                    ViolationElementType::GRID, -1, 0, LimitViolationType::DIVERGENCE,
+                    std::numeric_limits<real_type>::quiet_NaN(),
+                    std::numeric_limits<real_type>::quiet_NaN()};
+                _violations_n_.push_back(sentinel);
+                for(auto & row : _violations) row.push_back(sentinel);
+            }
             _timer_total = timer.duration();
             return;
         }
