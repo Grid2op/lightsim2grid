@@ -42,8 +42,18 @@ struct LS2G_API SbusPolicy
         setters (TimeSeries, InjectionSweep, ScenarioSweep). Holds its own per-step
         Sbus matrix, moved verbatim (de-templated off `BatchInitKind`, which never
         actually affected this code -- only the cosmetic `algo_name` text below) from
-        the pre-refactor `BaseInjectionSweep<INIT>`. **/
-    struct Vary {
+        the pre-refactor `BaseInjectionSweep<INIT>`.
+
+        LS2G_API here (not just on the enclosing SbusPolicy): `assemble`/
+        `constant_sbus_pu` are defined out-of-line in SbusPolicy.cpp (part of
+        lightsim2grid_core) -- MSVC's dllexport does not propagate from an enclosing
+        class to a nested one, so without this the symbols would be missing from
+        lightsim2grid_core.dll's export table for any *other* DLL that ever calls
+        into this struct directly (see the identical, and triggered, issue on
+        YbusPolicy::Contingency). No current call site outside lightsim2grid_core
+        happens to reach this one yet, but the codebase's own convention is to mark
+        every core-lib class with out-of-line members this way regardless. **/
+    struct LS2G_API Vary {
         static constexpr bool supports_vary = true;
 
         // RowMajor, matching BaseBatchSolverSynch::CplxMat -- NOT the column-major

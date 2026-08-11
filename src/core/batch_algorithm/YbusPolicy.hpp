@@ -39,8 +39,20 @@ struct LS2G_API YbusPolicy
         trafos), emulated by editing the admittance matrix coefficients rather than
         rebuilding it from scratch (used by ContingencyAnalysis and ScenarioSweep).
         Holds its own Coeff-list bookkeeping, moved verbatim from the pre-refactor
-        `ContingencyAnalysis`. **/
-    struct Contingency {
+        `ContingencyAnalysis`.
+
+        LS2G_API here (not just on the enclosing YbusPolicy) is required, not
+        decorative: this nested struct's methods are defined out-of-line in
+        YbusPolicy.cpp (part of lightsim2grid_core) and called directly from
+        BaseBatchSweep's inline (header-defined) is_grid_connected_after_contingency()
+        / pick_reference_slack(), which get compiled into lightsim2grid_cpp.pyd -- a
+        *different* DLL on Windows. MSVC's dllexport does NOT propagate from an
+        enclosing class to a nested one, so without this the symbols are simply
+        missing from lightsim2grid_core.dll's export table (LNK2001 "unresolved
+        external symbol" when linking lightsim2grid_cpp.pyd) even though every
+        GCC/Clang build (default symbol visibility is far more permissive) links
+        fine regardless. **/
+    struct LS2G_API Contingency {
         static constexpr bool supports_contingency = true;
 
         // registered contingencies, gridmodel branch ids (lines then trafos). A
