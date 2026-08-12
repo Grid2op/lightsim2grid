@@ -75,8 +75,23 @@ struct LS2G_API SbusPolicy
         // owns that lock and only hands already-validated data here.
         RealMat gen_p, sgen_p, load_p, load_q;
 
+        // per-step generator voltage-magnitude targets (target_vm_pu), one row per
+        // step, one column per generator, as set by modify_gen_v. Empty (0 rows)
+        // means "never set": the grid's own target_vm_pu_ was already correctly
+        // seeded once, before the very first step, by
+        // BaseBatchSolverSynch::_finish_preprocessing's unconditional set_vm() call
+        // -- nothing to redo. Unlike gen_p/sgen_p/load_p/load_q above, this axis
+        // feeds NOTHING into `sbuses`/assemble()/constant_sbus_pu(): it is not part
+        // of the injection at all, it only re-seeds |V| at PV buses before each
+        // step's solve (see BaseBatchSweep::_apply_step_gen_v). Kept here anyway
+        // (rather than as a separate member of BaseBatchSweep) so it shares this
+        // struct's existing row-count-lock-free / "0 rows = unset" contract and
+        // stays reachable from wherever gen_p etc. are.
+        RealMat gen_v;
+
         void clear() {
             gen_p = RealMat(); sgen_p = RealMat(); load_p = RealMat(); load_q = RealMat();
+            gen_v = RealMat();
             sbuses = CplxMat();
         }
 

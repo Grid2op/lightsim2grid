@@ -24,6 +24,18 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     int & nb_solved, double & timer_solver, double & timer_modif_ybus,
     bool & conv, bool & invertible)
 {
+    // re-seed |V| at every voltage-regulating generator's regulated bus with this
+    // row's own target (modify_gen_v; a no-op if it was never set, or on a
+    // SbusPolicy::NOOP instantiation). Applied unconditionally, AC or DC, matching
+    // the existing precedent in BaseBatchSolverSynch::_finish_preprocessing (which
+    // also seeds vm before branching AC/DC) -- DC's own equations ignore |V|
+    // magnitude, so this is harmless there. Covers both BatchInitKind variants: V
+    // already holds "this row's starting point" by the time _run_one_step runs
+    // (either freshly reset to Vinit_solver for FromSeed, or carried over from the
+    // previous row's convergence for FromPreviousStep / TimeSeries), so a single
+    // unconditional call here re-applies the *current* row's target every time.
+    _apply_step_gen_v(i, V);
+
     auto t1 = CustTimer();
     invertible = _remove_step_coeffs(Ybus, i, ac_solver_used, algo);
     timer_modif_ybus += t1.duration();

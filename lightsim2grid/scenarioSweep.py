@@ -44,11 +44,14 @@ class ScenarioSweep:
     :class:`lightsim2grid.injectionSweep.InjectionSweep` (a single bundled
     ``compute_V_from_inj`` call), this class uses a setter-based API: call as many of
     ``modify_gen_p`` / ``modify_sgen_p`` / ``modify_load_p`` / ``modify_load_q`` /
-    ``set_contingency_lines`` / ``set_contingency_trafos`` as are relevant, then
-    ``compute()``. Any axis you never set defaults to the grid's own state for every
-    row (its own target injection, or "nothing disconnected"). The first setter you
-    call fixes the number of simulations; every later setter is checked against it
-    immediately.
+    ``modify_gen_v`` / ``set_contingency_lines`` / ``set_contingency_trafos`` as are
+    relevant, then ``compute()``. Any axis you never set defaults to the grid's own
+    state for every row (its own target injection / voltage setpoint, or "nothing
+    disconnected"). The first setter you call fixes the number of simulations; every
+    later setter is checked against it immediately. Note ``modify_gen_v`` is different
+    from the other ``modify_*`` setters: it does not feed the injection (Sbus), it only
+    re-seeds the voltage magnitude at each voltage-regulating generator's regulated bus
+    before that row's solve.
 
     This is deliberately a *different* API from
     :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis`'s ``add_n1`` /
@@ -268,6 +271,18 @@ class ScenarioSweep:
             raise RuntimeError(f"The number of loads on the grid ({self.grid2op_env.n_load}) "
                                f"differs from the number of columns of load_q ({load_q.shape[1]}).")
         self.computer.modify_load_q(load_q)
+        self.__computed = False
+
+    def modify_gen_v(self, gen_v):
+        """Per-step generator target voltage magnitude (vm_pu), shape ``(n_simul, n_gen)``.
+        Unlike ``modify_gen_p``/``modify_load_p``/``modify_load_q``, this does NOT feed the
+        injection (Sbus) -- it only re-seeds ``|V|`` at each voltage-regulating generator's
+        regulated bus before that step's solve."""
+        gen_v = self._check_2d(gen_v, "gen_v")
+        if gen_v.shape[1] != self.grid2op_env.n_gen:
+            raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "
+                               f"differs from the number of columns of gen_v ({gen_v.shape[1]}).")
+        self.computer.modify_gen_v(gen_v)
         self.__computed = False
 
     def set_contingency_lines(self, mask):

@@ -425,15 +425,33 @@ bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualA
 
 void GeneratorContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const
 {
+    _set_vm_impl(V, id_grid_to_solver, target_vm_pu_);
+}
+
+void GeneratorContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver,
+                                const Eigen::Ref<const RealVect> & target_vm_pu_row) const
+{
+    if(target_vm_pu_row.size() != static_cast<Eigen::Index>(nb())){
+        std::ostringstream exc_;
+        exc_ << "GeneratorContainer::set_vm: got a target_vm_pu vector of size " << target_vm_pu_row.size()
+             << ", expected " << nb() << " (one entry per generator).";
+        throw std::runtime_error(exc_.str());
+    }
+    _set_vm_impl(V, id_grid_to_solver, target_vm_pu_row);
+}
+
+void GeneratorContainer::_set_vm_impl(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver,
+                                      const Eigen::Ref<const RealVect> & target_vm) const
+{
     const int nb_gen = nb();
     SolverBusId bus_id_solver;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
-        
+
         if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
 
-        
+
         bool pseudo_off = is_pseudo_off(gen_id);
         if ((!turnedoff_gen_pv_) && pseudo_off) continue;  // in this case turned off generators are not pv
 
@@ -465,7 +483,7 @@ void GeneratorContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & 
             tmp = 1.0;
         }
         tmp = 1.0 / tmp;
-        tmp *= target_vm_pu_(gen_id);
+        tmp *= target_vm(gen_id);
         V(bus_id_solver.cast_int()) *= tmp;
     }
 }

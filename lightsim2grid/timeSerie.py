@@ -253,6 +253,21 @@ class TimeSerie:
         self.computer.modify_load_q(load_q)
         self.__computed = False
 
+    def modify_gen_v(self, gen_v):
+        """Per-step generator target voltage magnitude (vm_pu), shape ``(n_simul, n_gen)``.
+        Unlike :func:`modify_gen_p`/:func:`modify_load_p`/:func:`modify_load_q`, this does
+        NOT feed the injection (Sbus) -- it only re-seeds ``|V|`` at each voltage-regulating
+        generator's regulated bus before that step's solve. See :func:`modify_gen_p`."""
+        gen_v = np.asarray(gen_v)
+        if gen_v.ndim != 2:
+            raise RuntimeError("gen_v should be a matrix with rows representing time steps "
+                               "and columns representing individual production.")
+        if gen_v.shape[1] != self.grid2op_env.n_gen:
+            raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "
+                               f"differs from the number of columns of gen_v ({gen_v.shape[1]}).")
+        self.computer.modify_gen_v(gen_v)
+        self.__computed = False
+
     def compute(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):
         """
         Run the batch using whatever was set by :func:`modify_gen_p` / :func:`modify_sgen_p`

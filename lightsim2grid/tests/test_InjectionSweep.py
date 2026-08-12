@@ -206,6 +206,28 @@ class TestInjectionSweepCPP(unittest.TestCase):
         assert computer4.nb_solved() == self.nb_steps
         assert computer4.total_time() > 0.
 
+    def test_modify_gen_v(self):
+        """per-step generator target voltage magnitude: does NOT feed the injection
+        (Sbus), it only re-seeds |V| at the regulated bus before each row's solve."""
+        gens = self.grid.get_generators()
+        pv_gen_id = next(i for i, g in enumerate(gens) if not g.is_slack)
+        bus_id = gens[pv_gen_id].bus_id
+        nb_steps = 3
+        targets = np.array([1.00, 1.03, 0.97])
+        gen_v = np.tile(np.array([g.target_vm_pu for g in gens]), (nb_steps, 1))
+        gen_v[:, pv_gen_id] = targets
+
+        computer = InjectionSweepCPP(self.grid)
+        computer.modify_gen_p(self.prod_p[:nb_steps])
+        computer.modify_sgen_p(self.sgen_p[:nb_steps])
+        computer.modify_load_p(self.load_p[:nb_steps])
+        computer.modify_load_q(self.load_q[:nb_steps])
+        computer.modify_gen_v(gen_v)
+        computer.compute(self.Vinit, self.env.backend.max_it, self.env.backend.tol)
+        assert computer.get_status() == 1
+        vm = np.abs(np.array(computer.get_voltages())[:, bus_id])
+        np.testing.assert_allclose(vm, targets, atol=1e-6)
+
 
 class TestInjectionSweepGrid2op(unittest.TestCase):
     """the grid2op level wrapper, which shares everything but the c++ class with TimeSerie"""

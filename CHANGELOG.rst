@@ -1965,6 +1965,19 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   is invisible to both valgrind and ASan -- only the assertion build catches it. The test
   binary itself (not just ``lightsim2grid_core``) is now compiled and linked with the
   sanitizer flags, see ``src/tests/CMakeLists.txt``.
+- [ADDED] ``modify_gen_v`` on ``TimeSeriesCPP`` / ``InjectionSweepCPP`` /
+  ``ScenarioSweepCPP`` (python: ``TimeSerie.modify_gen_v`` /
+  ``ScenarioSweep.modify_gen_v``, the latter inherited "for free" by
+  ``InjectionSweep``): a new per-step axis, the target generator voltage magnitude
+  (``vm_pu``), shape ``(n_simul, n_gen)``. Unlike ``modify_gen_p`` / ``modify_sgen_p`` /
+  ``modify_load_p`` / ``modify_load_q``, this does **not** feed the injection (``Sbus``)
+  at all: a PV bus's magnitude is not part of Newton-Raphson's unknown vector, so it
+  never moves during a solve once seeded -- ``modify_gen_v`` only re-seeds ``|V|`` at
+  each voltage-regulating generator's regulated bus immediately before that row's solve
+  (``GeneratorContainer::set_vm``, a new overload taking an explicit per-generator
+  vm vector, alongside the existing single-arg overload reading the grid's own
+  ``target_vm_pu``). Left unset (the default), every row keeps using the grid's own
+  ``target_vm_pu``, exactly as before this setter existed.
 
 [0.13.1]  2026-04-21
 --------------------

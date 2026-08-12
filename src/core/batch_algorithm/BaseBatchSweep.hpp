@@ -389,6 +389,18 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _lock_or_check_nb_steps(load_q.rows(), "modify_load_q");
             sbus_policy_.load_q = load_q;
         }
+        // Per-step generator target voltage magnitude (vm_pu). Unlike the four
+        // setters above, this does NOT feed the injection (Sbus): it only re-seeds
+        // |V| at each voltage-regulating generator's regulated bus before that
+        // step's solve (see _apply_step_gen_v / GeneratorContainer::set_vm). Left
+        // unset (0 rows), every row keeps using the grid's own target_vm_pu, exactly
+        // as before this setter existed.
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void modify_gen_v(const Eigen::Ref<const typename S::RealMat> & gen_v) {
+            _check_cols(gen_v, static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb()), "modify_gen_v");
+            _lock_or_check_nb_steps(gen_v.rows(), "modify_gen_v");
+            sbus_policy_.gen_v = gen_v;
+        }
 
         // ============ contingency mask setters (Contingency && Vary only) ========
         // ScenarioSweep only: row i, column j True means "deactivate this branch for
@@ -940,6 +952,26 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         CplxVect _step_sbus(size_t) const { return Sbus_; }
 
+        // ----- per-step generator vm seeding: 2-way (SbusPolicy::Vary::gen_v row
+        // applied via GeneratorContainer::set_vm, vs. a no-op leaving V's magnitude
+        // alone). Unlike _step_sbus above this mutates V in place rather than
+        // returning a value: set_vm's contract is "rescale |V| at each PV
+        // generator's regulated bus", there is nothing to hand back. -----
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        void _apply_step_gen_v(size_t, CplxVect &) const {}
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void _apply_step_gen_v(size_t i, CplxVect & V) const {
+            if(sbus_policy_.gen_v.rows() == 0) return;  // never set: the grid's own
+                // target_vm_pu_ was already seeded once by _finish_preprocessing,
+                // before the very first step -- nothing to redo here, no per-row
+                // regression.
+            const RealVect target_vm_pu_row = sbus_policy_.gen_v.row(i);  // materialize:
+                // a RowMajor matrix row is not contiguous the way a plain RealVect
+                // is, so bind it to a real RealVect before handing it to set_vm's
+                // Eigen::Ref<const RealVect> parameter (same pattern as _step_sbus).
+            _grid_model.get_generators().set_vm(V, id_me_to_solver_, target_vm_pu_row);
+        }
+
         // ----- per-row "which branches did THIS row itself disconnect" ------------
         // used by _record_row_violations below to exclude a row's own disconnected
         // branches from that row's current-limit checks (they still look "connected"
@@ -1103,6 +1135,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
                         algo.set_masked_buses(masked);
                         V = Vinit_solver;
+                        _apply_step_gen_v(cont_id, V);
                         if(masked.empty()){
                             conv = compute_one_powerflow(algo, control, nb_solved, timer_solver, Ybus, V, _step_sbus(cont_id),
                                                          slack_ids_solver_.as_eigen(), slack_weights_,

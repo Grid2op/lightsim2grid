@@ -302,6 +302,55 @@ class TestScenarioSweepCPP(unittest.TestCase):
             assert row[0].element_type == ViolationElementType.GRID
             assert row[0].violation_type == LimitViolationType.DIVERGENCE
 
+    def _pv_gen(self):
+        gens = self.grid.get_generators()
+        pv_gen_id = next(i for i, g in enumerate(gens) if not g.is_slack)
+        return gens, pv_gen_id, gens[pv_gen_id].bus_id
+
+    def test_modify_gen_v(self):
+        """per-step generator target voltage magnitude, plain (non-masked) path."""
+        gens, pv_gen_id, bus_id = self._pv_gen()
+        nb_steps = 3
+        targets = np.array([1.00, 1.03, 0.97])
+        gen_v = np.tile(np.array([g.target_vm_pu for g in gens]), (nb_steps, 1))
+        gen_v[:, pv_gen_id] = targets
+
+        computer = ScenarioSweepCPP(self.grid)
+        computer.modify_gen_p(self.gen_p[:nb_steps])
+        computer.modify_load_p(self.load_p[:nb_steps])
+        computer.modify_load_q(self.load_q[:nb_steps])
+        computer.modify_gen_v(gen_v)
+        computer.set_contingency_lines(self.no_line_mask[:nb_steps])
+        computer.compute(self.Vinit, self.max_it, self.tol)
+        assert computer.get_status() == 1
+        vm = np.abs(np.array(computer.get_voltages())[:, bus_id])
+        np.testing.assert_allclose(vm, targets, atol=1e-6)
+
+    def test_modify_gen_v_through_masked_path(self):
+        """same as above, but with handle_disconnected_grid=True and an active (but
+        non-islanding, on this meshed grid) contingency -- exercises
+        _run_range_masked, the only per-step solve path that does not go through
+        _run_one_step."""
+        gens, pv_gen_id, bus_id = self._pv_gen()
+        nb_steps = 3
+        targets = np.array([1.00, 1.03, 0.97])
+        gen_v = np.tile(np.array([g.target_vm_pu for g in gens]), (nb_steps, 1))
+        gen_v[:, pv_gen_id] = targets
+
+        computer = ScenarioSweepCPP(self.grid)
+        computer.handle_disconnected_grid = True
+        computer.modify_gen_p(self.gen_p[:nb_steps])
+        computer.modify_load_p(self.load_p[:nb_steps])
+        computer.modify_load_q(self.load_q[:nb_steps])
+        computer.modify_gen_v(gen_v)
+        line_mask = np.zeros((nb_steps, self.n_line), dtype=bool)
+        line_mask[:, 0] = True  # a contingency that does not island the grid here
+        computer.set_contingency_lines(line_mask)
+        computer.compute(self.Vinit, self.max_it, self.tol)
+        assert computer.get_status() == 1
+        vm = np.abs(np.array(computer.get_voltages())[:, bus_id])
+        np.testing.assert_allclose(vm, targets, atol=1e-6)
+
 
 class TestScenarioSweepGrid2op(unittest.TestCase):
     """the grid2op-level wrapper (lightsim2grid.scenarioSweep.ScenarioSweep)"""
