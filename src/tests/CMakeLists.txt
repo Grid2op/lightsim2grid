@@ -76,6 +76,7 @@ add_executable(lightsim2grid_unit_tests
     test_batch_voltage_control.cpp
     test_timeseries_sbus.cpp
     test_injection_sweep.cpp
+    test_scenario_sweep_violations.cpp
 )
 target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
 

@@ -21,7 +21,6 @@ Change Log
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
 - code parrallelism directly in the `Computer` and `SecurityAnalysisCPP` classes
-- a mode to do both `Computer` and `SecurityAnalysisCPP`
 - use the "multi slack hack" (see issue #50) for SecurityAnalysis or Computer for example
 - code `helm` powerflow method
 - interface with gridpack (to enforce q limits for example)
@@ -118,8 +117,12 @@ TODO: add a CI job that builds one of the example C++ algorithm plugins
       ``test_plugin_against_installed`` job each cover half of this (the former builds
       lightsim2grid itself with the flag but does not touch a plugin; the latter builds a
       plugin but never with the flag) -- neither exercises the combination.
-TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding small decreasing 
+TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding small decreasing
       lambba coefficients to the diagonal of J to improve its conditionning.
+TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the current
+      row-aligned / zipped semantics (row `i`'s injection paired with row `i`'s
+      contingency) and a cartesian one ("every registered contingency x every
+      injection profile").
 
 [1.0.0] 2026-xx-yy
 --------------------
@@ -183,6 +186,93 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   under ``tell_all_changed()``. Being a C++ test it runs under the valgrind pass of the C++ suite and
   the ASan/UBSan + Eigen-assertion builds, where a too-long index that stays inside the heap would
   still be caught.
+- [BREAKING] (c++ API only) ``batch_algorithm/BaseInjectionSweep.hpp`` / ``.cpp`` and
+  ``batch_algorithm/ContingencyAnalysis.hpp`` / ``.cpp`` are removed, replaced by
+  ``batch_algorithm/BaseBatchSweep.hpp`` / ``.cpp`` (plus two new small headers,
+  ``batch_algorithm/YbusPolicy.hpp`` / ``.cpp`` and ``batch_algorithm/SbusPolicy.hpp`` /
+  ``.cpp``): a single class template ``ls2g::BaseBatchSweep<YbusPolicy, SbusPolicy,
+  BatchInitKind>``, policy-parameterized on what varies per step in the admittance
+  matrix (nothing, or a contingency) and in the injection (nothing, or per-step
+  values). ``TimeSeries``, ``InjectionSweep`` and ``ContingencyAnalysis`` are now three
+  aliases of it -- same behavior, same C++ and python public API as before (the
+  policy-only, contingency-only and injection-only methods are gated with
+  ``std::enable_if`` so each alias only exposes what it always exposed); nothing
+  changes on the python side for these three. C++ code including the old paths must
+  update its ``#include``.
+- [ADDED] ``ScenarioSweepCPP`` (python wrapper ``lightsim2grid.scenarioSweep.ScenarioSweep``),
+  the 4th instantiation of ``ls2g::BaseBatchSweep``: varies both the injection AND a
+  contingency (a line / trafo disconnection) per row, independently and row-aligned --
+  row ``i`` of the injection matrices is solved together with row ``i`` of the
+  contingency mask. Built up with a new setter-based API (see below) rather than a
+  single bundled call: ``modify_gen_p`` / ``modify_sgen_p`` / ``modify_load_p`` /
+  ``modify_load_q`` for the injection, ``set_contingency_lines`` /
+  ``set_contingency_trafos`` (dense boolean masks, shape ``(n_simul, n_line)`` /
+  ``(n_simul, n_trafo)``, ``True`` = "deactivate this branch for this row") for the
+  contingency, then ``compute(Vinit, max_iter, tol)``. Deliberately a *different* API
+  from ``ContingencyAnalysisCPP``'s ``add_n1`` / ``add_nk`` (a set of distinct
+  contingencies applied to one shared base injection) -- the two usages do not unify
+  cleanly, so ``ScenarioSweepCPP`` does not have ``add_n1`` / ``add_nk`` and
+  ``ContingencyAnalysisCPP`` does not have ``set_contingency_lines`` /
+  ``set_contingency_trafos``. See ``docs/scenario_sweep.rst``.
+- [ADDED] ``ScenarioSweepCPP`` now also has ``ContingencyAnalysisCPP``'s
+  ``handle_disconnected_grid`` mode and inline limit-violation checking
+  (``compute_limit_violations`` / ``violation_threshold`` / ``get_violations`` /
+  ``get_violations_n``), same names and semantics on both classes, and both return the
+  same ``LimitViolation`` objects. Deliberately **no** ``converged`` / ``converged_n`` on
+  ``ScenarioSweepCPP``: a non-converged row's ``get_violations()`` entry already carries a
+  ``GRID`` / ``NOT_SIMULATED``-or-``DIVERGENCE`` sentinel violation, so a separate
+  convergence flag would be redundant (``ContingencyAnalysisCPP``'s own ``converged`` /
+  ``converged_n`` are unchanged). A diverging pre-batch "n" powerflow (the shared base
+  case every row in the batch is solved relative to) now also stamps this same
+  ``GRID`` / ``DIVERGENCE`` sentinel into ``get_violations_n()`` and every row of
+  ``get_violations()``, instead of leaving them as empty lists indistinguishable from
+  "converged, nothing found". As on ``ContingencyAnalysisCPP``, toggling
+  ``compute_limit_violations`` clears the whole object (registered contingencies,
+  injections, ``handle_disconnected_grid``, ...) -- set it *before* configuring
+  anything else. ``lightsim2grid.scenarioSweep.ScenarioSweep`` gains a ``run()`` method
+  reusing the existing ``PreContingencyResult`` / ``ContingencyResult`` /
+  ``SecurityAnalysisResult`` dataclasses from ``lightsim2grid.contingencyAnalysis``
+  (``contingency_name`` is always ``None`` there, unlike ``ContingencyAnalysis.run()``).
+- [ADDED] a new setter-based API -- ``modify_gen_p`` / ``modify_sgen_p`` /
+  ``modify_load_p`` / ``modify_load_q`` + ``compute(Vinit, max_iter, tol)`` -- is now
+  also available on ``TimeSeriesCPP`` / ``InjectionSweepCPP``, alongside their existing
+  bundled ``compute_Vs`` call (kept, not removed, deprecated via docstring only). Unlike
+  ``compute_Vs``, which requires all four matrices every call, any axis you never set
+  defaults to the grid's own current target value, broadcast across every row --
+  applies to ``ScenarioSweepCPP`` too. Every setter shares one row-count lock: the
+  first one called fixes the number of simulations, every later one (across all
+  setters, including ``set_contingency_lines`` / ``set_contingency_trafos`` on
+  ``ScenarioSweepCPP``) is checked against it immediately, instead of only at
+  ``compute()`` time as ``compute_Vs``'s equivalent check did.
+- [FIXED] ``ScenarioSweepCPP`` (non-``handle_disconnected_grid`` path) used to abandon every
+  row after the first one that failed to converge (a contingency that islands the grid is a
+  routine, expected outcome for this class, not an exceptional one) -- later rows were left as
+  all-zero voltages with an empty, misleadingly "converged, nothing found"-looking violation
+  list. Each row of ``ScenarioSweepCPP`` is independent (unlike ``TimeSeriesCPP``, whose rows
+  chain), so it now keeps going past a failing row, exactly like ``ContingencyAnalysisCPP``
+  already did; ``get_status()`` still correctly reports 0 for the batch as a whole.
+- [FIXED] ``ScenarioSweep.run()`` (the python wrapper) raised on any per-row failure instead of
+  reporting it through the sentinel-violation mechanism its own docstring describes --
+  ``compute()`` is now called with ``ignore_errors=True`` internally, matching
+  ``ContingencyAnalysis.run()``'s behavior (only a diverging shared pre-batch "n" case, which
+  makes the whole result meaningless, still surfaces as an unmistakable ``GRID`` /
+  ``DIVERGENCE`` sentinel rather than a silent empty list).
+- [FIXED] ``ScenarioSweepCPP::compute_flows`` / ``compute_power_flows`` did not detect a
+  ``modify_*`` / ``set_contingency_lines`` / ``set_contingency_trafos`` call made after
+  ``compute()`` without a following ``compute()`` -- unlike ``ContingencyAnalysisCPP``'s
+  equivalent guard (a registered-contingency-count check), a count comparison cannot catch this
+  on ``ScenarioSweepCPP``, since its row-count lock already forbids changing the row count
+  itself; only the row *content* changes. Both methods now raise in that situation instead of
+  silently mixing a new mask/injection with stale voltages from the previous ``compute()``.
+- [FIXED] ``lightsim2grid.scenarioSweep.ScenarioSweep``'s ``compute_limit_violations`` setter
+  reset ``self.__computed`` but not the cached ``_line_mask`` / ``_trafo_mask`` (there is no
+  C++-side getter for them), even though it clear()s the masks C++-side -- the next ``run()``
+  could derive ``element_ids`` / ``element_names`` from a stale cache. Both are now reset too.
+- [FIXED] ``modify_sgen_p`` (on both ``lightsim2grid.timeSerie.TimeSerie`` -- and so, by
+  inheritance, ``lightsim2grid.injectionSweep.InjectionSweep`` -- and
+  ``lightsim2grid.scenarioSweep.ScenarioSweep``) validated ``ndim`` but not the column count,
+  unlike ``modify_gen_p`` / ``modify_load_p`` / ``modify_load_q``; the C++ side still caught it,
+  just with a less immediately actionable error. Consistency fix only.
 - [ADDED] ``src/tests/test_timeseries_sbus.cpp`` and ``lightsim2grid/tests/test_timeseries_sbus.py``:
   a one-step time series fed the grid's OWN injections must reproduce ``ac_pf`` / ``dc_pf`` exactly.
   Covers each dropped element kind separately and all of them together, in ac and in dc, plus a
@@ -1875,6 +1965,19 @@ TODO: Levenberg-Marquardt damping (a.k.a. Tikhonov-regularized Newton) : adding 
   is invisible to both valgrind and ASan -- only the assertion build catches it. The test
   binary itself (not just ``lightsim2grid_core``) is now compiled and linked with the
   sanitizer flags, see ``src/tests/CMakeLists.txt``.
+- [ADDED] ``modify_gen_v`` on ``TimeSeriesCPP`` / ``InjectionSweepCPP`` /
+  ``ScenarioSweepCPP`` (python: ``TimeSerie.modify_gen_v`` /
+  ``ScenarioSweep.modify_gen_v``, the latter inherited "for free" by
+  ``InjectionSweep``): a new per-step axis, the target generator voltage magnitude
+  (``vm_pu``), shape ``(n_simul, n_gen)``. Unlike ``modify_gen_p`` / ``modify_sgen_p`` /
+  ``modify_load_p`` / ``modify_load_q``, this does **not** feed the injection (``Sbus``)
+  at all: a PV bus's magnitude is not part of Newton-Raphson's unknown vector, so it
+  never moves during a solve once seeded -- ``modify_gen_v`` only re-seeds ``|V|`` at
+  each voltage-regulating generator's regulated bus immediately before that row's solve
+  (``GeneratorContainer::set_vm``, a new overload taking an explicit per-generator
+  vm vector, alongside the existing single-arg overload reading the grid's own
+  ``target_vm_pu``). Left unset (the default), every row keeps using the grid's own
+  ``target_vm_pu``, exactly as before this setter existed.
 
 [0.13.1]  2026-04-21
 --------------------

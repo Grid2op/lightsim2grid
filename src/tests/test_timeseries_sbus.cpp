@@ -32,13 +32,14 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LSGrid.hpp"
-#include "batch_algorithm/BaseInjectionSweep.hpp"
+#include "batch_algorithm/BaseBatchSweep.hpp"
 
 using Catch::Approx;
 using ls2g::AlgorithmType;
 using ls2g::CplxVect;
 using ls2g::LSGrid;
 using ls2g::RealVect;
+using ls2g::ScenarioSweep;
 using ls2g::TimeSeries;
 using ls2g::cplx_type;
 using ls2g::real_type;
@@ -88,6 +89,48 @@ void add_gens(LSGrid & g, bool with_q_mode_gen)
                                                    : std::vector<bool>{true};
     g.init_generators_full(p, v, q, vreg, qmin, qmax, b);
     g.add_gen_slackbus(0, 1.);
+}
+
+// a slack generator at bus 0 plus a genuine voltage-regulating (PV) generator at bus 2,
+// whose target vm_pu is `pv_target_vm` -- used by the modify_gen_v tests below, which
+// need a real PV bus (unlike add_gens' optional second generator, which is Q-mode /
+// voltage_regulator_on == false, ie NOT a PV bus).
+void add_slack_and_pv_gens(LSGrid & g, real_type pv_target_vm)
+{
+    RealVect p(2), v(2), q(2), qmin(2), qmax(2);
+    Eigen::VectorXi b(2);
+    p(0) = 0.; v(0) = 1.02; q(0) = 0.; qmin(0) = -1000.; qmax(0) = 1000.; b(0) = 0;
+    p(1) = 20.; v(1) = pv_target_vm; q(1) = 0.; qmin(1) = -1000.; qmax(1) = 1000.; b(1) = 2;
+    const std::vector<bool> vreg{true, true};
+    g.init_generators_full(p, v, q, vreg, qmin, qmax, b);
+    g.add_gen_slackbus(0, 1.);
+}
+
+// a triangular (2-connected) 3-bus mesh -- bus 0 (slack), bus 1 (load), bus 2 (PV
+// generator) -- so that disconnecting any single line still leaves every bus
+// connected. Used by the ScenarioSweep modify_gen_v test below, which needs
+// handle_disconnected_grid's masked path (_run_range_masked) to actually run without
+// islanding the PV bus away from the slack.
+LSGrid make_mesh_skeleton()
+{
+    LSGrid g;
+    g.set_sn_mva(100.);
+    g.set_init_vm_pu(1.0);
+    const RealVect vn = RealVect::Constant(3, 138.);
+    g.init_bus(3u, 1u, vn, 0, 0);
+    const RealVect r = RealVect::Constant(3, 0.01);
+    const RealVect x = RealVect::Constant(3, 0.1);
+    const CplxVect h = CplxVect::Zero(3);
+    Eigen::VectorXi f(3), t(3);
+    f(0) = 0; t(0) = 1;  // bus0 - bus1
+    f(1) = 1; t(1) = 2;  // bus1 - bus2
+    f(2) = 0; t(2) = 2;  // bus0 - bus2 (the redundant edge)
+    g.init_powerlines(r, x, h, f, t);
+    RealVect lp(1), lq(1); lp << LOAD_P; lq << LOAD_Q;
+    Eigen::VectorXi lb(1); lb << 1;
+    g.init_loads(lp, lq, lb);
+    add_slack_and_pv_gens(g, 1.02);
+    return g;
 }
 
 void add_sgen(LSGrid & g, int bus, real_type p_mw, real_type q_mvar)
@@ -320,5 +363,101 @@ TEST_CASE("several TimeSeries steps still track the single shot", "[tssbus]")
             INFO("bus " << b);
             CHECK(std::abs(Vts(b)) == Approx(std::abs(V(b))).epsilon(1e-9));
         }
+    }
+}
+
+// --- modify_gen_v: per-step generator voltage-magnitude target ------------------
+
+TEST_CASE("a TimeSeries step with an unset modify_gen_v keeps the grid's own PV target",
+          "[tssbus][genv]")
+{
+    // non-regression: modify_gen_v is deliberately never called here, so the PV
+    // bus's converged |V| must still match the grid's own target_vm_pu, exactly as
+    // before this setter existed (BaseBatchSolverSynch::_finish_preprocessing's
+    // once-only set_vm() call is untouched).
+    LSGrid ref = make_skeleton(); add_slack_and_pv_gens(ref, 1.05);
+    ref.change_algorithm(AlgorithmType::NR_SparseLU);
+    const CplxVect V = ref.ac_pf(flat(ref), 30, 1e-11);
+    REQUIRE(V.size() == NB_BUS);
+
+    LSGrid ts_grid = make_skeleton(); add_slack_and_pv_gens(ts_grid, 1.05);
+    ts_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(ts_grid);
+    RealMat gen_p(1, 2), load_p(1, 1), load_q(1, 1);
+    gen_p(0, 0) = 0.; gen_p(0, 1) = 20.;
+    load_p(0, 0) = LOAD_P; load_q(0, 0) = LOAD_Q;
+    ts.modify_gen_p(gen_p);
+    ts.modify_load_p(load_p);
+    ts.modify_load_q(load_q);
+    ts.compute(flat(ts_grid), 30, 1e-11);
+    REQUIRE(ts.get_status() == 1);
+    const CplxVect Vts = ts.get_voltages().row(0);
+    for (int b = 0; b < NB_BUS; ++b) {
+        INFO("bus " << b);
+        CHECK(std::abs(Vts(b)) == Approx(std::abs(V(b))).epsilon(1e-9));
+    }
+}
+
+TEST_CASE("a TimeSeries step honors a per-row modify_gen_v target", "[tssbus][genv]")
+{
+    LSGrid ts_grid = make_skeleton(); add_slack_and_pv_gens(ts_grid, 1.02);
+    ts_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(ts_grid);
+
+    const std::vector<real_type> targets{1.00, 1.03, 0.97};
+    const int nb_steps = static_cast<int>(targets.size());
+    RealMat gen_p(nb_steps, 2), load_p(nb_steps, 1), load_q(nb_steps, 1), gen_v(nb_steps, 2);
+    for (int s = 0; s < nb_steps; ++s) {
+        gen_p(s, 0) = 0.; gen_p(s, 1) = 20.;
+        load_p(s, 0) = LOAD_P; load_q(s, 0) = LOAD_Q;
+        gen_v(s, 0) = 1.02;         // slack: kept constant across rows
+        gen_v(s, 1) = targets[s];  // the PV generator at bus 2, varied per row
+    }
+    ts.modify_gen_p(gen_p);
+    ts.modify_load_p(load_p);
+    ts.modify_load_q(load_q);
+    ts.modify_gen_v(gen_v);
+    ts.compute(flat(ts_grid), 30, 1e-11);
+    REQUIRE(ts.get_status() == 1);
+    for (int s = 0; s < nb_steps; ++s) {
+        INFO("step " << s);
+        CHECK(std::abs(ts.get_voltages().row(s)(2)) == Approx(targets[s]).epsilon(1e-8));
+    }
+}
+
+TEST_CASE("a ScenarioSweep row honors a per-row modify_gen_v target through the masked path",
+          "[tssbus][genv]")
+{
+    // exercises _run_range_masked (BaseBatchSweep.hpp), the ONLY per-step solve path
+    // that does not go through _run_one_step -- handle_disconnected_grid=true routes
+    // every row through it regardless of whether that row's contingency actually
+    // strands anything. make_mesh_skeleton is 2-connected so no row ever islands the
+    // PV bus away from the slack; this isolates the modify_gen_v call site itself.
+    LSGrid ts_grid = make_mesh_skeleton();
+    ts_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ScenarioSweep sw(ts_grid);
+    sw.set_handle_disconnected_grid(true);
+
+    const std::vector<real_type> targets{1.00, 1.03, 0.97};
+    const int nb_steps = static_cast<int>(targets.size());
+    RealMat gen_p(nb_steps, 2), load_p(nb_steps, 1), load_q(nb_steps, 1), gen_v(nb_steps, 2);
+    ScenarioSweep::BoolMat line_mask = ScenarioSweep::BoolMat::Zero(nb_steps, 3);
+    for (int s = 0; s < nb_steps; ++s) {
+        gen_p(s, 0) = 0.; gen_p(s, 1) = 20.;
+        load_p(s, 0) = LOAD_P; load_q(s, 0) = LOAD_Q;
+        gen_v(s, 0) = 1.02;
+        gen_v(s, 1) = targets[s];
+        line_mask(s, s % 3) = true;  // disconnect a different (redundant) line each row
+    }
+    sw.modify_gen_p(gen_p);
+    sw.modify_load_p(load_p);
+    sw.modify_load_q(load_q);
+    sw.modify_gen_v(gen_v);
+    sw.set_contingency_lines(line_mask);
+    sw.compute(flat(ts_grid), 30, 1e-11);
+    REQUIRE(sw.get_status() == 1);
+    for (int s = 0; s < nb_steps; ++s) {
+        INFO("step " << s);
+        CHECK(std::abs(sw.get_voltages().row(s)(2)) == Approx(targets[s]).epsilon(1e-8));
     }
 }

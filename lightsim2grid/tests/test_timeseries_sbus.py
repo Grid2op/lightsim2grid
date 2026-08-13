@@ -109,5 +109,60 @@ class TestTimeSeriesSbusCompleteness(unittest.TestCase):
                            "the added elements do not affect the solution")
 
 
+class TestModifyGenV(unittest.TestCase):
+    """``modify_gen_v``: per-step generator target voltage magnitude (vm_pu). Unlike
+    the four setters checked above, this axis does not feed the injection (Sbus) at
+    all -- it only re-seeds |V| at each voltage-regulating generator's regulated bus
+    before that step's solve. Companion C++ cases: ``[genv]`` in
+    ``src/tests/test_timeseries_sbus.cpp``.
+    """
+    def _pv_gen(self, model):
+        gens = model.get_generators()
+        pv_gen_id = next(i for i, g in enumerate(gens) if not g.is_slack)
+        return gens, pv_gen_id, gens[pv_gen_id].bus_id
+
+    def test_per_row_override(self):
+        net, model = _model(add_extras=False)
+        nb_bus = net.bus.shape[0]
+        gens, pv_gen_id, bus_id = self._pv_gen(model)
+
+        ts = TimeSeriesCPP(model)
+        gen_p, _, load_p, load_q = _own_injections(model)
+        nb_steps = 3
+        targets = np.array([1.00, 1.03, 0.97])
+        gen_p = np.tile(gen_p, (nb_steps, 1))
+        load_p = np.tile(load_p, (nb_steps, 1))
+        load_q = np.tile(load_q, (nb_steps, 1))
+        gen_v = np.tile(np.array([g.target_vm_pu for g in gens]), (nb_steps, 1))
+        gen_v[:, pv_gen_id] = targets
+
+        ts.modify_gen_p(gen_p)
+        ts.modify_load_p(load_p)
+        ts.modify_load_q(load_q)
+        ts.modify_gen_v(gen_v)
+        ts.compute(np.ones(nb_bus, dtype=np.complex128), MAX_IT, TOL)
+        self.assertEqual(ts.get_status(), 1, "time series diverged")
+        vm = np.abs(np.array(ts.get_voltages())[:, bus_id])
+        np.testing.assert_allclose(vm, targets, atol=1e-6)
+
+    def test_unset_matches_grid_default(self):
+        # non-regression: modify_gen_v never called, so every row must keep using
+        # the grid's own target_vm_pu, exactly as before this setter existed.
+        net, model = _model(add_extras=False)
+        nb_bus = net.bus.shape[0]
+        gens, _, bus_id = self._pv_gen(model)
+        V = model.ac_pf(np.ones(nb_bus, dtype=np.complex128), MAX_IT, TOL)
+        self.assertGreater(V.shape[0], 0, "ac_pf diverged")
+
+        _, ts_model = _model(add_extras=False)
+        ts = TimeSeriesCPP(ts_model)
+        gen_p, sgen_p, load_p, load_q = _own_injections(ts_model)
+        status = ts.compute_Vs(gen_p, sgen_p, load_p, load_q,
+                               np.ones(nb_bus, dtype=np.complex128), MAX_IT, TOL)
+        self.assertEqual(status, 1, "time series diverged")
+        vm = np.abs(np.array(ts.get_voltages())[0, bus_id])
+        self.assertAlmostEqual(vm, np.abs(V[bus_id]), places=8)
+
+
 if __name__ == "__main__":
     unittest.main()

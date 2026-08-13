@@ -72,11 +72,18 @@ def mpc_to_powermodels(bus, gen, branch, dcline, baseMVA) -> dict:
         transformer = tap != 0.
         shift_degree = float(branch[i, SHIFT])
         if not transformer and shift_degree != 0.:
-            # matpower's own convention: a non-transformer (TAP == 0) branch has no
-            # meaningful phase shift; `from_matpower`'s legacy array-based loader
-            # silently dropped it too (it never passed SHIFT to `init_powerlines`)
+            # matpower's own reference makeYbus.m applies `tap = tap .* exp(1j*pi/180*
+            # branch(:, SHIFT))` unconditionally, to every branch, regardless of TAP --
+            # a TAP == 0 ("plain line") branch with a non-zero SHIFT still gets a
+            # magnitude-1 phase-shifting tap in matpower's own solver (verified against
+            # a real MATPOWER/Octave run: Ybus is genuinely asymmetric here, not the
+            # symmetric plain-line value dropping SHIFT would give). So the shift must
+            # be kept; `classify_branches`/`is_transformer` in `from_powermodels`'s
+            # `_aux_add_branch.py` already routes any branch with a non-zero shift
+            # through `init_trafo` (ratio=1) regardless of this dict's own
+            # `transformer` flag, so no further change is needed here besides not
+            # zeroing the value.
             weird_shift_rows.append(i)
-            shift_degree = 0.
         network["branch"][key] = {
             "f_bus": int(branch[i, F_BUS]),
             "t_bus": int(branch[i, T_BUS]),
@@ -93,8 +100,9 @@ def mpc_to_powermodels(bus, gen, branch, dcline, baseMVA) -> dict:
     if weird_shift_rows:
         warnings.warn(f"{len(weird_shift_rows)} branch(es) (0-based mpc `branch` row ids: "
                       f"{weird_shift_rows}) have `TAP == 0` (so are treated as a plain "
-                      "powerline) but a non-zero `SHIFT`, which is not physically meaningful "
-                      "for a plain line. The `SHIFT` will be ignored for these branches.")
+                      "powerline for their ratio) but a non-zero `SHIFT`. Matching "
+                      "matpower's own makeYbus.m, the SHIFT is kept and these branches "
+                      "are modeled as a zero-ratio (tap=1) phase-shifting transformer.")
 
     if dcline.shape[0]:
         network["dcline"] = {}

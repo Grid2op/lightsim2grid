@@ -178,6 +178,23 @@ class TestInjectionSweepCPP(unittest.TestCase):
         computer_th.nb_thread = 4
         assert np.array_equal(self._compute(computer_th), Vs_dc)
 
+    def test_new_setter_api_matches_legacy_compute_vs(self):
+        """the new modify_* + compute() API must give bit-for-bit the same result as the
+        legacy bundled compute_Vs() call on the same object -- guards against the SFINAE
+        gating silently changing which code path the legacy call takes"""
+        Vs_legacy = self._compute(InjectionSweepCPP(self.grid))
+
+        computer = InjectionSweepCPP(self.grid)
+        computer.modify_gen_p(self.prod_p)
+        computer.modify_sgen_p(self.sgen_p)
+        computer.modify_load_p(self.load_p)
+        computer.modify_load_q(self.load_q)
+        computer.compute(self.Vinit, self.env.backend.max_it, self.env.backend.tol)
+        assert computer.get_status() == 1
+        Vs_new = 1.0 * computer.get_voltages()
+
+        assert np.array_equal(Vs_new, Vs_legacy)
+
     def test_timers(self):
         computer = InjectionSweepCPP(self.grid)
         self._compute(computer)
@@ -188,6 +205,28 @@ class TestInjectionSweepCPP(unittest.TestCase):
         self._compute(computer4)
         assert computer4.nb_solved() == self.nb_steps
         assert computer4.total_time() > 0.
+
+    def test_modify_gen_v(self):
+        """per-step generator target voltage magnitude: does NOT feed the injection
+        (Sbus), it only re-seeds |V| at the regulated bus before each row's solve."""
+        gens = self.grid.get_generators()
+        pv_gen_id = next(i for i, g in enumerate(gens) if not g.is_slack)
+        bus_id = gens[pv_gen_id].bus_id
+        nb_steps = 3
+        targets = np.array([1.00, 1.03, 0.97])
+        gen_v = np.tile(np.array([g.target_vm_pu for g in gens]), (nb_steps, 1))
+        gen_v[:, pv_gen_id] = targets
+
+        computer = InjectionSweepCPP(self.grid)
+        computer.modify_gen_p(self.prod_p[:nb_steps])
+        computer.modify_sgen_p(self.sgen_p[:nb_steps])
+        computer.modify_load_p(self.load_p[:nb_steps])
+        computer.modify_load_q(self.load_q[:nb_steps])
+        computer.modify_gen_v(gen_v)
+        computer.compute(self.Vinit, self.env.backend.max_it, self.env.backend.tol)
+        assert computer.get_status() == 1
+        vm = np.abs(np.array(computer.get_voltages())[:, bus_id])
+        np.testing.assert_allclose(vm, targets, atol=1e-6)
 
 
 class TestInjectionSweepGrid2op(unittest.TestCase):
@@ -223,6 +262,35 @@ class TestInjectionSweepGrid2op(unittest.TestCase):
         sweep = InjectionSweep(self.env)
         with self.assertRaises(ValueError):
             sweep.nb_thread = 1.5
+
+    def test_new_setter_api_is_inherited_from_timeserie(self):
+        """modify_gen_p / modify_sgen_p / modify_load_p / modify_load_q / compute() are
+        defined once on TimeSerie and never overridden by InjectionSweep -- inherited "for
+        free", driving the InjectionSweepCPP instance set via _CPP_CLASS. This pins that
+        the inherited setter-based API actually works end to end through the grid2op-level
+        wrapper (not just on the raw InjectionSweepCPP object, already covered by
+        TestInjectionSweepCPP.test_new_setter_api_matches_legacy_compute_vs above)."""
+        n_steps = 3
+        prod_p = np.tile(self.env.backend.prod_p, (n_steps, 1))
+        load_p = np.tile(self.env.backend.load_p, (n_steps, 1))
+        load_q = np.tile(self.env.backend.load_q, (n_steps, 1))
+
+        sweep_setter = InjectionSweep(self.env)
+        sweep_setter.modify_gen_p(prod_p)
+        sweep_setter.modify_load_p(load_p)
+        sweep_setter.modify_load_q(load_q)
+        Vs_setter = sweep_setter.compute()
+        Ps_setter = sweep_setter.compute_P()
+        As_setter = sweep_setter.compute_A()
+
+        sweep_legacy = InjectionSweep(self.env)
+        Vs_legacy = sweep_legacy.compute_V_from_inj(prod_p, load_p, load_q)
+        Ps_legacy = sweep_legacy.compute_P()
+        As_legacy = sweep_legacy.compute_A()
+
+        assert np.array_equal(Vs_setter, Vs_legacy)
+        assert np.array_equal(Ps_setter, Ps_legacy)
+        assert np.array_equal(As_setter, As_legacy)
 
 
 if __name__ == "__main__":

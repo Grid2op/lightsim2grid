@@ -35,8 +35,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "LSGrid.hpp"
-#include "batch_algorithm/ContingencyAnalysis.hpp"
-#include "batch_algorithm/BaseInjectionSweep.hpp"
+#include "batch_algorithm/BaseBatchSweep.hpp"
 
 using Catch::Approx;
 using ls2g::AlgorithmType;

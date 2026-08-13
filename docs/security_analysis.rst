@@ -42,6 +42,13 @@ to / from other data sources.
 
 .. note::
 
+    If you need to vary the injection *and* a contingency per simulation (instead of one
+    shared base case with `add_single_contingency` / `add_multiple_contingencies`), see
+    :doc:`scenario_sweep` -- a related but deliberately different API, row-aligned rather
+    than a set of distinct scenarios.
+
+.. note::
+
     Set `security_analysis.init_from_n_powerflow = True` **before** the computation actually runs
     (eg before `get_flows` / `compute_V` / `run` are called -- setting it afterwards has no
     effect) to initialize each contingency with the voltage solution of the pre-contingency

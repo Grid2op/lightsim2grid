@@ -286,7 +286,18 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         the ac powerflow
         **/
         void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const;
-        
+
+        /**
+        same as set_vm(V, id_grid_to_solver) above, but reads the per-generator target
+        vm_pu from `target_vm_pu_row` instead of the member `target_vm_pu_` -- used by
+        BaseBatchSweep to re-seed |V| with a per-step (per-scenario) generator voltage
+        setpoint (see modify_gen_v) rather than the grid's own, fixed, target. Same
+        "last writer wins" behaviour as the other overload when several generators
+        regulate the same bus (the loop below applies whichever one it visits last).
+        **/
+        void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver,
+                    const Eigen::Ref<const RealVect> & target_vm_pu_row) const;
+
         void cout_v(){
             for(const auto & el : target_vm_pu_){
                 std::cout << "V " << el << '\n';
@@ -294,6 +305,12 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         }
 
     private:
+        // shared body of both set_vm() overloads above -- `target_vm` is either the
+        // member target_vm_pu_ (the single-arg overload) or a caller-supplied
+        // per-generator vector (the 3-arg overload).
+        void _set_vm_impl(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver,
+                          const Eigen::Ref<const RealVect> & target_vm) const;
+
         // physical properties
         RealVect min_q_;
         RealVect max_q_;

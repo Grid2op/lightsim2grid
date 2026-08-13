@@ -119,7 +119,15 @@ try:
 except ImportError as exc_:  # noqa: F841
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass
-    
+
+try:
+    from lightsim2grid.scenarioSweep import ScenarioSweep  # noqa: F401
+    __all__.append("ScenarioSweep")
+    __all__.append("scenarioSweep")
+except ImportError as exc_:  # noqa: F841
+    # grid2op is not installed, the ScenarioSweep module will not be available
+    pass
+
 try:
     from lightsim2grid.rewards import N1ContingencyReward  # noqa: F401
     __all__.append("rewards")
