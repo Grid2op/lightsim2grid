@@ -81,7 +81,13 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
             conv = algo.compute_pf_dc(Bbus_, V, Pbus, slack_ids, slack_weights, bus_pv, bus_pq);
         }
     }
-    if(conv){
+    if(conv && !algo.lazy_v()){
+        // lazy_v(): the DC fast path (see BaseAlgo::set_lazy_v) never built V_ for
+        // this solve, so algo.get_V() would return stale data here. Skipping this
+        // reassignment is safe in that mode: DC's linear solve never reads the
+        // previous row's angles back (unlike AC's NR warm start), and the caller's
+        // local V keeps carrying the correct magnitude on its own (see
+        // BaseBatchSweep::_apply_step_gen_v) -- nothing downstream needs its angle.
         V = algo.get_V().array();
     }
     ++nb_solved;
@@ -151,7 +157,7 @@ void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
 {
     // TODO find a way to factorize that with TrafoContainer::compute_results
     // TODO and LineContainer::compute_results
-    if (_voltages.size() == 0)
+    if (_voltages.size() == 0 && _thetas.size() == 0)
     {
         std::ostringstream exc_;
         exc_ << "BaseMultiplePowerflow::compute_flows_from_Vs: cannot compute the flows as the voltages are not set. Have you called compute(...) ? ";
@@ -162,7 +168,7 @@ void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
 
     auto timer_compute = CustTimer();
     const auto & sn_mva = _grid_model.get_sn_mva();
-    const auto & nb_steps = _voltages.rows();
+    const auto & nb_steps = _nb_result_rows();
 
     // reset the results
     if (amps) _amps_flows = RealMat::Zero(nb_steps, n_total_);

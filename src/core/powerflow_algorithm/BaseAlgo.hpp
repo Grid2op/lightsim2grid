@@ -396,6 +396,19 @@ class LS2G_API BaseAlgo : public BaseConstants
         void tell_solver_control(const AlgoControl & solver_control){
             _solver_control = solver_control;
         }
+
+        // Batch DC sweeps (BaseBatchSweep's theta-only fast path) call this before a
+        // run of per-step compute_pf_dc() calls: when true, the DC solver only builds
+        // Va_ (theta) and skips Vm_/V_ entirely. DC magnitude never changes across a
+        // solve (it is a pure echo of the caller's V, see BaseDCAlgo::compute_pf_dc),
+        // so the batch caller reconstructs it itself, from its own (much smaller)
+        // input data, only if/when something actually asks for it (get_voltages(),
+        // current-limit checks) -- see BaseBatchSolverSynch. No-op default: AC
+        // solvers always need V_ built by the solve itself, and a solver that does
+        // not override this (eg a plugin) keeps building it eagerly, exactly as
+        // before this existed.
+        virtual void set_lazy_v(bool) {}
+        virtual bool lazy_v() const { return false; }
         virtual void reset();
         // TODO speed: prevent copy and use Eigen::Ref here
         virtual RealMat get_ptdf(){

@@ -157,6 +157,12 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _amps_flows = RealMat();
             _active_power_flows = RealMat();
             _voltages = CplxMat();
+            _thetas = RealMat();
+            _dc_lazy_storage_used_ = false;
+            _dc_base_vm_solver_ = RealVect();
+            _dc_base_vm_grid_ = RealVect();
+            _dc_gen_v_ = RealMat();
+            _dc_vm_cache_ = RealMat();
             _nb_solved = 0;
             _timer_compute_A = 0.;
             _timer_compute_P = 0.;
@@ -165,13 +171,24 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             // NB: _nb_thread is deliberately NOT reset -- it is a setting, not a result.
         }
 
-        // results 
+        // results
         // this should not be const, see https://pybind11.readthedocs.io/en/stable/advanced/cast/eigen.html#pass-by-reference
         // tl;dr: const can make copies ! OR NOT I AM LOST
         const RealMat & get_flows() const {return _amps_flows;}
         const RealMat & get_power_flows() const {return _active_power_flows;}
-        const CplxMat & get_voltages() const {return _voltages;}
-        
+        // DC theta-only fast path (see BaseAlgo::set_lazy_v): when a compute() used
+        // it, _voltages is left empty and _thetas (+ the small _dc_* inputs) holds
+        // everything needed to rebuild it -- done here, lazily, on first request, and
+        // cached (_voltages stays mutable for exactly this reason). A compute() that
+        // did not use the fast path (AC, or DC with handle_disconnected_grid) already
+        // leaves _voltages fully populated, so this is then a no-op.
+        const CplxMat & get_voltages() const {
+            if(_dc_lazy_storage_used_ && _voltages.size() == 0 && _thetas.size() != 0){
+                _rebuild_voltages_from_thetas();
+            }
+            return _voltages;
+        }
+
     protected:
         template<class T>
         void compute_amps_flows(const T & structure_data,
@@ -196,7 +213,12 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
             size_t nb_el = structure_data.nb();
             real_type sqrt_3 = sqrt(3.);
-            const Eigen::Index nb_steps = _voltages.rows();
+            // DC theta-only fast path (see BaseAlgo::set_lazy_v / BaseBatchSweep::compute):
+            // when active, _voltages is empty and the per-bus values are read straight from
+            // _thetas (real, no .arg() needed) + the small _dc_* reconstruction inputs
+            // (no .abs() on a full complex column needed either) instead.
+            const bool dc_lazy = !is_ac && _dc_lazy_storage_used_;
+            const Eigen::Index nb_steps = _nb_result_rows();
 
             RealVect res;
             for(size_t el_id = 0; el_id < nb_el; ++el_id){
@@ -215,23 +237,33 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // DC has no such reduction (handled explicitly below).
                 GlobalBusId bus_from_me = bus_from(el_id);
                 GlobalBusId bus_to_me = bus_to(el_id);
-                // TODO speed: this copies a full nb_steps-sized column per line/trafo,
-                // every call. _voltages is RowMajor, so a column isn't contiguous and
-                // can't bind to Eigen::Ref; the ternary also needs a common type with
-                // CplxVect::Zero(nb_steps). Avoiding the copy would need a control-flow
-                // restructure (separate open-side / closed-side code paths) rather than
-                // a reference-type change -- see CHANGELOG [TODO].
-                const CplxVect Efrom = s1 ? CplxVect(_voltages.col(bus_from_me.cast_int())) : CplxVect::Zero(nb_steps);
-                const CplxVect Eto   = s2 ? CplxVect(_voltages.col(bus_to_me.cast_int()))   : CplxVect::Zero(nb_steps);
 
-                // vn_kv base for the amps conversion: use whichever side is
-                // actually energized. If side 1 (the one being measured) is
-                // open the numerator below is exactly 0 regardless (AC: Efrom
-                // == 0 forces S_ft == 0; DC: forced explicitly), so the choice
-                // of base here only has to avoid a spurious 0/0 division.
                 const real_type bus_vn_kv_f = s1 ? bus_vn_kv(bus_from_me.cast_int())
                                                   : (s2 ? bus_vn_kv(bus_to_me.cast_int()) : real_type(1.));
-                const RealVect v_f_kv = (s1 ? Efrom.array().abs() : Eto.array().abs()) * bus_vn_kv_f;
+
+                // TODO speed: this copies a full nb_steps-sized column per line/trafo,
+                // every call. _voltages/_thetas are RowMajor, so a column isn't contiguous
+                // and can't bind to Eigen::Ref; the ternary also needs a common type with
+                // Zero(nb_steps). Avoiding the copy would need a control-flow restructure
+                // (separate open-side / closed-side code paths) rather than a
+                // reference-type change -- see CHANGELOG [TODO].
+                CplxVect Efrom, Eto;  // AC, or DC without the fast path (_voltages-backed)
+                RealVect theta_from, theta_to;  // DC fast path (_thetas-backed)
+                RealVect v_f_kv;
+                if(dc_lazy){
+                    theta_from = s1 ? RealVect(_thetas.col(bus_from_me.cast_int())) : RealVect::Zero(nb_steps);
+                    theta_to   = s2 ? RealVect(_thetas.col(bus_to_me.cast_int()))   : RealVect::Zero(nb_steps);
+                    v_f_kv = (s1 ? _dc_vm_col(bus_from_me.cast_int(), nb_steps) : _dc_vm_col(bus_to_me.cast_int(), nb_steps)) * bus_vn_kv_f;
+                } else {
+                    Efrom = s1 ? CplxVect(_voltages.col(bus_from_me.cast_int())) : CplxVect::Zero(nb_steps);
+                    Eto   = s2 ? CplxVect(_voltages.col(bus_to_me.cast_int()))   : CplxVect::Zero(nb_steps);
+                    // vn_kv base for the amps conversion: use whichever side is
+                    // actually energized. If side 1 (the one being measured) is
+                    // open the numerator below is exactly 0 regardless (AC: Efrom
+                    // == 0 forces S_ft == 0; DC: forced explicitly), so the choice
+                    // of base here only has to avoid a spurious 0/0 division.
+                    v_f_kv = (s1 ? Efrom.array().abs() : Eto.array().abs()) * bus_vn_kv_f;
+                }
 
                 if(is_ac){
                     // retrieve physical parameters (complex)
@@ -258,8 +290,10 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     // results: P = ydc_ff . theta_from + ydc_ft . theta_to  (theta = bus voltage angle)
                     const real_type y_ff = vect_ydc_ff(el_id);
                     const real_type y_ft = vect_ydc_ft(el_id);
-                    const RealVect theta_from = Efrom.array().arg();
-                    const RealVect theta_to = Eto.array().arg();
+                    if(!dc_lazy){
+                        theta_from = Efrom.array().arg();
+                        theta_to = Eto.array().arg();
+                    }
                     res = (y_ff * theta_from.array() + y_ft * theta_to.array()) * sn_mva;
                     if(is_trafo) res.array() -= dc_x_tau_shift(el_id);
                     res.array() = res.array().abs();
@@ -289,7 +323,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
             size_t nb_el = structure_data.nb();
-            const Eigen::Index nb_steps = _voltages.rows();
+            // see compute_amps_flows above -- same DC theta-only fast path
+            const bool dc_lazy = !is_ac && _dc_lazy_storage_used_;
+            const Eigen::Index nb_steps = _nb_result_rows();
 
             RealVect res;
             for(size_t el_id = 0; el_id < nb_el; ++el_id){
@@ -312,8 +348,16 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // TODO speed: same structural copy as in compute_amps_flows above (see
                 // the TODO there for why this isn't a simple Eigen::Ref fix) -- see
                 // CHANGELOG [TODO].
-                const CplxVect Efrom = s1 ? CplxVect(_voltages.col(bus_from_me.cast_int())) : CplxVect::Zero(nb_steps);
-                const CplxVect Eto   = s2 ? CplxVect(_voltages.col(bus_to_me.cast_int()))   : CplxVect::Zero(nb_steps);
+                CplxVect Efrom, Eto;
+                RealVect theta_from, theta_to;
+                if(dc_lazy){
+                    // DC active power needs only theta -- no magnitude, no .arg() round trip
+                    theta_from = s1 ? RealVect(_thetas.col(bus_from_me.cast_int())) : RealVect::Zero(nb_steps);
+                    theta_to   = s2 ? RealVect(_thetas.col(bus_to_me.cast_int()))   : RealVect::Zero(nb_steps);
+                } else {
+                    Efrom = s1 ? CplxVect(_voltages.col(bus_from_me.cast_int())) : CplxVect::Zero(nb_steps);
+                    Eto   = s2 ? CplxVect(_voltages.col(bus_to_me.cast_int()))   : CplxVect::Zero(nb_steps);
+                }
 
                 // trafo equations (to get the power at the "from" side)
                 if(is_ac){
@@ -340,8 +384,10 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     // results: P = ydc_ff . theta_from + ydc_ft . theta_to  (theta = bus voltage angle)
                     const real_type y_ff = vect_ydc_ff(el_id);
                     const real_type y_ft = vect_ydc_ft(el_id);
-                    const RealVect theta_from = Efrom.array().arg();
-                    const RealVect theta_to = Eto.array().arg();
+                    if(!dc_lazy){
+                        theta_from = Efrom.array().arg();
+                        theta_to = Eto.array().arg();
+                    }
                     res = (y_ff * theta_from.array() + y_ft * theta_to.array()) * sn_mva;
                     if(is_trafo) res.array() -= dc_x_tau_shift(el_id);
                 }
@@ -517,11 +563,22 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             Eigen::Ref<CplxVect> Vinit_solver,  // is modified if _init_from_n_powerflow is true !
             size_t max_iter,
             real_type tol,
-            CustTimer  & timer_preproc  // non const because double duration() is not const
+            CustTimer  & timer_preproc,  // non const because double duration() is not const
+            bool use_dc_lazy_v = false  // see BaseBatchSweep::compute()
         ){
 
-                // init the results matrices
-                _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus); 
+                // init the results matrices: the DC theta-only fast path accumulates into
+                // _thetas (real) instead of _voltages (complex) -- see get_voltages() /
+                // compute_amps_flows / compute_active_power_flows.
+                _dc_lazy_storage_used_ = use_dc_lazy_v;
+                if(use_dc_lazy_v){
+                    _thetas = RealMat::Zero(nb_steps, nb_total_bus);
+                    _voltages = CplxMat();
+                } else {
+                    _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus);
+                    _thetas = RealMat();
+                }
+                _dc_vm_cache_ = RealMat();
                 _amps_flows = RealMat::Zero(0, n_total_);
                 _active_power_flows = RealMat::Zero(0, n_total_);
 
@@ -535,6 +592,11 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
                 CplxVect Vinit_solver2 = Vinit_solver;
                 bool conv;
+                // the "n" powerflow warm-up solve always needs the full complex V: its
+                // result may seed every row (_init_from_n_powerflow below) and, for
+                // ContingencyAnalysis / ScenarioSweep, feeds _record_n_case_violations --
+                // so it must never be lazy, even when the per-row sweep that follows will be.
+                _algo.set_lazy_v(false);
                 if(_algo.ac_solver_used()){
                     // Sbus_ is already per-unit (pre_process_solver / fillSbus_me divides by
                     // sn_mva when != 1), same convention as LSGrid::ac_pf's acSbus_ -- so tol
@@ -566,12 +628,82 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // or not
                 if(_init_from_n_powerflow) Vinit_solver = _algo.get_V();
 
+                if(use_dc_lazy_v && conv){
+                    // magnitude is a pure echo of the input in DC (see BaseDCAlgo::compute_pf_dc)
+                    // and never changes across the sweep except where a row explicitly re-seeds it
+                    // (BaseBatchSweep::_apply_step_gen_v) -- this is the shared base every row's
+                    // magnitude is reconstructed from, see _dc_vm_row_grid.
+                    _dc_base_vm_solver_ = Vinit_solver.array().abs();
+                    _dc_base_vm_grid_ = RealVect::Constant(static_cast<Eigen::Index>(nb_total_bus), real_type(1.));
+                    _dc_base_vm_grid_(id_solver_to_me_.as_eigen()) = _dc_base_vm_solver_;
+                }
+
                 // everything init from n-case above
                 _algo_controler.tell_none_changed();
-                
+
                 // end of pre processing
                 _timer_pre_proc = timer_preproc.duration();
                 return conv;
+        }
+
+        // number of computed rows, whichever accumulator (_voltages or, DC fast
+        // path, _thetas) actually holds them.
+        Eigen::Index _nb_result_rows() const {
+            return _dc_lazy_storage_used_ ? _thetas.rows() : _voltages.rows();
+        }
+
+        // DC fast path only: row i's magnitude (grid-space, one entry per bus), used
+        // to rebuild get_voltages()'s complex matrix. |V| never changes across a DC
+        // solve (see BaseDCAlgo::compute_pf_dc) -- it is either the shared base
+        // (_dc_gen_v_ never set: the common case, nothing to redo per row) or, when a
+        // row re-seeds generator voltage targets (BaseBatchSweep::modify_gen_v), the
+        // base rescaled at those generators' regulated buses -- delegated to
+        // GeneratorContainer::set_vm, the exact function BaseBatchSweep::
+        // _apply_step_gen_v already uses live, so this reconstruction is guaranteed
+        // consistent with what that row's solve actually saw.
+        RealVect _dc_vm_row_grid(Eigen::Index i) const {
+            if(_dc_gen_v_.rows() == 0) return _dc_base_vm_grid_;
+            CplxVect tmp = _dc_base_vm_solver_.cast<cplx_type>();
+            const RealVect row = _dc_gen_v_.row(i);
+            _grid_model.get_generators().set_vm(tmp, id_me_to_solver_, row);
+            RealVect res = _dc_base_vm_grid_;
+            res(id_solver_to_me_.as_eigen()) = tmp.array().abs();
+            return res;
+        }
+
+        // DC fast path only: all `nb_steps` rows' magnitude at a single grid bus
+        // (one column of what get_voltages() would reconstruct). The common case
+        // (_dc_gen_v_ never set) is a plain broadcast, no reconstruction needed; the
+        // row-varying case is served from a cache built once (not once per branch).
+        RealVect _dc_vm_col(Eigen::Index bus_id, Eigen::Index nb_steps) const {
+            if(_dc_gen_v_.rows() == 0) return RealVect::Constant(nb_steps, _dc_base_vm_grid_(bus_id));
+            _ensure_dc_vm_cache(nb_steps);
+            return _dc_vm_cache_.col(bus_id);
+        }
+
+        void _ensure_dc_vm_cache(Eigen::Index nb_steps) const {
+            if(_dc_vm_cache_.rows() == nb_steps) return;
+            const Eigen::Index nb_bus = _dc_base_vm_grid_.size();
+            _dc_vm_cache_ = RealMat::Zero(nb_steps, nb_bus);
+            for(Eigen::Index i = 0; i < nb_steps; ++i){
+                _dc_vm_cache_.row(i) = _dc_vm_row_grid(i).transpose();
+            }
+        }
+
+        // DC fast path only: rebuilds the full complex _voltages from _thetas + the
+        // reconstructed per-row magnitude -- see get_voltages(). Same total number of
+        // std::polar calls as the pre-optimization eager path, but now genuinely
+        // optional: paid only if/when a caller actually asks for complex voltages.
+        void _rebuild_voltages_from_thetas() const {
+            const Eigen::Index nb_steps = _thetas.rows();
+            const Eigen::Index nb_bus = _thetas.cols();
+            _voltages = CplxMat::Zero(nb_steps, nb_bus);
+            for(Eigen::Index i = 0; i < nb_steps; ++i){
+                const RealVect vm_row = _dc_vm_row_grid(i);
+                for(Eigen::Index j = 0; j < nb_bus; ++j){
+                    _voltages(i, j) = std::polar(vm_row(j), _thetas(i, j));
+                }
+            }
         }
 
     protected:
@@ -595,10 +727,35 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         AlgorithmSelector _algo;
 
         // outputs
-        CplxMat _voltages;
+        // mutable: get_voltages() rebuilds this lazily, from _thetas, on first request
+        // when the DC fast path was used (see _rebuild_voltages_from_thetas) -- a pure
+        // caching side effect of an otherwise-const accessor.
+        mutable CplxMat _voltages;
         RealMat _amps_flows;
         RealMat _active_power_flows;
-        
+
+        // ----- DC theta-only fast path (see BaseAlgo::set_lazy_v) -----------------
+        // true for the duration of one compute() call using it: DC, and not the
+        // "handle disconnected grid" masked path (which stays on the legacy, always-
+        // eager _voltages accumulation -- see BaseBatchSweep::_run_range_masked).
+        bool _dc_lazy_storage_used_ = false;
+        // grid-space theta accumulator (nb_steps x nb_total_bus), filled instead of
+        // _voltages when _dc_lazy_storage_used_.
+        RealMat _thetas;
+        // solver-space / grid-space magnitude shared by every row that does not
+        // re-seed a generator voltage target (see _dc_vm_row_grid).
+        RealVect _dc_base_vm_solver_;
+        RealVect _dc_base_vm_grid_;
+        // copy of SbusPolicy::Vary::gen_v (empty if never set / not applicable, eg
+        // ContingencyAnalysis) -- kept here, generic, so the magnitude reconstruction
+        // helpers above do not need to know about SbusPolicy at all.
+        RealMat _dc_gen_v_;
+        // lazily-built cache of _dc_vm_row_grid for every row, used by compute_amps_flows
+        // so a magnitude that does vary per row (_dc_gen_v_ set) is reconstructed once,
+        // not once per branch endpoint that reads it.
+        mutable RealMat _dc_vm_cache_;
+
+
         // timers
         int _nb_solved = 0;
         double _timer_compute_A = 0.;
