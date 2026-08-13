@@ -123,6 +123,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
             }
             if(_dc_lazy_storage_used_){
                 _thetas.row(i)(id_solver_to_me_.as_eigen()) = algo.get_Va().array();
+                // marks this row as actually solved -- see _dc_row_solved_ / _dc_vm_row_grid:
+                // a row that never reaches here (eg an islanding DC contingency, which
+                // diverges and is skipped above) must reconstruct as exact complex 0, not
+                // as its (never written, so 0) theta paired with a nonzero base magnitude.
+                if(static_cast<size_t>(i) < _dc_row_solved_.size()) _dc_row_solved_[i] = 1;
             } else {
                 _voltages.row(i)(id_solver_to_me_.as_eigen()) = V.array();
             }

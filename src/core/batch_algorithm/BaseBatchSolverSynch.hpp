@@ -158,6 +158,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _active_power_flows = RealMat();
             _voltages = CplxMat();
             _thetas = RealMat();
+            _dc_row_solved_.clear();
             _dc_lazy_storage_used_ = false;
             _dc_base_vm_solver_ = RealVect();
             _dc_base_vm_grid_ = RealVect();
@@ -573,10 +574,12 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 _dc_lazy_storage_used_ = use_dc_lazy_v;
                 if(use_dc_lazy_v){
                     _thetas = RealMat::Zero(nb_steps, nb_total_bus);
+                    _dc_row_solved_.assign(nb_steps, 0);
                     _voltages = CplxMat();
                 } else {
                     _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus);
                     _thetas = RealMat();
+                    _dc_row_solved_.clear();
                 }
                 _dc_vm_cache_ = RealMat();
                 _amps_flows = RealMat::Zero(0, n_total_);
@@ -633,8 +636,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     // and never changes across the sweep except where a row explicitly re-seeds it
                     // (BaseBatchSweep::_apply_step_gen_v) -- this is the shared base every row's
                     // magnitude is reconstructed from, see _dc_vm_row_grid.
+                    // Grid buses outside id_solver_to_me_ (eg an unused substation's second bus)
+                    // default to 0, not 1: they are never part of the solved system, and the legacy
+                    // (eager) _voltages was CplxMat::Zero(...)-initialized and never wrote them --
+                    // 0 magnitude reproduces that "untouched column reads back as exact complex 0"
+                    // contract regardless of theta (also 0 there, for the same reason).
                     _dc_base_vm_solver_ = Vinit_solver.array().abs();
-                    _dc_base_vm_grid_ = RealVect::Constant(static_cast<Eigen::Index>(nb_total_bus), real_type(1.));
+                    _dc_base_vm_grid_ = RealVect::Zero(static_cast<Eigen::Index>(nb_total_bus));
                     _dc_base_vm_grid_(id_solver_to_me_.as_eigen()) = _dc_base_vm_solver_;
                 }
 
@@ -662,6 +670,12 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // _apply_step_gen_v already uses live, so this reconstruction is guaranteed
         // consistent with what that row's solve actually saw.
         RealVect _dc_vm_row_grid(Eigen::Index i) const {
+            if(static_cast<size_t>(i) < _dc_row_solved_.size() && !_dc_row_solved_[static_cast<size_t>(i)]){
+                // never actually solved (eg an islanding contingency that diverges,
+                // see _dc_row_solved_) -- 0 magnitude reproduces the legacy "untouched
+                // row reads back as exact complex 0" contract regardless of theta.
+                return RealVect::Zero(_dc_base_vm_grid_.size());
+            }
             if(_dc_gen_v_.rows() == 0) return _dc_base_vm_grid_;
             CplxVect tmp = _dc_base_vm_solver_.cast<cplx_type>();
             const RealVect row = _dc_gen_v_.row(i);
@@ -675,8 +689,16 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // (one column of what get_voltages() would reconstruct). The common case
         // (_dc_gen_v_ never set) is a plain broadcast, no reconstruction needed; the
         // row-varying case is served from a cache built once (not once per branch).
+        // Either way, a never-solved row (_dc_row_solved_) is forced back to 0 -- see
+        // _dc_vm_row_grid.
         RealVect _dc_vm_col(Eigen::Index bus_id, Eigen::Index nb_steps) const {
-            if(_dc_gen_v_.rows() == 0) return RealVect::Constant(nb_steps, _dc_base_vm_grid_(bus_id));
+            if(_dc_gen_v_.rows() == 0){
+                RealVect res = RealVect::Constant(nb_steps, _dc_base_vm_grid_(bus_id));
+                for(Eigen::Index i = 0; i < nb_steps; ++i){
+                    if(static_cast<size_t>(i) < _dc_row_solved_.size() && !_dc_row_solved_[static_cast<size_t>(i)]) res(i) = 0.;
+                }
+                return res;
+            }
             _ensure_dc_vm_cache(nb_steps);
             return _dc_vm_cache_.col(bus_id);
         }
@@ -742,6 +764,15 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // grid-space theta accumulator (nb_steps x nb_total_bus), filled instead of
         // _voltages when _dc_lazy_storage_used_.
         RealMat _thetas;
+        // one entry per row: whether _thetas.row(i) actually holds a converged solve
+        // (0 initially, set by _run_range only where it writes that row). A row that
+        // never converges (eg a contingency that islands the grid with no slack
+        // reference in the stranded piece, in DC) is skipped there -- its theta stays
+        // 0 (indistinguishable from a genuinely converged, exactly-flat-angle row) --
+        // so the magnitude reconstruction below must consult this explicitly to
+        // reproduce the legacy contract of an unwritten row (CplxMat::Zero(...),
+        // never touched) reading back as exact complex 0, not (0-angle magnitude).
+        std::vector<char> _dc_row_solved_;
         // solver-space / grid-space magnitude shared by every row that does not
         // re-seed a generator voltage target (see _dc_vm_row_grid).
         RealVect _dc_base_vm_solver_;
