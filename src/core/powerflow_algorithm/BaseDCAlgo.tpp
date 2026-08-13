@@ -285,20 +285,26 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
     Va_(nonslack_ybus_ids_) = Va_dc_without_slack;
     Va_.array() += std::arg(V(slack_buses_ids_solver_(0)));
 
-    // add the Voltage setpoints of the generator (only recompute when magnitudes may have changed)
-    // size check guards against Vm_ being cleared by a previous failed contingency
-    if(need_factorize_ ||
-        Vm_.size() != sizeYbus_with_slack_ ||  // in contingency analysis, Vm is cleared if a cont diverges, so I need to recompute it
-       _solver_control.has_v_changed() ||
-       _solver_control.has_dimension_changed() ||
-       _solver_control.has_pv_changed() || _solver_control.has_pq_changed()){
-        Vm_ = V.array().abs();
-    }
+    // batch DC theta-only fast path (see BaseAlgo::set_lazy_v): the caller only
+    // wants Va_ (theta) from this call, and will reconstruct Vm_/V_ itself, later,
+    // only if/when it actually needs them. Vm_/V_ are left untouched (possibly
+    // stale) below -- the caller must not read get_Vm()/get_V() while lazy.
+    if(!_lazy_v_){
+        // add the Voltage setpoints of the generator (only recompute when magnitudes may have changed)
+        // size check guards against Vm_ being cleared by a previous failed contingency
+        if(need_factorize_ ||
+            Vm_.size() != sizeYbus_with_slack_ ||  // in contingency analysis, Vm is cleared if a cont diverges, so I need to recompute it
+           _solver_control.has_v_changed() ||
+           _solver_control.has_dimension_changed() ||
+           _solver_control.has_pv_changed() || _solver_control.has_pq_changed()){
+            Vm_ = V.array().abs();
+        }
 
-    // compute complex voltages with std::polar: uses hardware sincos, no temporaries, fills V and V_ in one pass
-    V_.resize(sizeYbus_with_slack_);
-    for(int i = 0; i < sizeYbus_with_slack_; ++i){
-        V_[i] = std::polar(Vm_[i], Va_[i]);
+        // compute complex voltages with std::polar: uses hardware sincos, no temporaries, fills V and V_ in one pass
+        V_.resize(sizeYbus_with_slack_);
+        for(int i = 0; i < sizeYbus_with_slack_; ++i){
+            V_[i] = std::polar(Vm_[i], Va_[i]);
+        }
     }
     nr_iter_ = 1;
     need_refactor_ = false;  // no need to redo it in general cases

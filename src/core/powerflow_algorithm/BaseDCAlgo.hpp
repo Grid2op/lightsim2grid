@@ -34,7 +34,8 @@ class BaseDCAlgo final: public BaseAlgo
             timer_ptdf_(0.),
             timer_lodf_(0.),
             sizeYbus_with_slack_(0),
-            sizeYbus_without_slack_(0){};
+            sizeYbus_without_slack_(0),
+            _lazy_v_(false){};
 
         ~BaseDCAlgo() noexcept override = default;
 
@@ -132,6 +133,10 @@ class BaseDCAlgo final: public BaseAlgo
             masked_buses_ = solver_bus_ids;
         }
 
+        // see BaseAlgo::set_lazy_v / lazy_v
+        void set_lazy_v(bool value) override { _lazy_v_ = value; }
+        bool lazy_v() const override { return _lazy_v_; }
+
     private:
         // no copy allowed
         BaseDCAlgo(const BaseDCAlgo&) = delete;
@@ -188,6 +193,12 @@ class BaseDCAlgo final: public BaseAlgo
         // solver bus ids (with-slack indexing) masked by the "handle disconnected
         // grid" mode (empty by default => no masking). See set_masked_buses.
         std::vector<int> masked_buses_;
+
+        // batch DC theta-only fast path: see BaseAlgo::set_lazy_v. Deliberately not
+        // touched by reset() -- it is a caller-controlled mode, set once per batch
+        // compute() and expected to survive the internal reset()s a topology change
+        // (eg a per-row contingency) may trigger mid-sweep.
+        bool _lazy_v_;
 };
 
 #include "BaseDCAlgo.tpp"

@@ -972,6 +972,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _grid_model.get_generators().set_vm(V, id_me_to_solver_, target_vm_pu_row);
         }
 
+        // ----- sbus_policy_.gen_v, generically (2-way, same split as above): feeds
+        // BaseBatchSolverSynch's generic (SbusPolicy-agnostic) DC fast-path magnitude
+        // reconstruction (_dc_gen_v_ / _dc_vm_row_grid) -- empty wherever
+        // modify_gen_v does not exist (SbusPolicy::NOOP, ie ContingencyAnalysis) or
+        // was never called. -----
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        const RealMat & _sbus_gen_v() const { return sbus_policy_.gen_v; }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        RealMat _sbus_gen_v() const { return RealMat(); }
+
         // ----- per-row "which branches did THIS row itself disconnect" ------------
         // used by _record_row_violations below to exclude a row's own disconnected
         // branches from that row's current-limit checks (they still look "connected"
@@ -1221,7 +1231,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         void _maybe_check_results_match_defaults(const std::string & fun_name) const {
-            const size_t nb_res = static_cast<size_t>(_voltages.rows());
+            const size_t nb_res = static_cast<size_t>(_nb_result_rows());
             if(nb_res != ybus_policy_.li_defaults.size()){
                 std::ostringstream exc_;
                 exc_ << algo_name() << "::" << fun_name << ": the results were computed for "
@@ -1265,7 +1275,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
         void _maybe_clean_flows(bool is_amps){
             auto timer = CustTimer();
-            const Eigen::Index nb_steps = _voltages.rows();
+            const Eigen::Index nb_steps = _nb_result_rows();
             for(Eigen::Index row = 0; row < nb_steps; ++row){
                 if(ybus_policy_.line_mask.rows() > 0){
                     for(Eigen::Index col = 0; col < ybus_policy_.line_mask.cols(); ++col){

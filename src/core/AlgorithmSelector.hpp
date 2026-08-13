@@ -239,6 +239,14 @@ class LS2G_API AlgorithmSelector final
             get_prt_solver("tell_solver_control", false)->tell_solver_control(solver_control);
         }
 
+        // see BaseAlgo::set_lazy_v / lazy_v
+        void set_lazy_v(bool value) {
+            get_prt_solver("set_lazy_v", false)->set_lazy_v(value);
+        }
+        bool lazy_v() const {
+            return get_prt_solver("lazy_v", false)->lazy_v();
+        }
+
         // bus masking (ContingencyAnalysis "handle disconnected grid" mode)
         bool supports_bus_masking() const {
             return get_prt_solver("supports_bus_masking", false)->supports_bus_masking();

@@ -1978,6 +1978,32 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   vm vector, alongside the existing single-arg overload reading the grid's own
   ``target_vm_pu``). Left unset (the default), every row keeps using the grid's own
   ``target_vm_pu``, exactly as before this setter existed.
+- [IMPROVED] speed (DC batch algorithms -- ``TimeSeriesCPP`` / ``InjectionSweepCPP`` /
+  ``ContingencyAnalysisCPP`` / ``ScenarioSweepCPP``): a DC solve no longer builds the
+  complex voltage every row. ``BaseDCAlgo::compute_pf_dc`` only ever *outputs* the bus
+  angles (``theta``, the linear solve's actual result) -- the magnitude ``Vm_`` is a
+  pure, unmodified echo of the caller's input, and the complex ``V_`` it used to build
+  from both (a ``std::polar`` / hardware ``sincos`` call per bus) existed only so
+  downstream code could read it back. That downstream code (``compute_amps_flows`` /
+  ``compute_active_power_flows``) was then immediately un-building it again with
+  ``.arg()`` (and, for the current-limit checks, ``check_current_violations`` did the
+  same) -- a full sin/cos-then-atan2 round trip, per bus, per row, for values that were
+  never actually needed in complex form. A new ``BaseAlgo::set_lazy_v`` toggle (DC-only;
+  a no-op default for AC / plugin solvers) lets ``BaseBatchSweep`` skip that entirely:
+  the per-row sweep now accumulates only ``theta`` (a plain real matrix), and the flow
+  computations read it directly, with no ``.arg()``. The (small, per-generator) voltage
+  magnitude is reconstructed only if/when something actually asks for it --
+  ``get_voltages()`` (lazily, cached on first call) or the amps flows (which do need
+  ``|V|`` for the per-unit-to-amps conversion) -- from the grid's own target voltages
+  plus ``modify_gen_v``, if set, the exact same (tiny) input the row loop itself already
+  used, never from a stored per-row matrix. Bit-for-bit identical results (covered by
+  the existing DC / ``modify_gen_v`` / current-limit-violation cases across
+  ``src/tests/test_injection_sweep.cpp``, ``test_timeseries_sbus.cpp``,
+  ``test_batch_voltage_control.cpp`` and ``test_scenario_sweep_violations.cpp``); the
+  "handle disconnected grid" mode (``ContingencyAnalysisCPP`` / ``ScenarioSweepCPP``) is
+  unaffected and keeps building the complex voltage eagerly, as it already needs
+  per-row current-limit checks whenever that mode is combined with
+  ``compute_limit_violations``.
 
 [0.13.1]  2026-04-21
 --------------------

@@ -86,7 +86,24 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
             control.tell_none_changed();
             if(!ac_solver_used) control.tell_recompute_sbus();
 
-            _store_row_status(i, conv, invertible, V);
+            if(conv && _dc_lazy_storage_used_ && _compute_limit_violations_){
+                // V's angle is stale in the DC fast path (never refreshed from the
+                // solve -- see compute_one_powerflow / BaseAlgo::set_lazy_v):
+                // current-limit checks need the real per-bus angle, so rebuild it
+                // here for just this row, from the fresh theta (algo.get_Va()) and
+                // V's own magnitude (still correct -- DC never changes |V|, see
+                // BaseDCAlgo::compute_pf_dc). Paid only when limit violations are
+                // actually requested.
+                const RealVect Vm_local = V.array().abs();
+                const auto & Va_local = algo.get_Va();
+                CplxVect V_violations(V.size());
+                for(Eigen::Index k = 0; k < V_violations.size(); ++k){
+                    V_violations[k] = std::polar(Vm_local[k], Va_local[k]);
+                }
+                _store_row_status(i, conv, invertible, V_violations);
+            } else {
+                _store_row_status(i, conv, invertible, V);
+            }
 
             if(!conv){
                 first_diverging_step = static_cast<int>(i);
@@ -104,7 +121,16 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
                 if(SbusPolicy::supports_vary && !YbusPolicy::supports_contingency) return;
                 continue;
             }
-            _voltages.row(i)(id_solver_to_me_.as_eigen()) = V.array();
+            if(_dc_lazy_storage_used_){
+                _thetas.row(i)(id_solver_to_me_.as_eigen()) = algo.get_Va().array();
+                // marks this row as actually solved -- see _dc_row_solved_ / _dc_vm_row_grid:
+                // a row that never reaches here (eg an islanding DC contingency, which
+                // diverges and is skipped above) must reconstruct as exact complex 0, not
+                // as its (never written, so 0) theta paired with a nonzero base magnitude.
+                if(static_cast<size_t>(i) < _dc_row_solved_.size()) _dc_row_solved_[i] = 1;
+            } else {
+                _voltages.row(i)(id_solver_to_me_.as_eigen()) = V.array();
+            }
         }
     } catch(...) {
         err = std::current_exception();
@@ -119,10 +145,14 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
 {
     const real_type tol_ = tol / sn_mva;
     const int nb_thread = std::min(static_cast<int>(nb_steps), std::max(1, _nb_thread));
+    // DC theta-only fast path (see BaseAlgo::set_lazy_v): _handle_disconnected_grid
+    // never applies on this (!Y::supports_contingency) instantiation.
+    const bool use_dc_lazy_v = !ac_solver_used;
 
     if(nb_thread <= 1){
         // single-threaded path: reuse the (already warmed up) member solver and
         // the member accumulators -> identical to the legacy code.
+        _algo.set_lazy_v(use_dc_lazy_v);
         int step_diverge = -1;
         std::exception_ptr err;
         _run_range(0, nb_steps, _algo, _algo_controler, Ybus_, Vinit_solver,
@@ -147,6 +177,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
 
     auto init_thread = [&](int t){
         algos[t] = make_thread_algo();
+        algos[t]->set_lazy_v(use_dc_lazy_v);
         controls[t] = _algo_controler;
     };
 
@@ -196,10 +227,15 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
 {
     const real_type tol_ = tol / sn_mva;
     const bool mask_mode = _handle_disconnected_grid;
+    // DC theta-only fast path (see BaseAlgo::set_lazy_v): never on together with
+    // mask_mode -- that path stays on the legacy, always-eager _voltages
+    // accumulation (see _run_range_masked).
+    const bool use_dc_lazy_v = !ac_solver_used && !mask_mode;
 
     if(std::min(static_cast<int>(nb_steps), std::max(1, _nb_thread)) <= 1){
         // single-threaded path: reuse the (already warmed-up) member solver, member
         // Ybus_ and the member accumulators -> identical to the legacy code.
+        _algo.set_lazy_v(use_dc_lazy_v);
         std::exception_ptr err;
         int step_diverge = -1;
         if(mask_mode){
@@ -233,6 +269,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
 
     auto init_thread = [&](int t){
         algos[t] = make_thread_algo();
+        algos[t]->set_lazy_v(use_dc_lazy_v);
         controls[t] = _algo_controler;
         ybus_copies[t] = Ybus_;
     };
@@ -328,8 +365,16 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // no setter exists to set it there)
     _maybe_prepare_masks();
 
+    // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
+    // the "handle disconnected grid" masked one (which stays on the always-eager
+    // legacy path -- see _run_range_masked). _sbus_gen_v() is the generic,
+    // SbusPolicy-agnostic copy of sbus_policy_.gen_v (BaseBatchSolverSynch's
+    // magnitude-reconstruction helpers do not need to know about SbusPolicy at all).
+    const bool use_dc_lazy_v = !ac_solver_used && !_handle_disconnected_grid;
+    if(use_dc_lazy_v) _dc_gen_v_ = _sbus_gen_v();
+
     bool n_powerflow_has_conv = _finish_preprocessing(
-        nb_steps, nb_total_bus, Vinit_solver, max_iter, tol, timer_preproc
+        nb_steps, nb_total_bus, Vinit_solver, max_iter, tol, timer_preproc, use_dc_lazy_v
     );
 
     if(!n_powerflow_has_conv){
