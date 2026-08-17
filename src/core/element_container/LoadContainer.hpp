@@ -1,0 +1,105 @@
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#ifndef LOAD_CONTAINER_H
+#define LOAD_CONTAINER_H
+
+
+#include "Eigen/Core"
+#include "Eigen/Dense"
+#include "Eigen/SparseCore"
+#include "Eigen/SparseLU"
+
+#include "Utils.hpp"
+#include "OneSideContainer_PQ.hpp"
+
+namespace ls2g {
+
+
+class LoadContainer;
+class LS2G_API LoadInfo : public OneSideContainer_PQ::OneSidePQInfo
+{
+    public:
+        inline LoadInfo(const LoadContainer & r_data_load, int my_id) noexcept;
+};
+
+
+/**
+This class is a container for all loads on the grid.
+
+The convention used for the generator is the same as in pandapower:
+https://pandapower.readthedocs.io/en/latest/elements/load.html
+
+and for modeling of the Ybus matrix:
+https://pandapower.readthedocs.io/en/latest/elements/load.html#electric-model
+
+NOTE: this class is also used for the storage units! So storage units are modeled as load
+which entails that negative storage: the unit is discharging, power is injected in the grid,
+positive storage: the unit is charging, power is taken from the grid.
+**/
+class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorAdder<LoadContainer, LoadInfo>
+{
+    friend class LoadInfo;
+
+    public:
+        using DataInfo = LoadInfo;
+
+    // regular implementation
+    public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
+        using StateRes = std::tuple<
+           OneSideContainer_PQ::StateRes  // state of the base class 
+           > ;
+        
+        LoadContainer() noexcept = default;
+        ~LoadContainer() noexcept override = default;
+        
+        // pickle (python)
+        LoadContainer::StateRes get_state() const;
+        void set_state(LoadContainer::StateRes & my_state);
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path, bool atomic = true) const;
+        static LoadContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "LoadContainer"; }  // written into / checked against the binary file header
+        
+        void init(const Eigen::Ref<const RealVect> & load_p_mw,
+                  const Eigen::Ref<const RealVect> & load_q_mvar,
+                  const Eigen::Ref<const Eigen::VectorXi> & load_bus_id
+                  )
+        {
+            init_osc_pq(load_p_mw,
+                        load_q_mvar,
+                        load_bus_id,
+                        "loads");
+            reset_results();
+        }
+    
+        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+
+    protected:
+        void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+                              const Eigen::Ref<const RealVect> & /*Vm*/,
+                              const Eigen::Ref<const CplxVect> & /*V*/,
+                              const SolverBusIdVect & /*id_grid_to_solver*/,
+                              const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
+                              real_type /*sn_mva*/,
+                              bool ac) override
+                              {
+                                set_osc_pq_res_p();
+                                set_osc_pq_res_q(ac);
+                              }
+};
+
+inline LoadInfo::LoadInfo(const LoadContainer & r_data_load, int my_id) noexcept: 
+        OneSidePQInfo(r_data_load, my_id) {}
+
+
+} // namespace ls2g
+
+#endif  //LOAD_CONTAINER_H

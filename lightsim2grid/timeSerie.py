@@ -23,14 +23,14 @@ except ImportError as exc_:  # noqa: F841
     # grid2Op is not installed
     GRID2OP_INSTALLED = False
 
-from lightsim2grid.solver import SolverType
+from lightsim2grid.algorithm import AlgorithmType
 from .lightsim2grid_cpp import TimeSeriesCPP
 
 # deprecated
 Computers = TimeSeriesCPP
 
 
-class ___TimeSerie:
+class TimeSerie:
     """
     This helper class, that only works with grid2op when using a LightSimBackend allows to compute
     the flows (at the origin side of the powerline / transformers). It is roughly equivalent to the
@@ -41,7 +41,7 @@ class ___TimeSerie:
         import grid2op
         import numpy as np
         from grid2op.Parameters import Parameters
-        from lightsim2grid.LightSimBackend import LightSimBackend
+        from lightsim2grid import LightSimBackend
 
         env_name = ...
         param = Parameters()
@@ -74,7 +74,7 @@ class ___TimeSerie:
 
         from lightsim2grid import TimeSerie
         import grid2op
-        from lightsim2grid.LightSimBackend import LightSimBackend
+        from lightsim2grid import LightSimBackend
 
         env_name = ...
         env = grid2op.make(env_name, param=param, backend=LightSimBackend())
@@ -83,14 +83,20 @@ class ___TimeSerie:
         res_p, res_a, res_v = time_series.get_flows(scenario_id=..., seed=...)
 
     """
+
+    #: the c++ class this wrapper drives. Overridden by
+    #: :class:`lightsim2grid.injectionSweep.InjectionSweep`, which shares this entire
+    #: wrapper and only swaps the underlying computer.
+    _CPP_CLASS = TimeSeriesCPP
+
     def __init__(self, grid2op_env):
         if not GRID2OP_INSTALLED:
-            raise RuntimeError("Impossible to use the python wrapper `TimeSerie` "
+            raise RuntimeError(f"Impossible to use the python wrapper `{type(self).__name__}` "
                                "when grid2op is not installed. Please fall back to the "
                                "c++ version (available in python) with:\n"
-                               "\tfrom lightsim2grid.timeSerie import TimeSerieCPP\n"
+                               f"\tfrom lightsim2grid.timeSerie import {type(self)._CPP_CLASS.__name__}\n"
                                "and refer to the appropriate documentation.")
-            
+
         from grid2op.Environment import Environment  # type: ignore # otherwise i got issues...
         if not isinstance(grid2op_env.backend, LightSimBackend):
             raise RuntimeError("This class only works with LightSimBackend")
@@ -98,17 +104,33 @@ class ___TimeSerie:
             raise RuntimeError("Please an environment of class \"Environment\", "
                                "and not \"MultimixEnv\" or \"BaseMultiProcessEnv\"")
         self.grid2op_env = grid2op_env.copy()
-        self.computer = TimeSeriesCPP(self.grid2op_env.backend._grid)
+        self.computer = type(self)._CPP_CLASS(self.grid2op_env.backend._grid)
         self.prod_p = None
         self.load_p = None
         self.load_q = None
         self.__computed = False
         
-        self.available_solvers = self.computer.available_solvers()
-        if SolverType.KLU in self.available_solvers:
+        self.available_default_algorithms = self.computer.available_default_algorithms()
+        if AlgorithmType.NR_KLU in self.available_default_algorithms:
             # use the faster KLU if available
-            self.computer.change_solver(SolverType.KLU)
+            self.computer.change_algorithm(AlgorithmType.NR_KLU)
     
+    @property
+    def init_from_n_powerflow(self):
+        """Whether to initialize the complex voltages of the first step of the batch with
+        the results of a "n" powerflow (a powerflow at the current state of the grid)
+        instead of a flat start. Default: ``False``. Must be set before the computation
+        actually runs (eg before ``compute_V`` is called); it has no effect on a powerflow
+        that has already been solved.
+        """
+        return self.computer.init_from_n_powerflow
+
+    @init_from_n_powerflow.setter
+    def init_from_n_powerflow(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `init_from_n_powerflow` attribute must be a boolean.")
+        self.computer.init_from_n_powerflow = bool(val)
+        
     def get_injections(self, scenario_id=None, seed=None):
         """
         This function allows to retrieve the injection of the given scenario, for the given seed
@@ -172,11 +194,104 @@ class ___TimeSerie:
         elif status != 1:
             # only raise a warning in this case
             warnings.warn(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
-        Vs = 1.0 * self.computer.get_voltages()  # If I don't copy, lazy eval may break stuff... 
+        Vs = self.computer.get_voltages().copy()  # If I don't copy, lazy eval may break stuff... 
         # eg test_time_series_dc.py does behave stochastically
         self.__computed = True
         return Vs
         
+    def modify_gen_p(self, gen_p):
+        """Per-step active generator setpoints, shape ``(n_simul, n_gen)``. Part of the
+        new setter-based API (see :func:`compute`); an alternative to
+        :func:`compute_V_from_inj`, not required if you use that call instead."""
+        gen_p = np.asarray(gen_p)
+        if gen_p.ndim != 2:
+            raise RuntimeError("gen_p should be a matrix with rows representing time steps "
+                               "and columns representing individual production.")
+        if gen_p.shape[1] != self.grid2op_env.n_gen:
+            raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "
+                               f"differs from the number of columns of gen_p ({gen_p.shape[1]}).")
+        self.computer.modify_gen_p(gen_p)
+        self.__computed = False
+
+    def modify_sgen_p(self, sgen_p):
+        """Per-step active static generator setpoints, shape ``(n_simul, n_sgen)``. See
+        :func:`modify_gen_p`."""
+        sgen_p = np.asarray(sgen_p)
+        if sgen_p.ndim != 2:
+            raise RuntimeError("sgen_p should be a matrix with rows representing time steps "
+                               "and columns representing individual static generation.")
+        n_sgen = len(self.grid2op_env.backend._grid.get_static_generators())
+        if sgen_p.shape[1] != n_sgen:
+            raise RuntimeError(f"The number of static generators on the grid ({n_sgen}) "
+                               f"differs from the number of columns of sgen_p ({sgen_p.shape[1]}).")
+        self.computer.modify_sgen_p(sgen_p)
+        self.__computed = False
+
+    def modify_load_p(self, load_p):
+        """Per-step active load setpoints, shape ``(n_simul, n_load)``. See
+        :func:`modify_gen_p`."""
+        load_p = np.asarray(load_p)
+        if load_p.ndim != 2:
+            raise RuntimeError("load_p should be a matrix with rows representing time steps "
+                               "and columns representing individual loads.")
+        if load_p.shape[1] != self.grid2op_env.n_load:
+            raise RuntimeError(f"The number of loads on the grid ({self.grid2op_env.n_load}) "
+                               f"differs from the number of columns of load_p ({load_p.shape[1]}).")
+        self.computer.modify_load_p(load_p)
+        self.__computed = False
+
+    def modify_load_q(self, load_q):
+        """Per-step reactive load setpoints, shape ``(n_simul, n_load)``. See
+        :func:`modify_gen_p`."""
+        load_q = np.asarray(load_q)
+        if load_q.ndim != 2:
+            raise RuntimeError("load_q should be a matrix with rows representing time steps "
+                               "and columns representing individual loads.")
+        if load_q.shape[1] != self.grid2op_env.n_load:
+            raise RuntimeError(f"The number of loads on the grid ({self.grid2op_env.n_load}) "
+                               f"differs from the number of columns of load_q ({load_q.shape[1]}).")
+        self.computer.modify_load_q(load_q)
+        self.__computed = False
+
+    def modify_gen_v(self, gen_v):
+        """Per-step generator target voltage magnitude (vm_pu), shape ``(n_simul, n_gen)``.
+        Unlike :func:`modify_gen_p`/:func:`modify_load_p`/:func:`modify_load_q`, this does
+        NOT feed the injection (Sbus) -- it only re-seeds ``|V|`` at each voltage-regulating
+        generator's regulated bus before that step's solve. See :func:`modify_gen_p`."""
+        gen_v = np.asarray(gen_v)
+        if gen_v.ndim != 2:
+            raise RuntimeError("gen_v should be a matrix with rows representing time steps "
+                               "and columns representing individual production.")
+        if gen_v.shape[1] != self.grid2op_env.n_gen:
+            raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "
+                               f"differs from the number of columns of gen_v ({gen_v.shape[1]}).")
+        self.computer.modify_gen_v(gen_v)
+        self.__computed = False
+
+    def compute(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):
+        """
+        Run the batch using whatever was set by :func:`modify_gen_p` / :func:`modify_sgen_p`
+        / :func:`modify_load_p` / :func:`modify_load_q` (the new setter-based API -- an
+        alternative to the single bundled :func:`compute_V_from_inj` call). ``max_iter`` /
+        ``tol`` default to the backend's own values when not given.
+        """
+        if v_init is None:
+            v_init_comp = self.grid2op_env.backend.V
+        else:
+            v_init_comp = 1.0 * v_init  # make a copy !
+        if max_iter is None:
+            max_iter = self.grid2op_env.backend.max_it
+        if tol is None:
+            tol = self.grid2op_env.backend.tol
+        self.computer.compute(v_init_comp, max_iter, tol)
+        status = self.computer.get_status()
+        if status != 1 and not ignore_errors:
+            raise RuntimeError(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
+        elif status != 1:
+            warnings.warn(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
+        self.__computed = True
+        return self.computer.get_voltages().copy()
+
     def compute_V(self, scenario_id=None, seed=None, v_init=None, ignore_errors=False):
         """
         This function allows to retrieve the complex voltage at each bus of the grid for each step.
@@ -279,6 +394,3 @@ class ___TimeSerie:
         return self.prod_p, self.load_p, self.load_q
 
 
-if GRID2OP_INSTALLED:
-    TimeSerie = ___TimeSerie
-    

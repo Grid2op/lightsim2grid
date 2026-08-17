@@ -1,0 +1,332 @@
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#include "BaseAlgo.hpp"
+#include "LSGrid.hpp"  // needs to be included here because of the forward declaration
+
+#include <cmath>    // std::isfinite
+#include <sstream>
+
+namespace ls2g {
+
+namespace {
+
+// bounds + duplicate / overlap check for one of slack_ids / pv / pq.
+// `marks` holds, for each bus, 0 (unseen) or the 1-based index into
+// `array_names` of the array that already claimed it.
+void check_bus_id_array(const std::string & caller,
+                        const Eigen::Ref<const IntVect> & ids,
+                        Eigen::Index n,
+                        std::vector<char> & marks,
+                        int array_code,
+                        const char * const array_names[])
+{
+    const char * name = array_names[array_code - 1];
+    for (Eigen::Index i = 0; i < ids.size(); ++i) {
+        const int id = ids(i);
+        if (id < 0 || id >= n) {
+            std::ostringstream exc_;
+            exc_ << caller << ": " << name << "[" << i << "] = " << id
+                 << " is out of bounds: bus ids must be in [0, " << n
+                 << ") (n = size of Ybus).";
+            throw std::out_of_range(exc_.str());
+        }
+        if (marks[static_cast<std::size_t>(id)] != 0) {
+            const char * first = array_names[marks[static_cast<std::size_t>(id)] - 1];
+            std::ostringstream exc_;
+            exc_ << caller << ": bus id " << id << " appears both in " << first
+                 << " and in " << name
+                 << " (or twice in the same one): slack_ids, pv and pq must be disjoint.";
+            throw std::runtime_error(exc_.str());
+        }
+        marks[static_cast<std::size_t>(id)] = static_cast<char>(array_code);
+    }
+}
+
+}  // anonymous namespace
+
+void BaseAlgo::check_pf_inputs(
+    const std::string & caller,
+    Eigen::Index ybus_rows, 
+    Eigen::Index ybus_cols,
+    Eigen::Index v_size,
+    Eigen::Index sbus_size,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq)
+{
+    if (ybus_rows != ybus_cols) {
+        std::ostringstream exc_;
+        exc_ << caller << ": the Ybus matrix must be square. Currently: ("
+             << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    const Eigen::Index n = ybus_rows;
+    if (sbus_size != n) {
+        std::ostringstream exc_;
+        exc_ << caller << ": Size of the Sbus (or Pbus) vector should be the same as the size of Ybus. Currently: "
+             << "Sbus (" << sbus_size << ") and Ybus (" << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    if (v_size != n) {
+        std::ostringstream exc_;
+        exc_ << caller << ": Size of V (init voltages) should be the same as the size of Ybus. Currently: "
+             << "V (" << v_size << ") and Ybus (" << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    if (slack_weights.size() != n) {
+        std::ostringstream exc_;
+        exc_ << caller << ": Size of slack_weights should be the same as the size of Ybus "
+             << "(one weight per bus, indexed by bus id). Currently: slack_weights ("
+             << slack_weights.size() << ") and Ybus (" << ybus_rows << ", " << ybus_cols << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    if (slack_ids.size() == 0) {
+        std::ostringstream exc_;
+        exc_ << caller << ": at least one slack bus is required (slack_ids is empty).";
+        throw std::runtime_error(exc_.str());
+    }
+    static const char * const array_names[] = {"slack_ids", "pv", "pq"};
+    std::vector<char> marks(static_cast<std::size_t>(n), 0);
+    check_bus_id_array(caller, slack_ids, n, marks, 1, array_names);
+    check_bus_id_array(caller, pv, n, marks, 2, array_names);
+    check_bus_id_array(caller, pq, n, marks, 3, array_names);
+}
+
+void BaseAlgo::check_iter_tol(const std::string & caller, int max_iter, real_type tol)
+{
+    if (max_iter < 0) {
+        std::ostringstream exc_;
+        exc_ << caller << ": max_iter must be a non-negative integer, got " << max_iter << ".";
+        throw std::runtime_error(exc_.str());
+    }
+    if (!std::isfinite(tol) || !(tol > 0.)) {
+        std::ostringstream exc_;
+        exc_ << caller << ": tol must be a finite, strictly positive number, got " << tol << ".";
+        throw std::runtime_error(exc_.str());
+    }
+}
+
+bool BaseAlgo::compute_pf_with_input_validation(
+    const Eigen::SparseMatrix<cplx_type> & Ybus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq,
+    int max_iter,
+    real_type tol)
+{
+    check_pf_inputs("compute_pf", Ybus.rows(), Ybus.cols(), V.size(), Sbus.size(),
+                    slack_ids, slack_weights, pv, pq);
+    check_iter_tol("compute_pf", max_iter, tol);
+    return compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
+}
+
+bool BaseAlgo::compute_pf_dc_with_input_validation(
+    const Eigen::SparseMatrix<real_type> & Bbus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const RealVect> & Pbus,
+    const Eigen::Ref<const IntVect> & slack_ids,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq)
+{
+    check_pf_inputs("compute_pf_dc", Bbus.rows(), Bbus.cols(), V.size(), Pbus.size(),
+                    slack_ids, slack_weights, pv, pq);
+    return compute_pf_dc(Bbus, V, Pbus, slack_ids, slack_weights, pv, pq);
+}
+
+void BaseAlgo::reset(){
+    // reset timers
+    reset_timer();
+
+    //reset the attribute
+    n_ = -1;
+    Vm_ = RealVect();  // voltage magnitude
+    Va_ = RealVect();  // voltage angle
+    V_ = RealVect();  // voltage angle  // TODO solver control: see if I could reuse some of these
+    nr_iter_ = 0;  // number of iteration performs by the algorithm
+    err_ = ErrorType::NotInitError; //error message:
+
+    _solver_control = AlgoControl();
+    _solver_control.tell_all_changed();
+}
+
+
+RealVect BaseAlgo::_evaluate_Fx(
+    const EigenRefConstCplxSpMat     & Ybus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    const Eigen::Ref<const IntVect>  & pv,
+    const Eigen::Ref<const IntVect>  & pq)
+{
+    auto timer = CustTimer();
+    auto npv = pv.size();
+    auto npq = pq.size();
+
+    // compute the mismatch
+    // CplxVect tmp = Ybus * V;  // this is a vector
+    // tmp = tmp.array().conjugate();  // i take the conjugate
+    auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array();
+    auto real_ = mis.real();
+    auto imag_ = mis.imag();
+
+    // build and fill the result
+    RealVect res(npv + 2*npq);
+    res.segment(0,npv) = real_(pv);
+    res.segment(npv,npq) = real_(pq);
+    res.segment(npv+npq, npq) = imag_(pq);
+    timer_Fx_ += timer.duration();
+    return res;
+}
+
+RealVect BaseAlgo::_evaluate_Fx(
+    const EigenRefConstCplxSpMat &  Ybus,
+    const Eigen::Ref<const CplxVect> & V,
+    const Eigen::Ref<const CplxVect> & Sbus,
+    size_t slack_id,  // id of the ref slack bus
+    real_type slack_absorbed,
+    const Eigen::Ref<const RealVect> & slack_weights,
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq)
+{
+    /**
+    Remember, when this function is used:
+
+    J has the shape:
+    
+    | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
+    | l |  -------  |               |            | ------------------------- |
+    | a | J11 | J12 | = dimensions: |            | (pvpq, pvpq) | (pvpq, pq) |
+    | c | --------- |               |   ------   | ------------------------- |
+    | k | J21 | J22 |               |  (pq, 1)   |  (pq, pvpq)  | (pq, pq)   |
+
+    python implementation:
+    `J11` = dS_dVa[array([pvpq]).T, pvpq].real
+    `J12` = dS_dVm[array([pvpq]).T, pq].real
+    `J21` = dS_dVa[array([pq]).T, pvpq].imag
+    `J22` = dS_dVm[array([pq]).T, pq].imag
+
+    `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real
+    and dS_dVm[slack_bus_id, pq].real
+
+    `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
+    the remaining pq components are all 0.
+
+    So i need to make sure that the returned F has the same properties:
+
+    - first element is the slack bus
+    - then it's Va of pv buses
+    - then it's Va of pq buses
+    - then it's Vm of pq buses
+
+    **/
+
+    // TODO factorize with above (ugly copy paste)
+    auto timer = CustTimer();
+    auto npv = pv.size();
+    auto npq = pq.size();
+
+    // compute the mismatch
+    // CplxVect tmp = Ybus * V;  // this is a vector
+    // tmp = tmp.array().conjugate();  // i take the conjugate
+    auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
+    RealVect real_ = mis.real();
+    RealVect imag_ = mis.imag();
+
+    // build and fill the result
+    RealVect res(npv + 2 * npq + 1); // slack adds one component hence the '+1' also bellow)
+    res(0) = real_(slack_id);  // slack bus is first variable
+    res.segment(1, npv) = real_(pv);
+    res.segment(npv + 1, npq) = real_(pq);
+    res.segment(npv + npq + 1, npq) = imag_(pq);
+    timer_Fx_ += timer.duration();
+    return res;
+    
+}
+
+bool BaseAlgo::_check_for_convergence(
+    const Eigen::Ref<const RealVect> & F,
+    real_type tol)
+{
+    auto timer = CustTimer();
+    const auto norm_inf = F.lpNorm<Eigen::Infinity>();
+    bool res =  norm_inf  < tol;
+    timer_check_ += timer.duration();
+    return res;
+}
+
+bool BaseAlgo::_check_for_convergence(
+    const Eigen::Ref<const RealVect> & p,
+    const Eigen::Ref<const RealVect> & q,
+    real_type tol)
+{
+    auto timer = CustTimer();
+    const auto norm_inf_p = p.lpNorm<Eigen::Infinity>();
+    const auto norm_inf_q = q.lpNorm<Eigen::Infinity>();
+    bool res =  (norm_inf_p  < tol) && (norm_inf_q < tol);
+    timer_check_ += timer.duration();
+    return res;
+}
+
+Eigen::VectorXi BaseAlgo::extract_slack_bus_id(
+    const Eigen::Ref<const IntVect> & pv,
+    const Eigen::Ref<const IntVect> & pq,
+    unsigned int nb_bus)
+{
+    // pv: list of index of pv nodes
+    // pq: list of index of pq nodes
+    // nb_bus: total number of bus in the grid
+    // returns: res: the ids of all the slack buses (by def: not PV and not PQ)
+    int nb_slacks = nb_bus - pv.size() - pq.size();
+    if(nb_slacks == 0){
+        // TODO DEBUG MODE
+        throw std::runtime_error("BaseAlgo::extract_slack_bus_id: All buses are tagged as PV or PQ, there can be no slack.");
+    }
+    Eigen::VectorXi res(nb_slacks);
+    size_t i_res = 0;
+    // run through both pv and pq nodes and declare they are not slack bus
+    std::vector<bool> tmp(nb_bus, true);
+    for(auto pv_i : pv) tmp[pv_i] = false;
+    for(auto pq_i : pq) tmp[pq_i] = false;
+
+    // run through all buses
+    for(unsigned int k=0; k < nb_bus; ++k)
+    {
+        if(tmp[k])
+        {
+            if((i_res >= static_cast<size_t>(nb_slacks))){
+                // TODO DEBUG MODE
+                throw std::runtime_error("BaseAlgo::extract_slack_bus_id: too many slack found. Maybe a bus is both PV and PQ ?");
+            }
+            res[i_res] = k;
+            ++i_res;
+        }
+    }
+    if(static_cast<size_t>(res.size()) != i_res){
+        // TODO DEBUG MODE
+        throw std::runtime_error("BaseAlgo::extract_slack_bus_id: Some slacks are not found in your grid.");
+    }
+    return res;
+}
+
+
+void BaseAlgo::get_Bf(Eigen::SparseMatrix<real_type> & Bf) const {
+    if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
+    lsgrid_ptr_->fillBf_for_PTDF(Bf);
+}
+
+void BaseAlgo::get_Bf_transpose(Eigen::SparseMatrix<real_type> & Bf_T) const {
+    if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
+    lsgrid_ptr_->fillBf_for_PTDF(Bf_T, true);
+}
+
+} // namespace ls2g

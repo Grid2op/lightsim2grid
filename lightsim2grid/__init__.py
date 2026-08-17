@@ -6,18 +6,81 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__version__ = "0.13.0"
+__version__ = "1.0.0.rc4"
 
 __all__ = [
     "newtonpf",
-    "SolverType",
+    "AlgorithmType",
     "ErrorType",
+    "algorithm",
     "solver",
-    "compilation_options"]
+    "compilation_options",
+    "load_algorithm_plugin",
+    "get_include",
+    "get_cmake_dir"]
 
-# import directly from c++ module
-from lightsim2grid.solver import SolverType
-from lightsim2grid.solver import ErrorType
+import os as _os
+import sys as _sys
+
+# Load the C++ extension with RTLD_GLOBAL so its symbols (BaseAlgo, AlgorithmRegistry,
+# etc.) are visible to solver plugins loaded later via load_solver_plugin().
+# This is the standard pattern for extension modules that support dlopen plugins
+# (used by PyTorch, JAX, and others for the same reason).
+if hasattr(_sys, "getdlopenflags"):
+    # Unix only: load with RTLD_GLOBAL so symbols are visible to dlopen'd plugins.
+    _old_dlopen_flags = _sys.getdlopenflags()
+    _sys.setdlopenflags(_old_dlopen_flags | _os.RTLD_GLOBAL)
+    try:
+        from lightsim2grid.algorithm import AlgorithmType
+        from lightsim2grid.algorithm import ErrorType
+    finally:
+        _sys.setdlopenflags(_old_dlopen_flags)
+else:
+    # Windows (Python >= 3.8): the DLL search path no longer includes the
+    # package directory automatically.  Add it so that lightsim2grid_core.dll
+    # (a dependency of lightsim2grid_cpp.pyd) is found before the import.
+    if hasattr(_os, "add_dll_directory"):
+        _os.add_dll_directory(_os.path.dirname(__file__))
+    from lightsim2grid.algorithm import AlgorithmType
+    from lightsim2grid.algorithm import ErrorType
+
+
+def load_algorithm_plugin(path: str) -> None:
+    """Load a shared library containing a lightsim2grid algorithm plugin.
+
+    The library must export a ``ls2g_register_plugin`` entry point, which the
+    ``LS2G_PLUGIN_ENTRY`` macro generates from the plugin's registration
+    function (see ``examples/external_algorithm/`` for a minimal example).  The
+    library is loaded, the entry point is looked up and called, and the new
+    algorithm(s) it declares are registered into the C++ ``AlgorithmRegistry``
+    singleton.
+
+    Registration happens through a function the loader calls explicitly, *not*
+    inside a static constructor during ``dlopen``, so any failure -- an ABI
+    mismatch, a solver name that is already registered (which includes loading
+    the same plugin twice), a library that is not a plugin, a missing file --
+    is raised here as a normal, catchable Python exception instead of aborting
+    the interpreter.
+
+    After this call the new solver name is usable via::
+
+        grid.change_algorithm("MySolverName")
+
+    and will appear in ``grid.available_algorithm_names()``.
+
+    Parameters
+    ----------
+    path:
+        Absolute or relative path to the ``.so`` / ``.dll`` file.
+
+    Raises
+    ------
+    RuntimeError
+        If the library cannot be loaded, does not export the plugin entry
+        point, or its registration is refused (ABI mismatch, duplicate name).
+    """
+    from lightsim2grid.lightsim2grid_cpp import _load_algorithm_plugin
+    _load_algorithm_plugin(str(path))
 
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend  # noqa: F401
@@ -42,16 +105,76 @@ except ImportError as exc_:  # noqa: F841
     pass
 
 try:
+    from lightsim2grid.injectionSweep import InjectionSweep  # noqa: F401
+    __all__.append("InjectionSweep")
+    __all__.append("injectionSweep")
+except ImportError as exc_:  # noqa: F841
+    # grid2op is not installed, the InjectionSweep module will not be available
+    pass
+
+try:
     from lightsim2grid.contingencyAnalysis import ContingencyAnalysis  # noqa: F401
     __all__.append("contingencyAnalysis")
     __all__.append("ContingencyAnalysis")
 except ImportError as exc_:  # noqa: F841
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass
-    
+
+try:
+    from lightsim2grid.scenarioSweep import ScenarioSweep  # noqa: F401
+    __all__.append("ScenarioSweep")
+    __all__.append("scenarioSweep")
+except ImportError as exc_:  # noqa: F841
+    # grid2op is not installed, the ScenarioSweep module will not be available
+    pass
+
 try:
     from lightsim2grid.rewards import N1ContingencyReward  # noqa: F401
     __all__.append("rewards")
 except ImportError as exc_:  # noqa: F841
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass
+
+
+def _installed_pkg_dir() -> str:
+    """Return the *installed* package directory (site-packages/lightsim2grid/).
+
+    For editable installs __file__ points to the source tree, but the compiled
+    extension and installed data (headers, cmake files) live in site-packages.
+    We anchor to the .so extension module, which is always in site-packages.
+    """
+    import importlib.util as _ilu
+    spec = _ilu.find_spec("lightsim2grid.lightsim2grid_cpp")
+    if spec and spec.origin:
+        return _os.path.dirname(spec.origin)
+    return _os.path.dirname(_os.path.abspath(__file__))
+
+
+def get_include() -> str:
+    """Return the path to the lightsim2grid_core public C++ headers.
+
+    Mirrors pybind11.get_include(). Useful for building C++ extensions that
+    depend on lightsim2grid_core without going through CMake find_package.
+    """
+    return _os.path.join(_installed_pkg_dir(), "include")
+
+
+def get_cmake_dir() -> str:
+    """Return the path to the lightsim2grid_core CMake config directory.
+
+    Use this to locate the package when calling cmake::
+
+        cmake -Dlightsim2grid_core_DIR=$(python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
+
+    Or from Python::
+
+        import subprocess, lightsim2grid
+        subprocess.run(["cmake", f"-Dlightsim2grid_core_DIR={lightsim2grid.get_cmake_dir()}", ...])
+    """
+    p = _os.path.join(_installed_pkg_dir(), "share", "cmake", "lightsim2grid_core")
+    if not _os.path.exists(p):
+        raise ImportError(
+            "lightsim2grid CMake files not found. "
+            "Reinstall the package: pip install lightsim2grid"
+        )
+    return p

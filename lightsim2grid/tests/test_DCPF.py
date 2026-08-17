@@ -21,11 +21,11 @@ import warnings
 
 from lightsim2grid import LightSimBackend
 try:
-    from lightsim2grid.solver import KLUSolver
-    ClassSolver = KLUSolver
+    from lightsim2grid.algorithm import NR_KLU
+    ClassSolver = NR_KLU
 except ImportError as exc_:
-    from lightsim2grid.solver import SparseLUSolver
-    ClassSolver = SparseLUSolver
+    from lightsim2grid.algorithm import NR_SparseLU
+    ClassSolver = NR_SparseLU
 
 
 from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
@@ -352,6 +352,7 @@ class TestDCPF_LODF(TestDCPF):
         assert dcYbus.shape == (gridmodel.total_bus(), gridmodel.total_bus())    
         dcYbus_solver = gridmodel.get_dcYbus_solver()
         assert dcYbus_solver.shape == (gridmodel.nb_connected_bus(), gridmodel.nb_connected_bus())   
+        assert dcYbus.nnz == dcYbus_solver.nnz, f"{dcYbus.nnz} nnz els with gridmodel id and {dcYbus_solver.nnz} nnz els with solver id"
         assert (dcYbus[id_dc_solver_to_me.reshape(-1,1), id_dc_solver_to_me.reshape(1,-1)] != dcYbus_solver).nnz == 0    
         with self.assertRaises(RuntimeError):
             Sbus = gridmodel.get_Sbus()                

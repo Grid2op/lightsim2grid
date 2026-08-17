@@ -16,13 +16,8 @@ import matplotlib.pyplot as plt
 from grid2op import make, Parameters
 from grid2op.Chronics import FromNPY
 from grid2op.Backend import PandaPowerBackend
-from lightsim2grid import LightSimBackend, TimeSerie
-try:
-    from lightsim2grid import ContingencyAnalysis
-except ImportError:
-    from lightsim2grid import SecurityAnalysis as ContingencyAnalysis
-    
-from lightsim2grid.solver import SolverType
+from lightsim2grid import LightSimBackend, TimeSerie, ContingencyAnalysis
+from lightsim2grid.algorithm import AlgorithmType
 
 from tqdm import tqdm
 import os
@@ -235,9 +230,72 @@ def run_grid2op_env(env_lightsim, case, reset_solver,
     return nb_step
         
         
+def generate_narrative(case_names_displayed,
+                        g2op_step_time, g2op_step_time_reset,
+                        ts_speeds, sa_speeds,
+                        g2op_speeds, g2op_speeds_reset):
+    """Generates (from the numbers actually measured in this run) the descriptive text that should go
+    under the tables of docs/benchmarks_grid_sizes.rst, the same way `generate_narrative` in
+    benchmark_solvers.py does for docs/benchmarks.rst.
+
+    All 5 tables printed by this script (TL;DR plus the 4 detailed ones) already come from the same
+    run, so unlike the other benchmark scripts there was no risk of the *tables* drifting against one
+    another here -- but there was no generated commentary at all below them either. This adds it.
+    """
+    recycling_ratios = []
+    ts_ratios = []
+    sa_ratios = []
+    for i in range(len(case_names_displayed)):
+        step_recycling = g2op_step_time[i]
+        step_no_recycling = g2op_step_time_reset[i]
+        if step_recycling and step_no_recycling:
+            recycling_ratios.append((case_names_displayed[i], step_no_recycling / step_recycling))
+        # ts_speeds / sa_speeds are in pf/s (or contingencies/s): `1. / speed` is the per-pf
+        # duration in seconds, directly comparable to `step_recycling` (also in seconds).
+        ts_speed = ts_speeds[i]
+        if step_recycling and ts_speed:
+            ts_ratios.append((case_names_displayed[i], step_recycling * ts_speed))
+        sa_speed = sa_speeds[i]
+        if step_recycling and sa_speed:
+            sa_ratios.append((case_names_displayed[i], step_recycling * sa_speed))
+
+    if not recycling_ratios:
+        return ""
+
+    paragraphs = []
+
+    lo_name, lo_val = min(recycling_ratios, key=lambda x: x[1])
+    hi_name, hi_val = max(recycling_ratios, key=lambda x: x[1])
+    paragraphs.append(
+        f"Allowing lightsim2grid to \"recycle\" previous computation (column `avg step duration (ms)`, "
+        f"default behaviour) instead of restarting from scratch at every step makes grid2op between "
+        f"**~{lo_val:.1f}x** (on `{lo_name}`) and **~{hi_val:.1f}x** (on `{hi_name}`) faster, depending on "
+        f"the grid size."
+    )
+
+    if ts_ratios:
+        lo_name, lo_val = min(ts_ratios, key=lambda x: x[1])
+        hi_name, hi_val = max(ts_ratios, key=lambda x: x[1])
+        paragraphs.append(
+            f"Compared to a regular grid2op step (with recycling), the `TimeSerie` module is between "
+            f"**~{lo_val:.1f}x** (on `{lo_name}`) and **~{hi_val:.1f}x** (on `{hi_name}`) faster."
+        )
+
+    if sa_ratios:
+        lo_name, lo_val = min(sa_ratios, key=lambda x: x[1])
+        hi_name, hi_val = max(sa_ratios, key=lambda x: x[1])
+        paragraphs.append(
+            f"Similarly, the `ContingencyAnalysis` module is between **~{lo_val:.1f}x** (on `{lo_name}`) "
+            f"and **~{hi_val:.1f}x** (on `{hi_name}`) faster than a regular grid2op step (with recycling) "
+            f"to evaluate one contingency."
+        )
+
+    return "\n\n".join(paragraphs)
+
+
 if __name__ == "__main__":
     prng = np.random.default_rng(42)
-    ls_solver_type = SolverType.KLU
+    ls_solver_type = AlgorithmType.NR_KLU
     case_names_displayed = [get_env_name_displayed(el) for el in case_names]
     solver_preproc_solver_time = []
     g2op_speeds = []
@@ -327,7 +385,7 @@ if __name__ == "__main__":
                                         load_q,
                                         gen_p_g2op,
                                         sgen_p)
-        env_lightsim.backend.set_solver_type(ls_solver_type)
+        env_lightsim.backend.set_algo_type(ls_solver_type)
         # Perform the computation using grid2op
         reset_solver = True  # non default
         nb_step_reset = run_grid2op_env(env_lightsim, case, reset_solver,
@@ -355,14 +413,14 @@ if __name__ == "__main__":
         computer = time_serie.computer
         computer_ts = time_serie.computer
         v_init = env_lightsim.backend.V
-        status = computer.compute_Vs(gen_p,
+        status = computer.compute_Vs(gen_p_g2op,
                                      sgen_p,
                                      load_p,
                                      load_q,
                                      v_init,
                                      env_lightsim.backend.max_it,
                                      env_lightsim.backend.tol)
-        time_serie._TimeSerie__computed = True
+        time_serie._TimeSerie__computed = True # type: ignore
         a_or = time_serie.compute_A()
         assert status or computer.nb_solved() == nb_step_pp, f"some powerflow diverge for Time Series for {case_name}: {computer.nb_solved()} "
 
@@ -514,33 +572,43 @@ if __name__ == "__main__":
     else:
         print(tab_sa)
     print()
-        
+
+    # generate (from the numbers measured above) the descriptive text that should go under the
+    # tables in docs/benchmarks_grid_sizes.rst.
+    narrative_text = generate_narrative(case_names_displayed,
+                                        g2op_step_time, g2op_step_time_reset,
+                                        ts_speeds, sa_speeds,
+                                        g2op_speeds, g2op_speeds_reset)
+    print("Description:")
+    print(narrative_text)
+    print()
+
     if MAKE_PLOT:
         # make the plot summarizing all results
         plt.plot(g2op_sizes, solver_preproc_solver_time, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Time taken (s)")
-        plt.title(f"Time to compute {g2op_sizes[0]} powerflows using Grid2Op.step (dc pf [init] + ac pf)")
+        plt.title("Time to compute {g2op_sizes[0]} powerflows using Grid2Op.step (dc pf [init] + ac pf)")
         plt.show()
 
         plt.plot(g2op_sizes, g2op_speeds, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Speed (pf / s)")
-        plt.title(f"Computation speed using Grid2Op.step (dc pf [init] + ac pf)")
+        plt.title("Computation speed using Grid2Op.step (dc pf [init] + ac pf)")
         plt.yscale("log")
         plt.show()
 
         plt.plot(g2op_sizes, ls_solver_time, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Speed (solver time)")
-        plt.title(f"Computation speed for solving the powerflow only")
+        plt.title("Computation speed for solving the powerflow only")
         plt.yscale("log")
         plt.show()
 
         plt.plot(g2op_sizes, ls_gridmodel_time, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Speed (solver time)")
-        plt.title(f"Computation speed for solving the powerflow only")
+        plt.title("Computation speed for solving the powerflow only")
         plt.yscale("log")
         plt.show()
         
@@ -554,7 +622,7 @@ if __name__ == "__main__":
         plt.plot(ts_sizes, ts_speeds, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Speed (pf / s)")
-        plt.title(f"Computation speed for TimeSeries")
+        plt.title("Computation speed for TimeSeries")
         plt.yscale("log")
         plt.show()
         
@@ -562,12 +630,12 @@ if __name__ == "__main__":
         plt.plot(sa_sizes, [1000. / el for el in sa_speeds], linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Time taken per contingency (ms)")
-        plt.title(f"Average time per contingencies")
+        plt.title("Average time per contingencies")
         plt.show()
 
         plt.plot(sa_sizes, sa_speeds, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Speed (contingency / s)")
-        plt.title(f"Computation speed for Security Analysis")
+        plt.title("Computation speed for Security Analysis")
         plt.yscale("log")
         plt.show()

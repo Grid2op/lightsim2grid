@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 from pathlib import Path
+import sys
 import tempfile
 import pickle
 import os
@@ -17,15 +18,38 @@ import numpy as np
 
 import grid2op
 from lightsim2grid.lightSimBackend import LightSimBackend
-from lightsim2grid.gridmodel.compare_gridmodel import (
-    compare_gridmodel_input,
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# generated, dependency-free reproduction of _exotic_elements_fixture's grid (see
+# _gen_exotic_elements_case.py) -- deliberately NOT `_exotic_elements_fixture` itself,
+# so this whole test module stays importable and runnable without pypowsybl installed
+from _exotic_elements_case_ls import build_exotic_elements_case_grid  # noqa: E402
+
+from lightsim2grid.network.compare_lsgrid import (
+    compare_network_input,
     _compare_loads,
     _compare_lines,
     _compare_generators,
     _compare_shunts,
     _compare_storages,
     _compare_substations,
-    _compare_trafos)
+    _compare_trafos,
+    _compare_static_generators,
+    _compare_dclines,
+    _compare_svcs)
+
+
+def _solved_exotic_case_grid():
+    """`build_exotic_elements_case_grid()` is unsolved by construction (callers run
+    their own powerflow); the comparisons below only read input attributes, but a
+    flat-start ac_pf is run anyway to match the pypowsybl-based fixture's own
+    default (`build_exotic_elements_grid(solve=True)`) as closely as possible."""
+    grid = build_exotic_elements_case_grid()
+    v0 = np.ones(grid.total_bus(), dtype=complex)
+    conv = grid.ac_pf(v0, 20, 1e-7)
+    if len(conv) == 0:
+        raise RuntimeError("_solved_exotic_case_grid: ac_pf did not converge; this is a bug")
+    return grid
 
 
 class TestPickle(unittest.TestCase):
@@ -113,12 +137,12 @@ class TestPickle(unittest.TestCase):
                 pickle.dump(self.env.backend, f)
             with open(os.path.join(tmpdir, "test_pickle.pickle"), "rb") as f:
                 backend_1 = pickle.load(f)
-            assert backend_1._grid.get_solver_type() ==  self.env.backend._grid.get_solver_type()
+            assert backend_1._grid.get_algo_type() ==  self.env.backend._grid.get_algo_type()
             assert backend_1._grid.get_dc_solver_type() ==  self.env.backend._grid.get_dc_solver_type()
             
             self.aux_test_2sides(self.env.backend._grid, backend_1._grid)
             self.aux_test_1side(self.env.backend._grid, backend_1._grid)
-            tmp = compare_gridmodel_input(self.env.backend._grid, backend_1._grid)
+            tmp = compare_network_input(self.env.backend._grid, backend_1._grid)
             assert len(tmp) == 0
             
             nb_bus_total = self.env.n_sub * 2
@@ -143,35 +167,81 @@ class TestPickle(unittest.TestCase):
             self.aux_test_2sides(self.env.backend._grid, backend_1._grid, True)
             self.aux_test_1side(self.env.backend._grid, backend_1._grid, True)
 
+    def test_pickle_algo_config(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
+        grid = self.env.backend._grid
+
+        ac_cfg = grid.get_ac_algo_config()
+        ac_cfg.int_params = [1, 2, 3, 4]
+        ac_cfg.real_params = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+        grid.set_ac_algo_config(ac_cfg)
+        # DC solver (DC_SparseLU) does not populate AlgoConfig at all (only the
+        # NRAlgo family does): get_config()/set_config() are BaseAlgo's no-op.
+        # Read back whatever is actually applied rather than assuming the
+        # values above took effect, so this only tests that the round trip
+        # preserves whatever the config actually is.
+        dc_cfg = grid.get_dc_algo_config()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test_pickle_algo_config.pickle")
+            with open(path, "wb") as f:
+                pickle.dump(grid, f)
+            with open(path, "rb") as f:
+                grid_1 = pickle.load(f)
+
+        ac_cfg_1 = grid_1.get_ac_algo_config()
+        assert list(ac_cfg_1.int_params) == list(ac_cfg.int_params)
+        assert np.allclose(ac_cfg_1.real_params, ac_cfg.real_params)
+
+        dc_cfg_1 = grid_1.get_dc_algo_config()
+        assert list(dc_cfg_1.int_params) == list(dc_cfg.int_params)
+        assert np.allclose(dc_cfg_1.real_params, dc_cfg.real_params)
+
     def test_cannot_load_unfit_ls_version(self):
         tmpdir = Path(".") / "old_pickle"
-        with self.assertRaises(ImportError):
+        with self.assertRaises((ImportError, AttributeError)):
             # old pickle made with lightsim2grid_cpp directly accessible from "from lightsim2grid_cpp import XXX"
             with open(tmpdir / "test_pickle.pickle", "rb") as f:
                 pickle.load(f)
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises((RuntimeError, AttributeError)):
             # pickle made with lightsim2grid_cpp accessible only with "from lightsim2grid.lightsim2grid_cpp import XXX"
             with open(tmpdir / "test_pickle_2.pickle", "rb") as f:
                 pickle.load(f)
                         
-    def _aux_test_pickle(self, fun_name, fun_comp):
+    def _aux_test_pickle(self, fun_name, fun_comp, check_old_version=True, grid=None):
+        """`grid` defaults to a full l2rpn_idf_2023 grid2op env's LSGrid; pass one
+        explicitly (eg `_solved_exotic_case_grid()`) to test an element type
+        l2rpn_idf_2023 does not carry any of (SVC, HVDC -- see
+        `_exotic_elements_fixture.py` / `_exotic_elements_case_ls.py`). Only meaningful with `check_old_version=False`:
+        the `old_pickle/` legacy fixtures below were generated from an
+        l2rpn_idf_2023 grid and have nothing to do with `grid`.
+        """
         # test I can reload if saved some the same ls version
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
-        els = getattr(self.env.backend._grid, fun_name)()
+        if grid is None:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore")
+                self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
+            grid = self.env.backend._grid
+        els = getattr(grid, fun_name)()
         with tempfile.TemporaryDirectory() as tmpdir:
             with open(os.path.join(tmpdir, f"test_pickle_{fun_name}.pickle"), "wb") as f:
                 pickle.dump(els, f)
             with open(os.path.join(tmpdir, f"test_pickle_{fun_name}.pickle"), "rb") as f:
-                els_reloaded = pickle.load(f)  
-                
+                els_reloaded = pickle.load(f)
+
         class Struct:
             pass
         setattr(Struct, fun_name, lambda self: els_reloaded)
-        diff_ = fun_comp(Struct(), self.env.backend._grid)
+        diff_ = fun_comp(Struct(), grid)
         assert len(diff_) == 0
-        
+
+        if not check_old_version:
+            # no legacy fixture available in `old_pickle/` for this container
+            # (it was added to lightsim2grid after the fixtures were generated)
+            return
+
         # Test I cannot reload if saved from an old version
         tmpdir = Path(".") / "old_pickle"
         with self.assertRaises(ImportError):
@@ -182,27 +252,41 @@ class TestPickle(unittest.TestCase):
             # pickle made with lightsim2grid_cpp accessible only with "from lightsim2grid.lightsim2grid_cpp import XXX"
             with open(tmpdir / f"test_pickle_{fun_name}_2.pickle", "rb") as f:
                 pickle.load(f)
-        
-    def test_pickle_loads(self):  
+
+    def test_pickle_loads(self):
         self._aux_test_pickle("get_loads", _compare_loads)
-        
+
     def test_pickle_lines(self):
         self._aux_test_pickle("get_lines", _compare_lines)
-        
+
     def test_pickle_trafos(self):
         self._aux_test_pickle("get_trafos", _compare_trafos)
-        
+
     def test_pickle_storages(self):
         self._aux_test_pickle("get_storages", _compare_storages)
-        
+
     def test_pickle_generators(self):
         self._aux_test_pickle("get_generators", _compare_generators)
-        
+
     def test_pickle_shunts(self):
         self._aux_test_pickle("get_shunts", _compare_shunts)
-        
+
     def test_pickle_substations(self):
         self._aux_test_pickle("get_substations", _compare_substations)
+
+    def test_pickle_sgens(self):
+        self._aux_test_pickle("get_static_generators", _compare_static_generators, check_old_version=False)
+
+    def test_pickle_hvdc(self):
+        # l2rpn_idf_2023 carries no HVDC line at all -- use the exotic-elements
+        # case grid instead, which has 3 (VSC droop, VSC no-droop, LCC).
+        self._aux_test_pickle("get_dclines", _compare_dclines, check_old_version=False,
+                              grid=_solved_exotic_case_grid())
+
+    def test_pickle_svcs(self):
+        # l2rpn_idf_2023 carries no SVC at all -- use the exotic-elements case grid.
+        self._aux_test_pickle("get_svcs", _compare_svcs, check_old_version=False,
+                              grid=_solved_exotic_case_grid())
 
 
 if __name__ == "__main__":

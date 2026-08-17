@@ -1,0 +1,41 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Include directory — path computed relative to this config file's installed location
+set_and_check(lightsim2grid_core_INCLUDE_DIR "@PACKAGE_LS2G_INSTALL_INCLUDEDIR@")
+
+# The exported target carries Threads::Threads in its PUBLIC link interface
+# (used by the multi-threaded ContingencyAnalysis). A consumer doing
+# find_package(lightsim2grid_core) must re-discover that imported target,
+# otherwise including the targets file below fails with
+# "target ... contains: Threads::Threads but the target was not found".
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_dependency(Threads)
+
+# Import the library target (lightsim2grid::core)
+if(NOT TARGET lightsim2grid::core)
+    include("${CMAKE_CURRENT_LIST_DIR}/lightsim2grid_coreTargets.cmake")
+endif()
+
+# Convenience alias so users can also write ls2g::core
+if(NOT TARGET ls2g::core AND TARGET lightsim2grid::core)
+    add_library(ls2g::core ALIAS lightsim2grid::core)
+endif()
+
+set(lightsim2grid_core_LIBRARIES    lightsim2grid::core)
+set(lightsim2grid_core_INCLUDE_DIRS "${lightsim2grid_core_INCLUDE_DIR}")
+
+# Whether *this* lightsim2grid_core was built with -march=native / -O3
+# (src/core/CMakeLists.txt's USE_MARCH_NATIVE / USE_O3_OPTIM, driven by the
+# __COMPILE_MARCHNATIVE / __O3_OPTIM env vars). A consumer linking against
+# lightsim2grid::core (a separate shared library) MUST use the identical
+# -march flag: -march=native changes which SIMD ISA Eigen sees enabled,
+# which changes EIGEN_MAX_ALIGN_BYTES and thus how Eigen aligns/allocates/
+# frees its dynamic-size matrices. An Eigen object allocated under one
+# alignment assumption and freed under another (e.g. crossing the BaseAlgo
+# virtual interface) silently corrupts the heap. See docs/solver_plugin.rst.
+set(lightsim2grid_core_MARCH_NATIVE @USE_MARCH_NATIVE@)
+set(lightsim2grid_core_O3_OPTIM     @USE_O3_OPTIM@)
+
+check_required_components(lightsim2grid_core)

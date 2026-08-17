@@ -19,6 +19,11 @@ except ImportError:
     # above packages not mandatory for compare_lightsim2grid_pypowsybl.py
     pass
 
+try:
+    from lightsim2grid import LightSimBackend
+except ImportError:
+    LightSimBackend = None
+
 
 def get_env_name_displayed(env_name):
     res = re.sub("^l2rpn_", "", env_name)
@@ -54,7 +59,16 @@ def get_rest(env_pp, env_KLU, env_SLU, env_GS):
     pass
 
 
-def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_solver=False, env_seed=None):
+def run_env(
+    env,
+    max_ts,
+    agent,
+    chron_id=None,
+    keep_forecast=False,
+    with_type_solver=False,
+    env_seed=None,
+    detailed_ls_output=False,
+    is_dc=False):
     pbar_desc = None
     if with_type_solver:
         try:
@@ -100,6 +114,24 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
     reward = env.reward_range[0]
     nb_ts = 0
     prev_act = None
+    time_ls = 0.
+    ls_timer_Fx = 0.
+    ls_timer_solve = 0.
+    ls_timer_initialize = 0.
+    ls_timer_check = 0.
+    ls_timer_dSbus = 0.
+    ls_timer_fillJ = 0.
+    ls_timer_Va_Vm = 0.
+    ls_timer_pre_proc = 0.
+    ls_timer_total_nr = 0.
+    ls_timer_factor = 0.
+    ls_timer_refactor = 0.
+    ls_timer_per_refactor = 0.
+    ls_timer_per_solve = 0.
+    ls_timer_per_scale = 0.
+    ls_timer_per_mismatch = 0.
+    if LightSimBackend is None or not isinstance(env.backend, LightSimBackend):
+        detailed_ls_output = False
     beg_ = time.perf_counter()
     with tqdm(total=nb_rows, desc=pbar_desc) as pbar:
         while not done:
@@ -109,6 +141,35 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
             gen_p[nb_ts, :] = obs.prod_p
             gen_q[nb_ts, :] = obs.prod_q
             nb_ts += 1
+            if detailed_ls_output:
+                ls_grid = env.backend._grid
+                if is_dc:
+                    timers_jac = ls_grid.get_dc_solver().get_timers_jacobian()
+                    nr_iter = 1
+                else:
+                    timers_jac = ls_grid.get_solver().get_timers_jacobian()
+                    nr_iter =  ls_grid.get_solver().get_nb_iter()
+                ls_timer_Fx += timers_jac.timer_Fx
+                ls_timer_solve += timers_jac.timer_solve
+                ls_timer_initialize += timers_jac.timer_initialize
+                ls_timer_check += timers_jac.timer_check
+                ls_timer_dSbus += timers_jac.timer_dSbus
+                ls_timer_fillJ += timers_jac.timer_fillJ
+                ls_timer_Va_Vm += timers_jac.timer_Va_Vm
+                ls_timer_pre_proc += timers_jac.timer_pre_proc
+                ls_timer_total_nr += timers_jac.timer_total_nr
+                ls_timer_refactor += timers_jac.timer_refactor
+                ls_timer_factor += timers_jac.timer_factor
+                if abs(timers_jac.timer_factor) > 1e-8:
+                    # factor is used
+                    nb_denom = nr_iter - 1
+                else:
+                    # refactor is used accross all iterations
+                    nb_denom = nr_iter
+                ls_timer_per_refactor += timers_jac.timer_refactor / nb_denom 
+                ls_timer_per_solve += timers_jac.timer_solve / nr_iter  # solve is called each iter
+                ls_timer_per_scale += timers_jac.timer_scale
+                ls_timer_per_mismatch += timers_jac.timer_mismatch
             pbar.update(1)
             if nb_ts >= max_ts or done:
                 break
@@ -117,6 +178,35 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
             prev_act = act  # noqa: F841
     end_ = time.perf_counter()
     total_time = end_ - beg_
+    if detailed_ls_output:
+        time_ls = env.backend._timer_solver
+        print("--------------------------------------")
+        print("Detailed lightsim2grid timings: ")
+        print(f"Total time {time_ls * 1000.:.2e}ms => {time_ls / nb_ts * 1e3:.2e} ms/pf | {nb_ts / time_ls:.0f} pf /s")
+        print(f"Total time spent in the solver: {1e3 * ls_timer_total_nr:.2e} ms "
+            f"({100. * ls_timer_total_nr / time_ls:.0f}% of total time spent in lightsim2grid)")
+        print(f"Total time spent in linear solver {1e3 * (ls_timer_initialize + ls_timer_factor + ls_timer_refactor + ls_timer_solve):.2e} ms "
+            f"({100. * (ls_timer_initialize + ls_timer_factor + ls_timer_refactor + ls_timer_solve) / ls_timer_total_nr:.0f}% of total time in the solver)")
+        print(f"\t Time to pre process Ybus, Sbus etc.: {1e3 * ls_timer_pre_proc:.2e} ms ({100. * ls_timer_pre_proc / ls_timer_total_nr:.0f} % of time in solver)")
+        print(f"\t Time to initialize linear solver {1e3 * ls_timer_initialize:.2e} ms ({100. * ls_timer_initialize / ls_timer_total_nr:.0f} % of time in solver)")
+        print(f"\t Time to factor the linear solver {1e3 * ls_timer_factor:.2e} ms ({100. * ls_timer_factor / ls_timer_total_nr:.0f} % of time in solver)")
+        if not is_dc:
+            print(f"\t Time to fill the Jacobian {1e3 * ls_timer_fillJ:.2e} ms ({100. * ls_timer_fillJ / ls_timer_total_nr:.0f} % of time in solver)")
+        print(f"\t Time to refactor the Jacobian linear system: {1e3 * ls_timer_refactor:.2e} ms ({100. * ls_timer_refactor / ls_timer_total_nr:.0f} % of time in solver)")
+        if not is_dc:
+            print(f"\t\t This equates to {1e3 * ls_timer_per_refactor:.2e} ms per refactor")
+        print(f"\t Time to solve the Jacobian linear system: {1e3 * ls_timer_solve:.2e} ms ({100. * ls_timer_solve / ls_timer_total_nr:.0f} % of time in solver)")
+        if not is_dc:
+            print(f"\t\t This equates to {1e3 * ls_timer_per_solve:.2e} ms per solve")
+            print(f"\t Time to evaluate p,q mismmatch at each bus {1e3*ls_timer_Fx:.2e} ms ({100. * ls_timer_Fx / ls_timer_total_nr:.0f} % of time in solver)")
+            print(f"\t Time to evaluate cvg criteria {1e3*ls_timer_check:.2e} ms ({100. * ls_timer_check / ls_timer_total_nr:.0f} % of time in solver)")
+            print(f"\t Time to build mismatch vector {1e3*ls_timer_per_mismatch:.2e} ms ({100. * ls_timer_per_mismatch / ls_timer_total_nr:.0f} % of time in solver)")
+            print(f"\t Time to scale mismatch vector {1e3*ls_timer_per_scale:.2e} ms ({100. * ls_timer_per_scale / ls_timer_total_nr:.0f} % of time in solver)")
+        else:
+            # in DC timer_mismatch is used for the post processing
+            print(f"\t Time in the post processing: {1e3*ls_timer_per_mismatch:.2e} ms ({100. * ls_timer_per_mismatch / ls_timer_total_nr:.0f} % of time in solver)")
+        print("--------------------------------------\n")
+
     return nb_ts, total_time, aor, gen_p, gen_q
 
 

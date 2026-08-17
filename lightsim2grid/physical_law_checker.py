@@ -58,8 +58,8 @@ class PhysicalLawChecker:
     """
     def __init__(self, grid2op_env):
         # lazy import to avoir circular import  TODO why ?
-        from grid2op.Environment.Environment import Environment
-        from grid2op.Environment.MultiMixEnv import MultiMixEnvironment
+        from grid2op.Environment import Environment
+        from grid2op.Environment import MultiMixEnvironment
         if isinstance(grid2op_env, Environment):
             env_path = grid2op_env.get_path_env()
             gridobj_ref = type(grid2op_env)
@@ -74,7 +74,14 @@ class PhysicalLawChecker:
 
         self.init_env = grid2op_env
         self._this_backend = LightSimBackend.init_grid(gridobj_ref)()
-        self._this_backend.load_grid(grid_path)
+        if hasattr(self._this_backend, "load_grid_public"):
+            # grid2op >= 1.11.0: load_grid_public also initializes _load_bus_target /
+            # _gen_bus_target / _storage_bus_target / _shunt_bus_target, needed by
+            # update_from_obs below
+            self._this_backend.load_grid_public(grid_path)
+        else:
+            self._this_backend.load_grid(grid_path)
+        self._this_backend.assert_grid_correct()
 
     def check_solution(self, vcomplex, grid2op_obs, with_qlim=False):
         """

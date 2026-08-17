@@ -14,7 +14,7 @@ import zipfile
 from scipy import sparse
 KLU_AVAILBLE = False
 try:
-    from lightsim2grid.lightsim2grid_cpp import KLUSolver
+    from lightsim2grid.lightsim2grid_cpp import NR_KLU
     KLU_AVAILBLE = True
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out
@@ -31,7 +31,7 @@ class MakeTests(unittest.TestCase):
         self.tol_test = 1e-4  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
         if not KLU_AVAILBLE:
             return
-        self.solver = KLUSolver()
+        self.solver = NR_KLU()
 
         self.path = None
         self.V_init = None
@@ -84,7 +84,7 @@ class MakeTests(unittest.TestCase):
         """
         pvpq = np.r_[pv, pq]
 
-        comp_val = np.abs(J[1:, 1:] - J_pp)  # new in version 0.5.6 : distributed slack added a component to J
+        comp_val = np.abs(J - J_pp)  # J already remapped to pandapower [pvpq | pq] order in solver_aux
         comp_val = comp_val
         assert np.sum(np.abs(comp_val[:len(pvpq), :len(pvpq)])) <= self.tol_test, "J11 (dS_dVa_r) are not equal"
         assert np.sum(np.abs(comp_val[len(pvpq):, :len(pvpq)])) <= self.tol_test, "J21 (dS_dVa_i) are not equal"
@@ -104,6 +104,13 @@ class MakeTests(unittest.TestCase):
                                           self.pv, self.pq, self.max_it, self.tol)
         assert has_conv, "the load flow has diverged for {}".format(self.path)
         J = self.solver.get_J()
+        # new NR layout puts the slack at the end and orders the bus unknowns via the
+        # bus_id -> J-column converters; remap to pandapower's [pvpq | pq] order.
+        theta = np.asarray(self.solver.get_theta_to_J_col())
+        vm = np.asarray(self.solver.get_vm_to_J_col())
+        pvpq = np.r_[self.pv, self.pq]
+        col_perm = np.concatenate([theta[pvpq], vm[self.pq]])
+        J = J[col_perm.reshape(-1, 1), col_perm.reshape(1, -1)]
         Va = self.solver.get_Va()
         Vm = self.solver.get_Vm()
         J_pp, V_pp = self.load_res(iter_max=self.solver.get_nb_iter())
@@ -125,6 +132,52 @@ class MakeTests(unittest.TestCase):
                     self.solver_aux()
                     nb_tested += 1
         assert nb_tested == 5, "incorrect number of test cases found, found {} while there should be 5".format(nb_tested)
+
+    def _find_and_load_one_case(self):
+        for path in os.listdir("."):
+            _, ext = os.path.splitext(path)
+            if ext == ".zip" and self.load_path(path):
+                return
+        raise RuntimeError("no test case zip found in the current directory")
+
+    def test_linear_solver_stats(self):
+        """get_linear_solver_stats() (LinearSolverPolicy wrapper) reports non-trivial,
+        consistent counters after a successful powerflow."""
+        if not KLU_AVAILBLE:
+            self.skipTest("KLU is not installed")
+        self._find_and_load_one_case()
+        self.solver_aux()
+        stats = self.solver.get_linear_solver_stats()
+        assert stats.nb_analyze >= 1, "analyze() should have been called at least once"
+        assert stats.nb_factorize >= 1, "factorize() should have been called at least once"
+        assert stats.nb_solve >= 1, "solve() should have been called at least once"
+        assert stats.nb_refactorize_failed == 0, "no refactor should fail on a well-behaved test case"
+        assert stats.nb_fallback_factorize == 0, "no fallback factorize expected on plain NR_KLU"
+        assert stats.timer_factor >= 0.0
+        assert stats.timer_solve >= 0.0
+
+    def test_refactor_retry_solver(self):
+        """NRRefactorRetry_KLU (RefactorRetryLinearSolver) converges the same as NR_KLU
+        on a well-behaved case, with zero fallback fires (sanity, not a regression)."""
+        if not KLU_AVAILBLE:
+            self.skipTest("KLU is not installed")
+        try:
+            from lightsim2grid.lightsim2grid_cpp import NRRefactorRetry_KLU
+        except ImportError:
+            self.skipTest("NRRefactorRetry_KLU is not available")
+        self._find_and_load_one_case()
+        solver = NRRefactorRetry_KLU()
+        ref = set(np.arange(self.Sbus.shape[0])) - set(self.pv) - set(self.pq)
+        ref = np.array(list(ref))
+        slack_weights = np.zeros(self.Sbus.shape[0])
+        slack_weights[ref] = 1.0 / ref.shape[0]
+        has_conv = solver.compute_pf(self.Ybus, self.V_init, self.Sbus, ref, slack_weights,
+                                      self.pv, self.pq, self.max_it, self.tol)
+        assert has_conv, "NRRefactorRetry_KLU failed to converge on a case where NR_KLU succeeds"
+        stats = solver.get_linear_solver_stats()
+        assert stats.nb_factorize >= 1
+        assert stats.nb_refactorize_failed == 0, "unexpected refactor failure on a well-behaved test case"
+        assert stats.nb_fallback_factorize == 0, "unexpected fallback factorize on a well-behaved test case"
 
 
 if __name__ == "__main__":
