@@ -6507,6 +6507,14 @@ const std::string DocTimeSeries::nb_solved = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocTimeSeries::nb_converged = R"mydelimiter(
+    Number of powerflows, among those `nb_solved()` attempted, that actually
+    converged. Always <= `nb_solved()`: a row skipped outright (eg a non-invertible /
+    islanding admittance matrix, on ContingencyAnalysis / ScenarioSweep) never reaches
+    the solver at all, so it counts towards neither.
+
+)mydelimiter";
+
 const std::string DocTimeSeries::get_status = R"mydelimiter(
     Status of the solvers (1: success, 0: failure).
 

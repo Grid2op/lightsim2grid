@@ -58,6 +58,7 @@ void bind_batch_sweep_common(py::class_<T> & cls)
         .def("amps_computation_time", &T::amps_computation_time, DocTimeSeries::amps_computation_time.c_str())
         .def("thread_init_time", &T::thread_init_time, DocTimeSeries::thread_init_time.c_str())
         .def("nb_solved", &T::nb_solved, DocTimeSeries::nb_solved.c_str())
+        .def("nb_converged", &T::nb_converged, DocTimeSeries::nb_converged.c_str())
 
         // status
         // `<>`: see the comment above modify_gen_p -- Clang (used for the macOS/arm64
@@ -415,5 +416,6 @@ void bind_batch(py::module_& m) {
         .def("modif_Ybus_time", &ContingencyAnalysis::modif_Ybus_time<>, DocContingencyAnalysis::modif_Ybus_time.c_str())
         .def("thread_init_time", &ContingencyAnalysis::thread_init_time, DocTimeSeries::thread_init_time.c_str())
         .def("solve_time", &ContingencyAnalysis::solve_time<>, "TODO")
-        .def("nb_solved", &ContingencyAnalysis::nb_solved, DocTimeSeries::nb_solved.c_str());
+        .def("nb_solved", &ContingencyAnalysis::nb_solved, DocTimeSeries::nb_solved.c_str())
+        .def("nb_converged", &ContingencyAnalysis::nb_converged, DocTimeSeries::nb_converged.c_str());
 }

@@ -733,6 +733,7 @@ struct LS2G_API DocTimeSeries
     static const std::string preprocessing_time;
     static const std::string amps_computation_time;
     static const std::string nb_solved;
+    static const std::string nb_converged;
     static const std::string get_status;
 
     static const std::string compute_Vs;

@@ -152,6 +152,11 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // time spent building the per-thread solvers (0. when nb_thread == 1)
         double thread_init_time() const {return _timer_thread_init;}
         int nb_solved() const {return _nb_solved;}
+        // number of those nb_solved() attempts that actually converged (ie a row
+        // that was invertible AND whose solver reported convergence). Always
+        // <= nb_solved(): a row skipped outright (eg a non-invertible / islanding
+        // Ybus) never reaches compute_one_powerflow, so it counts towards neither.
+        int nb_converged() const {return _nb_converged;}
         virtual void clear() {
             _algo.reset();
             _amps_flows = RealMat();
@@ -165,6 +170,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _dc_gen_v_ = RealMat();
             _dc_vm_cache_ = RealMat();
             _nb_solved = 0;
+            _nb_converged = 0;
             _timer_compute_A = 0.;
             _timer_compute_P = 0.;
             _timer_solver = 0.;
@@ -421,6 +427,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         bool compute_one_powerflow(AlgorithmSelector & algo,
                                    AlgoControl & control,
                                    int & nb_solved,
+                                   int & nb_converged,
                                    double & timer_solver,
                                    const EigenRefConstCplxSpMat     &  Ybus,
                                    CplxVect & V,
@@ -545,6 +552,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
             // reset timers
             _nb_solved = 0;
+            _nb_converged = 0;
             _timer_pre_proc = 0.;
             _timer_total = 0.;
             _timer_solver = 0.;
@@ -789,6 +797,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
         // timers
         int _nb_solved = 0;
+        int _nb_converged = 0;
         double _timer_compute_A = 0.;
         double _timer_compute_P = 0.;
         double _timer_solver = 0.;
