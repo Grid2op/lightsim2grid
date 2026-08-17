@@ -389,12 +389,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _lock_or_check_nb_steps(load_q.rows(), "modify_load_q");
             sbus_policy_.load_q = load_q;
         }
-        // Per-step generator target voltage magnitude (vm_pu). Unlike the four
-        // setters above, this does NOT feed the injection (Sbus): it only re-seeds
-        // |V| at each voltage-regulating generator's regulated bus before that
-        // step's solve (see _apply_step_gen_v / GeneratorContainer::set_vm). Left
-        // unset (0 rows), every row keeps using the grid's own target_vm_pu, exactly
-        // as before this setter existed.
+        // Per-step generator target voltage magnitude, in pu (vm_pu), NOT kV. Unlike
+        // the four setters above, this does NOT feed the injection (Sbus): it only
+        // re-seeds |V| at each voltage-regulating generator's regulated bus before
+        // that step's solve (see _apply_step_gen_v / GeneratorContainer::set_vm).
+        // Left unset (0 rows), every row keeps using the grid's own target_vm_pu,
+        // exactly as before this setter existed.
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         void modify_gen_v(const Eigen::Ref<const typename S::RealMat> & gen_v) {
             _check_cols(gen_v, static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb()), "modify_gen_v");

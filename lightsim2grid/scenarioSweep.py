@@ -50,8 +50,8 @@ class ScenarioSweep:
     disconnected"). The first setter you call fixes the number of simulations; every
     later setter is checked against it immediately. Note ``modify_gen_v`` is different
     from the other ``modify_*`` setters: it does not feed the injection (Sbus), it only
-    re-seeds the voltage magnitude at each voltage-regulating generator's regulated bus
-    before that row's solve.
+    re-seeds the voltage magnitude (in pu, NOT kV) at each voltage-regulating generator's
+    regulated bus before that row's solve.
 
     This is deliberately a *different* API from
     :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis`'s ``add_n1`` /
@@ -274,10 +274,10 @@ class ScenarioSweep:
         self.__computed = False
 
     def modify_gen_v(self, gen_v):
-        """Per-step generator target voltage magnitude (vm_pu), shape ``(n_simul, n_gen)``.
-        Unlike ``modify_gen_p``/``modify_load_p``/``modify_load_q``, this does NOT feed the
-        injection (Sbus) -- it only re-seeds ``|V|`` at each voltage-regulating generator's
-        regulated bus before that step's solve."""
+        """Per-step generator target voltage magnitude, shape ``(n_simul, n_gen)``, in pu
+        (``vm_pu``), NOT kV. Unlike ``modify_gen_p``/``modify_load_p``/``modify_load_q``,
+        this does NOT feed the injection (Sbus) -- it only re-seeds ``|V|`` at each
+        voltage-regulating generator's regulated bus before that step's solve."""
         gen_v = self._check_2d(gen_v, "gen_v")
         if gen_v.shape[1] != self.grid2op_env.n_gen:
             raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "

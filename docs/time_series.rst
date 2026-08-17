@@ -106,10 +106,10 @@ Two things follow:
     `modify_gen_v` + `compute()`) as an alternative to the single bundled
     `compute_V_from_inj` call -- see :doc:`scenario_sweep` (which uses that same API,
     plus a per-step contingency) for details on how it behaves when an axis is never
-    set. `modify_gen_v` (per-step generator target voltage magnitude, `vm_pu`) is
-    different from the other four: it does not feed the injection (`Sbus`) at all, it
-    only re-seeds `|V|` at each voltage-regulating generator's regulated bus before
-    that step's solve.
+    set. `modify_gen_v` (per-step generator target voltage magnitude, in pu -- `vm_pu`,
+    NOT kV) is different from the other four: it does not feed the injection (`Sbus`)
+    at all, it only re-seeds `|V|` at each voltage-regulating generator's regulated
+    bus before that step's solve.
 
 .. _timeserie_benchmark:
 

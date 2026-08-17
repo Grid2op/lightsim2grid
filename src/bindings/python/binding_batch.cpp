@@ -95,7 +95,8 @@ void bind_batch_sweep_common(py::class_<T> & cls)
         .def("modify_load_q", &T::template modify_load_q<>, py::arg("load_q"),
              "Per-step reactive load setpoints, shape (n_simul, n_load). See modify_gen_p().")
         .def("modify_gen_v", &T::template modify_gen_v<>, py::arg("gen_v"),
-             "Per-step generator target voltage magnitude (vm_pu), shape (n_simul, n_gen). "
+             "Per-step generator target voltage magnitude, shape (n_simul, n_gen), in pu "
+             "(vm_pu), NOT kV. "
              "Unlike modify_gen_p/modify_sgen_p/modify_load_p/modify_load_q, this does NOT "
              "feed the injection (Sbus) -- it only re-seeds |V| at each voltage-regulating "
              "generator's regulated bus before that step's solve. See modify_gen_p() for "

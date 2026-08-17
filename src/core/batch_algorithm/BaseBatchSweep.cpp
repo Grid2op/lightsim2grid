@@ -107,18 +107,19 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
 
             if(!conv){
                 first_diverging_step = static_cast<int>(i);
-                // A diverging/non-invertible step stops this whole range for
-                // TimeSeries (chained steps: a later row's Vinit depends on this one)
-                // and InjectionSweep (independent rows, but this has always been its
-                // behavior -- the aggregate status already reports the failure).
-                // ContingencyAnalysis and ScenarioSweep instead keep going: every row
-                // is independent (BatchInitKind::FromSeed) AND carries its own
-                // contingency, which routinely islands the grid on exactly the row
-                // that fails -- aborting the whole range would silently zero out
-                // every later row too, with no distinguishing sentinel. A skip is
-                // just one more zero row / NOT_SIMULATED-or-DIVERGENCE violation,
-                // already recorded above by _store_row_status.
-                if(SbusPolicy::supports_vary && !YbusPolicy::supports_contingency) return;
+                // A diverging/non-invertible step stops this whole range only when
+                // steps are chained (TimeSeries, INIT == FromPreviousStep): a later
+                // row's Vinit depends on this one, so there is nothing meaningful left
+                // to compute past the failure. Every other instantiation (InjectionSweep,
+                // ContingencyAnalysis, ScenarioSweep) uses BatchInitKind::FromSeed --
+                // its rows are independent of one another and of their ordering (see
+                // eg InjectionSweep's own docstring), so one failing row must not
+                // prevent the rest of the range from being computed. Aborting there
+                // would silently leave every later row as an unattempted zero row,
+                // indistinguishable from an actual divergence. A skip is just one more
+                // zero row / NOT_SIMULATED-or-DIVERGENCE violation, already recorded
+                // above by _store_row_status.
+                if(INIT == BatchInitKind::FromPreviousStep) return;
                 continue;
             }
             if(_dc_lazy_storage_used_){

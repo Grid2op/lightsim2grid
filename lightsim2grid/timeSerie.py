@@ -254,10 +254,11 @@ class TimeSerie:
         self.__computed = False
 
     def modify_gen_v(self, gen_v):
-        """Per-step generator target voltage magnitude (vm_pu), shape ``(n_simul, n_gen)``.
-        Unlike :func:`modify_gen_p`/:func:`modify_load_p`/:func:`modify_load_q`, this does
-        NOT feed the injection (Sbus) -- it only re-seeds ``|V|`` at each voltage-regulating
-        generator's regulated bus before that step's solve. See :func:`modify_gen_p`."""
+        """Per-step generator target voltage magnitude, shape ``(n_simul, n_gen)``, in
+        pu (``vm_pu``), NOT kV. Unlike :func:`modify_gen_p`/:func:`modify_load_p`/
+        :func:`modify_load_q`, this does NOT feed the injection (Sbus) -- it only
+        re-seeds ``|V|`` at each voltage-regulating generator's regulated bus before
+        that step's solve. See :func:`modify_gen_p`."""
         gen_v = np.asarray(gen_v)
         if gen_v.ndim != 2:
             raise RuntimeError("gen_v should be a matrix with rows representing time steps "

@@ -5883,6 +5883,8 @@ const std::string DocLSGrid::change_v_gen = R"mydelimiter(
     :attr:`~lightsim2grid.elements.GenInfo.target_vm_pu`), see :func:`change_p_load` for the
     "never throws" note.
 
+    The voltage setpoint is expressed in pu, NOT kV.
+
 )mydelimiter";
 
 const std::string DocLSGrid::change_p_shunt = R"mydelimiter(
@@ -6228,6 +6230,8 @@ const std::string DocLSGrid::update_sgens_p = R"mydelimiter(
 
 const std::string DocLSGrid::update_gens_v = R"mydelimiter(
     Masked, vectorized equivalent of :func:`change_v_gen`, see :func:`update_gens_p`.
+
+    Voltage setpoints are expressed in pu, NOT kV.
 
 )mydelimiter";
 
