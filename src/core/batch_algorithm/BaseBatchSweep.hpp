@@ -333,6 +333,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _li_masked.clear();
             _skip_mask.clear();
             _converged.clear();
+            _converged_mask_.clear();
             _violations.clear();
             _converged_n_ = false;
             _violations_n_.clear();
@@ -354,6 +355,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _li_masked.clear();
             _skip_mask.clear();
             _converged.clear();
+            _converged_mask_.clear();
             _violations.clear();
             _converged_n_ = false;
             _violations_n_.clear();
@@ -389,12 +391,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _lock_or_check_nb_steps(load_q.rows(), "modify_load_q");
             sbus_policy_.load_q = load_q;
         }
-        // Per-step generator target voltage magnitude (vm_pu). Unlike the four
-        // setters above, this does NOT feed the injection (Sbus): it only re-seeds
-        // |V| at each voltage-regulating generator's regulated bus before that
-        // step's solve (see _apply_step_gen_v / GeneratorContainer::set_vm). Left
-        // unset (0 rows), every row keeps using the grid's own target_vm_pu, exactly
-        // as before this setter existed.
+        // Per-step generator target voltage magnitude, in pu (vm_pu), NOT kV. Unlike
+        // the four setters above, this does NOT feed the injection (Sbus): it only
+        // re-seeds |V| at each voltage-regulating generator's regulated bus before
+        // that step's solve (see _apply_step_gen_v / GeneratorContainer::set_vm).
+        // Left unset (0 rows), every row keeps using the grid's own target_vm_pu,
+        // exactly as before this setter existed.
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         void modify_gen_v(const Eigen::Ref<const typename S::RealMat> & gen_v) {
             _check_cols(gen_v, static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb()), "modify_gen_v");
@@ -561,6 +563,18 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _check_limit_violations_enabled("converged");
             return _converged;
         }
+        // per-row converged mask, available on EVERY instantiation (TimeSeries /
+        // InjectionSweep / ContingencyAnalysis / ScenarioSweep) unconditionally --
+        // unlike converged() above (ContingencyAnalysis-only, and gated behind
+        // compute_limit_violations=True), this is always sized to nb_steps() and
+        // always populated by compute(), no setup required. Row i is 1 iff that row
+        // was both invertible and reported convergence by the solver; a row an
+        // aborted TimeSeries chain never reaches (see _run_range's
+        // BatchInitKind::FromPreviousStep early return) reads as 0, same as an
+        // outright divergence -- indistinguishable from the caller's point of view,
+        // which matches nb_solved()/nb_converged()'s own "never attempted" == "did
+        // not converge" convention.
+        const std::vector<char> & converged_mask() const { return _converged_mask_; }
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         const std::vector<std::vector<LimitViolation> > & get_violations() const {
             _check_limit_violations_enabled("get_violations");
@@ -1036,6 +1050,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _record_row_violations_dispatch(size_t, const CplxVect &, const std::vector<int> *) {}
 
         void _store_row_status(size_t i, bool conv, bool invertible, const CplxVect & V_solver){
+            _converged_mask_[i] = conv ? 1 : 0;
             if(!_compute_limit_violations_) return;
             _converged[i] = conv ? 1 : 0;
             if(!conv){
@@ -1102,13 +1117,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         Eigen::SparseMatrix<cplx_type> & Ybus,
                         const Eigen::Ref<const CplxVect> & Vinit_solver,
                         bool ac_solver_used, int max_iter, real_type tol_solver,
-                        int & nb_solved, double & timer_solver, double & timer_modif_ybus,
+                        int & nb_solved, int & nb_converged, double & timer_solver, double & timer_modif_ybus,
                         int & first_diverging_step, std::exception_ptr & err,
                         bool needs_solver_init);
         void _run_one_step(size_t i, AlgorithmSelector & algo, AlgoControl & control,
                            Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & V,
                            bool ac_solver_used, int max_iter, real_type tol_solver,
-                           int & nb_solved, double & timer_solver, double & timer_modif_ybus,
+                           int & nb_solved, int & nb_converged, double & timer_solver, double & timer_modif_ybus,
                            bool & conv, bool & invertible);
 
         // per-range worker: mask-mode path (ContingencyAnalysis AND ScenarioSweep --
@@ -1124,7 +1139,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                Eigen::SparseMatrix<cplx_type> & Ybus,
                                const Eigen::Ref<const CplxVect> & Vinit_solver,
                                bool ac_solver_used, int max_iter, real_type tol, real_type sn_mva,
-                               double & timer_modif_ybus, int & nb_solved, double & timer_solver,
+                               double & timer_modif_ybus, int & nb_solved, int & nb_converged, double & timer_solver,
                                int & first_diverging_step, std::exception_ptr & err, bool needs_solver_init)
         {
             try {
@@ -1147,12 +1162,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         V = Vinit_solver;
                         _apply_step_gen_v(cont_id, V);
                         if(masked.empty()){
-                            conv = compute_one_powerflow(algo, control, nb_solved, timer_solver, Ybus, V, _step_sbus(cont_id),
+                            conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id),
                                                          slack_ids_solver_.as_eigen(), slack_weights_,
                                                          bus_pv_.as_eigen(), bus_pq_.as_eigen(), max_iter, tol / sn_mva);
                         } else {
                             const RealVect sw = _masked_slack_weights(masked);
-                            conv = compute_one_powerflow(algo, control, nb_solved, timer_solver, Ybus, V, _step_sbus(cont_id),
+                            conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id),
                                                          slack_ids_solver_.as_eigen(), sw,
                                                          bus_pv_.as_eigen(), bus_pq_.as_eigen(), max_iter, tol / sn_mva);
                         }
@@ -1176,6 +1191,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     if(do_store) _voltages.row(cont_id)(id_solver_to_me_.as_eigen()) = V.array();
                     else if(first_diverging_step < 0) first_diverging_step = static_cast<int>(cont_id);
 
+                    _converged_mask_[cont_id] = do_store ? 1 : 0;
                     if(_compute_limit_violations_){
                         _converged[cont_id] = do_store ? 1 : 0;
                         if(!do_store){
@@ -1201,16 +1217,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                      Eigen::SparseMatrix<cplx_type> & Ybus,
                                      const Eigen::Ref<const CplxVect> & Vinit_solver,
                                      bool ac_solver_used, int max_iter, real_type tol, real_type sn_mva,
-                                     double & timer_modif_ybus, int & nb_solved, double & timer_solver,
+                                     double & timer_modif_ybus, int & nb_solved, int & nb_converged, double & timer_solver,
                                      int & first_diverging_step, std::exception_ptr & err, bool needs_solver_init){
             _run_range_masked(cont_begin, cont_end, algo, control, Ybus, Vinit_solver, ac_solver_used,
-                              max_iter, tol, sn_mva, timer_modif_ybus, nb_solved, timer_solver,
+                              max_iter, tol, sn_mva, timer_modif_ybus, nb_solved, nb_converged, timer_solver,
                               first_diverging_step, err, needs_solver_init);
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _maybe_run_range_masked(size_t, size_t, AlgorithmSelector &, AlgoControl &,
                                      Eigen::SparseMatrix<cplx_type> &, const Eigen::Ref<const CplxVect> &,
-                                     bool, int, real_type, real_type, double &, int &, double &,
+                                     bool, int, real_type, real_type, double &, int &, int &, double &,
                                      int &, std::exception_ptr &, bool){
             throw std::logic_error("unreachable: handle_disconnected_grid cannot be set on this instantiation");
         }
@@ -1333,6 +1349,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         bool _compute_limit_violations_ = false;
         real_type _violation_threshold_ = 1.0;
         std::vector<char> _converged;
+        // twin of _converged above, but unconditional (every instantiation, not just
+        // ContingencyAnalysis; not gated behind compute_limit_violations) -- see
+        // converged_mask().
+        std::vector<char> _converged_mask_;
         std::vector<std::vector<LimitViolation> > _violations;
         bool _converged_n_ = false;
         std::vector<LimitViolation> _violations_n_;

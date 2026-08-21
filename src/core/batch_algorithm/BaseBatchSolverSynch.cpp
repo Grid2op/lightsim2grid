@@ -29,7 +29,7 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
 )
 {
     return compute_one_powerflow(
-        _algo, _algo_controler, _nb_solved, _timer_solver,
+        _algo, _algo_controler, _nb_solved, _nb_converged, _timer_solver,
         Ybus, V, Sbus, slack_ids, slack_weights, bus_pv, bus_pq, max_iter, tol);
 }
 
@@ -42,6 +42,7 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
     AlgorithmSelector & algo,
     AlgoControl & control,
     int & nb_solved,
+    int & nb_converged,
     double & timer_solver,
     const EigenRefConstCplxSpMat & Ybus,
     CplxVect &  V,
@@ -91,6 +92,7 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
         V = algo.get_V().array();
     }
     ++nb_solved;
+    if(conv) ++nb_converged;
     timer_solver += algo.get_computation_time();
     return conv;
 }

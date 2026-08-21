@@ -35,10 +35,12 @@ this package should not be used for detailed power system computations or simula
   addition to grid2op's own environments -- see
   [LSGrid module](https://lightsim2grid.readthedocs.io/en/latest/network.html) (`lightsim2grid.gridmodel`
   / `GridModel` are the older, deprecated names for `lightsim2grid.network` / `LSGrid`).
-- **Multi-threaded contingency (n-1) analysis** and time-series computation, both much faster than
-  stepping through grid2op one scenario / contingency at a time -- see
-  [Contingency Analysis](https://lightsim2grid.readthedocs.io/en/latest/security_analysis.html) and
-  [Time series](https://lightsim2grid.readthedocs.io/en/latest/time_series.html).
+- **Multi-threaded contingency (n-1) analysis**, time-series, injection-sweep and scenario-sweep
+  computation, all much faster than stepping through grid2op one scenario / contingency at a time --
+  see [Contingency Analysis](https://lightsim2grid.readthedocs.io/en/latest/security_analysis.html) and
+  [Time series](https://lightsim2grid.readthedocs.io/en/latest/time_series.html). Every one of these
+  batch classes exposes `nb_solved()` / `nb_converged()` and a per-row `converged_mask()`, so a failing
+  row is diagnosable without re-running the batch one row at a time.
 - **Fast binary serialization** (`save_binary` / `load_binary`) of a grid, in addition to the standard
   pickle support -- see
   [Fast binary serialization](https://lightsim2grid.readthedocs.io/en/latest/binary_serialization.html).

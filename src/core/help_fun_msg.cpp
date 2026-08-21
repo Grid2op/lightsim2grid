@@ -5883,6 +5883,8 @@ const std::string DocLSGrid::change_v_gen = R"mydelimiter(
     :attr:`~lightsim2grid.elements.GenInfo.target_vm_pu`), see :func:`change_p_load` for the
     "never throws" note.
 
+    The voltage setpoint is expressed in pu, NOT kV.
+
 )mydelimiter";
 
 const std::string DocLSGrid::change_p_shunt = R"mydelimiter(
@@ -6229,6 +6231,8 @@ const std::string DocLSGrid::update_sgens_p = R"mydelimiter(
 const std::string DocLSGrid::update_gens_v = R"mydelimiter(
     Masked, vectorized equivalent of :func:`change_v_gen`, see :func:`update_gens_p`.
 
+    Voltage setpoints are expressed in pu, NOT kV.
+
 )mydelimiter";
 
 const std::string DocLSGrid::update_loads_p = R"mydelimiter(
@@ -6500,6 +6504,32 @@ const std::string DocTimeSeries::preprocessing_time = R"mydelimiter(
 
 const std::string DocTimeSeries::nb_solved = R"mydelimiter(
     Total number of powerflows solved.
+
+)mydelimiter";
+
+const std::string DocTimeSeries::nb_converged = R"mydelimiter(
+    Number of powerflows, among those `nb_solved()` attempted, that actually
+    converged. Always <= `nb_solved()`: a row skipped outright (eg a non-invertible /
+    islanding admittance matrix, on ContingencyAnalysis / ScenarioSweep) never reaches
+    the solver at all, so it counts towards neither.
+
+)mydelimiter";
+
+const std::string DocTimeSeries::converged_mask = R"mydelimiter(
+    Per-row convergence, as a list[bool] of length `nb_steps()` (row order matches
+    the row order of whatever was solved: `my_defaults()` for ContingencyAnalysis,
+    the injection / contingency matrices otherwise). Unlike `converged()`
+    (ContingencyAnalysis-only, and only usable if `compute_limit_violations=True`
+    was set), this is available on every batch class -- TimeSeries, InjectionSweep,
+    ContingencyAnalysis and ScenarioSweep alike -- unconditionally, no setup
+    required.
+
+    Row `i` is True iff that row was both invertible and reported convergence by
+    the solver. A row that was never attempted at all (eg every row after the
+    first failure in a TimeSeries, whose steps are chained and so stop there) is
+    False too -- indistinguishable from an outright divergence, the same
+    "never attempted" == "did not converge" convention `nb_solved()` /
+    `nb_converged()` already use.
 
 )mydelimiter";
 

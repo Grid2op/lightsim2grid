@@ -368,23 +368,22 @@ class TestSolverControl(unittest.TestCase):
         NB: this test has no sense in DC
         """
         gen_bus = [el.bus_id for el in self.gridmodel.get_generators()]
-        vn_kv = self.gridmodel.get_bus_vn_kv()
         for gen in self.gridmodel.get_generators():
             if gen.bus_id in gen_bus:
                 # nothing will change if there is another gen connected to the
                 # same bus as the gen (error if everything is coded normally
                 # which it might not)
                 continue
-            
+
             self.gridmodel.tell_solver_need_reset()
             expected_diff = 1e-3
-            to_add_remove = 0.1 * gen.target_vm_pu * vn_kv[gen.bus_id]
+            to_add_remove = 0.1 * gen.target_vm_pu
             self.aux_do_undo_ac(funname_do="_change_gen_v_action",
                                 funname_undo="_change_gen_v_action",
                                 runpf_fun=runpf_fun,
                                 el_id=gen.id,
                                 expected_diff=expected_diff,
-                                el_val=gen.target_vm_pu * vn_kv[gen.bus_id],
+                                el_val=gen.target_vm_pu,
                                 to_add_remove=to_add_remove,
                                 )
 

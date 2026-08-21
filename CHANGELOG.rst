@@ -2004,6 +2004,33 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   unaffected and keeps building the complex voltage eagerly, as it already needs
   per-row current-limit checks whenever that mode is combined with
   ``compute_limit_violations``.
+- [FIXED] ``BaseBatchSweep``'s ``_run_range`` aborted the whole remaining range on the first
+  row that failed to solve (was non-invertible, or diverged) for **every** instantiation,
+  not just ``TimeSeriesCPP``. The abort condition was keyed on
+  ``SbusPolicy::supports_vary && !YbusPolicy::supports_contingency``, which happens to be
+  true for ``TimeSeriesCPP`` (correctly abort: each row is warm-started from the previous
+  one, so nothing past a failure is meaningful) but was *also* true for
+  ``InjectionSweepCPP`` (each row is independent of the others and of their order, per its
+  own docstring -- a later row must not be abandoned just because an earlier, unrelated one
+  failed). ``ContingencyAnalysisCPP`` / ``ScenarioSweepCPP`` were unaffected in practice
+  (they go through the masked ``_run_range_masked`` path instead), but the same policy
+  combination would have hit them too under ``handle_disconnected_grid``. The abort is now
+  keyed directly on the real criterion, ``BatchInitKind::FromPreviousStep`` (chained rows),
+  which is true only for ``TimeSeriesCPP``. Every other row still gets its own zero-row /
+  ``NOT_SIMULATED``-or-``DIVERGENCE`` sentinel via the existing ``_store_row_status``, same as
+  a genuinely diverging row already got; only rows *after* it, which used to be silently
+  skipped, are now actually attempted.
+- [ADDED] ``nb_converged()`` on every batch algorithm (``TimeSeriesCPP`` /
+  ``InjectionSweepCPP`` / ``ContingencyAnalysisCPP`` -- and so ``SecurityAnalysis``, which
+  wraps it -- / ``ScenarioSweepCPP``), next to the existing ``nb_solved()``: the count of
+  powerflows, among those ``nb_solved()`` attempted, that actually converged. Always
+  ``<= nb_solved()`` -- a row skipped outright (a non-invertible / islanding admittance
+  matrix, on ``ContingencyAnalysisCPP`` / ``ScenarioSweepCPP``) never reaches the solver at
+  all, so it counts towards neither. Implemented once, on the shared
+  ``BaseBatchSolverSynch`` base, by threading a new ``int & nb_converged`` out-parameter
+  alongside the existing ``nb_solved`` one through ``compute_one_powerflow`` and every
+  caller up to ``_compute_threaded`` (including its per-thread accumulate-then-merge
+  logic), so all four classes get it identically and cannot drift apart.
 
 [0.13.1]  2026-04-21
 --------------------
@@ -2034,6 +2061,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   This means that calls like "from lightsim2grid_cpp import XXX" will not work. To replace them 
   you  need to perform "from lightsim2grid.lightsim2grid_cpp import XXX"
 - [FIXED] some compilation issues on some systems (*eg* windows when using c++23 standard)
+- [FIXED] some issues with "copy on write" and pandas 3 when init from pandapower grid.
 - [IMPROVED] cleaner `cktso_lib` (`from lightsim2grid.compilation_options import cktso_lib`) : the file name and extension are omitted
 - [IMPROVED] easier build by relying on cmake and scikit_build_core to build the cpp part
 - [IMPROVED] SuiteSparse to version 7.12.2 (2026-02-05)
@@ -2041,7 +2069,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 [0.12.2] 2026-02-05
 ----------------------
 - [FIXED] an issue with shunt buses (was set to 1 even if they were disconnected)
-- [FIXED] a warning when applying actions on generator votlage setpoints (due to NaN)
+- [FIXED] a warning when applying actions on generator voltage setpoints (due to NaN)
 - [FIXED] pandapower grid could be modified when importing a grid from pandapower.
 - [IMPROVED] add a test to make sure generator types are available if using
   `dist_slack_non_renew` information.

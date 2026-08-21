@@ -58,6 +58,14 @@ void bind_batch_sweep_common(py::class_<T> & cls)
         .def("amps_computation_time", &T::amps_computation_time, DocTimeSeries::amps_computation_time.c_str())
         .def("thread_init_time", &T::thread_init_time, DocTimeSeries::thread_init_time.c_str())
         .def("nb_solved", &T::nb_solved, DocTimeSeries::nb_solved.c_str())
+        .def("nb_converged", &T::nb_converged, DocTimeSeries::nb_converged.c_str())
+        .def("converged_mask", [](const T & self){
+                 const std::vector<char> & c = self.converged_mask();  // char, not bool: see
+                 // ContingencyAnalysis's own converged() binding below for why (disjoint
+                 // multi-threaded writes into std::vector<bool> are not safe, it is bit-packed).
+                 return std::vector<bool>(c.begin(), c.end());
+             },
+             DocTimeSeries::converged_mask.c_str())
 
         // status
         // `<>`: see the comment above modify_gen_p -- Clang (used for the macOS/arm64
@@ -95,7 +103,8 @@ void bind_batch_sweep_common(py::class_<T> & cls)
         .def("modify_load_q", &T::template modify_load_q<>, py::arg("load_q"),
              "Per-step reactive load setpoints, shape (n_simul, n_load). See modify_gen_p().")
         .def("modify_gen_v", &T::template modify_gen_v<>, py::arg("gen_v"),
-             "Per-step generator target voltage magnitude (vm_pu), shape (n_simul, n_gen). "
+             "Per-step generator target voltage magnitude, shape (n_simul, n_gen), in pu "
+             "(vm_pu), NOT kV. "
              "Unlike modify_gen_p/modify_sgen_p/modify_load_p/modify_load_q, this does NOT "
              "feed the injection (Sbus) -- it only re-seeds |V| at each voltage-regulating "
              "generator's regulated bus before that step's solve. See modify_gen_p() for "
@@ -414,5 +423,11 @@ void bind_batch(py::module_& m) {
         .def("modif_Ybus_time", &ContingencyAnalysis::modif_Ybus_time<>, DocContingencyAnalysis::modif_Ybus_time.c_str())
         .def("thread_init_time", &ContingencyAnalysis::thread_init_time, DocTimeSeries::thread_init_time.c_str())
         .def("solve_time", &ContingencyAnalysis::solve_time<>, "TODO")
-        .def("nb_solved", &ContingencyAnalysis::nb_solved, DocTimeSeries::nb_solved.c_str());
+        .def("nb_solved", &ContingencyAnalysis::nb_solved, DocTimeSeries::nb_solved.c_str())
+        .def("nb_converged", &ContingencyAnalysis::nb_converged, DocTimeSeries::nb_converged.c_str())
+        .def("converged_mask", [](const ContingencyAnalysis & self){
+                 const std::vector<char> & c = self.converged_mask();
+                 return std::vector<bool>(c.begin(), c.end());
+             },
+             DocTimeSeries::converged_mask.c_str());
 }

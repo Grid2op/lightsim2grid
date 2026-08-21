@@ -21,7 +21,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     size_t i, AlgorithmSelector & algo, AlgoControl & control,
     Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & V,
     bool ac_solver_used, int max_iter, real_type tol_solver,
-    int & nb_solved, double & timer_solver, double & timer_modif_ybus,
+    int & nb_solved, int & nb_converged, double & timer_solver, double & timer_modif_ybus,
     bool & conv, bool & invertible)
 {
     // re-seed |V| at every voltage-regulating generator's regulated bus with this
@@ -41,7 +41,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     timer_modif_ybus += t1.duration();
 
     if(invertible){
-        conv = compute_one_powerflow(algo, control, nb_solved, timer_solver,
+        conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
                                      Ybus, V, _step_sbus(i),
                                      slack_ids_solver_.as_eigen(), slack_weights_,
                                      bus_pv_.as_eigen(), bus_pq_.as_eigen(),
@@ -62,7 +62,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
     Eigen::SparseMatrix<cplx_type> & Ybus,
     const Eigen::Ref<const CplxVect> & Vinit_solver,
     bool ac_solver_used, int max_iter, real_type tol_solver,
-    int & nb_solved, double & timer_solver, double & timer_modif_ybus,
+    int & nb_solved, int & nb_converged, double & timer_solver, double & timer_modif_ybus,
     int & first_diverging_step, std::exception_ptr & err,
     bool needs_solver_init)
 {
@@ -81,7 +81,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
             bool conv = false;
             bool invertible = true;
             _run_one_step(i, algo, control, Ybus, V, ac_solver_used, max_iter, tol_solver,
-                          nb_solved, timer_solver, timer_modif_ybus, conv, invertible);
+                          nb_solved, nb_converged, timer_solver, timer_modif_ybus, conv, invertible);
 
             control.tell_none_changed();
             if(!ac_solver_used) control.tell_recompute_sbus();
@@ -107,18 +107,19 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
 
             if(!conv){
                 first_diverging_step = static_cast<int>(i);
-                // A diverging/non-invertible step stops this whole range for
-                // TimeSeries (chained steps: a later row's Vinit depends on this one)
-                // and InjectionSweep (independent rows, but this has always been its
-                // behavior -- the aggregate status already reports the failure).
-                // ContingencyAnalysis and ScenarioSweep instead keep going: every row
-                // is independent (BatchInitKind::FromSeed) AND carries its own
-                // contingency, which routinely islands the grid on exactly the row
-                // that fails -- aborting the whole range would silently zero out
-                // every later row too, with no distinguishing sentinel. A skip is
-                // just one more zero row / NOT_SIMULATED-or-DIVERGENCE violation,
-                // already recorded above by _store_row_status.
-                if(SbusPolicy::supports_vary && !YbusPolicy::supports_contingency) return;
+                // A diverging/non-invertible step stops this whole range only when
+                // steps are chained (TimeSeries, INIT == FromPreviousStep): a later
+                // row's Vinit depends on this one, so there is nothing meaningful left
+                // to compute past the failure. Every other instantiation (InjectionSweep,
+                // ContingencyAnalysis, ScenarioSweep) uses BatchInitKind::FromSeed --
+                // its rows are independent of one another and of their ordering (see
+                // eg InjectionSweep's own docstring), so one failing row must not
+                // prevent the rest of the range from being computed. Aborting there
+                // would silently leave every later row as an unattempted zero row,
+                // indistinguishable from an actual divergence. A skip is just one more
+                // zero row / NOT_SIMULATED-or-DIVERGENCE violation, already recorded
+                // above by _store_row_status.
+                if(INIT == BatchInitKind::FromPreviousStep) return;
                 continue;
             }
             if(_dc_lazy_storage_used_){
@@ -156,7 +157,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         int step_diverge = -1;
         std::exception_ptr err;
         _run_range(0, nb_steps, _algo, _algo_controler, Ybus_, Vinit_solver,
-                  ac_solver_used, max_iter, tol_, _nb_solved, _timer_solver, _timer_modif_Ybus,
+                  ac_solver_used, max_iter, tol_, _nb_solved, _nb_converged, _timer_solver, _timer_modif_Ybus,
                   step_diverge, err, false);
         if(err) std::rethrow_exception(err);
         _status = step_diverge < 0 ? 1 : 0;
@@ -170,6 +171,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     std::vector<std::unique_ptr<AlgorithmSelector> > algos(nb_thread);
     std::vector<AlgoControl> controls(nb_thread);
     std::vector<int> th_nb_solved(nb_thread, 0);
+    std::vector<int> th_nb_converged(nb_thread, 0);
     std::vector<double> th_timer_solver(nb_thread, 0.);
     std::vector<double> th_timer_modif_ybus(nb_thread, 0.);
     std::vector<int> th_diverge(nb_thread, -1);
@@ -187,11 +189,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         size_t b, e;
         split_range(nb_steps, nb_thread, t, b, e);
         threads.emplace_back([this, t, b, e, ac_solver_used, max_iter, tol_,
-                              &init_thread, &algos, &controls, &th_nb_solved,
+                              &init_thread, &algos, &controls, &th_nb_solved, &th_nb_converged,
                               &th_timer_solver, &th_timer_modif_ybus, &th_diverge, &th_err, &Vinit_solver](){
             init_thread(t);
             _run_range(b, e, *algos[t], controls[t], Ybus_, Vinit_solver, ac_solver_used, max_iter, tol_,
-                      th_nb_solved[t], th_timer_solver[t], th_timer_modif_ybus[t], th_diverge[t], th_err[t], true);
+                      th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif_ybus[t], th_diverge[t], th_err[t], true);
         });
     }
     timer_thread_init = timer_thread.duration();
@@ -201,7 +203,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         split_range(nb_steps, nb_thread, 0, b, e);
         init_thread(0);
         _run_range(b, e, *algos[0], controls[0], Ybus_, Vinit_solver, ac_solver_used, max_iter, tol_,
-                  th_nb_solved[0], th_timer_solver[0], th_timer_modif_ybus[0], th_diverge[0], th_err[0], true);
+                  th_nb_solved[0], th_nb_converged[0], th_timer_solver[0], th_timer_modif_ybus[0], th_diverge[0], th_err[0], true);
     }
 
     for(auto & th : threads) th.join();
@@ -212,6 +214,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     bool all_conv = true;
     for(int t = 0; t < nb_thread; ++t){
         _nb_solved += th_nb_solved[t];
+        _nb_converged += th_nb_converged[t];
         _timer_solver += th_timer_solver[t];
         _timer_modif_Ybus += th_timer_modif_ybus[t];
         if(th_diverge[t] >= 0) all_conv = false;
@@ -241,10 +244,10 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(mask_mode){
             _maybe_run_range_masked(0, nb_steps, _algo, _algo_controler, Ybus_, Vinit_solver,
                                     ac_solver_used, max_iter, tol, sn_mva,
-                                    _timer_modif_Ybus, _nb_solved, _timer_solver, step_diverge, err, false);
+                                    _timer_modif_Ybus, _nb_solved, _nb_converged, _timer_solver, step_diverge, err, false);
         } else {
             _run_range(0, nb_steps, _algo, _algo_controler, Ybus_, Vinit_solver, ac_solver_used,
-                      max_iter, tol_, _nb_solved, _timer_solver, _timer_modif_Ybus, step_diverge, err, false);
+                      max_iter, tol_, _nb_solved, _nb_converged, _timer_solver, _timer_modif_Ybus, step_diverge, err, false);
         }
         if(err) std::rethrow_exception(err);
         // meaningful only where SbusPolicy::supports_vary (ContingencyAnalysis has no
@@ -263,6 +266,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     std::vector<Eigen::SparseMatrix<cplx_type> > ybus_copies(nb_thread);
     std::vector<double> th_timer_modif(nb_thread, 0.);
     std::vector<int> th_nb_solved(nb_thread, 0);
+    std::vector<int> th_nb_converged(nb_thread, 0);
     std::vector<double> th_timer_solver(nb_thread, 0.);
     std::vector<int> th_diverge(nb_thread, -1);
     std::vector<std::exception_ptr> th_err(nb_thread);
@@ -282,15 +286,15 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         split_range(nb_steps, nb_thread, t, b, e);
         threads.emplace_back([this, t, b, e, ac_solver_used, max_iter, tol, tol_, sn_mva, mask_mode,
                               &init_thread, &algos, &controls, &ybus_copies, &th_timer_modif,
-                              &th_nb_solved, &th_timer_solver, &th_diverge, &th_err, &Vinit_solver](){
+                              &th_nb_solved, &th_nb_converged, &th_timer_solver, &th_diverge, &th_err, &Vinit_solver](){
             init_thread(t);
             if(mask_mode){
                 _maybe_run_range_masked(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used,
-                                        max_iter, tol, sn_mva, th_timer_modif[t], th_nb_solved[t], th_timer_solver[t],
+                                        max_iter, tol, sn_mva, th_timer_modif[t], th_nb_solved[t], th_nb_converged[t], th_timer_solver[t],
                                         th_diverge[t], th_err[t], true);
             } else {
                 _run_range(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used, max_iter, tol_,
-                          th_nb_solved[t], th_timer_solver[t], th_timer_modif[t], th_diverge[t], th_err[t], true);
+                          th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif[t], th_diverge[t], th_err[t], true);
             }
         });
     }
@@ -302,11 +306,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         init_thread(0);
         if(mask_mode){
             _maybe_run_range_masked(b, e, *algos[0], controls[0], ybus_copies[0], Vinit_solver, ac_solver_used,
-                                    max_iter, tol, sn_mva, th_timer_modif[0], th_nb_solved[0], th_timer_solver[0],
+                                    max_iter, tol, sn_mva, th_timer_modif[0], th_nb_solved[0], th_nb_converged[0], th_timer_solver[0],
                                     th_diverge[0], th_err[0], true);
         } else {
             _run_range(b, e, *algos[0], controls[0], ybus_copies[0], Vinit_solver, ac_solver_used, max_iter, tol_,
-                      th_nb_solved[0], th_timer_solver[0], th_timer_modif[0], th_diverge[0], th_err[0], true);
+                      th_nb_solved[0], th_nb_converged[0], th_timer_solver[0], th_timer_modif[0], th_diverge[0], th_err[0], true);
         }
     }
 
@@ -318,6 +322,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     bool all_conv = true;
     for(int t = 0; t < nb_thread; ++t){
         _nb_solved += th_nb_solved[t];
+        _nb_converged += th_nb_converged[t];
         _timer_solver += th_timer_solver[t];
         _timer_modif_Ybus += th_timer_modif[t];
         if(th_diverge[t] >= 0) all_conv = false;
@@ -342,6 +347,12 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     const bool ac_solver_used = _algo.ac_solver_used();
 
     const size_t nb_steps = _nb_steps();
+
+    // per-row converged mask (converged_mask()): every instantiation, always on,
+    // regardless of compute_limit_violations -- see BaseBatchSweep.hpp's comment
+    // next to it. Rows never reached this compute() (eg a TimeSeries chain that
+    // aborts, or the diverging-"n"-case early return below) stay 0.
+    _converged_mask_.assign(nb_steps, 0);
 
     // limit-violation bookkeeping (ContingencyAnalysis only; no-op elsewhere)
     _refresh_defaults_vect_cache();
