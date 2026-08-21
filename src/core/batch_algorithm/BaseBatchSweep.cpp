@@ -348,6 +348,12 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     const size_t nb_steps = _nb_steps();
 
+    // per-row converged mask (converged_mask()): every instantiation, always on,
+    // regardless of compute_limit_violations -- see BaseBatchSweep.hpp's comment
+    // next to it. Rows never reached this compute() (eg a TimeSeries chain that
+    // aborts, or the diverging-"n"-case early return below) stay 0.
+    _converged_mask_.assign(nb_steps, 0);
+
     // limit-violation bookkeeping (ContingencyAnalysis only; no-op elsewhere)
     _refresh_defaults_vect_cache();
     if(_compute_limit_violations_){

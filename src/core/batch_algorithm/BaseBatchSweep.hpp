@@ -333,6 +333,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _li_masked.clear();
             _skip_mask.clear();
             _converged.clear();
+            _converged_mask_.clear();
             _violations.clear();
             _converged_n_ = false;
             _violations_n_.clear();
@@ -354,6 +355,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _li_masked.clear();
             _skip_mask.clear();
             _converged.clear();
+            _converged_mask_.clear();
             _violations.clear();
             _converged_n_ = false;
             _violations_n_.clear();
@@ -561,6 +563,18 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _check_limit_violations_enabled("converged");
             return _converged;
         }
+        // per-row converged mask, available on EVERY instantiation (TimeSeries /
+        // InjectionSweep / ContingencyAnalysis / ScenarioSweep) unconditionally --
+        // unlike converged() above (ContingencyAnalysis-only, and gated behind
+        // compute_limit_violations=True), this is always sized to nb_steps() and
+        // always populated by compute(), no setup required. Row i is 1 iff that row
+        // was both invertible and reported convergence by the solver; a row an
+        // aborted TimeSeries chain never reaches (see _run_range's
+        // BatchInitKind::FromPreviousStep early return) reads as 0, same as an
+        // outright divergence -- indistinguishable from the caller's point of view,
+        // which matches nb_solved()/nb_converged()'s own "never attempted" == "did
+        // not converge" convention.
+        const std::vector<char> & converged_mask() const { return _converged_mask_; }
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         const std::vector<std::vector<LimitViolation> > & get_violations() const {
             _check_limit_violations_enabled("get_violations");
@@ -1036,6 +1050,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _record_row_violations_dispatch(size_t, const CplxVect &, const std::vector<int> *) {}
 
         void _store_row_status(size_t i, bool conv, bool invertible, const CplxVect & V_solver){
+            _converged_mask_[i] = conv ? 1 : 0;
             if(!_compute_limit_violations_) return;
             _converged[i] = conv ? 1 : 0;
             if(!conv){
@@ -1176,6 +1191,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     if(do_store) _voltages.row(cont_id)(id_solver_to_me_.as_eigen()) = V.array();
                     else if(first_diverging_step < 0) first_diverging_step = static_cast<int>(cont_id);
 
+                    _converged_mask_[cont_id] = do_store ? 1 : 0;
                     if(_compute_limit_violations_){
                         _converged[cont_id] = do_store ? 1 : 0;
                         if(!do_store){
@@ -1333,6 +1349,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         bool _compute_limit_violations_ = false;
         real_type _violation_threshold_ = 1.0;
         std::vector<char> _converged;
+        // twin of _converged above, but unconditional (every instantiation, not just
+        // ContingencyAnalysis; not gated behind compute_limit_violations) -- see
+        // converged_mask().
+        std::vector<char> _converged_mask_;
         std::vector<std::vector<LimitViolation> > _violations;
         bool _converged_n_ = false;
         std::vector<LimitViolation> _violations_n_;

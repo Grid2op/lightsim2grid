@@ -6515,6 +6515,24 @@ const std::string DocTimeSeries::nb_converged = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocTimeSeries::converged_mask = R"mydelimiter(
+    Per-row convergence, as a list[bool] of length `nb_steps()` (row order matches
+    the row order of whatever was solved: `my_defaults()` for ContingencyAnalysis,
+    the injection / contingency matrices otherwise). Unlike `converged()`
+    (ContingencyAnalysis-only, and only usable if `compute_limit_violations=True`
+    was set), this is available on every batch class -- TimeSeries, InjectionSweep,
+    ContingencyAnalysis and ScenarioSweep alike -- unconditionally, no setup
+    required.
+
+    Row `i` is True iff that row was both invertible and reported convergence by
+    the solver. A row that was never attempted at all (eg every row after the
+    first failure in a TimeSeries, whose steps are chained and so stop there) is
+    False too -- indistinguishable from an outright divergence, the same
+    "never attempted" == "did not converge" convention `nb_solved()` /
+    `nb_converged()` already use.
+
+)mydelimiter";
+
 const std::string DocTimeSeries::get_status = R"mydelimiter(
     Status of the solvers (1: success, 0: failure).
 
