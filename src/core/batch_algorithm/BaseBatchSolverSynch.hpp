@@ -529,9 +529,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             }
 
             // extract relevant information
-            const SolverBusIdVect & gm_bus_pv = _grid_model.get_pv_solver();
-            const SolverBusIdVect & gm_bus_pq = _grid_model.get_pq_solver();
-            const RealVect & gm_bus_sw = _grid_model.get_slack_weights_solver();
+            // ask for the family this batch actually solved with: the grid keeps
+            // one pv-pq split and one set of slack weights PER family, and the
+            // family-less accessors answer for AC whenever an AC powerflow has run
+            // on this grid -- which is not necessarily the one we just built.
+            const SolverBusIdVect & gm_bus_pv = ac_solver_used ? _grid_model.get_ac_pv_solver() : _grid_model.get_dc_pv_solver();
+            const SolverBusIdVect & gm_bus_pq = ac_solver_used ? _grid_model.get_ac_pq_solver() : _grid_model.get_dc_pq_solver();
+            const RealVect gm_bus_sw = ac_solver_used ? _grid_model.get_ac_slack_weights_solver() : _grid_model.get_dc_slack_weights_solver();
 
             // TODO copies are made here, which is not ideal
             bus_pv_ = gm_bus_pv;  // was _to_intvect()

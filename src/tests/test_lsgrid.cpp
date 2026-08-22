@@ -650,3 +650,6 @@ TEST_CASE("documented error paths", "[LSGrid]")
         CHECK_THROWS_AS(grid.deactivate_load(3), std::out_of_range);
     }
 }
+
+// NB the cache-reuse behaviour of `unset_changes()` / `allow_*_cache_reuse` /
+// `prevent_*_cache_reuse` is covered in test_cache_reuse.cpp.

@@ -530,9 +530,15 @@ struct LS2G_API DocLSGrid
     static const std::string get_slack_weights;
     static const std::string get_pv_solver;
     static const std::string get_pq_solver;
+    static const std::string get_ac_pv_solver;
+    static const std::string get_dc_pv_solver;
+    static const std::string get_ac_pq_solver;
+    static const std::string get_dc_pq_solver;
     static const std::string get_slack_ids_solver;
     static const std::string get_slack_ids_dc_solver;
     static const std::string get_slack_weights_solver;
+    static const std::string get_ac_slack_weights_solver;
+    static const std::string get_dc_slack_weights_solver;
     static const std::string get_Ybus;
     static const std::string get_dcYbus;
     static const std::string get_Sbus;
@@ -568,6 +574,15 @@ struct LS2G_API DocLSGrid
     // solver-state bookkeeping
     static const std::string unset_changes;
     static const std::string tell_solver_need_reset;
+    static const std::string allow_ac_cache_reuse;
+    static const std::string allow_dc_cache_reuse;
+    static const std::string allow_cache_reuse;
+    static const std::string get_allow_ac_cache_reuse;
+    static const std::string get_allow_dc_cache_reuse;
+    static const std::string get_allow_cache_reuse;
+    static const std::string prevent_ac_cache_reuse;
+    static const std::string prevent_dc_cache_reuse;
+    static const std::string prevent_cache_reuse;
 
     // slack designation
     static const std::string add_gen_slackbus;

@@ -363,6 +363,99 @@ Both ``get_ptdf`` and ``get_lodf`` require a DC powerflow (``dc_pf``) to have be
 are only valid for the topology that was in place when that powerflow was solved -- any topology
 change invalidates them. See each function's own documentation below for a full worked example.
 
+.. _cache-reuse-section:
+
+Solver cache reuse
+-------------------
+
+Solving a powerflow is not only the linear algebra: the grid must first be turned into what the
+solver consumes -- a compact bus labelling, the admittance matrix ``Ybus``, the injection vector
+``Sbus``, the PV / PQ split, the slack weights. On a small grid that assembly is worth a good
+fifth of the total time, and it is almost entirely redundant between two consecutive powerflows:
+changing one load's setpoint does not move a single admittance coefficient.
+
+So ``LSGrid`` keeps what it built and re-stamps only the parts that changed. Every method that
+modifies the grid (``change_*``, ``deactivate_*``, ``reactivate_*``, …) records what it
+invalidated, and each powerflow rebuilds exactly that much.
+
+**This is on by default and needs nothing from you.** Every powerflow marks its own solver
+family "in sync" on the way out.
+
+.. versionchanged:: 1.0.0
+    Before 1.0.0 you had to call ``lsgrid.unset_changes()`` yourself after each powerflow, or
+    silently pay for a full rebuild every time. That call is now unnecessary (it does nothing
+    when cache reuse is enabled, which is the default) and it is kept only for backward
+    compatibility.
+
+The AC and the DC solver cache **independently**: each has its own bus labelling, its own matrix
+(``Ybus`` / ``Bbus``), its own injections, its own PV / PQ split and slack weights. An AC
+powerflow never marks, invalidates or overwrites anything belonging to the DC family, and the
+reverse. Hence the per-family accessors :func:`~lightsim2grid.network.LSGrid.get_ac_pv_solver`,
+:func:`~lightsim2grid.network.LSGrid.get_dc_pv_solver`, and their ``pq`` / ``slack_weights``
+counterparts.
+
+Controlling it
++++++++++++++++
+
+======================================================   =============================================================
+Method                                                    Meaning
+======================================================   =============================================================
+``lsgrid.allow_cache_reuse(bool)``                        turn reuse on (default) or off, for both families
+``lsgrid.allow_ac_cache_reuse(bool)``                     ... for the AC family only
+``lsgrid.allow_dc_cache_reuse(bool)``                     ... for the DC family only
+``lsgrid.get_allow_cache_reuse()``                        ``True`` iff **both** families may reuse
+``lsgrid.get_allow_ac_cache_reuse()``                     is the AC family allowed to reuse?
+``lsgrid.get_allow_dc_cache_reuse()``                     is the DC family allowed to reuse?
+``lsgrid.prevent_cache_reuse()``                          drop what both families cached, once
+``lsgrid.prevent_ac_cache_reuse()``                       ... for the AC family only
+``lsgrid.prevent_dc_cache_reuse()``                       ... for the DC family only
+======================================================   =============================================================
+
+Note the difference: ``allow_*`` is a **mode** (it stays until you change it back), while
+``prevent_*`` is a **one-shot invalidation** -- the family throws away what it had and caches
+again from the next powerflow on. ``prevent_cache_reuse()`` is the function historically called
+``tell_solver_need_reset()``, which still works.
+
+You should not normally need either. The two cases that call for them are:
+
+- **You suspect a caching bug.** ``allow_cache_reuse(False)`` makes every powerflow rebuild
+  everything from the containers; the two runs must agree to the last bit.
+
+  .. code-block:: python
+
+      v_cached = lsgrid.ac_pf(v_init, 10, 1e-8)
+      lsgrid.allow_cache_reuse(False)
+      v_rebuilt = lsgrid.ac_pf(v_init, 10, 1e-8)
+      assert (abs(v_cached - v_rebuilt) < 1e-12).all()
+
+- **You modified the grid behind ``LSGrid``'s back**, through something other than its own
+  ``change_*`` / ``deactivate_*`` / ``reactivate_*`` methods -- then nothing recorded the
+  invalidation, and ``prevent_cache_reuse()`` (or the narrower ``tell_recompute_ybus`` /
+  ``tell_recompute_sbus``) is how you say so.
+
+.. note::
+    A wrong "nothing changed" claim can cost you a rebuild you were trying to avoid; it can never
+    make lightsim2grid read memory it does not own. Every powerflow checks that the data the flags
+    describe is actually there before reusing it, and rebuilds from scratch otherwise.
+
+What is never cached across
+++++++++++++++++++++++++++++
+
+**Serialization.** Nothing the solvers cache is written to a pickle or a binary file, and nothing
+is read back: a grid restored through :func:`~lightsim2grid.network.LSGrid.load_binary` or
+``pickle.loads`` always starts cold and rebuilds on its first powerflow. This is a security
+property rather than a performance one. A cache is a second copy of state the elements already
+determine; read back from a file it becomes a copy that cannot be checked against the elements it
+claims to describe. ``check_grid()`` can validate that an index is in range -- it cannot validate
+that a matrix really is the admittance matrix of the grid stored next to it, and one that merely
+looked well-formed would be solved without complaint. Files are not trusted input, so the cache is
+rebuilt, once, from data that is.
+
+**Copying.** :func:`~lightsim2grid.network.LSGrid.copy` does not carry the cache either: the copy
+starts cold and rebuilds on its first powerflow. Unlike the serialization case this is not a safety
+requirement -- a copy is the same grid, in the same process, so its cache would be perfectly valid
+-- and it may change in a future version. The ``allow_*_cache_reuse`` settings *are* copied.
+
 Detailed documentation
 --------------------------
 
