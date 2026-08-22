@@ -290,15 +290,21 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
     // only if/when it actually needs them. Vm_/V_ are left untouched (possibly
     // stale) below -- the caller must not read get_Vm()/get_V() while lazy.
     if(!_lazy_v_){
-        // add the Voltage setpoints of the generator (only recompute when magnitudes may have changed)
-        // size check guards against Vm_ being cleared by a previous failed contingency
-        if(need_factorize_ ||
-            Vm_.size() != sizeYbus_with_slack_ ||  // in contingency analysis, Vm is cleared if a cont diverges, so I need to recompute it
-           _solver_control.has_v_changed() ||
-           _solver_control.has_dimension_changed() ||
-           _solver_control.has_pv_changed() || _solver_control.has_pq_changed()){
-            Vm_ = V.array().abs();
-        }
+        // DC solves for angles only: the magnitudes it reports are the ones it was
+        // GIVEN, in `V` -- the caller's Vinit, with the regulated buses snapped to
+        // their setpoint by pre_process_solver. So they must be taken from `V`
+        // every time.
+        // This used to be guarded by `_solver_control.has_v_changed() || ...`,
+        // which asks whether the GRID's voltage setpoints changed -- a different
+        // question, and one that says nothing about the vector just passed in. Two
+        // dc_pf() calls with different Vinit magnitudes therefore returned the
+        // first call's magnitudes for every bus not pinned by a controller,
+        // whenever the solver control said "nothing changed" (ie after every
+        // `unset_changes()` -- LightSimBackend calls it after every step -- and now
+        // after every DC powerflow, since cache reuse is automatic).
+        // What the guard saved was one `abs()` over nb_bus doubles, next to a
+        // sparse triangular solve of the same dimension: nothing measurable.
+        Vm_ = V.array().abs();
 
         // compute complex voltages with std::polar: uses hardware sincos, no temporaries, fills V and V_ in one pass
         V_.resize(sizeYbus_with_slack_);

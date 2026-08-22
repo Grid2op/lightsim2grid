@@ -66,6 +66,7 @@ add_executable(lightsim2grid_unit_tests
     test_binary_archive_stateres.cpp
     test_binary_archive_corruption.cpp
     test_lsgrid.cpp
+    test_cache_reuse.cpp
     test_case_exotic_elements.cpp
     test_ls2g_abi_tag.cpp
     test_plugin_registration.cpp

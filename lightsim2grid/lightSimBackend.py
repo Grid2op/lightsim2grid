@@ -1768,9 +1768,14 @@ class LightSimBackend(Backend):
                 tick = time.perf_counter()
                 self._timer_preproc += tick - beg_preproc
                 if self._last_dc:
-                    # otherwise might segfault is a dc powerflow as 
-                    # been run before an ac one
-                    self._grid.tell_solver_need_reset()
+                    # The AC and the DC solver now cache independently (each has its
+                    # own bus labelling, matrix, injections and pv/pq split), and no
+                    # powerflow reuses data another family built, so a DC run before
+                    # an AC one is no longer a problem -- this used to segfault.
+                    # The reset is kept only to clear `_last_dc`; it costs one
+                    # rebuild on the (rare) first AC powerflow after an explicit
+                    # `runpf(is_dc=True)`.
+                    self._grid.prevent_cache_reuse()
                     self._last_dc = False
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
                 self._timer_solver += time.perf_counter() - tick
@@ -1865,6 +1870,10 @@ class LightSimBackend(Backend):
             if (np.abs(self.line_or_theta) >= 1e6).any() or (np.abs(self.line_ex_theta) >= 1e6).any():
                 raise BackendError("Some theta are above 1e6 which should not be happening !")
             res = True
+            # `unset_changes()` is a no-op since lightsim2grid 1.0.0: the grid marks
+            # its own solver cache in sync after every powerflow. Kept so a backend
+            # instance whose grid had `allow_cache_reuse(False)` still behaves the
+            # way it used to.
             self._grid.unset_changes()
             self._disallow_modif()
         

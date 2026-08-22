@@ -126,7 +126,61 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.0] 2026-xx-yy
 --------------------
-- [FIXED] ``LSGrid.unset_changes()`` could make the next powerflow **segfault**. It tells the grid
+- [BREAKING] **solver cache reuse is now automatic and on by default**, per solver family.
+  A powerflow reuses what the previous one of the same family built -- the compact bus labelling,
+  ``Ybus`` / ``Sbus``, the PV / PQ split, the slack weights -- and only re-stamps what the grid
+  reports as modified since. Every powerflow marks its own family "in sync" on the way out, so
+  ``LSGrid.unset_changes()`` is no longer needed: it is a no-op whenever reuse is enabled, and is
+  kept purely for backward compatibility. Worth ~24% of the time of a powerflow on a 14-bus grid,
+  and nothing has to be called to get it.
+  This is breaking for code that modifies the grid through a path that bypasses ``LSGrid``'s own
+  ``change_*`` / ``deactivate_*`` / ``reactivate_*`` methods (direct manipulation of the C++
+  containers, for instance). Such code used to get away with it as long as it never called
+  ``unset_changes()``; now it must say so with ``prevent_cache_reuse()`` (or the narrower
+  ``tell_recompute_ybus`` / ``tell_recompute_sbus``), or turn reuse off altogether with
+  ``allow_cache_reuse(False)``. Everything that goes through the public API is unaffected: a
+  completeness sweep over every mutating ``LSGrid`` method (``src/tests/test_cache_reuse.cpp``)
+  checks that the cached and the fully-rebuilt answer agree.
+- [ADDED] ``LSGrid.allow_cache_reuse(bool)`` / ``allow_ac_cache_reuse`` / ``allow_dc_cache_reuse``
+  and their ``get_*`` counterparts: turn cache reuse off (durably) for one family or both. The
+  answer is identical either way, so this is a debugging switch ("is this wrong number a caching
+  artefact?") and an escape hatch for code that mutates the containers directly.
+- [ADDED] ``LSGrid.prevent_cache_reuse()`` / ``prevent_ac_cache_reuse()`` / ``prevent_dc_cache_reuse()``:
+  a one-shot invalidation of what a family cached (as opposed to the ``allow_*`` mode above).
+  ``prevent_cache_reuse()`` is the new name of ``tell_solver_need_reset()``, which still exists and
+  behaves identically. Both are now documented rather than tagged "internal, do not use".
+- [BREAKING] the AC and the DC solver families no longer share ANY solver-side data.
+  ``slack_weights``, the PV split and the PQ split were single members overwritten by whichever
+  family solved last -- unlike ``Ybus`` / ``Sbus`` / the id maps, which were already per family.
+  That is what made a "nothing changed" claim unsound across families, and it prevented per-family
+  cache reuse. Each family now owns its own, exposed as ``get_ac_pv_solver`` / ``get_dc_pv_solver``
+  and the ``pq`` / ``slack_weights`` equivalents. The family-less ``get_pv_solver`` /
+  ``get_pq_solver`` / ``get_slack_weights_solver`` are unchanged in spirit and answer for the AC
+  family once an AC powerflow has run, falling back to DC otherwise -- which also fixes them:
+  they used to relabel whatever the last solve left behind with the AC bus mapping.
+- [FIXED] ``LSGrid.set_sn_mva()`` did not invalidate anything. ``sn_mva`` is the base power of the
+  whole per-unit system: it is passed to ``fillYbus`` / ``fillBdc`` and divides ``fillSbus_me``, so
+  a powerflow run after it, on a grid whose cache was considered in sync, solved the previous base
+  power's system. Found by the completeness sweep described above.
+- [FIXED] ``dc_pf()`` returned the voltage MAGNITUDES of a previous call. DC solves for angles
+  only, so the magnitudes it reports are the ones it was handed -- but ``BaseDCAlgo`` skipped
+  ``Vm_ = V.array().abs()`` unless ``_solver_control.has_v_changed()``, which asks whether the
+  GRID's voltage setpoints changed and says nothing about the vector just passed in. Two
+  ``dc_pf()`` calls with different ``Vinit`` therefore returned the first call's magnitudes for
+  every bus not pinned by a controller, whenever the solver control said "nothing changed" -- ie
+  after every ``unset_changes()``, which ``LightSimBackend`` calls after each step. The guard is
+  removed: it saved one ``abs()`` over ``nb_bus`` doubles next to a sparse triangular solve of the
+  same dimension.
+- [FIXED] a diverging powerflow left the algorithm's internal state (half-converged iterate,
+  factorization of a system it gave up on) in place for the next call, and threw away nothing.
+  The algorithm is now reset on divergence, and the next powerflow of that family rebuilds its
+  internals -- while the DATA built for the diverged solve, which is a correct picture of the grid,
+  is kept and stays reusable.
+- [FIXED] ``LSGrid.set_state()`` (pickle / binary load) into an ``LSGrid`` that had already solved
+  left that instance's "nothing changed" marking in place, about a grid that no longer existed.
+  A restored grid of a different size was caught by the structural checks; a same-sized one with a
+  different topology was not. ``set_state`` now invalidates both families.
+- [FIXED] ``LSGrid.unset_changes()`` could make the next powerflow **segfault**. It told the grid
   "the cached solver-side data matches me", for the AC *and* the DC family at once, and nothing
   checked that claim. Three sequences -- all of them documented usage -- therefore entered the
   "nothing to rebuild" path with a default-constructed (empty) id map / Ybus / Sbus and indexed
@@ -142,14 +196,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``check_solution`` guarded against the first one locally with ``id_me_to_ac_solver_.size() > 0``.
   The check now lives where the reuse decision is made instead: ``_pre_process_solver_impl``
   verifies, in a handful of integer comparisons, that the data the flags describe is actually
-  there and actually belongs to the family about to run, and falls back to a full rebuild
-  otherwise. A wrong "nothing changed" can now cost time, never memory safety.
-  This also covers the shared members: ``slack_weights_``, ``bus_pv_`` and ``bus_pq_`` are single
-  members used by both families (unlike Ybus / Sbus / the id maps, which are per family), so a
-  family reusing its own maps still rebuilds those when the other family wrote them last --
-  ``LSGrid`` tracks which family they belong to. The cached fast path is unaffected: it stays
-  bit-for-bit identical to a full rebuild, and still worth ~20% of the per-powerflow time on a
-  14-bus grid.
+  there, and falls back to a full rebuild otherwise. A wrong "nothing changed" can now cost time,
+  never memory safety.
 - [ADDED] ``InjectionSweepCPP`` (python wrapper ``lightsim2grid.injectionSweep.InjectionSweep``), a
   third batch algorithm. It computes exactly what ``TimeSeriesCPP`` computes -- one powerflow per row
   of the injection matrices, on a fixed grid topology -- with exactly the same interface, and differs

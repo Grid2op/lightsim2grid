@@ -4719,6 +4719,12 @@ const std::string DocLSGrid::get_pv_solver = R"mydelimiter(
     .. seealso:: :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` and :func:`lightsim2grid.network.LSGrid.id_ac_solver_to_me` for
         ways to link the "grid model" bus id to the "solver" bus id.
         
+
+    .. versionadded:: 1.0.0
+        The AC and the DC solver each keep their own copy of this. This accessor answers
+        for the AC family as soon as an AC powerflow has run on this grid, and falls back
+        to the DC one otherwise; the ``get_ac_*`` / ``get_dc_*`` variants name the family
+        explicitly and never guess.
 )mydelimiter";
 
 const std::string DocLSGrid::get_pq_solver = R"mydelimiter(
@@ -4741,6 +4747,12 @@ const std::string DocLSGrid::get_pq_solver = R"mydelimiter(
     .. seealso:: :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` and :func:`lightsim2grid.network.LSGrid.id_ac_solver_to_me` for
         ways to link the "grid model" bus id to the "solver" bus id.
 
+
+    .. versionadded:: 1.0.0
+        The AC and the DC solver each keep their own copy of this. This accessor answers
+        for the AC family as soon as an AC powerflow has run on this grid, and falls back
+        to the DC one otherwise; the ``get_ac_*`` / ``get_dc_*`` variants name the family
+        explicitly and never guess.
 )mydelimiter";
 
 const std::string DocLSGrid::get_slack_ids_solver = R"mydelimiter(
@@ -4810,7 +4822,69 @@ const std::string DocLSGrid::get_slack_weights_solver = R"mydelimiter(
     .. seealso:: :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` and :func:`lightsim2grid.network.LSGrid.id_ac_solver_to_me` for
         ways to link the "grid model" bus id to the "solver" bus id.
 
+
+    .. versionadded:: 1.0.0
+        The AC and the DC solver each keep their own copy of this. This accessor answers
+        for the AC family as soon as an AC powerflow has run on this grid, and falls back
+        to the DC one otherwise; the ``get_ac_*`` / ``get_dc_*`` variants name the family
+        explicitly and never guess.
 )mydelimiter";
+
+// ---------------------------------------------------------------------------
+// per-family (AC / DC) variants of the solver-labelled accessors
+// ---------------------------------------------------------------------------
+
+const std::string DocLSGrid::get_ac_pv_solver = R"mydelimiter(
+    Same as :func:`lightsim2grid.network.LSGrid.get_pv_solver`, but always for the **AC**
+    solver family, whatever powerflow ran last. Empty until an AC powerflow (or
+    :func:`lightsim2grid.network.LSGrid.check_solution`) has built the AC data.
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_dc_pv_solver = R"mydelimiter(
+    Same as :func:`lightsim2grid.network.LSGrid.get_pv_solver`, but always for the **DC**
+    solver family. Empty until a DC powerflow has built the DC data. Note that the DC
+    solver labels its buses independently of the AC one: these ids are only meaningful
+    together with :func:`lightsim2grid.network.LSGrid.id_dc_solver_to_me`.
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_ac_pq_solver = R"mydelimiter(
+    Same as :func:`lightsim2grid.network.LSGrid.get_pq_solver`, but always for the **AC**
+    solver family. See :func:`lightsim2grid.network.LSGrid.get_ac_pv_solver`.
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_dc_pq_solver = R"mydelimiter(
+    Same as :func:`lightsim2grid.network.LSGrid.get_pq_solver`, but always for the **DC**
+    solver family. See :func:`lightsim2grid.network.LSGrid.get_dc_pv_solver`.
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_ac_slack_weights_solver = R"mydelimiter(
+    Same as :func:`lightsim2grid.network.LSGrid.get_slack_weights_solver`, but always for
+    the **AC** solver family. See :func:`lightsim2grid.network.LSGrid.get_ac_pv_solver`.
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_dc_slack_weights_solver = R"mydelimiter(
+    Same as :func:`lightsim2grid.network.LSGrid.get_slack_weights_solver`, but always for
+    the **DC** solver family. See :func:`lightsim2grid.network.LSGrid.get_dc_pv_solver`.
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
 
 const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
     This function returns the (complex) `Ybus` matrix used to compute the AC powerflow.
@@ -5503,48 +5577,168 @@ const std::string DocLSGrid::set_max_nb_bus_per_sub = R"mydelimiter(
 // ---------------------------------------------------------------------------
 
 const std::string DocLSGrid::unset_changes = R"mydelimiter(
-    Tell the grid that a powerflow has just run successfully, so every "pending change" flag
-    can be cleared: both the AC and DC solver families' change-tracking flags (see
-    :class:`~lightsim2grid.algorithm.AlgoControl`, read via :func:`get_ac_algo_controler` /
-    :func:`get_dc_algo_controler`) are reset to "nothing changed", and the bus connectivity
-    snapshot used to detect future topology changes is refreshed.
+    Historical, manual way of telling the grid "the data cached for the solvers matches me,
+    reuse it". Since version 1.0.0 every powerflow does this for its own family on the way
+    out, so **there is nothing left for this function to do and it returns immediately**
+    whenever cache reuse is enabled for both families (the default).
 
-    This is purely a performance hint, never mandatory: skipping it only means the next
-    powerflow may recompute / re-stamp more than strictly necessary (nothing becomes incorrect).
-    Call it once after each powerflow you consider "settled" -- typically what
-    :class:`~lightsim2grid.lightSimBackend.LightSimBackend` does after every step.
+    It still has an effect on a grid where :func:`lightsim2grid.network.LSGrid.allow_cache_reuse`
+    (or one of its per-family variants) turned the automatic marking off -- and even there the
+    family's own setting wins: a family told not to reuse its cache rebuilds on its next
+    powerflow regardless.
 
-    It is also a hint in the other direction: calling it when the cached data does *not*
-    in fact match the grid -- on a grid that was never solved, or before a powerflow of the
-    *other* family (this clears the AC and the DC flags alike, and each family caches its own
-    matrices) -- cannot corrupt anything. Every powerflow checks that the data the flags
-    describe is really there and really belongs to the family about to run, and rebuilds it
-    from scratch otherwise. The worst a wrong claim can cost is the rebuild it was trying to
-    avoid. What it does NOT excuse is modifying the grid through a path that bypasses
-    `LSGrid`'s own ``change_*`` / ``deactivate_*`` / ``reactivate_*`` methods and then calling
-    this: the cached matrices are then genuinely stale, and stale-but-well-formed data solves
-    to a wrong answer. Use :func:`tell_solver_need_reset` after such a change.
+    Calling it is never unsafe, and never necessary. New code should simply not call it.
+
+    .. versionchanged:: 1.0.0
+        No longer needed: cache reuse is automatic and on by default. Before 1.0.0, forgetting
+        this call silently cost performance -- and making it at the wrong moment (on a grid that
+        never solved, or before a powerflow of the *other* family) could segfault.
 
     .. seealso::
-        :func:`tell_solver_need_reset`, which does the opposite: force everything to be
-        considered "changed".
+        :func:`lightsim2grid.network.LSGrid.allow_cache_reuse` and
+        :func:`lightsim2grid.network.LSGrid.prevent_cache_reuse`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::allow_ac_cache_reuse = R"mydelimiter(
+    Enable (default) or disable cache reuse for the **AC** solver family.
+
+    When enabled, an AC powerflow reuses what the previous AC powerflow built -- the solver bus
+    labelling, the admittance matrix ``Ybus``, the injection vector ``Sbus``, the PV / PQ split,
+    the slack weights -- and only re-stamps the parts the grid reports as modified since. Every
+    AC powerflow marks the AC family "in sync" on its way out, so this needs nothing from you.
+
+    When disabled, every AC powerflow rebuilds all of it from the grid, every time.
+
+    **The result is identical either way.** This switch exists to answer "is this wrong number a
+    caching bug?" in one line, and as a safety net for code that mutates the C++ containers
+    behind :class:`lightsim2grid.network.LSGrid`'s back instead of going through its
+    ``change_*`` / ``deactivate_*`` / ``reactivate_*`` methods (which set the invalidation flags
+    themselves). Expect the rebuild to cost roughly 20-25% of the time of a small powerflow.
+
+    Parameters
+    ----------
+    allowed: ``bool``
+        Whether the AC family may reuse its cache.
+
+    .. versionadded:: 1.0.0
+
+    .. seealso::
+        :func:`lightsim2grid.network.LSGrid.allow_dc_cache_reuse`,
+        :func:`lightsim2grid.network.LSGrid.allow_cache_reuse`,
+        :func:`lightsim2grid.network.LSGrid.get_allow_ac_cache_reuse` and
+        :func:`lightsim2grid.network.LSGrid.prevent_ac_cache_reuse`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::allow_dc_cache_reuse = R"mydelimiter(
+    Enable (default) or disable cache reuse for the **DC** solver family.
+
+    Exactly :func:`lightsim2grid.network.LSGrid.allow_ac_cache_reuse`, for the DC solver: its own
+    bus labelling, its own ``Bbus`` / ``Pbus``, its own PV / PQ split and slack weights. The two
+    families are fully independent -- switching one off says nothing about the other, and neither
+    can invalidate or overwrite the other's data.
+
+    Parameters
+    ----------
+    allowed: ``bool``
+        Whether the DC family may reuse its cache.
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::allow_cache_reuse = R"mydelimiter(
+    Convenience: set :func:`lightsim2grid.network.LSGrid.allow_ac_cache_reuse` and
+    :func:`lightsim2grid.network.LSGrid.allow_dc_cache_reuse` at once.
+
+    Parameters
+    ----------
+    allowed: ``bool``
+        Whether both families may reuse their cache.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        # is this result a caching artefact?
+        grid.allow_cache_reuse(False)
+        v_no_cache = grid.ac_pf(v_init, 10, 1e-8)
+        grid.allow_cache_reuse(True)
+        # v_no_cache and the cached result must agree bit for bit
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_allow_ac_cache_reuse = R"mydelimiter(
+    Whether the AC solver family may reuse its cache (``True`` by default).
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_allow_dc_cache_reuse = R"mydelimiter(
+    Whether the DC solver family may reuse its cache (``True`` by default).
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_allow_cache_reuse = R"mydelimiter(
+    ``True`` only when **both** families may reuse their cache (the default). Use
+    :func:`lightsim2grid.network.LSGrid.get_allow_ac_cache_reuse` /
+    :func:`lightsim2grid.network.LSGrid.get_allow_dc_cache_reuse` to tell them apart.
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::prevent_ac_cache_reuse = R"mydelimiter(
+    Throw away what the **AC** family cached: its next powerflow starts from scratch
+    (bus labelling, ``Ybus``, ``Sbus``, PV / PQ split, slack weights, the algorithm's own
+    factorization, and the bus-connectivity snapshot used to detect topology changes).
+
+    This is a one-shot invalidation, not a mode: the AC family goes on caching normally
+    afterwards. To turn caching off durably, use
+    :func:`lightsim2grid.network.LSGrid.allow_ac_cache_reuse` instead.
+
+    You need it only after modifying the grid through a path that bypasses
+    :class:`lightsim2grid.network.LSGrid`'s own ``change_*`` / ``deactivate_*`` /
+    ``reactivate_*`` methods -- those already invalidate exactly what they touch -- or when in
+    doubt after a change of unclear scope. It is always correct, just more expensive than
+    letting the narrower flags do their job.
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::prevent_dc_cache_reuse = R"mydelimiter(
+    Same as :func:`lightsim2grid.network.LSGrid.prevent_ac_cache_reuse`, for the **DC** family.
+
+    .. versionadded:: 1.0.0
+
+)mydelimiter";
+
+const std::string DocLSGrid::prevent_cache_reuse = R"mydelimiter(
+    Throw away what **both** families cached -- see
+    :func:`lightsim2grid.network.LSGrid.prevent_ac_cache_reuse`.
+
+    This is the function previously named ``tell_solver_need_reset``, which still works and does
+    exactly the same thing.
+
+    .. versionadded:: 1.0.0
 
 )mydelimiter";
 
 const std::string DocLSGrid::tell_solver_need_reset = R"mydelimiter(
-    Force both the AC and DC solver families to fully reset (discard any cached factorization /
-    matrix, see :attr:`~lightsim2grid.algorithm.AlgoControl.need_reset_solver`) on their next
-    powerflow, and forget the last-known bus connectivity snapshot so the next call sees every
-    bus as "possibly changed".
+    Backward-compatible name of :func:`lightsim2grid.network.LSGrid.prevent_cache_reuse`: throw
+    away what both solver families cached, so their next powerflow starts from scratch.
 
-    Use this after modifying the grid through some path that bypasses `LSGrid`'s own
-    ``change_*`` / ``deactivate_*`` / ``reactivate_*`` methods (which already set the narrower,
-    more precise flags themselves) -- eg after directly mutating the C++ containers, or when in
-    doubt after a change of unclear scope. It is always correct, just more expensive than letting
-    the narrower flags do their job.
-
-    .. seealso::
-        :func:`unset_changes`, its opposite: clears every flag instead of forcing them all.
+    .. versionchanged:: 1.0.0
+        Renamed to :func:`lightsim2grid.network.LSGrid.prevent_cache_reuse`. This name is kept and
+        behaves identically; there is no plan to remove it.
 
 )mydelimiter";
 
