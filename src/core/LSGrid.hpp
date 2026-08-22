@@ -2237,6 +2237,16 @@ class LS2G_API LSGrid final
         // LAST so existing member offsets are unchanged (ABI-stable for the
         // gpusim2grid cross-module LSGrid cast). See set_reference_slack_bus.
         int _forced_ref_slack_bus_id = -1;
+
+        // Which solver family the SHARED solver-side members (slack_weights_,
+        // bus_pv_, bus_pq_ -- unlike Ybus / Sbus / the id maps, there is only one
+        // of each for the two families) were last built for. Read by the
+        // cache-consistency guard at the top of _pre_process_solver_impl, so that
+        // a family reusing its own cached maps still rebuilds what the other
+        // family overwrote. Appended after _forced_ref_slack_bus_id for the same
+        // ABI reason as above.
+        enum class SolverCacheOwner : char {None = 0, AC = 1, DC = 2};
+        SolverCacheOwner solver_cache_owner_ = SolverCacheOwner::None;
 };
 
 

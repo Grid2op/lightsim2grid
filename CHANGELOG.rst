@@ -126,6 +126,30 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [FIXED] ``LSGrid.unset_changes()`` could make the next powerflow **segfault**. It tells the grid
+  "the cached solver-side data matches me", for the AC *and* the DC family at once, and nothing
+  checked that claim. Three sequences -- all of them documented usage -- therefore entered the
+  "nothing to rebuild" path with a default-constructed (empty) id map / Ybus / Sbus and indexed
+  them with bus ids in the hundreds::
+
+      unset_changes(); ac_pf();           # nothing was ever built
+      dc_pf(); unset_changes(); ac_pf();  # what was built belongs to the other family
+      ac_pf(); unset_changes(); dc_pf();  # idem
+
+  Release wheels are built ``-O3 -DNDEBUG``, so this was an out-of-bounds read, not an error.
+  ``LightSimBackend.runpf`` already carried a python-side workaround for the second one (the
+  ``self._last_dc`` ``tell_solver_need_reset()``, comment: "otherwise might segfault"), and
+  ``check_solution`` guarded against the first one locally with ``id_me_to_ac_solver_.size() > 0``.
+  The check now lives where the reuse decision is made instead: ``_pre_process_solver_impl``
+  verifies, in a handful of integer comparisons, that the data the flags describe is actually
+  there and actually belongs to the family about to run, and falls back to a full rebuild
+  otherwise. A wrong "nothing changed" can now cost time, never memory safety.
+  This also covers the shared members: ``slack_weights_``, ``bus_pv_`` and ``bus_pq_`` are single
+  members used by both families (unlike Ybus / Sbus / the id maps, which are per family), so a
+  family reusing its own maps still rebuilds those when the other family wrote them last --
+  ``LSGrid`` tracks which family they belong to. The cached fast path is unaffected: it stays
+  bit-for-bit identical to a full rebuild, and still worth ~20% of the per-powerflow time on a
+  14-bus grid.
 - [ADDED] ``InjectionSweepCPP`` (python wrapper ``lightsim2grid.injectionSweep.InjectionSweep``), a
   third batch algorithm. It computes exactly what ``TimeSeriesCPP`` computes -- one powerflow per row
   of the injection matrices, on a fixed grid topology -- with exactly the same interface, and differs

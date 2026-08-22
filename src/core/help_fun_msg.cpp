@@ -5514,6 +5514,17 @@ const std::string DocLSGrid::unset_changes = R"mydelimiter(
     Call it once after each powerflow you consider "settled" -- typically what
     :class:`~lightsim2grid.lightSimBackend.LightSimBackend` does after every step.
 
+    It is also a hint in the other direction: calling it when the cached data does *not*
+    in fact match the grid -- on a grid that was never solved, or before a powerflow of the
+    *other* family (this clears the AC and the DC flags alike, and each family caches its own
+    matrices) -- cannot corrupt anything. Every powerflow checks that the data the flags
+    describe is really there and really belongs to the family about to run, and rebuilds it
+    from scratch otherwise. The worst a wrong claim can cost is the rebuild it was trying to
+    avoid. What it does NOT excuse is modifying the grid through a path that bypasses
+    `LSGrid`'s own ``change_*`` / ``deactivate_*`` / ``reactivate_*`` methods and then calling
+    this: the cached matrices are then genuinely stale, and stale-but-well-formed data solves
+    to a wrong answer. Use :func:`tell_solver_need_reset` after such a change.
+
     .. seealso::
         :func:`tell_solver_need_reset`, which does the opposite: force everything to be
         considered "changed".

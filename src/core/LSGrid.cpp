@@ -656,6 +656,7 @@ void LSGrid::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     dcPbus_ = RealVect();
     bus_pv_ = SolverBusIdVect();
     bus_pq_ = SolverBusIdVect();
+    solver_cache_owner_ = SolverCacheOwner::None;  // the shared members are cleared here (slack_weights_ below)
 
     algo_controler_.ac_algo_controler().tell_all_changed();
     algo_controler_.dc_algo_controler().tell_all_changed();
@@ -1242,6 +1243,9 @@ CplxVect LSGrid::check_solution(const Eigen::Ref<const CplxVect> & V_proposed, b
     // default-constructed (empty) size, and `fill_hvdc_droop_solver_data`'s
     // `id_me_to_solver[bus_id]` lookup (bus ids in the hundreds/thousands) then read
     // out of bounds -- a silent, hard-to-reproduce segfault instead of a clean rebuild.
+    // (the cache-consistency guard in _pre_process_solver_impl now catches this case too,
+    // and the two families' variants of it; this stays as the local, cheaper statement of
+    // what check_solution itself may assume)
     if(id_me_to_ac_solver_.size() > 0) reset_solver.tell_none_changed();
     CplxVect V = pre_process_solver(V_proposed,
                                     acSbus_,
@@ -1358,12 +1362,50 @@ CplxVect LSGrid::_pre_process_solver_impl(
 {
     // cplx_type matrix => AC solver family, real_type matrix => DC solver family
     const bool is_ac = std::is_same<MatScalar, cplx_type>::value;
-    if(solver_control.need_reset_solver()){
+
+    // ---- cache-consistency guard ------------------------------------------------
+    // `solver_control` only records what changed SINCE the last solve of this
+    // family. It cannot say whether that family was ever solved at all, so nothing
+    // stopped a caller from asserting "nothing changed" -- which is exactly what
+    // `unset_changes()` does, for BOTH families at once -- while the solver-side
+    // data of the family about to run was still default-constructed, or built for
+    // the *other* family. The "nothing to rebuild" path was then taken with an
+    // empty `id_me_to_solver` / `mat` / `inj`, and everything downstream indexes
+    // those with bus ids in the hundreds: an out-of-bounds read (a segfault), not
+    // a clean rebuild. Three sequences reached it, all of them documented usage:
+    //     unset_changes(); ac_pf();           // never solved at all
+    //     dc_pf(); unset_changes(); ac_pf();  // built for the other family
+    //     ac_pf(); unset_changes(); dc_pf();  // idem
+    // (the second one is why `LightSimBackend.runpf` carries a `self._last_dc`
+    // `tell_solver_need_reset()` with an "otherwise might segfault" comment, and
+    // the same failure mode `check_solution` guards against locally with
+    // `id_me_to_ac_solver_.size() > 0`).
+    // So: never trust the flags alone. Check that the data they describe is really
+    // there and really belongs to this family, and fall back to a full rebuild when
+    // it is not -- a wrong "nothing changed" can then cost time, never memory
+    // safety. This is a handful of integer comparisons, off any inner loop.
+    const auto nb_bus_solver_cached = static_cast<Eigen::Index>(id_solver_to_me.size());
+    const SolverCacheOwner this_family = is_ac ? SolverCacheOwner::AC : SolverCacheOwner::DC;
+    const bool cache_unusable =
+        (id_me_to_solver.size() != substations_.nb_bus()) ||  // never built, or built for another grid size
+        (nb_bus_solver_cached == 0) ||
+        (mat.rows() != nb_bus_solver_cached) ||
+        (mat.cols() != mat.rows()) ||
+        (inj.size() != nb_bus_solver_cached) ||
+        (slack_weights_.size() != nb_bus_solver_cached) ||
+        // `slack_weights_`, `bus_pv_` and `bus_pq_` are single members SHARED by the
+        // two families (unlike Ybus / Sbus / the id maps, which are per family), so
+        // a family that can reuse its own maps must still rebuild those if the other
+        // family wrote them last.
+        (solver_cache_owner_ != this_family);
+
+    if(solver_control.need_reset_solver() || cache_unusable){
         if(is_ac) _algo.reset();
         else _dc_algo.reset();
     }
 
     bool redo_all =
+            cache_unusable ||
             solver_control.need_reset_solver() ||
             solver_control.has_dimension_changed();
 
@@ -1394,6 +1436,7 @@ CplxVect LSGrid::_pre_process_solver_impl(
 
     // init_bus_status can set the flag "has_dimension_change", so redo this here
     redo_all =
+            cache_unusable ||
             solver_control.need_reset_solver() ||
             solver_control.has_dimension_changed();
     bool converter_changed = false;
@@ -1441,16 +1484,26 @@ CplxVect LSGrid::_pre_process_solver_impl(
         svcs_.set_vm(V, id_me_to_solver);  // VOLTAGE-mode SVCs (init quality at the regulated bus)
     }
 
-    if(solver_control.need_reset_solver() ||
-       solver_control.has_dimension_changed() ||
+    if(redo_all ||
        solver_control.has_slack_participate_changed() ||
        solver_control.has_pv_changed() ||
        solver_control.has_slack_weight_changed()){
         slack_weights_ = generators_.get_slack_weights_solver(mat.rows(), id_me_to_solver);
     }
 
-    if(is_ac) _algo.tell_solver_control(solver_control);
-    else _dc_algo.tell_solver_control(solver_control);
+    if(cache_unusable){
+        // the flags we were handed described a cache that did not exist: tell the
+        // solver about the rebuild we actually did, not about the "nothing changed"
+        // it would otherwise skip its own rebuild on.
+        const AlgoControl all_changed;  // default ctor: everything changed
+        if(is_ac) _algo.tell_solver_control(all_changed);
+        else _dc_algo.tell_solver_control(all_changed);
+    } else {
+        if(is_ac) _algo.tell_solver_control(solver_control);
+        else _dc_algo.tell_solver_control(solver_control);
+    }
+    // the shared members above now describe this family
+    solver_cache_owner_ = this_family;
 
     // Keep the member solver-side labelling in sync with the vectors we just built.
     // The single-shot ac_pf / dc_pf pass the members themselves (self-assign, skipped
