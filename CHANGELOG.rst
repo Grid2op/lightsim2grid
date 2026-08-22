@@ -158,6 +158,13 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``get_pq_solver`` / ``get_slack_weights_solver`` are unchanged in spirit and answer for the AC
   family once an AC powerflow has run, falling back to DC otherwise -- which also fixes them:
   they used to relabel whatever the last solve left behind with the AC bus mapping.
+- [BREAKING] ``LightSimBackend`` no longer carries the ``_last_dc`` workaround (a
+  ``tell_solver_need_reset()`` before the first AC powerflow following a DC one, comment:
+  "otherwise might segfault"). It existed only because the two solver families shared their
+  cached solver-side data; they no longer do, so a DC powerflow before an AC one on the same
+  backend is simply safe, and the AC family keeps its cache across it. The private
+  ``_last_dc`` attribute is removed with it. Covered by ``TestDcThenAcSameBackend`` in
+  ``lightsim2grid/tests/test_DoNothingACDC.py``.
 - [FIXED] ``LSGrid.set_sn_mva()`` did not invalidate anything. ``sn_mva`` is the base power of the
   whole per-unit system: it is passed to ``fillYbus`` / ``fillBdc`` and divides ``fillSbus_me``, so
   a powerflow run after it, on a grid whose cache was considered in sync, solved the previous base

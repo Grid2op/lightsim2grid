@@ -421,9 +421,6 @@ class LightSimBackend(Backend):
                                "loading a grid from pypowsybl at the moment. Please fill a feature request "
                                "(github issue) if this feature interest you.")
         
-        # issue if dc then ac powerflow
-        self._last_dc = True
-        
         # speed optimization
         self._lineor_res = None
         self._lineex_res = None
@@ -1737,7 +1734,6 @@ class LightSimBackend(Backend):
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
                 # one everywhere...
                 # But not when it initializes in DC mode... (see below)
-                self._last_dc = True
                 self.V = np.ones(self.nb_bus_total, dtype=complex) #  * self._grid.get_init_vm_pu()
                 tick = time.perf_counter()
                 self._timer_preproc += tick - beg_preproc
@@ -1767,16 +1763,6 @@ class LightSimBackend(Backend):
                     V_init = copy.deepcopy(self.V)
                 tick = time.perf_counter()
                 self._timer_preproc += tick - beg_preproc
-                if self._last_dc:
-                    # The AC and the DC solver now cache independently (each has its
-                    # own bus labelling, matrix, injections and pv/pq split), and no
-                    # powerflow reuses data another family built, so a DC run before
-                    # an AC one is no longer a problem -- this used to segfault.
-                    # The reset is kept only to clear `_last_dc`; it costs one
-                    # rebuild on the (rare) first AC powerflow after an explicit
-                    # `runpf(is_dc=True)`.
-                    self._grid.prevent_cache_reuse()
-                    self._last_dc = False
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
                 self._timer_solver += time.perf_counter() - tick
                 if V.shape[0] == 0:
@@ -2000,7 +1986,6 @@ class LightSimBackend(Backend):
             self.V[:] = self._grid.get_init_vm_pu()  # reset the V to its "original" value (see issue 30)
         self._reset_res_pointers()
         self._disallow_modif()
-        self._last_dc = True
     
     def _reset_res_pointers(self):
         self._lineor_res  = None
@@ -2084,7 +2069,7 @@ class LightSimBackend(Backend):
                            "_stop_if_load_disco", "_stop_if_gen_disco", "_stop_if_storage_disco",
                            "_timer_fetch_data_cpp", "_next_pf_fails", "_automatically_disconnect",
                            "_need_islanding_detection",
-                           "_last_dc", "_gen_slack_id"
+                           "_gen_slack_id"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
