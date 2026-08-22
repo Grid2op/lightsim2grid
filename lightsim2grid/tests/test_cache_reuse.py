@@ -16,7 +16,9 @@ that used to segfault the interpreter no longer do.
 """
 
 import os
+import pickle
 import sys
+import tempfile
 import unittest
 
 import numpy as np
@@ -176,6 +178,76 @@ class TestCacheReuseIsInvisible(_Base):
         ref_grid, _ = self._grid()
         expected = self._dc(ref_grid, v_low)
         np.testing.assert_allclose(np.abs(got), np.abs(expected), rtol=0., atol=1e-12)
+
+
+class TestDeserializedGridStartsCold(_Base):
+    """Nothing the solvers cache ever crosses a serialization boundary.
+
+    The bus labelling, Ybus / Sbus, the pv-pq split and the slack weights are all derived
+    from the elements, so a grid restored from a pickle (or a binary file) rebuilds them
+    rather than reading them back. That is a security property, not a performance one: a
+    cache read from a file is a second copy of state that cannot be checked against the
+    elements it claims to describe.
+    """
+
+    def _assert_cold(self, grid):
+        self.assertTrue(grid.get_ac_algo_controler().need_reset_solver())
+        self.assertTrue(grid.get_dc_algo_controler().need_reset_solver())
+        self.assertEqual(grid.get_ac_pv_solver().shape[0], 0)
+        self.assertEqual(grid.get_dc_pv_solver().shape[0], 0)
+        self.assertEqual(grid.get_ac_pq_solver().shape[0], 0)
+        self.assertEqual(grid.get_dc_pq_solver().shape[0], 0)
+        self.assertEqual(grid.get_ac_slack_weights_solver().shape[0], 0)
+        self.assertEqual(grid.get_dc_slack_weights_solver().shape[0], 0)
+
+    def test_pickle_round_trip_is_cold(self):
+        source, v_init = self._grid()
+        self.assertGreater(self._ac(source, v_init).shape[0], 0)  # source carries a live cache
+        self.assertGreater(self._dc(source, v_init).shape[0], 0)
+
+        restored = pickle.loads(pickle.dumps(source))
+        self._assert_cold(restored)
+
+        ref, ref_v = self._grid(reuse=False)
+        np.testing.assert_allclose(self._ac(restored, v_init), self._ac(ref, ref_v),
+                                   rtol=0., atol=1e-9)
+
+    def test_binary_round_trip_is_cold(self):
+        source, v_init = self._grid()
+        self.assertGreater(self._ac(source, v_init).shape[0], 0)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "cold.lsb")
+            source.save_binary(path)
+            restored = type(source).load_binary(path)
+        self._assert_cold(restored)
+
+        ref, ref_v = self._grid(reuse=False)
+        np.testing.assert_allclose(self._ac(restored, v_init), self._ac(ref, ref_v),
+                                   rtol=0., atol=1e-9)
+
+
+class TestCopyStartsCold(_Base):
+    """`LSGrid.copy()` does not carry the cache either: the copy constructor resets the
+    solver state, so the copy rebuilds on its first powerflow. Unlike serialization this
+    is a choice, not a safety requirement -- a copy is the same grid in the same process,
+    so its cache would be valid. It is pinned here so the behaviour is deliberate.
+    """
+
+    def test_copy_is_cold_but_correct(self):
+        source, v_init = self._grid()
+        self.assertGreater(self._ac(source, v_init).shape[0], 0)
+        source.change_p_load(1, 61.)
+
+        copied = source.copy()
+        self.assertTrue(copied.get_ac_algo_controler().need_reset_solver())
+        self.assertEqual(copied.get_ac_pv_solver().shape[0], 0)
+        # ... and the settings do travel with it
+        self.assertTrue(copied.get_allow_cache_reuse())
+
+        ref, ref_v = self._grid(reuse=False)
+        ref.change_p_load(1, 61.)
+        np.testing.assert_allclose(self._ac(copied, v_init), self._ac(ref, ref_v),
+                                   rtol=0., atol=1e-9)
 
 
 class TestNoLongerSegfaults(_Base):

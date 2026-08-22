@@ -438,6 +438,24 @@ You should not normally need either. The two cases that call for them are:
     make lightsim2grid read memory it does not own. Every powerflow checks that the data the flags
     describe is actually there before reusing it, and rebuilds from scratch otherwise.
 
+What is never cached across
+++++++++++++++++++++++++++++
+
+**Serialization.** Nothing the solvers cache is written to a pickle or a binary file, and nothing
+is read back: a grid restored through :func:`~lightsim2grid.network.LSGrid.load_binary` or
+``pickle.loads`` always starts cold and rebuilds on its first powerflow. This is a security
+property rather than a performance one. A cache is a second copy of state the elements already
+determine; read back from a file it becomes a copy that cannot be checked against the elements it
+claims to describe. ``check_grid()`` can validate that an index is in range -- it cannot validate
+that a matrix really is the admittance matrix of the grid stored next to it, and one that merely
+looked well-formed would be solved without complaint. Files are not trusted input, so the cache is
+rebuilt, once, from data that is.
+
+**Copying.** :func:`~lightsim2grid.network.LSGrid.copy` does not carry the cache either: the copy
+starts cold and rebuilds on its first powerflow. Unlike the serialization case this is not a safety
+requirement -- a copy is the same grid, in the same process, so its cache would be perfectly valid
+-- and it may change in a future version. The ``allow_*_cache_reuse`` settings *are* copied.
+
 Detailed documentation
 --------------------------
 

@@ -33,6 +33,7 @@
 //     they say, per family, and the two families never write over each other.
 
 #include <complex>
+#include <cstdio>
 #include <functional>
 #include <string>
 #include <vector>
@@ -278,12 +279,17 @@ TEST_CASE("a 'nothing changed' claim never makes a powerflow read data that was 
         // structural checks alone would not notice, so set_state invalidates.
         LSGrid grid = make_grid();
         REQUIRE(solve_ac(grid).size() == 14);  // grid now carries a live AC cache
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());
 
         LSGrid other = make_grid();
         other.deactivate_powerline(4);
         other.change_p_load(3, 77.);
         LSGrid::StateRes state = other.get_state();
         grid.set_state(state);
+
+        // cold, whatever this instance had cached before
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
 
         const CplxVect v = solve_ac(grid);
         REQUIRE(v.size() == 14);
@@ -292,6 +298,93 @@ TEST_CASE("a 'nothing changed' claim never makes a powerflow read data that was 
         ref.deactivate_powerline(4);
         ref.change_p_load(3, 77.);
         CHECK((v - solve_ac(ref)).norm() < 1e-9);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 4. nothing cached ever crosses a serialization boundary
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a deserialized grid always starts with a cold cache", "[LSGrid][cache_reuse][serialization]")
+{
+    // The solver caches are derived state: a second copy of something the elements
+    // already determine. Restoring one from a file would mean trusting a copy that
+    // cannot be checked against the elements it claims to describe -- check_grid()
+    // can validate an index, it cannot validate "this really is the admittance
+    // matrix of this grid" -- so none of it is serialized, and the bus-connectivity
+    // snapshot that IS in the layout is not believed on the way back in either.
+    const auto check_cold = [](const LSGrid & g){
+        // both families ask for a full rebuild ...
+        CHECK(g.get_ac_algo_controler().need_reset_solver());
+        CHECK(g.get_dc_algo_controler().need_reset_solver());
+        // ... and nothing solver-side came back from the file
+        CHECK(g.get_ac_pv_solver().size() == 0);
+        CHECK(g.get_dc_pv_solver().size() == 0);
+        CHECK(g.get_ac_pq_solver().size() == 0);
+        CHECK(g.get_dc_pq_solver().size() == 0);
+        CHECK(g.get_ac_slack_weights_solver().size() == 0);
+        CHECK(g.get_dc_slack_weights_solver().size() == 0);
+        CHECK(g.id_me_to_ac_solver().size() == 0);
+        CHECK(g.id_me_to_dc_solver().size() == 0);
+    };
+
+    SECTION("through get_state / set_state (the pickle path)"){
+        LSGrid source = make_grid();
+        REQUIRE(solve_ac(source).size() == 14);   // source carries a live AC cache
+        REQUIRE(solve_dc(source).size() == 14);   // ... and a live DC one
+        LSGrid::StateRes state = source.get_state();
+
+        // restored INTO a grid that has already solved: a fresh LSGrid is cold to
+        // begin with, so it would not tell us whether set_state invalidates
+        LSGrid restored = make_grid();
+        REQUIRE(solve_ac(restored).size() == 14);
+        REQUIRE(solve_dc(restored).size() == 14);
+        REQUIRE_FALSE(restored.get_ac_algo_controler().need_reset_solver());
+        restored.set_state(state);
+        check_cold(restored);
+
+        // and it still solves to the same answer as a grid that never serialized
+        LSGrid ref = make_grid();
+        ref.allow_cache_reuse(false);
+        CHECK((solve_ac(restored) - solve_ac(ref)).norm() < 1e-9);
+        CHECK((solve_dc(restored) - solve_dc(ref)).norm() < 1e-9);
+    }
+
+    SECTION("through save_binary / load_binary"){
+        LSGrid source = make_grid();
+        REQUIRE(solve_ac(source).size() == 14);
+        REQUIRE(solve_dc(source).size() == 14);
+
+        const std::string path = "test_cache_reuse_cold_load.lsb";
+        source.save_binary(path);
+        LSGrid restored = LSGrid::load_binary(path);
+        std::remove(path.c_str());
+        check_cold(restored);
+
+        LSGrid ref = make_grid();
+        ref.allow_cache_reuse(false);
+        CHECK((solve_ac(restored) - solve_ac(ref)).norm() < 1e-9);
+        CHECK((solve_dc(restored) - solve_dc(ref)).norm() < 1e-9);
+    }
+
+    SECTION("a hand-edited bus-connectivity snapshot cannot authorize any reuse"){
+        // BUS_STATUS_ID is the one piece of cache metadata inside StateRes. Poison
+        // it (this is what a crafted file looks like) and the restored grid must be
+        // exactly as cold, and answer exactly the same, as with a faithful one.
+        LSGrid source = make_grid();
+        REQUIRE(solve_ac(source).size() == 14);
+        LSGrid::StateRes state = source.get_state();
+        std::vector<bool> & bus_status = std::get<LSGrid::BUS_STATUS_ID>(state);
+        bus_status.assign(bus_status.size(), true);  // "every bus was connected"
+
+        LSGrid restored = make_grid();
+        REQUIRE(solve_ac(restored).size() == 14);
+        restored.set_state(state);
+        check_cold(restored);
+
+        LSGrid ref = make_grid();
+        ref.allow_cache_reuse(false);
+        CHECK((solve_ac(restored) - solve_ac(ref)).norm() < 1e-9);
     }
 }
 

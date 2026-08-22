@@ -165,7 +165,12 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     const std::vector<int> & ls_to_pp = std::get<LS_TO_ORIG_ID>(my_state);
     init_vm_pu_ = std::get<INIT_VM_PU_ID>(my_state);
     sn_mva_ = std::get<SN_MVA_ID>(my_state);
-    const std::vector<bool> & last_bus_status_saved = std::get<BUS_STATUS_ID>(my_state);
+    // NB `std::get<BUS_STATUS_ID>(my_state)` is deliberately NOT read here. It is
+    // the bus-connectivity snapshot the solver caches use to detect topology
+    // changes -- cache metadata, not grid data -- and a file is not a trusted
+    // source for it. It is still written by get_state() (the layout is unchanged);
+    // it is simply not believed on the way back in. See the note at the end of
+    // this function.
     SubstationContainer::StateRes & state_substations = std::get<SUBSTATION_ID>(my_state);
     // powerlines
     LineContainer::StateRes & state_lines = std::get<LINE_ID>(my_state);
@@ -198,10 +203,6 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     const std::vector<int> & bus_fusion_rep = std::get<BUS_FUSION_REP_ID>(my_state);
 
     // substations
-    // One snapshot is serialized (StateRes has a single `bus_status` field); both
-    // families adopt it, since the grid it describes is the one being restored.
-    last_bus_status_saved_ = last_bus_status_saved;
-    last_bus_status_dc_ = last_bus_status_saved;
     substations_.set_state(state_substations);
     max_nb_bus_per_sub_ = substations_.nmax_busbar_per_sub();
     n_sub_ = substations_.nb_sub();
@@ -284,16 +285,33 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // the next powerflow. check_grid() turns that into a clean exception here.
     check_grid();
 
-    // Everything above was replaced wholesale. If this LSGrid had already solved,
-    // its families may be marked "nothing changed since my last powerflow" -- a
-    // claim about a grid that no longer exists. The structural checks in
-    // _pre_process_solver_impl catch a restored grid of a DIFFERENT size, but a
-    // same-sized one with a different topology would slip through and be solved
-    // against the previous grid's matrices. Nothing may be reused here.
-    algo_controler_.ac_algo_controler().tell_all_changed();
-    algo_controler_.dc_algo_controler().tell_all_changed();
-    ac_algo_needs_rebuild_ = true;
-    dc_algo_needs_rebuild_ = true;
+    // ---- a restored grid always starts cold -------------------------------
+    // Enforced at the top of this function, not here: set_state() opens with
+    // tell_all_changed() on both families and calls reset(true, true, true) once
+    // the containers are in, which clears every solver-side member and both
+    // connectivity snapshots. This note is here because that is a CONTRACT, not an
+    // incidental consequence -- see the "TODO see if it's worth the trouble NOT to
+    // do it" sitting on that very reset.
+    //
+    // Nothing the solvers cache is serialized. Not the bus labelling, not Ybus /
+    // Sbus, not the pv-pq split, not the slack weights, not the change-tracking
+    // flags. StateRes carries the ELEMENTS; everything else is derived from them,
+    // and is rebuilt from them. That should stay true. A cache is a second copy of
+    // state that also exists elsewhere, and the moment it is read from a file it
+    // becomes a copy nobody can check against the elements it claims to describe:
+    // check_grid() above can validate an index against the containers, but it
+    // cannot validate "this really is the admittance matrix of this grid", and a
+    // matrix that merely LOOKS well-formed would be solved without complaint. A
+    // file is not trusted input. Rebuilding costs one assembly, once.
+    //
+    // The one piece of cache metadata that IS in the layout -- BUS_STATUS_ID, the
+    // bus-connectivity snapshot -- is still written by get_state() (the layout is
+    // unchanged) but deliberately not read back; see the note where it would have
+    // been. reset() would overwrite it anyway.
+    //
+    // Pinned by "a deserialized grid always starts with a cold cache" in
+    // src/tests/test_cache_reuse.cpp (tag [serialization]), so that a later attempt
+    // to skip the reset above cannot quietly take this guarantee with it.
 };
 
 void LSGrid::_restore_algorithm(AlgorithmSelector & algo_selector,

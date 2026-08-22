@@ -183,10 +183,22 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   The algorithm is now reset on divergence, and the next powerflow of that family rebuilds its
   internals -- while the DATA built for the diverged solve, which is a correct picture of the grid,
   is kept and stays reusable.
-- [FIXED] ``LSGrid.set_state()`` (pickle / binary load) into an ``LSGrid`` that had already solved
-  left that instance's "nothing changed" marking in place, about a grid that no longer existed.
-  A restored grid of a different size was caught by the structural checks; a same-sized one with a
-  different topology was not. ``set_state`` now invalidates both families.
+- [ADDED] the rule that **nothing the solvers cache ever crosses a serialization boundary** is now
+  pinned by tests (``[serialization]`` in ``src/tests/test_cache_reuse.cpp``,
+  ``TestDeserializedGridStartsCold`` in ``lightsim2grid/tests/test_cache_reuse.py``). ``StateRes``
+  carries the elements; the bus labelling, ``Ybus`` / ``Sbus``, the pv-pq split, the slack weights
+  and the change-tracking flags are all derived from them and are rebuilt from them, so a grid
+  restored from a pickle or a binary file always starts with a cold cache. That was already true
+  (``set_state`` resets the solver state), but nothing checked it and the reset carries a "see if
+  it's worth the trouble NOT to do it" TODO -- which is exactly the change these tests now block.
+  The reasoning is a security one, not a performance one: a cache read from a file is a second copy
+  of state that ``check_grid()`` cannot verify against the elements it claims to describe (it can
+  validate an index; it cannot validate "this really is the admittance matrix of this grid"), and a
+  well-formed-looking matrix would be solved without complaint.
+- [FIXED] ``LSGrid.set_state()`` read the serialized bus-connectivity snapshot (``BUS_STATUS_ID``)
+  back into the two solver-cache snapshots. It was immediately overwritten by the reset that follows,
+  so nothing was ever wrong -- but it made a file the nominal source of cache metadata. The field is
+  still written by ``get_state()`` (the layout is unchanged); it is simply no longer read back.
 - [FIXED] ``LSGrid.unset_changes()`` could make the next powerflow **segfault**. It told the grid
   "the cached solver-side data matches me", for the AC *and* the DC family at once, and nothing
   checked that claim. Three sequences -- all of them documented usage -- therefore entered the
