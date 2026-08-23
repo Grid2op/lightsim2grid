@@ -498,7 +498,50 @@ class LS2G_API LSGrid final
                              pmax_1to2_mw, pmax_2to1_mw);
         }
 
+        /**
+         * Recount, from the elements themselves, how many of them hold each bus.
+         *
+         * The recovery path for the incremental counts: they are maintained +1 / -1
+         * by every mutator (see GenericContainer::_apply_and_track_buses), and this
+         * is what restores them if that ever drifts. Run wherever a cache is not
+         * reused and after any wholesale change of element status -- set_state, a
+         * binary load, consider_only_main_component -- so drift can never outlive an
+         * invalidation. Same predicate the mutators use, so the two cannot disagree
+         * about what "holds a bus" means.
+         */
+        void recompute_bus_element_counts(){
+            substations_.reset_bus_element_counts();
+            // arm the counting BEFORE adding: reset_bus_element_counts() disarms it
+            // (all-zero is indistinguishable from "never counted"), and the adds
+            // below go through the very same bus_gained_element that the gate makes
+            // inert. Marking ready at the end instead would leave every count at 0.
+            substations_.mark_bus_counts_ready();
+            bool unused = false;
+            const auto add_all = [&](const auto & c){
+                const int nb_el = static_cast<int>(c.nb());
+                for(int el = 0; el < nb_el; ++el) c.contribute_to_buses(el, substations_, +1, unused);
+            };
+            add_all(powerlines_); add_all(shunts_); add_all(trafos_); add_all(generators_);
+            add_all(loads_); add_all(sgens_); add_all(storages_); add_all(hvdc_lines_);
+            // `svcs_` is here, and is NOT in init_bus_status()'s reconnect list.
+            // That omission looks like an oversight: SvcContainer is a
+            // OneSideContainer_PQ and inherits a perfectly good
+            // reconnect_connected_buses, it is simply never called -- so today a bus
+            // whose ONLY element is an SVC does not count as connected. Excluding it
+            // here instead would mean making SvcContainer the one container that
+            // does not track its own contribution, which is exactly the kind of
+            // special case this design exists to avoid. So the counts are correct
+            // and self-consistent, and they differ from `bus_status_` only for an
+            // SVC-alone bus. Nothing consumes the counts yet, so nothing changes;
+            // whoever switches the consumer over closes that gap, and owes it a test.
+            add_all(svcs_);
+        }
+
         void init_bus_status(){
+            // the counts are derived from exactly the same element status this
+            // function reads, so this is the natural place to (re)establish them --
+            // and it is what makes any drift unable to outlive a rebuild.
+            recompute_bus_element_counts();
             substations_.disconnect_all_buses();
 
             powerlines_.reconnect_connected_buses(substations_);
@@ -844,18 +887,18 @@ class LS2G_API LSGrid final
 
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {
-            powerlines_.deactivate(powerline_id, algo_controler_);
+            powerlines_.deactivate(powerline_id, algo_controler_, substations_);
         }
         void reactivate_powerline(int powerline_id) {
-            powerlines_.reactivate(powerline_id, algo_controler_);
+            powerlines_.reactivate(powerline_id, algo_controler_, substations_);
         }
         // per-side (de)activation: model a powerline connected on one terminal only
         // ("half-open"). With set_synch_status_both_side(false), the other side stays
         // as is; with the default (true) the other side follows (whole-line behaviour).
-        void deactivate_powerline_side1(int powerline_id) { powerlines_.deactivate_side_1(powerline_id, algo_controler_); }
-        void deactivate_powerline_side2(int powerline_id) { powerlines_.deactivate_side_2(powerline_id, algo_controler_); }
-        void reactivate_powerline_side1(int powerline_id) { powerlines_.reactivate_side_1(powerline_id, algo_controler_); }
-        void reactivate_powerline_side2(int powerline_id) { powerlines_.reactivate_side_2(powerline_id, algo_controler_); }
+        void deactivate_powerline_side1(int powerline_id) { powerlines_.deactivate_side_1(powerline_id, algo_controler_, substations_); }
+        void deactivate_powerline_side2(int powerline_id) { powerlines_.deactivate_side_2(powerline_id, algo_controler_, substations_); }
+        void reactivate_powerline_side1(int powerline_id) { powerlines_.reactivate_side_1(powerline_id, algo_controler_, substations_); }
+        void reactivate_powerline_side2(int powerline_id) { powerlines_.reactivate_side_2(powerline_id, algo_controler_, substations_); }
 
         /**
          * Change the bus on the "side 1" of the powerline powerline_id.
@@ -892,14 +935,14 @@ class LS2G_API LSGrid final
         int get_bus2_powerline(int powerline_id) const {return powerlines_.get_bus_side_2(powerline_id).cast_int();}
 
         //deactivate trafo
-        void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, algo_controler_); }
-        void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, algo_controler_); }
+        void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, algo_controler_, substations_); }
+        void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, algo_controler_, substations_); }
         // per-side (de)activation of a transformer terminal ("half-open"), see the
         // powerline equivalents above.
-        void deactivate_trafo_side1(int trafo_id) { trafos_.deactivate_side_1(trafo_id, algo_controler_); }
-        void deactivate_trafo_side2(int trafo_id) { trafos_.deactivate_side_2(trafo_id, algo_controler_); }
-        void reactivate_trafo_side1(int trafo_id) { trafos_.reactivate_side_1(trafo_id, algo_controler_); }
-        void reactivate_trafo_side2(int trafo_id) { trafos_.reactivate_side_2(trafo_id, algo_controler_); }
+        void deactivate_trafo_side1(int trafo_id) { trafos_.deactivate_side_1(trafo_id, algo_controler_, substations_); }
+        void deactivate_trafo_side2(int trafo_id) { trafos_.deactivate_side_2(trafo_id, algo_controler_, substations_); }
+        void reactivate_trafo_side1(int trafo_id) { trafos_.reactivate_side_1(trafo_id, algo_controler_, substations_); }
+        void reactivate_trafo_side2(int trafo_id) { trafos_.reactivate_side_2(trafo_id, algo_controler_, substations_); }
 
         /**
          * Change the bus on the "side 1" of the trafo trafo_id.
@@ -963,8 +1006,8 @@ class LS2G_API LSGrid final
         }
 
         //load
-        void deactivate_load(int load_id) {loads_.deactivate(load_id, algo_controler_); }
-        void reactivate_load(int load_id) {loads_.reactivate(load_id, algo_controler_); }
+        void deactivate_load(int load_id) {loads_.deactivate(load_id, algo_controler_, substations_); }
+        void reactivate_load(int load_id) {loads_.reactivate(load_id, algo_controler_, substations_); }
 
         /**
          * Change the bus on the load load_id.
@@ -982,8 +1025,8 @@ class LS2G_API LSGrid final
         [[nodiscard]] int get_bus_load(int load_id) const {return loads_.get_bus(load_id).cast_int();}
 
         //generator
-        void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, algo_controler_); }
-        void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, algo_controler_); }
+        void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, algo_controler_, substations_); }
+        void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, algo_controler_, substations_); }
 
         /**
          * Change the bus on the generator generator_id.
@@ -1002,8 +1045,8 @@ class LS2G_API LSGrid final
         [[nodiscard]] int get_bus_gen(int gen_id) const {return generators_.get_bus(gen_id).cast_int();}
 
         //static var compensator (SVC)
-        void deactivate_svc(int svc_id) {svcs_.deactivate(svc_id, algo_controler_); }
-        void reactivate_svc(int svc_id) {svcs_.reactivate(svc_id, algo_controler_); }
+        void deactivate_svc(int svc_id) {svcs_.deactivate(svc_id, algo_controler_, substations_); }
+        void reactivate_svc(int svc_id) {svcs_.reactivate(svc_id, algo_controler_, substations_); }
         void change_bus_svc(int svc_id, GridModelBusId new_gridmodel_bus_id) {
             svcs_.change_bus(svc_id, new_gridmodel_bus_id, algo_controler_, substations_);
         }
@@ -1017,8 +1060,8 @@ class LS2G_API LSGrid final
         }
 
         //shunt
-        void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, algo_controler_); }
-        void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, algo_controler_); }
+        void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, algo_controler_, substations_); }
+        void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, algo_controler_, substations_); }
         /**
          * Change the bus on the shunt shunt_id.
          * 
@@ -1035,8 +1078,8 @@ class LS2G_API LSGrid final
         [[nodiscard]] int get_bus_shunt(int shunt_id) const {return shunts_.get_bus(shunt_id).cast_int();}
 
         //static gen
-        void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, algo_controler_); }
-        void reactivate_sgen(int sgen_id) {sgens_.reactivate(sgen_id, algo_controler_); }
+        void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, algo_controler_, substations_); }
+        void reactivate_sgen(int sgen_id) {sgens_.reactivate(sgen_id, algo_controler_, substations_); }
         /**
          * Change the bus on the static generator sgen_id.
          * 
@@ -1053,8 +1096,8 @@ class LS2G_API LSGrid final
         [[nodiscard]] int get_bus_sgen(int sgen_id) const {return sgens_.get_bus(sgen_id).cast_int();}
 
         //storage units
-        void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, algo_controler_); }
-        void reactivate_storage(int storage_id) {storages_.reactivate(storage_id, algo_controler_); }
+        void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, algo_controler_, substations_); }
+        void reactivate_storage(int storage_id) {storages_.reactivate(storage_id, algo_controler_, substations_); }
         /**
          * Change the bus on the storage storage_id.
          * 
@@ -1073,8 +1116,8 @@ class LS2G_API LSGrid final
         [[nodiscard]] int get_bus_storage(int storage_id) const {return storages_.get_bus(storage_id).cast_int();}
 
         //deactivate a powerline (disconnect it)
-        void deactivate_dcline(int dcline_id) {hvdc_lines_.deactivate(dcline_id, algo_controler_); }
-        void reactivate_dcline(int dcline_id) {hvdc_lines_.reactivate(dcline_id, algo_controler_); }
+        void deactivate_dcline(int dcline_id) {hvdc_lines_.deactivate(dcline_id, algo_controler_, substations_); }
+        void reactivate_dcline(int dcline_id) {hvdc_lines_.reactivate(dcline_id, algo_controler_, substations_); }
         // Disconnect only one converter station of an HVDC line ("half-open"): the
         // other station keeps injecting its scheduled P / regulating Q-V, matching
         // OpenLoadFlow which treats a VSC station with its DC partner switched off as
@@ -1082,11 +1125,11 @@ class LS2G_API LSGrid final
         // Unlike powerlines/trafos this is unconditional (HvdcLineContainer's
         // synch_status_both_side_ defaults to false), no `keep_half_open_lines` needed.
         void deactivate_dcline_side1(int dcline_id) {
-            hvdc_lines_.deactivate_side_1(dcline_id, algo_controler_);
+            hvdc_lines_.deactivate_side_1(dcline_id, algo_controler_, substations_);
             hvdc_lines_.disable_droop(dcline_id);  // remote angle is gone, see disable_droop's doc
         }
         void deactivate_dcline_side2(int dcline_id) {
-            hvdc_lines_.deactivate_side_2(dcline_id, algo_controler_);
+            hvdc_lines_.deactivate_side_2(dcline_id, algo_controler_, substations_);
             hvdc_lines_.disable_droop(dcline_id);
         }
         void change_p_dcline(int dcline_id, real_type new_p) {hvdc_lines_.change_p(dcline_id, new_p, algo_controler_); }

@@ -2541,14 +2541,14 @@ void LSGrid::consider_only_main_component(){
         if(conn_comp[bus_id] == main_cc_id) bus_in_main_cc[bus_id] = true;
     }
     // disconnected elements not in main component
-    powerlines_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    shunts_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    trafos_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    loads_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    sgens_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    storages_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    generators_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    hvdc_lines_.disconnect_if_not_in_main_component(bus_in_main_cc);
+    powerlines_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_);
+    shunts_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_);
+    trafos_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_);
+    loads_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_);
+    sgens_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_);
+    storages_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_);
+    generators_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_);
+    hvdc_lines_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_);
     // and finally deal with the buses
     init_bus_status();
 }

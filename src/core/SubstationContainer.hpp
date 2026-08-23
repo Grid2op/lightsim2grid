@@ -10,6 +10,7 @@
 #define SUBSTATIONCONTAINER_H
 
 #include <iostream>
+#include <cassert>
 #include <vector>
 // #include <set>
 #include <stdio.h>
@@ -109,6 +110,7 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             n_bus_max_(n_sub * nmax_busbar_per_sub),
             sub_vn_kv_(n_sub),
             bus_status_(n_bus_max_, false),
+            nb_elements_per_bus_(n_bus_max_, 0),
             bus_vn_kv_(n_bus_max_){}
             
         ~SubstationContainer() noexcept = default;
@@ -293,6 +295,7 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             bus_vn_kv_ = bus_vn_kv;  // base_kv
 
             bus_status_ = std::vector<bool>(nb_bus(), true); // by default everything is connected
+            reset_bus_element_counts();  // recounted from the elements by LSGrid::init_bus_status()
 
             // check that a "substation" always has the same vn_kv for all of its buses
             check_bus_vn_kv_uniform_per_sub();
@@ -340,6 +343,61 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
                 }
             }
         }
+        // ---- per-bus element count ---------------------------------------------
+        /**
+         * How many elements currently hold each bus alive.
+         *
+         * DERIVED state, deliberately absent from StateRes: it is a function of the
+         * elements, so it is recomputed (recompute_bus_element_counts, driven by
+         * LSGrid) rather than serialized. That is also the recovery path -- if the
+         * incremental bookkeeping ever drifts, any rebuild restores it from the
+         * elements themselves.
+         *
+         * A bus is in the solved system iff its count is non-zero, so the two
+         * transitions that matter are 0 -> 1 and 1 -> 0: those, and only those,
+         * change the DIMENSION of the system and renumber every bus after them.
+         * `bus_gained_element` / `bus_lost_element` report exactly that; what the
+         * caller does with it (raising `tell_dimension_changed`) is the caller's
+         * business, and nothing else about the change flags is decided here.
+         */
+        const std::vector<std::size_t> & get_nb_elements_per_bus() const {return nb_elements_per_bus_;}
+
+        /**
+         * Have the counts been established from the elements at least once?
+         *
+         * They start at zero on a grid that has only just been built, which is
+         * indistinguishable from "every bus is empty" -- so until something has
+         * counted, tracking a decrement would underflow on the first
+         * `deactivate_load(...)`. Tracking is therefore inert until then, and
+         * `recompute_bus_element_counts()` is what turns it on. That is not a
+         * special case bolted on: it is the same "recount whenever there is no
+         * cache to protect" rule that makes drift unable to outlive an
+         * invalidation, applied to the moment before the first powerflow.
+         */
+        bool bus_counts_ready() const {return bus_counts_ready_;}
+        void mark_bus_counts_ready(){bus_counts_ready_ = true;}
+
+        /// one more element holds `global_bus_id`; true iff it just crossed 0 -> 1
+        bool bus_gained_element(const GlobalBusId & global_bus_id){
+            if(!bus_counts_ready_) return false;
+            return ++nb_elements_per_bus_[global_bus_id.cast_int()] == 1;
+        }
+        /// one fewer element holds `global_bus_id`; true iff it just crossed 1 -> 0
+        bool bus_lost_element(const GlobalBusId & global_bus_id){
+            if(!bus_counts_ready_) return false;
+            // a count that would go negative means an element was removed twice, ie
+            // the bookkeeping has drifted. Not something to paper over silently.
+            assert(nb_elements_per_bus_[global_bus_id.cast_int()] > 0 &&
+                   "SubstationContainer::bus_lost_element: count already 0 -- an element "
+                   "was removed from this bus twice, the incremental counts have drifted");
+            return --nb_elements_per_bus_[global_bus_id.cast_int()] == 0;
+        }
+        /// back to "nothing holds any bus", ready to be recounted from the elements
+        void reset_bus_element_counts(){
+            nb_elements_per_bus_.assign(nb_bus(), 0);
+            bus_counts_ready_ = false;   // re-established by recompute_bus_element_counts()
+        }
+
         const std::vector<bool> & get_bus_status() const {return bus_status_;}
         
         void disconnect_all_buses(){
@@ -426,6 +484,9 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
          */
         RealVect sub_vn_kv_;
         std::vector<bool> bus_status_;
+        // derived from the elements, never serialized: see get_nb_elements_per_bus()
+        std::vector<std::size_t> nb_elements_per_bus_;
+        bool bus_counts_ready_ = false;  // see bus_counts_ready()
         RealVect bus_vn_kv_;
         std::vector<std::string> sub_names_;
         RealVect bus_vmin_kv_;  // optional, empty if unset

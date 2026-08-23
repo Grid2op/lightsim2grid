@@ -175,6 +175,16 @@ class OneSideContainer : public GenericContainer
             return bus_id_.as_eigen();
         }
 
+        /// one-sided: this element holds its own bus, and only while it is active
+        void contribute_to_buses(int el_id, SubstationContainer & substation,
+                                 int sign, bool & crossed) const override {
+            if(!status_[el_id]) return;                 // inactive: holds nothing
+            const GlobalBusId my_bus = bus_id_(el_id);
+            if(my_bus.cast_int() == _deactivated_bus_id) return;
+            crossed |= (sign > 0) ? substation.bus_gained_element(my_bus)
+                                  : substation.bus_lost_element(my_bus);
+        }
+
         void reconnect_connected_buses(SubstationContainer & substation) const override{
             const int nb_els = nb();
             for(int el_id = 0; el_id < nb_els; ++el_id)
@@ -189,11 +199,11 @@ class OneSideContainer : public GenericContainer
                     exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx(...)` ?.";
                     throw std::runtime_error(exc_.str());
                 }
-                substation.reconnect_bus(my_bus);  // this bus is connected
+                substation.reconnect_bus(my_bus);
             }
         }
 
-        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override final {
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation) override final {
             const int nb_el = nb();
             DualAlgoControl unused_solver_control;
             for(int el_id = 0; el_id < nb_el; ++el_id)
@@ -201,12 +211,49 @@ class OneSideContainer : public GenericContainer
                 if(!status_[el_id]) continue;
                 const GlobalBusId my_bus = bus_id_(el_id);
                 if(!busbar_in_main_component[my_bus.cast_int()]){
-                    deactivate(el_id, unused_solver_control);
+                    deactivate(el_id, unused_solver_control, substation);
                 }
             }    
         }
 
-        virtual bool deactivate(int el_id, DualAlgoControl & solver_control) final {
+        virtual bool deactivate(int el_id, DualAlgoControl & solver_control,
+                                SubstationContainer & substation) final {
+            // validate BEFORE _apply_and_track_buses: it asks contribute_to_buses for
+            // the element's current contribution first, which indexes status_[el_id]
+            // with an unchecked operator[] (a negative id wraps to a huge size_t).
+            // The check inside *_no_bus_tracking is too late to stop that.
+            _check_in_range(el_id, status_, "deactivate");
+            bool res = false;
+            _apply_and_track_buses(el_id, substation, solver_control,
+                                   [&]{ res = deactivate_no_bus_tracking(el_id, solver_control); });
+            return res;
+        }
+        virtual bool reactivate(int el_id, DualAlgoControl & solver_control,
+                                SubstationContainer & substation) final {
+            // validate BEFORE _apply_and_track_buses: it asks contribute_to_buses for
+            // the element's current contribution first, which indexes status_[el_id]
+            // with an unchecked operator[] (a negative id wraps to a huge size_t).
+            // The check inside *_no_bus_tracking is too late to stop that.
+            _check_in_range(el_id, status_, "reactivate");
+            bool res = false;
+            _apply_and_track_buses(el_id, substation, solver_control,
+                                   [&]{ res = reactivate_no_bus_tracking(el_id, solver_control); });
+            return res;
+        }
+
+        /**
+         * The same mutation WITHOUT touching the per-bus element counts.
+         *
+         * For a container that owns its own contribution (a load, a generator, an
+         * HVDC converter station) this is only ever called through `deactivate`
+         * above, which brackets it with the counting. It is public because
+         * TwoSidesContainer must call it directly: a line's two ends do NOT own
+         * their contribution -- `status_global_` gates it, and a side knows nothing
+         * about that -- so the branch as a whole does the counting, once, around
+         * both sides. Letting each side count here would decrement a bus the gate
+         * says the branch never held.
+         */
+        bool deactivate_no_bus_tracking(int el_id, DualAlgoControl & solver_control) {
             // validate el_id *before* dispatching: `_deactivate` indexes status_[el_id]
             // with an unchecked operator[] (a negative id would wrap to a huge size_t),
             // and `_generic_deactivate` only checks afterwards.
@@ -215,7 +262,18 @@ class OneSideContainer : public GenericContainer
             _generic_deactivate(el_id, status_);
             return res;
         }
-        virtual bool reactivate(int el_id, DualAlgoControl & solver_control) final {
+        /// change_bus WITHOUT touching the per-bus counts; see
+        /// deactivate_no_bus_tracking for why TwoSidesContainer needs this.
+        bool change_bus_no_bus_tracking(int el_id, GridModelBusId new_gridmodel_bus_id,
+                                        DualAlgoControl & solver_control,
+                                        const SubstationContainer & substation) {
+            _check_in_range(el_id, bus_id_, "change_bus");
+            if(bus_id_(el_id) == new_gridmodel_bus_id) return false;
+            bool res = this->_change_bus(el_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
+            _generic_change_bus(el_id, new_gridmodel_bus_id, bus_id_, solver_control, substation.nb_bus());
+            return res;
+        }
+        bool reactivate_no_bus_tracking(int el_id, DualAlgoControl & solver_control) {
             _check_in_range(el_id, status_, "reactivate");
             bool res = this->_reactivate(el_id, solver_control);
             _generic_reactivate(el_id, status_);
@@ -232,12 +290,20 @@ class OneSideContainer : public GenericContainer
             int load_id,
             GridModelBusId new_gridmodel_bus_id,
             DualAlgoControl & solver_control,
-            const SubstationContainer & substation) final {
+            SubstationContainer & substation) final {
                 // validate load_id *before* dispatching: `_change_bus` reads bus_id_(load_id)
                 // with an unchecked Eigen operator(); `_generic_change_bus` only checks afterwards.
                 _check_in_range(load_id, bus_id_, "change_bus");
-                bool res = this->_change_bus(load_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
-                _generic_change_bus(load_id, new_gridmodel_bus_id, bus_id_, solver_control, substation.nb_bus());
+                // a move to the bus it is already on holds exactly the same bus
+                // afterwards. Tracking it would take the contribution away and put
+                // it straight back -- correct counts, but a bus that is alone would
+                // transiently hit 0 and report a crossing that never happened,
+                // costing a full rebuild. grid2op sends this every step.
+                if(bus_id_(load_id) == new_gridmodel_bus_id) return false;
+                bool res = false;
+                _apply_and_track_buses(load_id, substation, solver_control, [&]{
+                    res = change_bus_no_bus_tracking(load_id, new_gridmodel_bus_id, solver_control, substation);
+                });
                 return res;
         }
 
@@ -395,12 +461,12 @@ class OneSideContainer : public GenericContainer
                         throw std::out_of_range(exc_.str());
                     }
                     GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
-                    bool change_effective = reactivate(el_id, solver_control); // eg reactivate_load(load_id);
+                    bool change_effective = reactivate(el_id, solver_control, substations); // eg reactivate_load(load_id);
                     change_effective = change_bus(el_id, new_bus_backend, solver_control, substations) || change_effective; // eg change_bus_load(load_id, new_bus_backend);
                     if(change_effective) res[el_id] = true;
                 } else if (new_bus.cast_int() == _deactivated_bus_id){
                     // new bus is negative, we deactivate it
-                    bool change_effective = deactivate(el_id, solver_control);// eg deactivate_load(load_id);
+                    bool change_effective = deactivate(el_id, solver_control, substations);// eg deactivate_load(load_id);
                     // bus_status_ is set to "false" in GridModel.update_topo
                     // and a bus is activated if (and only if) one element is connected to it.
                     // I must not set `bus_status_[new_bus_backend] = false;` in this case !

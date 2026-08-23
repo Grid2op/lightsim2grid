@@ -735,6 +735,34 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         }
 
         // gridmodel utilities
+        /**
+         * A line or transformer is gated by `status_global_` FIRST: a globally
+         * deactivated branch holds nothing, whatever its two sides say. Only then
+         * does each side count, on its own status. This gate is why the rule cannot
+         * live in OneSideContainer -- a line END has no idea the branch it belongs
+         * to was deactivated as a whole.
+         */
+        void contribute_to_buses(int el_id, SubstationContainer & substation,
+                                 int sign, bool & crossed) const override {
+            if(!status_global_[el_id]) return;                  // the gate
+            const std::vector<bool> & st1 = this->get_status_side_1();
+            const std::vector<bool> & st2 = this->get_status_side_2();
+            if(st1[el_id]){
+                const GlobalBusId b = this->get_bus_side_1(el_id);
+                if(b.cast_int() != GenericContainer::_deactivated_bus_id){
+                    crossed |= (sign > 0) ? substation.bus_gained_element(b)
+                                          : substation.bus_lost_element(b);
+                }
+            }
+            if(st2[el_id]){
+                const GlobalBusId b = this->get_bus_side_2(el_id);
+                if(b.cast_int() != GenericContainer::_deactivated_bus_id){
+                    crossed |= (sign > 0) ? substation.bus_gained_element(b)
+                                          : substation.bus_lost_element(b);
+                }
+            }
+        }
+
         void reconnect_connected_buses(SubstationContainer & substation) const override{
             const size_t nb_els = nb();
             const std::vector<bool>& status_side_1_ = get_status_side_1();

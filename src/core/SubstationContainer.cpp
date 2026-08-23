@@ -98,6 +98,10 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     n_bus_max_ = static_cast<int>(n_bus_max);
     sub_vn_kv_ = RealVect::Map(sub_vn_kv.data(), sub_vn_kv.size());
     bus_status_ = bus_status;
+    // derived state, absent from StateRes on purpose: size it to match the grid we
+    // just restored and leave it zeroed. LSGrid recounts it from the elements (the
+    // restored grid's own status flags) before anything reads it.
+    reset_bus_element_counts();
     bus_vn_kv_ = RealVect::Map(bus_vn_kv.data(), bus_vn_kv.size());
     sub_names_ = sub_names;
     bus_vmin_kv_ = bus_vmin_kv.empty() ? RealVect() : RealVect::Map(bus_vmin_kv.data(), bus_vmin_kv.size());
