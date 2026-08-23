@@ -301,65 +301,95 @@ TEST_CASE("a 'nothing changed' claim never makes a powerflow read data that was 
     }
 }
 
-TEST_CASE("the structural half of the guard is what stands between unset_changes and an OOB read",
+TEST_CASE("unset_changes never records a claim the cache cannot back",
           "[LSGrid][cache_reuse][unset_changes]")
 {
-    // The sections above all reach `unset_changes()` through
-    // `allow_cache_reuse(false)`, ie with BOTH families told never to reuse. The
-    // family that then runs is caught by the FIRST test in
-    // `SolverSideCache::is_usable` (`if(!allow_reuse) return false;`) before any of
-    // the structural comparisons matter, so those sections pass even with the rest
-    // of `is_usable` deleted.
-    //
-    // Turning off only the OTHER family is what exercises it. `unset_changes()`
-    // returns early only when both families cache automatically, so switching one
-    // off re-arms it -- and it marks BOTH families "in sync", including the one
-    // still allowed to reuse and whose solver-side data may never have been built.
-    // For that family nothing but the structural comparisons is left: with them
-    // removed, each of the three sequences below indexes a default-constructed
-    // id map / matrix / injection vector with bus ids in the hundreds. Under
+    // `unset_changes()` marks BOTH families -- that is its historical contract and
+    // code written before 1.0.0 relies on it. It is also what used to make it
+    // dangerous: a family that had never solved got marked "in sync" next to one
+    // that had, and its next powerflow took the "nothing to rebuild" path with an
+    // empty bus labelling, indexing it with bus ids in the hundreds. Under
     // -O3 -DNDEBUG (what the wheels ship) that is a segfault, not an error.
     //
-    // So: this is the test to look at before "the cache is reused by default now,
-    // `is_usable` can stop checking". It can, but only once `unset_changes()` stops
-    // making the claim on a family that cannot back it.
+    // It still marks both families. What changed is that each one is verified first,
+    // so the claim is only ever RECORDED where it is true; a family that cannot back
+    // it is retired instead and rebuilds on its next powerflow. The powerflow path
+    // no longer re-checks, which is the whole point -- so these sections are what
+    // stands between `unset_changes()` and an out-of-bounds read.
     LSGrid ref_ac = make_grid();
     LSGrid ref_dc = make_grid();
     const CplxVect v_ac_ref = solve_ac(ref_ac);
     const CplxVect v_dc_ref = solve_dc(ref_dc);
 
-    SECTION("DC still automatic, never solved, and unset_changes marks it in sync"){
+    SECTION("a family that never solved is retired, not marked"){
         LSGrid grid = make_grid();
-        grid.allow_ac_cache_reuse(false);   // only AC: unset_changes() is no longer a no-op
-        REQUIRE(grid.get_allow_dc_cache_reuse());
-        grid.unset_changes();               // claims DC is in sync -- it has built nothing
-        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+        grid.unset_changes();   // neither family has built anything
 
-        const CplxVect v = solve_dc(grid);
-        REQUIRE(v.size() == 14);
-        CHECK((v - v_dc_ref).norm() < 1e-9);
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+        CHECK((solve_ac(grid) - v_ac_ref).norm() < 1e-9);
+        CHECK((solve_dc(grid) - v_dc_ref).norm() < 1e-9);
     }
-    SECTION("AC still automatic, never solved, and unset_changes marks it in sync"){
+    SECTION("the family that did solve is marked, the other is retired"){
         LSGrid grid = make_grid();
-        grid.allow_dc_cache_reuse(false);
-        REQUIRE(grid.get_allow_ac_cache_reuse());
+        REQUIRE(solve_ac(grid).size() == 14);   // AC has a live cache, DC has nothing
         grid.unset_changes();
-        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());
 
-        const CplxVect v = solve_ac(grid);
-        REQUIRE(v.size() == 14);
-        CHECK((v - v_ac_ref).norm() < 1e-9);
+        CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // true claim, recorded
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());        // false claim, refused
+        CHECK((solve_dc(grid) - v_dc_ref).norm() < 1e-9);
+        CHECK((solve_ac(grid) - v_ac_ref).norm() < 1e-9);
     }
-    SECTION("the other family solved first, so the grid is warm but this family is not"){
+    SECTION("and the other way round"){
         LSGrid grid = make_grid();
-        REQUIRE(solve_ac(grid).size() == 14);  // AC cache is live, DC has nothing
+        REQUIRE(solve_dc(grid).size() == 14);
+        grid.unset_changes();
+
+        CHECK_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK((solve_ac(grid) - v_ac_ref).norm() < 1e-9);
+    }
+    SECTION("a pending topology change is not papered over"){
+        // The dangerous direction, and the reason unset_changes() refreshes the bus
+        // status before comparing: called with a real change outstanding, "forget
+        // past changes" would drop it and solve the OLD system with the new grid.
+        // The connectivity comparison is what refuses.
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        grid.deactivate_powerline(4);
+        grid.unset_changes();
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+
+        LSGrid ref = make_grid();
+        ref.deactivate_powerline(4);
+        CHECK((solve_ac(grid) - solve_ac(ref)).norm() < 1e-9);
+    }
+    SECTION("a genuinely up-to-date cache is left alone, however often it is claimed"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        for(int i = 0; i < 3; ++i){
+            grid.unset_changes();
+            CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+            CHECK((solve_ac(grid) - v_ac_ref).norm() < 1e-9);
+        }
+    }
+    SECTION("turning one family's reuse off does not make the other unsafe"){
+        // the sequence that used to segfault: both families marked, only one built
+        LSGrid grid = make_grid();
         grid.allow_ac_cache_reuse(false);
         grid.unset_changes();
-        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+        CHECK((solve_dc(grid) - v_dc_ref).norm() < 1e-9);
 
-        const CplxVect v = solve_dc(grid);
-        REQUIRE(v.size() == 14);
-        CHECK((v - v_dc_ref).norm() < 1e-9);
+        LSGrid grid2 = make_grid();
+        grid2.allow_dc_cache_reuse(false);
+        grid2.unset_changes();
+        CHECK((solve_ac(grid2) - v_ac_ref).norm() < 1e-9);
+
+        LSGrid grid3 = make_grid();
+        REQUIRE(solve_ac(grid3).size() == 14);
+        grid3.allow_ac_cache_reuse(false);
+        grid3.unset_changes();
+        CHECK((solve_dc(grid3) - v_dc_ref).norm() < 1e-9);
     }
 }
 

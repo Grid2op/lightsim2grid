@@ -641,24 +641,36 @@ class LS2G_API LSGrid final
         void tell_solver_need_reset(){prevent_cache_reuse();}
 
         /**
-         * Inform the grid that a powerflow has been run and that every "past changes"
-         * can be "forgotten" : if a solver is re run, then some things are cached to
-         * avoid un necessary computation.
+         * Tell the grid that everything it built for its solvers still describes the
+         * grid, so the next powerflow of either family can re-stamp only what changed
+         * from now on.
          *
-         * Historical, manual counterpart of the automatic marking described above.
-         * When both families cache automatically (the default) there is nothing
-         * left for it to do and it returns immediately; it only has an effect on a
-         * family whose automatic reuse was turned off -- and even then that
-         * family's `allow_*_cache_reuse(false)` still wins, so the claim is
-         * recorded but the next powerflow of that family rebuilds anyway.
+         * THE USER-FACING, CHECKED ENTRY POINT. Same relationship to
+         * `_mark_cache_valid` as `compute_pf_with_input_validation` has to
+         * `compute_pf`: identical intent, but this one does not take the caller's
+         * word for it. It applies to BOTH families, as it always has -- that is the
+         * historical contract and code written before 1.0.0 relies on it.
          *
-         * Kept for backward compatibility: new code should simply not call it.
+         * Marking both families is also exactly what used to make it dangerous: a
+         * family that had never solved got marked "in sync" alongside one that had,
+         * and its next powerflow took the "nothing to rebuild" path with an empty bus
+         * labelling. So each family is now verified separately before the claim is
+         * recorded -- structurally (is the data there, and the right shape?) and
+         * against the grid's connectivity right now (does that labelling still
+         * describe it?). A family that cannot back the claim is not marked: it is
+         * retired, and rebuilds on its next powerflow. A wrong claim therefore costs
+         * time, never memory safety, and it costs it only to the family that was
+         * wrong.
+         *
+         * Since automatic reuse landed in 1.0.0 there is normally nothing for this to
+         * do -- every powerflow marks its own family on the way out. Kept for
+         * backward compatibility; new code should simply not call it.
          */
         void unset_changes(){
-            if(ac_cache_.allow_reuse && dc_cache_.allow_reuse) return;  // already done, after every powerflow
-            _mark_cache_valid(true);
-            _mark_cache_valid(false);
-        }  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+            const std::size_t nb_bus = substations_.nb_bus();
+            _declare_up_to_date(ac_cache_, algo_controler_.ac_algo_controler(), nb_bus);
+            _declare_up_to_date(dc_cache_, algo_controler_.dc_algo_controler(), nb_bus);
+        }
 
         void tell_recompute_ybus(){algo_controler_.ac_algo_controler().tell_recompute_ybus(); algo_controler_.dc_algo_controler().tell_recompute_ybus();}
         void tell_recompute_sbus(){algo_controler_.ac_algo_controler().tell_recompute_sbus(); algo_controler_.dc_algo_controler().tell_recompute_sbus();}
@@ -2215,6 +2227,41 @@ class LS2G_API LSGrid final
         void _mark_cache_valid(bool ac){
             if(ac) _mark_cache_valid(ac_cache_, algo_controler_.ac_algo_controler());
             else _mark_cache_valid(dc_cache_, algo_controler_.dc_algo_controler());
+        }
+
+        /**
+         * One family's half of `unset_changes()`: record the claim if the cache can
+         * back it, retire the cache if it cannot. Templated on the cache so it can
+         * ask `is_consistent`, which the family-agnostic SolverBusLayout cannot
+         * answer on its own (it does not know about the matrix).
+         *
+         * `allow_reuse` is deliberately NOT consulted. It says whether the next
+         * powerflow MAY reuse the cache; it says nothing about whether the cache
+         * currently describes the grid, which is the only question being asked here.
+         * A family with reuse turned off still gets an honest answer recorded, and
+         * the powerflow path still refuses to reuse it.
+         */
+        template<class Cache>
+        void _declare_up_to_date(Cache & cache, AlgoControl & control, std::size_t nb_bus_grid){
+            // `control.nothing_changed()` is the load-bearing test, and this function
+            // only READS it. The element containers are what declare a change, in
+            // their own modifiers; that is the authority on whether this family's
+            // cache still describes the grid, and nothing here second-guesses it or
+            // adds to it.
+            //
+            // A cache cannot answer the question by looking at itself: change a
+            // line's impedance, a transformer tap or a load's target and every size
+            // in the cache -- and every bus's connected/disconnected status -- is
+            // exactly what it was. Clearing the flags on a false claim is not a
+            // segfault, it is a converged, plausible, wrong answer, because the next
+            // powerflow re-solves the OLD system.
+            //
+            // `is_consistent` is the separate, structural question -- is the data
+            // there at all, and the right shape -- which is what stands between a
+            // claim about a family that never solved and an out-of-bounds read. It
+            // reads only sizes; it says nothing about what changed.
+            if(control.nothing_changed() && cache.is_consistent(nb_bus_grid)) _mark_cache_valid(cache, control);
+            else _retire_cache(cache, control);
         }
 
         /**

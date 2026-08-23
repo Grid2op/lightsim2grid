@@ -176,6 +176,28 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] a build into a caller's cache no longer resets or reconfigures the grid's own solver.
   ``_algo.reset()`` / ``tell_solver_control()`` fired for a solve the grid would never perform,
   discarding a factorization its next powerflow would have reused.
+- [FIXED] ``LSGrid.unset_changes()`` no longer papers over a change that has not been solved.
+  Its contract is "a powerflow has run, past changes can be forgotten" -- but nothing checked that
+  a powerflow *had* run, so calling it with a modification outstanding cleared the flags that
+  described it and the next powerflow re-solved the OLD system: converged, plausible, and wrong by
+  0.038 pu on a 14-bus grid with one line deactivated. It now refuses instead: each family is
+  marked only if its change control reports nothing outstanding AND its cache is structurally
+  intact and still matches the grid's connectivity; a family that cannot back the claim is retired
+  and rebuilds on its next powerflow. It still applies to BOTH families, as it always has.
+  Note a cache cannot detect this by self-inspection -- changing a line's impedance, a transformer
+  tap or a load target leaves every vector size and every bus status exactly as they were -- which
+  is why the new ``AlgoControl.nothing_changed()`` is the load-bearing test. The element containers
+  remain the sole authority on what changed: they declare it through ``AlgoControl`` in their own
+  modifiers, and ``unset_changes()`` only reads that back. The structural check beside it answers a
+  different question (is the data there at all, and the right shape) and says nothing about change.
+- [ADDED] ``AlgoControl.nothing_changed()``: has every change this control tracks already been
+  consumed by a solve? The exact negation of ``tell_all_changed()``.
+- the powerflow path no longer re-verifies that the data behind a "nothing changed" claim exists.
+  The two entry points that can make such a claim without having built anything --
+  ``unset_changes()`` and ``check_solution()`` -- now verify it themselves, at an altitude where
+  the check is free. What remains on the powerflow path is the ``allow_*_cache_reuse`` switch plus
+  a debug-only assertion, so a future third claimant is caught by the C++ suite (run under ASan,
+  UBSan and valgrind in CI) at no cost in release wheels.
 - [BREAKING] the AC and the DC solver families no longer share ANY solver-side data.
   ``slack_weights``, the PV split and the PQ split were single members overwritten by whichever
   family solved last -- unlike ``Ybus`` / ``Sbus`` / the id maps, which were already per family.

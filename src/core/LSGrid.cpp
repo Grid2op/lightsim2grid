@@ -6,6 +6,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+#include <cassert>
 #include "LSGrid.hpp"
 #include "AlgorithmSelector.hpp"  // to avoid circular references
 #include "BinaryArchive.hpp"
@@ -1279,7 +1280,9 @@ CplxVect LSGrid::check_solution(const Eigen::Ref<const CplxVect> & V_proposed, b
     // (the cache-consistency guard in _pre_process_solver_impl now catches this case too,
     // and the two families' variants of it; this stays as the local, cheaper statement of
     // what check_solution itself may assume)
-    if(ac_cache_.id_me_to_solver.size() > 0) reset_solver.tell_none_changed();
+    if(ac_cache_.may_be_reused() && ac_cache_.is_consistent(substations_.nb_bus())){
+        reset_solver.tell_none_changed();
+    }
     CplxVect V = pre_process_solver(V_proposed,
                                     ac_cache_,
                                     reset_solver,
@@ -1423,7 +1426,29 @@ CplxVect LSGrid::_pre_process_solver_impl(
     // init_bus_status() raises its flags against, and those flags themselves all
     // describe THIS grid, and say nothing about what is in someone else's cache.
     // Free in practice -- every foreign caller asks for a full rebuild anyway.
-    const bool cache_unusable = !own_cache || !cache.is_usable(substations_.nb_bus());
+    //
+    // Beyond that this path asks only the switch. It does NOT re-verify that the
+    // data behind a "nothing changed" claim exists, because by the time we are here
+    // that claim has already been vouched for:
+    //   - the grid raises the flags itself as it is modified (change_*, deactivate_*,
+    //     init_bus_status, set_state, the copy ctor, a divergence): all of those can
+    //     only make the cache MORE stale, never falsely fresh;
+    //   - `AlgoControl`'s constructor asks for a full rebuild, so a grid that never
+    //     solved rebuilds;
+    //   - python cannot clear the flags: `get_*_algo_controler()` is bound read-only
+    //     (binding_misc.cpp exposes the has_* / need_* getters, no tell_*);
+    //   - the two places that CAN claim "nothing changed" without having built
+    //     anything -- `unset_changes()` and `check_solution()` -- verify it
+    //     themselves, at their own altitude, where an O(nb_bus) check is free.
+    // The assertion below is what keeps that reasoning honest: no cost in release
+    // (-DNDEBUG, what the wheels ship), and it fires in the C++ suite -- which CI
+    // runs under ASan, UBSan and valgrind -- the day a fourth claimant appears.
+    const bool cache_unusable = !own_cache || !cache.may_be_reused();
+    assert((cache_unusable || solver_control.need_reset_solver() ||
+            solver_control.has_dimension_changed() ||
+            cache.is_consistent(substations_.nb_bus())) &&
+           "a 'nothing changed' control was handed to a cache that cannot back it: "
+           "some caller marked this family valid without building it");
 
     // `_algo` / `_dc_algo` are THIS grid's algorithms and consume this grid's cache
     // and nothing else. A foreign builder solves with its own (BaseBatchSolverSynch

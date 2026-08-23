@@ -127,6 +127,24 @@ class AlgoControl final
             one_el_change_bus_ = true;
         }
 
+        /**
+         * Is there nothing outstanding -- has every change this control tracks
+         * already been consumed by a solve?
+         *
+         * The exact negation of tell_all_changed(), and the only honest way to ask
+         * "is a cache built against this grid still valid?". A cache cannot answer
+         * that by looking at itself: changing a line's impedance, a tap, or an
+         * injection leaves every vector size and every bus status exactly as it was.
+         * Only these flags know. See LSGrid::unset_changes().
+         */
+        [[nodiscard]] bool nothing_changed() const noexcept {
+            return !change_dimension_ && !pv_changed_ && !pq_changed_ &&
+                   !slack_participate_changed_ && !need_reset_solver_ &&
+                   !need_recompute_sbus_ && !need_recompute_ybus_ && !v_changed_ &&
+                   !slack_weight_changed_ && !ybus_some_coeffs_zero_ &&
+                   !ybus_change_sparsity_pattern_ && !one_el_change_bus_;
+        }
+
         void tell_none_changed(){
             change_dimension_ = false;
             pv_changed_ = false;

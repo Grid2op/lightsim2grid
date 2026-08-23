@@ -121,10 +121,9 @@ struct SolverBusLayout
         last_bus_status.clear();
     }
 
-    /// the family-agnostic half of is_usable(); see there for why this exists
-    [[nodiscard]] bool layout_is_usable(std::size_t nb_bus_grid) const noexcept {
+    /// the family-agnostic half of is_consistent(); see there for why this exists
+    [[nodiscard]] bool layout_is_consistent(std::size_t nb_bus_grid) const noexcept {
         const Eigen::Index nb_solver = nb_bus_solver();
-        if(!allow_reuse) return false;              // told never to reuse
         if(nb_solver == 0) return false;            // never built
         if(id_me_to_solver.size() != nb_bus_grid) return false;  // built for another grid size
         if(slack_weights.size() != nb_solver) return false;
@@ -177,32 +176,47 @@ struct SolverSideCache final : SolverBusLayout
     }
 
     /**
-     * Is there really a system in here, of the shape the caller is about to claim
-     * is up to date, for a grid with `nb_bus_grid` buses?
+     * Is there really a system in here, of the shape a caller claiming "nothing
+     * changed" is about to be believed about, for a grid with `nb_bus_grid` buses?
      *
-     * This is the one guard between a "nothing changed" claim and an out-of-bounds
-     * read. A powerflow's change flags only record what happened SINCE that family
-     * last solved; they cannot say whether it ever solved at all. Nothing stops a
-     * caller from asserting "nothing changed" -- `LSGrid::unset_changes()` does
-     * exactly that, for both families at once -- about a family whose data is still
-     * default-constructed. The "nothing to rebuild" path was then taken with an
-     * empty `id_me_to_solver` / `mat` / `inj`, and everything downstream indexes
-     * them with bus ids in the hundreds. Release wheels are -O3 -DNDEBUG, so that
-     * is a segfault, not an error.
+     * This answers "is the DATA there and self-consistent", not "may it be reused"
+     * (`allow_reuse`) and not "has the grid changed since" -- that last one is not a
+     * question a cache can answer about itself, and it is not this object's job:
+     * the element containers declare every change through AlgoControl as they are
+     * modified, and AlgoControl::nothing_changed() is what reads it back.
      *
-     * So the flags are never trusted alone: check that the data they describe is
-     * really there, and rebuild when it is not. A wrong "nothing changed" then
-     * costs time, never memory safety. A handful of integer comparisons, off any
-     * inner loop -- every size here is O(1) to read.
+     * It exists because a powerflow's change flags only record what happened SINCE
+     * that family last solved; they cannot say whether it ever solved at all. A
+     * caller asserting "nothing changed" about a family whose data is still
+     * default-constructed used to take the "nothing to rebuild" path with an empty
+     * `id_me_to_solver` / `mat` / `inj`, and everything downstream indexes them with
+     * bus ids in the hundreds. Release wheels are -O3 -DNDEBUG, so that is a
+     * segfault, not an error.
+     *
+     * Every size here is O(1) to read, so this is a handful of integer comparisons.
+     * It is still off the powerflow path: the only way into the library to claim
+     * "nothing changed" without having built anything is LSGrid::unset_changes(),
+     * and that is where this is checked. The powerflow path keeps it as a debug
+     * assertion -- free in release, and it fires in the C++ suite (which CI runs
+     * under ASan and valgrind) if a future caller finds another way in.
      */
-    [[nodiscard]] bool is_usable(std::size_t nb_bus_grid) const noexcept {
-        if(!layout_is_usable(nb_bus_grid)) return false;
+    [[nodiscard]] bool is_consistent(std::size_t nb_bus_grid) const noexcept {
+        if(!layout_is_consistent(nb_bus_grid)) return false;
         const Eigen::Index nb_solver = nb_bus_solver();
         if(mat.rows() != nb_solver) return false;
         if(mat.cols() != mat.rows()) return false;
         if(inj.size() != nb_solver) return false;
         return true;
     }
+
+    /**
+     * The powerflow path's question: may the next solve of this family reuse what
+     * is in here? Just the switch -- see is_consistent() for why nothing else is
+     * needed here, and _pre_process_solver_impl for the debug assertion that keeps
+     * that reasoning honest.
+     */
+    [[nodiscard]] bool may_be_reused() const noexcept { return allow_reuse; }
+
 };
 
 /// the AC family: complex Ybus / Sbus
