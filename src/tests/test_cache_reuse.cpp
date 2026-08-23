@@ -301,6 +301,67 @@ TEST_CASE("a 'nothing changed' claim never makes a powerflow read data that was 
     }
 }
 
+TEST_CASE("the structural half of the guard is what stands between unset_changes and an OOB read",
+          "[LSGrid][cache_reuse][unset_changes]")
+{
+    // The sections above all reach `unset_changes()` through
+    // `allow_cache_reuse(false)`, ie with BOTH families told never to reuse. The
+    // family that then runs is caught by the guard's FIRST term
+    // (`!allow_*_cache_reuse_`) before any of the structural comparisons matter,
+    // so those sections pass even with the structural half of the guard deleted.
+    //
+    // Turning off only the OTHER family is what exercises it. `unset_changes()`
+    // returns early only when both families cache automatically, so switching one
+    // off re-arms it -- and it marks BOTH families "in sync", including the one
+    // still allowed to reuse and whose solver-side data may never have been built.
+    // For that family nothing but the structural comparisons is left: with them
+    // removed, each of the three sequences below indexes a default-constructed
+    // id map / matrix / injection vector with bus ids in the hundreds. Under
+    // -O3 -DNDEBUG (what the wheels ship) that is a segfault, not an error.
+    //
+    // So: this is the test to look at before "the cache is reused by default now,
+    // the consistency check can go". It can go from `unset_changes()` only if
+    // `unset_changes()` stops making the claim on a family that cannot back it.
+    LSGrid ref_ac = make_grid();
+    LSGrid ref_dc = make_grid();
+    const CplxVect v_ac_ref = solve_ac(ref_ac);
+    const CplxVect v_dc_ref = solve_dc(ref_dc);
+
+    SECTION("DC still automatic, never solved, and unset_changes marks it in sync"){
+        LSGrid grid = make_grid();
+        grid.allow_ac_cache_reuse(false);   // only AC: unset_changes() is no longer a no-op
+        REQUIRE(grid.get_allow_dc_cache_reuse());
+        grid.unset_changes();               // claims DC is in sync -- it has built nothing
+        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+
+        const CplxVect v = solve_dc(grid);
+        REQUIRE(v.size() == 14);
+        CHECK((v - v_dc_ref).norm() < 1e-9);
+    }
+    SECTION("AC still automatic, never solved, and unset_changes marks it in sync"){
+        LSGrid grid = make_grid();
+        grid.allow_dc_cache_reuse(false);
+        REQUIRE(grid.get_allow_ac_cache_reuse());
+        grid.unset_changes();
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+
+        const CplxVect v = solve_ac(grid);
+        REQUIRE(v.size() == 14);
+        CHECK((v - v_ac_ref).norm() < 1e-9);
+    }
+    SECTION("the other family solved first, so the grid is warm but this family is not"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);  // AC cache is live, DC has nothing
+        grid.allow_ac_cache_reuse(false);
+        grid.unset_changes();
+        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+
+        const CplxVect v = solve_dc(grid);
+        REQUIRE(v.size() == 14);
+        CHECK((v - v_dc_ref).norm() < 1e-9);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 4. nothing cached ever crosses a serialization boundary
 // ---------------------------------------------------------------------------
