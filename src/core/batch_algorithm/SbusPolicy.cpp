@@ -63,7 +63,7 @@ CplxVect SbusPolicy::Vary::constant_sbus_pu(const LSGrid & grid_model,
                                             const char * algo_name) const
 {
     // the complete per-unit injection, straight from the gridmodel (the caller's own
-    // Sbus_ (ac) / Pbus_.cast<cplx_type>() (dc))
+    // ac_cache_.inj (ac) / dc_cache_.inj.cast<cplx_type>() (dc))
     CplxVect res = complete_sbus_pu;
     if(static_cast<int>(res.size()) != nb_buses_solver){
         std::ostringstream exc_;

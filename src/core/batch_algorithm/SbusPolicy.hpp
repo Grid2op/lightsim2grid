@@ -29,7 +29,7 @@ struct LS2G_API SbusPolicy
 {
     /** the injection is fixed for the whole batch (ContingencyAnalysis): no state, no
         work -- the `BaseBatchSweep` per-step loop simply reuses the fixed member
-        `Sbus_`/`Pbus_` for every row. **/
+        `ac_cache_.inj`/`dc_cache_.inj` for every row. **/
     struct NOOP {
         static constexpr bool supports_vary = false;
         // no-op: lets BaseBatchSweep::clear() (a plain, always-compiled member) call
@@ -118,8 +118,8 @@ struct LS2G_API SbusPolicy
          * setpoint, the hvdc injections and (dc only) the phase-shifter term.
          *
          * Computed as `complete - accounted_for`: `complete_sbus_pu` is the complete
-         * per-unit injection the gridmodel built (the caller's own Sbus_ (ac) /
-         * Pbus_.cast<cplx_type>() (dc), read-only here), minus the same
+         * per-unit injection the gridmodel built (the caller's own ac_cache_.inj (ac) /
+         * dc_cache_.inj.cast<cplx_type>() (dc), read-only here), minus the same
          * reconstruction the per-step matrices perform, evaluated at the gridmodel's
          * own target values. Deriving it this way -- instead of listing the elements
          * -- is what keeps it from falling out of date when a new element type starts

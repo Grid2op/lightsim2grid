@@ -301,6 +301,152 @@ TEST_CASE("a 'nothing changed' claim never makes a powerflow read data that was 
     }
 }
 
+TEST_CASE("the structural half of the guard is what stands between unset_changes and an OOB read",
+          "[LSGrid][cache_reuse][unset_changes]")
+{
+    // The sections above all reach `unset_changes()` through
+    // `allow_cache_reuse(false)`, ie with BOTH families told never to reuse. The
+    // family that then runs is caught by the FIRST test in
+    // `SolverSideCache::is_usable` (`if(!allow_reuse) return false;`) before any of
+    // the structural comparisons matter, so those sections pass even with the rest
+    // of `is_usable` deleted.
+    //
+    // Turning off only the OTHER family is what exercises it. `unset_changes()`
+    // returns early only when both families cache automatically, so switching one
+    // off re-arms it -- and it marks BOTH families "in sync", including the one
+    // still allowed to reuse and whose solver-side data may never have been built.
+    // For that family nothing but the structural comparisons is left: with them
+    // removed, each of the three sequences below indexes a default-constructed
+    // id map / matrix / injection vector with bus ids in the hundreds. Under
+    // -O3 -DNDEBUG (what the wheels ship) that is a segfault, not an error.
+    //
+    // So: this is the test to look at before "the cache is reused by default now,
+    // `is_usable` can stop checking". It can, but only once `unset_changes()` stops
+    // making the claim on a family that cannot back it.
+    LSGrid ref_ac = make_grid();
+    LSGrid ref_dc = make_grid();
+    const CplxVect v_ac_ref = solve_ac(ref_ac);
+    const CplxVect v_dc_ref = solve_dc(ref_dc);
+
+    SECTION("DC still automatic, never solved, and unset_changes marks it in sync"){
+        LSGrid grid = make_grid();
+        grid.allow_ac_cache_reuse(false);   // only AC: unset_changes() is no longer a no-op
+        REQUIRE(grid.get_allow_dc_cache_reuse());
+        grid.unset_changes();               // claims DC is in sync -- it has built nothing
+        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+
+        const CplxVect v = solve_dc(grid);
+        REQUIRE(v.size() == 14);
+        CHECK((v - v_dc_ref).norm() < 1e-9);
+    }
+    SECTION("AC still automatic, never solved, and unset_changes marks it in sync"){
+        LSGrid grid = make_grid();
+        grid.allow_dc_cache_reuse(false);
+        REQUIRE(grid.get_allow_ac_cache_reuse());
+        grid.unset_changes();
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+
+        const CplxVect v = solve_ac(grid);
+        REQUIRE(v.size() == 14);
+        CHECK((v - v_ac_ref).norm() < 1e-9);
+    }
+    SECTION("the other family solved first, so the grid is warm but this family is not"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);  // AC cache is live, DC has nothing
+        grid.allow_ac_cache_reuse(false);
+        grid.unset_changes();
+        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+
+        const CplxVect v = solve_dc(grid);
+        REQUIRE(v.size() == 14);
+        CHECK((v - v_dc_ref).norm() < 1e-9);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 3b. a cache is one object, and it belongs to one owner
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a build into someone else's cache never leaves this grid solving a mixture",
+          "[LSGrid][cache_reuse][batch]")
+{
+    // `pre_process_solver` serves two kinds of caller: this grid (ac_pf / dc_pf /
+    // check_solution pass ac_cache_ / dc_cache_) and a foreign builder -- the batch
+    // algorithms, which pass a cache they own.
+    //
+    // For the foreign one, the grid's own cache is still an output: the NR
+    // extensions are not built from what the solver was handed, they are pulled out
+    // of the LSGrid through `lsgrid_ptr`, and they read the labelling AND the pv-pq
+    // split (see fill_voltage_control_solver_data's use of bus_pq). So the build has
+    // to publish there. What it must never do is leave that publication looking like
+    // a cache: the labelling and the split would be the caller's while the matrix
+    // and the injections are still this grid's, which is the right size, passes
+    // every structural check, converges, and is wrong.
+    //
+    // Retiring the snapshot is what prevents it, and that is what these sections
+    // pin. Note what is NOT tested here: that the nine parts cannot be handed over
+    // separately in the first place. That is not a runtime property any more, it is
+    // the type -- SolverSideCache is one object, so there is nothing to mismatch.
+    SECTION("AC"){
+        LSGrid grid = make_grid();
+        const CplxVect v_before = solve_ac(grid);
+        REQUIRE(v_before.size() == 14);
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // cache is live
+
+        // exactly what a batch does: its own cache, its own control
+        ls2g::AcSolverCache foreign;
+        const ls2g::AlgoControl foreign_control;  // default ctor: everything changed
+        grid.pre_process_solver(flat_start(grid), foreign, foreign_control);
+
+        // it built the WHOLE cache into the caller's object ...
+        CHECK(foreign.mat.rows() == 14);
+        CHECK(foreign.mat.cols() == 14);
+        CHECK(foreign.inj.size() == 14);
+        CHECK(foreign.slack_weights.size() == 14);
+        CHECK(foreign.bus_pq.size() > 0);
+        CHECK(foreign.id_solver_to_me.size() == 14);
+        // ... published the labelling and the split the NR extensions read back ...
+        CHECK(grid.get_ac_pq_solver().size() == foreign.bus_pq.size());
+        CHECK(grid.get_ac_pv_solver().size() == foreign.bus_pv.size());
+        // ... and retired this grid's own cache rather than leaving it a mixture
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+
+        // so the grid's own next powerflow is unaffected by the detour
+        CHECK((solve_ac(grid) - v_before).norm() < 1e-9);
+    }
+    SECTION("DC"){
+        LSGrid grid = make_grid();
+        const CplxVect v_before = solve_dc(grid);
+        REQUIRE(v_before.size() == 14);
+        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+
+        ls2g::DcSolverCache foreign;
+        const ls2g::AlgoControl foreign_control;
+        grid.pre_process_dc_solver(flat_start(grid), foreign, foreign_control);
+
+        CHECK(foreign.mat.rows() == 14);
+        CHECK(foreign.inj.size() == 14);
+        CHECK(grid.get_dc_pq_solver().size() == foreign.bus_pq.size());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+
+        CHECK((solve_dc(grid) - v_before).norm() < 1e-9);
+    }
+    SECTION("one family's foreign build leaves the other family's cache alone"){
+        LSGrid grid = make_grid();
+        const CplxVect v_ac_before = solve_ac(grid);
+        const CplxVect v_dc_before = solve_dc(grid);
+
+        ls2g::DcSolverCache foreign;
+        const ls2g::AlgoControl foreign_control;
+        grid.pre_process_dc_solver(flat_start(grid), foreign, foreign_control);
+
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+        CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // AC untouched
+        CHECK((solve_ac(grid) - v_ac_before).norm() < 1e-9);
+        CHECK((solve_dc(grid) - v_dc_before).norm() < 1e-9);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 4. nothing cached ever crosses a serialization boundary
 // ---------------------------------------------------------------------------

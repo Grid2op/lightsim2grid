@@ -43,8 +43,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     if(invertible){
         conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
                                      Ybus, V, _step_sbus(i),
-                                     slack_ids_solver_.as_eigen(), slack_weights_,
-                                     bus_pv_.as_eigen(), bus_pq_.as_eigen(),
+                                     active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
+                                     active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                      max_iter, tol_solver);
     } else {
         conv = false;
@@ -123,14 +123,14 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
                 continue;
             }
             if(_dc_lazy_storage_used_){
-                _thetas.row(i)(id_solver_to_me_.as_eigen()) = algo.get_Va().array();
+                _thetas.row(i)(active_layout().id_solver_to_me.as_eigen()) = algo.get_Va().array();
                 // marks this row as actually solved -- see _dc_row_solved_ / _dc_vm_row_grid:
                 // a row that never reaches here (eg an islanding DC contingency, which
                 // diverges and is skipped above) must reconstruct as exact complex 0, not
                 // as its (never written, so 0) theta paired with a nonzero base magnitude.
                 if(static_cast<size_t>(i) < _dc_row_solved_.size()) _dc_row_solved_[i] = 1;
             } else {
-                _voltages.row(i)(id_solver_to_me_.as_eigen()) = V.array();
+                _voltages.row(i)(active_layout().id_solver_to_me.as_eigen()) = V.array();
             }
         }
     } catch(...) {
@@ -156,7 +156,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         _algo.set_lazy_v(use_dc_lazy_v);
         int step_diverge = -1;
         std::exception_ptr err;
-        _run_range(0, nb_steps, _algo, _algo_controler, Ybus_, Vinit_solver,
+        _run_range(0, nb_steps, _algo, _algo_controler, ac_cache_.mat, Vinit_solver,
                   ac_solver_used, max_iter, tol_, _nb_solved, _nb_converged, _timer_solver, _timer_modif_Ybus,
                   step_diverge, err, false);
         if(err) std::rethrow_exception(err);
@@ -166,7 +166,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
 
     // multi-threaded path: every thread owns its solver and its solver control.
     // The admittance matrix is NOT copied per thread: the topology is fixed here,
-    // so Ybus_/Bbus_ stay read-only for the whole loop and are simply shared.
+    // so ac_cache_.mat/dc_cache_.mat stay read-only for the whole loop and are simply shared.
     auto timer_thread = CustTimer();
     std::vector<std::unique_ptr<AlgorithmSelector> > algos(nb_thread);
     std::vector<AlgoControl> controls(nb_thread);
@@ -192,7 +192,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
                               &init_thread, &algos, &controls, &th_nb_solved, &th_nb_converged,
                               &th_timer_solver, &th_timer_modif_ybus, &th_diverge, &th_err, &Vinit_solver](){
             init_thread(t);
-            _run_range(b, e, *algos[t], controls[t], Ybus_, Vinit_solver, ac_solver_used, max_iter, tol_,
+            _run_range(b, e, *algos[t], controls[t], ac_cache_.mat, Vinit_solver, ac_solver_used, max_iter, tol_,
                       th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif_ybus[t], th_diverge[t], th_err[t], true);
         });
     }
@@ -202,7 +202,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         size_t b, e;
         split_range(nb_steps, nb_thread, 0, b, e);
         init_thread(0);
-        _run_range(b, e, *algos[0], controls[0], Ybus_, Vinit_solver, ac_solver_used, max_iter, tol_,
+        _run_range(b, e, *algos[0], controls[0], ac_cache_.mat, Vinit_solver, ac_solver_used, max_iter, tol_,
                   th_nb_solved[0], th_nb_converged[0], th_timer_solver[0], th_timer_modif_ybus[0], th_diverge[0], th_err[0], true);
     }
 
@@ -237,16 +237,16 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
 
     if(std::min(static_cast<int>(nb_steps), std::max(1, _nb_thread)) <= 1){
         // single-threaded path: reuse the (already warmed-up) member solver, member
-        // Ybus_ and the member accumulators -> identical to the legacy code.
+        // ac_cache_.mat and the member accumulators -> identical to the legacy code.
         _algo.set_lazy_v(use_dc_lazy_v);
         std::exception_ptr err;
         int step_diverge = -1;
         if(mask_mode){
-            _maybe_run_range_masked(0, nb_steps, _algo, _algo_controler, Ybus_, Vinit_solver,
+            _maybe_run_range_masked(0, nb_steps, _algo, _algo_controler, ac_cache_.mat, Vinit_solver,
                                     ac_solver_used, max_iter, tol, sn_mva,
                                     _timer_modif_Ybus, _nb_solved, _nb_converged, _timer_solver, step_diverge, err, false);
         } else {
-            _run_range(0, nb_steps, _algo, _algo_controler, Ybus_, Vinit_solver, ac_solver_used,
+            _run_range(0, nb_steps, _algo, _algo_controler, ac_cache_.mat, Vinit_solver, ac_solver_used,
                       max_iter, tol_, _nb_solved, _nb_converged, _timer_solver, _timer_modif_Ybus, step_diverge, err, false);
         }
         if(err) std::rethrow_exception(err);
@@ -275,7 +275,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         algos[t] = make_thread_algo();
         algos[t]->set_lazy_v(use_dc_lazy_v);
         controls[t] = _algo_controler;
-        ybus_copies[t] = Ybus_;
+        ybus_copies[t] = ac_cache_.mat;
     };
 
     auto timer_thread = CustTimer();

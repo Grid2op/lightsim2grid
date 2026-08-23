@@ -422,7 +422,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // explicit version: operates on the passed solver / control and writes
         // its book-keeping into the passed accumulators. This is what the
         // multi-threaded ContingencyAnalysis uses (one solver per thread). The
-        // read-only member Bbus_ is only read here (safe to share across threads).
+        // read-only member dc_cache_.mat is only read here (safe to share across threads).
         // V stays plain -- same AC/DC forwarding reason as the member overload above.
         bool compute_one_powerflow(AlgorithmSelector & algo,
                                    AlgoControl & control,
@@ -443,7 +443,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // Warm up a (freshly built) solver so its symbolic factorization / DC
         // internal Ybus / sparsity pattern match the member solver after the
         // n-powerflow. Mirrors the n-powerflow block of _finish_preprocessing
-        // (works on the member Ybus_ / Bbus_ / Sbus_ / Pbus_ — all read-only).
+        // (works on the member ac_cache_.mat / dc_cache_.mat / ac_cache_.inj / dc_cache_.inj — all read-only).
         // `control` is left in the "nothing changed" state on return so the
         // subsequent per-contingency solves reuse the factorization.
         bool warmup_solver(AlgorithmSelector & algo,
@@ -487,60 +487,52 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         }
     protected:
 
+        /**
+         * The family-agnostic half of whichever cache this sweep is building into.
+         *
+         * A batch runs AC or DC for its whole life, so exactly one of ac_cache_ /
+         * dc_cache_ is ever populated. Most of this class does not care which --
+         * the bus labelling, the slack and the pv-pq split have the same type
+         * either way -- so it reads them through here rather than branching at
+         * every use. `_ac_solver_used` is set by prepare_solver_input_base, and
+         * defaults to the AC side so that a read before any prep sees an empty
+         * layout rather than a dangling one.
+         */
+        [[nodiscard]] SolverBusLayout & active_layout() noexcept {
+            return _ac_solver_used ? static_cast<SolverBusLayout &>(ac_cache_)
+                                   : static_cast<SolverBusLayout &>(dc_cache_);
+        }
+        [[nodiscard]] const SolverBusLayout & active_layout() const noexcept {
+            return _ac_solver_used ? static_cast<const SolverBusLayout &>(ac_cache_)
+                                   : static_cast<const SolverBusLayout &>(dc_cache_);
+        }
+
         CplxVect prepare_solver_input_base(const Eigen::Ref<const CplxVect> & Vinit, bool ac_solver_used){
-            // clear previous data
-            Sbus_ = CplxVect();
-            Ybus_ = Eigen::SparseMatrix<cplx_type>();
-            Pbus_ = RealVect();
-            Bbus_ = Eigen::SparseMatrix<real_type>();
-            id_solver_to_me_.clear();
-            id_me_to_solver_.clear();
-            slack_ids_solver_ = SolverBusIdVect();
-            slack_ids_me_ = GlobalBusIdVect();
+            // Which family this batch runs, for active_layout(). Fixed for the whole
+            // sweep (it comes from the algorithm), but recorded here rather than
+            // asked of _algo on every access.
+            _ac_solver_used = ac_solver_used;
+
+            // clear previous data: the whole cache, in one call, because it is one
+            // object -- there is no way to forget a field
+            ac_cache_.clear();
+            dc_cache_.clear();
             nb_buses_solver_ = -1;
 
-            // fill the data correctly
+            // fill the data correctly. One call fills the ENTIRE cache -- labelling,
+            // matrix, injections, slack, pv-pq split, slack weights -- into vectors
+            // this batch owns. Nothing of it is left in _grid_model to be collected
+            // afterwards.
             _algo_controler.tell_all_changed();
             CplxVect res;
             if(ac_solver_used){
-                res = _grid_model.pre_process_solver(
-                    Vinit,
-                    Sbus_,
-                    Ybus_,
-                    id_me_to_solver_,
-                    id_solver_to_me_,
-                    slack_ids_me_,
-                    slack_ids_solver_,
-                    ac_solver_used,
-                    _algo_controler);
-                nb_buses_solver_ = static_cast<int>(Ybus_.cols());
+                res = _grid_model.pre_process_solver(Vinit, ac_cache_, _algo_controler);
+                nb_buses_solver_ = static_cast<int>(ac_cache_.mat.cols());
             } else {
                 // native real DC path: build the real Bbus / Pbus
-                res = _grid_model.pre_process_dc_solver(
-                    Vinit,
-                    Pbus_,
-                    Bbus_,
-                    id_me_to_solver_,
-                    id_solver_to_me_,
-                    slack_ids_me_,
-                    slack_ids_solver_,
-                    _algo_controler);
-                nb_buses_solver_ = static_cast<int>(Bbus_.cols());
+                res = _grid_model.pre_process_dc_solver(Vinit, dc_cache_, _algo_controler);
+                nb_buses_solver_ = static_cast<int>(dc_cache_.mat.cols());
             }
-
-            // extract relevant information
-            // ask for the family this batch actually solved with: the grid keeps
-            // one pv-pq split and one set of slack weights PER family, and the
-            // family-less accessors answer for AC whenever an AC powerflow has run
-            // on this grid -- which is not necessarily the one we just built.
-            const SolverBusIdVect & gm_bus_pv = ac_solver_used ? _grid_model.get_ac_pv_solver() : _grid_model.get_dc_pv_solver();
-            const SolverBusIdVect & gm_bus_pq = ac_solver_used ? _grid_model.get_ac_pq_solver() : _grid_model.get_dc_pq_solver();
-            const RealVect gm_bus_sw = ac_solver_used ? _grid_model.get_ac_slack_weights_solver() : _grid_model.get_dc_slack_weights_solver();
-
-            // TODO copies are made here, which is not ideal
-            bus_pv_ = gm_bus_pv;  // was _to_intvect()
-            bus_pq_ = gm_bus_pq;  // was _to_intvect()
-            slack_weights_ = gm_bus_sw;
             return res;
         }
 
@@ -565,7 +557,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
         // Vinit_solver as Eigen::Ref relies on the reassignment below
         // (Vinit_solver = _algo.get_V()) always being same-size as the caller's
-        // Vinit_solver: both trace back to the same Ybus_/Bbus_ solver-space
+        // Vinit_solver: both trace back to the same ac_cache_.mat/dc_cache_.mat solver-space
         // dimension (nb_buses_solver_) for the duration of one call, so this holds
         // structurally, not by luck. No virtual dispatch here to enforce it --
         // if that invariant is ever broken, Eigen::Ref's operator= will assert
@@ -604,7 +596,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // (needed to init the underlying solver with the correct sparsity pattern in particular)
                 _algo_controler.tell_all_changed();
                 _algo.tell_solver_control(_algo_controler);
-                _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
+                _grid_model.get_generators().set_vm(Vinit_solver, active_layout().id_me_to_solver);
                 CplxVect Vinit_solver2 = Vinit_solver;
                 bool conv;
                 // the "n" powerflow warm-up solve always needs the full complex V: its
@@ -613,30 +605,30 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // so it must never be lazy, even when the per-row sweep that follows will be.
                 _algo.set_lazy_v(false);
                 if(_algo.ac_solver_used()){
-                    // Sbus_ is already per-unit (pre_process_solver / fillSbus_me divides by
+                    // ac_cache_.inj is already per-unit (pre_process_solver / fillSbus_me divides by
                     // sn_mva when != 1), same convention as LSGrid::ac_pf's acSbus_ -- so tol
                     // (a physical MW/MVAr tolerance) must be converted the same way LSGrid::ac_pf
                     // does (`tol / sn_mva_`), or this initial solve accepts a per-unit mismatch
                     // up to sn_mva times looser than what the caller asked for.
                     conv = _algo.compute_pf(
-                        Ybus_,
+                        ac_cache_.mat,
                         Vinit_solver2,
-                        Sbus_,
-                        slack_ids_solver_.as_eigen(),
-                        slack_weights_,
-                        bus_pv_.as_eigen(),
-                        bus_pq_.as_eigen(),
+                        ac_cache_.inj,
+                        active_layout().slack_bus_id_solver.as_eigen(),
+                        active_layout().slack_weights,
+                        active_layout().bus_pv.as_eigen(),
+                        active_layout().bus_pq.as_eigen(),
                         max_iter,
                         tol / _grid_model.get_sn_mva());
                 } else {
                     conv = _algo.compute_pf_dc(
-                        Bbus_,
+                        dc_cache_.mat,
                         Vinit_solver2,
-                        Pbus_,
-                        slack_ids_solver_.as_eigen(),
-                        slack_weights_,
-                        bus_pv_.as_eigen(),
-                        bus_pq_.as_eigen());
+                        dc_cache_.inj,
+                        active_layout().slack_bus_id_solver.as_eigen(),
+                        active_layout().slack_weights,
+                        active_layout().bus_pv.as_eigen(),
+                        active_layout().bus_pq.as_eigen());
                 }
 
                 // check if we init the n-1 cases with results from the n cases
@@ -648,14 +640,14 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     // and never changes across the sweep except where a row explicitly re-seeds it
                     // (BaseBatchSweep::_apply_step_gen_v) -- this is the shared base every row's
                     // magnitude is reconstructed from, see _dc_vm_row_grid.
-                    // Grid buses outside id_solver_to_me_ (eg an unused substation's second bus)
+                    // Grid buses outside active_layout().id_solver_to_me (eg an unused substation's second bus)
                     // default to 0, not 1: they are never part of the solved system, and the legacy
                     // (eager) _voltages was CplxMat::Zero(...)-initialized and never wrote them --
                     // 0 magnitude reproduces that "untouched column reads back as exact complex 0"
                     // contract regardless of theta (also 0 there, for the same reason).
                     _dc_base_vm_solver_ = Vinit_solver.array().abs();
                     _dc_base_vm_grid_ = RealVect::Zero(static_cast<Eigen::Index>(nb_total_bus));
-                    _dc_base_vm_grid_(id_solver_to_me_.as_eigen()) = _dc_base_vm_solver_;
+                    _dc_base_vm_grid_(active_layout().id_solver_to_me.as_eigen()) = _dc_base_vm_solver_;
                 }
 
                 // everything init from n-case above
@@ -691,9 +683,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             if(_dc_gen_v_.rows() == 0) return _dc_base_vm_grid_;
             CplxVect tmp = _dc_base_vm_solver_.cast<cplx_type>();
             const RealVect row = _dc_gen_v_.row(i);
-            _grid_model.get_generators().set_vm(tmp, id_me_to_solver_, row);
+            _grid_model.get_generators().set_vm(tmp, active_layout().id_me_to_solver, row);
             RealVect res = _dc_base_vm_grid_;
-            res(id_solver_to_me_.as_eigen()) = tmp.array().abs();
+            res(active_layout().id_solver_to_me.as_eigen()) = tmp.array().abs();
             return res;
         }
 
@@ -809,23 +801,21 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // solver control
         AlgoControl _algo_controler;
 
-        // internal data
-        CplxVect Sbus_;
-        Eigen::SparseMatrix<cplx_type> Ybus_;
-        // DC counterparts (real): the DC solver works on the real system Bbus . theta = Pbus
-        RealVect Pbus_;
-        Eigen::SparseMatrix<real_type> Bbus_;
-        GlobalBusIdVect id_solver_to_me_;
-        SolverBusIdVect id_me_to_solver_;
-        SolverBusIdVect slack_ids_solver_;
-        GlobalBusIdVect slack_ids_me_;
+        // ---- what this batch solves, one object per family --------------------
+        // A batch runs AC or DC, never both, so only one of these is ever built --
+        // `active_layout()` picks it. They belong to the BATCH, not to
+        // `_grid_model`: LSGrid::pre_process_solver fills whichever cache it is
+        // handed, all of it, so nothing this batch builds can end up half in the
+        // grid's cache and half in ours. That used to be exactly what happened --
+        // the pv-pq split and the slack weights were not parameters, so they were
+        // written into the grid's members while everything else came here, and had
+        // to be fetched back out afterwards (three copies, and a grid left holding
+        // a mixture). See SolverSideCache.hpp.
+        AcSolverCache ac_cache_;
+        DcSolverCache dc_cache_;
+        /// which of the two above this sweep is building into; see active_layout()
+        bool _ac_solver_used = true;
         int nb_buses_solver_;
-
-        // TODO everything is copied here
-        // not optimal...
-        SolverBusIdVect bus_pv_;
-        SolverBusIdVect bus_pq_;
-        RealVect slack_weights_;
 
 };
 

@@ -36,7 +36,7 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
 /**
  V is modified at each call !
  Explicit version: operates on the passed solver / control / accumulators so it
- can run concurrently (one solver per thread). The member Bbus_ is read-only here.
+ can run concurrently (one solver per thread). The member dc_cache_.mat is read-only here.
 **/
 bool BaseBatchSolverSynch::compute_one_powerflow(
     AlgorithmSelector & algo,
@@ -69,17 +69,17 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
             max_iter,
             tol);
     } else {
-        // native real DC entry point: Bbus_ is the (constant) real admittance built in
+        // native real DC entry point: dc_cache_.mat is the (constant) real admittance built in
         // prepare_solver_input_base; Pbus is the real part of the (possibly per-step)
-        // injection. ContingencyAnalysis leaves Sbus_ empty in DC (it relies on the
-        // member Pbus_ built once), so fall back to Pbus_ when no complex Sbus is given.
+        // injection. ContingencyAnalysis leaves ac_cache_.inj empty in DC (it relies on the
+        // member dc_cache_.inj built once), so fall back to dc_cache_.inj when no complex Sbus is given.
         // Split into two branches (rather than a ternary) so the common/no-Sbus case
-        // binds Pbus_ directly instead of unifying both branches into a fresh copy.
+        // binds dc_cache_.inj directly instead of unifying both branches into a fresh copy.
         if(Sbus.size() == 0){
-            conv = algo.compute_pf_dc(Bbus_, V, Pbus_, slack_ids, slack_weights, bus_pv, bus_pq);
+            conv = algo.compute_pf_dc(dc_cache_.mat, V, dc_cache_.inj, slack_ids, slack_weights, bus_pv, bus_pq);
         } else {
             const RealVect Pbus = Sbus.real();
-            conv = algo.compute_pf_dc(Bbus_, V, Pbus, slack_ids, slack_weights, bus_pv, bus_pq);
+            conv = algo.compute_pf_dc(dc_cache_.mat, V, Pbus, slack_ids, slack_weights, bus_pv, bus_pq);
         }
     }
     if(conv && !algo.lazy_v()){
@@ -110,24 +110,24 @@ bool BaseBatchSolverSynch::warmup_solver(
     bool conv;
     if(algo.ac_solver_used()){
         conv = algo.compute_pf(
-            Ybus_,
+            ac_cache_.mat,
             Vinit_solver,
-            Sbus_,
-            slack_ids_solver_.as_eigen(),
-            slack_weights_,
-            bus_pv_.as_eigen(),
-            bus_pq_.as_eigen(),
+            ac_cache_.inj,
+            active_layout().slack_bus_id_solver.as_eigen(),
+            active_layout().slack_weights,
+            active_layout().bus_pv.as_eigen(),
+            active_layout().bus_pq.as_eigen(),
             max_iter,
             tol);
     } else {
         conv = algo.compute_pf_dc(
-            Bbus_,
+            dc_cache_.mat,
             Vinit_solver,
-            Pbus_,
-            slack_ids_solver_.as_eigen(),
-            slack_weights_,
-            bus_pv_.as_eigen(),
-            bus_pq_.as_eigen());
+            dc_cache_.inj,
+            active_layout().slack_bus_id_solver.as_eigen(),
+            active_layout().slack_weights,
+            active_layout().bus_pv.as_eigen(),
+            active_layout().bus_pq.as_eigen());
     }
     // subsequent per-contingency solves reuse the factorization
     control.tell_none_changed();

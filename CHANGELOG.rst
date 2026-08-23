@@ -149,6 +149,33 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   a one-shot invalidation of what a family cached (as opposed to the ``allow_*`` mode above).
   ``prevent_cache_reuse()`` is the new name of ``tell_solver_need_reset()``, which still exists and
   behaves identically. Both are now documented rather than tagged "internal, do not use".
+- [BREAKING] everything a solver family caches now lives in one object, ``SolverSideCache``
+  (``src/core/SolverSideCache.hpp``), instead of eighteen separate ``LSGrid`` members. The bus
+  labelling, ``Ybus`` / ``Sbus``, the slack, the PV / PQ split and each family's connectivity
+  snapshot are one picture of the grid taken at one instant, expressed in ONE bus labelling; they
+  are now built, handed over and retired as one unit. ``LSGrid`` holds ``ac_cache_`` / ``dc_cache_``;
+  ``pre_process_solver`` / ``pre_process_dc_solver`` (C++ only, never exposed to python) take one
+  cache reference instead of seven loose containers. **This changes ``LSGrid``'s member layout**, so
+  anything that casts an ``LSGrid`` across a module boundary (``gpusim2grid``) must be rebuilt
+  against these headers -- which the plugin ABI policy in ``docs/solver_plugin.rst`` already
+  requires. Nothing changes for python.
+- [FIXED] a batch algorithm no longer writes half of what it builds into the grid's cache.
+  ``slack_weights``, ``bus_pv`` and ``bus_pq`` were not parameters of ``pre_process_solver``: they
+  were taken from the grid's own members whatever the caller passed for the other six containers.
+  So a ``TimeSeries`` / ``ContingencyAnalysis`` build wrote its PV / PQ split and its slack weights
+  into the grid's cache, next to a ``Ybus`` built for a different labelling, and left that grid
+  still claiming the result was reusable; and the reuse guard compared one owner's container sizes
+  against the other's, so a caller that reused its own containers with a "nothing changed" control
+  would have skipped ``fillpv_pq`` and stamped the grid's PV / PQ split onto its own system --
+  converged, plausible, wrong. Nothing reached that (every batch asks for a full rebuild, and works
+  on a private copy of the grid), which is what made it worth closing before something did. A cache
+  being one object removes the whole class of mistake: there is no way to hand a function half of
+  it. What a foreign build still publishes into the grid -- the labelling and the split, which the
+  NR extensions read back through ``lsgrid_ptr`` rather than from what the solver was handed -- now
+  retires that grid's cache instead of leaving it a mixture.
+- [FIXED] a build into a caller's cache no longer resets or reconfigures the grid's own solver.
+  ``_algo.reset()`` / ``tell_solver_control()`` fired for a solve the grid would never perform,
+  discarding a factorization its next powerflow would have reused.
 - [BREAKING] the AC and the DC solver families no longer share ANY solver-side data.
   ``slack_weights``, the PV split and the PQ split were single members overwritten by whichever
   family solved last -- unlike ``Ybus`` / ``Sbus`` / the id maps, which were already per family.
