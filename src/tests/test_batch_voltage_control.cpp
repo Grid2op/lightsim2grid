@@ -316,6 +316,28 @@ TEST_CASE("a batch on an already-solved grid regulates too", "[batch][vctrl]")
     check_same_voltages(one_step_timeseries(grid, 2), ref);
 }
 
+TEST_CASE("the source grid still solves correctly after a batch ran on it", "[batch][vctrl]")
+{
+    // The batch copies the grid, but the copy is not where this could go wrong. Every
+    // batch prep calls pre_process_solver with the batch's OWN containers, and that
+    // call publishes the batch's labelling and pv-pq split into the grid it was called
+    // on -- next to a Ybus / Sbus it did not publish. On the copy that mixture is
+    // harmless (the copy never runs a powerflow of its own). The point here is the
+    // contract that makes it harmless anywhere: a build into someone else's containers
+    // always leaves that grid rebuilding, so no cache is ever half this grid's and
+    // half someone else's. Solve the source grid on both sides of a batch and it must
+    // not move.
+    LSGrid ref_grid = make_remote_gen_grid();
+    const CplxVect ref = single_shot(ref_grid);
+
+    LSGrid grid = make_remote_gen_grid();
+    check_same_voltages(single_shot(grid), ref);
+    check_same_voltages(one_step_timeseries(grid, 2), ref);
+    check_same_voltages(single_shot(grid), ref);   // ... and again, after the batch
+    check_same_voltages(empty_contingency(grid), ref);
+    check_same_voltages(single_shot(grid), ref);
+}
+
 TEST_CASE("two generators sharing one regulated bus share it in a batch too", "[batch][vctrl]")
 {
     // Sharing is the supported multi-controller case (test_powerflow_algorithm.cpp

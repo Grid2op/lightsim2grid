@@ -363,6 +363,116 @@ TEST_CASE("the structural half of the guard is what stands between unset_changes
 }
 
 // ---------------------------------------------------------------------------
+// 3b. the cache belongs to exactly one owner
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a build into someone else's containers never leaves a half-replaced cache",
+          "[LSGrid][cache_reuse][batch]")
+{
+    // `pre_process_solver` / `pre_process_dc_solver` serve two kinds of caller.
+    // `ac_pf` / `dc_pf` / `check_solution` hand over the grid's OWN per-family
+    // members: what comes out is the family cache. The batch algorithms
+    // (BaseBatchSolverSynch and everything built on it) hand over containers they own
+    // and solve them with an algorithm of their own.
+    //
+    // For the second kind, the grid's members are still a real output: the NR
+    // extensions are not built from what the solver was handed, they are pulled back
+    // out of the LSGrid through `lsgrid_ptr` (bus labelling, slack ids, AND the pv-pq
+    // split -- see fill_voltage_control_solver_data's use of bus_pq_ac_). So the
+    // build has to publish there, and that publication is what leaves the grid's own
+    // cache a mixture: the caller's labelling and split next to the grid's own Ybus /
+    // Sbus, which are deliberately not published (they are the expensive half).
+    //
+    // Right size, passes every structural check, reads as valid. The only thing that
+    // makes it safe is that the grid is then told to rebuild -- so that is what these
+    // sections pin. (The other half of the contract, that the nine containers may not
+    // be MIXED between owners in one call, is enforced by a throw in
+    // _pre_process_solver_impl; it cannot be reached from outside the class, since
+    // building a mixed call needs non-const access to private members.)
+    SECTION("AC"){
+        LSGrid grid = make_grid();
+        const CplxVect v_before = solve_ac(grid);
+        REQUIRE(v_before.size() == 14);
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // cache is live
+
+        // exactly what a batch does: its own containers, its own control
+        CplxVect foreign_sbus;
+        Eigen::SparseMatrix<cplx_type> foreign_ybus;
+        ls2g::SolverBusIdVect foreign_id_me_to_solver, foreign_slack_solver, foreign_pv, foreign_pq;
+        ls2g::GlobalBusIdVect foreign_id_solver_to_me, foreign_slack_me;
+        RealVect foreign_sw;
+        const ls2g::AlgoControl foreign_control;  // default ctor: everything changed
+        grid.pre_process_solver(flat_start(grid), foreign_sbus, foreign_ybus,
+                                foreign_id_me_to_solver, foreign_id_solver_to_me,
+                                foreign_slack_me, foreign_slack_solver,
+                                foreign_sw, foreign_pv, foreign_pq,
+                                true, foreign_control);
+
+        // it built into the caller's containers ...
+        CHECK(foreign_ybus.rows() == 14);
+        CHECK(foreign_ybus.cols() == 14);
+        CHECK(foreign_sbus.size() == 14);
+        CHECK(foreign_sw.size() == 14);
+        CHECK(foreign_pq.size() > 0);
+        // ... published the pv-pq split the NR extensions read back out of the grid ...
+        CHECK(grid.get_ac_pq_solver().size() == foreign_pq.size());
+        CHECK(grid.get_ac_pv_solver().size() == foreign_pv.size());
+        // ... and left this grid unable to reuse what is now a mixture
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+
+        // so the grid's own next powerflow is unaffected by the detour
+        CHECK((solve_ac(grid) - v_before).norm() < 1e-9);
+    }
+    SECTION("DC"){
+        LSGrid grid = make_grid();
+        const CplxVect v_before = solve_dc(grid);
+        REQUIRE(v_before.size() == 14);
+        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+
+        RealVect foreign_pbus;
+        Eigen::SparseMatrix<real_type> foreign_bbus;
+        ls2g::SolverBusIdVect foreign_id_me_to_solver, foreign_slack_solver, foreign_pv, foreign_pq;
+        ls2g::GlobalBusIdVect foreign_id_solver_to_me, foreign_slack_me;
+        RealVect foreign_sw;
+        const ls2g::AlgoControl foreign_control;
+        grid.pre_process_dc_solver(flat_start(grid), foreign_pbus, foreign_bbus,
+                                   foreign_id_me_to_solver, foreign_id_solver_to_me,
+                                   foreign_slack_me, foreign_slack_solver,
+                                   foreign_sw, foreign_pv, foreign_pq,
+                                   foreign_control);
+
+        CHECK(foreign_bbus.rows() == 14);
+        CHECK(foreign_pbus.size() == 14);
+        CHECK(grid.get_dc_pq_solver().size() == foreign_pq.size());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+
+        CHECK((solve_dc(grid) - v_before).norm() < 1e-9);
+    }
+    SECTION("one family's foreign build does not disturb the other family's cache"){
+        LSGrid grid = make_grid();
+        const CplxVect v_ac_before = solve_ac(grid);
+        const CplxVect v_dc_before = solve_dc(grid);
+
+        RealVect foreign_pbus;
+        Eigen::SparseMatrix<real_type> foreign_bbus;
+        ls2g::SolverBusIdVect foreign_id_me_to_solver, foreign_slack_solver, foreign_pv, foreign_pq;
+        ls2g::GlobalBusIdVect foreign_id_solver_to_me, foreign_slack_me;
+        RealVect foreign_sw;
+        const ls2g::AlgoControl foreign_control;
+        grid.pre_process_dc_solver(flat_start(grid), foreign_pbus, foreign_bbus,
+                                   foreign_id_me_to_solver, foreign_id_solver_to_me,
+                                   foreign_slack_me, foreign_slack_solver,
+                                   foreign_sw, foreign_pv, foreign_pq,
+                                   foreign_control);
+
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+        CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // AC untouched
+        CHECK((solve_ac(grid) - v_ac_before).norm() < 1e-9);
+        CHECK((solve_dc(grid) - v_dc_before).norm() < 1e-9);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 4. nothing cached ever crosses a serialization boundary
 // ---------------------------------------------------------------------------
 

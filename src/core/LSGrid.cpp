@@ -754,6 +754,9 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
                                     id_ac_solver_to_me_,
                                     slack_bus_id_ac_me_,
                                     slack_bus_id_ac_solver_,
+                                    slack_weights_ac_,
+                                    bus_pv_ac_,
+                                    bus_pq_ac_,
                                     is_ac,
                                     algo_controler_.ac_algo_controler());
 
@@ -1293,6 +1296,9 @@ CplxVect LSGrid::check_solution(const Eigen::Ref<const CplxVect> & V_proposed, b
                                     id_ac_solver_to_me_,
                                     slack_bus_id_ac_me_,
                                     slack_bus_id_ac_solver_,
+                                    slack_weights_ac_,
+                                    bus_pv_ac_,
+                                    bus_pq_ac_,
                                     is_ac, reset_solver,
                                     false);  // do NOT snap regulated buses to their target: we are testing V_proposed as-is
 
@@ -1396,16 +1402,56 @@ CplxVect LSGrid::_pre_process_solver_impl(
     GlobalBusIdVect & id_solver_to_me,
     GlobalBusIdVect & slack_bus_id_me,
     SolverBusIdVect & slack_bus_id_solver,
+    RealVect & slack_weights,
+    SolverBusIdVect & bus_pv,
+    SolverBusIdVect & bus_pq,
     const AlgoControl & solver_control,
     bool init_pv_vm_targets)
 {
     // cplx_type matrix => AC solver family, real_type matrix => DC solver family
     const bool is_ac = std::is_same<MatScalar, cplx_type>::value;
-    // this family's own solver-side data (the other family keeps its own copy of
-    // each of these, so the two never overwrite one another)
-    RealVect & slack_weights = is_ac ? slack_weights_ac_ : slack_weights_dc_;
-    SolverBusIdVect & bus_pv = is_ac ? bus_pv_ac_ : bus_pv_dc_;
-    SolverBusIdVect & bus_pq = is_ac ? bus_pq_ac_ : bus_pq_dc_;
+
+    // ---- whose solver-side data is this? ----------------------------------------
+    // Two kinds of caller reach this function, and they must not be treated alike.
+    //   - THE GRID ITSELF (ac_pf / dc_pf / check_solution) hands over its own
+    //     per-family members. What is built here IS the family cache, this grid's
+    //     algorithm is the one that will consume it, and reusing what the previous
+    //     powerflow left is the whole point.
+    //   - A FOREIGN BUILDER -- today the batch algorithms (TimeSeries /
+    //     ContingencyAnalysis / the sweeps, through BaseBatchSolverSynch), on a
+    //     private copy of the grid -- hands over vectors it owns and solves them with
+    //     an algorithm of its own. For it this function is a pure builder.
+    //
+    // `slack_weights`, `bus_pv` and `bus_pq` used to be exempt from that: they were
+    // taken from this grid's members whatever the caller passed for everything else.
+    // Two things followed, both silent.
+    //   1. A foreign build wrote its pv-pq split and its slack weights into the
+    //      grid's cache, on top of a Ybus / Sbus the grid had built for a different
+    //      labelling -- a cache that is a mixture of two owners and reads as valid.
+    //   2. The guard below sized one owner's containers against the other's. Sizes
+    //      agree far more often than labellings do, so a caller reusing its own
+    //      containers with a "nothing changed" control would have skipped fillpv_pq
+    //      and stamped THIS grid's pv-pq split onto ITS system: converged, plausible,
+    //      wrong. Nothing reaches that today (every foreign caller asks for a full
+    //      rebuild), which is exactly what makes it the kind of bug that surfaces
+    //      years later, in whichever batch path first tries to keep its Ybus.
+    // So the nine containers now travel as one group, from one owner, and only the
+    // owner of a cache may reuse it.
+    const int nb_own = _nb_own_cache_args(is_ac, &inj, &mat, &id_me_to_solver,
+                                          &id_solver_to_me, &slack_bus_id_me,
+                                          &slack_bus_id_solver, &slack_weights,
+                                          &bus_pv, &bus_pq);
+    if(nb_own != 0 && nb_own != 9){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::pre_process_solver: " << nb_own << " of the 9 solver-side "
+             << "containers belong to this grid's own " << (is_ac ? "AC" : "DC")
+             << " cache and " << (9 - nb_own) << " to the caller. They must all come "
+             << "from the same owner: mixing them builds the matrices with one bus "
+             << "labelling and the pv/pq split (or the slack weights) with another, "
+             << "which converges to a wrong answer instead of failing.";
+        throw std::runtime_error(exc_.str());
+    }
+    const bool own_cache = (nb_own == 9);
 
     // ---- cache-consistency guard ------------------------------------------------
     // `solver_control` only records what changed SINCE the last solve of this
@@ -1432,6 +1478,13 @@ CplxVect LSGrid::_pre_process_solver_impl(
     // cache simply never has a usable one.
     const auto nb_bus_solver_cached = static_cast<Eigen::Index>(id_solver_to_me.size());
     const bool cache_unusable =
+        // a foreign builder never reuses: `solver_control`, the connectivity snapshot
+        // init_bus_status() compares against and the flags it raises all belong to
+        // THIS grid, and say nothing about what the caller's containers hold. Free in
+        // practice -- every foreign caller asks for a full rebuild anyway -- and it is
+        // what makes the mixed-owner fast path above structurally impossible rather
+        // than merely unreached.
+        !own_cache ||
         !(is_ac ? allow_ac_cache_reuse_ : allow_dc_cache_reuse_) ||
         (id_me_to_solver.size() != substations_.nb_bus()) ||  // never built, or built for another grid size
         (nb_bus_solver_cached == 0) ||
@@ -1441,7 +1494,13 @@ CplxVect LSGrid::_pre_process_solver_impl(
         (slack_weights.size() != nb_bus_solver_cached) ||
         (bus_pv.size() + bus_pq.size() > static_cast<std::size_t>(nb_bus_solver_cached));
 
-    if(solver_control.need_reset_solver() || cache_unusable){
+    // `_algo` / `_dc_algo` are THIS grid's algorithms: they consume this grid's cache
+    // and nothing else. A foreign builder solves with an algorithm of its own (see
+    // BaseBatchSolverSynch's `_algo`), so resetting ours -- throwing away a
+    // factorization our next own powerflow would have reused -- is at best wasted
+    // work, and pairing it with a "nothing changed" control it never sees is how a
+    // reset algorithm ends up asked to skip the rebuild it just lost.
+    if(own_cache && (solver_control.need_reset_solver() || cache_unusable)){
         if(is_ac) _algo.reset();
         else _dc_algo.reset();
     }
@@ -1541,48 +1600,71 @@ CplxVect LSGrid::_pre_process_solver_impl(
     // once the algorithm has actually run -- check_solution() comes through this
     // function too, without ever calling compute_pf, and clearing the flag there
     // would drop a rebuild the next real powerflow still needs.
-    const bool algo_needs_rebuild = is_ac ? ac_algo_needs_rebuild_ : dc_algo_needs_rebuild_;
-    if(cache_unusable || algo_needs_rebuild){
-        // Either the flags we were handed described a cache that did not exist (so
-        // we rebuilt everything just now), or the previous solve of this family
-        // diverged and its algorithm was reset. Both mean the algorithm must
-        // rebuild its own internals rather than skip on a "nothing changed" it
-        // cannot honour.
-        const AlgoControl all_changed;  // default ctor: everything changed
-        if(is_ac) _algo.tell_solver_control(all_changed);
-        else _dc_algo.tell_solver_control(all_changed);
-    } else {
-        if(is_ac) _algo.tell_solver_control(solver_control);
-        else _dc_algo.tell_solver_control(solver_control);
+    // Only when this grid's own algorithm is the one about to run on what we just
+    // built: a foreign builder configures its own (BaseBatchSolverSynch does it
+    // itself, from its own control), and telling ours about a solve it will not
+    // perform only desynchronizes it from the cache it still holds.
+    if(own_cache){
+        const bool algo_needs_rebuild = is_ac ? ac_algo_needs_rebuild_ : dc_algo_needs_rebuild_;
+        if(cache_unusable || algo_needs_rebuild){
+            // Either the flags we were handed described a cache that did not exist (so
+            // we rebuilt everything just now), or the previous solve of this family
+            // diverged and its algorithm was reset. Both mean the algorithm must
+            // rebuild its own internals rather than skip on a "nothing changed" it
+            // cannot honour.
+            const AlgoControl all_changed;  // default ctor: everything changed
+            if(is_ac) _algo.tell_solver_control(all_changed);
+            else _dc_algo.tell_solver_control(all_changed);
+        } else {
+            if(is_ac) _algo.tell_solver_control(solver_control);
+            else _dc_algo.tell_solver_control(solver_control);
+        }
     }
 
-    // Keep the member solver-side labelling in sync with the vectors we just built.
-    // The single-shot ac_pf / dc_pf pass the members themselves (self-assign, skipped
-    // below), but the batch algorithms (TimeSeries / ContingencyAnalysis, through
-    // BaseBatchSolverSynch) own their local vectors and pass those -- while the solver
-    // still reaches back into this LSGrid through `lsgrid_ptr` to build its NR
-    // extensions:
-    //   Base           -> get_free_vm_slack_solver_buses()    (slack_bus_id_*_solver_)
+    // A foreign build still has to PUBLISH what it built into this grid's members,
+    // because the solver reaches back into the LSGrid through `lsgrid_ptr` to build
+    // its NR extensions, and those read the members rather than anything they were
+    // handed:
+    //   Base           -> get_free_vm_slack_solver_buses()    (slack_bus_id_ac_solver_,
+    //                       id_me_to_ac_solver_)
     //   Hvdc           -> fill_hvdc_droop_solver_data()       (id_me_to_*_solver_)
-    //   VoltageControl -> fill_voltage_control_solver_data()  (id_*_solver_to_me_,
-    //                       id_me_to_*_solver_, and the two above)
+    //   VoltageControl -> fill_voltage_control_solver_data()  (id_me_to_ac_solver_,
+    //                       id_ac_solver_to_me_, bus_pq_ac_, and the two above)
     // A member left stale there does not read as an error, it reads as "nothing to
     // do": the controller list comes back empty and the solve SILENTLY drops remote
     // voltage control / the free Vm unknown of a distributed-slack participant. Note
-    // that the batch classes hold a *copy* of the grid, and LSGrid's copy constructor
-    // reset()s all of this, so stale here always means empty. Every member the
-    // extensions read must therefore reflect the active mapping in every path -- not
-    // just the forward map.
-    if(is_ac){
-        if(&id_me_to_solver != &id_me_to_ac_solver_) id_me_to_ac_solver_ = id_me_to_solver;
-        if(&id_solver_to_me != &id_ac_solver_to_me_) id_ac_solver_to_me_ = id_solver_to_me;
-        if(&slack_bus_id_me != &slack_bus_id_ac_me_) slack_bus_id_ac_me_ = slack_bus_id_me;
-        if(&slack_bus_id_solver != &slack_bus_id_ac_solver_) slack_bus_id_ac_solver_ = slack_bus_id_solver;
-    } else {
-        if(&id_me_to_solver != &id_me_to_dc_solver_) id_me_to_dc_solver_ = id_me_to_solver;
-        if(&id_solver_to_me != &id_dc_solver_to_me_) id_dc_solver_to_me_ = id_solver_to_me;
-        if(&slack_bus_id_me != &slack_bus_id_dc_me_) slack_bus_id_dc_me_ = slack_bus_id_me;
-        if(&slack_bus_id_solver != &slack_bus_id_dc_solver_) slack_bus_id_dc_solver_ = slack_bus_id_solver;
+    // `bus_pq_ac_`: the pv-pq split is part of what the extensions read, which is why
+    // it is published here and not merely built into the caller's own vector.
+    // (The single-shot ac_pf / dc_pf pass the members themselves, so there is nothing
+    // to publish -- own_cache covers exactly that case.)
+    if(!own_cache){
+        if(is_ac){
+            id_me_to_ac_solver_ = id_me_to_solver;
+            id_ac_solver_to_me_ = id_solver_to_me;
+            slack_bus_id_ac_me_ = slack_bus_id_me;
+            slack_bus_id_ac_solver_ = slack_bus_id_solver;
+            slack_weights_ac_ = slack_weights;
+            bus_pv_ac_ = bus_pv;
+            bus_pq_ac_ = bus_pq;
+        } else {
+            id_me_to_dc_solver_ = id_me_to_solver;
+            id_dc_solver_to_me_ = id_solver_to_me;
+            slack_bus_id_dc_me_ = slack_bus_id_me;
+            slack_bus_id_dc_solver_ = slack_bus_id_solver;
+            slack_weights_dc_ = slack_weights;
+            bus_pv_dc_ = bus_pv;
+            bus_pq_dc_ = bus_pq;
+        }
+        // ... and that publication is precisely what makes this grid's own cache for
+        // that family untrustworthy afterwards: the labelling and the split are now
+        // the caller's, while the matrix and the injections -- deliberately NOT
+        // published, they are the expensive half and the caller keeps them -- are
+        // still whatever this grid built last, if anything. The mixture is the right
+        // size and passes every structural check, so nothing downstream would notice
+        // it. This is the write-through that used to happen silently, for pv / pq /
+        // the slack weights only; now it is complete, and it is paid for:
+        if(is_ac) prevent_ac_cache_reuse();
+        else prevent_dc_cache_reuse();
     }
     return V;
 }
@@ -1595,13 +1677,17 @@ CplxVect LSGrid::pre_process_solver(
     GlobalBusIdVect & id_solver_to_me,
     GlobalBusIdVect & slack_bus_id_me,
     SolverBusIdVect & slack_bus_id_solver,
+    RealVect & slack_weights,
+    SolverBusIdVect & bus_pv,
+    SolverBusIdVect & bus_pq,
     bool /*is_ac*/,  // kept for API compatibility; DC now goes through pre_process_dc_solver
     const AlgoControl & solver_control,
     bool init_pv_vm_targets)
 {
     return _pre_process_solver_impl<cplx_type>(
         Vinit, Sbus, Ybus, id_me_to_solver, id_solver_to_me,
-        slack_bus_id_me, slack_bus_id_solver, solver_control, init_pv_vm_targets);
+        slack_bus_id_me, slack_bus_id_solver, slack_weights, bus_pv, bus_pq,
+        solver_control, init_pv_vm_targets);
 }
 
 CplxVect LSGrid::pre_process_dc_solver(
@@ -1612,11 +1698,15 @@ CplxVect LSGrid::pre_process_dc_solver(
     GlobalBusIdVect & id_solver_to_me,
     GlobalBusIdVect & slack_bus_id_me,
     SolverBusIdVect & slack_bus_id_solver,
+    RealVect & slack_weights,
+    SolverBusIdVect & bus_pv,
+    SolverBusIdVect & bus_pq,
     const AlgoControl & solver_control)
 {
     return _pre_process_solver_impl<real_type>(
         Vinit, Pbus, Bbus, id_me_to_solver, id_solver_to_me,
-        slack_bus_id_me, slack_bus_id_solver, solver_control, true);
+        slack_bus_id_me, slack_bus_id_solver, slack_weights, bus_pv, bus_pq,
+        solver_control, true);
 }
 
 CplxVect LSGrid::_get_results_back_to_orig_nodes(const Eigen::Ref<const CplxVect> & res_tmp,
@@ -2081,6 +2171,9 @@ CplxVect LSGrid::dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
                                        id_dc_solver_to_me_,
                                        slack_bus_id_dc_me_,
                                        slack_bus_id_dc_solver_,
+                                       slack_weights_dc_,
+                                       bus_pv_dc_,
+                                       bus_pq_dc_,
                                        algo_controler_.dc_algo_controler());
     // start the solver (native real DC entry point)
     conv = _dc_algo.compute_pf_dc(

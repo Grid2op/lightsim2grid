@@ -149,6 +149,25 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   a one-shot invalidation of what a family cached (as opposed to the ``allow_*`` mode above).
   ``prevent_cache_reuse()`` is the new name of ``tell_solver_need_reset()``, which still exists and
   behaves identically. Both are now documented rather than tagged "internal, do not use".
+- [FIXED] the solver-side data a powerflow is built from now belongs to exactly one owner.
+  ``LSGrid::pre_process_solver`` / ``pre_process_dc_solver`` (C++ only, not exposed to python)
+  serve two kinds of caller: the grid itself (``ac_pf`` / ``dc_pf`` / ``check_solution``, which
+  hand over their own members, so what comes out IS the family cache) and the batch algorithms
+  (``TimeSeries`` / ``ContingencyAnalysis`` / the sweeps, which own their containers and solve them
+  with an algorithm of their own). The slack weights and the PV / PQ split were exempt: they were
+  taken from the grid's members whatever the caller passed for everything else. So a batch build
+  wrote its own split into the grid's cache next to a ``Ybus`` / ``Sbus`` built for a different
+  labelling, and the cache-consistency guard compared one owner's container sizes against the
+  other's -- sizes agree far more often than labellings do, so a caller that reused its containers
+  with a "nothing changed" control would have skipped ``fillpv_pq`` and stamped the grid's PV / PQ
+  split onto its own system: converged, plausible, wrong. Nothing reached it (every batch asks for
+  a full rebuild), which is what made it worth closing before something did.
+  The three vectors are now parameters like the rest of the group, ``allow_cache_reuse`` fast paths
+  are reserved to the owner of a cache, mixing the two owners' containers in one call raises
+  instead of building a chimera, and a build into a caller's containers leaves the grid it was
+  called on rebuilding rather than reusing what is now half its own and half the caller's. This
+  changes the signature of the two ``pre_process_*`` methods (three added parameters) for C++
+  callers; nothing changes for python, and the numbers a batch returns are unchanged.
 - [BREAKING] the AC and the DC solver families no longer share ANY solver-side data.
   ``slack_weights``, the PV split and the PQ split were single members overwritten by whichever
   family solved last -- unlike ``Ybus`` / ``Sbus`` / the id maps, which were already per family.

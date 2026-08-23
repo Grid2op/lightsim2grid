@@ -1874,6 +1874,13 @@ class LS2G_API LSGrid final
         // Sbus stays a plain reference (not Eigen::Ref): forwarded into
         // _pre_process_solver_impl's inj, which forwards into prepare_injection,
         // which reassigns/resizes it.
+        // `slack_weights` / `bus_pv` / `bus_pq` complete the group: they used to be
+        // taken from this grid's own members whatever the caller passed for the rest,
+        // which meant a foreign builder silently wrote its pv-pq split and its slack
+        // weights into the grid's cache while leaving the grid's Ybus / Sbus behind.
+        // The whole group now travels together -- see the ownership check at the top
+        // of _pre_process_solver_impl, and BaseBatchSolverSynch::prepare_solver_input_base
+        // for the caller that owns its own.
         CplxVect pre_process_solver(const Eigen::Ref<const CplxVect> & Vinit,
                                     CplxVect & Sbus,
                                     Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -1881,6 +1888,9 @@ class LS2G_API LSGrid final
                                     GlobalBusIdVect & id_solver_to_me,
                                     GlobalBusIdVect & slack_bus_id_me,
                                     SolverBusIdVect & slack_bus_id_solver,
+                                    RealVect & slack_weights,
+                                    SolverBusIdVect & bus_pv,
+                                    SolverBusIdVect & bus_pq,
                                     bool is_ac,
                                     const AlgoControl & solver_control,
                                     bool init_pv_vm_targets = true);
@@ -1897,6 +1907,9 @@ class LS2G_API LSGrid final
                                        GlobalBusIdVect & id_solver_to_me,
                                        GlobalBusIdVect & slack_bus_id_me,
                                        SolverBusIdVect & slack_bus_id_solver,
+                                       RealVect & slack_weights,
+                                       SolverBusIdVect & bus_pv,
+                                       SolverBusIdVect & bus_pq,
                                        const AlgoControl & solver_control);
 
         //for FDPF
@@ -2098,8 +2111,51 @@ class LS2G_API LSGrid final
                                           GlobalBusIdVect & id_solver_to_me,
                                           GlobalBusIdVect & slack_bus_id_me,
                                           SolverBusIdVect & slack_bus_id_solver,
+                                          RealVect & slack_weights,
+                                          SolverBusIdVect & bus_pv,
+                                          SolverBusIdVect & bus_pq,
                                           const AlgoControl & solver_control,
                                           bool init_pv_vm_targets);
+
+        // How many of the nine solver-side containers `_pre_process_solver_impl` was
+        // handed are this LSGrid's own cache for that family. Nine means the caller is
+        // the grid itself (ac_pf / dc_pf / check_solution, which pass their members);
+        // zero means a foreign builder (the batch algorithms, which own theirs). Any
+        // number in between is a programming error -- see the call site.
+        // Everything is compared as `const void *` so the two families' differently
+        // typed members can be handled by one runtime branch (C++14: no `if constexpr`).
+        // Nine pointer comparisons summed branchlessly, once per powerflow.
+        [[nodiscard]] int _nb_own_cache_args(bool is_ac,
+                                             const void * inj,
+                                             const void * mat,
+                                             const void * id_me_to_solver,
+                                             const void * id_solver_to_me,
+                                             const void * slack_bus_id_me,
+                                             const void * slack_bus_id_solver,
+                                             const void * slack_weights,
+                                             const void * bus_pv,
+                                             const void * bus_pq) const noexcept {
+            if(is_ac){
+                return (inj                 == (const void *) &acSbus_)
+                     + (mat                 == (const void *) &Ybus_ac_)
+                     + (id_me_to_solver     == (const void *) &id_me_to_ac_solver_)
+                     + (id_solver_to_me     == (const void *) &id_ac_solver_to_me_)
+                     + (slack_bus_id_me     == (const void *) &slack_bus_id_ac_me_)
+                     + (slack_bus_id_solver == (const void *) &slack_bus_id_ac_solver_)
+                     + (slack_weights       == (const void *) &slack_weights_ac_)
+                     + (bus_pv              == (const void *) &bus_pv_ac_)
+                     + (bus_pq              == (const void *) &bus_pq_ac_);
+            }
+            return (inj                 == (const void *) &dcPbus_)
+                 + (mat                 == (const void *) &Bbus_dc_)
+                 + (id_me_to_solver     == (const void *) &id_me_to_dc_solver_)
+                 + (id_solver_to_me     == (const void *) &id_dc_solver_to_me_)
+                 + (slack_bus_id_me     == (const void *) &slack_bus_id_dc_me_)
+                 + (slack_bus_id_solver == (const void *) &slack_bus_id_dc_solver_)
+                 + (slack_weights       == (const void *) &slack_weights_dc_)
+                 + (bus_pv              == (const void *) &bus_pv_dc_)
+                 + (bus_pq              == (const void *) &bus_pq_dc_);
+        }
         // matrix (re)initialization, overloaded per family (no `if constexpr`, C++14)
         void init_solver_matrix(Eigen::SparseMatrix<cplx_type> & mat, int nb_bus_solver){ init_Ybus(mat, nb_bus_solver); }
         void init_solver_matrix(Eigen::SparseMatrix<real_type> & mat, int nb_bus_solver){ init_Bbus(mat, nb_bus_solver); }

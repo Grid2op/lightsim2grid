@@ -497,6 +497,17 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             id_me_to_solver_.clear();
             slack_ids_solver_ = SolverBusIdVect();
             slack_ids_me_ = GlobalBusIdVect();
+            // the pv-pq split and the slack weights belong to the same group as the
+            // matrix and the labelling above: cleared with them, rebuilt with them,
+            // and passed to the builder with them. They used to be fetched back out of
+            // _grid_model afterwards, which only worked because pre_process_solver
+            // wrote its pv-pq split into the grid's OWN cache whatever containers it
+            // had been handed -- a write-through that left the grid's cache holding
+            // this batch's split next to the grid's Ybus. See the ownership check in
+            // LSGrid::_pre_process_solver_impl.
+            bus_pv_ = SolverBusIdVect();
+            bus_pq_ = SolverBusIdVect();
+            slack_weights_ = RealVect();
             nb_buses_solver_ = -1;
 
             // fill the data correctly
@@ -511,6 +522,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     id_solver_to_me_,
                     slack_ids_me_,
                     slack_ids_solver_,
+                    slack_weights_,
+                    bus_pv_,
+                    bus_pq_,
                     ac_solver_used,
                     _algo_controler);
                 nb_buses_solver_ = static_cast<int>(Ybus_.cols());
@@ -524,23 +538,12 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     id_solver_to_me_,
                     slack_ids_me_,
                     slack_ids_solver_,
+                    slack_weights_,
+                    bus_pv_,
+                    bus_pq_,
                     _algo_controler);
                 nb_buses_solver_ = static_cast<int>(Bbus_.cols());
             }
-
-            // extract relevant information
-            // ask for the family this batch actually solved with: the grid keeps
-            // one pv-pq split and one set of slack weights PER family, and the
-            // family-less accessors answer for AC whenever an AC powerflow has run
-            // on this grid -- which is not necessarily the one we just built.
-            const SolverBusIdVect & gm_bus_pv = ac_solver_used ? _grid_model.get_ac_pv_solver() : _grid_model.get_dc_pv_solver();
-            const SolverBusIdVect & gm_bus_pq = ac_solver_used ? _grid_model.get_ac_pq_solver() : _grid_model.get_dc_pq_solver();
-            const RealVect gm_bus_sw = ac_solver_used ? _grid_model.get_ac_slack_weights_solver() : _grid_model.get_dc_slack_weights_solver();
-
-            // TODO copies are made here, which is not ideal
-            bus_pv_ = gm_bus_pv;  // was _to_intvect()
-            bus_pq_ = gm_bus_pq;  // was _to_intvect()
-            slack_weights_ = gm_bus_sw;
             return res;
         }
 
