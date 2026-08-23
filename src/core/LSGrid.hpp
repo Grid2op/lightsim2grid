@@ -509,7 +509,11 @@ class LS2G_API LSGrid final
             sgens_.reconnect_connected_buses(substations_);
             storages_.reconnect_connected_buses(substations_);
             hvdc_lines_.reconnect_connected_buses(substations_);
-            const std::vector<bool> new_status = substations_.get_bus_status();
+            // by reference: every mutation of the bus status happens in the calls
+            // above, and _flag_dimension_change only reads. Taking it by value here
+            // copied the whole vector on every powerflow that reaches this function,
+            // to be read twice and thrown away.
+            const std::vector<bool> & new_status = substations_.get_bus_status();
 
             // Each family is compared against the connectivity ITS OWN cache was
             // built with: an AC powerflow that finds the AC snapshot up to date
