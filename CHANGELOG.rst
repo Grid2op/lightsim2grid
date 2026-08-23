@@ -177,6 +177,28 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   different question (is the data there at all, and the right shape) and says nothing about change.
 - [ADDED] ``AlgoControl.nothing_changed()``: has every change this control tracks already been
   consumed by a solve? The exact negation of ``tell_all_changed()``.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 4 -> 5: ``LSGrid``'s serialized state no longer carries the
+  AC family's bus-connectivity photograph. Nothing needs it -- a bus entering or leaving the solved
+  system is now reported by ``SubstationContainer``'s per-bus element counts as it happens -- so the
+  field is removed rather than left dead. It was also the only piece of solver-cache metadata a
+  saved grid carried, so a crafted file has nothing left to poison.
+- [ADDED] ``SubstationContainer`` keeps, per bus, how many elements hold it alive, maintained
+  incrementally by every mutator that can change bus membership. A bus is in the solved system iff
+  its count is non-zero, so the two transitions that matter (0 -> 1 and 1 -> 0) are exactly what
+  raises ``tell_dimension_changed``. Every other change flag stays where the element containers
+  decide it. Which buses an element holds is stated once, in
+  ``GenericContainer::contribute_to_buses``; ``reconnect_connected_buses``, the from-scratch recount
+  and every mutator are built from it, so the incremental and the rebuilt answer cannot disagree.
+- [FIXED] a bus whose only element is a static VAR compensator now counts as connected.
+  ``init_bus_status()`` never called ``SvcContainer::reconnect_connected_buses`` -- the container
+  inherits a perfectly good one from ``OneSideContainer_PQ``, it was simply left out of the list --
+  so such a bus was dropped from the solved system. An SVC injects reactive power; its bus belongs
+  there.
+- ``init_bus_status()`` no longer walks every element of eight containers on every powerflow that
+  rebuilds (it derives the bus status from the counts, O(nb_bus) instead of O(all elements)), and
+  ``_mark_cache_valid`` no longer copies a ``std::vector<bool>`` per powerflow. Worth ~1.7% of the
+  instructions of a powerflow that changes topology on a 1000-bus grid; below the wall-clock noise
+  floor there, since the solve dominates.
 - the powerflow path no longer re-verifies that the data behind a "nothing changed" claim exists.
   The two entry points that can make such a claim without having built anything --
   ``unset_changes()`` and ``check_solution()`` -- now verify it themselves, at an altitude where

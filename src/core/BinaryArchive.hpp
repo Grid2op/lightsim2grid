@@ -79,7 +79,7 @@ namespace ls2g {
 // v4: the AC / DC algorithm is stored as its registry *name* (std::string)
 //     instead of an AlgorithmType enum, so a grid using an external (plugin)
 //     solver can be saved and restored -- see LSGrid::StateRes.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 4;
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 5;
 
 class LS2G_API BinaryArchive
 {

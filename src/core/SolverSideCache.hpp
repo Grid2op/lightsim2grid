@@ -80,15 +80,23 @@ struct SolverBusLayout
 
     // ---- what makes the above reusable, or not -----------------------------
     /**
-     * The grid's bus connectivity at the moment this cache was built. A powerflow
-     * compares the grid's current connectivity against this to decide whether the
-     * labelling above still describes it; each family keeps its own, because a
-     * family that has not solved in a while may be several grid modifications
-     * behind the other one. Empty means "nothing built" -- which is also how a
-     * cache is retired without throwing its contents away (see the publication
-     * step at the end of LSGrid::_pre_process_solver_impl).
+     * The grid size this cache was built for, or 0 for "nothing built / retired".
+     *
+     * This used to be a full std::vector<bool> photograph of the grid's bus
+     * connectivity, compared bus-by-bus on every powerflow to decide whether the
+     * labelling above still described the grid. It no longer has to be: a bus
+     * enters or leaves the solved system exactly when its element count crosses 0,
+     * and SubstationContainer now notices that as it happens and raises
+     * `tell_dimension_changed` there. So the photograph, the O(nb_bus) copy that
+     * refreshed it every powerflow, and the two O(nb_bus) walks that compared it
+     * are all gone -- what is left is one integer, which is all `is_consistent`
+     * ever needed it for.
+     *
+     * 0 is also how a cache is retired without throwing its contents away: the
+     * publication step at the end of LSGrid::_pre_process_solver_impl leaves the
+     * labelling in place for the NR extensions to read, but not usable as a cache.
      */
-    std::vector<bool> last_bus_status;
+    std::size_t built_for_nb_bus = 0;
     /**
      * Durable "never reuse this" switch (LSGrid::allow_ac_cache_reuse etc.). The
      * answer is identical either way, so this is a debugging switch and an escape
@@ -118,7 +126,7 @@ struct SolverBusLayout
         slack_weights = RealVect();
         bus_pv = SolverBusIdVect();
         bus_pq = SolverBusIdVect();
-        last_bus_status.clear();
+        built_for_nb_bus = 0;
     }
 
     /// the family-agnostic half of is_consistent(); see there for why this exists
@@ -129,8 +137,8 @@ struct SolverBusLayout
         if(slack_weights.size() != nb_solver) return false;
         // every bus is pv, pq, or slack: the split can never outnumber the system
         if(bus_pv.size() + bus_pq.size() > static_cast<std::size_t>(nb_solver)) return false;
-        // a snapshot that does not cover the grid means "retired", see last_bus_status
-        if(last_bus_status.size() != nb_bus_grid) return false;
+        // built for another grid, or retired: see built_for_nb_bus
+        if(built_for_nb_bus != nb_bus_grid) return false;
         return true;
     }
 };

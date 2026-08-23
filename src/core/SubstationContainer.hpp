@@ -392,6 +392,21 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
                    "was removed from this bus twice, the incremental counts have drifted");
             return --nb_elements_per_bus_[global_bus_id.cast_int()] == 0;
         }
+        /**
+         * A bus is connected iff at least one element holds it. Derive the whole
+         * status from the counts -- O(nb_bus), touching no element.
+         *
+         * This reproduces exactly what disconnect_all_buses() + every container's
+         * reconnect_connected_buses() produced, including the consequence that a
+         * bus turned off by hand through `deactivate_bus` comes back if something
+         * is still on it. That was already true (the old rebuild wiped it the same
+         * way); the counts just make it explicit rather than incidental.
+         */
+        void set_bus_status_from_element_counts(){
+            const std::size_t nb_bus_total = bus_status_.size();
+            for(std::size_t i = 0; i < nb_bus_total; ++i) bus_status_[i] = (nb_elements_per_bus_[i] > 0);
+        }
+
         /// back to "nothing holds any bus", ready to be recounted from the elements
         void reset_bus_element_counts(){
             nb_elements_per_bus_.assign(nb_bus(), 0);

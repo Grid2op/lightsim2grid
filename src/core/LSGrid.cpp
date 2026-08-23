@@ -31,8 +31,8 @@ LSGrid::LSGrid(const LSGrid & other)
 
     // copy the powersystem representation
     // 1. bus
-    ac_cache_.last_bus_status = other.ac_cache_.last_bus_status;
-    dc_cache_.last_bus_status = other.dc_cache_.last_bus_status;
+    // the solver-side caches (including built_for_nb_bus) are reset below, not
+    // copied: a copy starts cold. See reset().
     substations_ = other.substations_;
     max_nb_bus_per_sub_ = substations_.nmax_busbar_per_sub();
     n_sub_ = substations_.nb_sub();
@@ -119,7 +119,6 @@ LSGrid::StateRes LSGrid::get_state() const
                             ls_to_orig,
                             init_vm_pu_,
                             sn_mva_,
-                            ac_cache_.last_bus_status,
                             res_substation,
                             res_line,
                             res_shunt,
@@ -166,7 +165,7 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     const std::vector<int> & ls_to_pp = std::get<LS_TO_ORIG_ID>(my_state);
     init_vm_pu_ = std::get<INIT_VM_PU_ID>(my_state);
     sn_mva_ = std::get<SN_MVA_ID>(my_state);
-    // NB `std::get<BUS_STATUS_ID>(my_state)` is deliberately NOT read here. It is
+    // NB the bus-connectivity photograph that used to be slot 6 is gone. It is
     // the bus-connectivity snapshot the solver caches use to detect topology
     // changes -- cache metadata, not grid data -- and a file is not a trusted
     // source for it. It is still written by get_state() (the layout is unchanged);
@@ -684,10 +683,10 @@ void LSGrid::reset(bool reset_solver, bool reset_ac, bool reset_dc)
 
     algo_controler_.ac_algo_controler().tell_all_changed();
     algo_controler_.dc_algo_controler().tell_all_changed();
-    // Retires BOTH caches -- it clears the connectivity snapshot, which is what
+    // Retires BOTH caches -- it zeroes `built_for_nb_bus`, which is what
     // `is_consistent` / `unset_changes()` read as "nothing built". Needed even
     // for a family whose data was left in place just above: the controls say
-    // everything changed, and the snapshot must not contradict them.
+    // everything changed, and the retirement marker must not contradict them.
     prevent_cache_reuse();
 
     // reset the solvers

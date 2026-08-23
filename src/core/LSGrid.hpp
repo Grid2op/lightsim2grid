@@ -65,7 +65,11 @@ class LS2G_API LSGrid final
                 std::vector<int>, // ls_to_orig
                 real_type,  // init_vm_pu
                 real_type, //sn_mva
-                std::vector<bool>,  // bus_status
+                // NB the AC family's bus-connectivity photograph used to sit here.
+                // Change detection no longer compares against one -- a bus entering
+                // or leaving the solved system is reported by SubstationContainer's
+                // element counts as it happens -- so the field is gone and
+                // BINARY_FORMAT_VERSION is bumped accordingly.
                 SubstationContainer::StateRes,
                 // powerlines
                 LineContainer::StateRes ,
@@ -115,24 +119,23 @@ class LS2G_API LSGrid final
         static const std::size_t LS_TO_ORIG_ID = 3;
         static const std::size_t INIT_VM_PU_ID = 4;
         static const std::size_t SN_MVA_ID = 5;
-        static const std::size_t BUS_STATUS_ID = 6;
-        static const std::size_t SUBSTATION_ID = 7;
-        static const std::size_t LINE_ID = 8;
-        static const std::size_t SHUNT_ID = 9;
-        static const std::size_t TRAFO_ID = 10;
-        static const std::size_t GEN_ID = 11;
-        static const std::size_t LOAD_ID = 12;
-        static const std::size_t SGEN_ID = 13;
-        static const std::size_t STORAGE_ID = 14;
-        static const std::size_t HVDC_ID = 15;
-        static const std::size_t SVC_ID = 16;
-        static const std::size_t AC_ALGO_NAME_ID = 17;
-        static const std::size_t DC_ALGO_NAME_ID = 18;
-        static const std::size_t AC_ALGO_CONFIG_ID = 19;
-        static const std::size_t DC_ALGO_CONFIG_ID = 20;
-        static const std::size_t INIT_KWARGS_KEYS_ID = 21;
-        static const std::size_t INIT_KWARGS_VALUES_ID = 22;
-        static const std::size_t BUS_FUSION_REP_ID = 23;
+        static const std::size_t SUBSTATION_ID = 6;
+        static const std::size_t LINE_ID = 7;
+        static const std::size_t SHUNT_ID = 8;
+        static const std::size_t TRAFO_ID = 9;
+        static const std::size_t GEN_ID = 10;
+        static const std::size_t LOAD_ID = 11;
+        static const std::size_t SGEN_ID = 12;
+        static const std::size_t STORAGE_ID = 13;
+        static const std::size_t HVDC_ID = 14;
+        static const std::size_t SVC_ID = 15;
+        static const std::size_t AC_ALGO_NAME_ID = 16;
+        static const std::size_t DC_ALGO_NAME_ID = 17;
+        static const std::size_t AC_ALGO_CONFIG_ID = 18;
+        static const std::size_t DC_ALGO_CONFIG_ID = 19;
+        static const std::size_t INIT_KWARGS_KEYS_ID = 20;
+        static const std::size_t INIT_KWARGS_VALUES_ID = 21;
+        static const std::size_t BUS_FUSION_REP_ID = 22;
 
         LSGrid():
           timer_last_ac_pf_(0.),
@@ -537,34 +540,30 @@ class LS2G_API LSGrid final
             add_all(svcs_);
         }
 
+        /**
+         * Bring `substations_`' bus status up to date: a bus is connected iff at
+         * least one element holds it.
+         *
+         * This used to disconnect every bus and then walk every element of eight
+         * containers to put them back -- O(all elements), on every powerflow that
+         * rebuilds or that saw an element change bus. The counts already answer the
+         * question, so all that is left is reading them: O(nb_bus), no element
+         * touched.
+         *
+         * It also no longer decides anything about change flags. It used to compare
+         * the fresh status against each family's photograph and raise
+         * `tell_dimension_changed` on a difference; now the crossing that would
+         * have caused that difference raises it as it happens, in
+         * GenericContainer::_apply_and_track_buses, which is both earlier and
+         * exact.
+         */
         void init_bus_status(){
-            // the counts are derived from exactly the same element status this
-            // function reads, so this is the natural place to (re)establish them --
-            // and it is what makes any drift unable to outlive a rebuild.
-            recompute_bus_element_counts();
-            substations_.disconnect_all_buses();
-
-            powerlines_.reconnect_connected_buses(substations_);
-            shunts_.reconnect_connected_buses(substations_);
-            trafos_.reconnect_connected_buses(substations_);
-            generators_.reconnect_connected_buses(substations_);
-            loads_.reconnect_connected_buses(substations_);
-            sgens_.reconnect_connected_buses(substations_);
-            storages_.reconnect_connected_buses(substations_);
-            hvdc_lines_.reconnect_connected_buses(substations_);
-            // by reference: every mutation of the bus status happens in the calls
-            // above, and _flag_dimension_change only reads. Taking it by value here
-            // copied the whole vector on every powerflow that reaches this function,
-            // to be read twice and thrown away.
-            const std::vector<bool> & new_status = substations_.get_bus_status();
-
-            // Each family is compared against the connectivity ITS OWN cache was
-            // built with: an AC powerflow that finds the AC snapshot up to date
-            // must not conclude anything about DC, which may be several grid
-            // modifications behind. A snapshot is refreshed only by
-            // _mark_cache_valid(), ie when that family has actually rebuilt.
-            _flag_dimension_change(new_status, ac_cache_.last_bus_status, algo_controler_.ac_algo_controler());
-            _flag_dimension_change(new_status, dc_cache_.last_bus_status, algo_controler_.dc_algo_controler());
+            // one-time, on a grid that has never been counted (freshly built, or
+            // restored by set_state / load_binary, which disarm the counts): the
+            // same "recount whenever there is no cache to protect" rule. Every
+            // later call is O(nb_bus).
+            if(!substations_.bus_counts_ready()) recompute_bus_element_counts();
+            substations_.set_bus_status_from_element_counts();
         }
         void set_substation_names(const std::vector<std::string> & sub_names){
             substations_.init_sub_names(sub_names);
@@ -2334,7 +2333,7 @@ class LS2G_API LSGrid final
         // unless that family's reuse was turned off.
         void _mark_cache_valid(SolverBusLayout & cache, AlgoControl & control){
             control.tell_none_changed();
-            cache.last_bus_status = substations_.get_bus_status();
+            cache.built_for_nb_bus = substations_.nb_bus();
         }
         void _mark_cache_valid(bool ac){
             if(ac) _mark_cache_valid(ac_cache_, algo_controler_.ac_algo_controler());
@@ -2387,29 +2386,10 @@ class LS2G_API LSGrid final
          * its control were somehow told "nothing changed".
          */
         void _retire_cache(SolverBusLayout & cache, AlgoControl & control){
-            cache.last_bus_status.clear();
+            cache.built_for_nb_bus = 0;
             control.tell_solver_need_reset();
         }
 
-        // One family's half of init_bus_status(): flag a dimension change iff the
-        // connectivity differs from the one that family's cache was built with.
-        static void _flag_dimension_change(const std::vector<bool> & new_status,
-                                           const std::vector<bool> & last_status,
-                                           AlgoControl & family_control){
-            if(new_status.size() != last_status.size()){
-                // the snapshot was never taken (fresh grid, or a family that has
-                // not solved since a prevent_*_cache_reuse), or the grid changed
-                // size: either way nothing may be reused
-                family_control.tell_dimension_changed();
-                return;
-            }
-            for(std::size_t global_bus = 0; global_bus < new_status.size(); ++global_bus){
-                if(last_status[global_bus] != new_status[global_bus]){
-                    family_control.tell_dimension_changed();
-                    return;
-                }
-            }
-        }
 
         // memory for the import
         // TODO switches: move to BaseSubstation
