@@ -37,6 +37,8 @@
 using ls2g::CplxVect;
 using ls2g::LSGrid;
 using ls2g::cplx_type;
+using ls2g::GridModelBusId;
+using ls2g::RealVect;
 
 namespace {
 
@@ -53,6 +55,20 @@ CplxVect flat_start(const LSGrid & grid)
 void require_counts_match_recount(LSGrid & grid, const std::string & what)
 {
     const std::vector<std::size_t> incremental = grid.get_substations().get_nb_elements_per_bus();
+
+    // The bus status is not a second, separately-maintained copy of this: a bus is
+    // connected iff its count is non-zero, and the mutators flip the one entry that
+    // crossed as it crosses. That is what lets init_bus_status() skip the O(nb_bus)
+    // rebuild, so it has to hold after every one of them -- checked BEFORE the
+    // recount below, which would re-derive the status and hide any drift.
+    // The exception is deliberate and narrow: deactivate_bus / reactivate_bus /
+    // disconnect_all_buses write the status without changing what holds the bus, and
+    // say so through bus_status_needs_refresh().
+    if(!grid.get_substations().bus_status_needs_refresh()){
+        INFO("bus status drifted from the element counts after: " << what);
+        CHECK(grid.get_substations().bus_status_matches_counts());
+    }
+
     grid.recompute_bus_element_counts();
     const std::vector<std::size_t> & from_scratch = grid.get_substations().get_nb_elements_per_bus();
 
@@ -173,4 +189,114 @@ TEST_CASE("the count sweep still covers every mutator", "[SubstationContainer][b
     // membership and it is not added here, this number stops matching and someone
     // has to look. Counted from the survey in the commit message.
     CHECK(all_bus_mutations().size() == 41u);
+}
+
+TEST_CASE("the bus status follows the counts without being rebuilt", "[SubstationContainer][bus_count]")
+{
+    // What commit 3 is actually about. `bus_status_` used to be recomputed from the
+    // counts on every powerflow that rebuilt -- O(nb_bus), which on a grid with far
+    // more buses than elements (5000 substations at 12 busbars each, most empty) is
+    // the dominant cost of the very step the counts were introduced to make cheap.
+    // It does not have to be: only a 0-crossing can change a bus's status, and the
+    // crossing is already detected.
+    LSGrid grid = make_grid();
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 14);
+    const auto & subs = grid.get_substations();
+    REQUIRE(subs.bus_counts_ready());
+    REQUIRE_FALSE(subs.bus_status_needs_refresh());
+    REQUIRE(subs.bus_status_matches_counts());
+
+    SECTION("a mutator that empties a bus takes that bus out, with no refresh pending"){
+        // bus 8 of the case-14 fixture holds exactly one element: load 8.
+        const int bus8 = grid.get_loads_as_data().get_buses()(8).cast_int();
+        REQUIRE(subs.get_nb_elements_per_bus()[bus8] >= 1u);
+        grid.deactivate_load(8);
+        if(subs.get_nb_elements_per_bus()[bus8] == 0u){
+            CHECK_FALSE(subs.is_bus_connected(GridModelBusId(bus8)));
+        }
+        CHECK_FALSE(subs.bus_status_needs_refresh());
+        CHECK(subs.bus_status_matches_counts());
+        grid.reactivate_load(8);
+        CHECK(subs.is_bus_connected(GridModelBusId(bus8)) ==
+              (subs.get_nb_elements_per_bus()[bus8] > 0u));
+        CHECK(subs.bus_status_matches_counts());
+    }
+
+    SECTION("a hand-set status asks for the refresh, and the next rebuild does it"){
+        // deactivate_bus does NOT remove anything from the bus, so the counts are
+        // untouched and the two legitimately disagree. That must not be silent, and
+        // it must not survive the next rebuild -- which is exactly what the old
+        // unconditional rebuild did to a hand-set status too.
+        grid.deactivate_bus_python(3);
+        CHECK(subs.bus_status_needs_refresh());
+        grid.init_bus_status();
+        CHECK_FALSE(subs.bus_status_needs_refresh());
+        CHECK(subs.bus_status_matches_counts());
+    }
+
+    SECTION("a fresh recount re-establishes both, together"){
+        grid.recompute_bus_element_counts();
+        CHECK_FALSE(subs.bus_status_needs_refresh());
+        CHECK(subs.bus_status_matches_counts());
+    }
+
+    SECTION("replacing a whole container disarms the counts, and a rebuild restores them"){
+        // init_* replaces a container wholesale, which no +1 / -1 can see. Rather
+        // than let the counts quietly describe elements that are gone, they are
+        // disarmed and rebuilt from the elements at the next init_bus_status().
+        // Re-initializing the storage container with three empty vectors removes
+        // every storage from the grid. No +1 / -1 sees that, which is the point:
+        // without the disarming below the counts would keep describing elements
+        // that no longer exist, and the recount at the next init_bus_status() is
+        // what makes that unable to outlive one rebuild.
+        REQUIRE(grid.get_storages().nb() > 0);
+        grid.init_storages(RealVect(), RealVect(), Eigen::VectorXi());
+        CHECK_FALSE(subs.bus_counts_ready());
+        CHECK(subs.bus_status_needs_refresh());
+        grid.init_bus_status();
+        CHECK(subs.bus_counts_ready());
+        CHECK_FALSE(subs.bus_status_needs_refresh());
+        CHECK(subs.bus_status_matches_counts());
+        require_counts_match_recount(grid, "re-initializing the storage container");
+    }
+}
+
+TEST_CASE("an SVC holds its bus in the solved system, like every other element",
+          "[SubstationContainer][bus_count]")
+{
+    // The gap the counts closed on the way past. `init_bus_status()` used to
+    // disconnect every bus and walk eight containers to put them back: lines,
+    // shunts, trafos, gens, loads, sgens, storages, hvdc. Not SVCs -- SvcContainer
+    // inherits a perfectly good reconnect_connected_buses, it was simply never
+    // called. So a bus held by nothing but an SVC read as disconnected, got no solver
+    // id, and silently dropped out of the system it should have been in.
+    //
+    // Nothing states that list any more: the counts come from `contribute_to_buses`,
+    // which every container implements for itself, and the bus status is the counts
+    // read back. A container cannot be left off a list that no longer exists.
+    //
+    // What is checked here is the one fact the old list got wrong -- an active SVC
+    // contributes +1 to its bus, so a bus holding only that SVC has a count of 1 and
+    // is connected. (The exotic fixture has one busbar per substation and a line on
+    // every bus, so there is no bus to strand an SVC on; the contribution is the
+    // claim, and it is what the count measures.)
+    LSGrid grid = make_grid();
+    REQUIRE(grid.get_svcs().nb() > 0);
+    grid.recompute_bus_element_counts();
+
+    const auto & subs = grid.get_substations();
+    const int svc_bus = grid.get_svcs().get_buses()(0).cast_int();
+    const std::size_t with_svc = subs.get_nb_elements_per_bus()[svc_bus];
+    REQUIRE(with_svc >= 1u);
+
+    grid.deactivate_svc(0);
+    CHECK(subs.get_nb_elements_per_bus()[svc_bus] == with_svc - 1u);
+    CHECK(subs.is_bus_connected(GridModelBusId(svc_bus)) ==
+          (subs.get_nb_elements_per_bus()[svc_bus] > 0u));
+    require_counts_match_recount(grid, "deactivating the SVC");
+
+    grid.reactivate_svc(0);
+    CHECK(subs.get_nb_elements_per_bus()[svc_bus] == with_svc);
+    CHECK(subs.is_bus_connected(GridModelBusId(svc_bus)));
+    require_counts_match_recount(grid, "reactivating the SVC");
 }

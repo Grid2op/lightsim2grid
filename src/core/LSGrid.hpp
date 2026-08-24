@@ -343,6 +343,17 @@ class LS2G_API LSGrid final
         // form lets a NaN straight through.
         static void check_positive_finite(real_type value, const char * name);
 
+        /**
+         * A whole element container has just been replaced (the init_* below).
+         *
+         * Nothing tracked that -- the +1 / -1 bookkeeping only sees the mutators --
+         * so the per-bus element counts no longer describe the elements. Disarm
+         * them: init_bus_status() rebuilds them from the elements, and the bus
+         * status from them, before anything reads either again. Same "recount
+         * whenever there is nothing to protect" rule set_state / load_binary use.
+         */
+        void _elements_replaced_wholesale(){ substations_.reset_bus_element_counts(); }
+
         void init_powerlines(const Eigen::Ref<const RealVect> & branch_r,
                              const Eigen::Ref<const RealVect> & branch_x,
                              const Eigen::Ref<const CplxVect> & branch_h,
@@ -350,6 +361,7 @@ class LS2G_API LSGrid final
                              const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                              ){
             powerlines_.init(branch_r, branch_x, branch_h, branch_from_id, branch_to_id);
+            _elements_replaced_wholesale();
         }
         void init_powerlines_full(const Eigen::Ref<const RealVect> & branch_r,
                                   const Eigen::Ref<const RealVect> & branch_x,
@@ -361,12 +373,14 @@ class LS2G_API LSGrid final
             powerlines_.init(branch_r, branch_x, branch_h1,
                              branch_h2, branch_from_id, 
                              branch_to_id);
+            _elements_replaced_wholesale();
         }
 
         void init_shunt(const Eigen::Ref<const RealVect> & shunt_p_mw,
                         const Eigen::Ref<const RealVect> & shunt_q_mvar,
                         const Eigen::Ref<const Eigen::VectorXi> & shunt_bus_id){
             shunts_.init(shunt_p_mw, shunt_q_mvar, shunt_bus_id);
+            _elements_replaced_wholesale();
         }
         void init_trafo_pandapower(const Eigen::Ref<const RealVect> & trafo_r,
                                    const Eigen::Ref<const RealVect> & trafo_x,
@@ -381,6 +395,7 @@ class LS2G_API LSGrid final
                                    ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_shift_degree,
                          trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
+            _elements_replaced_wholesale();
         }
         void init_trafo(const Eigen::Ref<const RealVect> & trafo_r,
                         const Eigen::Ref<const RealVect> & trafo_x,
@@ -394,6 +409,7 @@ class LS2G_API LSGrid final
                            ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_ratio, trafo_shift_degree,
                          trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
+            _elements_replaced_wholesale();
         }
 
         void init_generators(const Eigen::Ref<const RealVect> & generators_p,
@@ -402,6 +418,7 @@ class LS2G_API LSGrid final
                              const Eigen::Ref<const RealVect> & generators_max_q,
                              const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id){
             generators_.init(generators_p, generators_v, generators_min_q, generators_max_q, generators_bus_id);
+            _elements_replaced_wholesale();
         }
         void init_generators_full(const Eigen::Ref<const RealVect> & generators_p,
                                   const Eigen::Ref<const RealVect> & generators_v,
@@ -412,11 +429,13 @@ class LS2G_API LSGrid final
                                   const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id){
             generators_.init_full(generators_p, generators_v, generators_q, voltage_regulator_on,
                                   generators_min_q, generators_max_q, generators_bus_id);
+            _elements_replaced_wholesale();
         }
         void init_loads(const Eigen::Ref<const RealVect> & loads_p,
                         const Eigen::Ref<const RealVect> & loads_q,
                         const Eigen::Ref<const Eigen::VectorXi> & loads_bus_id){
             loads_.init(loads_p, loads_q, loads_bus_id);
+            _elements_replaced_wholesale();
         }
         void init_sgens(const Eigen::Ref<const RealVect> & sgen_p,
                         const Eigen::Ref<const RealVect> & sgen_q,
@@ -426,6 +445,7 @@ class LS2G_API LSGrid final
                         const Eigen::Ref<const RealVect> & sgen_qmax,
                         const Eigen::Ref<const Eigen::VectorXi> & sgen_bus_id){
             sgens_.init(sgen_p, sgen_q, sgen_pmin, sgen_pmax, sgen_qmin, sgen_qmax, sgen_bus_id);
+            _elements_replaced_wholesale();
         }
         void init_svcs(const std::vector<int> & regulation_mode,
                        const Eigen::Ref<const RealVect> & target_vm_pu,
@@ -437,11 +457,13 @@ class LS2G_API LSGrid final
                        const Eigen::Ref<const Eigen::VectorXi> & svc_bus_id){
             svcs_.init(regulation_mode, target_vm_pu, q_setpoint_mvar, slope_pu,
                        b_min, b_max, regulated_bus_id, svc_bus_id);
+            _elements_replaced_wholesale();
         }
         void init_storages(const Eigen::Ref<const RealVect> & storages_p,
                            const Eigen::Ref<const RealVect> & storages_q,
                            const Eigen::Ref<const Eigen::VectorXi> & storages_bus_id){
             storages_.init(storages_p, storages_q, storages_bus_id);
+            _elements_replaced_wholesale();
         }
         void init_dclines(const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
                           const Eigen::Ref<const Eigen::VectorXi> & branch_to_id,
@@ -457,6 +479,7 @@ class LS2G_API LSGrid final
             hvdc_lines_.init_legacy(branch_from_id, branch_to_id, p_mw,
                                     loss_percent, loss_mw, vm1_pu, vm2_pu,
                                     min_q1, max_q1, min_q2, max_q2);
+            _elements_replaced_wholesale();
         }
         /**
          * Full IIDM-style hvdc initialization (two converter stations - VSC or
@@ -499,6 +522,7 @@ class LS2G_API LSGrid final
                              no_legacy_loss, no_legacy_loss,
                              droop_enabled, droop_p0_mw, droop_mw_per_deg,
                              pmax_1to2_mw, pmax_2to1_mw);
+            _elements_replaced_wholesale();
         }
 
         /**
@@ -526,18 +550,22 @@ class LS2G_API LSGrid final
             };
             add_all(powerlines_); add_all(shunts_); add_all(trafos_); add_all(generators_);
             add_all(loads_); add_all(sgens_); add_all(storages_); add_all(hvdc_lines_);
-            // `svcs_` is here, and is NOT in init_bus_status()'s reconnect list.
-            // That omission looks like an oversight: SvcContainer is a
-            // OneSideContainer_PQ and inherits a perfectly good
-            // reconnect_connected_buses, it is simply never called -- so today a bus
-            // whose ONLY element is an SVC does not count as connected. Excluding it
-            // here instead would mean making SvcContainer the one container that
-            // does not track its own contribution, which is exactly the kind of
-            // special case this design exists to avoid. So the counts are correct
-            // and self-consistent, and they differ from `bus_status_` only for an
-            // SVC-alone bus. Nothing consumes the counts yet, so nothing changes;
-            // whoever switches the consumer over closes that gap, and owes it a test.
+            // `svcs_` is here, and was NOT in the reconnect list init_bus_status()
+            // used to walk. That omission looks like an oversight: SvcContainer is a
+            // OneSideContainer_PQ and inherited a perfectly good
+            // reconnect_connected_buses, it was simply never called -- so a bus whose
+            // ONLY element is an SVC did not count as connected, and was dropped from
+            // the solved system. Excluding it here instead would mean making
+            // SvcContainer the one container that does not track its own
+            // contribution, which is exactly the kind of special case this design
+            // exists to avoid. So the counts cover it, and the status below is the
+            // counts, which closes the gap (see "an SVC holds its bus in the solved
+            // system" in test_bus_element_count.cpp).
             add_all(svcs_);
+            // the counts ARE the definition of "connected", so the status is just
+            // them read back. From here on every 0-crossing keeps the two in step by
+            // itself -- see SubstationContainer::bus_gained_element.
+            substations_.set_bus_status_from_element_counts();
         }
 
         /**
@@ -546,24 +574,41 @@ class LS2G_API LSGrid final
          *
          * This used to disconnect every bus and then walk every element of eight
          * containers to put them back -- O(all elements), on every powerflow that
-         * rebuilds or that saw an element change bus. The counts already answer the
-         * question, so all that is left is reading them: O(nb_bus), no element
-         * touched.
+         * rebuilds or that saw an element change bus. Then it became one O(nb_bus)
+         * read of the counts. Now it is usually nothing at all: a bus's status can
+         * only change when its element count crosses 0, and SubstationContainer
+         * flips that one entry as the crossing happens, so the vector is already
+         * right. What is left is the two cases where it is not:
          *
-         * It also no longer decides anything about change flags. It used to compare
-         * the fresh status against each family's photograph and raise
-         * `tell_dimension_changed` on a difference; now the crossing that would
-         * have caused that difference raises it as it happens, in
-         * GenericContainer::_apply_and_track_buses, which is both earlier and
-         * exact.
+         *  - the counts have never been established (a freshly built grid, or one
+         *    restored by set_state / load_binary, which disarm them): recount from
+         *    the elements, O(all elements), the same "recount whenever there is no
+         *    cache to protect" rule that keeps drift from outliving an invalidation;
+         *  - something wrote `bus_status_` behind the counts' back -- deactivate_bus
+         *    / reactivate_bus, disconnect_all_buses: re-derive the whole vector,
+         *    O(nb_bus), exactly as before.
+         *
+         * What that is worth is `nb_bus` times a constant, independent of how many
+         * elements the grid has: callgrind measures ~13 instructions saved per bus
+         * per topology-changing powerflow, the same figure at 1000, 5000, 12 000 and
+         * 60 000 buses. So it is the sparsely-filled grids that gain -- 5000
+         * substations at 12 busbars each is a 60 000-entry vector rebuilt to solve a
+         * 5 000-bus system.
+         *
+         * It decides nothing about change flags. It used to compare the fresh status
+         * against each family's photograph and raise `tell_dimension_changed` on a
+         * difference; now the crossing that would have caused that difference raises
+         * it as it happens, in GenericContainer::_apply_and_track_buses, which is
+         * both earlier and exact.
          */
         void init_bus_status(){
-            // one-time, on a grid that has never been counted (freshly built, or
-            // restored by set_state / load_binary, which disarm the counts): the
-            // same "recount whenever there is no cache to protect" rule. Every
-            // later call is O(nb_bus).
-            if(!substations_.bus_counts_ready()) recompute_bus_element_counts();
-            substations_.set_bus_status_from_element_counts();
+            if(!substations_.bus_counts_ready()){
+                recompute_bus_element_counts();  // also re-derives the status
+                return;
+            }
+            if(substations_.bus_status_needs_refresh()) substations_.set_bus_status_from_element_counts();
+            assert(substations_.bus_status_matches_counts() &&
+                   "LSGrid::init_bus_status: the bus status and the element counts have drifted apart");
         }
         void set_substation_names(const std::vector<std::string> & sub_names){
             substations_.init_sub_names(sub_names);

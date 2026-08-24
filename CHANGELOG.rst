@@ -195,10 +195,23 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   so such a bus was dropped from the solved system. An SVC injects reactive power; its bus belongs
   there.
 - ``init_bus_status()`` no longer walks every element of eight containers on every powerflow that
-  rebuilds (it derives the bus status from the counts, O(nb_bus) instead of O(all elements)), and
-  ``_mark_cache_valid`` no longer copies a ``std::vector<bool>`` per powerflow. Worth ~1.7% of the
-  instructions of a powerflow that changes topology on a 1000-bus grid; below the wall-clock noise
-  floor there, since the solve dominates.
+  rebuilds, and no longer rebuilds the bus-status vector at all. A bus's status can only change
+  when its element count crosses 0, and ``SubstationContainer`` flips that one entry as the
+  crossing happens, so in the steady state there is nothing left to bring up to date. The
+  whole-vector rebuild now runs only where nothing kept it in step: a grid that has never been
+  counted (freshly built, or restored by ``set_state`` / ``load_binary``), or a status written by
+  hand through ``deactivate_bus`` / ``reactivate_bus``. ``_mark_cache_valid`` no longer copies a
+  ``std::vector<bool>`` per powerflow either.
+  What that is worth is ``nb_bus`` times a constant, independent of the number of elements:
+  callgrind measures ~13 instructions saved per bus per topology-changing powerflow, on all four
+  of 1000x1, 1000x12, 5000x1 and 5000x12 (substations x busbars) -- 0.08% of a solve on the
+  1000-bus grid, 0.93% on the 12 000-bus one. It is the sparsely-filled grids that gain: 5000
+  substations at 12 busbars each is a 60 000-bus vector walked to solve a 5 000-bus system. Below
+  the wall-clock noise floor in every case; the solve dominates.
+- ``LSGrid``'s ``init_*`` methods (the ones that replace a whole element container) now disarm the
+  per-bus element counts, so the next ``init_bus_status()`` recounts from the elements. Replacing a
+  container wholesale is not something the incremental +1 / -1 bookkeeping can see, and counts that
+  describe elements which no longer exist must not survive it.
 - the powerflow path no longer re-verifies that the data behind a "nothing changed" claim exists.
   The two entry points that can make such a claim without having built anything --
   ``unset_changes()`` and ``check_solution()`` -- now verify it themselves, at an altitude where
