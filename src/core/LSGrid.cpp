@@ -384,8 +384,8 @@ void LSGrid::check_grid() const
     check_positive_finite(init_vm_pu_, "init_vm_pu");
 
     // The substation container FIRST: it defines nb_bus / nb_sub, the bounds every
-    // per-element check below is expressed against, and it carries the vector
-    // (bus_status_) those very ids are used to index. Validating elements against a
+    // per-element check below is expressed against, and it carries the per-bus
+    // element counts those very ids are used to index. Validating elements against a
     // self-inconsistent substation container would prove nothing.
     substations_.check_valid();
 

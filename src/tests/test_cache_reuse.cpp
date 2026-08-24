@@ -128,7 +128,9 @@ std::vector<NamedMutation> all_mutations()
         {"set_reference_slack_bus",    [](LSGrid & g){ g.add_gen_slackbus(1, 1.); g.set_reference_slack_bus(6); }},
         {"consider_only_main_component",   [](LSGrid & g){ g.deactivate_powerline(4); g.consider_only_main_component(); }},
         {"set_gen_regulated_bus",      [](LSGrid & g){ g.set_gen_regulated_bus(3, 9); }},
-        {"deactivate_bus",             [](LSGrid & g){ g.deactivate_load(8); g.deactivate_bus_python(8); }},
+        // deactivate_bus is a deprecated no-op since the per-bus element counts became the
+        // only statement of bus connectivity; it stays in the sweep to check it stays inert
+        {"deactivate_bus (no-op)",     [](LSGrid & g){ g.deactivate_load(8); g.deactivate_bus_python(8); }},
         {"change_algorithm (ac)",  [](LSGrid & g){ g.change_algorithm(AlgorithmType::NRSing_SparseLU); }},
         {"set_sn_mva",             [](LSGrid & g){ g.set_sn_mva(50.); }},
         {"set_init_vm_pu",         [](LSGrid & g){ g.set_init_vm_pu(1.01); }},

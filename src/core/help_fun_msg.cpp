@@ -4579,6 +4579,11 @@ const std::string DocLSGrid::total_bus = R"mydelimiter(
 
 const std::string DocLSGrid::nb_connected_bus = R"mydelimiter(
     Returns (>0 integer) the number of connected buses on the powergrid (ignores the disconnected bus).
+
+    .. versionchanged:: 1.0.0
+        A bus is connected if and only if at least one active element sits on it. The count is
+        maintained as elements are connected, disconnected or moved, so this is a constant-time
+        read rather than a walk over every bus.
 )mydelimiter";
 
 const std::string DocLSGrid::get_pv = R"mydelimiter(
@@ -5514,13 +5519,46 @@ const std::string DocLSGrid::get_bus_vn_kv = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::deactivate_bus = R"mydelimiter(
+    .. deprecated:: 1.0.0
+        Does nothing. Kept so existing code keeps importing; it will be removed in a later
+        version.
+
+    A bus is part of the powerflow if and only if at least one active element sits on it --
+    that is the only statement of bus connectivity there is (see :func:`get_bus_status`), so
+    there is no separate switch left for this to turn off.
+
+    It was already all but inert before: whatever it set, the next powerflow rebuilt the bus
+    status from the elements and threw it away, so a bus with elements on it came straight
+    back and a bus without them was already out. Removing the effect therefore changes no
+    powerflow result.
+
+    To take a bus out of the powerflow, disconnect the **elements** on it
+    (``deactivate_load``, ``deactivate_gen``, ``deactivate_powerline``, ...).
+
+)mydelimiter";
+
+const std::string DocLSGrid::reactivate_bus = R"mydelimiter(
+    .. deprecated:: 1.0.0
+        Does nothing, see :func:`deactivate_bus`. A bus comes back into the powerflow by
+        having an active element on it.
+
+)mydelimiter";
+
 const std::string DocLSGrid::get_bus_status = R"mydelimiter(
     Whether each bus ("gridmodel" numbering) is currently connected -- part of at least one
-    active element or busbar coupling, so contributing an unknown to the powerflow.
+    active element, so contributing an unknown to the powerflow.
 
     There is no dedicated python class for a single bus (unlike loads, generators, etc.): this
     raw per-bus vector, together with :func:`get_bus_vn_kv`, is the only way to inspect bus-level
     state directly.
+
+    .. versionchanged:: 1.0.0
+        This is derived, not stored: a bus is connected if and only if at least one active
+        element sits on it, and the vector is built from the per-bus element counts each time
+        you ask. It is therefore always in step with the elements, it is returned **by value**
+        (it used to be a reference into an internal vector), and it can no longer be set: see
+        :func:`deactivate_bus`.
 
 )mydelimiter";
 

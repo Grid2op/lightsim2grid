@@ -348,9 +348,9 @@ class LS2G_API LSGrid final
          *
          * Nothing tracked that -- the +1 / -1 bookkeeping only sees the mutators --
          * so the per-bus element counts no longer describe the elements. Disarm
-         * them: init_bus_status() rebuilds them from the elements, and the bus
-         * status from them, before anything reads either again. Same "recount
-         * whenever there is nothing to protect" rule set_state / load_binary use.
+         * them: init_bus_status() rebuilds them from the elements before anything
+         * reads them again. Same "recount whenever there is nothing to protect" rule
+         * set_state / load_binary use.
          */
         void _elements_replaced_wholesale(){ substations_.reset_bus_element_counts(); }
 
@@ -558,14 +558,13 @@ class LS2G_API LSGrid final
             // the solved system. Excluding it here instead would mean making
             // SvcContainer the one container that does not track its own
             // contribution, which is exactly the kind of special case this design
-            // exists to avoid. So the counts cover it, and the status below is the
-            // counts, which closes the gap (see "an SVC holds its bus in the solved
-            // system" in test_bus_element_count.cpp).
+            // exists to avoid. So the counts cover it, and connectivity IS the counts,
+            // which closes the gap (see "an SVC holds its bus in the solved system"
+            // in test_bus_element_count.cpp).
             add_all(svcs_);
-            // the counts ARE the definition of "connected", so the status is just
-            // them read back. From here on every 0-crossing keeps the two in step by
-            // itself -- see SubstationContainer::bus_gained_element.
-            substations_.set_bus_status_from_element_counts();
+            // the size of the solved system follows from the counts; from here on
+            // every 0-crossing moves it by one, see bus_gained_element
+            substations_.recount_connected_buses();
         }
 
         /**
@@ -575,25 +574,23 @@ class LS2G_API LSGrid final
          * This used to disconnect every bus and then walk every element of eight
          * containers to put them back -- O(all elements), on every powerflow that
          * rebuilds or that saw an element change bus. Then it became one O(nb_bus)
-         * read of the counts. Now it is usually nothing at all: a bus's status can
-         * only change when its element count crosses 0, and SubstationContainer
-         * flips that one entry as the crossing happens, so the vector is already
-         * right. What is left is the two cases where it is not:
+         * read of the counts into a separate `bus_status_` vector. Now there is no
+         * separate vector: a bus is connected iff its element count is non-zero, and
+         * `nb_connected_bus_` is moved by one at the crossings, so in the steady
+         * state this does nothing at all.
          *
-         *  - the counts have never been established (a freshly built grid, or one
-         *    restored by set_state / load_binary, which disarm them): recount from
-         *    the elements, O(all elements), the same "recount whenever there is no
-         *    cache to protect" rule that keeps drift from outliving an invalidation;
-         *  - something wrote `bus_status_` behind the counts' back -- deactivate_bus
-         *    / reactivate_bus, disconnect_all_buses: re-derive the whole vector,
-         *    O(nb_bus), exactly as before.
+         * What is left is the one case where there is nothing to be up to date with:
+         * the counts have never been established (a freshly built grid, or one
+         * restored by set_state / load_binary, which disarm them). Recount from the
+         * elements, O(all elements) -- the same "recount whenever there is no cache
+         * to protect" rule that keeps drift from outliving an invalidation.
          *
-         * What that is worth is `nb_bus` times a constant, independent of how many
-         * elements the grid has: callgrind measures ~13 instructions saved per bus
-         * per topology-changing powerflow, the same figure at 1000, 5000, 12 000 and
-         * 60 000 buses. So it is the sparsely-filled grids that gain -- 5000
-         * substations at 12 busbars each is a 60 000-entry vector rebuilt to solve a
-         * 5 000-bus system.
+         * What the O(nb_bus) rewrite was worth is `nb_bus` times a constant,
+         * independent of how many elements the grid has: callgrind measured ~13
+         * instructions per bus per topology-changing powerflow, the same figure at
+         * 1000, 5000, 12 000 and 60 000 buses. So it is the sparsely-filled grids
+         * that gain -- 5000 substations at 12 busbars each is a 60 000-entry vector
+         * rebuilt to solve a 5 000-bus system.
          *
          * It decides nothing about change flags. It used to compare the fresh status
          * against each family's photograph and raise `tell_dimension_changed` on a
@@ -602,13 +599,10 @@ class LS2G_API LSGrid final
          * both earlier and exact.
          */
         void init_bus_status(){
-            if(!substations_.bus_counts_ready()){
-                recompute_bus_element_counts();  // also re-derives the status
-                return;
-            }
-            if(substations_.bus_status_needs_refresh()) substations_.set_bus_status_from_element_counts();
-            assert(substations_.bus_status_matches_counts() &&
-                   "LSGrid::init_bus_status: the bus status and the element counts have drifted apart");
+            if(!substations_.bus_counts_ready()) recompute_bus_element_counts();
+            assert(substations_.connected_bus_count_is_exact() &&
+                   "LSGrid::init_bus_status: the connected-bus count has drifted from the "
+                   "per-bus element counts");
         }
         void set_substation_names(const std::vector<std::string> & sub_names){
             substations_.init_sub_names(sub_names);
@@ -814,41 +808,30 @@ class LS2G_API LSGrid final
         // check the kirchoff law
         CplxVect check_solution(const Eigen::Ref<const CplxVect> & V, bool check_q_limits);
 
-        // deactivate a bus. Be careful, if a bus is deactivated, but an element is
-        // still connected to it, it will throw an exception
-        void deactivate_bus(GlobalBusId global_bus_id) {
-            if(substations_.is_bus_connected(global_bus_id)){
-                // bus was connected, dim of matrix change
-                algo_controler_.ac_algo_controler().need_reset_solver();
-                algo_controler_.ac_algo_controler().need_recompute_sbus();
-                algo_controler_.ac_algo_controler().need_recompute_ybus();
-                algo_controler_.ac_algo_controler().ybus_change_sparsity_pattern();
-                algo_controler_.dc_algo_controler().need_reset_solver();
-                algo_controler_.dc_algo_controler().need_recompute_sbus();
-                algo_controler_.dc_algo_controler().need_recompute_ybus();
-                algo_controler_.dc_algo_controler().ybus_change_sparsity_pattern();
-                GenericContainer::_generic_deactivate(global_bus_id, substations_);
-            }
-        }
+        /**
+         * @brief \deprecated no-op, kept for source compatibility.
+         *
+         * A bus is in the solved system iff at least one element holds it -- that is
+         * now the only statement of bus connectivity there is (see
+         * SubstationContainer::is_bus_connected), so there is no second switch left
+         * for this to flip.
+         *
+         * It was already all but inert: whatever it set, the next powerflow rebuilt
+         * the bus status from the elements and threw it away, so a bus with elements
+         * on it came straight back and a bus without them was already out. That is
+         * why removing the effect changes no answer -- the pandapower and powermodels
+         * loaders call it for out-of-service buses whose elements they also
+         * disconnect, which is what actually did the work.
+         *
+         * To take a bus out of the system, disconnect the ELEMENTS on it.
+         */
+        void deactivate_bus(GlobalBusId /*global_bus_id*/) { }
         void deactivate_bus_python(int global_bus_id) {
             deactivate_bus(GlobalBusId(global_bus_id));
         }
 
-        // if a bus is connected, but isolated, it will make the powerflow diverge
-        void reactivate_bus(GlobalBusId global_bus_id) {
-            if(!substations_.is_bus_connected(global_bus_id)){
-                // bus was not connected, dim of matrix change
-                algo_controler_.ac_algo_controler().need_reset_solver();
-                algo_controler_.ac_algo_controler().need_recompute_sbus();
-                algo_controler_.ac_algo_controler().need_recompute_ybus();
-                algo_controler_.ac_algo_controler().ybus_change_sparsity_pattern();
-                algo_controler_.dc_algo_controler().need_reset_solver();
-                algo_controler_.dc_algo_controler().need_recompute_sbus();
-                algo_controler_.dc_algo_controler().need_recompute_ybus();
-                algo_controler_.dc_algo_controler().ybus_change_sparsity_pattern();
-                GenericContainer::_generic_reactivate(global_bus_id, substations_); 
-            }
-        }
+        /// \deprecated no-op, see deactivate_bus()
+        void reactivate_bus(GlobalBusId /*global_bus_id*/) { }
         void reactivate_bus_python(int global_bus_id) {
             reactivate_bus(GlobalBusId(global_bus_id));
         }
@@ -875,7 +858,9 @@ class LS2G_API LSGrid final
         [[nodiscard]] const SGenContainer & get_static_generators() const {return sgens_;}
         [[nodiscard]] const SvcContainer & get_svcs() const {return svcs_;}
         [[nodiscard]] const ShuntContainer & get_shunts() const {return shunts_;}
-        [[nodiscard]] const std::vector<bool> & get_bus_status() const {return substations_.get_bus_status();}
+        /// which buses are in the solved system; built from the element counts, see
+        /// SubstationContainer::get_bus_status (returns BY VALUE, no longer a reference)
+        [[nodiscard]] std::vector<bool> get_bus_status() const {return substations_.get_bus_status();}
         
         void set_line_names(const std::vector<std::string> & names){
             GenericContainer::check_size(names, powerlines_.nb(), "set_line_names");

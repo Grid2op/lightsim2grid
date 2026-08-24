@@ -563,6 +563,8 @@ struct LS2G_API DocLSGrid
     // grid-level scalars / bus infrastructure (no per-element python class to reference)
     static const std::string get_bus_vn_kv;
     static const std::string get_bus_status;
+    static const std::string deactivate_bus;
+    static const std::string reactivate_bus;
     static const std::string set_init_vm_pu;
     static const std::string get_init_vm_pu;
     static const std::string set_sn_mva;

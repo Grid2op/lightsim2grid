@@ -72,7 +72,12 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             // every already-saved binary file -- including this repo's own
             // format-4 compatibility fixture (tests/binary_format_fixture).
             std::vector<real_type>, // sub_vn_kv_ (optional, see above)
-            std::vector<bool>,  // bus_status_;
+            // NB there is no bus-status slot here. Whether a bus is in the solved
+            // system is not independent state: it is `nb_elements_per_bus_[b] > 0`,
+            // and that is recounted from the elements -- whose status IS serialized
+            // -- as soon as a restored grid is used. Serializing it would be
+            // serializing a cache of something already in the file, with a way for
+            // a crafted file to make the two disagree.
             std::vector<real_type>,  // bus_vn_kv_;
             std::vector<std::string>,  // sub_names_
             std::vector<real_type>,  // bus_vmin_kv_ (optional, empty if unset)
@@ -109,20 +114,13 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             nmax_busbar_per_sub_(nmax_busbar_per_sub),
             n_bus_max_(n_sub * nmax_busbar_per_sub),
             sub_vn_kv_(n_sub),
-            bus_status_(n_bus_max_, false),
             nb_elements_per_bus_(n_bus_max_, 0),
             bus_vn_kv_(n_bus_max_){}
             
         ~SubstationContainer() noexcept = default;
 
-        void reset_bus_status(){
-            // iterate the vector actually being written, not n_bus_max_ (a separate
-            // field): set_state() now guarantees they agree, but not depending on
-            // that invariant costs nothing and cannot go wrong if it is ever broken.
-            const std::size_t nb_bus_total = bus_status_.size();
-            for(std::size_t i = 0; i < nb_bus_total; ++ i) bus_status_[i] = false;
-            bus_status_dirty_ = true;
-        }
+        /// \deprecated no-op, see the note above disconnect_all_buses()
+        void reset_bus_status(){ }
 
         void init_sub(const Eigen::Ref<const RealVect> & sub_vn_kv){
             if((n_sub_ <= 0) || (nmax_busbar_per_sub_ <= 0)){
@@ -171,17 +169,13 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         size_t nb_bus() const {return bus_vn_kv_.size();}
         
         /**
-        Retrieve the number of connected buses
-        **/
-        size_t nb_connected_bus() const
-        {
-            size_t res = 0;
-            for(const auto & el : bus_status_)
-            {
-                if(el) ++res;
-            }
-            return res;
-        }
+         * How many buses are in the solved system, ie hold at least one element.
+         *
+         * Maintained, not counted: `bus_gained_element` / `bus_lost_element` move it
+         * by one on the crossings they already detect, so this is a read of one
+         * integer rather than the walk of a whole vector it used to be.
+         */
+        size_t nb_connected_bus() const {return nb_connected_bus_;}
 
         
         int nmax_busbar_per_sub() const {return nmax_busbar_per_sub_;}
@@ -208,9 +202,23 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         Eigen::Ref<const RealVect> get_bus_vmin_kv() const {return bus_vmin_kv_;}
         Eigen::Ref<const RealVect> get_bus_vmax_kv() const {return bus_vmax_kv_;}
 
-        bool is_bus_connected(const GridModelBusId & global_bus_id) const {return bus_status_[global_bus_id.cast_int()];}
+        /**
+         * Is this bus in the solved system?
+         *
+         * There is one answer, and it is the element count: a bus is connected iff
+         * at least one element holds it. This used to read a separate
+         * `std::vector<bool> bus_status_` that had to be rebuilt from the elements
+         * to stay true, and that could be -- and was -- set by hand to something the
+         * elements contradicted. Nothing states it twice any more.
+         */
+        bool is_bus_connected(const GridModelBusId & global_bus_id) const {
+            return nb_elements_per_bus_[global_bus_id.cast_int()] > 0;
+        }
         bool is_bus_connected(int sub_id, const LocalBusId & local_bus_id) const {
-            return bus_status_[local_to_gridmodel(sub_id, local_bus_id).cast_int()];
+            const GridModelBusId bus = local_to_gridmodel(sub_id, local_bus_id);
+            // the "disconnected" sentinel is not a bus and must not index anything
+            if(bus.cast_int() == BaseConstants::_deactivated_bus_id) return false;
+            return is_bus_connected(bus);
         }
 
         /**
@@ -295,8 +303,9 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             nmax_busbar_per_sub_ = nmax_busbar_per_sub;
             bus_vn_kv_ = bus_vn_kv;  // base_kv
 
-            bus_status_ = std::vector<bool>(nb_bus(), true); // by default everything is connected
-            reset_bus_element_counts();  // recounted from the elements by LSGrid::init_bus_status()
+            // no bus holds anything yet, and nothing has counted: the elements are
+            // declared after this, and LSGrid::init_bus_status() counts them
+            reset_bus_element_counts();
 
             // check that a "substation" always has the same vn_kv for all of its buses
             check_bus_vn_kv_uniform_per_sub();
@@ -381,17 +390,16 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         /**
          * One more element holds `global_bus_id`; true iff it just crossed 0 -> 1.
          *
-         * The crossing is also where `bus_status_` is brought along: a bus is
-         * connected iff its count is non-zero, so the ONLY moments its status can
-         * change are the two crossings -- which is exactly why the whole-vector
-         * refresh below is not needed on every powerflow. See
-         * bus_status_needs_refresh().
+         * The crossing is also where `nb_connected_bus_` is kept up: a bus is in the
+         * solved system iff its count is non-zero, so the size of that system can
+         * only change at the two crossings -- which is why nothing has to count
+         * buses, ever.
          */
         bool bus_gained_element(const GlobalBusId & global_bus_id){
             if(!bus_counts_ready_) return false;
             const std::size_t idx = static_cast<std::size_t>(global_bus_id.cast_int());
             if(++nb_elements_per_bus_[idx] != 1) return false;
-            bus_status_[idx] = true;   // 0 -> 1: the bus enters the solved system
+            ++nb_connected_bus_;   // 0 -> 1: the bus enters the solved system
             return true;
         }
         /// one fewer element holds `global_bus_id`; true iff it just crossed 1 -> 0
@@ -404,95 +412,69 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
                    "SubstationContainer::bus_lost_element: count already 0 -- an element "
                    "was removed from this bus twice, the incremental counts have drifted");
             if(--nb_elements_per_bus_[idx] != 0) return false;
-            bus_status_[idx] = false;  // 1 -> 0: the bus leaves it
+            assert(nb_connected_bus_ > 0 && "SubstationContainer::bus_lost_element: "
+                   "the connected-bus count has drifted");
+            --nb_connected_bus_;   // 1 -> 0: the bus leaves it
             return true;
         }
         /**
-         * A bus is connected iff at least one element holds it. Derive the whole
-         * status from the counts -- O(nb_bus), touching no element.
-         *
-         * This reproduces exactly what disconnect_all_buses() + every container's
-         * reconnect_connected_buses() produced, including the consequence that a
-         * bus turned off by hand through `deactivate_bus` comes back if something
-         * is still on it. That was already true (the old rebuild wiped it the same
-         * way); the counts just make it explicit rather than incidental.
+         * Re-establish `nb_connected_bus_` from the counts. O(nb_bus), and only ever
+         * run right after a from-scratch recount (see
+         * LSGrid::recompute_bus_element_counts) -- the crossings keep it exact from
+         * then on.
          */
-        void set_bus_status_from_element_counts(){
-            const std::size_t nb_bus_total = bus_status_.size();
-            for(std::size_t i = 0; i < nb_bus_total; ++i) bus_status_[i] = (nb_elements_per_bus_[i] > 0);
-            bus_status_dirty_ = false;
+        void recount_connected_buses(){
+            nb_connected_bus_ = 0;
+            for(const std::size_t nb_el : nb_elements_per_bus_) if(nb_el > 0) ++nb_connected_bus_;
         }
 
         /**
-         * Does `bus_status_` still have to be rebuilt from the counts, or has it
-         * been kept in step as the grid was modified?
-         *
-         * `bus_gained_element` / `bus_lost_element` flip the status of the one bus
-         * that crossed, as it crosses. So after a from-scratch refresh the two stay
-         * equal on their own, and the O(nb_bus) walk that used to run on every
-         * powerflow that rebuilt has nothing left to do. It is still needed after
-         * something writes `bus_status_` behind the counts' back -- `deactivate_bus`
-         * / `reactivate_bus`, `disconnect_all_buses`, a restored state -- and that
-         * is what this flag records.
-         *
-         * True also means "not yet established at all": a container whose counts
-         * have never been armed has no counts to derive a status from, and LSGrid
-         * recounts from the elements first (see LSGrid::init_bus_status).
+         * Debug-only invariant: the maintained `nb_connected_bus_` is what a fresh
+         * count of the non-empty buses would give. Checked by the C++ suite (which
+         * CI runs under ASan / UBSan / valgrind) rather than left as a comment.
          */
-        bool bus_status_needs_refresh() const {return bus_status_dirty_;}
-
-        /**
-         * Debug-only invariant: `bus_status_[i] == (nb_elements_per_bus_[i] > 0)`
-         * for every bus. It holds whenever the counts are armed and no refresh is
-         * pending, and that is what lets init_bus_status() skip the walk. Used by
-         * the C++ test suite (which CI runs under ASan / UBSan / valgrind) rather
-         * than left as a comment.
-         */
-        bool bus_status_matches_counts() const {
-            if(!bus_counts_ready_) return false;
-            const std::size_t nb_bus_total = bus_status_.size();
-            if(nb_elements_per_bus_.size() != nb_bus_total) return false;
-            for(std::size_t i = 0; i < nb_bus_total; ++i){
-                if(bus_status_[i] != (nb_elements_per_bus_[i] > 0)) return false;
-            }
-            return true;
+        bool connected_bus_count_is_exact() const {
+            std::size_t expected = 0;
+            for(const std::size_t nb_el : nb_elements_per_bus_) if(nb_el > 0) ++expected;
+            return expected == nb_connected_bus_;
         }
 
         /// back to "nothing holds any bus", ready to be recounted from the elements
         void reset_bus_element_counts(){
             nb_elements_per_bus_.assign(nb_bus(), 0);
+            nb_connected_bus_ = 0;
             bus_counts_ready_ = false;   // re-established by recompute_bus_element_counts()
-            // with no counts there is nothing keeping bus_status_ in step: whatever
-            // it holds now has to be re-derived once the counts are back.
-            bus_status_dirty_ = true;
         }
 
-        const std::vector<bool> & get_bus_status() const {return bus_status_;}
-        
-        // The three writers below set `bus_status_` WITHOUT changing what holds the
-        // bus, so they are the one way the status and the counts can disagree. Each
-        // says so, and LSGrid::init_bus_status() re-derives the whole vector from the
-        // counts on the next rebuild -- exactly what it always did to a hand-set
-        // status. Nothing else needs to know.
-        void disconnect_all_buses(){
-            const size_t nb_bus_total = nb_bus();
-            for(size_t i = 0; i < nb_bus_total; ++i) bus_status_[i] = false;
-            bus_status_dirty_ = true;
+        /**
+         * Which buses are in the solved system, as a `std::vector<bool>` indexed by
+         * grid bus id.
+         *
+         * Built on demand from the element counts, not stored: `is_bus_connected` is
+         * the O(1) form and is what the C++ core uses. This exists because the
+         * pandapower backend wants the whole picture at once, and it returns BY VALUE
+         * for that reason -- the old reference into a member is gone along with the
+         * member.
+         */
+        std::vector<bool> get_bus_status() const {
+            std::vector<bool> res(nb_elements_per_bus_.size(), false);
+            for(std::size_t i = 0; i < nb_elements_per_bus_.size(); ++i) res[i] = (nb_elements_per_bus_[i] > 0);
+            return res;
         }
-        void reconnect_bus(const GridModelBusId& global_bus_id){
-            bus_status_[global_bus_id.cast_int()] = true;
-            bus_status_dirty_ = true;
-        }
-        void reconnect_bus(int sub_id, const LocalBusId & local_bus_id){
-            reconnect_bus(local_to_gridmodel(sub_id, local_bus_id));
-        }
-        void disconnect_bus(const GridModelBusId & global_bus_id){
-            bus_status_[global_bus_id.cast_int()] = false;
-            bus_status_dirty_ = true;
-        }
-        void disconnect_bus(int sub_id, const LocalBusId & local_bus_id){
-            disconnect_bus(local_to_gridmodel(sub_id, local_bus_id));
-        }
+
+        // ---- deprecated: setting a bus's status by hand ------------------------
+        // A bus is in the solved system iff an element holds it. There is no second
+        // switch, so these five have nothing left to set and are no-ops kept for
+        // source compatibility. They were already very close to inert: whatever they
+        // wrote, the next powerflow rebuilt the status from the elements and threw it
+        // away, which is why turning them into no-ops changes no answer. Disconnect
+        // the ELEMENTS on a bus instead -- that is what "this bus is out of service"
+        // has always actually meant here.
+        void disconnect_all_buses(){ }
+        void reconnect_bus(const GridModelBusId& /*global_bus_id*/){ }
+        void reconnect_bus(int /*sub_id*/, const LocalBusId & /*local_bus_id*/){ }
+        void disconnect_bus(const GridModelBusId & /*global_bus_id*/){ }
+        void disconnect_bus(int /*sub_id*/, const LocalBusId & /*local_bus_id*/){ }
         GridModelBusId local_to_gridmodel(int sub_id, const LocalBusId & local_bus_id) const{
             if(local_bus_id.cast_int() == BaseConstants::_deactivated_bus_id){
                 return GlobalBusId(BaseConstants::_deactivated_bus_id);
@@ -560,13 +542,12 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
          *     already-saved file needs to load.
          */
         RealVect sub_vn_kv_;
-        std::vector<bool> bus_status_;
-        // derived from the elements, never serialized: see get_nb_elements_per_bus()
+        // derived from the elements, never serialized: see get_nb_elements_per_bus().
+        // THE statement of which buses are in the solved system -- there is no
+        // separate status vector any more.
         std::vector<std::size_t> nb_elements_per_bus_;
+        std::size_t nb_connected_bus_ = 0;  // see nb_connected_bus()
         bool bus_counts_ready_ = false;  // see bus_counts_ready()
-        // see bus_status_needs_refresh(); starts true because a container that has
-        // never counted has nothing to keep bus_status_ in step with
-        bool bus_status_dirty_ = true;
         RealVect bus_vn_kv_;
         std::vector<std::string> sub_names_;
         RealVect bus_vmin_kv_;  // optional, empty if unset

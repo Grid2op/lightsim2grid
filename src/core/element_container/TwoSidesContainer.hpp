@@ -185,22 +185,13 @@ class TwoSidesContainer : public GenericContainer
         /**
          * An HVDC line has NO global gate: the two converter stations stand alone,
          * one can be on while the other is off, which is legitimate. So this simply
-         * delegates -- deliberately unlike TwoSidesContainer_rxh_A above. (The same
-         * asymmetry is already in reconnect_connected_buses below, and this keeps
-         * the two in step by construction.)
+         * delegates -- deliberately unlike TwoSidesContainer_rxh_A above, which gates
+         * on `status_global_` first.
          */
         void contribute_to_buses(int el_id, SubstationContainer & substation,
                                  int sign, bool & crossed) const override {
             side_1_.contribute_to_buses(el_id, substation, sign, crossed);
             side_2_.contribute_to_buses(el_id, substation, sign, crossed);
-        }
-
-        void reconnect_connected_buses(SubstationContainer & substation) const override{
-            side_1_.reconnect_connected_buses(substation);
-            side_2_.reconnect_connected_buses(substation);
-            // TODO think about status here !
-            // Do I do if status_global_, reconnect connected buses of side_1 and side_2
-            // (in this case this can do nothing if side_1 or side_2 is not connected)
         }
 
         void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation) override {

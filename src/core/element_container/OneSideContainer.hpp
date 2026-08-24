@@ -30,7 +30,6 @@ namespace ls2g {
 // - get_theta
 // - get_status
 // - get_bus_id
-// - reconnect_connected_buses
 // - gen_p_per_bus
 
 // same public api but need overriden in private api
@@ -183,24 +182,6 @@ class OneSideContainer : public GenericContainer
             if(my_bus.cast_int() == _deactivated_bus_id) return;
             crossed |= (sign > 0) ? substation.bus_gained_element(my_bus)
                                   : substation.bus_lost_element(my_bus);
-        }
-
-        void reconnect_connected_buses(SubstationContainer & substation) const override{
-            const int nb_els = nb();
-            for(int el_id = 0; el_id < nb_els; ++el_id)
-            {
-                if(!status_[el_id]) continue;
-                const GlobalBusId my_bus = bus_id_(el_id);
-                if(my_bus.cast_int() == _deactivated_bus_id){
-                    // TODO DEBUG MODE only this in debug mode
-                    std::ostringstream exc_;
-                    exc_ << "OneSideContainer::reconnect_connected_buses: element with id ";
-                    exc_ << el_id;
-                    exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx(...)` ?.";
-                    throw std::runtime_error(exc_.str());
-                }
-                substation.reconnect_bus(my_bus);
-            }
         }
 
         void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation) override final {
@@ -467,9 +448,9 @@ class OneSideContainer : public GenericContainer
                 } else if (new_bus.cast_int() == _deactivated_bus_id){
                     // new bus is negative, we deactivate it
                     bool change_effective = deactivate(el_id, solver_control, substations);// eg deactivate_load(load_id);
-                    // bus_status_ is set to "false" in GridModel.update_topo
+                    // the bus is taken out of the system in GridModel.update_topo
                     // and a bus is activated if (and only if) one element is connected to it.
-                    // I must not set `bus_status_[new_bus_backend] = false;` in this case !
+                    // I must not take `new_bus_backend` out of the system in this case !
                     if(change_effective) res[el_id] = true;
                 }
             }
@@ -687,13 +668,13 @@ class OneSideContainer : public GenericContainer
                              << _deactivated_bus_id << " (meaning disconnected).";
                         throw std::runtime_error(exc_.str());
                     }
-                    if(!substations.is_bus_connected(GridModelBusId(bus)))
-                    {
-                        std::ostringstream exc_;
-                        exc_ << "LSGrid::check_grid: " << el_name << " id " << el_id
-                             << " is connected to bus id " << bus << " which is not an active bus.";
-                        throw std::runtime_error(exc_.str());
-                    }
+                    // NB there is no "... and its bus must be active" check here any
+                    // more. A bus is active iff an element holds it, and an active
+                    // element on bus `bus` IS one such element, so the condition was
+                    // a tautology: it could only ever fire when the per-bus counts
+                    // had not been established yet, which says nothing about the
+                    // grid. What it used to catch -- a saved bus-status vector
+                    // contradicting the elements -- cannot be expressed any more.
                 }
                 if(has_subid)
                 {

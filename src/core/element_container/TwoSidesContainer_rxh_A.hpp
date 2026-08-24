@@ -763,45 +763,6 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
         }
 
-        void reconnect_connected_buses(SubstationContainer & substation) const override{
-            const size_t nb_els = nb();
-            const std::vector<bool>& status_side_1_ = get_status_side_1();
-            const std::vector<bool>& status_side_2_ = get_status_side_2();
-            for(size_t el_id = 0; el_id < nb_els; ++el_id){
-                // don't do anything if the element is disconnected
-                if(!status_global_[el_id]) continue;
-                
-                if(status_side_1_[el_id])
-                {
-                    const GlobalBusId bus_or_id_me = get_bus_side_1(el_id);        
-                    if(bus_or_id_me.cast_int() == _deactivated_bus_id){
-                        // TODO DEBUG MODE only this in debug mode
-                        std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::reconnect_connected_buses: branch with id ";
-                        exc_ << el_id;
-                        exc_ << " is connected (side 1) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx_side_1(...)` ?.";
-                        throw std::runtime_error(exc_.str());
-                    }
-                    substation.reconnect_bus(bus_or_id_me);
-                }
-
-                if(status_side_2_[el_id])
-                {
-                    const GlobalBusId bus_ex_id_me = get_bus_side_2(el_id);        
-                    if(bus_ex_id_me.cast_int() == _deactivated_bus_id){
-                        // TODO DEBUG MODE only this in debug mode
-                        std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::reconnect_connected_buses: branch with id ";
-                        exc_ << el_id;
-                        exc_ << " is connected (side 2) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx_side_2(...)` ?.";
-                        throw std::runtime_error(exc_.str());
-                    }
-                    // bus_status[bus_ex_id_me] = true;
-                    substation.reconnect_bus(bus_ex_id_me);
-                }
-            }
-        }
-
     protected:
 
         // TODO save that somewhere (and don't forget to template that)

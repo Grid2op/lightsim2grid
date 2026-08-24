@@ -211,11 +211,6 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                          );
 
         // accessor / modifiers
-        void reconnect_connected_buses(SubstationContainer & substation) const override {
-            side_1_.reconnect_connected_buses(substation);
-            side_2_.reconnect_connected_buses(substation);
-        }
-
         void get_graph(std::vector<Eigen::Triplet<real_type> > & /*res*/) const override {
             // for buses only connected through a hvdc line, i don't add them
             // they are not in the same "connected component"

@@ -89,10 +89,6 @@ class LS2G_API GenericContainer : public BaseConstants
                                 };
     
         static const int _deactivated_bus_id;
-        virtual void reconnect_connected_buses(SubstationContainer & /*substation*/) const {
-                                // nothing to do by default
-                                };
-
         // ---- which buses does an element hold alive? ---------------------------
         /**
          * Apply this element's contribution to `substation`'s per-bus element count:
@@ -101,11 +97,12 @@ class LS2G_API GenericContainer : public BaseConstants
          * entered or left the solved system.
          *
          * THIS IS THE ONLY STATEMENT OF "WHICH BUSES DOES THIS ELEMENT HOLD".
-         * `reconnect_connected_buses` is built from it, the from-scratch recount is
-         * built from it, and every mutator tracks its own effect through it (see
-         * `_apply_and_track_buses`). Anything that states the rule a second time can
-         * drift from the first, and the failure mode is a bus labelling that no
-         * longer matches the matrices -- a converged, plausible, wrong answer.
+         * The from-scratch recount is built from it and every mutator tracks its own
+         * effect through it (see `_apply_and_track_buses`); there is no longer a
+         * `reconnect_connected_buses` stating the same rule a second time. Anything
+         * that states it twice can drift, and the failure mode is a bus labelling
+         * that no longer matches the matrices -- a converged, plausible, wrong
+         * answer.
          *
          * The rule is genuinely different per container, which is why this is
          * virtual and not a helper:
@@ -223,8 +220,6 @@ class LS2G_API GenericContainer : public BaseConstants
         static void _generic_reactivate(int el_id, std::vector<bool> & status);
         static void _generic_deactivate(int el_id, std::vector<bool> & status);
 
-        static void _generic_reactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
-        static void _generic_deactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
 
         /**
         check if an element is in a vector or an Eigen Vector, do not use for other types of containers (might not be efficient at all)

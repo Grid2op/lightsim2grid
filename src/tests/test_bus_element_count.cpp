@@ -56,18 +56,12 @@ void require_counts_match_recount(LSGrid & grid, const std::string & what)
 {
     const std::vector<std::size_t> incremental = grid.get_substations().get_nb_elements_per_bus();
 
-    // The bus status is not a second, separately-maintained copy of this: a bus is
-    // connected iff its count is non-zero, and the mutators flip the one entry that
-    // crossed as it crosses. That is what lets init_bus_status() skip the O(nb_bus)
-    // rebuild, so it has to hold after every one of them -- checked BEFORE the
-    // recount below, which would re-derive the status and hide any drift.
-    // The exception is deliberate and narrow: deactivate_bus / reactivate_bus /
-    // disconnect_all_buses write the status without changing what holds the bus, and
-    // say so through bus_status_needs_refresh().
-    if(!grid.get_substations().bus_status_needs_refresh()){
-        INFO("bus status drifted from the element counts after: " << what);
-        CHECK(grid.get_substations().bus_status_matches_counts());
-    }
+    // `nb_connected_bus()` is not a second, separately-maintained copy of this: the
+    // mutators move it by one on the 0-crossings they already detect, so it has to
+    // equal a fresh count of the non-empty buses after every one of them. Checked
+    // BEFORE the recount below, which would re-establish it and hide any drift.
+    INFO("the connected-bus count drifted from the element counts after: " << what);
+    CHECK(grid.get_substations().connected_bus_count_is_exact());
 
     grid.recompute_bus_element_counts();
     const std::vector<std::size_t> & from_scratch = grid.get_substations().get_nb_elements_per_bus();
@@ -191,74 +185,106 @@ TEST_CASE("the count sweep still covers every mutator", "[SubstationContainer][b
     CHECK(all_bus_mutations().size() == 41u);
 }
 
-TEST_CASE("the bus status follows the counts without being rebuilt", "[SubstationContainer][bus_count]")
+TEST_CASE("bus connectivity IS the element counts", "[SubstationContainer][bus_count]")
 {
-    // What commit 3 is actually about. `bus_status_` used to be recomputed from the
-    // counts on every powerflow that rebuilt -- O(nb_bus), which on a grid with far
-    // more buses than elements (5000 substations at 12 busbars each, most empty) is
-    // the dominant cost of the very step the counts were introduced to make cheap.
-    // It does not have to be: only a 0-crossing can change a bus's status, and the
-    // crossing is already detected.
+    // What stages 2 and 3 are about. There used to be a `std::vector<bool>
+    // bus_status_` next to these counts, saying the same thing a second time: it had
+    // to be rebuilt from the elements on every powerflow to stay true (O(nb_bus),
+    // which on a grid with far more buses than elements -- 5000 substations at 12
+    // busbars each, most empty -- is the dominant cost of the very step the counts
+    // were introduced to make cheap), and it could be set by hand to something the
+    // elements contradicted. It is gone: `is_bus_connected(b)` is `count[b] > 0`,
+    // and `nb_connected_bus()` is one integer moved at the crossings.
     LSGrid grid = make_grid();
     REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 14);
     const auto & subs = grid.get_substations();
     REQUIRE(subs.bus_counts_ready());
-    REQUIRE_FALSE(subs.bus_status_needs_refresh());
-    REQUIRE(subs.bus_status_matches_counts());
+    REQUIRE(subs.connected_bus_count_is_exact());
 
-    SECTION("a mutator that empties a bus takes that bus out, with no refresh pending"){
-        // bus 8 of the case-14 fixture holds exactly one element: load 8.
+    SECTION("a mutator that empties a bus takes that bus out of the system"){
         const int bus8 = grid.get_loads_as_data().get_buses()(8).cast_int();
         REQUIRE(subs.get_nb_elements_per_bus()[bus8] >= 1u);
+        const std::size_t nb_conn_before = subs.nb_connected_bus();
+
         grid.deactivate_load(8);
-        if(subs.get_nb_elements_per_bus()[bus8] == 0u){
-            CHECK_FALSE(subs.is_bus_connected(GridModelBusId(bus8)));
-        }
-        CHECK_FALSE(subs.bus_status_needs_refresh());
-        CHECK(subs.bus_status_matches_counts());
+        CHECK(subs.is_bus_connected(GridModelBusId(bus8)) ==
+              (subs.get_nb_elements_per_bus()[bus8] > 0u));
+        CHECK(subs.connected_bus_count_is_exact());
+
         grid.reactivate_load(8);
         CHECK(subs.is_bus_connected(GridModelBusId(bus8)) ==
               (subs.get_nb_elements_per_bus()[bus8] > 0u));
-        CHECK(subs.bus_status_matches_counts());
+        CHECK(subs.nb_connected_bus() == nb_conn_before);
+        CHECK(subs.connected_bus_count_is_exact());
     }
 
-    SECTION("a hand-set status asks for the refresh, and the next rebuild does it"){
-        // deactivate_bus does NOT remove anything from the bus, so the counts are
-        // untouched and the two legitimately disagree. That must not be silent, and
-        // it must not survive the next rebuild -- which is exactly what the old
-        // unconditional rebuild did to a hand-set status too.
+    SECTION("get_bus_status() is the counts, built on demand"){
+        const std::vector<bool> status = grid.get_bus_status();
+        REQUIRE(status.size() == subs.get_nb_elements_per_bus().size());
+        std::size_t nb_true = 0;
+        for(std::size_t b = 0; b < status.size(); ++b){
+            INFO("bus " << b);
+            CHECK(status[b] == (subs.get_nb_elements_per_bus()[b] > 0u));
+            if(status[b]) ++nb_true;
+        }
+        CHECK(nb_true == subs.nb_connected_bus());
+    }
+
+    SECTION("deactivate_bus / reactivate_bus are no-ops"){
+        // They have nothing left to set: a bus is in the system iff an element holds
+        // it. They were already all but inert -- whatever they wrote, the next
+        // powerflow rebuilt the status from the elements and threw it away -- which
+        // is why this changes no answer.
+        const std::vector<bool> before = grid.get_bus_status();
+        const std::size_t nb_conn_before = subs.nb_connected_bus();
         grid.deactivate_bus_python(3);
-        CHECK(subs.bus_status_needs_refresh());
-        grid.init_bus_status();
-        CHECK_FALSE(subs.bus_status_needs_refresh());
-        CHECK(subs.bus_status_matches_counts());
-    }
-
-    SECTION("a fresh recount re-establishes both, together"){
-        grid.recompute_bus_element_counts();
-        CHECK_FALSE(subs.bus_status_needs_refresh());
-        CHECK(subs.bus_status_matches_counts());
+        grid.reactivate_bus_python(4);
+        CHECK(grid.get_bus_status() == before);
+        CHECK(subs.nb_connected_bus() == nb_conn_before);
+        CHECK(subs.connected_bus_count_is_exact());
     }
 
     SECTION("replacing a whole container disarms the counts, and a rebuild restores them"){
-        // init_* replaces a container wholesale, which no +1 / -1 can see. Rather
-        // than let the counts quietly describe elements that are gone, they are
-        // disarmed and rebuilt from the elements at the next init_bus_status().
         // Re-initializing the storage container with three empty vectors removes
         // every storage from the grid. No +1 / -1 sees that, which is the point:
-        // without the disarming below the counts would keep describing elements
-        // that no longer exist, and the recount at the next init_bus_status() is
-        // what makes that unable to outlive one rebuild.
+        // without the disarming the counts would keep describing elements that no
+        // longer exist, and the recount at the next init_bus_status() is what makes
+        // that unable to outlive one rebuild.
         REQUIRE(grid.get_storages().nb() > 0);
         grid.init_storages(RealVect(), RealVect(), Eigen::VectorXi());
         CHECK_FALSE(subs.bus_counts_ready());
-        CHECK(subs.bus_status_needs_refresh());
         grid.init_bus_status();
         CHECK(subs.bus_counts_ready());
-        CHECK_FALSE(subs.bus_status_needs_refresh());
-        CHECK(subs.bus_status_matches_counts());
+        CHECK(subs.connected_bus_count_is_exact());
         require_counts_match_recount(grid, "re-initializing the storage container");
     }
+}
+
+TEST_CASE("a restored grid counts its own buses", "[SubstationContainer][bus_count]")
+{
+    // Bus connectivity is no longer serialized (BINARY_FORMAT_VERSION 6), so there
+    // is no field for a saved state to disagree with the elements about. What comes
+    // back is counted from the restored elements' own status -- which IS in the
+    // state -- so a round-trip reproduces the connectivity exactly, and a crafted
+    // file cannot state anything else.
+    LSGrid grid = make_grid();
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 14);
+    grid.deactivate_load(8);   // change the topology so the round-trip has to carry it
+    const std::vector<bool> expected_status = grid.get_bus_status();
+    const std::size_t expected_nb_conn = grid.get_substations().nb_connected_bus();
+
+    LSGrid::StateRes st = grid.get_state();
+    LSGrid restored;
+    restored.set_state(st);
+
+    const auto & subs = restored.get_substations();
+    CHECK_FALSE(subs.bus_counts_ready());          // nothing has counted yet
+    restored.init_bus_status();                     // ... so this counts, from the elements
+    CHECK(subs.bus_counts_ready());
+    CHECK(restored.get_bus_status() == expected_status);
+    CHECK(subs.nb_connected_bus() == expected_nb_conn);
+    CHECK(subs.connected_bus_count_is_exact());
+    require_counts_match_recount(restored, "restoring a state");
 }
 
 TEST_CASE("an SVC holds its bus in the solved system, like every other element",

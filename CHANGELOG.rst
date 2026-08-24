@@ -194,14 +194,34 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   inherits a perfectly good one from ``OneSideContainer_PQ``, it was simply left out of the list --
   so such a bus was dropped from the solved system. An SVC injects reactive power; its bus belongs
   there.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 5 -> 6: ``SubstationContainer``'s serialized state no longer
+  carries ``bus_status_``. Whether a bus is part of the powerflow is not independent state -- it is
+  "at least one active element sits on it" -- and the elements' own status *is* in the file, so
+  storing it was storing a cache of something already there, with a way for a crafted file to make
+  the two disagree. A restored grid counts its buses from its elements.
+- [BREAKING] [DEPRECATED] ``LSGrid.deactivate_bus(bus_id)`` and ``LSGrid.reactivate_bus(bus_id)`` are
+  now **no-ops** (kept so existing code keeps importing; they will be removed in a later version).
+  A bus is part of the powerflow if and only if at least one active element sits on it, which is now
+  the only statement of bus connectivity there is, so there is no separate switch left for them to
+  flip. They were already all but inert: whatever they set, the next powerflow rebuilt the bus status
+  from the elements and threw it away -- a bus with elements on it came straight back, a bus without
+  them was already out -- which is why removing the effect changes no powerflow result. To take a bus
+  out of the powerflow, disconnect the **elements** on it. The pandapower and powermodels loaders call
+  these for out-of-service buses whose elements they also disconnect, and that is what did the work.
+  (The C++ ``SubstationContainer::disconnect_all_buses`` / ``reconnect_bus`` / ``disconnect_bus`` /
+  ``reset_bus_status`` are no-ops for the same reason.)
+- [BREAKING] ``LSGrid.get_bus_status()`` now returns a **new** list of bool built from the per-bus
+  element counts, instead of a reference into an internal vector. The values are unchanged (they are
+  what the powerflow always used); what changes is that they are always in step with the elements,
+  and that the result is a copy -- python callers who kept it around and expected it to update by
+  itself now need to call it again.
 - ``init_bus_status()`` no longer walks every element of eight containers on every powerflow that
-  rebuilds, and no longer rebuilds the bus-status vector at all. A bus's status can only change
-  when its element count crosses 0, and ``SubstationContainer`` flips that one entry as the
-  crossing happens, so in the steady state there is nothing left to bring up to date. The
-  whole-vector rebuild now runs only where nothing kept it in step: a grid that has never been
-  counted (freshly built, or restored by ``set_state`` / ``load_binary``), or a status written by
-  hand through ``deactivate_bus`` / ``reactivate_bus``. ``_mark_cache_valid`` no longer copies a
-  ``std::vector<bool>`` per powerflow either.
+  rebuilds, and no longer maintains a bus-status vector at all: a bus is connected iff its element
+  count is non-zero, and ``nb_connected_bus()`` is one integer moved when a count crosses 0. In the
+  steady state it does nothing. It recounts from the elements only where there is nothing to be up
+  to date with -- a grid that has never been counted (freshly built, or restored by ``set_state`` /
+  ``load_binary``). ``_mark_cache_valid`` no longer copies a ``std::vector<bool>`` per powerflow
+  either, and ``nb_connected_bus()`` is a constant-time read rather than a walk over every bus.
   What that is worth is ``nb_bus`` times a constant, independent of the number of elements:
   callgrind measures ~13 instructions saved per bus per topology-changing powerflow, on all four
   of 1000x1, 1000x12, 5000x1 and 5000x12 (substations x busbars) -- 0.08% of a solve on the

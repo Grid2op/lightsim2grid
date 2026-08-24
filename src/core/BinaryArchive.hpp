@@ -79,7 +79,15 @@ namespace ls2g {
 // v4: the AC / DC algorithm is stored as its registry *name* (std::string)
 //     instead of an AlgorithmType enum, so a grid using an external (plugin)
 //     solver can be saved and restored -- see LSGrid::StateRes.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 5;
+// v5: LSGrid::StateRes no longer carries the AC family's bus-connectivity
+//     photograph (the solver cache derives what it needs from the grid's bus
+//     count instead).
+// v6: SubstationContainer::StateRes no longer carries `bus_status_` either.
+//     Whether a bus is in the solved system is not independent state: it is
+//     "at least one element holds it", counted from the elements -- whose own
+//     status IS serialized. Storing it was storing a cache of something already
+//     in the file, with a way for a crafted file to make the two disagree.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 6;
 
 class LS2G_API BinaryArchive
 {
