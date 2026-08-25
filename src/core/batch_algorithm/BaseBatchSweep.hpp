@@ -1098,6 +1098,18 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_masks(){
             if(!_handle_disconnected_grid) return;
+            if(!_voltage_control_may_mask_wired_){
+                // first compute() with masking on for this object (or the first ever):
+                // _algo's VoltageControl extension needs its stranded-controller
+                // Jacobian slot, which must exist in the sparsity BEFORE the next
+                // build_J_sparsity() -- force one. A no-op the next time (this stays
+                // true until the object is destroyed; turning handle_disconnected_grid
+                // back off does not need a matching rebuild, it just leaves the slot
+                // reserved and unused).
+                _algo.set_may_mask_voltage_control(true);
+                _algo_controler.tell_pv_changed();
+                _voltage_control_may_mask_wired_ = true;
+            }
             if(!_algo.supports_bus_masking()){
                 std::ostringstream exc_;
                 exc_ << algo_name() << ": the `handle_disconnected_grid` mode requires a "
@@ -1344,6 +1356,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // state (SFINAE-gated methods above restrict who can reach it); empty /
         // false on every instantiation but ContingencyAnalysis.
         bool _handle_disconnected_grid = false;
+        // whether _algo (the single-threaded / member algo -- each per-thread one is
+        // freshly spawned and told directly, see _compute_threaded) has already been
+        // told may_mask_voltage_control(true): sparsity only needs a forced rebuild
+        // (tell_pv_changed()) the first time a compute() actually turns masking on,
+        // see _maybe_prepare_masks().
+        bool _voltage_control_may_mask_wired_ = false;
         std::vector<std::vector<int> > _li_masked;
         std::vector<char> _skip_mask;
         bool _compute_limit_violations_ = false;
