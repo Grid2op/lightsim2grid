@@ -27,6 +27,9 @@ void VoltageControl::update_state(
     my_size_ = data_.n_controllers();
     // per-solve init: the reactive injection state starts at 0 (gen convention)
     q_ = RealVect::Zero(my_size_);
+    // data_ is now current for this compute_pf() call -- safe to derive
+    // group_stranded_ from it (see set_masked_buses / _recompute_group_stranded).
+    _recompute_group_stranded();
 }
 
 } // namespace ls2g

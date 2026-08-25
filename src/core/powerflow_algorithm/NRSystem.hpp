@@ -638,6 +638,31 @@ class LS2G_API VoltageControl
             const Eigen::Ref<const IntVect>  & /*pq*/
         ) {}
 
+        // ContingencyAnalysis "handle_disconnected_grid" mode (see NRSystem::
+        // set_masked_buses, which forwards here): scope is a SINGLETON group
+        // (cnt == 1) whose sole controller sits on a bus this contingency masks.
+        // That controller's own equipment is isolated from the live component --
+        // there is nobody left to hold the regulated bus at v_set -- so its
+        // voltage row is repurposed (fill_feature_values / fill_custom_rows) from
+        // the voltage constraint into a plain "Q_c = 0" pin, freeing the
+        // regulated bus back to its own ordinary PQ equations. That reproduces
+        // what a rebuilt (single-shot) topology does once the disconnected
+        // controller drops out of the group. A multi-controller (cnt > 1) group
+        // with a stranded member is NOT covered: the row/column structure stays
+        // singular for it, exactly as before this method existed.
+        //
+        // Only STORES the list here: `data_` may still hold the previous contingency's
+        // (or, on a freshly spawned per-thread algo, no) content at this point -- the
+        // multi-threaded path calls this before that thread's first update_state() ever
+        // runs. group_stranded_ is (re)computed from data_ + masked_buses_ inside
+        // update_state() itself, which always runs right after this, once per
+        // compute_pf() call, so it is guaranteed to see data_ freshly rebuilt for the
+        // very contingency this masked_buses_ belongs to.
+        void set_masked_buses(const std::vector<int>& masked_buses)
+        {
+            masked_buses_ = masked_buses;
+        }
+
         // claims, per group: N q-unknown columns, 1 voltage row, N-1 sharing rows;
         // caches the controller q rows and the regulated-bus vm columns (the ledger
         // is fully populated by Base / MultiSlack before this runs)
@@ -682,8 +707,13 @@ class LS2G_API VoltageControl
                 for (int off = 0; off < cnt; ++off) {
                     const int j = first + off;
                     if (q_rows_[j] >= 0 && q_cols_[j] >= 0) h_qrow_[j] = sink.add(q_rows_[j], q_cols_[j]);
-                    // slope coupling Vm(reg) <- s.Q_c, declared for every SVC (slope-independent pattern)
-                    if (data_.kind(j) == VoltageControlSolverData::SVC && v_row >= 0 && q_cols_[j] >= 0)
+                    // slope coupling Vm(reg) <- s.Q_c, declared for every SVC (slope-independent
+                    // pattern) and for a lone (cnt == 1) controller of any kind: reserved with
+                    // value 0 in the normal case so set_masked_buses can repurpose it into a
+                    // "pin Q_c to 0" coefficient (see fill_feature_values) without ever touching
+                    // J's sparsity pattern.
+                    if ((data_.kind(j) == VoltageControlSolverData::SVC || cnt == 1) &&
+                        v_row >= 0 && q_cols_[j] >= 0)
                         h_slope_[j] = sink.add(v_row, q_cols_[j]);
                 }
                 if (v_row >= 0 && vm_cols_[g] >= 0) h_vm_[g] = sink.add(v_row, vm_cols_[g]);
@@ -702,15 +732,19 @@ class LS2G_API VoltageControl
         void fill_feature_values(FeatureWriter& writer, const Eigen::Ref<const RealVect>& /*Va*/) const
         {
             const int ng = data_.n_groups();
+            const bool have_stranded = !group_stranded_.empty();
             for (int g = 0; g < ng; ++g) {
                 const int first = data_.grp_start(g);
                 const int cnt   = data_.grp_count(g);
+                const bool stranded = have_stranded && group_stranded_[g];
                 for (int off = 0; off < cnt; ++off) {
                     const int j = first + off;
                     if (h_qrow_[j]  >= 0) writer.add(h_qrow_[j],  static_cast<real_type>(-1.));
-                    if (h_slope_[j] >= 0) writer.add(h_slope_[j], data_.slope(j));
+                    if (h_slope_[j] >= 0) writer.add(h_slope_[j], stranded ? static_cast<real_type>(1.) : data_.slope(j));
                 }
-                if (h_vm_[g] >= 0) writer.add(h_vm_[g], static_cast<real_type>(1.));
+                // stranded (singleton, masked controller): drop the Vm(reg) coupling -- the row
+                // is now "Q_c = 0" (see fill_custom_rows), not the voltage constraint.
+                if (h_vm_[g] >= 0) writer.add(h_vm_[g], stranded ? static_cast<real_type>(0.) : static_cast<real_type>(1.));
                 const real_type w_first = data_.weight(first);
                 for (int k = 0; k < cnt - 1; ++k) {
                     if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], w_first);
@@ -734,9 +768,18 @@ class LS2G_API VoltageControl
                               const Eigen::Ref<const RealVect>& dx) const
         {
             const int ng = data_.n_groups();
+            const bool have_stranded = !group_stranded_.empty();
             for (int g = 0; g < ng; ++g) {
                 const int first = data_.grp_start(g);
                 const int cnt   = data_.grp_count(g);
+                if (have_stranded && group_stranded_[g]) {
+                    // stranded singleton controller: pin Q_c = 0 instead of the voltage
+                    // constraint (see set_masked_buses); cnt == 1 here, so there are no
+                    // sharing rows to fill for this group.
+                    const real_type Qt_first = q_(first) + dx(q_cols_[first]);
+                    res(v_rows_[g]) -= Qt_first;
+                    continue;
+                }
                 // voltage constraint  Vm(reg) + sum s_c.Q_c - v_set
                 real_type vm_trial = Vm(data_.reg_bus(g));
                 if (vm_cols_[g] >= 0) vm_trial += dx(vm_cols_[g]);
@@ -777,6 +820,8 @@ class LS2G_API VoltageControl
             h_vm_.clear();
             h_shareA_.clear();
             h_shareB_.clear();
+            masked_buses_.clear();
+            group_stranded_.clear();
         }
 
         // converged reactive injection per controller (pu, registration order)
@@ -796,6 +841,23 @@ class LS2G_API VoltageControl
         }
 
     private:
+        // (re)derive group_stranded_ from the just-refreshed data_ and the stored
+        // masked_buses_ (see set_masked_buses above for why this can't run there
+        // directly). Called from update_state(), once per compute_pf() call, right
+        // after data_ is rebuilt -- cheap: ng and masked_buses_ are both tiny.
+        void _recompute_group_stranded()
+        {
+            const int ng = data_.n_groups();
+            group_stranded_.assign(ng, 0);
+            if (masked_buses_.empty()) return;
+            for (int g = 0; g < ng; ++g) {
+                if (data_.grp_count(g) != 1) continue;
+                const int ctrl_bus = data_.bus(data_.grp_start(g));
+                if (std::find(masked_buses_.begin(), masked_buses_.end(), ctrl_bus) != masked_buses_.end())
+                    group_stranded_[g] = 1;
+            }
+        }
+
         int                            my_size_;     // number of controllers
         VoltageControlSolverData       data_;        // per-solve controller data (refreshed every update_state)
         RealVect                       q_;           // running reactive injection per controller (pu, gen convention)
@@ -805,10 +867,17 @@ class LS2G_API VoltageControl
         std::vector<int>               vm_cols_;     // vm column of each group's regulated bus (-1 if none)
         std::vector<std::vector<int> > share_rows_;  // sharing rows of each group (size N-1)
         std::vector<int>               h_qrow_;      // handle (q_row, q_col) per controller
-        std::vector<int>               h_slope_;     // handle (v_row, q_col) per controller (-1 unless SVC)
+        std::vector<int>               h_slope_;     // handle (v_row, q_col) per controller (-1 unless
+                                                       // SVC or a lone (cnt==1) controller -- see
+                                                       // declare_feature_entries / set_masked_buses)
         std::vector<int>               h_vm_;        // handle (v_row, vm_col) per group
         std::vector<std::vector<int> > h_shareA_;    // handle (share_row, q_col_{k+1}) per group
         std::vector<std::vector<int> > h_shareB_;    // handle (share_row, q_col_1) per group
+        std::vector<int>               masked_buses_;    // last set_masked_buses() argument, verbatim
+        std::vector<char>              group_stranded_;  // per group: 1 iff cnt==1 and its lone
+                                                           // controller's bus is masked; derived from
+                                                           // masked_buses_ by _recompute_group_stranded(),
+                                                           // called from update_state(); empty when unset
 };
 
 
@@ -896,6 +965,13 @@ public:
     void set_masked_buses(const std::vector<int>& solver_bus_ids) {
         masked_buses_ = solver_bus_ids;
         masked_dirty_ = true;
+        // forward to the VoltageControl extension when present (both AC
+        // instantiations carry it -- see the SingleSlackNRSystem / MultiSlackNRSystem
+        // aliases below): lets a stranded singleton controller's voltage row be
+        // repurposed instead of staying structurally singular. A no-op elsewhere
+        // (_find_extension returns nullptr when VoltageControl is not in Rest...).
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_masked_buses(masked_buses_);
     }
 
     // ----- NR iteration primitives -----------------------------------------------
@@ -1220,6 +1296,26 @@ private:
     }
     template <class T>
     const T* _find_extension() const {
+        return _find_extension_impl<T>(std::make_index_sequence<sizeof...(Rest)>{});
+    }
+
+    // ---- same search, mutable overload -------------------------------------------
+    // Needed by set_masked_buses() (non-const) to forward into VoltageControl; kept
+    // separate from the const version above rather than const_cast-ing its result.
+    template <class T, class U>
+    static void _maybe_set_ext_mut(T*& /*found*/, U& /*ext*/) {}
+    template <class T>
+    static void _maybe_set_ext_mut(T*& found, T& ext) { found = &ext; }
+
+    template <class T, std::size_t... Is>
+    T* _find_extension_impl(std::index_sequence<Is...>) {
+        T* found = nullptr;
+        int dummy[] = { 0, (_maybe_set_ext_mut<T>(found, std::get<Is>(extensions_)), 0)... };
+        (void)dummy;
+        return found;
+    }
+    template <class T>
+    T* _find_extension() {
         return _find_extension_impl<T>(std::make_index_sequence<sizeof...(Rest)>{});
     }
 

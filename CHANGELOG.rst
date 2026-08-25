@@ -126,6 +126,26 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.0] 2026-xx-yy
 --------------------
+- [FIXED] ``ContingencyAnalysis`` / ``SecurityAnalysis``'s ``handle_disconnected_grid`` mode no
+  longer reports a DIVERGENCE for a contingency that stands a lone (single-controller) remote
+  voltage regulator's own bus while leaving the bus it regulates connected -- e.g. a generator
+  reaching its regulated bus only through a transformer that trips. Bus masking is a value-only
+  edit that must not touch the Jacobian's sparsity pattern, so the ``VoltageControl`` extension's
+  bordered voltage row used to survive untouched and keep demanding ``Vm(regulated) == v_set``
+  while the controller's own reactive-injection unknown lost its only coupling once its bus's P/Q
+  rows were masked to identity -- a structurally singular system. For a group with exactly one
+  controller, that row is now repurposed (when the mask strands the controller's own bus) into a
+  plain ``Q_c == 0`` pin instead, using a Jacobian slot that is now reserved unconditionally for
+  every such controller (previously only for a sloped SVC) so no re-factorization is needed. The
+  regulated bus then falls back to its own ordinary PQ equations, matching what a rebuilt
+  (single-shot) topology already does once the disconnected controller drops out of its group.
+  A group shared by more than one controller (``cnt > 1``) is untouched by this fix: stranding one
+  of several controllers regulating the same bus stays exactly as before (see
+  ``src/tests/test_batch_voltage_control.cpp`` for what that already does -- it happens not to
+  diverge, since the surviving sharing-row coupling keeps the system non-singular). Stranding the
+  *regulated* bus itself (rather than a controller's bus) also stays a DIVERGENCE: unlike this
+  case, that one has no well-defined fallback under the "same sparsity every contingency" masking
+  design, and even a rebuilt single-shot topology has no support for it either (it raises).
 - [BREAKING] **solver cache reuse is now automatic and on by default**, per solver family.
   A powerflow reuses what the previous one of the same family built -- the compact bus labelling,
   ``Ybus`` / ``Sbus``, the PV / PQ split, the slack weights -- and only re-stamps what the grid
