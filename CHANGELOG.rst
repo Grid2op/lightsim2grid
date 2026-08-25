@@ -127,7 +127,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 [1.0.0] 2026-xx-yy
 --------------------
 - [FIXED] ``ContingencyAnalysis`` / ``SecurityAnalysis``'s ``handle_disconnected_grid`` mode no
-  longer reports a DIVERGENCE for a contingency that stands a lone (single-controller) remote
+  longer reports a DIVERGENCE for a contingency that strands a lone (single-controller) remote
   voltage regulator's own bus while leaving the bus it regulates connected -- e.g. a generator
   reaching its regulated bus only through a transformer that trips. Bus masking is a value-only
   edit that must not touch the Jacobian's sparsity pattern, so the ``VoltageControl`` extension's
@@ -135,10 +135,20 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   while the controller's own reactive-injection unknown lost its only coupling once its bus's P/Q
   rows were masked to identity -- a structurally singular system. For a group with exactly one
   controller, that row is now repurposed (when the mask strands the controller's own bus) into a
-  plain ``Q_c == 0`` pin instead, using a Jacobian slot that is now reserved unconditionally for
-  every such controller (previously only for a sloped SVC) so no re-factorization is needed. The
-  regulated bus then falls back to its own ordinary PQ equations, matching what a rebuilt
-  (single-shot) topology already does once the disconnected controller drops out of its group.
+  plain ``Q_c == 0`` pin instead, using one extra Jacobian slot per such controller, so no
+  re-factorization is needed. The regulated bus then falls back to its own ordinary PQ equations,
+  matching what a rebuilt (single-shot) topology already does once the disconnected controller
+  drops out of its group.
+  That extra slot is reserved ONLY when it can ever be used: ``NRAlgo`` /
+  ``AlgorithmSelector`` gained ``set_may_mask_voltage_control(bool)``, and ``BaseBatchSweep``
+  calls it (on ``_algo`` and on every freshly-spawned per-thread algo) exactly when
+  ``handle_disconnected_grid`` is actually enabled for this run, before the first
+  ``build_J_sparsity()`` it affects. Plain ``ac_pf``, ``TimeSeriesCPP``, and a
+  ``ContingencyAnalysis`` / ``ScenarioSweep`` that never turns ``handle_disconnected_grid`` on are
+  therefore bit-for-bit as cheap as before this fix -- no reserved slot, no extra ``fill_J`` work --
+  regardless of how many remote-regulating generators or SVCs the grid has. A sloped SVC keeps
+  reserving its coupling slot unconditionally as before (needed for the slope itself, independent
+  of masking).
   A group shared by more than one controller (``cnt > 1``) is untouched by this fix: stranding one
   of several controllers regulating the same bus stays exactly as before (see
   ``src/tests/test_batch_voltage_control.cpp`` for what that already does -- it happens not to

@@ -274,6 +274,10 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     auto init_thread = [&](int t){
         algos[t] = make_thread_algo();
         algos[t]->set_lazy_v(use_dc_lazy_v);
+        // freshly spawned -- no rebuild-invalidation needed (its very first
+        // build_J_sparsity() already sees this), unlike _algo in
+        // _maybe_prepare_masks() which may already have sparsity built.
+        if(mask_mode) algos[t]->set_may_mask_voltage_control(true);
         controls[t] = _algo_controler;
         ybus_copies[t] = Ybus_;
     };

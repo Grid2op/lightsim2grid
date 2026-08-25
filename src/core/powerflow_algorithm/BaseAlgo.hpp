@@ -435,6 +435,17 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual bool supports_bus_masking() const { return false; }
         virtual void set_masked_buses(const std::vector<int> & /*solver_bus_ids*/) {}
 
+        // Tells the algorithm whether a stranded-controller Jacobian slot (see
+        // VoltageControl::declare_feature_entries in NRSystem.hpp) is worth reserving
+        // for THIS run: only ContingencyAnalysis/ScenarioSweep's handle_disconnected_grid
+        // mode ever calls set_masked_buses, so every other caller (plain ac_pf,
+        // TimeSeries, an un-masked batch) should not pay for it at all. Must be called
+        // BEFORE the first build_J_sparsity() this affects; a caller that flips it after
+        // sparsity was already built for a different value must also force a rebuild
+        // (e.g. via the solver control's tell_pv_changed()) -- see BaseBatchSweep::
+        // _maybe_prepare_masks(). Default is a no-op so other algorithms are unaffected.
+        virtual void set_may_mask_voltage_control(bool /*val*/) {}
+
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}
         

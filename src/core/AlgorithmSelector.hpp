@@ -254,6 +254,9 @@ class LS2G_API AlgorithmSelector final
         void set_masked_buses(const std::vector<int>& solver_bus_ids) {
             get_prt_solver("set_masked_buses", false)->set_masked_buses(solver_bus_ids);
         }
+        void set_may_mask_voltage_control(bool val) {
+            get_prt_solver("set_may_mask_voltage_control", false)->set_may_mask_voltage_control(val);
+        }
 
         Eigen::SparseMatrix<real_type> get_J_python() const {
             Eigen::SparseMatrix<real_type> res = get_J();

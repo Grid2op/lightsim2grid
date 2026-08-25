@@ -663,6 +663,13 @@ class LS2G_API VoltageControl
             masked_buses_ = masked_buses;
         }
 
+        // Gates the extra (v_row, q_col) slot declare_feature_entries reserves for a
+        // lone (cnt==1) GEN controller (see there): only worth it when THIS run might
+        // ever call set_masked_buses with a non-empty list. Caller-set, once, before
+        // the first declare_feature_entries() it should affect -- see NRSystem::
+        // set_may_mask_voltage_control / BaseAlgo::set_may_mask_voltage_control.
+        void set_may_mask_voltage_control(bool val) { may_mask_ = val; }
+
         // claims, per group: N q-unknown columns, 1 voltage row, N-1 sharing rows;
         // caches the controller q rows and the regulated-bus vm columns (the ledger
         // is fully populated by Base / MultiSlack before this runs)
@@ -708,11 +715,14 @@ class LS2G_API VoltageControl
                     const int j = first + off;
                     if (q_rows_[j] >= 0 && q_cols_[j] >= 0) h_qrow_[j] = sink.add(q_rows_[j], q_cols_[j]);
                     // slope coupling Vm(reg) <- s.Q_c, declared for every SVC (slope-independent
-                    // pattern) and for a lone (cnt == 1) controller of any kind: reserved with
-                    // value 0 in the normal case so set_masked_buses can repurpose it into a
-                    // "pin Q_c to 0" coefficient (see fill_feature_values) without ever touching
-                    // J's sparsity pattern.
-                    if ((data_.kind(j) == VoltageControlSolverData::SVC || cnt == 1) &&
+                    // pattern, needed regardless of masking) and, ONLY when this run might ever
+                    // mask a bus (may_mask_, see set_may_mask_voltage_control), for a lone
+                    // (cnt == 1) controller of any kind: reserved with value 0 in the normal case
+                    // so set_masked_buses can repurpose it into a "pin Q_c to 0" coefficient (see
+                    // fill_feature_values) without ever touching J's sparsity pattern. Gating this
+                    // on may_mask_ keeps every other caller -- plain ac_pf, TimeSeries, an
+                    // un-masked batch -- exactly as cheap as before this feature existed.
+                    if ((data_.kind(j) == VoltageControlSolverData::SVC || (cnt == 1 && may_mask_)) &&
                         v_row >= 0 && q_cols_[j] >= 0)
                         h_slope_[j] = sink.add(v_row, q_cols_[j]);
                 }
@@ -858,6 +868,12 @@ class LS2G_API VoltageControl
             }
         }
 
+        // Caller-set run config, NOT reset by clear() (see set_may_mask_voltage_control):
+        // whether a lone controller's Jacobian slot is worth reserving in
+        // declare_feature_entries. The batch code that owns this decision
+        // (BaseBatchSweep::_maybe_prepare_masks) re-asserts it before every
+        // compute(), so it never actually goes stale across a clear_jacobian().
+        bool                           may_mask_ = false;
         int                            my_size_;     // number of controllers
         VoltageControlSolverData       data_;        // per-solve controller data (refreshed every update_state)
         RealVect                       q_;           // running reactive injection per controller (pu, gen convention)
@@ -972,6 +988,18 @@ public:
         // (_find_extension returns nullptr when VoltageControl is not in Rest...).
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_masked_buses(masked_buses_);
+    }
+
+    // Whether the stranded-controller Jacobian slot (see VoltageControl::
+    // declare_feature_entries) is worth reserving at all: only set_masked_buses()
+    // above is ever able to use it, and only ContingencyAnalysis / ScenarioSweep's
+    // handle_disconnected_grid mode ever calls that. Must be called before the
+    // first build_J_sparsity() this should affect (see BaseAlgo::
+    // set_may_mask_voltage_control's doc for the caller-side invalidation this
+    // implies if it is ever flipped after sparsity was already built).
+    void set_may_mask_voltage_control(bool val) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_may_mask_voltage_control(val);
     }
 
     // ----- NR iteration primitives -----------------------------------------------

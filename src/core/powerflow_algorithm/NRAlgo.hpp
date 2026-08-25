@@ -164,6 +164,9 @@ public:
     void set_masked_buses(const std::vector<int> & solver_bus_ids) override {
         _system.set_masked_buses(solver_bus_ids);
     }
+    void set_may_mask_voltage_control(bool val) override {
+        _system.set_may_mask_voltage_control(val);
+    }
     
     // ----- scaling policy ------------------------------------------------------
     ScalingPolicyType get_scaling_policy_type()  const { return scaling_policy_->type(); }

@@ -518,6 +518,42 @@ TEST_CASE("a contingency stranding a lone controller's own bus falls back to pla
     }
 }
 
+TEST_CASE("the fallback also works through the multi-threaded batch path", "[batch][vctrl][mask]")
+{
+    // set_may_mask_voltage_control gets wired differently for the single-threaded
+    // _algo (re-asserted + a forced rebuild in _maybe_prepare_masks, since _algo is
+    // a long-lived member that may already have sparsity built) than for the
+    // per-thread algos spawned fresh every compute() (told directly in
+    // init_thread, no rebuild needed -- their first build_J_sparsity() already
+    // sees it). Exercise the second path specifically: >= 2 contingencies with
+    // nb_thread >= 2 actually engages it.
+    LSGrid ref_grid = make_leaf_remote_gen_grid();
+    ref_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ref_grid.deactivate_trafo(0);
+    ref_grid.deactivate_gen(1);
+    const CplxVect ref = ref_grid.ac_pf(
+        CplxVect::Constant(static_cast<Eigen::Index>(ref_grid.total_bus()), cplx_type(1., 0.)), 30, 1e-10);
+    REQUIRE(ref.size() == LEAF_NB_BUS);
+
+    LSGrid grid = make_leaf_remote_gen_grid();
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ContingencyAnalysis ca(grid, /*compute_limit_violations=*/true);
+    ca.set_handle_disconnected_grid(true);
+    ca.set_nb_thread(2);
+    ca.add_n1(0);  // the line: no stranding, just here to force nb_thread == 2
+    ca.add_n1(1);  // the trafo: strands ctrl's own bus, as in the test above
+    ca.compute(CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), cplx_type(1., 0.)), 30, 1e-10);
+    REQUIRE(ca.get_voltages().rows() == 2);
+    REQUIRE(ca.converged().size() == 2);
+    CHECK(ca.converged()[1] == 1);
+    for (int b : {0, LEAF_BUS_D}) {
+        INFO("bus " << b);
+        CHECK(std::abs(ca.get_voltages()(1, b)) == Approx(std::abs(ref(b))).epsilon(1e-8));
+        CHECK(std::arg(ca.get_voltages()(1, b)) == Approx(std::arg(ref(b))).margin(1e-9));
+    }
+    CHECK(std::abs(ca.get_voltages()(1, LEAF_BUS_B)) == 0.);
+}
+
 TEST_CASE("a stranded member of a SHARED control group is unaffected by the cnt==1 fallback", "[batch][vctrl][mask]")
 {
     // bus 0 (slack) --line-- bus 1 (D, regulated) --trafoA-- bus 2 (ctrl A)
