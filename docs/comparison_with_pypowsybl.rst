@@ -302,7 +302,7 @@ Results
 
 The benchmarks were run on:
 
-- date: 2026-08-06 18:23  CEST
+- date: 2026-08-28 16:56  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
@@ -312,7 +312,7 @@ The benchmarks were run on:
 - pandapower version: 3.4.0
 - pypowsybl version: 1.15.0
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.0.0.rc3
+- lightsim2grid version: 1.0.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -386,15 +386,15 @@ Times are expressed in ms.
 ===========  ===============  ===========
 case name      lightsim2grid    pypowsybl
 ===========  ===============  ===========
-ieee9                  0.103         4.48
-ieee14                 0.1           1.36
-ieee30                 0.155         1.63
-ieee57                 0.229         2
-ieee118                0.292         2.68
-ieee300                0.796         5.21
+ieee9                 0.113          6.49
+ieee14                0.0807         1.57
+ieee30                0.157          1.68
+ieee57                0.182          2.2
+ieee118               0.289          2.72
+ieee300               0.819          5.19
 ===========  ===============  ===========
 
-For this initial computation, lightsim2grid is between **7** and **44** times faster than pypowsybl.
+For this initial computation, lightsim2grid is between **6** and **58** times faster than pypowsybl.
 
 .. warning::
     This is not fair for pypowsybl.
@@ -423,15 +423,15 @@ time it took to perform the 100 powerflows.
 ===========  ===============  ===========
 case name      lightsim2grid    pypowsybl
 ===========  ===============  ===========
-ieee9                 0.0082         1.17
-ieee14                0.0108         1.1
-ieee30                0.0198         1.7
-ieee57                0.0372         1.82
-ieee118               0.0851         2.52
-ieee300               0.313          4.84
+ieee9                0.00864         1.14
+ieee14               0.0107          1.13
+ieee30               0.0202          1.66
+ieee57               0.037           1.82
+ieee118              0.0673          2.57
+ieee300              0.291           5.04
 ===========  ===============  ===========
 
-For successive powerflows, lightsim2grid is between **15** and **143** times faster than pypowsybl.
+For successive powerflows, lightsim2grid is between **17** and **131** times faster than pypowsybl.
 
 
 Computation times security analysis
@@ -451,12 +451,12 @@ compute the flows from the resulting voltages.
 ===========  ===============  ===========
 case name      lightsim2grid    pypowsybl
 ===========  ===============  ===========
-ieee9                 0.0132        0.349
-ieee14                0.01          0.19
-ieee30                0.0157        0.186
-ieee57                0.0316        0.182
-ieee118               0.0436        0.306
-ieee300               0.172         1.23
+ieee9                 0.0144        0.893
+ieee14                0.0109        0.193
+ieee30                0.0163        0.181
+ieee57                0.0316        0.186
+ieee118               0.048         0.301
+ieee300               0.17          1.22
 ===========  ===============  ===========
 
-For the contingency analysis, lightsim2grid is between **6** and **26** times faster than pypowsybl.
+For the contingency analysis, lightsim2grid is between **6** and **62** times faster than pypowsybl.

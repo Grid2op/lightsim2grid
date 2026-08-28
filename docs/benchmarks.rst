@@ -54,7 +54,7 @@ compared with pandapower and pypowsybl when using grid2op.
 
 All of them has been run on a computer with a the following characteristics:
 
-- date: 2026-08-06 18:11  CEST
+- date: 2026-08-28 16:45  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
@@ -65,14 +65,14 @@ All of them has been run on a computer with a the following characteristics:
 - pypowsybl version: 1.15.0
 - pypowsybl2grid version: 0.3.1
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.0.0.rc3
+- lightsim2grid version: 1.0.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
 	- nicslu_solver_available: True 
 	- cktso_solver_available: True 
 	- compiled_march_native: True 
-	- compiled_o3_optim: True  
+	- compiled_o3_optim: True 
 
 To run the benchmark, ``cd`` into the ``benchmarks`` folder and install the dependencies
 (we suppose here that you have already installed lightsim2grid):
@@ -210,35 +210,35 @@ First on an environment based on the IEEE case 14 grid:
 ====================  ======================  ===================================  ==========================
 case14_sandbox          grid2op speed (it/s)    grid2op 'backend.runpf' time (ms)    time in 'algo' (ms / pf)
 ====================  ======================  ===================================  ==========================
-PP                                      97.4                               8.85                        3.06
-PP (no numba)                           74.7                              12                           6.26
-PP (with lightsim)                      97                                 9.02                        1.63
-pypowsybl                              525                                 1.53                        1.18
-GS                                    1430                                 0.431                       0.373
-GS synch                              1240                                 0.539                       0.482
-NR single (SLU)                       2720                                 0.0933                      0.0344
-NR (SLU)                              2670                                 0.0963                      0.0364
-NR single (KLU)                       2990                                 0.0678                      0.011
-NR (KLU)                              2880                                 0.0704                      0.0115
-NR single (NICSLU\*)                  2870                                 0.07                        0.0108
-NR (NICSLU\*)                         2970                                 0.0676                      0.0105
-NR single (CKTSO\*)                   2880                                 0.0694                      0.0103
-NR (CKTSO\*)                          2880                                 0.0697                      0.0108
-FDPF XB (SLU)                         2950                                 0.0717                      0.0148
-FDPF BX (SLU)                         2910                                 0.0781                      0.0217
-FDPF XB (KLU)                         2900                                 0.0711                      0.0125
-FDPF BX (KLU)                         2840                                 0.0772                      0.0185
-FDPF XB (NICSLU\*)                    2920                                 0.0705                      0.0126
-FDPF BX (NICSLU\*)                    2820                                 0.0777                      0.0189
-FDPF XB (CKTSO\*)                     3000                                 0.0683                      0.0123
-FDPF BX (CKTSO\*)                     2930                                 0.0746                      0.0182
+PP                                      98.3                               8.78                        3.02
+PP (no numba)                           74.1                              12.1                         6.28
+PP (with lightsim)                      95.6                               9.16                        1.66
+pypowsybl                              480                                 1.72                        1.38
+GS                                    1430                                 0.428                       0.369
+GS synch                              1260                                 0.526                       0.467
+NR single (SLU)                       2680                                 0.0957                      0.0358
+NR (SLU)                              2650                                 0.0982                      0.0375
+NR single (KLU)                       2930                                 0.0699                      0.0114
+NR (KLU)                              2940                                 0.0704                      0.0117
+NR single (NICSLU\*)                  2950                                 0.069                       0.0108
+NR (NICSLU\*)                         2940                                 0.0691                      0.011
+NR single (CKTSO\*)                   2990                                 0.0674                      0.0103
+NR (CKTSO\*)                          2960                                 0.0681                      0.0105
+FDPF XB (SLU)                         2940                                 0.0723                      0.0149
+FDPF BX (SLU)                         2860                                 0.0798                      0.0219
+FDPF XB (KLU)                         2940                                 0.0703                      0.0126
+FDPF BX (KLU)                         2920                                 0.0757                      0.0185
+FDPF XB (NICSLU\*)                    2940                                 0.0704                      0.0126
+FDPF BX (NICSLU\*)                    2920                                 0.0753                      0.0182
+FDPF XB (CKTSO\*)                     2990                                 0.0691                      0.0122
+FDPF BX (CKTSO\*)                     2940                                 0.0747                      0.018
 ====================  ======================  ===================================  ==========================
 
-From a grid2op perspective, lightsim2grid allows to compute up to ~2996 steps each second (column `grid2op speed`, row `FDPF XB (CKTSO\*)`) on the case14_sandbox and "only" ~97 for the default PandaPower Backend (column `grid2op speed`, row `PP`), leading to a speed up of **~31** (2996 / 97) in this case (lightsim2grid Backend is ~31 times faster than pandapower Backend when comparing grid2op speed).
+From a grid2op perspective, lightsim2grid allows to compute up to ~2990 steps each second (column `grid2op speed`, row `NR single (CKTSO\*)`) on the case14_sandbox and "only" ~98 for the default PandaPower Backend (column `grid2op speed`, row `PP`), leading to a speed up of **~30** (2990 / 98) in this case (lightsim2grid Backend is ~30 times faster than pandapower Backend when comparing grid2op speed).
 
-When compared to powsybl (with the pypowsybl backend), lightsim2grid (with newton raphson) is around **~5.7** times faster (525 vs 2996).
+When compared to powsybl (with the pypowsybl backend), lightsim2grid (with newton raphson) is around **~6.2** times faster (480 vs 2990).
 
-For this environment there is no sensible difference in using `KLU` linear solver (rows `NR single (KLU)` or `NR (KLU)`) compared to using the SparseLU solver of Eigen (rows `NR single (SLU)` or `NR (SLU)`) (2668 vs 2883 iterations on the reported runs, might slightly vary across runs).
+For this environment there is no sensible difference in using `KLU` linear solver (rows `NR single (KLU)` or `NR (KLU)`) compared to using the SparseLU solver of Eigen (rows `NR single (SLU)` or `NR (SLU)`) (2652 vs 2936 iterations on the reported runs, might slightly vary across runs).
 
 Linear solvers `KLU`, `NICSLU` and `CKTSO` achieve almost identical performances, at least we think the observed differences are within error margins.
 
@@ -246,43 +246,42 @@ There are also very little differences between non distributed slack (`NR Single
 
 Finally, the "fast decoupled" methods also lead to equivalent performances (compared to the Newton Raphson one) for almost all linear solvers.
 
-For this environment, for lightsim2grid backend (and if we don't take into account the "agent time"), the computation time is vastly dominated by factor external to the powerflow solver. Indeed, doing a 'env.step' (column `grid2op speed (it/s)`) takes 0.334ms (`1. / 2996. * 1000.`) on average and on this 334 µs (or 0.334ms), only 12 µs are spent in the backend (column `time in 'algo' (ms / pf)`). Meaning that ~322 µs are spent in the grid2op extra layer or in the backend implementation in this case (`96%` of the computation time - `=322 / 334`- is external to the powerflow algorithm)
-
+For this environment, for lightsim2grid backend (and if we don't take into account the "agent time"), the computation time is vastly dominated by factor external to the powerflow solver. Indeed, doing a 'env.step' (column `grid2op speed (it/s)`) takes 0.334ms (`1. / 2990. * 1000.`) on average and on this 334 µs (or 0.334ms), only 10 µs are spent in the backend (column `time in 'algo' (ms / pf)`). Meaning that ~324 µs are spent in the grid2op extra layer or in the backend implementation in this case (`97%` of the computation time - `=324 / 334`- is external to the powerflow algorithm)
 
 Then on an environment based on the IEEE case 118:
 
 =====================  ======================  ===================================  ==========================
 neurips_2020_track2      grid2op speed (it/s)    grid2op 'backend.runpf' time (ms)    time in 'algo' (ms / pf)
 =====================  ======================  ===================================  ==========================
-PP                                      86.8                                10                          4.1
-PP (no numba)                           64.8                                13.9                        7.93
-PP (with lightsim)                      84.9                                10.4                        2.15
-pypowsybl                              226                                   4                          3.52
-GS                                       7.43                              134                        134
-GS synch                                25.9                                38.3                       38.2
-NR single (SLU)                       1190                                   0.5                        0.416
-NR (SLU)                              1230                                   0.48                       0.4
-NR single (KLU)                       2130                                   0.154                      0.0805
-NR (KLU)                              2140                                   0.154                      0.0805
-NR single (NICSLU\*)                  2150                                   0.145                      0.0691
-NR (NICSLU\*)                         2150                                   0.146                      0.0694
-NR single (CKTSO\*)                   2230                                   0.138                      0.0654
-NR (CKTSO\*)                          2220                                   0.139                      0.0661
-FDPF XB (SLU)                         2020                                   0.19                       0.118
-FDPF BX (SLU)                         1960                                   0.204                      0.132
-FDPF XB (KLU)                         2100                                   0.172                      0.1
-FDPF BX (KLU)                         2050                                   0.184                      0.113
-FDPF XB (NICSLU\*)                    2070                                   0.173                      0.0996
-FDPF BX (NICSLU\*)                    2070                                   0.181                      0.11
-FDPF XB (CKTSO\*)                     2120                                   0.169                      0.0975
-FDPF BX (CKTSO\*)                     2030                                   0.184                      0.111
+PP                                      82.7                                10.5                        4.35
+PP (no numba)                           61.9                                14.6                        8.33
+PP (with lightsim)                      82.4                                10.7                        2.25
+pypowsybl                              214                                   4.22                       3.71
+GS                                       7.23                              138                        137
+GS synch                                25.5                                38.8                       38.7
+NR single (SLU)                       1190                                   0.494                      0.408
+NR (SLU)                              1200                                   0.49                       0.403
+NR single (KLU)                       2050                                   0.158                      0.0804
+NR (KLU)                              2040                                   0.16                       0.0814
+NR single (NICSLU\*)                  2120                                   0.146                      0.0691
+NR (NICSLU\*)                         2120                                   0.146                      0.0695
+NR single (CKTSO\*)                   2130                                   0.144                      0.0675
+NR (CKTSO\*)                          2120                                   0.145                      0.0687
+FDPF XB (SLU)                         1960                                   0.193                      0.117
+FDPF BX (SLU)                         1890                                   0.208                      0.132
+FDPF XB (KLU)                         2030                                   0.176                      0.101
+FDPF BX (KLU)                         1970                                   0.188                      0.113
+FDPF XB (NICSLU\*)                    2050                                   0.172                      0.0977
+FDPF BX (NICSLU\*)                    1980                                   0.185                      0.11
+FDPF XB (CKTSO\*)                     2040                                   0.173                      0.0976
+FDPF BX (CKTSO\*)                     1970                                   0.186                      0.11
 =====================  ======================  ===================================  ==========================
 
-From a grid2op perspective, lightsim2grid allows to compute up to ~2228 steps each second (column `grid2op speed`, row `NR single (CKTSO\*)`) on the neurips_2020_track2 and "only" ~87 for the default PandaPower Backend (column `grid2op speed`, row `PP`), leading to a speed up of **~26** (2228 / 87) in this case (lightsim2grid Backend is ~26 times faster than pandapower Backend when comparing grid2op speed).
+From a grid2op perspective, lightsim2grid allows to compute up to ~2135 steps each second (column `grid2op speed`, row `NR single (CKTSO\*)`) on the neurips_2020_track2 and "only" ~83 for the default PandaPower Backend (column `grid2op speed`, row `PP`), leading to a speed up of **~26** (2135 / 83) in this case (lightsim2grid Backend is ~26 times faster than pandapower Backend when comparing grid2op speed).
 
-When compared to powsybl (with the pypowsybl backend), lightsim2grid (with newton raphson) is around **~9.9** times faster (226 vs 2228).
+When compared to powsybl (with the pypowsybl backend), lightsim2grid (with newton raphson) is around **~10.0** times faster (214 vs 2135).
 
-For this environment there is a sensible difference in using `KLU` linear solver (rows `NR single (KLU)` or `NR (KLU)`) compared to using the SparseLU solver of Eigen (rows `NR single (SLU)` or `NR (SLU)`) (1227 vs 2139 iterations on the reported runs, might slightly vary across runs).
+For this environment there is a sensible difference in using `KLU` linear solver (rows `NR single (KLU)` or `NR (KLU)`) compared to using the SparseLU solver of Eigen (rows `NR single (SLU)` or `NR (SLU)`) (1195 vs 2037 iterations on the reported runs, might slightly vary across runs).
 
 Linear solvers `KLU`, `NICSLU` and `CKTSO` achieve almost identical performances, at least we think the observed differences are within error margins.
 
@@ -290,7 +289,7 @@ There are also very little differences between non distributed slack (`NR Single
 
 Finally, the "fast decoupled" methods also lead to equivalent performances (compared to the Newton Raphson one) for almost all linear solvers.
 
-For this environment, for lightsim2grid backend (and if we don't take into account the "agent time"), the computation time is vastly dominated by factor external to the powerflow solver. Indeed, doing a 'env.step' (column `grid2op speed (it/s)`) takes 0.449ms (`1. / 2228. * 1000.`) on average and on this 449 µs (or 0.449ms), only 65 µs are spent in the backend (column `time in 'algo' (ms / pf)`). Meaning that ~383 µs are spent in the grid2op extra layer or in the backend implementation in this case (`85%` of the computation time - `=383 / 449`- is external to the powerflow algorithm)
+For this environment, for lightsim2grid backend (and if we don't take into account the "agent time"), the computation time is vastly dominated by factor external to the powerflow solver. Indeed, doing a 'env.step' (column `grid2op speed (it/s)`) takes 0.468ms (`1. / 2135. * 1000.`) on average and on this 468 µs (or 0.468ms), only 68 µs are spent in the backend (column `time in 'algo' (ms / pf)`). Meaning that ~401 µs are spent in the grid2op extra layer or in the backend implementation in this case (`86%` of the computation time - `=401 / 468`- is external to the powerflow algorithm)
 
 .. note:: The "solver powerflow time" reported for pandapower is obtained by summing, over the 1000 powerflow performed
     the `pandapower_backend._grid["_ppc"]["et"]` (the "estimated time" of the pandapower newton raphson computation)

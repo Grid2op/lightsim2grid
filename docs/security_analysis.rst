@@ -166,7 +166,7 @@ root of the lightsim2grid repository:
 
 Results, made with:
 
-- date: 2026-08-06 18:23  CEST
+- date: 2026-08-28 16:57  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
@@ -175,7 +175,7 @@ Results, made with:
 - pandas version: 2.3.3
 - pandapower version: 3.4.0
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.0.0.rc3
+- lightsim2grid version: 1.0.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -187,14 +187,14 @@ Results, made with:
 ===========  ===========  ===========  ========  ======================
   nb_thread    nb solved    time (ms)    pf / s  speed-up vs 1 thread
 ===========  ===========  ===========  ========  ======================
-          1          703      4276.13       164  1.00x
-          2          703      2319.19       303  1.84x
-          3          703      1835.12       383  2.33x
-          4          703      1432.11       491  2.99x
-          5          703      1258.72       559  3.40x
-          6          703      1092.99       643  3.91x
-          7          703      1131.49       621  3.78x
-          8          703      1079          652  3.96x
+          1          703      4144.41       170  1.00x
+          2          703      2307.1        305  1.80x
+          3          703      1759.85       399  2.35x
+          4          703      1425.17       493  2.91x
+          5          703      1235.88       569  3.35x
+          6          703      1103.81       637  3.75x
+          7          703      1183.16       594  3.50x
+          8          703      1065.82       660  3.89x
 ===========  ===========  ===========  ========  ======================
 
 As documented above, speed-up is sub-linear (the per-thread set-up cost, plus the
@@ -422,7 +422,7 @@ Benchmarks (Contingency Analysis)
 
 Here are some benchmarks made with:
 
-- date: 2026-08-06 18:23  CEST
+- date: 2026-08-28 16:57  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
@@ -431,7 +431,7 @@ Here are some benchmarks made with:
 - pandas version: 2.3.3
 - pandapower version: 3.4.0
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.0.0.rc3
+- lightsim2grid version: 1.0.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -439,7 +439,6 @@ Here are some benchmarks made with:
 	- cktso_solver_available: True 
 	- compiled_march_native: True 
 	- compiled_o3_optim: True 
-
 
 This benchmark is available by running, from the root of the lightsim2grid repository:
 
@@ -454,19 +453,19 @@ For this setting the outputs are:
 .. code-block:: bash
 
     For environment: l2rpn_neurips_2020_track2_small (177 n-1 simulated)
-    Total time spent in "computer" to solve everything: 10.3ms (17115 pf / s), 0.06 ms / pf
-        - time to compute the coefficients to simulate line disconnection: 0.30ms
-        - time to pre process Ybus: 0.30ms
-        - time to perform powerflows: 9.70ms (18255 pf / s, 0.05 ms / pf)
-    In addition, it took 0.40 ms to retrieve the current from the complex voltages (in total 16475.6 pf /s, 0.06 ms / pf)
+    Total time spent in "computer" to solve everything: 11.4ms (15514 pf / s), 0.06 ms / pf)
+        - time to compute the coefficients to simulate line disconnection: 0.35ms
+        - time to pre process Ybus: 0.32ms
+        - time to perform powerflows: 10.68ms (16567 pf / s, 0.06 ms / pf)
+    In addition, it took 0.43 ms to retrieve the current from the complex voltages (in total 14949.6 pf /s, 0.07 ms / pf)
 
     Comparison with raw grid2op timings
-    It took grid2op (with lightsim2grid, using obs.simulate): 0.29s to perform the same computation
-        This is a 26.7 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
-    It took grid2op (with pandapower, using obs.simulate): 11.25s to perform the same computation
-        This is a 1046.8 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)
+    It took grid2op (with lightsim2grid, using obs.simulate): 0.36s to perform the same computation
+        This is a 30.7 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
+    It took grid2op (with pandapower, using obs.simulate): 11.12s to perform the same computation
+        This is a 939.3 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)
 
-    In this case then, the `ContingencyAnalysis` module is 27 times faster than raw grid2op (with obs.simulate and lightsim2grid) and 1047 times faster than raw grid2op (with obs.simulate and pandapower)
+    In this case then, the `ContingencyAnalysis` module is 31 times faster than raw grid2op (with obs.simulate and lightsim2grid) and 939 times faster than raw grid2op (with obs.simulate and pandapower)
     All results match !
 
 

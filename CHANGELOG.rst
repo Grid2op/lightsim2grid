@@ -124,7 +124,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       contingency) and a cartesian one ("every registered contingency x every
       injection profile").
 
-[1.0.0] 2026-xx-yy
+[1.0.0] 2026-08-28
 --------------------
 - [BREAKING] **solver cache reuse is now automatic and on by default**, per solver family.
   A powerflow reuses what the previous one of the same family built -- the compact bus labelling,

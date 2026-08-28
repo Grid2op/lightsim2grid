@@ -16,18 +16,18 @@ In summary, lightsim2grid (when using KLU linear solver) perfomances are:
 ================  ===============  ==================  =====================  ====================  ==============================
 grid                size (nb bus)    time (recycling)    time (no recycling)    time (`TimeSerie`)    time (`ContingencyAnalysis`)
 ================  ===============  ==================  =====================  ====================  ==============================
-case14                         14           0.0180543              0.0393453            0.00691772                       0.0141547
-case118                       118           0.0925261              0.245769             0.034242                         0.0501795
-case_illinois200              200           0.163772               0.418551             0.06606                          0.112861
-case300                       300           0.314592               0.688923             0.183331                         0.235984
-case1354pegase               1354           1.63302                3.10312              0.883601                         1.09353
-case1888rte                  1888           2.44727                4.32304              1.11172                          1.40246
-case2848rte                  2848           3.8338                 6.75225              1.7368                           2.20093
-case2869pegase               2869           3.82374                7.33523              2.05757                          2.41441
-case3120sp                   3120           4.30735                7.57317              1.61617                          2.42757
-case6495rte                  6495          11.8292                18.8783               4.82027                          5.84038
-case6515rte                  6515          13.4284                20.365                4.96732                          5.87362
-case9241pegase               9241          17.6527                29.9001               8.38969                          9.64497
+case14                         14           0.0151524              0.0393676            0.00546965                       0.0120966
+case118                       118           0.0907367              0.239201             0.0381798                        0.055575
+case_illinois200              200           0.163444               0.423087             0.0683476                        0.112028
+case300                       300           0.311167               0.704807             0.176352                         0.229164
+case1354pegase               1354           1.59221                3.11083              0.900187                         1.11285
+case1888rte                  1888           2.41214                4.32001              1.12627                          1.42144
+case2848rte                  2848           3.7678                 6.71873              1.74596                          2.21609
+case2869pegase               2869           3.78651                7.26164              2.08606                          2.42732
+case3120sp                   3120           4.26542                7.49865              1.6428                           2.48339
+case6495rte                  6495          11.5761                18.7157               4.78278                          5.74913
+case6515rte                  6515          12.9611                20.1715               4.91258                          5.81299
+case9241pegase               9241          17.4095                29.7788               8.40066                          9.6462
 ================  ===============  ==================  =====================  ====================  ==============================
    
 
@@ -70,7 +70,7 @@ counting 9241 buses).
 
 All of them has been run on a computer with a the following characteristics:
 
-- date: 2026-08-06 18:23  CEST
+- date: 2026-08-28 16:56  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
@@ -79,7 +79,7 @@ All of them has been run on a computer with a the following characteristics:
 - pandas version: 2.3.3
 - pandapower version: 3.4.0
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.0.0.rc3
+- lightsim2grid version: 1.0.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -166,18 +166,18 @@ Results using grid2op.steps (288 consecutive steps, only measuring 'dc pf [init]
 ================  ===============  ========================  ==========================  ================  ============================  ==========================
 grid                size (nb bus)    avg step duration (ms)    time [DC + AC] (ms / pf)    speed (pf / s)    time in 'solver' (ms / pf)    time in 'algo' (ms / pf)
 ================  ===============  ========================  ==========================  ================  ============================  ==========================
-case14                         14                  0.416912                   0.0294001        34013.5                        0.0180543                   0.0141478
-case118                       118                  0.456141                   0.107554          9297.69                       0.0925261                   0.0824107
-case_illinois200              200                  0.529129                   0.180569          5538.04                       0.163772                    0.151446
-case300                       300                  0.722134                   0.335469          2980.9                        0.314592                    0.296417
-case1354pegase               1354                  2.49597                    1.68992            591.744                      1.63302                     1.55694
-case1888rte                  1888                  3.16992                    2.5168             397.329                      2.44727                     2.35697
-case2848rte                  2848                  4.74195                    3.93506            254.126                      3.8338                      3.69879
-case2869pegase               2869                  5.24078                    3.93682            254.012                      3.82374                     3.65829
-case3120sp                   3120                  5.283                      4.42263            226.11                       4.30735                     4.16654
-case6495rte                  6495                 13.6542                    12.0822              82.7664                    11.8292                     11.4815
-case6515rte                  6515                 15.2783                    13.6811              73.0938                    13.4284                     13.0776
-case9241pegase               9241                 22.0619                    18.0824              55.3025                    17.6527                     16.9855
+case14                         14                  0.320099                   0.0244134        40961.2                        0.0151524                   0.0117544
+case118                       118                  0.451427                   0.105576          9471.88                       0.0907367                   0.080653
+case_illinois200              200                  0.528523                   0.180514          5539.72                       0.163444                    0.150956
+case300                       300                  0.725959                   0.333054          3002.51                       0.311167                    0.292701
+case1354pegase               1354                  2.45353                    1.65307            604.936                      1.59221                     1.51582
+case1888rte                  1888                  3.15837                    2.48821            401.895                      2.41214                     2.32146
+case2848rte                  2848                  4.70391                    3.87832            257.843                      3.7678                      3.63089
+case2869pegase               2869                  5.2151                     3.90676            255.967                      3.78651                     3.61854
+case3120sp                   3120                  5.30337                    4.39481            227.541                      4.26542                     4.11986
+case6495rte                  6495                 13.403                     11.845               84.4239                    11.5761                     11.2339
+case6515rte                  6515                 14.7969                    13.225               75.6144                    12.9611                     12.6123
+case9241pegase               9241                 21.7958                    17.866               55.9721                    17.4095                     16.7472
 ================  ===============  ========================  ==========================  ================  ============================  ==========================
 
 Results using grid2op.steps (288 consecutive steps, only measuring 'dc pf [init] + ac pf') (**no recycling allowed**, non default)
@@ -185,18 +185,18 @@ Results using grid2op.steps (288 consecutive steps, only measuring 'dc pf [init]
 ================  ===============  ========================  ==========================  ================  ============================  ==========================
 grid name           size (nb bus)    avg step duration (ms)    time [DC + AC] (ms / pf)    speed (pf / s)    time in 'solver' (ms / pf)    time in 'algo' (ms / pf)
 ================  ===============  ========================  ==========================  ================  ============================  ==========================
-case14                         14                  0.382921                   0.0647661        15440.2                        0.0393453                   0.0315124
-case118                       118                  0.716991                   0.335443          2981.13                       0.245769                    0.218422
-case_illinois200              200                  1.11168                    0.538909          1855.6                        0.418551                    0.385138
-case300                       300                  1.27529                    0.8701            1149.29                       0.688923                    0.635676
-case1354pegase               1354                  4.63179                    3.81146            262.367                      3.10312                     2.8725
-case1888rte                  1888                  5.87786                    5.20158            192.249                      4.32304                     4.06026
-case2848rte                  2848                  8.95185                    8.10464            123.386                      6.75225                     6.35489
-case2869pegase               2869                 10.4034                     9.0233             110.824                      7.33523                     6.81353
-case3120sp                   3120                  9.96229                    9.06944            110.26                       7.57317                     7.18675
-case6495rte                  6495                 23.8855                    22.1442              45.1586                    18.8783                     17.904
-case6515rte                  6515                 25.3544                    23.6233              42.3312                    20.365                      19.3901
-case9241pegase               9241                 39.9119                    35.7023              28.0094                    29.9001                     27.9824
+case14                         14                  0.375508                   0.0636576        15709.1                        0.0393676                   0.0312537
+case118                       118                  0.701734                   0.327901          3049.7                        0.239201                    0.211855
+case_illinois200              200                  0.920673                   0.546093          1831.19                       0.423087                    0.387856
+case300                       300                  1.29638                    0.888698          1125.24                       0.704807                    0.650414
+case1354pegase               1354                  4.64983                    3.82789            261.24                       3.11083                     2.87081
+case1888rte                  1888                  5.89917                    5.20745            192.033                      4.32001                     4.04502
+case2848rte                  2848                  8.93703                    8.088              123.64                       6.71873                     6.3059
+case2869pegase               2869                 10.2971                     8.9443             111.803                      7.26164                     6.71196
+case3120sp                   3120                  9.92825                    9.01849            110.883                      7.49865                     7.09966
+case6495rte                  6495                 23.9327                    22.0092              45.4356                    18.7157                     17.7245
+case6515rte                  6515                 25.1584                    23.4604              42.625                     20.1715                     19.1766
+case9241pegase               9241                 39.761                     35.6363              28.0612                    29.7788                     27.8505
 ================  ===============  ========================  ==========================  ================  ============================  ==========================
 
 .. _bench_grid_size_ts:
@@ -227,18 +227,18 @@ table in the previous benchmark.
 ================  ===============  ================  ================
 grid                size (nb bus)    time (ms / pf)    speed (pf / s)
 ================  ===============  ================  ================
-case14                         14        0.00691772        144556
-case118                       118        0.034242           29203.9
-case_illinois200              200        0.06606            15137.7
-case300                       300        0.183331            5454.61
-case1354pegase               1354        0.883601            1131.73
-case1888rte                  1888        1.11172              899.509
-case2848rte                  2848        1.7368               575.772
-case2869pegase               2869        2.05757              486.01
-case3120sp                   3120        1.61617              618.746
-case6495rte                  6495        4.82027              207.457
-case6515rte                  6515        4.96732              201.316
-case9241pegase               9241        8.38969              119.194
+case14                         14        0.00546965        182827
+case118                       118        0.0381798          26191.9
+case_illinois200              200        0.0683476          14631.1
+case300                       300        0.176352            5670.46
+case1354pegase               1354        0.900187            1110.88
+case1888rte                  1888        1.12627              887.888
+case2848rte                  2848        1.74596              572.75
+case2869pegase               2869        2.08606              479.372
+case3120sp                   3120        1.6428               608.716
+case6495rte                  6495        4.78278              209.083
+case6515rte                  6515        4.91258              203.559
+case9241pegase               9241        8.40066              119.038
 ================  ===============  ================  ================
 
 .. _bench_grid_size_ca:
@@ -264,18 +264,18 @@ only 1000).
 ================  ===============  ===================  ===================
 grid                size (nb bus)    time (ms / cont.)    speed (cont. / s)
 ================  ===============  ===================  ===================
-case14                         14            0.0141547            70648
-case118                       118            0.0501795            19928.4
-case_illinois200              200            0.112861              8860.47
-case300                       300            0.235984              4237.57
-case1354pegase               1354            1.09353                914.474
-case1888rte                  1888            1.40246                713.035
-case2848rte                  2848            2.20093                454.354
-case2869pegase               2869            2.41441                414.18
-case3120sp                   3120            2.42757                411.934
-case6495rte                  6495            5.84038                171.222
-case6515rte                  6515            5.87362                170.253
-case9241pegase               9241            9.64497                103.681
+case14                         14            0.0120966            82668
+case118                       118            0.055575             17993.7
+case_illinois200              200            0.112028              8926.3
+case300                       300            0.229164              4363.69
+case1354pegase               1354            1.11285                898.597
+case1888rte                  1888            1.42144                703.511
+case2848rte                  2848            2.21609                451.244
+case2869pegase               2869            2.42732                411.976
+case3120sp                   3120            2.48339                402.676
+case6495rte                  6495            5.74913                173.939
+case6515rte                  6515            5.81299                172.029
+case9241pegase               9241            9.6462                 103.668
 ================  ===============  ===================  ===================
 
 Comments
@@ -283,9 +283,8 @@ Comments
 
 This is the text printed by ``benchmark_grid_size.py`` (see the note above the TL;DR table) for the tables
 above, computed from the numbers actually measured during that run.
+Allowing lightsim2grid to "recycle" previous computation (column `avg step duration (ms)`, default behaviour) instead of restarting from scratch at every step makes grid2op between **~1.2x** (on `case14`) and **~2.0x** (on `case2869pegase`) faster, depending on the grid size.
 
-Allowing lightsim2grid to "recycle" previous computation (column `avg step duration (ms)`, default behaviour) instead of restarting from scratch at every step makes grid2op between **~0.9x** (on `case14`) and **~2.1x** (on `case_illinois200`) faster, depending on the grid size.
+Compared to a regular grid2op step (with recycling), the `TimeSerie` module is between **~2.5x** (on `case2869pegase`) and **~58.5x** (on `case14`) faster.
 
-Compared to a regular grid2op step (with recycling), the `TimeSerie` module is between **~2.5x** (on `case2869pegase`) and **~60.3x** (on `case14`) faster.
-
-Similarly, the `ContingencyAnalysis` module is between **~2.2x** (on `case2848rte`) and **~29.5x** (on `case14`) faster than a regular grid2op step (with recycling) to evaluate one contingency.
+Similarly, the `ContingencyAnalysis` module is between **~2.1x** (on `case2848rte`) and **~26.5x** (on `case14`) faster than a regular grid2op step (with recycling) to evaluate one contingency.
