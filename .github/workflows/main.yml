@@ -6,6 +6,12 @@ on:
       - '*'
     tags:
       - 'v*.*.*'
+  # NOTE: GitHub Actions branch-filter globs ('*') do not match '/', so the
+  # push trigger above never actually fires for slash-namespaced branches
+  # (e.g. claude/*). Without this, CI silently never ran on such PRs before
+  # merge -- it only ran after the merge commit landed on a slash-free
+  # branch (master/dev_0.13.2/...). pull_request covers those PRs properly.
+  pull_request:
 
 env:
   # ── Wheel count guard ─────────────────────────────────────────────────────
@@ -14,14 +20,14 @@ env:
   # from being created, which in turn prevents the PyPI release workflow
   # (publish.yml) from running at all.
   #
-  #   manylinux x86_64  (cp38–cp314 × 1 container)            →  7
-  #   windows   x64     (cp38–cp314 × AMD64)                   →  7
-  #   macos     x86_64  (cp38–cp314, native on macos-15-intel) →  7
+  #   manylinux x86_64  (cp39–cp314 × 1 container)             →  6
+  #   windows   x64     (cp39–cp314 × AMD64)                   →  6
+  #   macos     x86_64  (cp39–cp314, native on macos-15-intel) →  6
   #   macos     arm64   (cp310–cp314, native on macos-14)      →  5
-  #   exotic    macos arm64  via cibuildwheel (cp38, cp39)     →  2
+  #   exotic    macos arm64  via cibuildwheel (cp39)           →  1
   #   exotic    windows ARM64 via cibuildwheel (cp39–cp314)    →  6
-  #                                                total:        34
-  EXPECTED_WHEELS: 34
+  #                                                total:        30
+  EXPECTED_WHEELS: 30
   EXPECTED_SDIST: 1
 
 jobs:
@@ -39,11 +45,11 @@ jobs:
           #   abi: cp37m,
           #   version: '3.7',
           # }
-          - {
-            name: cp38,
-            abi: cp38,
-            version: '3.8',
-          }
+          # - {
+          #   name: cp38,
+          #   abi: cp38,
+          #   version: '3.8',
+          # }
           - {
             name: cp39,
             abi: cp39,
@@ -102,7 +108,7 @@ jobs:
       #     platforms: arm64
 
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: true
 
@@ -143,22 +149,24 @@ jobs:
           python3 -c "from lightsim2grid import *"
           python3 -c "from lightsim2grid.newtonpf import newtonpf"
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.injectionSweep import InjectionSweepCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
 
       - name: Check package can be imported (bare install, numpy < 2)
         if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313' && matrix.python.name != 'cp314'
         run: |
-          python3 -m pip install "numpy<2"
+          python3 -m pip install "numpy<2" scipy
           cd tmp_for_import_checking
           python3 -c "import lightsim2grid"
           python3 -c "from lightsim2grid import *"
           python3 -c "from lightsim2grid.newtonpf import newtonpf"
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.injectionSweep import InjectionSweepCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -181,7 +189,7 @@ jobs:
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
           python3 -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
-          python3 -c "from lightsim2grid.gridmodel import init_from_pandapower"
+          python3 -c "from lightsim2grid.network import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
         if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
@@ -190,13 +198,13 @@ jobs:
           python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: lightsim2grid-wheel-linux-${{ matrix.python.name }}-${{ matrix.cont.name }}
           path: wheelhouse/*.whl
 
       - name: Upload source archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         if: matrix.python.name == 'cp312'
         with:
           name: lightsim2grid-sources
@@ -213,10 +221,10 @@ jobs:
           #   name: cp37,
           #   version: '3.7',
           # }
-          - {
-            name: cp38,
-            version: '3.8',
-          }
+          # - {
+          #   name: cp38,
+          #   version: '3.8',
+          # }
           - {
             name: cp39,
             version: '3.9',
@@ -257,18 +265,18 @@ jobs:
     steps:
 
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: true
 
       - name: Setup Python ${{ matrix.python.version }} ${{ matrix.win_arch.msvc}}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: ${{ matrix.python.version }}
           architecture: ${{ matrix.win_arch.msvc}}
 
       - name: Setup MSVC ${{ matrix.win_arch.msvc}}
-        uses: bus1/cabuild/action/msdevshell@e22aba57d6e74891d059d66501b6b5aed8123c4d # v1
+        uses: bus1/cabuild/action/msdevshell@06ea2833eef61e9b0d0ce0d728416e617e4fb1fe  # v1 (no tagged releases; pinned to latest v1 branch commit)
         with:
           architecture: ${{ matrix.win_arch.msvc}}
 
@@ -293,22 +301,24 @@ jobs:
           python3 -c "from lightsim2grid import *"
           python3 -c "from lightsim2grid.newtonpf import newtonpf"
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.injectionSweep import InjectionSweepCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
 
       - name: Check package can be imported (bare install, numpy < 2)
         if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313' && matrix.python.name != 'cp314'
         run: |
-          python3 -m pip install "numpy<2"
+          python3 -m pip install "numpy<2" scipy
           cd tmp_for_import_checking
           python3 -c "import lightsim2grid"
           python3 -c "from lightsim2grid import *"
           python3 -c "from lightsim2grid.newtonpf import newtonpf"
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.injectionSweep import InjectionSweepCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
           python3 -m pip install --upgrade numpy
 
       - name: Check LightSimBackend can be imported (with grid2op)
@@ -322,7 +332,7 @@ jobs:
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
           python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
-          python -c "from lightsim2grid.gridmodel import init_from_pandapower"
+          python -c "from lightsim2grid.network import init_from_pandapower"
           
       - name: Check LightSimBackend can be used to create env
         if: matrix.python.name != 'cp314' # pandapower does not support 3.14, so grid2op does not so I cannot test that for 3.14
@@ -335,7 +345,7 @@ jobs:
       #     python -m unittest lightsim2grid.tests.test_n1contingencyrewards.TestN1ContingencyReward_Base.test_do_nothing
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: lightsim2grid-wheel-win-${{ matrix.python.name }}-${{ matrix.win_arch.msvc}}
           path: dist/*.whl
@@ -351,10 +361,10 @@ jobs:
           #   name: cp37,
           #   version: '3.7',
           # }
-          - {
-            name: cp38,
-            version: '3.8',
-          }
+          # - {
+          #   name: cp38,
+          #   version: '3.8',
+          # }
           - {
             name: cp39,
             version: '3.9',
@@ -409,12 +419,12 @@ jobs:
     steps:
 
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: true
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: ${{ matrix.python.version }}
 
@@ -445,9 +455,10 @@ jobs:
           python -c "from lightsim2grid import *"
           python -c "from lightsim2grid.newtonpf import newtonpf"
           python -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python -c "from lightsim2grid.injectionSweep import InjectionSweepCPP"
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python -c "from lightsim2grid.gridmodel import GridModel"
+          python -c "from lightsim2grid.network import LSGrid"
 
       - name: Check package can be imported (bare install)
         if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38'
@@ -457,9 +468,10 @@ jobs:
           python3 -c "from lightsim2grid import *"
           python3 -c "from lightsim2grid.newtonpf import newtonpf"
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.injectionSweep import InjectionSweepCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -486,7 +498,7 @@ jobs:
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
           python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
-          python -c "from lightsim2grid.gridmodel import init_from_pandapower"
+          python -c "from lightsim2grid.network import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
         if: matrix.python.name != 'cp314' || matrix.runner.arch != 'x86_64'
@@ -497,7 +509,7 @@ jobs:
           python -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}
           path: dist/*.whl
@@ -526,10 +538,10 @@ jobs:
           #   cibuildwheel: linux
           # }
         python:
-          - {
-            name: cp38,
-            version: '3.8',
-          }
+          # - {
+          #   name: cp38,
+          #   version: '3.8',
+          # }
           - {
             name: cp39,
             version: '3.9',
@@ -585,18 +597,50 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: true
 
       - name: Set up QEMU
         if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
         with:
           platforms: all
 
+      # cibuildwheel cross-compiles for ARM64 on this (x64) runner without
+      # setting up an MSVC dev-shell environment itself (it either expects
+      # one already configured, or lets the build backend handle the cross
+      # target on its own) -- so nothing points delvewheel at the ARM64
+      # flavor of the VC++ runtime DLLs (msvcp140.dll etc.) it needs to
+      # vendor into the repaired wheel. The x64 copies reachable via PATH
+      # are correctly rejected by delvewheel (architecture mismatch).
+      # Locate the real ARM64 redistributable under the VS install (ships
+      # for every target arch, just not on PATH by default) via vswhere,
+      # which is present on every GitHub-hosted Windows runner.
+      - name: Locate ARM64 VC++ redistributable (for delvewheel)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -property installationPath
+          # VC\Redist\MSVC contains both numbered version dirs (e.g.
+          # 14.44.35112, holding the real per-arch redist files) and a
+          # "v143"-style toolset-name dir that does NOT -- picking the
+          # "latest" dir by name (e.g. Sort-Object Name -Descending) can
+          # land on v143 (since 'v' sorts after digits) and fail, so search
+          # every dir under Redist\MSVC directly for the actual CRT folder
+          # instead of guessing which version dir is the real one by name.
+          $armCrtDir = Get-ChildItem -Path (Join-Path $vsPath "VC\Redist\MSVC") -Recurse -Directory -Filter "Microsoft.VC*.CRT" -ErrorAction SilentlyContinue |
+                       Where-Object { $_.FullName -match '\\arm64\\' } |
+                       Select-Object -First 1
+          if (-not $armCrtDir) {
+            throw "Could not locate the ARM64 VC++ CRT redistributable under $vsPath\VC\Redist\MSVC"
+          }
+          Write-Host "Found ARM64 CRT redist dir: $($armCrtDir.FullName)"
+          "LS2G_ARM64_CRT_DIR=$($armCrtDir.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Compile with cibuildwheel
-        uses: pypa/cibuildwheel@63fd63b352a9a8bdcc24791c9dbee952ee9a8abc  # v3.3.0
+        uses: pypa/cibuildwheel@4726cd35bb13f7bde50cf2761f2499ac7b3aa32c  # v4.1.1
         env:
           CIBW_PLATFORM: "${{ matrix.runner.cibuildwheel}}"
           CIBW_BUILD: "${{ matrix.python.name}}-*"
@@ -604,6 +648,22 @@ jobs:
           CIBW_ARCHS_MACOS: arm64 
           CIBW_ARCHS_WINDOWS: ARM64 
           CIBW_ENVIRONMENT: __O3_OPTIM=1
+          # lightsim2grid_cpp's legacy root-level copy (see
+          # INSTALL_LEGACY_LIGHTSIM2GRID_CPP in CMakeLists.txt) depends on
+          # lightsim2grid_core.dll, which lives one directory away in
+          # lightsim2grid/. delvewheel's default repair command only
+          # resolves DLL dependencies via directories already inside the
+          # wheel when --ignore-existing is passed, or PATH -- it never
+          # searches the same directory as the module being analyzed. Add
+          # --ignore-existing (cibuildwheel's default command otherwise,
+          # see delvewheel's own --ignore-existing/--ignore-in-wheel help
+          # text) so it finds the DLL already present in the wheel instead
+          # of failing with "Unable to find library: lightsim2grid_core.dll".
+          # --add-path points it at the real ARM64 VC++ runtime DLLs
+          # (msvcp140.dll etc, located by the step above) it also needs to
+          # vendor in -- otherwise it only sees the x64 copies on PATH,
+          # which it correctly refuses as an architecture mismatch.
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: "delvewheel repair --ignore-existing --add-path \"${{ env.LS2G_ARM64_CRT_DIR }}\" -w {dest_dir} -v {wheel}"
           CIBW_TEST_REQUIRES: grid2op pandapower
           CIBW_TEST_SKIP: "*-macosx_arm64 *-win_arm64" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
           CIBW_TEST_COMMAND: >
@@ -611,16 +671,261 @@ jobs:
             python -c "from lightsim2grid import *" &&
             python -c "from lightsim2grid.newtonpf import newtonpf" &&
             python -c "from lightsim2grid.timeSerie import TimeSeriesCPP, TimeSerie" &&
+            python -c "from lightsim2grid.injectionSweep import InjectionSweepCPP, InjectionSweep" &&
             python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP, ContingencyAnalysis" &&
             python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP, SecurityAnalysis" &&
-            python -c "from lightsim2grid.gridmodel import GridModel, init_from_pandapower" &&
+            python -c "from lightsim2grid.network import LSGrid, init_from_pandapower" &&
             python -c "from lightsim2grid import LightSimBackend" &&
             python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: lightsim2grid-wheel-exotic-${{ matrix.runner.whl_nm}}-${{ matrix.python.name }}
           path: ./wheelhouse/*.whl
+
+  test_cmake_standalone:
+    name: Test standalone cmake build — ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-2022, macos-14]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: true
+
+      - name: Setup MSVC (windows)
+        if: runner.os == 'Windows'
+        uses: bus1/cabuild/action/msdevshell@06ea2833eef61e9b0d0ce0d728416e617e4fb1fe  # v1 (no tagged releases; pinned to latest v1 branch commit)
+        with:
+          architecture: x64
+
+      - name: Configure + build lightsim2grid_core
+        run: |
+          cmake -S src/core -B _build_core -DCMAKE_BUILD_TYPE=Release
+          cmake --build _build_core --config Release
+
+      - name: Install
+        run: cmake --install _build_core --prefix _install --config Release
+
+      - name: Verify installed layout (unix)
+        if: runner.os != 'Windows'
+        run: |
+          ls _install/lib/*lightsim2grid_core* || ls _install/lib64/*lightsim2grid_core*
+          ls _install/include/lightsim2grid/LSGrid.hpp
+          ls _install/lib/cmake/lightsim2grid_core/lightsim2grid_coreConfig.cmake
+
+      - name: Verify installed layout (windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          ls _install/lib/lightsim2grid_core* || ls _install/bin/lightsim2grid_core*
+          ls _install/include/lightsim2grid/LSGrid.hpp
+          ls _install/lib/cmake/lightsim2grid_core/lightsim2grid_coreConfig.cmake
+
+      - name: Build minimal consumer via find_package
+        shell: bash
+        run: |
+          mkdir -p _test_consumer
+          cat > _test_consumer/CMakeLists.txt << 'EOF'
+          cmake_minimum_required(VERSION 3.15)
+          project(consumer CXX)
+          set(CMAKE_CXX_STANDARD 14)
+          find_package(lightsim2grid_core CONFIG REQUIRED)
+          add_executable(consumer consumer.cpp)
+          target_link_libraries(consumer PRIVATE lightsim2grid::core)
+          EOF
+          cat > _test_consumer/consumer.cpp << 'EOF'
+          #include <AlgorithmRegistry.hpp>
+          int main() { auto& r = ls2g::AlgorithmRegistry::instance(); return r.available_algorithm_names().empty() ? 1 : 0; }
+          EOF
+          cmake -S _test_consumer -B _build_consumer \
+                -DCMAKE_PREFIX_PATH="$(pwd)/_install" \
+                -DCMAKE_BUILD_TYPE=Release
+          cmake --build _build_consumer --config Release
+
+  test_plugin_against_installed:
+    name: Test plugin against pip-installed — ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-2022, macos-14]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Setup MSVC (windows)
+        if: runner.os == 'Windows'
+        uses: bus1/cabuild/action/msdevshell@06ea2833eef61e9b0d0ce0d728416e617e4fb1fe  # v1 (no tagged releases; pinned to latest v1 branch commit)
+        with:
+          architecture: x64
+
+      - name: Install lightsim2grid
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_compile_ci.txt
+          python -m pip install -v . --no-build-isolation
+
+      - name: Build plugin via get_cmake_dir()
+        shell: bash
+        run: |
+          mkdir -p _tmp_cmake_dir
+          LS2G_CMAKE=$(cd _tmp_cmake_dir && python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
+          cmake -S examples/external_algorithm -B examples/external_algorithm/build \
+                -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE" \
+                -DCMAKE_BUILD_TYPE=Release
+          cmake --build examples/external_algorithm/build --config Release
+
+      - name: Run plugin test
+        run: python examples/external_algorithm/test_plugin.py
+
+      - name: Run plugin registration unittests (against the installed package)
+        shell: bash
+        # Run from the scratch dir so `import lightsim2grid` resolves to the
+        # pip-installed package, not the source tree (which has no built
+        # extension). LS2G_TEST_PLUGIN_DIR points the tests at the plugin built
+        # above; the finders pick the right per-platform file name themselves.
+        working-directory: _tmp_cmake_dir
+        env:
+          LS2G_TEST_PLUGIN_DIR: ${{ github.workspace }}/examples/external_algorithm/build
+        run: |
+          python -m unittest -v \
+            lightsim2grid.tests.test_solver_registry \
+            lightsim2grid.tests.test_plugin_registration
+
+  test_klu_strategies:
+    name: Test KLU detection strategies (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Python build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_compile_ci.txt
+
+      # ── Strategy 4: build KLU from SuiteSparse submodule CMakeLists ────────
+      # Submodule present but no pre-built .a files → CMake strategy 4 triggers
+      - name: "[Strategy 4] Install lightsim2grid"
+        run: python -m pip install -v . --no-build-isolation
+
+      - name: "[Strategy 4] Assert KLU solver is available"
+        run: |
+          mkdir -p _klu_check
+          cd _klu_check
+          python -c "
+          from lightsim2grid.lightsim2grid_cpp import klu_solver_available
+          assert klu_solver_available, 'KLU solver not available (strategy 4 failed)'
+          print('Strategy 4 OK: KLU available')
+          "
+
+      - name: "[Strategy 4] Uninstall lightsim2grid"
+        run: pip uninstall lightsim2grid -y
+
+      # ── Strategy 3: pre-built .a files in SuiteSparse submodule ────────────
+      # `make` compiles KLU static libs; CMake finds them via strategy 3
+      - name: "[Strategy 3] Compile KLU static libraries"
+        run: make
+
+      - name: "[Strategy 3] Install lightsim2grid"
+        run: python -m pip install -v . --no-build-isolation
+
+      - name: "[Strategy 3] Assert KLU solver is available"
+        run: |
+          cd _klu_check
+          python -c "
+          from lightsim2grid.lightsim2grid_cpp import klu_solver_available
+          assert klu_solver_available, 'KLU solver not available (strategy 3 failed)'
+          print('Strategy 3 OK: KLU available')
+          "
+
+      - name: "[Strategy 3] Uninstall lightsim2grid"
+        run: pip uninstall lightsim2grid -y
+
+      - name: "[Strategy 3] Clean compiled KLU static libraries"
+        run: make distclean
+
+      # ── Strategy 1: system-wide KLU via apt ────────────────────────────────
+      # libsuitesparse-dev on Ubuntu 24.04 ships CMake config files → strategy 1
+      # SuiteSparse submodule removed so strategies 3 & 4 cannot interfere
+      - name: "[Strategy 1] Install libsuitesparse-dev"
+        run: sudo apt-get install -y libsuitesparse-dev
+
+      - name: "[Strategy 1] Remove SuiteSparse submodule"
+        run: rm -rf SuiteSparse
+
+      - name: "[Strategy 1] Install lightsim2grid"
+        run: python -m pip install -v . --no-build-isolation
+
+      - name: "[Strategy 1] Assert KLU solver is available"
+        run: |
+          cd _klu_check
+          python -c "
+          from lightsim2grid.lightsim2grid_cpp import klu_solver_available
+          assert klu_solver_available, 'KLU solver not available (strategy 1 failed)'
+          print('Strategy 1 OK: KLU available')
+          "
+
+  test_march_native:
+    # -march=native is a supported opt-in build flag (see benchmarks/env_compile_all.sh)
+    # that release wheels do not use, so plain CI builds never exercise it. It changes
+    # which SIMD ISA Eigen sees enabled (__AVX__, __AVX2__, ...) in each translation
+    # unit; lightsim2grid_core and lightsim2grid_cpp (the pybind11 bindings) are two
+    # separate shared libraries, so both must see the identical flag -- otherwise an
+    # Eigen object allocated in one and freed in the other computes a different
+    # alignment offset, corrupting the heap ("double free or corruption") the first
+    # time a function's return value crosses the module boundary (e.g. any pandapower
+    # -> LightSimBackend conversion, or a forecast-backend copy). Regression test for
+    # that class of bug: env creation reliably crashed within seconds before the fix.
+    name: Test -march=native build (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_compile_ci.txt
+          python -m pip install grid2op pandapower lxml
+
+      - name: Build lightsim2grid with -march=native
+        run: __COMPILE_MARCHNATIVE=1 __O3_OPTIM=1 python -m pip install -v . --no-build-isolation
+
+      - name: Create + reset a LightSimBackend env (exercises the core<->bindings Eigen boundary)
+        run: |
+          mkdir -p _march_native_check
+          cd _march_native_check
+          python -c "
+          import warnings
+          from grid2op import make
+          from grid2op.Parameters import Parameters
+          from lightsim2grid import LightSimBackend
+
+          param = Parameters()
+          param.init_from_dict({'NO_OVERFLOW_DISCONNECTION': True, 'ENV_DC': True, 'FORECAST_DC': True})
+          with warnings.catch_warnings():
+              warnings.filterwarnings('ignore')
+              env = make('l2rpn_case14_sandbox', backend=LightSimBackend(), param=param, test=True)
+          env.reset()
+          print('OK: env created and reset under -march=native without crashing')
+          "
 
   package:
     name: Package wheels
@@ -629,9 +934,21 @@ jobs:
 
     steps:
       - name: Download wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           path: download
+          # Without this, each per-leg artifact (lightsim2grid-wheel-linux-...,
+          # lightsim2grid-sources, ...) lands in its own download/<artifact-name>/
+          # subdirectory. The "Upload wheels" step below then preserves that
+          # nesting inside the single lightsim2grid-wheels artifact it produces,
+          # which publish.yml's "Download wheels from CI run" step in turn
+          # reproduces under dist/ -- e.g. dist/lightsim2grid-sources/*.tar.gz
+          # instead of dist/*.tar.gz. pypa/gh-action-pypi-publish only looks
+          # directly in dist/, not recursively, so it finds nothing to publish
+          # (the wheel-count check above/in publish.yml still passes either way,
+          # since `find` is recursive). Flatten everything into download/ here
+          # instead so the final artifact -- and dist/ -- end up flat.
+          merge-multiple: true
 
       - name: Verify wheel and sdist count
         run: |
@@ -661,7 +978,7 @@ jobs:
           echo "✓ All ${{ env.EXPECTED_WHEELS }} wheels and ${{ env.EXPECTED_SDIST }} sdist accounted for."
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: lightsim2grid-wheels
           retention-days: 90

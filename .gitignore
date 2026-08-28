@@ -9,6 +9,8 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+build_tests/
+_skbuild_build/
 develop-eggs/
 dist/
 downloads/
@@ -305,3 +307,25 @@ venv_ls_glop/
 venv_old_glop/
 venv_pypobk/
 benchmarks/*.mat
+20260427_refacto.txt
+CLAUDE.md
+NR_refacto_cancel_last_step.txt
+_build_consumer/
+_build_core/
+_build_plugin/
+_install/
+_pyloadflow/
+_requirements_python39.txt
+_test_consumer/
+benchmarks/*.json.pickle
+benchmarks/res_benchmarks/
+bug_assistflux/
+bug_memory_leak.py
+compile_error.txt
+debug_assistflux/
+pp_3_bug_ybus/
+req_legacy_pp.txt
+test_issue_128.py
+time_memory.csv
+time_memory_simulator.csv
+
