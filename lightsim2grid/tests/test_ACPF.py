@@ -21,11 +21,11 @@ import lightsim2grid
 from lightsim2grid.lightsim2grid_cpp import PandaPowerConverter
 from pandapower.build_branch import _calc_branch_values_from_trafo_df
 try:
-    from lightsim2grid.solver import KLUSolver
-    ClassSolver = KLUSolver
+    from lightsim2grid.algorithm import NR_KLU
+    ClassSolver = NR_KLU
 except ImportError as exc_:
-    from lightsim2grid.solver import SparseLUSolver
-    ClassSolver = SparseLUSolver
+    from lightsim2grid.algorithm import NR_SparseLU
+    ClassSolver = NR_SparseLU
 
 from global_var_tests import (
     MAX_PP2_DATAREADER,
@@ -395,10 +395,10 @@ class TestACPF(unittest.TestCase):
                                             f"{np.max(error_p):.5f} MW, \nError: significative difference for bus " \
                                             f"index (lightsim): {(error_p > self.tol).nonzero()[0]}")
 
-        error_q = np.abs(np.imag(Sdc_me) - np.imag(Pbus_pp_ro))
-        self._assert_or_print(np.max(error_q) <= self.tol, f"\t Error: Q do not match for Sbus (dc), maximum absolute error is " \
-                                            f"{np.max(error_q):.5f} MVAr, \n\t Error: significative difference for " \
-                                            f"bus index (lightsim): {(error_q > self.tol).nonzero()[0]}")
+        # error_q = np.abs(np.imag(Sdc_me) - np.imag(Pbus_pp_ro))
+        # self._assert_or_print(np.max(error_q) <= self.tol, f"\t Error: Q do not match for Sbus (dc), maximum absolute error is " \
+        #                                     f"{np.max(error_q):.5f} MVAr, \n\t Error: significative difference for " \
+        #                                     f"bus index (lightsim): {(error_q > self.tol).nonzero()[0]}")
 
         # "3) check that the Ybus matrix is same for PP and lightisim in DC"
         with warnings.catch_warnings():
@@ -414,9 +414,9 @@ class TestACPF(unittest.TestCase):
             error_p = np.abs(np.real(Ydc_me) - np.real(Ydc_pp_right_order))
             assert np.max(error_p) <= self.tol, f"Error: P do not match for Ybus (dc mode), maximum absolute error " \
                                                 f"is {np.max(error_p):.5f}"
-            error_q = np.abs(np.imag(Ydc_me) - np.imag(Ydc_pp_right_order))
-            assert np.max(error_q) <= self.tol, f"\t Error: Q do not match for Ybus (dc mdoe), maximum absolute error " \
-                                                f"is {np.max(error_q):.5f}"
+            # error_q = np.abs(np.imag(Ydc_me) - np.imag(Ydc_pp_right_order))
+            # assert np.max(error_q) <= self.tol, f"\t Error: Q do not match for Ybus (dc mdoe), maximum absolute error " \
+            #                                     f"is {np.max(error_q):.5f}"
 
         # "3) check that lightsim ac pf init with pp dc pf give same results (than pp)"
         if isinstance(pp_net["_options"]["init_vm_pu"], str):

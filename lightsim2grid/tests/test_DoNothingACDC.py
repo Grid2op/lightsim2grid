@@ -8,6 +8,9 @@
 
 import unittest
 import warnings
+
+import numpy as np
+
 import grid2op
 from grid2op.Parameters import Parameters
 from lightsim2grid import LightSimBackend
@@ -65,6 +68,88 @@ class TestEnvDN(unittest.TestCase):
     
     def test_ac(self):
         self._aux_test_do_nothing(is_dc=False)
+
+
+class TestDcThenAcSameBackend(unittest.TestCase):
+    """A DC powerflow followed by an AC one, on the same backend instance.
+
+    This used to be unsafe: the two solver families shared their cached bus
+    labelling / matrices / pv-pq split, so an AC powerflow run after a DC one
+    could pick up the DC family's data -- an out-of-bounds read, ie a segfault.
+    `LightSimBackend.runpf` carried a `self._last_dc` /
+    `tell_solver_need_reset()` workaround for it ("otherwise might segfault").
+    Since 1.0.0 the families cache independently and the workaround is gone;
+    this pins the behaviour it used to protect.
+    """
+    def _make_backend(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
+        env.reset()
+        return env
+
+    def _ac_flows(self, backend):
+        conv, exc_ = backend.runpf(is_dc=False)
+        assert conv, f"AC powerflow diverged: {exc_}"
+        p_or, q_or, v_or, a_or = backend.lines_or_info()
+        return np.concatenate((p_or, q_or, v_or, a_or))
+
+    def _dc_flows(self, backend):
+        conv, exc_ = backend.runpf(is_dc=True)
+        assert conv, f"DC powerflow diverged: {exc_}"
+        p_or, q_or, v_or, a_or = backend.lines_or_info()
+        return np.concatenate((p_or, q_or, v_or, a_or))
+
+    def test_ac_after_dc(self):
+        """the AC result must not depend on a DC powerflow having run before it"""
+        ref_env = self._make_backend()
+        try:
+            ref = self._ac_flows(ref_env.backend)
+        finally:
+            ref_env.close()
+
+        env = self._make_backend()
+        try:
+            self._dc_flows(env.backend)
+            np.testing.assert_allclose(self._ac_flows(env.backend), ref, rtol=0., atol=1e-9)
+        finally:
+            env.close()
+
+    def test_dc_after_ac(self):
+        """... and symmetrically for the DC result"""
+        ref_env = self._make_backend()
+        try:
+            ref = self._dc_flows(ref_env.backend)
+        finally:
+            ref_env.close()
+
+        env = self._make_backend()
+        try:
+            self._ac_flows(env.backend)
+            np.testing.assert_allclose(self._dc_flows(env.backend), ref, rtol=0., atol=1e-9)
+        finally:
+            env.close()
+
+    def test_alternating(self):
+        """alternating the two families on one backend, several times over"""
+        ref_env = self._make_backend()
+        try:
+            ac_ref = self._ac_flows(ref_env.backend)
+        finally:
+            ref_env.close()
+        ref_env = self._make_backend()
+        try:
+            dc_ref = self._dc_flows(ref_env.backend)
+        finally:
+            ref_env.close()
+
+        env = self._make_backend()
+        try:
+            for _ in range(3):
+                np.testing.assert_allclose(self._ac_flows(env.backend), ac_ref, rtol=0., atol=1e-9)
+                np.testing.assert_allclose(self._dc_flows(env.backend), dc_ref, rtol=0., atol=1e-9)
+        finally:
+            env.close()
 
 
 if __name__ == "__main__":
