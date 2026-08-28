@@ -10,7 +10,7 @@ you can obtain one at http://mozilla.org/MPL/2.0/.
 
 SPDX-License-Identifier: MPL-2.0
 
-This file is part of LightSim2grid, LightSim2grid a implements a c++ backend targeting the Grid2Op platform.
+This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 Disclaimer
 ----------
@@ -27,7 +27,6 @@ independant for powersystem focus analysis. Indeed, the code provided in this pa
 developping AI focused controlers. Some of its limitations include, but are not limited to:
 
 - it does not enforce reactive power limits on generators
-- it does not model AC/DC converters
 - transformers have fixed tap ratio (though it can be changed at initialization of the solver)
 - shunts have fixed tap during the Newton-Raphson algorithm (though it can be changed at the initialization of the solver)
 - only powerflow ("steady state") can be performed

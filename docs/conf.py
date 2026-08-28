@@ -22,8 +22,8 @@ copyright = '2019, RTE France'
 author = 'Benjamin DONNOT'
 
 # The full version, including alpha/beta/rc tags
-release = "0.13.1"
-version = '0.13'
+release = "1.0.0.rc4"
+version = '1.0'
 
 # -- General configuration ---------------------------------------------------
 
@@ -34,7 +34,8 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.coverage',
-    'sphinx.ext.imgmath',
+    'sphinx.ext.mathjax',  # client-side math rendering: no local LaTeX install needed
+                           # (unlike sphinx.ext.imgmath, which shells out to `latex`)
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
     # 'builder',
@@ -51,11 +52,22 @@ extensions = [
 
     # for pdf
     # 'rst2pdf.pdfbuilder'
-
-    # markdown renderer
-    # 'm2r',
-    'recommonmark',
 ]
+
+# External inventories so :class:/:func:/:attr: references to third-party types
+# used throughout the docstrings (numpy/scipy/pandas type hints, grid2op and
+# pypowsybl classes) resolve instead of showing up as nitpicky "reference target
+# not found" warnings. Fetched over the network at build time (and cached) --
+# Read the Docs builds have normal internet access; a fully offline build just
+# falls back to unresolved (but non-fatal) references for these.
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/', None),
+    'pandas': ('https://pandas.pydata.org/docs/', None),
+    'grid2op': ('https://grid2op.readthedocs.io/en/latest/', None),
+    'pypowsybl': ('https://pypowsybl.readthedocs.io/en/latest/', None),
+}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = []  # ['_templates']
@@ -71,7 +83,6 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_experimental_html5_writer = True
 html_theme = "sphinx_rtd_theme" #"alabaster" #'basic' # 'alabaster'
 highlight_language = 'python3'
 
