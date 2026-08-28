@@ -1,0 +1,180 @@
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+template<class LinearSolver, class NRSystem>
+bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
+        const EigenRefConstCplxSpMat     & Ybus,
+        const Eigen::Ref<const CplxVect> & V,
+        const Eigen::Ref<const CplxVect> & Sbus,
+        const Eigen::Ref<const IntVect>  & slack_ids,
+        const Eigen::Ref<const RealVect> & slack_weights,
+        const Eigen::Ref<const IntVect>  & pv,
+        const Eigen::Ref<const IntVect>  & pq,
+        int                              max_iter,
+        real_type                        tol)
+{
+    if (!is_linear_solver_valid()) return false;
+
+    reset_timer();
+    err_ = ErrorType::NoError;
+    auto timer     = CustTimer();
+    auto timer_pre = CustTimer();
+
+    // Determine whether topology rebuild is required.
+    const bool need_rebuild = (
+        need_factorize_ ||
+        _solver_control.need_reset_solver() ||
+        _solver_control.has_dimension_changed() ||
+        _solver_control.has_slack_participate_changed() ||
+        _solver_control.ybus_change_sparsity_pattern() ||
+        _solver_control.has_ybus_some_coeffs_zero() ||
+        _solver_control.need_recompute_ybus() ||
+        _solver_control.has_pv_changed() ||
+        _solver_control.has_pq_changed()
+    );
+
+    if (need_rebuild) {
+        // Reset linear solver state before re-initialization.
+        ErrorType rs = _linear_solver.reset();
+        if (rs != ErrorType::NoError) err_ = rs;
+    }
+
+    // linear solver failed to reset or I had a previous error
+    // without a explicit call to "reset"
+    if (!((err_ == ErrorType::NotInitError) || (err_ == ErrorType::NoError))) {
+        timer_pre_proc_ += timer_pre.duration();
+        timer_total_nr_ += timer.duration();
+        return false;
+    }
+    // std::cout << "Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).\n";
+    // Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).
+    _system.update_state(BaseAlgo::lsgrid_ptr_, Ybus, V, Sbus, slack_weights);
+
+    // Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).
+    // std::cout << "Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).\n";
+    if (need_rebuild)
+        _system.init_topology(slack_ids, slack_weights, pv, pq);
+
+    // Phase 2: rebuild J sparsity + value_map, then initialize linear solver.
+    // std::cout << "Phase 2: rebuild J sparsity + value_map, then initialize linear solver.\n";
+    bool need_init = need_rebuild;
+    if (need_rebuild) {
+        _system.build_J_sparsity();
+        n_ = static_cast<int>(_system.J().cols());
+    }
+    // std::cout << "need_init " << need_init << "\n";
+
+
+    // Initial mismatch (negated: Sbus - Scomp)
+    RealVect F = _system.mismatch();
+    timer_pre_proc_ += timer_pre.duration(); 
+    bool converged = _check_for_convergence(F, tol);  // counted in timer_check_
+    nr_iter_       = 0;
+    bool res       = true;
+    bool need_factorize = true;   // factorize on first iteration
+
+    while ((!converged) & (nr_iter_ < max_iter)) {
+        nr_iter_++;
+        // std::cout << "=================================\n";
+        // std::cout << "start iter " << nr_iter_ << std::endl;
+
+        need_factorize = (need_factorize || should_refactor_policy(nr_iter_));
+        if (need_factorize) {
+            // Phase 3: fill J numerically with current V.
+            // std::cout << "fill_internal_variables\n";
+            _system.fill_internal_variables();  // timer_dSbus_
+            // std::cout << "fill_J\n";
+            _system.fill_J();  // timer_fillJ_
+
+            if (need_init) {
+                // New sparsity pattern: analyze (structure) then factorize (values).
+                err_ = _linear_solver.analyze(_system.J());
+                if (err_ == ErrorType::NoError) {
+                    err_ = _linear_solver.factorize(_system.J());
+                }
+                need_init = false;
+                need_factorize_ = false;
+            } else {
+                err_ = _linear_solver.refactorize(_system.J());
+            }
+            if (err_ != ErrorType::NoError) { res = false; break; }
+            need_factorize = false;
+        }
+
+        // Solve J * dx = F  (F = mismatch, negated convention; F overwritten with dx)
+        // std::cout << "_linear_solver.solve(F);\n";
+        err_ = _linear_solver.solve(F);
+        if (err_ != ErrorType::NoError) {
+            res = false; break;
+        }
+
+        // Apply scaling policy (runtime dispatch)
+        // std::cout << "scaling_policy_->scale(_system, F);\n";
+        auto timer_sc = CustTimer();
+        real_type coeff = scaling_policy_->scale(_system, F);
+        timer_scale_ += timer_sc.duration();
+
+        auto timer_va_vm = CustTimer();
+        // std::cout << "apply_step(coeff * F)\n";
+        _system.apply_step(coeff * F);
+        timer_Va_Vm_ += timer_va_vm.duration();
+
+        // New mismatch
+        // std::cout << "mismatch\n";
+        auto timer_mis = CustTimer();
+        F = _system.mismatch();
+        timer_mismatch_ += timer_mis.duration();
+        if (!F.allFinite()) { err_ = ErrorType::InifiniteValue; break; }
+        converged = _check_for_convergence(F, tol);  // timer_check_
+        need_factorize = false;
+    }
+
+    if (!converged) {
+        if (err_ == ErrorType::NoError) err_ = ErrorType::TooManyIterations;
+        res = false;
+    }
+
+    // Synchronise BaseAlgo's voltage state
+    V_  = _system.V();
+    Vm_ = _system.Vm();
+    Va_ = _system.Va();
+
+    // Propagate NRSystem timers to NRAlgo
+    // std::cout << "timers\n";
+    timer_dSbus_ += _system.timer_dSbus();
+    timer_fillJ_ += _system.timer_fillJ();
+    _system.reset_timers();
+    timer_total_nr_ += timer.duration();
+
+    #ifdef __COUT_TIMES
+        {
+            const LinearSolverStats lsstats = detail::get_stats_impl(_linear_solver, 0);
+            std::cout << "Computation time: "
+                      << "\n\t timer_initialize_: " << lsstats.timer_initialize_
+                      << "\n\t timer_dSbus_: " << timer_dSbus_
+                      << "\n\t timer_fillJ_: " << timer_fillJ_
+                      << "\n\t timer_Fx_: " << timer_Fx_
+                      << "\n\t timer_check_: " << timer_check_
+                      << "\n\t timer_solve_: " << lsstats.timer_solve_
+                      << "\n\t timer_total_nr_: " << timer_total_nr_
+                      << "\n\n";
+        }
+    #endif
+    return res;
+}
+
+template<class LinearSolver, class NRSystem>
+void NRAlgo<LinearSolver, NRSystem>::reset()
+{
+    BaseAlgo::reset();
+    _system.clear_jacobian();
+    need_factorize_ = true;
+    n_ = -1;
+    ErrorType reset_status = _linear_solver.reset();
+    if (reset_status != ErrorType::NoError) err_ = reset_status;
+}
