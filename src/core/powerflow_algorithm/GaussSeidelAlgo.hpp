@@ -1,0 +1,63 @@
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#ifndef GAUSSSEIDEL_ALGO_H
+#define GAUSSSEIDEL_ALGO_H
+
+#include "BaseAlgo.hpp"
+
+namespace ls2g {
+
+class LS2G_API GaussSeidelAlgo : public BaseAlgo
+{
+    public:
+        GaussSeidelAlgo() noexcept :BaseAlgo(true) {};
+
+        ~GaussSeidelAlgo() noexcept override = default;
+
+        // todo  can be factorized
+        Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const override {
+            throw std::runtime_error("get_J: There is no jacobian in the Gauss Seidel method");
+        }
+
+        // todo change the name!
+        bool compute_pf(
+            const EigenRefConstCplxSpMat     & Ybus,
+            const Eigen::Ref<const CplxVect> & V,
+            const Eigen::Ref<const CplxVect> & Sbus,
+            const Eigen::Ref<const IntVect>  & slack_ids,
+            const Eigen::Ref<const RealVect> & slack_weights,  // currently unused
+            const Eigen::Ref<const IntVect>  & pv,
+            const Eigen::Ref<const IntVect>  & pq,
+            int                              max_iter,
+            real_type                        tol
+        ) override;
+
+    protected:
+
+        virtual
+        void one_iter(
+            Eigen::Ref<CplxVect>            tmp_Sbus,
+            const EigenRefConstCplxSpMat    & Ybus,
+            const Eigen::Ref<const IntVect> & pv,
+            const Eigen::Ref<const IntVect> & pq
+        );
+
+    private:
+        // no copy allowed
+        GaussSeidelAlgo(const GaussSeidelAlgo&) = delete;
+        GaussSeidelAlgo(GaussSeidelAlgo&&) = delete;
+        GaussSeidelAlgo & operator=(GaussSeidelAlgo&&) = delete;
+        GaussSeidelAlgo & operator=(const GaussSeidelAlgo&) = delete;
+
+};
+
+
+} // namespace ls2g
+
+#endif // GAUSSSEIDEL_ALGO_H

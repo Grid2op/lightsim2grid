@@ -101,6 +101,12 @@ print(f"\t This is a {(total_time_glop_ls) / (full_time_ts) :.1f} speed up from 
 print(f"It took grid2op (with pandapower): {total_time_glop_pp:.2f}s to perform the same computation")
 print(f"\t This is a {(total_time_glop_pp) / (full_time_ts) :.1f} speed up from TimeSerie over raw grid2op (pandapower)")
 
+speedup_ls = total_time_glop_ls / full_time_ts
+speedup_pp = total_time_glop_pp / full_time_ts
+print()
+print(f"In this case then, the `TimeSerie` module is {speedup_ls:.0f} times faster than raw grid2op "
+      f"(lightsim2grid) and {speedup_pp:.0f} times faster than raw grid2op (pandapower)")
+
 #### Check that the results matches
 env.set_id(scenario_id)
 obs = env.reset()

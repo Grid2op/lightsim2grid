@@ -24,13 +24,13 @@ Simply install lightsim2grid as any python package:
 Start Using LightSim2grid
 ---------------------------
 
-The preferred way to use light2im simulator is with Grid2op. And in this case, you can simply use it
+The preferred way to use lightsim2grid simulator is with Grid2op. And in this case, you can simply use it
 this way:
 
 .. code-block:: python
 
     import grid2op
-    from lightsim2grid.LightSimBackend import LightSimBackend
+    from lightsim2grid import LightSimBackend
     from grid2op.Agent import RandomAgent
 
     # create an environment
@@ -47,7 +47,7 @@ this way:
 
     # proceed as you would any open ai gym loop
     nb_episode = 10
-    for _ in range(nb_episde):
+    for _ in range(nb_episode):
         # you perform in this case 10 different episodes
         obs = env.reset()
         reward = env.reward_range[0]
@@ -56,7 +56,7 @@ this way:
             # here you loop on the time steps: at each step your agent receive an observation
             # takes an action
             # and the environment computes the next observation that will be used at the next step.
-            act = agent.act(obs, reward, done)
+            act = my_agent.act(obs, reward, done)
             obs, reward, done, info = env.step(act)
             # the `LightSimBackend` will be used to carry out the powerflow computation instead
             # of the default grid2op `PandaPowerBackend`
@@ -139,6 +139,7 @@ Once done, you can simply "install" the lightsim2grid image with:
 This step should be done only once (unless you delete the image) it will download approximately 4 or 5GB from the
 internet. The lightsim2grid image contains lightsim and grid2op python packages (as well as their
 dependencies), equivalent of what would be installed if you typed:
+
 .. code-block:: bash
 
     pip install -U grid2op[optional] pybind11
@@ -195,9 +196,9 @@ section for more information, in the example above this can look like:
 +++++++++++++++++++++++++++++++++++++++++
 
 Once everything is set-up you can execute anything you want on this container. Note that doing so, the execution
-of the code will be totally independant of your system. Only the things located in `DIR_PATH` will be visible 
+of the code will be totally independant of your system. Only the things located in `DIR_PATH` will be visible
 by your script, only the python package installed in the container will be usable, only the python interpreter
-of the containter (python 3.6 at time of writing) will be usable etc.
+of the containter will be usable etc.
 
 .. code-block:: bash
 
@@ -252,7 +253,7 @@ is distributed
     damages or losses, even if such party shall have 
     been informed of the possibility of such damages.
 
-1. Clean-up
+4. Clean-up
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Once you are done with your experiments, you can stop the docker container:

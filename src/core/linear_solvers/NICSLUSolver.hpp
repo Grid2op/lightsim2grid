@@ -1,0 +1,146 @@
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#ifdef NICSLU_SOLVER_AVAILABLE
+#ifndef NICSLUSOLVER_H
+#define NICSLUSOLVER_H
+
+#include <memory>
+
+// eigen is necessary to easily pass data from numpy to c++ without any copy.
+// and to optimize the matrix operations
+#include "Utils.hpp"
+
+#include "Eigen/Core"
+#include "Eigen/Dense"
+#include "Eigen/SparseCore"
+
+// import nicslu package
+#include "nicslu_cpp.inl"
+
+namespace ls2g {
+
+/**
+class to handle the solver using newton-raphson method, using NICSLU algorithm and sparse matrices.
+
+As long as the admittance matrix of the system does not change, you can reuse the same solver.
+Reusing the same solver is possible, but "reset" method must be called.
+
+Otherwise, unexpected behaviour might follow, including "segfault".
+
+NB: the code of NICSLU is not included in this repository. This class is only compiled if the "setup.py"
+can find a version of `https://github.com/chenxm1986/nicslu`. Be careful though, this code is under some
+specific license.
+
+**/
+
+// TODO use the cpp API instead !
+class LS2G_API NICSLULinearSolver final
+{
+    public:
+        NICSLULinearSolver() noexcept:
+            solver_(),
+            nb_thread_(1),
+            ai_(nullptr), 
+            ap_(nullptr){}
+
+        ~NICSLULinearSolver() noexcept
+        {
+           solver_.Free();
+           // ai_ / ap_ are std::unique_ptr and free themselves.
+        }
+
+        // NICSLULinearSolver(NICSLULinearSolver && other) noexcept: nb_thread_(other.nb_thread_){
+        //     TODO
+        //     if(ai_!= nullptr) delete [] ai_;
+        //     ai_ = other.ai_;
+        //     other.ai_ = nullptr;
+
+        //     if(ap_!= nullptr) delete [] ap_;
+        //     ap_ = other.ap_;
+        //     other.ap_ = nullptr;
+
+        //     std::swap(solver_, other.solver_);
+        // }
+
+        // public api
+        ErrorType reset();
+        ErrorType analyze(const EigenRefConstRealSpMat & J);   // reordering + symbolic factorization (may use values for MC64 scaling)
+        ErrorType factorize(const EigenRefConstRealSpMat & J); // numeric factorization (requires values)
+        ErrorType refactorize(const EigenRefConstRealSpMat & J);  // re-numeric factorization, reuses symbolic
+        ErrorType solve(Eigen::Ref<RealVect> b);
+
+        // can this linear solver solve problem where RHS is a matrix
+        static const bool CAN_SOLVE_MAT;
+
+        // prevent copy and assignment
+        NICSLULinearSolver(const NICSLULinearSolver&) = delete;
+        NICSLULinearSolver(NICSLULinearSolver&&) = delete;
+        NICSLULinearSolver & operator=(NICSLULinearSolver&&) = delete;
+        NICSLULinearSolver & operator=(const NICSLULinearSolver&) = delete;
+        
+    private:
+        // solver initialization
+        CNicsLU solver_;
+        const unsigned int nb_thread_;
+        // ai_ / ap_ own the CSC index buffers passed to NICSLU's Analyze; they must
+        // stay alive until reset() / destruction, which std::unique_ptr handles.
+        std::unique_ptr<unsigned int[]> ai_;
+        std::unique_ptr<unsigned int[]> ap_;
+
+};
+
+#endif // NICSLUSOLVER_H
+
+} // namespace ls2g
+
+#elif defined(_READ_THE_DOCS)
+#ifndef NICSLUSOLVER_H
+#define NICSLUSOLVER_H
+#include "Utils.hpp"
+
+#include "Eigen/Core"
+#include "Eigen/Dense"
+#include "Eigen/SparseCore"
+
+namespace ls2g {
+
+/**
+Doc-only stand-in for NICSLULinearSolver, used when the real (licensed) NICSLU library is
+not available but _READ_THE_DOCS is set: it gives NR_NICSLU (and its DC_NICSLU /
+FDPF_*_NICSLU / NRSing_NICSLU / NRRefactorRetry_NICSLU siblings, see Solvers.hpp) a
+genuine, distinct, fully-functional C++ type -- with the same name and public interface
+as the real NICSLULinearSolver -- so Sphinx can document them as real classes without
+requiring the actual library. Every method is a trivial no-op: this is never meant to
+actually solve a real system, only to be introspected.
+**/
+class LS2G_API NICSLULinearSolver final
+{
+    public:
+        NICSLULinearSolver() noexcept = default;
+        ~NICSLULinearSolver() noexcept = default;
+
+        ErrorType reset() { return ErrorType::NoError; }
+        ErrorType analyze(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType factorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType refactorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
+        ErrorType solve(Eigen::Ref<RealVect> /*b*/) { return ErrorType::NoError; }
+
+        // can this linear solver solve problem where RHS is a matrix
+        static constexpr bool CAN_SOLVE_MAT = false;
+
+        // prevent copy and assignment (matches the real NICSLULinearSolver)
+        NICSLULinearSolver(const NICSLULinearSolver&) = delete;
+        NICSLULinearSolver(NICSLULinearSolver&&) = delete;
+        NICSLULinearSolver & operator=(NICSLULinearSolver&&) = delete;
+        NICSLULinearSolver & operator=(const NICSLULinearSolver&) = delete;
+};
+
+} // namespace ls2g
+#endif // NICSLUSOLVER_H
+#endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
