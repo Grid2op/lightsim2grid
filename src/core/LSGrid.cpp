@@ -671,45 +671,35 @@ void LSGrid::init_bus(unsigned int n_sub,
 
 void LSGrid::reset(bool reset_solver, bool reset_ac, bool reset_dc)
 {
-    if(reset_ac){
-        ac_cache_.id_me_to_solver = SolverBusIdVect();
-        ac_cache_.id_solver_to_me = GlobalBusIdVect();
-        ac_cache_.slack_bus_id_solver = SolverBusIdVect();
-        ac_cache_.mat = Eigen::SparseMatrix<cplx_type>();
-    }
-
-    if(reset_dc){
-        dc_cache_.id_me_to_solver = SolverBusIdVect();
-        dc_cache_.id_solver_to_me = GlobalBusIdVect();
-        dc_cache_.slack_bus_id_solver = SolverBusIdVect();
-        dc_cache_.mat = Eigen::SparseMatrix<real_type>();
-    }
+    // A family's solver-side data is ONE object, so "reset the AC side" is one
+    // call. What clear() deliberately leaves alone is the two policy flags:
+    // `allow_reuse` is the caller's standing choice and a reset is not a request
+    // to change it, and `algo_needs_rebuild` belongs to the algorithm, handled
+    // below with the algorithms themselves.
+    if(reset_ac) ac_cache_.clear();
+    if(reset_dc) dc_cache_.clear();
 
     timer_last_ac_pf_= 0.;
     timer_last_dc_pf_ = 0.;
 
-    ac_cache_.inj = CplxVect();
-    dc_cache_.inj = RealVect();
-    ac_cache_.bus_pv = SolverBusIdVect();
-    ac_cache_.bus_pq = SolverBusIdVect();
-    dc_cache_.bus_pv = SolverBusIdVect();
-    dc_cache_.bus_pq = SolverBusIdVect();
-    dc_cache_.slack_weights = RealVect();
-    ac_cache_.algo_needs_rebuild = false;  // the algorithms themselves are reset below
-    dc_cache_.algo_needs_rebuild = false;
-
     algo_controler_.ac_algo_controler().tell_all_changed();
     algo_controler_.dc_algo_controler().tell_all_changed();
-    tell_solver_need_reset(); // also handles ac_cache_.last_bus_status
-    
-    ac_cache_.slack_bus_id_me = GlobalBusIdVect();  // slack bus id, gridmodel number
-    ac_cache_.slack_bus_id_solver = SolverBusIdVect();  // slack bus id, solver number
-    dc_cache_.slack_bus_id_me = GlobalBusIdVect();
-    dc_cache_.slack_bus_id_solver = SolverBusIdVect();
-    ac_cache_.slack_weights = RealVect();
+    // Retires BOTH caches -- it clears the connectivity snapshot, which is what
+    // `is_consistent` / `unset_changes()` read as "nothing built". Needed even
+    // for a family whose data was left in place just above: the controls say
+    // everything changed, and the snapshot must not contradict them.
+    prevent_cache_reuse();
 
     // reset the solvers
     if (reset_solver){
+        // The algorithms rebuild from scratch just below, so whatever a previous
+        // divergence asked them to redo is moot. Cleared HERE and not
+        // unconditionally: with `reset_solver` false they keep their internals,
+        // and this flag is then the only thing that will still tell them to
+        // rebuild from the cache.
+        ac_cache_.algo_needs_rebuild = false;
+        dc_cache_.algo_needs_rebuild = false;
+
         _algo.reset();
         _algo.set_lsgrid(this);
         _algo.tell_solver_control(algo_controler_.ac_algo_controler());
