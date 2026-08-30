@@ -739,7 +739,6 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     bool is_ac = true;
     CplxVect V = pre_process_solver(Vinit,
-                                    ac_cache_,
                                     algo_controler_.ac_algo_controler());
 
     // start the solver
@@ -1267,14 +1266,13 @@ CplxVect LSGrid::check_solution(const Eigen::Ref<const CplxVect> & V_proposed, b
     // default-constructed (empty) size, and `fill_hvdc_droop_solver_data`'s
     // `id_me_to_solver[bus_id]` lookup (bus ids in the hundreds/thousands) then read
     // out of bounds -- a silent, hard-to-reproduce segfault instead of a clean rebuild.
-    // (the cache-consistency guard in _pre_process_solver_impl now catches this case too,
+    // (the cache-consistency guard in _pre_process_own_cache now catches this case too,
     // and the two families' variants of it; this stays as the local, cheaper statement of
     // what check_solution itself may assume)
     if(ac_cache_.may_be_reused() && ac_cache_.is_consistent(substations_.nb_bus())){
         reset_solver.tell_none_changed();
     }
     CplxVect V = pre_process_solver(V_proposed,
-                                    ac_cache_,
                                     reset_solver,
                                     false);  // do NOT snap regulated buses to their target: we are testing V_proposed as-is
 
@@ -1369,88 +1367,26 @@ void LSGrid::prepare_injection(RealVect & Pbus, bool redo_all, bool converter_ch
         }
 }
 
+// ---------------------------------------------------------------------------
+// THE BUILD, and the two things a caller can want done around it.
+//
+// `_build_into_cache` assembles a solver family's whole input out of this grid.
+// It is the same work whoever asked, and it is the bulk of what used to be one
+// function serving two callers through an `own_cache` flag. What the two callers
+// actually disagree about is everything AROUND it -- the reuse policy and the
+// algorithm on one side, publication and retirement on the other -- so that is
+// what the two entry points below are, and the flag is gone.
+// ---------------------------------------------------------------------------
 template<class MatScalar>
-CplxVect LSGrid::_pre_process_solver_impl(
+CplxVect LSGrid::_build_into_cache(
     const Eigen::Ref<const CplxVect> & Vinit,
     SolverSideCache<MatScalar> & cache,
     const AlgoControl & solver_control,
+    bool force_full_rebuild,
     bool init_pv_vm_targets)
 {
-    // cplx_type matrix => AC solver family, real_type matrix => DC solver family
-    const bool is_ac = SolverSideCache<MatScalar>::is_ac;
-
-    // ---- whose cache is this? ---------------------------------------------------
-    // `ac_pf` / `dc_pf` / `check_solution` pass this grid's own cache: what gets
-    // built here IS the family cache, and this grid's algorithm is what will solve
-    // it. The batch algorithms (BaseBatchSolverSynch, on a private copy of the
-    // grid) pass a cache they own and solve it with an algorithm of their own; for
-    // them this is a pure builder.
-    // One address comparison, because the whole cache is one object -- there is no
-    // way to hand this function half of someone's cache and half of ours.
-    const bool own_cache = _is_own_cache(cache);
-
-    // ---- cache-consistency guard ------------------------------------------------
-    // `solver_control` only records what changed SINCE the last solve of this
-    // family. It cannot say whether that family was ever solved at all, so nothing
-    // stops a caller from asserting "nothing changed" -- which is what
-    // `unset_changes()` used to do for BOTH families at once -- while the
-    // solver-side data of the family about to run is still default-constructed.
-    // The "nothing to rebuild" path was then taken with an empty
-    // `cache.id_me_to_solver` / `cache.mat` / `cache.inj`, and everything downstream indexes those
-    // with bus ids in the hundreds: an out-of-bounds read (a segfault), not a
-    // clean rebuild. Three sequences reached it, all of them documented usage:
-    //     unset_changes(); ac_pf();           // never solved at all
-    //     dc_pf(); unset_changes(); ac_pf();  // built for the other family
-    //     ac_pf(); unset_changes(); dc_pf();  // idem
-    // (the second one is why `LightSimBackend.runpf` carried a `self._last_dc`
-    // `tell_solver_need_reset()` with an "otherwise might segfault" comment, and
-    // the same failure mode `check_solution` guards against locally with
-    // `ac_cache_.id_me_to_solver.size() > 0`).
-    // So: never trust the flags alone. Check that the data they describe is really
-    // there, and fall back to a full rebuild when it is not -- a wrong "nothing
-    // changed" can then cost time, never memory safety. This is a handful of
-    // integer comparisons, off any inner loop. It is also where
-    // `allow_*_cache_reuse(false)` takes effect: a family told not to reuse its
-    // cache simply never has a usable one.
-    // A foreign builder never reuses: `solver_control`, the connectivity snapshot
-    // init_bus_status() raises its flags against, and those flags themselves all
-    // describe THIS grid, and say nothing about what is in someone else's cache.
-    // Free in practice -- every foreign caller asks for a full rebuild anyway.
-    //
-    // Beyond that this path asks only the switch. It does NOT re-verify that the
-    // data behind a "nothing changed" claim exists, because by the time we are here
-    // that claim has already been vouched for:
-    //   - the grid raises the flags itself as it is modified (change_*, deactivate_*,
-    //     init_bus_status, set_state, the copy ctor, a divergence): all of those can
-    //     only make the cache MORE stale, never falsely fresh;
-    //   - `AlgoControl`'s constructor asks for a full rebuild, so a grid that never
-    //     solved rebuilds;
-    //   - python cannot clear the flags: `get_*_algo_controler()` is bound read-only
-    //     (binding_misc.cpp exposes the has_* / need_* getters, no tell_*);
-    //   - the two places that CAN claim "nothing changed" without having built
-    //     anything -- `unset_changes()` and `check_solution()` -- verify it
-    //     themselves, at their own altitude, where an O(nb_bus) check is free.
-    // The assertion below is what keeps that reasoning honest: no cost in release
-    // (-DNDEBUG, what the wheels ship), and it fires in the C++ suite -- which CI
-    // runs under ASan, UBSan and valgrind -- the day a fourth claimant appears.
-    const bool cache_unusable = !own_cache || !cache.may_be_reused();
-    assert((cache_unusable || solver_control.need_reset_solver() ||
-            solver_control.has_dimension_changed() ||
-            cache.is_consistent(substations_.nb_bus())) &&
-           "a 'nothing changed' control was handed to a cache that cannot back it: "
-           "some caller marked this family valid without building it");
-
-    // `_algo` / `_dc_algo` are THIS grid's algorithms and consume this grid's cache
-    // and nothing else. A foreign builder solves with its own (BaseBatchSolverSynch
-    // holds one), so resetting ours would only throw away a factorization our next
-    // own powerflow would have reused.
-    if(own_cache && (solver_control.need_reset_solver() || cache_unusable)){
-        if(is_ac) _algo.reset();
-        else _dc_algo.reset();
-    }
-
     bool redo_all =
-            cache_unusable ||
+            force_full_rebuild ||
             solver_control.need_reset_solver() ||
             solver_control.has_dimension_changed();
 
@@ -1481,7 +1417,7 @@ CplxVect LSGrid::_pre_process_solver_impl(
 
     // init_bus_status can set the flag "has_dimension_change", so redo this here
     redo_all =
-            cache_unusable ||
+            force_full_rebuild ||
             solver_control.need_reset_solver() ||
             solver_control.has_dimension_changed();
     bool converter_changed = false;
@@ -1536,38 +1472,163 @@ CplxVect LSGrid::_pre_process_solver_impl(
         cache.slack_weights = generators_.get_slack_weights_solver(cache.mat.rows(), cache.id_me_to_solver);
     }
 
-    // Set when this family's previous powerflow diverged and its algorithm was
-    // reset (see process_results). Every built-in algorithm also raises its own
-    // `need_factorize_` in reset() and would rebuild without being told, but an
-    // external (plugin) solver is under no such obligation: all it is promised is
-    // the AlgoControl it is handed. Only READ here, and cleared by process_results
-    // once the algorithm has actually run -- check_solution() comes through this
-    // function too, without ever calling compute_pf, and clearing the flag there
-    // would drop a rebuild the next real powerflow still needs.
-    // Only when this grid's own algorithm is the one about to run on what we just
-    // built: a foreign builder configures its own, and telling ours about a solve
-    // it will never perform only desynchronizes it from the cache it still holds.
-    if(own_cache){
-        if(cache_unusable || cache.algo_needs_rebuild){
-            // Either the flags we were handed described a cache that did not exist
-            // (so we rebuilt everything just now), or the previous solve of this
-            // family diverged and its algorithm was reset. Both mean the algorithm
-            // must rebuild its own internals rather than skip on a "nothing
-            // changed" it cannot honour.
-            const AlgoControl all_changed;  // default ctor: everything changed
-            if(is_ac) _algo.tell_solver_control(all_changed);
-            else _dc_algo.tell_solver_control(all_changed);
-        } else {
-            if(is_ac) _algo.tell_solver_control(solver_control);
-            else _dc_algo.tell_solver_control(solver_control);
-        }
+    return V;
+}
+
+CplxVect LSGrid::pre_process_solver(
+    const Eigen::Ref<const CplxVect> & Vinit,
+    const AlgoControl & solver_control,
+    bool init_pv_vm_targets)
+{
+    return _pre_process_own_cache<cplx_type>(Vinit, ac_cache_, solver_control, init_pv_vm_targets);
+}
+
+CplxVect LSGrid::pre_process_dc_solver(
+    const Eigen::Ref<const CplxVect> & Vinit,
+    const AlgoControl & solver_control)
+{
+    return _pre_process_own_cache<real_type>(Vinit, dc_cache_, solver_control, true);
+}
+
+template<class MatScalar>
+CplxVect LSGrid::_pre_process_own_cache(
+    const Eigen::Ref<const CplxVect> & Vinit,
+    SolverSideCache<MatScalar> & cache,
+    const AlgoControl & solver_control,
+    bool init_pv_vm_targets)
+{
+    // cplx_type matrix => AC solver family, real_type matrix => DC solver family
+    const bool is_ac = SolverSideCache<MatScalar>::is_ac;
+
+    // ---- may the previous build be re-stamped rather than rebuilt? --------------
+    // `solver_control` only records what changed SINCE the last solve of this
+    // family. It cannot say whether that family was ever solved at all, so nothing
+    // stops a caller from asserting "nothing changed" -- which is what
+    // `unset_changes()` used to do for BOTH families at once -- while the
+    // solver-side data of the family about to run is still default-constructed.
+    // The "nothing to rebuild" path was then taken with an empty
+    // `cache.id_me_to_solver` / `cache.mat` / `cache.inj`, and everything downstream
+    // indexes those with bus ids in the hundreds: an out-of-bounds read (a
+    // segfault), not a clean rebuild. Three sequences reached it, all of them
+    // documented usage:
+    //     unset_changes(); ac_pf();           // never solved at all
+    //     dc_pf(); unset_changes(); ac_pf();  // built for the other family
+    //     ac_pf(); unset_changes(); dc_pf();  // idem
+    // (the second one is why `LightSimBackend.runpf` carried a `self._last_dc`
+    // `tell_solver_need_reset()` with an "otherwise might segfault" comment, and
+    // the same failure mode `check_solution` guards against locally.)
+    //
+    // This path asks only the switch -- it is also where `allow_*_cache_reuse(false)`
+    // takes effect. It does NOT re-verify that the data behind a "nothing changed"
+    // claim exists, because by the time we are here that claim has already been
+    // vouched for:
+    //   - the grid raises the flags itself as it is modified (change_*, deactivate_*,
+    //     init_bus_status, set_state, the copy ctor, a divergence): all of those can
+    //     only make the cache MORE stale, never falsely fresh;
+    //   - `AlgoControl`'s constructor asks for a full rebuild, so a grid that never
+    //     solved rebuilds;
+    //   - python cannot clear the flags: `get_*_algo_controler()` is bound read-only
+    //     (binding_misc.cpp exposes the has_* / need_* getters, no tell_*);
+    //   - the two places that CAN claim "nothing changed" without having built
+    //     anything -- `unset_changes()` and `check_solution()` -- verify it
+    //     themselves, at their own altitude, where an O(nb_bus) check is free.
+    // The assertion below is what keeps that reasoning honest: no cost in release
+    // (-DNDEBUG, what the wheels ship), and it fires in the C++ suite -- which CI
+    // runs under ASan, UBSan and valgrind -- the day a fourth claimant appears.
+    const bool cache_unusable = !cache.may_be_reused();
+    assert((cache_unusable || solver_control.need_reset_solver() ||
+            solver_control.has_dimension_changed() ||
+            cache.is_consistent(substations_.nb_bus())) &&
+           "a 'nothing changed' control was handed to a cache that cannot back it: "
+           "some caller marked this family valid without building it");
+
+    // Our own algorithm is about to run on what we are about to build, so a full
+    // rebuild means its internals (a factorization of the previous system) are
+    // stale too.
+    if(solver_control.need_reset_solver() || cache_unusable){
+        if(is_ac) _algo.reset();
+        else _dc_algo.reset();
     }
 
-    // A foreign build has to PUBLISH what it built into this grid's own cache,
-    // because the solver does not get its NR extensions from what it was handed --
-    // it reaches back into the LSGrid through `lsgrid_ptr` and reads the members:
-    //   Base           -> get_free_vm_slack_solver_buses()   (slack_bus_id_solver,
-    //                       id_me_to_solver)
+    CplxVect V = _build_into_cache(Vinit, cache, solver_control, cache_unusable, init_pv_vm_targets);
+
+    // `cache.algo_needs_rebuild` is set when this family's previous powerflow
+    // diverged and its algorithm was reset (see process_results). Every built-in
+    // algorithm also raises its own `need_factorize_` in reset() and would rebuild
+    // without being told, but an external (plugin) solver is under no such
+    // obligation: all it is promised is the AlgoControl it is handed. Only READ
+    // here, and cleared by process_results once the algorithm has actually run --
+    // check_solution() comes through this function too, without ever calling
+    // compute_pf, and clearing the flag there would drop a rebuild the next real
+    // powerflow still needs.
+    if(cache_unusable || cache.algo_needs_rebuild){
+        // Either the flags we were handed described a cache that did not exist
+        // (so we rebuilt everything just now), or the previous solve of this
+        // family diverged and its algorithm was reset. Both mean the algorithm
+        // must rebuild its own internals rather than skip on a "nothing
+        // changed" it cannot honour.
+        const AlgoControl all_changed;  // default ctor: everything changed
+        if(is_ac) _algo.tell_solver_control(all_changed);
+        else _dc_algo.tell_solver_control(all_changed);
+    } else {
+        if(is_ac) _algo.tell_solver_control(solver_control);
+        else _dc_algo.tell_solver_control(solver_control);
+    }
+    return V;
+}
+
+CplxVect LSGrid::build_solver_input(
+    const Eigen::Ref<const CplxVect> & Vinit,
+    AcSolverCache & out,
+    const AlgoControl & solver_control)
+{
+    return _build_foreign_cache<cplx_type>(Vinit, out, solver_control);
+}
+
+CplxVect LSGrid::build_dc_solver_input(
+    const Eigen::Ref<const CplxVect> & Vinit,
+    DcSolverCache & out,
+    const AlgoControl & solver_control)
+{
+    return _build_foreign_cache<real_type>(Vinit, out, solver_control);
+}
+
+template<class MatScalar>
+CplxVect LSGrid::_build_foreign_cache(
+    const Eigen::Ref<const CplxVect> & Vinit,
+    SolverSideCache<MatScalar> & out,
+    const AlgoControl & solver_control)
+{
+    // Our own cache is not a foreign one: taking this path with it would rebuild
+    // it while telling our algorithm nothing, then retire what was just built.
+    // The caller wanted pre_process_solver. One address comparison, once per
+    // build, and it cannot be got wrong: the family is already in the type.
+    if(_is_own_cache(out)){
+        throw std::runtime_error(
+            "LSGrid::build_solver_input: handed this grid's own solver cache. That "
+            "entry point builds into a cache the CALLER owns and solves with the "
+            "caller's own algorithm; to build this grid's own cache for its own "
+            "powerflow, call pre_process_solver / pre_process_dc_solver instead.");
+    }
+
+    // A foreign build never re-stamps: `solver_control`, the connectivity snapshot
+    // init_bus_status() raises its flags against, and those flags themselves all
+    // describe THIS grid, and say nothing about what is in `out`.
+    CplxVect V = _build_into_cache(Vinit, out, solver_control,
+                                   /*force_full_rebuild=*/true,
+                                   /*init_pv_vm_targets=*/true);
+
+    // `_algo` / `_dc_algo` are deliberately untouched: they are THIS grid's, they
+    // hold a factorization of THIS grid's cache, and the caller solves `out` with
+    // an algorithm of its own (BaseBatchSolverSynch holds one). Resetting or
+    // re-configuring ours for a solve we will never perform would only throw that
+    // factorization away and desynchronize the algorithm from the cache it holds.
+
+    // ---- publish the layout, then retire it -------------------------------------
+    // The NR extensions do not read the cache the solver was handed. They call back
+    // into the grid through `lsgrid_ptr`:
+    //   Base           -> get_free_vm_slack_solver_buses()  (id_me_to_solver,
+    //                       slack_bus_id_solver)
     //   Hvdc           -> fill_hvdc_droop_solver_data()      (id_me_to_solver)
     //   VoltageControl -> fill_voltage_control_solver_data() (id_me_to_solver,
     //                       id_solver_to_me, bus_pq, and the two above)
@@ -1583,40 +1644,22 @@ CplxVect LSGrid::_pre_process_solver_impl(
     // caller's while its matrix and injections are still ours. Right size, passes
     // every structural check, and wrong. It is only ever read by the extensions,
     // during the caller's own solve; this grid must never SOLVE from it.
-    if(!own_cache){
-        SolverSideCache<MatScalar> & mine = _own_cache_for(cache);
-        mine.id_me_to_solver = cache.id_me_to_solver;
-        mine.id_solver_to_me = cache.id_solver_to_me;
-        mine.slack_bus_id_me = cache.slack_bus_id_me;
-        mine.slack_bus_id_solver = cache.slack_bus_id_solver;
-        mine.slack_weights = cache.slack_weights;
-        mine.bus_pv = cache.bus_pv;
-        mine.bus_pq = cache.bus_pq;
-        // ... and it is not a cache any more, it is a view for the extensions:
-        // clear the snapshot so the next own powerflow of this family rebuilds
-        // instead of solving the mixture (is_usable() rejects a snapshot that does
-        // not cover the grid), and raise the flags that say so.
-        _retire_cache(mine, is_ac ? algo_controler_.ac_algo_controler()
-                                  : algo_controler_.dc_algo_controler());
-    }
+    SolverSideCache<MatScalar> & mine = _own_cache_for(out);
+    mine.id_me_to_solver = out.id_me_to_solver;
+    mine.id_solver_to_me = out.id_solver_to_me;
+    mine.slack_bus_id_me = out.slack_bus_id_me;
+    mine.slack_bus_id_solver = out.slack_bus_id_solver;
+    mine.slack_weights = out.slack_weights;
+    mine.bus_pv = out.bus_pv;
+    mine.bus_pq = out.bus_pq;
+    // ... and it is not a cache any more, it is a view for the extensions:
+    // clear the snapshot so the next own powerflow of this family rebuilds
+    // instead of solving the mixture (is_consistent() rejects a snapshot that does
+    // not cover the grid), and raise the flags that say so.
+    _retire_cache(mine, SolverSideCache<MatScalar>::is_ac
+                            ? algo_controler_.ac_algo_controler()
+                            : algo_controler_.dc_algo_controler());
     return V;
-}
-
-CplxVect LSGrid::pre_process_solver(
-    const Eigen::Ref<const CplxVect> & Vinit,
-    AcSolverCache & cache,
-    const AlgoControl & solver_control,
-    bool init_pv_vm_targets)
-{
-    return _pre_process_solver_impl<cplx_type>(Vinit, cache, solver_control, init_pv_vm_targets);
-}
-
-CplxVect LSGrid::pre_process_dc_solver(
-    const Eigen::Ref<const CplxVect> & Vinit,
-    DcSolverCache & cache,
-    const AlgoControl & solver_control)
-{
-    return _pre_process_solver_impl<real_type>(Vinit, cache, solver_control, true);
 }
 
 CplxVect LSGrid::_get_results_back_to_orig_nodes(const Eigen::Ref<const CplxVect> & res_tmp,
@@ -2075,7 +2118,6 @@ CplxVect LSGrid::dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
     // pre process the data: builds the real DC admittance matrix dc_cache_.mat and real power vector dc_cache_.inj
     bool is_ac = false;
     CplxVect V = pre_process_dc_solver(Vinit,
-                                       dc_cache_,
                                        algo_controler_.dc_algo_controler());
     // start the solver (native real DC entry point)
     conv = _dc_algo.compute_pf_dc(

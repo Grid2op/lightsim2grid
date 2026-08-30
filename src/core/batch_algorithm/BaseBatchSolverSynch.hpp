@@ -526,11 +526,11 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _algo_controler.tell_all_changed();
             CplxVect res;
             if(ac_solver_used){
-                res = _grid_model.pre_process_solver(Vinit, ac_cache_, _algo_controler);
+                res = _grid_model.build_solver_input(Vinit, ac_cache_, _algo_controler);
                 nb_buses_solver_ = static_cast<int>(ac_cache_.mat.cols());
             } else {
                 // native real DC path: build the real Bbus / Pbus
-                res = _grid_model.pre_process_dc_solver(Vinit, dc_cache_, _algo_controler);
+                res = _grid_model.build_dc_solver_input(Vinit, dc_cache_, _algo_controler);
                 nb_buses_solver_ = static_cast<int>(dc_cache_.mat.cols());
             }
             return res;

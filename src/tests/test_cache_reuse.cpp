@@ -426,7 +426,7 @@ TEST_CASE("a build into someone else's cache never leaves this grid solving a mi
         // exactly what a batch does: its own cache, its own control
         ls2g::AcSolverCache foreign;
         const ls2g::AlgoControl foreign_control;  // default ctor: everything changed
-        grid.pre_process_solver(flat_start(grid), foreign, foreign_control);
+        grid.build_solver_input(flat_start(grid), foreign, foreign_control);
 
         // it built the WHOLE cache into the caller's object ...
         CHECK(foreign.mat.rows() == 14);
@@ -452,7 +452,7 @@ TEST_CASE("a build into someone else's cache never leaves this grid solving a mi
 
         ls2g::DcSolverCache foreign;
         const ls2g::AlgoControl foreign_control;
-        grid.pre_process_dc_solver(flat_start(grid), foreign, foreign_control);
+        grid.build_dc_solver_input(flat_start(grid), foreign, foreign_control);
 
         CHECK(foreign.mat.rows() == 14);
         CHECK(foreign.inj.size() == 14);
@@ -461,6 +461,41 @@ TEST_CASE("a build into someone else's cache never leaves this grid solving a mi
 
         CHECK((solve_dc(grid) - v_before).norm() < 1e-9);
     }
+    SECTION("a foreign build ignores a 'nothing changed' control"){
+        // The own / foreign distinction used to be a runtime flag inside ONE
+        // function (`own_cache = _is_own_cache(cache)`); it is now which of two
+        // functions you call, and `build_solver_input` hardcodes a full rebuild
+        // instead of consulting the reuse policy.
+        //
+        // This is the section that would catch that being undone. `solver_control`,
+        // the connectivity snapshot and the change flags all describe THIS grid and
+        // say nothing about the caller's cache -- so honouring a "nothing changed"
+        // claim about a foreign cache means re-stamping only part of it and leaving
+        // the rest from whatever was there before. Here "before" is nothing at all,
+        // so a foreign build that believed the claim would hand back an empty
+        // labelling and an empty matrix; with a non-empty one it would be worse than
+        // empty, because every size would still look right.
+        LSGrid grid = make_grid();
+        const CplxVect v_before = solve_ac(grid);
+        REQUIRE(v_before.size() == 14);
+
+        ls2g::AcSolverCache foreign;   // nothing has ever been built into it
+        ls2g::AlgoControl lying_control;
+        lying_control.tell_none_changed();   // ... and a control that says so is fine
+        grid.build_solver_input(flat_start(grid), foreign, lying_control);
+
+        // built in full regardless of what the control claimed
+        CHECK(foreign.mat.rows() == 14);
+        CHECK(foreign.mat.cols() == 14);
+        CHECK(foreign.inj.size() == 14);
+        CHECK(foreign.slack_weights.size() == 14);
+        CHECK(foreign.bus_pq.size() > 0);
+        CHECK(foreign.id_solver_to_me.size() == 14);
+        CHECK(foreign.id_me_to_solver.size() == grid.total_bus());
+
+        // and the grid's own next powerflow is still unaffected by the detour
+        CHECK((solve_ac(grid) - v_before).norm() < 1e-9);
+    }
     SECTION("one family's foreign build leaves the other family's cache alone"){
         LSGrid grid = make_grid();
         const CplxVect v_ac_before = solve_ac(grid);
@@ -468,7 +503,7 @@ TEST_CASE("a build into someone else's cache never leaves this grid solving a mi
 
         ls2g::DcSolverCache foreign;
         const ls2g::AlgoControl foreign_control;
-        grid.pre_process_dc_solver(flat_start(grid), foreign, foreign_control);
+        grid.build_dc_solver_input(flat_start(grid), foreign, foreign_control);
 
         CHECK(grid.get_dc_algo_controler().need_reset_solver());
         CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // AC untouched

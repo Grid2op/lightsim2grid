@@ -1871,17 +1871,20 @@ class LS2G_API LSGrid final
         if you will perform a powerflow after it or not. (usually put ``true`` here).
 
         /**
-         * Build (or re-stamp) everything a solver family needs, into `cache`.
+         * Build (or re-stamp) this grid's OWN solver-side cache for the AC family,
+         * and hand the result to this grid's own algorithm.
          *
-         * `cache` is the whole output: bus labelling, matrix, injections, slack,
-         * pv-pq split. Passing it as ONE object is the point -- see
-         * SolverSideCache.hpp. Two kinds of caller:
-         *   - this grid itself (ac_pf / dc_pf / check_solution) passes ac_cache_ /
-         *     dc_cache_, so what comes out IS the family cache and may be reused by
-         *     the next powerflow of that family;
-         *   - anything else (the batch algorithms) passes a cache it owns. That
-         *     never reuses, and it leaves this grid's own cache of that family
-         *     marked for a full rebuild -- see the end of _pre_process_solver_impl.
+         * The cache is not a parameter: there is exactly one AC cache this can mean
+         * (`ac_cache_`), and this entry point is defined by the fact that `_algo` is
+         * about to solve what it produces. It therefore does the two things that only
+         * make sense for our own solve, around the shared build:
+         *   - it decides whether the previous build may be re-stamped rather than
+         *     rebuilt (the reuse policy: `allow_ac_cache_reuse`, the change flags);
+         *   - it resets / re-configures `_algo` to match what was rebuilt.
+         *
+         * To build a system out of this grid into a cache YOU own -- which is what the
+         * batch algorithms do -- call `build_solver_input` instead. That is a
+         * genuinely different operation, not this one with a flag: see there.
          *
          * `init_pv_vm_targets`: when true (every real powerflow), voltage-controlled
          * elements with no droop/slope (generators, HVDC converters, zero-slope SVCs
@@ -1894,13 +1897,47 @@ class LS2G_API LSGrid final
          * like a large spurious power mismatch at a strongly-meshed bus.
          */
         CplxVect pre_process_solver(const Eigen::Ref<const CplxVect> & Vinit,
-                                    AcSolverCache & cache,
                                     const AlgoControl & solver_control,
                                     bool init_pv_vm_targets = true);
 
-        /// DC counterpart: real Bbus / Pbus, no `init_pv_vm_targets` (always on).
+        /// DC counterpart: builds `dc_cache_` (real Bbus / Pbus) for `_dc_algo`, no
+        /// `init_pv_vm_targets` (always on).
         CplxVect pre_process_dc_solver(const Eigen::Ref<const CplxVect> & Vinit,
-                                       DcSolverCache & cache,
+                                       const AlgoControl & solver_control);
+
+        /**
+         * Build a complete AC solver input out of this grid, into a cache the CALLER
+         * owns, to be solved by the CALLER's own algorithm. This is what the batch
+         * algorithms (BaseBatchSolverSynch, working on a private copy of the grid) use.
+         *
+         * Not `pre_process_solver` with a different cache -- a different operation:
+         *
+         *  - It never re-stamps. `solver_control`, this grid's connectivity snapshot
+         *    and its change flags all describe THIS grid; none of them says anything
+         *    about what is in `out`. So `out` is always rebuilt from scratch. (Free in
+         *    practice: a caller handing over its own cache asks for a full rebuild
+         *    anyway -- but that is now a property of this function, not a courtesy of
+         *    the caller.)
+         *  - It leaves `_algo` / `_dc_algo` alone. They are this grid's, they hold a
+         *    factorization of this grid's own cache, and they will not run on `out`.
+         *  - It PUBLISHES the bus labelling and the pv-pq split into this grid's own
+         *    cache, then retires it. The NR extensions (MultiSlack, VoltageControl,
+         *    Hvdc) do not read the cache they were handed: they call back into the
+         *    grid through `lsgrid_ptr` (get_free_vm_slack_solver_buses,
+         *    fill_hvdc_droop_solver_data, fill_voltage_control_solver_data -- that
+         *    last one needs `bus_pq`). During the caller's solve those must answer in
+         *    the caller's labelling, or remote voltage control is silently dropped.
+         *    See the publication step at the end of `_build_foreign_cache`.
+         *
+         * Throws if handed this grid's own cache -- that is `pre_process_solver`.
+         */
+        CplxVect build_solver_input(const Eigen::Ref<const CplxVect> & Vinit,
+                                    AcSolverCache & out,
+                                    const AlgoControl & solver_control);
+
+        /// DC counterpart of `build_solver_input`: real Bbus / Pbus into `out`.
+        CplxVect build_dc_solver_input(const Eigen::Ref<const CplxVect> & Vinit,
+                                       DcSolverCache & out,
                                        const AlgoControl & solver_control);
 
         //for FDPF
@@ -2086,25 +2123,57 @@ class LS2G_API LSGrid final
         }
     
     protected:
-        // Shared implementation of pre_process_solver (AC: complex Ybus / Sbus) and
-        // pre_process_dc_solver (DC: real Bbus / Pbus). The matrix scalar type selects the
-        // family (cplx_type => AC, real_type => DC); the type-specific steps (matrix init / fill,
-        // injection assembly) are tag-dispatched to the overloads just below.
-        // inj stays a plain reference (not Eigen::Ref): it is forwarded straight into
-        // prepare_injection (CplxVect&/RealVect& overload), which reassigns/resizes it
-        // -- not a template-deduction issue here (MatScalar/InjVect are always given
-        // explicitly at the two call sites below), just resize-forwarding.
-        // Shared implementation of pre_process_solver (AC: complex Ybus / Sbus) and
-        // pre_process_dc_solver (DC: real Bbus / Pbus). The cache's scalar type
-        // selects the family; the type-specific steps (matrix init / fill, injection
-        // assembly) are tag-dispatched to the overloads just below.
+        /**
+         * THE BUILD. Everything a solver family needs, assembled out of this grid
+         * into `cache`: bus labelling, matrix, injections, slack, pv-pq split.
+         *
+         * Deliberately knows nothing about whose cache this is. No reuse policy, no
+         * algorithm, no publication -- those are the two entry points' business, and
+         * they are the ONLY thing that differs between them (`_pre_process_own_cache`
+         * and `_build_foreign_cache` below). The cache's scalar type selects the
+         * family; the type-specific steps (matrix init / fill, injection assembly)
+         * are tag-dispatched to the overloads further down.
+         *
+         * `force_full_rebuild` is the caller's half of the "may I re-stamp?" answer:
+         * the own-cache path passes its reuse policy, the foreign path passes true.
+         * It is a parameter and not a member read because it is exactly what the two
+         * entry points disagree about. Note it cannot simply be `redo_all`: that is
+         * recomputed inside, because init_bus_status() can raise
+         * has_dimension_changed() half way through.
+         */
         template<class MatScalar>
-        CplxVect _pre_process_solver_impl(const Eigen::Ref<const CplxVect> & Vinit,
-                                          SolverSideCache<MatScalar> & cache,
-                                          const AlgoControl & solver_control,
-                                          bool init_pv_vm_targets);
+        CplxVect _build_into_cache(const Eigen::Ref<const CplxVect> & Vinit,
+                                   SolverSideCache<MatScalar> & cache,
+                                   const AlgoControl & solver_control,
+                                   bool force_full_rebuild,
+                                   bool init_pv_vm_targets);
+
+        /**
+         * `pre_process_solver` / `pre_process_dc_solver` for either family: the reuse
+         * policy and this grid's algorithm, wrapped around `_build_into_cache`.
+         * `cache` is always ac_cache_ or dc_cache_ -- the public entry points are the
+         * only callers and they pass the member that matches MatScalar.
+         */
+        template<class MatScalar>
+        CplxVect _pre_process_own_cache(const Eigen::Ref<const CplxVect> & Vinit,
+                                        SolverSideCache<MatScalar> & cache,
+                                        const AlgoControl & solver_control,
+                                        bool init_pv_vm_targets);
+
+        /**
+         * `build_solver_input` / `build_dc_solver_input` for either family: a full
+         * rebuild into `out`, then publish the layout into our own cache for the NR
+         * extensions and retire it. Never touches `_algo` / `_dc_algo`.
+         */
+        template<class MatScalar>
+        CplxVect _build_foreign_cache(const Eigen::Ref<const CplxVect> & Vinit,
+                                      SolverSideCache<MatScalar> & out,
+                                      const AlgoControl & solver_control);
 
         // Is `cache` this grid's own cache for its family, or someone else's?
+        // No longer a dispatch -- which entry point you called is what decides that
+        // -- but the precondition check `build_solver_input` rejects a caller with:
+        // handing it our own cache means it wanted `pre_process_solver`.
         // Overloaded rather than branched on a runtime flag: the family is already
         // in the type, so this is one address comparison and no way to get it wrong.
         [[nodiscard]] bool _is_own_cache(const AcSolverCache & c) const noexcept {return &c == &ac_cache_;}

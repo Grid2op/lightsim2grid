@@ -154,9 +154,17 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   labelling, ``Ybus`` / ``Sbus``, the slack, the PV / PQ split and each family's connectivity
   snapshot are one picture of the grid taken at one instant, expressed in ONE bus labelling; they
   are now built, handed over and retired as one unit. ``LSGrid`` holds ``ac_cache_`` / ``dc_cache_``;
-  ``pre_process_solver`` / ``pre_process_dc_solver`` (C++ only, never exposed to python) take one
-  cache reference instead of seven loose containers. **This changes ``LSGrid``'s member layout**, so
-  anything that casts an ``LSGrid`` across a module boundary (``gpusim2grid``) must be rebuilt
+  ``pre_process_solver`` / ``pre_process_dc_solver`` (C++ only, never exposed to python) no longer
+  take a cache at all: they are defined by the fact that they build ``ac_cache_`` / ``dc_cache_`` for
+  this grid's own algorithm. Building a solver input into a cache the CALLER owns -- what the batch
+  algorithms do -- is now a separate pair, ``build_solver_input`` / ``build_dc_solver_input``, rather
+  than the same function distinguishing the two by comparing the cache's address. The two really are
+  different operations: the own-cache pair applies the reuse policy and resets / re-configures
+  ``_algo``; the foreign pair never re-stamps (the change flags describe THIS grid and say nothing
+  about someone else's cache), leaves this grid's algorithms alone, and publishes the labelling and
+  PV / PQ split into this grid's cache for the NR extensions before retiring it. The assembly itself
+  is shared, unchanged, in one private ``_build_into_cache``.
+  **This changes ``LSGrid``'s member layout**, so anything that casts an ``LSGrid`` across a module boundary (``gpusim2grid``) must be rebuilt
   against these headers -- which the plugin ABI policy in ``docs/solver_plugin.rst`` already
   requires. Nothing changes for python.
 - [FIXED] a batch algorithm no longer writes half of what it builds into the grid's cache.
@@ -262,7 +270,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``LightSimBackend.runpf`` already carried a python-side workaround for the second one (the
   ``self._last_dc`` ``tell_solver_need_reset()``, comment: "otherwise might segfault"), and
   ``check_solution`` guarded against the first one locally with ``id_me_to_ac_solver_.size() > 0``.
-  The check now lives where the reuse decision is made instead: ``_pre_process_solver_impl``
+  The check now lives where the reuse decision is made instead: ``_pre_process_own_cache``
   verifies, in a handful of integer comparisons, that the data the flags describe is actually
   there, and falls back to a full rebuild otherwise. A wrong "nothing changed" can now cost time,
   never memory safety.
