@@ -194,15 +194,21 @@ class TwoSidesContainer : public GenericContainer
             side_2_.contribute_to_buses(el_id, substation, sign, crossed);
         }
 
-        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation) override {
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation, DualAlgoControl & solver_control) override {
             const int nb_el = nb();
-            DualAlgoControl unused_solver_control;
             const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
             const GlobalBusIdVect & bus_side_2_id_ = get_buses_side_2();
             for(int i = 0; i < nb_el; ++i){
                 if(!status_global_[i]){
-                    side_1_.deactivate(i, unused_solver_control, substation);
-                    side_2_.deactivate(i, unused_solver_control, substation);
+                    // the branch is globally off, so by contribute_to_buses it already
+                    // holds nothing: the bracket takes nothing away and puts nothing
+                    // back. Applied rather than assumed, and through the branch's rule
+                    // -- a side's own deactivate() would use the one-sided one and
+                    // decrement a bus the gate says the branch never held.
+                    _apply_and_track_buses(i, substation, solver_control, [&]{
+                        side_1_.deactivate_no_bus_tracking(i, solver_control);
+                        side_2_.deactivate_no_bus_tracking(i, solver_control);
+                    });
                     continue;
                 }
                 // A side is "outside the main component" only if it is CONNECTED
@@ -218,9 +224,13 @@ class TwoSidesContainer : public GenericContainer
                     // island, boundary, or (defensively) a branch straddling two
                     // components: drop the whole element rather than throw. Keeping
                     // the main component well-posed is the goal of this function.
-                    side_1_.deactivate(i, unused_solver_control, substation);
-                    side_2_.deactivate(i, unused_solver_control, substation);
-                    if(!ignore_status_global_) status_global_[i] = false;
+                    // One bracket around both sides AND the `status_global_` flip, as
+                    // everywhere else: the gate is what contribute_to_buses reads first.
+                    _apply_and_track_buses(i, substation, solver_control, [&]{
+                        side_1_.deactivate_no_bus_tracking(i, solver_control);
+                        side_2_.deactivate_no_bus_tracking(i, solver_control);
+                        if(!ignore_status_global_) status_global_[i] = false;
+                    });
                 }
             }
         }
@@ -265,25 +275,53 @@ class TwoSidesContainer : public GenericContainer
             side_1_._check_pos_topo_vect_filled();
             side_2_._check_pos_topo_vect_filled();
 
-            std::vector<bool> side1_changed = side_1_.update_topo(has_changed, new_values, solver_control, substations);
-            std::vector<bool> side2_changed = side_2_.update_topo(has_changed, new_values, solver_control, substations);
+            const int nb_el = nb();
+            const int nb_topo = static_cast<int>(has_changed.rows());
+            std::vector<bool> side1_changed(nb_el, false);
+            std::vector<bool> side2_changed(nb_el, false);
+            std::vector<bool> real_changed(nb_el, false);
+
+            for(int el_id=0; el_id<nb_el; ++el_id)
+            {
+                const int pos1 = side_1_.checked_pos_topo_vect(el_id, nb_topo);
+                const int pos2 = side_2_.checked_pos_topo_vect(el_id, nb_topo);
+                const bool touched_1 = has_changed(pos1);
+                const bool touched_2 = has_changed(pos2);
+                // an element the caller did not touch mutates nothing, so it must not
+                // be bracketed either -- see OneSideContainer::update_topo.
+                if(!touched_1 && !touched_2) continue;
+
+                // The branch counts ONCE, around everything this element's entry does:
+                // both side moves AND `resolve_status`, which sets `status_global_` --
+                // the gate contribute_to_buses reads FIRST. Leaving resolve_status
+                // outside the bracket is how a bus whose only element was the ex side
+                // of a line stayed counted after the line was disconnected: the system
+                // lost a bus, and nothing told the solver its dimension had changed.
+                // The sides use the *_no_bus_tracking entry point for the same reason
+                // deactivate() does: a line end does not own its contribution.
+                bool real_change = false;
+                _apply_and_track_buses(el_id, substations, solver_control, [&]{
+                    const bool s1 = side_1_.update_topo_one_el_no_bus_tracking(el_id, has_changed, new_values, solver_control, substations);
+                    const bool s2 = side_2_.update_topo_one_el_no_bus_tracking(el_id, has_changed, new_values, solver_control, substations);
+                    side1_changed[el_id] = s1;
+                    side2_changed[el_id] = s2;
+                    real_change = s1 || s2;
+                    // set the global status
+                    if(touched_1){
+                        real_change = resolve_status(el_id, true, solver_control) || real_change;
+                    }
+                    if(touched_2){
+                        real_change = resolve_status(el_id, false, solver_control) || real_change;
+                    }
+                });
+                real_changed[el_id] = real_change;
+            }
             // used for updating derived class for example.
             this->_update_topo(solver_control, substations, side1_changed, side2_changed);
 
-            // set the global status
-            int nb_el = nb();
             for(int el_id=0; el_id<nb_el; ++el_id)
             {
-                int pos1 = side_1_.pos_topo_vect_(el_id);
-                int pos2 = side_2_.pos_topo_vect_(el_id);
-                bool real_change = side1_changed[el_id] || side2_changed[el_id];
-                if(has_changed(pos1)){
-                    real_change = resolve_status(el_id, true, solver_control) || real_change;
-                }
-                if(has_changed(pos2)){
-                    real_change = resolve_status(el_id, false, solver_control) || real_change;
-                }
-                if(real_change) this->_update_effective_coeffs_one_el(el_id);
+                if(real_changed[el_id]) this->_update_effective_coeffs_one_el(el_id);
             }
         }
 

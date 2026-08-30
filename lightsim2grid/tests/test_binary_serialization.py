@@ -574,13 +574,13 @@ class TestSerializedEnumValues(unittest.TestCase):
                          {"VSC": 0, "LCC": 1})
 
 
-# reference file saved with binary format 3 (see BINARY_FORMAT_VERSION in
+# reference file saved with binary format 6 (see BINARY_FORMAT_VERSION in
 # src/core/BinaryArchive.hpp) + a few values it is known to contain, used by
 # TestBinaryLayoutUnchanged below. Regenerate (only after a deliberate format
 # bump) with: python -m lightsim2grid.tests.test_binary_serialization regen
 FIXTURE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "binary_format_fixture",
-                            "case14_sandbox_format4.lsb")
+                            "case14_sandbox_format6.lsb")
 FIXTURE_ENV_NAME = "l2rpn_case14_sandbox"
 FIXTURE_N_SUB = 14
 FIXTURE_N_LOAD = 11

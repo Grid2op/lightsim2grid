@@ -326,3 +326,187 @@ TEST_CASE("an SVC holds its bus in the solved system, like every other element",
     CHECK(subs.is_bus_connected(GridModelBusId(svc_bus)));
     require_counts_match_recount(grid, "reactivating the SVC");
 }
+
+namespace {
+
+using BoolArr = Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor>;
+using IntArr = Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor>;
+
+// Three substations of TWO busbars each (6 buses), two lines 0-1 and 1-2, a load
+// at bus 2 and a slack gen at bus 0, wired up for update_topo(): subids and
+// pos_topo_vect set, dim_topo == 6 (load, gen, then each line's two ends).
+//
+// Two busbars per substation is what the exotic fixture lacks and what this needs:
+// somewhere to strand a single line end, so a bus exists whose ONLY element is that
+// end. That bus's count is then the whole question.
+LSGrid make_two_busbar_grid()
+{
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+
+    RealVect bus_vn_kv(6);
+    bus_vn_kv << 138., 138., 138., 138., 138., 138.;
+    grid.init_bus(3, 2, bus_vn_kv, 0, 0);
+
+    RealVect branch_r(2), branch_x(2);
+    branch_r << 0.01, 0.01;
+    branch_x << 0.1, 0.1;
+    const ls2g::CplxVect branch_h = ls2g::CplxVect::Zero(2);
+    Eigen::VectorXi from_id(2), to_id(2);
+    from_id << 0, 1;
+    to_id << 1, 2;
+    grid.init_powerlines(branch_r, branch_x, branch_h, from_id, to_id);
+
+    RealVect load_p(1), load_q(1);
+    load_p << 50.;
+    load_q << 10.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 2;
+    grid.init_loads(load_p, load_q, load_bus);
+
+    RealVect gen_p(1), gen_v(1), gen_min_q(1), gen_max_q(1);
+    gen_p << 0.;
+    gen_v << 1.02;
+    gen_min_q << -1000.;
+    gen_max_q << 1000.;
+    Eigen::VectorXi gen_bus(1);
+    gen_bus << 0;
+    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+
+    Eigen::VectorXi load_sub(1); load_sub << 2;
+    Eigen::VectorXi gen_sub(1);  gen_sub  << 0;
+    Eigen::VectorXi line_sub1(2); line_sub1 << 0, 1;
+    Eigen::VectorXi line_sub2(2); line_sub2 << 1, 2;
+    grid.set_load_to_subid(load_sub);
+    grid.set_gen_to_subid(gen_sub);
+    grid.set_line_to_sub1_id(line_sub1);
+    grid.set_line_to_sub2_id(line_sub2);
+
+    Eigen::VectorXi load_pos(1); load_pos << 0;
+    Eigen::VectorXi gen_pos(1);  gen_pos  << 1;
+    Eigen::VectorXi line_pos1(2); line_pos1 << 2, 3;
+    Eigen::VectorXi line_pos2(2); line_pos2 << 4, 5;
+    grid.set_load_pos_topo_vect(load_pos);
+    grid.set_gen_pos_topo_vect(gen_pos);
+    grid.set_line_pos1_topo_vect(line_pos1);
+    grid.set_line_pos2_topo_vect(line_pos2);
+    return grid;
+}
+
+// one entry of the grid2op topology vector, the rest untouched
+void set_topo(LSGrid & grid, int pos, int local_bus)
+{
+    BoolArr changed = BoolArr::Constant(6, false);
+    IntArr values = IntArr::Zero(6);
+    changed(pos) = true;
+    values(pos) = local_bus;
+    grid.update_topo(changed, values);
+}
+
+}  // namespace
+
+TEST_CASE("update_topo counts the buses it takes out of the system",
+          "[SubstationContainer][bus_count]")
+{
+    // The batch entry point grid2op drives every single step, and the one the
+    // mutator sweep above cannot reach. It is not a thin wrapper over the mutators:
+    // it calls `resolve_status`, which sets a branch's `status_global_` -- the gate
+    // `contribute_to_buses` reads FIRST -- and deactivates the opposite side through
+    // the *_no_bus_tracking entry points. Both change which buses the branch holds,
+    // so both belong INSIDE the counting bracket.
+    //
+    // They were outside it. Stranding a line end on a busbar of its own and then
+    // disconnecting the line left that bus counted, with no element on it: the
+    // system silently lost a bus and nothing raised the dimension change, so the
+    // solver kept its previous sizing and the next powerflow failed to initialise.
+    LSGrid grid = make_two_busbar_grid();
+    grid.recompute_bus_element_counts();
+    const auto & subs = grid.get_substations();
+
+    const int LINE = 1;              // the 1-2 line
+    const int LINE1_POS_SIDE_1 = 3;  // its side-1 slot in the topology vector
+    const int LINE1_POS_SIDE_2 = 5;  // its side-2 slot
+    const int STRANDED_BUS = 5;      // substation 2, busbar 2
+
+    REQUIRE(grid.nb_connected_bus() == 3);
+    REQUIRE(subs.get_nb_elements_per_bus()[STRANDED_BUS] == 0u);
+
+    // strand the line's side 2 on the second busbar of its substation: that bus now
+    // holds exactly one element, so it enters the system (0 -> 1).
+    set_topo(grid, LINE1_POS_SIDE_2, 2);
+    CHECK(subs.get_nb_elements_per_bus()[STRANDED_BUS] == 1u);
+    CHECK(subs.is_bus_connected(GridModelBusId(STRANDED_BUS)));
+    CHECK(grid.nb_connected_bus() == 4);
+    require_counts_match_recount(grid, "update_topo stranding a line end on its own busbar");
+
+    // now take the OTHER end out. resolve_status turns the whole line off, so the
+    // branch holds nothing -- including the bus it was alone on, which must leave
+    // the system (1 -> 0).
+    set_topo(grid, LINE1_POS_SIDE_1, -1);
+    CHECK(grid.get_powerlines_as_data().get_status_global()[LINE] == false);
+    CHECK(subs.get_nb_elements_per_bus()[STRANDED_BUS] == 0u);
+    CHECK_FALSE(subs.is_bus_connected(GridModelBusId(STRANDED_BUS)));
+    CHECK(grid.nb_connected_bus() == 3);
+    require_counts_match_recount(grid, "update_topo disconnecting a line stranded at one end");
+}
+
+TEST_CASE("update_topo re-asserting the bus an element is already on moves nothing",
+          "[SubstationContainer][bus_count]")
+{
+    // grid2op sends the whole topology vector every step, most of it asking for the
+    // bus the element is already on. Such an entry must not take a contribution away
+    // and put it straight back: a bus held by that element alone would transiently
+    // hit 0 and report a crossing that never happened, costing a full rebuild.
+    LSGrid grid = make_two_busbar_grid();
+    grid.recompute_bus_element_counts();
+    const auto & subs = grid.get_substations();
+
+    set_topo(grid, 5, 2);   // strand the 1-2 line's side 2 on busbar 2, alone
+    const std::vector<std::size_t> before = subs.get_nb_elements_per_bus();
+    REQUIRE(before[5] == 1u);
+
+    set_topo(grid, 5, 2);   // ... and ask for exactly that again
+    CHECK(subs.get_nb_elements_per_bus() == before);
+    CHECK(grid.nb_connected_bus() == 4);
+    require_counts_match_recount(grid, "update_topo re-asserting the current bus");
+}
+
+TEST_CASE("consider_only_main_component tells the solver the dimension changed",
+          "[SubstationContainer][bus_count]")
+{
+    // `disconnect_if_not_in_main_component` deactivates the elements it strands, so
+    // the buses whose last element it takes away LEAVE the solved system -- which
+    // renumbers every bus after them. It used to hand those deactivations a local,
+    // throwaway DualAlgoControl, so the crossings were detected and then dropped on
+    // the floor; the flag reached the real controller only because init_bus_status()
+    // rebuilt the status and compared it against each family's photograph.
+    //
+    // Nothing compares photographs any more, so the crossing IS the notification and
+    // it has to be raised on the controller the solver actually reads. Otherwise the
+    // system silently loses a bus, the solver keeps its previous sizing, and the next
+    // powerflow fails to initialise (grid2op's `automatically_disconnect=True`).
+    LSGrid grid = make_two_busbar_grid();
+    grid.recompute_bus_element_counts();
+
+    // solve once, then declare everything up to date: from here, any flag that is set
+    // was set by what follows.
+    REQUIRE(grid.dc_pf(flat_start(grid), 30, 1e-10).size() > 0);
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() > 0);
+    grid.unset_changes();
+    REQUIRE_FALSE(grid.get_ac_algo_controler().has_dimension_changed());
+    REQUIRE_FALSE(grid.get_dc_algo_controler().has_dimension_changed());
+
+    // cut the 1-2 line: bus 2 keeps only the load, which is now its own island, so
+    // consider_only_main_component drops the load and bus 2 leaves the system.
+    grid.deactivate_powerline(1);
+    grid.unset_changes();
+    const int before = grid.nb_connected_bus();
+    grid.consider_only_main_component();
+    REQUIRE(grid.nb_connected_bus() < before);
+
+    CHECK(grid.get_ac_algo_controler().has_dimension_changed());
+    CHECK(grid.get_dc_algo_controler().has_dimension_changed());
+    require_counts_match_recount(grid, "consider_only_main_component");
+}
