@@ -1984,8 +1984,8 @@ class LS2G_API LSGrid final
          *
          * Not `pre_process_solver` with a different cache -- a different operation:
          *
-         *  - It never re-stamps. `solver_control`, this grid's connectivity snapshot
-         *    and its change flags all describe THIS grid; none of them says anything
+         *  - It never re-stamps. `solver_control` and this grid's change flags all
+         *    describe THIS grid; none of them says anything
          *    about what is in `out`. So `out` is always rebuilt from scratch. (Free in
          *    practice: a caller handing over its own cache asks for a full rebuild
          *    anyway -- but that is now a property of this function, not a courtesy of
@@ -2357,9 +2357,9 @@ class LS2G_API LSGrid final
         [[nodiscard]] bool _has_ac_cache() const noexcept {return ac_cache_.id_solver_to_me.size() > 0;}
 
         // Record that `family_control`'s cached data now matches the grid: its
-        // flags go back to "nothing changed" and its connectivity snapshot is
-        // refreshed. Called after every powerflow of that family (converged or
-        // not: pre_process built the data against the current grid either way),
+        // flags go back to "nothing changed" and it is stamped with the grid size
+        // it was built for. Called after every powerflow of that family (converged
+        // or not: pre_process built the data against the current grid either way),
         // unless that family's reuse was turned off.
         void _mark_cache_valid(SolverBusLayout & cache, AlgoControl & control){
             control.tell_none_changed();
@@ -2457,9 +2457,8 @@ class LS2G_API LSGrid final
         SubstationContainer substations_;
         std::map<std::string, std::string> init_kwargs_;  // see get_init_kwargs()
 
-        // The bus labelling, the matrices, the injections, the slack, the pv-pq
-        // split and each family's connectivity snapshot all live in ac_cache_ /
-        // dc_cache_, declared further down.
+        // The bus labelling, the matrices, the injections, the slack and the pv-pq
+        // split all live in ac_cache_ / dc_cache_, declared further down.
 
         // 2. powerline
         LineContainer powerlines_;

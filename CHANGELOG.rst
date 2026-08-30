@@ -177,28 +177,28 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   different question (is the data there at all, and the right shape) and says nothing about change.
 - [ADDED] ``AlgoControl.nothing_changed()``: has every change this control tracks already been
   consumed by a solve? The exact negation of ``tell_all_changed()``.
-- [BREAKING] ``BINARY_FORMAT_VERSION`` 4 -> 5: ``LSGrid``'s serialized state no longer carries the
-  AC family's bus-connectivity photograph. Nothing needs it -- a bus entering or leaving the solved
-  system is now reported by ``SubstationContainer``'s per-bus element counts as it happens -- so the
-  field is removed rather than left dead. It was also the only piece of solver-cache metadata a
-  saved grid carried, so a crafted file has nothing left to poison.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 4 -> 6: nothing about bus connectivity is serialized any
+  more. ``LSGrid``'s state loses the AC family's bus-connectivity photograph (5) and
+  ``SubstationContainer``'s loses ``bus_status_`` (6). Neither is independent state: a bus is part
+  of the powerflow if and only if at least one active element sits on it, and the elements' own
+  status *is* in the file, so both were caches of something already there -- with a way for a
+  crafted file to make the two disagree. A restored grid counts its buses from its elements. That
+  photograph was also the last piece of solver-cache metadata a saved grid carried, so there is
+  nothing left in the layout to poison.
 - [ADDED] ``SubstationContainer`` keeps, per bus, how many elements hold it alive, maintained
   incrementally by every mutator that can change bus membership. A bus is in the solved system iff
   its count is non-zero, so the two transitions that matter (0 -> 1 and 1 -> 0) are exactly what
   raises ``tell_dimension_changed``. Every other change flag stays where the element containers
-  decide it. Which buses an element holds is stated once, in
-  ``GenericContainer::contribute_to_buses``; ``reconnect_connected_buses``, the from-scratch recount
-  and every mutator are built from it, so the incremental and the rebuilt answer cannot disagree.
+  decide it. Which buses an element holds is stated once and only once, in
+  ``GenericContainer::contribute_to_buses``: the from-scratch recount and every mutator are built
+  from it, so the incremental and the rebuilt answer cannot disagree. The second statement of that
+  same rule, ``reconnect_connected_buses``, is deleted from all five containers -- it was the one
+  that drifted (see the SVC fix below).
 - [FIXED] a bus whose only element is a static VAR compensator now counts as connected.
   ``init_bus_status()`` never called ``SvcContainer::reconnect_connected_buses`` -- the container
   inherits a perfectly good one from ``OneSideContainer_PQ``, it was simply left out of the list --
   so such a bus was dropped from the solved system. An SVC injects reactive power; its bus belongs
   there.
-- [BREAKING] ``BINARY_FORMAT_VERSION`` 5 -> 6: ``SubstationContainer``'s serialized state no longer
-  carries ``bus_status_``. Whether a bus is part of the powerflow is not independent state -- it is
-  "at least one active element sits on it" -- and the elements' own status *is* in the file, so
-  storing it was storing a cache of something already there, with a way for a crafted file to make
-  the two disagree. A restored grid counts its buses from its elements.
 - [BREAKING] [DEPRECATED] ``LSGrid.deactivate_bus(bus_id)`` and ``LSGrid.reactivate_bus(bus_id)`` are
   now **no-ops** (kept so existing code keeps importing; they will be removed in a later version).
   A bus is part of the powerflow if and only if at least one active element sits on it, which is now

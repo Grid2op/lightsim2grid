@@ -165,12 +165,12 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     const std::vector<int> & ls_to_pp = std::get<LS_TO_ORIG_ID>(my_state);
     init_vm_pu_ = std::get<INIT_VM_PU_ID>(my_state);
     sn_mva_ = std::get<SN_MVA_ID>(my_state);
-    // NB the bus-connectivity photograph that used to be slot 6 is gone. It is
-    // the bus-connectivity snapshot the solver caches use to detect topology
-    // changes -- cache metadata, not grid data -- and a file is not a trusted
-    // source for it. It is still written by get_state() (the layout is unchanged);
-    // it is simply not believed on the way back in. See the note at the end of
-    // this function.
+    // NB slot 6 used to hold the AC family's bus-connectivity photograph: cache
+    // metadata, not grid data, and a file is not a trusted source for it. It was
+    // written but deliberately never read back. It is gone from the layout
+    // entirely now -- a bus entering or leaving the solved system is reported by
+    // SubstationContainer's per-bus element counts as it happens. See the note at
+    // the end of this function.
     SubstationContainer::StateRes & state_substations = std::get<SUBSTATION_ID>(my_state);
     // powerlines
     LineContainer::StateRes & state_lines = std::get<LINE_ID>(my_state);
@@ -288,8 +288,8 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // ---- a restored grid always starts cold -------------------------------
     // Enforced at the top of this function, not here: set_state() opens with
     // tell_all_changed() on both families and calls reset(true, true, true) once
-    // the containers are in, which clears every solver-side member and both
-    // connectivity snapshots. This note is here because that is a CONTRACT, not an
+    // the containers are in, which clears both families' caches and retires them.
+    // This note is here because that is a CONTRACT, not an
     // incidental consequence -- see the "TODO see if it's worth the trouble NOT to
     // do it" sitting on that very reset.
     //
@@ -304,10 +304,11 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // matrix that merely LOOKS well-formed would be solved without complaint. A
     // file is not trusted input. Rebuilding costs one assembly, once.
     //
-    // The one piece of cache metadata that IS in the layout -- BUS_STATUS_ID, the
-    // bus-connectivity snapshot -- is still written by get_state() (the layout is
-    // unchanged) but deliberately not read back; see the note where it would have
-    // been. reset() would overwrite it anyway.
+    // There is no longer any cache metadata in the layout at all: BUS_STATUS_ID,
+    // the bus-connectivity snapshot, was the last piece and is gone -- so a
+    // crafted file has nothing left to poison. Which buses are in the solved
+    // system is counted from the restored elements, whose own status IS in the
+    // file.
     //
     // Pinned by "a deserialized grid always starts with a cold cache" in
     // src/tests/test_cache_reuse.cpp (tag [serialization]), so that a later attempt
@@ -1610,9 +1611,8 @@ CplxVect LSGrid::_build_foreign_cache(
             "powerflow, call pre_process_solver / pre_process_dc_solver instead.");
     }
 
-    // A foreign build never re-stamps: `solver_control`, the connectivity snapshot
-    // init_bus_status() raises its flags against, and those flags themselves all
-    // describe THIS grid, and say nothing about what is in `out`.
+    // A foreign build never re-stamps: `solver_control` and the flags it carries
+    // all describe THIS grid, and say nothing about what is in `out`.
     CplxVect V = _build_into_cache(Vinit, out, solver_control,
                                    /*force_full_rebuild=*/true,
                                    /*init_pv_vm_targets=*/true);
