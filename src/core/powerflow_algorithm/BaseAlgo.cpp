@@ -172,18 +172,22 @@ RealVect BaseAlgo::_evaluate_Fx(
     auto npv = pv.size();
     auto npq = pq.size();
 
-    // compute the mismatch
-    // CplxVect tmp = Ybus * V;  // this is a vector
-    // tmp = tmp.array().conjugate();  // i take the conjugate
-    auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array();
-    auto real_ = mis.real();
-    auto imag_ = mis.imag();
+    // compute the mismatch. `mis` is a CONCRETE vector, not the (previously
+    // `auto`) lazy expression: `Ybus * V` is a sparse-times-dense product,
+    // which Eigen can only evaluate into a temporary, and it does so once per
+    // expression evaluation -- so with the expression kept lazy the three
+    // segment assignments below each recomputed the whole matrix-vector
+    // product. One product, evaluated once, is enough.
+    const CplxVect mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array();
 
+    // .real() / .imag() stay lazy on purpose: they are views of `mis`, read
+    // once each through the index arrays, so materialising them would only add
+    // two full-length copies.
     // build and fill the result
     RealVect res(npv + 2*npq);
-    res.segment(0,npv) = real_(pv);
-    res.segment(npv,npq) = real_(pq);
-    res.segment(npv+npq, npq) = imag_(pq);
+    res.segment(0,npv) = mis.real()(pv);
+    res.segment(npv,npq) = mis.real()(pq);
+    res.segment(npv+npq, npq) = mis.imag()(pq);
     timer_Fx_ += timer.duration();
     return res;
 }
@@ -235,19 +239,17 @@ RealVect BaseAlgo::_evaluate_Fx(
     auto npv = pv.size();
     auto npq = pq.size();
 
-    // compute the mismatch
-    // CplxVect tmp = Ybus * V;  // this is a vector
-    // tmp = tmp.array().conjugate();  // i take the conjugate
-    auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
-    RealVect real_ = mis.real();
-    RealVect imag_ = mis.imag();
+    // compute the mismatch, once (see the other overload above: the sparse *
+    // dense product is re-evaluated at every evaluation of a lazy expression
+    // holding it, and `real_` / `imag_` were two such evaluations)
+    const CplxVect mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
 
     // build and fill the result
     RealVect res(npv + 2 * npq + 1); // slack adds one component hence the '+1' also bellow)
-    res(0) = real_(slack_id);  // slack bus is first variable
-    res.segment(1, npv) = real_(pv);
-    res.segment(npv + 1, npq) = real_(pq);
-    res.segment(npv + npq + 1, npq) = imag_(pq);
+    res(0) = std::real(mis(slack_id));  // slack bus is first variable
+    res.segment(1, npv) = mis.real()(pv);
+    res.segment(npv + 1, npq) = mis.real()(pq);
+    res.segment(npv + npq + 1, npq) = mis.imag()(pq);
     timer_Fx_ += timer.duration();
     return res;
     

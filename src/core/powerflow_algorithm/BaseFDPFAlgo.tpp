@@ -91,10 +91,10 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(
 
     // first check, if the problem is already solved, i stop there
     // compute a first time the mismatch to initialize the slack bus
-    CplxVect mis = evaluate_mismatch(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights);
-    mis.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm
-    p_ = mis(pvpq).real();  // P = mis[pvpq].real
-    q_ = mis(pq).imag();  // Q = mis[pq].imag
+    evaluate_mismatch_into(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights);
+    mis_.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm
+    p_ = mis_(pvpq).real();  // P = mis[pvpq].real
+    q_ = mis_(pq).imag();  // Q = mis[pq].imag
     
     CplxVect tmp_va;
     nr_iter_ = 0; //current step

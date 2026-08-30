@@ -126,6 +126,43 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] **Gauss-Seidel is ~12x faster** (121-bus mesh, 5568 sweeps: 470 ms -> 37 ms; the
+  synchronous variant, 1.9x: 422 ms -> 228 ms), for the same sweeps and bit-identical voltages.
+  ``Ybus`` reaches a solver column-major, but a Gauss-Seidel sweep needs one ROW of it at a time --
+  and a row of a column-major sparse matrix is not stored anywhere: reading it means scanning every
+  column. ``GaussSeidelAlgo::one_iter`` did exactly that (``Ybus.row(k) * V_``, once per pq bus and
+  twice per pv bus), which made one sweep cost O(nb_bus * nnz) instead of O(nnz); and it re-found
+  ``Ybus(k, k)`` by binary search inside column k on every lookup. Both now come from caches
+  rebuilt once per ``compute_pf`` (an O(nnz) transpose, against the hundreds or thousands of sweeps
+  that follow): a row-major copy of ``Ybus`` and its diagonal. The row-major inner iterator visits a
+  row by increasing column index, which is the order Eigen's sparse * dense product summed it in,
+  so the sums are unchanged to the last bit.
+- [IMPROVED] ``BaseAlgo::_evaluate_Fx`` (the Gauss-Seidel convergence check) computed its
+  sparse-times-dense ``Ybus * V`` product **three times** per call, and the multi-slack overload
+  twice. The mismatch was kept as a lazy Eigen expression (``auto mis = ...``), and a lazy
+  expression holding a sparse * dense product re-evaluates that product every time the expression
+  is evaluated -- once per assignment of the three result segments. It is a concrete vector now.
+- [IMPROVED] the Newton-Raphson iteration allocates less per iteration: ~7-14% off the
+  algorithm-side cost of a solve (everything but the linear solver: dS assembly, Jacobian fill,
+  mismatch, voltage update), which on a 121-bus grid is about a fifth of an NR solve with KLU and
+  most of one without a fast linear solver. ``NRSystem``'s residual, trial-voltage and dS assembly
+  write into buffers that live as long as the system instead of heap-allocating and freeing a fresh
+  one on every call -- which matters most for the line-search / Iwamoto step policies, whose
+  backtracking evaluates the residual up to ``ls_max_iter`` times per iteration.
+  In particular every ``Ybus * V`` product now lands in a named buffer with ``.noalias()`` rather
+  than inside a coefficient-wise expression Eigen has to allocate a temporary to evaluate, and
+  ``NRAlgo`` scales its step in place instead of handing ``apply_step`` a ``coeff * F`` expression
+  that its ``Eigen::Ref`` parameter had to materialise. Values are unchanged bit for bit.
+- [IMPROVED] ``NRSystem`` no longer keeps ``dS_dVm`` / ``dS_dVa`` as two full ``Eigen::SparseMatrix``
+  copies of ``Ybus``. Nothing ever indexed them by (row, column): ``fill_internal_variables`` writes
+  them and ``fill_J`` reads them purely by nonzero position, so they are plain value arrays, one
+  coefficient per ``Ybus`` nonzero. Each topology change is two structure copies (outer + inner
+  index arrays) lighter -- the "TODO speed: copy only the sparsity pattern and not the values" that
+  used to sit in ``init_topology``.
+- [ADDED] ``NRSystem::mismatch_into(res)`` and ``NRSystem::mismatch_sq_norm_at_current()``: the
+  allocation-free forms of ``mismatch()`` and ``mismatch_sq_norm_at(<zero step>)``, which the NR
+  loop and the step-scaling policies now use. The value-returning forms stay, unchanged, for
+  out-of-tree algorithms.
 - [BREAKING] everything a solver family caches now lives in one object, ``SolverSideCache``
   (``src/core/SolverSideCache.hpp``), instead of eighteen separate ``LSGrid`` members. The bus
   labelling, ``Ybus`` / ``Sbus``, the slack, the PV / PQ split and each family's connectivity

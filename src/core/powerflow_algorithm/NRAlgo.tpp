@@ -120,14 +120,21 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         timer_scale_ += timer_sc.duration();
 
         auto timer_va_vm = CustTimer();
-        // std::cout << "apply_step(coeff * F)\n";
-        _system.apply_step(coeff * F);
+        // scale F in place rather than passing the `coeff * F` expression:
+        // binding it to apply_step's Eigen::Ref<const RealVect> parameter made
+        // Eigen materialise the expression into a heap temporary on every
+        // iteration. F is dead here -- it is overwritten by the new mismatch
+        // just below -- so scaling it in place is free, and the full-Newton
+        // case (coeff == 1, the NoScaling policy) does not even pay the scan.
+        if (coeff != static_cast<real_type>(1.)) F *= coeff;
+        _system.apply_step(F);
         timer_Va_Vm_ += timer_va_vm.duration();
 
-        // New mismatch
+        // New mismatch (written into F's existing buffer: its dimension cannot
+        // change inside the loop)
         // std::cout << "mismatch\n";
         auto timer_mis = CustTimer();
-        F = _system.mismatch();
+        _system.mismatch_into(F);
         timer_mismatch_ += timer_mis.duration();
         if (!F.allFinite()) { err_ = ErrorType::InifiniteValue; break; }
         converged = _check_for_convergence(F, tol);  // timer_check_

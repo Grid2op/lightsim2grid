@@ -49,6 +49,8 @@ class BaseFDPFAlgo final: public BaseAlgo
             grid_Bpp_ = Eigen::SparseMatrix<real_type>();  // the B double prime matrix  (size n_pq)
             p_ = RealVect();
             q_ = RealVect();
+            mis_ = CplxVect();
+            ybus_v_ = CplxVect();
             need_factorize_ = true;
 
             // reset linear solvers
@@ -99,17 +101,34 @@ class BaseFDPFAlgo final: public BaseAlgo
             detail::reset_stats_timers_impl(_linear_solver_Bpp, 0);
         }
 
+        // (V * conj(Ybus * V) - Sbus + slack_absorbed * slack_weights), written
+        // into the persistent mis_ buffer rather than returned by value: this
+        // runs once or twice per FDPF iteration, and returning an nb_bus
+        // complex vector meant heap-allocating and freeing one every time.
+        // Ybus * V lands in its own buffer first (`noalias`): a sparse * dense
+        // product left inside the coefficient-wise expression is one more
+        // temporary Eigen has to allocate to evaluate it.
+        void evaluate_mismatch_into(const EigenRefConstCplxSpMat     &  Ybus,
+                                    const Eigen::Ref<const CplxVect> & V,
+                                    const Eigen::Ref<const CplxVect> & Sbus,
+                                    size_t /*slack_id*/,  // id of the ref slack bus
+                                    real_type slack_absorbed,
+                                    const Eigen::Ref<const RealVect> & slack_weights)
+        {
+            ybus_v_.noalias() = Ybus * V;
+            mis_ = V.array() * ybus_v_.array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
+        }
+
+        // value-returning form, kept for out-of-tree derived algorithms
         CplxVect evaluate_mismatch(const EigenRefConstCplxSpMat     &  Ybus,
                                    const Eigen::Ref<const CplxVect> & V,
                                    const Eigen::Ref<const CplxVect> & Sbus,
-                                   size_t /*slack_id*/,  // id of the ref slack bus
+                                   size_t slack_id,  // id of the ref slack bus
                                    real_type slack_absorbed,
                                    const Eigen::Ref<const RealVect> & slack_weights)
         {
-            // CplxVect tmp = Ybus * V;  // this is a vector
-            // tmp = tmp.array().conjugate();  // i take the conjugate
-            auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
-            return mis;
+            evaluate_mismatch_into(Ybus, V, Sbus, slack_id, slack_absorbed, slack_weights);
+            return mis_;
         }
         
         void fillBp_Bpp(
@@ -194,16 +213,16 @@ class BaseFDPFAlgo final: public BaseAlgo
             V_ = Vm_.array() * tmp_va.array();
             Vm_ = V_.array().abs();
             Va_ = V_.array().arg();
-            auto mis = evaluate_mismatch(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights);  // mis = (V * conj(Ybus * V) - Sbus) / Vm
-            mis.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm (do not forget the / Vm !)
+            evaluate_mismatch_into(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights);  // mis_ = V * conj(Ybus * V) - Sbus
+            mis_.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm (do not forget the / Vm !)
 
-            bool tmp = mis.allFinite();
+            bool tmp = mis_.allFinite();
             if(!tmp){
                 err_ = ErrorType::InifiniteValue;
                 return false; // divergence due to Nans
             }
-            p_ = mis(pvpq).real();  // P = mis[pvpq].real
-            q_ = mis(pq).imag();  // Q = mis[pq].imag
+            p_ = mis_(pvpq).real();  // P = mis[pvpq].real
+            q_ = mis_(pq).imag();  // Q = mis[pq].imag
             return _check_for_convergence(p_, q_, tol);
         }
 
@@ -233,6 +252,9 @@ class BaseFDPFAlgo final: public BaseAlgo
         Eigen::SparseMatrix<real_type> Bpp_;  // the B double prime matrix  (size n_pq)
         RealVect p_;  // (size n_pvpq)
         RealVect q_;  // (size n_pq)
+        // per-iteration scratch, kept across iterations (see evaluate_mismatch_into)
+        CplxVect mis_;     // per-bus complex power mismatch (size nb_bus)
+        CplxVect ybus_v_;  // Ybus * V (size nb_bus)
         bool need_factorize_;
 
     private:

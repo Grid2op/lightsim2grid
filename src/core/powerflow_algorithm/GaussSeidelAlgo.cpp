@@ -36,6 +36,9 @@ bool GaussSeidelAlgo::compute_pf(
     // TODO SLACK (for now i put all slacks as PV, except the first one)
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);
 
+    // row-major view + diagonal of Ybus, used by every sweep below
+    refresh_ybus_cache(Ybus);
+
     V_ = V;
     Vm_ = V_.array().abs();  // update Vm and Va again in case
     Va_ = V_.array().arg();  // we wrapped around with a negative Vm
@@ -81,9 +84,20 @@ bool GaussSeidelAlgo::compute_pf(
     return res;
 }
 
+void GaussSeidelAlgo::refresh_ybus_cache(const EigenRefConstCplxSpMat & Ybus)
+{
+    ybus_rowmajor_ = Ybus;  // column-major -> row-major (one O(nnz) transpose)
+    const Eigen::Index n = Ybus.rows();
+    if(ybus_diag_.size() != n) ybus_diag_.resize(n);
+    ybus_diag_.setZero();
+    for(int col = 0; col < Ybus.outerSize(); ++col)
+        for(EigenRefConstCplxSpMat::InnerIterator it(Ybus, col); it; ++it)
+            if(it.row() == it.col()) ybus_diag_.coeffRef(it.row()) = it.value();
+}
+
 void GaussSeidelAlgo::one_iter(
     Eigen::Ref<CplxVect> tmp_Sbus,
-    const EigenRefConstCplxSpMat & Ybus,
+    const EigenRefConstCplxSpMat & /*Ybus*/,  // read through the caches below
     const Eigen::Ref<const IntVect> & pv,
     const Eigen::Ref<const IntVect> & pq)
 {
@@ -99,8 +113,8 @@ void GaussSeidelAlgo::one_iter(
         int k = pq.coeff(k_tmp);
         tmp = tmp_Sbus.coeff(k) / V_.coeff(k);
         tmp = std::conj(tmp);
-        tmp -= static_cast<cplx_type>(Ybus.row(k) * V_);
-        tmp /= Ybus.coeff(k,k);
+        tmp -= ybus_row_times_V(k);
+        tmp /= ybus_diag_.coeff(k);
         V_.coeffRef(k) += tmp;
     }
 
@@ -109,7 +123,7 @@ void GaussSeidelAlgo::one_iter(
     {
         int k = pv.coeff(k_tmp);
         // update Sbus
-        tmp = static_cast<cplx_type>(Ybus.row(k) * V_);  // Ybus[k,:] * V
+        tmp = ybus_row_times_V(k);  // Ybus[k,:] * V
         tmp = std::conj(tmp);  // conj(Ybus[k,:] * V)
         tmp *= V_.coeff(k);  // (V[k] * conj(Ybus[k,:] * V))
         tmp = my_i * std::imag(tmp);
@@ -118,8 +132,8 @@ void GaussSeidelAlgo::one_iter(
         // update V
         tmp = tmp_Sbus.coeff(k) / V_.coeff(k);
         tmp = std::conj(tmp);
-        tmp -= static_cast<cplx_type>(Ybus.row(k) * V_);
-        tmp /= Ybus.coeff(k,k);
+        tmp -= ybus_row_times_V(k);
+        tmp /= ybus_diag_.coeff(k);
         V_.coeffRef(k) += tmp;
     }
 

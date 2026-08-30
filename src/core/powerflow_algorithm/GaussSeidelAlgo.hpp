@@ -38,6 +38,13 @@ class LS2G_API GaussSeidelAlgo : public BaseAlgo
             real_type                        tol
         ) override;
 
+        void reset() override {
+            BaseAlgo::reset();
+            // drop the Ybus caches below: they are rebuilt by the next compute_pf
+            ybus_rowmajor_ = Eigen::SparseMatrix<cplx_type, Eigen::RowMajor>();
+            ybus_diag_ = CplxVect();
+        }
+
     protected:
 
         virtual
@@ -47,6 +54,34 @@ class LS2G_API GaussSeidelAlgo : public BaseAlgo
             const Eigen::Ref<const IntVect> & pv,
             const Eigen::Ref<const IntVect> & pq
         );
+
+        // Ybus arrives column-major (that is what EigenRefConstCplxSpMat is),
+        // but a Gauss-Seidel sweep needs one ROW of it at a time -- and a row of
+        // a column-major sparse matrix is not stored anywhere: reading it means
+        // scanning every column. `Ybus.row(k) * V_`, called once per pq bus and
+        // twice per pv bus, therefore made one sweep cost O(nb_bus * nnz)
+        // instead of O(nnz). These two caches, rebuilt once per compute_pf
+        // (O(nnz), against the hundreds or thousands of sweeps that follow),
+        // give the sweep the row it needs directly:
+        //   - ybus_rowmajor_ : the same coefficients, row-major, so row k is a
+        //     contiguous InnerIterator walk;
+        //   - ybus_diag_     : Ybus(k, k), which Ybus.coeff(k, k) was
+        //     re-finding by binary search inside column k every time.
+        // The row-major inner iterator visits a row's coefficients by
+        // increasing column index, which is the order Eigen's sparse * dense
+        // product summed them in, so the sums are unchanged to the last bit.
+        void refresh_ybus_cache(const EigenRefConstCplxSpMat & Ybus);
+
+        // row k of Ybus times the current voltages: sum_j Ybus(k, j) * V_(j)
+        cplx_type ybus_row_times_V(int k) const {
+            cplx_type res(0., 0.);
+            for (Eigen::SparseMatrix<cplx_type, Eigen::RowMajor>::InnerIterator it(ybus_rowmajor_, k); it; ++it)
+                res += it.value() * V_.coeff(it.col());
+            return res;
+        }
+
+        Eigen::SparseMatrix<cplx_type, Eigen::RowMajor> ybus_rowmajor_;
+        CplxVect                                        ybus_diag_;
 
     private:
         // no copy allowed

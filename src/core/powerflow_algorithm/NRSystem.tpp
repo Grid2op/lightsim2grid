@@ -16,10 +16,12 @@ inline void NRSystem<Base, Rest...>::init_topology(
     const Eigen::Ref<const IntVect> &              pv,
     const Eigen::Ref<const IntVect> &              pq)
 {
-    // init the sparsity pattern of the dS matrices (values do not matter yet)
-    // TODO speed: copy only the sparsity pattern and not the values
-    dS_dVm_ = Ybus_ref_;  // Ybus_ref_ is a reference, dS_dVm_ is a plain struct, this forces a copy
-    dS_dVa_ = Ybus_ref_;
+    // size the dS value arrays: one coefficient per Ybus nonzero, in Ybus'
+    // own storage order (they are pure value arrays, see their declaration --
+    // no structure to copy, so nothing of Ybus is duplicated here)
+    const Eigen::Index nnz_ybus = Ybus_ref_.nonZeros();
+    if(dS_dVm_vals_.size() != nnz_ybus) dS_dVm_vals_.resize(nnz_ybus);
+    if(dS_dVa_vals_.size() != nnz_ybus) dS_dVa_vals_.resize(nnz_ybus);
     map_dsdva_r_.clear();
     map_dsdva_i_.clear();
     map_dsdvm_r_.clear();
@@ -136,28 +138,14 @@ inline void NRSystem<Base, Rest...>::fill_J()
     real_type* J_values = J_.valuePtr();
     std::fill(J_values, J_values + J_.nonZeros(), static_cast<real_type>(0.));
 
-    const cplx_type* ds_dvm = dS_dVm_.valuePtr();
-    const cplx_type* ds_dva = dS_dVa_.valuePtr();
-    size_t i = 0;
-    for (auto& c : map_dsdva_r_) {
-        if (c != -1) J_values[c] += std::real(ds_dva[i]);
-        ++i;
-    }
-    i = 0;
-    for (auto& c : map_dsdva_i_) {
-        if (c != -1) J_values[c] += std::imag(ds_dva[i]);
-        ++i;
-    }
-    i = 0;
-    for (auto& c : map_dsdvm_r_) {
-        if (c != -1) J_values[c] += std::real(ds_dvm[i]);
-        ++i;
-    }
-    i = 0;
-    for (auto& c : map_dsdvm_i_) {
-        if (c != -1) J_values[c] += std::imag(ds_dvm[i]);
-        ++i;
-    }
+    const cplx_type* ds_dvm = dS_dVm_vals_.data();
+    const cplx_type* ds_dva = dS_dVa_vals_.data();
+    // four passes, in the historical order, so a J coefficient fed by several
+    // contributions still sums them the same way
+    _accumulate_ds<true>(J_values, map_dsdva_r_, ds_dva);
+    _accumulate_ds<false>(J_values, map_dsdva_i_, ds_dva);
+    _accumulate_ds<true>(J_values, map_dsdvm_r_, ds_dvm);
+    _accumulate_ds<false>(J_values, map_dsdvm_i_, ds_dvm);
 
     // feature (non dS-derived) values
     FeatureWriter writer(J_values, feature_pos_);
@@ -190,35 +178,51 @@ template <typename... Rest>
 inline void NRSystem<Base, Rest...>::fill_internal_variables()
 {
     auto timer = CustTimer();
-    // const Eigen::SparseMatrix<cplx_type>& Ybus = *Ybus_ptr_;
-    const auto size_dS = V_.size();
-    const CplxVect Vnorm = V_.array() / V_.array().abs();
-    const CplxVect Ibus  = Ybus_ref_ * V_;
-    const CplxVect conjIbus_Vnorm = Ibus.array().conjugate() * Vnorm.array();
+    const Eigen::Index size_dS = V_.size();
 
-    cplx_type * ds_dvm_val_ptr = dS_dVm_.valuePtr();
-    cplx_type * ds_dva_val_ptr = dS_dVa_.valuePtr();
+    // persistent scratch: plain assignment resizes only when the dimension
+    // actually changed, so after the first call of a topology these two are
+    // filled in place, without touching the allocator
+    Vnorm_cache_ = V_.array() / V_.array().abs();
+    Ibus_cache_.noalias() = Ybus_ref_ * V_;   // noalias: straight into the buffer, no product temporary
+    conj_ibus_vnorm_cache_ = Ibus_cache_.array().conjugate() * Vnorm_cache_.array();
 
-    size_t pos = 0;
-    for (size_t col_id = 0; col_id < static_cast<size_t>(size_dS); ++col_id) {
+    cplx_type * ds_dvm_val_ptr = dS_dVm_vals_.data();
+    cplx_type * ds_dva_val_ptr = dS_dVa_vals_.data();
+    // read the four buffers through raw pointers: they are members (so they
+    // survive from one call to the next), and a compiler that cannot prove the
+    // writes below do not reach them would otherwise reload each base address
+    // on every nonzero
+    const cplx_type * const v_ptr     = V_.data();
+    const cplx_type * const vnorm_ptr = Vnorm_cache_.data();
+    const cplx_type * const ibus_ptr  = Ibus_cache_.data();
+    const cplx_type * const civ_ptr   = conj_ibus_vnorm_cache_.data();
+
+    Eigen::Index pos = 0;
+    for (Eigen::Index col_id = 0; col_id < size_dS; ++col_id) {
+        // loop-invariant over the inner (row) loop: read once per column
+        const cplx_type Vnorm_col = vnorm_ptr[col_id];
+        const cplx_type V_col     = v_ptr[col_id];
         for (EigenRefConstCplxSpMat::InnerIterator it(Ybus_ref_, col_id); it; ++it) {
-            const size_t row_id = static_cast<size_t>(it.row());
+            const Eigen::Index row_id = it.row();
             const cplx_type el_ybus = it.value();
-
-            cplx_type& dvm = ds_dvm_val_ptr[pos];
-            cplx_type& dva = ds_dva_val_ptr[pos];
+            const cplx_type V_row = v_ptr[row_id];
 
             // use formula derived from pandapower
-            dvm = el_ybus * Vnorm(col_id);
-            dvm = std::conj(dvm) * V_(row_id);
+            cplx_type dvm = el_ybus * Vnorm_col;
+            dvm = std::conj(dvm) * V_row;
 
-            dva = el_ybus * V_(col_id);
+            cplx_type dva = el_ybus * V_col;
             if (col_id == row_id) {
-                dvm += conjIbus_Vnorm(row_id);
-                dva -= Ibus(row_id);
+                dvm += civ_ptr[row_id];
+                dva -= ibus_ptr[row_id];
             }
-            const cplx_type tmp = BaseConstants::my_i * V_(row_id);
-            dva = std::conj(-dva) * tmp;
+            // i * V_row, spelled out: a complex multiply by i is a swap and a
+            // sign flip, not the four multiplications std::complex performs
+            // (same bits, since 0*x - 1*y == -y and 0*y + 1*x == x exactly).
+            const cplx_type tmp(-std::imag(V_row), std::real(V_row));
+            ds_dvm_val_ptr[pos] = dvm;
+            ds_dva_val_ptr[pos] = std::conj(-dva) * tmp;
             ++pos;
         }
     }
@@ -227,12 +231,21 @@ inline void NRSystem<Base, Rest...>::fill_internal_variables()
 
 // ---- NR primitives -----------------------------------------------------------
 template <typename... Rest>
-inline RealVect NRSystem<Base, Rest...>::mismatch() const
+inline void NRSystem<Base, Rest...>::mismatch_into(Eigen::Ref<RealVect> res) const
 {
     // current state: no step (dx == 0), residual evaluated at V_
     const auto n = static_cast<Eigen::Index>(total_state_variables());
+    assert(res.size() == n);
     if(dx_zero_cache_.size() != n) dx_zero_cache_ = RealVect::Zero(n);
-    return _residual(V_, dx_zero_cache_);
+    _residual_into(res, V_, dx_zero_cache_);
+}
+
+template <typename... Rest>
+inline RealVect NRSystem<Base, Rest...>::mismatch() const
+{
+    RealVect res(static_cast<Eigen::Index>(total_state_variables()));
+    mismatch_into(res);
+    return res;
 }
 
 template <typename... Rest>
@@ -250,7 +263,7 @@ inline void NRSystem<Base, Rest...>::apply_step(const Eigen::Ref<const RealVect>
     base_.apply_step(dx);
     _apply_step_extensions(dx, std::make_index_sequence<sizeof...(Rest)>{});
 
-    V_ = _reconstruct_V(Va_, Vm_);
+    _reconstruct_V_into(V_, Va_, Vm_);
     if (Vm_.minCoeff() < static_cast<real_type>(0.)) {
         Vm_ = V_.array().abs();
         Va_ = V_.array().arg();
@@ -260,53 +273,87 @@ inline void NRSystem<Base, Rest...>::apply_step(const Eigen::Ref<const RealVect>
 template <typename... Rest>
 inline real_type NRSystem<Base, Rest...>::mismatch_sq_norm_at(const Eigen::Ref<const RealVect>& dx) const
 {
-    return _residual(_compute_trial_V(dx), dx).squaredNorm();
+    const auto n = static_cast<Eigen::Index>(total_state_variables());
+    if(res_cache_.size() != n) res_cache_.resize(n);
+    _compute_trial_V_into(V_trial_cache_, dx);
+    _residual_into(res_cache_, V_trial_cache_, dx);
+    return res_cache_.squaredNorm();
 }
 
 template <typename... Rest>
-inline CplxVect NRSystem<Base, Rest...>::_reconstruct_V(const Eigen::Ref<const RealVect>& Va, const Eigen::Ref<const RealVect>& Vm)
+inline real_type NRSystem<Base, Rest...>::mismatch_sq_norm_at_current() const
 {
+    // deliberately the zero-step call, not a shortcut through V_: the trial
+    // voltages are rebuilt from (Va_, Vm_) exactly as for any other step, so
+    // this is bit-for-bit what mismatch_sq_norm_at(zero vector) returned.
+    const auto n = static_cast<Eigen::Index>(total_state_variables());
+    if(dx_zero_cache_.size() != n) dx_zero_cache_ = RealVect::Zero(n);
+    return mismatch_sq_norm_at(dx_zero_cache_);
+}
+
+template <typename... Rest>
+inline void NRSystem<Base, Rest...>::_reconstruct_V_into(
+    CplxVect& V_out,
+    const Eigen::Ref<const RealVect>& Va,
+    const Eigen::Ref<const RealVect>& Vm)
+{
+    // V = Vm * (cos(Va) + i.sin(Va)), straight into the caller's vector: the
+    // same expression as before, but assigned instead of returned, so the
+    // per-call nb_bus complex temporary is gone (Eigen resizes V_out only when
+    // the dimension actually changed, so nothing is allocated after the first
+    // call of a topology).
     const cplx_type m_i = BaseConstants::my_i;
-    return Vm.array() * (Va.array().cos().template cast<cplx_type>()
-                         + m_i * Va.array().sin().template cast<cplx_type>());
+    V_out = Vm.array() * (Va.array().cos().template cast<cplx_type>()
+                          + m_i * Va.array().sin().template cast<cplx_type>());
 }
 
 template <typename... Rest>
-inline CplxVect NRSystem<Base, Rest...>::_compute_trial_V(const Eigen::Ref<const RealVect>& dx) const
+inline void NRSystem<Base, Rest...>::_compute_trial_V_into(CplxVect& V_out, const Eigen::Ref<const RealVect>& dx) const
 {
-    // same voltage loops as apply_step, on local copies; the components' extra
-    // state is handled through the dx argument of adjust_mismatch / fill_custom_rows
-    RealVect Va_t = Va_;
-    RealVect Vm_t = Vm_;
+    // same voltage loops as apply_step, on (persistent) copies; the components'
+    // extra state is handled through the dx argument of adjust_mismatch /
+    // fill_custom_rows
+    Va_trial_cache_ = Va_;
+    Vm_trial_cache_ = Vm_;
     const std::vector<int>& theta_buses = ledger_.theta_buses();
     const std::vector<int>& theta_cols  = ledger_.theta_cols();
-    for (size_t k = 0; k < theta_buses.size(); ++k) Va_t(theta_buses[k]) += dx(theta_cols[k]);
+    for (size_t k = 0; k < theta_buses.size(); ++k) Va_trial_cache_(theta_buses[k]) += dx(theta_cols[k]);
     const std::vector<int>& vm_buses = ledger_.vm_buses();
     const std::vector<int>& vm_cols  = ledger_.vm_cols();
-    for (size_t k = 0; k < vm_buses.size(); ++k) Vm_t(vm_buses[k]) += dx(vm_cols[k]);
-    return _reconstruct_V(Va_t, Vm_t);
+    for (size_t k = 0; k < vm_buses.size(); ++k) Vm_trial_cache_(vm_buses[k]) += dx(vm_cols[k]);
+    _reconstruct_V_into(V_out, Va_trial_cache_, Vm_trial_cache_);
 }
 
 template <typename... Rest>
-inline RealVect NRSystem<Base, Rest...>::_residual(const Eigen::Ref<const CplxVect>& V_t, const Eigen::Ref<const RealVect>& dx) const
+inline void NRSystem<Base, Rest...>::_residual_into(
+    Eigen::Ref<RealVect> res,
+    const Eigen::Ref<const CplxVect>& V_t,
+    const Eigen::Ref<const RealVect>& dx) const
 {
-    // per-bus complex power mismatch: V .* conj(Ybus V) - Sbus
-    CplxVect mis = V_t.array() * (Ybus_ref_ * V_t).array().conjugate()
-                   - _Sbus_view().array();
+    // per-bus complex power mismatch: V .* conj(Ybus V) - Sbus.
+    // Ybus * V_t goes into its own persistent buffer first: left inside the
+    // coefficient-wise expression it is a sparse-times-dense product, which
+    // Eigen can only evaluate into a heap temporary -- one allocation per call,
+    // and this runs at least twice per NR iteration (once per backtracking
+    // trial of a line search).
+    assert(res.size() == static_cast<Eigen::Index>(total_state_variables()));
+    ybus_v_cache_.noalias() = Ybus_ref_ * V_t;
+    mis_cache_ = V_t.array() * ybus_v_cache_.array().conjugate()
+                 - _Sbus_view().array();
     // components adjust the complex injection (e.g. + slack_absorbed * slack_weights,
     // + the theta-dependent hvdc droop flows)
-    base_.adjust_mismatch(V_t, dx, mis);
-    _adjust_mismatch_extensions(V_t, dx, mis, std::make_index_sequence<sizeof...(Rest)>{});
+    base_.adjust_mismatch(V_t, dx, mis_cache_);
+    _adjust_mismatch_extensions(V_t, dx, mis_cache_, std::make_index_sequence<sizeof...(Rest)>{});
 
     // generic residual rows, driven by the ledger's (bus, row) pair lists
     // (accumulate: duplicated rows must sum)
-    RealVect res = RealVect::Zero(static_cast<Eigen::Index>(total_state_variables()));
+    res.setZero();
     const std::vector<int>& p_buses = ledger_.p_buses();
     const std::vector<int>& p_rows  = ledger_.p_rows();
-    for (size_t k = 0; k < p_buses.size(); ++k) res(p_rows[k]) -= std::real(mis(p_buses[k]));
+    for (size_t k = 0; k < p_buses.size(); ++k) res(p_rows[k]) -= std::real(mis_cache_(p_buses[k]));
     const std::vector<int>& q_buses = ledger_.q_buses();
     const std::vector<int>& q_rows  = ledger_.q_rows();
-    for (size_t k = 0; k < q_buses.size(); ++k) res(q_rows[k]) -= std::imag(mis(q_buses[k]));
+    for (size_t k = 0; k < q_buses.size(); ++k) res(q_rows[k]) -= std::imag(mis_cache_(q_buses[k]));
 
     // component-owned custom rows (none for Base / MultiSlack)
     base_.fill_custom_rows(res, Va_, Vm_, dx);
@@ -322,6 +369,30 @@ inline RealVect NRSystem<Base, Rest...>::_residual(const Eigen::Ref<const CplxVe
             if (qr >= 0) res(qr) = static_cast<real_type>(0.);
         }
     }
+}
+
+// ---- value-returning wrappers (kept for out-of-tree derived algorithms) ------
+template <typename... Rest>
+inline CplxVect NRSystem<Base, Rest...>::_reconstruct_V(const Eigen::Ref<const RealVect>& Va, const Eigen::Ref<const RealVect>& Vm)
+{
+    CplxVect res;
+    _reconstruct_V_into(res, Va, Vm);
+    return res;
+}
+
+template <typename... Rest>
+inline CplxVect NRSystem<Base, Rest...>::_compute_trial_V(const Eigen::Ref<const RealVect>& dx) const
+{
+    CplxVect res;
+    _compute_trial_V_into(res, dx);
+    return res;
+}
+
+template <typename... Rest>
+inline RealVect NRSystem<Base, Rest...>::_residual(const Eigen::Ref<const CplxVect>& V_t, const Eigen::Ref<const RealVect>& dx) const
+{
+    RealVect res(static_cast<Eigen::Index>(total_state_variables()));
+    _residual_into(res, V_t, dx);
     return res;
 }
 

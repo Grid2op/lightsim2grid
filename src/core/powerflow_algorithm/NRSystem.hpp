@@ -19,6 +19,7 @@
 #include "Eigen/SparseCore"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <tuple>
 #include <vector>
@@ -195,8 +196,11 @@ class LS2G_API Base
             const Eigen::Ref<const IntVect>  & pv,
             const Eigen::Ref<const IntVect>  & pq
         ) {
-            pv_ = IntVect(pv);
-            pq_ = IntVect(pq);
+            // plain assignment, not `pv_ = IntVect(pv)`: the explicit temporary
+            // allocated a fresh buffer on every topology change, where a direct
+            // assignment reuses pv_'s own storage whenever the size is unchanged.
+            pv_ = pv;
+            pq_ = pq;
 
             nb_pv_ = static_cast<int>(pv_.size());
             nb_pq_ = static_cast<int>(pq_.size());
@@ -901,8 +905,19 @@ public:
     // ----- NR iteration primitives -----------------------------------------------
 
     RealVect   mismatch()                           const;
+    // same value as mismatch(), written into a caller-owned vector (which must
+    // already have total_state_variables() coefficients). Lets the NR loop
+    // refresh its residual in place instead of allocating -- and then freeing
+    // -- a fresh one on every iteration.
+    void       mismatch_into(Eigen::Ref<RealVect> res) const;
     void       apply_step(const Eigen::Ref<const RealVect>& dx);
     real_type  mismatch_sq_norm_at(const Eigen::Ref<const RealVect>& dx) const;
+    // ||mismatch at the current state||^2, i.e. mismatch_sq_norm_at(0) without
+    // materialising the zero step vector the caller would otherwise build on
+    // every call (a line search does this once per NR iteration). It really is
+    // the zero-step call -- same reconstruct-then-evaluate path, same value to
+    // the last bit -- not a shortcut through V_.
+    real_type  mismatch_sq_norm_at_current() const;
 
     // Direct, allocation-light update of the LAST-registered extension's
     // `count` feature entries, identified purely by count and position (the
@@ -924,8 +939,18 @@ public:
         base_.clear();
         _clear_extensions(std::make_index_sequence<sizeof...(Rest)>{});
 
-        dS_dVm_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
-        dS_dVa_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
+        dS_dVm_vals_ = CplxVect();
+        dS_dVa_vals_ = CplxVect();
+        Vnorm_cache_ = CplxVect();
+        Ibus_cache_  = CplxVect();
+        conj_ibus_vnorm_cache_ = CplxVect();
+
+        ybus_v_cache_   = CplxVect();
+        mis_cache_      = CplxVect();
+        Va_trial_cache_ = RealVect();
+        Vm_trial_cache_ = RealVect();
+        V_trial_cache_  = CplxVect();
+        res_cache_      = RealVect();
 
         map_dsdva_r_.clear();
         map_dsdva_i_.clear();
@@ -1036,9 +1061,34 @@ private:
     // safe to reuse across calls instead of allocating a fresh RealVect::Zero(n)
     // every time (mismatch() runs at least twice per NR iteration).
     mutable RealVect                       dx_zero_cache_;
+    // scratch for _residual_into / _compute_trial_V_into / mismatch_sq_norm_at.
+    // These run at least twice per NR iteration -- and once per backtracking
+    // trial of a line search, i.e. up to ~20 times -- so every one of them used
+    // to heap-allocate (and free) a full nb_bus / nb_unknown vector on each
+    // call. They are mutable because the calls are const: like dx_zero_cache_
+    // above they are pure scratch, never state (an NRSystem is owned by exactly
+    // one solver, and a multi-threaded batch gives each thread its own solver).
+    mutable CplxVect                       ybus_v_cache_;   // Ybus * V_t
+    mutable CplxVect                       mis_cache_;      // per-bus complex mismatch
+    mutable RealVect                       Va_trial_cache_, Vm_trial_cache_;
+    mutable CplxVect                       V_trial_cache_;
+    mutable RealVect                       res_cache_;      // residual at the trial point
     Eigen::SparseMatrix<real_type, Eigen::ColMajor>         J_;
     double                                 timer_dSbus_, timer_fillJ_;
-    Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>         dS_dVm_, dS_dVa_;
+    // dS_dVm / dS_dVa VALUES only, one per Ybus nonzero, in Ybus' own
+    // (compressed) storage order. They used to be two full
+    // Eigen::SparseMatrix copies of Ybus, but nothing ever indexed them by
+    // (row, col): fill_internal_variables writes them and fill_J reads them
+    // purely by nnz position, exactly as they are laid out here. Dropping the
+    // sparse wrapper removes the two structure copies (outer + inner index
+    // arrays) init_topology made of Ybus on every topology change -- the
+    // "TODO speed: copy only the sparsity pattern and not the values" that
+    // used to sit there.
+    CplxVect                               dS_dVm_vals_, dS_dVa_vals_;
+    // scratch for fill_internal_variables, kept across calls so the two
+    // nb_bus-sized vectors it needs are allocated once per topology instead of
+    // once per Jacobian fill
+    CplxVect                               Vnorm_cache_, Ibus_cache_, conj_ibus_vnorm_cache_;
 
     // dS value maps: Ybus nnz position -> position in J_.valuePtr() (-1 if unused)
     std::vector<int>                       map_dsdva_r_;
@@ -1060,6 +1110,24 @@ private:
     std::vector<int>                       masked_zero_pos_;
     std::vector<int>                       masked_one_pos_;
     bool                                   masked_dirty_;
+
+    // one dS -> J accumulation pass over a value map: for every Ybus nonzero
+    // that feeds a Jacobian coefficient, J[pos] += real/imag(ds[k]). TakeReal
+    // picks the part, so the four passes of fill_J share one loop. The dS
+    // values are read straight through (sequentially, one per Ybus nonzero),
+    // which is what the -1 holes in the map buy: no index indirection.
+    template <bool TakeReal>
+    static void _accumulate_ds(real_type* J_values,
+                               const std::vector<int>& map,
+                               const cplx_type* ds)
+    {
+        const std::size_t n = map.size();
+        const int* pos = map.data();
+        for (std::size_t k = 0; k < n; ++k) {
+            if (pos[k] < 0) continue;
+            J_values[pos[k]] += TakeReal ? std::real(ds[k]) : std::imag(ds[k]);
+        }
+    }
 
     // resolve masked_zero_pos_ / masked_one_pos_ from masked_buses_ and J_'s
     // sparsity (one pass over the nonzeros). Call only when J_ is built.
@@ -1113,10 +1181,23 @@ protected:
     Eigen::Index                                            Sbus_size_;
     Eigen::Map<const CplxVect> _Sbus_view() const { return Eigen::Map<const CplxVect>(Sbus_data_ptr_, Sbus_size_); }
 
+    // V = Vm * exp(i.Va), written into V_out (resized only when needed).
+    static void _reconstruct_V_into(CplxVect& V_out,
+                                    const Eigen::Ref<const RealVect>& Va,
+                                    const Eigen::Ref<const RealVect>& Vm);
+    void _compute_trial_V_into(CplxVect& V_out, const Eigen::Ref<const RealVect>& dx) const;
+    // assemble the (negated) residual at trial voltages V_t into `res` (which
+    // must already have total_state_variables() coefficients); dx is the step
+    // that produced V_t (used by components that carry extra state, e.g. slack
+    // absorbed).
+    void _residual_into(Eigen::Ref<RealVect> res,
+                        const Eigen::Ref<const CplxVect>& V_t,
+                        const Eigen::Ref<const RealVect>& dx) const;
+
+    // value-returning wrappers, kept for out-of-tree derived algorithms: the
+    // *_into forms above are what the hot path uses.
     static CplxVect _reconstruct_V(const Eigen::Ref<const RealVect>& Va, const Eigen::Ref<const RealVect>& Vm);
     CplxVect _compute_trial_V(const Eigen::Ref<const RealVect>& dx) const;
-    // assemble the (negated) residual at trial voltages V_t; dx is the step that
-    // produced V_t (used by components that carry extra state, e.g. slack absorbed).
     RealVect _residual(const Eigen::Ref<const CplxVect>& V_t, const Eigen::Ref<const RealVect>& dx) const;
 
 private:
