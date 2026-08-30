@@ -510,3 +510,25 @@ TEST_CASE("consider_only_main_component tells the solver the dimension changed",
     CHECK(grid.get_dc_algo_controler().has_dimension_changed());
     require_counts_match_recount(grid, "consider_only_main_component");
 }
+
+TEST_CASE("a grid that has been built but not yet solved counts its buses",
+          "[SubstationContainer][bus_count]")
+{
+    // The counts are disarmed by every `init_*` that replaces a whole element
+    // container, because no +1 / -1 can see a container being swapped out. So a
+    // freshly loaded grid has never been counted -- and an all-zero count is exactly
+    // what "never counted" looks like.
+    //
+    // The powerflow establishes them through init_bus_status(), but the connectivity
+    // READERS are public API and a loader is entitled to be asked before anything is
+    // solved: init_from_matpower(...) followed by get_bus_status() reported every bus
+    // disconnected. Reading connectivity establishes the counts, like solving does.
+    LSGrid grid = make_two_busbar_grid();   // built, never counted, never solved
+
+    CHECK(grid.nb_connected_bus() == 3);
+    const std::vector<bool> status = grid.get_bus_status();
+    REQUIRE(status.size() == 6u);
+    CHECK(status[0]); CHECK(status[1]); CHECK(status[2]);   // busbar 1 of each substation
+    CHECK_FALSE(status[3]); CHECK_FALSE(status[4]); CHECK_FALSE(status[5]);  // busbar 2: empty
+    require_counts_match_recount(grid, "reading connectivity on a never-solved grid");
+}
