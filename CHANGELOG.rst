@@ -124,31 +124,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       contingency) and a cartesian one ("every registered contingency x every
       injection profile").
 
-[1.0.0] 2026-08-28
+[1.0.1] 2026-xx-yy
 --------------------
-- [BREAKING] **solver cache reuse is now automatic and on by default**, per solver family.
-  A powerflow reuses what the previous one of the same family built -- the compact bus labelling,
-  ``Ybus`` / ``Sbus``, the PV / PQ split, the slack weights -- and only re-stamps what the grid
-  reports as modified since. Every powerflow marks its own family "in sync" on the way out, so
-  ``LSGrid.unset_changes()`` is no longer needed: it is a no-op whenever reuse is enabled, and is
-  kept purely for backward compatibility. Worth ~24% of the time of a powerflow on a 14-bus grid,
-  and nothing has to be called to get it.
-  This is breaking for code that modifies the grid through a path that bypasses ``LSGrid``'s own
-  ``change_*`` / ``deactivate_*`` / ``reactivate_*`` methods (direct manipulation of the C++
-  containers, for instance). Such code used to get away with it as long as it never called
-  ``unset_changes()``; now it must say so with ``prevent_cache_reuse()`` (or the narrower
-  ``tell_recompute_ybus`` / ``tell_recompute_sbus``), or turn reuse off altogether with
-  ``allow_cache_reuse(False)``. Everything that goes through the public API is unaffected: a
-  completeness sweep over every mutating ``LSGrid`` method (``src/tests/test_cache_reuse.cpp``)
-  checks that the cached and the fully-rebuilt answer agree.
-- [ADDED] ``LSGrid.allow_cache_reuse(bool)`` / ``allow_ac_cache_reuse`` / ``allow_dc_cache_reuse``
-  and their ``get_*`` counterparts: turn cache reuse off (durably) for one family or both. The
-  answer is identical either way, so this is a debugging switch ("is this wrong number a caching
-  artefact?") and an escape hatch for code that mutates the containers directly.
-- [ADDED] ``LSGrid.prevent_cache_reuse()`` / ``prevent_ac_cache_reuse()`` / ``prevent_dc_cache_reuse()``:
-  a one-shot invalidation of what a family cached (as opposed to the ``allow_*`` mode above).
-  ``prevent_cache_reuse()`` is the new name of ``tell_solver_need_reset()``, which still exists and
-  behaves identically. Both are now documented rather than tagged "internal, do not use".
 - [BREAKING] everything a solver family caches now lives in one object, ``SolverSideCache``
   (``src/core/SolverSideCache.hpp``), instead of eighteen separate ``LSGrid`` members. The bus
   labelling, ``Ybus`` / ``Sbus``, the slack, the PV / PQ split and each family's connectivity
@@ -206,6 +183,32 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   the check is free. What remains on the powerflow path is the ``allow_*_cache_reuse`` switch plus
   a debug-only assertion, so a future third claimant is caught by the C++ suite (run under ASan,
   UBSan and valgrind in CI) at no cost in release wheels.
+
+[1.0.0] 2026-08-28
+--------------------
+- [BREAKING] **solver cache reuse is now automatic and on by default**, per solver family.
+  A powerflow reuses what the previous one of the same family built -- the compact bus labelling,
+  ``Ybus`` / ``Sbus``, the PV / PQ split, the slack weights -- and only re-stamps what the grid
+  reports as modified since. Every powerflow marks its own family "in sync" on the way out, so
+  ``LSGrid.unset_changes()`` is no longer needed: it is a no-op whenever reuse is enabled, and is
+  kept purely for backward compatibility. Worth ~24% of the time of a powerflow on a 14-bus grid,
+  and nothing has to be called to get it.
+  This is breaking for code that modifies the grid through a path that bypasses ``LSGrid``'s own
+  ``change_*`` / ``deactivate_*`` / ``reactivate_*`` methods (direct manipulation of the C++
+  containers, for instance). Such code used to get away with it as long as it never called
+  ``unset_changes()``; now it must say so with ``prevent_cache_reuse()`` (or the narrower
+  ``tell_recompute_ybus`` / ``tell_recompute_sbus``), or turn reuse off altogether with
+  ``allow_cache_reuse(False)``. Everything that goes through the public API is unaffected: a
+  completeness sweep over every mutating ``LSGrid`` method (``src/tests/test_cache_reuse.cpp``)
+  checks that the cached and the fully-rebuilt answer agree.
+- [ADDED] ``LSGrid.allow_cache_reuse(bool)`` / ``allow_ac_cache_reuse`` / ``allow_dc_cache_reuse``
+  and their ``get_*`` counterparts: turn cache reuse off (durably) for one family or both. The
+  answer is identical either way, so this is a debugging switch ("is this wrong number a caching
+  artefact?") and an escape hatch for code that mutates the containers directly.
+- [ADDED] ``LSGrid.prevent_cache_reuse()`` / ``prevent_ac_cache_reuse()`` / ``prevent_dc_cache_reuse()``:
+  a one-shot invalidation of what a family cached (as opposed to the ``allow_*`` mode above).
+  ``prevent_cache_reuse()`` is the new name of ``tell_solver_need_reset()``, which still exists and
+  behaves identically. Both are now documented rather than tagged "internal, do not use".
 - [BREAKING] the AC and the DC solver families no longer share ANY solver-side data.
   ``slack_weights``, the PV split and the PQ split were single members overwritten by whichever
   family solved last -- unlike ``Ybus`` / ``Sbus`` / the id maps, which were already per family.
@@ -270,7 +273,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``LightSimBackend.runpf`` already carried a python-side workaround for the second one (the
   ``self._last_dc`` ``tell_solver_need_reset()``, comment: "otherwise might segfault"), and
   ``check_solution`` guarded against the first one locally with ``id_me_to_ac_solver_.size() > 0``.
-  The check now lives where the reuse decision is made instead: ``_pre_process_own_cache``
+  The check now lives where the reuse decision is made instead: ``_pre_process_solver_impl``
   verifies, in a handful of integer comparisons, that the data the flags describe is actually
   there, and falls back to a full rebuild otherwise. A wrong "nothing changed" can now cost time,
   never memory safety.
