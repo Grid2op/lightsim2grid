@@ -11,8 +11,9 @@
 // the solver: they are pulled out of the LSGrid itself, through the `lsgrid_ptr`
 // the algorithm holds, by LSGrid::get_free_vm_slack_solver_buses /
 // fill_hvdc_droop_solver_data / fill_voltage_control_solver_data. Those three read
-// the grid's *member* solver-side labelling (id_me_to_ac_solver_,
-// id_ac_solver_to_me_, slack_bus_id_ac_solver_).
+// the grid's own AC cache (ac_cache_: id_me_to_solver, id_solver_to_me,
+// slack_bus_id_solver -- and bus_pq, which fill_voltage_control_solver_data needs
+// to know which buses own a Q equation).
 //
 // LSGrid::ac_pf passes those very members to pre_process_solver, so they are always
 // current there. The batch algorithms (TimeSeries / ContingencyAnalysis /
@@ -314,6 +315,26 @@ TEST_CASE("a batch on an already-solved grid regulates too", "[batch][vctrl]")
     LSGrid grid = make_remote_gen_grid();
     single_shot(grid);   // solved BEFORE the batch copies it
     check_same_voltages(one_step_timeseries(grid, 2), ref);
+}
+
+TEST_CASE("the source grid still solves correctly after a batch ran on it", "[batch][vctrl]")
+{
+    // Every batch prep calls pre_process_solver with the batch's OWN cache, and that
+    // call publishes the batch's labelling and pv-pq split into the grid it was
+    // called on -- next to a matrix it did not publish. On the batch's private copy
+    // that mixture is harmless (the copy never runs a powerflow of its own); the
+    // point here is the contract that makes it harmless anywhere, namely that such a
+    // build always retires that grid's cache. Solve the source grid on both sides of
+    // a batch and it must not move.
+    LSGrid ref_grid = make_remote_gen_grid();
+    const CplxVect ref = single_shot(ref_grid);
+
+    LSGrid grid = make_remote_gen_grid();
+    check_same_voltages(single_shot(grid), ref);
+    check_same_voltages(one_step_timeseries(grid, 2), ref);
+    check_same_voltages(single_shot(grid), ref);   // ... and again, after the batch
+    check_same_voltages(empty_contingency(grid), ref);
+    check_same_voltages(single_shot(grid), ref);
 }
 
 TEST_CASE("two generators sharing one regulated bus share it in a batch too", "[batch][vctrl]")

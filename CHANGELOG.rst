@@ -124,6 +124,66 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       contingency) and a cartesian one ("every registered contingency x every
       injection profile").
 
+[1.0.1] 2026-xx-yy
+--------------------
+- [BREAKING] everything a solver family caches now lives in one object, ``SolverSideCache``
+  (``src/core/SolverSideCache.hpp``), instead of eighteen separate ``LSGrid`` members. The bus
+  labelling, ``Ybus`` / ``Sbus``, the slack, the PV / PQ split and each family's connectivity
+  snapshot are one picture of the grid taken at one instant, expressed in ONE bus labelling; they
+  are now built, handed over and retired as one unit. ``LSGrid`` holds ``ac_cache_`` / ``dc_cache_``;
+  ``pre_process_solver`` / ``pre_process_dc_solver`` (C++ only, never exposed to python) no longer
+  take a cache at all: they are defined by the fact that they build ``ac_cache_`` / ``dc_cache_`` for
+  this grid's own algorithm. Building a solver input into a cache the CALLER owns -- what the batch
+  algorithms do -- is now a separate pair, ``build_solver_input`` / ``build_dc_solver_input``, rather
+  than the same function distinguishing the two by comparing the cache's address. The two really are
+  different operations: the own-cache pair applies the reuse policy and resets / re-configures
+  ``_algo``; the foreign pair never re-stamps (the change flags describe THIS grid and say nothing
+  about someone else's cache), leaves this grid's algorithms alone, and publishes the labelling and
+  PV / PQ split into this grid's cache for the NR extensions before retiring it. The assembly itself
+  is shared, unchanged, in one private ``_build_into_cache``.
+  **This changes ``LSGrid``'s member layout**, so anything that casts an ``LSGrid`` across a module boundary (``gpusim2grid``) must be rebuilt
+  against these headers -- which the plugin ABI policy in ``docs/solver_plugin.rst`` already
+  requires. Nothing changes for python.
+- [FIXED] a batch algorithm no longer writes half of what it builds into the grid's cache.
+  ``slack_weights``, ``bus_pv`` and ``bus_pq`` were not parameters of ``pre_process_solver``: they
+  were taken from the grid's own members whatever the caller passed for the other six containers.
+  So a ``TimeSeries`` / ``ContingencyAnalysis`` build wrote its PV / PQ split and its slack weights
+  into the grid's cache, next to a ``Ybus`` built for a different labelling, and left that grid
+  still claiming the result was reusable; and the reuse guard compared one owner's container sizes
+  against the other's, so a caller that reused its own containers with a "nothing changed" control
+  would have skipped ``fillpv_pq`` and stamped the grid's PV / PQ split onto its own system --
+  converged, plausible, wrong. Nothing reached that (every batch asks for a full rebuild, and works
+  on a private copy of the grid), which is what made it worth closing before something did. A cache
+  being one object removes the whole class of mistake: there is no way to hand a function half of
+  it. What a foreign build still publishes into the grid -- the labelling and the split, which the
+  NR extensions read back through ``lsgrid_ptr`` rather than from what the solver was handed -- now
+  retires that grid's cache instead of leaving it a mixture.
+- [FIXED] a build into a caller's cache no longer resets or reconfigures the grid's own solver.
+  ``_algo.reset()`` / ``tell_solver_control()`` fired for a solve the grid would never perform,
+  discarding a factorization its next powerflow would have reused.
+- [FIXED] ``LSGrid.unset_changes()`` no longer papers over a change that has not been solved.
+  Its contract is "a powerflow has run, past changes can be forgotten" -- but nothing checked that
+  a powerflow *had* run, so calling it with a modification outstanding cleared the flags that
+  described it and the next powerflow re-solved the OLD system: converged, plausible, and wrong by
+  0.038 pu on a 14-bus grid with one line deactivated. It now refuses instead: each family is
+  marked only if its change control reports nothing outstanding AND its cache is structurally
+  intact and still matches the grid's connectivity; a family that cannot back the claim is retired
+  and rebuilds on its next powerflow. It still applies to BOTH families, as it always has.
+  Note a cache cannot detect this by self-inspection -- changing a line's impedance, a transformer
+  tap or a load target leaves every vector size and every bus status exactly as they were -- which
+  is why the new ``AlgoControl.nothing_changed()`` is the load-bearing test. The element containers
+  remain the sole authority on what changed: they declare it through ``AlgoControl`` in their own
+  modifiers, and ``unset_changes()`` only reads that back. The structural check beside it answers a
+  different question (is the data there at all, and the right shape) and says nothing about change.
+- [ADDED] ``AlgoControl.nothing_changed()``: has every change this control tracks already been
+  consumed by a solve? The exact negation of ``tell_all_changed()``.
+- the powerflow path no longer re-verifies that the data behind a "nothing changed" claim exists.
+  The two entry points that can make such a claim without having built anything --
+  ``unset_changes()`` and ``check_solution()`` -- now verify it themselves, at an altitude where
+  the check is free. What remains on the powerflow path is the ``allow_*_cache_reuse`` switch plus
+  a debug-only assertion, so a future third claimant is caught by the C++ suite (run under ASan,
+  UBSan and valgrind in CI) at no cost in release wheels.
+
 [1.0.0] 2026-08-28
 --------------------
 - [BREAKING] **solver cache reuse is now automatic and on by default**, per solver family.

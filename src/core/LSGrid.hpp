@@ -21,6 +21,7 @@
 #include <cmath>  // for PI
 
 #include "Utils.hpp"
+#include "SolverSideCache.hpp"
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
@@ -172,22 +173,22 @@ class LS2G_API LSGrid final
          */
         size_t total_bus() const {return substations_.nb_bus();}
 
-        const SolverBusIdVect & id_me_to_ac_solver() const {return id_me_to_ac_solver_;}
-        const GlobalBusIdVect & id_ac_solver_to_me() const {return id_ac_solver_to_me_;}
-        const SolverBusIdVect & id_me_to_dc_solver() const {return id_me_to_dc_solver_;}
-        const GlobalBusIdVect & id_dc_solver_to_me() const {return id_dc_solver_to_me_;}
+        const SolverBusIdVect & id_me_to_ac_solver() const {return ac_cache_.id_me_to_solver;}
+        const GlobalBusIdVect & id_ac_solver_to_me() const {return ac_cache_.id_solver_to_me;}
+        const SolverBusIdVect & id_me_to_dc_solver() const {return dc_cache_.id_me_to_solver;}
+        const GlobalBusIdVect & id_dc_solver_to_me() const {return dc_cache_.id_solver_to_me;}
 
         std::vector<int> id_me_to_ac_solver_numpy() const {
-            return id_me_to_ac_solver_.to_int_vector();
+            return ac_cache_.id_me_to_solver.to_int_vector();
         }
         std::vector<int> id_ac_solver_to_me_numpy() const {
-            return id_ac_solver_to_me_.to_int_vector();
+            return ac_cache_.id_solver_to_me.to_int_vector();
         }
         std::vector<int> id_me_to_dc_solver_numpy() const {
-            return id_me_to_dc_solver_.to_int_vector();
+            return dc_cache_.id_me_to_solver.to_int_vector();
         }
         std::vector<int> id_dc_solver_to_me_numpy() const {
-            return id_dc_solver_to_me_.to_int_vector();
+            return dc_cache_.id_solver_to_me.to_int_vector();
         }
 
         // retrieve the underlying data (raw class)
@@ -508,15 +509,19 @@ class LS2G_API LSGrid final
             sgens_.reconnect_connected_buses(substations_);
             storages_.reconnect_connected_buses(substations_);
             hvdc_lines_.reconnect_connected_buses(substations_);
-            const std::vector<bool> new_status = substations_.get_bus_status();
+            // by reference: every mutation of the bus status happens in the calls
+            // above, and _flag_dimension_change only reads. Taking it by value here
+            // copied the whole vector on every powerflow that reaches this function,
+            // to be read twice and thrown away.
+            const std::vector<bool> & new_status = substations_.get_bus_status();
 
             // Each family is compared against the connectivity ITS OWN cache was
             // built with: an AC powerflow that finds the AC snapshot up to date
             // must not conclude anything about DC, which may be several grid
             // modifications behind. A snapshot is refreshed only by
             // _mark_cache_valid(), ie when that family has actually rebuilt.
-            _flag_dimension_change(new_status, last_bus_status_saved_, algo_controler_.ac_algo_controler());
-            _flag_dimension_change(new_status, last_bus_status_dc_, algo_controler_.dc_algo_controler());
+            _flag_dimension_change(new_status, ac_cache_.last_bus_status, algo_controler_.ac_algo_controler());
+            _flag_dimension_change(new_status, dc_cache_.last_bus_status, algo_controler_.dc_algo_controler());
         }
         void set_substation_names(const std::vector<std::string> & sub_names){
             substations_.init_sub_names(sub_names);
@@ -608,13 +613,13 @@ class LS2G_API LSGrid final
         // answer is identical either way, so this is a debugging switch (is a
         // wrong result a caching bug?) or a safety net for code that mutates the
         // containers behind LSGrid's back -- not something a normal user needs.
-        void allow_ac_cache_reuse(bool allowed){allow_ac_cache_reuse_ = allowed;}
-        void allow_dc_cache_reuse(bool allowed){allow_dc_cache_reuse_ = allowed;}
-        void allow_cache_reuse(bool allowed){allow_ac_cache_reuse_ = allowed; allow_dc_cache_reuse_ = allowed;}
-        [[nodiscard]] bool get_allow_ac_cache_reuse() const {return allow_ac_cache_reuse_;}
-        [[nodiscard]] bool get_allow_dc_cache_reuse() const {return allow_dc_cache_reuse_;}
+        void allow_ac_cache_reuse(bool allowed){ac_cache_.allow_reuse = allowed;}
+        void allow_dc_cache_reuse(bool allowed){dc_cache_.allow_reuse = allowed;}
+        void allow_cache_reuse(bool allowed){ac_cache_.allow_reuse = allowed; dc_cache_.allow_reuse = allowed;}
+        [[nodiscard]] bool get_allow_ac_cache_reuse() const {return ac_cache_.allow_reuse;}
+        [[nodiscard]] bool get_allow_dc_cache_reuse() const {return dc_cache_.allow_reuse;}
         // true only when BOTH families are allowed to reuse their cache
-        [[nodiscard]] bool get_allow_cache_reuse() const {return allow_ac_cache_reuse_ && allow_dc_cache_reuse_;}
+        [[nodiscard]] bool get_allow_cache_reuse() const {return ac_cache_.allow_reuse && dc_cache_.allow_reuse;}
 
         /**
          * Throw away everything a family cached and start its next powerflow from
@@ -629,37 +634,43 @@ class LS2G_API LSGrid final
          *
          * Formerly `tell_solver_need_reset()`, still available under that name.
          */
-        void prevent_ac_cache_reuse(){
-            last_bus_status_saved_ = std::vector<bool>(substations_.nb_bus(), false);
-            algo_controler_.ac_algo_controler().tell_solver_need_reset();
-        }
-        void prevent_dc_cache_reuse(){
-            last_bus_status_dc_ = std::vector<bool>(substations_.nb_bus(), false);
-            algo_controler_.dc_algo_controler().tell_solver_need_reset();
-        }
+        void prevent_ac_cache_reuse(){_retire_cache(ac_cache_, algo_controler_.ac_algo_controler());}
+        void prevent_dc_cache_reuse(){_retire_cache(dc_cache_, algo_controler_.dc_algo_controler());}
         void prevent_cache_reuse(){prevent_ac_cache_reuse(); prevent_dc_cache_reuse();}
         // backward-compatible name of `prevent_cache_reuse()`
         void tell_solver_need_reset(){prevent_cache_reuse();}
 
         /**
-         * Inform the grid that a powerflow has been run and that every "past changes"
-         * can be "forgotten" : if a solver is re run, then some things are cached to
-         * avoid un necessary computation.
+         * Tell the grid that everything it built for its solvers still describes the
+         * grid, so the next powerflow of either family can re-stamp only what changed
+         * from now on.
          *
-         * Historical, manual counterpart of the automatic marking described above.
-         * When both families cache automatically (the default) there is nothing
-         * left for it to do and it returns immediately; it only has an effect on a
-         * family whose automatic reuse was turned off -- and even then that
-         * family's `allow_*_cache_reuse(false)` still wins, so the claim is
-         * recorded but the next powerflow of that family rebuilds anyway.
+         * THE USER-FACING, CHECKED ENTRY POINT. Same relationship to
+         * `_mark_cache_valid` as `compute_pf_with_input_validation` has to
+         * `compute_pf`: identical intent, but this one does not take the caller's
+         * word for it. It applies to BOTH families, as it always has -- that is the
+         * historical contract and code written before 1.0.0 relies on it.
          *
-         * Kept for backward compatibility: new code should simply not call it.
+         * Marking both families is also exactly what used to make it dangerous: a
+         * family that had never solved got marked "in sync" alongside one that had,
+         * and its next powerflow took the "nothing to rebuild" path with an empty bus
+         * labelling. So each family is now verified separately before the claim is
+         * recorded -- structurally (is the data there, and the right shape?) and
+         * against the grid's connectivity right now (does that labelling still
+         * describe it?). A family that cannot back the claim is not marked: it is
+         * retired, and rebuilds on its next powerflow. A wrong claim therefore costs
+         * time, never memory safety, and it costs it only to the family that was
+         * wrong.
+         *
+         * Since automatic reuse landed in 1.0.0 there is normally nothing for this to
+         * do -- every powerflow marks its own family on the way out. Kept for
+         * backward compatibility; new code should simply not call it.
          */
         void unset_changes(){
-            if(allow_ac_cache_reuse_ && allow_dc_cache_reuse_) return;  // already done, after every powerflow
-            _mark_cache_valid(true);
-            _mark_cache_valid(false);
-        }  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+            const std::size_t nb_bus = substations_.nb_bus();
+            _declare_up_to_date(ac_cache_, algo_controler_.ac_algo_controler(), nb_bus);
+            _declare_up_to_date(dc_cache_, algo_controler_.dc_algo_controler(), nb_bus);
+        }
 
         void tell_recompute_ybus(){algo_controler_.ac_algo_controler().tell_recompute_ybus(); algo_controler_.dc_algo_controler().tell_recompute_ybus();}
         void tell_recompute_sbus(){algo_controler_.ac_algo_controler().tell_recompute_sbus(); algo_controler_.dc_algo_controler().tell_recompute_sbus();}
@@ -1129,7 +1140,7 @@ class LS2G_API LSGrid final
          * controller, and SVC-regulated slack buses. A slack bus that DOES host a
          * local PV generator stays Vm-fixed (PV-like) with no Q equation. AC
          * labelling. Only valid once `pre_process_solver` ran (it needs
-         * `id_me_to_ac_solver_` / `slack_bus_id_ac_solver_`).
+         * `ac_cache_.id_me_to_solver` / `ac_cache_.slack_bus_id_solver`).
          */
         std::set<int> get_free_vm_slack_solver_buses() const;
         /**
@@ -1271,7 +1282,7 @@ class LS2G_API LSGrid final
          * @return Eigen::SparseMatrix<cplx_type> 
          */
         Eigen::SparseMatrix<cplx_type> get_Ybus_solver() const {
-            return Ybus_ac_;  // This is copied to python
+            return ac_cache_.mat;  // This is copied to python
         }
 
         /**
@@ -1289,7 +1300,7 @@ class LS2G_API LSGrid final
          * @return Eigen::SparseMatrix<cplx_type> 
          */
         Eigen::SparseMatrix<real_type> get_dcYbus_solver() const {
-            return Bbus_dc_;  // This is copied to python (DC admittance matrix is real)
+            return dc_cache_.mat;  // This is copied to python (DC admittance matrix is real)
         }
 
         /**
@@ -1307,7 +1318,7 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const CplxVect>
          */
         [[nodiscard]] Eigen::Ref<const CplxVect> get_Sbus_solver() const{
-            return acSbus_;
+            return ac_cache_.inj;
         }
 
         /**
@@ -1325,7 +1336,7 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const CplxVect>
          */
         [[nodiscard]] Eigen::Ref<const RealVect> get_dcSbus_solver() const{
-            return dcPbus_;  // DC power injection is real (active power P)
+            return dc_cache_.inj;  // DC power injection is real (active power P)
         }
 
         /**
@@ -1345,7 +1356,7 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const CplxVect>
          */
         [[nodiscard]] Eigen::SparseMatrix<cplx_type> get_Ybus() const {
-            return _relabel_matrix(Ybus_ac_, id_ac_solver_to_me_);
+            return _relabel_matrix(ac_cache_.mat, ac_cache_.id_solver_to_me);
         }
 
         /**
@@ -1365,7 +1376,7 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const CplxVect>
          */
         [[nodiscard]] Eigen::SparseMatrix<real_type> get_dcYbus() const {
-            return _relabel_matrix(Bbus_dc_, id_dc_solver_to_me_);
+            return _relabel_matrix(dc_cache_.mat, dc_cache_.id_solver_to_me);
         }
 
         /**
@@ -1383,7 +1394,7 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const CplxVect>
          */
         [[nodiscard]] CplxVect get_Sbus() const {
-            return _relabel_vector(acSbus_, id_ac_solver_to_me_);
+            return _relabel_vector(ac_cache_.inj, ac_cache_.id_solver_to_me);
         }
 
         /**
@@ -1401,7 +1412,7 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const CplxVect>
          */
         [[nodiscard]] RealVect get_dcSbus() const {
-            return _relabel_vector(dcPbus_, id_dc_solver_to_me_);
+            return _relabel_vector(dc_cache_.inj, dc_cache_.id_solver_to_me);
         }
 
         /**
@@ -1412,7 +1423,7 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const Eigen::VectorXi> 
          */
         [[nodiscard]] const SolverBusIdVect & get_pv_solver() const{
-            return _has_ac_cache() ? bus_pv_ac_ : bus_pv_dc_;
+            return _has_ac_cache() ? ac_cache_.bus_pv : dc_cache_.bus_pv;
         }
         /**
          * @brief Get the vector (list) of pv buses, solver labelling
@@ -1430,10 +1441,10 @@ class LS2G_API LSGrid final
         // behind the other), so ask for the one you mean: the family-less
         // accessors above answer for AC when an AC powerflow has run, and only
         // fall back to DC otherwise.
-        [[nodiscard]] const SolverBusIdVect & get_ac_pv_solver() const {return bus_pv_ac_;}
-        [[nodiscard]] const SolverBusIdVect & get_dc_pv_solver() const {return bus_pv_dc_;}
-        [[nodiscard]] Eigen::Ref<const IntVect> get_ac_pv_solver_numpy() const {return bus_pv_ac_.as_eigen();}
-        [[nodiscard]] Eigen::Ref<const IntVect> get_dc_pv_solver_numpy() const {return bus_pv_dc_.as_eigen();}
+        [[nodiscard]] const SolverBusIdVect & get_ac_pv_solver() const {return ac_cache_.bus_pv;}
+        [[nodiscard]] const SolverBusIdVect & get_dc_pv_solver() const {return dc_cache_.bus_pv;}
+        [[nodiscard]] Eigen::Ref<const IntVect> get_ac_pv_solver_numpy() const {return ac_cache_.bus_pv.as_eigen();}
+        [[nodiscard]] Eigen::Ref<const IntVect> get_dc_pv_solver_numpy() const {return dc_cache_.bus_pv.as_eigen();}
 
         /**
          * @brief Get the vector (list) of pv buses, gridmodel labelling
@@ -1443,8 +1454,8 @@ class LS2G_API LSGrid final
          * @return const Eigen::VectorXi
          */
         [[nodiscard]] GlobalBusIdVect get_pv() const{
-            if(_has_ac_cache()) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(bus_pv_ac_, id_ac_solver_to_me_);
-            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(bus_pv_dc_, id_dc_solver_to_me_);
+            if(_has_ac_cache()) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(ac_cache_.bus_pv, ac_cache_.id_solver_to_me);
+            if(dc_cache_.id_solver_to_me.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(dc_cache_.bus_pv, dc_cache_.id_solver_to_me);
             throw std::runtime_error("LSGrid::get_pv: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
         [[nodiscard]] IntVect get_pv_numpy() const{
@@ -1459,7 +1470,7 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const Eigen::VectorXi> 
          */
         [[nodiscard]] const SolverBusIdVect & get_pq_solver() const{
-            return _has_ac_cache() ? bus_pq_ac_ : bus_pq_dc_;
+            return _has_ac_cache() ? ac_cache_.bus_pq : dc_cache_.bus_pq;
         }
         /**
          * @brief Get the vector (list) of pq buses, solver labelling
@@ -1472,10 +1483,10 @@ class LS2G_API LSGrid final
             return get_pq_solver().as_eigen();  // was _to_intvect()
         }
         // per-family variants, see get_ac_pv_solver / get_dc_pv_solver above
-        [[nodiscard]] const SolverBusIdVect & get_ac_pq_solver() const {return bus_pq_ac_;}
-        [[nodiscard]] const SolverBusIdVect & get_dc_pq_solver() const {return bus_pq_dc_;}
-        [[nodiscard]] Eigen::Ref<const IntVect> get_ac_pq_solver_numpy() const {return bus_pq_ac_.as_eigen();}
-        [[nodiscard]] Eigen::Ref<const IntVect> get_dc_pq_solver_numpy() const {return bus_pq_dc_.as_eigen();}
+        [[nodiscard]] const SolverBusIdVect & get_ac_pq_solver() const {return ac_cache_.bus_pq;}
+        [[nodiscard]] const SolverBusIdVect & get_dc_pq_solver() const {return dc_cache_.bus_pq;}
+        [[nodiscard]] Eigen::Ref<const IntVect> get_ac_pq_solver_numpy() const {return ac_cache_.bus_pq.as_eigen();}
+        [[nodiscard]] Eigen::Ref<const IntVect> get_dc_pq_solver_numpy() const {return dc_cache_.bus_pq.as_eigen();}
 
         /**
          * @brief Get the vector (list) of pq buses, grimodel labelling
@@ -1485,8 +1496,8 @@ class LS2G_API LSGrid final
          * @return const Eigen::VectorXi
          */
         [[nodiscard]] GlobalBusIdVect get_pq() const{
-            if(_has_ac_cache()) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(bus_pq_ac_, id_ac_solver_to_me_);
-            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(bus_pq_dc_, id_dc_solver_to_me_);
+            if(_has_ac_cache()) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(ac_cache_.bus_pq, ac_cache_.id_solver_to_me);
+            if(dc_cache_.id_solver_to_me.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(dc_cache_.bus_pq, dc_cache_.id_solver_to_me);
             throw std::runtime_error("LSGrid::get_pq: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
         [[nodiscard]] IntVect get_pq_numpy() const{
@@ -1499,7 +1510,7 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const Eigen::VectorXi> 
          */
         [[nodiscard]] const SolverBusIdVect & get_slack_ids_solver() const{
-            return slack_bus_id_ac_solver_;
+            return ac_cache_.slack_bus_id_solver;
         }
         /**
          * @brief Get the vector (list) of pq buses, grimodel labelling
@@ -1509,7 +1520,7 @@ class LS2G_API LSGrid final
          * @return const Eigen::VectorXi
          */
         [[nodiscard]] Eigen::Ref<const IntVect> get_slack_ids_solver_numpy() const{
-            return slack_bus_id_ac_solver_.as_eigen();  // was _to_intvect()
+            return ac_cache_.slack_bus_id_solver.as_eigen();  // was _to_intvect()
         }
 
         /**
@@ -1518,7 +1529,7 @@ class LS2G_API LSGrid final
          * @return const Eigen::VectorXi 
          */
         [[nodiscard]] GlobalBusIdVect get_slack_ids() const {
-            return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(slack_bus_id_ac_solver_, id_ac_solver_to_me_);
+            return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(ac_cache_.slack_bus_id_solver, ac_cache_.id_solver_to_me);
         }
         [[nodiscard]] IntVect get_slack_ids_numpy() const {
             return get_slack_ids().as_eigen();  // was _to_intvect()
@@ -1530,7 +1541,7 @@ class LS2G_API LSGrid final
          * @return const SolverBusIdVect &
          */
         [[nodiscard]] const SolverBusIdVect & get_slack_ids_dc_solver() const{
-            return slack_bus_id_dc_solver_;
+            return dc_cache_.slack_bus_id_solver;
         }
         /**
          * @brief Get the ids of the buses that participate to the slack (DC), solver labelling
@@ -1538,13 +1549,13 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const IntVect> 
          */
         [[nodiscard]] Eigen::Ref<const IntVect> get_slack_ids_dc_solver_numpy() const{
-            return slack_bus_id_dc_solver_.as_eigen();  // was _to_intvect()
+            return dc_cache_.slack_bus_id_solver.as_eigen();  // was _to_intvect()
         }
 
         [[nodiscard]] GlobalBusIdVect get_slack_ids_dc() const{
             return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(
-                slack_bus_id_dc_solver_,
-                id_dc_solver_to_me_);
+                dc_cache_.slack_bus_id_solver,
+                dc_cache_.id_solver_to_me);
         }
         /**
          * @brief Get the ids of the buses that participate to the slack (DC), gridmodel labelling
@@ -1563,11 +1574,11 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const RealVect> 
          */
         [[nodiscard]] Eigen::Ref<const RealVect> get_slack_weights_solver() const{
-            return _has_ac_cache() ? slack_weights_ac_ : slack_weights_dc_;
+            return _has_ac_cache() ? ac_cache_.slack_weights : dc_cache_.slack_weights;
         }
         // per-family variants, see get_ac_pv_solver / get_dc_pv_solver above
-        [[nodiscard]] Eigen::Ref<const RealVect> get_ac_slack_weights_solver() const {return slack_weights_ac_;}
-        [[nodiscard]] Eigen::Ref<const RealVect> get_dc_slack_weights_solver() const {return slack_weights_dc_;}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_ac_slack_weights_solver() const {return ac_cache_.slack_weights;}
+        [[nodiscard]] Eigen::Ref<const RealVect> get_dc_slack_weights_solver() const {return dc_cache_.slack_weights;}
 
         /**
          * @brief Get the slack weights for each buses (gridmodel labelling)
@@ -1577,8 +1588,8 @@ class LS2G_API LSGrid final
          * @return Eigen::Ref<const RealVect> 
          */
         [[nodiscard]] RealVect get_slack_weights() const{
-            if(_has_ac_cache()) return _relabel_vector(slack_weights_ac_, id_ac_solver_to_me_);
-            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(slack_weights_dc_, id_dc_solver_to_me_);
+            if(_has_ac_cache()) return _relabel_vector(ac_cache_.slack_weights, ac_cache_.id_solver_to_me);
+            if(dc_cache_.id_solver_to_me.size() > 0) return _relabel_vector(dc_cache_.slack_weights, dc_cache_.id_solver_to_me);
             throw std::runtime_error("LSGrid::get_slack_weights: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
@@ -1597,8 +1608,8 @@ class LS2G_API LSGrid final
          * @return CplxVect
          */
         [[nodiscard]] CplxVect get_V() const{
-            if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_V_solver(), id_ac_solver_to_me_);
-            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_V_solver(), id_dc_solver_to_me_);
+            if(ac_cache_.id_solver_to_me.size() > 0) return _relabel_vector(get_V_solver(), ac_cache_.id_solver_to_me);
+            if(dc_cache_.id_solver_to_me.size() > 0) return _relabel_vector(get_V_solver(), dc_cache_.id_solver_to_me);
             throw std::runtime_error("LSGrid::get_V: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
@@ -1617,8 +1628,8 @@ class LS2G_API LSGrid final
          * @return const RealVect
          */
         [[nodiscard]] RealVect get_Va() const{
-            if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_Va_solver(), id_ac_solver_to_me_);
-            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_Va_solver(), id_dc_solver_to_me_);
+            if(ac_cache_.id_solver_to_me.size() > 0) return _relabel_vector(get_Va_solver(), ac_cache_.id_solver_to_me);
+            if(dc_cache_.id_solver_to_me.size() > 0) return _relabel_vector(get_Va_solver(), dc_cache_.id_solver_to_me);
             throw std::runtime_error("LSGrid::get_Va: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
@@ -1637,8 +1648,8 @@ class LS2G_API LSGrid final
          * @return const RealVect
          */
         [[nodiscard]] RealVect get_Vm() const{
-            if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_Vm_solver(), id_ac_solver_to_me_);
-            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_Vm_solver(), id_dc_solver_to_me_);
+            if(ac_cache_.id_solver_to_me.size() > 0) return _relabel_vector(get_Vm_solver(), ac_cache_.id_solver_to_me);
+            if(dc_cache_.id_solver_to_me.size() > 0) return _relabel_vector(get_Vm_solver(), dc_cache_.id_solver_to_me);
             throw std::runtime_error("LSGrid::get_Vm: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
@@ -1859,44 +1870,74 @@ class LS2G_API LSGrid final
         is_ac indicates if you want to perform and AC powerflow or a DC powerflow and reset_solver indicates
         if you will perform a powerflow after it or not. (usually put ``true`` here).
 
-        This is use internally by ac_pf or dc_pf but also when doing batched solvers (*eg* TimeSeries or Contingency analysis)
-        **/
-        // `init_pv_vm_targets`: when true (the default, used by the real ac_pf / dc_pf
-        // solves), voltage-controlled elements with no droop/slope (generators, HVDC
-        // converters, zero-slope SVCs -- see SvcContainer::set_vm) have the proposed
-        // voltage MAGNITUDE at their regulated bus snapped to their own target, a
-        // reasonable NR-initialization heuristic. `check_solution` passes `false`: it
-        // is testing a caller-supplied (eg OLF's) voltage as-is, and silently
-        // overwriting it there defeats the whole point of the check -- even a tiny,
-        // physically-correct gap between that voltage and the local target (the
-        // regulator doing its job) can look like a large spurious power mismatch at a
-        // strongly-meshed bus.
-        // Sbus stays a plain reference (not Eigen::Ref): forwarded into
-        // _pre_process_solver_impl's inj, which forwards into prepare_injection,
-        // which reassigns/resizes it.
+        /**
+         * Build (or re-stamp) this grid's OWN solver-side cache for the AC family,
+         * and hand the result to this grid's own algorithm.
+         *
+         * The cache is not a parameter: there is exactly one AC cache this can mean
+         * (`ac_cache_`), and this entry point is defined by the fact that `_algo` is
+         * about to solve what it produces. It therefore does the two things that only
+         * make sense for our own solve, around the shared build:
+         *   - it decides whether the previous build may be re-stamped rather than
+         *     rebuilt (the reuse policy: `allow_ac_cache_reuse`, the change flags);
+         *   - it resets / re-configures `_algo` to match what was rebuilt.
+         *
+         * To build a system out of this grid into a cache YOU own -- which is what the
+         * batch algorithms do -- call `build_solver_input` instead. That is a
+         * genuinely different operation, not this one with a flag: see there.
+         *
+         * `init_pv_vm_targets`: when true (every real powerflow), voltage-controlled
+         * elements with no droop/slope (generators, HVDC converters, zero-slope SVCs
+         * -- see SvcContainer::set_vm) have the proposed voltage MAGNITUDE at their
+         * regulated bus snapped to their own target, a reasonable NR-initialization
+         * heuristic. `check_solution` passes false: it is testing a caller-supplied
+         * (eg OLF's) voltage as-is, and silently overwriting it there defeats the
+         * whole point of the check -- even a tiny, physically-correct gap between
+         * that voltage and the local target (the regulator doing its job) can look
+         * like a large spurious power mismatch at a strongly-meshed bus.
+         */
         CplxVect pre_process_solver(const Eigen::Ref<const CplxVect> & Vinit,
-                                    CplxVect & Sbus,
-                                    Eigen::SparseMatrix<cplx_type> & Ybus,
-                                    SolverBusIdVect & id_me_to_solver,
-                                    GlobalBusIdVect & id_solver_to_me,
-                                    GlobalBusIdVect & slack_bus_id_me,
-                                    SolverBusIdVect & slack_bus_id_solver,
-                                    bool is_ac,
                                     const AlgoControl & solver_control,
                                     bool init_pv_vm_targets = true);
 
-        // DC-specific pre processing: builds the real Bbus (admittance) matrix and the
-        // real Pbus (active power) vector, reusing the shared bus-mapping helpers. Mirrors
-        // pre_process_solver but keeps the whole DC path real (no complex Ybus / Sbus).
-        // Pbus stays a plain reference (not Eigen::Ref): same resize-forwarding
-        // reason as pre_process_solver's Sbus above.
+        /// DC counterpart: builds `dc_cache_` (real Bbus / Pbus) for `_dc_algo`, no
+        /// `init_pv_vm_targets` (always on).
         CplxVect pre_process_dc_solver(const Eigen::Ref<const CplxVect> & Vinit,
-                                       RealVect & Pbus,
-                                       Eigen::SparseMatrix<real_type> & Bbus,
-                                       SolverBusIdVect & id_me_to_solver,
-                                       GlobalBusIdVect & id_solver_to_me,
-                                       GlobalBusIdVect & slack_bus_id_me,
-                                       SolverBusIdVect & slack_bus_id_solver,
+                                       const AlgoControl & solver_control);
+
+        /**
+         * Build a complete AC solver input out of this grid, into a cache the CALLER
+         * owns, to be solved by the CALLER's own algorithm. This is what the batch
+         * algorithms (BaseBatchSolverSynch, working on a private copy of the grid) use.
+         *
+         * Not `pre_process_solver` with a different cache -- a different operation:
+         *
+         *  - It never re-stamps. `solver_control`, this grid's connectivity snapshot
+         *    and its change flags all describe THIS grid; none of them says anything
+         *    about what is in `out`. So `out` is always rebuilt from scratch. (Free in
+         *    practice: a caller handing over its own cache asks for a full rebuild
+         *    anyway -- but that is now a property of this function, not a courtesy of
+         *    the caller.)
+         *  - It leaves `_algo` / `_dc_algo` alone. They are this grid's, they hold a
+         *    factorization of this grid's own cache, and they will not run on `out`.
+         *  - It PUBLISHES the bus labelling and the pv-pq split into this grid's own
+         *    cache, then retires it. The NR extensions (MultiSlack, VoltageControl,
+         *    Hvdc) do not read the cache they were handed: they call back into the
+         *    grid through `lsgrid_ptr` (get_free_vm_slack_solver_buses,
+         *    fill_hvdc_droop_solver_data, fill_voltage_control_solver_data -- that
+         *    last one needs `bus_pq`). During the caller's solve those must answer in
+         *    the caller's labelling, or remote voltage control is silently dropped.
+         *    See the publication step at the end of `_build_foreign_cache`.
+         *
+         * Throws if handed this grid's own cache -- that is `pre_process_solver`.
+         */
+        CplxVect build_solver_input(const Eigen::Ref<const CplxVect> & Vinit,
+                                    AcSolverCache & out,
+                                    const AlgoControl & solver_control);
+
+        /// DC counterpart of `build_solver_input`: real Bbus / Pbus into `out`.
+        CplxVect build_dc_solver_input(const Eigen::Ref<const CplxVect> & Vinit,
+                                       DcSolverCache & out,
                                        const AlgoControl & solver_control);
 
         //for FDPF
@@ -2008,7 +2049,7 @@ class LS2G_API LSGrid final
          * from the same vector (input) that uses the solver convention.
          *
          * Overloaded on purpose (not "copy paste, find a better way"): callers pass either
-         * a genuine Eigen::Matrix<T,...> lvalue (eg `acSbus_`) or an Eigen::Ref<const
+         * a genuine Eigen::Matrix<T,...> lvalue (eg `ac_cache_.inj`) or an Eigen::Ref<const
          * Matrix<T,...>> prvalue returned by a `get_..._solver()` accessor (eg
          * `get_V_solver()`). Both need their own overload because T only appears deduced
          * from the argument's own type: a Ref argument cannot deduce T through this
@@ -2082,24 +2123,64 @@ class LS2G_API LSGrid final
         }
     
     protected:
-        // Shared implementation of pre_process_solver (AC: complex Ybus / Sbus) and
-        // pre_process_dc_solver (DC: real Bbus / Pbus). The matrix scalar type selects the
-        // family (cplx_type => AC, real_type => DC); the type-specific steps (matrix init / fill,
-        // injection assembly) are tag-dispatched to the overloads just below.
-        // inj stays a plain reference (not Eigen::Ref): it is forwarded straight into
-        // prepare_injection (CplxVect&/RealVect& overload), which reassigns/resizes it
-        // -- not a template-deduction issue here (MatScalar/InjVect are always given
-        // explicitly at the two call sites below), just resize-forwarding.
-        template<class MatScalar, class InjVect>
-        CplxVect _pre_process_solver_impl(const Eigen::Ref<const CplxVect> & Vinit,
-                                          InjVect & inj,
-                                          Eigen::SparseMatrix<MatScalar> & mat,
-                                          SolverBusIdVect & id_me_to_solver,
-                                          GlobalBusIdVect & id_solver_to_me,
-                                          GlobalBusIdVect & slack_bus_id_me,
-                                          SolverBusIdVect & slack_bus_id_solver,
-                                          const AlgoControl & solver_control,
-                                          bool init_pv_vm_targets);
+        /**
+         * THE BUILD. Everything a solver family needs, assembled out of this grid
+         * into `cache`: bus labelling, matrix, injections, slack, pv-pq split.
+         *
+         * Deliberately knows nothing about whose cache this is. No reuse policy, no
+         * algorithm, no publication -- those are the two entry points' business, and
+         * they are the ONLY thing that differs between them (`_pre_process_own_cache`
+         * and `_build_foreign_cache` below). The cache's scalar type selects the
+         * family; the type-specific steps (matrix init / fill, injection assembly)
+         * are tag-dispatched to the overloads further down.
+         *
+         * `force_full_rebuild` is the caller's half of the "may I re-stamp?" answer:
+         * the own-cache path passes its reuse policy, the foreign path passes true.
+         * It is a parameter and not a member read because it is exactly what the two
+         * entry points disagree about. Note it cannot simply be `redo_all`: that is
+         * recomputed inside, because init_bus_status() can raise
+         * has_dimension_changed() half way through.
+         */
+        template<class MatScalar>
+        CplxVect _build_into_cache(const Eigen::Ref<const CplxVect> & Vinit,
+                                   SolverSideCache<MatScalar> & cache,
+                                   const AlgoControl & solver_control,
+                                   bool force_full_rebuild,
+                                   bool init_pv_vm_targets);
+
+        /**
+         * `pre_process_solver` / `pre_process_dc_solver` for either family: the reuse
+         * policy and this grid's algorithm, wrapped around `_build_into_cache`.
+         * `cache` is always ac_cache_ or dc_cache_ -- the public entry points are the
+         * only callers and they pass the member that matches MatScalar.
+         */
+        template<class MatScalar>
+        CplxVect _pre_process_own_cache(const Eigen::Ref<const CplxVect> & Vinit,
+                                        SolverSideCache<MatScalar> & cache,
+                                        const AlgoControl & solver_control,
+                                        bool init_pv_vm_targets);
+
+        /**
+         * `build_solver_input` / `build_dc_solver_input` for either family: a full
+         * rebuild into `out`, then publish the layout into our own cache for the NR
+         * extensions and retire it. Never touches `_algo` / `_dc_algo`.
+         */
+        template<class MatScalar>
+        CplxVect _build_foreign_cache(const Eigen::Ref<const CplxVect> & Vinit,
+                                      SolverSideCache<MatScalar> & out,
+                                      const AlgoControl & solver_control);
+
+        // Is `cache` this grid's own cache for its family, or someone else's?
+        // No longer a dispatch -- which entry point you called is what decides that
+        // -- but the precondition check `build_solver_input` rejects a caller with:
+        // handing it our own cache means it wanted `pre_process_solver`.
+        // Overloaded rather than branched on a runtime flag: the family is already
+        // in the type, so this is one address comparison and no way to get it wrong.
+        [[nodiscard]] bool _is_own_cache(const AcSolverCache & c) const noexcept {return &c == &ac_cache_;}
+        [[nodiscard]] bool _is_own_cache(const DcSolverCache & c) const noexcept {return &c == &dc_cache_;}
+        /// this grid's own cache for the family `c` belongs to (`c` itself when owned)
+        [[nodiscard]] AcSolverCache & _own_cache_for(const AcSolverCache &) noexcept {return ac_cache_;}
+        [[nodiscard]] DcSolverCache & _own_cache_for(const DcSolverCache &) noexcept {return dc_cache_;}
         // matrix (re)initialization, overloaded per family (no `if constexpr`, C++14)
         void init_solver_matrix(Eigen::SparseMatrix<cplx_type> & mat, int nb_bus_solver){ init_Ybus(mat, nb_bus_solver); }
         void init_solver_matrix(Eigen::SparseMatrix<real_type> & mat, int nb_bus_solver){ init_Bbus(mat, nb_bus_solver); }
@@ -2119,7 +2200,7 @@ class LS2G_API LSGrid final
         void fillBdc(Eigen::SparseMatrix<real_type> & res, const SolverBusIdVect& id_me_to_solver);  // DC: real admittance matrix
         void fillSbus_me(Eigen::Ref<CplxVect> res, bool ac, const SolverBusIdVect& id_me_to_solver);
         // writes the pv / pq split into the caller-supplied vectors: the AC and the
-        // DC family each own theirs (bus_pv_ac_ / bus_pv_dc_, ...), and they are
+        // DC family each own theirs (ac_cache_.bus_pv / dc_cache_.bus_pv, ...), and they are
         // expressed in that family's own solver labelling.
         void fillpv_pq(const SolverBusIdVect& id_me_to_solver,
                        const GlobalBusIdVect& id_solver_to_me,
@@ -2201,21 +2282,70 @@ class LS2G_API LSGrid final
         // Has an AC powerflow ever built the AC solver-side data on this grid?
         // Used by the family-less get_pv_solver() / get_pq_solver() /
         // get_slack_weights_solver() to pick which family to answer for.
-        [[nodiscard]] bool _has_ac_cache() const noexcept {return id_ac_solver_to_me_.size() > 0;}
+        [[nodiscard]] bool _has_ac_cache() const noexcept {return ac_cache_.id_solver_to_me.size() > 0;}
 
         // Record that `family_control`'s cached data now matches the grid: its
         // flags go back to "nothing changed" and its connectivity snapshot is
         // refreshed. Called after every powerflow of that family (converged or
         // not: pre_process built the data against the current grid either way),
         // unless that family's reuse was turned off.
+        void _mark_cache_valid(SolverBusLayout & cache, AlgoControl & control){
+            control.tell_none_changed();
+            cache.last_bus_status = substations_.get_bus_status();
+        }
         void _mark_cache_valid(bool ac){
-            if(ac){
-                algo_controler_.ac_algo_controler().tell_none_changed();
-                last_bus_status_saved_ = substations_.get_bus_status();
-            } else {
-                algo_controler_.dc_algo_controler().tell_none_changed();
-                last_bus_status_dc_ = substations_.get_bus_status();
-            }
+            if(ac) _mark_cache_valid(ac_cache_, algo_controler_.ac_algo_controler());
+            else _mark_cache_valid(dc_cache_, algo_controler_.dc_algo_controler());
+        }
+
+        /**
+         * One family's half of `unset_changes()`: record the claim if the cache can
+         * back it, retire the cache if it cannot. Templated on the cache so it can
+         * ask `is_consistent`, which the family-agnostic SolverBusLayout cannot
+         * answer on its own (it does not know about the matrix).
+         *
+         * `allow_reuse` is deliberately NOT consulted. It says whether the next
+         * powerflow MAY reuse the cache; it says nothing about whether the cache
+         * currently describes the grid, which is the only question being asked here.
+         * A family with reuse turned off still gets an honest answer recorded, and
+         * the powerflow path still refuses to reuse it.
+         */
+        template<class Cache>
+        void _declare_up_to_date(Cache & cache, AlgoControl & control, std::size_t nb_bus_grid){
+            // `control.nothing_changed()` is the load-bearing test, and this function
+            // only READS it. The element containers are what declare a change, in
+            // their own modifiers; that is the authority on whether this family's
+            // cache still describes the grid, and nothing here second-guesses it or
+            // adds to it.
+            //
+            // A cache cannot answer the question by looking at itself: change a
+            // line's impedance, a transformer tap or a load's target and every size
+            // in the cache -- and every bus's connected/disconnected status -- is
+            // exactly what it was. Clearing the flags on a false claim is not a
+            // segfault, it is a converged, plausible, wrong answer, because the next
+            // powerflow re-solves the OLD system.
+            //
+            // `is_consistent` is the separate, structural question -- is the data
+            // there at all, and the right shape -- which is what stands between a
+            // claim about a family that never solved and an out-of-bounds read. It
+            // reads only sizes; it says nothing about what changed.
+            if(control.nothing_changed() && cache.is_consistent(nb_bus_grid)) _mark_cache_valid(cache, control);
+            else _retire_cache(cache, control);
+        }
+
+        /**
+         * The opposite of _mark_cache_valid: this family must rebuild from scratch.
+         *
+         * The DATA is deliberately left in place -- `prevent_*_cache_reuse()` is
+         * also how a foreign build's published labelling is retired, and the NR
+         * extensions still have to be able to read it during that build. What goes
+         * is the claim that it is up to date: an empty snapshot fails
+         * `layout_is_usable`, so the next powerflow of this family rebuilds even if
+         * its control were somehow told "nothing changed".
+         */
+        void _retire_cache(SolverBusLayout & cache, AlgoControl & control){
+            cache.last_bus_status.clear();
+            control.tell_solver_need_reset();
         }
 
         // One family's half of init_bus_status(): flag a dimension change iff the
@@ -2272,19 +2402,11 @@ class LS2G_API LSGrid final
         int n_sub_;
         int max_nb_bus_per_sub_;
         SubstationContainer substations_;
-        std::vector<bool> last_bus_status_saved_;
         std::map<std::string, std::string> init_kwargs_;  // see get_init_kwargs()
 
-        // always have the length of the number of buses,
-        // id_me_to_model_[id_me] gives -1 if the bus "id_me" is deactivated, or "id_model" if it is activated.
-        SolverBusIdVect id_me_to_ac_solver_;
-        // convert the bus id from the model to the bus id of me.
-        // it has a variable size, that depends on the number of connected bus. if "id_model" is an id of a bus
-        // sent to the solver, then id_model_to_me_[id_model] is the bus id of this model of the grid.
-        GlobalBusIdVect id_ac_solver_to_me_;
-
-        SolverBusIdVect id_me_to_dc_solver_;
-        GlobalBusIdVect id_dc_solver_to_me_;
+        // The bus labelling, the matrices, the injections, the slack, the pv-pq
+        // split and each family's connectivity snapshot all live in ac_cache_ /
+        // dc_cache_, declared further down.
 
         // 2. powerline
         LineContainer powerlines_;
@@ -2318,23 +2440,20 @@ class LS2G_API LSGrid final
         // 9b. static var compensators (SVC)
         SvcContainer svcs_;
 
-        // 10. slack bus
-        // std::vector<int> slack_bus_id_;
-        GlobalBusIdVect slack_bus_id_ac_me_;  // slack bus id, gridmodel number
-        SolverBusIdVect slack_bus_id_ac_solver_;  // slack bus id, solver number
-        GlobalBusIdVect slack_bus_id_dc_me_;
-        SolverBusIdVect slack_bus_id_dc_solver_;
-        // AC family's slack weights (solver labelling). The DC twin is appended at
-        // the end of the class -- see the ABI note there.
-        RealVect slack_weights_ac_;
-
-        // as matrix, for the solver
-        Eigen::SparseMatrix<cplx_type> Ybus_ac_;
-        Eigen::SparseMatrix<real_type> Bbus_dc_;  // DC admittance matrix is real (susceptance B)
-        CplxVect acSbus_;
-        RealVect dcPbus_;  // DC power injection is real (active power P)
-        SolverBusIdVect bus_pv_ac_;  // id are the solver internal id and NOT the initial id
-        SolverBusIdVect bus_pq_ac_;  // id are the solver internal id and NOT the initial id
+        // ---- what each solver family cached -----------------------------------
+        // One object per family, not eighteen loose members. Everything a family
+        // solves with -- the compact bus labelling, its matrix, its injections,
+        // its slack, its pv-pq split -- plus the bookkeeping that says whether any
+        // of it may still be reused. They are one picture of the grid taken at one
+        // instant and expressed in ONE bus labelling, so they are built together,
+        // handed over together and thrown away together; see SolverSideCache.hpp
+        // for why that has to be structural rather than a convention.
+        // This is also where anything else a family needs to cache goes (remote /
+        // shared voltage-control layouts, HVDC droop data, ...): add a field there
+        // and it inherits the lifetime and the invalidation rules of everything
+        // already in it, instead of adding one more `_ac_` / `_dc_` pair here.
+        AcSolverCache ac_cache_;
+        DcSolverCache dc_cache_;
 
         // TODO have version of the stuff above for the public api, indexed with "me" and not "solver"
 
@@ -2342,54 +2461,9 @@ class LS2G_API LSGrid final
         AlgorithmSelector _algo;
         AlgorithmSelector _dc_algo;
 
-        // forced angle-reference slack bus (gridmodel id, -1 = none). Declared
-        // LAST so existing member offsets are unchanged (ABI-stable for the
-        // gpusim2grid cross-module LSGrid cast). See set_reference_slack_bus.
+        // forced angle-reference slack bus (gridmodel id, -1 = none).
+        // See set_reference_slack_bus.
         int _forced_ref_slack_bus_id = -1;
-
-        // ---- DC twins of the solver-side data ---------------------------------
-        // The AC and the DC solver each cache their own bus labelling, matrix and
-        // injection vector; these three used to be the exception -- one shared
-        // copy for both families, silently overwritten by whichever solved last.
-        // That is what made `unset_changes()` unsafe across families (a family
-        // could reuse its own maps while reading the other's pv / pq split) and
-        // it is what makes per-family cache reuse possible now that it is gone.
-        // Appended here, after _forced_ref_slack_bus_id, for the same ABI reason
-        // as above: the AC copies keep the offsets they always had.
-        RealVect slack_weights_dc_;
-        SolverBusIdVect bus_pv_dc_;  // id are the solver internal id and NOT the initial id
-        SolverBusIdVect bus_pq_dc_;  // id are the solver internal id and NOT the initial id
-        // bus connectivity each family's cache was last built with (the AC twin is
-        // `last_bus_status_saved_`, kept under its historical name because it is
-        // the one written to / read from StateRes -- see get_state / set_state,
-        // which restores it into BOTH families).
-        std::vector<bool> last_bus_status_dc_;
-
-        // May a powerflow reuse what the previous one of the same family built
-        // (Ybus / Sbus, the bus labelling, the pv-pq split, the slack weights)?
-        // ON by default: after every powerflow that converges, that family's grid
-        // is marked "nothing changed since" automatically, so the next one only
-        // re-stamps what the grid actually reports as modified. Turn a family off
-        // to force it to rebuild everything on every solve -- the answer is the
-        // same either way, so this is a debugging / paranoia switch, not a
-        // correctness one. See allow_cache_reuse() / prevent_cache_reuse().
-        bool allow_ac_cache_reuse_ = true;
-        bool allow_dc_cache_reuse_ = true;
-
-        // Set when a family's powerflow diverged. The DATA it built (Ybus / Sbus,
-        // the labelling, the pv-pq split) is still a correct picture of the grid
-        // -- divergence is a numerical failure, not a data one -- so it is kept
-        // and stays reusable. What is not reusable is the ALGORITHM's own state:
-        // a half-converged iterate, a factorization of a matrix it gave up on.
-        // That is reset on the spot, and this flag makes the next powerflow hand
-        // the algorithm an "everything changed" control so it rebuilds its
-        // internals (Jacobian sparsity, Bp/Bpp, the linear solver) from the
-        // cached matrices instead of assuming they are still there. The built-in
-        // algorithms would manage without it -- their reset() raises their own
-        // `need_factorize_`, which gates the same rebuilds -- but an external
-        // (plugin) solver is promised nothing beyond the AlgoControl it is given.
-        bool ac_algo_needs_rebuild_ = false;
-        bool dc_algo_needs_rebuild_ = false;
 };
 
 

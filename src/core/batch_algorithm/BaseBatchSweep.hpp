@@ -599,17 +599,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         IntVect is_grid_connected_after_contingency(){
             const bool ac_solver_used = _algo.ac_solver_used();
-            const bool inputs_ready = (ac_solver_used ? Ybus_.cols() != 0 : Bbus_.cols() != 0);
+            const bool inputs_ready = (ac_solver_used ? ac_cache_.mat.cols() != 0 : dc_cache_.mat.cols() != 0);
             if(!inputs_ready || ybus_policy_.li_coeffs.size() != ybus_policy_.li_defaults.size()){
                 const size_t nb_total_bus = _grid_model.total_bus();
                 CplxVect Vinit = CplxVect::Constant(static_cast<Eigen::Index>(nb_total_bus),
                                                     {_grid_model.get_init_vm_pu(), 0.});
                 prepare_solver_input_base(Vinit, ac_solver_used);
-                ybus_policy_.init_li_coeffs(_grid_model, ac_solver_used, id_me_to_solver_, n_line_);
+                ybus_policy_.init_li_coeffs(_grid_model, ac_solver_used, active_layout().id_me_to_solver, n_line_);
             }
             IntVect res = IntVect::Constant(ybus_policy_.li_coeffs.size(), 0);
             if(ac_solver_used){
-                Eigen::SparseMatrix<cplx_type> Ybus = Ybus_;
+                Eigen::SparseMatrix<cplx_type> Ybus = ac_cache_.mat;
                 int cont_id = 0;
                 for(const auto & coeffs_modif: ybus_policy_.li_coeffs){
                     if(YbusPolicy::Contingency::remove_from_Ybus(Ybus, coeffs_modif, true, _algo)) res(cont_id) = 1;
@@ -618,7 +618,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     ++cont_id;
                 }
             } else {
-                Eigen::SparseMatrix<real_type> Bbus = Bbus_;
+                Eigen::SparseMatrix<real_type> Bbus = dc_cache_.mat;
                 int cont_id = 0;
                 for(const auto & coeffs_modif: ybus_policy_.li_coeffs){
                     for(const auto & c: coeffs_modif) Bbus.coeffRef(c.row_id, c.col_id) -= std::real(c.value);
@@ -633,17 +633,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         int pick_reference_slack(){
             const bool ac_solver_used = _algo.ac_solver_used();
-            const bool inputs_ready = (ac_solver_used ? Ybus_.cols() != 0 : Bbus_.cols() != 0);
+            const bool inputs_ready = (ac_solver_used ? ac_cache_.mat.cols() != 0 : dc_cache_.mat.cols() != 0);
             if(!inputs_ready || ybus_policy_.li_coeffs.size() != ybus_policy_.li_defaults.size()){
                 const size_t nb_total_bus = _grid_model.total_bus();
                 CplxVect Vinit = CplxVect::Constant(static_cast<Eigen::Index>(nb_total_bus),
                                                     {_grid_model.get_init_vm_pu(), 0.});
                 prepare_solver_input_base(Vinit, ac_solver_used);
-                ybus_policy_.init_li_coeffs(_grid_model, ac_solver_used, id_me_to_solver_, n_line_);
+                ybus_policy_.init_li_coeffs(_grid_model, ac_solver_used, active_layout().id_me_to_solver, n_line_);
             }
             _select_ref_slack_and_masks();
-            if(slack_ids_me_.size() == 0) return -1;
-            return slack_ids_me_[static_cast<int>(0)].cast_int();
+            if(active_layout().slack_bus_id_me.size() == 0) return -1;
+            return active_layout().slack_bus_id_me[static_cast<int>(0)].cast_int();
         }
 
         // ================= legacy bundled compute_Vs / get_sbuses ================
@@ -759,7 +759,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
         }
         RealVect _masked_slack_weights(const std::vector<int> & masked) const {
-            RealVect w = slack_weights_;
+            RealVect w = active_layout().slack_weights;
             if(masked.empty()) return w;
             const real_type orig_sum = w.sum();
             for(int b : masked) if(b >= 0 && b < w.size()) w(b) = 0.;
@@ -815,7 +815,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         // pre-pass run before the (n-)powerflow: fills _li_masked (the masked bus
         // set of each contingency), chooses the reference slack that minimises the
-        // number of skipped contingencies (reordering slack_ids_me_ so it is index 0)
+        // number of skipped contingencies (reordering active_layout().slack_bus_id_me so it is index 0)
         // and fills _skip_mask. Keyed entirely off ybus_policy_.li_coeffs, which is
         // representation-agnostic (populated from li_defaults on ContingencyAnalysis,
         // from line_mask/trafo_mask on ScenarioSweep) -- shared by both. Called from
@@ -829,7 +829,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _skip_mask.assign(nb_cont, 0);
 
             if(_algo.ac_solver_used()){
-                Eigen::SparseMatrix<cplx_type> Ybus = Ybus_;
+                Eigen::SparseMatrix<cplx_type> Ybus = ac_cache_.mat;
                 size_t cont_id = 0;
                 for(const auto & coeffs_modif: ybus_policy_.li_coeffs){
                     for(const auto & c: coeffs_modif) Ybus.coeffRef(c.row_id, c.col_id) -= c.value;
@@ -838,7 +838,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     ++cont_id;
                 }
             } else {
-                Eigen::SparseMatrix<real_type> Bbus = Bbus_;
+                Eigen::SparseMatrix<real_type> Bbus = dc_cache_.mat;
                 size_t cont_id = 0;
                 for(const auto & coeffs_modif: ybus_policy_.li_coeffs){
                     for(const auto & c: coeffs_modif) Bbus.coeffRef(c.row_id, c.col_id) -= std::real(c.value);
@@ -848,14 +848,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
             }
 
-            const Eigen::Index nb_slack = slack_ids_me_.size();
+            const Eigen::Index nb_slack = active_layout().slack_bus_id_me.size();
             std::vector<int> candidates;
             for(Eigen::Index i = 0; i < nb_slack; ++i){
-                const int b = slack_ids_me_[static_cast<int>(i)].cast_int();
-                if(b >= 0 && b < slack_weights_.size() && slack_weights_(b) > 0.) candidates.push_back(b);
+                const int b = active_layout().slack_bus_id_me[static_cast<int>(i)].cast_int();
+                if(b >= 0 && b < active_layout().slack_weights.size() && active_layout().slack_weights(b) > 0.) candidates.push_back(b);
             }
             if(candidates.empty()){
-                for(Eigen::Index i = 0; i < nb_slack; ++i) candidates.push_back(slack_ids_me_[static_cast<int>(i)].cast_int());
+                for(Eigen::Index i = 0; i < nb_slack; ++i) candidates.push_back(active_layout().slack_bus_id_me[static_cast<int>(i)].cast_int());
             }
             if(candidates.empty()) return;
 
@@ -868,7 +868,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             for(int bus : candidates){
                 int strand = 0;
                 for(const auto & masked : _li_masked) if(is_masked(masked, bus)) ++strand;
-                const real_type weight = (bus < slack_weights_.size()) ? slack_weights_(bus) : 0.;
+                const real_type weight = (bus < active_layout().slack_weights.size()) ? active_layout().slack_weights(bus) : 0.;
                 const bool better = (best_strand < 0) ||
                                     (strand < best_strand) ||
                                     (strand == best_strand && weight > best_weight) ||
@@ -881,10 +881,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 reordered.reserve(static_cast<size_t>(nb_slack));
                 reordered.push_back(best_bus);
                 for(Eigen::Index i = 0; i < nb_slack; ++i){
-                    const int b = slack_ids_me_[static_cast<int>(i)].cast_int();
+                    const int b = active_layout().slack_bus_id_me[static_cast<int>(i)].cast_int();
                     if(b != best_bus) reordered.push_back(b);
                 }
-                slack_ids_me_ = GlobalBusIdVect(reordered);
+                active_layout().slack_bus_id_me = GlobalBusIdVect(reordered);
             }
 
             for(size_t cont_id = 0; cont_id < nb_cont; ++cont_id){
@@ -917,12 +917,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         void _prepare_ybus_varying(bool ac_solver_used, Eigen::Index) {
-            ybus_policy_.init_li_coeffs(_grid_model, ac_solver_used, id_me_to_solver_, n_line_);
+            ybus_policy_.init_li_coeffs(_grid_model, ac_solver_used, active_layout().id_me_to_solver, n_line_);
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
         void _prepare_ybus_varying(bool ac_solver_used, Eigen::Index nb_steps) {
-            ybus_policy_.init_li_coeffs_from_masks(_grid_model, ac_solver_used, id_me_to_solver_, n_line_, nb_steps);
+            ybus_policy_.init_li_coeffs_from_masks(_grid_model, ac_solver_used, active_layout().id_me_to_solver, n_line_, nb_steps);
         }
 
         // ----- Sbus-varying preparation: 2-way --------------------------------
@@ -930,8 +930,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _prepare_sbus_varying(bool, Eigen::Index) {}
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         void _prepare_sbus_varying(bool ac_solver_used, Eigen::Index nb_steps) {
-            const CplxVect complete = ac_solver_used ? CplxVect(Sbus_) : CplxVect(Pbus_.template cast<cplx_type>());
-            sbus_policy_.assemble(_grid_model, ac_solver_used, nb_buses_solver_, id_me_to_solver_,
+            const CplxVect complete = ac_solver_used ? CplxVect(ac_cache_.inj) : CplxVect(dc_cache_.inj.template cast<cplx_type>());
+            sbus_policy_.assemble(_grid_model, ac_solver_used, nb_buses_solver_, active_layout().id_me_to_solver,
                                   complete, _grid_model.get_sn_mva(), nb_steps, algo_name());
         }
 
@@ -964,7 +964,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         CplxVect _step_sbus(size_t i) const { return sbus_policy_.sbuses.row(i); }
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
-        CplxVect _step_sbus(size_t) const { return Sbus_; }
+        CplxVect _step_sbus(size_t) const { return ac_cache_.inj; }
 
         // ----- per-step generator vm seeding: 2-way (SbusPolicy::Vary::gen_v row
         // applied via GeneratorContainer::set_vm, vs. a no-op leaving V's magnitude
@@ -983,7 +983,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 // a RowMajor matrix row is not contiguous the way a plain RealVect
                 // is, so bind it to a real RealVect before handing it to set_vm's
                 // Eigen::Ref<const RealVect> parameter (same pattern as _step_sbus).
-            _grid_model.get_generators().set_vm(V, id_me_to_solver_, target_vm_pu_row);
+            _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver, target_vm_pu_row);
         }
 
         // ----- sbus_policy_.gen_v, generically (2-way, same split as above): feeds
@@ -1028,16 +1028,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             const std::vector<int> * masked_ids_use = (masked_ids != nullptr && !masked_ids->empty()) ? masked_ids : nullptr;
 
-            batch_sweep_detail::check_bus_voltage_violations(V, id_me_to_solver_, _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
+            batch_sweep_detail::check_bus_voltage_violations(V, active_layout().id_me_to_solver, _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
                                          _grid_model.get_bus_vn_kv(), _grid_model.get_substations(),
                                          _violation_threshold_, masked_ids_use, _violations[i]);
             batch_sweep_detail::check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
-                                     V, id_me_to_solver_, _grid_model.get_bus_vn_kv(), ac_solver_used, sn_mva,
+                                     V, active_layout().id_me_to_solver, _grid_model.get_bus_vn_kv(), ac_solver_used, sn_mva,
                                      _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
                                      _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, skip_lines, _violations[i]);
             batch_sweep_detail::check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
-                                     V, id_me_to_solver_, _grid_model.get_bus_vn_kv(), ac_solver_used, sn_mva,
+                                     V, active_layout().id_me_to_solver, _grid_model.get_bus_vn_kv(), ac_solver_used, sn_mva,
                                      _grid_model.get_trafos_as_data().get_limit_a1_ka(),
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, skip_trafos, _violations[i]);
@@ -1078,16 +1078,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(!_compute_limit_violations_) return;
             _converged_n_ = true;
             const std::vector<int> no_skip;
-            batch_sweep_detail::check_bus_voltage_violations(V_n, id_me_to_solver_, _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
+            batch_sweep_detail::check_bus_voltage_violations(V_n, active_layout().id_me_to_solver, _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
                                          _grid_model.get_bus_vn_kv(), _grid_model.get_substations(),
                                          _violation_threshold_, nullptr, _violations_n_);
             batch_sweep_detail::check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
-                                     V_n, id_me_to_solver_, _grid_model.get_bus_vn_kv(), _algo.ac_solver_used(), _grid_model.get_sn_mva(),
+                                     V_n, active_layout().id_me_to_solver, _grid_model.get_bus_vn_kv(), _algo.ac_solver_used(), _grid_model.get_sn_mva(),
                                      _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
                                      _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, no_skip, _violations_n_);
             batch_sweep_detail::check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
-                                     V_n, id_me_to_solver_, _grid_model.get_bus_vn_kv(), _algo.ac_solver_used(), _grid_model.get_sn_mva(),
+                                     V_n, active_layout().id_me_to_solver, _grid_model.get_bus_vn_kv(), _algo.ac_solver_used(), _grid_model.get_sn_mva(),
                                      _grid_model.get_trafos_as_data().get_limit_a1_ka(),
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, no_skip, _violations_n_);
@@ -1127,9 +1127,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                            bool & conv, bool & invertible);
 
         // per-range worker: mask-mode path (ContingencyAnalysis AND ScenarioSweep --
-        // shared, using _step_sbus(cont_id) instead of a hardcoded fixed Sbus_ so it
+        // shared, using _step_sbus(cont_id) instead of a hardcoded fixed ac_cache_.inj so it
         // picks up per-row injections on ScenarioSweep; a no-op change for
-        // ContingencyAnalysis, whose overload of _step_sbus still returns Sbus_).
+        // ContingencyAnalysis, whose overload of _step_sbus still returns ac_cache_.inj).
         // Only ever called from _maybe_run_range_masked below, itself only ever
         // called from compute() (non-template, .cpp-confined) -- safe to stay
         // declared here / defined out-of-line in BaseBatchSweep.cpp.
@@ -1163,13 +1163,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         _apply_step_gen_v(cont_id, V);
                         if(masked.empty()){
                             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id),
-                                                         slack_ids_solver_.as_eigen(), slack_weights_,
-                                                         bus_pv_.as_eigen(), bus_pq_.as_eigen(), max_iter, tol / sn_mva);
+                                                         active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
+                                                         active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         } else {
                             const RealVect sw = _masked_slack_weights(masked);
                             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id),
-                                                         slack_ids_solver_.as_eigen(), sw,
-                                                         bus_pv_.as_eigen(), bus_pq_.as_eigen(), max_iter, tol / sn_mva);
+                                                         active_layout().slack_bus_id_solver.as_eigen(), sw,
+                                                         active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         }
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
                         algo.set_masked_buses(std::vector<int>());
@@ -1188,7 +1188,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         div_reason = LimitViolationType::NOT_SIMULATED;
                     }
 
-                    if(do_store) _voltages.row(cont_id)(id_solver_to_me_.as_eigen()) = V.array();
+                    if(do_store) _voltages.row(cont_id)(active_layout().id_solver_to_me.as_eigen()) = V.array();
                     else if(first_diverging_step < 0) first_diverging_step = static_cast<int>(cont_id);
 
                     _converged_mask_[cont_id] = do_store ? 1 : 0;
@@ -1231,7 +1231,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             throw std::logic_error("unreachable: handle_disconnected_grid cannot be set on this instantiation");
         }
 
-        // ----- threading spawn: 2-way (per-thread Ybus copy vs shared Ybus_) ------
+        // ----- threading spawn: 2-way (per-thread Ybus copy vs shared ac_cache_.mat) ------
         // Only ever called from compute() (non-template, .cpp-confined): safe to
         // stay declared here / defined out-of-line in BaseBatchSweep.cpp.
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
