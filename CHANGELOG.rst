@@ -212,6 +212,14 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   reason ``deactivate()`` does: a line end does not own its contribution. As a side effect a
   one-sided element being reactivated and moved in the same entry is now one bracket rather than
   two.
+- [FIXED] ``LSGrid.get_bus_status()`` and ``LSGrid.nb_connected_bus()`` no longer report every bus
+  disconnected on a grid that has been built but not yet solved. The per-bus element counts are
+  disarmed by everything the incremental ``+1`` / ``-1`` cannot see -- a freshly built grid,
+  ``set_state`` / ``load_binary``, an ``init_*`` that replaces a whole element container -- and an
+  all-zero count is exactly what "never counted" looks like. Only the powerflow re-established them
+  (through ``init_bus_status()``), so ``init_from_matpower(...)`` followed by ``get_bus_status()``
+  answered from the disarmed state. Reading connectivity now establishes the counts, the same way
+  solving does.
 - [FIXED] ``LSGrid.consider_only_main_component()`` now tells the solver its dimension changed.
   ``disconnect_if_not_in_main_component`` deactivates the elements it strands, so the buses whose
   last element it takes away leave the solved system -- which renumbers every bus after them. It

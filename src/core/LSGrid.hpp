@@ -536,6 +536,25 @@ class LS2G_API LSGrid final
          * invalidation. Same predicate the mutators use, so the two cannot disagree
          * about what "holds a bus" means.
          */
+        /**
+         * Establish the per-bus element counts if they have never been counted.
+         *
+         * The counts are what the elements say, cached; they are disarmed by anything
+         * the incremental +1 / -1 cannot see -- a freshly built grid, `set_state` /
+         * `load_binary`, an `init_*` that replaces a whole element container. An
+         * all-zero count is indistinguishable from "never counted", so every path that
+         * READS connectivity has to establish them first, not just the powerflow: a
+         * grid that has been loaded but not yet solved must still answer from its
+         * elements, or `get_bus_status()` reports every bus disconnected.
+         *
+         * Logically const: it computes what the elements already state. It changes what
+         * the grid has counted, never what the grid is.
+         */
+        void _ensure_bus_counts() const {
+            if(substations_.bus_counts_ready()) return;
+            const_cast<LSGrid *>(this)->recompute_bus_element_counts();
+        }
+
         void recompute_bus_element_counts(){
             substations_.reset_bus_element_counts();
             // arm the counting BEFORE adding: reset_bus_element_counts() disarms it
@@ -599,7 +618,7 @@ class LS2G_API LSGrid final
          * both earlier and exact.
          */
         void init_bus_status(){
-            if(!substations_.bus_counts_ready()) recompute_bus_element_counts();
+            _ensure_bus_counts();
             assert(substations_.connected_bus_count_is_exact() &&
                    "LSGrid::init_bus_status: the connected-bus count has drifted from the "
                    "per-bus element counts");
@@ -843,7 +862,7 @@ class LS2G_API LSGrid final
          * 
          * @return int 
          */
-        int nb_connected_bus() const {return substations_.nb_connected_bus();}
+        int nb_connected_bus() const {_ensure_bus_counts(); return substations_.nb_connected_bus();}
         size_t nb_powerline() const {return powerlines_.nb();}
         size_t nb_trafo() const {return trafos_.nb();}
 
@@ -860,7 +879,7 @@ class LS2G_API LSGrid final
         [[nodiscard]] const ShuntContainer & get_shunts() const {return shunts_;}
         /// which buses are in the solved system; built from the element counts, see
         /// SubstationContainer::get_bus_status (returns BY VALUE, no longer a reference)
-        [[nodiscard]] std::vector<bool> get_bus_status() const {return substations_.get_bus_status();}
+        [[nodiscard]] std::vector<bool> get_bus_status() const {_ensure_bus_counts(); return substations_.get_bus_status();}
         
         void set_line_names(const std::vector<std::string> & names){
             GenericContainer::check_size(names, powerlines_.nb(), "set_line_names");
