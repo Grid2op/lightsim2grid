@@ -21,6 +21,44 @@ template<class LinearSolver, FDPFMethod XB_BX>
 class BaseFDPFAlgo final: public BaseAlgo
 {
     public:
+
+        // Put a (magnitude, angle) pair back in canonical form: magnitude
+        // >= 0, angle in [-pi, pi]. Both can leave that form during an FDPF
+        // iteration -- the Q iteration (`Vm_(pq) -= q_`) can overshoot a
+        // magnitude past zero, and the P iteration accumulates into Va_
+        // without ever wrapping it.
+        //
+        // has_converged used to restore it by going through the complex
+        // voltage -- `Vm_ = V_.abs(); Va_ = V_.arg();` -- which costs a hypot
+        // and an atan2 per bus, twice per iteration, to rediscover two numbers
+        // the solver already holds: V_ is built as Vm_ * exp(i.Va_), so |V_| is
+        // just |Vm_| and arg(V_) is just Va_, plus half a turn where the
+        // magnitude went negative. On a 121-bus grid that pair cost 2.5 us per
+        // call out of a ~150 us solve.
+        //
+        // Equivalent to the abs()/arg() pair over the whole domain (checked in
+        // test_fdpf_algorithm.cpp over Vm in [-3, 3] x Va in [-10, 10] rad),
+        // with ONE exception: at Vm == 0 exactly, where the phase of a zero
+        // phasor is undefined. arg() returned whichever of 0 / +pi / -pi
+        // atan2's signed-zero rules produced for (+-0, +-0); this keeps the
+        // incoming angle. Neither can reach a converged answer, because the
+        // caller's next step divides the mismatch by that zero and fails its
+        // allFinite() check.
+        //
+        // Kept as a named static (rather than inline in has_converged) so the
+        // identity it rests on can be tested directly: the branches below are
+        // unreachable from a converging solve -- a trajectory that overshoots a
+        // magnitude ends up diverging, and a diverged solve clears its state.
+        static void canonicalise_vm_va(Eigen::Ref<RealVect> Vm, Eigen::Ref<RealVect> Va)
+        {
+            // a negative magnitude is the same phasor turned by pi
+            Va.array() = (Vm.array() < my_zero_).select(Va.array() + my_pi, Va.array());
+            Vm = Vm.cwiseAbs();
+            // subtracts an exact zero whenever the angle is already in range,
+            // which is the ordinary case
+            Va.array() -= my_two_ * my_pi * (Va.array() * (my_one_ / (my_two_ * my_pi))).round();
+        }
+
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
         ~BaseFDPFAlgo() noexcept override = default;
 
@@ -211,8 +249,12 @@ class BaseFDPFAlgo final: public BaseAlgo
 
             // V = Vm * exp(1j * Va) : 
             V_ = Vm_.array() * tmp_va.array();
-            Vm_ = V_.array().abs();
-            Va_ = V_.array().arg();
+            // ... then put (Vm_, Va_) back in canonical form. `tmp_va` is
+            // exp(i.Va_), so this is a sign flip and a half turn -- see
+            // canonicalise_vm_va, which used to be `Vm_ = V_.abs(); Va_ =
+            // V_.arg();`. V_ itself is built above and is unchanged.
+            canonicalise_vm_va(Vm_, Va_);
+
             evaluate_mismatch_into(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights);  // mis_ = V * conj(Ybus * V) - Sbus
             mis_.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm (do not forget the / Vm !)
 

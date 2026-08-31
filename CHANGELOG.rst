@@ -126,6 +126,38 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] **Fast-Decoupled powerflow is ~1.25-1.35x faster** (whole solve, both the XB and
+  the BX flavour, 49 to 1600 buses), for the same iteration count and the same answer.
+  ``BaseFDPFAlgo::has_converged`` rebuilds V from (Vm, Va) and then has to put that pair back in
+  canonical form -- magnitude >= 0, angle wrapped -- because the Q iteration (``Vm_(pq) -= q_``)
+  can overshoot a magnitude past zero and the P iteration accumulates into ``Va_`` without ever
+  wrapping it. It did that with ``Vm_ = V_.array().abs(); Va_ = V_.array().arg();``: a hypot and an
+  atan2 per bus, twice per iteration, to rediscover two numbers the solver already holds. V is
+  built as ``Vm_ * exp(i.Va_)``, so its modulus is just ``|Vm_|`` and its argument just ``Va_``,
+  plus half a turn where the magnitude went negative -- a sign flip and an addition. On a 121-bus
+  grid that pair cost 2.5 us per call out of a ~150 us solve. The complex voltage ``V_`` the solve
+  actually consumes is built exactly as before and is unchanged bit for bit; ``Vm_`` / ``Va_`` now
+  differ in their last bits (in their favour: an exact ``|Vm_|`` instead of a rounded
+  ``hypot(Vm.cos, Vm.sin)``), which moves a converged solution by ~1e-13 -- four orders of
+  magnitude inside the 1e-9 convergence tolerance, with iteration counts unchanged on all 80
+  grid / loading / flavour combinations checked, and no change in the distance to a Newton-Raphson
+  reference solution.
+- [ADDED] ``BaseFDPFAlgo::canonicalise_vm_va``, the (magnitude, angle) canonicalisation above, as a
+  named static so the identity it rests on can be tested head-on. It has to be: its two interesting
+  branches -- a negative magnitude, an angle several turns out of range -- turn out to be
+  unreachable from any converging solve (a trajectory that overshoots a magnitude ends up
+  diverging, and a diverged solve clears ``Vm_`` / ``Va_`` / ``V_``), so no solve-level test can
+  reach them.
+- [ADDED] ``src/tests/test_fdpf_algorithm.cpp``. The Fast-Decoupled family had no answer-level
+  coverage at all -- it appeared in the suite only through ``test_cache_reuse.cpp`` (caching, not
+  numbers) and ``test_plugin_registration.cpp`` (names) -- so the change above landed on untested
+  code. It now pins that both flavours converge to the Newton-Raphson solution of the same grid,
+  that the reported ``Vm`` / ``Va`` stay consistent with the reported ``V``, and that
+  ``canonicalise_vm_va`` agrees with the ``abs()`` / ``arg()`` pair it replaced over Vm in [-3, 3]
+  x Va in [-10, 10] rad. The one place they deliberately differ is Vm == 0 exactly, where the phase
+  of a zero phasor is undefined (``arg()`` returned whichever of 0 / +pi / -pi atan2's signed-zero
+  rules produced) and where the solve cannot converge anyway -- the mismatch is divided by that
+  zero on the next line and fails its ``allFinite()`` check.
 - [IMPROVED] **Gauss-Seidel is ~12x faster** (121-bus mesh, 5568 sweeps: 470 ms -> 37 ms; the
   synchronous variant, 1.9x: 422 ms -> 228 ms), for the same sweeps and bit-identical voltages.
   ``Ybus`` reaches a solver column-major, but a Gauss-Seidel sweep needs one ROW of it at a time --

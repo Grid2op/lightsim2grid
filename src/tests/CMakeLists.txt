@@ -73,6 +73,7 @@ add_executable(lightsim2grid_unit_tests
     test_check_grid.cpp
     test_state_poisoning.cpp
     test_powerflow_algorithm.cpp
+    test_fdpf_algorithm.cpp
     test_voltage_control_reclassify.cpp
     test_batch_voltage_control.cpp
     test_timeseries_sbus.cpp
