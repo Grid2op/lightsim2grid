@@ -436,7 +436,7 @@ class OneSideContainer : public GenericContainer
                          << "re-initializing this container).";
                     throw std::runtime_error(exc_.str());
                 }
-                int sub_id = subid_(el_id);
+                const int sub_id = subid_(el_id);
                 // `sub_id` feeds local_to_gridmodel's arithmetic (sub_id + (busbar-1)*n_sub),
                 // whose OUTPUT is bounds-checked before being stored as this element's bus id
                 // -- but an out-of-range `sub_id` can still combine with a valid busbar to land
