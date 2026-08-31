@@ -199,6 +199,29 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   inherits a perfectly good one from ``OneSideContainer_PQ``, it was simply left out of the list --
   so such a bus was dropped from the solved system. An SVC injects reactive power; its bus belongs
   there.
+- [FIXED] ``LSGrid.update_topo()`` -- the batch entry point grid2op drives every step -- now counts
+  the buses it takes out of the system. It is not a thin wrapper over the individual mutators: it
+  also calls ``resolve_status``, which sets a branch's ``status_global_`` (the gate
+  ``contribute_to_buses`` reads *first*) and opens the opposite side through the
+  ``*_no_bus_tracking`` entry points. Both change which buses the branch holds, and both ran
+  OUTSIDE the counting bracket, so stranding a line end alone on a busbar and then disconnecting
+  the line left that bus counted with nothing on it: the system silently lost a bus, nothing raised
+  ``tell_dimension_changed``, and the next powerflow failed to initialise
+  (``ErrorType.NotInitError``). The whole per-element update -- both sides *and* ``resolve_status``
+  -- is now one bracket, and the sides use the ``*_no_bus_tracking`` entry points for the same
+  reason ``deactivate()`` does: a line end does not own its contribution. As a side effect a
+  one-sided element being reactivated and moved in the same entry is now one bracket rather than
+  two.
+- [FIXED] ``LSGrid.consider_only_main_component()`` now tells the solver its dimension changed.
+  ``disconnect_if_not_in_main_component`` deactivates the elements it strands, so the buses whose
+  last element it takes away leave the solved system -- which renumbers every bus after them. It
+  handed those deactivations a local, throwaway ``DualAlgoControl``, so the 0-crossings were
+  detected and dropped on the floor; the flag used to reach the real controller only because
+  ``init_bus_status()`` rebuilt the status and compared it against each family's photograph. With
+  the crossing *being* the notification, it now goes to the controller the solver reads. The
+  two-sided containers additionally do their counting through the branch's own rule, in one bracket
+  around both sides and the ``status_global_`` flip, instead of letting each side count for itself
+  under the one-sided rule. This is what broke grid2op's ``automatically_disconnect=True``.
 - [BREAKING] [DEPRECATED] ``LSGrid.deactivate_bus(bus_id)`` and ``LSGrid.reactivate_bus(bus_id)`` are
   now **no-ops** (kept so existing code keeps importing; they will be removed in a later version).
   A bus is part of the powerflow if and only if at least one active element sits on it, which is now

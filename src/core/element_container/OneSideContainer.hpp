@@ -184,15 +184,14 @@ class OneSideContainer : public GenericContainer
                                   : substation.bus_lost_element(my_bus);
         }
 
-        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation) override final {
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation, DualAlgoControl & solver_control) override final {
             const int nb_el = nb();
-            DualAlgoControl unused_solver_control;
             for(int el_id = 0; el_id < nb_el; ++el_id)
             {
                 if(!status_[el_id]) continue;
                 const GlobalBusId my_bus = bus_id_(el_id);
                 if(!busbar_in_main_component[my_bus.cast_int()]){
-                    deactivate(el_id, unused_solver_control, substation);
+                    deactivate(el_id, solver_control, substation);
                 }
             }    
         }
@@ -345,8 +344,131 @@ class OneSideContainer : public GenericContainer
         }
 
         /**
+         * The position this element occupies in the grid2op topology vector, checked
+         * against the length of the arrays that position is about to index.
+         *
+         * `pos_topo_vect_` indexes has_changed / new_values with an unchecked Eigen
+         * operator(). check_grid() proves the stored positions form a permutation of
+         * [0, dim_topo), but the set_pos_topo_vect() setters only check the vector's
+         * *length*, not its values -- so a position written straight through a setter
+         * (bypassing check_grid) would read past the caller arrays. Release wheels are
+         * -O3 -DNDEBUG, so neither Eigen nor the STL catches it: validate here, which
+         * every update_topo path goes through before indexing.
+         */
+        int checked_pos_topo_vect(int el_id, int nb_topo) const {
+            const int el_pos = pos_topo_vect_(el_id);
+            if((el_pos < 0) || (el_pos >= nb_topo)){
+                std::ostringstream exc_;
+                exc_ << "OneSideContainer::update_topo: element " << el_id << " has position "
+                     << el_pos << " in the topology vector, out of range [0, " << nb_topo
+                     << "). The stored pos_topo_vect is inconsistent (run check_grid()).";
+                throw std::out_of_range(exc_.str());
+            }
+            return el_pos;
+        }
+
+        /**
+         * Apply this element's entry of the grid2op topology vector, WITHOUT touching
+         * the per-bus element counts. Returns whether anything actually changed.
+         *
+         * Same contract, and the same reason, as deactivate_no_bus_tracking: a line
+         * END does not own its contribution -- `status_global_` gates it -- so when
+         * this side belongs to a branch it is the BRANCH that brackets the whole
+         * per-element update with the counting, once, around both sides *and*
+         * `resolve_status` (which flips that very gate). A standalone container owns
+         * its contribution and brackets this itself, in update_topo below.
+         */
+        bool update_topo_one_el_no_bus_tracking(
+            int el_id,
+            const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+            const Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+            DualAlgoControl & solver_control,
+            SubstationContainer & substations
+        )
+        {
+            const int el_pos = checked_pos_topo_vect(el_id, static_cast<int>(has_changed.rows()));
+            if(!has_changed(el_pos)) return false;
+            LocalBusId new_bus = LocalBusId(new_values(el_pos));  // it is a LocalBusId
+            if(new_bus.cast_int() < _deactivated_bus_id){
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
+                exc_ << substations.nmax_busbar_per_sub();
+                exc_ << " you provided ";
+                exc_ << new_bus.cast_int();
+                exc_ << ".";
+                throw std::out_of_range(exc_.str());
+            }
+            if(new_bus.cast_int() > substations.nmax_busbar_per_sub()){
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
+                exc_ << substations.nmax_busbar_per_sub();
+                exc_ << " you provided ";
+                exc_ << new_bus.cast_int();
+                exc_ << ".";
+                throw std::out_of_range(exc_.str());
+            }
+
+            if(new_bus.cast_int() > 0){
+                // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
+                if(subid_.size() == 0){
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::update_topo: cannot reconnect element " << el_id
+                         << " to a bus: no substation id was ever set for this container "
+                         << "(set_subid was never called).";
+                    throw std::runtime_error(exc_.str());
+                }
+                // subid_ is only ever assigned by set_subid() (checked against nb() at the
+                // time of the call) or set_osc_state(); neither is re-run when the container
+                // is re-initialized with a different element count (init() does not touch
+                // subid_), so a container whose element count grew after set_subid() was last
+                // called leaves subid_ shorter than the CURRENT nb() -- indexing el_id below
+                // would read past its end. Same class of bug _check_pos_topo_vect_filled()
+                // already guards against for pos_topo_vect_ (its size() != nb() check); mirror
+                // it here.
+                if(subid_.size() != nb()){
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::update_topo: cannot reconnect element " << el_id
+                         << " to a bus: subid_ has " << subid_.size() << " entries but this "
+                         << "container currently has " << nb() << " elements (set_subid was "
+                         << "called for a different element count -- call it again after "
+                         << "re-initializing this container).";
+                    throw std::runtime_error(exc_.str());
+                }
+                int sub_id = subid_(el_id);
+                // `sub_id` feeds local_to_gridmodel's arithmetic (sub_id + (busbar-1)*n_sub),
+                // whose OUTPUT is bounds-checked before being stored as this element's bus id
+                // -- but an out-of-range `sub_id` can still combine with a valid busbar to land
+                // BY COINCIDENCE on another substation's legitimate bus id, silently reconnecting
+                // this element to the WRONG bus instead of raising. set_subid() only rejects
+                // negative ids (it has no access to n_sub); validate the full range here, where
+                // `substations` gives us that context.
+                if((sub_id < 0) || (sub_id >= substations.nb_sub())){
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::update_topo: element " << el_id
+                         << " has substation id " << sub_id << ", out of range [0, "
+                         << substations.nb_sub() << "). The stored subid is inconsistent "
+                         << "(run check_grid()).";
+                    throw std::out_of_range(exc_.str());
+                }
+                GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
+                bool change_effective = reactivate_no_bus_tracking(el_id, solver_control); // eg reactivate_load(load_id);
+                change_effective = change_bus_no_bus_tracking(el_id, new_bus_backend, solver_control, substations) || change_effective; // eg change_bus_load(load_id, new_bus_backend);
+                return change_effective;
+            } else if (new_bus.cast_int() == _deactivated_bus_id){
+                // new bus is negative, we deactivate it
+                // the bus is taken out of the system in GridModel.update_topo
+                // and a bus is activated if (and only if) one element is connected to it.
+                // I must not take `new_bus_backend` out of the system in this case !
+                return deactivate_no_bus_tracking(el_id, solver_control);// eg deactivate_load(load_id);
+            }
+            return false;
+        }
+
+        /**
          * Only the values of "new_values" corresponding to "has_changed" == true are used.
-         * 
+         *
          * The bus labelling in "new_values" are local bus (between 1 and n_max_busbar_per_sub).
          */
         virtual std::vector<bool> update_topo(
@@ -361,98 +483,18 @@ class OneSideContainer : public GenericContainer
             const int nb_topo = static_cast<int>(has_changed.rows());
             for(int el_id = 0; el_id < nb(); ++el_id)
             {
-                int el_pos = pos_topo_vect_(el_id);
-                // `el_pos` indexes has_changed / new_values with an unchecked Eigen
-                // operator(). check_grid() proves the stored positions form a
-                // permutation of [0, dim_topo), but the set_pos_topo_vect() setters
-                // only check the vector's *length*, not its values -- so a position
-                // written straight through a setter (bypassing check_grid) would read
-                // past the caller arrays here. Release wheels are -O3 -DNDEBUG, so
-                // neither Eigen nor the STL catches it: validate before indexing.
-                if((el_pos < 0) || (el_pos >= nb_topo)){
-                    std::ostringstream exc_;
-                    exc_ << "OneSideContainer::update_topo: element " << el_id << " has position "
-                         << el_pos << " in the topology vector, out of range [0, " << nb_topo
-                         << "). The stored pos_topo_vect is inconsistent (run check_grid()).";
-                    throw std::out_of_range(exc_.str());
-                }
-                if(!has_changed(el_pos)) continue;
-                LocalBusId new_bus = LocalBusId(new_values(el_pos));  // it is a LocalBusId
-                if(new_bus.cast_int() < _deactivated_bus_id){
-                    // TODO DEBUG MODE: only check in debug mode
-                    std::ostringstream exc_;
-                    exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
-                    exc_ << substations.nmax_busbar_per_sub();
-                    exc_ << " you provided ";
-                    exc_ << new_bus.cast_int();
-                    exc_ << ".";
-                    throw std::out_of_range(exc_.str());
-                }
-                if(new_bus.cast_int() > substations.nmax_busbar_per_sub()){
-                    // TODO DEBUG MODE: only check in debug mode
-                    std::ostringstream exc_;
-                    exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
-                    exc_ << substations.nmax_busbar_per_sub();
-                    exc_ << " you provided ";
-                    exc_ << new_bus.cast_int();
-                    exc_ << ".";
-                    throw std::out_of_range(exc_.str());
-                }
-
-                if(new_bus.cast_int() > 0){
-                    // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
-                    if(subid_.size() == 0){
-                        std::ostringstream exc_;
-                        exc_ << "OneSideContainer::update_topo: cannot reconnect element " << el_id
-                             << " to a bus: no substation id was ever set for this container "
-                             << "(set_subid was never called).";
-                        throw std::runtime_error(exc_.str());
-                    }
-                    // subid_ is only ever assigned by set_subid() (checked against nb() at the
-                    // time of the call) or set_osc_state(); neither is re-run when the container
-                    // is re-initialized with a different element count (init() does not touch
-                    // subid_), so a container whose element count grew after set_subid() was last
-                    // called leaves subid_ shorter than the CURRENT nb() -- indexing el_id below
-                    // would read past its end. Same class of bug _check_pos_topo_vect_filled()
-                    // already guards against for pos_topo_vect_ (its size() != nb() check); mirror
-                    // it here.
-                    if(subid_.size() != nb()){
-                        std::ostringstream exc_;
-                        exc_ << "OneSideContainer::update_topo: cannot reconnect element " << el_id
-                             << " to a bus: subid_ has " << subid_.size() << " entries but this "
-                             << "container currently has " << nb() << " elements (set_subid was "
-                             << "called for a different element count -- call it again after "
-                             << "re-initializing this container).";
-                        throw std::runtime_error(exc_.str());
-                    }
-                    int sub_id = subid_(el_id);
-                    // `sub_id` feeds local_to_gridmodel's arithmetic (sub_id + (busbar-1)*n_sub),
-                    // whose OUTPUT is bounds-checked before being stored as this element's bus id
-                    // -- but an out-of-range `sub_id` can still combine with a valid busbar to land
-                    // BY COINCIDENCE on another substation's legitimate bus id, silently reconnecting
-                    // this element to the WRONG bus instead of raising. set_subid() only rejects
-                    // negative ids (it has no access to n_sub); validate the full range here, where
-                    // `substations` gives us that context.
-                    if((sub_id < 0) || (sub_id >= substations.nb_sub())){
-                        std::ostringstream exc_;
-                        exc_ << "OneSideContainer::update_topo: element " << el_id
-                             << " has substation id " << sub_id << ", out of range [0, "
-                             << substations.nb_sub() << "). The stored subid is inconsistent "
-                             << "(run check_grid()).";
-                        throw std::out_of_range(exc_.str());
-                    }
-                    GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
-                    bool change_effective = reactivate(el_id, solver_control, substations); // eg reactivate_load(load_id);
-                    change_effective = change_bus(el_id, new_bus_backend, solver_control, substations) || change_effective; // eg change_bus_load(load_id, new_bus_backend);
-                    if(change_effective) res[el_id] = true;
-                } else if (new_bus.cast_int() == _deactivated_bus_id){
-                    // new bus is negative, we deactivate it
-                    bool change_effective = deactivate(el_id, solver_control, substations);// eg deactivate_load(load_id);
-                    // the bus is taken out of the system in GridModel.update_topo
-                    // and a bus is activated if (and only if) one element is connected to it.
-                    // I must not take `new_bus_backend` out of the system in this case !
-                    if(change_effective) res[el_id] = true;
-                }
+                // an entry the caller did not touch mutates nothing, so it must not be
+                // bracketed either: taking a contribution away and putting it straight
+                // back leaves the counts right, but a bus held by this element alone
+                // would transiently hit 0 and report a crossing that never happened.
+                if(!has_changed(checked_pos_topo_vect(el_id, nb_topo))) continue;
+                // ONE bracket for the whole entry: reactivating an element and then
+                // moving it is a single change of which bus it holds, not two.
+                _apply_and_track_buses(el_id, substations, solver_control, [&]{
+                    res[el_id] = update_topo_one_el_no_bus_tracking(el_id, has_changed,
+                                                                   new_values, solver_control,
+                                                                   substations);
+                });
             }
             return res;
         }

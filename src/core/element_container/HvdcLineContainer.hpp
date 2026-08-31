@@ -227,15 +227,18 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // NOT deactivate the whole line when a single side is outside the main
         // component: we keep the in-main converter injecting and open only the
         // out-of-main one. A line with BOTH sides outside is still fully dropped.
-        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation) override {
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation, DualAlgoControl & solver_control) override {
             const int nb_el = nb();
-            DualAlgoControl unused_solver_control;
             const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
             const GlobalBusIdVect & bus_side_2_id_ = get_buses_side_2();
             for(int i = 0; i < nb_el; ++i){
                 if(!status_global_[i]){
-                    side_1_.deactivate(i, unused_solver_control, substation);
-                    side_2_.deactivate(i, unused_solver_control, substation);
+                    // see TwoSidesContainer::disconnect_if_not_in_main_component: the
+                    // branch does the counting, once, through its own rule.
+                    _apply_and_track_buses(i, substation, solver_control, [&]{
+                        side_1_.deactivate_no_bus_tracking(i, solver_control);
+                        side_2_.deactivate_no_bus_tracking(i, solver_control);
+                    });
                     continue;
                 }
                 const int b1 = bus_side_1_id_(i).cast_int();
@@ -244,9 +247,11 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                 const bool s2_outside = (b2 != _deactivated_bus_id) && !busbar_in_main_component[b2];
                 if(s1_outside && s2_outside){
                     // both converters in (an)other synchronous component: drop it all
-                    side_1_.deactivate(i, unused_solver_control, substation);
-                    side_2_.deactivate(i, unused_solver_control, substation);
-                    if(!ignore_status_global_) status_global_[i] = false;
+                    _apply_and_track_buses(i, substation, solver_control, [&]{
+                        side_1_.deactivate_no_bus_tracking(i, solver_control);
+                        side_2_.deactivate_no_bus_tracking(i, solver_control);
+                        if(!ignore_status_global_) status_global_[i] = false;
+                    });
                 } else if(s1_outside || s2_outside){
                     // exactly one converter in the main synchronous component: keep
                     // the HVDC line active and that converter injecting its scheduled
@@ -254,8 +259,10 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                     // Angle-droop ("AC emulation") cannot run across the cut (the
                     // remote angle is gone) -> fall back to the fixed power setpoint.
                     droop_enabled_[i] = false;
-                    if(s1_outside) side_1_.deactivate(i, unused_solver_control, substation);
-                    else           side_2_.deactivate(i, unused_solver_control, substation);
+                    _apply_and_track_buses(i, substation, solver_control, [&]{
+                        if(s1_outside) side_1_.deactivate_no_bus_tracking(i, solver_control);
+                        else           side_2_.deactivate_no_bus_tracking(i, solver_control);
+                    });
                     // status_global_[i] stays true: the line still injects in-main
                 }
             }

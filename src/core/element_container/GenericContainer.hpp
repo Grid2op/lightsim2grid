@@ -168,7 +168,7 @@ class LS2G_API GenericContainer : public BaseConstants
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & /*busbar_in_main_component*/, SubstationContainer & /*substation*/) {
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & /*busbar_in_main_component*/, SubstationContainer & /*substation*/, DualAlgoControl & /*solver_control*/) {
                                 // nothing to do by default
                                 };
 
