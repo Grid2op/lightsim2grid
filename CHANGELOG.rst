@@ -212,6 +212,15 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   reason ``deactivate()`` does: a line end does not own its contribution. As a side effect a
   one-sided element being reactivated and moved in the same entry is now one bracket rather than
   two.
+- [FIXED] a ``change_bus`` the grid refuses no longer corrupts the per-bus element counts.
+  ``GenericContainer::_change_bus`` rejects a bus id below 0 or past the last bus -- and ``-1`` is
+  the "no bus" marker, so it is exactly the id a caller reaches for meaning "disconnect this".
+  That rejection is raised from *inside* the counting bracket, after the element's contribution has
+  been taken away and before it is put back, so the ``-1`` stood alone: every bus the element held
+  stayed one short, silently and for the rest of the grid's life, on a call that changed nothing
+  else. ``_apply_and_track_buses`` now restores the contribution on the way out of an exception as
+  well as on the normal path. Found by review; covered for all twelve ``change_bus`` entry points,
+  against both a negative and a past-the-end bus id.
 - [FIXED] ``LSGrid.get_bus_status()`` and ``LSGrid.nb_connected_bus()`` no longer report every bus
   disconnected on a grid that has been built but not yet solved. The per-bus element counts are
   disarmed by everything the incremental ``+1`` / ``-1`` cannot see -- a freshly built grid,

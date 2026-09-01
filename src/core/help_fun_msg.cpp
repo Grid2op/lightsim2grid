@@ -4580,7 +4580,7 @@ const std::string DocLSGrid::total_bus = R"mydelimiter(
 const std::string DocLSGrid::nb_connected_bus = R"mydelimiter(
     Returns (>0 integer) the number of connected buses on the powergrid (ignores the disconnected bus).
 
-    .. versionchanged:: 1.0.0
+    .. versionchanged:: 1.0.1
         A bus is connected if and only if at least one active element sits on it. The count is
         maintained as elements are connected, disconnected or moved, so this is a constant-time
         read rather than a walk over every bus.
@@ -5520,7 +5520,7 @@ const std::string DocLSGrid::get_bus_vn_kv = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocLSGrid::deactivate_bus = R"mydelimiter(
-    .. deprecated:: 1.0.0
+    .. deprecated:: 1.0.1
         Does nothing. Kept so existing code keeps importing; it will be removed in a later
         version.
 
@@ -5539,7 +5539,7 @@ const std::string DocLSGrid::deactivate_bus = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocLSGrid::reactivate_bus = R"mydelimiter(
-    .. deprecated:: 1.0.0
+    .. deprecated:: 1.0.1
         Does nothing, see :func:`deactivate_bus`. A bus comes back into the powerflow by
         having an active element on it.
 
@@ -5553,7 +5553,7 @@ const std::string DocLSGrid::get_bus_status = R"mydelimiter(
     raw per-bus vector, together with :func:`get_bus_vn_kv`, is the only way to inspect bus-level
     state directly.
 
-    .. versionchanged:: 1.0.0
+    .. versionchanged:: 1.0.1
         This is derived, not stored: a bus is connected if and only if at least one active
         element sits on it, and the vector is built from the per-bus element counts each time
         you ask. It is therefore always in step with the elements, it is returned **by value**

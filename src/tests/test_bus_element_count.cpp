@@ -532,3 +532,147 @@ TEST_CASE("a grid that has been built but not yet solved counts its buses",
     CHECK_FALSE(status[3]); CHECK_FALSE(status[4]); CHECK_FALSE(status[5]);  // busbar 2: empty
     require_counts_match_recount(grid, "reading connectivity on a never-solved grid");
 }
+
+namespace {
+
+struct NamedChangeBus {
+    const char * name;
+    std::function<int(const LSGrid &)> nb;      // 0 -> this grid has none, skip
+    std::function<void(LSGrid &, int)> apply;   // (grid, target bus id)
+};
+
+// Every change_bus entry point, one element each, driven by the target bus id so the
+// same list can be pointed at a bus that exists and at one that does not.
+std::vector<NamedChangeBus> all_change_bus_mutators()
+{
+    return {
+        {"change_bus_load",       [](const LSGrid & g){ return static_cast<int>(g.get_loads().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus_load_python(0, b); }},
+        {"change_bus_gen",        [](const LSGrid & g){ return static_cast<int>(g.get_generators().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus_gen_python(0, b); }},
+        {"change_bus_shunt",      [](const LSGrid & g){ return static_cast<int>(g.get_shunts().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus_shunt_python(0, b); }},
+        {"change_bus_sgen",       [](const LSGrid & g){ return static_cast<int>(g.get_static_generators().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus_sgen_python(0, b); }},
+        {"change_bus_storage",    [](const LSGrid & g){ return static_cast<int>(g.get_storages().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus_storage_python(0, b); }},
+        {"change_bus_svc",        [](const LSGrid & g){ return static_cast<int>(g.get_svcs().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus_svc_python(0, b); }},
+        {"change_bus1_powerline", [](const LSGrid & g){ return static_cast<int>(g.get_lines().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus1_powerline_python(0, b); }},
+        {"change_bus2_powerline", [](const LSGrid & g){ return static_cast<int>(g.get_lines().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus2_powerline_python(0, b); }},
+        {"change_bus1_trafo",     [](const LSGrid & g){ return static_cast<int>(g.get_trafos().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus1_trafo_python(0, b); }},
+        {"change_bus2_trafo",     [](const LSGrid & g){ return static_cast<int>(g.get_trafos().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus2_trafo_python(0, b); }},
+        {"change_bus1_dcline",    [](const LSGrid & g){ return static_cast<int>(g.get_dclines().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus1_dcline_python(0, b); }},
+        {"change_bus2_dcline",    [](const LSGrid & g){ return static_cast<int>(g.get_dclines().nb()); },
+                                  [](LSGrid & g, int b){ g.change_bus2_dcline_python(0, b); }},
+    };
+}
+
+}  // namespace
+
+TEST_CASE("a change_bus the grid rejects leaves the counts exactly as they were",
+          "[SubstationContainer][bus_count]")
+{
+    // -1 is the "no bus" marker, so it is the id a caller reaches for meaning
+    // "disconnect this" -- and change_bus is NOT the way to do that:
+    // GenericContainer::_change_bus rejects it, as it rejects any id past the last bus.
+    //
+    // What matters here is where the throw comes from. It is raised INSIDE the
+    // counting bracket: after the element's contribution has been taken away, and
+    // before it is put back. Unless the bracket restores it on the way out, a call the
+    // grid refused leaves every bus that element held one short -- silently, and for
+    // the rest of the grid's life. A rejected mutation must change nothing at all.
+    for(const auto & mutation : all_change_bus_mutators()){
+        for(const int bad_bus : {-1, 100000}){
+            const std::string what = std::string(mutation.name) + " to bus " + std::to_string(bad_bus);
+            SECTION(what){
+                LSGrid grid = make_grid();
+                grid.recompute_bus_element_counts();
+                if(mutation.nb(grid) == 0) return;   // this fixture has none of these
+                const std::vector<std::size_t> before = grid.get_substations().get_nb_elements_per_bus();
+                const int nb_connected_before = grid.nb_connected_bus();
+
+                CHECK_THROWS_AS(mutation.apply(grid, bad_bus), std::out_of_range);
+
+                INFO("the counts moved even though the grid refused: " << what);
+                CHECK(grid.get_substations().get_nb_elements_per_bus() == before);
+                CHECK(grid.nb_connected_bus() == nb_connected_before);
+                require_counts_match_recount(grid, what);
+            }
+        }
+    }
+}
+
+TEST_CASE("every bus-membership mutator keeps the counts exact with synch_status_both_side off",
+          "[SubstationContainer][bus_count]")
+{
+    // Lines and transformers default to `synch_status_both_side_ == true`: opening one
+    // side drags the other with it, inside resolve_status. With it false a branch is
+    // allowed to sit HALF-OPEN -- one side on its bus, the other off -- and
+    // resolve_status takes a different path: it never touches the opposite side, and it
+    // only moves `status_global_` when the two sides agree. That is a different
+    // sequence of contributions to count, so it needs the same sweep.
+    //
+    // HvdcLineContainer hard-codes false in its constructor, so the sweep above already
+    // covers this path for HVDC. What it never reaches is a LINE or a TRANSFORMER that
+    // is allowed to go half-open, which is what this sets up.
+    for(const auto & mutation : all_bus_mutations()){
+        SECTION(mutation.name){
+            LSGrid grid = make_grid();
+            grid.set_synch_status_both_side(false);
+            grid.recompute_bus_element_counts();
+            mutation.apply(grid);
+            require_counts_match_recount(grid, mutation.name);
+        }
+        SECTION(std::string(mutation.name) + " (on a grid that has already solved)"){
+            LSGrid grid = make_grid();
+            grid.set_synch_status_both_side(false);
+            REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 14);
+            grid.recompute_bus_element_counts();
+            mutation.apply(grid);
+            require_counts_match_recount(grid, mutation.name);
+        }
+    }
+}
+
+TEST_CASE("a half-open line keeps the bus its live side still holds",
+          "[SubstationContainer][bus_count]")
+{
+    // The same scenario as "update_topo counts the buses it takes out of the system",
+    // with synch_status_both_side off -- and the opposite outcome, which is the point.
+    //
+    // With it ON, opening side 1 drags side 2 off too, the branch goes globally off,
+    // and the bus side 2 was alone on leaves the system. With it OFF the branch stays
+    // connected_global with side 2 still live on that bus, so the bus STAYS. Same
+    // bracket, same counting, a different right answer -- which is exactly what a
+    // count derived from `contribute_to_buses` has to get right on its own.
+    LSGrid grid = make_two_busbar_grid();
+    grid.set_synch_status_both_side(false);
+    grid.recompute_bus_element_counts();
+    const auto & subs = grid.get_substations();
+
+    const int LINE = 1;
+    const int LINE1_POS_SIDE_1 = 3;
+    const int LINE1_POS_SIDE_2 = 5;
+    const int STRANDED_BUS = 5;
+
+    set_topo(grid, LINE1_POS_SIDE_2, 2);           // strand side 2 alone on busbar 2
+    REQUIRE(subs.get_nb_elements_per_bus()[STRANDED_BUS] == 1u);
+    REQUIRE(grid.nb_connected_bus() == 4);
+    require_counts_match_recount(grid, "half-open: stranding side 2");
+
+    set_topo(grid, LINE1_POS_SIDE_1, -1);          // open the OTHER side
+    // the branch is not dragged off with it: side 2 is still live, and still holds its bus
+    CHECK(grid.get_powerlines_as_data().get_status_global()[LINE] == true);
+    CHECK(grid.get_powerlines_as_data().get_status_side_1()[LINE] == false);
+    CHECK(grid.get_powerlines_as_data().get_status_side_2()[LINE] == true);
+    CHECK(subs.get_nb_elements_per_bus()[STRANDED_BUS] == 1u);
+    CHECK(subs.is_bus_connected(GridModelBusId(STRANDED_BUS)));
+    CHECK(grid.nb_connected_bus() == 4);
+    require_counts_match_recount(grid, "half-open: opening the other side");
+}

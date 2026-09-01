@@ -147,12 +147,32 @@ class LS2G_API GenericContainer : public BaseConstants
                                     Mutation && mutate){
             bool crossed = false;
             contribute_to_buses(el_id, substation, -1, crossed);
-            mutate();
-            contribute_to_buses(el_id, substation, +1, crossed);
-            if(crossed){
-                solver_control.ac_algo_controler().tell_dimension_changed();
-                solver_control.dc_algo_controler().tell_dimension_changed();
+            // Putting the contribution back is the other half of taking it away, so it
+            // has to happen on BOTH ways out -- see the catch below.
+            const auto put_the_contribution_back = [&]{
+                contribute_to_buses(el_id, substation, +1, crossed);
+                if(crossed){
+                    solver_control.ac_algo_controler().tell_dimension_changed();
+                    solver_control.dc_algo_controler().tell_dimension_changed();
+                }
+            };
+            try{
+                mutate();
+            }catch(...){
+                // The grid refused the mutation (an out-of-range bus id, a bad element
+                // id), or it gave up part way. The `-1` above has already happened; if
+                // the exception left here without the `+1`, every bus this element
+                // holds would stay one short -- silently, for the rest of the grid's
+                // life, on a call that was supposed to change nothing.
+                //
+                // `contribute_to_buses` reads the element's state as it is NOW, so this
+                // restores what the element holds after whatever did happen, which is
+                // what a recount would say either way. It cannot throw here: the same
+                // call with the same el_id already succeeded above.
+                put_the_contribution_back();
+                throw;
             }
+            put_the_contribution_back();
         }
 
         /**computes the total amount of power for each bus (for generator only)**/
