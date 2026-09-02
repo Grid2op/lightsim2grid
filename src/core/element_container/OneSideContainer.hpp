@@ -162,6 +162,8 @@ class OneSideContainer : public GenericContainer
         // public generic API
         int nb() const { return static_cast<int>(bus_id_.size()); }
         GridModelBusId get_bus(int el_id) const {return _get_bus(el_id, status_, bus_id_);}
+        // same, for an el_id one of our own loops produced (see _get_bus_internal)
+        GridModelBusId get_bus_internal(int el_id) const {return _get_bus_internal(el_id, status_, bus_id_);}
         const GlobalBusIdVect & get_buses() const {return bus_id_;}
 
         tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}

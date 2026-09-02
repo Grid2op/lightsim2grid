@@ -38,6 +38,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         using TwoSidesContainer<OneSideType>::check_size;
         using TwoSidesContainer<OneSideType>::get_bus_side_1;
         using TwoSidesContainer<OneSideType>::get_bus_side_2;
+        using TwoSidesContainer<OneSideType>::get_bus_side_1_internal;
+        using TwoSidesContainer<OneSideType>::get_bus_side_2_internal;
 
     protected:
         using TwoSidesContainer<OneSideType>::_get_amps;
@@ -278,7 +280,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 GridModelBusId bus_hv_id_me, bus_lv_id_me;
                 SolverBusId bus_hv_solver_id, bus_lv_solver_id;
                 if(status1[el_id]){
-                    bus_hv_id_me = get_bus_side_1(el_id);
+                    bus_hv_id_me = get_bus_side_1_internal(el_id);
                     if(bus_hv_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::compute_results: (GlobalBusId) the branch with id ";
@@ -300,7 +302,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 }
 
                 if(status2[el_id]){
-                    bus_lv_id_me = get_bus_side_2(el_id);
+                    bus_lv_id_me = get_bus_side_2_internal(el_id);
                     if(bus_lv_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::compute_results: (GlobalBusId) the branch with id ";
@@ -412,8 +414,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             for(size_t el_id = 0; el_id < my_size; ++el_id){
                 // don't do anything if the element is disconnected
                 if(!status_global_[el_id]) continue;
-                const GridModelBusId bus_or = get_bus_side_1(el_id);
-                const GridModelBusId bus_ex = get_bus_side_2(el_id);
+                const GridModelBusId bus_or = get_bus_side_1_internal(el_id);
+                const GridModelBusId bus_ex = get_bus_side_2_internal(el_id);
                 if((bus_or.cast_int() != _deactivated_bus_id) && 
                    (bus_ex.cast_int() != _deactivated_bus_id)){
                     res.push_back(Eigen::Triplet<real_type>(bus_or.cast_int(), bus_ex.cast_int(), 1.));
@@ -466,7 +468,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 bool status1_me = status1[el_id];
                 bool status2_me = status2[el_id];
                 if(status1_me){
-                    bus_side1_id_me = get_bus_side_1(el_id);
+                    bus_side1_id_me = get_bus_side_1_internal(el_id);
                     if(bus_side1_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::fillYbus: (GlobalID) the branch with id ";
@@ -485,7 +487,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 }
 
                 if(status2_me){
-                    bus_side2_id_me = get_bus_side_2(el_id);
+                    bus_side2_id_me = get_bus_side_2_internal(el_id);
                     if(bus_side2_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::fillYbus: (GlobalID) the branch with id ";
@@ -547,8 +549,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 // In DC disconnected on one side == disco on both sides
                 if((!status1[el_id]) || (!status2[el_id])) continue;
 
-                const GlobalBusId bus_side1_id_me = get_bus_side_1(el_id);
-                const GlobalBusId bus_side2_id_me = get_bus_side_2(el_id);
+                const GlobalBusId bus_side1_id_me = get_bus_side_1_internal(el_id);
+                const GlobalBusId bus_side2_id_me = get_bus_side_2_internal(el_id);
                 if(bus_side1_id_me.cast_int() == _deactivated_bus_id || bus_side2_id_me.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
                     exc_ << "TwoSidesContainer_rxh_A::fillBdc: (GlobalID) the branch with id ";
@@ -608,7 +610,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 // get the from / to bus id
                 if(side_1_.get_status(el_id))
                 {
-                    bus_or_id_me = get_bus_side_1(el_id);
+                    bus_or_id_me = get_bus_side_1_internal(el_id);
                     if(bus_or_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: (GlobalId) the branch (line or trafo) with id ";
@@ -629,7 +631,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 }
                 if(side_2_.get_status(el_id))
                 {
-                    bus_ex_id_me = get_bus_side_2(el_id);
+                    bus_ex_id_me = get_bus_side_2_internal(el_id);
                     if(bus_ex_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: (GlobalId) the branch (line or trafo) with id ";
@@ -685,7 +687,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 if(!side2_conn[line_id]) continue;
 
                 // get the from / to bus id
-                GlobalBusId bus_or_id_me = get_bus_side_1(line_id);
+                GlobalBusId bus_or_id_me = get_bus_side_1_internal(line_id);
                 if(bus_or_id_me.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
                     exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: (GlobalId) the line/trafo with id ";
@@ -701,7 +703,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     exc_ << " is connected (side 1) to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
                 }
-                GlobalBusId bus_ex_id_me = get_bus_side_2(line_id);
+                GlobalBusId bus_ex_id_me = get_bus_side_2_internal(line_id);
                 if(bus_ex_id_me.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
                     exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: (GlobalId) the line/trafo with id ";
@@ -745,7 +747,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 
                 if(status_side_1_[el_id])
                 {
-                    const GlobalBusId bus_or_id_me = get_bus_side_1(el_id);        
+                    const GlobalBusId bus_or_id_me = get_bus_side_1_internal(el_id);        
                     if(bus_or_id_me.cast_int() == _deactivated_bus_id){
                         // TODO DEBUG MODE only this in debug mode
                         std::ostringstream exc_;
@@ -759,7 +761,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
                 if(status_side_2_[el_id])
                 {
-                    const GlobalBusId bus_ex_id_me = get_bus_side_2(el_id);        
+                    const GlobalBusId bus_ex_id_me = get_bus_side_2_internal(el_id);        
                     if(bus_ex_id_me.cast_int() == _deactivated_bus_id){
                         // TODO DEBUG MODE only this in debug mode
                         std::ostringstream exc_;

@@ -135,6 +135,9 @@ class TwoSidesContainer : public GenericContainer
 
         GridModelBusId get_bus_side_1(int el_id) const {return side_1_.get_bus(el_id);}
         GridModelBusId get_bus_side_2(int el_id) const {return side_2_.get_bus(el_id);}
+        // same, for an el_id one of our own loops produced (see _get_bus_internal)
+        GridModelBusId get_bus_side_1_internal(int el_id) const {return side_1_.get_bus_internal(el_id);}
+        GridModelBusId get_bus_side_2_internal(int el_id) const {return side_2_.get_bus_internal(el_id);}
         // Per-side connectivity: an element can be `connected_global` (the
         // TwoSidesContainer-level status, e.g. an HVDC line kept active
         // because at least one converter is in the main synchronous
@@ -226,9 +229,9 @@ class TwoSidesContainer : public GenericContainer
                 // don't do anything if the element is disconnected
                 if(!status_global_[el_id]) continue;
 
-                const GlobalBusId bus_or = get_bus_side_1(el_id);
+                const GlobalBusId bus_or = get_bus_side_1_internal(el_id);
                 if(bus_or.cast_int() != _deactivated_bus_id) res[bus_or.cast_int()] += 1;
-                const GlobalBusId bus_ex = get_bus_side_2(el_id);
+                const GlobalBusId bus_ex = get_bus_side_2_internal(el_id);
                 if(bus_ex.cast_int() != _deactivated_bus_id) res[bus_ex.cast_int()] += 1;
             }
         }

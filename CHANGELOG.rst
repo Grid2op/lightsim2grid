@@ -126,6 +126,27 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] the bounds check on an element id is now compiled out with NDEBUG **when the id came
+  from this library rather than from a caller**. Profiling a powerflow on case9241pegase found
+  ``GenericContainer::_check_in_range`` and the ``_get_bus`` it guards reached 128k times per solve
+  -- four passes over both ends of every branch, in ``fillYbus``, ``compute_results`` and
+  ``reconnect_connected_buses`` -- all of them from loops shaped ``for(el_id = 0; el_id < nb();
+  ++el_id)``, where the bound is a property of the loop and the check can only fail if there is a
+  bug here rather than in the caller. Both were also out-of-line calls, not inlined compares: the
+  error paths build an ``ostringstream``. Worth ~2.9% of everything lightsim2grid itself does in a
+  rebuild solve (14.7M instructions of 919M).
+  **Nothing a user can reach lost its check.** ``_check_in_range`` is unchanged and still throws
+  for every id that crosses the python boundary -- ``get_bus_load`` / ``get_bus_gen`` /
+  ``get_bus1_powerline`` and friends, ``deactivate`` / ``reactivate`` / ``change_bus``,
+  ``change_ratio`` / ``change_shift``, ``set_regulated_bus``, ``set_status_droop``,
+  ``update_slack_weights_by_id``. The new ``_check_in_range_internal`` is the debug-only twin, used
+  by the new ``_get_bus_internal`` and by the ``get_bus_side_1_internal`` /
+  ``get_bus_side_2_internal`` accessors the branch containers' own loops now call. The assertion and
+  sanitizer CI builds keep every one of them, since ``USE_DEBUG_ASSERTS`` clears ``NDEBUG``.
+  Verified from both sides: ``lightsim2grid/tests/test_LSGrid_out_of_bounds.py`` (10 tests, 82
+  subtests -- the suite written for exactly this contract) still passes, and a release build
+  (``-DNDEBUG``) still raises ``out_of_range`` for a bad id on each user-facing accessor. Results
+  are bit-identical on case118 and the three PEGASE cases.
 - [IMPROVED] ``NRSystem::fill_internal_variables`` -- the dS assembly, and the most expensive thing
   lightsim2grid itself does in a Newton solve (13.7% of one on case9241pegase, against 63% for KLU)
   -- computes both derivatives from ONE product instead of four. 1.26-1.39x on the phase, on every

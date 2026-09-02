@@ -171,15 +171,19 @@ class LS2G_API GenericContainer : public BaseConstants
                 cont.end(),
                 static_cast<typename VectCLS::value_type>(val)) != cont.end();}
 
+        // Bounds check for an element id that came from OUTSIDE this library --
+        // a python call, a grid2op action, anything a user chose. Always
+        // compiled in: such an id is never trusted, and the alternative to
+        // throwing is an out-of-bounds read on a bit-packed std::vector<bool>,
+        // which in a release wheel is a segfault or silent garbage rather than
+        // an error.
         template<typename Cont, typename FunName, typename IntType>
         // todo automatically "unwrap" IntType to be either cont::size_type for stl container and
         // Eigen::Index for Eigen containers
         static void _check_in_range(IntType el_id, const Cont & cont, FunName fun_name="")
         {
-            // TODO debug mode: only in debug mode
             if(el_id >= static_cast<IntType>(cont.size()))
             {
-                // TODO DEBUG MODE: only check in debug mode
                 std::ostringstream exc_;
                 exc_ << "GenericContainer::"<<fun_name<<": Cannot access element with id";
                 exc_ << el_id;
@@ -190,13 +194,38 @@ class LS2G_API GenericContainer : public BaseConstants
             }
             if(el_id < 0)
             {
-                // TODO DEBUG MODE: only check in debug mode
                 std::ostringstream exc_;
                 exc_ << "GenericContainer::"<< fun_name <<" Cannot change the bus of element with id ";
                 exc_ << el_id;
                 exc_ << " (id should be >= 0)";
                 throw std::out_of_range(exc_.str());
             }
+        }
+
+        // The same check for an id THIS library generated: the counter of a loop
+        // over a container's own elements, which cannot be out of range unless
+        // there is a bug here rather than in the caller. Compiled out with
+        // NDEBUG; the assertion and sanitizer CI builds keep it, since
+        // USE_DEBUG_ASSERTS clears NDEBUG (see src/core/CMakeLists.txt).
+        //
+        // It was not free. On a 9241-bus grid the internal callers alone reached
+        // it 128k times per powerflow -- four passes over both ends of every
+        // branch, in fillYbus, compute_results and reconnect_connected_buses --
+        // and it plus the _get_bus it guards were ~1.9% of a solve, spent
+        // re-deriving a bound the loop already guarantees. Note the check is
+        // also a function call there, not an inlined compare: the error paths
+        // build an ostringstream, so the compiler keeps the whole thing
+        // out of line.
+        template<typename Cont, typename FunName, typename IntType>
+        static void _check_in_range_internal(IntType el_id, const Cont & cont, FunName fun_name="")
+        {
+#ifndef NDEBUG
+            _check_in_range(el_id, cont, fun_name);
+#else
+            (void) el_id;
+            (void) cont;
+            (void) fun_name;
+#endif
         }
 
     protected:
@@ -215,7 +244,20 @@ class LS2G_API GenericContainer : public BaseConstants
             GlobalBusIdVect &  el_bus_ids,
             DualAlgoControl & solver_control,
             int nb_bus) const;
+        // el_id supplied by a caller: bounds-checked, throws out_of_range.
         GridModelBusId _get_bus(int el_id, const std::vector<bool> & status_, const GlobalBusIdVect & bus_id_) const;
+        // el_id produced by one of our own loops over this container: the bound
+        // is a property of the loop, so it is only asserted (see
+        // _check_in_range_internal). Defined here rather than in the .cpp so the
+        // loops that call it per element can actually inline it.
+        GridModelBusId _get_bus_internal(int el_id, const std::vector<bool> & status_, const GlobalBusIdVect & bus_id_) const
+        {
+            _check_in_range_internal(static_cast<std::vector<bool>::size_type>(el_id),
+                                     status_,
+                                     "_get_bus_internal");
+            if(!status_[el_id]) return GridModelBusId(_deactivated_bus_id);
+            return bus_id_(el_id);
+        }
 
         /**
         compute the amps from the p, the q and the v (v should NOT be pair unit)
