@@ -97,15 +97,18 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
     base_.declare_feature_entries(sink_);
     _declare_feature_entries_extensions(sink_, std::make_index_sequence<sizeof...(Rest)>{});
 
-    // build the matrix (duplicated positions are summed, all values are 0 here)
-    std::vector<Eigen::Triplet<real_type> > triplets;
-    triplets.reserve(cntrb.size() + sink_.size());
-    for (const auto& c : cntrb) triplets.push_back({c.jrow(), c.jcol(), 0.});
-    for (int h = 0; h < sink_.size(); ++h) triplets.push_back({sink_.row(h), sink_.col(h), 0.});
+    // build the matrix (duplicated positions are summed, all values are 0 here).
+    // The feature entries are appended to cntrb so that one range describes the
+    // whole pattern and Contrib can be fed to setFromTriplets as is; only the
+    // first n_ds entries carry a dS value.
+    const std::size_t n_ds = cntrb.size();
+    cntrb.reserve(n_ds + static_cast<std::size_t>(sink_.size()));
+    for (int h = 0; h < sink_.size(); ++h)
+        cntrb.push_back(Contrib::structural(sink_.row(h), sink_.col(h)));
 
     const int dim_J = ledger_.size();
     J_.resize(dim_J, dim_J);
-    J_.setFromTriplets(triplets.begin(), triplets.end());
+    J_.setFromTriplets(cntrb.begin(), cntrb.end());
     J_.makeCompressed();
 
     // resolve the dS value maps (Ybus nnz position -> J_.valuePtr() position).
@@ -117,7 +120,8 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
     map_dsdva_i_.assign(nnz_Y, -1);
     map_dsdvm_r_.assign(nnz_Y, -1);
     map_dsdvm_i_.assign(nnz_Y, -1);
-    for (const auto& c : cntrb) {
+    for (std::size_t idx = 0; idx < n_ds; ++idx) {
+        const Contrib& c = cntrb[idx];
         const int pos = Base::find_J_pos(J_outer, J_inner, c.jrow(), c.jcol());
         switch (c.whichmat()) {
             case dSdVa_r: map_dsdva_r_[c.ybus_k()] = pos; break;
@@ -140,7 +144,8 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
     // the layout is decided, rather than assumed in the hot loop.
     {
         std::vector<int> writers(static_cast<std::size_t>(J_.nonZeros()), 0);
-        for (const auto& c : cntrb) {
+        for (std::size_t idx = 0; idx < n_ds; ++idx) {
+            const Contrib& c = cntrb[idx];
             const int pos = Base::find_J_pos(J_outer, J_inner, c.jrow(), c.jcol());
             if (pos >= 0) ++writers[static_cast<std::size_t>(pos)];
         }

@@ -85,11 +85,24 @@ class LS2G_API Contrib final
            ybus_k_(ybus_k),
            whichmat_(whichmat) {}
 
+       // A structural-only entry: it claims a J coefficient but carries no dS
+       // value (used for the feature coefficients, which fill_J writes itself).
+       static Contrib structural(int jrow, int jcol) noexcept {
+           return Contrib(jrow, jcol, -1, dSdVa_r);
+       }
+
        int jrow() const {return jrow_;}
        int jcol() const {return jcol_;}
        int ybus_k() const {return ybus_k_;}
        dSdX whichmat() const {return whichmat_;}
 
+       // Eigen's "triplet" protocol: build_J_sparsity hands the contributions
+       // straight to setFromTriplets instead of copying them into a vector of
+       // Eigen::Triplet just to attach the zero. That pass builds the sparsity
+       // pattern only, so every value is zero; fill_J writes the numbers.
+       int row() const {return jrow_;}
+       int col() const {return jcol_;}
+       real_type value() const {return static_cast<real_type>(0.);}
 };
 
 // ---- Component protocol --------------------------------------------------------

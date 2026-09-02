@@ -126,6 +126,24 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``NRSystem::build_J_sparsity`` hands its contributions straight to
+  ``setFromTriplets`` instead of copying them into a second vector first. The generic dS pass
+  records one 16-byte ``Contrib`` per Jacobian coefficient a dS matrix feeds (its J row and
+  column, the Ybus nonzero it reads, and which of the four dS parts it takes), and that vector has
+  to survive the build because the value maps are resolved from it afterwards. The code then
+  allocated an equally large ``std::vector<Eigen::Triplet<real_type> >`` and refilled it with the
+  same row/column pairs plus a literal ``0.`` -- 2.07 MB of it on case9241pegase, duplicating the
+  2.07 MB already held -- purely because ``setFromTriplets`` wants ``row() / col() / value()`` and
+  ``Contrib`` spelled them ``jrow() / jcol()`` and had no value at all. This pass builds the
+  sparsity pattern only, so every value written was zero anyway; ``fill_J`` writes the numbers.
+  ``Contrib`` now also answers to Eigen's triplet protocol, the feature entries the components
+  declare are appended to the same vector so one range covers the whole pattern, and the maps are
+  resolved over the leading dS entries. Worth 12.9M instructions of 908M on a case9241pegase
+  rebuild solve (**-1.4% of everything, C++ side**): the 8.5M spent constructing triplets is gone,
+  and ``set_from_triplets`` itself drops 12.5M -> 6.6M because the zero is now a constant the
+  compiler folds into the store rather than a value loaded per entry. Results are bit-identical --
+  the pattern handed to Eigen is the same, in the same order -- verified on case118 and the three
+  PEGASE cases across NR / NRSing / NRRefactorRetry / FDPF XB / FDPF BX with both SparseLU and KLU.
 - [IMPROVED] the bounds check on an element id is now compiled out with NDEBUG **when the id came
   from this library rather than from a caller**. Profiling a powerflow on case9241pegase found
   ``GenericContainer::_check_in_range`` and the ``_get_bus`` it guards reached 128k times per solve
