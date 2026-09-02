@@ -158,16 +158,30 @@ class LS2G_API Base
             nb_pvpq_(0)
             {}
 
+        // Position of (row, col) in a compressed column-major matrix' value
+        // array, -1 if that coefficient is not stored. Takes the index arrays
+        // rather than the matrix: build_J_sparsity calls this once per Jacobian
+        // coefficient -- four times the Ybus nonzeros, ~170k on a 9241-bus grid
+        // -- and the Eigen::Ref the matrix-taking overload binds, free as it is
+        // to construct, is still a per-coefficient cost paid to read two
+        // pointers that do not change across the loop.
+        static int find_J_pos(const int* outer_index,
+                              const int* inner_index,
+                              int row,
+                              int col){
+            const int start = outer_index[col];
+            const int end   = outer_index[col + 1];
+            auto it = std::lower_bound(inner_index + start, inner_index + end, row);
+            if (it == inner_index + end || *it != row) return -1;
+            return static_cast<int>(it - inner_index);
+        }
+
+        // same, on a matrix (the entry point callers outside this loop use)
         static int find_J_pos (
             const Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > & J_csc,
             int row,
             int col){
-            int start = J_csc.outerIndexPtr()[col];
-            int end   = J_csc.outerIndexPtr()[col + 1];
-            const int* inner = J_csc.innerIndexPtr();
-            auto it = std::lower_bound(inner + start, inner + end, row);
-            if (it == inner + end || *it != row) return -1;
-            return (int) (it - inner);
+            return find_J_pos(J_csc.outerIndexPtr(), J_csc.innerIndexPtr(), row, col);
         };
 
         // call at the beginning of each solve. Defined out-of-line
@@ -1111,21 +1125,30 @@ private:
     std::vector<int>                       masked_one_pos_;
     bool                                   masked_dirty_;
 
-    // one dS -> J accumulation pass over a value map: for every Ybus nonzero
-    // that feeds a Jacobian coefficient, J[pos] += real/imag(ds[k]). TakeReal
-    // picks the part, so the four passes of fill_J share one loop. The dS
-    // values are read straight through (sequentially, one per Ybus nonzero),
-    // which is what the -1 holes in the map buy: no index indirection.
+    // one dS -> J pass over a value map: for every Ybus nonzero that feeds a
+    // Jacobian coefficient, J[pos] = real/imag(ds[k]). TakeReal picks the part,
+    // so the four passes of fill_J share one loop. The dS values are read
+    // straight through (sequentially, one per Ybus nonzero), which is what the
+    // -1 holes in the map buy: no index indirection.
+    //
+    // ASSIGNS, and that is what lets fill_J skip zeroing J. No Jacobian
+    // coefficient is ever written by two dS entries: the four families live at
+    // (p_row, theta_col), (p_row, vm_col), (q_row, theta_col) and (q_row,
+    // vm_col), and a row is a P equation or a Q equation and a column a theta
+    // unknown or a vm unknown, never both -- so the families are pairwise
+    // disjoint -- while within one family the Ybus coefficient (i, j) maps to
+    // (row(i), col(j)) injectively, the ledger handing every bus its own row
+    // and column. Asserted below in debug builds, on every topology.
     template <bool TakeReal>
-    static void _accumulate_ds(real_type* J_values,
-                               const std::vector<int>& map,
-                               const cplx_type* ds)
+    static void _assign_ds(real_type* J_values,
+                           const std::vector<int>& map,
+                           const cplx_type* ds)
     {
         const std::size_t n = map.size();
         const int* pos = map.data();
         for (std::size_t k = 0; k < n; ++k) {
             if (pos[k] < 0) continue;
-            J_values[pos[k]] += TakeReal ? std::real(ds[k]) : std::imag(ds[k]);
+            J_values[pos[k]] = TakeReal ? std::real(ds[k]) : std::imag(ds[k]);
         }
     }
 

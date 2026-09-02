@@ -126,6 +126,36 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``NRSystem::fill_J`` no longer zeroes the Jacobian before filling it: ~1.2x on the
+  fill itself for a large grid (case9241pegase: 1.96 -> 1.63 ms per solve, and 2.28 -> 1.86 ms on
+  the rebuild path). It zeroed because every write accumulated, several contributions being able
+  to land on one coefficient -- so a value array a megabyte wide was rewritten at every
+  factorisation, and every coefficient was then read before being written. Only the FEATURE
+  entries actually need that: the four dS families live at (p_row, theta_col), (p_row, vm_col),
+  (q_row, theta_col) and (q_row, vm_col), and since a row is a P equation or a Q equation and a
+  column a theta unknown or a vm unknown -- never both -- they are pairwise disjoint, while within
+  a family the ledger hands every bus its own row and column, so no two dS entries ever claim the
+  same coefficient. They can therefore assign. What still accumulates is the feature entries,
+  because a component may legitimately add to a dS coefficient (an hvdc droop slope adds to the
+  dP/dtheta of its end buses), so those positions -- a handful, against every nonzero of J -- are
+  the only ones zeroed. Values are unchanged to the bit (``0 + x`` is ``x``), checked on case118
+  and the three PEGASE cases across NR / NRSing / SparseLU / FDPF.
+- [ADDED] ``build_J_sparsity`` asserts, in debug builds, the two properties the above rests on: no
+  Jacobian coefficient is claimed by two dS entries, and every stored coefficient has a writer (one
+  that is never written would keep a stale value now that the array is not cleared). Checked where
+  the layout is decided rather than assumed in the hot loop, and covered by the assertion / sanitizer
+  CI builds. Two tests pin the same thing behaviourally: filling J twice without changing anything
+  must not move it, and filling at one voltage state then another must match a system that only ever
+  saw the second -- both with and without a droop hvdc line, which is the case whose feature entries
+  land on dS coefficients.
+- [IMPROVED] ``Base::find_J_pos`` takes the index arrays rather than the matrix, and
+  ``build_J_sparsity`` reads them once instead of once per coefficient: ~1.1x on the pre-processing
+  of a rebuild (case9241pegase: 7.97 -> 7.19 ms). It was binding an ``Eigen::Ref`` to J on every
+  call, and it is called four times the Ybus nonzeros -- 170k times per solve on a 9241-bus grid,
+  which callgrind showed as the single most-called function in a powerflow. The Ref itself is free
+  to construct and does not copy (it aliases a compressed, same-Options matrix); paying for one per
+  coefficient to read two pointers that never change across the loop is what cost. The
+  matrix-taking overload stays, and now delegates.
 - [IMPROVED] **Fast-Decoupled powerflow is ~1.25-1.35x faster** (whole solve, both the XB and
   the BX flavour, 49 to 1600 buses), for the same iteration count and the same answer.
   ``BaseFDPFAlgo::has_converged`` rebuilds V from (Vm, Va) and then has to put that pair back in

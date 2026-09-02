@@ -6,6 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+#include <cassert>
+
 namespace ls2g {
 
 // ---- Phase 1: topology init --------------------------------------------------
@@ -106,13 +108,17 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
     J_.setFromTriplets(triplets.begin(), triplets.end());
     J_.makeCompressed();
 
-    // resolve the dS value maps (Ybus nnz position -> J_.valuePtr() position)
+    // resolve the dS value maps (Ybus nnz position -> J_.valuePtr() position).
+    // J_'s index arrays are read once here, not once per coefficient: this loop
+    // runs four times the Ybus nonzeros.
+    const int* J_outer = J_.outerIndexPtr();
+    const int* J_inner = J_.innerIndexPtr();
     map_dsdva_r_.assign(nnz_Y, -1);
     map_dsdva_i_.assign(nnz_Y, -1);
     map_dsdvm_r_.assign(nnz_Y, -1);
     map_dsdvm_i_.assign(nnz_Y, -1);
     for (const auto& c : cntrb) {
-        const int pos = Base::find_J_pos(J_, c.jrow(), c.jcol());
+        const int pos = Base::find_J_pos(J_outer, J_inner, c.jrow(), c.jcol());
         switch (c.whichmat()) {
             case dSdVa_r: map_dsdva_r_[c.ybus_k()] = pos; break;
             case dSdVa_i: map_dsdva_i_[c.ybus_k()] = pos; break;
@@ -124,7 +130,26 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
     // resolve the feature positions
     feature_pos_.resize(sink_.size());
     for (int h = 0; h < sink_.size(); ++h)
-        feature_pos_[h] = Base::find_J_pos(J_, sink_.row(h), sink_.col(h));
+        feature_pos_[h] = Base::find_J_pos(J_outer, J_inner, sink_.row(h), sink_.col(h));
+
+#ifndef NDEBUG
+    // fill_J assigns the dS values and only ACCUMULATES the feature ones, which
+    // is correct as long as no Jacobian coefficient is claimed by two dS
+    // entries (see _assign_ds) and every stored coefficient has a writer at
+    // all. Both are properties of the ledger, so they are checked here, where
+    // the layout is decided, rather than assumed in the hot loop.
+    {
+        std::vector<int> writers(static_cast<std::size_t>(J_.nonZeros()), 0);
+        for (const auto& c : cntrb) {
+            const int pos = Base::find_J_pos(J_outer, J_inner, c.jrow(), c.jcol());
+            if (pos >= 0) ++writers[static_cast<std::size_t>(pos)];
+        }
+        for (int w : writers) assert(w <= 1 && "two dS entries share one J coefficient");
+        for (int pos : feature_pos_)
+            if (pos >= 0) ++writers[static_cast<std::size_t>(pos)];
+        for (int w : writers) assert(w >= 1 && "a J coefficient no one writes would keep a stale value");
+    }
+#endif
 }
 
 // ---- Phase 3: fill J values (fast, called every factorisation) ---------------
@@ -133,19 +158,30 @@ inline void NRSystem<Base, Rest...>::fill_J()
 {
     auto timer = CustTimer();
 
-    // zero J first: every write below accumulates (+=), since several
-    // contributions may resolve to the same position
     real_type* J_values = J_.valuePtr();
-    std::fill(J_values, J_values + J_.nonZeros(), static_cast<real_type>(0.));
+
+    // Only the FEATURE coefficients are zeroed, not the whole value array.
+    // This used to be a std::fill over every nonzero of J -- a megabyte on a
+    // 9241-bus grid, rewritten at every factorisation -- because every write
+    // below accumulated. It no longer has to: the dS passes assign (no two of
+    // them ever claim the same coefficient, see _assign_ds), so they bring
+    // their own coefficients up to date whatever was there before. What still
+    // accumulates is the feature entries, because a component may legitimately
+    // add to a dS coefficient -- an hvdc droop slope adds to the dP/dtheta of
+    // its end buses -- and those need a zero to start from.
+    //
+    // Hence the order: zero the feature positions, let the dS pass overwrite
+    // the ones it shares, then add the feature values on top. Values are
+    // unchanged: `0 + x` is `x`.
+    for (int pos : feature_pos_)
+        if (pos >= 0) J_values[pos] = static_cast<real_type>(0.);
 
     const cplx_type* ds_dvm = dS_dVm_vals_.data();
     const cplx_type* ds_dva = dS_dVa_vals_.data();
-    // four passes, in the historical order, so a J coefficient fed by several
-    // contributions still sums them the same way
-    _accumulate_ds<true>(J_values, map_dsdva_r_, ds_dva);
-    _accumulate_ds<false>(J_values, map_dsdva_i_, ds_dva);
-    _accumulate_ds<true>(J_values, map_dsdvm_r_, ds_dvm);
-    _accumulate_ds<false>(J_values, map_dsdvm_i_, ds_dvm);
+    _assign_ds<true>(J_values, map_dsdva_r_, ds_dva);
+    _assign_ds<false>(J_values, map_dsdva_i_, ds_dva);
+    _assign_ds<true>(J_values, map_dsdvm_r_, ds_dvm);
+    _assign_ds<false>(J_values, map_dsdvm_i_, ds_dvm);
 
     // feature (non dS-derived) values
     FeatureWriter writer(J_values, feature_pos_);
