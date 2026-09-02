@@ -126,6 +126,28 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``NRSystem::fill_internal_variables`` -- the dS assembly, and the most expensive thing
+  lightsim2grid itself does in a Newton solve (13.7% of one on case9241pegase, against 63% for KLU)
+  -- computes both derivatives from ONE product instead of four. 1.26-1.39x on the phase, on every
+  grid from 118 to 9241 buses, rebuild or cache-reuse; -36% of its instruction count under
+  callgrind. Writing Y for Ybus(i, j), the formulas derived from pandapower are
+  ``dS_dVm(i,j) = conj(Y.Vnorm_j).V_i`` and ``dS_dVa(i,j) = -conj(Y.V_j).i.V_i`` -- and Vnorm_j is
+  just V_j / |V_j|, so the first is the second's product divided by a real. With
+  ``B = conj(Y.V_j).V_i`` (two complex products), dS_dVm is ``B / |V_j|`` (a real scaling) and
+  dS_dVa is ``-i.B`` (a swap and a sign flip). The diagonal's two extra terms share a product the
+  same way: ``conj(Y.V_i - Ibus_i).V_i`` is ``B - conj(Ibus_i).V_i``, and its dS_dVm term
+  ``conj(Ibus_i).Vnorm_i`` is that same value over |V_i|. The arithmetic is now written on real and
+  imaginary parts rather than left to ``std::complex``, whose ``operator*`` carries a NaN-recovery
+  branch after every product -- on its own, that part was worth 1.19-1.31x and was bit-identical.
+  Two of the four nb_bus scratch vectors are gone with it: the unit phasors and the two
+  ``conj(Ibus) . *`` products are each used once per bus, on the diagonal, so they are built there
+  instead of materialised and carried through the solve.
+  Values move by **less than one ulp relative** (measured 1.9e-16 on case9241pegase): the one
+  rounding that differs is dividing by |V_j| after the product rather than before. This is the
+  Jacobian, not the residual -- it steers the Newton step, it does not define the answer -- and
+  across case118 and the three PEGASE cases, on NR / NRSing / SparseLU, iteration counts are
+  unchanged everywhere and converged voltages agree to 7.3e-13, five orders inside the 1e-8
+  tolerance. FDPF is untouched (it builds no Jacobian) and stays bit-identical.
 - [IMPROVED] ``NRSystem::fill_J`` no longer zeroes the Jacobian before filling it: ~1.2x on the
   fill itself for a large grid (case9241pegase: 1.96 -> 1.63 ms per solve, and 2.28 -> 1.86 ms on
   the rebuild path). It zeroed because every write accumulated, several contributions being able

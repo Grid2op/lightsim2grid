@@ -955,9 +955,8 @@ public:
 
         dS_dVm_vals_ = CplxVect();
         dS_dVa_vals_ = CplxVect();
-        Vnorm_cache_ = CplxVect();
-        Ibus_cache_  = CplxVect();
-        conj_ibus_vnorm_cache_ = CplxVect();
+        Ibus_cache_   = CplxVect();
+        inv_vm_cache_ = RealVect();
 
         ybus_v_cache_   = CplxVect();
         mis_cache_      = CplxVect();
@@ -1102,7 +1101,8 @@ private:
     // scratch for fill_internal_variables, kept across calls so the two
     // nb_bus-sized vectors it needs are allocated once per topology instead of
     // once per Jacobian fill
-    CplxVect                               Vnorm_cache_, Ibus_cache_, conj_ibus_vnorm_cache_;
+    CplxVect                               Ibus_cache_;    // Ybus * V
+    RealVect                               inv_vm_cache_;  // 1 / |V|
 
     // dS value maps: Ybus nnz position -> position in J_.valuePtr() (-1 if unused)
     std::vector<int>                       map_dsdva_r_;
