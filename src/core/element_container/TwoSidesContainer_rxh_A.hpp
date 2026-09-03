@@ -494,6 +494,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 bool status2_me = status2[el_id];
                 if(status1_me){
                     bus_side1_id_me = get_bus_side_1_internal(el_id);
+#ifndef NDEBUG
                     if(bus_side1_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::fillYbus: (GlobalID) the branch with id ";
@@ -501,7 +502,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                         exc_ << " is connected (side 1) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
+#endif
                     bus_side1_solver_id = id_grid_to_solver[bus_side1_id_me.cast_int()];
+#ifndef NDEBUG
                     if(bus_side1_solver_id.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::fillYbus: (SolverID) the branch with id ";
@@ -509,10 +512,12 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                         exc_ << " is connected (side 1) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
+#endif
                 }
 
                 if(status2_me){
                     bus_side2_id_me = get_bus_side_2_internal(el_id);
+#ifndef NDEBUG
                     if(bus_side2_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::fillYbus: (GlobalID) the branch with id ";
@@ -520,7 +525,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                         exc_ << " is connected (side 2) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
+#endif
                     bus_side2_solver_id = id_grid_to_solver[bus_side2_id_me.cast_int()];
+#ifndef NDEBUG
                     if(bus_side2_solver_id.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::fillYbus: (SolverID) the branch with id ";
@@ -528,6 +535,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                         exc_ << " is connected (side 2) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
+#endif
                 }
                 
                 if(ac){
@@ -576,20 +584,24 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
                 const GlobalBusId bus_side1_id_me = get_bus_side_1_internal(el_id);
                 const GlobalBusId bus_side2_id_me = get_bus_side_2_internal(el_id);
+#ifndef NDEBUG
                 if(bus_side1_id_me.cast_int() == _deactivated_bus_id || bus_side2_id_me.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
                     exc_ << "TwoSidesContainer_rxh_A::fillBdc: (GlobalID) the branch with id ";
                     exc_ << el_id << " is connected to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
                 }
+#endif
                 const SolverBusId bus_side1_solver_id = id_grid_to_solver[bus_side1_id_me.cast_int()];
                 const SolverBusId bus_side2_solver_id = id_grid_to_solver[bus_side2_id_me.cast_int()];
+#ifndef NDEBUG
                 if(bus_side1_solver_id.cast_int() == _deactivated_bus_id || bus_side2_solver_id.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
                     exc_ << "TwoSidesContainer_rxh_A::fillBdc: (SolverID) the branch with id ";
                     exc_ << el_id << " is connected to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
                 }
+#endif
 
                 res.push_back(Eigen::Triplet<real_type> (bus_side1_solver_id.cast_int(), bus_side1_solver_id.cast_int(), ydc_11_(el_id)));
                 res.push_back(Eigen::Triplet<real_type> (bus_side2_solver_id.cast_int(), bus_side2_solver_id.cast_int(), ydc_22_(el_id)));

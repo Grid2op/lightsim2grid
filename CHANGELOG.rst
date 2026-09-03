@@ -126,6 +126,23 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] the "connected to a disconnected bus" checks in the **matrix and injection assembly**
+  are now debug-only, the same treatment ``_check_in_range`` got and for the same reason: the ids
+  they test are ones this library just produced. ``fillYbus`` / ``fillSbus`` / ``fillBdc`` /
+  ``hack_Sbus_for_dc_phase_shifter`` are reached only from ``LSGrid::_build_into_cache``; the bus
+  comes out of the container's own ``bus_id_`` for an element the loop has already established is
+  connected, and the solver id out of the ``id_grid_to_solver`` LSGrid built two steps earlier. A
+  failure there is not a caller error but an inconsistency between an element's status and its bus
+  -- which ``check_grid()`` validates, and which no public method can produce on its own. Each was
+  an ``std::ostringstream`` built inline in the assembly loop, so they also cost the surrounding
+  code its registers. 18 blocks across 7 containers.
+  Worth -240,759 instructions on the branch ``fillYbus`` (**-3.2%**), -394,671 on ``LSGrid::fillYbus``,
+  -359,922 on a whole case9241pegase AC rebuild solve and -169,974 on a DC one. Too small to
+  separate from run-to-run noise in wall clock; the instruction counts are exact and reproducible.
+  **Nothing a user can reach lost a check**, and the assertion builds keep every one of them: the
+  release libraries carry none of the message strings, the Debug library carries them all. Results
+  bit-identical on case118 and the three PEGASE cases -- 16 AC configurations (NR / NRSing / FDPF,
+  SparseLU and KLU) and 8 DC ones -- across every element result at 17 digits.
 - [IMPROVED] ``TwoSidesContainer_rxh_A``'s branch flow results are computed on real and imaginary
   parts instead of through ``std::complex``. -963k instructions of the 21.7M
   ``LSGrid::compute_results`` spends on a case9241pegase solve (-4.4%) and -2.9% on the function's

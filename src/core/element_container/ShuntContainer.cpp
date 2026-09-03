@@ -44,6 +44,7 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         tmp = {target_p_mw_(shunt_id), -target_q_mvar_(shunt_id)};  // TODO : check the sign here for p_mw, it is suspicious !
 
         bus_id_me = bus_id_(shunt_id);
+#ifndef NDEBUG
         if(bus_id_solver.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "ShuntContainer::fillYbus: the shunt with id ";
@@ -51,7 +52,9 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
         if(bus_id_solver.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "ShuntContainer::fillYbus: the shunt with id ";
@@ -59,6 +62,7 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
         if(abs(sn_mva - 1.) > _tol_equal_float) tmp /= sn_mva;
         res.push_back(Eigen::Triplet<cplx_type> (bus_id_solver.cast_int(), bus_id_solver.cast_int(), tmp));
     }
@@ -115,6 +119,7 @@ void ShuntContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect &
         // i don't do anything if the shunt is disconnected
         if(!status_[shunt_id]) continue;
         bus_id_me = bus_id_(shunt_id);
+#ifndef NDEBUG
         if(bus_id_me.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "ShuntContainer::fillSbus: the shunt with id ";
@@ -122,10 +127,13 @@ void ShuntContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect &
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
         if(bus_id_solver.cast_int() == _deactivated_bus_id){
             throw std::runtime_error("LSGrid::fillSbus: A shunt is connected to a disconnected bus.");
         }
+#endif
         Sbus.coeffRef(bus_id_solver.cast_int()) -= target_p_mw_(shunt_id);  // TODO : check the - here, it is suspicious !
     }
 }
