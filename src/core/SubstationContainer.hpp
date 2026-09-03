@@ -257,7 +257,7 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
          * dropped earlier (non-finite thermal limits / reactive bounds are legitimate
          * sentinels on real grids) -- a NOMINAL voltage has no such convention, 0 or a
          * negative value is simply meaningless and would silently produce nonsense
-         * per-unit conversions (v_kv_from_vpu multiplies by it).
+         * per-unit conversions (v_kv_theta_from_vpu multiplies by it).
          */
         void check_vn_kv_positive() const
         {

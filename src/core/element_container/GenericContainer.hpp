@@ -268,29 +268,24 @@ class LS2G_API GenericContainer : public BaseConstants
                        const Eigen::Ref<const RealVect> & v) const;
 
         /**
-        convert v from pu to v in kv (and assign it to the right element...)
-        **/
-        void v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
-                           const Eigen::Ref<const RealVect> & Vm,
-                           const std::vector<bool> & status,
-                           int nb_element,
-                           const GlobalBusIdVect & bus_me_id,
-                           const SolverBusIdVect & id_grid_to_solver,
-                           const Eigen::Ref<const RealVect> & bus_vn_kv,
-                           Eigen::Ref<RealVect> v) const;
+        Convert this container's bus voltages to the per-element results: v from
+        pu to kV, theta from rad to degrees.
 
-
-        /**
-        compute va in degree from va in rad.
+        This was two functions, v_kv_from_vpu and v_deg_from_va, called back to
+        back on the same elements. Everything before the last line of each was
+        the same work -- read the element's bus, map it to a solver bus, check
+        both are connected -- so the walk is done once and both results are
+        written from it.
         **/
-        void v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
-                           const Eigen::Ref<const RealVect> & Vm,
-                           const std::vector<bool> & status,
-                           int nb_element,
-                           const GlobalBusIdVect & bus_me_id,
-                           const SolverBusIdVect & id_grid_to_solver,
-                           const Eigen::Ref<const RealVect> & bus_vn_kv,
-                           Eigen::Ref<RealVect> v) const;
+        void v_kv_theta_from_vpu(const Eigen::Ref<const RealVect> & Va,
+                                 const Eigen::Ref<const RealVect> & Vm,
+                                 const std::vector<bool> & status,
+                                 int nb_element,
+                                 const GlobalBusIdVect & bus_me_id,
+                                 const SolverBusIdVect & id_grid_to_solver,
+                                 const Eigen::Ref<const RealVect> & bus_vn_kv,
+                                 Eigen::Ref<RealVect> v,
+                                 Eigen::Ref<RealVect> theta) const;
 };
 
 

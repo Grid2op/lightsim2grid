@@ -126,6 +126,18 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``GenericContainer::v_kv_from_vpu`` and ``v_deg_from_va`` are one function,
+  ``v_kv_theta_from_vpu``. -862k instructions of the 24.1M ``LSGrid::compute_results`` spends on a
+  case9241pegase solve (-3.6%), and -2.9% on the function's wall time (min of 11 batches of 2000
+  calls, four runs, no overlap between the two). They were called back to back on the same elements
+  by ``OneSideContainer::compute_results`` -- for loads, static gens, storages, shunts, generators
+  and SVCs -- and everything before the last line of each was the same work: read the element's
+  bus, map it through ``id_grid_to_solver``, check that neither is the deactivated bus. Only the
+  final assignment differed (Vm times the bus' nominal kV, against Va times 180/pi). The walk, the
+  two gathers and the two checks now happen once and both results are written from them. Results
+  are bit-identical, verified on every element result (P/Q/V/theta/amps of lines, trafos, loads,
+  gens, shunts, sgens, storages and hvdc, at 17 digits) over case118 and the three PEGASE cases
+  under NR / NRSing / FDPF with SparseLU and KLU.
 - [IMPROVED] ``ShuntContainer::_compute_results`` computes the shunt's power on real and imaginary
   parts instead of through ``std::complex``. -264k instructions of the 24.4M ``LSGrid::compute_results``
   spends on a case9241pegase solve (-1.1% of the post-processing). The expression is

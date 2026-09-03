@@ -112,77 +112,42 @@ GridModelBusId GenericContainer::_get_bus(int el_id, const std::vector<bool> & s
     return res;
 }
 
-void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & /*Va*/,
-                                     const Eigen::Ref<const RealVect> & Vm,
-                                     const std::vector<bool> & status,
-                                     int nb_element,
-                                     const GlobalBusIdVect & bus_me_id,
-                                     const SolverBusIdVect & id_grid_to_solver,
-                                     const Eigen::Ref<const RealVect> & bus_vn_kv,
-                                     Eigen::Ref<RealVect> v) const
+void GenericContainer::v_kv_theta_from_vpu(const Eigen::Ref<const RealVect> & Va,
+                                           const Eigen::Ref<const RealVect> & Vm,
+                                           const std::vector<bool> & status,
+                                           int nb_element,
+                                           const GlobalBusIdVect & bus_me_id,
+                                           const SolverBusIdVect & id_grid_to_solver,
+                                           const Eigen::Ref<const RealVect> & bus_vn_kv,
+                                           Eigen::Ref<RealVect> v,
+                                           Eigen::Ref<RealVect> theta) const
 {
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that
         if(!status[el_id]) {
             v(el_id) = v_disco_el_;
-            continue;
-        }
-        GlobalBusId el_bus_me_id = bus_me_id(el_id);
-        if(el_bus_me_id.cast_int() == _deactivated_bus_id){
-            // TODO DEBUG MODE: only check in debug mode
-            std::ostringstream exc_;
-            exc_ << "GenericContainer::v_kv_from_vpu: element with id ";
-            exc_ << el_id;
-            exc_ << " is connected to a disconnected bus while being connected to the grid.";
-            throw std::runtime_error(exc_.str());
-        }
-        SolverBusId bus_solver_id = id_grid_to_solver[el_bus_me_id.cast_int()];
-        if(bus_solver_id.cast_int() == _deactivated_bus_id){
-            // TODO DEBUG MODE: only check in debug mode
-            std::ostringstream exc_;
-            exc_ << "GenericContainer::v_kv_from_vpu: The element of id ";
-            exc_ << el_id;
-            exc_ << " is connected to a disconnected bus";
-            throw std::runtime_error(exc_.str());
-        }
-        real_type bus_vn_kv_me = bus_vn_kv(el_bus_me_id.cast_int());
-        v(el_id) = Vm(bus_solver_id.cast_int()) * bus_vn_kv_me;
-    }
-}
-
-void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
-                                     const Eigen::Ref<const RealVect> & /*Vm*/,
-                                     const std::vector<bool> & status,
-                                     int nb_element,
-                                     const GlobalBusIdVect & bus_me_id,
-                                     const SolverBusIdVect & id_grid_to_solver,
-                                     const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
-                                     Eigen::Ref<RealVect> theta) const
-{
-    for(int el_id = 0; el_id < nb_element; ++el_id){
-        // if the element is disconnected, i leave it like that
-        if(!status[el_id]) {
             theta(el_id) = theta_disco_el_;
             continue;
         }
-        GlobalBusId el_bus_me_id = bus_me_id(el_id);
+        const GlobalBusId el_bus_me_id = bus_me_id(el_id);
         if(el_bus_me_id.cast_int() == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
-            exc_ << "GenericContainer::v_kv_from_vpu: element with id ";
+            exc_ << "GenericContainer::v_kv_theta_from_vpu: element with id ";
             exc_ << el_id;
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
-        SolverBusId bus_solver_id = id_grid_to_solver[el_bus_me_id.cast_int()];
+        const SolverBusId bus_solver_id = id_grid_to_solver[el_bus_me_id.cast_int()];
         if(bus_solver_id.cast_int() == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
-            exc_ << "GenericContainer::v_deg_from_va: The element of id ";
-            exc_ << bus_solver_id.cast_int();
+            exc_ << "GenericContainer::v_kv_theta_from_vpu: The element of id ";
+            exc_ << el_id;
             exc_ << " is connected to a disconnected bus";
             throw std::runtime_error(exc_.str());
         }
+        v(el_id) = Vm(bus_solver_id.cast_int()) * bus_vn_kv(el_bus_me_id.cast_int());
         theta(el_id) = Va(bus_solver_id.cast_int()) * my_180_pi_;
     }
 }

@@ -252,8 +252,8 @@ class OneSideContainer : public GenericContainer
                                      bool ac) final
         {
             const int nb_els = nb();
-            v_kv_from_vpu(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
-            v_deg_from_va(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
+            v_kv_theta_from_vpu(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv,
+                                res_v_, res_theta_);
             this->_compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
         }
 
