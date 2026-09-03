@@ -64,26 +64,10 @@ void GenericContainer::_generic_change_bus(
                     el_bus_ids,
                     "_change_bus");
 
-    // throw error: bus id does not exist
-    if(new_gridmodel_bus_id.cast_int() >= nb_max_bus)
-    {
-        // TODO DEBUG MODE: only check in debug mode
-        std::ostringstream exc_;
-        exc_ << "GenericContainer::_change_bus: Cannot change an element to bus ";
-        exc_ << new_gridmodel_bus_id.cast_int();
-        exc_ << " There are only ";
-        exc_ << nb_max_bus;
-        exc_ << " distinct buses on this grid.";
-        throw std::out_of_range(exc_.str());
-    }
-    if(new_gridmodel_bus_id.cast_int() < 0)
-    {
-        // TODO DEBUG MODE: only check in debug mode
-        std::ostringstream exc_;
-        exc_ << "GenericContainer::_change_bus: new bus id should be >=0 and not ";
-        exc_ << new_gridmodel_bus_id.cast_int();
-        throw std::out_of_range(exc_.str());
-    }
+    // The bus id is validated by _check_new_bus_id, which the mutators call BEFORE
+    // entering the _apply_and_track_buses bracket -- see the note there. Rejecting it
+    // from in here would mean rejecting it with the element's contribution already
+    // taken away.
     auto bus_me_id = el_bus_ids(el_id);
     bus_me_id = new_gridmodel_bus_id;
 }

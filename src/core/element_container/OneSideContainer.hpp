@@ -276,6 +276,9 @@ class OneSideContainer : public GenericContainer
                 // validate load_id *before* dispatching: `_change_bus` reads bus_id_(load_id)
                 // with an unchecked Eigen operator(); `_generic_change_bus` only checks afterwards.
                 _check_in_range(load_id, bus_id_, "change_bus");
+                // and the BUS id too, before _apply_and_track_buses takes this
+                // element's contribution away -- see _check_new_bus_id.
+                _check_new_bus_id(new_gridmodel_bus_id, substation.nb_bus());
                 // a move to the bus it is already on holds exactly the same bus
                 // afterwards. Tracking it would take the contribution away and put
                 // it straight back -- correct counts, but a bus that is alone would
@@ -456,6 +459,7 @@ class OneSideContainer : public GenericContainer
                 }
                 GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
                 bool change_effective = reactivate_no_bus_tracking(el_id, solver_control); // eg reactivate_load(load_id);
+                _check_new_bus_id(new_bus_backend, substations.nb_bus());
                 change_effective = change_bus_no_bus_tracking(el_id, new_bus_backend, solver_control, substations) || change_effective; // eg change_bus_load(load_id, new_bus_backend);
                 return change_effective;
             } else if (new_bus.cast_int() == _deactivated_bus_id){

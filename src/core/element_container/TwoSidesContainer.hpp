@@ -405,6 +405,9 @@ class TwoSidesContainer : public GenericContainer
          */        
         virtual void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, SubstationContainer & substation) final {
             _check_in_range(el_id, status_global_, "change_bus_side_1");  // before _apply_and_track_buses reads status_global_[el_id]
+            // and the BUS id, before the bracket takes this element's contribution
+            // away -- a call the grid will refuse must not touch the counts at all.
+            _check_new_bus_id(new_gridmodel_bus_id, substation.nb_bus());
             // the branch counts once, around both the side move and resolve_status --
             // a line END must not count for itself, status_global_ gates it
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 1).");
@@ -426,6 +429,9 @@ class TwoSidesContainer : public GenericContainer
          */  
         virtual void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, SubstationContainer & substation) final {
             _check_in_range(el_id, status_global_, "change_bus_side_2");  // before _apply_and_track_buses reads status_global_[el_id]
+            // and the BUS id, before the bracket takes this element's contribution
+            // away -- a call the grid will refuse must not touch the counts at all.
+            _check_new_bus_id(new_gridmodel_bus_id, substation.nb_bus());
             // the branch counts once, around both the side move and resolve_status --
             // a line END must not count for itself, status_global_ gates it
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 2).");

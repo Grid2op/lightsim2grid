@@ -126,6 +126,29 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] a ``change_bus`` the grid is going to refuse is now rejected **before** the per-bus
+  element counts are touched, instead of being compensated for afterwards. -3,899,955 instructions
+  on a case9241pegase rebuild solve (**-0.45% of everything**), of which the whole of the branch
+  ``fillYbus``' share: 12,085,107 -> 8,185,194, **-32.3%**.
+  ``_apply_and_track_buses`` brackets a mutation between "take this element's contribution away"
+  and "put it back". The bus-id validation lived inside that bracket, in ``_generic_change_bus``,
+  so a refused call was rejected with the contribution already removed -- which is why it needed a
+  ``try`` / ``catch(...)`` restoring it on the way out. That catch was not free: an unwind edge
+  through ``GenericContainer.hpp`` made GCC keep every ``std::vector<bool>`` access in ``fillYbus``
+  live across it, in a function that never calls any of this. Bisecting the nine commits of #188
+  against that single number found it exactly -- eight of them at 7,463,013 and the ninth at
+  8,859,264 -- and deleting only the catch, keeping everything else in that commit, restored
+  7,463,013 to the instruction.
+  The new ``GenericContainer::_check_new_bus_id`` is called by the four ``change_bus`` entry points
+  before they enter the bracket, so a refused call never touches the counts at all rather than
+  touching them and undoing it. It is always active: the id comes from the caller. An exception
+  from deeper inside a mutation can still leave the counts short, and that is deliberate -- such a
+  grid must be rebuilt and its caches dropped, not carried on with.
+  #188's own coverage is what caught the first attempt at this: it found the HVDC and two-sided
+  ``change_bus`` paths where the check had landed inside the lambda instead of before the bracket
+  (36 failing assertions). All 227 test cases / 590,769 assertions pass in the C++17, C++14 and
+  Debug builds, and results are bit-identical on case118 and the three PEGASE cases across 16 AC
+  and 8 DC configurations.
 - [IMPROVED] the same debug-only treatment for the "connected to a disconnected bus" checks on the
   **results path**, where it is worth considerably more than on the assembly one:
   ``LSGrid::compute_results`` drops **-1,591,221 instructions (-7.65%)** and **-7.4% of its wall

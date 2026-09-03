@@ -147,32 +147,24 @@ class LS2G_API GenericContainer : public BaseConstants
                                     Mutation && mutate){
             bool crossed = false;
             contribute_to_buses(el_id, substation, -1, crossed);
-            // Putting the contribution back is the other half of taking it away, so it
-            // has to happen on BOTH ways out -- see the catch below.
-            const auto put_the_contribution_back = [&]{
-                contribute_to_buses(el_id, substation, +1, crossed);
-                if(crossed){
-                    solver_control.ac_algo_controler().tell_dimension_changed();
-                    solver_control.dc_algo_controler().tell_dimension_changed();
-                }
-            };
-            try{
-                mutate();
-            }catch(...){
-                // The grid refused the mutation (an out-of-range bus id, a bad element
-                // id), or it gave up part way. The `-1` above has already happened; if
-                // the exception left here without the `+1`, every bus this element
-                // holds would stay one short -- silently, for the rest of the grid's
-                // life, on a call that was supposed to change nothing.
-                //
-                // `contribute_to_buses` reads the element's state as it is NOW, so this
-                // restores what the element holds after whatever did happen, which is
-                // what a recount would say either way. It cannot throw here: the same
-                // call with the same el_id already succeeded above.
-                put_the_contribution_back();
-                throw;
+            // Everything a caller can get wrong -- the element id, the bus id -- is
+            // checked by the mutators BEFORE they call in here (_check_in_range and
+            // _check_new_bus_id), so a call the grid refuses never reaches this
+            // bracket and the counts it would have left short are never touched.
+            //
+            // This used to be a try / catch that put the contribution back on the way
+            // out of an exception. It was not free: an unwind edge through this header
+            // made GCC keep every std::vector<bool> access in fillYbus live across it,
+            // for 4.9M instructions per rebuild solve of case9241pegase, in a function
+            // that never calls any of this. An exception from deeper inside a mutation
+            // can still leave the counts short; that is a grid which must be rebuilt
+            // and its caches dropped, not one to carry on solving with.
+            mutate();
+            contribute_to_buses(el_id, substation, +1, crossed);
+            if(crossed){
+                solver_control.ac_algo_controler().tell_dimension_changed();
+                solver_control.dc_algo_controler().tell_dimension_changed();
             }
-            put_the_contribution_back();
         }
 
         /**computes the total amount of power for each bus (for generator only)**/
@@ -318,6 +310,46 @@ class LS2G_API GenericContainer : public BaseConstants
          * 
          * The new_gridmodel_bus_id is given in the gridmodel convention, between 0 and `n_sub * n_busbar_per_sub` 
          */
+        /**
+         * Validate a caller-supplied bus id, BEFORE anything is mutated.
+         *
+         * This used to live inside `_generic_change_bus`, which runs from inside the
+         * `_apply_and_track_buses` bracket -- so a bus id the grid was going to refuse
+         * was rejected only after the element's contribution had been taken away.
+         * `_apply_and_track_buses` compensated with a try / catch that put the
+         * contribution back on the way out.
+         *
+         * Checking first is both simpler and cheaper. Simpler because a refused call
+         * never touches the counts at all, rather than touching them and undoing it
+         * with a restore that has to reason about a half-applied mutation. Cheaper
+         * because the catch cost far more than the exceptional path it protected: an
+         * unwind edge through this header made GCC keep every `std::vector<bool>`
+         * access in `fillYbus` live across it, for 4.9M instructions per rebuild solve
+         * of case9241pegase -- in a function that never calls any of this.
+         *
+         * Always active: the id comes from the caller, so this is a user-facing check.
+         */
+        static void _check_new_bus_id(const GridModelBusId & new_gridmodel_bus_id, int nb_max_bus)
+        {
+            if(new_gridmodel_bus_id.cast_int() >= nb_max_bus)
+            {
+                std::ostringstream exc_;
+                exc_ << "GenericContainer::_change_bus: Cannot change an element to bus ";
+                exc_ << new_gridmodel_bus_id.cast_int();
+                exc_ << " There are only ";
+                exc_ << nb_max_bus;
+                exc_ << " distinct buses on this grid.";
+                throw std::out_of_range(exc_.str());
+            }
+            if(new_gridmodel_bus_id.cast_int() < 0)
+            {
+                std::ostringstream exc_;
+                exc_ << "GenericContainer::_change_bus: new bus id should be >=0 and not ";
+                exc_ << new_gridmodel_bus_id.cast_int();
+                throw std::out_of_range(exc_.str());
+            }
+        }
+
         void _generic_change_bus(
             int el_id,
             const GridModelBusId & new_gridmodel_bus_id,
