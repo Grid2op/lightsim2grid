@@ -126,6 +126,31 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] the last throw sites inside the ``_apply_and_track_buses`` bracket are gone, which
+  takes the branch ``fillYbus`` back to **exactly** what it cost before #188 landed: 7,222,254
+  instructions, the same figure to the digit. Together with the previous entry that is
+  12,085,107 -> 7,222,254 on that function (**-40.2%**), ``pre_process_solver``
+  33,503,851 -> 28,640,988, and **-4,862,863 on a whole case9241pegase rebuild solve (-0.56%)**.
+  Validating the bus id before the bracket removed the biggest unwind edge but not all of them:
+  ``deactivate_no_bus_tracking`` / ``reactivate_no_bus_tracking`` /
+  ``change_bus_no_bus_tracking`` each re-checked the element id, and so did
+  ``_generic_deactivate`` / ``_generic_reactivate`` / ``_generic_change_bus`` underneath them --
+  three layers of the same check, the outermost of which is the user-facing one. The inner two are
+  now ``_check_in_range_internal``, the debug-only form: every one of the 18 bracket call sites is
+  reached through a public entry point that has already raised for a bad id, and a throw from
+  inside the bracket is the thing this whole layer exists to avoid.
+  **No user-facing check was lost**, verified from a release build rather than by reading: a
+  release-built driver still raises for ``change_bus_load(0, -1)``, ``change_bus_load(0, nb+1000)``,
+  the generator equivalents, ``change_bus_load(999999, 0)`` and ``deactivate_load(999999)`` -- six
+  out of six. The Debug library carries all ten internal messages, the Release library four (the
+  user-facing ones).
+  Two stale comments went with it: ``GeneratorContainer::_change_bus`` and
+  ``SvcContainer::_change_bus`` both claimed their IndexError came from ``_generic_change_bus``
+  "which the caller runs *after* this function". It has not for some time -- 
+  ``change_bus_no_bus_tracking`` raises first.
+  227 test cases / 590,769 assertions pass in the C++17, C++14 and Debug builds -- including #188's
+  refused-``change_bus`` sweep, which is what makes this safe to do -- and results are
+  bit-identical across 16 AC and 8 DC configurations on case118 and the three PEGASE cases.
 - [IMPROVED] a ``change_bus`` the grid is going to refuse is now rejected **before** the per-bus
   element counts are touched, instead of being compensated for afterwards. -3,899,955 instructions
   on a case9241pegase rebuild solve (**-0.45% of everything**), of which the whole of the branch

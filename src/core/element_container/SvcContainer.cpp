@@ -252,9 +252,10 @@ bool SvcContainer::_reactivate(int svc_id, DualAlgoControl & solver_control)
 
 bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/)
 {
-    // el_id is validated (and the proper IndexError raised) by `_generic_change_bus`,
-    // which the caller runs *after* this function. Bail out here on an out-of-range
-    // id so the `regulated_bus_id_` write below never touches memory out of bounds.
+    // el_id is validated (and the proper IndexError raised) by
+    // OneSideContainer::change_bus / change_bus_no_bus_tracking, which run *before*
+    // this function. Bail out here on an out-of-range id anyway so the
+    // `regulated_bus_id_` write below never touches memory out of bounds.
     if(svc_id < 0 || svc_id >= nb()) return false;
     if(bus_id_(svc_id) == new_bus_id) return false;
     // a LOCAL voltage controller's regulated bus follows its own bus

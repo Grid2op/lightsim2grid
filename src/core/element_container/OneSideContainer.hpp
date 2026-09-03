@@ -236,10 +236,12 @@ class OneSideContainer : public GenericContainer
          * says the branch never held.
          */
         bool deactivate_no_bus_tracking(int el_id, DualAlgoControl & solver_control) {
-            // validate el_id *before* dispatching: `_deactivate` indexes status_[el_id]
-            // with an unchecked operator[] (a negative id would wrap to a huge size_t),
-            // and `_generic_deactivate` only checks afterwards.
-            _check_in_range(el_id, status_, "deactivate");
+            // Debug-only: every caller is inside an _apply_and_track_buses bracket whose
+            // public entry point (deactivate, deactivate_side_1, update_topo, ...) has
+            // already raised for a bad el_id, and a throw from in here would be a throw
+            // from inside the counting bracket -- which is what this whole layer exists
+            // to avoid, and what an unwind edge through this header costs fillYbus.
+            _check_in_range_internal(el_id, status_, "deactivate");
             bool res = this->_deactivate(el_id, solver_control);
             _generic_deactivate(el_id, status_);
             return res;
@@ -249,14 +251,14 @@ class OneSideContainer : public GenericContainer
         bool change_bus_no_bus_tracking(int el_id, GridModelBusId new_gridmodel_bus_id,
                                         DualAlgoControl & solver_control,
                                         const SubstationContainer & substation) {
-            _check_in_range(el_id, bus_id_, "change_bus");
+            _check_in_range_internal(el_id, bus_id_, "change_bus");  // see deactivate_no_bus_tracking
             if(bus_id_(el_id) == new_gridmodel_bus_id) return false;
             bool res = this->_change_bus(el_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
             _generic_change_bus(el_id, new_gridmodel_bus_id, bus_id_, solver_control, substation.nb_bus());
             return res;
         }
         bool reactivate_no_bus_tracking(int el_id, DualAlgoControl & solver_control) {
-            _check_in_range(el_id, status_, "reactivate");
+            _check_in_range_internal(el_id, status_, "reactivate");  // see deactivate_no_bus_tracking
             bool res = this->_reactivate(el_id, solver_control);
             _generic_reactivate(el_id, status_);
             return res;

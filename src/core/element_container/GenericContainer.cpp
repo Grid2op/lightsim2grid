@@ -38,16 +38,18 @@ void GenericContainer::_get_amps(Eigen::Ref<RealVect> a,
 }
 
 void GenericContainer::_generic_reactivate(int el_id, std::vector<bool> & eltype_status){
-    _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
+    _check_in_range_internal(static_cast<std::vector<bool>::size_type>(el_id),
                     eltype_status,
-                    "_generic_reactivate");
+                    "_generic_reactivate");  // debug-only: the public entry point already raised, see
+                    // OneSideContainer::deactivate_no_bus_tracking
     eltype_status[el_id] = true;  //TODO why it's needed to do that again
 }
 
 void GenericContainer::_generic_deactivate(int el_id, std::vector<bool> & eltype_status){
-    _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
+    _check_in_range_internal(static_cast<std::vector<bool>::size_type>(el_id),
                     eltype_status,
-                    "_generic_deactivate");
+                    "_generic_deactivate");  // debug-only: the public entry point already raised, see
+                    // OneSideContainer::deactivate_no_bus_tracking
     eltype_status[el_id] = false;   //TODO why it's needed to do that again
 }
 
@@ -60,9 +62,10 @@ void GenericContainer::_generic_change_bus(
     // bus id here "me_id" and NOT "solver_id"
 
     // throw error: object id does not exist
-    _check_in_range(static_cast<Eigen::Index>(el_id),
+    _check_in_range_internal(static_cast<Eigen::Index>(el_id),
                     el_bus_ids,
-                    "_change_bus");
+                    "_change_bus");  // debug-only: the public entry point already raised, see
+                    // OneSideContainer::deactivate_no_bus_tracking
 
     // The bus id is validated by _check_new_bus_id, which the mutators call BEFORE
     // entering the _apply_and_track_buses bracket -- see the note there. Rejecting it
