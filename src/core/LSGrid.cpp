@@ -1671,6 +1671,7 @@ CplxVect LSGrid::_get_results_back_to_orig_nodes(const Eigen::Ref<const CplxVect
     for (int bus_id_me=0; bus_id_me < nb_bus; ++bus_id_me){
         if(!substations_.is_bus_connected(GlobalBusId(bus_id_me))) continue;  // nothing is done if the bus is connected
         SolverBusId bus_id_solver = id_me_to_solver[bus_id_me];
+#ifndef NDEBUG
         if(bus_id_solver.cast_int() == BaseConstants::_deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "LSGrid::_get_results_back_to_orig_nodes: the bus with id ";
@@ -1678,6 +1679,7 @@ CplxVect LSGrid::_get_results_back_to_orig_nodes(const Eigen::Ref<const CplxVect
             exc_ << " is connected to a disconnected bus (solver side)";
             throw std::runtime_error(exc_.str());
         }
+#endif
         res(bus_id_me) = res_tmp(static_cast<int>(bus_id_solver));
     }
     return res;

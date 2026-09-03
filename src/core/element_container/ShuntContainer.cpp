@@ -154,6 +154,7 @@ void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
             continue;
         }
         GlobalBusId bus_id_me = bus_id_(shunt_id);
+#ifndef NDEBUG
         if(bus_id_me.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "ShuntContainer::_compute_results: the shunt with id ";
@@ -161,10 +162,13 @@ void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
         SolverBusId bus_solver_id = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
         if(bus_solver_id.cast_int() == _deactivated_bus_id){
             throw std::runtime_error("ShuntContainer::compute_results: A shunt is connected to a disconnected bus.");
         }
+#endif
         // Same arithmetic as `s = E * conj(y * E)` with `y = -(p + i.q) / sn_mva`,
         // written on real and imaginary parts. std::complex's operator* carries a
         // NaN-recovery branch after every product, and there are two products per

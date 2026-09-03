@@ -135,6 +135,7 @@ void GenericContainer::v_kv_theta_from_vpu(const Eigen::Ref<const RealVect> & Va
             continue;
         }
         const GlobalBusId el_bus_me_id = bus_me_id(el_id);
+#ifndef NDEBUG
         if(el_bus_me_id.cast_int() == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
@@ -143,7 +144,9 @@ void GenericContainer::v_kv_theta_from_vpu(const Eigen::Ref<const RealVect> & Va
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
+#endif
         const SolverBusId bus_solver_id = id_grid_to_solver[el_bus_me_id.cast_int()];
+#ifndef NDEBUG
         if(bus_solver_id.cast_int() == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
@@ -152,6 +155,7 @@ void GenericContainer::v_kv_theta_from_vpu(const Eigen::Ref<const RealVect> & Va
             exc_ << " is connected to a disconnected bus";
             throw std::runtime_error(exc_.str());
         }
+#endif
         v(el_id) = Vm(bus_solver_id.cast_int()) * bus_vn_kv(el_bus_me_id.cast_int());
         theta(el_id) = Va(bus_solver_id.cast_int()) * my_180_pi_;
     }

@@ -281,6 +281,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 SolverBusId bus_hv_solver_id, bus_lv_solver_id;
                 if(status1[el_id]){
                     bus_hv_id_me = get_bus_side_1_internal(el_id);
+#ifndef NDEBUG
                     if(bus_hv_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::compute_results: (GlobalBusId) the branch with id ";
@@ -288,7 +289,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                         exc_ << " is connected (side 1) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
+#endif
                     bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me.cast_int()];
+#ifndef NDEBUG
                     if(bus_hv_solver_id.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::compute_results: (SolverBusId) the branch with id ";
@@ -296,6 +299,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                         exc_ << " is connected (side 1) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
+#endif
                 }else{
                     bus_hv_id_me = GridModelBusId(_deactivated_bus_id);
                     bus_hv_solver_id = SolverBusId(_deactivated_bus_id);
@@ -303,6 +307,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
                 if(status2[el_id]){
                     bus_lv_id_me = get_bus_side_2_internal(el_id);
+#ifndef NDEBUG
                     if(bus_lv_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::compute_results: (GlobalBusId) the branch with id ";
@@ -310,7 +315,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                         exc_ << " is connected (side 2) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
+#endif
                     bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me.cast_int()];
+#ifndef NDEBUG
                     if(bus_lv_solver_id.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
                         exc_ << "TwoSidesContainer_rxh_A::compute_results: (SolverBusId) the branch with id ";
@@ -318,6 +325,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                         exc_ << " is connected (side 2) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
+#endif
                 }else{
                     bus_lv_id_me = GridModelBusId(_deactivated_bus_id);
                     bus_lv_solver_id = SolverBusId(_deactivated_bus_id);

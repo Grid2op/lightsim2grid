@@ -126,6 +126,25 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] the same debug-only treatment for the "connected to a disconnected bus" checks on the
+  **results path**, where it is worth considerably more than on the assembly one:
+  ``LSGrid::compute_results`` drops **-1,591,221 instructions (-7.65%)** and **-7.4% of its wall
+  time** (min of 11 batches of 2000 calls: 954 -> 884 microseconds, four runs, the two ranges not
+  overlapping). Nine blocks, in ``TwoSidesContainer_rxh_A::compute_results_tsc_rxha_no_amps`` (four,
+  inside a loop over all 16049 branches of case9241pegase),
+  ``GenericContainer::v_kv_theta_from_vpu`` (two, over every load, static gen, storage, shunt,
+  generator and SVC), ``ShuntContainer::_compute_results`` (two) and
+  ``LSGrid::_get_results_back_to_orig_nodes`` (one, per bus). Each was an ``std::ostringstream``
+  built inline in the loop.
+  Same argument as the assembly path: these run only from ``LSGrid::process_results``, on a bus the
+  container just read out of its own ``bus_id_`` for an element already established as connected,
+  and on the ``id_me_to_solver`` this very solve built. Not gated, and deliberately: the guard in
+  ``HvdcLineContainer::compute_results`` that rejects a half-open droop line, which is a state
+  invariant rather than an id check and is the documented alternative to indexing with the open
+  side's -1.
+  Verified from the binaries: the Release and C++14 libraries carry none of the nine messages, the
+  Debug library carries them all. Results bit-identical on case118 and the three PEGASE cases, 16
+  AC configurations and 8 DC ones, every element result at 17 digits.
 - [IMPROVED] the "connected to a disconnected bus" checks in the **matrix and injection assembly**
   are now debug-only, the same treatment ``_check_in_range`` got and for the same reason: the ids
   they test are ones this library just produced. ``fillYbus`` / ``fillSbus`` / ``fillBdc`` /
