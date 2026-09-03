@@ -172,12 +172,15 @@ class LS2G_API Base
             {}
 
         // Position of (row, col) in a compressed column-major matrix' value
-        // array, -1 if that coefficient is not stored. Takes the index arrays
-        // rather than the matrix: build_J_sparsity calls this once per Jacobian
-        // coefficient -- four times the Ybus nonzeros, ~170k on a 9241-bus grid
-        // -- and the Eigen::Ref the matrix-taking overload binds, free as it is
-        // to construct, is still a per-coefficient cost paid to read two
-        // pointers that do not change across the loop.
+        // array, -1 if that coefficient is not stored. Nothing in the solve
+        // path calls this any more -- build_J_sparsity used to, once per
+        // Jacobian coefficient, and now records each position as it writes the
+        // pattern instead -- but it stays part of the component protocol for
+        // components and external consumers that need to locate a coefficient
+        // in an already-built J. The overload taking the index arrays rather
+        // than the matrix is the one to use in a loop: the Eigen::Ref the
+        // matrix-taking overload binds, free as it is to construct, is still a
+        // per-call cost paid to read two pointers that do not change.
         static int find_J_pos(const int* outer_index,
                               const int* inner_index,
                               int row,
@@ -189,7 +192,7 @@ class LS2G_API Base
             return static_cast<int>(it - inner_index);
         }
 
-        // same, on a matrix (the entry point callers outside this loop use)
+        // same, on a matrix (the convenient entry point for a one-off lookup)
         static int find_J_pos (
             const Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > & J_csc,
             int row,

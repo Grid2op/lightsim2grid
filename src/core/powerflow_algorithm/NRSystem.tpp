@@ -65,18 +65,32 @@ inline void NRSystem<Base, Rest...>::update_state(
 }
 
 // ---- Phase 2: build J sparsity + value maps -----------------------------------
+//
+// J's compressed-column arrays are written here directly, rather than handing
+// the pattern to Eigen's setFromTriplets and then looking every contribution
+// back up in the result. setFromTriplets does the same two counting sorts this
+// function does, but it carries a double per entry through a temporary
+// SparseMatrix, collapses duplicates in a pass of its own, and materialises the
+// transpose as a second matrix -- and it hands back only a matrix, leaving
+// 4 * nnz(Ybus) binary searches (~170k on a 9241-bus grid) to find where each
+// contribution landed. Building the arrays here carries a 4-byte entry id
+// instead of the value, folds the duplicate collapse into the transpose, and
+// drops each contribution's position straight into the map it belongs to as
+// the row indices are written.
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::build_J_sparsity()
 {
-    J_ = Eigen::SparseMatrix<real_type, Eigen::ColMajor>();
-
-    // const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>& Ybus = *Ybus_ptr_;
     const int nnz_Y = static_cast<int>(Ybus_ref_.nonZeros());
+    const int dim_J = ledger_.size();
 
     // generic dS pass: ONE loop over the Ybus nonzeros generates every
     // dS-derived entry, for all components at once. k is the running nnz index.
+    // The per-row histogram of the pattern is counted here rather than in a
+    // pass of its own -- row_ptr[r + 1] ends up holding the number of entries
+    // of J row r, the shape a prefix sum turns into row starts.
     std::vector<Contrib> cntrb;
     cntrb.reserve(4 * nnz_Y);  // pessimistic upper bound
+    std::vector<int> row_ptr(static_cast<std::size_t>(dim_J) + 1, 0);
     int k = 0;
     for (int outer = 0; outer < Ybus_ref_.outerSize(); ++outer) {
         for (EigenRefConstCplxSpMat::InnerIterator
@@ -85,70 +99,135 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
             const int i = static_cast<int>(it.row()), j = static_cast<int>(it.col());
             const int pr = ledger_.p_row(i),     qr = ledger_.q_row(i);
             const int tc = ledger_.theta_col(j), vc = ledger_.vm_col(j);
-            if (pr >= 0 && tc >= 0) cntrb.push_back({pr, tc, k, dSdVa_r});
-            if (pr >= 0 && vc >= 0) cntrb.push_back({pr, vc, k, dSdVm_r});
-            if (qr >= 0 && tc >= 0) cntrb.push_back({qr, tc, k, dSdVa_i});
-            if (qr >= 0 && vc >= 0) cntrb.push_back({qr, vc, k, dSdVm_i});
+            if (pr >= 0 && tc >= 0) {cntrb.push_back({pr, tc, k, dSdVa_r}); ++row_ptr[pr + 1];}
+            if (pr >= 0 && vc >= 0) {cntrb.push_back({pr, vc, k, dSdVm_r}); ++row_ptr[pr + 1];}
+            if (qr >= 0 && tc >= 0) {cntrb.push_back({qr, tc, k, dSdVa_i}); ++row_ptr[qr + 1];}
+            if (qr >= 0 && vc >= 0) {cntrb.push_back({qr, vc, k, dSdVm_i}); ++row_ptr[qr + 1];}
         }
     }
 
-    // feature (non dS-derived) entries declared by the components
+    // feature (non dS-derived) entries declared by the components. They are
+    // appended to cntrb so that one contiguous list describes the whole
+    // pattern; only the first n_ds entries carry a dS value, the rest are
+    // structural and are identified by their index alone.
     sink_.clear();
     base_.declare_feature_entries(sink_);
     _declare_feature_entries_extensions(sink_, std::make_index_sequence<sizeof...(Rest)>{});
 
-    // build the matrix (duplicated positions are summed, all values are 0 here).
-    // The feature entries are appended to cntrb so that one range describes the
-    // whole pattern and Contrib can be fed to setFromTriplets as is; only the
-    // first n_ds entries carry a dS value.
-    const std::size_t n_ds = cntrb.size();
-    cntrb.reserve(n_ds + static_cast<std::size_t>(sink_.size()));
-    for (int h = 0; h < sink_.size(); ++h)
+    const int n_ds  = static_cast<int>(cntrb.size());
+    const int n_f   = sink_.size();
+    const int n_ent = n_ds + n_f;
+    cntrb.reserve(static_cast<std::size_t>(n_ent));
+    for (int h = 0; h < n_f; ++h) {
         cntrb.push_back(Contrib::structural(sink_.row(h), sink_.col(h)));
+        ++row_ptr[sink_.row(h) + 1];
+    }
 
-    const int dim_J = ledger_.size();
+    // ---- 1. entries -> CSR, keyed by J row --------------------------------
+    // The row histogram becomes row starts, then every entry is scattered into
+    // its row's slice as the pair (its J column, its index in cntrb).
+    for (int r = 0; r < dim_J; ++r) row_ptr[r + 1] += row_ptr[r];
+    std::vector<int> csr_col(static_cast<std::size_t>(n_ent));
+    std::vector<int> csr_src(static_cast<std::size_t>(n_ent));
+    std::vector<int> head(row_ptr.begin(), row_ptr.end() - 1);
+    for (int e = 0; e < n_ent; ++e) {
+        const int p = head[cntrb[e].jrow()]++;
+        csr_col[p] = cntrb[e].jcol();
+        csr_src[p] = e;
+    }
+
+    // ---- 2. CSR -> CSC: count the columns, duplicates collapsed -----------
+    // Walking the rows in increasing order hands every column its row indices
+    // already sorted -- that transpose IS the sort -- so the entries that share
+    // a coefficient arrive side by side and last_row is enough to spot them.
+    // Duplicates are real and expected: a feature entry may land on a dS
+    // coefficient (an hvdc droop slope adds to the dP/dtheta of its end buses).
+    std::vector<int> col_ptr(static_cast<std::size_t>(dim_J) + 1, 0);
+    std::vector<int> last_row(static_cast<std::size_t>(dim_J), -1);
+    for (int r = 0; r < dim_J; ++r) {
+        for (int p = row_ptr[r]; p < row_ptr[r + 1]; ++p) {
+            const int c = csr_col[p];
+            if (last_row[c] != r) {last_row[c] = r; ++col_ptr[c + 1];}
+        }
+    }
+    for (int c = 0; c < dim_J; ++c) col_ptr[c + 1] += col_ptr[c];
+    const int nnz_J = col_ptr[dim_J];
+
+    // J takes those column starts as its outer array. resize() drops it into
+    // compressed mode with a zeroed outer array and keeps whatever the last
+    // build allocated, so a rebuild at constant size allocates nothing.
     J_.resize(dim_J, dim_J);
-    J_.setFromTriplets(cntrb.begin(), cntrb.end());
-    J_.makeCompressed();
+    J_.resizeNonZeros(nnz_J);
+    int* J_outer = J_.outerIndexPtr();
+    int* J_inner = J_.innerIndexPtr();
+    std::copy(col_ptr.begin(), col_ptr.end(), J_outer);
+    std::fill(J_.valuePtr(), J_.valuePtr() + nnz_J, static_cast<real_type>(0.));
 
-    // resolve the dS value maps (Ybus nnz position -> J_.valuePtr() position).
-    // J_'s index arrays are read once here, not once per coefficient: this loop
-    // runs four times the Ybus nonzeros.
-    const int* J_outer = J_.outerIndexPtr();
-    const int* J_inner = J_.innerIndexPtr();
+    // ---- 3. write the row indices, and each contribution's position -------
+    // Same walk as above, so each column is filled in increasing row order.
+    // A coefficient's position is known the moment its row index is written,
+    // which is what replaces the binary searches: the dS maps (Ybus nnz
+    // position -> J_.valuePtr() position) and the feature positions are filled
+    // straight from here.
     map_dsdva_r_.assign(nnz_Y, -1);
     map_dsdva_i_.assign(nnz_Y, -1);
     map_dsdvm_r_.assign(nnz_Y, -1);
     map_dsdvm_i_.assign(nnz_Y, -1);
-    for (std::size_t idx = 0; idx < n_ds; ++idx) {
-        const Contrib& c = cntrb[idx];
-        const int pos = Base::find_J_pos(J_outer, J_inner, c.jrow(), c.jcol());
-        switch (c.whichmat()) {
-            case dSdVa_r: map_dsdva_r_[c.ybus_k()] = pos; break;
-            case dSdVa_i: map_dsdva_i_[c.ybus_k()] = pos; break;
-            case dSdVm_r: map_dsdvm_r_[c.ybus_k()] = pos; break;
-            case dSdVm_i: map_dsdvm_i_[c.ybus_k()] = pos; break;
+    feature_pos_.assign(static_cast<std::size_t>(n_f), -1);
+
+    std::fill(last_row.begin(), last_row.end(), -1);
+    std::copy(col_ptr.begin(), col_ptr.end() - 1, head.begin());
+    for (int r = 0; r < dim_J; ++r) {
+        for (int p = row_ptr[r]; p < row_ptr[r + 1]; ++p) {
+            const int c = csr_col[p];
+            int pos;
+            if (last_row[c] != r) {
+                last_row[c] = r;
+                pos = head[c]++;
+                J_inner[pos] = r;
+            } else {
+                pos = head[c] - 1;  // duplicate: the coefficient already exists
+            }
+            const int e = csr_src[p];
+            if (e >= n_ds) {
+                feature_pos_[e - n_ds] = pos;
+                continue;
+            }
+            const Contrib& c_ds = cntrb[e];
+            switch (c_ds.whichmat()) {
+                case dSdVa_r: map_dsdva_r_[c_ds.ybus_k()] = pos; break;
+                case dSdVa_i: map_dsdva_i_[c_ds.ybus_k()] = pos; break;
+                case dSdVm_r: map_dsdvm_r_[c_ds.ybus_k()] = pos; break;
+                case dSdVm_i: map_dsdvm_i_[c_ds.ybus_k()] = pos; break;
+            }
         }
     }
 
-    // resolve the feature positions
-    feature_pos_.resize(sink_.size());
-    for (int h = 0; h < sink_.size(); ++h)
-        feature_pos_[h] = Base::find_J_pos(J_outer, J_inner, sink_.row(h), sink_.col(h));
-
 #ifndef NDEBUG
+    // What the linear solvers and fill_J are entitled to assume, now that the
+    // arrays are written here rather than by Eigen: J is compressed, every
+    // column is filled exactly to its declared end, and its row indices are
+    // strictly increasing (KLU and SparseLU both read them as sorted, and a
+    // repeated row index would be a coefficient stored twice).
+    assert(J_.isCompressed() && "J must be compressed for the linear solvers");
+    assert(J_.nonZeros() == nnz_J);
+    for (int c = 0; c < dim_J; ++c) {
+        assert(head[c] == J_outer[c + 1] && "a J column was not filled to its end");
+        for (int p = J_outer[c] + 1; p < J_outer[c + 1]; ++p)
+            assert(J_inner[p - 1] < J_inner[p] && "J row indices must be strictly increasing");
+    }
+
     // fill_J assigns the dS values and only ACCUMULATES the feature ones, which
     // is correct as long as no Jacobian coefficient is claimed by two dS
     // entries (see _assign_ds) and every stored coefficient has a writer at
     // all. Both are properties of the ledger, so they are checked here, where
     // the layout is decided, rather than assumed in the hot loop.
     {
-        std::vector<int> writers(static_cast<std::size_t>(J_.nonZeros()), 0);
-        for (std::size_t idx = 0; idx < n_ds; ++idx) {
-            const Contrib& c = cntrb[idx];
-            const int pos = Base::find_J_pos(J_outer, J_inner, c.jrow(), c.jcol());
-            if (pos >= 0) ++writers[static_cast<std::size_t>(pos)];
-        }
+        std::vector<int> writers(static_cast<std::size_t>(nnz_J), 0);
+        for (const std::vector<int>* m : {&map_dsdva_r_, &map_dsdva_i_,
+                                          &map_dsdvm_r_, &map_dsdvm_i_})
+            for (int pos : *m)
+                if (pos >= 0) ++writers[static_cast<std::size_t>(pos)];
         for (int w : writers) assert(w <= 1 && "two dS entries share one J coefficient");
         for (int pos : feature_pos_)
             if (pos >= 0) ++writers[static_cast<std::size_t>(pos)];

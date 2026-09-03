@@ -126,6 +126,44 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``NRSystem::build_J_sparsity`` writes J's compressed-column arrays itself instead of
+  going through ``setFromTriplets`` and then looking every contribution back up in the result.
+  **1.5-1.6x on the phase that contains it** -- the ``pre_proc`` timer, which also covers
+  ``update_state`` and ``init_topology``, goes 5.06-5.21 -> 3.36-3.39 ms per solve on
+  case9241pegase, 1.39-1.46 -> 0.88-0.90 on case2869pegase, 0.60-0.63 -> 0.38-0.39 on
+  case1354pegase, and a rebuild solve on case9241pegase drops 2% of its total instruction count.
+  The function itself goes 58.7M -> 40.4M instructions for three rebuilds (**1.45x**, and 1.77x
+  against 1.0.0).
+  ``setFromTriplets`` runs the same two counting sorts this function needs -- bucket the entries by
+  row, then transpose into columns, the transpose being what sorts each column -- but it carries a
+  double per entry through a temporary ``SparseMatrix``, collapses duplicates in a pass of its own,
+  and materialises the transpose as a second matrix; and since it hands back only a matrix, finding
+  where each contribution landed took ``4 * nnz(Ybus)`` binary searches afterwards (~170k per
+  rebuild on a 9241-bus grid, 12.1M instructions of the 58.7M, with Eigen's own machinery
+  accounting for 23.5M more). Doing the two sorts here carries a 4-byte entry id instead of the
+  value, folds the duplicate collapse into the transpose, and -- the point of the exercise -- knows
+  each coefficient's position at the moment it writes its row index, so the dS maps and the feature
+  positions are filled straight from that walk and the binary searches are gone entirely.
+  Duplicate entries stay supported, which is what rules out the cheaper sorted-triplet path: a
+  feature entry may legitimately land on a dS coefficient (an hvdc droop slope adds to the
+  dP/dtheta of its end buses), and 856 of them turn up over the C++ test suite.
+  The invariants Eigen used to provide are now asserted in the debug build, where they are
+  verified over the whole suite: J compressed, every column filled exactly to its declared end,
+  row indices strictly increasing. Beyond that, the build was cross-checked entry by entry against
+  ``setFromTriplets`` + ``find_J_pos`` over 409 sparsity builds of the C++ test suite (which is
+  what exercises multi-slack, voltage control and hvdc) and on the four benchmark grids: same nnz,
+  same outer array, same inner array, same position for every single contribution. Results are
+  bit-identical on case118 and the three PEGASE cases across NR / NRSing / NRRefactorRetry /
+  FDPF XB / FDPF BX / DC with both SparseLU and KLU (32 configurations).
+  Two things were tried and dropped because they measured worse: keeping the scratch buffers as
+  members to skip the per-rebuild allocation (the extra indirection in the two hot walks cost more
+  than the allocations saved -- ``pre_proc`` 3.65-3.87 ms against 3.33-3.40 for the local
+  buffers, five runs out of five), and leaving J's value array uninitialised (``fill_J`` does write
+  every coefficient, but a freshly built J being all zeros is what ``get_J_python`` and the
+  assertions assume).
+  ``Base::find_J_pos`` has no caller left in the solve path. It stays part of the component
+  protocol -- a component or an external consumer still needs a way to locate a coefficient in a
+  built J -- with its comment corrected to say so.
 - [IMPROVED] ``NRSystem::build_J_sparsity`` hands its contributions straight to
   ``setFromTriplets`` instead of copying them into a second vector first. The generic dS pass
   records one 16-byte ``Contrib`` per Jacobian coefficient a dS matrix feeds (its J row and
