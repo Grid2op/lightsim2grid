@@ -126,6 +126,16 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``ShuntContainer::_compute_results`` computes the shunt's power on real and imaginary
+  parts instead of through ``std::complex``. -264k instructions of the 24.4M ``LSGrid::compute_results``
+  spends on a case9241pegase solve (-1.1% of the post-processing). The expression is
+  ``s = E * conj(y * E)`` with ``y = -(p + i.q) / sn_mva``: two complex-times-complex products, each
+  followed by ``std::complex``'s NaN-recovery branch, on each of the grid's 7327 shunts on every
+  single solve. Written out on parts the branches are gone and the results are bit-identical -- the
+  recovery path only fires on a non-finite product, and ``(-1 * x) / s`` and ``-(x / s)`` agree
+  exactly in IEEE 754. Verified against the previous build on every element result
+  (P/Q/V/theta/amps of lines, trafos, loads, gens, shunts, sgens, storages and hvdc, at 17 digits)
+  over case118 and the three PEGASE cases under NR / NRSing / FDPF with SparseLU and KLU.
 - [IMPROVED] ``BaseDCAlgo::remove_slack_buses`` writes the slack-free DC matrix' compressed arrays
   itself instead of collecting the surviving coefficients into a vector of ``Eigen::Triplet`` and
   handing that to ``setFromTriplets``. **3.09x on the function** (11.4M -> 3.7M instructions for
