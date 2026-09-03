@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 // #include "DCSolver.h"
+#include <cassert>
 #include <limits>  // for nans
 #include <cmath>  // for nans
 
@@ -405,24 +406,70 @@ void BaseDCAlgo<LinearSolver>::add_droop_to_dcSbus(){
 template<class LinearSolver>
 template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
 void BaseDCAlgo<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat){
-    res_mat = Eigen::SparseMatrix<real_type>(sizeYbus_without_slack_, sizeYbus_without_slack_);  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
-    std::vector<Eigen::Triplet<real_type> > tripletList;
-    tripletList.reserve(ref_mat.nonZeros());
+    // Deleting the slack rows and columns of an already compressed matrix needs
+    // no triplet list. mat_bus_id_ is a monotone compaction -- fill_mat_bus_id
+    // hands out consecutive ids in bus order, skipping the slack buses -- and
+    // the inner iterator walks each column in increasing row order, so the
+    // surviving coefficients come out in exactly the order a compressed
+    // column-major matrix stores them: sorted, and one per coefficient. There
+    // is nothing to sort and nothing to merge, so res_mat is written in place,
+    // in two passes over ref_mat -- one to size each column, one to fill it.
+    //
+    // This used to collect the survivors into a vector of Eigen::Triplet and
+    // hand that to setFromTriplets, which re-derived the order it was already
+    // in the hard way (bucket by row, then transpose into columns, both through
+    // a temporary SparseMatrix) for 5% of a DC solve on a 9241-bus grid.
+    const int dim = sizeYbus_without_slack_;  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
+    typedef typename Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>>::InnerIterator RefInnerIt;
+
+    // resize() drops res_mat into compressed mode with a zeroed outer array and
+    // keeps what the previous build allocated. The counts are accumulated
+    // straight into that outer array, which a prefix sum then turns into the
+    // column starts -- the shape it has to end up in anyway.
+    res_mat.resize(dim, dim);
+    int * outer = res_mat.outerIndexPtr();
     for (int k=0; k < nb_bus_solver; ++k){
-        if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
-        for (typename Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>>::InnerIterator it(ref_mat, k); it; ++it)
-        {
-            int row_res = static_cast<int>(it.row());  // TODO Eigen::Index here ?
-            row_res = mat_bus_id_(row_res);
-            int col_res = static_cast<int>(it.col());  // should be k   // TODO Eigen::Index here ?
-            col_res = mat_bus_id_(col_res);
-            if(row_res == -1) continue;
-            if(col_res == -1) continue;
-            tripletList.push_back(Eigen::Triplet<real_type> (row_res, col_res, std::real(it.value())));
-        }
+        const int col_res = mat_bus_id_(k);
+        if(col_res == -1) continue;  // slack column, dropped whole
+        assert(col_res < dim && "remove_slack_buses: mat_bus_id_ labels more columns than the matrix has");
+        int nb_kept = 0;
+        for (RefInnerIt it(ref_mat, k); it; ++it)
+            if(mat_bus_id_(static_cast<int>(it.row())) != -1) ++nb_kept;
+        outer[col_res + 1] = nb_kept;
     }
-    res_mat.setFromTriplets(tripletList.begin(), tripletList.end());
-    res_mat.makeCompressed();
+    for (int c = 0; c < dim; ++c) outer[c + 1] += outer[c];
+
+    res_mat.resizeNonZeros(outer[dim]);
+    outer = res_mat.outerIndexPtr();
+    int * inner = res_mat.innerIndexPtr();
+    real_type * values = res_mat.valuePtr();
+    for (int k=0; k < nb_bus_solver; ++k){
+        const int col_res = mat_bus_id_(k);
+        if(col_res == -1) continue;
+        int pos = outer[col_res];
+        for (RefInnerIt it(ref_mat, k); it; ++it){
+            const int row_res = mat_bus_id_(static_cast<int>(it.row()));
+            if(row_res == -1) continue;  // slack row, dropped
+            assert(row_res < dim && "remove_slack_buses: mat_bus_id_ labels more rows than the matrix has");
+            inner[pos] = row_res;
+            values[pos] = std::real(it.value());
+            ++pos;
+        }
+        assert(pos == outer[col_res + 1] &&
+               "remove_slack_buses: the two passes disagree on a column's size");
+    }
+
+#ifndef NDEBUG
+    // What the linear solvers are entitled to assume, now that the arrays are
+    // written here rather than by Eigen. The strictly-increasing check is also
+    // what would catch mat_bus_id_ losing its monotonicity, which is the
+    // property this function is built on.
+    assert(res_mat.isCompressed() && "remove_slack_buses must leave a compressed matrix");
+    for (int c = 0; c < dim; ++c)
+        for (int p = outer[c] + 1; p < outer[c + 1]; ++p)
+            assert(inner[p - 1] < inner[p] &&
+                   "remove_slack_buses: row indices must be strictly increasing");
+#endif
 }
 
 template<class LinearSolver>

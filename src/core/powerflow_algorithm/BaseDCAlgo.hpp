@@ -158,8 +158,9 @@ class BaseDCAlgo final: public BaseAlgo
         void add_droop_to_dcYbus();
         void add_droop_to_dcSbus();
 
-        // remove_slack_buses: res_mat is reset (reassigned) and setFromTriplets/makeCompressed'd
-        // from scratch in this function, so it needs a real reference, not Eigen::Ref.
+        // remove_slack_buses: res_mat is resized and its compressed arrays are
+        // rewritten from scratch in this function, so it needs a real reference,
+        // not Eigen::Ref.
         template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
         void remove_slack_buses(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat);
 

@@ -126,6 +126,38 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``BaseDCAlgo::remove_slack_buses`` writes the slack-free DC matrix' compressed arrays
+  itself instead of collecting the surviving coefficients into a vector of ``Eigen::Triplet`` and
+  handing that to ``setFromTriplets``. **3.09x on the function** (11.4M -> 3.7M instructions for
+  three rebuilds of case9241pegase) and **-4.9% on a whole DC solve** (dc_pf 158.5M -> 150.8M);
+  wall clock per rebuild solve 12.97 -> 12.53 ms on case9241pegase, 3.39 -> 3.31 on case2869pegase,
+  1.53 -> 1.45 on case1354pegase.
+  Nothing here ever needed sorting or merging. ``mat_bus_id_`` is a monotone compaction --
+  ``fill_mat_bus_id`` hands out consecutive ids in bus order, skipping the slack buses -- and the
+  inner iterator walks each column of the source in increasing row order, so the coefficients that
+  survive the row/column deletion come out already in the order a compressed column-major matrix
+  stores them, one per coefficient. ``setFromTriplets`` cannot know that: it re-derived that exact
+  order the hard way, bucketing by row and transposing back into columns, both through a temporary
+  ``SparseMatrix`` carrying a double per entry, for 5% of a DC solve. The matrix is now built in
+  place in two passes over the source, one to size each column (straight into the outer array,
+  which a prefix sum turns into the column starts) and one to fill it. The triplet vector -- half a
+  megabyte on case9241pegase -- is gone with it, and ``res_mat`` is resized rather than reassigned,
+  so a rebuild at constant size re-uses what the previous one allocated.
+  The sortedness this rests on was measured, not assumed: an assertion over every consecutive pair
+  found the old triplet list strictly ordered column-major with no duplicates in all 136 builds of
+  the C++ test suite and on the four benchmark grids under both DC solvers. The new build was then
+  cross-checked against the old one coefficient by coefficient -- same nnz, same outer array, same
+  inner array, same values bit for bit -- over the same 136 builds and the same grids. What remains
+  in the code is the cheaper permanent form of that check, in debug builds: the matrix is
+  compressed, each column is filled exactly to the size the first pass computed, and its row
+  indices are strictly increasing (which is also what would catch ``mat_bus_id_`` losing the
+  monotonicity the whole function is built on).
+  Results are bit-identical -- voltages, line flows and generator P/Q, to 17 digits -- on case118
+  and the three PEGASE cases under ``DC_KLU`` and ``DC_SparseLU``, and the AC algorithms are
+  untouched.
+  ``LSGrid::fillBdc``, the other ``setFromTriplets`` in the DC path (6.6% of a DC solve), is
+  deliberately left alone: its entries are unsorted and heavily duplicated -- every branch writes
+  both its end buses' diagonals -- which is the one shape Eigen's assembler is already good at.
 - [IMPROVED] ``NRSystem::build_J_sparsity`` writes J's compressed-column arrays itself instead of
   going through ``setFromTriplets`` and then looking every contribution back up in the result.
   **1.5-1.6x on the phase that contains it** -- the ``pre_proc`` timer, which also covers
