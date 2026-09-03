@@ -352,18 +352,43 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
                     // TODO for DC with yff, ...
                     // trafo equations
-                    cplx_type I_hvlv =  (yac_eff_11_(el_id) * Ehv + yac_eff_12_(el_id) * Elv);
-                    cplx_type I_lvhv =  (yac_eff_22_(el_id) * Elv + yac_eff_21_(el_id) * Ehv);
+                    //   I_hvlv = conj(y11.Ehv + y12.Elv), s_hvlv = Ehv.I_hvlv
+                    //   I_lvhv = conj(y22.Elv + y21.Ehv), s_lvhv = Elv.I_lvhv
+                    // written on real and imaginary parts: that is six
+                    // complex-times-complex products per branch, and
+                    // std::complex follows every one of them with a branch that
+                    // re-derives the result if it came out NaN. Bit-identical --
+                    // the products are grouped exactly as std::complex groups
+                    // them, the recovery path only fires on a non-finite result,
+                    // and conj is an exact sign flip.
+                    const real_type ehv_r = std::real(Ehv), ehv_i = std::imag(Ehv);
+                    const real_type elv_r = std::real(Elv), elv_i = std::imag(Elv);
+                    const real_type y11_r = std::real(yac_eff_11_(el_id)), y11_i = std::imag(yac_eff_11_(el_id));
+                    const real_type y12_r = std::real(yac_eff_12_(el_id)), y12_i = std::imag(yac_eff_12_(el_id));
+                    const real_type y21_r = std::real(yac_eff_21_(el_id)), y21_i = std::imag(yac_eff_21_(el_id));
+                    const real_type y22_r = std::real(yac_eff_22_(el_id)), y22_i = std::imag(yac_eff_22_(el_id));
 
-                    I_hvlv = std::conj(I_hvlv);
-                    I_lvhv = std::conj(I_lvhv);
-                    cplx_type s_hvlv = Ehv * I_hvlv;
-                    cplx_type s_lvhv = Elv * I_lvhv;
+                    const real_type a_r = y11_r * ehv_r - y11_i * ehv_i;   // y11 . Ehv
+                    const real_type a_i = y11_r * ehv_i + y11_i * ehv_r;
+                    const real_type b_r = y12_r * elv_r - y12_i * elv_i;   // y12 . Elv
+                    const real_type b_i = y12_r * elv_i + y12_i * elv_r;
+                    const real_type c_r = y22_r * elv_r - y22_i * elv_i;   // y22 . Elv
+                    const real_type c_i = y22_r * elv_i + y22_i * elv_r;
+                    const real_type d_r = y21_r * ehv_r - y21_i * ehv_i;   // y21 . Ehv
+                    const real_type d_i = y21_r * ehv_i + y21_i * ehv_r;
 
-                    res_p_side_1(el_id) = std::real(s_hvlv) * sn_mva;
-                    res_q_side_1(el_id) = std::imag(s_hvlv) * sn_mva;
-                    res_p_side_2(el_id) = std::real(s_lvhv) * sn_mva;
-                    res_q_side_2(el_id) = std::imag(s_lvhv) * sn_mva;
+                    const real_type ih_r = a_r + b_r, ih_i = -(a_i + b_i);  // conj(y11.Ehv + y12.Elv)
+                    const real_type il_r = c_r + d_r, il_i = -(c_i + d_i);  // conj(y22.Elv + y21.Ehv)
+
+                    const real_type sh_r = ehv_r * ih_r - ehv_i * ih_i;    // s_hvlv = Ehv . I_hvlv
+                    const real_type sh_i = ehv_r * ih_i + ehv_i * ih_r;
+                    const real_type sl_r = elv_r * il_r - elv_i * il_i;    // s_lvhv = Elv . I_lvhv
+                    const real_type sl_i = elv_r * il_i + elv_i * il_r;
+
+                    res_p_side_1(el_id) = sh_r * sn_mva;
+                    res_q_side_1(el_id) = sh_i * sn_mva;
+                    res_p_side_2(el_id) = sl_r * sn_mva;
+                    res_q_side_2(el_id) = sl_i * sn_mva;
                 }else{
                     // result of the dc powerflow
                     if(status1[el_id] && status2[el_id]){

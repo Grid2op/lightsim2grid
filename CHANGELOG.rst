@@ -126,6 +126,19 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``TwoSidesContainer_rxh_A``'s branch flow results are computed on real and imaginary
+  parts instead of through ``std::complex``. -963k instructions of the 21.7M
+  ``LSGrid::compute_results`` spends on a case9241pegase solve (-4.4%) and -2.9% on the function's
+  wall time (min of 11 batches of 2000 calls, four runs, the two ranges not overlapping). Each of
+  the grid's 16049 branches costs six complex-times-complex products -- ``y11.Ehv``, ``y12.Elv``,
+  ``y22.Elv``, ``y21.Ehv``, then ``Ehv.conj(I_hvlv)`` and ``Elv.conj(I_lvhv)`` -- and
+  ``std::complex`` follows every one of them with a branch that re-derives the result if it came
+  out NaN. That was a third (4.24M) of everything the branch flow loop did. Results are
+  bit-identical: the products are grouped exactly as ``std::complex`` groups them, ``conj`` is an
+  exact sign flip, and the recovery path only fires on a non-finite product. Verified on every
+  element result (P/Q/V/theta/amps of lines, trafos, loads, gens, shunts, sgens, storages and
+  hvdc, at 17 digits) over case118 and the three PEGASE cases under NR / NRSing / FDPF with
+  SparseLU and KLU.
 - [IMPROVED] ``GenericContainer::_get_amps`` computes the current in one pass instead of four.
   **-14% on ``LSGrid::compute_results``' wall time** (min of 11 batches of 2000 calls: 1164 -> 1001
   microseconds, four runs) and -1.55M instructions of 23.3M (-6.7%). It read
