@@ -8,6 +8,7 @@
 
 #include "GenericContainer.hpp"
 
+#include <cmath>
 #include <iostream>
 #include <sstream>
 
@@ -20,16 +21,20 @@ void GenericContainer::_get_amps(Eigen::Ref<RealVect> a,
                                   const Eigen::Ref<const RealVect> & p,
                                   const Eigen::Ref<const RealVect> & q,
                                   const Eigen::Ref<const RealVect> & v) const {
-    RealVect p2q2 = p.array() * p.array() + q.array() * q.array();
-    p2q2 = p2q2.array().cwiseSqrt();
-
-    // modification in case of disconnected powerlines
-    // because i don't want to divide by 0. below
-    RealVect v_tmp = v;
-    for(auto & el: v_tmp){
-        if(abs(el) < _tol_equal_float) el = 1.0;
+    // One pass, no temporaries. This was four: sum of squares into a vector,
+    // square root over it, a copy of v, then a scan of that copy to replace the
+    // zeros -- two full-length allocations per call, and this is called four
+    // times per solve (both ends of the powerlines and of the transformers).
+    // Same arithmetic in the same order, so the values are bit-identical; the
+    // guard on v is what stops a disconnected element (v = 0) dividing by zero.
+    const Eigen::Index nb_el = a.size();
+    for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
+        const real_type v_el = v(el_id);
+        const real_type v_div = (std::abs(v_el) < _tol_equal_float) ? 1.0 : v_el;
+        const real_type p_el = p(el_id);
+        const real_type q_el = q(el_id);
+        a(el_id) = std::sqrt(p_el * p_el + q_el * q_el) * _1_sqrt_3 / v_div;
     }
-    a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }
 
 void GenericContainer::_generic_reactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation){

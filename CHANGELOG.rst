@@ -126,6 +126,19 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``GenericContainer::_get_amps`` computes the current in one pass instead of four.
+  **-14% on ``LSGrid::compute_results``' wall time** (min of 11 batches of 2000 calls: 1164 -> 1001
+  microseconds, four runs) and -1.55M instructions of 23.3M (-6.7%). It read
+  ``a = sqrt(p^2 + q^2) / (sqrt(3) . v)`` as four separate expressions -- the sum of squares into a
+  vector, a square root over that vector, a full copy of v, then a scan of the copy replacing the
+  zeros -- which is two full-length heap allocations and three extra passes over memory, on every
+  one of the four calls a solve makes (both ends of the powerlines and of the transformers). The
+  guard that stops a disconnected element's zero voltage dividing by zero is now a ternary inside
+  the one loop. Same arithmetic in the same order, so results are bit-identical -- verified on
+  every element result (P/Q/V/theta/amps of lines, trafos, loads, gens, shunts, sgens, storages and
+  hvdc, at 17 digits) over case118 and the three PEGASE cases under NR / NRSing / FDPF with
+  SparseLU and KLU. The wall-clock gain is much larger than the instruction count suggests, which
+  is the allocations: they cost time, not instructions.
 - [IMPROVED] ``GenericContainer::v_kv_from_vpu`` and ``v_deg_from_va`` are one function,
   ``v_kv_theta_from_vpu``. -862k instructions of the 24.1M ``LSGrid::compute_results`` spends on a
   case9241pegase solve (-3.6%), and -2.9% on the function's wall time (min of 11 batches of 2000
