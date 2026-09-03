@@ -114,7 +114,9 @@ void bind_gridmodel(py::module_& m) {
         .def("add_gen_slackbus", &LSGrid::add_gen_slackbus, DocLSGrid::add_gen_slackbus.c_str())
         .def("remove_gen_slackbus", &LSGrid::remove_gen_slackbus, DocLSGrid::remove_gen_slackbus.c_str())
         .def("get_bus_vn_kv", &LSGrid::get_bus_vn_kv, DocLSGrid::get_bus_vn_kv.c_str(), py::return_value_policy::reference_internal)
-        .def("get_bus_status", &LSGrid::get_bus_status, DocLSGrid::get_bus_status.c_str(), py::return_value_policy::reference)
+        // NB no return_value_policy::reference: get_bus_status() now BUILDS the vector from the
+        // per-bus element counts and returns it by value, so pybind must copy (the default).
+        .def("get_bus_status", &LSGrid::get_bus_status, DocLSGrid::get_bus_status.c_str())
         .def("set_bus_voltage_limits", &LSGrid::set_bus_voltage_limits, DocLSGrid::set_bus_voltage_limits.c_str())
         .def("get_bus_vmin_kv", &LSGrid::get_bus_vmin_kv, DocLSGrid::get_bus_vmin_kv.c_str(), py::return_value_policy::reference_internal)
         .def("get_bus_vmax_kv", &LSGrid::get_bus_vmax_kv, DocLSGrid::get_bus_vmax_kv.c_str(), py::return_value_policy::reference_internal)
@@ -169,8 +171,11 @@ void bind_gridmodel(py::module_& m) {
         .def("set_substation_names", &LSGrid::set_substation_names, DocLSGrid::set_substation_names.c_str())
         .def("get_substation_names", &LSGrid::get_substation_names, DocLSGrid::get_substation_names.c_str())
 
-        .def("deactivate_bus", &LSGrid::deactivate_bus_python, DocLSGrid::_internal_do_not_use.c_str())
-        .def("reactivate_bus", &LSGrid::reactivate_bus_python, DocLSGrid::_internal_do_not_use.c_str())
+        // deprecated no-ops since 1.0.0: a bus is in the solved system iff an active element
+        // sits on it, so there is no separate switch left for these to flip. Kept so that
+        // existing loaders (pandapower / powermodels) and backends keep importing.
+        .def("deactivate_bus", &LSGrid::deactivate_bus_python, DocLSGrid::deactivate_bus.c_str())
+        .def("reactivate_bus", &LSGrid::reactivate_bus_python, DocLSGrid::reactivate_bus.c_str())
 
         .def("deactivate_powerline", &LSGrid::deactivate_powerline, DocLSGrid::deactivate_powerline.c_str())
         .def("reactivate_powerline", &LSGrid::reactivate_powerline, DocLSGrid::reactivate_powerline.c_str())

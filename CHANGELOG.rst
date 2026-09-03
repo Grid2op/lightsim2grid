@@ -177,6 +177,101 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   different question (is the data there at all, and the right shape) and says nothing about change.
 - [ADDED] ``AlgoControl.nothing_changed()``: has every change this control tracks already been
   consumed by a solve? The exact negation of ``tell_all_changed()``.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 4 -> 6: nothing about bus connectivity is serialized any
+  more. ``LSGrid``'s state loses the AC family's bus-connectivity photograph (5) and
+  ``SubstationContainer``'s loses ``bus_status_`` (6). Neither is independent state: a bus is part
+  of the powerflow if and only if at least one active element sits on it, and the elements' own
+  status *is* in the file, so both were caches of something already there -- with a way for a
+  crafted file to make the two disagree. A restored grid counts its buses from its elements. That
+  photograph was also the last piece of solver-cache metadata a saved grid carried, so there is
+  nothing left in the layout to poison.
+- [ADDED] ``SubstationContainer`` keeps, per bus, how many elements hold it alive, maintained
+  incrementally by every mutator that can change bus membership. A bus is in the solved system iff
+  its count is non-zero, so the two transitions that matter (0 -> 1 and 1 -> 0) are exactly what
+  raises ``tell_dimension_changed``. Every other change flag stays where the element containers
+  decide it. Which buses an element holds is stated once and only once, in
+  ``GenericContainer::contribute_to_buses``: the from-scratch recount and every mutator are built
+  from it, so the incremental and the rebuilt answer cannot disagree. The second statement of that
+  same rule, ``reconnect_connected_buses``, is deleted from all five containers -- it was the one
+  that drifted (see the SVC fix below).
+- [FIXED] a bus whose only element is a static VAR compensator now counts as connected.
+  ``init_bus_status()`` never called ``SvcContainer::reconnect_connected_buses`` -- the container
+  inherits a perfectly good one from ``OneSideContainer_PQ``, it was simply left out of the list --
+  so such a bus was dropped from the solved system. An SVC injects reactive power; its bus belongs
+  there.
+- [FIXED] ``LSGrid.update_topo()`` -- the batch entry point grid2op drives every step -- now counts
+  the buses it takes out of the system. It is not a thin wrapper over the individual mutators: it
+  also calls ``resolve_status``, which sets a branch's ``status_global_`` (the gate
+  ``contribute_to_buses`` reads *first*) and opens the opposite side through the
+  ``*_no_bus_tracking`` entry points. Both change which buses the branch holds, and both ran
+  OUTSIDE the counting bracket, so stranding a line end alone on a busbar and then disconnecting
+  the line left that bus counted with nothing on it: the system silently lost a bus, nothing raised
+  ``tell_dimension_changed``, and the next powerflow failed to initialise
+  (``ErrorType.NotInitError``). The whole per-element update -- both sides *and* ``resolve_status``
+  -- is now one bracket, and the sides use the ``*_no_bus_tracking`` entry points for the same
+  reason ``deactivate()`` does: a line end does not own its contribution. As a side effect a
+  one-sided element being reactivated and moved in the same entry is now one bracket rather than
+  two.
+- [FIXED] a ``change_bus`` the grid refuses no longer corrupts the per-bus element counts.
+  ``GenericContainer::_change_bus`` rejects a bus id below 0 or past the last bus -- and ``-1`` is
+  the "no bus" marker, so it is exactly the id a caller reaches for meaning "disconnect this".
+  That rejection is raised from *inside* the counting bracket, after the element's contribution has
+  been taken away and before it is put back, so the ``-1`` stood alone: every bus the element held
+  stayed one short, silently and for the rest of the grid's life, on a call that changed nothing
+  else. ``_apply_and_track_buses`` now restores the contribution on the way out of an exception as
+  well as on the normal path. Found by review; covered for all twelve ``change_bus`` entry points,
+  against both a negative and a past-the-end bus id.
+- [FIXED] ``LSGrid.get_bus_status()`` and ``LSGrid.nb_connected_bus()`` no longer report every bus
+  disconnected on a grid that has been built but not yet solved. The per-bus element counts are
+  disarmed by everything the incremental ``+1`` / ``-1`` cannot see -- a freshly built grid,
+  ``set_state`` / ``load_binary``, an ``init_*`` that replaces a whole element container -- and an
+  all-zero count is exactly what "never counted" looks like. Only the powerflow re-established them
+  (through ``init_bus_status()``), so ``init_from_matpower(...)`` followed by ``get_bus_status()``
+  answered from the disarmed state. Reading connectivity now establishes the counts, the same way
+  solving does.
+- [FIXED] ``LSGrid.consider_only_main_component()`` now tells the solver its dimension changed.
+  ``disconnect_if_not_in_main_component`` deactivates the elements it strands, so the buses whose
+  last element it takes away leave the solved system -- which renumbers every bus after them. It
+  handed those deactivations a local, throwaway ``DualAlgoControl``, so the 0-crossings were
+  detected and dropped on the floor; the flag used to reach the real controller only because
+  ``init_bus_status()`` rebuilt the status and compared it against each family's photograph. With
+  the crossing *being* the notification, it now goes to the controller the solver reads. The
+  two-sided containers additionally do their counting through the branch's own rule, in one bracket
+  around both sides and the ``status_global_`` flip, instead of letting each side count for itself
+  under the one-sided rule. This is what broke grid2op's ``automatically_disconnect=True``.
+- [BREAKING] [DEPRECATED] ``LSGrid.deactivate_bus(bus_id)`` and ``LSGrid.reactivate_bus(bus_id)`` are
+  now **no-ops** (kept so existing code keeps importing; they will be removed in a later version).
+  A bus is part of the powerflow if and only if at least one active element sits on it, which is now
+  the only statement of bus connectivity there is, so there is no separate switch left for them to
+  flip. They were already all but inert: whatever they set, the next powerflow rebuilt the bus status
+  from the elements and threw it away -- a bus with elements on it came straight back, a bus without
+  them was already out -- which is why removing the effect changes no powerflow result. To take a bus
+  out of the powerflow, disconnect the **elements** on it. The pandapower and powermodels loaders call
+  these for out-of-service buses whose elements they also disconnect, and that is what did the work.
+  (The C++ ``SubstationContainer::disconnect_all_buses`` / ``reconnect_bus`` / ``disconnect_bus`` /
+  ``reset_bus_status`` are no-ops for the same reason.)
+- [BREAKING] ``LSGrid.get_bus_status()`` now returns a **new** list of bool built from the per-bus
+  element counts, instead of a reference into an internal vector. The values are unchanged (they are
+  what the powerflow always used); what changes is that they are always in step with the elements,
+  and that the result is a copy -- python callers who kept it around and expected it to update by
+  itself now need to call it again.
+- ``init_bus_status()`` no longer walks every element of eight containers on every powerflow that
+  rebuilds, and no longer maintains a bus-status vector at all: a bus is connected iff its element
+  count is non-zero, and ``nb_connected_bus()`` is one integer moved when a count crosses 0. In the
+  steady state it does nothing. It recounts from the elements only where there is nothing to be up
+  to date with -- a grid that has never been counted (freshly built, or restored by ``set_state`` /
+  ``load_binary``). ``_mark_cache_valid`` no longer copies a ``std::vector<bool>`` per powerflow
+  either, and ``nb_connected_bus()`` is a constant-time read rather than a walk over every bus.
+  What that is worth is ``nb_bus`` times a constant, independent of the number of elements:
+  callgrind measures ~13 instructions saved per bus per topology-changing powerflow, on all four
+  of 1000x1, 1000x12, 5000x1 and 5000x12 (substations x busbars) -- 0.08% of a solve on the
+  1000-bus grid, 0.93% on the 12 000-bus one. It is the sparsely-filled grids that gain: 5000
+  substations at 12 busbars each is a 60 000-bus vector walked to solve a 5 000-bus system. Below
+  the wall-clock noise floor in every case; the solve dominates.
+- ``LSGrid``'s ``init_*`` methods (the ones that replace a whole element container) now disarm the
+  per-bus element counts, so the next ``init_bus_status()`` recounts from the elements. Replacing a
+  container wholesale is not something the incremental +1 / -1 bookkeeping can see, and counts that
+  describe elements which no longer exist must not survive it.
 - the powerflow path no longer re-verifies that the data behind a "nothing changed" claim exists.
   The two entry points that can make such a claim without having built anything --
   ``unset_changes()`` and ``check_solution()`` -- now verify it themselves, at an altitude where

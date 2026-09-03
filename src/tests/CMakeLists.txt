@@ -78,6 +78,7 @@ add_executable(lightsim2grid_unit_tests
     test_timeseries_sbus.cpp
     test_injection_sweep.cpp
     test_scenario_sweep_violations.cpp
+    test_bus_element_count.cpp
 )
 target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
 

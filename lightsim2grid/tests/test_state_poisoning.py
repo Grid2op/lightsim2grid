@@ -32,12 +32,14 @@ from lightsim2grid.lightsim2grid_cpp import LSGrid, PandaPowerConverter, Conting
 from lightsim2grid.tests._exotic_elements_case_ls import build_exotic_elements_case_grid
 
 
-# state indices, mirroring LSGrid::StateRes (see LSGrid.hpp)
-LINE_ID = 8
-SHUNT_ID = 9
-TRAFO_ID = 10
-HVDC_ID = 15
-SVC_ID = 16
+# state indices, mirroring LSGrid::StateRes (see LSGrid.hpp). They shifted down by
+# one when the AC family's bus-connectivity photograph left the state (format 6):
+# bus connectivity is counted from the elements now, it is not stored.
+LINE_ID = 7
+SHUNT_ID = 8
+TRAFO_ID = 9
+HVDC_ID = 14
+SVC_ID = 15
 
 BIG = 10 ** 7
 
@@ -369,12 +371,13 @@ class TestBusVoltageLimitSymmetry(unittest.TestCase):
     loops to vmin.size() and then reads vmax(grid_id). A state with one set and the
     other empty passes the per-field checks yet reads past the end of the empty one
     (segfault before the fix). SUBSTATION_ID sub-state layout: n_sub(0), nmax(1),
-    sub_vn_kv(2), bus_status(3), bus_vn_kv(4), sub_names(5), bus_vmin(6), bus_vmax(7).
+    sub_vn_kv(2), bus_vn_kv(3), sub_names(4), bus_vmin(5), bus_vmax(6) -- there is no
+    bus_status slot since format 6: bus connectivity is counted from the elements.
     """
 
-    SUBSTATION_ID = 7
-    VMIN_FIELD = 6
-    VMAX_FIELD = 7
+    SUBSTATION_ID = 6
+    VMIN_FIELD = 5
+    VMAX_FIELD = 6
 
     def _grid_with_limits(self):
         grid = build_exotic_elements_case_grid()

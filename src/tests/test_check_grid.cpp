@@ -121,8 +121,10 @@ std::vector<int>& gen_regulated_bus(LSGrid::StateRes & st)
     return std::get<8>(std::get<LSGrid::GEN_ID>(st));
 }
 // SUBSTATION_ID -> SubstationContainer::StateRes = tuple<[0] n_sub,
-//   [1] nmax_busbar_per_sub, [2] sub_vn_kv, [3] bus_status, [4] bus_vn_kv,
-//   [5] sub_names, [6] bus_vmin_kv, [7] bus_vmax_kv>
+//   [1] nmax_busbar_per_sub, [2] sub_vn_kv, [3] bus_vn_kv, [4] sub_names,
+//   [5] bus_vmin_kv, [6] bus_vmax_kv>
+// (there is no bus-status slot: which buses are in the solved system is counted
+//  from the elements, whose own status IS serialized -- see BINARY_FORMAT_VERSION 6)
 int& sub_n_sub(LSGrid::StateRes & st)
 {
     return std::get<0>(std::get<LSGrid::SUBSTATION_ID>(st));
@@ -135,25 +137,21 @@ std::vector<real_type>& sub_sub_vn_kv(LSGrid::StateRes & st)
 {
     return std::get<2>(std::get<LSGrid::SUBSTATION_ID>(st));
 }
-std::vector<bool>& sub_bus_status(LSGrid::StateRes & st)
+std::vector<real_type>& sub_bus_vn_kv(LSGrid::StateRes & st)
 {
     return std::get<3>(std::get<LSGrid::SUBSTATION_ID>(st));
 }
-std::vector<real_type>& sub_bus_vn_kv(LSGrid::StateRes & st)
+std::vector<std::string>& sub_names(LSGrid::StateRes & st)
 {
     return std::get<4>(std::get<LSGrid::SUBSTATION_ID>(st));
 }
-std::vector<std::string>& sub_names(LSGrid::StateRes & st)
+std::vector<real_type>& sub_bus_vmin_kv(LSGrid::StateRes & st)
 {
     return std::get<5>(std::get<LSGrid::SUBSTATION_ID>(st));
 }
-std::vector<real_type>& sub_bus_vmin_kv(LSGrid::StateRes & st)
-{
-    return std::get<6>(std::get<LSGrid::SUBSTATION_ID>(st));
-}
 std::vector<real_type>& sub_bus_vmax_kv(LSGrid::StateRes & st)
 {
-    return std::get<7>(std::get<LSGrid::SUBSTATION_ID>(st));
+    return std::get<6>(std::get<LSGrid::SUBSTATION_ID>(st));
 }
 std::vector<int>& ls_to_orig(LSGrid::StateRes & st)
 {
@@ -388,23 +386,17 @@ TEST_CASE("set_subid rejects a negative substation id immediately", "[check_grid
 
 // --- the substation container: the ROOT of the grid's index space ------------
 // nb_bus() (= bus_vn_kv_.size()) is the bound every element's bus id is checked
-// against, bus_status_ is what those same ids actually index, and n_sub_ is both
-// the substation-id bound and a modulo divisor (sub_id_of_bus). Nothing
+// against, it sizes the per-bus element counts those same ids index, and n_sub_ is
+// both the substation-id bound and a modulo divisor (sub_id_of_bus). Nothing
 // re-derives them from one another, so a state in which they disagree turns a
-// *validated* bus id into an out-of-bounds access -- disconnect_all_buses()
-// writes nb_bus() entries into bus_status_, which is a heap write past the end.
-// These must be rejected by set_state()/check_grid(), never reach a powerflow.
-
-TEST_CASE("check_grid rejects a bus_status shorter than the bus count", "[check_grid][substation]")
-{
-    LSGrid grid = make_valid_grid();
-    LSGrid::StateRes st = grid.get_state();
-    REQUIRE(sub_bus_status(st).size() == 3);
-    sub_bus_status(st).resize(1);  // 1 status for 3 buses
-
-    LSGrid restored;
-    CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
-}
+// *validated* bus id into an out-of-bounds access. These must be rejected by
+// set_state()/check_grid(), never reach a powerflow.
+//
+// There used to be a case here poisoning a serialized bus-status vector to be
+// shorter than the bus count. It is gone with the field: the counts are sized from
+// bus_vn_kv_ at restore time and counted from the elements, so a file cannot state
+// a length for them at all. That is the stronger version of the same guarantee --
+// see "a restored grid counts its own buses" in test_bus_element_count.cpp.
 
 TEST_CASE("check_grid rejects a bus count that disagrees with n_sub * nmax_busbar", "[check_grid][substation]")
 {

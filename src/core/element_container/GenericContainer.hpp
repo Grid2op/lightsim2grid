@@ -89,9 +89,91 @@ class LS2G_API GenericContainer : public BaseConstants
                                 };
     
         static const int _deactivated_bus_id;
-        virtual void reconnect_connected_buses(SubstationContainer & /*substation*/) const {
+        // ---- which buses does an element hold alive? ---------------------------
+        /**
+         * Apply this element's contribution to `substation`'s per-bus element count:
+         * `sign > 0` adds what it holds NOW, `sign < 0` removes it. `crossed` is
+         * OR-ed with true for every bus that thereby crossed 0 -- ie every bus that
+         * entered or left the solved system.
+         *
+         * THIS IS THE ONLY STATEMENT OF "WHICH BUSES DOES THIS ELEMENT HOLD".
+         * The from-scratch recount is built from it and every mutator tracks its own
+         * effect through it (see `_apply_and_track_buses`); there is no longer a
+         * `reconnect_connected_buses` stating the same rule a second time. Anything
+         * that states it twice can drift, and the failure mode is a bus labelling
+         * that no longer matches the matrices -- a converged, plausible, wrong
+         * answer.
+         *
+         * The rule is genuinely different per container, which is why this is
+         * virtual and not a helper:
+         *   - one-sided elements hold their bus iff they are active;
+         *   - a line or transformer is gated by `status_global_` FIRST, and only
+         *     then does each side count -- a line end cannot know that, which is
+         *     why this cannot live in OneSideContainer alone;
+         *   - an HVDC line has no such gate: each converter station stands alone.
+         */
+        virtual void contribute_to_buses(int /*el_id*/,
+                                         SubstationContainer & /*substation*/,
+                                         int /*sign*/,
+                                         bool & /*crossed*/) const {
                                 // nothing to do by default
                                 };
+
+        /**
+         * Run `mutate`, and tell `substation` which buses this element stopped or
+         * started holding as a result.
+         *
+         * Written once, used by every mutator that can change bus membership. It
+         * never restates the contribution rule: it asks `contribute_to_buses` to
+         * take the element's current contribution away, lets the mutation happen,
+         * then asks it to put the new one back. Whatever the container's rule is,
+         * and whatever the mutation did, the counts end up right.
+         *
+         * `crossed` is what the caller turns into `tell_dimension_changed()`. Every
+         * OTHER change flag -- ybus sparsity, ybus values, sbus -- stays where it
+         * has always been decided, inside the container's own `_deactivate` /
+         * `_reactivate` / `_change_bus`, which `mutate` calls.
+         *
+         * Note a caller that hands us a no-op (deactivating an already-inactive
+         * element, changing a bus to itself) gets the right COUNTS either way -- it
+         * removes and re-adds the same contribution -- but a bus that is alone would
+         * transiently hit 0 and report a crossing that did not happen, costing a
+         * needless rebuild. Mutators guard the no-op cases before calling in.
+         */
+        template<class Mutation>
+        void _apply_and_track_buses(int el_id,
+                                    SubstationContainer & substation,
+                                    DualAlgoControl & solver_control,
+                                    Mutation && mutate){
+            bool crossed = false;
+            contribute_to_buses(el_id, substation, -1, crossed);
+            // Putting the contribution back is the other half of taking it away, so it
+            // has to happen on BOTH ways out -- see the catch below.
+            const auto put_the_contribution_back = [&]{
+                contribute_to_buses(el_id, substation, +1, crossed);
+                if(crossed){
+                    solver_control.ac_algo_controler().tell_dimension_changed();
+                    solver_control.dc_algo_controler().tell_dimension_changed();
+                }
+            };
+            try{
+                mutate();
+            }catch(...){
+                // The grid refused the mutation (an out-of-range bus id, a bad element
+                // id), or it gave up part way. The `-1` above has already happened; if
+                // the exception left here without the `+1`, every bus this element
+                // holds would stay one short -- silently, for the rest of the grid's
+                // life, on a call that was supposed to change nothing.
+                //
+                // `contribute_to_buses` reads the element's state as it is NOW, so this
+                // restores what the element holds after whatever did happen, which is
+                // what a recount would say either way. It cannot throw here: the same
+                // call with the same el_id already succeeded above.
+                put_the_contribution_back();
+                throw;
+            }
+            put_the_contribution_back();
+        }
 
         /**computes the total amount of power for each bus (for generator only)**/
         virtual void gen_p_per_bus(std::vector<real_type> & /*res*/) const {
@@ -106,7 +188,7 @@ class LS2G_API GenericContainer : public BaseConstants
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & /*busbar_in_main_component*/) {
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & /*busbar_in_main_component*/, SubstationContainer & /*substation*/, DualAlgoControl & /*solver_control*/) {
                                 // nothing to do by default
                                 };
 
@@ -158,8 +240,6 @@ class LS2G_API GenericContainer : public BaseConstants
         static void _generic_reactivate(int el_id, std::vector<bool> & status);
         static void _generic_deactivate(int el_id, std::vector<bool> & status);
 
-        static void _generic_reactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
-        static void _generic_deactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
 
         /**
         check if an element is in a vector or an Eigen Vector, do not use for other types of containers (might not be efficient at all)

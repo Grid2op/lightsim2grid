@@ -128,7 +128,9 @@ std::vector<NamedMutation> all_mutations()
         {"set_reference_slack_bus",    [](LSGrid & g){ g.add_gen_slackbus(1, 1.); g.set_reference_slack_bus(6); }},
         {"consider_only_main_component",   [](LSGrid & g){ g.deactivate_powerline(4); g.consider_only_main_component(); }},
         {"set_gen_regulated_bus",      [](LSGrid & g){ g.set_gen_regulated_bus(3, 9); }},
-        {"deactivate_bus",             [](LSGrid & g){ g.deactivate_load(8); g.deactivate_bus_python(8); }},
+        // deactivate_bus is a deprecated no-op since the per-bus element counts became the
+        // only statement of bus connectivity; it stays in the sweep to check it stays inert
+        {"deactivate_bus (no-op)",     [](LSGrid & g){ g.deactivate_load(8); g.deactivate_bus_python(8); }},
         {"change_algorithm (ac)",  [](LSGrid & g){ g.change_algorithm(AlgorithmType::NRSing_SparseLU); }},
         {"set_sn_mva",             [](LSGrid & g){ g.set_sn_mva(50.); }},
         {"set_init_vm_pu",         [](LSGrid & g){ g.set_init_vm_pu(1.01); }},
@@ -578,23 +580,33 @@ TEST_CASE("a deserialized grid always starts with a cold cache", "[LSGrid][cache
         CHECK((solve_dc(restored) - solve_dc(ref)).norm() < 1e-9);
     }
 
-    SECTION("a hand-edited bus-connectivity snapshot cannot authorize any reuse"){
-        // BUS_STATUS_ID is the one piece of cache metadata inside StateRes. Poison
-        // it (this is what a crafted file looks like) and the restored grid must be
-        // exactly as cold, and answer exactly the same, as with a faithful one.
+    SECTION("there is no cache metadata left in StateRes to hand-edit"){
+        // This section used to poison StateRes' bus-connectivity photograph -- the
+        // one piece of cache metadata a serialized grid carried -- and check that a
+        // crafted file still could not authorize any reuse. That field is gone: a
+        // bus entering or leaving the solved system is reported by
+        // SubstationContainer's element counts as it happens, so nothing about the
+        // cache needs to survive a save any more. The attack surface was removed
+        // rather than defended, which is why there is nothing to poison here.
+        //
+        // What remains testable is the property it was protecting: a restored grid
+        // is cold and answers exactly like one that never cached. Element status
+        // (which the counts are derived from) IS still serialized, so a faithful
+        // round trip must not smuggle warmth in with it.
         LSGrid source = make_grid();
         REQUIRE(solve_ac(source).size() == 14);
+        source.deactivate_powerline(4);          // a real connectivity change
+        REQUIRE(solve_ac(source).size() == 14);
         LSGrid::StateRes state = source.get_state();
-        std::vector<bool> & bus_status = std::get<LSGrid::BUS_STATUS_ID>(state);
-        bus_status.assign(bus_status.size(), true);  // "every bus was connected"
 
         LSGrid restored = make_grid();
-        REQUIRE(solve_ac(restored).size() == 14);
+        REQUIRE(solve_ac(restored).size() == 14);   // warm, and for a DIFFERENT topology
         restored.set_state(state);
         check_cold(restored);
 
         LSGrid ref = make_grid();
         ref.allow_cache_reuse(false);
+        ref.deactivate_powerline(4);
         CHECK((solve_ac(restored) - solve_ac(ref)).norm() < 1e-9);
     }
 }

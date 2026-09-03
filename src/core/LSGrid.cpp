@@ -31,8 +31,8 @@ LSGrid::LSGrid(const LSGrid & other)
 
     // copy the powersystem representation
     // 1. bus
-    ac_cache_.last_bus_status = other.ac_cache_.last_bus_status;
-    dc_cache_.last_bus_status = other.dc_cache_.last_bus_status;
+    // the solver-side caches (including built_for_nb_bus) are reset below, not
+    // copied: a copy starts cold. See reset().
     substations_ = other.substations_;
     max_nb_bus_per_sub_ = substations_.nmax_busbar_per_sub();
     n_sub_ = substations_.nb_sub();
@@ -119,7 +119,6 @@ LSGrid::StateRes LSGrid::get_state() const
                             ls_to_orig,
                             init_vm_pu_,
                             sn_mva_,
-                            ac_cache_.last_bus_status,
                             res_substation,
                             res_line,
                             res_shunt,
@@ -166,12 +165,12 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     const std::vector<int> & ls_to_pp = std::get<LS_TO_ORIG_ID>(my_state);
     init_vm_pu_ = std::get<INIT_VM_PU_ID>(my_state);
     sn_mva_ = std::get<SN_MVA_ID>(my_state);
-    // NB `std::get<BUS_STATUS_ID>(my_state)` is deliberately NOT read here. It is
-    // the bus-connectivity snapshot the solver caches use to detect topology
-    // changes -- cache metadata, not grid data -- and a file is not a trusted
-    // source for it. It is still written by get_state() (the layout is unchanged);
-    // it is simply not believed on the way back in. See the note at the end of
-    // this function.
+    // NB slot 6 used to hold the AC family's bus-connectivity photograph: cache
+    // metadata, not grid data, and a file is not a trusted source for it. It was
+    // written but deliberately never read back. It is gone from the layout
+    // entirely now -- a bus entering or leaving the solved system is reported by
+    // SubstationContainer's per-bus element counts as it happens. See the note at
+    // the end of this function.
     SubstationContainer::StateRes & state_substations = std::get<SUBSTATION_ID>(my_state);
     // powerlines
     LineContainer::StateRes & state_lines = std::get<LINE_ID>(my_state);
@@ -289,8 +288,8 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // ---- a restored grid always starts cold -------------------------------
     // Enforced at the top of this function, not here: set_state() opens with
     // tell_all_changed() on both families and calls reset(true, true, true) once
-    // the containers are in, which clears every solver-side member and both
-    // connectivity snapshots. This note is here because that is a CONTRACT, not an
+    // the containers are in, which clears both families' caches and retires them.
+    // This note is here because that is a CONTRACT, not an
     // incidental consequence -- see the "TODO see if it's worth the trouble NOT to
     // do it" sitting on that very reset.
     //
@@ -305,10 +304,11 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // matrix that merely LOOKS well-formed would be solved without complaint. A
     // file is not trusted input. Rebuilding costs one assembly, once.
     //
-    // The one piece of cache metadata that IS in the layout -- BUS_STATUS_ID, the
-    // bus-connectivity snapshot -- is still written by get_state() (the layout is
-    // unchanged) but deliberately not read back; see the note where it would have
-    // been. reset() would overwrite it anyway.
+    // There is no longer any cache metadata in the layout at all: BUS_STATUS_ID,
+    // the bus-connectivity snapshot, was the last piece and is gone -- so a
+    // crafted file has nothing left to poison. Which buses are in the solved
+    // system is counted from the restored elements, whose own status IS in the
+    // file.
     //
     // Pinned by "a deserialized grid always starts with a cold cache" in
     // src/tests/test_cache_reuse.cpp (tag [serialization]), so that a later attempt
@@ -385,8 +385,8 @@ void LSGrid::check_grid() const
     check_positive_finite(init_vm_pu_, "init_vm_pu");
 
     // The substation container FIRST: it defines nb_bus / nb_sub, the bounds every
-    // per-element check below is expressed against, and it carries the vector
-    // (bus_status_) those very ids are used to index. Validating elements against a
+    // per-element check below is expressed against, and it carries the per-bus
+    // element counts those very ids are used to index. Validating elements against a
     // self-inconsistent substation container would prove nothing.
     substations_.check_valid();
 
@@ -684,10 +684,10 @@ void LSGrid::reset(bool reset_solver, bool reset_ac, bool reset_dc)
 
     algo_controler_.ac_algo_controler().tell_all_changed();
     algo_controler_.dc_algo_controler().tell_all_changed();
-    // Retires BOTH caches -- it clears the connectivity snapshot, which is what
+    // Retires BOTH caches -- it zeroes `built_for_nb_bus`, which is what
     // `is_consistent` / `unset_changes()` read as "nothing built". Needed even
     // for a family whose data was left in place just above: the controls say
-    // everything changed, and the snapshot must not contradict them.
+    // everything changed, and the retirement marker must not contradict them.
     prevent_cache_reuse();
 
     // reset the solvers
@@ -1611,9 +1611,8 @@ CplxVect LSGrid::_build_foreign_cache(
             "powerflow, call pre_process_solver / pre_process_dc_solver instead.");
     }
 
-    // A foreign build never re-stamps: `solver_control`, the connectivity snapshot
-    // init_bus_status() raises its flags against, and those flags themselves all
-    // describe THIS grid, and say nothing about what is in `out`.
+    // A foreign build never re-stamps: `solver_control` and the flags it carries
+    // all describe THIS grid, and say nothing about what is in `out`.
     CplxVect V = _build_into_cache(Vinit, out, solver_control,
                                    /*force_full_rebuild=*/true,
                                    /*init_pv_vm_targets=*/true);
@@ -2541,14 +2540,14 @@ void LSGrid::consider_only_main_component(){
         if(conn_comp[bus_id] == main_cc_id) bus_in_main_cc[bus_id] = true;
     }
     // disconnected elements not in main component
-    powerlines_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    shunts_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    trafos_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    loads_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    sgens_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    storages_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    generators_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    hvdc_lines_.disconnect_if_not_in_main_component(bus_in_main_cc);
+    powerlines_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
+    shunts_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
+    trafos_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
+    loads_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
+    sgens_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
+    storages_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
+    generators_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
+    hvdc_lines_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
     // and finally deal with the buses
     init_bus_status();
 }

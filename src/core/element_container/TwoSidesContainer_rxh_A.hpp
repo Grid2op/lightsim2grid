@@ -735,41 +735,30 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         }
 
         // gridmodel utilities
-        void reconnect_connected_buses(SubstationContainer & substation) const override{
-            const size_t nb_els = nb();
-            const std::vector<bool>& status_side_1_ = get_status_side_1();
-            const std::vector<bool>& status_side_2_ = get_status_side_2();
-            for(size_t el_id = 0; el_id < nb_els; ++el_id){
-                // don't do anything if the element is disconnected
-                if(!status_global_[el_id]) continue;
-                
-                if(status_side_1_[el_id])
-                {
-                    const GlobalBusId bus_or_id_me = get_bus_side_1(el_id);        
-                    if(bus_or_id_me.cast_int() == _deactivated_bus_id){
-                        // TODO DEBUG MODE only this in debug mode
-                        std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::reconnect_connected_buses: branch with id ";
-                        exc_ << el_id;
-                        exc_ << " is connected (side 1) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx_side_1(...)` ?.";
-                        throw std::runtime_error(exc_.str());
-                    }
-                    substation.reconnect_bus(bus_or_id_me);
+        /**
+         * A line or transformer is gated by `status_global_` FIRST: a globally
+         * deactivated branch holds nothing, whatever its two sides say. Only then
+         * does each side count, on its own status. This gate is why the rule cannot
+         * live in OneSideContainer -- a line END has no idea the branch it belongs
+         * to was deactivated as a whole.
+         */
+        void contribute_to_buses(int el_id, SubstationContainer & substation,
+                                 int sign, bool & crossed) const override {
+            if(!status_global_[el_id]) return;                  // the gate
+            const std::vector<bool> & st1 = this->get_status_side_1();
+            const std::vector<bool> & st2 = this->get_status_side_2();
+            if(st1[el_id]){
+                const GlobalBusId b = this->get_bus_side_1(el_id);
+                if(b.cast_int() != GenericContainer::_deactivated_bus_id){
+                    crossed |= (sign > 0) ? substation.bus_gained_element(b)
+                                          : substation.bus_lost_element(b);
                 }
-
-                if(status_side_2_[el_id])
-                {
-                    const GlobalBusId bus_ex_id_me = get_bus_side_2(el_id);        
-                    if(bus_ex_id_me.cast_int() == _deactivated_bus_id){
-                        // TODO DEBUG MODE only this in debug mode
-                        std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::reconnect_connected_buses: branch with id ";
-                        exc_ << el_id;
-                        exc_ << " is connected (side 2) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx_side_2(...)` ?.";
-                        throw std::runtime_error(exc_.str());
-                    }
-                    // bus_status[bus_ex_id_me] = true;
-                    substation.reconnect_bus(bus_ex_id_me);
+            }
+            if(st2[el_id]){
+                const GlobalBusId b = this->get_bus_side_2(el_id);
+                if(b.cast_int() != GenericContainer::_deactivated_bus_id){
+                    crossed |= (sign > 0) ? substation.bus_gained_element(b)
+                                          : substation.bus_lost_element(b);
                 }
             }
         }
