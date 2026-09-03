@@ -37,21 +37,6 @@ void GenericContainer::_get_amps(Eigen::Ref<RealVect> a,
     }
 }
 
-void GenericContainer::_generic_reactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation){
-    _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id.cast_int()),
-                    substation.get_bus_status(),
-                    "_generic_reactivate");
-    substation.reconnect_bus(global_bus_id);
-    // status[el_id] = true;  //TODO why it's needed to do that again
-}
-
-void GenericContainer::_generic_deactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation){
-    _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id.cast_int()),
-                    substation.get_bus_status(),
-                    "_generic_deactivate");
-    substation.disconnect_bus(global_bus_id);
-}
-
 void GenericContainer::_generic_reactivate(int el_id, std::vector<bool> & eltype_status){
     _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
                     eltype_status,

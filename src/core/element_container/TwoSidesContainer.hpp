@@ -185,23 +185,33 @@ class TwoSidesContainer : public GenericContainer
         Eigen::Ref<const IntVect> get_bus_id_side_1_numpy() const {return side_1_.get_bus_id_numpy();}
         Eigen::Ref<const IntVect> get_bus_id_side_2_numpy() const {return side_2_.get_bus_id_numpy();}
 
-        void reconnect_connected_buses(SubstationContainer & substation) const override{
-            side_1_.reconnect_connected_buses(substation);
-            side_2_.reconnect_connected_buses(substation);
-            // TODO think about status here !
-            // Do I do if status_global_, reconnect connected buses of side_1 and side_2
-            // (in this case this can do nothing if side_1 or side_2 is not connected)
+        /**
+         * An HVDC line has NO global gate: the two converter stations stand alone,
+         * one can be on while the other is off, which is legitimate. So this simply
+         * delegates -- deliberately unlike TwoSidesContainer_rxh_A above, which gates
+         * on `status_global_` first.
+         */
+        void contribute_to_buses(int el_id, SubstationContainer & substation,
+                                 int sign, bool & crossed) const override {
+            side_1_.contribute_to_buses(el_id, substation, sign, crossed);
+            side_2_.contribute_to_buses(el_id, substation, sign, crossed);
         }
 
-        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override {
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation, DualAlgoControl & solver_control) override {
             const int nb_el = nb();
-            DualAlgoControl unused_solver_control;
             const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
             const GlobalBusIdVect & bus_side_2_id_ = get_buses_side_2();
             for(int i = 0; i < nb_el; ++i){
                 if(!status_global_[i]){
-                    side_1_.deactivate(i, unused_solver_control);
-                    side_2_.deactivate(i, unused_solver_control);
+                    // the branch is globally off, so by contribute_to_buses it already
+                    // holds nothing: the bracket takes nothing away and puts nothing
+                    // back. Applied rather than assumed, and through the branch's rule
+                    // -- a side's own deactivate() would use the one-sided one and
+                    // decrement a bus the gate says the branch never held.
+                    _apply_and_track_buses(i, substation, solver_control, [&]{
+                        side_1_.deactivate_no_bus_tracking(i, solver_control);
+                        side_2_.deactivate_no_bus_tracking(i, solver_control);
+                    });
                     continue;
                 }
                 // A side is "outside the main component" only if it is CONNECTED
@@ -217,9 +227,13 @@ class TwoSidesContainer : public GenericContainer
                     // island, boundary, or (defensively) a branch straddling two
                     // components: drop the whole element rather than throw. Keeping
                     // the main component well-posed is the goal of this function.
-                    side_1_.deactivate(i, unused_solver_control);
-                    side_2_.deactivate(i, unused_solver_control);
-                    if(!ignore_status_global_) status_global_[i] = false;
+                    // One bracket around both sides AND the `status_global_` flip, as
+                    // everywhere else: the gate is what contribute_to_buses reads first.
+                    _apply_and_track_buses(i, substation, solver_control, [&]{
+                        side_1_.deactivate_no_bus_tracking(i, solver_control);
+                        side_2_.deactivate_no_bus_tracking(i, solver_control);
+                        if(!ignore_status_global_) status_global_[i] = false;
+                    });
                 }
             }
         }
@@ -264,78 +278,119 @@ class TwoSidesContainer : public GenericContainer
             side_1_._check_pos_topo_vect_filled();
             side_2_._check_pos_topo_vect_filled();
 
-            std::vector<bool> side1_changed = side_1_.update_topo(has_changed, new_values, solver_control, substations);
-            std::vector<bool> side2_changed = side_2_.update_topo(has_changed, new_values, solver_control, substations);
+            const int nb_el = nb();
+            const int nb_topo = static_cast<int>(has_changed.rows());
+            std::vector<bool> side1_changed(nb_el, false);
+            std::vector<bool> side2_changed(nb_el, false);
+            std::vector<bool> real_changed(nb_el, false);
+
+            for(int el_id=0; el_id<nb_el; ++el_id)
+            {
+                const int pos1 = side_1_.checked_pos_topo_vect(el_id, nb_topo);
+                const int pos2 = side_2_.checked_pos_topo_vect(el_id, nb_topo);
+                const bool touched_1 = has_changed(pos1);
+                const bool touched_2 = has_changed(pos2);
+                // an element the caller did not touch mutates nothing, so it must not
+                // be bracketed either -- see OneSideContainer::update_topo.
+                if(!touched_1 && !touched_2) continue;
+
+                // The branch counts ONCE, around everything this element's entry does:
+                // both side moves AND `resolve_status`, which sets `status_global_` --
+                // the gate contribute_to_buses reads FIRST. Leaving resolve_status
+                // outside the bracket is how a bus whose only element was the ex side
+                // of a line stayed counted after the line was disconnected: the system
+                // lost a bus, and nothing told the solver its dimension had changed.
+                // The sides use the *_no_bus_tracking entry point for the same reason
+                // deactivate() does: a line end does not own its contribution.
+                bool real_change = false;
+                _apply_and_track_buses(el_id, substations, solver_control, [&]{
+                    const bool s1 = side_1_.update_topo_one_el_no_bus_tracking(el_id, has_changed, new_values, solver_control, substations);
+                    const bool s2 = side_2_.update_topo_one_el_no_bus_tracking(el_id, has_changed, new_values, solver_control, substations);
+                    side1_changed[el_id] = s1;
+                    side2_changed[el_id] = s2;
+                    real_change = s1 || s2;
+                    // set the global status
+                    if(touched_1){
+                        real_change = resolve_status(el_id, true, solver_control) || real_change;
+                    }
+                    if(touched_2){
+                        real_change = resolve_status(el_id, false, solver_control) || real_change;
+                    }
+                });
+                real_changed[el_id] = real_change;
+            }
             // used for updating derived class for example.
             this->_update_topo(solver_control, substations, side1_changed, side2_changed);
 
-            // set the global status
-            int nb_el = nb();
             for(int el_id=0; el_id<nb_el; ++el_id)
             {
-                int pos1 = side_1_.pos_topo_vect_(el_id);
-                int pos2 = side_2_.pos_topo_vect_(el_id);
-                bool real_change = side1_changed[el_id] || side2_changed[el_id];
-                if(has_changed(pos1)){
-                    real_change = resolve_status(el_id, true, solver_control) || real_change;
-                }
-                if(has_changed(pos2)){
-                    real_change = resolve_status(el_id, false, solver_control) || real_change;
-                }
-                if(real_change) this->_update_effective_coeffs_one_el(el_id);
+                if(real_changed[el_id]) this->_update_effective_coeffs_one_el(el_id);
             }
         }
 
         // setter (states)
         // methods used within lightsim
-        virtual void deactivate(int el_id, DualAlgoControl & solver_control) final {
+        // The branch as a whole does the bus counting, ONCE, around whatever the two
+        // sides do -- see OneSideContainer::deactivate_no_bus_tracking for why the
+        // sides must not count for themselves.
+        virtual void deactivate(int el_id, DualAlgoControl & solver_control,
+                                SubstationContainer & substation) final {
+            _check_in_range(el_id, status_global_, "deactivate");  // before _apply_and_track_buses reads status_global_[el_id]
             bool one_changed = false;
-            one_changed = side_1_.deactivate(el_id, solver_control) || one_changed;
-            one_changed = side_2_.deactivate(el_id, solver_control) || one_changed;
-            one_changed = this->_deactivate(el_id, solver_control) || one_changed;
-            _generic_deactivate(el_id, status_global_);
-            if(ignore_status_global_) status_global_[el_id] = true;
+            _apply_and_track_buses(el_id, substation, solver_control, [&]{
+                one_changed = side_1_.deactivate_no_bus_tracking(el_id, solver_control) || one_changed;
+                one_changed = side_2_.deactivate_no_bus_tracking(el_id, solver_control) || one_changed;
+                one_changed = this->_deactivate(el_id, solver_control) || one_changed;
+                _generic_deactivate(el_id, status_global_);
+                if(ignore_status_global_) status_global_[el_id] = true;
+            });
             if(one_changed){
                 // update coefficient for Ybus
                 this->_update_effective_coeffs_one_el(el_id);
             }
         }
-        virtual void reactivate(int el_id, DualAlgoControl & solver_control) final {
+        virtual void reactivate(int el_id, DualAlgoControl & solver_control,
+                                SubstationContainer & substation) final {
+            _check_in_range(el_id, status_global_, "reactivate");  // before _apply_and_track_buses reads status_global_[el_id]
             bool one_changed = false;
-            one_changed = side_1_.reactivate(el_id, solver_control) || one_changed;
-            one_changed = side_2_.reactivate(el_id, solver_control) || one_changed;
-            one_changed = this->_reactivate(el_id, solver_control) || one_changed;
-            _generic_reactivate(el_id, status_global_);
+            _apply_and_track_buses(el_id, substation, solver_control, [&]{
+                one_changed = side_1_.reactivate_no_bus_tracking(el_id, solver_control) || one_changed;
+                one_changed = side_2_.reactivate_no_bus_tracking(el_id, solver_control) || one_changed;
+                one_changed = this->_reactivate(el_id, solver_control) || one_changed;
+                _generic_reactivate(el_id, status_global_);
+                if(ignore_status_global_) status_global_[el_id] = true;
+            });
             if(one_changed){
-                // update coefficient for Ybus
                 this->_update_effective_coeffs_one_el(el_id);
             }
         }
-
-        // Per-side (de)activation: open / close a single terminal of the element.
-        // `resolve_status` enforces the synch_status_both_side_ policy (when true the
-        // other side follows, reproducing the whole-element behaviour; when false the
-        // element stays "half-open" with the other side untouched). Mirrors the
-        // change_bus_side_1 / change_bus_side_2 pattern below.
-        virtual void deactivate_side_1(int el_id, DualAlgoControl & solver_control) final {
-            bool one_changed = side_1_.deactivate(el_id, solver_control);
-            one_changed = resolve_status(el_id, true, solver_control) || one_changed;
-            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
+        virtual void deactivate_side_1(int el_id, DualAlgoControl & solver_control,
+                                       SubstationContainer & substation) final {
+            _check_in_range(el_id, status_global_, "deactivate_side_1");  // before _apply_and_track_buses reads status_global_[el_id]
+            _apply_and_track_buses(el_id, substation, solver_control, [&]{
+                if(side_1_.deactivate_no_bus_tracking(el_id, solver_control)) this->_update_effective_coeffs_one_el(el_id);
+            });
         }
-        virtual void deactivate_side_2(int el_id, DualAlgoControl & solver_control) final {
-            bool one_changed = side_2_.deactivate(el_id, solver_control);
-            one_changed = resolve_status(el_id, false, solver_control) || one_changed;
-            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
+        virtual void deactivate_side_2(int el_id, DualAlgoControl & solver_control,
+                                       SubstationContainer & substation) final {
+            _check_in_range(el_id, status_global_, "deactivate_side_2");  // before _apply_and_track_buses reads status_global_[el_id]
+            _apply_and_track_buses(el_id, substation, solver_control, [&]{
+                if(side_2_.deactivate_no_bus_tracking(el_id, solver_control)) this->_update_effective_coeffs_one_el(el_id);
+            });
         }
-        virtual void reactivate_side_1(int el_id, DualAlgoControl & solver_control) final {
-            bool one_changed = side_1_.reactivate(el_id, solver_control);
-            one_changed = resolve_status(el_id, true, solver_control) || one_changed;
-            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
+        virtual void reactivate_side_1(int el_id, DualAlgoControl & solver_control,
+                                       SubstationContainer & substation) final {
+            _check_in_range(el_id, status_global_, "reactivate_side_1");  // before _apply_and_track_buses reads status_global_[el_id]
+            _apply_and_track_buses(el_id, substation, solver_control, [&]{
+                if(side_1_.reactivate_no_bus_tracking(el_id, solver_control)) this->_update_effective_coeffs_one_el(el_id);
+            });
         }
-        virtual void reactivate_side_2(int el_id, DualAlgoControl & solver_control) final {
-            bool one_changed = side_2_.reactivate(el_id, solver_control);
-            one_changed = resolve_status(el_id, false, solver_control) || one_changed;
-            if(one_changed) this->_update_effective_coeffs_one_el(el_id);
+        virtual void reactivate_side_2(int el_id, DualAlgoControl & solver_control,
+                                       SubstationContainer & substation) final {
+            _check_in_range(el_id, status_global_, "reactivate_side_2");  // before _apply_and_track_buses reads status_global_[el_id]
+            _apply_and_track_buses(el_id, substation, solver_control, [&]{
+                if(side_2_.reactivate_no_bus_tracking(el_id, solver_control)) this->_update_effective_coeffs_one_el(el_id);
+            });
         }
 
         void reset_results_tsc(){
@@ -348,10 +403,16 @@ class TwoSidesContainer : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */        
-        virtual void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, const SubstationContainer & substation) final {
+        virtual void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, SubstationContainer & substation) final {
+            _check_in_range(el_id, status_global_, "change_bus_side_1");  // before _apply_and_track_buses reads status_global_[el_id]
+            // the branch counts once, around both the side move and resolve_status --
+            // a line END must not count for itself, status_global_ gates it
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 1).");
-            bool one_changed = side_1_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
+            bool one_changed = false;
+            _apply_and_track_buses(el_id, substation, solver_control, [&]{
+            one_changed = side_1_.change_bus_no_bus_tracking(el_id, new_gridmodel_bus_id, solver_control, substation);
             one_changed = resolve_status(el_id, true, solver_control) || one_changed;
+            });
             this-> _change_bus_side_1(el_id, new_gridmodel_bus_id, solver_control, substation, one_changed);
             if(one_changed){
                 // update coefficient for Ybus
@@ -363,10 +424,16 @@ class TwoSidesContainer : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */  
-        virtual void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, const SubstationContainer & substation) final {
+        virtual void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, SubstationContainer & substation) final {
+            _check_in_range(el_id, status_global_, "change_bus_side_2");  // before _apply_and_track_buses reads status_global_[el_id]
+            // the branch counts once, around both the side move and resolve_status --
+            // a line END must not count for itself, status_global_ gates it
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 2).");
-            bool one_changed = side_2_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
+            bool one_changed = false;
+            _apply_and_track_buses(el_id, substation, solver_control, [&]{
+            one_changed = side_2_.change_bus_no_bus_tracking(el_id, new_gridmodel_bus_id, solver_control, substation);
             one_changed = resolve_status(el_id, false, solver_control) || one_changed;
+            });
             this-> _change_bus_side_2(el_id, new_gridmodel_bus_id, solver_control, substation, one_changed);
             if(one_changed){
                 // update coefficient for Ybus
@@ -451,11 +518,11 @@ class TwoSidesContainer : public GenericContainer
                 if(side_modified.get_status(el_id)){
                     // element has been reconnected
                     // I need to reconnect other side
-                    res = res || side_to_update.reactivate(el_id, solver_control);
+                    res = res || side_to_update.reactivate_no_bus_tracking(el_id, solver_control);
                     status_global_[el_id] = true;
                     res = true;
                 }else{
-                    res = res || side_to_update.deactivate(el_id, solver_control);
+                    res = res || side_to_update.deactivate_no_bus_tracking(el_id, solver_control);
                     status_global_[el_id] = false;
                 }
             }
