@@ -503,23 +503,26 @@ inline void NRSystem<Base, Rest...>::_residual_into(
     // and this runs at least twice per NR iteration (once per backtracking
     // trial of a line search).
     assert(res.size() == static_cast<Eigen::Index>(total_state_variables()));
-    ybus_v_cache_.noalias() = Ybus_ref_ * V_t;
-    mis_cache_ = V_t.array() * ybus_v_cache_.array().conjugate()
+    // whoever owns them, or our own if nobody claimed them (see mis_own_)
+    CplxVect & ybus_v = (ybus_v_ptr_ != nullptr) ? *ybus_v_ptr_ : ybus_v_own_;
+    CplxVect & mis    = (mis_ptr_    != nullptr) ? *mis_ptr_    : mis_own_;
+    ybus_v.noalias() = Ybus_ref_ * V_t;
+    mis = V_t.array() * ybus_v.array().conjugate()
                  - _Sbus_view().array();
     // components adjust the complex injection (e.g. + slack_absorbed * slack_weights,
     // + the theta-dependent hvdc droop flows)
-    base_.adjust_mismatch(V_t, dx, mis_cache_);
-    _adjust_mismatch_extensions(V_t, dx, mis_cache_, std::make_index_sequence<sizeof...(Rest)>{});
+    base_.adjust_mismatch(V_t, dx, mis);
+    _adjust_mismatch_extensions(V_t, dx, mis, std::make_index_sequence<sizeof...(Rest)>{});
 
     // generic residual rows, driven by the ledger's (bus, row) pair lists
     // (accumulate: duplicated rows must sum)
     res.setZero();
     const std::vector<int>& p_buses = ledger_.p_buses();
     const std::vector<int>& p_rows  = ledger_.p_rows();
-    for (size_t k = 0; k < p_buses.size(); ++k) res(p_rows[k]) -= std::real(mis_cache_(p_buses[k]));
+    for (size_t k = 0; k < p_buses.size(); ++k) res(p_rows[k]) -= std::real(mis(p_buses[k]));
     const std::vector<int>& q_buses = ledger_.q_buses();
     const std::vector<int>& q_rows  = ledger_.q_rows();
-    for (size_t k = 0; k < q_buses.size(); ++k) res(q_rows[k]) -= std::imag(mis_cache_(q_buses[k]));
+    for (size_t k = 0; k < q_buses.size(); ++k) res(q_rows[k]) -= std::imag(mis(q_buses[k]));
 
     // component-owned custom rows (none for Base / MultiSlack)
     base_.fill_custom_rows(res, Va_, Vm_, dx);

@@ -92,9 +92,11 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(
     // first check, if the problem is already solved, i stop there
     // compute a first time the mismatch to initialize the slack bus
     evaluate_mismatch_into(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights);
-    mis_.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm
-    p_ = mis_(pvpq).real();  // P = mis[pvpq].real
-    q_ = mis_(pq).imag();  // Q = mis[pq].imag
+    // mis / Vm out of place, so mis_bus_ keeps the raw mismatch -- see has_converged,
+    // which does the same and says why.
+    mis_over_vm_ = mis_bus_.array() / Vm_.array();
+    p_ = mis_over_vm_(pvpq).real();  // P = mis[pvpq].real
+    q_ = mis_over_vm_(pq).imag();  // Q = mis[pq].imag
     
     CplxVect tmp_va;
     nr_iter_ = 0; //current step

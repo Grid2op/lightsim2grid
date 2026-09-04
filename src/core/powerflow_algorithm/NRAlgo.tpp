@@ -52,6 +52,12 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         return false;
     }
     // std::cout << "Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).\n";
+    // The system fills OUR mismatch buffers -- it is ours, so it writes into the
+    // members a caller reads through BaseAlgo::get_bus_mismatch(), the same two the
+    // FDPF fills directly. Two pointer stores; done here rather than at construction
+    // because the system is a member and this is the first point both exist.
+    _system.set_mismatch_buffers(mis_bus_, ybus_v_);
+
     // Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).
     _system.update_state(BaseAlgo::lsgrid_ptr_, Ybus, V, Sbus, slack_weights);
 

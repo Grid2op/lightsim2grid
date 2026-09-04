@@ -506,6 +506,22 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   **This changes ``LSGrid``'s member layout**, so anything that casts an ``LSGrid`` across a module boundary (``gpusim2grid``) must be rebuilt
   against these headers -- which the plugin ABI policy in ``docs/solver_plugin.rst`` already
   requires. Nothing changes for python.
+- [ADDED] ``BaseAlgo::get_bus_mismatch()``: the per-bus complex power mismatch of the last solve --
+  ``V .* conj(Ybus * V) - Sbus`` plus whatever the algorithm's components inject (the distributed
+  slack's share, the hvdc droop flows, a voltage controller's reactive output) -- in solver bus
+  numbering, available from any algorithm without knowing which family produced it. It and the
+  ``Ybus * V`` scratch are now ``BaseAlgo`` members filled by the concrete algorithm:
+  ``BaseFDPFAlgo`` writes them directly, and ``NRAlgo`` -- which owns its ``NRSystem`` rather than
+  being one -- hands the system their addresses, so nothing had to learn about the algorithm in the
+  other direction. An ``NRSystem`` built on its own (as the algorithm tests do) falls back to
+  buffers of its own, and ``NRAlgo`` re-points them on every solve, so a copied algorithm cannot
+  write into the original's members. This costs +0.14% on an FDPF solve (``case9241pegase``,
+  637,137,124 instructions per three solves against 636,268,666) and nothing on the Newton-Raphson.
+  The cost is one extra vector: the FDPF used to divide the mismatch by Vm *in place*, which left
+  that member holding mismatch/Vm rather than the mismatch -- a different quantity from the one the
+  Newton-Raphson leaves in the same place -- so the division is now out of place. Dividing only the
+  rows actually extracted would avoid the extra vector and does strictly less arithmetic; it
+  measured 2.2% slower, because the gather cannot vectorise and the contiguous divide can.
 - [FIXED] the Newton-Raphson and the Fast-Decoupled family now share one implementation of "put
   (Vm, Va) back in canonical form", in ``BaseConstants``, instead of having grown two that did
   different things. Both can drive a magnitude past zero mid-solve -- the FDPF Q iteration

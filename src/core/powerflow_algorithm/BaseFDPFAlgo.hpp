@@ -50,8 +50,8 @@ class BaseFDPFAlgo final: public BaseAlgo
             grid_Bpp_ = Eigen::SparseMatrix<real_type>();  // the B double prime matrix  (size n_pq)
             p_ = RealVect();
             q_ = RealVect();
-            mis_ = CplxVect();
-            ybus_v_ = CplxVect();
+            mis_over_vm_ = CplxVect();
+            // mis_bus_ / ybus_v_ are BaseAlgo's and are cleared by BaseAlgo::reset()
             need_factorize_ = true;
 
             // reset linear solvers
@@ -103,7 +103,7 @@ class BaseFDPFAlgo final: public BaseAlgo
         }
 
         // (V * conj(Ybus * V) - Sbus + slack_absorbed * slack_weights), written
-        // into the persistent mis_ buffer rather than returned by value: this
+        // into the persistent mis_bus_ buffer rather than returned by value: this
         // runs once or twice per FDPF iteration, and returning an nb_bus
         // complex vector meant heap-allocating and freeing one every time.
         // Ybus * V lands in its own buffer first (`noalias`): a sparse * dense
@@ -117,7 +117,7 @@ class BaseFDPFAlgo final: public BaseAlgo
                                     const Eigen::Ref<const RealVect> & slack_weights)
         {
             ybus_v_.noalias() = Ybus * V;
-            mis_ = V.array() * ybus_v_.array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
+            mis_bus_ = V.array() * ybus_v_.array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
         }
 
         // value-returning form, kept for out-of-tree derived algorithms
@@ -129,7 +129,7 @@ class BaseFDPFAlgo final: public BaseAlgo
                                    const Eigen::Ref<const RealVect> & slack_weights)
         {
             evaluate_mismatch_into(Ybus, V, Sbus, slack_id, slack_absorbed, slack_weights);
-            return mis_;
+            return mis_bus_;
         }
         
         void fillBp_Bpp(
@@ -222,16 +222,24 @@ class BaseFDPFAlgo final: public BaseAlgo
             // of compute_pf -- see wrap_va for why once is enough.
             if (Vm_.minCoeff() < my_zero_) fix_negative_vm(Vm_, Va_);
 
-            evaluate_mismatch_into(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights);  // mis_ = V * conj(Ybus * V) - Sbus
-            mis_.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm (do not forget the / Vm !)
-
-            bool tmp = mis_.allFinite();
-            if(!tmp){
+            evaluate_mismatch_into(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights);  // mis_bus_ = V * conj(Ybus * V) - Sbus
+            // mis / Vm (do not forget the / Vm !), out of place, so that mis_bus_ keeps
+            // the RAW mismatch -- the same quantity the Newton-Raphson leaves in that
+            // shared member, and the one a caller reading get_bus_mismatch() wants.
+            //
+            // Out of place, not "divide only the rows we extract": dividing at the
+            // gather (`mis_bus_(pvpq).real().array() / Vm_(pvpq).array()`) does strictly
+            // less arithmetic and measured 2.2% SLOWER on both flavours, because the
+            // gather cannot vectorise while this contiguous divide can. Same number of
+            // reads and writes as the in-place version it replaces; only the
+            // destination differs.
+            mis_over_vm_ = mis_bus_.array() / Vm_.array();
+            if(!mis_over_vm_.allFinite()){
                 err_ = ErrorType::InifiniteValue;
                 return false; // divergence due to Nans
             }
-            p_ = mis_(pvpq).real();  // P = mis[pvpq].real
-            q_ = mis_(pq).imag();  // Q = mis[pq].imag
+            p_ = mis_over_vm_(pvpq).real();  // P = mis[pvpq].real
+            q_ = mis_over_vm_(pq).imag();  // Q = mis[pq].imag
             return _check_for_convergence(p_, q_, tol);
         }
 
@@ -261,9 +269,9 @@ class BaseFDPFAlgo final: public BaseAlgo
         Eigen::SparseMatrix<real_type> Bpp_;  // the B double prime matrix  (size n_pq)
         RealVect p_;  // (size n_pvpq)
         RealVect q_;  // (size n_pq)
-        // per-iteration scratch, kept across iterations (see evaluate_mismatch_into)
-        CplxVect mis_;     // per-bus complex power mismatch (size nb_bus)
-        CplxVect ybus_v_;  // Ybus * V (size nb_bus)
+        // the per-bus complex mismatch and the Ybus * V scratch are BaseAlgo::mis_bus_
+        // and BaseAlgo::ybus_v_: both families compute exactly them
+        CplxVect mis_over_vm_;  // mis_bus_ / Vm, what the P and Q rows are gathered from
         bool need_factorize_;
 
     private:

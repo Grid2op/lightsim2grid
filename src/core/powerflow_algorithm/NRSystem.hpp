@@ -974,8 +974,10 @@ public:
         Ibus_cache_   = CplxVect();
         inv_vm_cache_ = RealVect();
 
-        ybus_v_cache_   = CplxVect();
-        mis_cache_      = CplxVect();
+        ybus_v_own_     = CplxVect();
+        mis_own_        = CplxVect();
+        if(ybus_v_ptr_ != nullptr) *ybus_v_ptr_ = CplxVect();
+        if(mis_ptr_ != nullptr)    *mis_ptr_    = CplxVect();
         Va_trial_cache_ = RealVect();
         Vm_trial_cache_ = RealVect();
         V_trial_cache_  = CplxVect();
@@ -995,6 +997,16 @@ public:
     }
 
     Eigen::Ref<const Eigen::SparseMatrix<real_type> > J()  const { return J_; }
+    /**
+     * Point this system at the mismatch buffers of the algorithm that owns it.
+     * Called once, before the first solve; the buffers must outlive this system,
+     * which they do -- they are members of the same object that holds it.
+     */
+    void set_mismatch_buffers(CplxVect & mis, CplxVect & ybus_v) noexcept {
+        mis_ptr_ = &mis;
+        ybus_v_ptr_ = &ybus_v;
+    }
+
     Eigen::Ref<const CplxVect> V()  const { return V_; }
     Eigen::Ref<const RealVect> Va() const { return Va_; }
     Eigen::Ref<const RealVect> Vm() const { return Vm_; }
@@ -1097,8 +1109,25 @@ private:
     // call. They are mutable because the calls are const: like dx_zero_cache_
     // above they are pure scratch, never state (an NRSystem is owned by exactly
     // one solver, and a multi-threaded batch gives each thread its own solver).
-    mutable CplxVect                       ybus_v_cache_;   // Ybus * V_t
-    mutable CplxVect                       mis_cache_;      // per-bus complex mismatch
+    // The per-bus complex mismatch and the Ybus * V scratch are NOT ours: they live
+    // in the BaseAlgo that owns this system (NRAlgo), which hands us their addresses
+    // in set_mismatch_buffers. Same two buffers the FDPF fills, so a caller can read
+    // the mismatch off any algorithm without knowing which family produced it.
+    //
+    // Pointers rather than references so the system stays assignable, and `* const`
+    // through a const method, which is what lets _residual_into stay const while
+    // writing through them -- exactly what `mutable` bought when they were members.
+    //
+    // Null until an owner claims them, and then the system falls back to the two
+    // below: an NRSystem is usable on its own (the algorithm tests build one and call
+    // mismatch() on it with no NRAlgo anywhere), so "nobody told me where to write"
+    // has to mean "write to my own buffer", not a null dereference. NRAlgo re-points
+    // them at the top of every compute_pf rather than once at construction, so a
+    // copied algorithm cannot end up writing into the buffers of the original.
+    CplxVect *                             ybus_v_ptr_ = nullptr;   // Ybus * V_t
+    CplxVect *                             mis_ptr_ = nullptr;      // per-bus complex mismatch
+    mutable CplxVect                       ybus_v_own_;  // used iff ybus_v_ptr_ is null
+    mutable CplxVect                       mis_own_;     // used iff mis_ptr_ is null
     mutable RealVect                       Va_trial_cache_, Vm_trial_cache_;
     mutable CplxVect                       V_trial_cache_;
     mutable RealVect                       res_cache_;      // residual at the trial point

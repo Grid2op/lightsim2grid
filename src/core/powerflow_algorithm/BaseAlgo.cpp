@@ -153,6 +153,8 @@ void BaseAlgo::reset(){
     Vm_ = RealVect();  // voltage magnitude
     Va_ = RealVect();  // voltage angle
     V_ = RealVect();  // voltage angle  // TODO solver control: see if I could reuse some of these
+    mis_bus_ = CplxVect();   // per-bus complex mismatch, see BaseAlgo::mis_bus_
+    ybus_v_ = CplxVect();
     nr_iter_ = 0;  // number of iteration performs by the algorithm
     err_ = ErrorType::NotInitError; //error message:
 
