@@ -1461,41 +1461,31 @@ CplxVect LSGrid::_build_into_cache(
     // grid. Nothing downstream can notice: an off-by-one count reads exactly like a
     // real one.
     //
-    // So when the answer to "may I reuse what was built for this grid?" is no --
-    // `force_full_rebuild` (the caller's reuse policy) or `need_reset_solver()` (the
-    // grid's own "start from scratch", which is what a mid-powerflow throw, a
-    // mid-mutation throw the caller reported, a copy, a set_state and
-    // prevent_cache_reuse() all leave behind) -- the counts are rebuilt from the
-    // elements too, not merely established if absent. That is the one moment at
-    // which a drift can be repaired rather than inherited, and it is on the path
-    // that was already paying for a full rebuild of everything else.
+    // Rebuilt from the elements when, and only when, the control says they may have
+    // drifted. That question is `cache_maybe_poisoned()` and NOT `need_reset_solver()`
+    // / `force_full_rebuild`: those two say the solver-side data must be rebuilt,
+    // which is a statement about data that is *always* re-derived from the elements
+    // anyway, and says nothing about the counts. Asking them cost an O(all elements)
+    // recount to every caller who merely wanted a fresh solve -- `allow_cache_reuse(false)`
+    // on every single solve, a `tell_solver_need_reset()` after an ordinary change --
+    // while the counts were perfectly good. See AlgoControl::tell_cache_maybe_poisoned
+    // for what does raise it.
     //
-    // It is NOT hooked to `redo_all`: that also fires on has_dimension_changed(),
-    // which an ordinary topology change raises on every grid2op step, and an
-    // O(all elements) recount per step is exactly the cost the counts exist to
-    // avoid. A step that only moves elements around keeps the incremental counts,
-    // and `init_bus_status()`'s assertion is what watches them in debug builds.
     // The two branches are the same operation at two strengths, not two operations:
     // `init_bus_status()` is `_ensure_bus_counts()` -- recount only if the counts were
     // never armed -- plus a debug assertion. Calling the recount directly does strictly
     // more, and the assertion is the one thing it skips, which right afterwards cannot
     // fail: recompute_bus_element_counts() ends with recount_connected_buses(), and
     // `connected_bus_count_is_exact()` is that same "count the non-empty buses" loop
-    // compared against what it just wrote.
-    if (force_full_rebuild || solver_control.need_reset_solver()){
+    // compared against what it just wrote. The `else if` still covers the grid whose
+    // counts were never established at all (freshly built, set_state / load_binary, an
+    // init_* that replaced a container), which is what `_ensure_bus_counts()` is for.
+    if (solver_control.cache_maybe_poisoned()){
         recompute_bus_element_counts();
     } else if (redo_all || solver_control.has_one_el_changed_bus()){
         init_bus_status();
     }
 
-    // `redo_all` used to be recomputed here, because init_bus_status() could raise
-    // has_dimension_changed() half way through -- and `solver_control` was bound to
-    // the grid's own member, so it saw it. Neither half of that is true any more:
-    // since the bus connectivity became the per-bus element counts, init_bus_status()
-    // is `_ensure_bus_counts()`, logically const and deciding nothing about change
-    // flags (the crossing that would have raised one raises it where it happens, in
-    // GenericContainer::_apply_and_track_buses); and the powerflow now hands us a
-    // working copy, not the member, so an aliased write could not reach us anyway.
     bool converter_changed = false;
     if (redo_all || solver_control.ybus_change_sparsity_pattern()){
         init_converter_bus_id(cache.id_me_to_solver, cache.id_solver_to_me);

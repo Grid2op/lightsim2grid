@@ -13,6 +13,13 @@ Change Log
   and make it mandatory (changes what newly-saved files contain, and can only become
   mandatory once no already-saved file needs to load). See the long note on the member
   itself in ``SubstationContainer.hpp``.
+- ``BaseFDPFAlgo::canonicalise_vm_va`` should be promoted to ``BaseAlgo`` and reused by every
+  algorithm: there are three or four separate implementations of "recover (Vm, Va) from V" in the
+  tree (``GaussSeidelAlgo::compute_pf``, ``NRSystem::update_state``, ``NRSystem::apply_step``), and
+  the FDPF one was measured faster. While doing it, settle the second question on the same function:
+  it wraps the angle on every call, and once at the end of the solve may be enough -- which needs
+  establishing that no intermediate consumer depends on a wrapped ``Va``. Both need an A/B per call
+  site, since the NR ones run once per solve rather than once per iteration. See the review of #189.
 - [refacto] have a structure in cpp for the buses
 - [refacto] have the id_grid_to_solver and id_solver_to_grid etc. directly in the solver and NOT in the gridmodel.
 - [refacto] put some method in the DataGeneric as well as some attribute (_status for example)
@@ -506,23 +513,26 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   **This changes ``LSGrid``'s member layout**, so anything that casts an ``LSGrid`` across a module boundary (``gpusim2grid``) must be rebuilt
   against these headers -- which the plugin ABI policy in ``docs/solver_plugin.rst`` already
   requires. Nothing changes for python.
-- [FIXED] a powerflow that cannot reuse its cache now rebuilds the per-bus element counts as well,
-  from the elements. Everything else a solve builds -- the bus labelling, Ybus / Sbus, the PV / PQ
-  split, the slack weights -- is derived from those counts, here and now; the counts themselves were
-  the exception, carried forward ``+1`` / ``-1`` from every mutation the grid had ever seen and
+- [FIXED] a drift in the per-bus element counts no longer outlives the invalidation that should have
+  repaired it. Everything else a solve builds -- the bus labelling, Ybus / Sbus, the PV / PQ split,
+  the slack weights -- is derived from those counts, here and now; the counts themselves were the
+  exception, carried forward ``+1`` / ``-1`` from every mutation the grid had ever seen and
   re-established only when they had never been counted at all (a fresh grid, ``set_state`` /
   ``load_binary``, an ``init_*``). Since bus connectivity *is* the counts, a count that is wrong is
   not a slow path but a different grid -- a phantom bus enlarges the solved system and shifts every
   bus id after it -- and nothing downstream can tell, because an off-by-one count reads exactly like
-  a real one. A drift therefore outlived every invalidation and lasted the life of the grid. It now
-  dies at the first solve that starts from scratch: ``prevent_cache_reuse()`` /
-  ``tell_solver_need_reset()``, a copy, a ``set_state``, a batch algorithm's build, a throw out of a
-  powerflow, or a throw out of a mutator that the caller reported. Deliberately hooked to "the cache
-  cannot be reused" and not to "something changed": an ordinary topology change raises
-  ``has_dimension_changed()`` on every grid2op step, and an O(all elements) recount per step is the
-  cost these counts exist to avoid. Measured on ``case9241pegase``: no change at all on the
-  cache-reuse path (-3 instructions per three solves), +5.29M instructions per solve on the
-  full-rebuild path, which is +1.8% of a rebuild that already costs 287M.
+  a real one. ``AlgoControl`` therefore gained ``cache_maybe_poisoned()``, and a powerflow whose
+  control raises it rebuilds the counts from the elements. It is deliberately NOT
+  ``need_reset_solver()``: that says the solver-side data is stale, which this grid re-derives from
+  the elements anyway, so asking it would have charged an O(all elements) recount to every caller who
+  merely wanted a fresh solve. The implication runs one way only -- a poisoning claim raises
+  ``need_reset_solver()`` with it, because a repaired count that did not reach the bus labelling
+  would leave the solve on the old bus set. Raised by construction, by ``tell_all_changed()`` (so: a
+  reset, a copy, a ``set_state``, a powerflow that threw part way through) and by the new
+  ``LSGrid.tell_bus_counts_maybe_poisoned()``, which is how a caller who changed bus membership
+  behind ``LSGrid``'s back -- or who caught an exception out of a mutator -- says so. Costs nothing
+  on any ordinary path: measured on ``case9241pegase``, +15 instructions per three solves with the
+  cache reused and +164 per three solves on a full rebuild.
 - [FIXED] a powerflow that throws part-way through no longer leaves the grid claiming its solver-side
   cache is up to date. A solve rebuilds that cache in place -- the bus labelling, Ybus / Sbus, the
   PV / PQ split, the slack weights, the algorithm's factorization -- so a throw anywhere in

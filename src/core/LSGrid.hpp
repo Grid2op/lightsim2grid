@@ -772,6 +772,33 @@ class LS2G_API LSGrid final
             _declare_up_to_date(dc_cache_, algo_controler_.dc_algo_controler(), nb_bus);
         }
 
+        /**
+         * Tell the grid that the per-bus element counts may no longer be what the
+         * elements say, so the next powerflow rebuilds them from the elements.
+         *
+         * The counts are the one piece of grid state a powerflow does NOT re-derive:
+         * they are carried forward +1 / -1 from every mutation, and since connectivity
+         * IS the counts, a lost increment is a phantom (or missing) bus -- it enlarges
+         * or shrinks the solved system and shifts every bus id after it, and nothing
+         * downstream can tell, because an off-by-one count reads exactly like a real
+         * one. Rebuilding them is O(all elements).
+         *
+         * Needed only by a caller who changed which buses an element holds WITHOUT
+         * going through LSGrid's own `change_*` / `deactivate_*` / `reactivate_*`
+         * methods -- those count for themselves -- or who caught an exception out of
+         * one of them and cannot know how far it got. `prevent_cache_reuse()` is NOT
+         * this: it says the solver-side data is stale, which it re-derives from the
+         * elements anyway, and says nothing about the counts.
+         *
+         * Raised on BOTH families deliberately: the counts are one grid-wide object,
+         * not per-family state, so whichever family solves next must be the one that
+         * repairs them.
+         */
+        void tell_bus_counts_maybe_poisoned(){
+            algo_controler_.ac_algo_controler().tell_cache_maybe_poisoned();
+            algo_controler_.dc_algo_controler().tell_cache_maybe_poisoned();
+        }
+
         void tell_recompute_ybus(){algo_controler_.ac_algo_controler().tell_recompute_ybus(); algo_controler_.dc_algo_controler().tell_recompute_ybus();}
         void tell_recompute_sbus(){algo_controler_.ac_algo_controler().tell_recompute_sbus(); algo_controler_.dc_algo_controler().tell_recompute_sbus();}
         void tell_ybus_change_sparsity_pattern(){algo_controler_.ac_algo_controler().tell_ybus_change_sparsity_pattern(); algo_controler_.dc_algo_controler().tell_ybus_change_sparsity_pattern();}

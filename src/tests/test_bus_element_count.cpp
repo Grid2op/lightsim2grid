@@ -751,11 +751,19 @@ TEST_CASE("a powerflow that cannot reuse its cache recounts the buses from the e
         REQUIRE(grid.nb_connected_bus() == nb_connected_ok + 1);
         REQUIRE(grid.get_substations().get_nb_elements_per_bus()[empty_bus] == 1u);
 
-        // "I cannot reuse my cache" -- the moment the drift has to die
-        grid.prevent_cache_reuse();
+        // "the counts may have drifted" -- the moment the drift has to die
+        grid.tell_bus_counts_maybe_poisoned();
+        // ... and it drags a full solver rebuild with it: the counts decide which
+        // buses exist, so a repaired count that did not reach the bus labelling would
+        // leave the solve on the old bus set -- the same wrong grid, tidier books.
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
         const CplxVect v = solve_ac(grid);
 
         CHECK(grid.nb_connected_bus() == nb_connected_ok);
+        // the phantom is gone from the solved system, not just from the counts
+        CHECK(static_cast<int>(grid.id_me_to_ac_solver().size()) == static_cast<int>(grid.total_bus()));
+        CHECK(static_cast<int>(grid.id_ac_solver_to_me().size()) == nb_connected_ok);
         CHECK(grid.get_substations().get_nb_elements_per_bus()[empty_bus] == 0u);
         require_counts_match_recount(grid, "an invalidated powerflow, after a forged phantom bus");
         REQUIRE(v.size() == v_ref.size());
@@ -775,7 +783,7 @@ TEST_CASE("a powerflow that cannot reuse its cache recounts the buses from the e
         poke(grid).bus_lost_element(ls2g::GlobalBusId(busy_bus));
         REQUIRE(grid.get_substations().get_nb_elements_per_bus()[busy_bus] == count_ok - 1u);
 
-        grid.prevent_cache_reuse();
+        grid.tell_bus_counts_maybe_poisoned();
         const CplxVect v = solve_ac(grid);
 
         CHECK(grid.get_substations().get_nb_elements_per_bus()[busy_bus] == count_ok);
@@ -794,7 +802,7 @@ TEST_CASE("a powerflow that cannot reuse its cache recounts the buses from the e
         poke(grid).bus_gained_element(ls2g::GlobalBusId(empty_bus));
         REQUIRE(grid.nb_connected_bus() == nb_connected_ok + 1);
 
-        grid.prevent_dc_cache_reuse();
+        grid.tell_bus_counts_maybe_poisoned();
         const CplxVect v = solve_dc(grid);
 
         CHECK(grid.nb_connected_bus() == nb_connected_ok);
@@ -802,13 +810,16 @@ TEST_CASE("a powerflow that cannot reuse its cache recounts the buses from the e
         CHECK((v - v_ref).norm() < 1e-9);
     }
 
-    SECTION("a solve that CAN reuse its cache does not pay for the recount"){
-        // The other side of the gate, stated as behaviour rather than as a timing:
-        // an ordinary solve keeps the incremental counts. Poke one and it survives,
-        // because nothing invalidated anything -- which is precisely why the recount
-        // is hooked to "cannot reuse", and not to `redo_all` (an ordinary topology
-        // change raises has_dimension_changed() on every grid2op step, and an
-        // O(all elements) recount per step is the cost these counts exist to avoid).
+    SECTION("only a poisoning claim pays for the recount"){
+        // The other side of the gate, and the distinction that gives it its name.
+        // Three solves, one forged drift, and only the third repairs it:
+        //   - an ordinary reusing solve keeps the incremental counts;
+        //   - so does `prevent_cache_reuse()` / `tell_solver_need_reset()`. That says
+        //     the SOLVER-SIDE data is stale -- data this grid re-derives from the
+        //     elements every time it rebuilds -- which says nothing about the counts.
+        //     Recounting there charged O(all elements) to every caller who merely
+        //     wanted a fresh solve;
+        //   - `tell_bus_counts_maybe_poisoned()` is the one that means it.
         LSGrid grid = make_two_busbar_grid();
         REQUIRE(solve_ac(grid).size() > 0);
         const int busy_bus = bus_with_at_least_two(grid);
@@ -816,10 +827,15 @@ TEST_CASE("a powerflow that cannot reuse its cache recounts the buses from the e
         const std::size_t count_ok = grid.get_substations().get_nb_elements_per_bus()[busy_bus];
 
         poke(grid).bus_lost_element(ls2g::GlobalBusId(busy_bus));
-        REQUIRE(solve_ac(grid).size() > 0);          // cache reused: nothing recounts
+
+        REQUIRE(solve_ac(grid).size() > 0);                       // cache reused
         CHECK(grid.get_substations().get_nb_elements_per_bus()[busy_bus] == count_ok - 1u);
 
-        grid.prevent_cache_reuse();                  // ... and now it does
+        grid.prevent_cache_reuse();                               // full rebuild ...
+        REQUIRE(solve_ac(grid).size() > 0);
+        CHECK(grid.get_substations().get_nb_elements_per_bus()[busy_bus] == count_ok - 1u);  // ... but no recount
+
+        grid.tell_bus_counts_maybe_poisoned();                    // ... and now it does
         REQUIRE(solve_ac(grid).size() > 0);
         CHECK(grid.get_substations().get_nb_elements_per_bus()[busy_bus] == count_ok);
     }
