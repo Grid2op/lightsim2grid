@@ -523,7 +523,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   the wrap moved to the end with and without its own guard): FDPF_XB 674,070,631 -> 636,268,666
   instructions per three solves and FDPF_BX 534,628,024 -> 505,471,702, both about -5.6%, with every
   element result bit-identical. The shared implementation on its own accounts for none of that --
-  it measured within noise of the old code -- the guard is the whole of it.
+  it measured within noise of the old code -- the guard is the whole of it. A seventh shape was
+  measured and rejected: one fused coefficient-wise loop reading each element once and writing only
+  the ones out of form, with no whole-vector expression and no separate probe. It beats the old code
+  but loses to the guard by ~2.8% on both flavours (FDPF_XB 654,109,921 against 636,268,666 on
+  ``case9241pegase``), because a scalar loop does not vectorise and touches both ``Vm`` and ``Va``
+  where the guard is a vectorised read over ``Vm`` alone.
 - [FIXED] a converged Newton-Raphson now reports an angle in [-pi, pi], as the Fast-Decoupled family
   always has. It never wrapped: it inherited the effect from the ``atan2`` in a repair that only
   fires on a trajectory heading for divergence, so an ordinary solve could report an angle outside
