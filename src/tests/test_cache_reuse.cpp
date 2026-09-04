@@ -948,6 +948,48 @@ public:
     }
 };
 
+// A solver that works exactly once and then fails on every later call.
+//
+// This is the sharpest form of the guarantee, because the same solver object runs
+// both powerflows: the first one CONVERGES -- so the grid ends it with a live cache
+// and "nothing changed" on both families -- and only the second one throws. Nothing
+// about the state afterwards can then be blamed on setup: whatever the grid says, the
+// throw said it.
+class FailsOnSecondCallAlgo : public ls2g::BaseAlgo {
+public:
+    FailsOnSecondCallAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
+    bool supports_hvdc_droop() const noexcept override { return true; }  // see ThrowingAcAlgo
+    bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
+                    const Eigen::Ref<const CplxVect> & V,
+                    const Eigen::Ref<const CplxVect> & /*Sbus*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*slack_ids*/,
+                    const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pv*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pq*/,
+                    int /*max_iter*/, real_type /*tol*/) override
+    {
+        ++nb_calls_;
+        if(nb_calls_ > 1){
+            throw std::runtime_error("__cache_reuse_fails_second__: deliberate failure on call "
+                                     + std::to_string(nb_calls_));
+        }
+        // A well-formed "solution": the voltages it was handed, right size and finite,
+        // so the external-solver output check accepts them and the powerflow completes
+        // normally. They are not a powerflow solution and nothing here reads them as
+        // one -- what this call has to produce is a SUCCESS, so that the cache is live
+        // and marked in sync when the next call throws.
+        V_ = V;
+        n_ = static_cast<int>(V.size());
+        Vm_ = V_.array().abs();
+        Va_ = V_.array().arg();
+        nr_iter_ = 1;
+        err_ = ls2g::ErrorType::NoError;
+        return true;
+    }
+private:
+    int nb_calls_ = 0;
+};
+
 }  // namespace
 
 TEST_CASE("a powerflow that throws leaves both families needing a full rebuild",
@@ -965,6 +1007,9 @@ TEST_CASE("a powerflow that throws leaves both families needing a full rebuild",
         ls2g::AlgorithmRegistry::instance().register_solver(
             "__cache_reuse_wrong_size__",
             [] { return std::unique_ptr<ls2g::BaseAlgo>(new WrongSizeAcAlgo()); });
+        ls2g::AlgorithmRegistry::instance().register_solver(
+            "__cache_reuse_fails_second__",
+            [] { return std::unique_ptr<ls2g::BaseAlgo>(new FailsOnSecondCallAlgo()); });
         return true;
     }();
     (void) registered;
@@ -1028,6 +1073,38 @@ TEST_CASE("a powerflow that throws leaves both families needing a full rebuild",
         CHECK_THROWS_AS(grid.ac_pf(flat_start(grid), 20, 1e-8), std::runtime_error);
         CHECK(grid.get_ac_algo_controler().need_reset_solver());
         CHECK(grid.get_dc_algo_controler().need_reset_solver());
+    }
+
+    SECTION("the same solver, twice: the second call is the only difference"){
+        // Nothing is swapped between the two powerflows -- same grid, same solver
+        // object, same call. The first one leaves the grid in "I can reuse my cache",
+        // the second one throws, and the grid is left in "I cannot reuse my cache".
+        // That is the same behaviour a throw out of a mutator has to have, arrived at
+        // without a try/catch anywhere.
+        LSGrid grid = make_grid();
+        REQUIRE(solve_dc(grid).size() == 14);   // give the DC family a live cache as well
+        grid.change_algorithm("__cache_reuse_fails_second__");
+
+        // call 1 -- succeeds
+        REQUIRE(grid.ac_pf(flat_start(grid), 20, 1e-8).size() == 14);
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+        REQUIRE(grid.get_ac_algo_controler().nothing_changed());   // "I can reuse my cache"
+        REQUIRE(grid.get_dc_algo_controler().nothing_changed());
+
+        // call 2 -- throws
+        CHECK_THROWS_AS(grid.ac_pf(flat_start(grid), 20, 1e-8), std::runtime_error);
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());   // "I cannot reuse my cache"
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+        CHECK_FALSE(grid.get_ac_algo_controler().nothing_changed());
+        CHECK_FALSE(grid.get_dc_algo_controler().nothing_changed());
+
+        // and the rebuild it asks for really is a rebuild, for either family
+        grid.change_algorithm("NR_SparseLU");
+        LSGrid ref = make_grid();
+        ref.allow_cache_reuse(false);
+        CHECK((solve_ac(grid) - solve_ac(ref)).norm() < 1e-9);
+        CHECK((solve_dc(grid) - solve_dc(ref)).norm() < 1e-9);
     }
 
     SECTION("a solve that does NOT throw publishes what it consumed"){

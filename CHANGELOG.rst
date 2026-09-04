@@ -527,6 +527,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   treatment from the other side: they now retire this grid's cache *before* copying the caller's
   labelling into it rather than after, so a throw part way through that copy cannot leave a
   half-published mixture behind a control that still says the cache is up to date.
+  Covered by a plugin solver that converges on its first call and throws on every later one: the
+  same grid, the same solver object, twice, so the state after the second call is the throw's doing
+  and nothing else's. Before this change that grid still answered ``nothing_changed()`` on both
+  families after the throw -- it would have solved from the half-rebuilt cache.
 - [FIXED] a batch algorithm no longer writes half of what it builds into the grid's cache.
   ``slack_weights``, ``bus_pv`` and ``bus_pq`` were not parameters of ``pre_process_solver``: they
   were taken from the grid's own members whatever the caller passed for the other six containers.
