@@ -79,7 +79,10 @@ class LS2G_API Contrib final
         dSdX whichmat_;
 
     public:
-       Contrib(int jrow, int jcol, int ybus_k, dSdX whichmat) noexcept:
+       // constexpr throughout: these are four ints wrapped in accessors, on the hot
+       // path of build_J_sparsity, and C++14 is enough for all of it (a constexpr
+       // member function is not implicitly const there, hence the explicit `const`).
+       constexpr Contrib(int jrow, int jcol, int ybus_k, dSdX whichmat) noexcept:
            jrow_(jrow),
            jcol_(jcol),
            ybus_k_(ybus_k),
@@ -87,22 +90,22 @@ class LS2G_API Contrib final
 
        // A structural-only entry: it claims a J coefficient but carries no dS
        // value (used for the feature coefficients, which fill_J writes itself).
-       static Contrib structural(int jrow, int jcol) noexcept {
+       static constexpr Contrib structural(int jrow, int jcol) noexcept {
            return Contrib(jrow, jcol, -1, dSdVa_r);
        }
 
-       int jrow() const {return jrow_;}
-       int jcol() const {return jcol_;}
-       int ybus_k() const {return ybus_k_;}
-       dSdX whichmat() const {return whichmat_;}
+       constexpr int jrow() const noexcept {return jrow_;}
+       constexpr int jcol() const noexcept {return jcol_;}
+       constexpr int ybus_k() const noexcept {return ybus_k_;}
+       constexpr dSdX whichmat() const noexcept {return whichmat_;}
 
        // Eigen's "triplet" protocol: build_J_sparsity hands the contributions
        // straight to setFromTriplets instead of copying them into a vector of
        // Eigen::Triplet just to attach the zero. That pass builds the sparsity
        // pattern only, so every value is zero; fill_J writes the numbers.
-       int row() const {return jrow_;}
-       int col() const {return jcol_;}
-       real_type value() const {return static_cast<real_type>(0.);}
+       constexpr int row() const noexcept {return jrow_;}
+       constexpr int col() const noexcept {return jcol_;}
+       constexpr real_type value() const noexcept {return static_cast<real_type>(0.);}
 };
 
 // ---- Component protocol --------------------------------------------------------

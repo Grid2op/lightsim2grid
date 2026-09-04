@@ -123,9 +123,6 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         // std::cout << "scaling_policy_->scale(_system, F);\n";
         auto timer_sc = CustTimer();
         real_type coeff = scaling_policy_->scale(_system, F);
-        timer_scale_ += timer_sc.duration();
-
-        auto timer_va_vm = CustTimer();
         // scale F in place rather than passing the `coeff * F` expression:
         // binding it to apply_step's Eigen::Ref<const RealVect> parameter made
         // Eigen materialise the expression into a heap temporary on every
@@ -133,6 +130,14 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         // just below -- so scaling it in place is free, and the full-Newton
         // case (coeff == 1, the NoScaling policy) does not even pay the scan.
         if (coeff != static_cast<real_type>(1.)) F *= coeff;
+        timer_scale_ += timer_sc.duration();
+
+        // timer_Va_Vm_ is the (Va, Vm) update and the voltage rebuild that follows
+        // it -- what apply_step does, and nothing else. It used to start above and
+        // so charged the scaling of F to it as well, which is not a voltage
+        // computation: applying `coeff` is the second half of the scaling policy and
+        // now counts where the policy itself does.
+        auto timer_va_vm = CustTimer();
         _system.apply_step(F);
         timer_Va_Vm_ += timer_va_vm.duration();
 

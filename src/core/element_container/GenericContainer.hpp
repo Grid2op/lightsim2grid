@@ -156,9 +156,30 @@ class LS2G_API GenericContainer : public BaseConstants
             // out of an exception. It was not free: an unwind edge through this header
             // made GCC keep every std::vector<bool> access in fillYbus live across it,
             // for 4.9M instructions per rebuild solve of case9241pegase, in a function
-            // that never calls any of this. An exception from deeper inside a mutation
-            // can still leave the counts short; that is a grid which must be rebuilt
-            // and its caches dropped, not one to carry on solving with.
+            // that never calls any of this.
+            //
+            // An exception from deeper inside a mutation can still leave the counts
+            // short -- the contribution is taken away above and never put back. That
+            // is deliberate, and it is why the counts are not the last word on
+            // themselves:
+            //
+            //   - such a grid must be REBUILT, not carried on with. A count that is
+            //     one short is not a slow path, it is a different grid: connectivity
+            //     IS the counts, so a bus that drops to 0 leaves the solved system
+            //     and shifts every bus id after it, and nothing downstream can tell,
+            //     because an off-by-one count reads exactly like a real one.
+            //   - a caller who catches such an exception says so with
+            //     `LSGrid::tell_bus_counts_maybe_poisoned()`, and the next powerflow
+            //     rebuilds the counts from the elements -- and, because poisoning
+            //     implies a solver reset, everything derived from them. That is the
+            //     repair; there is none in this bracket.
+            //   - an exception raised by the POWERFLOW rather than by a mutator needs
+            //     no such call: `LSGrid::ac_pf` / `dc_pf` run the solve against a copy
+            //     of the change tracking and publish it only on the success path, so a
+            //     throw leaves both families asking for a full rebuild by construction.
+            //
+            // What this bracket must never do is put the contribution back on the way
+            // out, which is what the try / catch cost.
             mutate();
             contribute_to_buses(el_id, substation, +1, crossed);
             if(crossed){

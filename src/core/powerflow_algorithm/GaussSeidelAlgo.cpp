@@ -36,7 +36,28 @@ bool GaussSeidelAlgo::compute_pf(
     // TODO SLACK (for now i put all slacks as PV, except the first one)
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);
 
-    // row-major view + diagonal of Ybus, used by every sweep below
+    // Row-major view + diagonal of Ybus, rebuilt on EVERY call: an O(nnz) transpose
+    // plus a scan, even when Ybus has not moved since the last solve.
+    //
+    // Gating it on the change flags -- a reset, a dimension change, a new sparsity
+    // pattern, new coefficients, the way LSGrid gates the rebuild of Ybus itself --
+    // is NOT safe, and was tried. The batch sweeps mutate Ybus in place between
+    // solves (YbusPolicy::Contingency::remove_from_Ybus does
+    // `Ybus.coeffRef(i, j) -= value`) and then hand the algorithm a control saying
+    // `tell_none_changed` from the second step onwards (BaseBatchSweep,
+    // `needs_solver_init`). Against that pattern a gated cache answers from a stale
+    // copy: reproduced directly -- solve, edit one coefficient, solve again with a
+    // "nothing changed" control -- for 0.38 pu of voltage error on case118, silently.
+    // nnz does not catch it either: an in-place `-=` leaves the sparsity pattern
+    // alone.
+    //
+    // The DC family avoids all of this by holding its Ybus internally and being
+    // handed each edit through update_internal_Ybus, which is DC-only
+    // (AlgorithmSelector::update_internal_Ybus throws otherwise). Gating this would
+    // need the same hook on the AC side. Whether a Gauss-Seidel can usefully reach
+    // those sweeps at all is a separate question -- it is not a solver anyone runs a
+    // contingency analysis with -- but "the caller cannot reach it" is not something
+    // this function can check, so it rebuilds.
     refresh_ybus_cache(Ybus);
 
     V_ = V;
@@ -90,9 +111,16 @@ void GaussSeidelAlgo::refresh_ybus_cache(const EigenRefConstCplxSpMat & Ybus)
     const Eigen::Index n = Ybus.rows();
     if(ybus_diag_.size() != n) ybus_diag_.resize(n);
     ybus_diag_.setZero();
-    for(int col = 0; col < Ybus.outerSize(); ++col)
-        for(EigenRefConstCplxSpMat::InnerIterator it(Ybus, col); it; ++it)
-            if(it.row() == it.col()) ybus_diag_.coeffRef(it.row()) = it.value();
+    // Ybus is column-major and compressed, so a column's row indices ascend: the
+    // moment one passes `col` there is no diagonal coefficient left to find in it.
+    // Scanning on to the end of every column read the whole lower triangle for
+    // nothing.
+    for(int col = 0; col < Ybus.outerSize(); ++col){
+        for(EigenRefConstCplxSpMat::InnerIterator it(Ybus, col); it; ++it){
+            if(it.row() > col) break;   // past the diagonal
+            if(it.row() == col){ ybus_diag_.coeffRef(col) = it.value(); break; }
+        }
+    }
 }
 
 void GaussSeidelAlgo::one_iter(

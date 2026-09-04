@@ -506,6 +506,18 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   **This changes ``LSGrid``'s member layout**, so anything that casts an ``LSGrid`` across a module boundary (``gpusim2grid``) must be rebuilt
   against these headers -- which the plugin ABI policy in ``docs/solver_plugin.rst`` already
   requires. Nothing changes for python.
+- [FIXED] ``GaussSeidelAlgo``'s diagonal scan stops at the diagonal. Ybus is column-major and
+  compressed, so a column's row indices ascend and there is nothing left to find once one passes the
+  column index; it read the whole lower triangle of every column for nothing.
+- [FIXED] the Newton-Raphson's ``timer_Va_Vm_`` now times the (Va, Vm) update and the voltage
+  rebuild that follows it -- what ``apply_step`` does -- and nothing else. It used to start one
+  statement earlier and so charged the scaling of the step vector to it as well; applying the
+  scaling coefficient is the second half of the scaling policy and now counts where the policy
+  itself does (``timer_scale_``). No arithmetic changes, only which timer each part lands in.
+- ``NRSystem``'s ``Contrib`` (its constructor, ``structural()`` and every accessor, including the
+  Eigen triplet protocol's ``row()`` / ``col()`` / ``value()``) is ``constexpr`` and ``noexcept``.
+  Four ints behind accessors, on the hot path of ``build_J_sparsity``; C++14 is enough for all of
+  it, which the C++14 job confirms.
 - [ADDED] ``BaseAlgo::get_bus_mismatch()``: the per-bus complex power mismatch of the last solve --
   ``V .* conj(Ybus * V) - Sbus`` plus whatever the algorithm's components inject (the distributed
   slack's share, the hvdc droop flows, a voltage controller's reactive output) -- in solver bus
