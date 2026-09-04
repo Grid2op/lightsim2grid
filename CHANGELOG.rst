@@ -507,27 +507,33 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   against these headers -- which the plugin ABI policy in ``docs/solver_plugin.rst`` already
   requires. Nothing changes for python.
 - [ADDED] ``benchmarks/make_exotic_grid.cpp``: turns an ordinary ``.lsb`` into the same grid with
-  every ``NRSystem`` feature switched on at once -- a distributed slack over every ON generator
-  (weight ``|target_p|``), 5 groups of up to 4 electrically close generators jointly regulating one
-  bus, 5 voltage-mode SVCs, and 4 hvdc lines covering both station types with two of them on angle
-  droop. It exists because NONE of the MATPOWER benchmark cases carries any of them -- case118,
-  case1354pegase, case2869pegase and case9241pegase all have 0 hvdc, 0 SVC and 1 slack generator --
-  so the extensions contribute nothing there and any change to that code measures as exactly zero.
-  Two deliberate stress cases: the two droop lines share an end bus, so their ``dP/dtheta`` entries
-  collide on one Jacobian position, and the voltage-regulating VSC stations sit on the generator
-  groups' controlled buses. Applied to case9241pegase it gives 1445 slack generators, 5 SVCs, 4 hvdc
-  lines, and a Jacobian of 17087 x 17087 with 131285 nonzeros against 17037 x 17037 / 129423 for the
-  plain case.
+  every ``NRSystem`` feature switched on at once. It exists because NONE of the MATPOWER benchmark
+  cases carries any of them -- case118, case1354pegase, case2869pegase and case9241pegase all have
+  0 hvdc, 0 SVC and 1 slack generator -- so the extensions contribute nothing there and any change to
+  that code measures as exactly zero. Applied to case9241pegase: a distributed slack over all 1445
+  generators (weight ``|target_p|``), 550 generators remotely regulating 486 buses one branch away,
+  5 voltage-mode SVCs and 20 hvdc lines (10 on angle droop, both station types in all three
+  combinations), giving a Jacobian of 18330 x 18330 with 141728 nonzeros against 17037 x 17037 /
+  129423 for the plain case. Two deliberate stress cases: consecutive hvdc lines share an end bus, so
+  two droop lines' ``dP/dtheta`` entries collide on one Jacobian position, and the voltage-regulating
+  VSC stations sit on buses the generators also control.
+  Three things it has to respect, all learned the hard way and all documented in the file: every
+  voltage setpoint is read off a reference solve of the unmodified grid, because a setpoint is a
+  property of the BUS and inventing one per generator diverges outright; an SVC must be alone in its
+  control group ("not supported in v1"), so an SVC co-regulating with generators is not expressible
+  today; and the remote control is applied in verified chunks, because 895 of the 1445 generator /
+  bus pairs make a system the Newton-Raphson cannot solve -- individually, not by weight of numbers
+  (taking 20 controllers at a time along the generator list, seven windows out of eight converge in
+  6 iterations and one does not).
 - The per-feature "needs zeroing" split suggested in the review of #189 was measured on that grid and
   NOT done. ``fill_J`` zeroes the feature positions before the dS passes assign and the components
   add on top; the proposal was to let features that never change skip it. The inventory holds -- only
   the hvdc droop's values change between iterations (they follow ``Va`` and a sign branch), while
   MultiSlack's slack weights and every VoltageControl coefficient are fixed for the whole solve --
-  but the loop costs 161,550 instructions per three solves out of 699,756,287, i.e. **0.023% of the
-  program and 0.74% of fill_J**, on a grid built specifically to maximise it. Realising any part of
-  that means reworking the ``zero -> dS assign -> feature add`` ordering, which is what currently
-  makes the shared-bus droop case come out right. Recorded so it is not re-proposed without the
-  number.
+  but the loop costs 1,176,480 instructions per three solves out of 3,577,650,967, i.e. **0.033% of
+  the program and 1.35% of fill_J**, on the grid built to maximise it. Realising any part of that
+  means reworking the ``zero -> dS assign -> feature add`` ordering, which is what makes the
+  shared-bus droop case come out right. Recorded so it is not re-proposed without the number.
 - [FIXED] ``GaussSeidelAlgo``'s diagonal scan stops at the diagonal. Ybus is column-major and
   compressed, so a column's row indices ascend and there is nothing left to find once one passes the
   column index; it read the whole lower triangle of every column for nothing.
