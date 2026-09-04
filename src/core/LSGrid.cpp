@@ -1451,7 +1451,33 @@ CplxVect LSGrid::_build_into_cache(
             }
         }
     }
-    if (redo_all || solver_control.has_one_el_changed_bus()){
+    // ---- the per-bus element counts ---------------------------------------------
+    // Everything else this function builds is derived, here and now, from the
+    // elements; the counts are the exception. They are maintained INCREMENTALLY --
+    // +1 / -1 in GenericContainer::_apply_and_track_buses as elements are connected,
+    // disconnected and moved -- and since the bus connectivity became those counts
+    // (they decide which buses exist, hence the size of the solved system and every
+    // bus id in it), an increment that was lost is not a slow path, it is a wrong
+    // grid. Nothing downstream can notice: an off-by-one count reads exactly like a
+    // real one.
+    //
+    // So when the answer to "may I reuse what was built for this grid?" is no --
+    // `force_full_rebuild` (the caller's reuse policy) or `need_reset_solver()` (the
+    // grid's own "start from scratch", which is what a mid-powerflow throw, a
+    // mid-mutation throw the caller reported, a copy, a set_state and
+    // prevent_cache_reuse() all leave behind) -- the counts are rebuilt from the
+    // elements too, not merely established if absent. That is the one moment at
+    // which a drift can be repaired rather than inherited, and it is on the path
+    // that was already paying for a full rebuild of everything else.
+    //
+    // It is NOT hooked to `redo_all`: that also fires on has_dimension_changed(),
+    // which an ordinary topology change raises on every grid2op step, and an
+    // O(all elements) recount per step is exactly the cost the counts exist to
+    // avoid. A step that only moves elements around keeps the incremental counts,
+    // and `init_bus_status()`'s assertion is what watches them in debug builds.
+    if (force_full_rebuild || solver_control.need_reset_solver()){
+        recompute_bus_element_counts();
+    } else if (redo_all || solver_control.has_one_el_changed_bus()){
         init_bus_status();
     }
 

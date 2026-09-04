@@ -506,6 +506,23 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   **This changes ``LSGrid``'s member layout**, so anything that casts an ``LSGrid`` across a module boundary (``gpusim2grid``) must be rebuilt
   against these headers -- which the plugin ABI policy in ``docs/solver_plugin.rst`` already
   requires. Nothing changes for python.
+- [FIXED] a powerflow that cannot reuse its cache now rebuilds the per-bus element counts as well,
+  from the elements. Everything else a solve builds -- the bus labelling, Ybus / Sbus, the PV / PQ
+  split, the slack weights -- is derived from those counts, here and now; the counts themselves were
+  the exception, carried forward ``+1`` / ``-1`` from every mutation the grid had ever seen and
+  re-established only when they had never been counted at all (a fresh grid, ``set_state`` /
+  ``load_binary``, an ``init_*``). Since bus connectivity *is* the counts, a count that is wrong is
+  not a slow path but a different grid -- a phantom bus enlarges the solved system and shifts every
+  bus id after it -- and nothing downstream can tell, because an off-by-one count reads exactly like
+  a real one. A drift therefore outlived every invalidation and lasted the life of the grid. It now
+  dies at the first solve that starts from scratch: ``prevent_cache_reuse()`` /
+  ``tell_solver_need_reset()``, a copy, a ``set_state``, a batch algorithm's build, a throw out of a
+  powerflow, or a throw out of a mutator that the caller reported. Deliberately hooked to "the cache
+  cannot be reused" and not to "something changed": an ordinary topology change raises
+  ``has_dimension_changed()`` on every grid2op step, and an O(all elements) recount per step is the
+  cost these counts exist to avoid. Measured on ``case9241pegase``: no change at all on the
+  cache-reuse path (-3 instructions per three solves), +5.29M instructions per solve on the
+  full-rebuild path, which is +1.8% of a rebuild that already costs 287M.
 - [FIXED] a powerflow that throws part-way through no longer leaves the grid claiming its solver-side
   cache is up to date. A solve rebuilds that cache in place -- the bus labelling, Ybus / Sbus, the
   PV / PQ split, the slack weights, the algorithm's factorization -- so a throw anywhere in
