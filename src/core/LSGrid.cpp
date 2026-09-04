@@ -1475,6 +1475,13 @@ CplxVect LSGrid::_build_into_cache(
     // O(all elements) recount per step is exactly the cost the counts exist to
     // avoid. A step that only moves elements around keeps the incremental counts,
     // and `init_bus_status()`'s assertion is what watches them in debug builds.
+    // The two branches are the same operation at two strengths, not two operations:
+    // `init_bus_status()` is `_ensure_bus_counts()` -- recount only if the counts were
+    // never armed -- plus a debug assertion. Calling the recount directly does strictly
+    // more, and the assertion is the one thing it skips, which right afterwards cannot
+    // fail: recompute_bus_element_counts() ends with recount_connected_buses(), and
+    // `connected_bus_count_is_exact()` is that same "count the non-empty buses" loop
+    // compared against what it just wrote.
     if (force_full_rebuild || solver_control.need_reset_solver()){
         recompute_bus_element_counts();
     } else if (redo_all || solver_control.has_one_el_changed_bus()){
