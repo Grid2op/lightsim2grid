@@ -736,10 +736,44 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
 
     // reset_results();  // clear the results  No need to do it, results are neceassirly set or reset in post process
 
+    // ---- exception safety, by construction -------------------------------------
+    // Everything below -- pre_process_solver, the algorithm, compute_results -- can
+    // throw, and half of it writes into `ac_cache_` and into the algorithm as it
+    // goes. There is no cheap way to undo that, and nothing that reads the flags
+    // could tell a half-built cache from a whole one.
+    //
+    // So do not try to undo it: make the grid's change tracking say "everything
+    // changed" for the duration of the solve, and run the solve off a COPY (24
+    // bools -- three register-sized stores; nothing measurable next to the millions
+    // of instructions that follow). The copy is what pre_process reads, what the
+    // algorithm is told, and what process_results marks as in sync. It becomes the
+    // grid's change tracking again only at the publication statement below, which
+    // is reachable only if nothing threw.
+    //
+    // A throw therefore leaves this grid asking for a full rebuild of BOTH families
+    // -- `need_reset_solver()` answers true on each -- which is exactly the state a
+    // caller must be in after a powerflow died half way through it, and it costs no
+    // unwind path, no catch block and no restore code. (An unwind edge in this hot
+    // code is not free: the try/catch that used to guard the bus-counting bracket
+    // cost 4.9M instructions per solve in code it never ran through.)
+    //
+    // The flags alone are enough to make the half-built cache unreachable, and they
+    // are the only thing touched here for a reason: `built_for_nb_bus` must NOT be
+    // zeroed up front, or the next solve's "nothing changed" claim would be checked
+    // against a cache it has just been told is inconsistent, and the debug assertion
+    // in _pre_process_own_cache would fire on the ordinary success path. Left as it
+    // is, it is simply never consulted: `need_reset_solver()` makes _build_into_cache
+    // redo every step and _pre_process_own_cache reset the algorithm, and it
+    // short-circuits both that assertion and `unset_changes()`, which retires the
+    // cache outright.
+    DualAlgoControl solve_control = algo_controler_;
+    algo_controler_.ac_algo_controler().tell_all_changed();
+    algo_controler_.dc_algo_controler().tell_all_changed();
+
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     bool is_ac = true;
     CplxVect V = pre_process_solver(Vinit,
-                                    algo_controler_.ac_algo_controler());
+                                    solve_control.ac_algo_controler());
 
     // start the solver
     conv = _algo.compute_pf(
@@ -754,7 +788,13 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
         tol / sn_mva_);
 
     // store results (in ac mode) 
-    process_results(conv, res, Vinit, true, ac_cache_.id_me_to_solver);
+    process_results(conv, res, Vinit, true, ac_cache_.id_me_to_solver,
+                    solve_control.ac_algo_controler());
+
+    // Nothing threw: publish the working copy. Only now does the grid stop saying
+    // "everything changed" -- and it says exactly what the solve consumed, DC
+    // included (untouched by an AC solve, so restored as it was).
+    algo_controler_ = solve_control;
 
     timer_last_ac_pf_ = timer.duration();
     // return the vector of complex voltage at each bus
@@ -1415,11 +1455,14 @@ CplxVect LSGrid::_build_into_cache(
         init_bus_status();
     }
 
-    // init_bus_status can set the flag "has_dimension_change", so redo this here
-    redo_all =
-            force_full_rebuild ||
-            solver_control.need_reset_solver() ||
-            solver_control.has_dimension_changed();
+    // `redo_all` used to be recomputed here, because init_bus_status() could raise
+    // has_dimension_changed() half way through -- and `solver_control` was bound to
+    // the grid's own member, so it saw it. Neither half of that is true any more:
+    // since the bus connectivity became the per-bus element counts, init_bus_status()
+    // is `_ensure_bus_counts()`, logically const and deciding nothing about change
+    // flags (the crossing that would have raised one raises it where it happens, in
+    // GenericContainer::_apply_and_track_buses); and the powerflow now hands us a
+    // working copy, not the member, so an aliased write could not reach us anyway.
     bool converter_changed = false;
     if (redo_all || solver_control.ybus_change_sparsity_pattern()){
         init_converter_bus_id(cache.id_me_to_solver, cache.id_solver_to_me);
@@ -1642,8 +1685,25 @@ CplxVect LSGrid::_build_foreign_cache(
     // out loud what that leaves behind: a cache whose labelling and split are the
     // caller's while its matrix and injections are still ours. Right size, passes
     // every structural check, and wrong. It is only ever read by the extensions,
-    // during the caller's own solve; this grid must never SOLVE from it.
+    // during the caller's own solve; this grid must never SOLVE from it -- which is
+    // what the retirement below says: clear the snapshot so the next own powerflow
+    // of this family rebuilds instead of solving the mixture (is_consistent()
+    // rejects a snapshot that does not cover the grid), and raise the flags that say
+    // so.
+    //
+    // Retired FIRST, published second. The end state is the same either way -- the
+    // retirement writes `built_for_nb_bus` and the change flags, the publication
+    // writes the seven containers, and neither reads the other -- but in this order
+    // the "this is not a cache any more" mark is already down before the first
+    // container is overwritten, so a throw part way through the copy (these are
+    // allocating vector assignments) cannot leave a half-published mixture behind a
+    // control that still says it is up to date. Same reasoning as the working-copy
+    // protocol in ac_pf, reached from the other side: there, invalidate before the
+    // writes and publish the claim at the end; here there is no claim to publish.
     SolverSideCache<MatScalar> & mine = _own_cache_for(out);
+    _retire_cache(mine, SolverSideCache<MatScalar>::is_ac
+                            ? algo_controler_.ac_algo_controler()
+                            : algo_controler_.dc_algo_controler());
     mine.id_me_to_solver = out.id_me_to_solver;
     mine.id_solver_to_me = out.id_solver_to_me;
     mine.slack_bus_id_me = out.slack_bus_id_me;
@@ -1651,13 +1711,6 @@ CplxVect LSGrid::_build_foreign_cache(
     mine.slack_weights = out.slack_weights;
     mine.bus_pv = out.bus_pv;
     mine.bus_pq = out.bus_pq;
-    // ... and it is not a cache any more, it is a view for the extensions:
-    // clear the snapshot so the next own powerflow of this family rebuilds
-    // instead of solving the mixture (is_consistent() rejects a snapshot that does
-    // not cover the grid), and raise the flags that say so.
-    _retire_cache(mine, SolverSideCache<MatScalar>::is_ac
-                            ? algo_controler_.ac_algo_controler()
-                            : algo_controler_.dc_algo_controler());
     return V;
 }
 
@@ -1688,7 +1741,8 @@ void LSGrid::process_results(bool conv,
                                 CplxVect & res,
                                 const Eigen::Ref<const CplxVect> & Vinit,
                                 bool ac,
-                                SolverBusIdVect & id_me_to_solver)
+                                SolverBusIdVect & id_me_to_solver,
+                                AlgoControl & solve_control)
 {
     if (conv){
         // An external (plugin) solver can claim convergence but return malformed
@@ -1749,7 +1803,16 @@ void LSGrid::process_results(bool conv,
     // data was built by pre_process either way -- but a family whose reuse was
     // turned off must not be marked: `allow_*_cache_reuse(false)` means "always
     // rebuild", and a stale mark would be the one thing able to defeat it.
-    if(ac ? ac_cache_.allow_reuse : dc_cache_.allow_reuse) _mark_cache_valid(ac);
+    //
+    // Marked on `solve_control` -- the working copy `ac_pf` / `dc_pf` handed us --
+    // and not on the member: the member is deliberately held at "everything
+    // changed" for the whole solve, and this copy only becomes the grid's change
+    // tracking once the caller publishes it, one statement after this function
+    // returns normally.
+    if(ac ? ac_cache_.allow_reuse : dc_cache_.allow_reuse){
+        if(ac) _mark_cache_valid(ac_cache_, solve_control);
+        else _mark_cache_valid(dc_cache_, solve_control);
+    }
 }
 
 bool LSGrid::_check_solver_output(bool ac)
@@ -2116,10 +2179,16 @@ CplxVect LSGrid::dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
 
     // reset_results();  // clear the results  No need to do it, results are neceassirly set or reset in post process
 
+    // Same working-copy protocol as ac_pf: see the "exception safety, by
+    // construction" note there.
+    DualAlgoControl solve_control = algo_controler_;
+    algo_controler_.ac_algo_controler().tell_all_changed();
+    algo_controler_.dc_algo_controler().tell_all_changed();
+
     // pre process the data: builds the real DC admittance matrix dc_cache_.mat and real power vector dc_cache_.inj
     bool is_ac = false;
     CplxVect V = pre_process_dc_solver(Vinit,
-                                       algo_controler_.dc_algo_controler());
+                                       solve_control.dc_algo_controler());
     // start the solver (native real DC entry point)
     conv = _dc_algo.compute_pf_dc(
         dc_cache_.mat,
@@ -2130,7 +2199,10 @@ CplxVect LSGrid::dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
         dc_cache_.bus_pv.as_eigen(),  // was _to_intvect()
         dc_cache_.bus_pq.as_eigen());  // was _to_intvect()
     // store results (fase -> because I am in dc mode)
-    process_results(conv, res, Vinit, is_ac, dc_cache_.id_me_to_solver);
+    process_results(conv, res, Vinit, is_ac, dc_cache_.id_me_to_solver,
+                    solve_control.dc_algo_controler());
+    // nothing threw: publish (see ac_pf)
+    algo_controler_ = solve_control;
     timer_last_dc_pf_ = timer.duration();
     return res;
 }

@@ -35,6 +35,8 @@
 #include <complex>
 #include <cstdio>
 #include <functional>
+#include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -42,6 +44,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LSGrid.hpp"
+#include "AlgorithmRegistry.hpp"
+#include "powerflow_algorithm/BaseAlgo.hpp"
 #include "case_exotic_elements.hpp"
 
 using Catch::Approx;
@@ -853,4 +857,190 @@ TEST_CASE("a copy of a grid does not inherit its cache", "[LSGrid][cache_reuse]"
     ref.allow_cache_reuse(false);
     ref.change_p_load(1, 61.);
     CHECK((v - solve_ac(ref)).norm() < 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// 6. a powerflow that throws leaves the grid needing a full rebuild
+// ---------------------------------------------------------------------------
+//
+// A solve writes into its family's cache and into the algorithm as it goes:
+// the bus labelling, Ybus / Sbus, the pv-pq split, the slack weights, a
+// factorization. If it throws half way through, all of that is a mixture of the
+// old grid and the new one -- and no flag written before the throw could tell a
+// caller which half is which.
+//
+// So `ac_pf` / `dc_pf` do not try to unwind it. They run the whole solve against
+// a COPY of the change tracking and leave the grid itself saying "everything
+// changed, both families" for the duration; the copy becomes the grid's change
+// tracking only at the publication statement, after process_results, which a
+// throw never reaches. The guarantee is therefore structural rather than
+// maintained by hand: whatever a future step throws, and wherever, the grid it
+// leaves behind rebuilds from scratch.
+//
+// (It is also why there is no try/catch here. An unwind edge through this code
+// is not free: the one that used to guard the bus-counting bracket cost 4.9M
+// instructions per solve without ever running.)
+
+namespace {
+
+// An AC solver that throws from compute_pf: the powerflow dies after
+// pre_process_solver has rebuilt the cache, before any result exists.
+class ThrowingAcAlgo : public ls2g::BaseAlgo {
+public:
+    ThrowingAcAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
+    // ac_pf rejects an angle-droop grid handed to a solver that cannot do droop,
+    // and the exotic test grid has three hvdc lines. That rejection happens BEFORE
+    // the solve begins -- nothing has been touched yet, so nothing needs
+    // invalidating -- which is exactly the throw this test must NOT be measuring.
+    bool supports_hvdc_droop() const noexcept override { return true; }
+    bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
+                    const Eigen::Ref<const CplxVect> & /*V*/,
+                    const Eigen::Ref<const CplxVect> & /*Sbus*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*slack_ids*/,
+                    const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pv*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pq*/,
+                    int /*max_iter*/, real_type /*tol*/) override
+    {
+        throw std::runtime_error("__cache_reuse_throwing_ac__: deliberate failure");
+    }
+};
+
+// An AC solver that claims convergence but returns V/Va/Vm one entry too long:
+// the throw then comes from process_results, after the algorithm has run.
+class WrongSizeAcAlgo : public ls2g::BaseAlgo {
+public:
+    WrongSizeAcAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
+    bool supports_hvdc_droop() const noexcept override { return true; }  // see ThrowingAcAlgo
+    bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
+                    const Eigen::Ref<const CplxVect> & V,
+                    const Eigen::Ref<const CplxVect> & /*Sbus*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*slack_ids*/,
+                    const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pv*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pq*/,
+                    int /*max_iter*/, real_type /*tol*/) override
+    {
+        const int bad = static_cast<int>(V.size()) + 1;
+        V_ = CplxVect::Constant(bad, cplx_type(1., 0.));
+        Va_ = RealVect::Zero(bad);
+        Vm_ = RealVect::Constant(bad, 1.);
+        n_ = bad;
+        nr_iter_ = 1;
+        err_ = ls2g::ErrorType::NoError;  // wrongly claims success
+        return true;
+    }
+};
+
+// the same for the DC family (a different virtual entry point, a different slot)
+class ThrowingDcAlgo : public ls2g::BaseAlgo {
+public:
+    ThrowingDcAlgo() : ls2g::BaseAlgo(/*is_ac=*/false) {}
+    bool compute_pf_dc(const ls2g::EigenRefConstRealSpMat & /*Bbus*/,
+                       const Eigen::Ref<const CplxVect> & /*V*/,
+                       const Eigen::Ref<const RealVect> & /*Pbus*/,
+                       const Eigen::Ref<const ls2g::IntVect> & /*slack_ids*/,
+                       const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                       const Eigen::Ref<const ls2g::IntVect> & /*pv*/,
+                       const Eigen::Ref<const ls2g::IntVect> & /*pq*/) override
+    {
+        throw std::runtime_error("__cache_reuse_throwing_dc__: deliberate failure");
+    }
+};
+
+}  // namespace
+
+TEST_CASE("a powerflow that throws leaves both families needing a full rebuild",
+          "[LSGrid][cache_reuse][exception_safety]")
+{
+    // Catch2 re-enters the test case once per SECTION, and the registry refuses a
+    // duplicate name: register on the first entry only.
+    static const bool registered = []{
+        ls2g::AlgorithmRegistry::instance().register_solver(
+            "__cache_reuse_throwing_ac__",
+            [] { return std::unique_ptr<ls2g::BaseAlgo>(new ThrowingAcAlgo()); });
+        ls2g::AlgorithmRegistry::instance().register_solver(
+            "__cache_reuse_throwing_dc__",
+            [] { return std::unique_ptr<ls2g::BaseAlgo>(new ThrowingDcAlgo()); });
+        ls2g::AlgorithmRegistry::instance().register_solver(
+            "__cache_reuse_wrong_size__",
+            [] { return std::unique_ptr<ls2g::BaseAlgo>(new WrongSizeAcAlgo()); });
+        return true;
+    }();
+    (void) registered;
+
+    SECTION("an AC solve that throws"){
+        LSGrid grid = make_grid();
+        // solve both families first, so both caches are live and both controls
+        // say "nothing changed": without the working-copy protocol, a throw would
+        // leave exactly that claim standing over a half-rebuilt AC cache.
+        REQUIRE(solve_ac(grid).size() == 14);
+        REQUIRE(solve_dc(grid).size() == 14);
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+
+        grid.change_algorithm("__cache_reuse_throwing_ac__");
+        CHECK_THROWS_AS(grid.ac_pf(flat_start(grid), 20, 1e-8), std::runtime_error);
+
+        // nothing was published: the grid asks for everything again, both families
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+
+        // and it really does rebuild: a working solver on that grid answers what a
+        // grid that never cached anything answers.
+        grid.change_algorithm("NR_SparseLU");
+        const CplxVect v = solve_ac(grid);
+        REQUIRE(v.size() == 14);
+        LSGrid ref = make_grid();
+        ref.allow_cache_reuse(false);
+        CHECK((v - solve_ac(ref)).norm() < 1e-9);
+    }
+
+    SECTION("a DC solve that throws"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        REQUIRE(solve_dc(grid).size() == 14);
+
+        grid.change_algorithm("__cache_reuse_throwing_dc__");
+        CHECK_THROWS_AS(grid.dc_pf(flat_start(grid), 1, 1e-8), std::runtime_error);
+
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+
+        grid.change_algorithm("DC_SparseLU");
+        const CplxVect v = solve_dc(grid);
+        REQUIRE(v.size() == 14);
+        LSGrid ref = make_grid();
+        ref.allow_cache_reuse(false);
+        CHECK((v - solve_dc(ref)).norm() < 1e-9);
+    }
+
+    SECTION("a throw raised after the algorithm ran -- process_results"){
+        // The wrong-sized-V rejection lives in process_results, i.e. AFTER the
+        // solver claimed success and after `algo_needs_rebuild` was cleared. The
+        // publication statement is still below it, so this throw invalidates just
+        // as thoroughly as one from the solver itself.
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+
+        grid.change_algorithm("__cache_reuse_wrong_size__");
+        CHECK_THROWS_AS(grid.ac_pf(flat_start(grid), 20, 1e-8), std::runtime_error);
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+    }
+
+    SECTION("a solve that does NOT throw publishes what it consumed"){
+        // the other half of the protocol: on the success path the copy is put back,
+        // so an AC solve still marks the AC family in sync and still leaves the DC
+        // family exactly as it found it.
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());   // never solved
+
+        REQUIRE(solve_dc(grid).size() == 14);
+        CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // untouched
+        CHECK_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+    }
 }

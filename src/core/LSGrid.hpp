@@ -2228,9 +2228,11 @@ class LS2G_API LSGrid final
          * `force_full_rebuild` is the caller's half of the "may I re-stamp?" answer:
          * the own-cache path passes its reuse policy, the foreign path passes true.
          * It is a parameter and not a member read because it is exactly what the two
-         * entry points disagree about. Note it cannot simply be `redo_all`: that is
-         * recomputed inside, because init_bus_status() can raise
-         * has_dimension_changed() half way through.
+         * entry points disagree about.
+         *
+         * `solver_control` is READ-ONLY here and nothing this function calls writes to
+         * it, which is what lets the powerflow hand over a working copy of the grid's
+         * change tracking rather than the member itself (see LSGrid::ac_pf).
          */
         template<class MatScalar>
         CplxVect _build_into_cache(const Eigen::Ref<const CplxVect> & Vinit,
@@ -2305,8 +2307,13 @@ class LS2G_API LSGrid final
         // res stays a plain reference (not Eigen::Ref): it is reassigned below
         // (res = _get_results_back_to_orig_nodes(...)) to total_bus() size, which can
         // differ from the caller's initial (often empty) res.
+        // `solve_control` is the working copy of this family's change tracking that
+        // `ac_pf` / `dc_pf` run the whole solve against (see the "exception safety"
+        // note on ac_pf). It is what gets marked "in sync" here -- never the member,
+        // which stays "everything changed" until the caller publishes this copy back
+        // on the success path.
         void process_results(bool conv, CplxVect & res, const Eigen::Ref<const CplxVect> & Vinit, bool ac,
-                             SolverBusIdVect & id_me_to_solver);
+                             SolverBusIdVect & id_me_to_solver, AlgoControl & solve_control);
 
         // Sanity-check the voltages a solver returned before they are consumed.
         // A wrong-sized V/Va/Vm is a contract violation -> throws
@@ -2384,10 +2391,10 @@ class LS2G_API LSGrid final
             control.tell_none_changed();
             cache.built_for_nb_bus = substations_.nb_bus();
         }
-        void _mark_cache_valid(bool ac){
-            if(ac) _mark_cache_valid(ac_cache_, algo_controler_.ac_algo_controler());
-            else _mark_cache_valid(dc_cache_, algo_controler_.dc_algo_controler());
-        }
+        // (there is deliberately no `_mark_cache_valid(bool ac)` shorthand any more:
+        // it marked the MEMBER control, and the only caller -- process_results -- must
+        // now mark the powerflow's working copy instead. Bringing it back would be the
+        // easy way to reintroduce the bug the working-copy protocol removes.)
 
         /**
          * One family's half of `unset_changes()`: record the claim if the cache can

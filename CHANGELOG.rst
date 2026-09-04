@@ -506,6 +506,27 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   **This changes ``LSGrid``'s member layout**, so anything that casts an ``LSGrid`` across a module boundary (``gpusim2grid``) must be rebuilt
   against these headers -- which the plugin ABI policy in ``docs/solver_plugin.rst`` already
   requires. Nothing changes for python.
+- [FIXED] a powerflow that throws part-way through no longer leaves the grid claiming its solver-side
+  cache is up to date. A solve rebuilds that cache in place -- the bus labelling, Ybus / Sbus, the
+  PV / PQ split, the slack weights, the algorithm's factorization -- so a throw anywhere in
+  ``ac_pf`` / ``dc_pf`` (a plugin solver raising, the wrong-sized-voltage rejection, an internal
+  consistency error) left a mixture of the old grid and the new one behind, with the change flags
+  still saying whatever they said before the call. ``ac_pf`` / ``dc_pf`` now run the whole solve
+  against a *copy* of the change tracking and hold the grid itself at "everything changed, both
+  families" for the duration; the copy becomes the grid's change tracking only at a publication
+  statement placed after ``compute_results``, which a throw never reaches. So an interrupted
+  powerflow leaves ``need_reset_solver()`` true on both families and the next one rebuilds from
+  scratch -- by construction, whatever a future step throws and wherever. Deliberately not a
+  ``try`` / ``catch``: an unwind edge through this code is not free (the one that used to guard the
+  bus-counting bracket cost 4.9M instructions per solve without ever running), while the copy is 24
+  bools -- measured at +21 instructions per solve on ``case9241pegase``, against 206M. Note the
+  input validation at the top of ``ac_pf`` / ``dc_pf`` (Vinit size, ``max_iter`` / ``tol``, a droop
+  grid handed to a solver that cannot do droop) stays *outside* that bracket: it runs before
+  anything is touched, so a rejected call still costs the caller's cache nothing.
+  ``build_solver_input`` / ``build_dc_solver_input`` (the batch-algorithm entry points) got the same
+  treatment from the other side: they now retire this grid's cache *before* copying the caller's
+  labelling into it rather than after, so a throw part way through that copy cannot leave a
+  half-published mixture behind a control that still says the cache is up to date.
 - [FIXED] a batch algorithm no longer writes half of what it builds into the grid's cache.
   ``slack_weights``, ``bus_pv`` and ``bus_pq`` were not parameters of ``pre_process_solver``: they
   were taken from the grid's own members whatever the caller passed for the other six containers.
