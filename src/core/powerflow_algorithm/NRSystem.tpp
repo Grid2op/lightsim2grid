@@ -422,10 +422,18 @@ inline void NRSystem<Base, Rest...>::apply_step(const Eigen::Ref<const RealVect>
     _apply_step_extensions(dx, std::make_index_sequence<sizeof...(Rest)>{});
 
     _reconstruct_V_into(V_, Va_, Vm_);
-    if (Vm_.minCoeff() < static_cast<real_type>(0.)) {
-        Vm_ = V_.array().abs();
-        Va_ = V_.array().arg();
-    }
+    // A step can drive a magnitude past zero. Repaired with the same cheap sign
+    // flip the FDPF uses (BaseConstants::fix_negative_vm), not with
+    // `Vm_ = V_.abs(); Va_ = V_.arg();`: V_ was just built as Vm_ * exp(i.Va_)
+    // one line above, so its modulus is |Vm_| and its argument is Va_ plus a half
+    // turn where the magnitude went negative -- a hypot and an atan2 per bus to
+    // rediscover two numbers we already hold. The guard is unchanged, and is what
+    // keeps this off the ordinary path entirely.
+    //
+    // The one behavioural difference is that atan2 also wrapped the angle here, as
+    // a side effect; the wrap now happens once per solve, in NRAlgo::compute_pf,
+    // which is where the FDPF does it too.
+    if (Vm_.minCoeff() < static_cast<real_type>(0.)) BaseConstants::fix_negative_vm(Vm_, Va_);
 }
 
 template <typename... Rest>

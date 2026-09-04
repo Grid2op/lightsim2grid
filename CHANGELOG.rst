@@ -13,13 +13,6 @@ Change Log
   and make it mandatory (changes what newly-saved files contain, and can only become
   mandatory once no already-saved file needs to load). See the long note on the member
   itself in ``SubstationContainer.hpp``.
-- ``BaseFDPFAlgo::canonicalise_vm_va`` should be promoted to ``BaseAlgo`` and reused by every
-  algorithm: there are three or four separate implementations of "recover (Vm, Va) from V" in the
-  tree (``GaussSeidelAlgo::compute_pf``, ``NRSystem::update_state``, ``NRSystem::apply_step``), and
-  the FDPF one was measured faster. While doing it, settle the second question on the same function:
-  it wraps the angle on every call, and once at the end of the solve may be enough -- which needs
-  establishing that no intermediate consumer depends on a wrapped ``Va``. Both need an A/B per call
-  site, since the NR ones run once per solve rather than once per iteration. See the review of #189.
 - [refacto] have a structure in cpp for the buses
 - [refacto] have the id_grid_to_solver and id_solver_to_grid etc. directly in the solver and NOT in the gridmodel.
 - [refacto] put some method in the DataGeneric as well as some attribute (_status for example)
@@ -513,6 +506,31 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   **This changes ``LSGrid``'s member layout**, so anything that casts an ``LSGrid`` across a module boundary (``gpusim2grid``) must be rebuilt
   against these headers -- which the plugin ABI policy in ``docs/solver_plugin.rst`` already
   requires. Nothing changes for python.
+- [FIXED] the Newton-Raphson and the Fast-Decoupled family now share one implementation of "put
+  (Vm, Va) back in canonical form", in ``BaseConstants``, instead of having grown two that did
+  different things. Both can drive a magnitude past zero mid-solve -- the FDPF Q iteration
+  (``Vm_(pq) -= q_``), the NR step (``Vm_(bus) += dx(col)``) -- and both accumulate into ``Va_``
+  without wrapping. The FDPF repaired it with a sign flip and a half turn, unconditionally, on every
+  call; ``NRSystem::apply_step`` repaired the same overshoot with ``Vm_ = V_.abs(); Va_ = V_.arg();``
+  -- the hypot and atan2 pair the cheap form exists to replace -- but only when a magnitude had
+  actually gone negative, and wrapped the angle as an accidental side effect of ``atan2``'s range.
+  The two halves have different justifications and are now separated accordingly:
+  ``fix_negative_vm`` runs on every FDPF iteration behind the NR's guard, because ``mis_ /= Vm_``
+  follows it and a negative magnitude flips that bus's P and Q; ``wrap_va`` runs once per solve,
+  because nothing inside either solve reads ``Va_`` except its own accumulation and the cos / sin
+  that rebuild V, and both are indifferent to a multiple of 2.pi. Measured on ``case9241pegase``,
+  against five alternatives (shared with no guard, guarded per call, guarded plus a wrap guard, and
+  the wrap moved to the end with and without its own guard): FDPF_XB 674,070,631 -> 636,268,666
+  instructions per three solves and FDPF_BX 534,628,024 -> 505,471,702, both about -5.6%, with every
+  element result bit-identical. The shared implementation on its own accounts for none of that --
+  it measured within noise of the old code -- the guard is the whole of it.
+- [FIXED] a converged Newton-Raphson now reports an angle in [-pi, pi], as the Fast-Decoupled family
+  always has. It never wrapped: it inherited the effect from the ``atan2`` in a repair that only
+  fires on a trajectory heading for divergence, so an ordinary solve could report an angle outside
+  the range where the FDPF never did. Costs +25k instructions per solve on ``case9241pegase`` (out
+  of 206M), because the wrap is asked for before it is done -- one pass and a reduction, against the
+  four passes of the wrap itself, and on a converged solve the answer is essentially always "already
+  in range".
 - [FIXED] a drift in the per-bus element counts no longer outlives the invalidation that should have
   repaired it. Everything else a solve builds -- the bus labelling, Ybus / Sbus, the PV / PQ split,
   the slack weights -- is derived from those counts, here and now; the counts themselves were the

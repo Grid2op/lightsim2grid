@@ -151,6 +151,22 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     Vm_ = _system.Vm();
     Va_ = _system.Va();
 
+    // The angle this algorithm REPORTS is canonical, like the FDPF's. Done here,
+    // on our own copy and once per solve, rather than inside the iteration:
+    // nothing in there cares about a multiple of 2.pi (V is rebuilt through
+    // cos / sin, and the step accumulates into Va_ regardless), and the system's
+    // own Va_ stays exactly as the iteration left it.
+    //
+    // Until now the Newton-Raphson did not wrap at all. It got the effect by
+    // accident, from the atan2 in a repair that only fires on a trajectory heading
+    // for divergence, so a converged solve could report an angle outside
+    // [-pi, pi] where the FDPF never did.
+    //
+    // Guarded, because on a converged solve the angles are in range and the test is
+    // one pass against the wrap's four: measured at +25k instructions per solve on
+    // case9241pegase, out of 206M, for an invariant this family did not have.
+    if (va_out_of_range(Va_)) wrap_va(Va_);
+
     // Propagate NRSystem timers to NRAlgo
     // std::cout << "timers\n";
     timer_dSbus_ += _system.timer_dSbus();
