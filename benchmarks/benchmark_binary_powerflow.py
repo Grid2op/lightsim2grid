@@ -39,6 +39,16 @@ functions::
     valgrind --tool=callgrind --callgrind-out-file=cg.out \\
              --toggle-collect='*ac_pf*' --cache-sim=no --branch-sim=no \\
              python benchmark_binary_powerflow.py grids/case9241pegase.lsb -n 3
+
+None of the MATPOWER cases carries an hvdc line, an SVC or a distributed slack, so
+none of NRSystem's extensions contributes anything on them. To profile that code,
+build the exotic variant first (step 1b) and pass it here like any other grid:
+
+    ./make_exotic_grid grids/case9241pegase.lsb grids/case9241_exotic.lsb
+    python benchmark_binary_powerflow.py grids/case9241_exotic.lsb -n 3
+
+See benchmarks/make_exotic_grid.cpp for what it adds and what it had to work
+around.
     callgrind_annotate --threshold=90 cg.out
 
 ``--toggle-collect`` keeps python start-up, the numpy import and load_binary out

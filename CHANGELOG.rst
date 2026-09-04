@@ -13,6 +13,19 @@ Change Log
   and make it mandatory (changes what newly-saved files contain, and can only become
   mandatory once no already-saved file needs to load). See the long note on the member
   itself in ``SubstationContainer.hpp``.
+- Remote voltage control fails on a majority of generator / bus pairs, and it looks like a bug
+  rather than a data problem. Pointing generator ``g`` at a bus one branch away, with that bus'
+  voltage FROM THE BASE SOLUTION as the target, works for some generators and not others: on
+  case9241pegase, 895 of the 1445 pairs make a system the Newton-Raphson cannot solve, while the
+  remaining 550 converge together in 19 iterations. It is the individual pairs and not the count --
+  taking 20 controllers at a time along the generator list, seven windows out of eight converge in 6
+  iterations and one does not. At scale it fails on the FIRST iteration with ``InifiniteValue`` or
+  ``SolverFactor``, which points at the linear solver or at the Jacobian assembly rather than at the
+  data: the base solution satisfies KCL at every bus, so a solution demonstrably exists, and the
+  setpoint asked of each controlled bus is the magnitude that bus already holds. Neither feasible
+  setpoints nor forbidding control cycles (a strict order on ``(vn_kv, bus id)``) changes it.
+  Reproduce with ``benchmarks/make_exotic_grid.cpp``, which works around it by applying the control
+  in verified chunks and dropping the ones that do not solve.
 - [refacto] have a structure in cpp for the buses
 - [refacto] have the id_grid_to_solver and id_solver_to_grid etc. directly in the solver and NOT in the gridmodel.
 - [refacto] put some method in the DataGeneric as well as some attribute (_status for example)
