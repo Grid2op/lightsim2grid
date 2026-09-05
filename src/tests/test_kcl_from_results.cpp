@@ -360,19 +360,26 @@ TEST_CASE("a generator cannot share the SVC's regulated bus (v1), so that path c
 // What happens is that every residual falls to ~1e-7 by the third iteration
 // except the REACTIVE balance at that bus, which then grows geometrically until
 // the iterate runs away (voltages at 1e-4 pu and at 8.7 pu by iteration 30).
-// A station with voltage_regulator_on excludes its reactive injection from Sbus
-// (ConverterStationContainer::fillSbus_station), on the PV-bus contract: the bus
-// owns a free Vm, and the reactive output is recovered from the residual
-// afterwards. A slack bus pinned by a local generator honours neither half --
-// LSGrid::get_free_vm_slack_solver_buses grants a free Vm and a Q equation only
-// to a slack bus NO local generator pins, and it looks at generators alone, never
-// at converter stations. So nothing in the assembled system determines that
-// station's reactive injection, and the Newton is left with a residual it has no
-// unknown to move.
+// This is a BUG, not an unsupported configuration. A voltage-regulating station is
+// a PV source, exactly like a generator, and two voltage-regulating generators
+// sharing the slack bus solve fine (four iterations) -- so there is nothing
+// infeasible about the arrangement.
 //
-// The SVC path rejects exactly this class of configuration with a clear message
-// ("is at a bus with no reactive (Q) equation ... not supported in v1"); the
-// converter-station path has no such guard and simply fails to converge.
+// The assembled system is not malformed either. With the slack at bus 1 it has
+// thirteen theta columns (bus 1 excluded, it is the reference), Vm columns at
+// exactly the six PQ buses, no Q columns, plus the distributed-slack column: 20
+// unknowns for 20 equations, the same shape as the bus-9 case that converges.
+// And ConverterStationContainer::fillSbus_station keeps a regulating station's
+// reactive injection out of Sbus in exactly the way GeneratorContainer::fillSbus
+// keeps a regulating generator's out, so the "Q is recovered afterwards" contract
+// is the same for both.
+//
+// So the defect is in the VALUES, not the structure, and the signature says where
+// to look: started from the exact solution, everything converges and then one
+// residual walks away by a steady factor per iteration. That is what a Jacobian
+// entry that does not match the residual it belongs to looks like -- something a
+// station contributes to the mismatch and not to J, or the reverse, at a bus
+// whose voltage has no column. Not yet localised.
 //
 // [!shouldfail] keeps the suite green while it is open and turns this test red
 // the day it is fixed, which is the signal to drop the tag.

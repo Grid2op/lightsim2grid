@@ -150,6 +150,19 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   "Divergence of AC powerflow. Detailed error: ...". The error and the iteration count are
   now captured and restored across the reset (``BaseAlgo::set_nb_iter``, next to the existing
   ``set_error``); the next solve overwrites both before using them, so nothing else changes.
+- [TODO] a voltage-regulating HVDC converter station sharing a bus with the SLACK generator
+  does not converge (``TooManyIterations``, using every iteration it is given). Reproduced by
+  the ``[!shouldfail]`` case in ``src/tests/test_kcl_from_results.cpp``, on all four such buses
+  of the exotic fixture. It is a bug, not an unsupported arrangement: such a station is a PV
+  source like any generator, two voltage-regulating generators on the slack bus solve in four
+  iterations, and the assembled system has the right shape (20 unknowns, 20 equations, the
+  same as a configuration that converges). Ruled out: the angle droop (one of the four lines
+  has none), a setpoint conflict (making them agree changes nothing), the linear solver (KLU,
+  SparseLU and the single-slack Newton all fail) and the starting point (it diverges
+  warm-started from the exact solution of the unmodified grid). From that exact solution every
+  residual falls to ~1e-7 by the third iteration and then ONE -- the reactive balance at that
+  bus -- grows by a steady factor per iteration until the iterate runs away, which points at a
+  Jacobian entry that does not match its residual at a bus whose voltage has no column.
 - [FIXED] the reactive output published for two elements sharing a bus could be **NaN**.
   ``GeneratorContainer::set_q`` and ``ConverterStationContainer::set_q`` split a bus' reactive
   residual proportionally to each element's reactive RANGE,
