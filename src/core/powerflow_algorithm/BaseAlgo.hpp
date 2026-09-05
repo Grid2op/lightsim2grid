@@ -532,7 +532,7 @@ class LS2G_API BaseAlgo : public BaseConstants
          * numbering. Empty on an algorithm that has never run (or has been reset).
          * See mis_bus_ for exactly what it contains.
          */
-        const CplxVect & get_bus_mismatch() const {return mis_bus_;}
+        Eigen::Ref<const CplxVect> get_bus_mismatch() const {return mis_bus_;}
 
         // Bf / Bf_T are resized and filled from scratch by fillBf_for_PTDF: a real
         // reference is needed, Eigen::Ref<SparseMatrix> can't resize/reserve.
