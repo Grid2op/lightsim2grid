@@ -2125,98 +2125,132 @@ void LSGrid::compute_results(bool ac){
     // for static var compensators
     svcs_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
 
-    //handle_slack_bus active power
+    // ---- active power of the slack generator(s) ------------------------------
     RealVect reactive_mismatch;  // not used in dc mode (DO NOT ATTEMPT TO USE IT THERE)
     RealVect active_mismatch;
-    if(ac){
-        // ---- what the elements at each bus actually produced ---------------------
-        //
-        // Taken from the ALGORITHM's own per-bus mismatch when it leaves one behind,
-        // rather than re-derived here. That is not only cheaper (it saves a sparse
-        // Ybus . V product, its heap temporary and a full complex pass per solve) --
-        // it is the only version that is right, because an algorithm's mismatch
-        // already accounts for the state IT solved for and this function cannot:
-        //
-        //   mis_bus_ = V .* conj(Ybus . V) - Sbus              (the raw residual)
-        //            + slack_absorbed * slack_weights          (MultiSlack)
-        //            + the angle-droop hvdc flows              (Hvdc)
-        //            - i * the voltage controllers' reactive output   (VoltageControl)
-        //
-        // Every one of those adjustments is exactly the correction this function
-        // needs, because every one of them is an injection that HAS its own published
-        // model and must therefore not be charged to the generators a second time:
-        //
-        //   * REACTIVE. Only VoltageControl touches the imaginary part, and it touches
-        //     it only at a controller's bus -- whose elements are served by the
-        //     write-back below, never by the redistribution. So at every bus the
-        //     redistribution does serve, `mis_bus_.imag()` IS the raw reactive
-        //     residual, which is what a locally-regulating generator produced.
-        //
-        //   * ACTIVE. The droop flows are already subtracted (Hvdc adds +p_flow, and
-        //     a station's published injection is -p_flow), so a slack generator
-        //     sharing a bus with a droop station is no longer charged with the
-        //     station's power. What remains to undo is the distributed-slack term,
-        //     which is the slack's own output and the very thing being computed:
-        //     subtracting it back out leaves the raw active residual for a family
-        //     that has no such unknown (the reference bus of a single-slack solve,
-        //     Gauss-Seidel), and leaves `-slack_absorbed * weight` for one that does
-        //     -- its P equation having driven `mis_bus_.real()` to zero there.
-        //     One expression covers both.
-        //
-        // An algorithm that leaves no usable mismatch (a plugin that did not opt in --
-        // see BaseAlgo::fills_bus_mismatch) falls back to deriving it here, which is
-        // what every family did before.
-        const bool from_algo = _algo.fills_bus_mismatch();
-        if(from_algo){
-            const Eigen::Ref<const CplxVect> mis = _algo.get_bus_mismatch();
-            const real_type slack_absorbed = _algo.get_slack_absorbed();
-            reactive_mismatch = mis.imag() * sn_mva_;
-            active_mismatch = (mis.real().array() -
-                               slack_absorbed * ac_cache_.slack_weights.array()) * sn_mva_;
-        } else {
-            // Ybus . V into a member buffer: inside a coefficient-wise expression it is
-            // a sparse-times-dense product Eigen can only evaluate into a heap temporary
-            ybus_v_res_.noalias() = ac_cache_.mat * V;
-            const CplxVect mismatch = V.array() * ybus_v_res_.array().conjugate()
-                                      - ac_cache_.inj.array();
-            active_mismatch = mismatch.real() * sn_mva_;
-            reactive_mismatch = mismatch.imag() * sn_mva_;
-        }
-    } else{
-        // distributed slack (DC): the global active power imbalance -sum(Pbus) is shared among the
-        // participating slack buses proportionally to their (normalized) slack weights. With a single
-        // slack this assigns the whole imbalance to the reference bus (historical behaviour).
-        active_mismatch = RealVect::Zero(V.size());
-        const real_type imbalance = -dc_cache_.inj.sum() * sn_mva_;
-        if(dc_cache_.slack_weights.size() == active_mismatch.size()){
-            for(int k=0; k < dc_cache_.slack_weights.size(); ++k){
-                if(dc_cache_.slack_weights(k) <= BaseConstants::my_zero_) continue;
-                active_mismatch(k) = dc_cache_.slack_weights(k) * imbalance;
-            }
-        } else {
-            // fallback (should not happen): assign the whole imbalance to the reference slack bus
-            const SolverBusId id_slack = dc_cache_.slack_bus_id_solver(0);
-            active_mismatch(id_slack.cast_int()) = imbalance;
-        }
-    }
+    if(ac) _fill_bus_mismatch_ac(V, active_mismatch, reactive_mismatch);
+    else _fill_bus_mismatch_dc(V.size(), active_mismatch);
     generators_.set_p_slack(active_mismatch, id_me_to_solver);
 
-    // ---- who is served by which mechanism ------------------------------------
-    // Two things publish a reactive output, and every element must be served by
-    // exactly one of them: the algorithm solved for it (write-back, below), or it
-    // did not and the element takes a share of its bus' reactive residual
-    // (redistribution, just after this). The controller list the algorithm hands
-    // back is the ONLY thing that knows which -- so it is read here, once, and both
-    // mechanisms are driven from it. It used to be a rule re-derived inside each
-    // container, and the two containers derived it differently.
+    // ---- reactive output of every element ------------------------------------
+    // Two mechanisms publish one, and every element is served by exactly one: either
+    // the algorithm solved for it (the write-back), or it did not and the element
+    // takes a share of its bus' reactive residual. The controller list the algorithm
+    // hands back is the ONLY thing that knows which, so it is read here, once, and
+    // drives both. It used to be a rule re-derived inside each container, and the two
+    // containers derived it differently.
     const RealVect ctrl_q    = ac ? _algo.get_controller_q()        : RealVect();
     const IntVect  ctrl_kind = ac ? _algo.get_controller_kind()     : IntVect();
     const IntVect  ctrl_elem = ac ? _algo.get_controller_elem_id()  : IntVect();
 
-    std::vector<bool> gen_solved(generators_.nb(), false);
-    std::vector<bool> hvdc1_solved(hvdc_lines_.nb(), false);
-    std::vector<bool> hvdc2_solved(hvdc_lines_.nb(), false);
-    for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
+    // first the elements whose reactive output needs no powerflow to be known
+    generators_.set_q(ac);
+    hvdc_lines_.set_q(ac);
+
+    if(ac){
+        std::vector<bool> gen_solved(generators_.nb(), false);
+        std::vector<bool> hvdc1_solved(hvdc_lines_.nb(), false);
+        std::vector<bool> hvdc2_solved(hvdc_lines_.nb(), false);
+        _mark_q_solved_by_algo(ctrl_kind, ctrl_elem, gen_solved, hvdc1_solved, hvdc2_solved);
+
+        if(reactive_mismatch.size() > 0){
+            _split_q_residual_per_bus(_collect_q_residual_shares(gen_solved, hvdc1_solved, hvdc2_solved),
+                                      reactive_mismatch);
+        }
+        _write_back_controller_q(ctrl_q, ctrl_kind, ctrl_elem);
+    }
+}
+
+void LSGrid::_throw_unknown_controller_kind(const std::string & fun_name, int kind)
+{
+    std::ostringstream exc_;
+    exc_ << fun_name << ": unknown voltage controller kind " << kind << ".";
+    throw std::runtime_error(exc_.str());
+}
+
+void LSGrid::_fill_bus_mismatch_ac(const Eigen::Ref<const CplxVect> & V,
+                                   RealVect & active_mismatch,
+                                   RealVect & reactive_mismatch)
+{
+    // What the elements at each bus actually produced.
+    //
+    // Taken from the ALGORITHM's own per-bus mismatch when it leaves one behind,
+    // rather than re-derived here. That is not only cheaper (it saves a sparse
+    // Ybus . V product, its heap temporary and a full complex pass per solve) --
+    // it is the only version that is right, because an algorithm's mismatch
+    // already accounts for the state IT solved for and this function cannot:
+    //
+    //   mis_bus_ = V .* conj(Ybus . V) - Sbus              (the raw residual)
+    //            + slack_absorbed * slack_weights          (MultiSlack)
+    //            + the angle-droop hvdc flows              (Hvdc)
+    //            - i * the voltage controllers' reactive output   (VoltageControl)
+    //
+    // Every one of those adjustments is exactly the correction this function needs,
+    // because every one of them is an injection that HAS its own published model and
+    // must therefore not be charged to the generators a second time:
+    //
+    //   * REACTIVE. Only VoltageControl touches the imaginary part, and it touches it
+    //     only at a controller's bus -- whose elements are served by the write-back,
+    //     never by the redistribution. So at every bus the redistribution does serve,
+    //     `mis_bus_.imag()` IS the raw reactive residual, which is what a
+    //     locally-regulating generator produced.
+    //
+    //   * ACTIVE. The droop flows are already subtracted (Hvdc adds +p_flow, and a
+    //     station's published injection is -p_flow), so a slack generator sharing a
+    //     bus with a droop station is no longer charged with the station's power.
+    //     What remains to undo is the distributed-slack term, which is the slack's own
+    //     output and the very thing being computed: subtracting it back out leaves the
+    //     raw active residual for a family that has no such unknown (the reference bus
+    //     of a single-slack solve, Gauss-Seidel), and leaves `-slack_absorbed * weight`
+    //     for one that does -- its P equation having driven `mis_bus_.real()` to zero
+    //     there. One expression covers both.
+    //
+    // An algorithm that leaves no usable mismatch (a plugin that did not opt in --
+    // see BaseAlgo::fills_bus_mismatch) falls back to deriving it here, which is what
+    // every family did before.
+    if(_algo.fills_bus_mismatch()){
+        const Eigen::Ref<const CplxVect> mis = _algo.get_bus_mismatch();
+        const real_type slack_absorbed = _algo.get_slack_absorbed();
+        reactive_mismatch = mis.imag() * sn_mva_;
+        active_mismatch = (mis.real().array() -
+                           slack_absorbed * ac_cache_.slack_weights.array()) * sn_mva_;
+    } else {
+        // Ybus . V into a member buffer: inside a coefficient-wise expression it is
+        // a sparse-times-dense product Eigen can only evaluate into a heap temporary
+        ybus_v_res_.noalias() = ac_cache_.mat * V;
+        const CplxVect mismatch = V.array() * ybus_v_res_.array().conjugate()
+                                  - ac_cache_.inj.array();
+        active_mismatch = mismatch.real() * sn_mva_;
+        reactive_mismatch = mismatch.imag() * sn_mva_;
+    }
+}
+
+void LSGrid::_fill_bus_mismatch_dc(Eigen::Index nb_bus_solver, RealVect & active_mismatch) const
+{
+    // distributed slack (DC): the global active power imbalance -sum(Pbus) is shared among the
+    // participating slack buses proportionally to their (normalized) slack weights. With a single
+    // slack this assigns the whole imbalance to the reference bus (historical behaviour).
+    active_mismatch = RealVect::Zero(nb_bus_solver);
+    const real_type imbalance = -dc_cache_.inj.sum() * sn_mva_;
+    if(dc_cache_.slack_weights.size() == active_mismatch.size()){
+        for(int k=0; k < dc_cache_.slack_weights.size(); ++k){
+            if(dc_cache_.slack_weights(k) <= BaseConstants::my_zero_) continue;
+            active_mismatch(k) = dc_cache_.slack_weights(k) * imbalance;
+        }
+    } else {
+        // fallback (should not happen): assign the whole imbalance to the reference slack bus
+        const SolverBusId id_slack = dc_cache_.slack_bus_id_solver(0);
+        active_mismatch(id_slack.cast_int()) = imbalance;
+    }
+}
+
+void LSGrid::_mark_q_solved_by_algo(const IntVect & ctrl_kind,
+                                    const IntVect & ctrl_elem,
+                                    std::vector<bool> & gen_solved,
+                                    std::vector<bool> & hvdc1_solved,
+                                    std::vector<bool> & hvdc2_solved) const
+{
+    for(int i = 0; i < static_cast<int>(ctrl_kind.size()); ++i){
         const int elem_id = ctrl_elem(i);
         switch(ctrl_kind(i)){
             case VoltageControlSolverData::GEN:
@@ -2234,154 +2268,146 @@ void LSGrid::compute_results(bool ac){
                 break;
             case VoltageControlSolverData::SVC:
                 break;  // an SVC never takes part in the redistribution
-            default: {
-                std::ostringstream exc_;
-                exc_ << "LSGrid::compute_results: unknown voltage controller kind "
-                     << ctrl_kind(i) << ".";
-                throw std::runtime_error(exc_.str());
-            }
+            default:
+                _throw_unknown_controller_kind("LSGrid::_mark_q_solved_by_algo", ctrl_kind(i));
         }
     }
+}
 
-    // ---- the elements whose reactive output is a share of their bus' residual --
-    // Everything else has already been published: set_q just wrote the ones whose
-    // value needs no powerflow, and the write-back below writes the ones the
-    // algorithm solved for. What is left is the generators and stations that pin
-    // their own bus' voltage without any "fancy" control on it -- a plain PV bus --
-    // and the only thing that cannot be decided one element at a time is how they
-    // share that bus' residual when there is more than one of them.
+std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector<bool> & gen_solved,
+                                                               const std::vector<bool> & hvdc1_solved,
+                                                               const std::vector<bool> & hvdc2_solved) const
+{
+    // Everything else has already been published: set_q wrote the ones whose value
+    // needs no powerflow, and the write-back writes the ones the algorithm solved for.
+    // What is left is the generators and stations that pin their own bus' voltage
+    // without any "fancy" control on it -- a plain PV bus.
     //
-    // So it is collected as a flat list and grouped by bus, rather than through
-    // three nb_bus vectors accumulated over every generator and station on the grid
-    // (which is what this used to be, and which ran on every solve whether or not a
-    // single bus needed it). A bus with ONE such element -- the overwhelmingly
-    // common case -- never computes a total at all: that element takes the whole
-    // residual, which is what the ratio degenerated to anyway.
-    generators_.set_q(ac);
-    hvdc_lines_.set_q(ac);
-
-    if(ac && reactive_mismatch.size() > 0){
-        struct QShare {
-            int bus_id;      ///< GRID bus id
-            real_type span;  ///< reactive range max_q - min_q, possibly +inf
-            int kind;        ///< VoltageControlSolverData::GEN / HVDC_SIDE_1 / HVDC_SIDE_2
-            int elem_id;
-        };
-        std::vector<QShare> shares;
-        const int nb_gen = static_cast<int>(generators_.nb());
-        shares.reserve(static_cast<std::size_t>(nb_gen));
-        const GlobalBusIdVect & gen_buses = generators_.get_buses();
-        for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-            if(!generators_.takes_q_residual_share(gen_id, gen_solved)) continue;
-            shares.push_back({gen_buses(gen_id).cast_int(),
-                              generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
-                              VoltageControlSolverData::GEN, gen_id});
-        }
-        const int nb_hvdc = static_cast<int>(hvdc_lines_.nb());
-        for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
-            for(int side = 1; side <= 2; ++side){
-                const std::vector<bool> & mask = (side == 1) ? hvdc1_solved : hvdc2_solved;
-                if(!hvdc_lines_.station_takes_q_residual_share(hvdc_id, side, mask)) continue;
-                shares.push_back({hvdc_lines_.get_station_bus(hvdc_id, side).cast_int(),
-                                  hvdc_lines_.get_station_q_range_mvar(hvdc_id, side),
-                                  side == 1 ? VoltageControlSolverData::HVDC_SIDE_1
-                                            : VoltageControlSolverData::HVDC_SIDE_2,
-                                  hvdc_id});
-            }
-        }
-
-        // Group by bus with one sort over the participants -- no per-bus storage, so
-        // nothing here is proportional to the size of the GRID, only to the number of
-        // machines that actually take a share. What is sorted is a packed
-        // (bus id, position) key rather than the records themselves: eight bytes and
-        // an integral comparison instead of twenty-four bytes and a predicate call.
-        const std::size_t nb_shares = shares.size();
-        std::vector<std::uint64_t> by_bus;
-        by_bus.reserve(nb_shares);
-        for(std::size_t k = 0; k < nb_shares; ++k){
-            by_bus.push_back((static_cast<std::uint64_t>(shares[k].bus_id) << 32) |
-                             static_cast<std::uint64_t>(k));
-        }
-        std::sort(by_bus.begin(), by_bus.end());
-
-        for(std::size_t first = 0; first < nb_shares; ){
-            const std::uint64_t bus_key = by_bus[first] >> 32;
-            std::size_t last = first + 1;
-            while((last < nb_shares) && ((by_bus[last] >> 32) == bus_key)) ++last;
-            const int bus_id = static_cast<int>(bus_key);
-            const SolverBusId bus_solver = ac_cache_.id_me_to_solver[bus_id];
-            const real_type q_to_absorb = reactive_mismatch[bus_solver.cast_int()];
-            const std::size_t nb_here = last - first;
-
-            // The share is proportional to an element's reactive RANGE, so a machine
-            // that can move more reactive power takes more of the residual. Two
-            // degenerate cases collapse to an equal split, and they are the same case
-            // really -- no information to weigh the participants against each other:
-            // every range zero (every machine at a fixed output), and any range not
-            // finite (+/- DBL_MAX limits, which is what a converter writes for
-            // "unbounded"; their difference overflows, and inf / inf used to publish
-            // NaN here).
-            real_type total_span = 0.;
-            bool all_finite = true;
-            if(nb_here > 1){
-                for(std::size_t k = first; k < last; ++k){
-                    const real_type span = shares[by_bus[k] & 0xffffffffu].span;
-                    if(!std::isfinite(span)){ all_finite = false; break; }
-                    total_span += span;
-                }
-            }
-            const real_type eps_q = 1e-8;
-            const real_type nb_here_r = static_cast<real_type>(nb_here);
-            for(std::size_t k = first; k < last; ++k){
-                const QShare & sh = shares[by_bus[k] & 0xffffffffu];
-                real_type q;
-                if(nb_here == 1) q = q_to_absorb;
-                else if(!all_finite) q = q_to_absorb / nb_here_r;
-                else q = q_to_absorb * (sh.span + eps_q) / (total_span + nb_here_r * eps_q);
-                switch(sh.kind){
-                    case VoltageControlSolverData::GEN:
-                        generators_.set_voltage_control_q(sh.elem_id, q);
-                        break;
-                    case VoltageControlSolverData::HVDC_SIDE_1:
-                        hvdc_lines_.set_station_voltage_control_q(sh.elem_id, 1, q);
-                        break;
-                    default:
-                        hvdc_lines_.set_station_voltage_control_q(sh.elem_id, 2, q);
-                        break;
-                }
-            }
-            first = last;
+    // They are collected as a flat list rather than through three nb_bus vectors
+    // accumulated over every generator and station on the grid (which is what this
+    // used to be, and which ran on every solve whether or not a single bus needed it).
+    std::vector<QShare> shares;
+    const int nb_gen = static_cast<int>(generators_.nb());
+    shares.reserve(static_cast<std::size_t>(nb_gen));
+    const GlobalBusIdVect & gen_buses = generators_.get_buses();
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if(!generators_.takes_q_residual_share(gen_id, gen_solved)) continue;
+        shares.push_back({gen_buses(gen_id).cast_int(),
+                          generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
+                          VoltageControlSolverData::GEN, gen_id});
+    }
+    const int nb_hvdc = static_cast<int>(hvdc_lines_.nb());
+    for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
+        for(int side = 1; side <= 2; ++side){
+            const std::vector<bool> & mask = (side == 1) ? hvdc1_solved : hvdc2_solved;
+            if(!hvdc_lines_.station_takes_q_residual_share(hvdc_id, side, mask)) continue;
+            shares.push_back({hvdc_lines_.get_station_bus(hvdc_id, side).cast_int(),
+                              hvdc_lines_.get_station_q_range_mvar(hvdc_id, side),
+                              side == 1 ? VoltageControlSolverData::HVDC_SIDE_1
+                                        : VoltageControlSolverData::HVDC_SIDE_2,
+                              hvdc_id});
         }
     }
+    return shares;
+}
 
-    // VoltageControl (gen / SVC / hvdc converter station) write-back: the reactive output of the
-    // voltage-mode controllers is solved inside the NR system (not by the per-bus
-    // redistribution above, which skips them -- see the masks). Pull it from the AC
-    // algorithm and store it (pu -> MVAr). Empty for DC / non-NR algorithms.
-    if(ac){
-        for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
-            const real_type q_mvar = ctrl_q(i) * sn_mva_;
-            switch(ctrl_kind(i)){
+void LSGrid::_split_q_residual_per_bus(const std::vector<QShare> & shares,
+                                       const Eigen::Ref<const RealVect> & reactive_mismatch)
+{
+    // The only thing that cannot be decided one element at a time is how the machines
+    // of one bus share its reactive residual when there is more than one of them.
+    //
+    // Group by bus with one sort over the participants -- no per-bus storage, so
+    // nothing here is proportional to the size of the GRID, only to the number of
+    // machines that actually take a share. What is sorted is a packed
+    // (bus id, position) key rather than the records themselves: eight bytes and an
+    // integral comparison instead of twenty-four bytes and a predicate call.
+    const std::size_t nb_shares = shares.size();
+    std::vector<std::uint64_t> by_bus;
+    by_bus.reserve(nb_shares);
+    for(std::size_t k = 0; k < nb_shares; ++k){
+        by_bus.push_back((static_cast<std::uint64_t>(shares[k].bus_id) << 32) |
+                         static_cast<std::uint64_t>(k));
+    }
+    std::sort(by_bus.begin(), by_bus.end());
+
+    for(std::size_t first = 0; first < nb_shares; ){
+        const std::uint64_t bus_key = by_bus[first] >> 32;
+        std::size_t last = first + 1;
+        while((last < nb_shares) && ((by_bus[last] >> 32) == bus_key)) ++last;
+        const int bus_id = static_cast<int>(bus_key);
+        const SolverBusId bus_solver = ac_cache_.id_me_to_solver[bus_id];
+        const real_type q_to_absorb = reactive_mismatch[bus_solver.cast_int()];
+        const std::size_t nb_here = last - first;
+
+        // The share is proportional to an element's reactive RANGE, so a machine that
+        // can move more reactive power takes more of the residual. Two degenerate
+        // cases collapse to an equal split, and they are the same case really -- no
+        // information to weigh the participants against each other: every range zero
+        // (every machine at a fixed output), and any range not finite (+/- DBL_MAX
+        // limits, which is what a converter writes for "unbounded"; their difference
+        // overflows, and inf / inf used to publish NaN here). A bus with ONE machine
+        // -- the overwhelmingly common case -- computes no total at all: it takes the
+        // whole residual, which is what the ratio degenerated to anyway.
+        real_type total_span = 0.;
+        bool all_finite = true;
+        if(nb_here > 1){
+            for(std::size_t k = first; k < last; ++k){
+                const real_type span = shares[by_bus[k] & 0xffffffffu].span;
+                if(!std::isfinite(span)){ all_finite = false; break; }
+                total_span += span;
+            }
+        }
+        const real_type eps_q = 1e-8;
+        const real_type nb_here_r = static_cast<real_type>(nb_here);
+        for(std::size_t k = first; k < last; ++k){
+            const QShare & sh = shares[by_bus[k] & 0xffffffffu];
+            real_type q;
+            if(nb_here == 1) q = q_to_absorb;
+            else if(!all_finite) q = q_to_absorb / nb_here_r;
+            else q = q_to_absorb * (sh.span + eps_q) / (total_span + nb_here_r * eps_q);
+            switch(sh.kind){
                 case VoltageControlSolverData::GEN:
-                    generators_.set_voltage_control_q(ctrl_elem(i), q_mvar);
-                    break;
-                case VoltageControlSolverData::SVC:
-                    svcs_.set_voltage_control_q(ctrl_elem(i), q_mvar);
+                    generators_.set_voltage_control_q(sh.elem_id, q);
                     break;
                 case VoltageControlSolverData::HVDC_SIDE_1:
-                    // elem_id is the hvdc LINE id for both station kinds
-                    hvdc_lines_.set_station_voltage_control_q(ctrl_elem(i), 1, q_mvar);
+                    hvdc_lines_.set_station_voltage_control_q(sh.elem_id, 1, q);
                     break;
-                case VoltageControlSolverData::HVDC_SIDE_2:
-                    hvdc_lines_.set_station_voltage_control_q(ctrl_elem(i), 2, q_mvar);
+                default:
+                    hvdc_lines_.set_station_voltage_control_q(sh.elem_id, 2, q);
                     break;
-                default: {
-                    std::ostringstream exc_;
-                    exc_ << "LSGrid::compute_results: unknown voltage controller kind "
-                         << ctrl_kind(i) << ".";
-                    throw std::runtime_error(exc_.str());
-                }
             }
+        }
+        first = last;
+    }
+}
+
+void LSGrid::_write_back_controller_q(const RealVect & ctrl_q,
+                                      const IntVect & ctrl_kind,
+                                      const IntVect & ctrl_elem)
+{
+    // VoltageControl (gen / SVC / hvdc converter station) write-back: the reactive
+    // output of the voltage-mode controllers is solved inside the NR system (not by
+    // the per-bus redistribution, which skips them -- see the masks). Pull it from the
+    // AC algorithm and store it (pu -> MVAr). Empty for DC / non-NR algorithms.
+    for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
+        const real_type q_mvar = ctrl_q(i) * sn_mva_;
+        switch(ctrl_kind(i)){
+            case VoltageControlSolverData::GEN:
+                generators_.set_voltage_control_q(ctrl_elem(i), q_mvar);
+                break;
+            case VoltageControlSolverData::SVC:
+                svcs_.set_voltage_control_q(ctrl_elem(i), q_mvar);
+                break;
+            case VoltageControlSolverData::HVDC_SIDE_1:
+                // elem_id is the hvdc LINE id for both station kinds
+                hvdc_lines_.set_station_voltage_control_q(ctrl_elem(i), 1, q_mvar);
+                break;
+            case VoltageControlSolverData::HVDC_SIDE_2:
+                hvdc_lines_.set_station_voltage_control_q(ctrl_elem(i), 2, q_mvar);
+                break;
+            default:
+                _throw_unknown_controller_kind("LSGrid::_write_back_controller_q", ctrl_kind(i));
         }
     }
 }
