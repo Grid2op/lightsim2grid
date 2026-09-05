@@ -343,46 +343,41 @@ TEST_CASE("a generator cannot share the SVC's regulated bus (v1), so that path c
 }
 
 
-// KNOWN DEFECT, and a different one from the Q attribution above: this
-// configuration does not solve AT ALL, so nothing here reaches the write-back --
-// the REQUIRE in solve() is what fails.
+// This configuration does not converge (TooManyIterations, using every iteration
+// it is given), so nothing here reaches the write-back -- the REQUIRE in solve()
+// is what fails. It is kept as a recorded LIMIT, not as a defect: what it
+// measures is where the angle-droop model stops being solvable, and the answer
+// depends smoothly on the droop gain.
 //
-// The trigger is narrow and has nothing to do with the droop: it is a
-// VOLTAGE-REGULATING converter station sharing a bus with the slack generator.
-// All four such buses of this fixture reproduce it (1, 2, 3 and 13, the stations
-// of hvdc lines 1 and 2); the stations of line 0, whose voltage_regulator_on is
-// false, do not (buses 4 and 5), and neither does a bus with no station at all.
-// It is not a setpoint conflict -- making the two agree changes nothing -- not
-// solver-specific (KLU, SparseLU and the single-slack Newton all fail), and not
-// a starting-point problem: it diverges warm-started from the exact solution of
-// the unmodified grid.
+// Sweeping k (the droop gain of hvdc line 1, MW/deg) against the bus the slack
+// generator is moved to:
 //
-// What happens is that every residual falls to ~1e-7 by the third iteration
-// except the REACTIVE balance at that bus, which then grows geometrically until
-// the iterate runs away (voltages at 1e-4 pu and at 8.7 pu by iteration 30).
-// This is a BUG, not an unsupported configuration. A voltage-regulating station is
-// a PV source, exactly like a generator, and two voltage-regulating generators
-// sharing the slack bus solve fine (four iterations) -- so there is nothing
-// infeasible about the arrangement.
+//     k =        0   0.18   1.8    18    60   120   180
+//     bus 1    conv  conv  conv   DIV   DIV   DIV   DIV
+//     bus 2    conv  conv  conv   DIV   DIV   DIV   DIV
+//     bus 3    conv  conv  conv  conv  conv   DIV   DIV
+//     bus 13   conv  conv  conv  conv  conv   DIV   DIV
+//     bus 10   conv  conv  conv  conv  conv  conv   DIV
+//     bus 4    conv  conv  conv  conv  conv  conv  conv
+//     bus 9    conv  conv  conv  conv  conv  conv  conv
 //
-// The assembled system is not malformed either. With the slack at bus 1 it has
-// thirteen theta columns (bus 1 excluded, it is the reference), Vm columns at
-// exactly the six PQ buses, no Q columns, plus the distributed-slack column: 20
-// unknowns for 20 equations, the same shape as the bus-9 case that converges.
-// And ConverterStationContainer::fillSbus_station keeps a regulating station's
-// reactive injection out of Sbus in exactly the way GeneratorContainer::fillSbus
-// keeps a regulating generator's out, so the "Q is recovered afterwards" contract
-// is the same for both.
+// A monotone threshold that moves with the gain, and differs by how far the
+// angle reference sits from the droop line, is what a STIFF element does to a
+// Newton -- not what a mis-wired one does. The fixture ships k = 180 MW/deg,
+// which is 180 / (pi/180) ~ 10,300 MW/rad, about 103 pu/rad on the 100 MVA base:
+// one hundredth of a radian of angle difference swings a full per-unit of DC
+// flow. Bus 10 carries no converter station at all and still fails at that gain;
+// with the hvdc lines deactivated every one of the fourteen buses converges.
 //
-// So the defect is in the VALUES, not the structure, and the signature says where
-// to look: started from the exact solution, everything converges and then one
-// residual walks away by a steady factor per iteration. That is what a Jacobian
-// entry that does not match the residual it belongs to looks like -- something a
-// station contributes to the mismatch and not to J, or the reverse, at a bus
-// whose voltage has no column. Not yet localised.
+// Ruled out by experiment, each on its own: voltage_regulator_on (identical
+// results with it off), the reactive limits (+/- 100 MVAr diverges exactly like
+// +/- DBL_MAX), the station being on the slack bus (bus 10 has none), the linear
+// solver (KLU, SparseLU and the single-slack Newton all fail alike) and the
+// distributed slack.
 //
-// [!shouldfail] keeps the suite green while it is open and turns this test red
-// the day it is fixed, which is the signal to drop the tag.
+// [!shouldfail] keeps the suite green; if the droop ever gains a step limiter or
+// a continuation, this turns red and should then be re-pointed at the new limit
+// rather than simply untagged.
 TEST_CASE("KCL holds with the slack generator on an angle-droop HVDC bus",
           "[LSGrid][kcl][!shouldfail]")
 {

@@ -150,6 +150,30 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   "Divergence of AC powerflow. Detailed error: ...". The error and the iteration count are
   now captured and restored across the reset (``BaseAlgo::set_nb_iter``, next to the existing
   ``set_error``); the next solve overwrites both before using them, so nothing else changes.
+- [KNOWN LIMIT] the angle-droop ("AC emulation") model stops converging at high droop gain,
+  and how high depends on where the angle reference sits. Recorded by the ``[!shouldfail]``
+  case in ``src/tests/test_kcl_from_results.cpp``. Sweeping the gain of the exotic fixture's
+  droop line against the bus its slack generator is moved to, the failures appear at
+  k >= 18 MW/deg for the droop line's own terminals, k >= 120 for the other converter buses,
+  and k = 180 for a bus carrying no converter at all; with the hvdc lines deactivated every
+  one of the fourteen buses converges. The fixture ships k = 180 MW/deg -- about 10,300
+  MW/rad, 103 pu on a 100 MVA base -- so a hundredth of a radian swings a full per-unit of DC
+  flow. A monotone threshold that moves with the gain is stiffness, not a wiring defect:
+  ``voltage_regulator_on`` (identical with it off), the reactive limits (+/- 100 MVAr behaves
+  exactly like +/- DBL_MAX), the station being on the slack bus (the bus that fails last
+  carries none), the linear solver and the distributed slack were each ruled out by
+  experiment.
+- [FIXED] a diverged AC or DC powerflow reported ``NotInitError`` after ``0`` iterations, no
+  matter what actually went wrong. ``LSGrid::process_results`` resets the algorithm on
+  divergence -- which it must, to drop a half-converged iterate and a factorization of a
+  system it gave up on -- but ``BaseAlgo::reset()`` puts the algorithm back to "never been
+  run", i.e. ``err_ = NotInitError`` and ``nr_iter_ = 0``, and the divergence path is
+  precisely where a caller reads those back. Every real diagnosis (``SingularMatrix``,
+  ``TooManyIterations``, ``InifiniteValue``, ``SolverFactor``, ...) was destroyed before
+  anyone could see it, including through ``LightSimBackend``'s
+  "Divergence of AC powerflow. Detailed error: ...". The error and the iteration count are
+  now captured and restored across the reset (``BaseAlgo::set_nb_iter``, next to the existing
+  ``set_error``); the next solve overwrites both before using them, so nothing else changes.
 - [TODO] a voltage-regulating HVDC converter station sharing a bus with the SLACK generator
   does not converge (``TooManyIterations``, using every iteration it is given). Reproduced by
   the ``[!shouldfail]`` case in ``src/tests/test_kcl_from_results.cpp``, on all four such buses
