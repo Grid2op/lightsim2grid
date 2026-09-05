@@ -214,13 +214,12 @@ class BaseFDPFAlgo final: public BaseAlgo
             V_ = Vm_.array() * tmp_va.array();
             // ... then repair a magnitude the Q iteration drove past zero, because
             // the division by Vm_ two lines below would otherwise flip that bus's P
-            // and Q. Guarded the way the Newton-Raphson guards the same repair (see
-            // NRSystem::apply_step): a converging trajectory never goes negative, so
-            // the ordinary solve pays one reduction instead of two full-length
-            // passes, twice per iteration. V_ is built above and is unchanged either
+            // and Q. Cheap on the ordinary path: the function starts by asking
+            // whether there is a negative magnitude at all, and a converging
+            // trajectory never has one. V_ is built above and is unchanged either
             // way. The angle wrap that used to run here with it has moved to the end
             // of compute_pf -- see wrap_va for why once is enough.
-            if (Vm_.minCoeff() < my_zero_) fix_negative_vm(Vm_, Va_);
+            fix_negative_vm(Vm_, Va_);
 
             evaluate_mismatch_into(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights);  // mis_bus_ = V * conj(Ybus * V) - Sbus
             // mis / Vm (do not forget the / Vm !), out of place, so that mis_bus_ keeps

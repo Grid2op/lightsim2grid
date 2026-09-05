@@ -70,8 +70,19 @@ class LS2G_API BaseConstants
         // mismatch by Vm_ immediately after (`mis_ /= Vm_`), so a negative
         // magnitude there does not merely look wrong -- it flips the sign of that
         // bus's P and Q and corrupts the convergence test.
+        //
+        // The `is there anything to do` test lives here, not at the call sites:
+        // both of them (BaseFDPFAlgo::has_converged and NRSystem::apply_step)
+        // want exactly this one, so duplicating it only gave the two families a
+        // second chance to drift apart. It is what makes the function cheap --
+        // a converging trajectory never drives a magnitude negative, so the
+        // ordinary solve pays one vectorised read-only reduction over Vm instead
+        // of the two full-length passes below. That is worth 5.6% of an FDPF
+        // solve on case9241pegase (674.1M -> 636.3M Ir); an unguarded version of
+        // this same function measured level with the code it replaced.
         static void fix_negative_vm(Eigen::Ref<RealVect> Vm, Eigen::Ref<RealVect> Va)
         {
+            if (Vm.minCoeff() >= my_zero_) return;  // the ordinary case
             // a negative magnitude is the same phasor turned by pi
             Va.array() = (Vm.array() < my_zero_).select(Va.array() + my_pi, Va.array());
             Vm = Vm.cwiseAbs();
@@ -85,18 +96,23 @@ class LS2G_API BaseConstants
         // enough. (The Newton-Raphson does not wrap at all: see
         // NRSystem::apply_step, whose fix-up covers only the negative magnitude.)
         //
-        // Subtracts an exact zero whenever the angle is already in range, which is
-        // the ordinary case.
         // Is any angle outside [-pi, pi]? One pass and a reduction, against the
-        // four passes wrap_va costs -- worth asking only if the answer is usually
-        // no, which is what the benchmark decides.
+        // four passes the wrap itself costs -- worth asking only if the answer is
+        // usually no, which is what the benchmark says it is.
         static bool va_out_of_range(const Eigen::Ref<const RealVect> & Va)
         {
             return Va.cwiseAbs().maxCoeff() > my_pi;
         }
 
+        // Guarded for the same reason fix_negative_vm is, and in the same place:
+        // both call sites (the end of BaseFDPFAlgo::compute_pf and of
+        // NRAlgo::compute_pf) asked the same question, so it is asked here once.
+        // Without the guard this subtracts an exact zero from every angle, which
+        // is correct and which the unguarded variant showed costs a little more
+        // than the reduction that skips it.
         static void wrap_va(Eigen::Ref<RealVect> Va)
         {
+            if (!va_out_of_range(Va)) return;  // the ordinary case
             Va.array() -= my_two_ * my_pi * (Va.array() * (my_one_ / (my_two_ * my_pi))).round();
         }
 

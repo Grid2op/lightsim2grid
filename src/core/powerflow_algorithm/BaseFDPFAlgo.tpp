@@ -145,10 +145,9 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(
     // The reported angle is canonical, whatever the solve did to it: the wrap no
     // longer runs inside has_converged (it is invisible to everything in there --
     // see wrap_va), so it runs once, here, on every exit path. `Va_` is meaningful
-    // on all of them: it is either the input, or an iterate. Asked before it is
-    // done, because on a converged solve the answer is essentially always "already
-    // in range": the test is one pass and a reduction, the wrap is four passes.
-    if (va_out_of_range(Va_)) wrap_va(Va_);
+    // on all of them: it is either the input, or an iterate. A no-op on a converged
+    // solve, whose angles are already in range -- wrap_va asks before it acts.
+    wrap_va(Va_);
     timer_total_nr_ += timer.duration();
     #ifdef __COUT_TIMES
         {

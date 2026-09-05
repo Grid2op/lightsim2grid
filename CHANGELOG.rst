@@ -584,8 +584,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   -- the hypot and atan2 pair the cheap form exists to replace -- but only when a magnitude had
   actually gone negative, and wrapped the angle as an accidental side effect of ``atan2``'s range.
   The two halves have different justifications and are now separated accordingly:
-  ``fix_negative_vm`` runs on every FDPF iteration behind the NR's guard, because ``mis_ /= Vm_``
-  follows it and a negative magnitude flips that bus's P and Q; ``wrap_va`` runs once per solve,
+  ``fix_negative_vm`` runs on every FDPF iteration, because ``mis_ /= Vm_`` follows it and a
+  negative magnitude flips that bus's P and Q; ``wrap_va`` runs once per solve,
   because nothing inside either solve reads ``Va_`` except its own accumulation and the cos / sin
   that rebuild V, and both are indifferent to a multiple of 2.pi. Measured on ``case9241pegase``,
   against five alternatives (shared with no guard, guarded per call, guarded plus a wrap guard, and
@@ -597,7 +597,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   the ones out of form, with no whole-vector expression and no separate probe. It beats the old code
   but loses to the guard by ~2.8% on both flavours (FDPF_XB 654,109,921 against 636,268,666 on
   ``case9241pegase``), because a scalar loop does not vectorise and touches both ``Vm`` and ``Va``
-  where the guard is a vectorised read over ``Vm`` alone.
+  where the guard is a vectorised read over ``Vm`` alone. Each guard lives inside the function it
+  guards rather than at the call sites, so the two families cannot ask the question differently
+  again: ``fix_negative_vm`` returns immediately when ``Vm.minCoeff() >= 0`` and ``wrap_va`` when
+  every angle is already in range. That is where the whole gain is, so it is not left to callers to
+  remember.
 - [FIXED] a converged Newton-Raphson now reports an angle in [-pi, pi], as the Fast-Decoupled family
   always has. It never wrapped: it inherited the effect from the ``atan2`` in a repair that only
   fires on a trajectory heading for divergence, so an ordinary solve could report an angle outside

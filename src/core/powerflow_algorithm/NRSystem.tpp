@@ -427,13 +427,13 @@ inline void NRSystem<Base, Rest...>::apply_step(const Eigen::Ref<const RealVect>
     // `Vm_ = V_.abs(); Va_ = V_.arg();`: V_ was just built as Vm_ * exp(i.Va_)
     // one line above, so its modulus is |Vm_| and its argument is Va_ plus a half
     // turn where the magnitude went negative -- a hypot and an atan2 per bus to
-    // rediscover two numbers we already hold. The guard is unchanged, and is what
-    // keeps this off the ordinary path entirely.
+    // rediscover two numbers we already hold. The test that keeps this off the
+    // ordinary path entirely lives inside the function, where the FDPF gets it too.
     //
     // The one behavioural difference is that atan2 also wrapped the angle here, as
     // a side effect; the wrap now happens once per solve, in NRAlgo::compute_pf,
     // which is where the FDPF does it too.
-    if (Vm_.minCoeff() < static_cast<real_type>(0.)) BaseConstants::fix_negative_vm(Vm_, Va_);
+    BaseConstants::fix_negative_vm(Vm_, Va_);
 }
 
 template <typename... Rest>

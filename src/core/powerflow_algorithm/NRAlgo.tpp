@@ -173,10 +173,10 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     // for divergence, so a converged solve could report an angle outside
     // [-pi, pi] where the FDPF never did.
     //
-    // Guarded, because on a converged solve the angles are in range and the test is
-    // one pass against the wrap's four: measured at +25k instructions per solve on
-    // case9241pegase, out of 206M, for an invariant this family did not have.
-    if (va_out_of_range(Va_)) wrap_va(Va_);
+    // wrap_va asks before it acts, and on a converged solve the answer is "already
+    // in range": measured at +25k instructions per solve on case9241pegase, out of
+    // 206M, for an invariant this family did not have.
+    wrap_va(Va_);
 
     // Propagate NRSystem timers to NRAlgo
     // std::cout << "timers\n";
