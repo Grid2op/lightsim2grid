@@ -242,13 +242,19 @@ void ConverterStationContainer::fillpv(std::vector<int> & bus_pv,
 void ConverterStationContainer::init_q_vector(int /*nb_bus*/,
                                               Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
                                               Eigen::Ref<RealVect> total_q_min_per_bus,
-                                              Eigen::Ref<RealVect> total_q_max_per_bus) const
+                                              Eigen::Ref<RealVect> total_q_max_per_bus,
+                                              const std::vector<bool> & solved_by_algo) const
 {
     const int nb_station = nb();
     for(int station_id = 0; station_id < nb_station; ++station_id)
     {
         if(!status_[station_id]) continue;
         if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
+        // a station whose Q the algorithm solved is written back from there, not from
+        // the per-bus redistribution: keep it out of the totals its neighbours on this
+        // bus are divided by. This test is what the generator side has always had and
+        // this one did not.
+        if (_is_solved_by_algo(solved_by_algo, station_id)) continue;
 
         const GlobalBusId bus_id = bus_id_(station_id);
         total_q_min_per_bus(bus_id.cast_int()) += min_q_(station_id);
@@ -262,7 +268,8 @@ void ConverterStationContainer::set_q(const Eigen::Ref<const RealVect> & reactiv
                                       bool ac,
                                       const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
                                       const Eigen::Ref<const RealVect> & total_q_min_per_bus,
-                                      const Eigen::Ref<const RealVect> & total_q_max_per_bus)
+                                      const Eigen::Ref<const RealVect> & total_q_max_per_bus,
+                                      const std::vector<bool> & solved_by_algo)
 {
     const int nb_station = nb();
     if(!ac){
@@ -271,7 +278,6 @@ void ConverterStationContainer::set_q(const Eigen::Ref<const RealVect> & reactiv
         return;
     }
 
-    real_type eps_q = 1e-8;
     for(int station_id = 0; station_id < nb_station; ++station_id)
     {
         if(!status_[station_id]){
@@ -284,23 +290,21 @@ void ConverterStationContainer::set_q(const Eigen::Ref<const RealVect> & reactiv
             res_q_(station_id) = target_q_mvar_(station_id);
             continue;
         }
+        if (_is_solved_by_algo(solved_by_algo, station_id)){
+            // solved by the algorithm; LSGrid::compute_results writes it back. Skipping
+            // it here is not only about not being overwritten twice: this station is
+            // absent from the bus totals above, so a share computed against them would
+            // be measured on a denominator it is not part of.
+            continue;
+        }
         const GlobalBusId bus_id = bus_id_(station_id);
         const SolverBusId bus_solver = id_grid_to_solver[bus_id.cast_int()];
         // TODO DEBUG MODE: check that the bus is correct!
-        real_type q_to_absorb = reactive_mismatch[bus_solver.cast_int()];
-        real_type max_q_me = max_q_(station_id);
-        real_type min_q_me = min_q_(station_id);
-        real_type max_q_bus = total_q_max_per_bus(bus_id.cast_int());
-        real_type min_q_bus = total_q_min_per_bus(bus_id.cast_int());
-        real_type nb_gen_with_me = static_cast<real_type>(total_gen_per_bus(bus_id.cast_int()));
-        real_type real_q;
-        if(nb_gen_with_me == 1.){
-            real_q = q_to_absorb;
-        }else{
-            real_type ratio = (max_q_me - min_q_me + eps_q) / (max_q_bus - min_q_bus + nb_gen_with_me * eps_q) ;
-            real_q = q_to_absorb * ratio ;
-        }
-        res_q_(station_id) = real_q;
+        res_q_(station_id) = _q_share(reactive_mismatch[bus_solver.cast_int()],
+                                      min_q_(station_id), max_q_(station_id),
+                                      total_q_min_per_bus(bus_id.cast_int()),
+                                      total_q_max_per_bus(bus_id.cast_int()),
+                                      total_gen_per_bus(bus_id.cast_int()));
     }
 }
 

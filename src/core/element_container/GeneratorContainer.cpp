@@ -535,7 +535,8 @@ void GeneratorContainer::set_p_slack(const Eigen::Ref<const RealVect>& node_mism
 void GeneratorContainer::init_q_vector(int /*nb_bus*/,
                                        Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
                                        Eigen::Ref<RealVect> total_q_min_per_bus,
-                                       Eigen::Ref<RealVect> total_q_max_per_bus) const
+                                       Eigen::Ref<RealVect> total_q_max_per_bus,
+                                       const std::vector<bool> & solved_by_algo) const
 {
     const int nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
@@ -544,9 +545,10 @@ void GeneratorContainer::init_q_vector(int /*nb_bus*/,
 
         if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
         if ((!turnedoff_gen_pv_) && is_pseudo_off(gen_id)) continue;  // in this case "turned off" generators are not pv
-        // a remote-regulating gen's Q comes from the VoltageControl extension, not
-        // from the per-bus reactive redistribution: exclude it from the bus totals
-        if (regulates_remote(gen_id)) continue;
+        // a gen whose Q the algorithm solved is written back from there, not from the
+        // per-bus reactive redistribution: keep it out of the totals too, or it would
+        // inflate the denominator its neighbours on this bus are divided by
+        if (_is_solved_by_algo(solved_by_algo, gen_id)) continue;
 
         const GlobalBusId bus_id = bus_id_(gen_id);
         total_q_min_per_bus(bus_id.cast_int()) += min_q_(gen_id);
@@ -561,7 +563,8 @@ void GeneratorContainer::set_q(
     bool ac,
     const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
     const Eigen::Ref<const RealVect> & total_q_min_per_bus,
-    const Eigen::Ref<const RealVect> & total_q_max_per_bus)
+    const Eigen::Ref<const RealVect> & total_q_max_per_bus,
+    const std::vector<bool> & solved_by_algo)
 {
     const int nb_gen = nb();
     if(!ac){
@@ -570,7 +573,6 @@ void GeneratorContainer::set_q(
         return;
     }
     
-    real_type eps_q = 1e-8;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
         if(!status_[gen_id]){
@@ -590,27 +592,23 @@ void GeneratorContainer::set_q(
             res_q_(gen_id) = 0.;
             continue;
         }
-        if (regulates_remote(gen_id)) {
-            // a remote-regulating gen's reactive output is set by the VoltageControl
-            // write-back (LSGrid::compute_results), not by the per-bus redistribution
+        if (_is_solved_by_algo(solved_by_algo, gen_id)) {
+            // this generator's reactive output is a state variable the algorithm
+            // solved: LSGrid::compute_results writes it back itself. Leaving it here
+            // would both overwrite that value with a share of a residual it is not
+            // part of, and -- because init_q_vector applies the same test -- count it
+            // in the totals its neighbours are divided by.
             continue;
         }
 
         const GlobalBusId bus_id = bus_id_(gen_id);
         const SolverBusId bus_solver = id_grid_to_solver[bus_id.cast_int()];
         // TODO DEBUG MODE: check that the bus is correct!
-        real_type q_to_absorb = reactive_mismatch[bus_solver.cast_int()];
-        real_type max_q_me = max_q_(gen_id);
-        real_type min_q_me = min_q_(gen_id);
-        real_type max_q_bus = total_q_max_per_bus(bus_id.cast_int());
-        real_type min_q_bus = total_q_min_per_bus(bus_id.cast_int());
-        real_type nb_gen_with_me = static_cast<real_type>(total_gen_per_bus(bus_id.cast_int()));
-        if(nb_gen_with_me == 1.){
-            real_q = q_to_absorb;
-        }else{
-            real_type ratio = (max_q_me - min_q_me + eps_q) / (max_q_bus - min_q_bus + nb_gen_with_me * eps_q) ;
-            real_q = q_to_absorb * ratio ;
-        }
+        real_q = _q_share(reactive_mismatch[bus_solver.cast_int()],
+                          min_q_(gen_id), max_q_(gen_id),
+                          total_q_min_per_bus(bus_id.cast_int()),
+                          total_q_max_per_bus(bus_id.cast_int()),
+                          total_gen_per_bus(bus_id.cast_int()));
         res_q_(gen_id) = real_q;
     }
 }

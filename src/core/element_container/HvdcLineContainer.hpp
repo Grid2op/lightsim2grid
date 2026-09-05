@@ -395,9 +395,13 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         void init_q_vector(int nb_bus,
                            Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
                            Eigen::Ref<RealVect> total_q_min_per_bus,
-                           Eigen::Ref<RealVect> total_q_max_per_bus) const {
-            side_1_.init_q_vector(nb_bus, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
-            side_2_.init_q_vector(nb_bus, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
+                           Eigen::Ref<RealVect> total_q_max_per_bus,
+                           const std::vector<bool> & solved_by_algo_side_1,
+                           const std::vector<bool> & solved_by_algo_side_2) const {
+            side_1_.init_q_vector(nb_bus, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus,
+                                  solved_by_algo_side_1);
+            side_2_.init_q_vector(nb_bus, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus,
+                                  solved_by_algo_side_2);
         }
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,
@@ -417,9 +421,13 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                    bool ac,
                    const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
                    const Eigen::Ref<const RealVect> & total_q_min_per_bus,
-                   const Eigen::Ref<const RealVect> & total_q_max_per_bus){
-            side_1_.set_q(reactive_mismatch, id_grid_to_solver, ac, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
-            side_2_.set_q(reactive_mismatch, id_grid_to_solver, ac, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
+                   const Eigen::Ref<const RealVect> & total_q_max_per_bus,
+                   const std::vector<bool> & solved_by_algo_side_1,
+                   const std::vector<bool> & solved_by_algo_side_2){
+            side_1_.set_q(reactive_mismatch, id_grid_to_solver, ac, total_gen_per_bus, total_q_min_per_bus,
+                          total_q_max_per_bus, solved_by_algo_side_1);
+            side_2_.set_q(reactive_mismatch, id_grid_to_solver, ac, total_gen_per_bus, total_q_min_per_bus,
+                          total_q_max_per_bus, solved_by_algo_side_2);
         }
         void get_vm_for_dc(Eigen::Ref<RealVect> Vm){
             side_1_.get_vm_for_dc(Vm);

@@ -1366,19 +1366,14 @@ void LSGrid::prepare_injection(CplxVect & Sbus, bool redo_all, bool converter_ch
         // init Sbus
         Sbus = CplxVect::Constant(id_solver_to_me.size(), 0.);
     }
-    if (redo_all ||
-        solver_control.need_recompute_sbus() ||  // TODO do we need it ?
-        solver_control.has_slack_participate_changed() ||
-        solver_control.has_pv_changed() ||
-        solver_control.has_pq_changed())  // TODO do we need it ?
-    {
-        int nb_bus_total = static_cast<int>(substations_.nb_bus());
-        total_q_min_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
-        total_q_max_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
-        total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus_total, 0);
-        generators_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
-        hvdc_lines_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
-    }
+    // The per-bus reactive totals used to be built here, as if they were an input to
+    // the solve. They are not: nothing between this point and the end of the powerflow
+    // reads them. They exist only to split a bus' reactive residual among the elements
+    // sitting on it, which is a POST-processing question -- and one that cannot even be
+    // answered here, because who takes part depends on which elements the algorithm
+    // ends up solving for itself. Built in compute_results now, against that answer.
+    // (Three nb_bus allocations and a walk of every generator and station, gone from
+    // every solve where an injection moved.)
     if (redo_all || converter_changed ||
         solver_control.has_slack_participate_changed() ||
         solver_control.has_pv_changed() ||
@@ -2193,22 +2188,86 @@ void LSGrid::compute_results(bool ac){
     }
     generators_.set_p_slack(active_mismatch, id_me_to_solver);
 
+    // ---- who is served by which mechanism ------------------------------------
+    // Two things publish a reactive output, and every element must be served by
+    // exactly one of them: the algorithm solved for it (write-back, below), or it
+    // did not and the element takes a share of its bus' reactive residual
+    // (redistribution, just after this). The controller list the algorithm hands
+    // back is the ONLY thing that knows which -- so it is read here, once, and both
+    // mechanisms are driven from it. It used to be a rule re-derived inside each
+    // container, and the two containers derived it differently.
+    const RealVect ctrl_q    = ac ? _algo.get_controller_q()        : RealVect();
+    const IntVect  ctrl_kind = ac ? _algo.get_controller_kind()     : IntVect();
+    const IntVect  ctrl_elem = ac ? _algo.get_controller_elem_id()  : IntVect();
+
+    std::vector<bool> gen_solved(generators_.nb(), false);
+    std::vector<bool> hvdc1_solved(hvdc_lines_.nb(), false);
+    std::vector<bool> hvdc2_solved(hvdc_lines_.nb(), false);
+    for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
+        const int elem_id = ctrl_elem(i);
+        switch(ctrl_kind(i)){
+            case VoltageControlSolverData::GEN:
+                if(elem_id >= 0 && elem_id < static_cast<int>(gen_solved.size()))
+                    gen_solved[elem_id] = true;
+                break;
+            case VoltageControlSolverData::HVDC_SIDE_1:
+                // elem_id is the hvdc LINE id for both station kinds
+                if(elem_id >= 0 && elem_id < static_cast<int>(hvdc1_solved.size()))
+                    hvdc1_solved[elem_id] = true;
+                break;
+            case VoltageControlSolverData::HVDC_SIDE_2:
+                if(elem_id >= 0 && elem_id < static_cast<int>(hvdc2_solved.size()))
+                    hvdc2_solved[elem_id] = true;
+                break;
+            case VoltageControlSolverData::SVC:
+                break;  // an SVC never takes part in the redistribution
+            default: {
+                std::ostringstream exc_;
+                exc_ << "LSGrid::compute_results: unknown voltage controller kind "
+                     << ctrl_kind(i) << ".";
+                throw std::runtime_error(exc_.str());
+            }
+        }
+    }
+
+    // ---- the per-bus reactive totals, over the elements that are left ---------
+    // Only meaningful in AC, and only where more than one element shares a bus --
+    // which is exactly what they say. Built from the elements the redistribution
+    // will actually serve, so a share is never measured against a denominator its
+    // own element is not part of.
+    if(ac){
+        const Eigen::Index nb_bus_total = static_cast<Eigen::Index>(substations_.nb_bus());
+        // resize only when the grid changed size, then zero: assigning
+        // `RealVect::Constant(n, 0.)` would allocate and free three vectors on every
+        // single solve, and these are members precisely so that it does not have to
+        if(total_q_min_per_bus_.size() != nb_bus_total) total_q_min_per_bus_.resize(nb_bus_total);
+        if(total_q_max_per_bus_.size() != nb_bus_total) total_q_max_per_bus_.resize(nb_bus_total);
+        if(total_gen_per_bus_.size() != nb_bus_total) total_gen_per_bus_.resize(nb_bus_total);
+        total_q_min_per_bus_.setZero();
+        total_q_max_per_bus_.setZero();
+        total_gen_per_bus_.setZero();
+        const int nb_bus_int = static_cast<int>(nb_bus_total);
+        generators_.init_q_vector(nb_bus_int, total_gen_per_bus_, total_q_min_per_bus_,
+                                  total_q_max_per_bus_, gen_solved);
+        hvdc_lines_.init_q_vector(nb_bus_int, total_gen_per_bus_, total_q_min_per_bus_,
+                                  total_q_max_per_bus_, hvdc1_solved, hvdc2_solved);
+    }
+
     // (in AC `reactive_mismatch` was filled together with the active half above; in
     // DC it stays empty, which is what set_q expects there)
     // mainly to initialize the Q value of the generators in dc (just fill it with 0.)
     generators_.set_q(reactive_mismatch, id_me_to_solver, ac,
-                      total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
+                      total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_,
+                      gen_solved);
     hvdc_lines_.set_q(reactive_mismatch, id_me_to_solver, ac,
-                    total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
+                      total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_,
+                      hvdc1_solved, hvdc2_solved);
 
     // VoltageControl (gen / SVC / hvdc converter station) write-back: the reactive output of the
     // voltage-mode controllers is solved inside the NR system (not by the per-bus
-    // redistribution above, which skips them). Pull it from the AC algorithm and
-    // store it (pu -> MVAr). Empty for DC / non-NR algorithms.
+    // redistribution above, which skips them -- see the masks). Pull it from the AC
+    // algorithm and store it (pu -> MVAr). Empty for DC / non-NR algorithms.
     if(ac){
-        const RealVect ctrl_q    = _algo.get_controller_q();
-        const IntVect  ctrl_kind = _algo.get_controller_kind();
-        const IntVect  ctrl_elem = _algo.get_controller_elem_id();
         for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
             const real_type q_mvar = ctrl_q(i) * sn_mva_;
             switch(ctrl_kind(i)){

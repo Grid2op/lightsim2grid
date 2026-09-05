@@ -270,14 +270,16 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         void init_q_vector(int nb_bus,
                            Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
                            Eigen::Ref<RealVect> total_q_min_per_bus,
-                           Eigen::Ref<RealVect> total_q_max_per_bus) const; // delta_q_per_gen_
+                           Eigen::Ref<RealVect> total_q_max_per_bus,
+                           const std::vector<bool> & solved_by_algo) const; // delta_q_per_gen_
 
         void set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
                    const SolverBusIdVect & id_grid_to_solver,
                    bool ac,
                    const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
                    const Eigen::Ref<const RealVect> & total_q_min_per_bus,
-                   const Eigen::Ref<const RealVect> & total_q_max_per_bus);
+                   const Eigen::Ref<const RealVect> & total_q_max_per_bus,
+                   const std::vector<bool> & solved_by_algo);
         
         void get_vm_for_dc(Eigen::Ref<RealVect> Vm);
         

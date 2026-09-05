@@ -286,11 +286,8 @@ TEST_CASE("exotic case14: the published results satisfy KCL at every bus",
 // arrangement in which the attribution can be caught being wrong.
 // ---------------------------------------------------------------------------
 
-// KNOWN DEFECT -- see the comment inside. [!shouldfail] keeps the suite green
-// while the bug is open, and turns this test RED the day it is fixed, which is
-// the signal to drop the tag.
 TEST_CASE("KCL holds with a generator on the same bus as an angle-droop HVDC station",
-          "[LSGrid][kcl][!shouldfail]")
+          "[LSGrid][kcl]")
 {
     // hvdc line 1 has the droop enabled and sits on buses 1 and 2; in AC its
     // active power is NOT stamped into Sbus (HvdcLineContainer::fillSbus skips
@@ -304,24 +301,20 @@ TEST_CASE("KCL holds with a generator on the same bus as an angle-droop HVDC sta
     grid.change_bus_gen_python(1, 1);   // generator 1: bus 6 -> bus 1
     solve(grid);
 
-    // WHAT ACTUALLY HAPPENS TODAY: the station's published reactive power is
-    // NaN and the generator's is -0.
-    //
-    // Both come out of the proportional split in
-    // ConverterStationContainer::set_q / GeneratorContainer::set_q:
-    //
-    //     ratio = (max_q_me  - min_q_me  + eps)
-    //           / (max_q_bus - min_q_bus + nb_gen_with_me * eps)
-    //
-    // The converter stations of hvdc lines 1 and 2 carry +/- DBL_MAX as their
-    // reactive limits -- that is what the pypowsybl converter writes for
-    // "unbounded", and the fixture is a capture of a real conversion. So
-    // `max_q_me - min_q_me` overflows to +inf, the bus total overflows to +inf
-    // too, and the ratio is inf / inf = NaN. The generator on the same bus is
-    // measured against that same infinite denominator and gets 90 / inf = 0.
-    //
-    // The bus still balances in P; in Q it balances only in the sense that NaN
+    // This used to publish NaN for the station and -0 for the generator. The
+    // proportional split divided (max_q_me - min_q_me + eps) by
+    // (max_q_bus - min_q_bus + n.eps), and the converter stations of hvdc lines 1
+    // and 2 carry +/- DBL_MAX as their reactive limits (what the pypowsybl
+    // converter writes for "unbounded", and this fixture is a capture of a real
+    // conversion) -- so both spans overflowed to +inf and the ratio was inf / inf,
+    // while the generator, measured against that same infinite denominator, got
+    // 90 / inf = 0. The bus balanced in P and, in Q, only in the sense that NaN
     // absorbs everything.
+    //
+    // GenericContainer::_q_share now falls back to an equal split when a range is
+    // not finite -- the same answer the formula already gives when every range is
+    // zero, and the only defensible one when there is no information to weight two
+    // unbounded machines against each other.
     const CplxVect residual = kcl_residual(grid);
     INFO("KCL residual, generator on a droop-HVDC bus:" << describe(residual, KCL_TOL));
     for (Eigen::Index bus_id = 0; bus_id < residual.size(); ++bus_id) {
@@ -350,9 +343,12 @@ TEST_CASE("a generator cannot share the SVC's regulated bus (v1), so that path c
 }
 
 
-// KNOWN DEFECT: this configuration does not solve at all -- ac_pf returns an
-// empty vector with ErrorType::NotInitError after zero iterations, so the
-// REQUIRE in solve() is what fails here, before any result is published.
+// KNOWN DEFECT, and a different one from the Q attribution above: this
+// configuration does not solve AT ALL. ac_pf returns an empty vector with
+// ErrorType::NotInitError after zero iterations, so the REQUIRE in solve() is
+// what fails, before any result is published -- nothing here reaches the
+// write-back. [!shouldfail] keeps the suite green while it is open and turns
+// this test red the day it is fixed, which is the signal to drop the tag.
 TEST_CASE("KCL holds with the slack generator on an angle-droop HVDC bus",
           "[LSGrid][kcl][!shouldfail]")
 {

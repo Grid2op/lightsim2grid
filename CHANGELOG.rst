@@ -139,6 +139,36 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [FIXED] the reactive output published for two elements sharing a bus could be **NaN**.
+  ``GeneratorContainer::set_q`` and ``ConverterStationContainer::set_q`` split a bus' reactive
+  residual proportionally to each element's reactive RANGE,
+  ``(max_q_me - min_q_me + eps) / (max_q_bus - min_q_bus + n * eps)``. A converter station
+  with "unbounded" limits carries +/- DBL_MAX (what the pypowsybl converter writes), so its
+  own span overflowed to ``+inf``, the bus total overflowed to ``+inf``, and the ratio was
+  ``inf / inf``; a generator on the same bus, measured against that same infinite
+  denominator, was published as ``0``. The split now lives in ONE place --
+  ``GenericContainer::_q_share``, used by both -- and falls back to an equal share when a
+  range is not finite, which is the same answer the formula already gives when every range
+  is zero. Finite ranges are untouched, bit for bit.
+- [FIXED] an element whose reactive output the ALGORITHM solved for (a voltage-control group
+  member) was served twice on the converter-station side: once by the per-bus redistribution
+  and again by the write-back that overwrote it -- and, worse, it inflated the totals its
+  neighbours on that bus were divided by. ``GeneratorContainer`` excluded remote regulators
+  from both; ``ConverterStationContainer`` excluded nobody, and neither excluded a LOCAL
+  generator enrolled in a group. Both now read one mask, built once per solve in
+  ``LSGrid::compute_results`` straight from the controller list the algorithm hands back
+  (``get_controller_kind()`` / ``get_controller_elem_id()``) -- so "who is served by the
+  write-back" has a single source of truth instead of a rule re-derived, differently, inside
+  each container.
+- [IMPROVED] ``total_gen_per_bus_`` / ``total_q_min_per_bus_`` / ``total_q_max_per_bus_`` are
+  no longer built during pre-processing. Nothing between there and the end of the powerflow
+  reads them: they exist only to split a bus' reactive residual afterwards, and who takes
+  part in that split is not even knowable until the algorithm has run. They are built in
+  ``compute_results`` now, over the elements the redistribution will actually serve. A solve
+  that only moved injections no longer walks every generator and converter station, nor
+  allocates three ``nb_bus`` vectors, on the way IN. It does so on the way out instead, so an
+  identical re-solve -- which used to skip the build entirely on its change flags -- pays
+  about 0.6% more on case9241pegase, while an ordinary cached step is unchanged (+0.02%).
 - [ADDED] ``BaseAlgo::fills_bus_mismatch()`` (+ the ``FILLS_BUS_MISMATCH`` compile-time
   constant next to ``IS_DC`` / ``SUPPORTS_HVDC_DROOP`` / ``IS_FDPF`` /
   ``SUPPORTS_REMOTE_VOLTAGE_CONTROL``): does this algorithm leave a usable per-bus mismatch
