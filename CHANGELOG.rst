@@ -139,6 +139,26 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] ``benchmarks/cache_profiling/ab_test.sh`` + ``ab_wallclock.sh`` +
+  ``compare_traces.py``: A/B one candidate change to ``src/core`` -- build the tree as it is,
+  build it again with a patch script applied, run every (grid, phase) under both, and report the
+  instructions retired side by side AND whether the two builds return the same answer. The
+  profiling driver now writes a trace of every solve (its iteration count and its full complex
+  voltage vector, 17 significant digits) so "same answer" is measured, not assumed; the tree is
+  restored with ``git checkout -- src/core`` on exit, including on failure.
+  First result, ``patches/inv_vm_from_vm.py``: ``NRSystem::fill_internal_variables`` opens with
+  ``inv_vm_cache_ = V_.array().abs().inverse()``, a ``std::hypot`` per bus per Newton iteration,
+  while ``Vm_`` already IS ``|V_|`` -- both writers of ``V_`` keep it so, which is the same
+  argument the comment in ``apply_step`` makes for ``Vm_`` / ``Va_``. Taking the reciprocal from
+  ``Vm_`` is worth **-2.1% / -2.5% / -2.2% / -1.6%** of an ordinary cached step on
+  case30 / case118 / case1354pegase / case9241pegase (and -1.3% to -3.3% on the clock, best of
+  9 runs), with **identical iteration counts in all 24 (grid, phase) pairs** and returned
+  voltages agreeing to 4.4e-15 / 5.8e-15 / 2.1e-13 / 1.4e-12 pu -- four to six orders of
+  magnitude below the 1e-8 tolerance both solutions were accepted at. It cannot be bit for bit
+  (``|cos + i.sin|`` is 1 only to a rounding), and it does not need to be: the value feeds only
+  the ``dS_dVm`` block of the Jacobian, never the mismatch the convergence test reads.
+  Results in ``benchmarks/cache_profiling/results_ab_inv_vm.txt``; the change itself is NOT
+  applied here.
 - [ADDED] ``benchmarks/cache_profiling/``: an instruction-count audit of the CACHED powerflow
   path -- a powerflow that follows an already successful one, which is what every grid2op step
   after the first actually runs. A standalone C++ driver (no python, no pybind11, links

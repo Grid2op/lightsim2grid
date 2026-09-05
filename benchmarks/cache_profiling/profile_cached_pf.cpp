@@ -40,6 +40,8 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -135,7 +137,11 @@ int main(int argc, char ** argv)
     if(argc < 3){
         std::cerr << "usage: " << argv[0]
                   << " <grid.lsb> <cold|idem|inj|inj_nores|dcac|topo|nocache>"
-                     " [nb_solves] [KLU|SparseLU|<registry name>] [always|chord|everyN]\n";
+                     " [nb_solves] [KLU|SparseLU|<registry name>] [always|chord|everyN]"
+                     " [trace_file]\n"
+                     "\nWith a trace_file, every solve's iteration count and full complex\n"
+                     "voltage vector are written there with 17 significant digits, so two\n"
+                     "builds can be compared bit for bit (see the A/B check in README.md).\n";
         return 2;
     }
     const std::string path = argv[1];
@@ -143,6 +149,7 @@ int main(int argc, char ** argv)
     const int nb_solves = (argc > 3) ? std::atoi(argv[3]) : 10;
     const std::string algo_name = (argc > 4) ? argv[4] : "KLU";
     const std::string refactor = (argc > 5) ? argv[5] : "always";
+    const std::string trace_path = (argc > 6) ? argv[6] : "";
 
     LSGrid grid = LSGrid::load_binary(path);
     try {
@@ -174,6 +181,14 @@ int main(int argc, char ** argv)
         CALLGRIND_TOGGLE_COLLECT;
         CALLGRIND_STOP_INSTRUMENTATION;
         if(V.size() == 0){ std::cerr << "cold solve diverged\n"; return 4; }
+        if(!trace_path.empty()){
+            std::ofstream out(trace_path);
+            out << std::setprecision(17) << std::scientific;
+            out << "step 0 iter " << grid.get_algo().get_nb_iter() << "\n";
+            for(Eigen::Index k = 0; k < V.size(); ++k){
+                out << V(k).real() << " " << V(k).imag() << "\n";
+            }
+        }
         std::cout << "cold: 1 solve, " << grid.get_algo().get_nb_iter() << " iterations\n";
         return 0;
     }
@@ -212,6 +227,12 @@ int main(int argc, char ** argv)
         std::cout << "topo: toggling line " << topo_line_id << "\n";
         V = grid.ac_pf(V, MAX_ITER, TOL);
     }
+
+    // The A/B trace: one entry per measured solve. Filled outside the collected
+    // region except for the push_back of an already-computed vector, which is
+    // why the trace is written only when a path was asked for.
+    std::vector<int> trace_iter;
+    std::vector<CplxVect> trace_V;
 
     long total_iter = 0;
     int nb_ok = 0;
@@ -254,9 +275,29 @@ int main(int argc, char ** argv)
             V = Vnew;
         }
         total_iter += grid.get_algo().get_nb_iter();
+        if(!trace_path.empty()){
+            trace_iter.push_back(grid.get_algo().get_nb_iter());
+            trace_V.push_back(V);
+        }
         ++nb_ok;
     }
     CALLGRIND_STOP_INSTRUMENTATION;
+
+    if(!trace_path.empty()){
+        std::ofstream out(trace_path);
+        if(!out){
+            std::cerr << "cannot write the trace to '" << trace_path << "'\n";
+            return 6;
+        }
+        out << std::setprecision(17) << std::scientific;
+        for(std::size_t step = 0; step < trace_iter.size(); ++step){
+            out << "step " << step << " iter " << trace_iter[step] << "\n";
+            const CplxVect & Vs = trace_V[step];
+            for(Eigen::Index k = 0; k < Vs.size(); ++k){
+                out << Vs(k).real() << " " << Vs(k).imag() << "\n";
+            }
+        }
+    }
 
     const auto t_end = std::chrono::steady_clock::now();
     const double secs = std::chrono::duration<double>(t_end - t_start).count();

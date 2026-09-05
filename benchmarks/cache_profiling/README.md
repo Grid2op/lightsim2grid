@@ -58,6 +58,26 @@ python3 summarize.py callgrind_out
 KLU). Everything is built `-O3 -g`: `-g` changes no code generation, it is only
 what lets `callgrind_annotate` attribute instructions to source lines.
 
+### A/B testing one candidate change
+
+`ab_test.sh` builds `src/core` twice -- once as it is, once with a patch script
+applied -- and runs every (grid, phase) under both, reporting the instruction
+counts side by side **and** whether the two builds return the same answer. The
+driver writes a trace of every solve (its iteration count and its full complex
+voltage vector, 17 significant digits) which `compare_traces.py` reads back, so
+"same answer" is a measurement and not an assumption. `ab_wallclock.sh` is the
+same A/B on wall-clock time (best of N runs), because an instruction count knows
+nothing about cache misses or the latency of a libm call.
+
+```bash
+./ab_test.sh      grids ab_out patches/inv_vm_from_vm.py
+python3 compare_traces.py ab_out
+./ab_wallclock.sh grids ab_out patches/inv_vm_from_vm.py 9
+```
+
+The tree is restored with `git checkout -- src/core` on exit, including on
+failure.
+
 ## Results
 
 Measured on this branch (`claude/lightsim2grid-cache-profiling-hweo3g`), gcc 13,
@@ -96,7 +116,10 @@ and more than half of what is left of it is `compute_results()`.
 
 Every line below is a real measurement: the same phases, re-run against a
 modified build, and compared against the table above. None of these changes is
-applied in this branch — this is an audit.
+applied in this branch — this is an audit. Percentages are on the ordinary
+cached step (`inj`); row 1 is on `idem`, where it is the whole point. Row 6 is
+the one that went through the full A/B (both builds, all four grids, all six
+phases, answers compared) — see its section.
 
 | # | change | case30 | case118 | case1354 | case9241 |
 |---|---|---:|---:|---:|---:|
@@ -105,7 +128,28 @@ applied in this branch — this is an audit.
 | 3 | refactorize J every 2 Newton iterations instead of every one | +10% | -17% | -20% | **-23%** |
 | 4 | do not recompute the element results (`inj` -> `inj_nores`) | -11.5% | -9.5% | -7.4% | -5.9% |
 | 5 | cache the voltage-control controller data instead of rebuilding it per solve | -2.2% | -3.4% | — | -1.1% |
-| 6 | take `1/\|V\|` from `Vm_` instead of a `hypot` pass over `V_` | — | -2.5% | — | -1.6% |
+| 6 | take `1/\|V\|` from `Vm_` instead of a `hypot` pass over `V_` (**A/B tested**) | -2.1% | -2.5% | -2.2% | -1.6% |
+
+### Where each of these landed
+
+An audit measures; it does not decide. What was decided, and why:
+
+* **1 (slack state carry-over) — rejected.** Sbus changes between two solves, so
+  a slack state carried over is a coupling between what may be two genuinely
+  different scenarios. Starting it from scratch is the safe answer, and the cost
+  measured here is the price of that safety, not a bug.
+* **2 (`initdc`) — rejected.** Warm-starting the AC solve from the previous
+  solution was tried before: when the topology changes a lot between two
+  consecutive steps, the last powerflow diverges. The DC init is much more
+  robust precisely *because* it introduces no coupling between consecutive
+  solves. The 2x on case9241pegase is what that robustness costs.
+* **3 (refactorization policy) — out of scope.** `EveryN` is a different
+  algorithm, not a cheaper way to run this one.
+* **5 (voltage-control data) — to do.** Worth it on its own, and more so because
+  the data is currently built twice. It needs the cache to carry more than it
+  does today (the `AlgoControl` state and what changed on the elements since),
+  so it is its own piece of work.
+* **6 (`1/|V|` from `Vm_`) — A/B tested here**, see below.
 
 ### 1. The cached path always runs at least one Newton iteration
 
@@ -132,9 +176,12 @@ at roughly the grid's total losses, above any sensible tolerance, so the
 convergence test before the loop can never pass and one iteration is always
 spent rediscovering a number the previous solve already had. Carrying
 `slack_absorbed_` (and `VoltageControl::q_`, reset to zero the same way) across
-solves when the cache is reusable would let an unchanged grid converge in zero
-iterations. The measured upper bound of that is the whole `idem` column: -60% to
--71%.
+solves would let an unchanged grid converge in zero iterations -- the measured
+upper bound of that is the whole `idem` column, -60% to -71%. **That is not
+being done**, and for a good reason: Sbus changes between two solves, so a
+carried-over slack state couples what may be two genuinely different scenarios.
+The number above is therefore the price of starting from scratch, not a saving
+on the table.
 
 This also matters for the ordinary step, not just the identical one: on `inj`
 the iteration count is the same either way (3 iterations), so the saving there
@@ -152,9 +199,10 @@ starting point than the AC solution of the previous step, so the AC Newton needs
 case9241pegase a step costs 221.4M Ir with the DC init and 111.3M without —
 `initdc` doubles it.
 
-The DC init earns its place on the first step of an episode and after a topology
-change. Keeping it there and warm-starting from the previous solution otherwise
-is worth half the CPU of a time series on a large grid.
+Warm-starting from the previous solution instead was tried before and
+**rejected**: when the topology changes a lot between two consecutive steps, the
+AC solve diverges. The DC init is robust exactly because it carries nothing over
+from the previous solve, and the 2x measured here is what that costs.
 
 ### 3. Refactorizing every Newton iteration
 
@@ -167,9 +215,10 @@ adds costs more than the factorization it skips — the crossover is somewhere
 around a hundred buses. `Chord` (factorize once, never again) does not converge
 within 10 iterations on any of these grids.
 
-This is a numerical-behaviour change, not a free win: it is the one entry in
-this table that trades iterations for factorizations. But the trade is currently
-not made at all, and on large grids it is clearly favourable.
+This is a different algorithm rather than a cheaper way to run the current one,
+so it is **out of scope** for this audit -- recorded here only because 55% of a
+large cached solve sits in `klu_refactor`, which is worth knowing whichever way
+the choice goes.
 
 ### 4. Result computation
 
@@ -202,18 +251,79 @@ the bus labelling, the pv/pq split and the generators' regulation configuration
 — all three already tracked by `AlgoControl` (`has_pv_changed`, `has_pq_changed`,
 `has_v_changed`, `has_dimension_changed`, `need_reset_solver`). Rebuilding it
 only when one of those is raised measures at -2.2% (case30), -3.4% (case118)
-and -1.1% (case9241pegase).
+and -1.1% (case9241pegase). **To be done**: the data is also built twice today,
+which makes it worth more than these numbers, but a correct cache of it needs
+the `AlgoControl` state and the element changes since the last solve to be
+carried alongside it -- its own piece of work.
 
-### 6. `hypot` where the answer is already known
+### 6. `hypot` where the answer is already known (A/B tested)
 
 `fill_internal_variables` starts with `inv_vm_cache_ = V_.array().abs().inverse()`
-— a `std::hypot` per bus per Newton iteration. But `Vm_` *is* `|V_|`:
-`apply_step` rebuilds `V_` as `Vm_ * exp(i.Va_)` and then makes `Vm_`
-non-negative, and `update_state` sets `Vm_ = |V_init|`. The comment a few lines
-below in `apply_step` makes exactly this argument for `Vm_`/`Va_` and declines to
-recompute them; the reciprocal pass was not given the same treatment.
-`inv_vm_cache_ = Vm_.array().inverse()` measures at -2.5% (case118) and -1.6%
-(case9241pegase), with the iteration count unchanged.
+— a `std::hypot` per bus per Newton iteration. But `Vm_` *is* `|V_|`. Only two
+places write `V_`, and both keep it so: `update_state` sets `Vm_ = |V_init|`
+next to `V_ = V_init`, and `apply_step` rebuilds `V_ = Vm_ * exp(i.Va_)` and then
+calls `fix_negative_vm`, which flips the sign of a negative `Vm_` and turns
+`Va_` by half a turn, leaving `V_` alone and still equal to
+`Vm_new * exp(i.Va_new)`. The comment a few lines below in `apply_step` makes
+exactly this argument for `Vm_` / `Va_` and declines to recompute them; the
+reciprocal pass was not given the same treatment.
+
+`inv_vm_cache_ = Vm_.array().inverse()` (patch:
+`patches/inv_vm_from_vm.py`), A/B tested with `ab_test.sh` over all four grids
+and six phases:
+
+| grid | `idem` | `inj` | `dcac` | `topo` | `nocache` | `cold` |
+|---|---:|---:|---:|---:|---:|---:|
+| case30 | -1.71% | **-2.11%** | -2.10% | -1.21% | -0.89% | -0.93% |
+| case118 | -1.73% | **-2.53%** | -2.52% | -1.40% | -1.32% | -1.30% |
+| case1354pegase | -1.69% | **-2.22%** | -2.25% | -1.21% | -1.17% | -1.39% |
+| case9241pegase | -1.27% | **-1.57%** | -1.59% | -0.92% | -0.89% | -1.12% |
+
+The shape is what it should be: the saving is largest on the phases that are
+mostly Newton iterations (`inj`, `dcac`) and smallest on the ones a rebuild
+dominates (`cold`, `topo`, `nocache`), because the `hypot` pass is paid once per
+iteration.
+
+An instruction count knows nothing about the latency of a libm call, so
+`ab_wallclock.sh` ran the same A/B on the clock (best of 9, no valgrind):
+
+| grid | `idem` A -> B | | `inj` A -> B | |
+|---|---:|---:|---:|---:|
+| case30 | 0.00991 -> 0.00983 ms | -0.84% | 0.01573 -> 0.01553 ms | -1.31% |
+| case118 | 0.0357 -> 0.0350 ms | -1.78% | 0.0721 -> 0.0697 ms | **-3.24%** |
+| case1354pegase | 0.631 -> 0.614 ms | -2.79% | 1.509 -> 1.469 ms | -2.64% |
+| case9241pegase | 5.704 -> 5.581 ms | -2.15% | 14.556 -> 14.072 ms | **-3.33%** |
+
+Time moves slightly *more* than instructions on the large grids, which is what a
+removed libm call should do.
+
+**Does it return the same answer?** Every one of the 24 (grid, phase) pairs
+converges in **exactly the same number of iterations**, and the returned
+voltages agree to:
+
+| grid | max abs. difference | relative | vs. the 1e-8 tolerance |
+|---|---:|---:|---|
+| case30 | 4.4e-15 pu | 20 ulp | 6 orders of magnitude below |
+| case118 | 5.8e-15 pu | 26 ulp | 6 orders below |
+| case1354pegase | 2.1e-13 pu | 900 ulp | 5 orders below |
+| case9241pegase | 1.4e-12 pu | 6,400 ulp | 4 orders below |
+
+Not bit for bit, and it cannot be: `|cos(a) + i.sin(a)|` is 1 only to within a
+rounding, so `|V_|` and `Vm_` differ in the last bits, and a Newton iteration
+amplifies that into the iterate. Two things bound what it can do. First, the
+value feeds *only* the `dS_dVm` block of the Jacobian — it never enters the
+mismatch, which is computed from `V` and `Sbus` and is what the convergence test
+reads. A rounding there perturbs the search direction, never the criterion the
+answer is accepted on. Second, the differences above are four to six orders of
+magnitude below the tolerance both solutions were accepted at: they are not two
+different answers, they are the same answer with the Newton having stopped at a
+slightly different point inside its own tolerance ball. The same argument
+already justifies the sibling shortcut in `apply_step`, whose comment records a
+1.9e-16 relative move for the same reason.
+
+Recommendation: take it. One line, no behaviour to reason about beyond the
+identity `Vm_ == |V_|`, ~2% off the ordinary cached step and ~1.5% off a large
+one, iteration counts untouched.
 
 In the same family, and not measured here: `_reconstruct_V_into` computes
 `Va.cos()` and `Va.sin()` as two separate libm passes (`__sincos_fma` shows up
