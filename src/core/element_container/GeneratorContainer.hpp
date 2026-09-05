@@ -267,7 +267,6 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
                             const SolverBusIdVect & id_grid_to_solver) const override;
- // delta_q_per_gen_
 
         /**
          * Publish the reactive output of the generators whose value is known without
@@ -343,7 +342,6 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         std::vector<real_type> gen_slack_weight_;
 
         // intermediate data
-        // Eigen::VectorXi total_gen_per_bus_;
         RealVect bus_slack_weight_;  // do not sum to 1., for each node of the grid, say the raw contribution for the generator
 
         // different parameter of the behaviour of the class

@@ -296,7 +296,7 @@ TEST_CASE("KCL holds with a generator on the same bus as an angle-droop HVDC sta
     // The share each takes is proportional to its reactive RANGE, and those two
     // spans used to overflow to +inf, making the ratio inf / inf -- so the station
     // was published as NaN and the generator, measured against the same infinite
-    // denominator, as 0. See GenericContainer::_q_share.
+    // denominator, as 0. See the per-bus split in LSGrid::compute_results.
     const CplxVect residual = kcl_residual(grid);
     INFO("KCL residual, generator on a droop-HVDC bus:" << describe(residual, KCL_TOL));
     for (Eigen::Index bus_id = 0; bus_id < residual.size(); ++bus_id) {

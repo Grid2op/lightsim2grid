@@ -180,9 +180,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   "unbounded" limits carries +/- DBL_MAX, whose difference overflows to ``+inf`` for the
   element AND for the bus total -- so the ratio was ``inf / inf``, and a generator on the same
   bus, measured against that infinite denominator, was published as ``0``. The split now lives
-  in one place (``GenericContainer::_q_share``) instead of six lines copied into two
-  containers, and falls back to an equal share when a range is not finite -- the same answer it
-  already gave when every range is zero. Finite ranges are untouched, bit for bit.
+  in one place (``LSGrid::compute_results``) instead of six lines copied into two containers,
+  and falls back to an equal share when a range is not finite -- the same answer it already
+  gave when every range is zero. Finite ranges are untouched, bit for bit.
 - [FIXED] an element whose reactive output the ALGORITHM solved for was served twice on the
   converter-station side -- once by the per-bus redistribution and again by the write-back that
   overwrote it -- and inflated the totals its neighbours were divided by. ``GeneratorContainer``

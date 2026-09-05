@@ -10,7 +10,6 @@
 #define GENERIC_CONTAINER_H
 
 #include <algorithm>  // for std::find
-#include <cmath>      // for std::isfinite
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -394,30 +393,6 @@ class LS2G_API GenericContainer : public BaseConstants
         }
 
         /**
-         * One element's share of the reactive residual of the bus it sits on.
-         *
-         * ONE implementation, used by both GeneratorContainer::set_q and
-         * ConverterStationContainer::set_q. It used to be the same six lines copied
-         * into each, which is how they drifted apart: the generator side learned to
-         * leave the elements the Newton solves for out of the split, the station side
-         * did not, and nothing made that visible.
-         *
-         * The share is proportional to the element's reactive RANGE, so a machine that
-         * can move more reactive power takes more of the residual. `eps` keeps the
-         * degenerate case meaningful: when every element on the bus has a fixed
-         * reactive output (a zero range), the ratios collapse to 1/n and the residual
-         * is shared equally.
-         *
-         * That degenerate case is also the answer to an UNBOUNDED range. Reactive
-         * limits of +/- DBL_MAX are what a converter writes for "no limit" (pypowsybl
-         * does, and real networks come through that path), and `max - min` on those
-         * overflows to +inf -- for the element AND for the bus total, making the ratio
-         * inf / inf, i.e. NaN, which then propagated into the published results of
-         * every element on the bus. There is no information in two unbounded ranges to
-         * weight one against the other, so this falls back to the same equal split the
-         * zero-range case already gets. Finite ranges are untouched, bit for bit.
-         */
-        /**
          * Did the ALGORITHM solve this element's reactive output itself?
          *
          * The mask is built once per solve by LSGrid::compute_results, straight from
@@ -431,22 +406,6 @@ class LS2G_API GenericContainer : public BaseConstants
             return (el_id >= 0) &&
                    (static_cast<std::size_t>(el_id) < solved_by_algo.size()) &&
                    solved_by_algo[static_cast<std::size_t>(el_id)];
-        }
-
-        static real_type _q_share(real_type q_to_absorb,
-                                  real_type min_q_me,  real_type max_q_me,
-                                  real_type min_q_bus, real_type max_q_bus,
-                                  int nb_el_on_bus)
-        {
-            if(nb_el_on_bus <= 1) return q_to_absorb;
-            const real_type nb = static_cast<real_type>(nb_el_on_bus);
-            const real_type eps_q = 1e-8;
-            const real_type span_me  = max_q_me  - min_q_me;
-            const real_type span_bus = max_q_bus - min_q_bus;
-            if(!std::isfinite(span_me) || !std::isfinite(span_bus)){
-                return q_to_absorb / nb;  // unbounded range(s): share equally
-            }
-            return q_to_absorb * (span_me + eps_q) / (span_bus + nb * eps_q);
         }
 
         /**
