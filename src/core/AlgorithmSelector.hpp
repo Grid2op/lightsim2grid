@@ -369,6 +369,10 @@ class LS2G_API AlgorithmSelector final
             return get_prt_solver("get_error", true)->get_error();
         }
 
+        void set_nb_iter(int nb_iter) {
+            get_prt_solver("set_nb_iter", true)->set_nb_iter(nb_iter);
+        }
+
         void set_error(ErrorType error) {
             get_prt_solver("set_error", true)->set_error(error);
         }

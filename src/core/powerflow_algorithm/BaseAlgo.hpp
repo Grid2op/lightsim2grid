@@ -317,6 +317,13 @@ class LS2G_API BaseAlgo : public BaseConstants
         // non-converged when a (possibly plugin) solver returned non-finite
         // voltages while still claiming convergence -- see
         // LSGrid::process_results / LSGrid::_check_solver_output.
+        /**
+         * Restore the iteration count a solve reached. Same purpose as set_error:
+         * LSGrid::process_results resets a diverged algorithm and puts the diagnosis
+         * back, so that "it gave up after N iterations" survives the reset.
+         */
+        void set_nb_iter(int nb_iter) { nr_iter_ = nb_iter; }
+
         void set_error(ErrorType error) {
             err_ = error;
         }

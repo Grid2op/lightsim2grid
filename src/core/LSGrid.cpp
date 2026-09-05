@@ -1806,8 +1806,25 @@ void LSGrid::process_results(bool conv,
         // iterate and a factorization of a system it gave up on. Reset it now and
         // tell the next solve to rebuild the algorithm's internals from the
         // (still valid) cached matrices.
+        //
+        // ... but not the DIAGNOSIS. reset() puts the algorithm back to "never been
+        // run", which means err_ = NotInitError and nr_iter_ = 0, and every caller
+        // reads those AFTERWARDS -- this is the divergence path, so reading them is
+        // the whole point. Left alone, a divergence reported NotInitError after zero
+        // iterations no matter what actually went wrong: a singular matrix, too many
+        // iterations, a non-finite value, all of them, every time, including through
+        // `LightSimBackend`'s "Divergence of AC powerflow. Detailed error: ...".
+        // So capture what the algorithm concluded and put it back on the far side of
+        // the reset. It costs an enum and an int, and the next solve overwrites both
+        // before using them (compute_pf opens with `err_ = NoError`).
+        const ErrorType err_diverged = ac ? _algo.get_error() : _dc_algo.get_error();
+        const int nb_iter_diverged = ac ? _algo.get_nb_iter() : _dc_algo.get_nb_iter();
         if(ac) _algo.reset();
         else _dc_algo.reset();
+        if(ac) _algo.set_error(err_diverged);
+        else _dc_algo.set_error(err_diverged);
+        if(ac) _algo.set_nb_iter(nb_iter_diverged);
+        else _dc_algo.set_nb_iter(nb_iter_diverged);
         algo_needs_rebuild = true;
     }
     // Automatic cache reuse: this family's solver-side data was just built against
