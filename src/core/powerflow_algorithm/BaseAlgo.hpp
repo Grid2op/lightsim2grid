@@ -527,6 +527,13 @@ class LS2G_API BaseAlgo : public BaseConstants
             return false;
         }
 
+        /**
+         * The per-bus complex power mismatch left by the last solve, in solver bus
+         * numbering. Empty on an algorithm that has never run (or has been reset).
+         * See mis_bus_ for exactly what it contains.
+         */
+        Eigen::Ref<const CplxVect> get_bus_mismatch() const {return mis_bus_;}
+
         // Bf / Bf_T are resized and filled from scratch by fillBf_for_PTDF: a real
         // reference is needed, Eigen::Ref<SparseMatrix> can't resize/reserve.
         void get_Bf(Eigen::SparseMatrix<real_type> & Bf) const;
@@ -535,6 +542,28 @@ class LS2G_API BaseAlgo : public BaseConstants
     protected:
         // solver initialization
         int n_;
+
+        /**
+         * The per-bus complex power mismatch of the last evaluation:
+         * V .* conj(Ybus * V) - Sbus, plus whatever the algorithm's components inject
+         * (the distributed slack's share, the hvdc droop flows, a voltage controller's
+         * reactive output). Size nb_bus, in SOLVER bus numbering.
+         *
+         * Held here, and not in each algorithm, because both families compute exactly
+         * this and both need it to persist across iterations -- and because it is the
+         * one intermediate a caller may legitimately want after the solve (see
+         * get_bus_mismatch). Filled by the concrete algorithm: BaseFDPFAlgo writes it
+         * directly, NRAlgo hands its address to the NRSystem it owns.
+         *
+         * It is the RAW mismatch in both families. The FDPF used to divide it by Vm in
+         * place -- the `mis / Vm` its P and Q rows need -- which left the same member
+         * meaning two different things depending on who last wrote it; that division
+         * now happens where the rows are extracted.
+         */
+        CplxVect mis_bus_;
+        /// Ybus * V of the last evaluation, kept out of the expression above so Eigen
+        /// does not have to allocate a temporary for the sparse * dense product.
+        CplxVect ybus_v_;
 
         // solution of the problem
         RealVect Vm_;  // voltage magnitude

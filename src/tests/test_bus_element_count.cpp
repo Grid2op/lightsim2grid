@@ -676,3 +676,167 @@ TEST_CASE("a half-open line keeps the bus its live side still holds",
     CHECK(grid.nb_connected_bus() == 4);
     require_counts_match_recount(grid, "half-open: opening the other side");
 }
+
+// ---------------------------------------------------------------------------
+// drift cannot outlive an invalidation
+// ---------------------------------------------------------------------------
+//
+// The counts are the one thing a powerflow does NOT derive from the elements: every
+// other piece of solver-side data -- the bus labelling, Ybus / Sbus, the pv-pq
+// split, the slack weights -- is built from them, here and now, while the counts
+// themselves are carried forward, +1 / -1, from every mutation the grid has ever
+// seen. And since connectivity IS the counts, a count that is wrong is not a slow
+// path, it is a different grid: a phantom bus enlarges the solved system and shifts
+// every bus id after it. Nothing downstream can tell -- an off-by-one count reads
+// exactly like a real one.
+//
+// Every case above proves the increments are not lost today. These two prove the
+// stronger, and more useful, property: when the grid says its cache cannot be
+// reused -- prevent_cache_reuse(), a copy, a set_state, a throw out of a powerflow
+// or out of a mutator the caller reported -- the next powerflow does not merely
+// rebuild everything derived from the counts, it rebuilds THE COUNTS, from the
+// elements. So a drift, however it got there, dies at the next invalidation instead
+// of being inherited for the life of the grid.
+//
+// No public API can produce a drift any more (the throw sites inside the counting
+// bracket are gone), so these stage one by hand, exactly as a lost increment would
+// leave it. They run on make_two_busbar_grid(): its three substations carry two
+// busbars each, so half its buses are empty and a phantom has somewhere to live.
+
+namespace {
+
+// The first bus no element holds -- a bus that is NOT in the solved system.
+int first_empty_bus(const LSGrid & grid)
+{
+    const std::vector<std::size_t> & counts = grid.get_substations().get_nb_elements_per_bus();
+    for(std::size_t b = 0; b < counts.size(); ++b) if(counts[b] == 0u) return static_cast<int>(b);
+    return -1;
+}
+
+// A bus at least two elements hold: taking one away drifts the count without
+// crossing 0, so connectivity does not change and nothing at all can notice.
+int bus_with_at_least_two(const LSGrid & grid)
+{
+    const std::vector<std::size_t> & counts = grid.get_substations().get_nb_elements_per_bus();
+    for(std::size_t b = 0; b < counts.size(); ++b) if(counts[b] >= 2u) return static_cast<int>(b);
+    return -1;
+}
+
+CplxVect solve_ac(LSGrid & grid){ return grid.ac_pf(flat_start(grid), 30, 1e-10); }
+CplxVect solve_dc(LSGrid & grid){ return grid.dc_pf(flat_start(grid), 1, 1e-10); }
+
+ls2g::SubstationContainer & poke(LSGrid & grid)
+{
+    // Staging a corruption is the whole point; there is deliberately no public way.
+    return const_cast<ls2g::SubstationContainer &>(grid.get_substations());
+}
+
+}  // namespace
+
+TEST_CASE("a powerflow that cannot reuse its cache recounts the buses from the elements",
+          "[SubstationContainer][bus_count][cache_reuse]")
+{
+    SECTION("a phantom bus -- a decrement that was lost"){
+        LSGrid grid = make_two_busbar_grid();
+        const CplxVect v_ref = solve_ac(grid);
+        REQUIRE(v_ref.size() > 0);
+        const int nb_connected_ok = grid.nb_connected_bus();
+
+        const int empty_bus = first_empty_bus(grid);
+        REQUIRE(empty_bus >= 0);
+        poke(grid).bus_gained_element(ls2g::GlobalBusId(empty_bus));
+
+        // the grid now believes in a bus no element holds, and it is in the solved
+        // system: this is what a lost decrement looks like from the outside.
+        REQUIRE(grid.nb_connected_bus() == nb_connected_ok + 1);
+        REQUIRE(grid.get_substations().get_nb_elements_per_bus()[empty_bus] == 1u);
+
+        // "the counts may have drifted" -- the moment the drift has to die
+        grid.tell_bus_counts_maybe_poisoned();
+        // ... and it drags a full solver rebuild with it: the counts decide which
+        // buses exist, so a repaired count that did not reach the bus labelling would
+        // leave the solve on the old bus set -- the same wrong grid, tidier books.
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+        const CplxVect v = solve_ac(grid);
+
+        CHECK(grid.nb_connected_bus() == nb_connected_ok);
+        // the phantom is gone from the solved system, not just from the counts
+        CHECK(static_cast<int>(grid.id_me_to_ac_solver().size()) == static_cast<int>(grid.total_bus()));
+        CHECK(static_cast<int>(grid.id_ac_solver_to_me().size()) == nb_connected_ok);
+        CHECK(grid.get_substations().get_nb_elements_per_bus()[empty_bus] == 0u);
+        require_counts_match_recount(grid, "an invalidated powerflow, after a forged phantom bus");
+        REQUIRE(v.size() == v_ref.size());
+        CHECK((v - v_ref).norm() < 1e-9);
+    }
+
+    SECTION("a count one too low -- an increment that was lost"){
+        // The subtler half: no bus crosses 0, so connectivity is unchanged and every
+        // powerflow answers correctly. The damage is latent -- the next element to
+        // leave that bus takes it out of the solved system one element too early.
+        LSGrid grid = make_two_busbar_grid();
+        const CplxVect v_ref = solve_ac(grid);
+        const int busy_bus = bus_with_at_least_two(grid);
+        REQUIRE(busy_bus >= 0);
+        const std::size_t count_ok = grid.get_substations().get_nb_elements_per_bus()[busy_bus];
+
+        poke(grid).bus_lost_element(ls2g::GlobalBusId(busy_bus));
+        REQUIRE(grid.get_substations().get_nb_elements_per_bus()[busy_bus] == count_ok - 1u);
+
+        grid.tell_bus_counts_maybe_poisoned();
+        const CplxVect v = solve_ac(grid);
+
+        CHECK(grid.get_substations().get_nb_elements_per_bus()[busy_bus] == count_ok);
+        require_counts_match_recount(grid, "an invalidated powerflow, after a forged lost increment");
+        CHECK((v - v_ref).norm() < 1e-9);
+    }
+
+    SECTION("the DC family recounts too"){
+        LSGrid grid = make_two_busbar_grid();
+        const CplxVect v_ref = solve_dc(grid);
+        REQUIRE(v_ref.size() > 0);
+        const int nb_connected_ok = grid.nb_connected_bus();
+
+        const int empty_bus = first_empty_bus(grid);
+        REQUIRE(empty_bus >= 0);
+        poke(grid).bus_gained_element(ls2g::GlobalBusId(empty_bus));
+        REQUIRE(grid.nb_connected_bus() == nb_connected_ok + 1);
+
+        grid.tell_bus_counts_maybe_poisoned();
+        const CplxVect v = solve_dc(grid);
+
+        CHECK(grid.nb_connected_bus() == nb_connected_ok);
+        require_counts_match_recount(grid, "an invalidated DC powerflow, after a forged phantom bus");
+        CHECK((v - v_ref).norm() < 1e-9);
+    }
+
+    SECTION("only a poisoning claim pays for the recount"){
+        // The other side of the gate, and the distinction that gives it its name.
+        // Three solves, one forged drift, and only the third repairs it:
+        //   - an ordinary reusing solve keeps the incremental counts;
+        //   - so does `prevent_cache_reuse()` / `tell_solver_need_reset()`. That says
+        //     the SOLVER-SIDE data is stale -- data this grid re-derives from the
+        //     elements every time it rebuilds -- which says nothing about the counts.
+        //     Recounting there charged O(all elements) to every caller who merely
+        //     wanted a fresh solve;
+        //   - `tell_bus_counts_maybe_poisoned()` is the one that means it.
+        LSGrid grid = make_two_busbar_grid();
+        REQUIRE(solve_ac(grid).size() > 0);
+        const int busy_bus = bus_with_at_least_two(grid);
+        REQUIRE(busy_bus >= 0);
+        const std::size_t count_ok = grid.get_substations().get_nb_elements_per_bus()[busy_bus];
+
+        poke(grid).bus_lost_element(ls2g::GlobalBusId(busy_bus));
+
+        REQUIRE(solve_ac(grid).size() > 0);                       // cache reused
+        CHECK(grid.get_substations().get_nb_elements_per_bus()[busy_bus] == count_ok - 1u);
+
+        grid.prevent_cache_reuse();                               // full rebuild ...
+        REQUIRE(solve_ac(grid).size() > 0);
+        CHECK(grid.get_substations().get_nb_elements_per_bus()[busy_bus] == count_ok - 1u);  // ... but no recount
+
+        grid.tell_bus_counts_maybe_poisoned();                    // ... and now it does
+        REQUIRE(solve_ac(grid).size() > 0);
+        CHECK(grid.get_substations().get_nb_elements_per_bus()[busy_bus] == count_ok);
+    }
+}

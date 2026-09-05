@@ -772,6 +772,33 @@ class LS2G_API LSGrid final
             _declare_up_to_date(dc_cache_, algo_controler_.dc_algo_controler(), nb_bus);
         }
 
+        /**
+         * Tell the grid that the per-bus element counts may no longer be what the
+         * elements say, so the next powerflow rebuilds them from the elements.
+         *
+         * The counts are the one piece of grid state a powerflow does NOT re-derive:
+         * they are carried forward +1 / -1 from every mutation, and since connectivity
+         * IS the counts, a lost increment is a phantom (or missing) bus -- it enlarges
+         * or shrinks the solved system and shifts every bus id after it, and nothing
+         * downstream can tell, because an off-by-one count reads exactly like a real
+         * one. Rebuilding them is O(all elements).
+         *
+         * Needed only by a caller who changed which buses an element holds WITHOUT
+         * going through LSGrid's own `change_*` / `deactivate_*` / `reactivate_*`
+         * methods -- those count for themselves -- or who caught an exception out of
+         * one of them and cannot know how far it got. `prevent_cache_reuse()` is NOT
+         * this: it says the solver-side data is stale, which it re-derives from the
+         * elements anyway, and says nothing about the counts.
+         *
+         * Raised on BOTH families deliberately: the counts are one grid-wide object,
+         * not per-family state, so whichever family solves next must be the one that
+         * repairs them.
+         */
+        void tell_bus_counts_maybe_poisoned(){
+            algo_controler_.ac_algo_controler().tell_cache_maybe_poisoned();
+            algo_controler_.dc_algo_controler().tell_cache_maybe_poisoned();
+        }
+
         void tell_recompute_ybus(){algo_controler_.ac_algo_controler().tell_recompute_ybus(); algo_controler_.dc_algo_controler().tell_recompute_ybus();}
         void tell_recompute_sbus(){algo_controler_.ac_algo_controler().tell_recompute_sbus(); algo_controler_.dc_algo_controler().tell_recompute_sbus();}
         void tell_ybus_change_sparsity_pattern(){algo_controler_.ac_algo_controler().tell_ybus_change_sparsity_pattern(); algo_controler_.dc_algo_controler().tell_ybus_change_sparsity_pattern();}
@@ -2228,9 +2255,11 @@ class LS2G_API LSGrid final
          * `force_full_rebuild` is the caller's half of the "may I re-stamp?" answer:
          * the own-cache path passes its reuse policy, the foreign path passes true.
          * It is a parameter and not a member read because it is exactly what the two
-         * entry points disagree about. Note it cannot simply be `redo_all`: that is
-         * recomputed inside, because init_bus_status() can raise
-         * has_dimension_changed() half way through.
+         * entry points disagree about.
+         *
+         * `solver_control` is READ-ONLY here and nothing this function calls writes to
+         * it, which is what lets the powerflow hand over a working copy of the grid's
+         * change tracking rather than the member itself (see LSGrid::ac_pf).
          */
         template<class MatScalar>
         CplxVect _build_into_cache(const Eigen::Ref<const CplxVect> & Vinit,
@@ -2305,8 +2334,13 @@ class LS2G_API LSGrid final
         // res stays a plain reference (not Eigen::Ref): it is reassigned below
         // (res = _get_results_back_to_orig_nodes(...)) to total_bus() size, which can
         // differ from the caller's initial (often empty) res.
+        // `solve_control` is the working copy of this family's change tracking that
+        // `ac_pf` / `dc_pf` run the whole solve against (see the "exception safety"
+        // note on ac_pf). It is what gets marked "in sync" here -- never the member,
+        // which stays "everything changed" until the caller publishes this copy back
+        // on the success path.
         void process_results(bool conv, CplxVect & res, const Eigen::Ref<const CplxVect> & Vinit, bool ac,
-                             SolverBusIdVect & id_me_to_solver);
+                             SolverBusIdVect & id_me_to_solver, AlgoControl & solve_control);
 
         // Sanity-check the voltages a solver returned before they are consumed.
         // A wrong-sized V/Va/Vm is a contract violation -> throws
@@ -2384,10 +2418,10 @@ class LS2G_API LSGrid final
             control.tell_none_changed();
             cache.built_for_nb_bus = substations_.nb_bus();
         }
-        void _mark_cache_valid(bool ac){
-            if(ac) _mark_cache_valid(ac_cache_, algo_controler_.ac_algo_controler());
-            else _mark_cache_valid(dc_cache_, algo_controler_.dc_algo_controler());
-        }
+        // (there is deliberately no `_mark_cache_valid(bool ac)` shorthand any more:
+        // it marked the MEMBER control, and the only caller -- process_results -- must
+        // now mark the powerflow's working copy instead. Bringing it back would be the
+        // easy way to reintroduce the bug the working-copy protocol removes.)
 
         /**
          * One family's half of `unset_changes()`: record the claim if the cache can

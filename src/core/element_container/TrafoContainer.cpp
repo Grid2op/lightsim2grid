@@ -283,6 +283,7 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
         if(abs(dc_x_tau_shift_[trafo_id]) < _tol_equal_float) continue; // nothing to do if the trafo is not concerned (no phase shifter)
         
         bus_id_me = get_bus_side_2(trafo_id);
+#ifndef NDEBUG
         if(bus_id_me.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (GridModelId) the trafo with id ";
@@ -290,7 +291,9 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
             exc_ << " is connected (side 2) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
         bus_id_solver_lv = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
         if(bus_id_solver_lv.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (SolverId) the trafo with id ";
@@ -298,8 +301,10 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
             exc_ << " is connected (side 2) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
 
         bus_id_me = get_bus_side_1(trafo_id);
+#ifndef NDEBUG
         if(bus_id_me.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (GridModelId) the trafo with id ";
@@ -307,7 +312,9 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
             exc_ << " is connected (side 1) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
         bus_id_solver_hv = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
         if(bus_id_solver_hv.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (SolverId) the trafo with id ";
@@ -315,6 +322,7 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
             exc_ << " is connected (side 1) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
         Sbus.coeffRef(bus_id_solver_hv.cast_int()) -= dc_x_tau_shift_[trafo_id];
         Sbus.coeffRef(bus_id_solver_lv.cast_int()) += dc_x_tau_shift_[trafo_id];
     }

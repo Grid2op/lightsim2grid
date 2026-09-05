@@ -52,6 +52,12 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         return false;
     }
     // std::cout << "Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).\n";
+    // The system fills OUR mismatch buffers -- it is ours, so it writes into the
+    // members a caller reads through BaseAlgo::get_bus_mismatch(), the same two the
+    // FDPF fills directly. Two pointer stores; done here rather than at construction
+    // because the system is a member and this is the first point both exist.
+    _system.set_mismatch_buffers(mis_bus_, ybus_v_);
+
     // Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).
     _system.update_state(BaseAlgo::lsgrid_ptr_, Ybus, V, Sbus, slack_weights);
 
@@ -117,17 +123,29 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         // std::cout << "scaling_policy_->scale(_system, F);\n";
         auto timer_sc = CustTimer();
         real_type coeff = scaling_policy_->scale(_system, F);
+        // scale F in place rather than passing the `coeff * F` expression:
+        // binding it to apply_step's Eigen::Ref<const RealVect> parameter made
+        // Eigen materialise the expression into a heap temporary on every
+        // iteration. F is dead here -- it is overwritten by the new mismatch
+        // just below -- so scaling it in place is free, and the full-Newton
+        // case (coeff == 1, the NoScaling policy) does not even pay the scan.
+        if (coeff != static_cast<real_type>(1.)) F *= coeff;
         timer_scale_ += timer_sc.duration();
 
+        // timer_Va_Vm_ is the (Va, Vm) update and the voltage rebuild that follows
+        // it -- what apply_step does, and nothing else. It used to start above and
+        // so charged the scaling of F to it as well, which is not a voltage
+        // computation: applying `coeff` is the second half of the scaling policy and
+        // now counts where the policy itself does.
         auto timer_va_vm = CustTimer();
-        // std::cout << "apply_step(coeff * F)\n";
-        _system.apply_step(coeff * F);
+        _system.apply_step(F);
         timer_Va_Vm_ += timer_va_vm.duration();
 
-        // New mismatch
+        // New mismatch (written into F's existing buffer: its dimension cannot
+        // change inside the loop)
         // std::cout << "mismatch\n";
         auto timer_mis = CustTimer();
-        F = _system.mismatch();
+        _system.mismatch_into(F);
         timer_mismatch_ += timer_mis.duration();
         if (!F.allFinite()) { err_ = ErrorType::InifiniteValue; break; }
         converged = _check_for_convergence(F, tol);  // timer_check_
@@ -143,6 +161,22 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     V_  = _system.V();
     Vm_ = _system.Vm();
     Va_ = _system.Va();
+
+    // The angle this algorithm REPORTS is canonical, like the FDPF's. Done here,
+    // on our own copy and once per solve, rather than inside the iteration:
+    // nothing in there cares about a multiple of 2.pi (V is rebuilt through
+    // cos / sin, and the step accumulates into Va_ regardless), and the system's
+    // own Va_ stays exactly as the iteration left it.
+    //
+    // Until now the Newton-Raphson did not wrap at all. It got the effect by
+    // accident, from the atan2 in a repair that only fires on a trajectory heading
+    // for divergence, so a converged solve could report an angle outside
+    // [-pi, pi] where the FDPF never did.
+    //
+    // wrap_va asks before it acts, and on a converged solve the answer is "already
+    // in range": measured at +25k instructions per solve on case9241pegase, out of
+    // 206M, for an invariant this family did not have.
+    wrap_va(Va_);
 
     // Propagate NRSystem timers to NRAlgo
     // std::cout << "timers\n";

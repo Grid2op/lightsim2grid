@@ -44,6 +44,7 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         tmp = {target_p_mw_(shunt_id), -target_q_mvar_(shunt_id)};  // TODO : check the sign here for p_mw, it is suspicious !
 
         bus_id_me = bus_id_(shunt_id);
+#ifndef NDEBUG
         if(bus_id_solver.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "ShuntContainer::fillYbus: the shunt with id ";
@@ -51,7 +52,9 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
         if(bus_id_solver.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "ShuntContainer::fillYbus: the shunt with id ";
@@ -59,6 +62,7 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
         if(abs(sn_mva - 1.) > _tol_equal_float) tmp /= sn_mva;
         res.push_back(Eigen::Triplet<cplx_type> (bus_id_solver.cast_int(), bus_id_solver.cast_int(), tmp));
     }
@@ -115,6 +119,7 @@ void ShuntContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect &
         // i don't do anything if the shunt is disconnected
         if(!status_[shunt_id]) continue;
         bus_id_me = bus_id_(shunt_id);
+#ifndef NDEBUG
         if(bus_id_me.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "ShuntContainer::fillSbus: the shunt with id ";
@@ -122,10 +127,13 @@ void ShuntContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect &
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
         if(bus_id_solver.cast_int() == _deactivated_bus_id){
             throw std::runtime_error("LSGrid::fillSbus: A shunt is connected to a disconnected bus.");
         }
+#endif
         Sbus.coeffRef(bus_id_solver.cast_int()) -= target_p_mw_(shunt_id);  // TODO : check the - here, it is suspicious !
     }
 }
@@ -146,6 +154,7 @@ void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
             continue;
         }
         GlobalBusId bus_id_me = bus_id_(shunt_id);
+#ifndef NDEBUG
         if(bus_id_me.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "ShuntContainer::_compute_results: the shunt with id ";
@@ -153,17 +162,29 @@ void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+#endif
         SolverBusId bus_solver_id = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
         if(bus_solver_id.cast_int() == _deactivated_bus_id){
             throw std::runtime_error("ShuntContainer::compute_results: A shunt is connected to a disconnected bus.");
         }
-        cplx_type E = V(bus_solver_id.cast_int());
-        cplx_type y = -my_one_ * (target_p_mw_(shunt_id) + my_i * target_q_mvar_(shunt_id)) / sn_mva;
-        cplx_type I = y * E;
-        I = std::conj(I);
-        cplx_type s = E * I;
-        res_p_(shunt_id) = -std::real(s) * sn_mva;  // TODO : check the - here, it is suspicious !
-        if(ac) res_q_(shunt_id) = std::imag(s) * sn_mva;
+#endif
+        // Same arithmetic as `s = E * conj(y * E)` with `y = -(p + i.q) / sn_mva`,
+        // written on real and imaginary parts. std::complex's operator* carries a
+        // NaN-recovery branch after every product, and there are two products per
+        // shunt here -- 7327 of them on a 9241-bus grid, on every solve.
+        // Bit-identical: the branch only fires on a non-finite result, and
+        // (-1 * x) / s and -(x / s) agree exactly in IEEE 754.
+        const cplx_type E = V(bus_solver_id.cast_int());
+        const real_type e_re = std::real(E), e_im = std::imag(E);
+        const real_type y_re = -target_p_mw_(shunt_id) / sn_mva;
+        const real_type y_im = -target_q_mvar_(shunt_id) / sn_mva;
+        const real_type i_re =   y_re * e_re - y_im * e_im;    // I = conj(y . E)
+        const real_type i_im = -(y_re * e_im + y_im * e_re);
+        const real_type s_re = e_re * i_re - e_im * i_im;      // s = E . I
+        const real_type s_im = e_re * i_im + e_im * i_re;
+        res_p_(shunt_id) = -s_re * sn_mva;  // TODO : check the - here, it is suspicious !
+        if(ac) res_q_(shunt_id) = s_im * sn_mva;
         else res_q_(shunt_id) = my_zero_;
     }
 }

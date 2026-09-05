@@ -129,19 +129,23 @@ void SvcContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & i
         if(regulation_mode_(svc_id) != RegulationMode::REACTIVE_POWER) continue;
 
         const GlobalBusId bus_id_me = bus_id_(svc_id);
+#ifndef NDEBUG
         if(bus_id_me.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "SvcContainer::fillSbus: Svc with id " << svc_id
                  << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
+#endif
         const SolverBusId bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
         if(bus_id_solver.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "SvcContainer::fillSbus: Svc with id " << svc_id
                  << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
+#endif
         // P = 0, Q = setpoint (generator injection convention)
         Sbus.coeffRef(bus_id_solver.cast_int()) += my_i * target_q_mvar_(svc_id);
     }
@@ -248,9 +252,10 @@ bool SvcContainer::_reactivate(int svc_id, DualAlgoControl & solver_control)
 
 bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/)
 {
-    // el_id is validated (and the proper IndexError raised) by `_generic_change_bus`,
-    // which the caller runs *after* this function. Bail out here on an out-of-range
-    // id so the `regulated_bus_id_` write below never touches memory out of bounds.
+    // el_id is validated (and the proper IndexError raised) by
+    // OneSideContainer::change_bus / change_bus_no_bus_tracking, which run *before*
+    // this function. Bail out here on an out-of-range id anyway so the
+    // `regulated_bus_id_` write below never touches memory out of bounds.
     if(svc_id < 0 || svc_id >= nb()) return false;
     if(bus_id_(svc_id) == new_bus_id) return false;
     // a LOCAL voltage controller's regulated bus follows its own bus

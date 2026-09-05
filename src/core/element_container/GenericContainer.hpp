@@ -147,32 +147,45 @@ class LS2G_API GenericContainer : public BaseConstants
                                     Mutation && mutate){
             bool crossed = false;
             contribute_to_buses(el_id, substation, -1, crossed);
-            // Putting the contribution back is the other half of taking it away, so it
-            // has to happen on BOTH ways out -- see the catch below.
-            const auto put_the_contribution_back = [&]{
-                contribute_to_buses(el_id, substation, +1, crossed);
-                if(crossed){
-                    solver_control.ac_algo_controler().tell_dimension_changed();
-                    solver_control.dc_algo_controler().tell_dimension_changed();
-                }
-            };
-            try{
-                mutate();
-            }catch(...){
-                // The grid refused the mutation (an out-of-range bus id, a bad element
-                // id), or it gave up part way. The `-1` above has already happened; if
-                // the exception left here without the `+1`, every bus this element
-                // holds would stay one short -- silently, for the rest of the grid's
-                // life, on a call that was supposed to change nothing.
-                //
-                // `contribute_to_buses` reads the element's state as it is NOW, so this
-                // restores what the element holds after whatever did happen, which is
-                // what a recount would say either way. It cannot throw here: the same
-                // call with the same el_id already succeeded above.
-                put_the_contribution_back();
-                throw;
+            // Everything a caller can get wrong -- the element id, the bus id -- is
+            // checked by the mutators BEFORE they call in here (_check_in_range and
+            // _check_new_bus_id), so a call the grid refuses never reaches this
+            // bracket and the counts it would have left short are never touched.
+            //
+            // This used to be a try / catch that put the contribution back on the way
+            // out of an exception. It was not free: an unwind edge through this header
+            // made GCC keep every std::vector<bool> access in fillYbus live across it,
+            // for 4.9M instructions per rebuild solve of case9241pegase, in a function
+            // that never calls any of this.
+            //
+            // An exception from deeper inside a mutation can still leave the counts
+            // short -- the contribution is taken away above and never put back. That
+            // is deliberate, and it is why the counts are not the last word on
+            // themselves:
+            //
+            //   - such a grid must be REBUILT, not carried on with. A count that is
+            //     one short is not a slow path, it is a different grid: connectivity
+            //     IS the counts, so a bus that drops to 0 leaves the solved system
+            //     and shifts every bus id after it, and nothing downstream can tell,
+            //     because an off-by-one count reads exactly like a real one.
+            //   - a caller who catches such an exception says so with
+            //     `LSGrid::tell_bus_counts_maybe_poisoned()`, and the next powerflow
+            //     rebuilds the counts from the elements -- and, because poisoning
+            //     implies a solver reset, everything derived from them. That is the
+            //     repair; there is none in this bracket.
+            //   - an exception raised by the POWERFLOW rather than by a mutator needs
+            //     no such call: `LSGrid::ac_pf` / `dc_pf` run the solve against a copy
+            //     of the change tracking and publish it only on the success path, so a
+            //     throw leaves both families asking for a full rebuild by construction.
+            //
+            // What this bracket must never do is put the contribution back on the way
+            // out, which is what the try / catch cost.
+            mutate();
+            contribute_to_buses(el_id, substation, +1, crossed);
+            if(crossed){
+                solver_control.ac_algo_controler().tell_dimension_changed();
+                solver_control.dc_algo_controler().tell_dimension_changed();
             }
-            put_the_contribution_back();
         }
 
         /**computes the total amount of power for each bus (for generator only)**/
@@ -251,15 +264,19 @@ class LS2G_API GenericContainer : public BaseConstants
                 cont.end(),
                 static_cast<typename VectCLS::value_type>(val)) != cont.end();}
 
+        // Bounds check for an element id that came from OUTSIDE this library --
+        // a python call, a grid2op action, anything a user chose. Always
+        // compiled in: such an id is never trusted, and the alternative to
+        // throwing is an out-of-bounds read on a bit-packed std::vector<bool>,
+        // which in a release wheel is a segfault or silent garbage rather than
+        // an error.
         template<typename Cont, typename FunName, typename IntType>
         // todo automatically "unwrap" IntType to be either cont::size_type for stl container and
         // Eigen::Index for Eigen containers
         static void _check_in_range(IntType el_id, const Cont & cont, FunName fun_name="")
         {
-            // TODO debug mode: only in debug mode
             if(el_id >= static_cast<IntType>(cont.size()))
             {
-                // TODO DEBUG MODE: only check in debug mode
                 std::ostringstream exc_;
                 exc_ << "GenericContainer::"<<fun_name<<": Cannot access element with id";
                 exc_ << el_id;
@@ -270,13 +287,38 @@ class LS2G_API GenericContainer : public BaseConstants
             }
             if(el_id < 0)
             {
-                // TODO DEBUG MODE: only check in debug mode
                 std::ostringstream exc_;
                 exc_ << "GenericContainer::"<< fun_name <<" Cannot change the bus of element with id ";
                 exc_ << el_id;
                 exc_ << " (id should be >= 0)";
                 throw std::out_of_range(exc_.str());
             }
+        }
+
+        // The same check for an id THIS library generated: the counter of a loop
+        // over a container's own elements, which cannot be out of range unless
+        // there is a bug here rather than in the caller. Compiled out with
+        // NDEBUG; the assertion and sanitizer CI builds keep it, since
+        // USE_DEBUG_ASSERTS clears NDEBUG (see src/core/CMakeLists.txt).
+        //
+        // It was not free. On a 9241-bus grid the internal callers alone reached
+        // it 128k times per powerflow -- four passes over both ends of every
+        // branch, in fillYbus, compute_results and reconnect_connected_buses --
+        // and it plus the _get_bus it guards were ~1.9% of a solve, spent
+        // re-deriving a bound the loop already guarantees. Note the check is
+        // also a function call there, not an inlined compare: the error paths
+        // build an ostringstream, so the compiler keeps the whole thing
+        // out of line.
+        template<typename Cont, typename FunName, typename IntType>
+        static void _check_in_range_internal(IntType el_id, const Cont & cont, FunName fun_name="")
+        {
+#ifndef NDEBUG
+            _check_in_range(el_id, cont, fun_name);
+#else
+            (void) el_id;
+            (void) cont;
+            (void) fun_name;
+#endif
         }
 
     protected:
@@ -289,13 +331,66 @@ class LS2G_API GenericContainer : public BaseConstants
          * 
          * The new_gridmodel_bus_id is given in the gridmodel convention, between 0 and `n_sub * n_busbar_per_sub` 
          */
+        /**
+         * Validate a caller-supplied bus id, BEFORE anything is mutated.
+         *
+         * This used to live inside `_generic_change_bus`, which runs from inside the
+         * `_apply_and_track_buses` bracket -- so a bus id the grid was going to refuse
+         * was rejected only after the element's contribution had been taken away.
+         * `_apply_and_track_buses` compensated with a try / catch that put the
+         * contribution back on the way out.
+         *
+         * Checking first is both simpler and cheaper. Simpler because a refused call
+         * never touches the counts at all, rather than touching them and undoing it
+         * with a restore that has to reason about a half-applied mutation. Cheaper
+         * because the catch cost far more than the exceptional path it protected: an
+         * unwind edge through this header made GCC keep every `std::vector<bool>`
+         * access in `fillYbus` live across it, for 4.9M instructions per rebuild solve
+         * of case9241pegase -- in a function that never calls any of this.
+         *
+         * Always active: the id comes from the caller, so this is a user-facing check.
+         */
+        static void _check_new_bus_id(const GridModelBusId & new_gridmodel_bus_id, int nb_max_bus)
+        {
+            if(new_gridmodel_bus_id.cast_int() >= nb_max_bus)
+            {
+                std::ostringstream exc_;
+                exc_ << "GenericContainer::_change_bus: Cannot change an element to bus ";
+                exc_ << new_gridmodel_bus_id.cast_int();
+                exc_ << " There are only ";
+                exc_ << nb_max_bus;
+                exc_ << " distinct buses on this grid.";
+                throw std::out_of_range(exc_.str());
+            }
+            if(new_gridmodel_bus_id.cast_int() < 0)
+            {
+                std::ostringstream exc_;
+                exc_ << "GenericContainer::_change_bus: new bus id should be >=0 and not ";
+                exc_ << new_gridmodel_bus_id.cast_int();
+                throw std::out_of_range(exc_.str());
+            }
+        }
+
         void _generic_change_bus(
             int el_id,
             const GridModelBusId & new_gridmodel_bus_id,
             GlobalBusIdVect &  el_bus_ids,
             DualAlgoControl & solver_control,
             int nb_bus) const;
+        // el_id supplied by a caller: bounds-checked, throws out_of_range.
         GridModelBusId _get_bus(int el_id, const std::vector<bool> & status_, const GlobalBusIdVect & bus_id_) const;
+        // el_id produced by one of our own loops over this container: the bound
+        // is a property of the loop, so it is only asserted (see
+        // _check_in_range_internal). Defined here rather than in the .cpp so the
+        // loops that call it per element can actually inline it.
+        GridModelBusId _get_bus_internal(int el_id, const std::vector<bool> & status_, const GlobalBusIdVect & bus_id_) const
+        {
+            _check_in_range_internal(static_cast<std::vector<bool>::size_type>(el_id),
+                                     status_,
+                                     "_get_bus_internal");
+            if(!status_[el_id]) return GridModelBusId(_deactivated_bus_id);
+            return bus_id_(el_id);
+        }
 
         /**
         compute the amps from the p, the q and the v (v should NOT be pair unit)
@@ -306,29 +401,24 @@ class LS2G_API GenericContainer : public BaseConstants
                        const Eigen::Ref<const RealVect> & v) const;
 
         /**
-        convert v from pu to v in kv (and assign it to the right element...)
-        **/
-        void v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
-                           const Eigen::Ref<const RealVect> & Vm,
-                           const std::vector<bool> & status,
-                           int nb_element,
-                           const GlobalBusIdVect & bus_me_id,
-                           const SolverBusIdVect & id_grid_to_solver,
-                           const Eigen::Ref<const RealVect> & bus_vn_kv,
-                           Eigen::Ref<RealVect> v) const;
+        Convert this container's bus voltages to the per-element results: v from
+        pu to kV, theta from rad to degrees.
 
-
-        /**
-        compute va in degree from va in rad.
+        This was two functions, v_kv_from_vpu and v_deg_from_va, called back to
+        back on the same elements. Everything before the last line of each was
+        the same work -- read the element's bus, map it to a solver bus, check
+        both are connected -- so the walk is done once and both results are
+        written from it.
         **/
-        void v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
-                           const Eigen::Ref<const RealVect> & Vm,
-                           const std::vector<bool> & status,
-                           int nb_element,
-                           const GlobalBusIdVect & bus_me_id,
-                           const SolverBusIdVect & id_grid_to_solver,
-                           const Eigen::Ref<const RealVect> & bus_vn_kv,
-                           Eigen::Ref<RealVect> v) const;
+        void v_kv_theta_from_vpu(const Eigen::Ref<const RealVect> & Va,
+                                 const Eigen::Ref<const RealVect> & Vm,
+                                 const std::vector<bool> & status,
+                                 int nb_element,
+                                 const GlobalBusIdVect & bus_me_id,
+                                 const SolverBusIdVect & id_grid_to_solver,
+                                 const Eigen::Ref<const RealVect> & bus_vn_kv,
+                                 Eigen::Ref<RealVect> v,
+                                 Eigen::Ref<RealVect> theta) const;
 };
 
 

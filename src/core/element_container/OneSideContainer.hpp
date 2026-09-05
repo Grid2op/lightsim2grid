@@ -161,6 +161,8 @@ class OneSideContainer : public GenericContainer
         // public generic API
         int nb() const { return static_cast<int>(bus_id_.size()); }
         GridModelBusId get_bus(int el_id) const {return _get_bus(el_id, status_, bus_id_);}
+        // same, for an el_id one of our own loops produced (see _get_bus_internal)
+        GridModelBusId get_bus_internal(int el_id) const {return _get_bus_internal(el_id, status_, bus_id_);}
         const GlobalBusIdVect & get_buses() const {return bus_id_;}
 
         tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
@@ -234,10 +236,12 @@ class OneSideContainer : public GenericContainer
          * says the branch never held.
          */
         bool deactivate_no_bus_tracking(int el_id, DualAlgoControl & solver_control) {
-            // validate el_id *before* dispatching: `_deactivate` indexes status_[el_id]
-            // with an unchecked operator[] (a negative id would wrap to a huge size_t),
-            // and `_generic_deactivate` only checks afterwards.
-            _check_in_range(el_id, status_, "deactivate");
+            // Debug-only: every caller is inside an _apply_and_track_buses bracket whose
+            // public entry point (deactivate, deactivate_side_1, update_topo, ...) has
+            // already raised for a bad el_id, and a throw from in here would be a throw
+            // from inside the counting bracket -- which is what this whole layer exists
+            // to avoid, and what an unwind edge through this header costs fillYbus.
+            _check_in_range_internal(el_id, status_, "deactivate");
             bool res = this->_deactivate(el_id, solver_control);
             _generic_deactivate(el_id, status_);
             return res;
@@ -247,14 +251,14 @@ class OneSideContainer : public GenericContainer
         bool change_bus_no_bus_tracking(int el_id, GridModelBusId new_gridmodel_bus_id,
                                         DualAlgoControl & solver_control,
                                         const SubstationContainer & substation) {
-            _check_in_range(el_id, bus_id_, "change_bus");
+            _check_in_range_internal(el_id, bus_id_, "change_bus");  // see deactivate_no_bus_tracking
             if(bus_id_(el_id) == new_gridmodel_bus_id) return false;
             bool res = this->_change_bus(el_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
             _generic_change_bus(el_id, new_gridmodel_bus_id, bus_id_, solver_control, substation.nb_bus());
             return res;
         }
         bool reactivate_no_bus_tracking(int el_id, DualAlgoControl & solver_control) {
-            _check_in_range(el_id, status_, "reactivate");
+            _check_in_range_internal(el_id, status_, "reactivate");  // see deactivate_no_bus_tracking
             bool res = this->_reactivate(el_id, solver_control);
             _generic_reactivate(el_id, status_);
             return res;
@@ -274,6 +278,9 @@ class OneSideContainer : public GenericContainer
                 // validate load_id *before* dispatching: `_change_bus` reads bus_id_(load_id)
                 // with an unchecked Eigen operator(); `_generic_change_bus` only checks afterwards.
                 _check_in_range(load_id, bus_id_, "change_bus");
+                // and the BUS id too, before _apply_and_track_buses takes this
+                // element's contribution away -- see _check_new_bus_id.
+                _check_new_bus_id(new_gridmodel_bus_id, substation.nb_bus());
                 // a move to the bus it is already on holds exactly the same bus
                 // afterwards. Tracking it would take the contribution away and put
                 // it straight back -- correct counts, but a bus that is alone would
@@ -296,8 +303,8 @@ class OneSideContainer : public GenericContainer
                                      bool ac) final
         {
             const int nb_els = nb();
-            v_kv_from_vpu(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
-            v_deg_from_va(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
+            v_kv_theta_from_vpu(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv,
+                                res_v_, res_theta_);
             this->_compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
         }
 
@@ -454,6 +461,7 @@ class OneSideContainer : public GenericContainer
                 }
                 GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
                 bool change_effective = reactivate_no_bus_tracking(el_id, solver_control); // eg reactivate_load(load_id);
+                _check_new_bus_id(new_bus_backend, substations.nb_bus());
                 change_effective = change_bus_no_bus_tracking(el_id, new_bus_backend, solver_control, substations) || change_effective; // eg change_bus_load(load_id, new_bus_backend);
                 return change_effective;
             } else if (new_bus.cast_int() == _deactivated_bus_id){

@@ -232,6 +232,7 @@ void GeneratorContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVe
         if ((!turnedoff_gen_pv_) && is_pseudo_off(gen_id) && voltage_regulator_on_[gen_id]) continue;  
 
         bus_id_me = bus_id_(gen_id);
+#ifndef NDEBUG
         if(bus_id_me.cast_int() == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
@@ -240,7 +241,9 @@ void GeneratorContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVe
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
+#endif
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
         if(bus_id_solver.cast_int() == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
@@ -249,6 +252,7 @@ void GeneratorContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVe
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
+#endif
         tmp = {target_p_mw_(gen_id), 0.};
         if(!voltage_regulator_on_[gen_id]){
             // gen is pq if voltage regulaton is off
@@ -393,9 +397,10 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, DualAl
 }
 
 bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) {
-    // el_id is validated (and the proper IndexError raised) by `_generic_change_bus`,
-    // which the caller runs *after* this function. Bail out here on an out-of-range
-    // id so the `regulated_bus_id_` write below never touches memory out of bounds.
+    // el_id is validated (and the proper IndexError raised) by
+    // OneSideContainer::change_bus / change_bus_no_bus_tracking, which run *before*
+    // this function. Bail out here on an out-of-range id anyway so the
+    // `regulated_bus_id_` write below never touches memory out of bounds.
     if(el_id < 0 || el_id >= nb()) return false;
     if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
     // keep a LOCAL regulator local across a bus change: its regulated bus follows

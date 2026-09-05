@@ -316,11 +316,39 @@ jobs:
             CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
             - checkout
-            - run: cat /etc/os-release
-            # - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            # - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            - run: apt-get update
+            # silkeh/clang:11 is bullseye-based, and bullseye has moved to
+            # archive.debian.org, so `apt-get update` fails on the stock sources and the
+            # job dies before it compiles anything. bullseye-security is NOT on the
+            # archive at all (its InRelease is ignored and its Release 404s), unlike
+            # buster's, which is why compile_gcc_earliest survives a plain rewrite of
+            # both hosts and this job does not. Nothing here comes from the security
+            # suite: cmake, python3, git and pip are all in main.
+            #
+            # Written as one `set -x` block, and from scratch rather than by patching
+            # whatever the image ships, because this bootstrap has now failed three
+            # different ways and a step-per-command layout says only which command
+            # failed, never what apt was actually looking at. The clang toolchain lives
+            # in /etc/apt/sources.list.d/ and is deliberately left alone -- it is on
+            # apt.llvm.org, which is still up.
+            - run:
+                name: point apt at archive.debian.org
+                command: |
+                    set -x
+                    cat /etc/os-release
+                    cat /etc/apt/sources.list || true
+                    ls -la /etc/apt/sources.list.d/ || true
+                    # `main` only: that is all the image's own sources.list had (the
+                    # earlier build log fetched bullseye/main and nothing else), and a
+                    # component the archive does not carry would fail the update.
+                    echo "deb http://archive.debian.org/debian bullseye main" > /etc/apt/sources.list
+                    echo "deb http://archive.debian.org/debian bullseye-updates main" >> /etc/apt/sources.list
+                    cat /etc/apt/sources.list
+                    # An archived suite's Release file is past its Valid-Until, which
+                    # apt treats as fatal. Written as config rather than passed as -o so
+                    # that the later `apt` / `apt-get update` steps inherit it too.
+                    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until
+                    apt-get update
+                    apt-cache policy cmake
             - run: apt install cmake -y
             - run: apt purge python3-pkg-resources libtinfo5 -y
             # - run: apt purge python3-* -y

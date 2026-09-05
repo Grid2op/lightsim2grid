@@ -21,6 +21,7 @@ template<class LinearSolver, FDPFMethod XB_BX>
 class BaseFDPFAlgo final: public BaseAlgo
 {
     public:
+
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
         ~BaseFDPFAlgo() noexcept override = default;
 
@@ -49,6 +50,8 @@ class BaseFDPFAlgo final: public BaseAlgo
             grid_Bpp_ = Eigen::SparseMatrix<real_type>();  // the B double prime matrix  (size n_pq)
             p_ = RealVect();
             q_ = RealVect();
+            mis_over_vm_ = CplxVect();
+            // mis_bus_ / ybus_v_ are BaseAlgo's and are cleared by BaseAlgo::reset()
             need_factorize_ = true;
 
             // reset linear solvers
@@ -99,17 +102,34 @@ class BaseFDPFAlgo final: public BaseAlgo
             detail::reset_stats_timers_impl(_linear_solver_Bpp, 0);
         }
 
+        // (V * conj(Ybus * V) - Sbus + slack_absorbed * slack_weights), written
+        // into the persistent mis_bus_ buffer rather than returned by value: this
+        // runs once or twice per FDPF iteration, and returning an nb_bus
+        // complex vector meant heap-allocating and freeing one every time.
+        // Ybus * V lands in its own buffer first (`noalias`): a sparse * dense
+        // product left inside the coefficient-wise expression is one more
+        // temporary Eigen has to allocate to evaluate it.
+        void evaluate_mismatch_into(const EigenRefConstCplxSpMat     &  Ybus,
+                                    const Eigen::Ref<const CplxVect> & V,
+                                    const Eigen::Ref<const CplxVect> & Sbus,
+                                    size_t /*slack_id*/,  // id of the ref slack bus
+                                    real_type slack_absorbed,
+                                    const Eigen::Ref<const RealVect> & slack_weights)
+        {
+            ybus_v_.noalias() = Ybus * V;
+            mis_bus_ = V.array() * ybus_v_.array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
+        }
+
+        // value-returning form, kept for out-of-tree derived algorithms
         CplxVect evaluate_mismatch(const EigenRefConstCplxSpMat     &  Ybus,
                                    const Eigen::Ref<const CplxVect> & V,
                                    const Eigen::Ref<const CplxVect> & Sbus,
-                                   size_t /*slack_id*/,  // id of the ref slack bus
+                                   size_t slack_id,  // id of the ref slack bus
                                    real_type slack_absorbed,
                                    const Eigen::Ref<const RealVect> & slack_weights)
         {
-            // CplxVect tmp = Ybus * V;  // this is a vector
-            // tmp = tmp.array().conjugate();  // i take the conjugate
-            auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
-            return mis;
+            evaluate_mismatch_into(Ybus, V, Sbus, slack_id, slack_absorbed, slack_weights);
+            return mis_bus_;
         }
         
         void fillBp_Bpp(
@@ -192,18 +212,33 @@ class BaseFDPFAlgo final: public BaseAlgo
 
             // V = Vm * exp(1j * Va) : 
             V_ = Vm_.array() * tmp_va.array();
-            Vm_ = V_.array().abs();
-            Va_ = V_.array().arg();
-            auto mis = evaluate_mismatch(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights);  // mis = (V * conj(Ybus * V) - Sbus) / Vm
-            mis.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm (do not forget the / Vm !)
+            // ... then repair a magnitude the Q iteration drove past zero, because
+            // the division by Vm_ two lines below would otherwise flip that bus's P
+            // and Q. Cheap on the ordinary path: the function starts by asking
+            // whether there is a negative magnitude at all, and a converging
+            // trajectory never has one. V_ is built above and is unchanged either
+            // way. The angle wrap that used to run here with it has moved to the end
+            // of compute_pf -- see wrap_va for why once is enough.
+            fix_negative_vm(Vm_, Va_);
 
-            bool tmp = mis.allFinite();
-            if(!tmp){
+            evaluate_mismatch_into(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights);  // mis_bus_ = V * conj(Ybus * V) - Sbus
+            // mis / Vm (do not forget the / Vm !), out of place, so that mis_bus_ keeps
+            // the RAW mismatch -- the same quantity the Newton-Raphson leaves in that
+            // shared member, and the one a caller reading get_bus_mismatch() wants.
+            //
+            // Out of place, not "divide only the rows we extract": dividing at the
+            // gather (`mis_bus_(pvpq).real().array() / Vm_(pvpq).array()`) does strictly
+            // less arithmetic and measured 2.2% SLOWER on both flavours, because the
+            // gather cannot vectorise while this contiguous divide can. Same number of
+            // reads and writes as the in-place version it replaces; only the
+            // destination differs.
+            mis_over_vm_ = mis_bus_.array() / Vm_.array();
+            if(!mis_over_vm_.allFinite()){
                 err_ = ErrorType::InifiniteValue;
                 return false; // divergence due to Nans
             }
-            p_ = mis(pvpq).real();  // P = mis[pvpq].real
-            q_ = mis(pq).imag();  // Q = mis[pq].imag
+            p_ = mis_over_vm_(pvpq).real();  // P = mis[pvpq].real
+            q_ = mis_over_vm_(pq).imag();  // Q = mis[pq].imag
             return _check_for_convergence(p_, q_, tol);
         }
 
@@ -233,6 +268,9 @@ class BaseFDPFAlgo final: public BaseAlgo
         Eigen::SparseMatrix<real_type> Bpp_;  // the B double prime matrix  (size n_pq)
         RealVect p_;  // (size n_pvpq)
         RealVect q_;  // (size n_pq)
+        // the per-bus complex mismatch and the Ybus * V scratch are BaseAlgo::mis_bus_
+        // and BaseAlgo::ybus_v_: both families compute exactly them
+        CplxVect mis_over_vm_;  // mis_bus_ / Vm, what the P and Q rows are gathered from
         bool need_factorize_;
 
     private:

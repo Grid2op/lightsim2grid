@@ -107,7 +107,8 @@ class AlgoControl final
             slack_weight_changed_(true),
             ybus_some_coeffs_zero_(true),
             ybus_change_sparsity_pattern_(true),
-            one_el_change_bus_(true)
+            one_el_change_bus_(true),
+            cache_maybe_poisoned_(true)
             {};
 
         ~AlgoControl() noexcept = default;
@@ -125,6 +126,7 @@ class AlgoControl final
             ybus_some_coeffs_zero_ = true;
             ybus_change_sparsity_pattern_ = true;
             one_el_change_bus_ = true;
+            cache_maybe_poisoned_ = true;
         }
 
         /**
@@ -142,7 +144,8 @@ class AlgoControl final
                    !slack_participate_changed_ && !need_reset_solver_ &&
                    !need_recompute_sbus_ && !need_recompute_ybus_ && !v_changed_ &&
                    !slack_weight_changed_ && !ybus_some_coeffs_zero_ &&
-                   !ybus_change_sparsity_pattern_ && !one_el_change_bus_;
+                   !ybus_change_sparsity_pattern_ && !one_el_change_bus_ &&
+                   !cache_maybe_poisoned_;
         }
 
         void tell_none_changed(){
@@ -158,6 +161,7 @@ class AlgoControl final
             ybus_some_coeffs_zero_ = false;
             ybus_change_sparsity_pattern_ = false;
             one_el_change_bus_ = false;
+            cache_maybe_poisoned_ = false;
         }
 
         // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes)
@@ -185,6 +189,40 @@ class AlgoControl final
         // might need to trigger some recomputation of some solvers (eg NR based ones)
         void tell_ybus_some_coeffs_zero(){ybus_some_coeffs_zero_ = true;}
         void tell_one_el_changed_bus(){one_el_change_bus_ = true;}
+        /**
+         * The per-bus element counts may no longer be what the elements say.
+         *
+         * Deliberately NOT the same question as `need_reset_solver()`, which asks
+         * whether the SOLVER-SIDE data has to be rebuilt. Everything that data is
+         * made of is derived from the elements when it is rebuilt, so a reset costs
+         * time and nothing else. The counts are different: they are maintained
+         * incrementally (+1 / -1 in GenericContainer::_apply_and_track_buses), they
+         * are never recomputed on the ordinary path, and since bus connectivity IS
+         * the counts a wrong one is not a slow path but a different grid. Rebuilding
+         * them is O(all elements), so it must be asked for by the thing that can
+         * actually make them wrong -- not by every caller who merely wants a fresh
+         * solve.
+         *
+         * Raised by: construction, `tell_all_changed()` (so: reset, a copy, set_state,
+         * a powerflow that threw part way through), and LSGrid's public
+         * `tell_bus_counts_maybe_poisoned()`, which is what a caller who mutated the
+         * containers behind LSGrid's back -- or who caught an exception out of a
+         * mutator -- uses to say so. NOT raised by `prevent_cache_reuse()` /
+         * `tell_solver_need_reset()`: those say the solver data is stale, which says
+         * nothing about the counts.
+         */
+        void tell_cache_maybe_poisoned(){
+            cache_maybe_poisoned_ = true;
+            // Poisoned counts imply a solver reset, and the implication only runs this
+            // way. The counts decide which buses exist, so EVERYTHING the solver side
+            // is made of is built on them -- the bus labelling, the dimension of Ybus,
+            // the pv-pq split, the slack weights. Recounting while re-stamping the rest
+            // would repair the counts and then solve the old bus set anyway, which is
+            // the same wrong grid with a tidier bookkeeping. The converse does not
+            // hold, and that is the whole point of having two flags: a solver reset
+            // says nothing about the counts.
+            need_reset_solver_ = true;
+        }
 
         bool has_dimension_changed() const {return change_dimension_;}
         bool has_pv_changed() const {return pv_changed_;}
@@ -198,6 +236,8 @@ class AlgoControl final
         bool has_v_changed() const {return v_changed_;}
         bool has_ybus_some_coeffs_zero() const {return ybus_some_coeffs_zero_;}
         bool has_one_el_changed_bus() const {return one_el_change_bus_;}
+        // see tell_cache_maybe_poisoned()
+        bool cache_maybe_poisoned() const {return cache_maybe_poisoned_;}
 
     private:    
         bool change_dimension_;
@@ -212,6 +252,7 @@ class AlgoControl final
         bool ybus_some_coeffs_zero_;  // tells that some coeff of ybus might have been set to 0. (and ybus compressed again, so these coeffs are really completely hidden)
         bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
         bool one_el_change_bus_;  // whether one element has change of bus (or being reconnected / disconnected)
+        bool cache_maybe_poisoned_;  // the per-bus element counts may have drifted: see tell_cache_maybe_poisoned()
 };
 
 /**

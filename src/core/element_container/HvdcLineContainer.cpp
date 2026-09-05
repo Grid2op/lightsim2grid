@@ -450,6 +450,7 @@ void HvdcLineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
         const GlobalBusId bus_2 = get_bus_side_2(hvdc_id);
         const SolverBusId bus_1_solver = id_grid_to_solver[bus_1.cast_int()];
         const SolverBusId bus_2_solver = id_grid_to_solver[bus_2.cast_int()];
+#ifndef NDEBUG
         if((bus_1_solver.cast_int() == _deactivated_bus_id) ||
            (bus_2_solver.cast_int() == _deactivated_bus_id)){
             std::ostringstream exc_;
@@ -458,6 +459,7 @@ void HvdcLineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
+#endif
         const real_type theta_1 = Va(bus_1_solver.cast_int());
         const real_type theta_2 = Va(bus_2_solver.cast_int());
         const real_type raw = p0_mw_(hvdc_id) + k_mw_per_rad_(hvdc_id) * (theta_1 - theta_2);

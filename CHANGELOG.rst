@@ -13,6 +13,19 @@ Change Log
   and make it mandatory (changes what newly-saved files contain, and can only become
   mandatory once no already-saved file needs to load). See the long note on the member
   itself in ``SubstationContainer.hpp``.
+- Remote voltage control fails on a majority of generator / bus pairs, and it looks like a bug
+  rather than a data problem. Pointing generator ``g`` at a bus one branch away, with that bus'
+  voltage FROM THE BASE SOLUTION as the target, works for some generators and not others: on
+  case9241pegase, 895 of the 1445 pairs make a system the Newton-Raphson cannot solve, while the
+  remaining 550 converge together in 19 iterations. It is the individual pairs and not the count --
+  taking 20 controllers at a time along the generator list, seven windows out of eight converge in 6
+  iterations and one does not. At scale it fails on the FIRST iteration with ``InifiniteValue`` or
+  ``SolverFactor``, which points at the linear solver or at the Jacobian assembly rather than at the
+  data: the base solution satisfies KCL at every bus, so a solution demonstrably exists, and the
+  setpoint asked of each controlled bus is the magnitude that bus already holds. Neither feasible
+  setpoints nor forbidding control cycles (a strict order on ``(vn_kv, bus id)``) changes it.
+  Reproduce with ``benchmarks/make_exotic_grid.cpp``, which works around it by applying the control
+  in verified chunks and dropping the ones that do not solve.
 - [refacto] have a structure in cpp for the buses
 - [refacto] have the id_grid_to_solver and id_solver_to_grid etc. directly in the solver and NOT in the gridmodel.
 - [refacto] put some method in the DataGeneric as well as some attribute (_status for example)
@@ -126,6 +139,368 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] the last throw sites inside the ``_apply_and_track_buses`` bracket are gone, which
+  takes the branch ``fillYbus`` back to **exactly** what it cost before #188 landed: 7,222,254
+  instructions, the same figure to the digit. Together with the previous entry that is
+  12,085,107 -> 7,222,254 on that function (**-40.2%**), ``pre_process_solver``
+  33,503,851 -> 28,640,988, and **-4,862,863 on a whole case9241pegase rebuild solve (-0.56%)**.
+  Validating the bus id before the bracket removed the biggest unwind edge but not all of them:
+  ``deactivate_no_bus_tracking`` / ``reactivate_no_bus_tracking`` /
+  ``change_bus_no_bus_tracking`` each re-checked the element id, and so did
+  ``_generic_deactivate`` / ``_generic_reactivate`` / ``_generic_change_bus`` underneath them --
+  three layers of the same check, the outermost of which is the user-facing one. The inner two are
+  now ``_check_in_range_internal``, the debug-only form: every one of the 18 bracket call sites is
+  reached through a public entry point that has already raised for a bad id, and a throw from
+  inside the bracket is the thing this whole layer exists to avoid.
+  **No user-facing check was lost**, verified from a release build rather than by reading: a
+  release-built driver still raises for ``change_bus_load(0, -1)``, ``change_bus_load(0, nb+1000)``,
+  the generator equivalents, ``change_bus_load(999999, 0)`` and ``deactivate_load(999999)`` -- six
+  out of six. The Debug library carries all ten internal messages, the Release library four (the
+  user-facing ones).
+  Two stale comments went with it: ``GeneratorContainer::_change_bus`` and
+  ``SvcContainer::_change_bus`` both claimed their IndexError came from ``_generic_change_bus``
+  "which the caller runs *after* this function". It has not for some time -- 
+  ``change_bus_no_bus_tracking`` raises first.
+  227 test cases / 590,769 assertions pass in the C++17, C++14 and Debug builds -- including #188's
+  refused-``change_bus`` sweep, which is what makes this safe to do -- and results are
+  bit-identical across 16 AC and 8 DC configurations on case118 and the three PEGASE cases.
+- [IMPROVED] a ``change_bus`` the grid is going to refuse is now rejected **before** the per-bus
+  element counts are touched, instead of being compensated for afterwards. -3,899,955 instructions
+  on a case9241pegase rebuild solve (**-0.45% of everything**), of which the whole of the branch
+  ``fillYbus``' share: 12,085,107 -> 8,185,194, **-32.3%**.
+  ``_apply_and_track_buses`` brackets a mutation between "take this element's contribution away"
+  and "put it back". The bus-id validation lived inside that bracket, in ``_generic_change_bus``,
+  so a refused call was rejected with the contribution already removed -- which is why it needed a
+  ``try`` / ``catch(...)`` restoring it on the way out. That catch was not free: an unwind edge
+  through ``GenericContainer.hpp`` made GCC keep every ``std::vector<bool>`` access in ``fillYbus``
+  live across it, in a function that never calls any of this. Bisecting the nine commits of #188
+  against that single number found it exactly -- eight of them at 7,463,013 and the ninth at
+  8,859,264 -- and deleting only the catch, keeping everything else in that commit, restored
+  7,463,013 to the instruction.
+  The new ``GenericContainer::_check_new_bus_id`` is called by the four ``change_bus`` entry points
+  before they enter the bracket, so a refused call never touches the counts at all rather than
+  touching them and undoing it. It is always active: the id comes from the caller. An exception
+  from deeper inside a mutation can still leave the counts short, and that is deliberate -- such a
+  grid must be rebuilt and its caches dropped, not carried on with.
+  #188's own coverage is what caught the first attempt at this: it found the HVDC and two-sided
+  ``change_bus`` paths where the check had landed inside the lambda instead of before the bracket
+  (36 failing assertions). All 227 test cases / 590,769 assertions pass in the C++17, C++14 and
+  Debug builds, and results are bit-identical on case118 and the three PEGASE cases across 16 AC
+  and 8 DC configurations.
+- [IMPROVED] the same debug-only treatment for the "connected to a disconnected bus" checks on the
+  **results path**, where it is worth considerably more than on the assembly one:
+  ``LSGrid::compute_results`` drops **-1,591,221 instructions (-7.65%)** and **-7.4% of its wall
+  time** (min of 11 batches of 2000 calls: 954 -> 884 microseconds, four runs, the two ranges not
+  overlapping). Nine blocks, in ``TwoSidesContainer_rxh_A::compute_results_tsc_rxha_no_amps`` (four,
+  inside a loop over all 16049 branches of case9241pegase),
+  ``GenericContainer::v_kv_theta_from_vpu`` (two, over every load, static gen, storage, shunt,
+  generator and SVC), ``ShuntContainer::_compute_results`` (two) and
+  ``LSGrid::_get_results_back_to_orig_nodes`` (one, per bus). Each was an ``std::ostringstream``
+  built inline in the loop.
+  Same argument as the assembly path: these run only from ``LSGrid::process_results``, on a bus the
+  container just read out of its own ``bus_id_`` for an element already established as connected,
+  and on the ``id_me_to_solver`` this very solve built. Not gated, and deliberately: the guard in
+  ``HvdcLineContainer::compute_results`` that rejects a half-open droop line, which is a state
+  invariant rather than an id check and is the documented alternative to indexing with the open
+  side's -1.
+  Verified from the binaries: the Release and C++14 libraries carry none of the nine messages, the
+  Debug library carries them all. Results bit-identical on case118 and the three PEGASE cases, 16
+  AC configurations and 8 DC ones, every element result at 17 digits.
+- [IMPROVED] the "connected to a disconnected bus" checks in the **matrix and injection assembly**
+  are now debug-only, the same treatment ``_check_in_range`` got and for the same reason: the ids
+  they test are ones this library just produced. ``fillYbus`` / ``fillSbus`` / ``fillBdc`` /
+  ``hack_Sbus_for_dc_phase_shifter`` are reached only from ``LSGrid::_build_into_cache``; the bus
+  comes out of the container's own ``bus_id_`` for an element the loop has already established is
+  connected, and the solver id out of the ``id_grid_to_solver`` LSGrid built two steps earlier. A
+  failure there is not a caller error but an inconsistency between an element's status and its bus
+  -- which ``check_grid()`` validates, and which no public method can produce on its own. Each was
+  an ``std::ostringstream`` built inline in the assembly loop, so they also cost the surrounding
+  code its registers. 18 blocks across 7 containers.
+  Worth -240,759 instructions on the branch ``fillYbus`` (**-3.2%**), -394,671 on ``LSGrid::fillYbus``,
+  -359,922 on a whole case9241pegase AC rebuild solve and -169,974 on a DC one. Too small to
+  separate from run-to-run noise in wall clock; the instruction counts are exact and reproducible.
+  **Nothing a user can reach lost a check**, and the assertion builds keep every one of them: the
+  release libraries carry none of the message strings, the Debug library carries them all. Results
+  bit-identical on case118 and the three PEGASE cases -- 16 AC configurations (NR / NRSing / FDPF,
+  SparseLU and KLU) and 8 DC ones -- across every element result at 17 digits.
+- [IMPROVED] ``TwoSidesContainer_rxh_A``'s branch flow results are computed on real and imaginary
+  parts instead of through ``std::complex``. -963k instructions of the 21.7M
+  ``LSGrid::compute_results`` spends on a case9241pegase solve (-4.4%) and -2.9% on the function's
+  wall time (min of 11 batches of 2000 calls, four runs, the two ranges not overlapping). Each of
+  the grid's 16049 branches costs six complex-times-complex products -- ``y11.Ehv``, ``y12.Elv``,
+  ``y22.Elv``, ``y21.Ehv``, then ``Ehv.conj(I_hvlv)`` and ``Elv.conj(I_lvhv)`` -- and
+  ``std::complex`` follows every one of them with a branch that re-derives the result if it came
+  out NaN. That was a third (4.24M) of everything the branch flow loop did. Results are
+  bit-identical: the products are grouped exactly as ``std::complex`` groups them, ``conj`` is an
+  exact sign flip, and the recovery path only fires on a non-finite product. Verified on every
+  element result (P/Q/V/theta/amps of lines, trafos, loads, gens, shunts, sgens, storages and
+  hvdc, at 17 digits) over case118 and the three PEGASE cases under NR / NRSing / FDPF with
+  SparseLU and KLU.
+- [IMPROVED] ``GenericContainer::_get_amps`` computes the current in one pass instead of four.
+  **-14% on ``LSGrid::compute_results``' wall time** (min of 11 batches of 2000 calls: 1164 -> 1001
+  microseconds, four runs) and -1.55M instructions of 23.3M (-6.7%). It read
+  ``a = sqrt(p^2 + q^2) / (sqrt(3) . v)`` as four separate expressions -- the sum of squares into a
+  vector, a square root over that vector, a full copy of v, then a scan of the copy replacing the
+  zeros -- which is two full-length heap allocations and three extra passes over memory, on every
+  one of the four calls a solve makes (both ends of the powerlines and of the transformers). The
+  guard that stops a disconnected element's zero voltage dividing by zero is now a ternary inside
+  the one loop. Same arithmetic in the same order, so results are bit-identical -- verified on
+  every element result (P/Q/V/theta/amps of lines, trafos, loads, gens, shunts, sgens, storages and
+  hvdc, at 17 digits) over case118 and the three PEGASE cases under NR / NRSing / FDPF with
+  SparseLU and KLU. The wall-clock gain is much larger than the instruction count suggests, which
+  is the allocations: they cost time, not instructions.
+- [IMPROVED] ``GenericContainer::v_kv_from_vpu`` and ``v_deg_from_va`` are one function,
+  ``v_kv_theta_from_vpu``. -862k instructions of the 24.1M ``LSGrid::compute_results`` spends on a
+  case9241pegase solve (-3.6%), and -2.9% on the function's wall time (min of 11 batches of 2000
+  calls, four runs, no overlap between the two). They were called back to back on the same elements
+  by ``OneSideContainer::compute_results`` -- for loads, static gens, storages, shunts, generators
+  and SVCs -- and everything before the last line of each was the same work: read the element's
+  bus, map it through ``id_grid_to_solver``, check that neither is the deactivated bus. Only the
+  final assignment differed (Vm times the bus' nominal kV, against Va times 180/pi). The walk, the
+  two gathers and the two checks now happen once and both results are written from them. Results
+  are bit-identical, verified on every element result (P/Q/V/theta/amps of lines, trafos, loads,
+  gens, shunts, sgens, storages and hvdc, at 17 digits) over case118 and the three PEGASE cases
+  under NR / NRSing / FDPF with SparseLU and KLU.
+- [IMPROVED] ``ShuntContainer::_compute_results`` computes the shunt's power on real and imaginary
+  parts instead of through ``std::complex``. -264k instructions of the 24.4M ``LSGrid::compute_results``
+  spends on a case9241pegase solve (-1.1% of the post-processing). The expression is
+  ``s = E * conj(y * E)`` with ``y = -(p + i.q) / sn_mva``: two complex-times-complex products, each
+  followed by ``std::complex``'s NaN-recovery branch, on each of the grid's 7327 shunts on every
+  single solve. Written out on parts the branches are gone and the results are bit-identical -- the
+  recovery path only fires on a non-finite product, and ``(-1 * x) / s`` and ``-(x / s)`` agree
+  exactly in IEEE 754. Verified against the previous build on every element result
+  (P/Q/V/theta/amps of lines, trafos, loads, gens, shunts, sgens, storages and hvdc, at 17 digits)
+  over case118 and the three PEGASE cases under NR / NRSing / FDPF with SparseLU and KLU.
+- [IMPROVED] ``BaseDCAlgo::remove_slack_buses`` writes the slack-free DC matrix' compressed arrays
+  itself instead of collecting the surviving coefficients into a vector of ``Eigen::Triplet`` and
+  handing that to ``setFromTriplets``. **3.09x on the function** (11.4M -> 3.7M instructions for
+  three rebuilds of case9241pegase) and **-4.9% on a whole DC solve** (dc_pf 158.5M -> 150.8M);
+  wall clock per rebuild solve 12.97 -> 12.53 ms on case9241pegase, 3.39 -> 3.31 on case2869pegase,
+  1.53 -> 1.45 on case1354pegase.
+  Nothing here ever needed sorting or merging. ``mat_bus_id_`` is a monotone compaction --
+  ``fill_mat_bus_id`` hands out consecutive ids in bus order, skipping the slack buses -- and the
+  inner iterator walks each column of the source in increasing row order, so the coefficients that
+  survive the row/column deletion come out already in the order a compressed column-major matrix
+  stores them, one per coefficient. ``setFromTriplets`` cannot know that: it re-derived that exact
+  order the hard way, bucketing by row and transposing back into columns, both through a temporary
+  ``SparseMatrix`` carrying a double per entry, for 5% of a DC solve. The matrix is now built in
+  place in two passes over the source, one to size each column (straight into the outer array,
+  which a prefix sum turns into the column starts) and one to fill it. The triplet vector -- half a
+  megabyte on case9241pegase -- is gone with it, and ``res_mat`` is resized rather than reassigned,
+  so a rebuild at constant size re-uses what the previous one allocated.
+  The sortedness this rests on was measured, not assumed: an assertion over every consecutive pair
+  found the old triplet list strictly ordered column-major with no duplicates in all 136 builds of
+  the C++ test suite and on the four benchmark grids under both DC solvers. The new build was then
+  cross-checked against the old one coefficient by coefficient -- same nnz, same outer array, same
+  inner array, same values bit for bit -- over the same 136 builds and the same grids. What remains
+  in the code is the cheaper permanent form of that check, in debug builds: the matrix is
+  compressed, each column is filled exactly to the size the first pass computed, and its row
+  indices are strictly increasing (which is also what would catch ``mat_bus_id_`` losing the
+  monotonicity the whole function is built on).
+  Results are bit-identical -- voltages, line flows and generator P/Q, to 17 digits -- on case118
+  and the three PEGASE cases under ``DC_KLU`` and ``DC_SparseLU``, and the AC algorithms are
+  untouched.
+  ``LSGrid::fillBdc``, the other ``setFromTriplets`` in the DC path (6.6% of a DC solve), is
+  deliberately left alone: its entries are unsorted and heavily duplicated -- every branch writes
+  both its end buses' diagonals -- which is the one shape Eigen's assembler is already good at.
+- [IMPROVED] ``NRSystem::build_J_sparsity`` writes J's compressed-column arrays itself instead of
+  going through ``setFromTriplets`` and then looking every contribution back up in the result.
+  **1.5-1.6x on the phase that contains it** -- the ``pre_proc`` timer, which also covers
+  ``update_state`` and ``init_topology``, goes 5.06-5.21 -> 3.36-3.39 ms per solve on
+  case9241pegase, 1.39-1.46 -> 0.88-0.90 on case2869pegase, 0.60-0.63 -> 0.38-0.39 on
+  case1354pegase, and a rebuild solve on case9241pegase drops 2% of its total instruction count.
+  The function itself goes 58.7M -> 40.4M instructions for three rebuilds (**1.45x**, and 1.77x
+  against 1.0.0).
+  ``setFromTriplets`` runs the same two counting sorts this function needs -- bucket the entries by
+  row, then transpose into columns, the transpose being what sorts each column -- but it carries a
+  double per entry through a temporary ``SparseMatrix``, collapses duplicates in a pass of its own,
+  and materialises the transpose as a second matrix; and since it hands back only a matrix, finding
+  where each contribution landed took ``4 * nnz(Ybus)`` binary searches afterwards (~170k per
+  rebuild on a 9241-bus grid, 12.1M instructions of the 58.7M, with Eigen's own machinery
+  accounting for 23.5M more). Doing the two sorts here carries a 4-byte entry id instead of the
+  value, folds the duplicate collapse into the transpose, and -- the point of the exercise -- knows
+  each coefficient's position at the moment it writes its row index, so the dS maps and the feature
+  positions are filled straight from that walk and the binary searches are gone entirely.
+  Duplicate entries stay supported, which is what rules out the cheaper sorted-triplet path: a
+  feature entry may legitimately land on a dS coefficient (an hvdc droop slope adds to the
+  dP/dtheta of its end buses), and 856 of them turn up over the C++ test suite.
+  The invariants Eigen used to provide are now asserted in the debug build, where they are
+  verified over the whole suite: J compressed, every column filled exactly to its declared end,
+  row indices strictly increasing. Beyond that, the build was cross-checked entry by entry against
+  ``setFromTriplets`` + ``find_J_pos`` over 409 sparsity builds of the C++ test suite (which is
+  what exercises multi-slack, voltage control and hvdc) and on the four benchmark grids: same nnz,
+  same outer array, same inner array, same position for every single contribution. Results are
+  bit-identical on case118 and the three PEGASE cases across NR / NRSing / NRRefactorRetry /
+  FDPF XB / FDPF BX / DC with both SparseLU and KLU (32 configurations).
+  Two things were tried and dropped because they measured worse: keeping the scratch buffers as
+  members to skip the per-rebuild allocation (the extra indirection in the two hot walks cost more
+  than the allocations saved -- ``pre_proc`` 3.65-3.87 ms against 3.33-3.40 for the local
+  buffers, five runs out of five), and leaving J's value array uninitialised (``fill_J`` does write
+  every coefficient, but a freshly built J being all zeros is what ``get_J_python`` and the
+  assertions assume).
+  ``Base::find_J_pos`` has no caller left in the solve path. It stays part of the component
+  protocol -- a component or an external consumer still needs a way to locate a coefficient in a
+  built J -- with its comment corrected to say so.
+- [IMPROVED] ``NRSystem::build_J_sparsity`` hands its contributions straight to
+  ``setFromTriplets`` instead of copying them into a second vector first. The generic dS pass
+  records one 16-byte ``Contrib`` per Jacobian coefficient a dS matrix feeds (its J row and
+  column, the Ybus nonzero it reads, and which of the four dS parts it takes), and that vector has
+  to survive the build because the value maps are resolved from it afterwards. The code then
+  allocated an equally large ``std::vector<Eigen::Triplet<real_type> >`` and refilled it with the
+  same row/column pairs plus a literal ``0.`` -- 2.07 MB of it on case9241pegase, duplicating the
+  2.07 MB already held -- purely because ``setFromTriplets`` wants ``row() / col() / value()`` and
+  ``Contrib`` spelled them ``jrow() / jcol()`` and had no value at all. This pass builds the
+  sparsity pattern only, so every value written was zero anyway; ``fill_J`` writes the numbers.
+  ``Contrib`` now also answers to Eigen's triplet protocol, the feature entries the components
+  declare are appended to the same vector so one range covers the whole pattern, and the maps are
+  resolved over the leading dS entries. Worth 12.9M instructions of 908M on a case9241pegase
+  rebuild solve (**-1.4% of everything, C++ side**): the 8.5M spent constructing triplets is gone,
+  and ``set_from_triplets`` itself drops 12.5M -> 6.6M because the zero is now a constant the
+  compiler folds into the store rather than a value loaded per entry. Results are bit-identical --
+  the pattern handed to Eigen is the same, in the same order -- verified on case118 and the three
+  PEGASE cases across NR / NRSing / NRRefactorRetry / FDPF XB / FDPF BX with both SparseLU and KLU.
+- [IMPROVED] the bounds check on an element id is now compiled out with NDEBUG **when the id came
+  from this library rather than from a caller**. Profiling a powerflow on case9241pegase found
+  ``GenericContainer::_check_in_range`` and the ``_get_bus`` it guards reached 128k times per solve
+  -- four passes over both ends of every branch, in ``fillYbus``, ``compute_results`` and
+  ``reconnect_connected_buses`` -- all of them from loops shaped ``for(el_id = 0; el_id < nb();
+  ++el_id)``, where the bound is a property of the loop and the check can only fail if there is a
+  bug here rather than in the caller. Both were also out-of-line calls, not inlined compares: the
+  error paths build an ``ostringstream``. Worth ~2.9% of everything lightsim2grid itself does in a
+  rebuild solve (14.7M instructions of 919M).
+  **Nothing a user can reach lost its check.** ``_check_in_range`` is unchanged and still throws
+  for every id that crosses the python boundary -- ``get_bus_load`` / ``get_bus_gen`` /
+  ``get_bus1_powerline`` and friends, ``deactivate`` / ``reactivate`` / ``change_bus``,
+  ``change_ratio`` / ``change_shift``, ``set_regulated_bus``, ``set_status_droop``,
+  ``update_slack_weights_by_id``. The new ``_check_in_range_internal`` is the debug-only twin, used
+  by the new ``_get_bus_internal`` and by the ``get_bus_side_1_internal`` /
+  ``get_bus_side_2_internal`` accessors the branch containers' own loops now call. The assertion and
+  sanitizer CI builds keep every one of them, since ``USE_DEBUG_ASSERTS`` clears ``NDEBUG``.
+  Verified from both sides: ``lightsim2grid/tests/test_LSGrid_out_of_bounds.py`` (10 tests, 82
+  subtests -- the suite written for exactly this contract) still passes, and a release build
+  (``-DNDEBUG``) still raises ``out_of_range`` for a bad id on each user-facing accessor. Results
+  are bit-identical on case118 and the three PEGASE cases.
+- [IMPROVED] ``NRSystem::fill_internal_variables`` -- the dS assembly, and the most expensive thing
+  lightsim2grid itself does in a Newton solve (13.7% of one on case9241pegase, against 63% for KLU)
+  -- computes both derivatives from ONE product instead of four. 1.26-1.39x on the phase, on every
+  grid from 118 to 9241 buses, rebuild or cache-reuse; -36% of its instruction count under
+  callgrind. Writing Y for Ybus(i, j), the formulas derived from pandapower are
+  ``dS_dVm(i,j) = conj(Y.Vnorm_j).V_i`` and ``dS_dVa(i,j) = -conj(Y.V_j).i.V_i`` -- and Vnorm_j is
+  just V_j / |V_j|, so the first is the second's product divided by a real. With
+  ``B = conj(Y.V_j).V_i`` (two complex products), dS_dVm is ``B / |V_j|`` (a real scaling) and
+  dS_dVa is ``-i.B`` (a swap and a sign flip). The diagonal's two extra terms share a product the
+  same way: ``conj(Y.V_i - Ibus_i).V_i`` is ``B - conj(Ibus_i).V_i``, and its dS_dVm term
+  ``conj(Ibus_i).Vnorm_i`` is that same value over |V_i|. The arithmetic is now written on real and
+  imaginary parts rather than left to ``std::complex``, whose ``operator*`` carries a NaN-recovery
+  branch after every product -- on its own, that part was worth 1.19-1.31x and was bit-identical.
+  Two of the four nb_bus scratch vectors are gone with it: the unit phasors and the two
+  ``conj(Ibus) . *`` products are each used once per bus, on the diagonal, so they are built there
+  instead of materialised and carried through the solve.
+  Values move by **less than one ulp relative** (measured 1.9e-16 on case9241pegase): the one
+  rounding that differs is dividing by |V_j| after the product rather than before. This is the
+  Jacobian, not the residual -- it steers the Newton step, it does not define the answer -- and
+  across case118 and the three PEGASE cases, on NR / NRSing / SparseLU, iteration counts are
+  unchanged everywhere and converged voltages agree to 7.3e-13, five orders inside the 1e-8
+  tolerance. FDPF is untouched (it builds no Jacobian) and stays bit-identical.
+- [IMPROVED] ``NRSystem::fill_J`` no longer zeroes the Jacobian before filling it: ~1.2x on the
+  fill itself for a large grid (case9241pegase: 1.96 -> 1.63 ms per solve, and 2.28 -> 1.86 ms on
+  the rebuild path). It zeroed because every write accumulated, several contributions being able
+  to land on one coefficient -- so a value array a megabyte wide was rewritten at every
+  factorisation, and every coefficient was then read before being written. Only the FEATURE
+  entries actually need that: the four dS families live at (p_row, theta_col), (p_row, vm_col),
+  (q_row, theta_col) and (q_row, vm_col), and since a row is a P equation or a Q equation and a
+  column a theta unknown or a vm unknown -- never both -- they are pairwise disjoint, while within
+  a family the ledger hands every bus its own row and column, so no two dS entries ever claim the
+  same coefficient. They can therefore assign. What still accumulates is the feature entries,
+  because a component may legitimately add to a dS coefficient (an hvdc droop slope adds to the
+  dP/dtheta of its end buses), so those positions -- a handful, against every nonzero of J -- are
+  the only ones zeroed. Values are unchanged to the bit (``0 + x`` is ``x``), checked on case118
+  and the three PEGASE cases across NR / NRSing / SparseLU / FDPF.
+- [ADDED] ``build_J_sparsity`` asserts, in debug builds, the two properties the above rests on: no
+  Jacobian coefficient is claimed by two dS entries, and every stored coefficient has a writer (one
+  that is never written would keep a stale value now that the array is not cleared). Checked where
+  the layout is decided rather than assumed in the hot loop, and covered by the assertion / sanitizer
+  CI builds. Two tests pin the same thing behaviourally: filling J twice without changing anything
+  must not move it, and filling at one voltage state then another must match a system that only ever
+  saw the second -- both with and without a droop hvdc line, which is the case whose feature entries
+  land on dS coefficients.
+- [IMPROVED] ``Base::find_J_pos`` takes the index arrays rather than the matrix, and
+  ``build_J_sparsity`` reads them once instead of once per coefficient: ~1.1x on the pre-processing
+  of a rebuild (case9241pegase: 7.97 -> 7.19 ms). It was binding an ``Eigen::Ref`` to J on every
+  call, and it is called four times the Ybus nonzeros -- 170k times per solve on a 9241-bus grid,
+  which callgrind showed as the single most-called function in a powerflow. The Ref itself is free
+  to construct and does not copy (it aliases a compressed, same-Options matrix); paying for one per
+  coefficient to read two pointers that never change across the loop is what cost. The
+  matrix-taking overload stays, and now delegates.
+- [IMPROVED] **Fast-Decoupled powerflow is ~1.25-1.35x faster** (whole solve, both the XB and
+  the BX flavour, 49 to 1600 buses), for the same iteration count and the same answer.
+  ``BaseFDPFAlgo::has_converged`` rebuilds V from (Vm, Va) and then has to put that pair back in
+  canonical form -- magnitude >= 0, angle wrapped -- because the Q iteration (``Vm_(pq) -= q_``)
+  can overshoot a magnitude past zero and the P iteration accumulates into ``Va_`` without ever
+  wrapping it. It did that with ``Vm_ = V_.array().abs(); Va_ = V_.array().arg();``: a hypot and an
+  atan2 per bus, twice per iteration, to rediscover two numbers the solver already holds. V is
+  built as ``Vm_ * exp(i.Va_)``, so its modulus is just ``|Vm_|`` and its argument just ``Va_``,
+  plus half a turn where the magnitude went negative -- a sign flip and an addition. On a 121-bus
+  grid that pair cost 2.5 us per call out of a ~150 us solve. The complex voltage ``V_`` the solve
+  actually consumes is built exactly as before and is unchanged bit for bit; ``Vm_`` / ``Va_`` now
+  differ in their last bits (in their favour: an exact ``|Vm_|`` instead of a rounded
+  ``hypot(Vm.cos, Vm.sin)``), which moves a converged solution by ~1e-13 -- four orders of
+  magnitude inside the 1e-9 convergence tolerance, with iteration counts unchanged on all 80
+  grid / loading / flavour combinations checked, and no change in the distance to a Newton-Raphson
+  reference solution.
+- [ADDED] ``BaseFDPFAlgo::canonicalise_vm_va``, the (magnitude, angle) canonicalisation above, as a
+  named static so the identity it rests on can be tested head-on. It has to be: its two interesting
+  branches -- a negative magnitude, an angle several turns out of range -- turn out to be
+  unreachable from any converging solve (a trajectory that overshoots a magnitude ends up
+  diverging, and a diverged solve clears ``Vm_`` / ``Va_`` / ``V_``), so no solve-level test can
+  reach them.
+- [ADDED] ``src/tests/test_fdpf_algorithm.cpp``. The Fast-Decoupled family had no answer-level
+  coverage at all -- it appeared in the suite only through ``test_cache_reuse.cpp`` (caching, not
+  numbers) and ``test_plugin_registration.cpp`` (names) -- so the change above landed on untested
+  code. It now pins that both flavours converge to the Newton-Raphson solution of the same grid,
+  that the reported ``Vm`` / ``Va`` stay consistent with the reported ``V``, and that
+  ``canonicalise_vm_va`` agrees with the ``abs()`` / ``arg()`` pair it replaced over Vm in [-3, 3]
+  x Va in [-10, 10] rad. The one place they deliberately differ is Vm == 0 exactly, where the phase
+  of a zero phasor is undefined (``arg()`` returned whichever of 0 / +pi / -pi atan2's signed-zero
+  rules produced) and where the solve cannot converge anyway -- the mismatch is divided by that
+  zero on the next line and fails its ``allFinite()`` check.
+- [IMPROVED] **Gauss-Seidel is ~12x faster** (121-bus mesh, 5568 sweeps: 470 ms -> 37 ms; the
+  synchronous variant, 1.9x: 422 ms -> 228 ms), for the same sweeps and bit-identical voltages.
+  ``Ybus`` reaches a solver column-major, but a Gauss-Seidel sweep needs one ROW of it at a time --
+  and a row of a column-major sparse matrix is not stored anywhere: reading it means scanning every
+  column. ``GaussSeidelAlgo::one_iter`` did exactly that (``Ybus.row(k) * V_``, once per pq bus and
+  twice per pv bus), which made one sweep cost O(nb_bus * nnz) instead of O(nnz); and it re-found
+  ``Ybus(k, k)`` by binary search inside column k on every lookup. Both now come from caches
+  rebuilt once per ``compute_pf`` (an O(nnz) transpose, against the hundreds or thousands of sweeps
+  that follow): a row-major copy of ``Ybus`` and its diagonal. The row-major inner iterator visits a
+  row by increasing column index, which is the order Eigen's sparse * dense product summed it in,
+  so the sums are unchanged to the last bit.
+- [IMPROVED] ``BaseAlgo::_evaluate_Fx`` (the Gauss-Seidel convergence check) computed its
+  sparse-times-dense ``Ybus * V`` product **three times** per call, and the multi-slack overload
+  twice. The mismatch was kept as a lazy Eigen expression (``auto mis = ...``), and a lazy
+  expression holding a sparse * dense product re-evaluates that product every time the expression
+  is evaluated -- once per assignment of the three result segments. It is a concrete vector now.
+- [IMPROVED] the Newton-Raphson iteration allocates less per iteration: ~7-14% off the
+  algorithm-side cost of a solve (everything but the linear solver: dS assembly, Jacobian fill,
+  mismatch, voltage update), which on a 121-bus grid is about a fifth of an NR solve with KLU and
+  most of one without a fast linear solver. ``NRSystem``'s residual, trial-voltage and dS assembly
+  write into buffers that live as long as the system instead of heap-allocating and freeing a fresh
+  one on every call -- which matters most for the line-search / Iwamoto step policies, whose
+  backtracking evaluates the residual up to ``ls_max_iter`` times per iteration.
+  In particular every ``Ybus * V`` product now lands in a named buffer with ``.noalias()`` rather
+  than inside a coefficient-wise expression Eigen has to allocate a temporary to evaluate, and
+  ``NRAlgo`` scales its step in place instead of handing ``apply_step`` a ``coeff * F`` expression
+  that its ``Eigen::Ref`` parameter had to materialise. Values are unchanged bit for bit.
+- [IMPROVED] ``NRSystem`` no longer keeps ``dS_dVm`` / ``dS_dVa`` as two full ``Eigen::SparseMatrix``
+  copies of ``Ybus``. Nothing ever indexed them by (row, column): ``fill_internal_variables`` writes
+  them and ``fill_J`` reads them purely by nonzero position, so they are plain value arrays, one
+  coefficient per ``Ybus`` nonzero. Each topology change is two structure copies (outer + inner
+  index arrays) lighter -- the "TODO speed: copy only the sparsity pattern and not the values" that
+  used to sit in ``init_topology``.
+- [ADDED] ``NRSystem::mismatch_into(res)`` and ``NRSystem::mismatch_sq_norm_at_current()``: the
+  allocation-free forms of ``mismatch()`` and ``mismatch_sq_norm_at(<zero step>)``, which the NR
+  loop and the step-scaling policies now use. The value-returning forms stay, unchanged, for
+  out-of-tree algorithms.
 - [BREAKING] everything a solver family caches now lives in one object, ``SolverSideCache``
   (``src/core/SolverSideCache.hpp``), instead of eighteen separate ``LSGrid`` members. The bus
   labelling, ``Ybus`` / ``Sbus``, the slack, the PV / PQ split and each family's connectivity
@@ -144,6 +519,141 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   **This changes ``LSGrid``'s member layout**, so anything that casts an ``LSGrid`` across a module boundary (``gpusim2grid``) must be rebuilt
   against these headers -- which the plugin ABI policy in ``docs/solver_plugin.rst`` already
   requires. Nothing changes for python.
+- [ADDED] ``benchmarks/make_exotic_grid.cpp``: turns an ordinary ``.lsb`` into the same grid with
+  every ``NRSystem`` feature switched on at once. It exists because NONE of the MATPOWER benchmark
+  cases carries any of them -- case118, case1354pegase, case2869pegase and case9241pegase all have
+  0 hvdc, 0 SVC and 1 slack generator -- so the extensions contribute nothing there and any change to
+  that code measures as exactly zero. Applied to case9241pegase: a distributed slack over all 1445
+  generators (weight ``|target_p|``), 550 generators remotely regulating 486 buses one branch away,
+  5 voltage-mode SVCs and 20 hvdc lines (10 on angle droop, both station types in all three
+  combinations), giving a Jacobian of 18330 x 18330 with 141728 nonzeros against 17037 x 17037 /
+  129423 for the plain case. Two deliberate stress cases: consecutive hvdc lines share an end bus, so
+  two droop lines' ``dP/dtheta`` entries collide on one Jacobian position, and the voltage-regulating
+  VSC stations sit on buses the generators also control.
+  Three things it has to respect, all learned the hard way and all documented in the file: every
+  voltage setpoint is read off a reference solve of the unmodified grid, because a setpoint is a
+  property of the BUS and inventing one per generator diverges outright; an SVC must be alone in its
+  control group ("not supported in v1"), so an SVC co-regulating with generators is not expressible
+  today; and the remote control is applied in verified chunks, because 895 of the 1445 generator /
+  bus pairs make a system the Newton-Raphson cannot solve -- individually, not by weight of numbers
+  (taking 20 controllers at a time along the generator list, seven windows out of eight converge in
+  6 iterations and one does not).
+- The per-feature "needs zeroing" split suggested in the review of #189 was measured on that grid and
+  NOT done. ``fill_J`` zeroes the feature positions before the dS passes assign and the components
+  add on top; the proposal was to let features that never change skip it. The inventory holds -- only
+  the hvdc droop's values change between iterations (they follow ``Va`` and a sign branch), while
+  MultiSlack's slack weights and every VoltageControl coefficient are fixed for the whole solve --
+  but the loop costs 1,176,480 instructions per three solves out of 3,577,650,967, i.e. **0.033% of
+  the program and 1.35% of fill_J**, on the grid built to maximise it. Realising any part of that
+  means reworking the ``zero -> dS assign -> feature add`` ordering, which is what makes the
+  shared-bus droop case come out right. Recorded so it is not re-proposed without the number.
+- [FIXED] ``GaussSeidelAlgo``'s diagonal scan stops at the diagonal. Ybus is column-major and
+  compressed, so a column's row indices ascend and there is nothing left to find once one passes the
+  column index; it read the whole lower triangle of every column for nothing.
+- [FIXED] the Newton-Raphson's ``timer_Va_Vm_`` now times the (Va, Vm) update and the voltage
+  rebuild that follows it -- what ``apply_step`` does -- and nothing else. It used to start one
+  statement earlier and so charged the scaling of the step vector to it as well; applying the
+  scaling coefficient is the second half of the scaling policy and now counts where the policy
+  itself does (``timer_scale_``). No arithmetic changes, only which timer each part lands in.
+- ``NRSystem``'s ``Contrib`` (its constructor, ``structural()`` and every accessor, including the
+  Eigen triplet protocol's ``row()`` / ``col()`` / ``value()``) is ``constexpr`` and ``noexcept``.
+  Four ints behind accessors, on the hot path of ``build_J_sparsity``; C++14 is enough for all of
+  it, which the C++14 job confirms.
+- [ADDED] ``BaseAlgo::get_bus_mismatch()``: the per-bus complex power mismatch of the last solve --
+  ``V .* conj(Ybus * V) - Sbus`` plus whatever the algorithm's components inject (the distributed
+  slack's share, the hvdc droop flows, a voltage controller's reactive output) -- in solver bus
+  numbering, available from any algorithm without knowing which family produced it. It and the
+  ``Ybus * V`` scratch are now ``BaseAlgo`` members filled by the concrete algorithm:
+  ``BaseFDPFAlgo`` writes them directly, and ``NRAlgo`` -- which owns its ``NRSystem`` rather than
+  being one -- hands the system their addresses, so nothing had to learn about the algorithm in the
+  other direction. An ``NRSystem`` built on its own (as the algorithm tests do) falls back to
+  buffers of its own, and ``NRAlgo`` re-points them on every solve, so a copied algorithm cannot
+  write into the original's members. This costs +0.14% on an FDPF solve (``case9241pegase``,
+  637,137,124 instructions per three solves against 636,268,666) and nothing on the Newton-Raphson.
+  The cost is one extra vector: the FDPF used to divide the mismatch by Vm *in place*, which left
+  that member holding mismatch/Vm rather than the mismatch -- a different quantity from the one the
+  Newton-Raphson leaves in the same place -- so the division is now out of place. Dividing only the
+  rows actually extracted would avoid the extra vector and does strictly less arithmetic; it
+  measured 2.2% slower, because the gather cannot vectorise and the contiguous divide can.
+- [FIXED] the Newton-Raphson and the Fast-Decoupled family now share one implementation of "put
+  (Vm, Va) back in canonical form", in ``BaseConstants``, instead of having grown two that did
+  different things. Both can drive a magnitude past zero mid-solve -- the FDPF Q iteration
+  (``Vm_(pq) -= q_``), the NR step (``Vm_(bus) += dx(col)``) -- and both accumulate into ``Va_``
+  without wrapping. The FDPF repaired it with a sign flip and a half turn, unconditionally, on every
+  call; ``NRSystem::apply_step`` repaired the same overshoot with ``Vm_ = V_.abs(); Va_ = V_.arg();``
+  -- the hypot and atan2 pair the cheap form exists to replace -- but only when a magnitude had
+  actually gone negative, and wrapped the angle as an accidental side effect of ``atan2``'s range.
+  The two halves have different justifications and are now separated accordingly:
+  ``fix_negative_vm`` runs on every FDPF iteration, because ``mis_ /= Vm_`` follows it and a
+  negative magnitude flips that bus's P and Q; ``wrap_va`` runs once per solve,
+  because nothing inside either solve reads ``Va_`` except its own accumulation and the cos / sin
+  that rebuild V, and both are indifferent to a multiple of 2.pi. Measured on ``case9241pegase``,
+  against five alternatives (shared with no guard, guarded per call, guarded plus a wrap guard, and
+  the wrap moved to the end with and without its own guard): FDPF_XB 674,070,631 -> 636,268,666
+  instructions per three solves and FDPF_BX 534,628,024 -> 505,471,702, both about -5.6%, with every
+  element result bit-identical. The shared implementation on its own accounts for none of that --
+  it measured within noise of the old code -- the guard is the whole of it. A seventh shape was
+  measured and rejected: one fused coefficient-wise loop reading each element once and writing only
+  the ones out of form, with no whole-vector expression and no separate probe. It beats the old code
+  but loses to the guard by ~2.8% on both flavours (FDPF_XB 654,109,921 against 636,268,666 on
+  ``case9241pegase``), because a scalar loop does not vectorise and touches both ``Vm`` and ``Va``
+  where the guard is a vectorised read over ``Vm`` alone. Each guard lives inside the function it
+  guards rather than at the call sites, so the two families cannot ask the question differently
+  again: ``fix_negative_vm`` returns immediately when ``Vm.minCoeff() >= 0`` and ``wrap_va`` when
+  every angle is already in range. That is where the whole gain is, so it is not left to callers to
+  remember.
+- [FIXED] a converged Newton-Raphson now reports an angle in [-pi, pi], as the Fast-Decoupled family
+  always has. It never wrapped: it inherited the effect from the ``atan2`` in a repair that only
+  fires on a trajectory heading for divergence, so an ordinary solve could report an angle outside
+  the range where the FDPF never did. Costs +25k instructions per solve on ``case9241pegase`` (out
+  of 206M), because the wrap is asked for before it is done -- one pass and a reduction, against the
+  four passes of the wrap itself, and on a converged solve the answer is essentially always "already
+  in range".
+- [FIXED] a drift in the per-bus element counts no longer outlives the invalidation that should have
+  repaired it. Everything else a solve builds -- the bus labelling, Ybus / Sbus, the PV / PQ split,
+  the slack weights -- is derived from those counts, here and now; the counts themselves were the
+  exception, carried forward ``+1`` / ``-1`` from every mutation the grid had ever seen and
+  re-established only when they had never been counted at all (a fresh grid, ``set_state`` /
+  ``load_binary``, an ``init_*``). Since bus connectivity *is* the counts, a count that is wrong is
+  not a slow path but a different grid -- a phantom bus enlarges the solved system and shifts every
+  bus id after it -- and nothing downstream can tell, because an off-by-one count reads exactly like
+  a real one. ``AlgoControl`` therefore gained ``cache_maybe_poisoned()``, and a powerflow whose
+  control raises it rebuilds the counts from the elements. It is deliberately NOT
+  ``need_reset_solver()``: that says the solver-side data is stale, which this grid re-derives from
+  the elements anyway, so asking it would have charged an O(all elements) recount to every caller who
+  merely wanted a fresh solve. The implication runs one way only -- a poisoning claim raises
+  ``need_reset_solver()`` with it, because a repaired count that did not reach the bus labelling
+  would leave the solve on the old bus set. Raised by construction, by ``tell_all_changed()`` (so: a
+  reset, a copy, a ``set_state``, a powerflow that threw part way through) and by the new
+  ``LSGrid.tell_bus_counts_maybe_poisoned()``, which is how a caller who changed bus membership
+  behind ``LSGrid``'s back -- or who caught an exception out of a mutator -- says so. Costs nothing
+  on any ordinary path: measured on ``case9241pegase``, +15 instructions per three solves with the
+  cache reused and +164 per three solves on a full rebuild.
+- [FIXED] a powerflow that throws part-way through no longer leaves the grid claiming its solver-side
+  cache is up to date. A solve rebuilds that cache in place -- the bus labelling, Ybus / Sbus, the
+  PV / PQ split, the slack weights, the algorithm's factorization -- so a throw anywhere in
+  ``ac_pf`` / ``dc_pf`` (a plugin solver raising, the wrong-sized-voltage rejection, an internal
+  consistency error) left a mixture of the old grid and the new one behind, with the change flags
+  still saying whatever they said before the call. ``ac_pf`` / ``dc_pf`` now run the whole solve
+  against a *copy* of the change tracking and hold the grid itself at "everything changed, both
+  families" for the duration; the copy becomes the grid's change tracking only at a publication
+  statement placed after ``compute_results``, which a throw never reaches. So an interrupted
+  powerflow leaves ``need_reset_solver()`` true on both families and the next one rebuilds from
+  scratch -- by construction, whatever a future step throws and wherever. Deliberately not a
+  ``try`` / ``catch``: an unwind edge through this code is not free (the one that used to guard the
+  bus-counting bracket cost 4.9M instructions per solve without ever running), while the copy is 24
+  bools -- measured at +21 instructions per solve on ``case9241pegase``, against 206M. Note the
+  input validation at the top of ``ac_pf`` / ``dc_pf`` (Vinit size, ``max_iter`` / ``tol``, a droop
+  grid handed to a solver that cannot do droop) stays *outside* that bracket: it runs before
+  anything is touched, so a rejected call still costs the caller's cache nothing.
+  ``build_solver_input`` / ``build_dc_solver_input`` (the batch-algorithm entry points) got the same
+  treatment from the other side: they now retire this grid's cache *before* copying the caller's
+  labelling into it rather than after, so a throw part way through that copy cannot leave a
+  half-published mixture behind a control that still says the cache is up to date.
+  Covered by a plugin solver that converges on its first call and throws on every later one: the
+  same grid, the same solver object, twice, so the state after the second call is the throw's doing
+  and nothing else's. Before this change that grid still answered ``nothing_changed()`` on both
+  families after the throw -- it would have solved from the half-rebuilt cache.
 - [FIXED] a batch algorithm no longer writes half of what it builds into the grid's cache.
   ``slack_weights``, ``bus_pv`` and ``bus_pq`` were not parameters of ``pre_process_solver``: they
   were taken from the grid's own members whatever the caller passed for the other six containers.

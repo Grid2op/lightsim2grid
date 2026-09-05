@@ -91,10 +91,12 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(
 
     // first check, if the problem is already solved, i stop there
     // compute a first time the mismatch to initialize the slack bus
-    CplxVect mis = evaluate_mismatch(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights);
-    mis.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm
-    p_ = mis(pvpq).real();  // P = mis[pvpq].real
-    q_ = mis(pq).imag();  // Q = mis[pq].imag
+    evaluate_mismatch_into(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights);
+    // mis / Vm out of place, so mis_bus_ keeps the raw mismatch -- see has_converged,
+    // which does the same and says why.
+    mis_over_vm_ = mis_bus_.array() / Vm_.array();
+    p_ = mis_over_vm_(pvpq).real();  // P = mis[pvpq].real
+    q_ = mis_over_vm_(pq).imag();  // Q = mis[pq].imag
     
     CplxVect tmp_va;
     nr_iter_ = 0; //current step
@@ -140,6 +142,12 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(
         if (err_ == ErrorType::NoError) err_ = ErrorType::TooManyIterations;
         res = false;
     }
+    // The reported angle is canonical, whatever the solve did to it: the wrap no
+    // longer runs inside has_converged (it is invisible to everything in there --
+    // see wrap_va), so it runs once, here, on every exit path. `Va_` is meaningful
+    // on all of them: it is either the input, or an iterate. A no-op on a converged
+    // solve, whose angles are already in range -- wrap_va asks before it acts.
+    wrap_va(Va_);
     timer_total_nr_ += timer.duration();
     #ifdef __COUT_TIMES
         {

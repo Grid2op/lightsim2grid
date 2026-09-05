@@ -171,6 +171,7 @@ void ConverterStationContainer::fillSbus_station(Eigen::Ref<CplxVect> Sbus,
         if(!status_[station_id]) continue;
 
         bus_id_me = bus_id_(station_id);
+#ifndef NDEBUG
         if(bus_id_me.cast_int() == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
@@ -179,7 +180,9 @@ void ConverterStationContainer::fillSbus_station(Eigen::Ref<CplxVect> Sbus,
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
+#endif
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
         if(bus_id_solver.cast_int() == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
@@ -188,6 +191,7 @@ void ConverterStationContainer::fillSbus_station(Eigen::Ref<CplxVect> Sbus,
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
+#endif
         tmp = {skip_p[station_id] ? 0. : target_p_mw_(station_id), 0.};
         if(!voltage_regulator_on_[station_id]){
             // station is pq if voltage regulation is off (VSC q setpoint or LCC consumption)

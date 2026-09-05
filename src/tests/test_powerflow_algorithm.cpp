@@ -920,6 +920,66 @@ TEST_CASE("a droop end on the slack of a single-slack system drops three entries
 // all three extensions at once
 // ===========================================================================
 
+TEST_CASE("fill_J rewrites every Jacobian coefficient it owns", "[NRSystem]")
+{
+    // fill_J does NOT zero J first any more: the dS passes assign, and only the
+    // feature entries accumulate (on top of a zero this writes for them), which
+    // is what lets a megabyte-sized value array stay untouched between fills.
+    // The property that makes it correct is that every stored coefficient is
+    // fully rewritten by each fill -- no coefficient survives from the previous
+    // one. Filling twice without changing anything must therefore be a no-op:
+    // were a coefficient still accumulating, the second fill would double it.
+    //
+    // The droop hvdc variant is the case that matters: its four dP/dtheta
+    // entries land ON dS coefficients, so they are the ones that still have to
+    // add rather than assign, and the ones a missing zero would double.
+    for (bool with_droop : {false, true}) {
+        LSGrid grid = make_radial_grid(4);
+        if (with_droop) add_droop_hvdc(grid, 1, 2, 10., 2.);
+        const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+
+        MultiSlackNRSystem sys;
+        build_system(sys, in, &grid);
+        const SpMatReal J_once = sys.J();
+
+        sys.fill_internal_variables();
+        sys.fill_J();
+        const SpMatReal J_twice = sys.J();
+
+        INFO((with_droop ? "with a droop hvdc line" : "without hvdc"));
+        REQUIRE(pattern_of(J_twice) == pattern_of(J_once));
+        CHECK(values_of(J_twice) == values_of(J_once));
+    }
+}
+
+TEST_CASE("a refilled J holds no trace of the state it was filled with before", "[NRSystem]")
+{
+    // The same property seen from the other side: fill at one voltage state,
+    // then at another, and the result must equal a system that only ever saw
+    // the second state. A coefficient that kept anything from the first fill
+    // would show up here even when the doubling test above passes.
+    LSGrid grid = make_radial_grid(4);
+    add_droop_hvdc(grid, 1, 2, 10., 2.);
+    const SolverInputs first = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+
+    // a second, different voltage state on the same topology
+    SolverInputs second = first;
+    for (Eigen::Index i = 0; i < second.V.size(); ++i)
+        second.V(i) *= cplx_type(0.97, 0.02);
+
+    MultiSlackNRSystem reused;
+    build_system(reused, first, &grid);     // filled once at `first` ...
+    build_system(reused, second, &grid);    // ... then again at `second`
+
+    MultiSlackNRSystem fresh;
+    build_system(fresh, second, &grid);     // only ever saw `second`
+
+    const SpMatReal J_reused = reused.J();
+    const SpMatReal J_fresh = fresh.J();
+    REQUIRE(pattern_of(J_reused) == pattern_of(J_fresh));
+    CHECK(values_of(J_reused) == values_of(J_fresh));
+}
+
 TEST_CASE("a grid exercising every NR extension at once stays consistent", "[NRSystem]")
 {
     // distributed slack (bus 0 + bus 1) + a remote-regulating generator

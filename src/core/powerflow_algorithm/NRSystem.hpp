@@ -19,6 +19,7 @@
 #include "Eigen/SparseCore"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <tuple>
 #include <vector>
@@ -78,17 +79,33 @@ class LS2G_API Contrib final
         dSdX whichmat_;
 
     public:
-       Contrib(int jrow, int jcol, int ybus_k, dSdX whichmat) noexcept:
+       // constexpr throughout: these are four ints wrapped in accessors, on the hot
+       // path of build_J_sparsity, and C++14 is enough for all of it (a constexpr
+       // member function is not implicitly const there, hence the explicit `const`).
+       constexpr Contrib(int jrow, int jcol, int ybus_k, dSdX whichmat) noexcept:
            jrow_(jrow),
            jcol_(jcol),
            ybus_k_(ybus_k),
            whichmat_(whichmat) {}
 
-       int jrow() const {return jrow_;}
-       int jcol() const {return jcol_;}
-       int ybus_k() const {return ybus_k_;}
-       dSdX whichmat() const {return whichmat_;}
+       // A structural-only entry: it claims a J coefficient but carries no dS
+       // value (used for the feature coefficients, which fill_J writes itself).
+       static constexpr Contrib structural(int jrow, int jcol) noexcept {
+           return Contrib(jrow, jcol, -1, dSdVa_r);
+       }
 
+       constexpr int jrow() const noexcept {return jrow_;}
+       constexpr int jcol() const noexcept {return jcol_;}
+       constexpr int ybus_k() const noexcept {return ybus_k_;}
+       constexpr dSdX whichmat() const noexcept {return whichmat_;}
+
+       // Eigen's "triplet" protocol: build_J_sparsity hands the contributions
+       // straight to setFromTriplets instead of copying them into a vector of
+       // Eigen::Triplet just to attach the zero. That pass builds the sparsity
+       // pattern only, so every value is zero; fill_J writes the numbers.
+       constexpr int row() const noexcept {return jrow_;}
+       constexpr int col() const noexcept {return jcol_;}
+       constexpr real_type value() const noexcept {return static_cast<real_type>(0.);}
 };
 
 // ---- Component protocol --------------------------------------------------------
@@ -157,16 +174,33 @@ class LS2G_API Base
             nb_pvpq_(0)
             {}
 
+        // Position of (row, col) in a compressed column-major matrix' value
+        // array, -1 if that coefficient is not stored. Nothing in the solve
+        // path calls this any more -- build_J_sparsity used to, once per
+        // Jacobian coefficient, and now records each position as it writes the
+        // pattern instead -- but it stays part of the component protocol for
+        // components and external consumers that need to locate a coefficient
+        // in an already-built J. The overload taking the index arrays rather
+        // than the matrix is the one to use in a loop: the Eigen::Ref the
+        // matrix-taking overload binds, free as it is to construct, is still a
+        // per-call cost paid to read two pointers that do not change.
+        static int find_J_pos(const int* outer_index,
+                              const int* inner_index,
+                              int row,
+                              int col){
+            const int start = outer_index[col];
+            const int end   = outer_index[col + 1];
+            auto it = std::lower_bound(inner_index + start, inner_index + end, row);
+            if (it == inner_index + end || *it != row) return -1;
+            return static_cast<int>(it - inner_index);
+        }
+
+        // same, on a matrix (the convenient entry point for a one-off lookup)
         static int find_J_pos (
             const Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > & J_csc,
             int row,
             int col){
-            int start = J_csc.outerIndexPtr()[col];
-            int end   = J_csc.outerIndexPtr()[col + 1];
-            const int* inner = J_csc.innerIndexPtr();
-            auto it = std::lower_bound(inner + start, inner + end, row);
-            if (it == inner + end || *it != row) return -1;
-            return (int) (it - inner);
+            return find_J_pos(J_csc.outerIndexPtr(), J_csc.innerIndexPtr(), row, col);
         };
 
         // call at the beginning of each solve. Defined out-of-line
@@ -195,8 +229,11 @@ class LS2G_API Base
             const Eigen::Ref<const IntVect>  & pv,
             const Eigen::Ref<const IntVect>  & pq
         ) {
-            pv_ = IntVect(pv);
-            pq_ = IntVect(pq);
+            // plain assignment, not `pv_ = IntVect(pv)`: the explicit temporary
+            // allocated a fresh buffer on every topology change, where a direct
+            // assignment reuses pv_'s own storage whenever the size is unchanged.
+            pv_ = pv;
+            pq_ = pq;
 
             nb_pv_ = static_cast<int>(pv_.size());
             nb_pq_ = static_cast<int>(pq_.size());
@@ -901,8 +938,19 @@ public:
     // ----- NR iteration primitives -----------------------------------------------
 
     RealVect   mismatch()                           const;
+    // same value as mismatch(), written into a caller-owned vector (which must
+    // already have total_state_variables() coefficients). Lets the NR loop
+    // refresh its residual in place instead of allocating -- and then freeing
+    // -- a fresh one on every iteration.
+    void       mismatch_into(Eigen::Ref<RealVect> res) const;
     void       apply_step(const Eigen::Ref<const RealVect>& dx);
     real_type  mismatch_sq_norm_at(const Eigen::Ref<const RealVect>& dx) const;
+    // ||mismatch at the current state||^2, i.e. mismatch_sq_norm_at(0) without
+    // materialising the zero step vector the caller would otherwise build on
+    // every call (a line search does this once per NR iteration). It really is
+    // the zero-step call -- same reconstruct-then-evaluate path, same value to
+    // the last bit -- not a shortcut through V_.
+    real_type  mismatch_sq_norm_at_current() const;
 
     // Direct, allocation-light update of the LAST-registered extension's
     // `count` feature entries, identified purely by count and position (the
@@ -924,8 +972,19 @@ public:
         base_.clear();
         _clear_extensions(std::make_index_sequence<sizeof...(Rest)>{});
 
-        dS_dVm_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
-        dS_dVa_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
+        dS_dVm_vals_ = CplxVect();
+        dS_dVa_vals_ = CplxVect();
+        Ibus_cache_   = CplxVect();
+        inv_vm_cache_ = RealVect();
+
+        ybus_v_own_     = CplxVect();
+        mis_own_        = CplxVect();
+        if(ybus_v_ptr_ != nullptr) *ybus_v_ptr_ = CplxVect();
+        if(mis_ptr_ != nullptr)    *mis_ptr_    = CplxVect();
+        Va_trial_cache_ = RealVect();
+        Vm_trial_cache_ = RealVect();
+        V_trial_cache_  = CplxVect();
+        res_cache_      = RealVect();
 
         map_dsdva_r_.clear();
         map_dsdva_i_.clear();
@@ -941,6 +1000,16 @@ public:
     }
 
     Eigen::Ref<const Eigen::SparseMatrix<real_type> > J()  const { return J_; }
+    /**
+     * Point this system at the mismatch buffers of the algorithm that owns it.
+     * Called once, before the first solve; the buffers must outlive this system,
+     * which they do -- they are members of the same object that holds it.
+     */
+    void set_mismatch_buffers(CplxVect & mis, CplxVect & ybus_v) noexcept {
+        mis_ptr_ = &mis;
+        ybus_v_ptr_ = &ybus_v;
+    }
+
     Eigen::Ref<const CplxVect> V()  const { return V_; }
     Eigen::Ref<const RealVect> Va() const { return Va_; }
     Eigen::Ref<const RealVect> Vm() const { return Vm_; }
@@ -1036,9 +1105,52 @@ private:
     // safe to reuse across calls instead of allocating a fresh RealVect::Zero(n)
     // every time (mismatch() runs at least twice per NR iteration).
     mutable RealVect                       dx_zero_cache_;
+    // scratch for _residual_into / _compute_trial_V_into / mismatch_sq_norm_at.
+    // These run at least twice per NR iteration -- and once per backtracking
+    // trial of a line search, i.e. up to ~20 times -- so every one of them used
+    // to heap-allocate (and free) a full nb_bus / nb_unknown vector on each
+    // call. They are mutable because the calls are const: like dx_zero_cache_
+    // above they are pure scratch, never state (an NRSystem is owned by exactly
+    // one solver, and a multi-threaded batch gives each thread its own solver).
+    // The per-bus complex mismatch and the Ybus * V scratch are NOT ours: they live
+    // in the BaseAlgo that owns this system (NRAlgo), which hands us their addresses
+    // in set_mismatch_buffers. Same two buffers the FDPF fills, so a caller can read
+    // the mismatch off any algorithm without knowing which family produced it.
+    //
+    // Pointers rather than references so the system stays assignable, and `* const`
+    // through a const method, which is what lets _residual_into stay const while
+    // writing through them -- exactly what `mutable` bought when they were members.
+    //
+    // Null until an owner claims them, and then the system falls back to the two
+    // below: an NRSystem is usable on its own (the algorithm tests build one and call
+    // mismatch() on it with no NRAlgo anywhere), so "nobody told me where to write"
+    // has to mean "write to my own buffer", not a null dereference. NRAlgo re-points
+    // them at the top of every compute_pf rather than once at construction, so a
+    // copied algorithm cannot end up writing into the buffers of the original.
+    CplxVect *                             ybus_v_ptr_ = nullptr;   // Ybus * V_t
+    CplxVect *                             mis_ptr_ = nullptr;      // per-bus complex mismatch
+    mutable CplxVect                       ybus_v_own_;  // used iff ybus_v_ptr_ is null
+    mutable CplxVect                       mis_own_;     // used iff mis_ptr_ is null
+    mutable RealVect                       Va_trial_cache_, Vm_trial_cache_;
+    mutable CplxVect                       V_trial_cache_;
+    mutable RealVect                       res_cache_;      // residual at the trial point
     Eigen::SparseMatrix<real_type, Eigen::ColMajor>         J_;
     double                                 timer_dSbus_, timer_fillJ_;
-    Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>         dS_dVm_, dS_dVa_;
+    // dS_dVm / dS_dVa VALUES only, one per Ybus nonzero, in Ybus' own
+    // (compressed) storage order. They used to be two full
+    // Eigen::SparseMatrix copies of Ybus, but nothing ever indexed them by
+    // (row, col): fill_internal_variables writes them and fill_J reads them
+    // purely by nnz position, exactly as they are laid out here. Dropping the
+    // sparse wrapper removes the two structure copies (outer + inner index
+    // arrays) init_topology made of Ybus on every topology change -- the
+    // "TODO speed: copy only the sparsity pattern and not the values" that
+    // used to sit there.
+    CplxVect                               dS_dVm_vals_, dS_dVa_vals_;
+    // scratch for fill_internal_variables, kept across calls so the two
+    // nb_bus-sized vectors it needs are allocated once per topology instead of
+    // once per Jacobian fill
+    CplxVect                               Ibus_cache_;    // Ybus * V
+    RealVect                               inv_vm_cache_;  // 1 / |V|
 
     // dS value maps: Ybus nnz position -> position in J_.valuePtr() (-1 if unused)
     std::vector<int>                       map_dsdva_r_;
@@ -1060,6 +1172,33 @@ private:
     std::vector<int>                       masked_zero_pos_;
     std::vector<int>                       masked_one_pos_;
     bool                                   masked_dirty_;
+
+    // one dS -> J pass over a value map: for every Ybus nonzero that feeds a
+    // Jacobian coefficient, J[pos] = real/imag(ds[k]). TakeReal picks the part,
+    // so the four passes of fill_J share one loop. The dS values are read
+    // straight through (sequentially, one per Ybus nonzero), which is what the
+    // -1 holes in the map buy: no index indirection.
+    //
+    // ASSIGNS, and that is what lets fill_J skip zeroing J. No Jacobian
+    // coefficient is ever written by two dS entries: the four families live at
+    // (p_row, theta_col), (p_row, vm_col), (q_row, theta_col) and (q_row,
+    // vm_col), and a row is a P equation or a Q equation and a column a theta
+    // unknown or a vm unknown, never both -- so the families are pairwise
+    // disjoint -- while within one family the Ybus coefficient (i, j) maps to
+    // (row(i), col(j)) injectively, the ledger handing every bus its own row
+    // and column. Asserted below in debug builds, on every topology.
+    template <bool TakeReal>
+    static void _assign_ds(real_type* J_values,
+                           const std::vector<int>& map,
+                           const cplx_type* ds)
+    {
+        const std::size_t n = map.size();
+        const int* pos = map.data();
+        for (std::size_t k = 0; k < n; ++k) {
+            if (pos[k] < 0) continue;
+            J_values[pos[k]] = TakeReal ? std::real(ds[k]) : std::imag(ds[k]);
+        }
+    }
 
     // resolve masked_zero_pos_ / masked_one_pos_ from masked_buses_ and J_'s
     // sparsity (one pass over the nonzeros). Call only when J_ is built.
@@ -1113,10 +1252,23 @@ protected:
     Eigen::Index                                            Sbus_size_;
     Eigen::Map<const CplxVect> _Sbus_view() const { return Eigen::Map<const CplxVect>(Sbus_data_ptr_, Sbus_size_); }
 
+    // V = Vm * exp(i.Va), written into V_out (resized only when needed).
+    static void _reconstruct_V_into(CplxVect& V_out,
+                                    const Eigen::Ref<const RealVect>& Va,
+                                    const Eigen::Ref<const RealVect>& Vm);
+    void _compute_trial_V_into(CplxVect& V_out, const Eigen::Ref<const RealVect>& dx) const;
+    // assemble the (negated) residual at trial voltages V_t into `res` (which
+    // must already have total_state_variables() coefficients); dx is the step
+    // that produced V_t (used by components that carry extra state, e.g. slack
+    // absorbed).
+    void _residual_into(Eigen::Ref<RealVect> res,
+                        const Eigen::Ref<const CplxVect>& V_t,
+                        const Eigen::Ref<const RealVect>& dx) const;
+
+    // value-returning wrappers, kept for out-of-tree derived algorithms: the
+    // *_into forms above are what the hot path uses.
     static CplxVect _reconstruct_V(const Eigen::Ref<const RealVect>& Va, const Eigen::Ref<const RealVect>& Vm);
     CplxVect _compute_trial_V(const Eigen::Ref<const RealVect>& dx) const;
-    // assemble the (negated) residual at trial voltages V_t; dx is the step that
-    // produced V_t (used by components that carry extra state, e.g. slack absorbed).
     RealVect _residual(const Eigen::Ref<const CplxVect>& V_t, const Eigen::Ref<const RealVect>& dx) const;
 
 private:
