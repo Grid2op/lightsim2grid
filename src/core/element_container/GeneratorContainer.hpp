@@ -267,19 +267,34 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
                             const SolverBusIdVect & id_grid_to_solver) const override;
-        void init_q_vector(int nb_bus,
-                           Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
-                           Eigen::Ref<RealVect> total_q_min_per_bus,
-                           Eigen::Ref<RealVect> total_q_max_per_bus,
-                           const std::vector<bool> & solved_by_algo) const; // delta_q_per_gen_
+ // delta_q_per_gen_
 
-        void set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
-                   const SolverBusIdVect & id_grid_to_solver,
-                   bool ac,
-                   const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
-                   const Eigen::Ref<const RealVect> & total_q_min_per_bus,
-                   const Eigen::Ref<const RealVect> & total_q_max_per_bus,
-                   const std::vector<bool> & solved_by_algo);
+        /**
+         * Publish the reactive output of the generators whose value is known without
+         * looking at the powerflow (disconnected, non-regulating, treated as off).
+         * A voltage-regulating one is left untouched: its value is either written back
+         * by LSGrid from the algorithm's controller list, or it is a share of its bus'
+         * reactive residual -- which depends on the other elements of that bus and so
+         * is LSGrid's to compute. See takes_q_residual_share.
+         */
+        void set_q(bool ac);
+
+        /**
+         * Is this generator one of those that share the reactive residual of their bus?
+         * The complement of what set_q() publishes, minus the ones the algorithm solved
+         * for (`solved_by_algo`, built once per solve by LSGrid from the controller
+         * list). Asked per generator by LSGrid::compute_results, which then groups them
+         * by bus.
+         */
+        bool takes_q_residual_share(int gen_id, const std::vector<bool> & solved_by_algo) const
+        {
+            if(!status_[gen_id]) return false;
+            if(!voltage_regulator_on_[gen_id]) return false;
+            if((!turnedoff_gen_pv_) && is_pseudo_off(gen_id)) return false;
+            // the algorithm solved this one: LSGrid writes it back from the controller list
+            if(_is_solved_by_algo(solved_by_algo, gen_id)) return false;
+            return true;
+        }
         
         void get_vm_for_dc(Eigen::Ref<RealVect> Vm);
         

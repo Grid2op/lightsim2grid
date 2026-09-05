@@ -239,37 +239,7 @@ void ConverterStationContainer::fillpv(std::vector<int> & bus_pv,
     }
 }
 
-void ConverterStationContainer::init_q_vector(int /*nb_bus*/,
-                                              Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
-                                              Eigen::Ref<RealVect> total_q_min_per_bus,
-                                              Eigen::Ref<RealVect> total_q_max_per_bus,
-                                              const std::vector<bool> & solved_by_algo) const
-{
-    const int nb_station = nb();
-    for(int station_id = 0; station_id < nb_station; ++station_id)
-    {
-        if(!status_[station_id]) continue;
-        if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-        // a station whose Q the algorithm solved is written back from there, not from
-        // the per-bus redistribution: keep it out of the totals its neighbours on this
-        // bus are divided by. This test is what the generator side has always had and
-        // this one did not.
-        if (_is_solved_by_algo(solved_by_algo, station_id)) continue;
-
-        const GlobalBusId bus_id = bus_id_(station_id);
-        total_q_min_per_bus(bus_id.cast_int()) += min_q_(station_id);
-        total_q_max_per_bus(bus_id.cast_int()) += max_q_(station_id);
-        total_gen_per_bus(bus_id.cast_int()) += 1;
-    }
-}
-
-void ConverterStationContainer::set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
-                                      const SolverBusIdVect & id_grid_to_solver,
-                                      bool ac,
-                                      const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
-                                      const Eigen::Ref<const RealVect> & total_q_min_per_bus,
-                                      const Eigen::Ref<const RealVect> & total_q_max_per_bus,
-                                      const std::vector<bool> & solved_by_algo)
+void ConverterStationContainer::set_q(bool ac)
 {
     const int nb_station = nb();
     if(!ac){
@@ -278,11 +248,14 @@ void ConverterStationContainer::set_q(const Eigen::Ref<const RealVect> & reactiv
         return;
     }
 
+    // The stations whose reactive output is known without looking at the powerflow.
+    // A voltage-regulating one is left alone: LSGrid either writes it back from the
+    // algorithm's controller list or gives it a share of its bus' reactive residual,
+    // which depends on the other elements of that bus. See takes_q_residual_share.
     for(int station_id = 0; station_id < nb_station; ++station_id)
     {
         if(!status_[station_id]){
-            // set at 0 for disconnected stations
-            res_q_(station_id) = 0.;
+            res_q_(station_id) = 0.;  // disconnected
             continue;
         }
         if (!voltage_regulator_on_[station_id]){
@@ -290,21 +263,7 @@ void ConverterStationContainer::set_q(const Eigen::Ref<const RealVect> & reactiv
             res_q_(station_id) = target_q_mvar_(station_id);
             continue;
         }
-        if (_is_solved_by_algo(solved_by_algo, station_id)){
-            // solved by the algorithm; LSGrid::compute_results writes it back. Skipping
-            // it here is not only about not being overwritten twice: this station is
-            // absent from the bus totals above, so a share computed against them would
-            // be measured on a denominator it is not part of.
-            continue;
-        }
-        const GlobalBusId bus_id = bus_id_(station_id);
-        const SolverBusId bus_solver = id_grid_to_solver[bus_id.cast_int()];
-        // TODO DEBUG MODE: check that the bus is correct!
-        res_q_(station_id) = _q_share(reactive_mismatch[bus_solver.cast_int()],
-                                      min_q_(station_id), max_q_(station_id),
-                                      total_q_min_per_bus(bus_id.cast_int()),
-                                      total_q_max_per_bus(bus_id.cast_int()),
-                                      total_gen_per_bus(bus_id.cast_int()));
+        // a voltage-regulating station: left for LSGrid, see the note above
     }
 }
 

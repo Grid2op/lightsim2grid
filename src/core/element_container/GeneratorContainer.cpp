@@ -532,39 +532,7 @@ void GeneratorContainer::set_p_slack(const Eigen::Ref<const RealVect>& node_mism
     }
 }
 
-void GeneratorContainer::init_q_vector(int /*nb_bus*/,
-                                       Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
-                                       Eigen::Ref<RealVect> total_q_min_per_bus,
-                                       Eigen::Ref<RealVect> total_q_max_per_bus,
-                                       const std::vector<bool> & solved_by_algo) const
-{
-    const int nb_gen = nb();
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
-    {
-        if(!status_[gen_id]) continue;
-
-        if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
-        if ((!turnedoff_gen_pv_) && is_pseudo_off(gen_id)) continue;  // in this case "turned off" generators are not pv
-        // a gen whose Q the algorithm solved is written back from there, not from the
-        // per-bus reactive redistribution: keep it out of the totals too, or it would
-        // inflate the denominator its neighbours on this bus are divided by
-        if (_is_solved_by_algo(solved_by_algo, gen_id)) continue;
-
-        const GlobalBusId bus_id = bus_id_(gen_id);
-        total_q_min_per_bus(bus_id.cast_int()) += min_q_(gen_id);
-        total_q_max_per_bus(bus_id.cast_int()) += max_q_(gen_id);
-        total_gen_per_bus(bus_id.cast_int()) += 1;
-    }
-}
-
-void GeneratorContainer::set_q(
-    const Eigen::Ref<const RealVect> & reactive_mismatch,
-    const SolverBusIdVect & id_grid_to_solver,
-    bool ac,
-    const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
-    const Eigen::Ref<const RealVect> & total_q_min_per_bus,
-    const Eigen::Ref<const RealVect> & total_q_max_per_bus,
-    const std::vector<bool> & solved_by_algo)
+void GeneratorContainer::set_q(bool ac)
 {
     const int nb_gen = nb();
     if(!ac){
@@ -572,44 +540,35 @@ void GeneratorContainer::set_q(
         for(int gen_id = 0; gen_id < nb_gen; ++gen_id) res_q_(gen_id) = 0.;
         return;
     }
-    
+
+    // Publishes the generators whose reactive output is KNOWN without looking at
+    // the powerflow: a disconnected one produces nothing, one that does not regulate
+    // voltage produces its setpoint, one treated as turned off produces nothing.
+    //
+    // Everything else is deliberately left alone here, because its value is not this
+    // container's to compute. Either the algorithm solved for it (LSGrid writes it
+    // back from the controller list), or it takes a share of its bus' reactive
+    // residual -- and that share depends on the OTHER elements of the same bus,
+    // which no single container can see. LSGrid::compute_results does that one, per
+    // bus, and only for the buses that need it.
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
         if(!status_[gen_id]){
-            // set at 0 for disconnected generators
-            res_q_(gen_id) = 0.;
-            continue;  
+            res_q_(gen_id) = 0.;  // disconnected
+            continue;
         }
-        real_type real_q = 0.;
         if (!voltage_regulator_on_[gen_id]){
             // gen is purposedly not pv, so output MVAr = input MVAr (just like a load)
             res_q_(gen_id) = target_q_mvar_(gen_id);
             continue;
-        } 
+        }
         if ((!turnedoff_gen_pv_) && is_pseudo_off(gen_id)) {
             // in this case turned off generators are not pv
             // it's as if the generator were turned off
             res_q_(gen_id) = 0.;
             continue;
         }
-        if (_is_solved_by_algo(solved_by_algo, gen_id)) {
-            // this generator's reactive output is a state variable the algorithm
-            // solved: LSGrid::compute_results writes it back itself. Leaving it here
-            // would both overwrite that value with a share of a residual it is not
-            // part of, and -- because init_q_vector applies the same test -- count it
-            // in the totals its neighbours are divided by.
-            continue;
-        }
-
-        const GlobalBusId bus_id = bus_id_(gen_id);
-        const SolverBusId bus_solver = id_grid_to_solver[bus_id.cast_int()];
-        // TODO DEBUG MODE: check that the bus is correct!
-        real_q = _q_share(reactive_mismatch[bus_solver.cast_int()],
-                          min_q_(gen_id), max_q_(gen_id),
-                          total_q_min_per_bus(bus_id.cast_int()),
-                          total_q_max_per_bus(bus_id.cast_int()),
-                          total_gen_per_bus(bus_id.cast_int()));
-        res_q_(gen_id) = real_q;
+        // a voltage-regulating generator: left for LSGrid, see the note above
     }
 }
 

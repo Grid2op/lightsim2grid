@@ -165,18 +165,16 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
                             const SolverBusIdVect & id_grid_to_solver) const override;
-        void init_q_vector(int nb_bus,
-                           Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
-                           Eigen::Ref<RealVect> total_q_min_per_bus,
-                           Eigen::Ref<RealVect> total_q_max_per_bus,
-                           const std::vector<bool> & solved_by_algo) const;
-        void set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
-                   const SolverBusIdVect & id_grid_to_solver,
-                   bool ac,
-                   const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
-                   const Eigen::Ref<const RealVect> & total_q_min_per_bus,
-                   const Eigen::Ref<const RealVect> & total_q_max_per_bus,
-                   const std::vector<bool> & solved_by_algo);
+        /// see GeneratorContainer::set_q
+        void set_q(bool ac);
+        /// see GeneratorContainer::takes_q_residual_share
+        bool takes_q_residual_share(int station_id, const std::vector<bool> & solved_by_algo) const
+        {
+            if(!status_[station_id]) return false;
+            if(!voltage_regulator_on_[station_id]) return false;
+            if(_is_solved_by_algo(solved_by_algo, station_id)) return false;
+            return true;
+        }
         void get_vm_for_dc(Eigen::Ref<RealVect> Vm);
         void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const;
 

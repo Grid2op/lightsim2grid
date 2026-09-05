@@ -160,15 +160,22 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   (``get_controller_kind()`` / ``get_controller_elem_id()``) -- so "who is served by the
   write-back" has a single source of truth instead of a rule re-derived, differently, inside
   each container.
-- [IMPROVED] ``total_gen_per_bus_`` / ``total_q_min_per_bus_`` / ``total_q_max_per_bus_`` are
-  no longer built during pre-processing. Nothing between there and the end of the powerflow
-  reads them: they exist only to split a bus' reactive residual afterwards, and who takes
-  part in that split is not even knowable until the algorithm has run. They are built in
-  ``compute_results`` now, over the elements the redistribution will actually serve. A solve
-  that only moved injections no longer walks every generator and converter station, nor
-  allocates three ``nb_bus`` vectors, on the way IN. It does so on the way out instead, so an
-  identical re-solve -- which used to skip the build entirely on its change flags -- pays
-  about 0.6% more on case9241pegase, while an ordinary cached step is unchanged (+0.02%).
+- [REMOVED] ``GeneratorContainer::init_q_vector`` / ``ConverterStationContainer::init_q_vector``
+  and the three ``LSGrid`` members they filled (``total_gen_per_bus_``, ``total_q_min_per_bus_``,
+  ``total_q_max_per_bus_``). Nothing between pre-processing and the end of the powerflow ever
+  read them: they existed only to split a bus' reactive residual afterwards, and who takes part
+  in that split is not knowable until the algorithm has run. Worse, they were GLOBAL -- three
+  ``nb_bus`` vectors accumulated over every generator and station on the grid, on every solve
+  where an injection moved, for a question that concerns only the buses carrying two or more
+  locally-regulating machines, which on most grids is none of them. The split is now done per
+  bus, in ``LSGrid::compute_results``, over a flat list of the machines that actually take a
+  share: a bus with one of them (the overwhelmingly common case) never computes a total at all,
+  it takes the whole residual. Nothing in the new path is proportional to the size of the grid.
+  ``set_q`` shrinks to what it can decide alone -- the disconnected, non-regulating and
+  turned-off machines -- and ``takes_q_residual_share`` names the rest.
+  The measured cost of moving out of pre-processing, where the change flags could skip the
+  build entirely, is +0.16% on an ordinary cached step and +0.95% on an identical re-solve
+  (case9241pegase).
 - [ADDED] ``BaseAlgo::fills_bus_mismatch()`` (+ the ``FILLS_BUS_MISMATCH`` compile-time
   constant next to ``IS_DC`` / ``SUPPORTS_HVDC_DROOP`` / ``IS_FDPF`` /
   ``SUPPORTS_REMOTE_VOLTAGE_CONTROL``): does this algorithm leave a usable per-bus mismatch

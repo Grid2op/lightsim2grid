@@ -2537,9 +2537,6 @@ class LS2G_API LSGrid final
         CplxVect ybus_v_res_;
 
         // 5. generators
-        RealVect total_q_min_per_bus_;  // TODO switches: move to BaseSubstation
-        RealVect total_q_max_per_bus_;  // TODO switches: move to BaseSubstation
-        Eigen::VectorXi total_gen_per_bus_;
         GeneratorContainer generators_;
 
         // 6. loads

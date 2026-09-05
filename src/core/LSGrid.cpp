@@ -7,6 +7,9 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include <cassert>
+#include <algorithm>  // for std::sort
+#include <cstdint>    // for std::uint64_t
+
 #include "LSGrid.hpp"
 #include "AlgorithmSelector.hpp"  // to avoid circular references
 #include "BinaryArchive.hpp"
@@ -51,8 +54,6 @@ LSGrid::LSGrid(const LSGrid & other)
     trafos_ = other.trafos_;
 
     // 5. generators
-    total_q_min_per_bus_ = RealVect();
-    total_q_max_per_bus_ = RealVect();
     generators_ = other.generators_;
 
     // 6. loads
@@ -179,9 +180,6 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // trafos
     TrafoContainer::StateRes & state_trafos = std::get<TRAFO_ID>(my_state);
     // generators
-    // total_q_min_per_bus_;
-    // total_q_max_per_bus_;
-    // total_gen_per_bus_;
     GeneratorContainer::StateRes & state_gens = std::get<GEN_ID>(my_state);
     // loads
     LoadContainer::StateRes & state_loads = std::get<LOAD_ID>(my_state);
@@ -222,8 +220,6 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // 3. trafos
     trafos_.set_state(state_trafos);
     // 4. gen
-    total_q_min_per_bus_ = RealVect();
-    total_q_max_per_bus_ = RealVect();
     generators_.set_state(state_gens);
     // 5. loads
     loads_.set_state(state_loads);
@@ -2230,38 +2226,116 @@ void LSGrid::compute_results(bool ac){
         }
     }
 
-    // ---- the per-bus reactive totals, over the elements that are left ---------
-    // Only meaningful in AC, and only where more than one element shares a bus --
-    // which is exactly what they say. Built from the elements the redistribution
-    // will actually serve, so a share is never measured against a denominator its
-    // own element is not part of.
-    if(ac){
-        const Eigen::Index nb_bus_total = static_cast<Eigen::Index>(substations_.nb_bus());
-        // resize only when the grid changed size, then zero: assigning
-        // `RealVect::Constant(n, 0.)` would allocate and free three vectors on every
-        // single solve, and these are members precisely so that it does not have to
-        if(total_q_min_per_bus_.size() != nb_bus_total) total_q_min_per_bus_.resize(nb_bus_total);
-        if(total_q_max_per_bus_.size() != nb_bus_total) total_q_max_per_bus_.resize(nb_bus_total);
-        if(total_gen_per_bus_.size() != nb_bus_total) total_gen_per_bus_.resize(nb_bus_total);
-        total_q_min_per_bus_.setZero();
-        total_q_max_per_bus_.setZero();
-        total_gen_per_bus_.setZero();
-        const int nb_bus_int = static_cast<int>(nb_bus_total);
-        generators_.init_q_vector(nb_bus_int, total_gen_per_bus_, total_q_min_per_bus_,
-                                  total_q_max_per_bus_, gen_solved);
-        hvdc_lines_.init_q_vector(nb_bus_int, total_gen_per_bus_, total_q_min_per_bus_,
-                                  total_q_max_per_bus_, hvdc1_solved, hvdc2_solved);
-    }
+    // ---- the elements whose reactive output is a share of their bus' residual --
+    // Everything else has already been published: set_q just wrote the ones whose
+    // value needs no powerflow, and the write-back below writes the ones the
+    // algorithm solved for. What is left is the generators and stations that pin
+    // their own bus' voltage without any "fancy" control on it -- a plain PV bus --
+    // and the only thing that cannot be decided one element at a time is how they
+    // share that bus' residual when there is more than one of them.
+    //
+    // So it is collected as a flat list and grouped by bus, rather than through
+    // three nb_bus vectors accumulated over every generator and station on the grid
+    // (which is what this used to be, and which ran on every solve whether or not a
+    // single bus needed it). A bus with ONE such element -- the overwhelmingly
+    // common case -- never computes a total at all: that element takes the whole
+    // residual, which is what the ratio degenerated to anyway.
+    generators_.set_q(ac);
+    hvdc_lines_.set_q(ac);
 
-    // (in AC `reactive_mismatch` was filled together with the active half above; in
-    // DC it stays empty, which is what set_q expects there)
-    // mainly to initialize the Q value of the generators in dc (just fill it with 0.)
-    generators_.set_q(reactive_mismatch, id_me_to_solver, ac,
-                      total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_,
-                      gen_solved);
-    hvdc_lines_.set_q(reactive_mismatch, id_me_to_solver, ac,
-                      total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_,
-                      hvdc1_solved, hvdc2_solved);
+    if(ac && reactive_mismatch.size() > 0){
+        struct QShare {
+            int bus_id;      ///< GRID bus id
+            real_type span;  ///< reactive range max_q - min_q, possibly +inf
+            int kind;        ///< VoltageControlSolverData::GEN / HVDC_SIDE_1 / HVDC_SIDE_2
+            int elem_id;
+        };
+        std::vector<QShare> shares;
+        const int nb_gen = static_cast<int>(generators_.nb());
+        shares.reserve(static_cast<std::size_t>(nb_gen));
+        const GlobalBusIdVect & gen_buses = generators_.get_buses();
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+            if(!generators_.takes_q_residual_share(gen_id, gen_solved)) continue;
+            shares.push_back({gen_buses(gen_id).cast_int(),
+                              generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
+                              VoltageControlSolverData::GEN, gen_id});
+        }
+        const int nb_hvdc = static_cast<int>(hvdc_lines_.nb());
+        for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
+            for(int side = 1; side <= 2; ++side){
+                const std::vector<bool> & mask = (side == 1) ? hvdc1_solved : hvdc2_solved;
+                if(!hvdc_lines_.station_takes_q_residual_share(hvdc_id, side, mask)) continue;
+                shares.push_back({hvdc_lines_.get_station_bus(hvdc_id, side).cast_int(),
+                                  hvdc_lines_.get_station_q_range_mvar(hvdc_id, side),
+                                  side == 1 ? VoltageControlSolverData::HVDC_SIDE_1
+                                            : VoltageControlSolverData::HVDC_SIDE_2,
+                                  hvdc_id});
+            }
+        }
+
+        // Group by bus with one sort over the participants -- no per-bus storage, so
+        // nothing here is proportional to the size of the GRID, only to the number of
+        // machines that actually take a share. What is sorted is a packed
+        // (bus id, position) key rather than the records themselves: eight bytes and
+        // an integral comparison instead of twenty-four bytes and a predicate call.
+        const std::size_t nb_shares = shares.size();
+        std::vector<std::uint64_t> by_bus;
+        by_bus.reserve(nb_shares);
+        for(std::size_t k = 0; k < nb_shares; ++k){
+            by_bus.push_back((static_cast<std::uint64_t>(shares[k].bus_id) << 32) |
+                             static_cast<std::uint64_t>(k));
+        }
+        std::sort(by_bus.begin(), by_bus.end());
+
+        for(std::size_t first = 0; first < nb_shares; ){
+            const std::uint64_t bus_key = by_bus[first] >> 32;
+            std::size_t last = first + 1;
+            while((last < nb_shares) && ((by_bus[last] >> 32) == bus_key)) ++last;
+            const int bus_id = static_cast<int>(bus_key);
+            const SolverBusId bus_solver = ac_cache_.id_me_to_solver[bus_id];
+            const real_type q_to_absorb = reactive_mismatch[bus_solver.cast_int()];
+            const std::size_t nb_here = last - first;
+
+            // The share is proportional to an element's reactive RANGE, so a machine
+            // that can move more reactive power takes more of the residual. Two
+            // degenerate cases collapse to an equal split, and they are the same case
+            // really -- no information to weigh the participants against each other:
+            // every range zero (every machine at a fixed output), and any range not
+            // finite (+/- DBL_MAX limits, which is what a converter writes for
+            // "unbounded"; their difference overflows, and inf / inf used to publish
+            // NaN here).
+            real_type total_span = 0.;
+            bool all_finite = true;
+            if(nb_here > 1){
+                for(std::size_t k = first; k < last; ++k){
+                    const real_type span = shares[by_bus[k] & 0xffffffffu].span;
+                    if(!std::isfinite(span)){ all_finite = false; break; }
+                    total_span += span;
+                }
+            }
+            const real_type eps_q = 1e-8;
+            const real_type nb_here_r = static_cast<real_type>(nb_here);
+            for(std::size_t k = first; k < last; ++k){
+                const QShare & sh = shares[by_bus[k] & 0xffffffffu];
+                real_type q;
+                if(nb_here == 1) q = q_to_absorb;
+                else if(!all_finite) q = q_to_absorb / nb_here_r;
+                else q = q_to_absorb * (sh.span + eps_q) / (total_span + nb_here_r * eps_q);
+                switch(sh.kind){
+                    case VoltageControlSolverData::GEN:
+                        generators_.set_voltage_control_q(sh.elem_id, q);
+                        break;
+                    case VoltageControlSolverData::HVDC_SIDE_1:
+                        hvdc_lines_.set_station_voltage_control_q(sh.elem_id, 1, q);
+                        break;
+                    default:
+                        hvdc_lines_.set_station_voltage_control_q(sh.elem_id, 2, q);
+                        break;
+                }
+            }
+            first = last;
+        }
+    }
 
     // VoltageControl (gen / SVC / hvdc converter station) write-back: the reactive output of the
     // voltage-mode controllers is solved inside the NR system (not by the per-bus
