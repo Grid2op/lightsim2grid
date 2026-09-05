@@ -2524,6 +2524,18 @@ class LS2G_API LSGrid final
         // ratio is computed from the tap, so maybe store tap num and tap_step_pct
         TrafoContainer trafos_;
 
+        /**
+         * Ybus . V, scratch for the per-bus mismatch compute_results() derives itself
+         * when the algorithm leaves none behind (BaseAlgo::fills_bus_mismatch false --
+         * a plugin that did not opt in). A member rather than a local so the
+         * allocation happens once per topology instead of once per solve: Eigen
+         * evaluates a sparse-times-dense product into a heap temporary whenever it
+         * appears inside a larger expression.
+         *
+         * AC only, and meaningless outside the compute_results() call that fills it.
+         */
+        CplxVect ybus_v_res_;
+
         // 5. generators
         RealVect total_q_min_per_bus_;  // TODO switches: move to BaseSubstation
         RealVect total_q_max_per_bus_;  // TODO switches: move to BaseSubstation

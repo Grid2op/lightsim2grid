@@ -2118,14 +2118,62 @@ void LSGrid::compute_results(bool ac){
     svcs_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
 
     //handle_slack_bus active power
-    CplxVect mismatch;  // power mismatch at each bus (SOLVER BUS !!!)
     RealVect reactive_mismatch;  // not used in dc mode (DO NOT ATTEMPT TO USE IT THERE)
     RealVect active_mismatch;
     if(ac){
-        // In AC mode i am not forced to run through all the grid
-        // auto tmp = (ac_cache_.mat * V).conjugate();
-        mismatch = V.array() * (ac_cache_.mat * V).conjugate().array() - ac_cache_.inj.array();
-        active_mismatch = mismatch.real() * sn_mva_;
+        // ---- what the elements at each bus actually produced ---------------------
+        //
+        // Taken from the ALGORITHM's own per-bus mismatch when it leaves one behind,
+        // rather than re-derived here. That is not only cheaper (it saves a sparse
+        // Ybus . V product, its heap temporary and a full complex pass per solve) --
+        // it is the only version that is right, because an algorithm's mismatch
+        // already accounts for the state IT solved for and this function cannot:
+        //
+        //   mis_bus_ = V .* conj(Ybus . V) - Sbus              (the raw residual)
+        //            + slack_absorbed * slack_weights          (MultiSlack)
+        //            + the angle-droop hvdc flows              (Hvdc)
+        //            - i * the voltage controllers' reactive output   (VoltageControl)
+        //
+        // Every one of those adjustments is exactly the correction this function
+        // needs, because every one of them is an injection that HAS its own published
+        // model and must therefore not be charged to the generators a second time:
+        //
+        //   * REACTIVE. Only VoltageControl touches the imaginary part, and it touches
+        //     it only at a controller's bus -- whose elements are served by the
+        //     write-back below, never by the redistribution. So at every bus the
+        //     redistribution does serve, `mis_bus_.imag()` IS the raw reactive
+        //     residual, which is what a locally-regulating generator produced.
+        //
+        //   * ACTIVE. The droop flows are already subtracted (Hvdc adds +p_flow, and
+        //     a station's published injection is -p_flow), so a slack generator
+        //     sharing a bus with a droop station is no longer charged with the
+        //     station's power. What remains to undo is the distributed-slack term,
+        //     which is the slack's own output and the very thing being computed:
+        //     subtracting it back out leaves the raw active residual for a family
+        //     that has no such unknown (the reference bus of a single-slack solve,
+        //     Gauss-Seidel), and leaves `-slack_absorbed * weight` for one that does
+        //     -- its P equation having driven `mis_bus_.real()` to zero there.
+        //     One expression covers both.
+        //
+        // An algorithm that leaves no usable mismatch (a plugin that did not opt in --
+        // see BaseAlgo::fills_bus_mismatch) falls back to deriving it here, which is
+        // what every family did before.
+        const bool from_algo = _algo.fills_bus_mismatch();
+        if(from_algo){
+            const Eigen::Ref<const CplxVect> mis = _algo.get_bus_mismatch();
+            const real_type slack_absorbed = _algo.get_slack_absorbed();
+            reactive_mismatch = mis.imag() * sn_mva_;
+            active_mismatch = (mis.real().array() -
+                               slack_absorbed * ac_cache_.slack_weights.array()) * sn_mva_;
+        } else {
+            // Ybus . V into a member buffer: inside a coefficient-wise expression it is
+            // a sparse-times-dense product Eigen can only evaluate into a heap temporary
+            ybus_v_res_.noalias() = ac_cache_.mat * V;
+            const CplxVect mismatch = V.array() * ybus_v_res_.array().conjugate()
+                                      - ac_cache_.inj.array();
+            active_mismatch = mismatch.real() * sn_mva_;
+            reactive_mismatch = mismatch.imag() * sn_mva_;
+        }
     } else{
         // distributed slack (DC): the global active power imbalance -sum(Pbus) is shared among the
         // participating slack buses proportionally to their (normalized) slack weights. With a single
@@ -2145,7 +2193,8 @@ void LSGrid::compute_results(bool ac){
     }
     generators_.set_p_slack(active_mismatch, id_me_to_solver);
 
-    if(ac) reactive_mismatch = mismatch.imag() * sn_mva_;
+    // (in AC `reactive_mismatch` was filled together with the active half above; in
+    // DC it stays empty, which is what set_q expects there)
     // mainly to initialize the Q value of the generators in dc (just fill it with 0.)
     generators_.set_q(reactive_mismatch, id_me_to_solver, ac,
                       total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);

@@ -22,7 +22,7 @@ class BaseFDPFAlgo final: public BaseAlgo
 {
     public:
 
-        BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
+        BaseFDPFAlgo() noexcept :BaseAlgo(true), slack_absorbed_(static_cast<real_type>(0.)), need_factorize_(true) {}
         ~BaseFDPFAlgo() noexcept override = default;
 
 
@@ -33,6 +33,10 @@ class BaseFDPFAlgo final: public BaseAlgo
         // check, and has_converged() is called once more on the accepted voltage
         static constexpr bool FILLS_BUS_MISMATCH = true;
         bool fills_bus_mismatch() const noexcept override { return FILLS_BUS_MISMATCH; }
+
+        // this family carries a distributed-slack unknown of its own; hand it back so
+        // a consumer of mis_bus_ can subtract its contribution (see slack_absorbed_)
+        real_type get_slack_absorbed() const override { return slack_absorbed_; }
 
         bool compute_pf(const EigenRefConstCplxSpMat     & Ybus,
                         const Eigen::Ref<const CplxVect> & V,
@@ -56,6 +60,7 @@ class BaseFDPFAlgo final: public BaseAlgo
             p_ = RealVect();
             q_ = RealVect();
             mis_over_vm_ = CplxVect();
+            slack_absorbed_ = static_cast<real_type>(0.);
             // mis_bus_ / ybus_v_ are BaseAlgo's and are cleared by BaseAlgo::reset()
             need_factorize_ = true;
 
@@ -276,6 +281,16 @@ class BaseFDPFAlgo final: public BaseAlgo
         // the per-bus complex mismatch and the Ybus * V scratch are BaseAlgo::mis_bus_
         // and BaseAlgo::ybus_v_: both families compute exactly them
         CplxVect mis_over_vm_;  // mis_bus_ / Vm, what the P and Q rows are gathered from
+        /**
+         * The converged value of the distributed-slack unknown, in pu.
+         *
+         * A member rather than a local of compute_pf because LSGrid::compute_results
+         * needs it AFTER the solve: mis_bus_ is written as
+         * `raw + slack_absorbed * slack_weights`, so the raw per-bus mismatch -- what
+         * says how much a slack generator actually produced -- can only be recovered
+         * from it by subtracting this back out. See BaseAlgo::get_slack_absorbed.
+         */
+        real_type slack_absorbed_;
         bool need_factorize_;
 
     private:
