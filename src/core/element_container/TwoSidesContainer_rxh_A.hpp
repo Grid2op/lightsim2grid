@@ -259,10 +259,17 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
             const std::vector<bool> & status1 = side_1_.get_status();
             const std::vector<bool> & status2 = side_2_.get_status();
+            // Read once per branch, not once per use. These are std::vector<bool>,
+            // so every `status1[el_id]` is a word offset, a shift and a mask rather
+            // than a load, and the loop below used to ask each of them five times.
+            const GlobalBusIdVect & buses1 = side_1_.get_buses();
+            const GlobalBusIdVect & buses2 = side_2_.get_buses();
             for(int el_id = 0; el_id < nb_element; ++el_id){
+                const bool st1 = status1[el_id];
+                const bool st2 = status2[el_id];
 
                 // don't do anything if the element is disconnected
-                if(!status_global_[el_id] || (!status1[el_id] && !status2[el_id])) {
+                if(!status_global_[el_id] || (!st1 && !st2)) {
                     res_p_side_1(el_id) = 0.0;  // in MW
                     res_q_side_1(el_id) = 0.0;  // in MVar
                     res_v_side_1(el_id) = v_disco_el_;  // in kV
@@ -279,8 +286,11 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 // connectivity
                 GridModelBusId bus_hv_id_me, bus_lv_id_me;
                 SolverBusId bus_hv_solver_id, bus_lv_solver_id;
-                if(status1[el_id]){
-                    bus_hv_id_me = get_bus_side_1_internal(el_id);
+                if(st1){
+                    // the side is connected: read the bus id itself rather than
+                    // going through get_bus_side_1_internal, which re-reads the
+                    // status bit we just tested (and does not inline)
+                    bus_hv_id_me = GridModelBusId(buses1(el_id).cast_int());
 #ifndef NDEBUG
                     if(bus_hv_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
@@ -305,8 +315,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     bus_hv_solver_id = SolverBusId(_deactivated_bus_id);
                 }
 
-                if(status2[el_id]){
-                    bus_lv_id_me = get_bus_side_2_internal(el_id);
+                if(st2){
+                    bus_lv_id_me = GridModelBusId(buses2(el_id).cast_int());
 #ifndef NDEBUG
                     if(bus_lv_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
@@ -332,7 +342,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 }
 
                 // retrieve voltages magnitude in kv instead of pu
-                if(status1[el_id]){
+                if(st1){
                     real_type v_hv = Vm(bus_hv_solver_id.cast_int());
                     real_type bus_vn_kv_hv = bus_vn_kv(bus_hv_id_me.cast_int());
                     res_v_side_1(el_id) = v_hv * bus_vn_kv_hv;
@@ -342,7 +352,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     res_theta_side_1(el_id) = theta_disco_el_;
                 }
 
-                if(status2[el_id]){
+                if(st2){
                     real_type v_lv = Vm(bus_lv_solver_id.cast_int());
                     real_type bus_vn_kv_lv = bus_vn_kv(bus_lv_id_me.cast_int());  
                     res_v_side_2(el_id) = v_lv * bus_vn_kv_lv;
@@ -355,8 +365,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 if(ac){
                     // results of the ac powerflow
                     // open-end voltage is 0; yac_eff_* already encodes the Kron-reduced contribution
-                    const cplx_type Ehv = status1[el_id] ? V(bus_hv_solver_id.cast_int()) : cplx_type(0., 0.);
-                    const cplx_type Elv = status2[el_id] ? V(bus_lv_solver_id.cast_int()) : cplx_type(0., 0.);
+                    const cplx_type Ehv = st1 ? V(bus_hv_solver_id.cast_int()) : cplx_type(0., 0.);
+                    const cplx_type Elv = st2 ? V(bus_lv_solver_id.cast_int()) : cplx_type(0., 0.);
 
                     // TODO for DC with yff, ...
                     // trafo equations
@@ -399,7 +409,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     res_q_side_2(el_id) = sl_i * sn_mva;
                 }else{
                     // result of the dc powerflow
-                    if(status1[el_id] && status2[el_id]){
+                    if(st1 && st2){
                         real_type Va_hv = Va(bus_hv_solver_id.cast_int());
                         real_type Va_lv = Va(bus_lv_solver_id.cast_int());
                         res_p_side_1(el_id) = (ydc_11_(el_id) * Va_hv + ydc_12_(el_id) * Va_lv) * sn_mva;

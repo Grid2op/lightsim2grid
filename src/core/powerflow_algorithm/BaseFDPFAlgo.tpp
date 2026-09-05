@@ -42,7 +42,10 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(
     auto timer = CustTimer();
 
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);  // retrieve_pv_with_slack (not all), add_slack_to_pv (all)
-    real_type slack_absorbed = std::real(Sbus.sum());  // initial guess for slack_absorbed
+    // the member, not a local: LSGrid::compute_results needs the converged value to
+    // recover the raw per-bus mismatch out of mis_bus_ (see slack_absorbed_)
+    slack_absorbed_ = std::real(Sbus.sum());  // initial guess for slack_absorbed
+    real_type & slack_absorbed = slack_absorbed_;
     const auto slack_bus_id = slack_ids(0);
     
     // initialize once and for all the "inverse" of these vectors

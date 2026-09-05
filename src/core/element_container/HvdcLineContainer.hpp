@@ -392,14 +392,6 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                             // no Bp coeffs for hvdc lines
                         }
 
-        void init_q_vector(int nb_bus,
-                           Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
-                           Eigen::Ref<RealVect> total_q_min_per_bus,
-                           Eigen::Ref<RealVect> total_q_max_per_bus) const {
-            side_1_.init_q_vector(nb_bus, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
-            side_2_.init_q_vector(nb_bus, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
-        }
-
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,
                              const Eigen::Ref<const CplxVect> & V,
@@ -412,14 +404,16 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             reset_results_tsc();
         }
 
-        void set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
-                   const SolverBusIdVect & id_grid_to_solver,
-                   bool ac,
-                   const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
-                   const Eigen::Ref<const RealVect> & total_q_min_per_bus,
-                   const Eigen::Ref<const RealVect> & total_q_max_per_bus){
-            side_1_.set_q(reactive_mismatch, id_grid_to_solver, ac, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
-            side_2_.set_q(reactive_mismatch, id_grid_to_solver, ac, total_gen_per_bus, total_q_min_per_bus, total_q_max_per_bus);
+        /// see GeneratorContainer::set_q
+        void set_q(bool ac){
+            side_1_.set_q(ac);
+            side_2_.set_q(ac);
+        }
+        /// see GeneratorContainer::takes_q_residual_share
+        bool station_takes_q_residual_share(int hvdc_id, int side,
+                                            const std::vector<bool> & solved_by_algo) const {
+            return (side == 1) ? side_1_.takes_q_residual_share(hvdc_id, solved_by_algo)
+                               : side_2_.takes_q_residual_share(hvdc_id, solved_by_algo);
         }
         void get_vm_for_dc(Eigen::Ref<RealVect> Vm){
             side_1_.get_vm_for_dc(Vm);

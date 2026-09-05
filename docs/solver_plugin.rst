@@ -281,6 +281,52 @@ Read-only accessors (provided by ``BaseAlgo``, no override needed):
 ``get_Va()``, ``get_Vm()``, ``get_V()``, ``get_error()``,
 ``get_nb_iter()``, ``converged()``, ``get_timers()``.
 
+Optional: the per-bus mismatch
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``LSGrid`` needs the per-bus complex power mismatch
+``V .* conj(Ybus . V) - Sbus`` to publish what the generators and the HVDC
+converter stations actually produced: it is the reactive output of a
+voltage-regulating generator, and the active output of a slack one. By default
+it derives that itself, from the voltages your solver returned — so a plugin
+that does nothing here keeps working exactly as before.
+
+If your solver already has that quantity (most do — it is the residual its
+convergence test reads), you can hand it over instead and save ``LSGrid`` a
+sparse product per solve:
+
+.. code-block:: cpp
+
+    class MySolver : public ls2g::BaseAlgo {
+        public:
+            // "yes, mis_bus_ is filled and it is trustworthy"
+            static constexpr bool FILLS_BUS_MISMATCH = true;
+            bool fills_bus_mismatch() const noexcept override { return FILLS_BUS_MISMATCH; }
+
+            bool compute_pf(...) override {
+                // ... solve ...
+                // one entry per SOLVER bus, at the voltage you are about to return
+                ybus_v_ = Ybus * V_;                                  // BaseAlgo scratch
+                mis_bus_ = V_.array() * ybus_v_.array().conjugate() - Sbus.array();
+                return converged;
+            }
+    };
+
+The contract, if you set the flag to ``true``:
+
+* ``mis_bus_`` has **exactly one entry per solver bus**, in solver numbering;
+* it is evaluated at the voltage ``V_`` you return, not at an earlier iterate;
+* it is in **per unit**, against the ``Sbus`` you were handed;
+* if your solver carries extra state of its own (a distributed-slack unknown, a
+  reactive injection it solves for a voltage-control group), fold it in the same
+  way you fold it into your own residual — that is what the built-in
+  Newton-Raphson does, and ``LSGrid`` accounts for it.
+
+This is **checked** for plugin solvers, once per solve: claiming the capability
+and leaving the buffer empty or the wrong size raises a ``RuntimeError`` rather
+than reading out of bounds. Leave the flag alone if you are unsure — the default
+costs you nothing but a sparse product.
+
 
 Writing a solver plugin
 ------------------------

@@ -20,6 +20,12 @@ class LS2G_API GaussSeidelAlgo : public BaseAlgo
 
         ~GaussSeidelAlgo() noexcept override = default;
 
+        // compute_pf leaves BaseAlgo::mis_bus_ filled at the voltage it returns --
+        // with the plain formula, this family has no extension state to fold in.
+        // Inherited by GaussSeidelSynchAlgo, which shares compute_pf.
+        static constexpr bool FILLS_BUS_MISMATCH = true;
+        bool fills_bus_mismatch() const noexcept override { return FILLS_BUS_MISMATCH; }
+
         // todo  can be factorized
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const override {
             throw std::runtime_error("get_J: There is no jacobian in the Gauss Seidel method");

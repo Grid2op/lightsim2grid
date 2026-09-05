@@ -68,6 +68,11 @@ public:
     static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = true;
     bool supports_remote_voltage_control() const noexcept override { return SUPPORTS_REMOTE_VOLTAGE_CONTROL; }
 
+    // the NRSystem fills BaseAlgo::mis_bus_ directly (set_mismatch_buffers), on
+    // every residual evaluation -- the last of which is at the voltage returned
+    static constexpr bool FILLS_BUS_MISMATCH = true;
+    bool fills_bus_mismatch() const noexcept override { return FILLS_BUS_MISMATCH; }
+
     // ----- Jacobian accessor ---------------------------------------------------
 
     Eigen::Ref<const Eigen::SparseMatrix<real_type>> get_J() const override {

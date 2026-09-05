@@ -239,30 +239,7 @@ void ConverterStationContainer::fillpv(std::vector<int> & bus_pv,
     }
 }
 
-void ConverterStationContainer::init_q_vector(int /*nb_bus*/,
-                                              Eigen::Ref<Eigen::VectorXi> total_gen_per_bus,
-                                              Eigen::Ref<RealVect> total_q_min_per_bus,
-                                              Eigen::Ref<RealVect> total_q_max_per_bus) const
-{
-    const int nb_station = nb();
-    for(int station_id = 0; station_id < nb_station; ++station_id)
-    {
-        if(!status_[station_id]) continue;
-        if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-
-        const GlobalBusId bus_id = bus_id_(station_id);
-        total_q_min_per_bus(bus_id.cast_int()) += min_q_(station_id);
-        total_q_max_per_bus(bus_id.cast_int()) += max_q_(station_id);
-        total_gen_per_bus(bus_id.cast_int()) += 1;
-    }
-}
-
-void ConverterStationContainer::set_q(const Eigen::Ref<const RealVect> & reactive_mismatch,
-                                      const SolverBusIdVect & id_grid_to_solver,
-                                      bool ac,
-                                      const Eigen::Ref<const Eigen::VectorXi> & total_gen_per_bus,
-                                      const Eigen::Ref<const RealVect> & total_q_min_per_bus,
-                                      const Eigen::Ref<const RealVect> & total_q_max_per_bus)
+void ConverterStationContainer::set_q(bool ac)
 {
     const int nb_station = nb();
     if(!ac){
@@ -271,12 +248,14 @@ void ConverterStationContainer::set_q(const Eigen::Ref<const RealVect> & reactiv
         return;
     }
 
-    real_type eps_q = 1e-8;
+    // The stations whose reactive output is known without looking at the powerflow.
+    // A voltage-regulating one is left alone: LSGrid either writes it back from the
+    // algorithm's controller list or gives it a share of its bus' reactive residual,
+    // which depends on the other elements of that bus. See takes_q_residual_share.
     for(int station_id = 0; station_id < nb_station; ++station_id)
     {
         if(!status_[station_id]){
-            // set at 0 for disconnected stations
-            res_q_(station_id) = 0.;
+            res_q_(station_id) = 0.;  // disconnected
             continue;
         }
         if (!voltage_regulator_on_[station_id]){
@@ -284,23 +263,7 @@ void ConverterStationContainer::set_q(const Eigen::Ref<const RealVect> & reactiv
             res_q_(station_id) = target_q_mvar_(station_id);
             continue;
         }
-        const GlobalBusId bus_id = bus_id_(station_id);
-        const SolverBusId bus_solver = id_grid_to_solver[bus_id.cast_int()];
-        // TODO DEBUG MODE: check that the bus is correct!
-        real_type q_to_absorb = reactive_mismatch[bus_solver.cast_int()];
-        real_type max_q_me = max_q_(station_id);
-        real_type min_q_me = min_q_(station_id);
-        real_type max_q_bus = total_q_max_per_bus(bus_id.cast_int());
-        real_type min_q_bus = total_q_min_per_bus(bus_id.cast_int());
-        real_type nb_gen_with_me = static_cast<real_type>(total_gen_per_bus(bus_id.cast_int()));
-        real_type real_q;
-        if(nb_gen_with_me == 1.){
-            real_q = q_to_absorb;
-        }else{
-            real_type ratio = (max_q_me - min_q_me + eps_q) / (max_q_bus - min_q_bus + nb_gen_with_me * eps_q) ;
-            real_q = q_to_absorb * ratio ;
-        }
-        res_q_(station_id) = real_q;
+        // a voltage-regulating station: left for LSGrid, see the note above
     }
 }
 

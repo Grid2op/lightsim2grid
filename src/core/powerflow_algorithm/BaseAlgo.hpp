@@ -268,6 +268,7 @@ class LS2G_API BaseAlgo : public BaseConstants
         static constexpr bool SUPPORTS_HVDC_DROOP = false;
         static constexpr bool IS_FDPF = false;
         static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = false;
+        static constexpr bool FILLS_BUS_MISMATCH = false;
 
         virtual bool is_dc() const noexcept { return IS_DC; }
         // Only the Newton-Raphson algorithms implement the hvdc angle-droop
@@ -283,6 +284,22 @@ class LS2G_API BaseAlgo : public BaseConstants
         // LSGrid::fill_voltage_control_solver_data). Gauss-Seidel /
         // Fast-Decoupled / DC do not consume that data at all.
         virtual bool supports_remote_voltage_control() const noexcept { return SUPPORTS_REMOTE_VOLTAGE_CONTROL; }
+        /**
+         * Does this algorithm leave a usable per-bus mismatch behind
+         * (`get_bus_mismatch()`, size nb_bus in SOLVER numbering, at the voltage it
+         * converged to)?
+         *
+         * LSGrid::compute_results reads it to work out what the generators and the
+         * converter stations actually produced, so an algorithm that answers true
+         * and then leaves the buffer empty (or the wrong size) would take the whole
+         * result publication down with it. Built-in algorithms are covered by this
+         * suite; an external (plugin) solver claiming the capability is CHECKED, once
+         * per solve, in LSGrid::process_results -- see _check_solver_output.
+         *
+         * Defaults to false, so a plugin written against an older header keeps the
+         * behaviour it has today: LSGrid falls back to deriving the mismatch itself.
+         */
+        virtual bool fills_bus_mismatch() const noexcept { return FILLS_BUS_MISMATCH; }
 
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;
@@ -300,6 +317,13 @@ class LS2G_API BaseAlgo : public BaseConstants
         // non-converged when a (possibly plugin) solver returned non-finite
         // voltages while still claiming convergence -- see
         // LSGrid::process_results / LSGrid::_check_solver_output.
+        /**
+         * Restore the iteration count a solve reached. Same purpose as set_error:
+         * LSGrid::process_results resets a diverged algorithm and puts the diagnosis
+         * back, so that "it gave up after N iterations" survives the reset.
+         */
+        void set_nb_iter(int nb_iter) { nr_iter_ = nb_iter; }
+
         void set_error(ErrorType error) {
             err_ = error;
         }
@@ -529,10 +553,19 @@ class LS2G_API BaseAlgo : public BaseConstants
 
         /**
          * The per-bus complex power mismatch left by the last solve, in solver bus
-         * numbering. Empty on an algorithm that has never run (or has been reset).
-         * See mis_bus_ for exactly what it contains.
+         * numbering. Empty on an algorithm that has never run (or has been reset),
+         * and on one whose `fills_bus_mismatch()` is false. See mis_bus_ for
+         * exactly what it contains.
+         *
+         * PUBLIC on purpose: LSGrid::compute_results reads it back through
+         * AlgorithmSelector to publish what the generators and converter stations
+         * produced, which is the whole point of the capability flag above. It sits
+         * in a `protected:` block otherwise, hence the explicit `public:` here and
+         * the one that closes it.
          */
+    public:
         Eigen::Ref<const CplxVect> get_bus_mismatch() const {return mis_bus_;}
+    protected:
 
         // Bf / Bf_T are resized and filled from scratch by fillBf_for_PTDF: a real
         // reference is needed, Eigen::Ref<SparseMatrix> can't resize/reserve.

@@ -337,6 +337,14 @@ class LS2G_API AlgorithmSelector final
             return get_prt_solver("get_slack_absorbed", false)->get_slack_absorbed();
         }
 
+        // see BaseAlgo::fills_bus_mismatch / BaseAlgo::mis_bus_
+        bool fills_bus_mismatch() const {
+            return get_prt_solver("fills_bus_mismatch", false)->fills_bus_mismatch();
+        }
+        Eigen::Ref<const CplxVect> get_bus_mismatch() const {
+            return get_prt_solver("get_bus_mismatch", false)->get_bus_mismatch();
+        }
+
         double get_computation_time() const {
             return std::get<3>(get_prt_solver("get_computation_time", true)->get_timers());
         }
@@ -359,6 +367,10 @@ class LS2G_API AlgorithmSelector final
 
         ErrorType get_error() const {
             return get_prt_solver("get_error", true)->get_error();
+        }
+
+        void set_nb_iter(int nb_iter) {
+            get_prt_solver("set_nb_iter", true)->set_nb_iter(nb_iter);
         }
 
         void set_error(ErrorType error) {

@@ -2356,6 +2356,47 @@ class LS2G_API LSGrid final
         Compute the results vector from the Va, Vm post powerflow
         **/
         void compute_results(bool ac);
+
+        /// one machine's participation in the reactive residual of its bus, see compute_results
+        struct QShare {
+            int bus_id;      ///< GRID bus id
+            real_type span;  ///< reactive range max_q - min_q, possibly +inf
+            int kind;        ///< VoltageControlSolverData::GEN / HVDC_SIDE_1 / HVDC_SIDE_2
+            int elem_id;
+        };
+
+        /// what the elements at each bus produced, from the algorithm's own mismatch
+        /// when it leaves one behind and re-derived here when it does not (AC)
+        void _fill_bus_mismatch_ac(const Eigen::Ref<const CplxVect> & V,
+                                   RealVect & active_mismatch,
+                                   RealVect & reactive_mismatch);
+
+        /// the active imbalance shared among the participating slack buses (DC)
+        void _fill_bus_mismatch_dc(Eigen::Index nb_bus_solver, RealVect & active_mismatch) const;
+
+        /// flag, per element, the ones whose reactive output the ALGORITHM solved for,
+        /// straight from the controller list it hands back
+        void _mark_q_solved_by_algo(const IntVect & ctrl_kind,
+                                    const IntVect & ctrl_elem,
+                                    std::vector<bool> & gen_solved,
+                                    std::vector<bool> & hvdc1_solved,
+                                    std::vector<bool> & hvdc2_solved) const;
+
+        /// the machines that take a share of their bus' reactive residual, as a flat list
+        std::vector<QShare> _collect_q_residual_shares(const std::vector<bool> & gen_solved,
+                                                       const std::vector<bool> & hvdc1_solved,
+                                                       const std::vector<bool> & hvdc2_solved) const;
+
+        /// give each of them its share, one bus at a time
+        void _split_q_residual_per_bus(const std::vector<QShare> & shares,
+                                       const Eigen::Ref<const RealVect> & reactive_mismatch);
+
+        /// publish the reactive output the algorithm solved for (pu -> MVAr)
+        void _write_back_controller_q(const RealVect & ctrl_q,
+                                      const IntVect & ctrl_kind,
+                                      const IntVect & ctrl_elem);
+
+        static void _throw_unknown_controller_kind(const std::string & fun_name, int kind);
         /**
         reset the results in case of divergence of the powerflow.
         **/
@@ -2524,10 +2565,19 @@ class LS2G_API LSGrid final
         // ratio is computed from the tap, so maybe store tap num and tap_step_pct
         TrafoContainer trafos_;
 
+        /**
+         * Ybus . V, scratch for the per-bus mismatch compute_results() derives itself
+         * when the algorithm leaves none behind (BaseAlgo::fills_bus_mismatch false --
+         * a plugin that did not opt in). A member rather than a local so the
+         * allocation happens once per topology instead of once per solve: Eigen
+         * evaluates a sparse-times-dense product into a heap temporary whenever it
+         * appears inside a larger expression.
+         *
+         * AC only, and meaningless outside the compute_results() call that fills it.
+         */
+        CplxVect ybus_v_res_;
+
         // 5. generators
-        RealVect total_q_min_per_bus_;  // TODO switches: move to BaseSubstation
-        RealVect total_q_max_per_bus_;  // TODO switches: move to BaseSubstation
-        Eigen::VectorXi total_gen_per_bus_;
         GeneratorContainer generators_;
 
         // 6. loads

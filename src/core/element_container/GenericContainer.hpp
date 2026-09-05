@@ -393,6 +393,22 @@ class LS2G_API GenericContainer : public BaseConstants
         }
 
         /**
+         * Did the ALGORITHM solve this element's reactive output itself?
+         *
+         * The mask is built once per solve by LSGrid::compute_results, straight from
+         * the controller list the algorithm hands back (kind + element id), so there
+         * is one source of truth for "who is served by the write-back" instead of a
+         * rule re-derived, differently, inside each container. An empty mask means
+         * "nobody" -- what a caller that has no algorithm to ask passes.
+         */
+        static bool _is_solved_by_algo(const std::vector<bool> & solved_by_algo, int el_id)
+        {
+            return (el_id >= 0) &&
+                   (static_cast<std::size_t>(el_id) < solved_by_algo.size()) &&
+                   solved_by_algo[static_cast<std::size_t>(el_id)];
+        }
+
+        /**
         compute the amps from the p, the q and the v (v should NOT be pair unit)
         **/
         void _get_amps(Eigen::Ref<RealVect> a,

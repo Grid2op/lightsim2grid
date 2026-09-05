@@ -309,7 +309,22 @@ inline void NRSystem<Base, Rest...>::fill_internal_variables()
     // them there costs the same arithmetic without more nb_bus vectors sitting
     // in cache for the whole solve.
     Ibus_cache_.noalias() = Ybus_ref_ * V_;      // noalias: no product temporary
-    inv_vm_cache_ = V_.array().abs().inverse();  // 1 / |V|
+    // 1 / |V|, read off Vm_ rather than recomputed from V_. Vm_ IS |V_|: the two
+    // writers of V_ keep it so -- update_state sets `Vm_ = |V_init|` next to
+    // `V_ = V_init`, and apply_step rebuilds `V_ = Vm_ * exp(i.Va_)` then calls
+    // fix_negative_vm, which flips a negative Vm_ and turns Va_ by half a turn,
+    // leaving V_ equal to that product with the new pair. `V_.array().abs()` was a
+    // std::hypot per bus per iteration spent rediscovering a number already held --
+    // the same argument apply_step makes for not recomputing Vm_ / Va_ there.
+    //
+    // The two agree to a rounding rather than bit for bit (|cos + i.sin| is 1 only
+    // to within one), and that is all it can be worth: this value scales the dS_dVm
+    // block of the Jacobian and nothing else. It never reaches the mismatch, which
+    // is what the convergence test reads, so a rounding here moves the Newton's
+    // search direction and not the criterion its answer is accepted on. A/B'd both
+    // ways (benchmarks/cache_profiling): identical iteration counts, voltages apart
+    // by at most 1.4e-12 pu against a 1e-8 tolerance, for about -2% of a cached solve.
+    inv_vm_cache_ = Vm_.array().inverse();
 
     cplx_type * ds_dvm_val_ptr = dS_dVm_vals_.data();
     cplx_type * ds_dva_val_ptr = dS_dVa_vals_.data();

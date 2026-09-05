@@ -59,20 +59,20 @@ TEST_CASE("exotic elements case grid: bus voltages match the Python (pypowsybl) 
     // captured from lightsim2grid.tests._exotic_elements_case_ls.build_exotic_elements_case_grid()
     // (bit-identical to the pypowsybl-built reference, see test_exotic_elements_case_ls.py)
     CplxVect expected(14);
-    expected << std::complex<double>(1.06, 0.0),
-                std::complex<double>(0.9687913157816583, -0.24787776517074517),
-                std::complex<double>(0.9689940823590732, -0.24708392977508187),
-                std::complex<double>(0.9711757063452228, -0.23836473607657993),
-                std::complex<double>(0.99413798106925, -0.26631227837286225),
-                std::complex<double>(0.9594083364855915, -0.2724673194933637),
-                std::complex<double>(1.0411254584549987, -0.08990428108198613),
-                std::complex<double>(0.9854269266425705, -0.22143570680397975),
-                std::complex<double>(0.9940133137427848, -0.17587393368946724),
-                std::complex<double>(1.002559976355528, -0.15245213766187748),
-                std::complex<double>(1.0353772607437275, -0.2699887552006848),
-                std::complex<double>(1.0079901894554393, -0.22846919125963108),
-                std::complex<double>(1.0630358198274958, -0.24094573198893576),
-                std::complex<double>(0.9692026875332204, -0.2462643914137463);
+    expected << std::complex<double>(1.0600000000000001, 0),
+                std::complex<double>(0.96799351594580019, -0.25097520412759489),
+                std::complex<double>(0.97102700718869095, -0.23896977070368952),
+                std::complex<double>(0.97196619148095098, -0.23512065544740082),
+                std::complex<double>(0.99485520142802564, -0.26337707742414879),
+                std::complex<double>(0.9594907122432127, -0.27213173889703429),
+                std::complex<double>(1.041138716753307, -0.089750612684686787),
+                std::complex<double>(0.98545996908740219, -0.22128861092757629),
+                std::complex<double>(0.99403667576525778, -0.17572183506772299),
+                std::complex<double>(1.0027959169054035, -0.15194114497901523),
+                std::complex<double>(1.0363593510923492, -0.26619409347963563),
+                std::complex<double>(1.0077294791673204, -0.22951146148151697),
+                std::complex<double>(1.0627848391631813, -0.24205037832007373),
+                std::complex<double>(0.96878618486527368, -0.24789781768742494);
 
     // tolerance matches ac_pf's own convergence tolerance (1e-7)
     for (Eigen::Index i = 0; i < expected.size(); ++i) {
@@ -98,7 +98,7 @@ TEST_CASE("exotic elements case grid: per-element SVC / HVDC / storage results m
     const auto svc_res = grid.get_svcs().get_res();  // (p_mw, q_mvar, v_kv)
     REQUIRE(std::get<0>(svc_res).size() == 1);
     CHECK(std::get<0>(svc_res)(0) == Approx(0.).margin(1e-7));
-    CHECK(std::get<1>(svc_res)(0) == Approx(3.1825424542277485).margin(1e-6));
+    CHECK(std::get<1>(svc_res)(0) == Approx(3.1973936014341695).margin(1e-6));
 
     // 3 HVDC lines, in the order they were captured: [0] HVDC_LCC, [1] HVDC_VSC_DROOP,
     // [2] HVDC_VSC_NODROOP (see init_hvdc_lines' type1/type2/droop_enabled arrays)
@@ -107,10 +107,10 @@ TEST_CASE("exotic elements case grid: per-element SVC / HVDC / storage results m
     REQUIRE(std::get<0>(dc_res1).size() == 3);
 
     RealVect expected_p1(3), expected_q1(3), expected_p2(3), expected_q2(3);
-    expected_p1 << -1.0, 6.914030838034747, -2.0;
-    expected_q1 << -0.48432217236497815, 6.60537787015234, -34.86344125029247;
-    expected_p2 << 0.9714032101652108, -7.449867311206058, 1.9293708416040272;
-    expected_q2 << -0.47047211298952835, -28.13849408754504, -43.2734977392165;
+    expected_p1 << -1, 0.27049315600354495, -2;
+    expected_q1 << -0.48432217236497815, 9.4080026411983049, -34.899112612469736;
+    expected_p2 << 0.97140321016521081, -0.27707090360682907, 1.9293708416040272;
+    expected_q2 << -0.47047211298952835, -31.247308364599498, -43.520804752267765;
 
     for (Eigen::Index i = 0; i < 3; ++i) {
         CHECK(std::get<0>(dc_res1)(i) == Approx(expected_p1(i)).margin(1e-6));

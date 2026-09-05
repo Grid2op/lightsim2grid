@@ -101,6 +101,23 @@ bool GaussSeidelAlgo::compute_pf(
     }
     Vm_ = V_.array().abs();  // update Vm and Va again in case
     Va_ = V_.array().arg();  // we wrapped around with a negative Vm
+
+    // The per-bus mismatch LSGrid::compute_results reads back to work out what the
+    // generators actually produced (BaseAlgo::mis_bus_, see fills_bus_mismatch()).
+    // Written from the ORIGINAL Sbus, not from `tmp_Sbus`: the caller's convention
+    // is `V .* conj(Ybus . V) - Sbus` against the injections IT handed us, and
+    // tmp_Sbus is this algorithm's own working copy. This family carries no
+    // extension state (no distributed-slack unknown, no voltage-control group), so
+    // there is nothing to fold in and the plain formula IS the answer -- which is
+    // also why the reference bus keeps its full imbalance here, exactly where a
+    // single-slack solve wants it.
+    //
+    // Filled even when the solve did not converge: process_results discards the
+    // results of a diverged solve anyway, and leaving a stale buffer from a
+    // previous solve behind would be worse than an honest one.
+    ybus_v_.noalias() = Ybus * V_;
+    mis_bus_ = V_.array() * ybus_v_.array().conjugate() - Sbus.array();
+
     timer_total_nr_ += timer.duration();
     return res;
 }
