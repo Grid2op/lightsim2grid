@@ -268,22 +268,12 @@ TEST_CASE("exotic case14: the published results satisfy KCL at every bus",
 }
 
 // ---------------------------------------------------------------------------
-// The cases above all pass -- but none of them can FAIL for the reason that
-// matters, and saying so is the point of this block.
-//
-// KCL is a per-bus law. It sees the TOTAL at a bus, never the split between the
-// elements sitting on it. If a bus carries a generator and something whose
-// injection the Newton solves for itself (a voltage-mode SVC, a remote
-// controller, an angle-droop HVDC station), and the generator is credited with
-// the other one's power, the bus still balances to the last digit and this
-// check stays green.
-//
-// In the exotic fixture no bus carries both: the generators are at buses 0, 6,
-// 7, 10 and 12, the HVDC stations at 1, 2, 3, 4, 5 and 13, the SVC at 5, the
-// storage at 4. So the cases above establish that the published results are
-// self-consistent, and nothing more. The three below move one element so that a
-// generator and an NR-solved injection DO share a bus -- which is the only
-// arrangement in which the attribution can be caught being wrong.
+// KCL is a per-bus law: it sees the TOTAL at a bus, never the split between the
+// elements on it. So a generator credited with a co-located element's reactive
+// output still balances, and the cases above -- where no bus carries both a
+// generator and an injection the algorithm solves for itself -- cannot catch it.
+// The cases below move one element so that a bus carries both, which is the only
+// arrangement in which that attribution can be caught being wrong.
 // ---------------------------------------------------------------------------
 
 TEST_CASE("KCL holds with a generator on the same bus as an angle-droop HVDC station",
@@ -301,20 +291,12 @@ TEST_CASE("KCL holds with a generator on the same bus as an angle-droop HVDC sta
     grid.change_bus_gen_python(1, 1);   // generator 1: bus 6 -> bus 1
     solve(grid);
 
-    // This used to publish NaN for the station and -0 for the generator. The
-    // proportional split divided (max_q_me - min_q_me + eps) by
-    // (max_q_bus - min_q_bus + n.eps), and the converter stations of hvdc lines 1
-    // and 2 carry +/- DBL_MAX as their reactive limits (what the pypowsybl
-    // converter writes for "unbounded", and this fixture is a capture of a real
-    // conversion) -- so both spans overflowed to +inf and the ratio was inf / inf,
-    // while the generator, measured against that same infinite denominator, got
-    // 90 / inf = 0. The bus balanced in P and, in Q, only in the sense that NaN
-    // absorbs everything.
-    //
-    // GenericContainer::_q_share now falls back to an equal split when a range is
-    // not finite -- the same answer the formula already gives when every range is
-    // zero, and the only defensible one when there is no information to weight two
-    // unbounded machines against each other.
+    // Regression guard: this bus carries a generator and a converter station whose
+    // reactive limits are +/- DBL_MAX (what a converter writes for "unbounded").
+    // The share each takes is proportional to its reactive RANGE, and those two
+    // spans used to overflow to +inf, making the ratio inf / inf -- so the station
+    // was published as NaN and the generator, measured against the same infinite
+    // denominator, as 0. See GenericContainer::_q_share.
     const CplxVect residual = kcl_residual(grid);
     INFO("KCL residual, generator on a droop-HVDC bus:" << describe(residual, KCL_TOL));
     for (Eigen::Index bus_id = 0; bus_id < residual.size(); ++bus_id) {
@@ -325,11 +307,10 @@ TEST_CASE("KCL holds with a generator on the same bus as an angle-droop HVDC sta
 TEST_CASE("a generator cannot share the SVC's regulated bus (v1), so that path cannot be probed",
           "[LSGrid][kcl]")
 {
-    // The obvious third arrangement -- a generator on the bus a voltage-mode SVC
-    // regulates -- cannot be built at all: v1 requires an SVC to be the only
-    // controller of its bus and says so. Recorded here so the gap is explicit:
-    // whether the generator would be credited with the SVC's reactive output is
-    // a question this suite CANNOT ask yet, not one it has answered.
+    // A generator on the bus a voltage-mode SVC regulates cannot be built at all:
+    // v1 requires an SVC to be the only controller of its bus. Recorded so the gap
+    // is explicit -- whether the generator would be credited with the SVC's
+    // reactive output is a question this suite cannot ask yet.
     LSGrid grid = ls2g_test::make_exotic_elements_grid();
     grid.deactivate_storage(0);
     for (int hvdc_id = 0; hvdc_id < 3; ++hvdc_id) grid.deactivate_dcline(hvdc_id);
@@ -343,29 +324,14 @@ TEST_CASE("a generator cannot share the SVC's regulated bus (v1), so that path c
 }
 
 
-// This one used to be tagged [!shouldfail]: it did not converge at all, and the
-// hunt for why ended somewhere useful. The trigger was never the converter
-// station, nor its voltage regulation, nor its reactive limits -- it was the
-// droop GAIN. The fixture asked for 180 MW/deg on a link rated 20 MW, which
-// reaches its cap in 0.106 degrees of angle difference: over any realistic
-// operating range that is not a droop, it is a switch, and a Newton chasing it
-// from a moved angle reference has nothing smooth to follow. The failures
-// appeared at a threshold that moved with the gain and with how far the
-// reference sat from the line -- the signature of stiffness, not of a wiring
-// mistake.
-//
-// The fixture now asks for 1.8 MW/deg, which swings the link across its full
-// +/- 20 MW over about 10.6 degrees. That is what "AC emulation" is meant to be
-// (mimicking a parallel AC corridor), 180 being the right order for a GW-class
-// link rather than this one. The powerflow converges for the slack generator on
-// EVERY bus of the grid, so this case now asserts the ordinary thing.
+// The slack generator shares a bus with an angle-droop converter station, so the
+// bus is the angle reference AND a terminal of a theta-dependent injection. This
+// only solves at a physically plausible droop gain: at the 180 MW/deg the fixture
+// used to carry, a link rated 20 MW reaches its cap in 0.106 degrees and the
+// Newton has a switch rather than a droop to follow. See the fixture's 1.8.
 TEST_CASE("KCL holds with the slack generator on an angle-droop HVDC bus",
           "[LSGrid][kcl]")
 {
-    // the sharpest arrangement: generator 0 IS the slack, so
-    // GeneratorContainer::set_p_slack hands it the whole active mismatch of its
-    // bus -- and that bus now also carries the droop station whose power never
-    // reached Sbus.
     LSGrid grid = ls2g_test::make_exotic_elements_grid();
     grid.deactivate_svc(0);
     grid.deactivate_storage(0);

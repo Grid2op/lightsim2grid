@@ -309,27 +309,21 @@ inline void NRSystem<Base, Rest...>::fill_internal_variables()
     // them there costs the same arithmetic without more nb_bus vectors sitting
     // in cache for the whole solve.
     Ibus_cache_.noalias() = Ybus_ref_ * V_;      // noalias: no product temporary
-    // 1 / |V|, read off Vm_ rather than recomputed from V_. Vm_ IS |V_|: the only
-    // two writers of V_ keep it so -- update_state sets `Vm_ = |V_init|` next to
-    // `V_ = V_init`, and apply_step rebuilds `V_ = Vm_ * exp(i.Va_)` and then calls
-    // fix_negative_vm, which flips the sign of a negative Vm_ and turns Va_ by half
-    // a turn, leaving V_ alone and still equal to Vm_ * exp(i.Va_) with the new
-    // pair. `V_.array().abs()` was therefore a std::hypot per bus per iteration
-    // spent rediscovering a number we already hold, which is the same argument the
-    // comment in apply_step makes for not recomputing Vm_ / Va_ there.
+    // 1 / |V|, read off Vm_ rather than recomputed from V_. Vm_ IS |V_|: the two
+    // writers of V_ keep it so -- update_state sets `Vm_ = |V_init|` next to
+    // `V_ = V_init`, and apply_step rebuilds `V_ = Vm_ * exp(i.Va_)` then calls
+    // fix_negative_vm, which flips a negative Vm_ and turns Va_ by half a turn,
+    // leaving V_ equal to that product with the new pair. `V_.array().abs()` was a
+    // std::hypot per bus per iteration spent rediscovering a number already held --
+    // the same argument apply_step makes for not recomputing Vm_ / Va_ there.
     //
     // The two agree to a rounding rather than bit for bit (|cos + i.sin| is 1 only
-    // to within one), and that is all it can ever be worth: this value scales the
-    // dS_dVm block of the Jacobian and nothing else -- it never reaches the
-    // mismatch, which is built from V_ and Sbus and is what the convergence test
-    // reads. A rounding here moves the Newton's search direction, never the
-    // criterion its answer is accepted on. Measured over case30 / case118 /
-    // case1354pegase / case9241pegase, in both directions (A/B in
-    // benchmarks/cache_profiling): identical iteration counts on all 24 (grid,
-    // phase) pairs, returned voltages apart by at most 4.4e-15 / 5.8e-15 /
-    // 2.1e-13 / 1.4e-12 pu -- four to six orders of magnitude below the 1e-8 the
-    // two solutions were both accepted at -- for -2.1% / -2.5% / -2.2% / -1.6% of
-    // an ordinary cached powerflow (-1.3% to -3.3% on the clock).
+    // to within one), and that is all it can be worth: this value scales the dS_dVm
+    // block of the Jacobian and nothing else. It never reaches the mismatch, which
+    // is what the convergence test reads, so a rounding here moves the Newton's
+    // search direction and not the criterion its answer is accepted on. A/B'd both
+    // ways (benchmarks/cache_profiling): identical iteration counts, voltages apart
+    // by at most 1.4e-12 pu against a 1e-8 tolerance, for about -2% of a cached solve.
     inv_vm_cache_ = Vm_.array().inverse();
 
     cplx_type * ds_dvm_val_ptr = dS_dVm_vals_.data();

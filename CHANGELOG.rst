@@ -139,214 +139,80 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
-- [FIXED] a diverged AC or DC powerflow reported ``NotInitError`` after ``0`` iterations, no
-  matter what actually went wrong. ``LSGrid::process_results`` resets the algorithm on
-  divergence -- which it must, to drop a half-converged iterate and a factorization of a
-  system it gave up on -- but ``BaseAlgo::reset()`` puts the algorithm back to "never been
-  run", i.e. ``err_ = NotInitError`` and ``nr_iter_ = 0``, and the divergence path is
-  precisely where a caller reads those back. Every real diagnosis (``SingularMatrix``,
-  ``TooManyIterations``, ``InifiniteValue``, ``SolverFactor``, ...) was destroyed before
-  anyone could see it, including through ``LightSimBackend``'s
-  "Divergence of AC powerflow. Detailed error: ...". The error and the iteration count are
-  now captured and restored across the reset (``BaseAlgo::set_nb_iter``, next to the existing
-  ``set_error``); the next solve overwrites both before using them, so nothing else changes.
-- [FIXED, TEST FIXTURE] the exotic-elements fixture asked for an angle-droop gain of
-  **180 MW/deg on an HVDC link rated 20 MW**, which reaches its cap in 0.106 degrees of angle
-  difference. Over any realistic operating range that is not a droop, it is a switch, and a
-  Newton chasing it has nothing smooth to follow: moving the fixture's slack generator to any
-  of five buses made the powerflow fail with ``TooManyIterations``. The failures appeared at
-  a threshold that moved with the gain (k >= 18 MW/deg for the droop line's own terminals,
-  k >= 120 for the other converter buses, k = 180 for a bus carrying no converter at all) and
-  with how far the angle reference sat from the line -- stiffness, not a wiring mistake. The
-  station's voltage regulation, its reactive limits (+/- 100 MVAr behaves exactly like
-  +/- DBL_MAX), the linear solver and the distributed slack were each ruled out by experiment.
-  ``_exotic_elements_fixture.py`` now asks for **1.8 MW/deg**, which swings the link across
-  its full +/- 20 MW over about 10.6 degrees -- what "AC emulation" is meant to be, 180 being
-  the right order for a GW-class link rather than this one. The powerflow now converges with
-  the slack generator on EVERY bus of the grid. ``case_exotic_elements.hpp`` and the
-  reference values in ``test_case_exotic_elements.cpp`` are regenerated accordingly;
-  ``test_exotic_elements_case_ls.py`` still finds the ls-built grid bit-identical to the
-  pypowsybl-built one, so those references remain a real cross-check and not a self-comparison.
-- [FIXED] a diverged AC or DC powerflow reported ``NotInitError`` after ``0`` iterations, no
-  matter what actually went wrong. ``LSGrid::process_results`` resets the algorithm on
-  divergence -- which it must, to drop a half-converged iterate and a factorization of a
-  system it gave up on -- but ``BaseAlgo::reset()`` puts the algorithm back to "never been
-  run", i.e. ``err_ = NotInitError`` and ``nr_iter_ = 0``, and the divergence path is
-  precisely where a caller reads those back. Every real diagnosis (``SingularMatrix``,
-  ``TooManyIterations``, ``InifiniteValue``, ``SolverFactor``, ...) was destroyed before
-  anyone could see it, including through ``LightSimBackend``'s
-  "Divergence of AC powerflow. Detailed error: ...". The error and the iteration count are
-  now captured and restored across the reset (``BaseAlgo::set_nb_iter``, next to the existing
-  ``set_error``); the next solve overwrites both before using them, so nothing else changes.
-- [KNOWN LIMIT] the angle-droop ("AC emulation") model stops converging at high droop gain,
-  and how high depends on where the angle reference sits. Recorded by the ``[!shouldfail]``
-  case in ``src/tests/test_kcl_from_results.cpp``. Sweeping the gain of the exotic fixture's
-  droop line against the bus its slack generator is moved to, the failures appear at
-  k >= 18 MW/deg for the droop line's own terminals, k >= 120 for the other converter buses,
-  and k = 180 for a bus carrying no converter at all; with the hvdc lines deactivated every
-  one of the fourteen buses converges. The fixture ships k = 180 MW/deg -- about 10,300
-  MW/rad, 103 pu on a 100 MVA base -- so a hundredth of a radian swings a full per-unit of DC
-  flow. A monotone threshold that moves with the gain is stiffness, not a wiring defect:
-  ``voltage_regulator_on`` (identical with it off), the reactive limits (+/- 100 MVAr behaves
-  exactly like +/- DBL_MAX), the station being on the slack bus (the bus that fails last
-  carries none), the linear solver and the distributed slack were each ruled out by
-  experiment.
-- [FIXED] a diverged AC or DC powerflow reported ``NotInitError`` after ``0`` iterations, no
-  matter what actually went wrong. ``LSGrid::process_results`` resets the algorithm on
-  divergence -- which it must, to drop a half-converged iterate and a factorization of a
-  system it gave up on -- but ``BaseAlgo::reset()`` puts the algorithm back to "never been
-  run", i.e. ``err_ = NotInitError`` and ``nr_iter_ = 0``, and the divergence path is
-  precisely where a caller reads those back. Every real diagnosis (``SingularMatrix``,
-  ``TooManyIterations``, ``InifiniteValue``, ``SolverFactor``, ...) was destroyed before
-  anyone could see it, including through ``LightSimBackend``'s
-  "Divergence of AC powerflow. Detailed error: ...". The error and the iteration count are
-  now captured and restored across the reset (``BaseAlgo::set_nb_iter``, next to the existing
-  ``set_error``); the next solve overwrites both before using them, so nothing else changes.
-- [TODO] a voltage-regulating HVDC converter station sharing a bus with the SLACK generator
-  does not converge (``TooManyIterations``, using every iteration it is given). Reproduced by
-  the ``[!shouldfail]`` case in ``src/tests/test_kcl_from_results.cpp``, on all four such buses
-  of the exotic fixture. It is a bug, not an unsupported arrangement: such a station is a PV
-  source like any generator, two voltage-regulating generators on the slack bus solve in four
-  iterations, and the assembled system has the right shape (20 unknowns, 20 equations, the
-  same as a configuration that converges). Ruled out: the angle droop (one of the four lines
-  has none), a setpoint conflict (making them agree changes nothing), the linear solver (KLU,
-  SparseLU and the single-slack Newton all fail) and the starting point (it diverges
-  warm-started from the exact solution of the unmodified grid). From that exact solution every
-  residual falls to ~1e-7 by the third iteration and then ONE -- the reactive balance at that
-  bus -- grows by a steady factor per iteration until the iterate runs away, which points at a
-  Jacobian entry that does not match its residual at a bus whose voltage has no column.
-- [FIXED] the reactive output published for two elements sharing a bus could be **NaN**.
-  ``GeneratorContainer::set_q`` and ``ConverterStationContainer::set_q`` split a bus' reactive
-  residual proportionally to each element's reactive RANGE,
-  ``(max_q_me - min_q_me + eps) / (max_q_bus - min_q_bus + n * eps)``. A converter station
-  with "unbounded" limits carries +/- DBL_MAX (what the pypowsybl converter writes), so its
-  own span overflowed to ``+inf``, the bus total overflowed to ``+inf``, and the ratio was
-  ``inf / inf``; a generator on the same bus, measured against that same infinite
-  denominator, was published as ``0``. The split now lives in ONE place --
-  ``GenericContainer::_q_share``, used by both -- and falls back to an equal share when a
-  range is not finite, which is the same answer the formula already gives when every range
-  is zero. Finite ranges are untouched, bit for bit.
-- [FIXED] an element whose reactive output the ALGORITHM solved for (a voltage-control group
-  member) was served twice on the converter-station side: once by the per-bus redistribution
-  and again by the write-back that overwrote it -- and, worse, it inflated the totals its
-  neighbours on that bus were divided by. ``GeneratorContainer`` excluded remote regulators
-  from both; ``ConverterStationContainer`` excluded nobody, and neither excluded a LOCAL
-  generator enrolled in a group. Both now read one mask, built once per solve in
-  ``LSGrid::compute_results`` straight from the controller list the algorithm hands back
-  (``get_controller_kind()`` / ``get_controller_elem_id()``) -- so "who is served by the
-  write-back" has a single source of truth instead of a rule re-derived, differently, inside
-  each container.
-- [REMOVED] ``GeneratorContainer::init_q_vector`` / ``ConverterStationContainer::init_q_vector``
-  and the three ``LSGrid`` members they filled (``total_gen_per_bus_``, ``total_q_min_per_bus_``,
-  ``total_q_max_per_bus_``). Nothing between pre-processing and the end of the powerflow ever
-  read them: they existed only to split a bus' reactive residual afterwards, and who takes part
-  in that split is not knowable until the algorithm has run. Worse, they were GLOBAL -- three
-  ``nb_bus`` vectors accumulated over every generator and station on the grid, on every solve
-  where an injection moved, for a question that concerns only the buses carrying two or more
-  locally-regulating machines, which on most grids is none of them. The split is now done per
-  bus, in ``LSGrid::compute_results``, over a flat list of the machines that actually take a
-  share: a bus with one of them (the overwhelmingly common case) never computes a total at all,
-  it takes the whole residual. Nothing in the new path is proportional to the size of the grid.
-  ``set_q`` shrinks to what it can decide alone -- the disconnected, non-regulating and
-  turned-off machines -- and ``takes_q_residual_share`` names the rest.
-  The measured cost of moving out of pre-processing, where the change flags could skip the
-  build entirely, is +0.16% on an ordinary cached step and +0.95% on an identical re-solve
-  (case9241pegase).
-- [ADDED] ``BaseAlgo::fills_bus_mismatch()`` (+ the ``FILLS_BUS_MISMATCH`` compile-time
-  constant next to ``IS_DC`` / ``SUPPORTS_HVDC_DROOP`` / ``IS_FDPF`` /
-  ``SUPPORTS_REMOTE_VOLTAGE_CONTROL``): does this algorithm leave a usable per-bus mismatch
-  behind, one entry per solver bus, at the voltage it converged to? True for Newton-Raphson
-  (its NRSystem fills ``mis_bus_`` on every residual evaluation), for Fast-Decoupled (its
-  ``evaluate_mismatch_into`` does) and now for Gauss-Seidel, which writes it once at the end
-  of ``compute_pf`` with the plain formula. **Defaults to false**, so a plugin built against
-  an older header behaves exactly as before. A plugin that claims the capability is CHECKED
-  once per solve in ``LSGrid::process_results``: an empty or wrongly-sized buffer raises
-  instead of being indexed out of bounds. Documented in ``docs/solver_plugin.rst``.
-  ``get_bus_mismatch()`` is public now (it was in a ``protected:`` block) and reachable
-  through ``AlgorithmSelector``.
-- [ADDED] ``src/tests/test_kcl_from_results.cpp``: Kirchhoff's current law, checked on the
-  PUBLISHED results rather than on the solver. Every other powerflow test checks what the
-  Newton did; this one walks the containers, reads the numbers a python user reads back
-  (``get_loads_res()``, ``get_gen_res()``, ``get_line_res1()``, ...), sums them per bus with
-  each container's own ``fillSbus`` sign convention, and requires zero -- no Ybus, no Sbus, no
-  mismatch vector, so anything the solver knows and the results do not is what it catches.
-  Calibrated on plain case14 (every exotic element switched off), then on case14 + storage and
-  case14 + voltage-mode SVC, before being pointed at the full exotic fixture, where **it
-  passes**: the published results of the exotic case are self-consistent.
-- [FIXED, IN TESTS ONLY] two configurations that are NOT, both marked ``[!shouldfail]`` so the
-  suite stays green until they are fixed and turns red the day they are. KCL is a per-bus law
-  and cannot see the split between elements sharing a bus, and in the exotic fixture no bus
-  carries both a generator and an injection the Newton solves for itself -- so the fixture
-  cannot exercise the case where one is credited with the other's power. Moving a generator
-  onto the bus of the angle-droop HVDC station (hvdc line 1, bus 1) makes the station's
-  published reactive power **NaN** and the generator's **-0**: the proportional split in
-  ``ConverterStationContainer::set_q`` / ``GeneratorContainer::set_q`` computes
-  ``(max_q_me - min_q_me + eps) / (max_q_bus - min_q_bus + n * eps)``, and the stations of
-  hvdc lines 1 and 2 carry +/- DBL_MAX as their limits (what the pypowsybl converter writes
-  for "unbounded", and the fixture is a capture of a real conversion), so both spans overflow
-  to ``+inf`` and the ratio is ``inf / inf``. The generator, measured against the same
-  infinite denominator, gets ``90 / inf = 0``. Moving the SLACK generator onto that bus does
-  not solve at all (``ErrorType::NotInitError``, zero iterations). A third arrangement -- a
-  generator on the bus a voltage-mode SVC regulates -- cannot be built in v1 (an SVC must be
-  the only controller of its bus), which is recorded as its own test so the gap is explicit.
-- [IMPROVED] the branch-flow loop in ``TwoSidesContainer_rxh_A::compute_results_tsc_rxha_no_amps``
-  reads each side's status bit ONCE per branch instead of five times, and takes the bus id
-  straight from the side's ``bus_id_`` where it has just established the side is connected
-  instead of going through ``get_bus_side_1_internal`` / ``get_bus_side_2_internal``, which
-  re-read the same bit and did not inline. These are ``std::vector<bool>``, so each of those
-  reads was a word offset, a shift and a mask rather than a load. Worth **-2.35% / -2.42% /
-  -2.31% / -2.05%** of an identical re-solve and -1.46% / -1.21% / -1.02% / -0.85% of an
-  ordinary cached step on case30 / case118 / case1354pegase / case9241pegase, which is
-  **-12.4% to -14.3% of compute_results itself** (931,292 instructions per solve on the
-  largest grid). The returned voltages are IDENTICAL -- 0 ulp, same iteration counts, all 16
-  (grid, phase) pairs -- this is pure bookkeeping, not an arithmetic change; the C++ suite
-  passes unchanged (229 test cases, 590,862 assertions). Measured with
-  ``benchmarks/cache_profiling``; see its README for what the rest of ``compute_results``
-  is made of.
-- [ADDED] ``benchmarks/cache_profiling/ab_test.sh`` + ``ab_wallclock.sh`` +
-  ``compare_traces.py``: A/B one candidate change to ``src/core`` -- build the tree as it is,
-  build it again with a patch script applied, run every (grid, phase) under both, and report the
-  instructions retired side by side AND whether the two builds return the same answer. The
-  profiling driver now writes a trace of every solve (its iteration count and its full complex
-  voltage vector, 17 significant digits) so "same answer" is measured, not assumed; the tree is
-  restored with ``git checkout -- src/core`` on exit, including on failure.
-  First result, ``patches/inv_vm_from_vm.py``: ``NRSystem::fill_internal_variables`` opens with
-  ``inv_vm_cache_ = V_.array().abs().inverse()``, a ``std::hypot`` per bus per Newton iteration,
-  while ``Vm_`` already IS ``|V_|`` -- both writers of ``V_`` keep it so, which is the same
-  argument the comment in ``apply_step`` makes for ``Vm_`` / ``Va_``. Taking the reciprocal from
-  ``Vm_`` is worth **-2.1% / -2.5% / -2.2% / -1.6%** of an ordinary cached step on
-  case30 / case118 / case1354pegase / case9241pegase (and -1.3% to -3.3% on the clock, best of
-  9 runs), with **identical iteration counts in all 24 (grid, phase) pairs** and returned
-  voltages agreeing to 4.4e-15 / 5.8e-15 / 2.1e-13 / 1.4e-12 pu -- four to six orders of
-  magnitude below the 1e-8 tolerance both solutions were accepted at. It cannot be bit for bit
-  (``|cos + i.sin|`` is 1 only to a rounding), and it does not need to be: the value feeds only
-  the ``dS_dVm`` block of the Jacobian, never the mismatch the convergence test reads.
-  Results in ``benchmarks/cache_profiling/results_ab_inv_vm.txt``.
-- [IMPROVED] ``NRSystem::fill_internal_variables`` takes ``1 / |V|`` from ``Vm_`` instead of a
-  ``std::hypot`` pass over ``V_`` (the A/B above): **-2.1% / -2.5% / -2.2% / -1.6%** of an
-  ordinary cached powerflow on case30 / case118 / case1354pegase / case9241pegase, -1.3% to
-  -3.3% on the clock. The C++ suite passes unchanged (229 test cases, 590,862 assertions).
 - [ADDED] ``benchmarks/cache_profiling/``: an instruction-count audit of the CACHED powerflow
-  path -- a powerflow that follows an already successful one, which is what every grid2op step
-  after the first actually runs. A standalone C++ driver (no python, no pybind11, links
-  ``src/core`` directly) runs a grid through one of several phases and lets callgrind COLLECT
-  only the ``ac_pf`` / ``dc_pf`` calls themselves, so the numbers are the cost of one powerflow
-  and nothing else; ``run_profile.sh`` drives one callgrind run per (grid, phase) and
-  ``summarize.py`` turns them into a per-solve breakdown and a per-call-site ledger of
-  ``LSGrid.cpp``. Measured on case30 / case118 / case1354pegase / case9241pegase, an ordinary
-  step (injections moved, topology unchanged) costs 177,116 / 864,166 / 11,580,775 /
-  111,291,208 instructions, which is 2.3x - 4.0x cheaper than the first solve and 1.7x - 2.4x
-  cheaper than the same solve with ``allow_ac_cache_reuse(false)``. See
-  ``benchmarks/cache_profiling/README.md`` for the full tables and for six measured savings the
-  audit found, the two largest being (a) the cached path always runs one full Newton iteration
-  even when the grid did not change, because ``MultiSlack::update_state`` re-derives the slack
-  state from ``real(Sbus.sum())`` on every solve instead of carrying it over -- the same solve
-  with ``NRSing_KLU`` converges in **zero** iterations and costs 71% less on case9241pegase --
-  and (b) ``LightSimBackend``'s default ``initdc=True``, which on a warm-started step doubles
-  the cost of a case9241pegase step (221,384,553 vs 111,291,208 instructions) because the DC
-  solution is a worse starting point than the previous AC one. Nothing in the library is
-  changed by this entry: it is an audit, and the candidate fixes were measured on throwaway
-  builds.
+  path -- a solve that follows a successful one, which is what every grid2op step after the
+  first runs. A standalone C++ driver (no python, no pybind11) lets callgrind collect ONLY the
+  ``ac_pf`` / ``dc_pf`` calls, so the numbers are the cost of one powerflow and nothing else.
+  ``ab_test.sh`` / ``ab_wallclock.sh`` A/B a candidate change against the tree as it is, in
+  instructions and on the clock, and ``compare_traces.py`` checks the two builds return the
+  same answer (every solve's iteration count and full complex voltage vector, 17 digits) --
+  so "no behaviour change" is measured rather than asserted. See its README.
+- [ADDED] ``BaseAlgo::fills_bus_mismatch()`` and the ``FILLS_BUS_MISMATCH`` constant, next to
+  ``IS_DC`` / ``SUPPORTS_HVDC_DROOP`` / ``IS_FDPF`` / ``SUPPORTS_REMOTE_VOLTAGE_CONTROL``:
+  does this algorithm leave a usable per-bus mismatch behind (one entry per solver bus, at the
+  voltage it converged to)? True for Newton-Raphson and Fast-Decoupled; Gauss-Seidel now writes
+  it too. **Defaults to false**, so a plugin built against an older header is unaffected; one
+  that claims the capability is checked once per solve. Documented in ``docs/solver_plugin.rst``.
+- [ADDED] ``src/tests/test_kcl_from_results.cpp``: Kirchhoff's current law checked on the
+  PUBLISHED results rather than on the solver. It walks the containers, reads the numbers a
+  python user reads back, sums them per bus with each container's own sign convention, and
+  requires zero -- no Ybus, no Sbus, no mismatch vector. Calibrated on plain case14 before
+  being pointed at the exotic fixture.
+- [IMPROVED] ``LSGrid::compute_results`` reads the per-bus mismatch off the algorithm instead
+  of rebuilding ``V .* conj(Ybus . V) - Sbus`` for itself, which removes a sparse product, its
+  heap temporary and a full complex pass per solve. It is also the only correct source: an
+  algorithm's mismatch already accounts for the state IT solved for (the distributed slack, the
+  angle-droop flows, the voltage controllers' reactive output), and this function cannot.
+  -3.4% / -1.4% of an identical re-solve and of an ordinary cached step on case9241pegase.
+  An algorithm that leaves no mismatch behind still gets the old derivation.
+- [IMPROVED] ``NRSystem::fill_internal_variables`` takes ``1 / |V|`` from ``Vm_``, which IS
+  ``|V_|``, instead of a ``std::hypot`` per bus per Newton iteration. **-2.1% / -2.5% / -2.2% /
+  -1.6%** of an ordinary cached powerflow on case30 / case118 / case1354pegase /
+  case9241pegase, -1.3% to -3.3% on the clock, with identical iteration counts.
+- [IMPROVED] the branch-flow loop in ``TwoSidesContainer_rxh_A`` reads each side's status bit
+  once per branch instead of five times, and takes the bus id straight from the side's
+  ``bus_id_`` where it has just established the side is connected. These are
+  ``std::vector<bool>``, so each read was a word offset, a shift and a mask rather than a load.
+  **-12.4% to -14.3% of compute_results** (931,292 instructions per solve on case9241pegase),
+  with bit-identical results.
+- [FIXED] the reactive output published for two elements sharing a bus could be **NaN**. The
+  split is proportional to each element's reactive RANGE, and a converter station with
+  "unbounded" limits carries +/- DBL_MAX, whose difference overflows to ``+inf`` for the
+  element AND for the bus total -- so the ratio was ``inf / inf``, and a generator on the same
+  bus, measured against that infinite denominator, was published as ``0``. The split now lives
+  in one place (``GenericContainer::_q_share``) instead of six lines copied into two
+  containers, and falls back to an equal share when a range is not finite -- the same answer it
+  already gave when every range is zero. Finite ranges are untouched, bit for bit.
+- [FIXED] an element whose reactive output the ALGORITHM solved for was served twice on the
+  converter-station side -- once by the per-bus redistribution and again by the write-back that
+  overwrote it -- and inflated the totals its neighbours were divided by. ``GeneratorContainer``
+  excluded remote regulators, ``ConverterStationContainer`` excluded nobody, and neither
+  excluded a LOCAL generator enrolled in a control group. Both now read one mask, built once per
+  solve from the algorithm's own controller list, so "who is served by the write-back" has a
+  single source of truth instead of a rule re-derived differently in each container.
+- [REMOVED] ``GeneratorContainer::init_q_vector`` / ``ConverterStationContainer::init_q_vector``
+  and the three ``LSGrid`` members they filled. Nothing between pre-processing and the end of
+  the powerflow read them: they existed only to split a bus' reactive residual afterwards, and
+  who takes part is not knowable until the algorithm has run. They were also global -- three
+  ``nb_bus`` vectors walked over every generator and station on every solve -- for a question
+  that concerns only buses carrying two or more locally-regulating machines. The split is now
+  done per bus, over a flat list of the machines that take a share; a bus with one of them
+  takes the whole residual and computes no total at all. Costs +0.16% on an ordinary cached
+  step and +0.95% on an identical re-solve, which is what leaving pre-processing (where the
+  change flags could skip the build) is worth.
+- [FIXED] a diverged AC or DC powerflow reported ``NotInitError`` after ``0`` iterations, no
+  matter what actually went wrong: ``process_results`` resets the algorithm on divergence, and
+  ``BaseAlgo::reset()`` means "never been run". Every real diagnosis was destroyed one line
+  before a caller could read it, including through ``LightSimBackend``'s "Divergence of AC
+  powerflow. Detailed error: ...". The error and the iteration count now survive the reset.
+- [FIXED] the exotic-elements test fixture asked for an angle-droop gain of 180 MW/deg on an
+  HVDC link rated 20 MW, which reaches its cap in 0.106 degrees of angle difference -- a switch
+  rather than a droop, and a Newton chasing it from a moved angle reference failed with
+  ``TooManyIterations``. Now 1.8 MW/deg, which swings the link across its full +/- 20 MW over
+  about 10.6 degrees; 180 is the right order for a GW-class link, not this one.
+  ``case_exotic_elements.hpp`` and the reference values in ``test_case_exotic_elements.cpp``
+  are regenerated accordingly, and ``test_exotic_elements_case_ls.py`` still finds the ls-built
+  grid bit-identical to the pypowsybl-built one.
 - [IMPROVED] the last throw sites inside the ``_apply_and_track_buses`` bracket are gone, which
   takes the branch ``fillYbus`` back to **exactly** what it cost before #188 landed: 7,222,254
   instructions, the same figure to the digit. Together with the previous entry that is
