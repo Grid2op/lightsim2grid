@@ -150,6 +150,34 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   "Divergence of AC powerflow. Detailed error: ...". The error and the iteration count are
   now captured and restored across the reset (``BaseAlgo::set_nb_iter``, next to the existing
   ``set_error``); the next solve overwrites both before using them, so nothing else changes.
+- [FIXED, TEST FIXTURE] the exotic-elements fixture asked for an angle-droop gain of
+  **180 MW/deg on an HVDC link rated 20 MW**, which reaches its cap in 0.106 degrees of angle
+  difference. Over any realistic operating range that is not a droop, it is a switch, and a
+  Newton chasing it has nothing smooth to follow: moving the fixture's slack generator to any
+  of five buses made the powerflow fail with ``TooManyIterations``. The failures appeared at
+  a threshold that moved with the gain (k >= 18 MW/deg for the droop line's own terminals,
+  k >= 120 for the other converter buses, k = 180 for a bus carrying no converter at all) and
+  with how far the angle reference sat from the line -- stiffness, not a wiring mistake. The
+  station's voltage regulation, its reactive limits (+/- 100 MVAr behaves exactly like
+  +/- DBL_MAX), the linear solver and the distributed slack were each ruled out by experiment.
+  ``_exotic_elements_fixture.py`` now asks for **1.8 MW/deg**, which swings the link across
+  its full +/- 20 MW over about 10.6 degrees -- what "AC emulation" is meant to be, 180 being
+  the right order for a GW-class link rather than this one. The powerflow now converges with
+  the slack generator on EVERY bus of the grid. ``case_exotic_elements.hpp`` and the
+  reference values in ``test_case_exotic_elements.cpp`` are regenerated accordingly;
+  ``test_exotic_elements_case_ls.py`` still finds the ls-built grid bit-identical to the
+  pypowsybl-built one, so those references remain a real cross-check and not a self-comparison.
+- [FIXED] a diverged AC or DC powerflow reported ``NotInitError`` after ``0`` iterations, no
+  matter what actually went wrong. ``LSGrid::process_results`` resets the algorithm on
+  divergence -- which it must, to drop a half-converged iterate and a factorization of a
+  system it gave up on -- but ``BaseAlgo::reset()`` puts the algorithm back to "never been
+  run", i.e. ``err_ = NotInitError`` and ``nr_iter_ = 0``, and the divergence path is
+  precisely where a caller reads those back. Every real diagnosis (``SingularMatrix``,
+  ``TooManyIterations``, ``InifiniteValue``, ``SolverFactor``, ...) was destroyed before
+  anyone could see it, including through ``LightSimBackend``'s
+  "Divergence of AC powerflow. Detailed error: ...". The error and the iteration count are
+  now captured and restored across the reset (``BaseAlgo::set_nb_iter``, next to the existing
+  ``set_error``); the next solve overwrites both before using them, so nothing else changes.
 - [KNOWN LIMIT] the angle-droop ("AC emulation") model stops converging at high droop gain,
   and how high depends on where the angle reference sits. Recorded by the ``[!shouldfail]``
   case in ``src/tests/test_kcl_from_results.cpp``. Sweeping the gain of the exotic fixture's

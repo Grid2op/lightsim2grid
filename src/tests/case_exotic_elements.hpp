@@ -16,7 +16,7 @@
 // transformer) via literal LSGrid init_*/add_*/set_* calls captured from a real
 // init_from_pypowsybl run -- no pypowsybl/pandapower/grid2op dependency, pure C++.
 //
-// Generated on 2026-07-16 using `python -m lightsim2grid.tests._gen_exotic_elements_case` (lightsim2grid 1.0.0.rc2, pypowsybl 1.15.0).
+// Generated on 2026-09-05 using `python -m lightsim2grid.tests._gen_exotic_elements_case` (lightsim2grid 1.0.0, pypowsybl 1.16.1).
 
 #include <complex>
 #include <vector>
@@ -176,7 +176,7 @@ inline ls2g::LSGrid make_exotic_elements_grid()
     RealVect hvdc_droop_p0_mw(3);
     hvdc_droop_p0_mw << 0.0, 1.0, 0.0;
     RealVect hvdc_droop_mw_per_deg(3);
-    hvdc_droop_mw_per_deg << 0.0, 180.0, 0.0;
+    hvdc_droop_mw_per_deg << 0.0, 1.7999999523162842, 0.0;
     RealVect hvdc_pmax_1to2_mw(3);
     hvdc_pmax_1to2_mw << 20.0, 20.0, 20.0;
     RealVect hvdc_pmax_2to1_mw(3);

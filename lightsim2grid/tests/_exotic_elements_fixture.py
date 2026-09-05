@@ -77,7 +77,7 @@ def build_exotic_elements_network() -> "pp.network.Network":
                         r=1.0, nominal_v=12.0, converters_mode="SIDE_1_RECTIFIER_SIDE_2_INVERTER",
                         target_p=2.0, max_p=20.0)
     n.create_extensions("hvdcAngleDroopActivePowerControl", id="HVDC_VSC_DROOP",
-                        p0=1.0, droop=180.0, enabled=True)
+                        p0=1.0, droop=1.8, enabled=True)
 
     # HVDC VSC-VSC, fixed setpoint (no droop)
     n.create_vsc_converter_stations(id="VSC3", voltage_level_id="VL12", bus_id="B12", loss_factor=1.1,

@@ -343,43 +343,24 @@ TEST_CASE("a generator cannot share the SVC's regulated bus (v1), so that path c
 }
 
 
-// This configuration does not converge (TooManyIterations, using every iteration
-// it is given), so nothing here reaches the write-back -- the REQUIRE in solve()
-// is what fails. It is kept as a recorded LIMIT, not as a defect: what it
-// measures is where the angle-droop model stops being solvable, and the answer
-// depends smoothly on the droop gain.
+// This one used to be tagged [!shouldfail]: it did not converge at all, and the
+// hunt for why ended somewhere useful. The trigger was never the converter
+// station, nor its voltage regulation, nor its reactive limits -- it was the
+// droop GAIN. The fixture asked for 180 MW/deg on a link rated 20 MW, which
+// reaches its cap in 0.106 degrees of angle difference: over any realistic
+// operating range that is not a droop, it is a switch, and a Newton chasing it
+// from a moved angle reference has nothing smooth to follow. The failures
+// appeared at a threshold that moved with the gain and with how far the
+// reference sat from the line -- the signature of stiffness, not of a wiring
+// mistake.
 //
-// Sweeping k (the droop gain of hvdc line 1, MW/deg) against the bus the slack
-// generator is moved to:
-//
-//     k =        0   0.18   1.8    18    60   120   180
-//     bus 1    conv  conv  conv   DIV   DIV   DIV   DIV
-//     bus 2    conv  conv  conv   DIV   DIV   DIV   DIV
-//     bus 3    conv  conv  conv  conv  conv   DIV   DIV
-//     bus 13   conv  conv  conv  conv  conv   DIV   DIV
-//     bus 10   conv  conv  conv  conv  conv  conv   DIV
-//     bus 4    conv  conv  conv  conv  conv  conv  conv
-//     bus 9    conv  conv  conv  conv  conv  conv  conv
-//
-// A monotone threshold that moves with the gain, and differs by how far the
-// angle reference sits from the droop line, is what a STIFF element does to a
-// Newton -- not what a mis-wired one does. The fixture ships k = 180 MW/deg,
-// which is 180 / (pi/180) ~ 10,300 MW/rad, about 103 pu/rad on the 100 MVA base:
-// one hundredth of a radian of angle difference swings a full per-unit of DC
-// flow. Bus 10 carries no converter station at all and still fails at that gain;
-// with the hvdc lines deactivated every one of the fourteen buses converges.
-//
-// Ruled out by experiment, each on its own: voltage_regulator_on (identical
-// results with it off), the reactive limits (+/- 100 MVAr diverges exactly like
-// +/- DBL_MAX), the station being on the slack bus (bus 10 has none), the linear
-// solver (KLU, SparseLU and the single-slack Newton all fail alike) and the
-// distributed slack.
-//
-// [!shouldfail] keeps the suite green; if the droop ever gains a step limiter or
-// a continuation, this turns red and should then be re-pointed at the new limit
-// rather than simply untagged.
+// The fixture now asks for 1.8 MW/deg, which swings the link across its full
+// +/- 20 MW over about 10.6 degrees. That is what "AC emulation" is meant to be
+// (mimicking a parallel AC corridor), 180 being the right order for a GW-class
+// link rather than this one. The powerflow converges for the slack generator on
+// EVERY bus of the grid, so this case now asserts the ordinary thing.
 TEST_CASE("KCL holds with the slack generator on an angle-droop HVDC bus",
-          "[LSGrid][kcl][!shouldfail]")
+          "[LSGrid][kcl]")
 {
     // the sharpest arrangement: generator 0 IS the slack, so
     // GeneratorContainer::set_p_slack hands it the whole active mismatch of its
