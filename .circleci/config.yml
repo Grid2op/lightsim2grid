@@ -317,12 +317,18 @@ jobs:
         steps:
             - checkout
             - run: cat /etc/os-release
-            # silkeh/clang:11 is buster-based, and buster's repositories have moved to
-            # archive.debian.org, so `apt-get update` 404s on the stock sources and the
-            # job dies before it compiles anything. Same two lines compile_gcc_earliest
-            # (gcc:8, also buster) has had active all along.
+            # silkeh/clang:11 is bullseye-based, and bullseye has moved to
+            # archive.debian.org, so `apt-get update` fails on the stock sources and the
+            # job dies before it compiles anything.
             - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
+            # The security suite is DROPPED rather than repointed, unlike
+            # compile_gcc_earliest (gcc:8): buster's security updates are on
+            # archive.debian.org under `buster/updates`, bullseye-security is not
+            # published there at all -- its InRelease is ignored and its Release 404s,
+            # which fails the whole `apt-get update`. Nothing this job installs comes
+            # from it: cmake, python3, git and pip all live in main, which the two
+            # lines above do reach.
+            - run: sed -i '/security\.debian\.org/d' /etc/apt/sources.list
             # - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: cat /etc/apt/sources.list
             - run: apt-get update
