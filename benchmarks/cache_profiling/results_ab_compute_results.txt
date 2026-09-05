@@ -36,3 +36,15 @@ case9241pegase   dcac              0.000e+00    0.000e+00   same iteration count
 case9241pegase   idem              0.000e+00    0.000e+00   same iteration counts (0.0 ulp)
 case9241pegase   inj               0.000e+00    0.000e+00   same iteration counts (0.0 ulp)
 case9241pegase   topo              0.000e+00    0.000e+00   same iteration counts (0.0 ulp)
+
+================ A/B (wall clock) ================
+============ A/B (wall clock, best of 9) ============
+grid             phase          A (ms)       B (ms)     delta
+case118          idem        0.0350448    0.0341631    -2.52%
+case118          inj         0.0699859    0.0692382    -1.07%
+case1354pegase   idem         0.615381     0.610102    -0.86%
+case1354pegase   inj            1.4684      1.46127    -0.49%
+case30           idem       0.00979329   0.00957716    -2.21%
+case30           inj         0.0154853    0.0152443    -1.56%
+case9241pegase   idem           5.5536      5.49528    -1.05%
+case9241pegase   inj           14.1849      14.0967    -0.62%

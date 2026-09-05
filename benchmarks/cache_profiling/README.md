@@ -129,6 +129,7 @@ phases, answers compared) — see its section.
 | 4 | do not recompute the element results (`inj` -> `inj_nores`) | -11.5% | -9.5% | -7.4% | -5.9% |
 | 5 | cache the voltage-control controller data instead of rebuilding it per solve | -2.2% | -3.4% | — | -1.1% |
 | 6 | take `1/\|V\|` from `Vm_` instead of a `hypot` pass over `V_` (**A/B tested**) | -2.1% | -2.5% | -2.2% | -1.6% |
+| 7 | make `compute_results` cheaper: no heap temporary, no `std::complex`, no repeated `vector<bool>` (**A/B tested**) | -1.7% | -1.5% | -1.1% | -0.9% |
 
 ### Where each of these landed
 
@@ -149,7 +150,9 @@ An audit measures; it does not decide. What was decided, and why:
   the data is currently built twice. It needs the cache to carry more than it
   does today (the `AlgoControl` state and what changed on the elements since),
   so it is its own piece of work.
-* **6 (`1/|V|` from `Vm_`) — A/B tested here**, see below.
+* **6 (`1/|V|` from `Vm_`) — A/B tested and applied**, see below.
+* **7 (a cheaper `compute_results`) — A/B tested**, see below. Row 4 is the
+  same work skipped entirely; row 7 is the same work done for ~15% less.
 
 ### 1. The cached path always runs at least one Newton iteration
 
@@ -329,6 +332,71 @@ In the same family, and not measured here: `_reconstruct_V_into` computes
 `Va.cos()` and `Va.sin()` as two separate libm passes (`__sincos_fma` shows up
 twice in the profile, ~2.5% together on case9241pegase); one `sincos` pass would
 halve that.
+
+### 7. `compute_results`, done for ~15% less (A/B tested)
+
+Row 4 measures switching result computation off. Most callers cannot: grid2op
+needs every element's P, Q, V, angle and current. So the question is what the
+work actually costs, and the profile (the `inj` run minus the `inj_nores` one,
+which is exactly `compute_results` and nothing else) splits its 6.51M Ir on
+case9241pegase as:
+
+| | Ir/solve | share |
+|---|---:|---:|
+| `TwoSidesContainer_rxh_A::compute_results_tsc_rxha_no_amps` (branch flows) | 2.87M | 44% |
+| — of which `std::vector<bool>` reads and out-of-line bus lookups | 0.98M | 15% |
+| `LSGrid::compute_results` itself (the per-bus mismatch) | 1.34M | 21% |
+| `OneSideContainer::get_bus_internal` (`std::vector<bool>`) | 0.58M | 9% |
+| `GenericContainer::_get_amps` | 0.32M | 5% |
+| `GenericContainer::v_kv_theta_from_vpu` | 0.29M | 4% |
+| `ShuntContainer::_compute_results` | 0.28M | 4% |
+
+`_get_amps` and `v_kv_theta_from_vpu` are already at ~5 and ~22 instructions per
+element and have nothing left in them. Two things do:
+
+**The per-bus mismatch** (`patches/bus_mismatch_no_temporary.py`).
+`mismatch = V.array() * (mat * V).conjugate().array() - inj.array()` pays three
+things it need not. `mat * V` inside a coefficient-wise expression is a
+sparse-times-dense product Eigen can only evaluate into a **heap temporary** --
+one allocation and one full-vector zero-fill per solve; `NRSystem::_residual_into`
+hit the same wall and answered it with a buffer that outlives the call. The
+coefficient-wise multiply then goes through `std::complex::operator*`, whose
+NaN-recovery branch after every product is the cost the dS pass and the
+branch-flow loop already spell out on real and imaginary parts to avoid. And
+`mismatch` is a full complex vector nothing reads: only its two halves are
+scaled into the real vectors anyone downstream sees. One pass writing those two
+directly removes all three.
+
+**The `std::vector<bool>`** (`patches/branch_results_hoist.py`).
+`status1[el_id]` and `status2[el_id]` are read five times each per branch, and
+each read is a word offset, a shift and a mask rather than a load. On top of
+that `get_bus_side_1_internal` re-reads the same status bit to decide whether to
+hand back `_deactivated_bus_id`, inside a branch that has just established the
+side is connected -- and it does not inline, which is the 0.58M
+`get_bus_internal` line above. Read each bit once, and take the bus id straight
+from the side's own `bus_id_` where the status is already known.
+
+Measured together, on top of the `1/|V|` change:
+
+| grid | `idem` | `inj` | `dcac` | `topo` | Ir saved per solve | vs. `compute_results` |
+|---|---:|---:|---:|---:|---:|---:|
+| case30 | -2.77% | -1.72% | -1.16% | -0.65% | 2,981 | **-14.6%** |
+| case118 | -3.03% | -1.52% | -1.12% | -0.88% | 12,760 | **-15.6%** |
+| case1354pegase | -2.58% | -1.14% | -0.69% | -0.62% | 128,631 | **-15.0%** |
+| case9241pegase | -2.25% | -0.93% | -0.47% | -0.54% | 1,020,293 | **-15.7%** |
+
+The absolute saving is the same number in every phase of a given grid --
+1,020,293 instructions on case9241pegase, to the instruction, in both `idem` and
+`inj` -- which is what removing a fixed per-solve cost looks like, and a check
+that the harness measures what it claims. On the clock: -2.5% / -2.2% on `idem`
+for case118 / case30, -0.5% to -1.6% elsewhere (best of 9).
+
+**Does it return the same answer?** Yes, and here that is not a judgement call:
+the returned voltages are **identical, 0 ulp**, in all 16 (grid, phase) pairs,
+with the same iteration counts. Unlike row 6, which moved a rounding, both of
+these are exact rearrangements -- the same products in the same grouping and the
+same order, with an allocation and a re-read taken out around them. The C++
+suite passes unchanged (229 test cases, 590,862 assertions).
 
 ### What is NOT worth attacking
 
