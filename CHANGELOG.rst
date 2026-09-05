@@ -139,6 +139,20 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] the branch-flow loop in ``TwoSidesContainer_rxh_A::compute_results_tsc_rxha_no_amps``
+  reads each side's status bit ONCE per branch instead of five times, and takes the bus id
+  straight from the side's ``bus_id_`` where it has just established the side is connected
+  instead of going through ``get_bus_side_1_internal`` / ``get_bus_side_2_internal``, which
+  re-read the same bit and did not inline. These are ``std::vector<bool>``, so each of those
+  reads was a word offset, a shift and a mask rather than a load. Worth **-2.35% / -2.42% /
+  -2.31% / -2.05%** of an identical re-solve and -1.46% / -1.21% / -1.02% / -0.85% of an
+  ordinary cached step on case30 / case118 / case1354pegase / case9241pegase, which is
+  **-12.4% to -14.3% of compute_results itself** (931,292 instructions per solve on the
+  largest grid). The returned voltages are IDENTICAL -- 0 ulp, same iteration counts, all 16
+  (grid, phase) pairs -- this is pure bookkeeping, not an arithmetic change; the C++ suite
+  passes unchanged (229 test cases, 590,862 assertions). Measured with
+  ``benchmarks/cache_profiling``; see its README for what the rest of ``compute_results``
+  is made of.
 - [ADDED] ``benchmarks/cache_profiling/ab_test.sh`` + ``ab_wallclock.sh`` +
   ``compare_traces.py``: A/B one candidate change to ``src/core`` -- build the tree as it is,
   build it again with a patch script applied, run every (grid, phase) under both, and report the

@@ -70,13 +70,15 @@ same A/B on wall-clock time (best of N runs), because an instruction count knows
 nothing about cache misses or the latency of a libm call.
 
 ```bash
-./ab_test.sh      grids ab_out patches/inv_vm_from_vm.py
+./ab_test.sh      grids ab_out patches/bus_mismatch_no_temporary.py
 python3 compare_traces.py ab_out
-./ab_wallclock.sh grids ab_out patches/inv_vm_from_vm.py 9
+./ab_wallclock.sh grids ab_out patches/bus_mismatch_no_temporary.py 9
 ```
 
 The tree is restored with `git checkout -- src/core` on exit, including on
-failure.
+failure. `patches/` holds candidates that have NOT been taken; a candidate's
+script is deleted once the change lands in `src/core`, and its measurements stay
+in the matching `results_ab_*.txt`.
 
 ## Results
 
@@ -129,7 +131,7 @@ phases, answers compared) — see its section.
 | 4 | do not recompute the element results (`inj` -> `inj_nores`) | -11.5% | -9.5% | -7.4% | -5.9% |
 | 5 | cache the voltage-control controller data instead of rebuilding it per solve | -2.2% | -3.4% | — | -1.1% |
 | 6 | take `1/\|V\|` from `Vm_` instead of a `hypot` pass over `V_` (**A/B tested**) | -2.1% | -2.5% | -2.2% | -1.6% |
-| 7 | make `compute_results` cheaper: no heap temporary, no `std::complex`, no repeated `vector<bool>` (**A/B tested**) | -1.7% | -1.5% | -1.1% | -0.9% |
+| 7 | make `compute_results` cheaper: no repeated `vector<bool>` (**applied**), no heap temporary / `std::complex` (superseded) | -1.7% | -1.5% | -1.1% | -0.9% |
 
 ### Where each of these landed
 
@@ -151,8 +153,10 @@ An audit measures; it does not decide. What was decided, and why:
   does today (the `AlgoControl` state and what changed on the elements since),
   so it is its own piece of work.
 * **6 (`1/|V|` from `Vm_`) — A/B tested and applied**, see below.
-* **7 (a cheaper `compute_results`) — A/B tested**, see below. Row 4 is the
-  same work skipped entirely; row 7 is the same work done for ~15% less.
+* **7 (a cheaper `compute_results`) — the `std::vector<bool>` half is A/B
+  tested and applied**; the mismatch half is superseded by reusing the
+  algorithm's own `Ybus . V`. See below. Row 4 is the same work skipped
+  entirely; row 7 is the same work done for ~15% less.
 
 ### 1. The cached path always runs at least one Newton iteration
 
@@ -271,9 +275,8 @@ calls `fix_negative_vm`, which flips the sign of a negative `Vm_` and turns
 exactly this argument for `Vm_` / `Va_` and declines to recompute them; the
 reciprocal pass was not given the same treatment.
 
-`inv_vm_cache_ = Vm_.array().inverse()` (patch:
-`patches/inv_vm_from_vm.py`), A/B tested with `ab_test.sh` over all four grids
-and six phases:
+`inv_vm_cache_ = Vm_.array().inverse()`, A/B tested with `ab_test.sh` over all
+four grids and six phases before it was applied:
 
 | grid | `idem` | `inj` | `dcac` | `topo` | `nocache` | `cold` |
 |---|---:|---:|---:|---:|---:|---:|
@@ -354,7 +357,8 @@ case9241pegase as:
 `_get_amps` and `v_kv_theta_from_vpu` are already at ~5 and ~22 instructions per
 element and have nothing left in them. Two things do:
 
-**The per-bus mismatch** (`patches/bus_mismatch_no_temporary.py`).
+**The per-bus mismatch** (`patches/bus_mismatch_no_temporary.py`) -- *superseded,
+see below*.
 `mismatch = V.array() * (mat * V).conjugate().array() - inj.array()` pays three
 things it need not. `mat * V` inside a coefficient-wise expression is a
 sparse-times-dense product Eigen can only evaluate into a **heap temporary** --
@@ -367,7 +371,7 @@ branch-flow loop already spell out on real and imaginary parts to avoid. And
 scaled into the real vectors anyone downstream sees. One pass writing those two
 directly removes all three.
 
-**The `std::vector<bool>`** (`patches/branch_results_hoist.py`).
+**The `std::vector<bool>`** -- *applied*.
 `status1[el_id]` and `status2[el_id]` are read five times each per branch, and
 each read is a word offset, a shift and a mask rather than a load. On top of
 that `get_bus_side_1_internal` re-reads the same status bit to decide whether to
@@ -375,6 +379,18 @@ hand back `_deactivated_bus_id`, inside a branch that has just established the
 side is connected -- and it does not inline, which is the 0.58M
 `get_bus_internal` line above. Read each bit once, and take the bus id straight
 from the side's own `bus_id_` where the status is already known.
+
+Measured on its own, it is most of the prize:
+
+| grid | `idem` | `inj` | Ir saved per solve | vs. `compute_results` |
+|---|---:|---:|---:|---:|
+| case30 | -2.35% | -1.46% | 2,527 | **-12.4%** |
+| case118 | -2.42% | -1.21% | 10,195 | **-12.4%** |
+| case1354pegase | -2.31% | -1.02% | 115,528 | **-13.5%** |
+| case9241pegase | -2.05% | -0.85% | 931,292 | **-14.3%** |
+
+-- 91% of what the two together are worth on case9241pegase, for eleven
+bit-vector reads per branch and one call that would not inline.
 
 Measured together, on top of the `1/|V|` change:
 
@@ -393,10 +409,27 @@ for case118 / case30, -0.5% to -1.6% elsewhere (best of 9).
 
 **Does it return the same answer?** Yes, and here that is not a judgement call:
 the returned voltages are **identical, 0 ulp**, in all 16 (grid, phase) pairs,
-with the same iteration counts. Unlike row 6, which moved a rounding, both of
-these are exact rearrangements -- the same products in the same grouping and the
-same order, with an allocation and a re-read taken out around them. The C++
-suite passes unchanged (229 test cases, 590,862 assertions).
+with the same iteration counts -- for the pair, and for the `std::vector<bool>`
+half on its own. Unlike row 6, which moved a rounding, both of these are exact
+rearrangements: the same products in the same grouping and the same order, with
+an allocation and a re-read taken out around them. The C++ suite passes
+unchanged (229 test cases, 590,862 assertions).
+
+**Where the mismatch half goes next.** It is worth only ~89k Ir per solve on
+case9241pegase once the `std::vector<bool>` half has landed, because most of the
+1.34M it profiled at is the `Ybus . V` product itself -- real work, not overhead.
+But that product is not work `compute_results` has to do at all: the algorithm
+computed `Ybus . V` at the accepted voltage on its last residual evaluation, and
+`NRSystem::_residual_into` already keeps it in a buffer that outlives the call
+(`ybus_v_`, next to the `mis_bus_` that `BaseAlgo::get_bus_mismatch()` exposes).
+Reading it back instead of recomputing it is worth the whole product, not just
+the temporary around it. The catch to work out is that `mis_bus_` itself is NOT
+the raw mismatch `compute_results` wants -- the components fold their own
+injections into it (the distributed slack's share, the hvdc droop flows, a
+voltage controller's reactive output), so at convergence it is ~0 where
+`compute_results` needs the slack's absorbed power and the generators' reactive
+output. `ybus_v_` is the reusable half; `mis_bus_` is not, without backing those
+adjustments out.
 
 ### What is NOT worth attacking
 
