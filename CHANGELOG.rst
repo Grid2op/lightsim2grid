@@ -157,8 +157,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   magnitude below the 1e-8 tolerance both solutions were accepted at. It cannot be bit for bit
   (``|cos + i.sin|`` is 1 only to a rounding), and it does not need to be: the value feeds only
   the ``dS_dVm`` block of the Jacobian, never the mismatch the convergence test reads.
-  Results in ``benchmarks/cache_profiling/results_ab_inv_vm.txt``; the change itself is NOT
-  applied here.
+  Results in ``benchmarks/cache_profiling/results_ab_inv_vm.txt``.
+- [IMPROVED] ``NRSystem::fill_internal_variables`` takes ``1 / |V|`` from ``Vm_`` instead of a
+  ``std::hypot`` pass over ``V_`` (the A/B above): **-2.1% / -2.5% / -2.2% / -1.6%** of an
+  ordinary cached powerflow on case30 / case118 / case1354pegase / case9241pegase, -1.3% to
+  -3.3% on the clock. The C++ suite passes unchanged (229 test cases, 590,862 assertions).
 - [ADDED] ``benchmarks/cache_profiling/``: an instruction-count audit of the CACHED powerflow
   path -- a powerflow that follows an already successful one, which is what every grid2op step
   after the first actually runs. A standalone C++ driver (no python, no pybind11, links
