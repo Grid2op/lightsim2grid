@@ -139,6 +139,31 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] ``src/tests/test_kcl_from_results.cpp``: Kirchhoff's current law, checked on the
+  PUBLISHED results rather than on the solver. Every other powerflow test checks what the
+  Newton did; this one walks the containers, reads the numbers a python user reads back
+  (``get_loads_res()``, ``get_gen_res()``, ``get_line_res1()``, ...), sums them per bus with
+  each container's own ``fillSbus`` sign convention, and requires zero -- no Ybus, no Sbus, no
+  mismatch vector, so anything the solver knows and the results do not is what it catches.
+  Calibrated on plain case14 (every exotic element switched off), then on case14 + storage and
+  case14 + voltage-mode SVC, before being pointed at the full exotic fixture, where **it
+  passes**: the published results of the exotic case are self-consistent.
+- [FIXED, IN TESTS ONLY] two configurations that are NOT, both marked ``[!shouldfail]`` so the
+  suite stays green until they are fixed and turns red the day they are. KCL is a per-bus law
+  and cannot see the split between elements sharing a bus, and in the exotic fixture no bus
+  carries both a generator and an injection the Newton solves for itself -- so the fixture
+  cannot exercise the case where one is credited with the other's power. Moving a generator
+  onto the bus of the angle-droop HVDC station (hvdc line 1, bus 1) makes the station's
+  published reactive power **NaN** and the generator's **-0**: the proportional split in
+  ``ConverterStationContainer::set_q`` / ``GeneratorContainer::set_q`` computes
+  ``(max_q_me - min_q_me + eps) / (max_q_bus - min_q_bus + n * eps)``, and the stations of
+  hvdc lines 1 and 2 carry +/- DBL_MAX as their limits (what the pypowsybl converter writes
+  for "unbounded", and the fixture is a capture of a real conversion), so both spans overflow
+  to ``+inf`` and the ratio is ``inf / inf``. The generator, measured against the same
+  infinite denominator, gets ``90 / inf = 0``. Moving the SLACK generator onto that bus does
+  not solve at all (``ErrorType::NotInitError``, zero iterations). A third arrangement -- a
+  generator on the bus a voltage-mode SVC regulates -- cannot be built in v1 (an SVC must be
+  the only controller of its bus), which is recorded as its own test so the gap is explicit.
 - [IMPROVED] the branch-flow loop in ``TwoSidesContainer_rxh_A::compute_results_tsc_rxha_no_amps``
   reads each side's status bit ONCE per branch instead of five times, and takes the bus id
   straight from the side's ``bus_id_`` where it has just established the side is connected
