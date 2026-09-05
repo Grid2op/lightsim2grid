@@ -1858,6 +1858,31 @@ bool LSGrid::_check_solver_output(bool ac)
              << " buses). This is a bug in the (possibly plugin) solver.";
         throw std::runtime_error(exc_.str());
     }
+    // A plugin that CLAIMS to leave a usable per-bus mismatch must actually have
+    // left one: compute_results indexes it with solver bus ids, so a short or
+    // empty buffer behind a `true` capability is an out-of-bounds read in a
+    // release build. Built-in algorithms are covered by the C++ suite and never
+    // reach this function (see the `is_external_algo` gate in process_results).
+    const bool fills_mismatch = ac ? _algo.fills_bus_mismatch() : _dc_algo.fills_bus_mismatch();
+    if(fills_mismatch){
+        const Eigen::Ref<const CplxVect> mis = ac ? _algo.get_bus_mismatch()
+                                                  : _dc_algo.get_bus_mismatch();
+        if(mis.size() != nb_bus_solver){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::process_results: the " << algo_name << " algorithm reports "
+                 << "fills_bus_mismatch() == true but left a per-bus mismatch of size "
+                 << mis.size() << ", while the solver problem has " << nb_bus_solver
+                 << " buses. This is a bug in the (possibly plugin) solver: either fill "
+                 << "get_bus_mismatch() with one entry per solver bus, or report the "
+                 << "capability as false and let lightsim2grid derive it.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(!mis.allFinite()){
+            (ac ? _algo : _dc_algo).set_error(ErrorType::InifiniteValue);
+            return false;
+        }
+    }
+
     if((!V.allFinite()) || (!Va.allFinite()) || (!Vm.allFinite()))
     {
         // Non-finite voltage: a well-behaved solver reports this itself

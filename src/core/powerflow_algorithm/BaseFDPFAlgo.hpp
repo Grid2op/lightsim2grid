@@ -29,6 +29,11 @@ class BaseFDPFAlgo final: public BaseAlgo
         static constexpr bool IS_FDPF = true;
         bool is_fdpf() const noexcept override { return IS_FDPF; }
 
+        // evaluate_mismatch_into writes BaseAlgo::mis_bus_ on every convergence
+        // check, and has_converged() is called once more on the accepted voltage
+        static constexpr bool FILLS_BUS_MISMATCH = true;
+        bool fills_bus_mismatch() const noexcept override { return FILLS_BUS_MISMATCH; }
+
         bool compute_pf(const EigenRefConstCplxSpMat     & Ybus,
                         const Eigen::Ref<const CplxVect> & V,
                         const Eigen::Ref<const CplxVect> & Sbus,

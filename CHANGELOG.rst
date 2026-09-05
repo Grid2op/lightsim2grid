@@ -139,6 +139,18 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] ``BaseAlgo::fills_bus_mismatch()`` (+ the ``FILLS_BUS_MISMATCH`` compile-time
+  constant next to ``IS_DC`` / ``SUPPORTS_HVDC_DROOP`` / ``IS_FDPF`` /
+  ``SUPPORTS_REMOTE_VOLTAGE_CONTROL``): does this algorithm leave a usable per-bus mismatch
+  behind, one entry per solver bus, at the voltage it converged to? True for Newton-Raphson
+  (its NRSystem fills ``mis_bus_`` on every residual evaluation), for Fast-Decoupled (its
+  ``evaluate_mismatch_into`` does) and now for Gauss-Seidel, which writes it once at the end
+  of ``compute_pf`` with the plain formula. **Defaults to false**, so a plugin built against
+  an older header behaves exactly as before. A plugin that claims the capability is CHECKED
+  once per solve in ``LSGrid::process_results``: an empty or wrongly-sized buffer raises
+  instead of being indexed out of bounds. Documented in ``docs/solver_plugin.rst``.
+  ``get_bus_mismatch()`` is public now (it was in a ``protected:`` block) and reachable
+  through ``AlgorithmSelector``.
 - [ADDED] ``src/tests/test_kcl_from_results.cpp``: Kirchhoff's current law, checked on the
   PUBLISHED results rather than on the solver. Every other powerflow test checks what the
   Newton did; this one walks the containers, reads the numbers a python user reads back
