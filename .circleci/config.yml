@@ -317,9 +317,14 @@ jobs:
         steps:
             - checkout
             - run: cat /etc/os-release
-            # - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
+            # silkeh/clang:11 is buster-based, and buster's repositories have moved to
+            # archive.debian.org, so `apt-get update` 404s on the stock sources and the
+            # job dies before it compiles anything. Same two lines compile_gcc_earliest
+            # (gcc:8, also buster) has had active all along.
+            - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
+            - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             # - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
+            - run: cat /etc/apt/sources.list
             - run: apt-get update
             - run: apt install cmake -y
             - run: apt purge python3-pkg-resources libtinfo5 -y
