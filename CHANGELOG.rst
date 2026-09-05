@@ -139,6 +139,27 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] ``benchmarks/cache_profiling/``: an instruction-count audit of the CACHED powerflow
+  path -- a powerflow that follows an already successful one, which is what every grid2op step
+  after the first actually runs. A standalone C++ driver (no python, no pybind11, links
+  ``src/core`` directly) runs a grid through one of several phases and lets callgrind COLLECT
+  only the ``ac_pf`` / ``dc_pf`` calls themselves, so the numbers are the cost of one powerflow
+  and nothing else; ``run_profile.sh`` drives one callgrind run per (grid, phase) and
+  ``summarize.py`` turns them into a per-solve breakdown and a per-call-site ledger of
+  ``LSGrid.cpp``. Measured on case30 / case118 / case1354pegase / case9241pegase, an ordinary
+  step (injections moved, topology unchanged) costs 177,116 / 864,166 / 11,580,775 /
+  111,291,208 instructions, which is 2.3x - 4.0x cheaper than the first solve and 1.7x - 2.4x
+  cheaper than the same solve with ``allow_ac_cache_reuse(false)``. See
+  ``benchmarks/cache_profiling/README.md`` for the full tables and for six measured savings the
+  audit found, the two largest being (a) the cached path always runs one full Newton iteration
+  even when the grid did not change, because ``MultiSlack::update_state`` re-derives the slack
+  state from ``real(Sbus.sum())`` on every solve instead of carrying it over -- the same solve
+  with ``NRSing_KLU`` converges in **zero** iterations and costs 71% less on case9241pegase --
+  and (b) ``LightSimBackend``'s default ``initdc=True``, which on a warm-started step doubles
+  the cost of a case9241pegase step (221,384,553 vs 111,291,208 instructions) because the DC
+  solution is a worse starting point than the previous AC one. Nothing in the library is
+  changed by this entry: it is an audit, and the candidate fixes were measured on throwaway
+  builds.
 - [IMPROVED] the last throw sites inside the ``_apply_and_track_buses`` bracket are gone, which
   takes the branch ``fillYbus`` back to **exactly** what it cost before #188 landed: 7,222,254
   instructions, the same figure to the digit. Together with the previous entry that is
