@@ -75,6 +75,7 @@ add_executable(lightsim2grid_unit_tests
     test_powerflow_algorithm.cpp
     test_fdpf_algorithm.cpp
     test_voltage_control_reclassify.cpp
+    test_voltage_control_plan_cache.cpp
     test_batch_voltage_control.cpp
     test_timeseries_sbus.cpp
     test_injection_sweep.cpp

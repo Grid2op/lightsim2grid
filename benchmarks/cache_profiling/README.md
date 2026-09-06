@@ -38,7 +38,9 @@ Phases, one callgrind run each:
 
 ```bash
 # 1. the grids, dumped from pandapower to lightsim2grid's binary format, so the
-#    profile contains no python and no conversion code
+#    profile contains no python and no conversion code. Two families: the plain
+#    pandapower cases, and a `_fancy` variant of the bigger ones carrying remote
+#    voltage-control groups and voltage-mode SVCs (see `make_fancy` there).
 python make_grids.py grids
 
 # 2. the driver, built straight against src/core -- no python, no pybind11
@@ -115,6 +117,7 @@ Acted on (each A/B'd, answers compared; see the changelog for the details):
 | `1/\|V\|` from `Vm_` instead of a `hypot` pass over `V_` | -2.1% | -2.5% | -2.2% | -1.6% |
 | read each branch status bit once, not five times | -1.5% | -1.2% | -1.0% | -0.9% |
 | take the per-bus mismatch off the algorithm | -2.1% | -2.1% | — | -1.4% |
+| derive the voltage-control plan once per solve, not four times | -3.7% | -8.1% | -3.1% | -2.2% |
 
 Measured and **declined**, recorded here so they are not re-proposed:
 
@@ -137,6 +140,63 @@ Measured and **declined**, recorded here so they are not re-proposed:
   count, and -17%/-20% on case118/case1354pegase; it loses on case30, where the
   iteration it adds costs more than the factorization it skips. Out of scope: a
   different algorithm, not a cheaper way to run this one.
+
+### The `_fancy` grids
+
+`make_grids.py` also writes a `_fancy` variant of case118, case1354pegase and
+case9241pegase: a few *pairs* of generators re-pointed at a common neighbouring
+load bus (a control **group**, solved by the bordered VoltageControl block) plus
+a few voltage-mode SVCs. Setpoints are the base case's own solved magnitudes, and
+each candidate is kept only if the grid still converges with it -- the same
+chunk-and-verify workaround `benchmarks/make_exotic_grid.cpp` uses, for the same
+reason (see the remote-voltage-control entry in the changelog's TODO).
+
+They exist because the plain pandapower cases have **no** remote voltage control
+and no SVC at all: the controller list is empty on every one of them, so nothing
+that concerns the bordered block shows up. Two things they measured:
+
+| grid | groups | SVCs | `idem` | `inj` | vs. the plain case (`idem`) |
+|---|---:|---:|---:|---:|---:|
+| case118_fancy | 8 | 4 | 385,022 | 1,173,068 | +16% |
+| case1354pegase_fancy | 20 | 10 | 10,293,316 | 15,583,429 | +138% |
+| case9241pegase_fancy | 40 | 30 | 318,321,358 | 596,998,625 | +686% |
+
+That last column is not the plan, and not the bordered rows either: on
+case9241pegase_fancy **86% of a cached solve is `klu_refactor`** (against 55% on
+the plain case). Forty two-member groups add 80 reactive-injection columns, each
+coupling a generator's bus to a regulated bus a branch away, and KLU's ordering
+pays for the fill-in that creates. Worth knowing before remote control is enabled
+at scale on a large grid; out of scope here.
+
+### Deriving the voltage-control plan once per solve
+
+The "fancy" voltage controllers are described by three derived sets -- which buses
+a control GROUP regulates, which slack buses keep a free Vm unknown, and the
+controller list itself -- and each of them used to be re-derived where it happened
+to be needed: by `fillpv_pq`, by `Base::update_state`, and twice by
+`VoltageControl::update_state` (which re-ran the free-Vm slack pass of its own).
+Four walks of every generator of the grid per powerflow, each building `std::set`s
+as it went. They are now one object (`VoltageControlPlan`), built once into the
+solver-side cache and read from there, and kept across a solve that changed none
+of its inputs -- which an ordinary grid2op step does not (moving a load's P and Q
+raises `need_recompute_sbus` and nothing else).
+
+A/B against the tree as it was, KLU, answers compared bit for bit:
+
+| grid | `inj` (an ordinary step) | `idem` (the floor) |
+|---|---:|---:|
+| case30 | **-3.7%** | -6.1% |
+| case118 | **-8.1%** | -16.4% |
+| case118_fancy | **-6.8%** | -18.2% |
+| case1354pegase | **-3.1%** | -7.3% |
+| case1354pegase_fancy | **-2.6%** | -3.9% |
+| case9241pegase | **-2.2%** | -5.4% |
+| case9241pegase_fancy | **-0.4%** | -0.8% |
+
+The proportion falls with grid size because the work removed is O(generators)
+while the solve it is measured against is dominated by KLU -- and it falls
+furthest on the fancy pegase case for exactly the reason the table above gives.
+In absolute terms it is 2.3M instructions per solve on case9241pegase.
 
 Measured and **not worth attacking**: the build side of the cache
 (`_build_into_cache` is ~1% of a case9241pegase solve, most of it the Sbus refill

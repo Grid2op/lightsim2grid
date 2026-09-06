@@ -139,6 +139,57 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] ``ls2g::VoltageControlPlan`` (``src/core/VoltageControlPlan.hpp``): everything one AC
+  solve needs to know about the "fancy" voltage controllers -- remote-regulating generators,
+  several machines regulating one bus, and voltage-mode SVCs -- as ONE object instead of three
+  functions on ``LSGrid``. They were never three answers: the controller list is derived from the
+  free-Vm slack set, which is derived from the group layout, and each of the three used to walk
+  the containers again where it happened to be needed. It is a member of ``SolverBusLayout``,
+  i.e. of a solver-side cache, because it is expressed in that cache's bus labelling AND its
+  pv-pq split: a plan carried across a relabelling is not stale data, it is a different grid.
+  ``LSGrid::get_group_controlled_buses`` / ``get_free_vm_slack_solver_buses`` /
+  ``fill_voltage_control_solver_data`` are unchanged in signature and behaviour and now build a
+  throw-away plan -- they are the on-demand form, for callers outside a solve.
+- [ADDED] ``AlgoControl::tell_voltage_control_changed()`` /
+  ``has_voltage_control_changed()`` / ``need_recompute_voltage_control()``, and a call to the
+  first from every element modifier that can move an input of the plan: a generator's regulated
+  bus, voltage setpoint, status, bus, slack role or pseudo-off state; an SVC's or an hvdc
+  converter station's status or bus; a station's setpoint. Its own flag rather than a reuse of
+  ``tell_pv_changed()``, because the two questions genuinely differ -- a remote regulator moving
+  its setpoint changes no bus' pv/pq class at all (that is the point of the bordered
+  formulation), and most of what makes a bus PV or PQ has nothing to do with a control group.
+  Raised on the AC family only: a DC solve has no voltage control, so there is no DC plan to
+  invalidate. ``need_recompute_voltage_control()`` is the union a powerflow asks, deliberately
+  conservative (it also fires on anything that re-labels the buses or re-splits them), and
+  all-or-nothing: the three layers are rebuilt together or not at all.
+- [IMPROVED] the voltage-control plan is derived **once per powerflow** instead of four times.
+  ``LSGrid::_build_into_cache`` builds it around ``fillpv_pq`` -- layer 1 is an input to the
+  pv-pq split, layers 2 and 3 are expressed in it -- and the NR extensions read it through
+  ``LSGrid::get_ac_voltage_control_plan()`` instead of calling back into the grid.
+  ``Base::update_state`` re-derived the free-Vm slack set and ``VoltageControl::update_state``
+  re-derived it a second time plus the whole controller list, each walking every generator of
+  the grid and building ``std::set``s as it went. A solve that changed none of the plan's inputs
+  -- which an ordinary grid2op step does not, moving a load's P and Q raises
+  ``need_recompute_sbus`` and nothing else -- now keeps the one the previous solve built.
+  **-3.7% / -8.1% / -3.1% / -2.2%** of an ordinary cached powerflow on
+  case30 / case118 / case1354pegase / case9241pegase (-6.1% / -16.4% / -7.3% / -5.4% of an
+  identical re-solve), and -6.8% / -2.6% / -0.4% on the new ``_fancy`` grids, with bit-identical
+  answers. It also removes a class of bug rather than only a cost: the three layers are now
+  built from one another instead of from three independent walks of the containers, so they
+  cannot disagree, and a foreign build (the batch algorithms) publishes the plan it just built
+  rather than leaving the extensions to re-derive one from the published labelling.
+- [ADDED] ``benchmarks/cache_profiling/make_grids.py`` also writes a ``_fancy`` variant of
+  case118, case1354pegase and case9241pegase: pairs of generators re-pointed at a common
+  neighbouring load bus (a control group) plus voltage-mode SVCs. The plain pandapower cases
+  have no remote voltage control and no SVC at all, so nothing that concerns the bordered
+  VoltageControl block showed up in the audit. Recorded there while measuring: on
+  case9241pegase_fancy (40 groups, 30 SVCs) **86% of a cached solve is** ``klu_refactor``,
+  against 55% on the plain case -- the 80 reactive-injection columns each couple a generator's
+  bus to a regulated bus a branch away, and KLU's ordering pays for the fill-in.
+- [ADDED] ``src/tests/test_voltage_control_plan_cache.cpp``: every input of the plan is mutated
+  on a grid that has already solved (so a stale plan is there to be wrongly reused) AND on a
+  fresh grid built in the final state, and the two solves must agree. A reused stale plan does
+  not throw and does not look wrong -- it converges, on the previous scenario's controllers.
 - [ADDED] ``benchmarks/cache_profiling/``: an instruction-count audit of the CACHED powerflow
   path -- a solve that follows a successful one, which is what every grid2op step after the
   first runs. A standalone C++ driver (no python, no pybind11) lets callgrind collect ONLY the

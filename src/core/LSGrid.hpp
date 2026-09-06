@@ -803,6 +803,22 @@ class LS2G_API LSGrid final
         void tell_recompute_sbus(){algo_controler_.ac_algo_controler().tell_recompute_sbus(); algo_controler_.dc_algo_controler().tell_recompute_sbus();}
         void tell_ybus_change_sparsity_pattern(){algo_controler_.ac_algo_controler().tell_ybus_change_sparsity_pattern(); algo_controler_.dc_algo_controler().tell_ybus_change_sparsity_pattern();}
         [[nodiscard]] const AlgoControl & get_ac_algo_controler() const {return algo_controler_.ac_algo_controler();}
+        /**
+         * The AC family's voltage-control plan: the group layout, the free-Vm slack
+         * buses and the controller list, all in the AC cache's own bus labelling.
+         *
+         * This is what the NR extensions read (Base for the free-Vm slack unknowns,
+         * VoltageControl for the bordered block), through the `lsgrid_ptr` they hold.
+         * It is built by `_build_into_cache`, so it describes the grid only from the
+         * end of `pre_process_solver` to the next grid modification -- exactly the
+         * window a solve runs in. Outside that window, ask
+         * `get_group_controlled_buses()` / `get_free_vm_slack_solver_buses()` /
+         * `fill_voltage_control_solver_data()`, which build a fresh plan and are
+         * correct at any time.
+         */
+        [[nodiscard]] const VoltageControlPlan & get_ac_voltage_control_plan() const {
+            return ac_cache_.voltage_control;
+        }
         [[nodiscard]] const AlgoControl & get_dc_algo_controler() const {return algo_controler_.dc_algo_controler();}
 
         // dc powerflow
@@ -1242,11 +1258,18 @@ class LS2G_API LSGrid final
         }
         /**
          * Per-solve data of the ACTIVE voltage-mode controllers (remote-regulating
-         * generators and, later, voltage-mode SVCs), grouped by regulated solver
-         * bus, in solver bus labelling and per-unit. Consumed by the VoltageControl
-         * extension of the Newton-Raphson system (ac = true only; empty in DC).
-         * Throws a clear error on the singular-for-us configurations (see Phase 0
-         * probe #3). Only valid once `pre_process_solver` ran.
+         * generators, voltage-mode SVCs, and enrolled hvdc converter stations),
+         * grouped by regulated solver bus, in solver bus labelling and per-unit
+         * (ac = true only; empty in DC). Throws a clear error on the
+         * singular-for-us configurations (see Phase 0 probe #3). Only valid once
+         * `pre_process_solver` ran.
+         *
+         * This is the ON-DEMAND form: it builds a whole VoltageControlPlan and
+         * throws it away, walking every generator, SVC and converter station of the
+         * grid to do so. It is here for callers outside a solve -- the python-facing
+         * ground truth and the tests. A powerflow does not use it: the VoltageControl
+         * NR extension reads the plan the cache already holds, see
+         * `get_ac_voltage_control_plan()`.
          */
         void fill_voltage_control_solver_data(VoltageControlSolverData & data, bool ac) const;
         /**
@@ -1259,6 +1282,9 @@ class LS2G_API LSGrid final
          * local PV generator stays Vm-fixed (PV-like) with no Q equation. AC
          * labelling. Only valid once `pre_process_solver` ran (it needs
          * `ac_cache_.id_me_to_solver` / `ac_cache_.slack_bus_id_solver`).
+         *
+         * On-demand, like `fill_voltage_control_solver_data` above and priced the
+         * same way; the Base block of the NR system reads the cached plan instead.
          */
         std::set<int> get_free_vm_slack_solver_buses() const;
         /**
@@ -1281,6 +1307,10 @@ class LS2G_API LSGrid final
          * Works in grid ids and reads only input data, so unlike the solver-side
          * accessors it is valid before / independently of `pre_process_solver`
          * (`fillpv_pq` needs it while it is still building that very labelling).
+         *
+         * On-demand, like the two above: it rebuilds layer 1 of a VoltageControlPlan
+         * from scratch. Inside a powerflow, `_build_into_cache` builds that layer
+         * once and hands it to `fillpv_pq` directly.
          */
         std::set<int> get_group_controlled_buses() const;
         /**
@@ -2322,9 +2352,15 @@ class LS2G_API LSGrid final
         // writes the pv / pq split into the caller-supplied vectors: the AC and the
         // DC family each own theirs (ac_cache_.bus_pv / dc_cache_.bus_pv, ...), and they are
         // expressed in that family's own solver labelling.
+        // `group_reg` is layer 1 of the caller's voltage-control plan (GRID bus ids,
+        // VoltageControlPlan::group_controlled_buses): the buses a control group
+        // regulates must stay out of PV, and the controller list the caller builds
+        // right afterwards has to be keyed on this very layout -- which is why it is
+        // handed in rather than re-derived here.
         void fillpv_pq(const SolverBusIdVect& id_me_to_solver,
                        const GlobalBusIdVect& id_solver_to_me,
                        const SolverBusIdVect & slack_bus_id_solver,
+                       const std::set<int> & group_reg,
                        SolverBusIdVect & bus_pv_out,
                        SolverBusIdVect & bus_pq_out);
 

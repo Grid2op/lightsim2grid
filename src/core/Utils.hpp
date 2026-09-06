@@ -108,7 +108,8 @@ class AlgoControl final
             ybus_some_coeffs_zero_(true),
             ybus_change_sparsity_pattern_(true),
             one_el_change_bus_(true),
-            cache_maybe_poisoned_(true)
+            cache_maybe_poisoned_(true),
+            voltage_control_changed_(true)
             {};
 
         ~AlgoControl() noexcept = default;
@@ -127,6 +128,7 @@ class AlgoControl final
             ybus_change_sparsity_pattern_ = true;
             one_el_change_bus_ = true;
             cache_maybe_poisoned_ = true;
+            voltage_control_changed_ = true;
         }
 
         /**
@@ -145,7 +147,7 @@ class AlgoControl final
                    !need_recompute_sbus_ && !need_recompute_ybus_ && !v_changed_ &&
                    !slack_weight_changed_ && !ybus_some_coeffs_zero_ &&
                    !ybus_change_sparsity_pattern_ && !one_el_change_bus_ &&
-                   !cache_maybe_poisoned_;
+                   !cache_maybe_poisoned_ && !voltage_control_changed_;
         }
 
         void tell_none_changed(){
@@ -162,6 +164,7 @@ class AlgoControl final
             ybus_change_sparsity_pattern_ = false;
             one_el_change_bus_ = false;
             cache_maybe_poisoned_ = false;
+            voltage_control_changed_ = false;
         }
 
         // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes)
@@ -189,6 +192,26 @@ class AlgoControl final
         // might need to trigger some recomputation of some solvers (eg NR based ones)
         void tell_ybus_some_coeffs_zero(){ybus_some_coeffs_zero_ = true;}
         void tell_one_el_changed_bus(){one_el_change_bus_ = true;}
+        /**
+         * Something the voltage-control plan is made of has changed: which buses a
+         * control GROUP regulates, who is in a group, or a setpoint / sharing key a
+         * group's bordered rows carry.
+         *
+         * Raised by the element modifiers that can move any of those -- a generator's
+         * regulated bus, its voltage setpoint, its regulator being connected or
+         * disconnected, an SVC or an hvdc converter station changing bus or status.
+         * Deliberately its OWN flag rather than a reuse of `tell_pv_changed()`: the
+         * two questions really do differ. A remote-regulating generator changing its
+         * setpoint changes no bus's pv/pq class at all (that is the whole point of the
+         * bordered formulation: the regulated bus stays PQ), and conversely most of
+         * what makes a bus PV or PQ has nothing to do with a control group. Folding
+         * one into the other would either rebuild the pv-pq split for nothing or --
+         * the dangerous direction -- reuse a plan whose setpoints have moved.
+         *
+         * See `need_recompute_voltage_control()` for the question a powerflow
+         * actually asks, and VoltageControlPlan for what gets rebuilt.
+         */
+        void tell_voltage_control_changed(){voltage_control_changed_ = true;}
         /**
          * The per-bus element counts may no longer be what the elements say.
          *
@@ -238,6 +261,35 @@ class AlgoControl final
         bool has_one_el_changed_bus() const {return one_el_change_bus_;}
         // see tell_cache_maybe_poisoned()
         bool cache_maybe_poisoned() const {return cache_maybe_poisoned_;}
+        // see tell_voltage_control_changed()
+        bool has_voltage_control_changed() const {return voltage_control_changed_;}
+
+        /**
+         * Must the voltage-control plan be rebuilt, or does the one the previous solve
+         * of this family left in its cache still describe the grid?
+         *
+         * A plan is expressed in ONE bus labelling and ONE pv-pq split, so it is
+         * invalidated both by what changes its own inputs (`voltage_control_changed_`)
+         * and by anything that re-labels the buses or re-splits them underneath it --
+         * a plan carried across a relabelling is not stale data, it is a different
+         * grid. Hence the union below rather than the single flag.
+         *
+         * What is deliberately NOT in it is the set of changes an ordinary grid2op
+         * step makes: moving a load's P and Q raises `need_recompute_sbus_` and
+         * nothing else, so the plan survives such a step untouched -- which is the
+         * whole point of caching it.
+         *
+         * All-or-nothing on purpose: the plan's three layers are rebuilt together or
+         * not at all. Refreshing only the setpoints of an otherwise unchanged group
+         * layout (the `v_changed_` case) is a finer question this does not try to
+         * answer yet.
+         */
+        [[nodiscard]] bool need_recompute_voltage_control() const noexcept {
+            return voltage_control_changed_ || change_dimension_ || need_reset_solver_ ||
+                   pv_changed_ || pq_changed_ || slack_participate_changed_ ||
+                   slack_weight_changed_ || one_el_change_bus_ ||
+                   ybus_change_sparsity_pattern_ || v_changed_ || cache_maybe_poisoned_;
+        }
 
     private:    
         bool change_dimension_;
@@ -253,6 +305,7 @@ class AlgoControl final
         bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
         bool one_el_change_bus_;  // whether one element has change of bus (or being reconnected / disconnected)
         bool cache_maybe_poisoned_;  // the per-bus element counts may have drifted: see tell_cache_maybe_poisoned()
+        bool voltage_control_changed_;  // an input of the voltage-control plan moved: see tell_voltage_control_changed()
 };
 
 /**

@@ -153,6 +153,9 @@ void ConverterStationContainer::change_v(int station_id, real_type new_v_pu, Dua
     {
         solver_control.ac_algo_controler().tell_v_changed();
         solver_control.dc_algo_controler().tell_v_changed();
+        // v_set of the group this station belongs to, when a group claims its bus.
+        // AC only: a DC solve has no voltage control, hence no plan to invalidate.
+        solver_control.ac_algo_controler().tell_voltage_control_changed();
         target_vm_pu_(station_id) = new_v_pu;
     }
 }
@@ -373,6 +376,7 @@ bool ConverterStationContainer::_deactivate(int el_id, DualAlgoControl & solver_
     solver_control.dc_algo_controler().tell_recompute_sbus();
     solver_control.ac_algo_controler().tell_pv_changed();
     solver_control.dc_algo_controler().tell_pv_changed();
+    solver_control.ac_algo_controler().tell_voltage_control_changed();  // a disconnected station is no longer a group member
     return true;
 }
 
@@ -382,6 +386,7 @@ bool ConverterStationContainer::_reactivate(int el_id, DualAlgoControl & solver_
     solver_control.dc_algo_controler().tell_recompute_sbus();
     solver_control.ac_algo_controler().tell_pv_changed();
     solver_control.dc_algo_controler().tell_pv_changed();
+    solver_control.ac_algo_controler().tell_voltage_control_changed();  // ... and a reconnected one is one again
     return true;
 }
 
@@ -394,6 +399,7 @@ bool ConverterStationContainer::_change_bus(int el_id, GridModelBusId new_bus_id
     if(voltage_regulator_on_[el_id]) {
         solver_control.ac_algo_controler().tell_pv_changed();
         solver_control.dc_algo_controler().tell_pv_changed();
+        solver_control.ac_algo_controler().tell_voltage_control_changed();  // the station's bus -- which is also the bus it regulates -- moved
     }
     return true;
 }

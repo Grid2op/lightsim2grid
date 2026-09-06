@@ -17,6 +17,7 @@
 
 #include "TaggedIdVec.hpp"
 #include "Utils.hpp"
+#include "VoltageControlPlan.hpp"
 #include "ls2g_api.hpp"
 
 namespace ls2g {
@@ -78,6 +79,23 @@ struct SolverBusLayout
     SolverBusIdVect bus_pv;  ///< solver ids, NOT grid ids
     SolverBusIdVect bus_pq;  ///< solver ids, NOT grid ids
 
+    // ---- the "fancy" voltage controllers -----------------------------------
+    /**
+     * Remote voltage control, several machines regulating one bus, and voltage-mode
+     * SVCs, as the NR extensions consume them (see VoltageControlPlan). Derived from
+     * the elements AND from the six members above -- it is expressed in this
+     * labelling and in this pv-pq split -- which is exactly why it belongs here
+     * rather than in the extensions that read it: a plan and the labelling it was
+     * built against are one picture of the grid, and mixing two of them is not stale
+     * data, it is a different grid.
+     *
+     * Both families carry the group layout -- `fillpv_pq` is one function and its
+     * rule is the same either way -- but only the AC family fills the two
+     * solver-side layers: a DC solve has no voltage control, so nothing reads a DC
+     * plan's free-Vm slack set or its controller list.
+     */
+    VoltageControlPlan voltage_control;
+
     // ---- what makes the above reusable, or not -----------------------------
     /**
      * The grid size this cache was built for, or 0 for "nothing built / retired".
@@ -126,6 +144,7 @@ struct SolverBusLayout
         slack_weights = RealVect();
         bus_pv = SolverBusIdVect();
         bus_pq = SolverBusIdVect();
+        voltage_control.clear();
         built_for_nb_bus = 0;
     }
 

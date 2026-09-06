@@ -228,6 +228,10 @@ bool SvcContainer::_deactivate(int svc_id, DualAlgoControl & solver_control)
         if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
             solver_control.ac_algo_controler().tell_pv_changed();
             solver_control.dc_algo_controler().tell_pv_changed();
+            // a voltage-mode SVC is ALWAYS a group controller, so connecting or
+            // disconnecting one creates or dissolves the group at the bus it
+            // regulates. AC only: a DC solve has no voltage control at all.
+            solver_control.ac_algo_controler().tell_voltage_control_changed();
         }
         return true;
     }
@@ -244,6 +248,10 @@ bool SvcContainer::_reactivate(int svc_id, DualAlgoControl & solver_control)
         if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
             solver_control.ac_algo_controler().tell_pv_changed();
             solver_control.dc_algo_controler().tell_pv_changed();
+            // a voltage-mode SVC is ALWAYS a group controller, so connecting or
+            // disconnecting one creates or dissolves the group at the bus it
+            // regulates. AC only: a DC solve has no voltage control at all.
+            solver_control.ac_algo_controler().tell_voltage_control_changed();
         }
         return true;
     }
@@ -271,6 +279,7 @@ bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoCo
     if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
         solver_control.ac_algo_controler().tell_pv_changed();
         solver_control.dc_algo_controler().tell_pv_changed();
+        solver_control.ac_algo_controler().tell_voltage_control_changed();  // the controller bus, and its regulated bus when local, moved
     }
     return true;
 }
