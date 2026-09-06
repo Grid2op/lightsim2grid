@@ -13,6 +13,7 @@
 #include <stdexcept>
 
 #include "BaseConstants.hpp"
+#include "element_container/GenericContainer.hpp"
 #include "element_container/GeneratorContainer.hpp"
 #include "element_container/HvdcLineContainer.hpp"
 #include "element_container/SvcContainer.hpp"
@@ -30,9 +31,16 @@ void VoltageControlPlan::clear() noexcept
 // layer 1: which buses a GROUP regulates (grid ids, no labelling needed)
 // ---------------------------------------------------------------------------
 void VoltageControlPlan::build_groups(const GeneratorContainer & generators,
-                                      const SvcContainer & svcs)
+                                      const SvcContainer & svcs,
+                                      bool supports_voltage_control)
 {
     group_reg_buses_.clear();
+    // An algorithm with no bordered block cannot honour a group, and taking a bus
+    // out of PV for one it will not build leaves that bus' magnitude pinned by
+    // nothing at all. Leaving the set empty is what gives layer 2 the classical
+    // split; refusing the grid outright, when it really does have controllers, is
+    // LSGrid::ac_pf's job (see list_unsupported) and happens before this runs.
+    if(!supports_voltage_control) return;
     // an ACTIVE remote-regulating generator: gen_is_voltage_controller() already
     // means "connected, regulator on, not pseudo-off, and regulating a bus that is
     // NOT its own". A purely local regulator therefore never lands here, which is
@@ -54,7 +62,104 @@ void VoltageControlPlan::build_groups(const GeneratorContainer & generators,
 }
 
 // ---------------------------------------------------------------------------
-// layers 2 and 3
+// layer 2: the pv/pq split
+// ---------------------------------------------------------------------------
+void VoltageControlPlan::build_pv_pq(const std::vector<const GenericContainer *> & pv_sources,
+                                     const SolverBusIdVect & id_me_to_solver,
+                                     const GlobalBusIdVect & id_solver_to_me,
+                                     const SolverBusIdVect & slack_bus_id_solver,
+                                     SolverBusIdVect & bus_pv_out,
+                                     SolverBusIdVect & bus_pq_out) const
+{
+    const int nb_bus = static_cast<int>(id_solver_to_me.size());  // number of bus in the solver!
+    std::vector<int> bus_pq;
+    bus_pq.reserve(nb_bus);
+    std::vector<int> bus_pv;
+    bus_pv.reserve(nb_bus);
+    std::vector<bool> has_bus_been_added(nb_bus, false);
+
+    bus_pv_out = SolverBusIdVect();
+    bus_pq_out = SolverBusIdVect();
+
+    // the classical part: every container says which buses it pins
+    for(const GenericContainer * container : pv_sources){
+        if(container == nullptr) continue;
+        container->fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
+    }
+
+    // ... and layer 1 takes back the ones a control GROUP regulates: their magnitude
+    // is set by the group's bordered voltage row, so they must keep their own Vm
+    // unknown (and hence their Q equation). See the doc on this function for the
+    // configuration this fixes. Whatever pinned such a bus through the PV path -- a
+    // local generator, or a voltage-regulating hvdc converter station -- is enrolled
+    // as a member of the group by build_controllers instead.
+    if(!group_reg_buses_.empty()){
+        std::vector<int> bus_pv_kept;
+        bus_pv_kept.reserve(bus_pv.size());
+        for(int bus_id_solver : bus_pv){
+            const int bus_id_me = id_solver_to_me[bus_id_solver].cast_int();
+            if(bus_id_me < 0 || !group_reg_buses_.count(bus_id_me)){
+                bus_pv_kept.push_back(bus_id_solver);
+                continue;
+            }
+            has_bus_been_added[bus_id_solver] = false;  // let the PQ loop take it
+        }
+        bus_pv.swap(bus_pv_kept);
+    }
+
+    // TODO remove the order here..., i could be faster in this piece of code
+    // (looping once through the buses)
+    for(int bus_id = 0; bus_id < nb_bus; ++bus_id){
+        if(GenericContainer::is_in_vect(bus_id, slack_bus_id_solver.to_int_vector())) continue;  // slack bus is not PQ either
+        if(has_bus_been_added[bus_id]) continue; // a pv bus cannot be PQ
+        bus_pq.push_back(bus_id);
+        has_bus_been_added[bus_id] = true;  // don't add it a second time
+    }
+    bus_pv_out = SolverBusIdVect(bus_pv.size(), SolverBusId(0));
+    for(int i = 0; i < static_cast<int>(bus_pv.size()); ++i){
+        bus_pv_out(i) = SolverBusId(bus_pv[i]);
+    }
+    bus_pq_out = SolverBusIdVect(bus_pq.size(), SolverBusId(0));
+    for(int i = 0; i < static_cast<int>(bus_pq.size()); ++i){
+        bus_pq_out(i) = SolverBusId(bus_pq[i]);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// the guard: what an algorithm without the bordered block must refuse
+// ---------------------------------------------------------------------------
+VoltageControlPlan::Unsupported
+VoltageControlPlan::list_unsupported(const GeneratorContainer & generators,
+                                     const SvcContainer & svcs,
+                                     const HvdcLineContainer & hvdc_lines) const
+{
+    Unsupported res;
+    if(group_reg_buses_.empty()) return res;  // nothing needs the bordered block
+
+    const int nb_gen = static_cast<int>(generators.nb());
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if(generators.gen_is_voltage_controller(gen_id)) res.gen_ids.push_back(gen_id);
+    }
+    const int nb_svc = static_cast<int>(svcs.nb());
+    for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
+        if(svcs.svc_is_voltage_controller(svc_id)) res.svc_ids.push_back(svc_id);
+    }
+    // a station is never an offender on its own: it pins its own bus the classical
+    // way unless a group already claims that bus, in which case it is enrolled and
+    // the user needs to know it is affected too
+    const int nb_hvdc = static_cast<int>(hvdc_lines.nb());
+    for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
+        for(int side = 1; side <= 2; ++side){
+            if(!hvdc_lines.station_is_voltage_controller(hvdc_id, side)) continue;
+            const int bus = hvdc_lines.get_station_bus(hvdc_id, side).cast_int();
+            if(group_reg_buses_.count(bus)) res.station_ids.push_back(std::make_pair(hvdc_id, side));
+        }
+    }
+    return res;
+}
+
+// ---------------------------------------------------------------------------
+// layers 3 and 4
 // ---------------------------------------------------------------------------
 void VoltageControlPlan::build_solver_side(const GeneratorContainer & generators,
                                            const SvcContainer & svcs,
@@ -92,7 +197,7 @@ void VoltageControlPlan::build_free_vm_slack(const GeneratorContainer & generato
     std::set<int> locally_vfixed;
     // ... except that a local regulator on a bus a control GROUP regulates does not
     // pin it: it is enrolled as a member of that group instead (see build_groups and
-    // the reclassification in LSGrid::fillpv_pq), and the group's voltage row needs
+    // the reclassification in build_pv_pq), and the group's voltage row needs
     // the free Vm this grants.
     const int nb_gen = static_cast<int>(generators.nb());
     const GlobalBusIdVect & gen_buses = generators.get_buses();
@@ -125,7 +230,7 @@ void VoltageControlPlan::build_controllers(const GeneratorContainer & generators
     if(nb_bus_solver == 0) return;  // see build_free_vm_slack
 
     // PQ membership: a bus owns a Q equation AND a Vm unknown iff it is a PQ bus
-    // (PV buses have only theta/P, the slack none). `bus_pq` is set by fillpv_pq.
+    // (PV buses have only theta/P, the slack none). `bus_pq` is layer 2's own output.
     std::vector<bool> is_pq(nb_bus_solver, false);
     for(int k = 0; k < static_cast<int>(bus_pq.size()); ++k){
         const int b = bus_pq(k).cast_int();
@@ -201,7 +306,7 @@ void VoltageControlPlan::_collect_gen_controllers(const GeneratorContainer & gen
         // The regulated bus needs a Vm unknown for the bordered row to act on. An
         // ordinary PQ bus has one; so does a slack bus that nothing pins locally (same
         // escape hatch as the controller bus just above -- `has_free_q`). A bus that is
-        // PV despite being group-controlled cannot occur any more (fillpv_pq
+        // PV despite being group-controlled cannot occur any more (layer 2
         // reclassifies it), so what is left here is a bus pinned by something that
         // cannot be enrolled.
         if(!is_pq[reg_solver] && !has_free_q[reg_solver]){
@@ -279,7 +384,7 @@ void VoltageControlPlan::_collect_station_controllers(const HvdcLineContainer & 
     // the voltage-regulating hvdc converter stations. A VSC station with
     // voltage_regulator_on pins its own bus through the PV path, exactly like a local
     // generator, so it is a controller only when a GROUP regulates that bus instead
-    // (fillpv_pq then kept the bus out of PV and it needs its members). Its sharing
+    // (layer 2 then kept the bus out of PV and it needs its members). Its sharing
     // key is a reactive range in MVAr -- the same currency as a generator's -- so a
     // mixed generator/station group shares reactive power correctly, unlike an SVC
     // (whose key is a susceptance range; hence the SVC-alone restriction below).

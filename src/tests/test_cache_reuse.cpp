@@ -813,10 +813,11 @@ TEST_CASE("a divergence recovers under every built-in AC algorithm", "[LSGrid][c
     // check_solution() is thrown into the sequence on purpose: it runs the same
     // pre-processing without ever calling the algorithm, so it must not consume
     // the "rebuild your internals" the diverged solve asked for.
-    // The fast-decoupled solvers do not support the hvdc angle droop that line 1
-    // of this grid has enabled: disconnect it, on the test grid and on its
-    // reference alike.
-    const auto disable_droop = [](LSGrid & g){ g.deactivate_dcline(1); };
+    // The fast-decoupled solvers support neither the hvdc angle droop that line 1
+    // of this grid has enabled nor the voltage-mode SVC it carries (they hold no
+    // NRSystem, so no Hvdc and no VoltageControl extension); ac_pf refuses both by
+    // name. Disconnect them, on the test grid and on its reference alike.
+    const auto disable_droop = [](LSGrid & g){ g.deactivate_dcline(1); g.deactivate_svc(0); };
     for(const auto algo : {AlgorithmType::NR_SparseLU,
                            AlgorithmType::NRSing_SparseLU,
                            AlgorithmType::FDPF_XB_SparseLU,
@@ -888,11 +889,14 @@ namespace {
 class ThrowingAcAlgo : public ls2g::BaseAlgo {
 public:
     ThrowingAcAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
-    // ac_pf rejects an angle-droop grid handed to a solver that cannot do droop,
-    // and the exotic test grid has three hvdc lines. That rejection happens BEFORE
-    // the solve begins -- nothing has been touched yet, so nothing needs
-    // invalidating -- which is exactly the throw this test must NOT be measuring.
+    // ac_pf has two pre-flight guards: it rejects an angle-droop grid handed to a
+    // solver that cannot do droop, and a voltage-control one handed to a solver with
+    // no bordered block. The exotic test grid has three hvdc lines AND a voltage-mode
+    // SVC, so both would fire. They fire BEFORE the solve begins -- nothing has been
+    // touched yet, so nothing needs invalidating -- which is exactly the throw this
+    // test must NOT be measuring. These doubles stand in for a full-featured solver.
     bool supports_hvdc_droop() const noexcept override { return true; }
+    bool supports_remote_voltage_control() const noexcept override { return true; }
     bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
                     const Eigen::Ref<const CplxVect> & /*V*/,
                     const Eigen::Ref<const CplxVect> & /*Sbus*/,
@@ -912,6 +916,7 @@ class WrongSizeAcAlgo : public ls2g::BaseAlgo {
 public:
     WrongSizeAcAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
     bool supports_hvdc_droop() const noexcept override { return true; }  // see ThrowingAcAlgo
+    bool supports_remote_voltage_control() const noexcept override { return true; }  // idem
     bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
                     const Eigen::Ref<const CplxVect> & V,
                     const Eigen::Ref<const CplxVect> & /*Sbus*/,
@@ -959,6 +964,7 @@ class FailsOnSecondCallAlgo : public ls2g::BaseAlgo {
 public:
     FailsOnSecondCallAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
     bool supports_hvdc_droop() const noexcept override { return true; }  // see ThrowingAcAlgo
+    bool supports_remote_voltage_control() const noexcept override { return true; }  // idem
     bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
                     const Eigen::Ref<const CplxVect> & V,
                     const Eigen::Ref<const CplxVect> & /*Sbus*/,

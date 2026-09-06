@@ -66,7 +66,17 @@ using ls2g::AlgorithmType;
 
 namespace {
 
-const int MAX_ITER = 10;
+// Iteration budget, per algorithm family. Newton-Raphson converges a cached solve
+// in 1 to 3 iterations and 10 is already generous; the fast-decoupled ones trade a
+// cheap iteration for many more of them (~50 on case118) and diverge outright at 10,
+// which is why the audit could not profile them at all until this was derived rather
+// than fixed. Asked of the selected solver (BaseAlgo::is_fdpf), so it is right for a
+// plugin too.
+int max_iter_for(const LSGrid & grid)
+{
+    return grid.get_algo().is_fdpf() ? 100 : 10;
+}
+
 const real_type TOL = 1e-8;
 
 // Move every load ~2% around its base value, in a way that changes on every
@@ -166,6 +176,7 @@ int main(int argc, char ** argv)
         return 3;
     }
 
+    const int max_iter = max_iter_for(grid);
     const int nb_bus = static_cast<int>(grid.total_bus());
     const RealVect p0 = grid.get_loads().get_target_p();
     const RealVect q0 = grid.get_loads().get_target_q();
@@ -177,7 +188,7 @@ int main(int argc, char ** argv)
         CALLGRIND_START_INSTRUMENTATION;
         CALLGRIND_ZERO_STATS;
         CALLGRIND_TOGGLE_COLLECT;
-        const CplxVect V = grid.ac_pf(V0, MAX_ITER, TOL);
+        const CplxVect V = grid.ac_pf(V0, max_iter, TOL);
         CALLGRIND_TOGGLE_COLLECT;
         CALLGRIND_STOP_INSTRUMENTATION;
         if(V.size() == 0){ std::cerr << "cold solve diverged\n"; return 4; }
@@ -197,12 +208,12 @@ int main(int argc, char ** argv)
     if(phase == "inj_nores") grid.deactivate_result_computation();
 
     // ---- warm up: the solve that fills the cache, never collected -----------
-    CplxVect V = grid.ac_pf(V0, MAX_ITER, TOL);
+    CplxVect V = grid.ac_pf(V0, max_iter, TOL);
     if(V.size() == 0){ std::cerr << "warm-up solve diverged\n"; return 4; }
 
     // A second uncollected solve, so that what we measure is really the steady
     // state (the first cached solve still refactorizes from a cold KLU object).
-    V = grid.ac_pf(V, MAX_ITER, TOL);
+    V = grid.ac_pf(V, max_iter, TOL);
     if(V.size() == 0){ std::cerr << "second warm-up solve diverged\n"; return 4; }
 
     // `topo` needs a line whose opening leaves the grid solvable -- on the
@@ -215,9 +226,9 @@ int main(int argc, char ** argv)
         for(int line_id = 0; line_id < scan_max; ++line_id){
             if(!grid.get_lines_status()[line_id]) continue;
             grid.deactivate_powerline(line_id);
-            const CplxVect Vtry = grid.ac_pf(V, MAX_ITER, TOL);
+            const CplxVect Vtry = grid.ac_pf(V, max_iter, TOL);
             grid.reactivate_powerline(line_id);
-            const CplxVect Vback = grid.ac_pf(V, MAX_ITER, TOL);
+            const CplxVect Vback = grid.ac_pf(V, max_iter, TOL);
             if(Vtry.size() != 0 && Vback.size() != 0){ topo_line_id = line_id; break; }
         }
         if(topo_line_id < 0){
@@ -225,7 +236,7 @@ int main(int argc, char ** argv)
             return 5;
         }
         std::cout << "topo: toggling line " << topo_line_id << "\n";
-        V = grid.ac_pf(V, MAX_ITER, TOL);
+        V = grid.ac_pf(V, max_iter, TOL);
     }
 
     // The A/B trace: one entry per measured solve. Filled outside the collected
@@ -260,16 +271,16 @@ int main(int argc, char ** argv)
             CplxVect Vdc_init = CplxVect::Constant(nb_bus, 1.);
             CALLGRIND_TOGGLE_COLLECT;
             grid.deactivate_result_computation();
-            const CplxVect Vdc = grid.dc_pf(Vdc_init, MAX_ITER, TOL);
+            const CplxVect Vdc = grid.dc_pf(Vdc_init, max_iter, TOL);
             grid.reactivate_result_computation();
-            const CplxVect Vac = (Vdc.size() != 0) ? grid.ac_pf(Vdc, MAX_ITER, TOL)
+            const CplxVect Vac = (Vdc.size() != 0) ? grid.ac_pf(Vdc, max_iter, TOL)
                                                    : CplxVect();
             CALLGRIND_TOGGLE_COLLECT;
             if(Vac.size() == 0){ std::cerr << "dcac diverged at step " << step << "\n"; return 4; }
             V = Vac;
         } else {
             CALLGRIND_TOGGLE_COLLECT;
-            const CplxVect Vnew = grid.ac_pf(V, MAX_ITER, TOL);
+            const CplxVect Vnew = grid.ac_pf(V, max_iter, TOL);
             CALLGRIND_TOGGLE_COLLECT;
             if(Vnew.size() == 0){ std::cerr << "diverged at step " << step << "\n"; return 4; }
             V = Vnew;

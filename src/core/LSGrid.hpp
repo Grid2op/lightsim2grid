@@ -290,6 +290,15 @@ class LS2G_API LSGrid final
             std::unique_ptr<BaseAlgo> tmp = AlgorithmRegistry::instance().make(name);
             if (tmp->IS_AC) {
                 _algo.change_algorithm(name);
+                // Same courtesy as the enum overload above, and it used to be missing
+                // here: a fast-decoupled solve reads Bp / Bpp, which only
+                // init_fdpf_coeffs() fills, so selecting an FDPF solver BY NAME threw
+                // "the FDPF coefficients are not cached" on the first powerflow while
+                // selecting the very same solver by enum worked. Asked of the solver
+                // itself (BaseAlgo::is_fdpf), so a plugin implementing the method is
+                // served too -- the type-keyed test cannot see either case, both being
+                // AlgorithmType::Custom.
+                if (_algo.is_fdpf()) init_fdpf_coeffs();
                 algo_controler_.ac_algo_controler().tell_all_changed();
             }
             else {
@@ -1306,11 +1315,11 @@ class LS2G_API LSGrid final
          *
          * Works in grid ids and reads only input data, so unlike the solver-side
          * accessors it is valid before / independently of `pre_process_solver`
-         * (`fillpv_pq` needs it while it is still building that very labelling).
+         * (layer 2 of the plan needs it while building the very split it feeds).
          *
          * On-demand, like the two above: it rebuilds layer 1 of a VoltageControlPlan
          * from scratch. Inside a powerflow, `_build_into_cache` builds that layer
-         * once and hands it to `fillpv_pq` directly.
+         * once, and the layers after it read that one.
          */
         std::set<int> get_group_controlled_buses() const;
         /**
@@ -2291,12 +2300,16 @@ class LS2G_API LSGrid final
          * it, which is what lets the powerflow hand over a working copy of the grid's
          * change tracking rather than the member itself (see LSGrid::ac_pf).
          */
+        /// `supports_voltage_control`: may the voltage-control layers be built at all
+        /// (BaseAlgo::supports_remote_voltage_control of the algorithm that will solve
+        /// this cache)? False leaves the plan empty and gives the classical pv/pq split.
         template<class MatScalar>
         CplxVect _build_into_cache(const Eigen::Ref<const CplxVect> & Vinit,
                                    SolverSideCache<MatScalar> & cache,
                                    const AlgoControl & solver_control,
                                    bool force_full_rebuild,
-                                   bool init_pv_vm_targets);
+                                   bool init_pv_vm_targets,
+                                   bool supports_voltage_control);
 
         /**
          * `pre_process_solver` / `pre_process_dc_solver` for either family: the reuse
@@ -2349,20 +2362,20 @@ class LS2G_API LSGrid final
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const SolverBusIdVect& id_me_to_solver);
         void fillBdc(Eigen::SparseMatrix<real_type> & res, const SolverBusIdVect& id_me_to_solver);  // DC: real admittance matrix
         void fillSbus_me(Eigen::Ref<CplxVect> res, bool ac, const SolverBusIdVect& id_me_to_solver);
-        // writes the pv / pq split into the caller-supplied vectors: the AC and the
-        // DC family each own theirs (ac_cache_.bus_pv / dc_cache_.bus_pv, ...), and they are
-        // expressed in that family's own solver labelling.
-        // `group_reg` is layer 1 of the caller's voltage-control plan (GRID bus ids,
-        // VoltageControlPlan::group_controlled_buses): the buses a control group
-        // regulates must stay out of PV, and the controller list the caller builds
-        // right afterwards has to be keyed on this very layout -- which is why it is
-        // handed in rather than re-derived here.
-        void fillpv_pq(const SolverBusIdVect& id_me_to_solver,
-                       const GlobalBusIdVect& id_solver_to_me,
-                       const SolverBusIdVect & slack_bus_id_solver,
-                       const std::set<int> & group_reg,
-                       SolverBusIdVect & bus_pv_out,
-                       SolverBusIdVect & bus_pq_out);
+        // The pv/pq split itself lives in VoltageControlPlan::build_pv_pq: its one
+        // subtlety is keyed on the control groups, and the controller list is then keyed
+        // on it, so the three are one object with one build order rather than a call
+        // sequence that has to be got right. What is left on this side is naming the
+        // containers to ask, which is what owning them means.
+        /// every container that can pin a bus' magnitude through the classical PV path
+        [[nodiscard]] std::vector<const GenericContainer *> _pv_capable_containers() const;
+        /**
+         * Refuse, by name, a grid whose voltage control the selected algorithm cannot
+         * honour. Called by `ac_pf` when `_algo.supports_remote_voltage_control()` is
+         * false -- the same shape as the angle-droop guard right above it, and for the
+         * same reason: the alternative is a converged, plausible, wrong answer.
+         */
+        void _throw_if_voltage_control_needed() const;
 
         // results
         /**process the results from the solver to this instance

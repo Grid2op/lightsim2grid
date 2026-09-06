@@ -117,7 +117,7 @@ Acted on (each A/B'd, answers compared; see the changelog for the details):
 | `1/\|V\|` from `Vm_` instead of a `hypot` pass over `V_` | -2.1% | -2.5% | -2.2% | -1.6% |
 | read each branch status bit once, not five times | -1.5% | -1.2% | -1.0% | -0.9% |
 | take the per-bus mismatch off the algorithm | -2.1% | -2.1% | — | -1.4% |
-| derive the voltage-control plan once per solve, not four times | -3.7% | -8.1% | -3.1% | -2.2% |
+| derive the voltage-control plan once per solve, not four times | -4.9% | -8.3% | -3.2% | -2.2% |
 
 Measured and **declined**, recorded here so they are not re-proposed:
 
@@ -185,18 +185,53 @@ A/B against the tree as it was, KLU, answers compared bit for bit:
 
 | grid | `inj` (an ordinary step) | `idem` (the floor) |
 |---|---:|---:|
-| case30 | **-3.7%** | -6.1% |
-| case118 | **-8.1%** | -16.4% |
-| case118_fancy | **-6.8%** | -18.2% |
-| case1354pegase | **-3.1%** | -7.3% |
+| case30 | **-4.9%** | -7.9% |
+| case118 | **-8.3%** | -16.9% |
+| case118_fancy | **-7.0%** | -18.6% |
+| case1354pegase | **-3.2%** | -7.3% |
 | case1354pegase_fancy | **-2.6%** | -3.9% |
 | case9241pegase | **-2.2%** | -5.4% |
 | case9241pegase_fancy | **-0.4%** | -0.8% |
 
-The proportion falls with grid size because the work removed is O(generators)
-while the solve it is measured against is dominated by KLU -- and it falls
-furthest on the fancy pegase case for exactly the reason the table above gives.
-In absolute terms it is 2.3M instructions per solve on case9241pegase.
+The two phases save the *same* number of instructions, to the last one (8,040 on
+case30 up to 2.3M on case9241pegase): what is removed is a fixed per-solve cost,
+paid before the Newton loop starts. `inj` reads smaller only because it is a
+1.5x-2.7x bigger solve. The proportion falls with grid size because the work
+removed is O(generators) while the solve it is measured against is dominated by
+KLU -- and it falls furthest on the fancy pegase case for the reason the table
+above gives.
+
+About 1.9k of the per-solve figure is a second, unrelated find: `AlgorithmSelector`
+took its `error_msg` by `const std::string &` and every call site passes a literal
+longer than libstdc++'s small-string buffer, so `get_V` / `get_Va` / `get_Vm` /
+`compute_pf` / `tell_solver_control` each did a malloc and a free per solve to build
+a string only the error path reads. `const char *` now.
+
+### Algorithms that cannot do voltage control
+
+The plan is only ever read by the `Base` and `VoltageControl` components of
+NRSystem, i.e. by the Newton-Raphson algorithms. Deriving it once per powerflow --
+into the cache, rather than lazily in the extension that wanted it -- therefore made
+the fast-decoupled and Gauss-Seidel algorithms pay for two container walks nobody
+reads: **+2.20% / +0.57%** of a rebuild on case118 / case9241pegase (`nocache`,
+FDPF_XB_KLU), and nothing on an ordinary step, where the plan is reused anyway.
+
+They now build no plan at all -- and, more to the point, they no longer take a
+group-regulated bus out of PV, which was a *wrong answer* rather than a slow one
+(0.36 pu on case118_fancy). Against the same pre-change baseline:
+
+| grid | phase | before | after |
+|---|---|---:|---:|
+| case118 | `inj` | 1,017,431 | 1,017,063 (**-0.04%**) |
+| case118 | `nocache` | 1,851,440 | 1,849,757 (**-0.09%**) |
+| case9241pegase | `inj` | 135,854,646 | 135,886,270 (+0.02%) |
+| case9241pegase | `nocache` | 218,035,000 | 217,924,056 (**-0.05%**) |
+
+Profiling those at all needed two fixes of its own: `change_algorithm` by NAME did
+not call `init_fdpf_coeffs()` (so an FDPF solver selected the way this driver selects
+it threw on the first solve), and the driver's iteration budget was a hard-coded 10
+where fast-decoupled needs ~50. Both are fixed; `max_iter` is now derived from
+`BaseAlgo::is_fdpf`.
 
 Measured and **not worth attacking**: the build side of the cache
 (`_build_into_cache` is ~1% of a case9241pegase solve, most of it the Sbus refill

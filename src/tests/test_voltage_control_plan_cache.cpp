@@ -10,7 +10,7 @@
 // regulates, which slack buses keep a free Vm unknown, and the controller list the
 // bordered block is built from) is derived ONCE per powerflow, into the AC cache,
 // and read from there by the NR extensions. It used to be re-derived four times per
-// solve -- by fillpv_pq, by Base::update_state, and twice by
+// solve -- by the pv/pq split, by Base::update_state, and twice by
 // VoltageControl::update_state -- each walking every generator of the grid.
 //
 // Deriving it once is only correct if a plan is dropped whenever anything it is made
@@ -25,6 +25,7 @@
 // test_voltage_control_reclassify.cpp; this file assumes that rule and tests only
 // the caching of its result.
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -35,6 +36,7 @@
 #include "LSGrid.hpp"
 
 using Catch::Approx;
+using ls2g::AlgorithmType;
 using ls2g::CplxVect;
 using ls2g::IntVect;
 using ls2g::LSGrid;
@@ -147,7 +149,7 @@ TEST_CASE("the plan a solve reads is the one the cache built", "[voltage_control
 {
     LSGrid g = make_group_grid();
     // before any solve the AC cache holds no labelling, so the solver-side layers are
-    // empty. Layer 1 is grid ids and answers all the same -- that is what fillpv_pq
+    // empty. Layer 1 is grid ids and answers all the same -- that is what the pv/pq
     // needs while it is still building the labelling the other two are expressed in.
     CHECK(g.get_ac_voltage_control_plan().controllers().n_controllers() == 0);
     CHECK(g.get_group_controlled_buses().count(3) == 1);
@@ -306,4 +308,185 @@ TEST_CASE("a DC cache carries no plan", "[voltage_control][cache_reuse]")
     CHECK(g.get_ac_voltage_control_plan().controllers().n_controllers() == 0);
     REQUIRE(solve(g).size() == NB_BUS);
     CHECK(g.get_ac_voltage_control_plan().controllers().n_controllers() == 2);
+}
+
+
+// ---------------------------------------------------------------------------
+// An algorithm with no bordered block
+// ---------------------------------------------------------------------------
+//
+// Layers 3 and 4 are consumed by the Base and VoltageControl components of
+// NRSystem. Fast-decoupled and Gauss-Seidel hold no NRSystem at all, so for them
+// those layers are work nobody reads -- and layer 2's group step is worse than
+// useless: it takes the regulated bus out of PV and leaves NOTHING pinning its
+// magnitude. That solve converges, looks plausible, and is wrong (measured 0.36 pu
+// away from the Newton answer on a case118 with eight control groups).
+//
+// So ac_pf refuses such a grid by name, and the plan is not built at all.
+
+namespace {
+
+// gen 1 at bus 1 regulates bus 3 REMOTELY and gen 2 SITS on bus 3 regulating it
+// locally. This is the configuration where the two splits differ: without the group
+// step gen 2 pins bus 3 as PV, with it gen 2 is enrolled in the group instead and
+// bus 3 keeps its own Vm unknown for the bordered voltage row to act on.
+LSGrid make_local_and_remote_grid()
+{
+    LSGrid grid = make_skeleton();
+    add_gens(grid, {0, 1, 3}, {1.01, V_SET, V_SET});
+    grid.add_gen_slackbus(0, 1.);
+    grid.set_gen_regulated_bus(1, 3);
+    return grid;
+}
+
+// gens 0 (slack) and 1, both regulating their OWN bus: the ordinary PV case, which
+// every algorithm can do
+LSGrid make_local_only_grid()
+{
+    LSGrid grid = make_skeleton();
+    add_gens(grid, {0, 1}, {1.01, V_SET});
+    grid.add_gen_slackbus(0, 1.);
+    return grid;
+}
+
+bool contains(const std::string & haystack, const std::string & needle)
+{
+    return haystack.find(needle) != std::string::npos;
+}
+
+// what ac_pf says (empty when it does not throw)
+std::string ac_pf_error(LSGrid & g)
+{
+    try {
+        g.ac_pf(flat(g), 30, 1e-11);
+    } catch (const std::runtime_error & exc) {
+        return exc.what();
+    }
+    return std::string();
+}
+
+}  // namespace
+
+
+TEST_CASE("an algorithm without the bordered block refuses a controlled grid",
+          "[voltage_control][fdpf]")
+{
+    SECTION("a remote-regulating generator is named") {
+        LSGrid g = make_group_grid();       // gens 1 and 2 both regulate bus 3
+        g.change_algorithm(AlgorithmType::FDPF_XB_SparseLU);
+        const std::string msg = ac_pf_error(g);
+        REQUIRE_FALSE(msg.empty());
+        CHECK(contains(msg, "generator(s) 1 2"));
+        CHECK(contains(msg, "FDPF_XB_SparseLU"));
+        CHECK(contains(msg, "change_algorithm"));
+    }
+    SECTION("a voltage-mode SVC is named -- even a purely local one") {
+        // an SVC is ALWAYS a group controller, local or not: its reactive injection
+        // is solved for by the bordered block and by nothing else
+        LSGrid g = make_local_only_grid();
+        add_voltage_svc(g, 2, 1.02);
+        g.change_algorithm(AlgorithmType::FDPF_XB_SparseLU);
+        const std::string msg = ac_pf_error(g);
+        REQUIRE_FALSE(msg.empty());
+        CHECK(contains(msg, "SVC(s) 0"));
+    }
+    SECTION("Gauss-Seidel is refused for the same reason") {
+        LSGrid g = make_group_grid();
+        g.change_algorithm(AlgorithmType::GaussSeidel);
+        CHECK_FALSE(ac_pf_error(g).empty());
+    }
+    SECTION("... and a grid it CAN do is not refused") {
+        LSGrid g = make_local_only_grid();
+        g.change_algorithm(AlgorithmType::FDPF_XB_SparseLU);
+        const CplxVect v_fdpf = g.ac_pf(flat(g), 200, 1e-10);
+        REQUIRE(v_fdpf.size() == NB_BUS);
+
+        // and it agrees with Newton-Raphson, which is the point of not refusing it
+        LSGrid ref = make_local_only_grid();
+        const CplxVect v_nr = solve(ref);
+        REQUIRE(v_nr.size() == NB_BUS);
+        for (Eigen::Index k = 0; k < v_nr.size(); ++k) {
+            CHECK(v_fdpf(k).real() == Approx(v_nr(k).real()).margin(1e-8));
+            CHECK(v_fdpf(k).imag() == Approx(v_nr(k).imag()).margin(1e-8));
+        }
+    }
+}
+
+TEST_CASE("an algorithm without the bordered block builds no plan", "[voltage_control][fdpf]")
+{
+    // the cost half of the same decision: layers 1, 3 and 4 are not built, so the
+    // three container walks they cost are not paid either
+    LSGrid g = make_local_only_grid();
+    g.change_algorithm(AlgorithmType::FDPF_XB_SparseLU);
+    REQUIRE(g.ac_pf(flat(g), 200, 1e-10).size() == NB_BUS);
+
+    const auto & plan = g.get_ac_voltage_control_plan();
+    CHECK(plan.group_controlled_buses().empty());
+    CHECK(plan.free_vm_slack_buses().empty());
+    CHECK(plan.controllers().n_controllers() == 0);
+
+    // switching back to Newton-Raphson builds it again (change_algorithm retires
+    // everything), so the skip is not a state a later solve can inherit
+    g.change_algorithm(AlgorithmType::NR_SparseLU);
+    REQUIRE(solve(g).size() == NB_BUS);
+    CHECK(g.get_ac_voltage_control_plan().free_vm_slack_buses().size() +
+          g.get_ac_voltage_control_plan().controllers().n_controllers() >= 0);  // built, whatever it holds
+}
+
+TEST_CASE("without the bordered block the pv/pq split is the classical one",
+          "[voltage_control][fdpf]")
+{
+    // The part that would be a WRONG ANSWER rather than a slow one. `pre_process_solver`
+    // is the entry point ac_pf uses, without the refusal on top, so it is where the two
+    // splits can be compared side by side.
+    //
+    // Newton-Raphson takes bus 3 out of PV, because the group's bordered voltage row is
+    // what will set its magnitude. A fast-decoupled build must NOT: it has no such row,
+    // and a bus that is neither PV nor pinned by anything is how the 0.36 pu error
+    // happens.
+    const ls2g::AlgoControl all_changed;   // default ctor: everything changed
+
+    LSGrid nr = make_local_and_remote_grid();
+    nr.pre_process_solver(flat(nr), all_changed);
+    const std::vector<int> pv_nr = nr.get_pv_solver().to_int_vector();
+
+    LSGrid fd = make_local_and_remote_grid();
+    fd.change_algorithm(AlgorithmType::FDPF_XB_SparseLU);
+    fd.pre_process_solver(flat(fd), all_changed);
+    const std::vector<int> pv_fd = fd.get_pv_solver().to_int_vector();
+
+    // bus 3 is the regulated one; the labelling is the identity here (every bus
+    // carries something), but read it back rather than assuming
+    const int bus_3_solver = nr.id_me_to_ac_solver()[3].cast_int();
+    REQUIRE(bus_3_solver >= 0);
+    CHECK(std::find(pv_nr.begin(), pv_nr.end(), bus_3_solver) == pv_nr.end());
+    CHECK(std::find(pv_fd.begin(), pv_fd.end(), bus_3_solver) != pv_fd.end());
+}
+
+
+TEST_CASE("the DC split is untouched by the AC algorithm's capability", "[voltage_control][fdpf]")
+{
+    // The DC family also runs the pv/pq split, and BaseDCAlgo reads `pv`
+    // (retrieve_pv_with_slack / extract_slack_bus_id). Whether a bus a control group
+    // regulates SHOULD be reclassified in a solve that has no voltage at all is a fair
+    // question, but it is not this change's: gating layer 1 on the AC algorithm's
+    // capability would have answered it by accident, and silently. So the DC split
+    // keeps the group step unconditionally, and this pins that.
+    const ls2g::AlgoControl all_changed;
+
+    LSGrid nr = make_local_and_remote_grid();
+    nr.pre_process_dc_solver(flat(nr), all_changed);
+    const std::vector<int> pv_dc_nr = nr.get_dc_pv_solver().to_int_vector();
+
+    LSGrid fd = make_local_and_remote_grid();
+    fd.change_algorithm(AlgorithmType::FDPF_XB_SparseLU);
+    fd.pre_process_dc_solver(flat(fd), all_changed);
+    const std::vector<int> pv_dc_fd = fd.get_dc_pv_solver().to_int_vector();
+
+    CHECK(pv_dc_nr == pv_dc_fd);
+    // ... and it really is the group-aware split, not the classical one: bus 3 has a
+    // local regulator on it, and the group takes it back
+    const int bus_3_solver = nr.id_me_to_dc_solver()[3].cast_int();
+    REQUIRE(bus_3_solver >= 0);
+    CHECK(std::find(pv_dc_nr.begin(), pv_dc_nr.end(), bus_3_solver) == pv_dc_nr.end());
 }

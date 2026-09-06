@@ -139,6 +139,56 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [FIXED] a grid using voltage control that the selected algorithm cannot implement -- a
+  generator or an hvdc converter station regulating a bus other than its own, several
+  machines regulating one bus, or a voltage-mode SVC -- was **solved anyway, to a wrong
+  answer**, by the fast-decoupled and Gauss-Seidel algorithms. Those hold no ``NRSystem``,
+  hence no ``VoltageControl`` extension, so no bordered block was ever built; but the pv/pq
+  split took the regulated bus out of PV all the same, leaving its magnitude pinned by
+  nothing. The solve converged, looked plausible, and on a case118 with eight control
+  groups landed **0.36 pu** away from the Newton-Raphson answer, missing every setpoint by
+  0.127 pu. ``BaseAlgo::supports_remote_voltage_control()`` existed to prevent exactly this
+  and had **no caller anywhere**. ``LSGrid::ac_pf`` now refuses such a grid, in the same
+  place and the same shape as the angle-droop guard right above it, naming every concerned
+  generator, SVC and converter station. It does not silently rewrite the grid: turning the
+  regulator off changes the reactive dispatch and pointing it at its own bus needs a
+  setpoint nobody has (the one it carries targets a *different* bus), so which of the two
+  to do is the caller's decision, not the library's.
+- [IMPROVED] ``LSGrid::fillpv_pq`` is gone: the pv/pq split is layer 2 of
+  ``VoltageControlPlan``. Its one subtlety -- a bus a control GROUP regulates must keep its
+  own Vm unknown -- is keyed on layer 1, and layer 4 is then keyed on the split, so the
+  three belong to one object and one build order rather than to a call sequence that has to
+  be got right. What stays on ``LSGrid`` is naming the containers to ask
+  (``_pv_capable_containers()``), which is what owning them means -- and that also settles
+  the standing ``TODO have a function to dispatch that to all type of elements``: the rule
+  is now "ask every container", not "ask these eight, in this order".
+- [IMPROVED] an algorithm with no bordered block builds no voltage-control plan at all:
+  layers 1, 3 and 4 are skipped and layer 2 produces the classical split. Deriving them
+  once per powerflow (see above) had made them the business of the cache rather than of
+  the extension that wanted them, which meant fast-decoupled and Gauss-Seidel paid for two
+  container walks whose result nobody reads -- **+2.2% / +0.57%** of a rebuild on case118 /
+  case9241pegase. Now **-0.09% / -0.05%** against the same baseline, and flat on an
+  ordinary step.
+- [FIXED] ``LSGrid::change_algorithm(const std::string&)`` did not call
+  ``init_fdpf_coeffs()``, which its ``AlgorithmType`` overload does: selecting a
+  fast-decoupled solver **by name** threw ``"the FDPF coefficients are not cached"`` on the
+  first powerflow, while selecting the very same solver by enum worked. Added
+  ``AlgorithmSelector::is_fdpf()`` (no argument) next to ``supports_hvdc_droop()`` and
+  ``supports_remote_voltage_control()`` and used it: the type-keyed ``is_fdpf(type)`` cannot
+  answer for a solver reached through the registry or for a plugin, both being
+  ``AlgorithmType::Custom``.
+- [IMPROVED] ``AlgorithmSelector::get_prt_solver`` and ``check_right_solver`` take a
+  ``const char *`` instead of a ``const std::string &``. All fifty-odd call sites pass a
+  string literal and the names are longer than libstdc++'s small-string buffer
+  (``"supports_remote_voltage_control"`` is 31 characters), so every call -- ``get_V``,
+  ``get_Va``, ``get_Vm``, ``compute_pf``, ``tell_solver_control`` and the capability
+  queries, several times per powerflow -- did one ``malloc`` and one ``free`` to build a
+  string only the error path ever reads. **-1,855 to -2,078 instructions per solve**, on
+  every grid and every algorithm.
+- [IMPROVED] the profiling driver derives its iteration budget from the algorithm family
+  (``BaseAlgo::is_fdpf``): 10 for Newton-Raphson and DC as before, 100 for fast-decoupled,
+  which needs ~50 on case118 and so diverged outright at 10. Together with the fix above
+  this is what makes the fast-decoupled algorithms profilable at all.
 - [ADDED] ``ls2g::VoltageControlPlan`` (``src/core/VoltageControlPlan.hpp``): everything one AC
   solve needs to know about the "fancy" voltage controllers -- remote-regulating generators,
   several machines regulating one bus, and voltage-mode SVCs -- as ONE object instead of three

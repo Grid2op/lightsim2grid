@@ -89,7 +89,7 @@ struct SolverBusLayout
      * built against are one picture of the grid, and mixing two of them is not stale
      * data, it is a different grid.
      *
-     * Both families carry the group layout -- `fillpv_pq` is one function and its
+     * Both families carry the group layout -- the pv/pq split is one rule and its
      * rule is the same either way -- but only the AC family fills the two
      * solver-side layers: a DC solve has no voltage control, so nothing reads a DC
      * plan's free-Vm slack set or its controller list.

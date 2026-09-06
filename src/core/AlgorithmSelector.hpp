@@ -142,6 +142,15 @@ class LS2G_API AlgorithmSelector final
         bool supports_remote_voltage_control() const {
             return get_prt_solver("supports_remote_voltage_control", false)->supports_remote_voltage_control();
         }
+        // The no-argument form of is_fdpf(AlgorithmType) above. The type-keyed one
+        // cannot answer for a solver selected BY NAME -- an FDPF built-in reached
+        // through the registry, or a plugin implementing the method -- because their
+        // type is the catch-all Custom. LSGrid::change_algorithm(const std::string&)
+        // needs this one: an FDPF solve reads Bp / Bpp, which only
+        // LSGrid::init_fdpf_coeffs() fills, and without it the first solve throws.
+        bool is_fdpf() const {
+            return get_prt_solver("is_fdpf", false)->is_fdpf();
+        }
 
         // Convenience accessors for the two FDPF SparseLU variants.
         // These exist mainly for internal diagnostic use (exposed as AlgorithmSelector.get_fdpf_*).
@@ -393,19 +402,25 @@ class LS2G_API AlgorithmSelector final
         }
 
     protected:
-        const BaseAlgo* get_prt_solver(const std::string& error_msg, bool check_right_solver_ = true) const {
+        const BaseAlgo* get_prt_solver(const char * error_msg, bool check_right_solver_ = true) const {
             if (check_right_solver_) check_right_solver(error_msg);
             if (!_algo) throw std::runtime_error("AlgorithmSelector: no solver is active (not initialized?)");
             return _algo.get();
         }
-        BaseAlgo* get_prt_solver(const std::string& error_msg, bool check_right_solver_ = true) {
+        BaseAlgo* get_prt_solver(const char * error_msg, bool check_right_solver_ = true) {
             if (check_right_solver_) check_right_solver(error_msg);
             if (!_algo) throw std::runtime_error("AlgorithmSelector: no solver is active (not initialized?)");
             return _algo.get();
         }
 
     private:
-        void check_right_solver(const std::string& error_msg) const {
+        // `error_msg` is a `const char*`, not a `const std::string&`: every one of the
+        // fifty-odd call sites passes a string literal, and the names are longer than
+        // libstdc++'s small-string buffer ("supports_remote_voltage_control" is 31
+        // chars), so a reference parameter meant one malloc + one free per call -- on
+        // get_V, get_Va, get_Vm, compute_pf and the capability queries, i.e. several
+        // times per powerflow, to build a string only the error path ever reads.
+        void check_right_solver(const char * error_msg) const {
             if (_algo_type != _algo_type_used_for_nr) {
                 std::ostringstream exc_;
                 exc_ << "AlgorithmSelector: Solver mismatch when calling '";

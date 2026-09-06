@@ -9,7 +9,7 @@
 // Which mechanism sets a bus' voltage magnitude: the classical PV treatment, or a
 // bordered VoltageControl group?
 //
-// The rule (LSGrid::get_group_controlled_buses, applied in LSGrid::fillpv_pq): a bus
+// The rule (VoltageControlPlan layer 1, applied by its layer 2 build_pv_pq): a bus
 // keeps the PV treatment as long as the only things regulating it stand ON it --
 // generators, or voltage-regulating hvdc converter stations. As soon as an ACTIVE
 // REMOTE regulator -- or any voltage-mode SVC, which is always a group controller --
