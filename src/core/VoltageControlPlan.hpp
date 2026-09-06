@@ -135,6 +135,11 @@ class LS2G_API VoltageControlPlan
          * formulation -- and then every local regulator on that bus, generator or
          * converter station, joins the group as a co-controller instead of pinning it.
          *
+         * Stations are read by `build_controllers`, not here, and that is not an
+         * oversight: a station has no regulated bus of its own (it always regulates the
+         * bus it stands on), so it can never be the remote controller that CREATES a
+         * group -- only a member of one somebody else created. See the body.
+         *
          * `supports_voltage_control` false (a fast-decoupled or Gauss-Seidel solve)
          * leaves the set EMPTY, which is what makes layer 2 produce the classical
          * split. It is not a shortcut past a real configuration: `LSGrid::ac_pf`

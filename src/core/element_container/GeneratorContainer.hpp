@@ -114,19 +114,12 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         void add_slackbus(int gen_id, real_type weight, DualAlgoControl & solver_control){
             // TODO DEBUG MODE
             if(weight <= 0.) throw std::runtime_error("GeneratorContainer::add_slackbus Cannot assign a negative (<=0) weight to the slack bus.");
-            if(!gen_slackbus_[gen_id]){
-                solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed();
-                // is_pseudo_off() answers false for a slack generator whatever its
-                // active power, and a pseudo-off generator is not a voltage
-                // controller -- so taking the slack role changes the control groups.
-                // Only the role: once it is held, the WEIGHT is irrelevant there
-                // (is_pseudo_off returns on gen_slackbus_ before it looks at it), and
-                // this is called for every generator on every step when the
-                // distributed slack is on, so raising it unconditionally would retire
-                // the voltage-control plan on every step for nothing. AC only: a DC
-                // solve has no voltage control, hence no plan to invalidate.
-                solver_control.ac_algo_controler().tell_voltage_control_changed();
-            }
+            // (taking the slack role does change who is a voltage controller --
+            // is_pseudo_off() answers false for a slack generator whatever its active
+            // power -- but tell_slack_participate_changed() above already rebuilds the
+            // pv/pq split, and the voltage-control plan is built around that split. See
+            // AlgoControl::need_recompute_voltage_control.)
+            if(!gen_slackbus_[gen_id]){ solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed(); }
             gen_slackbus_[gen_id] = true;
             if(abs(gen_slack_weight_[gen_id] - weight) > _tol_equal_float){
                 solver_control.ac_algo_controler().tell_slack_weight_changed(); solver_control.dc_algo_controler().tell_slack_weight_changed();
@@ -134,14 +127,8 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             }
         }
         void remove_slackbus(int gen_id, DualAlgoControl & solver_control){
-            const bool was_slack = gen_slackbus_[gen_id];
-            const bool had_weight = abs(gen_slack_weight_[gen_id]) > _tol_equal_float;
-            if(was_slack){ solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed(); }
-            if(had_weight){ solver_control.ac_algo_controler().tell_slack_weight_changed(); solver_control.dc_algo_controler().tell_slack_weight_changed(); }
-            // giving up the slack role, or the weight that stood in for it, can make
-            // this generator pseudo-off and so stop it being a voltage controller.
-            // Conditional for the same reason as add_slackbus above.
-            if(was_slack || had_weight) solver_control.ac_algo_controler().tell_voltage_control_changed();
+            if(gen_slackbus_[gen_id]){ solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed(); }
+            if(abs(gen_slack_weight_[gen_id]) > _tol_equal_float){ solver_control.ac_algo_controler().tell_slack_weight_changed(); solver_control.dc_algo_controler().tell_slack_weight_changed(); }
             gen_slackbus_[gen_id] = false;
             gen_slack_weight_[gen_id] = 0.;
         }
@@ -216,13 +203,11 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         void turnedoff_no_pv(DualAlgoControl & solver_control){
             solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed();
             solver_control.ac_algo_controler().tell_slack_weight_changed(); solver_control.dc_algo_controler().tell_slack_weight_changed();
-            solver_control.ac_algo_controler().tell_voltage_control_changed();  // turnedoff_gen_pv_ gates gen_is_voltage_controller
             turnedoff_gen_pv_=false;  // turned off generators are not pv. This is NOT the default.
             }  
         void turnedoff_pv(DualAlgoControl & solver_control){
             solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed();
             solver_control.ac_algo_controler().tell_slack_weight_changed(); solver_control.dc_algo_controler().tell_slack_weight_changed();
-            solver_control.ac_algo_controler().tell_voltage_control_changed();  // turnedoff_gen_pv_ gates gen_is_voltage_controller
             turnedoff_gen_pv_=true;  // turned off generators are pv. This is the default.
             }  
         bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
@@ -246,11 +231,20 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             _check_in_range(gen_id, regulated_bus_id_, "set_regulated_bus");
             if(regulated_bus_id_(gen_id) != bus_id){
                 regulated_bus_id_(gen_id) = bus_id;
-                solver_control.ac_algo_controler().tell_pv_changed();  // groups are rebuilt on topology init
-                solver_control.ac_algo_controler().tell_voltage_control_changed();  // this IS the group layout
-                solver_control.ac_algo_controler().tell_recompute_sbus();
-                solver_control.dc_algo_controler().tell_pv_changed();  // groups are rebuilt on topology init
-                solver_control.dc_algo_controler().tell_recompute_sbus();
+                // Only a generator that actually regulates reads this field: it decides
+                // whether the machine pins its own bus (PV) or joins a control group at
+                // another one, which is the pv/pq split and, through it, the whole
+                // voltage-control plan. For a non-regulating generator the value is
+                // stored and nothing else changes.
+                //
+                // No tell_recompute_sbus() (there used to be one): GeneratorContainer::
+                // fillSbus never reads regulated_bus_id_, and what it does read of a
+                // regulating generator -- target_p only, the reactive being free -- is
+                // the same either way.
+                if(voltage_regulator_on_[gen_id]){
+                    solver_control.ac_algo_controler().tell_pv_changed();
+                    solver_control.dc_algo_controler().tell_pv_changed();
+                }
             }
         }
         // true iff this generator is an ACTIVE remote voltage controller (joins a

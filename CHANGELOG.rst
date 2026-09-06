@@ -3,6 +3,23 @@ Change Log
 
 [TODO]
 --------
+- Several inputs of the voltage-control plan can only be set at construction, so a caller
+  cannot change them on a live grid at all. None of them is a missing-flag bug -- there is no
+  setter to raise a flag from -- but each is a missing capability, and adding the setter means
+  adding ``tell_voltage_control_changed()`` (or, where it moves who is in a group,
+  ``tell_pv_changed()``) with it:
+
+  * a generator's ``voltage_regulator_on_``: no way to take a machine out of voltage
+    regulation, or put it back, without rebuilding the container (``init_generators_full``).
+    ``set_gen_regulated_bus`` exists and does raise what it must, so only the on/off is missing.
+  * an hvdc converter station's ``voltage_regulator_on_``: same, through ``init_hvdc_lines``.
+  * an SVC's ``regulation_mode_`` (OFF / VOLTAGE / REACTIVE_POWER) and its
+    ``regulated_bus_id_``: neither has a setter, so an SVC cannot be switched between modes,
+    nor pointed at another bus, after ``init_svcs``.
+  * remote regulation BY an hvdc converter station is not modelled at all: the container
+    stores no regulated bus for a station, so a regulating one always regulates the bus it
+    stands on. A station only ever joins a control group somebody else created (see
+    ``VoltageControlPlan::build_groups``).
 - ``SubstationContainer::sub_vn_kv_`` is dead state: its only writers (``init_sub()``
   and the two-argument constructor) are called from nowhere, and nothing reads it
   back, so it is empty on every grid every loader produces and in every binary file
@@ -200,18 +217,32 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``LSGrid::get_group_controlled_buses`` / ``get_free_vm_slack_solver_buses`` /
   ``fill_voltage_control_solver_data`` are unchanged in signature and behaviour and now build a
   throw-away plan -- they are the on-demand form, for callers outside a solve.
-- [ADDED] ``AlgoControl::tell_voltage_control_changed()`` /
-  ``has_voltage_control_changed()`` / ``need_recompute_voltage_control()``, and a call to the
-  first from every element modifier that can move an input of the plan: a generator's regulated
-  bus, voltage setpoint, status, bus, slack role or pseudo-off state; an SVC's or an hvdc
-  converter station's status or bus; a station's setpoint. Its own flag rather than a reuse of
-  ``tell_pv_changed()``, because the two questions genuinely differ -- a remote regulator moving
-  its setpoint changes no bus' pv/pq class at all (that is the point of the bordered
-  formulation), and most of what makes a bus PV or PQ has nothing to do with a control group.
-  Raised on the AC family only: a DC solve has no voltage control, so there is no DC plan to
-  invalidate. ``need_recompute_voltage_control()`` is the union a powerflow asks, deliberately
-  conservative (it also fires on anything that re-labels the buses or re-splits them), and
-  all-or-nothing: the three layers are rebuilt together or not at all.
+- [ADDED] ``AlgoControl::need_recompute_pv_pq()`` -- must the pv/pq split be rebuilt: the
+  system was rebuilt from scratch, the bus set changed, the bus labelling changed, the slack
+  set moved, or a bus changed class -- and ``need_recompute_voltage_control()``, which is that
+  plus one term. Since the split IS a layer of the voltage-control plan
+  (``VoltageControlPlan::build_pv_pq``), whatever rebuilds the split rebuilds the plan: who is
+  in a control group and which bus it regulates are exactly the inputs the split reads, and
+  there is no way to change one without changing the other. ``LSGrid::_build_into_cache`` asks
+  those two and nothing else, so what the powerflow asks and what a test asks cannot drift.
+- [ADDED] ``AlgoControl::tell_voltage_control_changed()`` / ``has_voltage_control_changed()``:
+  the one term the pv/pq flags do not carry, a voltage SETPOINT. Moving a remote regulator's
+  target changes no bus' pv/pq class at all -- that is the point of the bordered formulation,
+  the regulated bus stays PQ -- so nothing else would notice. Raised from exactly two places
+  (``GeneratorContainer::change_v_nothrow`` and ``ConverterStationContainer::change_v``), on
+  the AC family only and only for an element that actually regulates: a DC solve has no
+  voltage control, and ``target_vm_pu_`` of a non-regulating machine is never read.
+- [FIXED] ``GeneratorContainer::set_regulated_bus`` raised ``tell_recompute_sbus()`` and
+  ``tell_pv_changed()`` unconditionally. ``fillSbus`` never reads ``regulated_bus_id_`` -- and
+  what it stamps for a regulating generator, active power only, is the same wherever that
+  generator regulates -- so the injections cannot have moved; and for a generator that does
+  not regulate at all the field is inert, so neither can the pv/pq split. Both are now raised
+  only when the machine regulates, and the Sbus one is gone.
+- [FIXED] ``ConverterStationContainer::_deactivate`` / ``_reactivate`` raised
+  ``tell_pv_changed()`` for every station. Only a REGULATING station pins a bus
+  (``ConverterStationContainer::fillpv`` skips the others), so only that one can move the
+  pv/pq split. ``tell_recompute_sbus()`` stays unconditional and is correct: a station IS in
+  Sbus, whether it regulates or not.
 - [IMPROVED] the voltage-control plan is derived **once per powerflow** instead of four times.
   ``LSGrid::_build_into_cache`` builds it around ``fillpv_pq`` -- layer 1 is an input to the
   pv-pq split, layers 2 and 3 are expressed in it -- and the NR extensions read it through

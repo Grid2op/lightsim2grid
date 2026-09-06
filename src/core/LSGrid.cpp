@@ -1273,24 +1273,24 @@ CplxVect LSGrid::_build_into_cache(
     // result instead of asking the grid to re-derive it. They used to be derived in
     // four different places, three of them walking every generator of the grid.
     //
-    // All the layers stand or fall together -- see
-    // AlgoControl::need_recompute_voltage_control() for the (deliberately
-    // conservative) question that decides, and note it is asked ONCE here rather
-    // than per layer: rebuilding layer 1 without the rest would leave the controller
-    // list keyed on a group layout it was not built from.
+    // All the layers stand or fall together, and the question that decides is asked
+    // ONCE: rebuilding layer 1 without the rest would leave the controller list keyed
+    // on a group layout it was not built from. It is also barely a second question --
+    // `need_recompute_voltage_control()` is `need_recompute_pv_pq()` plus one term,
+    // because the split IS layer 2 and whoever is in a group is exactly what the split
+    // reads. The one thing the split does not read is a setpoint, and that is the term.
     //
     // `supports_voltage_control` is the algorithm's own answer (BaseAlgo::
     // supports_remote_voltage_control): false for fast-decoupled and Gauss-Seidel,
     // which hold no NRSystem and so read neither layer 3 nor layer 4. For them the
     // plan stays empty and layer 2 produces the classical split -- and ac_pf has
     // already refused the grid if it really has controllers.
-    const bool rebuild_split =
-            redo_all || converter_changed ||
-            solver_control.has_slack_participate_changed() ||
-            solver_control.has_pv_changed() ||
-            solver_control.has_pq_changed();
+    // One predicate per layer, both of them AlgoControl's, so that what the powerflow
+    // asks and what a test asks cannot drift apart -- and so that the second is
+    // visibly the first plus one term, which is the whole shape of the thing.
+    const bool rebuild_split = force_full_rebuild || solver_control.need_recompute_pv_pq();
     const bool rebuild_voltage_control =
-            rebuild_split || solver_control.need_recompute_voltage_control();
+            force_full_rebuild || solver_control.need_recompute_voltage_control();
     // The DC family keeps the group step of layer 2 unconditionally, which is what it
     // has always done. It is not obviously RIGHT -- a DC solve has no voltage at all,
     // so a bus a group regulates arguably has no business being reclassified there --

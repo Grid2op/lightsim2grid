@@ -193,23 +193,21 @@ class AlgoControl final
         void tell_ybus_some_coeffs_zero(){ybus_some_coeffs_zero_ = true;}
         void tell_one_el_changed_bus(){one_el_change_bus_ = true;}
         /**
-         * Something the voltage-control plan is made of has changed: which buses a
-         * control GROUP regulates, who is in a group, or a setpoint / sharing key a
-         * group's bordered rows carry.
+         * A voltage SETPOINT a control group's bordered rows carry has moved: a
+         * regulating generator's or hvdc converter station's target magnitude.
          *
-         * Raised by the element modifiers that can move any of those -- a generator's
-         * regulated bus, its voltage setpoint, its regulator being connected or
-         * disconnected, an SVC or an hvdc converter station changing bus or status.
-         * Deliberately its OWN flag rather than a reuse of `tell_pv_changed()`: the
-         * two questions really do differ. A remote-regulating generator changing its
-         * setpoint changes no bus's pv/pq class at all (that is the whole point of the
-         * bordered formulation: the regulated bus stays PQ), and conversely most of
-         * what makes a bus PV or PQ has nothing to do with a control group. Folding
-         * one into the other would either rebuild the pv-pq split for nothing or --
-         * the dangerous direction -- reuse a plan whose setpoints have moved.
+         * Deliberately narrow, and deliberately NOT raised for everything the
+         * voltage-control plan is made of. Who is in a group, and which bus a group
+         * regulates, are the same inputs the pv/pq split reads -- and since that split
+         * IS a layer of the plan (VoltageControlPlan::build_pv_pq), a change to one is
+         * a change to the other, already carried by `pv_changed_` and friends. See
+         * `need_recompute_pv_pq()`. What those flags do NOT carry is a setpoint: moving
+         * a remote regulator's target changes no bus' pv/pq class at all -- that is the
+         * point of the bordered formulation, the regulated bus stays PQ -- so it needs
+         * a flag of its own, and this is it.
          *
-         * See `need_recompute_voltage_control()` for the question a powerflow
-         * actually asks, and VoltageControlPlan for what gets rebuilt.
+         * If you add an input to the plan that the pv/pq split does not read, raise
+         * this from the modifier that moves it.
          */
         void tell_voltage_control_changed(){voltage_control_changed_ = true;}
         /**
@@ -265,30 +263,48 @@ class AlgoControl final
         bool has_voltage_control_changed() const {return voltage_control_changed_;}
 
         /**
+         * Must the pv/pq split be rebuilt?
+         *
+         * Every term is a reason the split itself changes: the system was rebuilt from
+         * scratch (`need_reset_solver_`, which `tell_cache_maybe_poisoned()` implies),
+         * the bus set changed (`change_dimension_`), the bus LABELLING changed
+         * (`ybus_change_sparsity_pattern_`, which is what makes
+         * `LSGrid::init_converter_bus_id` run), the slack set moved
+         * (`slack_participate_changed_`, and the slack is not PV), or a bus changed
+         * class (`pv_changed_` / `pq_changed_`).
+         *
+         * Read by `LSGrid::_build_into_cache`, which is the only thing that rebuilds it.
+         */
+        [[nodiscard]] bool need_recompute_pv_pq() const noexcept {
+            return need_reset_solver_ || change_dimension_ || ybus_change_sparsity_pattern_ ||
+                   slack_participate_changed_ || pv_changed_ || pq_changed_;
+        }
+
+        /**
          * Must the voltage-control plan be rebuilt, or does the one the previous solve
          * of this family left in its cache still describe the grid?
          *
-         * A plan is expressed in ONE bus labelling and ONE pv-pq split, so it is
-         * invalidated both by what changes its own inputs (`voltage_control_changed_`)
-         * and by anything that re-labels the buses or re-splits them underneath it --
-         * a plan carried across a relabelling is not stale data, it is a different
-         * grid. Hence the union below rather than the single flag.
+         * The pv/pq split is a LAYER of that plan (VoltageControlPlan::build_pv_pq), so
+         * whatever rebuilds the split rebuilds the plan -- that is the first half, and
+         * it is not a grab-bag of loosely-related flags but literally the same question
+         * asked one layer down. Whoever is in a control group, and which bus it
+         * regulates, are exactly the inputs the split reads; there is no way to change
+         * one without changing the other.
          *
-         * What is deliberately NOT in it is the set of changes an ordinary grid2op
-         * step makes: moving a load's P and Q raises `need_recompute_sbus_` and
+         * The second half is what the split does NOT read: a setpoint. See
+         * `tell_voltage_control_changed()`.
+         *
+         * What is deliberately in NEITHER half is the set of changes an ordinary
+         * grid2op step makes: moving a load's P and Q raises `need_recompute_sbus_` and
          * nothing else, so the plan survives such a step untouched -- which is the
          * whole point of caching it.
          *
-         * All-or-nothing on purpose: the plan's three layers are rebuilt together or
-         * not at all. Refreshing only the setpoints of an otherwise unchanged group
-         * layout (the `v_changed_` case) is a finer question this does not try to
-         * answer yet.
+         * All-or-nothing on purpose: the plan's layers are rebuilt together or not at
+         * all. Refreshing only the setpoints of an otherwise unchanged group layout is
+         * a finer question this does not try to answer yet.
          */
         [[nodiscard]] bool need_recompute_voltage_control() const noexcept {
-            return voltage_control_changed_ || change_dimension_ || need_reset_solver_ ||
-                   pv_changed_ || pq_changed_ || slack_participate_changed_ ||
-                   slack_weight_changed_ || one_el_change_bus_ ||
-                   ybus_change_sparsity_pattern_ || v_changed_ || cache_maybe_poisoned_;
+            return need_recompute_pv_pq() || voltage_control_changed_;
         }
 
     private:    

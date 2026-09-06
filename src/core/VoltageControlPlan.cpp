@@ -59,6 +59,17 @@ void VoltageControlPlan::build_groups(const GeneratorContainer & generators,
         const int reg = svcs.get_regulated_bus_id(svc_id);
         if(reg >= 0) group_reg_buses_.insert(reg);
     }
+    // and NOT the hvdc converter stations, which is not an oversight. A station has no
+    // regulated bus of its own to read -- ConverterStationContainer stores none, a
+    // regulating station always regulates the bus it stands on -- so it can never be
+    // the REMOTE controller that makes a bus need the bordered treatment. It pins its
+    // own bus through the ordinary PV path (ConverterStationContainer::fillpv), exactly
+    // like a local generator, and becomes a group member only when a group formed by
+    // one of the two loops above already claims that bus. That enrolment is
+    // build_controllers' job (_collect_station_controllers), and it is keyed on the set
+    // this function returns -- which is why adding stations here would be circular as
+    // well as wrong. Remote regulation BY a station is simply not modelled; see the
+    // changelog TODO.
 }
 
 // ---------------------------------------------------------------------------
