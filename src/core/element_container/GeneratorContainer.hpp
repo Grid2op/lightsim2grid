@@ -114,11 +114,22 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         void add_slackbus(int gen_id, real_type weight, DualAlgoControl & solver_control){
             // TODO DEBUG MODE
             if(weight <= 0.) throw std::runtime_error("GeneratorContainer::add_slackbus Cannot assign a negative (<=0) weight to the slack bus.");
-            // (taking the slack role does change who is a voltage controller --
-            // is_pseudo_off() answers false for a slack generator whatever its active
-            // power -- but tell_slack_participate_changed() above already rebuilds the
-            // pv/pq split, and the voltage-control plan is built around that split. See
-            // AlgoControl::need_recompute_voltage_control.)
+            // Why `tell_slack_participate_changed()` and nothing about voltage: taking
+            // the slack role is an ACTIVE-power role, but the pv/pq split reads the
+            // slack set directly -- `fillpv` skips a bus that is in
+            // `slack_bus_id_solver` ("slack bus is not PV"), and the PQ loop right
+            // after it skips it too -- so a bus joining or leaving the slack set moves
+            // the split, whatever it does to voltage. That flag is what says so, and
+            // it is measured, not assumed: see the `[pv_pq]` cases in
+            // test_cache_reuse.cpp, which reach a state where it is the only term
+            // raised and fail if it is dropped.
+            //
+            // The voltage side needs no flag of its own for the same reason. It is
+            // real but secondary -- `is_pseudo_off()` answers false for a slack
+            // generator whatever its active power, so a zero-P slack generator IS a
+            // voltage controller where an ordinary one would not be -- and the
+            // voltage-control plan is built around the split this same flag rebuilds.
+            // See AlgoControl::need_recompute_voltage_control.
             if(!gen_slackbus_[gen_id]){ solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed(); }
             gen_slackbus_[gen_id] = true;
             if(abs(gen_slack_weight_[gen_id] - weight) > _tol_equal_float){

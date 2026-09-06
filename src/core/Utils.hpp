@@ -267,16 +267,29 @@ class AlgoControl final
          *
          * Every term is a reason the split itself changes: the system was rebuilt from
          * scratch (`need_reset_solver_`, which `tell_cache_maybe_poisoned()` implies),
-         * the bus set changed (`change_dimension_`), the bus LABELLING changed
-         * (`ybus_change_sparsity_pattern_`, which is what makes
-         * `LSGrid::init_converter_bus_id` run), the slack set moved
+         * the bus set changed (`change_dimension_`), the slack set moved
          * (`slack_participate_changed_`, and the slack is not PV), or a bus changed
          * class (`pv_changed_` / `pq_changed_`).
+         *
+         * `ybus_change_sparsity_pattern_` is deliberately NOT a term, though it looks
+         * like one: it is the flag for "the bus LABELLING may have moved". It is only
+         * ever raised by a BRANCH-side mutation (reconnecting a line or a trafo,
+         * moving one of its ends), and every one of those goes through
+         * `GenericContainer::_apply_and_track_buses`, which raises `change_dimension_`
+         * exactly when such a mutation empties or fills a bus -- which is exactly when
+         * the labelling moves. If no bus crossed, `id_me_to_solver` is unchanged, and a
+         * branch is neither a voltage controller nor a slack, so the split it produces
+         * is identical. The term was there, and dropping it was measured, not argued:
+         * see the `[pv_pq]` cases in `test_cache_reuse.cpp`, which put the grid in a
+         * state where this flag is the ONLY term raised and check the reused split
+         * against a cold one. With the term dropped they still pass; the same
+         * experiment run on `slack_participate_changed_` fails, which is why that one
+         * stays.
          *
          * Read by `LSGrid::_build_into_cache`, which is the only thing that rebuilds it.
          */
         [[nodiscard]] bool need_recompute_pv_pq() const noexcept {
-            return need_reset_solver_ || change_dimension_ || ybus_change_sparsity_pattern_ ||
+            return need_reset_solver_ || change_dimension_ ||
                    slack_participate_changed_ || pv_changed_ || pq_changed_;
         }
 

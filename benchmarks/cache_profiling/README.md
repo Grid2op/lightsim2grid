@@ -183,15 +183,15 @@ raises `need_recompute_sbus` and nothing else).
 
 A/B against the tree as it was, KLU, answers compared bit for bit:
 
-| grid | `inj` (an ordinary step) | `idem` (the floor) |
-|---|---:|---:|
-| case30 | **-4.9%** | -7.9% |
-| case118 | **-8.3%** | -16.9% |
-| case118_fancy | **-7.0%** | -18.6% |
-| case1354pegase | **-3.2%** | -7.3% |
-| case1354pegase_fancy | **-2.6%** | -3.9% |
-| case9241pegase | **-2.2%** | -5.4% |
-| case9241pegase_fancy | **-0.4%** | -0.8% |
+| grid | `inj` (an ordinary step) | `idem` (the floor) | `topo` (a line toggled) |
+|---|---:|---:|---:|
+| case30 | **-4.9%** | -7.9% | -2.3% |
+| case118 | **-8.3%** | -16.9% | -4.9% |
+| case118_fancy | **-7.0%** | -18.6% | -4.0% |
+| case1354pegase | **-3.2%** | -7.3% | -1.9% |
+| case1354pegase_fancy | **-2.6%** | -3.9% | -1.7% |
+| case9241pegase | **-2.2%** | -5.4% | -1.4% |
+| case9241pegase_fancy | **-0.4%** | -0.8% | -0.5% |
 
 The two phases save the *same* number of instructions, to the last one (8,040 on
 case30 up to 2.3M on case9241pegase): what is removed is a fixed per-solve cost,
@@ -206,6 +206,39 @@ took its `error_msg` by `const std::string &` and every call site passes a liter
 longer than libstdc++'s small-string buffer, so `get_V` / `get_Va` / `get_Vm` /
 `compute_pf` / `tell_solver_control` each did a malloc and a free per solve to build
 a string only the error path reads. `const char *` now.
+
+Part of the `topo` column is a third find, and it is the one the benchmark was used
+to *settle* rather than to report. `need_recompute_pv_pq()` listed
+`ybus_change_sparsity_pattern_` -- "the bus labelling may have moved" -- among the
+reasons to rebuild the pv/pq split. It is raised only by branch-side mutations
+(reconnecting a line or a trafo, moving one of its ends), and every one of those
+goes through `GenericContainer::_apply_and_track_buses`, which raises
+`change_dimension_` exactly when the mutation empties or fills a bus -- which is
+exactly when the labelling moves. So the term was subsumed. The argument was checked
+against the grid before it was believed: `src/tests/test_cache_reuse.cpp` reaches a
+state where this flag is the ONLY one of the six raised, solves warm and cold and
+compares, and the predicate was then built both ways. Dropping the term leaves those
+cases green; dropping `slack_participate_changed_` the same way makes them fail, so
+that one stays. What the drop is worth, on its own, on a solve whose cache a
+topology change retired:
+
+| grid | `topo`, term kept | `topo`, term dropped |
+|---|---:|---:|
+| case30 | 440,089 | 436,057 (**-0.9%**) |
+| case118 | 1,470,391 | 1,444,534 (**-1.8%**) |
+| case118_fancy | 2,443,695 | 2,409,714 (**-1.4%**) |
+| case1354pegase | 20,163,544 | 20,013,614 (**-0.7%**) |
+| case1354pegase_fancy | 28,649,453 | 28,470,141 (**-0.6%**) |
+| case9241pegase | 182,113,949 | 181,393,356 (**-0.4%**) |
+| case9241pegase_fancy | 536,874,742 | 536,025,060 (**-0.2%**) |
+
+(the `topo` phase toggles one line, so only every other solve raises the flag at
+all; the answers are bit-identical on all seven grids). A note for whoever measures
+next: the driver links `liblightsim2grid_core.so` with a RUNPATH into its own build
+directory, so two binaries copied out of the SAME build tree load whatever library
+that tree holds at run time, not the one they were built with. A/B either from two
+separate build directories, or with `LD_LIBRARY_PATH` -- which wins over RUNPATH --
+pointing at a saved copy of each library.
 
 ### Algorithms that cannot do voltage control
 

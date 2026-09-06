@@ -218,13 +218,28 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``fill_voltage_control_solver_data`` are unchanged in signature and behaviour and now build a
   throw-away plan -- they are the on-demand form, for callers outside a solve.
 - [ADDED] ``AlgoControl::need_recompute_pv_pq()`` -- must the pv/pq split be rebuilt: the
-  system was rebuilt from scratch, the bus set changed, the bus labelling changed, the slack
-  set moved, or a bus changed class -- and ``need_recompute_voltage_control()``, which is that
-  plus one term. Since the split IS a layer of the voltage-control plan
+  system was rebuilt from scratch, the bus set changed, the slack set moved, or a bus changed
+  class -- and ``need_recompute_voltage_control()``, which is that plus one term. Since the split IS a layer of the voltage-control plan
   (``VoltageControlPlan::build_pv_pq``), whatever rebuilds the split rebuilds the plan: who is
   in a control group and which bus it regulates are exactly the inputs the split reads, and
   there is no way to change one without changing the other. ``LSGrid::_build_into_cache`` asks
   those two and nothing else, so what the powerflow asks and what a test asks cannot drift.
+- [IMPROVED] ``AlgoControl::need_recompute_pv_pq()`` no longer lists
+  ``ybus_change_sparsity_pattern_``. That flag means "the bus LABELLING may have moved", and
+  it is raised only by branch-side mutations (reconnecting a line or a trafo, moving one of
+  its ends) -- every one of which goes through ``GenericContainer::_apply_and_track_buses``,
+  which raises ``change_dimension_`` exactly when the mutation empties or fills a bus, i.e.
+  exactly when the labelling moves. When no bus crossed, ``id_me_to_solver`` comes back
+  identical and a branch is neither a voltage controller nor a slack, so the split it produces
+  is the same one. Measured rather than argued: ``src/tests/test_cache_reuse.cpp`` (tag
+  ``[pv_pq]``) reaches a state where this flag is the ONLY one of the six raised, solves on
+  the reused cache, solves again cold and compares -- and the predicate was built both ways.
+  With the term dropped those cases stay green; the same experiment on
+  ``slack_participate_changed_`` fails them (``GeneratorContainer::fillpv`` skips a bus that is
+  in the slack set, and so does the PQ loop after it), which is why that term stays. Worth
+  **-0.9% / -1.8% / -0.7% / -0.4%** of a topology-changing cached powerflow on
+  case30 / case118 / case1354pegase / case9241pegase, on top of the plan caching above, with
+  bit-identical answers.
 - [ADDED] ``AlgoControl::tell_voltage_control_changed()`` / ``has_voltage_control_changed()``:
   the one term the pv/pq flags do not carry, a voltage SETPOINT. Moving a remote regulator's
   target changes no bus' pv/pq class at all -- that is the point of the bordered formulation,
