@@ -813,10 +813,11 @@ TEST_CASE("a divergence recovers under every built-in AC algorithm", "[LSGrid][c
     // check_solution() is thrown into the sequence on purpose: it runs the same
     // pre-processing without ever calling the algorithm, so it must not consume
     // the "rebuild your internals" the diverged solve asked for.
-    // The fast-decoupled solvers do not support the hvdc angle droop that line 1
-    // of this grid has enabled: disconnect it, on the test grid and on its
-    // reference alike.
-    const auto disable_droop = [](LSGrid & g){ g.deactivate_dcline(1); };
+    // The fast-decoupled solvers support neither the hvdc angle droop that line 1
+    // of this grid has enabled nor the voltage-mode SVC it carries (they hold no
+    // NRSystem, so no Hvdc and no VoltageControl extension); ac_pf refuses both by
+    // name. Disconnect them, on the test grid and on its reference alike.
+    const auto disable_droop = [](LSGrid & g){ g.deactivate_dcline(1); g.deactivate_svc(0); };
     for(const auto algo : {AlgorithmType::NR_SparseLU,
                            AlgorithmType::NRSing_SparseLU,
                            AlgorithmType::FDPF_XB_SparseLU,
@@ -888,11 +889,14 @@ namespace {
 class ThrowingAcAlgo : public ls2g::BaseAlgo {
 public:
     ThrowingAcAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
-    // ac_pf rejects an angle-droop grid handed to a solver that cannot do droop,
-    // and the exotic test grid has three hvdc lines. That rejection happens BEFORE
-    // the solve begins -- nothing has been touched yet, so nothing needs
-    // invalidating -- which is exactly the throw this test must NOT be measuring.
+    // ac_pf has two pre-flight guards: it rejects an angle-droop grid handed to a
+    // solver that cannot do droop, and a voltage-control one handed to a solver with
+    // no bordered block. The exotic test grid has three hvdc lines AND a voltage-mode
+    // SVC, so both would fire. They fire BEFORE the solve begins -- nothing has been
+    // touched yet, so nothing needs invalidating -- which is exactly the throw this
+    // test must NOT be measuring. These doubles stand in for a full-featured solver.
     bool supports_hvdc_droop() const noexcept override { return true; }
+    bool supports_remote_voltage_control() const noexcept override { return true; }
     bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
                     const Eigen::Ref<const CplxVect> & /*V*/,
                     const Eigen::Ref<const CplxVect> & /*Sbus*/,
@@ -912,6 +916,7 @@ class WrongSizeAcAlgo : public ls2g::BaseAlgo {
 public:
     WrongSizeAcAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
     bool supports_hvdc_droop() const noexcept override { return true; }  // see ThrowingAcAlgo
+    bool supports_remote_voltage_control() const noexcept override { return true; }  // idem
     bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
                     const Eigen::Ref<const CplxVect> & V,
                     const Eigen::Ref<const CplxVect> & /*Sbus*/,
@@ -959,6 +964,7 @@ class FailsOnSecondCallAlgo : public ls2g::BaseAlgo {
 public:
     FailsOnSecondCallAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
     bool supports_hvdc_droop() const noexcept override { return true; }  // see ThrowingAcAlgo
+    bool supports_remote_voltage_control() const noexcept override { return true; }  // idem
     bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
                     const Eigen::Ref<const CplxVect> & V,
                     const Eigen::Ref<const CplxVect> & /*Sbus*/,
@@ -1119,5 +1125,184 @@ TEST_CASE("a powerflow that throws leaves both families needing a full rebuild",
         REQUIRE(solve_dc(grid).size() == 14);
         CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // untouched
         CHECK_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 8. which terms does need_recompute_pv_pq() actually need?
+// ---------------------------------------------------------------------------
+//
+// `AlgoControl::need_recompute_pv_pq()` names the reasons the pv/pq split -- and so
+// the voltage-control plan built around it -- is rebuilt. Two terms were disputed in
+// review: `ybus_change_sparsity_pattern_` (raised when a branch is reconnected or one
+// of its ends is moved) and `slack_participate_changed_` (a slack that is not the
+// reference bus: what has it to do with the split?).
+//
+// An argument is not evidence, so: evidence. The only way to attribute a rebuild to
+// ONE term is to reach a state where that term is raised and the other five are not
+// -- otherwise the neighbour does the work and the term under test is redundant
+// whatever the physics says. So each case below asserts the whole vector of six
+// first, then does the comparison:
+//
+//   * solve, so the cache describes the grid;
+//   * apply the action, and check exactly which terms it raised;
+//   * solve WARM (on the cache the action left behind);
+//   * throw the cache away and solve COLD;
+//   * require the two answers to agree.
+//
+// A term still IN the predicate makes both paths rebuild, so the comparison is
+// trivially true and the case is a guard: it fails the day the term is dropped by
+// someone who did not check. A term that has been dropped makes the warm path really
+// reuse the split, and the case is a live regression test. The verdict was reached by
+// building the predicate both ways and running exactly these cases against each:
+//
+//   dropping `ybus_change_sparsity_pattern_`  -> both cases still pass  -> dropped
+//   dropping `slack_participate_changed_`     -> both cases fail        -> kept
+//
+// so the first TEST_CASE below is now live and the second is a guard.
+//
+// (`pq_changed_` is a seventh question that answers itself: nothing in the library
+// ever raises it except `tell_all_changed()`, which raises `need_reset_solver_` too.
+// It is kept because it is the honest name for "a bus changed class", and a caller
+// or a future container may raise it; it is simply never on its own today.)
+
+namespace {
+
+/// the six terms of AlgoControl::need_recompute_pv_pq(), read off one grid
+struct PvPqTerms {
+    bool reset = false;
+    bool dimension = false;
+    bool sparsity = false;
+    bool slack_participate = false;
+    bool pv = false;
+    bool pq = false;
+};
+
+PvPqTerms ac_pv_pq_terms(const LSGrid & grid)
+{
+    const ls2g::AlgoControl & control = grid.get_ac_algo_controler();
+    PvPqTerms terms;
+    terms.reset = control.need_reset_solver();
+    terms.dimension = control.has_dimension_changed();
+    terms.sparsity = control.ybus_change_sparsity_pattern();
+    terms.slack_participate = control.has_slack_participate_changed();
+    terms.pv = control.has_pv_changed();
+    terms.pq = control.has_pq_changed();
+    return terms;
+}
+
+/// solve on the cache as it stands, then throw the cache away and solve again
+CplxVect warm_then_cold(LSGrid & grid, CplxVect & cold_out)
+{
+    const CplxVect warm = solve_ac(grid);
+    grid.tell_solver_need_reset();
+    cold_out = solve_ac(grid);
+    return warm;
+}
+
+void check_warm_equals_cold(LSGrid & grid)
+{
+    CplxVect cold;
+    const CplxVect warm = warm_then_cold(grid, cold);
+    REQUIRE(warm.size() == 14);
+    REQUIRE(cold.size() == 14);
+    CHECK((warm - cold).norm() < 1e-9);
+}
+
+}  // namespace
+
+TEST_CASE("ybus_change_sparsity_pattern, on its own, does not move the split",
+          "[LSGrid][cache_reuse][pv_pq]")
+{
+    // Raised by TwoSidesContainer_rxh_A::_reactivate and
+    // OneSideContainer_forBranch::_reactivate / _change_bus -- reconnecting a branch,
+    // or moving one of its ends. Line 3 of the exotic grid joins two buses that both
+    // carry other elements, so opening and closing it leaves the bus SET alone and
+    // `change_dimension_` stays down: that is what makes the term isolable at all.
+    //
+    // VERDICT: both cases pass with the term dropped, so it IS dropped -- and these
+    // two cases are what now holds the reuse honest. It was redundant because every
+    // raiser goes through GenericContainer::_apply_and_track_buses, which raises
+    // change_dimension_ exactly when the mutation empties or fills a bus, which is
+    // exactly when the labelling moves. When no bus crossed, id_me_to_solver is
+    // unchanged and a branch is neither a voltage controller nor a slack, so the old
+    // split still describes the grid -- which is what these two cases check for real.
+    SECTION("a line is reconnected"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        grid.deactivate_powerline(3);
+        REQUIRE(solve_ac(grid).size() == 14);   // the cache now describes the open grid
+
+        grid.reactivate_powerline(3);
+        const PvPqTerms terms = ac_pv_pq_terms(grid);
+        CHECK(terms.sparsity);                  // the term under test ...
+        CHECK_FALSE(terms.reset);               // ... and only it
+        CHECK_FALSE(terms.dimension);
+        CHECK_FALSE(terms.slack_participate);
+        CHECK_FALSE(terms.pv);
+        CHECK_FALSE(terms.pq);
+
+        check_warm_equals_cold(grid);
+    }
+    SECTION("one end of a trafo is moved to another bus"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+
+        grid.change_bus1_trafo(0, GridModelBusId(3));
+        const PvPqTerms terms = ac_pv_pq_terms(grid);
+        CHECK(terms.sparsity);
+        CHECK_FALSE(terms.reset);
+        CHECK_FALSE(terms.dimension);
+        CHECK_FALSE(terms.slack_participate);
+        CHECK_FALSE(terms.pv);
+        CHECK_FALSE(terms.pq);
+
+        check_warm_equals_cold(grid);
+    }
+}
+
+TEST_CASE("slack_participate_changed, on its own, DOES move the split",
+          "[LSGrid][cache_reuse][pv_pq]")
+{
+    // The other disputed term, and this one earns its place. It is not about the
+    // reference bus: `GeneratorContainer::fillpv` skips a bus that is in
+    // `slack_bus_id_solver`, and the PQ loop right after it does too, so a bus that
+    // has just become slack must leave both lists and one that has just stopped being
+    // slack must join one of them. Move the slack set and the split moves with it.
+    //
+    // VERDICT: dropping this term makes both cases fail -- the warm solve keeps a
+    // split in which the old slack bus is still absent and the new one still PV -- so
+    // the term stays, and these two cases are the guard that says why.
+    SECTION("the slack moves to another generator"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+
+        ls2g::IntVect other_slack(1);
+        other_slack << 1;
+        grid.update_slack_weights_by_id(other_slack);
+        const PvPqTerms terms = ac_pv_pq_terms(grid);
+        CHECK(terms.slack_participate);         // the term under test ...
+        CHECK_FALSE(terms.reset);               // ... and only it
+        CHECK_FALSE(terms.dimension);
+        CHECK_FALSE(terms.sparsity);
+        CHECK_FALSE(terms.pv);
+        CHECK_FALSE(terms.pq);
+
+        check_warm_equals_cold(grid);
+    }
+    SECTION("a second generator joins the slack"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+
+        grid.add_gen_slackbus(1, 1.0);
+        const PvPqTerms terms = ac_pv_pq_terms(grid);
+        CHECK(terms.slack_participate);
+        CHECK_FALSE(terms.reset);
+        CHECK_FALSE(terms.dimension);
+        CHECK_FALSE(terms.sparsity);
+        CHECK_FALSE(terms.pv);
+        CHECK_FALSE(terms.pq);
+
+        check_warm_equals_cold(grid);
     }
 }

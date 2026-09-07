@@ -310,6 +310,7 @@ add_library(lightsim2grid_core SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/DataConverter.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SubstationContainer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/BinaryArchive.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/VoltageControlPlan.cpp"
     ${SOURCES}
 )
 

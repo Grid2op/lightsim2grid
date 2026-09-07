@@ -228,6 +228,10 @@ bool SvcContainer::_deactivate(int svc_id, DualAlgoControl & solver_control)
         if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
             solver_control.ac_algo_controler().tell_pv_changed();
             solver_control.dc_algo_controler().tell_pv_changed();
+            // (a voltage-mode SVC is ALWAYS a group controller, so this creates or
+            // dissolves the group at the bus it regulates -- which the pv/pq split,
+            // and the voltage-control plan built around it, follow from the flags
+            // above.)
         }
         return true;
     }
@@ -244,6 +248,10 @@ bool SvcContainer::_reactivate(int svc_id, DualAlgoControl & solver_control)
         if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
             solver_control.ac_algo_controler().tell_pv_changed();
             solver_control.dc_algo_controler().tell_pv_changed();
+            // (a voltage-mode SVC is ALWAYS a group controller, so this creates or
+            // dissolves the group at the bus it regulates -- which the pv/pq split,
+            // and the voltage-control plan built around it, follow from the flags
+            // above.)
         }
         return true;
     }

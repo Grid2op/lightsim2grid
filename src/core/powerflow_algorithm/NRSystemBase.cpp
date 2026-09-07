@@ -29,11 +29,18 @@ void Base::update_state(
 {
     // Slack buses not pinned by a LOCAL voltage-regulating generator need a
     // free Vm unknown + Q equation (added in register_in), exactly like an
-    // ordinary PQ bus. See LSGrid::get_free_vm_slack_solver_buses for the
+    // ordinary PQ bus. See VoltageControlPlan::free_vm_slack_buses for the
     // exact criterion (GeneratorContainer::gen_is_local_voltage_controller).
+    //
+    // READ, not re-derived: this is layer 2 of the plan the grid built into its AC
+    // cache during pre_process_solver, in the very labelling this solve runs in.
+    // Deriving it here walked every generator of the grid a second time (and
+    // VoltageControl::update_state walked them a third and a fourth), for an answer
+    // that cannot have changed since -- nothing touches the grid between
+    // pre_process_solver and compute_pf.
     free_vm_slack_buses_.clear();
     if (lsgrid_ptr != nullptr)
-        free_vm_slack_buses_ = lsgrid_ptr->get_free_vm_slack_solver_buses();
+        free_vm_slack_buses_ = lsgrid_ptr->get_ac_voltage_control_plan().free_vm_slack_buses();
 }
 
 } // namespace ls2g

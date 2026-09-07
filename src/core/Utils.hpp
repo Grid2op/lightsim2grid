@@ -108,7 +108,8 @@ class AlgoControl final
             ybus_some_coeffs_zero_(true),
             ybus_change_sparsity_pattern_(true),
             one_el_change_bus_(true),
-            cache_maybe_poisoned_(true)
+            cache_maybe_poisoned_(true),
+            voltage_control_changed_(true)
             {};
 
         ~AlgoControl() noexcept = default;
@@ -127,6 +128,7 @@ class AlgoControl final
             ybus_change_sparsity_pattern_ = true;
             one_el_change_bus_ = true;
             cache_maybe_poisoned_ = true;
+            voltage_control_changed_ = true;
         }
 
         /**
@@ -145,7 +147,7 @@ class AlgoControl final
                    !need_recompute_sbus_ && !need_recompute_ybus_ && !v_changed_ &&
                    !slack_weight_changed_ && !ybus_some_coeffs_zero_ &&
                    !ybus_change_sparsity_pattern_ && !one_el_change_bus_ &&
-                   !cache_maybe_poisoned_;
+                   !cache_maybe_poisoned_ && !voltage_control_changed_;
         }
 
         void tell_none_changed(){
@@ -162,6 +164,7 @@ class AlgoControl final
             ybus_change_sparsity_pattern_ = false;
             one_el_change_bus_ = false;
             cache_maybe_poisoned_ = false;
+            voltage_control_changed_ = false;
         }
 
         // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes)
@@ -189,6 +192,24 @@ class AlgoControl final
         // might need to trigger some recomputation of some solvers (eg NR based ones)
         void tell_ybus_some_coeffs_zero(){ybus_some_coeffs_zero_ = true;}
         void tell_one_el_changed_bus(){one_el_change_bus_ = true;}
+        /**
+         * A voltage SETPOINT a control group's bordered rows carry has moved: a
+         * regulating generator's or hvdc converter station's target magnitude.
+         *
+         * Deliberately narrow, and deliberately NOT raised for everything the
+         * voltage-control plan is made of. Who is in a group, and which bus a group
+         * regulates, are the same inputs the pv/pq split reads -- and since that split
+         * IS a layer of the plan (VoltageControlPlan::build_pv_pq), a change to one is
+         * a change to the other, already carried by `pv_changed_` and friends. See
+         * `need_recompute_pv_pq()`. What those flags do NOT carry is a setpoint: moving
+         * a remote regulator's target changes no bus' pv/pq class at all -- that is the
+         * point of the bordered formulation, the regulated bus stays PQ -- so it needs
+         * a flag of its own, and this is it.
+         *
+         * If you add an input to the plan that the pv/pq split does not read, raise
+         * this from the modifier that moves it.
+         */
+        void tell_voltage_control_changed(){voltage_control_changed_ = true;}
         /**
          * The per-bus element counts may no longer be what the elements say.
          *
@@ -238,6 +259,66 @@ class AlgoControl final
         bool has_one_el_changed_bus() const {return one_el_change_bus_;}
         // see tell_cache_maybe_poisoned()
         bool cache_maybe_poisoned() const {return cache_maybe_poisoned_;}
+        // see tell_voltage_control_changed()
+        bool has_voltage_control_changed() const {return voltage_control_changed_;}
+
+        /**
+         * Must the pv/pq split be rebuilt?
+         *
+         * Every term is a reason the split itself changes: the system was rebuilt from
+         * scratch (`need_reset_solver_`, which `tell_cache_maybe_poisoned()` implies),
+         * the bus set changed (`change_dimension_`), the slack set moved
+         * (`slack_participate_changed_`, and the slack is not PV), or a bus changed
+         * class (`pv_changed_` / `pq_changed_`).
+         *
+         * `ybus_change_sparsity_pattern_` is deliberately NOT a term, though it looks
+         * like one: it is the flag for "the bus LABELLING may have moved". It is only
+         * ever raised by a BRANCH-side mutation (reconnecting a line or a trafo,
+         * moving one of its ends), and every one of those goes through
+         * `GenericContainer::_apply_and_track_buses`, which raises `change_dimension_`
+         * exactly when such a mutation empties or fills a bus -- which is exactly when
+         * the labelling moves. If no bus crossed, `id_me_to_solver` is unchanged, and a
+         * branch is neither a voltage controller nor a slack, so the split it produces
+         * is identical. The term was there, and dropping it was measured, not argued:
+         * see the `[pv_pq]` cases in `test_cache_reuse.cpp`, which put the grid in a
+         * state where this flag is the ONLY term raised and check the reused split
+         * against a cold one. With the term dropped they still pass; the same
+         * experiment run on `slack_participate_changed_` fails, which is why that one
+         * stays.
+         *
+         * Read by `LSGrid::_build_into_cache`, which is the only thing that rebuilds it.
+         */
+        [[nodiscard]] bool need_recompute_pv_pq() const noexcept {
+            return need_reset_solver_ || change_dimension_ ||
+                   slack_participate_changed_ || pv_changed_ || pq_changed_;
+        }
+
+        /**
+         * Must the voltage-control plan be rebuilt, or does the one the previous solve
+         * of this family left in its cache still describe the grid?
+         *
+         * The pv/pq split is a LAYER of that plan (VoltageControlPlan::build_pv_pq), so
+         * whatever rebuilds the split rebuilds the plan -- that is the first half, and
+         * it is not a grab-bag of loosely-related flags but literally the same question
+         * asked one layer down. Whoever is in a control group, and which bus it
+         * regulates, are exactly the inputs the split reads; there is no way to change
+         * one without changing the other.
+         *
+         * The second half is what the split does NOT read: a setpoint. See
+         * `tell_voltage_control_changed()`.
+         *
+         * What is deliberately in NEITHER half is the set of changes an ordinary
+         * grid2op step makes: moving a load's P and Q raises `need_recompute_sbus_` and
+         * nothing else, so the plan survives such a step untouched -- which is the
+         * whole point of caching it.
+         *
+         * All-or-nothing on purpose: the plan's layers are rebuilt together or not at
+         * all. Refreshing only the setpoints of an otherwise unchanged group layout is
+         * a finer question this does not try to answer yet.
+         */
+        [[nodiscard]] bool need_recompute_voltage_control() const noexcept {
+            return need_recompute_pv_pq() || voltage_control_changed_;
+        }
 
     private:    
         bool change_dimension_;
@@ -253,6 +334,7 @@ class AlgoControl final
         bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
         bool one_el_change_bus_;  // whether one element has change of bus (or being reconnected / disconnected)
         bool cache_maybe_poisoned_;  // the per-bus element counts may have drifted: see tell_cache_maybe_poisoned()
+        bool voltage_control_changed_;  // an input of the voltage-control plan moved: see tell_voltage_control_changed()
 };
 
 /**

@@ -727,6 +727,7 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
         exc_ << "fast-decoupled ones). Please `change_algorithm` or disable the droop.";
         throw std::runtime_error(exc_.str());
     }
+    if(!_algo.supports_remote_voltage_control()) _throw_if_voltage_control_needed();
     bool conv = false;
     CplxVect res = CplxVect();
 
@@ -739,9 +740,9 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
     // could tell a half-built cache from a whole one.
     //
     // So do not try to undo it: make the grid's change tracking say "everything
-    // changed" for the duration of the solve, and run the solve off a COPY (24
-    // bools -- three register-sized stores; nothing measurable next to the millions
-    // of instructions that follow). The copy is what pre_process reads, what the
+    // changed" for the duration of the solve, and run the solve off a COPY (a
+    // couple of dozen bools -- a handful of register-sized stores; nothing
+    // measurable next to the millions of instructions that follow). The copy is what pre_process reads, what the
     // algorithm is told, and what process_results marks as in sync. It becomes the
     // grid's change tracking again only at the publication statement below, which
     // is reachable only if nothing threw.
@@ -882,320 +883,95 @@ void fill_hvdc_droop_data_from_grid(const LSGrid * lsgrid_ptr, HvdcDroopSolverDa
     if(lsgrid_ptr != nullptr) lsgrid_ptr->fill_hvdc_droop_solver_data(data, ac);
 }
 
+// ---------------------------------------------------------------------------
+// The three voltage-control queries below are the SAME object seen from three
+// altitudes (VoltageControlPlan: the group layout, the free-Vm slack set built
+// on it, and the controller list built on both). A powerflow does not come
+// through here at all: _build_into_cache builds ONE plan into the cache, and the
+// NR extensions read that one (see get_ac_voltage_control_plan).
+//
+// What is left here is the on-demand form: a fresh plan, built and thrown away,
+// for callers outside a solve -- the python-facing ground truth, and the tests
+// that ask the question of a grid that has not solved yet. Correct at any time,
+// and priced accordingly: it walks every generator and every SVC of the grid.
+// ---------------------------------------------------------------------------
+
 void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, bool ac) const
 {
     data.clear();
     if(!ac) return;  // DC: no voltage control (no-op, SVC contributes nothing)
-    const SolverBusIdVect & id_me_to_solver = ac_cache_.id_me_to_solver;
-    const int nb_bus_solver = static_cast<int>(ac_cache_.id_solver_to_me.size());
-    if(nb_bus_solver == 0) return;
+    VoltageControlPlan plan;
+    plan.build_groups(generators_, svcs_);
+    plan.build_solver_side(generators_, svcs_, hvdc_lines_,
+                           ac_cache_.id_me_to_solver, ac_cache_.id_solver_to_me,
+                           ac_cache_.slack_bus_id_solver, ac_cache_.bus_pq);
+    data = plan.controllers();
+}
 
-    // PQ membership: a bus owns a Q equation AND a Vm unknown iff it is a PQ bus
-    // (PV buses have only theta/P, the slack none). ac_cache_.bus_pq is set by fillpv_pq.
-    std::vector<bool> is_pq(nb_bus_solver, false);
-    for(int k = 0; k < static_cast<int>(ac_cache_.bus_pq.size()); ++k){
-        const int b = ac_cache_.bus_pq(k).cast_int();
-        if(b >= 0 && b < nb_bus_solver) is_pq[b] = true;
-    }
-    // Slack buses are not PQ in the base block, but a slack bus that is not pinned
-    // by a local PV generator is given a Q equation + free Vm by the MultiSlack
-    // extension (see LSGrid::get_free_vm_slack_solver_buses), so a controller on
-    // such a slack bus is supported even though `is_pq` is false there. A slack
-    // bus that IS locally pinned (another generator regulates it directly) gets
-    // no such Q equation at all -- checking membership of the whole `slack_bus_
-    // id_ac_solver_` list here (as opposed to just this "free" subset) would
-    // wrongly accept that case: its Q equation lookup then resolves to -1, the
-    // controller's own reactive-injection column ends up with no Jacobian entry
-    // anywhere, and the factorization fails with ErrorType::SolverFactor instead
-    // of this function's own clear error.
-    const std::set<int> free_vm_slack = get_free_vm_slack_solver_buses();
-    std::vector<bool> has_free_q(nb_bus_solver, false);
-    for(int b : free_vm_slack){
-        if(b >= 0 && b < nb_bus_solver) has_free_q[b] = true;
-    }
+void LSGrid::_throw_if_voltage_control_needed() const
+{
+    // The selected algorithm has no bordered block (fast-decoupled, Gauss-Seidel, a
+    // plugin that does not claim the capability). Silently dropping the controllers
+    // would not be a slower answer, it would be a WRONG one and a plausible-looking
+    // one: taking the regulated bus out of PV leaves nothing pinning its magnitude,
+    // and the solve converges somewhere else entirely (measured at 0.36 pu away on a
+    // case118 with eight control groups). Leaving the bus PV instead is no better --
+    // the setpoint would be applied to the wrong bus.
+    //
+    // Nor is there an honest way to rewrite the grid on the caller's behalf: turning
+    // the regulator off changes the reactive dispatch, and pointing it at its own bus
+    // needs a setpoint nobody has (the one it carries is the target for a DIFFERENT
+    // bus). So: refuse, and name everything affected so the caller can decide.
+    VoltageControlPlan plan;
+    plan.build_groups(generators_, svcs_);
+    const VoltageControlPlan::Unsupported bad = plan.list_unsupported(generators_, svcs_, hvdc_lines_);
+    if(bad.empty()) return;
 
-    // 1. collect the active voltage-mode controllers (generators and voltage-mode
-    //    SVCs). Per controller: solver bus, regulated solver bus, v_set (pu),
-    //    sharing key, kind, elem id.
-    struct Raw { int bus; int reg_bus; real_type v_set; real_type slope; real_type weight; int kind; int elem_id; };
-    std::vector<Raw> raws;
-    // Buses whose magnitude a group sets rather than the PV path. Every ACTIVE
-    // voltage regulator aiming at one of them is a member of its group -- including
-    // a LOCAL one, which fillpv_pq consequently did not let pin its own bus.
-    const std::set<int> group_reg = get_group_controlled_buses();
-    const int nb_gen = static_cast<int>(generators_.nb());
-    const GlobalBusIdVect & gen_buses = generators_.get_buses();
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        // remote regulators are always controllers; a local one only when the bus it
-        // regulates is group-controlled (something else remote/an SVC aims at it too)
-        if(!generators_.gen_is_voltage_controller(gen_id)){
-            if(!generators_.gen_is_local_voltage_controller(gen_id)) continue;
-            if(!group_reg.count(generators_.get_regulated_bus_id(gen_id))) continue;
-        }
-        const int ctrl_grid = gen_buses(gen_id).cast_int();
-        const int reg_grid  = generators_.get_regulated_bus_id(gen_id);
-        const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
-        const int reg_solver  = (reg_grid >= 0) ? id_me_to_solver[reg_grid].cast_int()
-                                                : GenericContainer::_deactivated_bus_id;
-        if(ctrl_solver == GenericContainer::_deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "LSGrid::fill_voltage_control_solver_data: generator " << gen_id
-                 << " is a voltage controller but its bus is disconnected.";
-            throw std::runtime_error(exc_.str());
-        }
-        if(reg_solver == GenericContainer::_deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "LSGrid::fill_voltage_control_solver_data: generator " << gen_id
-                 << " regulates a disconnected bus.";
-            throw std::runtime_error(exc_.str());
-        }
-        if(!is_pq[ctrl_solver] && !has_free_q[ctrl_solver]){
-            std::ostringstream exc_;
-            exc_ << "LSGrid::fill_voltage_control_solver_data: generator " << gen_id
-                 << " regulates a remote bus but its OWN bus has no reactive (Q) equation"
-                    " (it is a PV bus that is not a slack, or a slack bus already locally"
-                    " pinned by another voltage-regulating generator). This is not supported"
-                    " in v1.";
-            throw std::runtime_error(exc_.str());
-        }
-        // The regulated bus needs a Vm unknown for the bordered row to act on. An
-        // ordinary PQ bus has one; so does a slack bus that nothing pins locally,
-        // courtesy of the MultiSlack extension (same escape hatch as the controller
-        // bus just above -- `has_free_q`). A bus that is PV despite being
-        // group-controlled cannot occur any more (fillpv_pq reclassifies it), so
-        // what is left here is a bus pinned by something that cannot be enrolled.
-        if(!is_pq[reg_solver] && !has_free_q[reg_solver]){
-            std::ostringstream exc_;
-            exc_ << "LSGrid::fill_voltage_control_solver_data: generator " << gen_id
-                 << " regulates bus " << reg_grid << " which has no voltage (Vm) unknown"
-                    " (its magnitude is pinned by something that cannot join a control"
-                    " group). This is not supported in v1.";
-            throw std::runtime_error(exc_.str());
-        }
-        const real_type w = generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id);
-        raws.push_back({ctrl_solver, reg_solver, generators_.get_target_vm_pu(gen_id),
-                        static_cast<real_type>(0.), w, VoltageControlSolverData::GEN, gen_id});
+    std::ostringstream exc_;
+    exc_ << "LSGrid::ac_pf: this grid uses voltage control that only the Newton-Raphson "
+            "algorithms implement (a generator or an hvdc converter station regulating a "
+            "bus other than its own, several machines regulating the same bus, or a "
+            "voltage-mode SVC), and the selected algorithm '" << _algo.get_name()
+         << "' does not. Concerned elements:";
+    if(!bad.gen_ids.empty()){
+        exc_ << " generator(s)";
+        for(int gen_id : bad.gen_ids) exc_ << " " << gen_id;
+        exc_ << " (regulating a remote bus);";
     }
-
-    // ... and the active VOLTAGE-mode SVCs (local or remote, with or without slope)
-    const int nb_svc = static_cast<int>(svcs_.nb());
-    const GlobalBusIdVect & svc_buses = svcs_.get_buses();
-    for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
-        if(!svcs_.svc_is_voltage_controller(svc_id)) continue;
-        const int ctrl_grid = svc_buses(svc_id).cast_int();
-        const int reg_grid  = svcs_.get_regulated_bus_id(svc_id);
-        const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
-        const int reg_solver  = (reg_grid >= 0) ? id_me_to_solver[reg_grid].cast_int()
-                                                : GenericContainer::_deactivated_bus_id;
-        if(ctrl_solver == GenericContainer::_deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "LSGrid::fill_voltage_control_solver_data: SVC " << svc_id
-                 << " is a voltage controller but its bus is disconnected.";
-            throw std::runtime_error(exc_.str());
-        }
-        if(reg_solver == GenericContainer::_deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "LSGrid::fill_voltage_control_solver_data: SVC " << svc_id
-                 << " regulates a disconnected bus.";
-            throw std::runtime_error(exc_.str());
-        }
-        // same two escape hatches as the generator branch above: a slack bus that
-        // nothing pins locally owns a Q equation and a free Vm (MultiSlack)
-        if(!is_pq[ctrl_solver] && !has_free_q[ctrl_solver]){
-            std::ostringstream exc_;
-            exc_ << "LSGrid::fill_voltage_control_solver_data: SVC " << svc_id
-                 << " is at a bus with no reactive (Q) equation (it is a PV bus, or a slack"
-                    " bus pinned by a local voltage-regulating generator)."
-                    " This is not supported in v1.";
-            throw std::runtime_error(exc_.str());
-        }
-        if(!is_pq[reg_solver] && !has_free_q[reg_solver]){
-            std::ostringstream exc_;
-            exc_ << "LSGrid::fill_voltage_control_solver_data: SVC " << svc_id
-                 << " regulates bus " << reg_grid << " which has no voltage (Vm) unknown"
-                    " (its magnitude is pinned by something that cannot join a control"
-                    " group). This is not supported in v1.";
-            throw std::runtime_error(exc_.str());
-        }
-        const real_type w = svcs_.get_b_max(svc_id) - svcs_.get_b_min(svc_id);
-        raws.push_back({ctrl_solver, reg_solver, svcs_.get_target_vm_pu(svc_id),
-                        svcs_.get_slope_pu(svc_id), w, VoltageControlSolverData::SVC, svc_id});
+    if(!bad.svc_ids.empty()){
+        exc_ << " SVC(s)";
+        for(int svc_id : bad.svc_ids) exc_ << " " << svc_id;
+        exc_ << " (voltage mode);";
     }
-
-    // ... and the voltage-regulating hvdc converter stations. A VSC station with
-    // voltage_regulator_on pins its own bus through the PV path, exactly like a local
-    // generator, so it is a controller only when a GROUP regulates that bus instead
-    // (fillpv_pq then kept the bus out of PV and it needs its members). Its sharing
-    // key is a reactive range in MVAr -- the same currency as a generator's -- so a
-    // mixed generator/station group shares reactive power correctly, unlike an SVC
-    // (whose key is a susceptance range; hence the SVC-alone restriction below).
-    const int nb_hvdc = static_cast<int>(hvdc_lines_.nb());
-    for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
-        for(int side = 1; side <= 2; ++side){
-            if(!hvdc_lines_.station_is_voltage_controller(hvdc_id, side)) continue;
-            const int ctrl_grid = hvdc_lines_.get_station_bus(hvdc_id, side).cast_int();
-            // not group-controlled: the station keeps pinning its bus the classical way
-            if(!group_reg.count(ctrl_grid)) continue;
-            if(ctrl_grid == GenericContainer::_deactivated_bus_id) continue;
-            const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
-            if(ctrl_solver == GenericContainer::_deactivated_bus_id){
-                std::ostringstream exc_;
-                exc_ << "LSGrid::fill_voltage_control_solver_data: hvdc line " << hvdc_id
-                     << " side " << side << " regulates voltage but its bus is disconnected.";
-                throw std::runtime_error(exc_.str());
-            }
-            if(!is_pq[ctrl_solver] && !has_free_q[ctrl_solver]){
-                std::ostringstream exc_;
-                exc_ << "LSGrid::fill_voltage_control_solver_data: hvdc line " << hvdc_id
-                     << " side " << side << " takes part in a voltage-control group but its"
-                        " bus has no reactive (Q) equation. This is not supported in v1.";
-                throw std::runtime_error(exc_.str());
-            }
-            const int kind = (side == 1) ? VoltageControlSolverData::HVDC_SIDE_1
-                                         : VoltageControlSolverData::HVDC_SIDE_2;
-            raws.push_back({ctrl_solver, ctrl_solver,   // a station regulates its OWN bus
-                            hvdc_lines_.get_station_target_vm_pu(hvdc_id, side),
-                            static_cast<real_type>(0.),
-                            hvdc_lines_.get_station_q_range_mvar(hvdc_id, side),
-                            kind, hvdc_id});
-        }
+    if(!bad.station_ids.empty()){
+        exc_ << " hvdc converter station(s)";
+        for(const auto & station : bad.station_ids) exc_ << " " << station.first << "/side" << station.second;
+        exc_ << " (enrolled in a control group);";
     }
-    if(raws.empty()) return;
-
-    // 2. group by regulated solver bus (merge gens that share a regulated bus),
-    //    checking the v_set agree within tolerance.
-    std::vector<int> grp_reg;
-    std::vector<real_type> grp_vset;
-    std::vector<std::vector<int> > grp_members;  // indices into raws
-    for(int i = 0; i < static_cast<int>(raws.size()); ++i){
-        int g = -1;
-        for(int gg = 0; gg < static_cast<int>(grp_reg.size()); ++gg)
-            if(grp_reg[gg] == raws[i].reg_bus){ g = gg; break; }
-        if(g == -1){
-            g = static_cast<int>(grp_reg.size());
-            grp_reg.push_back(raws[i].reg_bus);
-            grp_vset.push_back(raws[i].v_set);
-            grp_members.push_back(std::vector<int>());
-        } else if(std::abs(grp_vset[g] - raws[i].v_set) > BaseConstants::_tol_equal_float){
-            std::ostringstream exc_;
-            exc_ << "LSGrid::fill_voltage_control_solver_data: several controllers regulate the"
-                    " same bus with conflicting voltage setpoints (" << grp_vset[g] << " vs "
-                 << raws[i].v_set << " pu).";
-            throw std::runtime_error(exc_.str());
-        }
-        grp_members[g].push_back(i);
-    }
-
-    // 2b. v1 restriction: an SVC may only be ALONE in its control group. The
-    //     cross-weight sharing of an SVC with other controllers (and any sloped
-    //     SVC sharing a regulated bus, cf Phase 0 probe #3) is not supported yet.
-    for(int g = 0; g < static_cast<int>(grp_members.size()); ++g){
-        if(grp_members[g].size() <= 1) continue;
-        for(int idx : grp_members[g]){
-            if(raws[idx].kind == VoltageControlSolverData::SVC){
-                std::ostringstream exc_;
-                exc_ << "LSGrid::fill_voltage_control_solver_data: SVC " << raws[idx].elem_id
-                     << " shares a regulated bus with other controllers, which is not"
-                        " supported in v1 (an SVC must be the only controller of its bus).";
-                throw std::runtime_error(exc_.str());
-            }
-        }
-    }
-
-    // 3. emit, controllers grouped contiguously
-    const int ng = static_cast<int>(grp_reg.size());
-    const int nc = static_cast<int>(raws.size());
-    data.bus = Eigen::VectorXi(nc);
-    data.kind = Eigen::VectorXi(nc);
-    data.elem_id = Eigen::VectorXi(nc);
-    data.slope = RealVect(nc);
-    data.weight = RealVect(nc);
-    data.group = Eigen::VectorXi(nc);
-    data.reg_bus = Eigen::VectorXi(ng);
-    data.v_set = RealVect(ng);
-    data.grp_start = Eigen::VectorXi(ng);
-    data.grp_count = Eigen::VectorXi(ng);
-    int cursor = 0;
-    for(int g = 0; g < ng; ++g){
-        data.reg_bus(g) = grp_reg[g];
-        data.v_set(g) = grp_vset[g];
-        data.grp_start(g) = cursor;
-        data.grp_count(g) = static_cast<int>(grp_members[g].size());
-        for(int idx : grp_members[g]){
-            const Raw & r = raws[idx];
-            data.bus(cursor) = r.bus;
-            data.kind(cursor) = r.kind;
-            data.elem_id(cursor) = r.elem_id;
-            data.slope(cursor) = r.slope;
-            // floor the sharing key to keep the N>1 sharing rows non-singular
-            data.weight(cursor) = (std::abs(r.weight) > BaseConstants::_tol_equal_float) ? r.weight : BaseConstants::_tol_equal_float;
-            data.group(cursor) = g;
-            ++cursor;
-        }
-    }
+    exc_ << " Please `change_algorithm` to a Newton-Raphson one, or take those elements "
+            "out of voltage control (`set_gen_regulated_bus` back to their own bus, or "
+            "turn the regulator / the SVC off) -- lightsim2grid will not do it for you, "
+            "because either choice changes the answer.";
+    throw std::runtime_error(exc_.str());
 }
 
 std::set<int> LSGrid::get_group_controlled_buses() const
 {
-    std::set<int> res;
-    // an ACTIVE remote-regulating generator: gen_is_voltage_controller() already
-    // means "connected, regulator on, not pseudo-off, and regulating a bus that is
-    // NOT its own". A purely local regulator therefore never lands here, which is
-    // what keeps the ordinary (possibly multi-generator) PV bus untouched.
-    const int nb_gen = static_cast<int>(generators_.nb());
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(!generators_.gen_is_voltage_controller(gen_id)) continue;
-        const int reg = generators_.get_regulated_bus_id(gen_id);
-        if(reg >= 0) res.insert(reg);
-    }
-    // a voltage-mode SVC is ALWAYS a group controller (even local and non-sloped),
-    // so the bus it regulates always needs the bordered treatment
-    const int nb_svc = static_cast<int>(svcs_.nb());
-    for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
-        if(!svcs_.svc_is_voltage_controller(svc_id)) continue;
-        const int reg = svcs_.get_regulated_bus_id(svc_id);
-        if(reg >= 0) res.insert(reg);
-    }
-    return res;
+    VoltageControlPlan plan;
+    plan.build_groups(generators_, svcs_);
+    return plan.group_controlled_buses();
 }
 
 std::set<int> LSGrid::get_free_vm_slack_solver_buses() const
 {
-    std::set<int> res;
-    // solver-bus ids of the slack buses
-    std::set<int> slack;
-    for(int k = 0; k < static_cast<int>(ac_cache_.slack_bus_id_solver.size()); ++k){
-        slack.insert(ac_cache_.slack_bus_id_solver(k).cast_int());
-    }
-    if(slack.empty()) return res;
-
-    // A slack bus is Vm-fixed (PV-like, no Q equation) only when a LOCAL
-    // voltage-regulating generator pins its magnitude. Collect those buses.
-    std::set<int> locally_vfixed;
-    const SolverBusIdVect & id_me_to_solver = ac_cache_.id_me_to_solver;
-    // ... except that a local regulator on a bus a control GROUP regulates does not
-    // pin it: it is enrolled as a member of that group instead (see
-    // get_group_controlled_buses and the reclassification in fillpv_pq), and the
-    // group's voltage row needs the free Vm this function grants.
-    const std::set<int> group_reg = get_group_controlled_buses();
-    const int nb_gen = static_cast<int>(generators_.nb());
-    const GlobalBusIdVect & gen_buses = generators_.get_buses();
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(!generators_.gen_is_local_voltage_controller(gen_id)) continue;
-        const int ctrl_grid = gen_buses(gen_id).cast_int();
-        if(group_reg.count(ctrl_grid)) continue;
-        const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
-        if(ctrl_solver == GenericContainer::_deactivated_bus_id) continue;
-        locally_vfixed.insert(ctrl_solver);
-    }
-
-    // Every slack bus whose magnitude is NOT pinned locally needs a free Vm
-    // unknown + Q equation: distributed-slack PQ participants (the common case),
-    // remote-voltage controllers, and SVC-regulated slack buses all fall here.
-    for(int b : slack){
-        if(!locally_vfixed.count(b)) res.insert(b);
-    }
-    return res;
+    // layer 2 only: this answer does not need the controller list, and building it
+    // here would make a query that cannot fail start throwing on a configuration
+    // the bordered formulation cannot express.
+    VoltageControlPlan plan;
+    plan.build_groups(generators_, svcs_);
+    plan.build_free_vm_slack(generators_, ac_cache_.id_me_to_solver,
+                             ac_cache_.id_solver_to_me, ac_cache_.slack_bus_id_solver);
+    return plan.free_vm_slack_buses();
 }
 
 void LSGrid::check_solution_q_values_onegen(Eigen::Ref<CplxVect> res,
@@ -1414,7 +1190,8 @@ CplxVect LSGrid::_build_into_cache(
     SolverSideCache<MatScalar> & cache,
     const AlgoControl & solver_control,
     bool force_full_rebuild,
-    bool init_pv_vm_targets)
+    bool init_pv_vm_targets,
+    bool supports_voltage_control)
 {
     bool redo_all =
             force_full_rebuild ||
@@ -1487,13 +1264,59 @@ CplxVect LSGrid::_build_into_cache(
     if (redo_all || converter_changed || solver_control.need_recompute_ybus()){
         fill_solver_matrix(cache.mat, cache.id_me_to_solver);
     }
-    if (redo_all || converter_changed ||
-        solver_control.has_slack_participate_changed() ||
-        solver_control.has_pv_changed() ||
-        solver_control.has_pq_changed()) {
-            init_slack_bus(cache.id_me_to_solver, cache.id_solver_to_me, cache.slack_bus_id_me, cache.slack_bus_id_solver);
-            fillpv_pq(cache.id_me_to_solver, cache.id_solver_to_me, cache.slack_bus_id_solver, cache.bus_pv, cache.bus_pq);
-        }
+    // ---- the voltage-control plan, built at most once per powerflow -------------
+    // How every bus' magnitude is pinned, and by what, is ONE derived object in four
+    // layers (see VoltageControlPlan): which buses a control GROUP regulates, the
+    // pv/pq split that layout perturbs, the free-Vm slack buses, and the controller
+    // list the bordered block is built from. Each layer is built out of the one
+    // before it, so they are built here, together, and the NR extensions read the
+    // result instead of asking the grid to re-derive it. They used to be derived in
+    // four different places, three of them walking every generator of the grid.
+    //
+    // All the layers stand or fall together, and the question that decides is asked
+    // ONCE: rebuilding layer 1 without the rest would leave the controller list keyed
+    // on a group layout it was not built from. It is also barely a second question --
+    // `need_recompute_voltage_control()` is `need_recompute_pv_pq()` plus one term,
+    // because the split IS layer 2 and whoever is in a group is exactly what the split
+    // reads. The one thing the split does not read is a setpoint, and that is the term.
+    //
+    // `supports_voltage_control` is the algorithm's own answer (BaseAlgo::
+    // supports_remote_voltage_control): false for fast-decoupled and Gauss-Seidel,
+    // which hold no NRSystem and so read neither layer 3 nor layer 4. For them the
+    // plan stays empty and layer 2 produces the classical split -- and ac_pf has
+    // already refused the grid if it really has controllers.
+    // One predicate per layer, both of them AlgoControl's, so that what the powerflow
+    // asks and what a test asks cannot drift apart -- and so that the second is
+    // visibly the first plus one term, which is the whole shape of the thing.
+    const bool rebuild_split = force_full_rebuild || solver_control.need_recompute_pv_pq();
+    const bool rebuild_voltage_control =
+            force_full_rebuild || solver_control.need_recompute_voltage_control();
+    // The DC family keeps the group step of layer 2 unconditionally, which is what it
+    // has always done. It is not obviously RIGHT -- a DC solve has no voltage at all,
+    // so a bus a group regulates arguably has no business being reclassified there --
+    // but `pv` is read by BaseDCAlgo (retrieve_pv_with_slack / extract_slack_bus_id),
+    // so changing it changes DC answers, and that is a question of its own and not
+    // this one's. Gating it on the AC algorithm's capability, which is what
+    // `supports_voltage_control` carries, would have done exactly that by accident.
+    const bool is_ac_family = SolverSideCache<MatScalar>::is_ac;
+    if (rebuild_voltage_control){
+        cache.voltage_control.build_groups(generators_, svcs_,
+                                           !is_ac_family || supports_voltage_control);
+    }
+    if (rebuild_split) {
+        init_slack_bus(cache.id_me_to_solver, cache.id_solver_to_me, cache.slack_bus_id_me, cache.slack_bus_id_solver);
+        cache.voltage_control.build_pv_pq(_pv_capable_containers(),
+                                          cache.id_me_to_solver, cache.id_solver_to_me,
+                                          cache.slack_bus_id_solver, cache.bus_pv, cache.bus_pq);
+    }
+    // Layers 3 and 4 are AC only, and only for an algorithm that reads them: `is_ac`
+    // is a compile-time constant, so the DC instantiation of this template does not
+    // even contain the call.
+    if (rebuild_voltage_control && supports_voltage_control && is_ac_family){
+        cache.voltage_control.build_solver_side(generators_, svcs_, hvdc_lines_,
+                                                cache.id_me_to_solver, cache.id_solver_to_me,
+                                                cache.slack_bus_id_solver, cache.bus_pq);
+    }
 
     // type-specific injection assembly (complex Sbus for AC, real Pbus for DC)
     prepare_injection(cache.inj, redo_all, converter_changed, cache.id_me_to_solver, cache.id_solver_to_me, solver_control);
@@ -1607,7 +1430,13 @@ CplxVect LSGrid::_pre_process_own_cache(
         else _dc_algo.reset();
     }
 
-    CplxVect V = _build_into_cache(Vinit, cache, solver_control, cache_unusable, init_pv_vm_targets);
+    // The algorithm that is about to run on this cache is OURS, so it is ours to ask
+    // whether the voltage-control layers are worth building at all. `_algo` -- the AC
+    // one -- is what is asked in both families: the layers themselves are AC-only, and
+    // the DC family's use of layer 1 is deliberately left alone (see _build_into_cache).
+    const bool supports_voltage_control = _algo.supports_remote_voltage_control();
+    CplxVect V = _build_into_cache(Vinit, cache, solver_control, cache_unusable,
+                                   init_pv_vm_targets, supports_voltage_control);
 
     // `cache.algo_needs_rebuild` is set when this family's previous powerflow
     // diverged and its algorithm was reset (see process_results). Every built-in
@@ -1670,9 +1499,15 @@ CplxVect LSGrid::_build_foreign_cache(
 
     // A foreign build never re-stamps: `solver_control` and the flags it carries
     // all describe THIS grid, and say nothing about what is in `out`.
+    // `supports_voltage_control` is true unconditionally here, and deliberately not
+    // read off `_algo`: the caller solves `out` with an algorithm of its OWN, which
+    // this grid knows nothing about. Building the plan is what preserves the batch
+    // path exactly as it was; a caller whose algorithm cannot consume it simply does
+    // not read it.
     CplxVect V = _build_into_cache(Vinit, out, solver_control,
                                    /*force_full_rebuild=*/true,
-                                   /*init_pv_vm_targets=*/true);
+                                   /*init_pv_vm_targets=*/true,
+                                   /*supports_voltage_control=*/true);
 
     // `_algo` / `_dc_algo` are deliberately untouched: they are THIS grid's, they
     // hold a factorization of THIS grid's cache, and the caller solves `out` with
@@ -1683,16 +1518,15 @@ CplxVect LSGrid::_build_foreign_cache(
     // ---- publish the layout, then retire it -------------------------------------
     // The NR extensions do not read the cache the solver was handed. They call back
     // into the grid through `lsgrid_ptr`:
-    //   Base           -> get_free_vm_slack_solver_buses()  (id_me_to_solver,
-    //                       slack_bus_id_solver)
-    //   Hvdc           -> fill_hvdc_droop_solver_data()      (id_me_to_solver)
-    //   VoltageControl -> fill_voltage_control_solver_data() (id_me_to_solver,
-    //                       id_solver_to_me, bus_pq, and the two above)
+    //   Base           -> get_ac_voltage_control_plan().free_vm_slack_buses()
+    //   Hvdc           -> fill_hvdc_droop_solver_data()   (id_me_to_solver)
+    //   VoltageControl -> get_ac_voltage_control_plan().controllers()
     // Left stale, that does not read as an error, it reads as "nothing to do": the
     // controller list comes back empty and the solve SILENTLY drops remote voltage
-    // control / the free Vm unknown of a distributed-slack participant. Note
-    // `bus_pq`: the pv-pq split is part of what the extensions read, which is why
-    // publishing only the labelling is not enough.
+    // control / the free Vm unknown of a distributed-slack participant. The plan is
+    // therefore published alongside the labelling below -- and note that publishing
+    // it is now a copy of what the build already produced, not a re-derivation from
+    // the published labelling: the two can no longer disagree.
     //
     // Copying the whole cache would also copy the matrix -- the expensive half, and
     // the one thing the caller keeps for itself -- so publish the rest and then say
@@ -1725,6 +1559,7 @@ CplxVect LSGrid::_build_foreign_cache(
     mine.slack_weights = out.slack_weights;
     mine.bus_pv = out.bus_pv;
     mine.bus_pq = out.bus_pq;
+    mine.voltage_control = out.voltage_control;
     return V;
 }
 
@@ -2024,79 +1859,19 @@ void LSGrid::fillSbus_me(Eigen::Ref<CplxVect> Sbus, bool ac, const SolverBusIdVe
     trafos_.hack_Sbus_for_dc_phase_shifter(Sbus, ac, id_me_to_solver);
 }
 
-void LSGrid::fillpv_pq(const SolverBusIdVect& id_me_to_solver,
-                          const GlobalBusIdVect& id_solver_to_me,
-                          const SolverBusIdVect & slack_bus_id_solver,
-                          SolverBusIdVect & bus_pv_out,
-                          SolverBusIdVect & bus_pq_out)
+// LSGrid::fillpv_pq is gone: the pv/pq split is layer 2 of the voltage-control plan
+// (VoltageControlPlan::build_pv_pq), because its one subtlety -- a bus a control
+// GROUP regulates must stay out of PV -- is keyed on layer 1 and is what layer 4 is
+// then built against. What is left on this side is naming the containers to ask,
+// which is what owning them means: see _pv_capable_containers().
+
+std::vector<const GenericContainer *> LSGrid::_pv_capable_containers() const
 {
-    // Nothing to do if neither pv, nor pq nor the dimension of the problem has changed
-
-    // init pq and pv vector
-    // TODO remove the order here..., i could be faster in this piece of code (looping once through the buses)
-    const int nb_bus = static_cast<int>(id_solver_to_me.size());  // number of bus in the solver!
-    std::vector<int> bus_pq;
-    bus_pq.reserve(nb_bus);
-    std::vector<int> bus_pv;
-    bus_pv.reserve(nb_bus);
-    std::vector<bool> has_bus_been_added(nb_bus, false);
-
-    bus_pv_out = SolverBusIdVect();
-    bus_pq_out = SolverBusIdVect();
-    powerlines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);  // TODO have a function to dispatch that to all type of elements
-    shunts_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
-    trafos_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
-    loads_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
-    storages_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
-    sgens_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
-    generators_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
-    hvdc_lines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
-
-    // A bus regulated by a VoltageControl group must keep its OWN Vm unknown (and
-    // hence its Q equation): the group's bordered voltage row `Vm(reg) - v_set = 0`
-    // is what sets its magnitude. The per-container fillpv above only knows how to
-    // keep a controller's own bus out of PV (GeneratorContainer::fillpv skips a gen
-    // that regulates remotely); nothing there stops a LOCAL regulator sitting on the
-    // regulated bus from claiming it as PV. When that happened the group's voltage
-    // row found no Vm column to write its +1 into -- a structurally empty row, i.e.
-    // a singular Jacobian -- so fill_voltage_control_solver_data had to reject the
-    // whole configuration ("regulates bus X which has no voltage (Vm) unknown"),
-    // even though it is perfectly well posed: the local regulator simply belongs in
-    // the group, and the sharing row then supplies the equation that fixes the
-    // reactive split. Drop those buses from PV here (the PQ loop just below picks
-    // them up) and fill_voltage_control_solver_data enrols the local regulators.
-    const std::set<int> group_reg = get_group_controlled_buses();
-    if(!group_reg.empty()){
-        std::vector<int> bus_pv_kept;
-        bus_pv_kept.reserve(bus_pv.size());
-        for(int bus_id_solver : bus_pv){
-            const int bus_id_me = id_solver_to_me[bus_id_solver].cast_int();
-            if(bus_id_me < 0 || !group_reg.count(bus_id_me)){
-                bus_pv_kept.push_back(bus_id_solver);
-                continue;
-            }
-            // Whatever pinned this bus through the PV path -- a local generator or a
-            // voltage-regulating hvdc converter station -- is enrolled as a member of
-            // the group by fill_voltage_control_solver_data instead.
-            has_bus_been_added[bus_id_solver] = false;  // let the PQ loop take it
-        }
-        bus_pv.swap(bus_pv_kept);
-    }
-
-    for(int bus_id = 0; bus_id< nb_bus; ++bus_id){
-        if(GenericContainer::is_in_vect(bus_id, slack_bus_id_solver.to_int_vector())) continue;  // slack bus is not PQ either
-        if(has_bus_been_added[bus_id]) continue; // a pv bus cannot be PQ
-        bus_pq.push_back(bus_id);
-        has_bus_been_added[bus_id] = true;  // don't add it a second time
-    }
-    bus_pv_out = SolverBusIdVect(bus_pv.size(), SolverBusId(0));
-    for(int i = 0; i < static_cast<int>(bus_pv.size()); ++i){
-        bus_pv_out(i) = SolverBusId(bus_pv[i]);
-    }
-    bus_pq_out = SolverBusIdVect(bus_pq.size(), SolverBusId(0));
-    for(int i = 0; i< static_cast<int>(bus_pq.size()); ++i){
-        bus_pq_out(i) = SolverBusId(bus_pq[i]);
-    }
+    // Everything that can pin a bus' voltage magnitude through the classical PV
+    // path, in the order the split used to ask them in (the order is immaterial --
+    // `fillpv` only ever sets flags -- but keeping it makes the move a no-op).
+    return {&powerlines_, &shunts_, &trafos_, &loads_,
+            &storages_, &sgens_, &generators_, &hvdc_lines_};
 }
 
 void LSGrid::compute_results(bool ac){

@@ -3,6 +3,23 @@ Change Log
 
 [TODO]
 --------
+- Several inputs of the voltage-control plan can only be set at construction, so a caller
+  cannot change them on a live grid at all. None of them is a missing-flag bug -- there is no
+  setter to raise a flag from -- but each is a missing capability, and adding the setter means
+  adding ``tell_voltage_control_changed()`` (or, where it moves who is in a group,
+  ``tell_pv_changed()``) with it:
+
+  * a generator's ``voltage_regulator_on_``: no way to take a machine out of voltage
+    regulation, or put it back, without rebuilding the container (``init_generators_full``).
+    ``set_gen_regulated_bus`` exists and does raise what it must, so only the on/off is missing.
+  * an hvdc converter station's ``voltage_regulator_on_``: same, through ``init_hvdc_lines``.
+  * an SVC's ``regulation_mode_`` (OFF / VOLTAGE / REACTIVE_POWER) and its
+    ``regulated_bus_id_``: neither has a setter, so an SVC cannot be switched between modes,
+    nor pointed at another bus, after ``init_svcs``.
+  * remote regulation BY an hvdc converter station is not modelled at all: the container
+    stores no regulated bus for a station, so a regulating one always regulates the bus it
+    stands on. A station only ever joins a control group somebody else created (see
+    ``VoltageControlPlan::build_groups``).
 - ``SubstationContainer::sub_vn_kv_`` is dead state: its only writers (``init_sub()``
   and the two-argument constructor) are called from nowhere, and nothing reads it
   back, so it is empty on every grid every loader produces and in every binary file
@@ -139,6 +156,136 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [FIXED] a grid using voltage control that the selected algorithm cannot implement -- a
+  generator or an hvdc converter station regulating a bus other than its own, several
+  machines regulating one bus, or a voltage-mode SVC -- was **solved anyway, to a wrong
+  answer**, by the fast-decoupled and Gauss-Seidel algorithms. Those hold no ``NRSystem``,
+  hence no ``VoltageControl`` extension, so no bordered block was ever built; but the pv/pq
+  split took the regulated bus out of PV all the same, leaving its magnitude pinned by
+  nothing. The solve converged, looked plausible, and on a case118 with eight control
+  groups landed **0.36 pu** away from the Newton-Raphson answer, missing every setpoint by
+  0.127 pu. ``BaseAlgo::supports_remote_voltage_control()`` existed to prevent exactly this
+  and had **no caller anywhere**. ``LSGrid::ac_pf`` now refuses such a grid, in the same
+  place and the same shape as the angle-droop guard right above it, naming every concerned
+  generator, SVC and converter station. It does not silently rewrite the grid: turning the
+  regulator off changes the reactive dispatch and pointing it at its own bus needs a
+  setpoint nobody has (the one it carries targets a *different* bus), so which of the two
+  to do is the caller's decision, not the library's.
+- [IMPROVED] ``LSGrid::fillpv_pq`` is gone: the pv/pq split is layer 2 of
+  ``VoltageControlPlan``. Its one subtlety -- a bus a control GROUP regulates must keep its
+  own Vm unknown -- is keyed on layer 1, and layer 4 is then keyed on the split, so the
+  three belong to one object and one build order rather than to a call sequence that has to
+  be got right. What stays on ``LSGrid`` is naming the containers to ask
+  (``_pv_capable_containers()``), which is what owning them means -- and that also settles
+  the standing ``TODO have a function to dispatch that to all type of elements``: the rule
+  is now "ask every container", not "ask these eight, in this order".
+- [IMPROVED] an algorithm with no bordered block builds no voltage-control plan at all:
+  layers 1, 3 and 4 are skipped and layer 2 produces the classical split. Deriving them
+  once per powerflow (see above) had made them the business of the cache rather than of
+  the extension that wanted them, which meant fast-decoupled and Gauss-Seidel paid for two
+  container walks whose result nobody reads -- **+2.2% / +0.57%** of a rebuild on case118 /
+  case9241pegase. Now **-0.09% / -0.05%** against the same baseline, and flat on an
+  ordinary step.
+- [FIXED] ``LSGrid::change_algorithm(const std::string&)`` did not call
+  ``init_fdpf_coeffs()``, which its ``AlgorithmType`` overload does: selecting a
+  fast-decoupled solver **by name** threw ``"the FDPF coefficients are not cached"`` on the
+  first powerflow, while selecting the very same solver by enum worked. Added
+  ``AlgorithmSelector::is_fdpf()`` (no argument) next to ``supports_hvdc_droop()`` and
+  ``supports_remote_voltage_control()`` and used it: the type-keyed ``is_fdpf(type)`` cannot
+  answer for a solver reached through the registry or for a plugin, both being
+  ``AlgorithmType::Custom``.
+- [IMPROVED] ``AlgorithmSelector::get_prt_solver`` and ``check_right_solver`` take a
+  ``const char *`` instead of a ``const std::string &``. All fifty-odd call sites pass a
+  string literal and the names are longer than libstdc++'s small-string buffer
+  (``"supports_remote_voltage_control"`` is 31 characters), so every call -- ``get_V``,
+  ``get_Va``, ``get_Vm``, ``compute_pf``, ``tell_solver_control`` and the capability
+  queries, several times per powerflow -- did one ``malloc`` and one ``free`` to build a
+  string only the error path ever reads. **-1,855 to -2,078 instructions per solve**, on
+  every grid and every algorithm.
+- [IMPROVED] the profiling driver derives its iteration budget from the algorithm family
+  (``BaseAlgo::is_fdpf``): 10 for Newton-Raphson and DC as before, 100 for fast-decoupled,
+  which needs ~50 on case118 and so diverged outright at 10. Together with the fix above
+  this is what makes the fast-decoupled algorithms profilable at all.
+- [ADDED] ``ls2g::VoltageControlPlan`` (``src/core/VoltageControlPlan.hpp``): everything one AC
+  solve needs to know about the "fancy" voltage controllers -- remote-regulating generators,
+  several machines regulating one bus, and voltage-mode SVCs -- as ONE object instead of three
+  functions on ``LSGrid``. They were never three answers: the controller list is derived from the
+  free-Vm slack set, which is derived from the group layout, and each of the three used to walk
+  the containers again where it happened to be needed. It is a member of ``SolverBusLayout``,
+  i.e. of a solver-side cache, because it is expressed in that cache's bus labelling AND its
+  pv-pq split: a plan carried across a relabelling is not stale data, it is a different grid.
+  ``LSGrid::get_group_controlled_buses`` / ``get_free_vm_slack_solver_buses`` /
+  ``fill_voltage_control_solver_data`` are unchanged in signature and behaviour and now build a
+  throw-away plan -- they are the on-demand form, for callers outside a solve.
+- [ADDED] ``AlgoControl::need_recompute_pv_pq()`` -- must the pv/pq split be rebuilt: the
+  system was rebuilt from scratch, the bus set changed, the slack set moved, or a bus changed
+  class -- and ``need_recompute_voltage_control()``, which is that plus one term. Since the split IS a layer of the voltage-control plan
+  (``VoltageControlPlan::build_pv_pq``), whatever rebuilds the split rebuilds the plan: who is
+  in a control group and which bus it regulates are exactly the inputs the split reads, and
+  there is no way to change one without changing the other. ``LSGrid::_build_into_cache`` asks
+  those two and nothing else, so what the powerflow asks and what a test asks cannot drift.
+- [IMPROVED] ``AlgoControl::need_recompute_pv_pq()`` no longer lists
+  ``ybus_change_sparsity_pattern_``. That flag means "the bus LABELLING may have moved", and
+  it is raised only by branch-side mutations (reconnecting a line or a trafo, moving one of
+  its ends) -- every one of which goes through ``GenericContainer::_apply_and_track_buses``,
+  which raises ``change_dimension_`` exactly when the mutation empties or fills a bus, i.e.
+  exactly when the labelling moves. When no bus crossed, ``id_me_to_solver`` comes back
+  identical and a branch is neither a voltage controller nor a slack, so the split it produces
+  is the same one. Measured rather than argued: ``src/tests/test_cache_reuse.cpp`` (tag
+  ``[pv_pq]``) reaches a state where this flag is the ONLY one of the six raised, solves on
+  the reused cache, solves again cold and compares -- and the predicate was built both ways.
+  With the term dropped those cases stay green; the same experiment on
+  ``slack_participate_changed_`` fails them (``GeneratorContainer::fillpv`` skips a bus that is
+  in the slack set, and so does the PQ loop after it), which is why that term stays. Worth
+  **-0.9% / -1.8% / -0.7% / -0.4%** of a topology-changing cached powerflow on
+  case30 / case118 / case1354pegase / case9241pegase, on top of the plan caching above, with
+  bit-identical answers.
+- [ADDED] ``AlgoControl::tell_voltage_control_changed()`` / ``has_voltage_control_changed()``:
+  the one term the pv/pq flags do not carry, a voltage SETPOINT. Moving a remote regulator's
+  target changes no bus' pv/pq class at all -- that is the point of the bordered formulation,
+  the regulated bus stays PQ -- so nothing else would notice. Raised from exactly two places
+  (``GeneratorContainer::change_v_nothrow`` and ``ConverterStationContainer::change_v``), on
+  the AC family only and only for an element that actually regulates: a DC solve has no
+  voltage control, and ``target_vm_pu_`` of a non-regulating machine is never read.
+- [FIXED] ``GeneratorContainer::set_regulated_bus`` raised ``tell_recompute_sbus()`` and
+  ``tell_pv_changed()`` unconditionally. ``fillSbus`` never reads ``regulated_bus_id_`` -- and
+  what it stamps for a regulating generator, active power only, is the same wherever that
+  generator regulates -- so the injections cannot have moved; and for a generator that does
+  not regulate at all the field is inert, so neither can the pv/pq split. Both are now raised
+  only when the machine regulates, and the Sbus one is gone.
+- [FIXED] ``ConverterStationContainer::_deactivate`` / ``_reactivate`` raised
+  ``tell_pv_changed()`` for every station. Only a REGULATING station pins a bus
+  (``ConverterStationContainer::fillpv`` skips the others), so only that one can move the
+  pv/pq split. ``tell_recompute_sbus()`` stays unconditional and is correct: a station IS in
+  Sbus, whether it regulates or not.
+- [IMPROVED] the voltage-control plan is derived **once per powerflow** instead of four times.
+  ``LSGrid::_build_into_cache`` builds it around ``fillpv_pq`` -- layer 1 is an input to the
+  pv-pq split, layers 2 and 3 are expressed in it -- and the NR extensions read it through
+  ``LSGrid::get_ac_voltage_control_plan()`` instead of calling back into the grid.
+  ``Base::update_state`` re-derived the free-Vm slack set and ``VoltageControl::update_state``
+  re-derived it a second time plus the whole controller list, each walking every generator of
+  the grid and building ``std::set``s as it went. A solve that changed none of the plan's inputs
+  -- which an ordinary grid2op step does not, moving a load's P and Q raises
+  ``need_recompute_sbus`` and nothing else -- now keeps the one the previous solve built.
+  **-3.7% / -8.1% / -3.1% / -2.2%** of an ordinary cached powerflow on
+  case30 / case118 / case1354pegase / case9241pegase (-6.1% / -16.4% / -7.3% / -5.4% of an
+  identical re-solve), and -6.8% / -2.6% / -0.4% on the new ``_fancy`` grids, with bit-identical
+  answers. It also removes a class of bug rather than only a cost: the three layers are now
+  built from one another instead of from three independent walks of the containers, so they
+  cannot disagree, and a foreign build (the batch algorithms) publishes the plan it just built
+  rather than leaving the extensions to re-derive one from the published labelling.
+- [ADDED] ``benchmarks/cache_profiling/make_grids.py`` also writes a ``_fancy`` variant of
+  case118, case1354pegase and case9241pegase: pairs of generators re-pointed at a common
+  neighbouring load bus (a control group) plus voltage-mode SVCs. The plain pandapower cases
+  have no remote voltage control and no SVC at all, so nothing that concerns the bordered
+  VoltageControl block showed up in the audit. Recorded there while measuring: on
+  case9241pegase_fancy (40 groups, 30 SVCs) **86% of a cached solve is** ``klu_refactor``,
+  against 55% on the plain case -- the 80 reactive-injection columns each couple a generator's
+  bus to a regulated bus a branch away, and KLU's ordering pays for the fill-in.
+- [ADDED] ``src/tests/test_voltage_control_plan_cache.cpp``: every input of the plan is mutated
+  on a grid that has already solved (so a stale plan is there to be wrongly reused) AND on a
+  fresh grid built in the final state, and the two solves must agree. A reused stale plan does
+  not throw and does not look wrong -- it converges, on the previous scenario's controllers.
 - [ADDED] ``benchmarks/cache_profiling/``: an instruction-count audit of the CACHED powerflow
   path -- a solve that follows a successful one, which is what every grid2op step after the
   first runs. A standalone C++ driver (no python, no pybind11) lets callgrind collect ONLY the

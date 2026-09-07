@@ -38,7 +38,9 @@ Phases, one callgrind run each:
 
 ```bash
 # 1. the grids, dumped from pandapower to lightsim2grid's binary format, so the
-#    profile contains no python and no conversion code
+#    profile contains no python and no conversion code. Two families: the plain
+#    pandapower cases, and a `_fancy` variant of the bigger ones carrying remote
+#    voltage-control groups and voltage-mode SVCs (see `make_fancy` there).
 python make_grids.py grids
 
 # 2. the driver, built straight against src/core -- no python, no pybind11
@@ -115,6 +117,7 @@ Acted on (each A/B'd, answers compared; see the changelog for the details):
 | `1/\|V\|` from `Vm_` instead of a `hypot` pass over `V_` | -2.1% | -2.5% | -2.2% | -1.6% |
 | read each branch status bit once, not five times | -1.5% | -1.2% | -1.0% | -0.9% |
 | take the per-bus mismatch off the algorithm | -2.1% | -2.1% | — | -1.4% |
+| derive the voltage-control plan once per solve, not four times | -4.9% | -8.3% | -3.2% | -2.2% |
 
 Measured and **declined**, recorded here so they are not re-proposed:
 
@@ -137,6 +140,131 @@ Measured and **declined**, recorded here so they are not re-proposed:
   count, and -17%/-20% on case118/case1354pegase; it loses on case30, where the
   iteration it adds costs more than the factorization it skips. Out of scope: a
   different algorithm, not a cheaper way to run this one.
+
+### The `_fancy` grids
+
+`make_grids.py` also writes a `_fancy` variant of case118, case1354pegase and
+case9241pegase: a few *pairs* of generators re-pointed at a common neighbouring
+load bus (a control **group**, solved by the bordered VoltageControl block) plus
+a few voltage-mode SVCs. Setpoints are the base case's own solved magnitudes, and
+each candidate is kept only if the grid still converges with it -- the same
+chunk-and-verify workaround `benchmarks/make_exotic_grid.cpp` uses, for the same
+reason (see the remote-voltage-control entry in the changelog's TODO).
+
+They exist because the plain pandapower cases have **no** remote voltage control
+and no SVC at all: the controller list is empty on every one of them, so nothing
+that concerns the bordered block shows up. Two things they measured:
+
+| grid | groups | SVCs | `idem` | `inj` | vs. the plain case (`idem`) |
+|---|---:|---:|---:|---:|---:|
+| case118_fancy | 8 | 4 | 385,022 | 1,173,068 | +16% |
+| case1354pegase_fancy | 20 | 10 | 10,293,316 | 15,583,429 | +138% |
+| case9241pegase_fancy | 40 | 30 | 318,321,358 | 596,998,625 | +686% |
+
+That last column is not the plan, and not the bordered rows either: on
+case9241pegase_fancy **86% of a cached solve is `klu_refactor`** (against 55% on
+the plain case). Forty two-member groups add 80 reactive-injection columns, each
+coupling a generator's bus to a regulated bus a branch away, and KLU's ordering
+pays for the fill-in that creates. Worth knowing before remote control is enabled
+at scale on a large grid; out of scope here.
+
+### Deriving the voltage-control plan once per solve
+
+The "fancy" voltage controllers are described by three derived sets -- which buses
+a control GROUP regulates, which slack buses keep a free Vm unknown, and the
+controller list itself -- and each of them used to be re-derived where it happened
+to be needed: by `fillpv_pq`, by `Base::update_state`, and twice by
+`VoltageControl::update_state` (which re-ran the free-Vm slack pass of its own).
+Four walks of every generator of the grid per powerflow, each building `std::set`s
+as it went. They are now one object (`VoltageControlPlan`), built once into the
+solver-side cache and read from there, and kept across a solve that changed none
+of its inputs -- which an ordinary grid2op step does not (moving a load's P and Q
+raises `need_recompute_sbus` and nothing else).
+
+A/B against the tree as it was, KLU, answers compared bit for bit:
+
+| grid | `inj` (an ordinary step) | `idem` (the floor) | `topo` (a line toggled) |
+|---|---:|---:|---:|
+| case30 | **-4.9%** | -7.9% | -2.3% |
+| case118 | **-8.3%** | -16.9% | -4.9% |
+| case118_fancy | **-7.0%** | -18.6% | -4.0% |
+| case1354pegase | **-3.2%** | -7.3% | -1.9% |
+| case1354pegase_fancy | **-2.6%** | -3.9% | -1.7% |
+| case9241pegase | **-2.2%** | -5.4% | -1.4% |
+| case9241pegase_fancy | **-0.4%** | -0.8% | -0.5% |
+
+The two phases save the *same* number of instructions, to the last one (8,040 on
+case30 up to 2.3M on case9241pegase): what is removed is a fixed per-solve cost,
+paid before the Newton loop starts. `inj` reads smaller only because it is a
+1.5x-2.7x bigger solve. The proportion falls with grid size because the work
+removed is O(generators) while the solve it is measured against is dominated by
+KLU -- and it falls furthest on the fancy pegase case for the reason the table
+above gives.
+
+About 1.9k of the per-solve figure is a second, unrelated find: `AlgorithmSelector`
+took its `error_msg` by `const std::string &` and every call site passes a literal
+longer than libstdc++'s small-string buffer, so `get_V` / `get_Va` / `get_Vm` /
+`compute_pf` / `tell_solver_control` each did a malloc and a free per solve to build
+a string only the error path reads. `const char *` now.
+
+Part of the `topo` column is a third find, and it is the one the benchmark was used
+to *settle* rather than to report. `need_recompute_pv_pq()` listed
+`ybus_change_sparsity_pattern_` -- "the bus labelling may have moved" -- among the
+reasons to rebuild the pv/pq split. It is raised only by branch-side mutations
+(reconnecting a line or a trafo, moving one of its ends), and every one of those
+goes through `GenericContainer::_apply_and_track_buses`, which raises
+`change_dimension_` exactly when the mutation empties or fills a bus -- which is
+exactly when the labelling moves. So the term was subsumed. The argument was checked
+against the grid before it was believed: `src/tests/test_cache_reuse.cpp` reaches a
+state where this flag is the ONLY one of the six raised, solves warm and cold and
+compares, and the predicate was then built both ways. Dropping the term leaves those
+cases green; dropping `slack_participate_changed_` the same way makes them fail, so
+that one stays. What the drop is worth, on its own, on a solve whose cache a
+topology change retired:
+
+| grid | `topo`, term kept | `topo`, term dropped |
+|---|---:|---:|
+| case30 | 440,089 | 436,057 (**-0.9%**) |
+| case118 | 1,470,391 | 1,444,534 (**-1.8%**) |
+| case118_fancy | 2,443,695 | 2,409,714 (**-1.4%**) |
+| case1354pegase | 20,163,544 | 20,013,614 (**-0.7%**) |
+| case1354pegase_fancy | 28,649,453 | 28,470,141 (**-0.6%**) |
+| case9241pegase | 182,113,949 | 181,393,356 (**-0.4%**) |
+| case9241pegase_fancy | 536,874,742 | 536,025,060 (**-0.2%**) |
+
+(the `topo` phase toggles one line, so only every other solve raises the flag at
+all; the answers are bit-identical on all seven grids). A note for whoever measures
+next: the driver links `liblightsim2grid_core.so` with a RUNPATH into its own build
+directory, so two binaries copied out of the SAME build tree load whatever library
+that tree holds at run time, not the one they were built with. A/B either from two
+separate build directories, or with `LD_LIBRARY_PATH` -- which wins over RUNPATH --
+pointing at a saved copy of each library.
+
+### Algorithms that cannot do voltage control
+
+The plan is only ever read by the `Base` and `VoltageControl` components of
+NRSystem, i.e. by the Newton-Raphson algorithms. Deriving it once per powerflow --
+into the cache, rather than lazily in the extension that wanted it -- therefore made
+the fast-decoupled and Gauss-Seidel algorithms pay for two container walks nobody
+reads: **+2.20% / +0.57%** of a rebuild on case118 / case9241pegase (`nocache`,
+FDPF_XB_KLU), and nothing on an ordinary step, where the plan is reused anyway.
+
+They now build no plan at all -- and, more to the point, they no longer take a
+group-regulated bus out of PV, which was a *wrong answer* rather than a slow one
+(0.36 pu on case118_fancy). Against the same pre-change baseline:
+
+| grid | phase | before | after |
+|---|---|---:|---:|
+| case118 | `inj` | 1,017,431 | 1,017,063 (**-0.04%**) |
+| case118 | `nocache` | 1,851,440 | 1,849,757 (**-0.09%**) |
+| case9241pegase | `inj` | 135,854,646 | 135,886,270 (+0.02%) |
+| case9241pegase | `nocache` | 218,035,000 | 217,924,056 (**-0.05%**) |
+
+Profiling those at all needed two fixes of its own: `change_algorithm` by NAME did
+not call `init_fdpf_coeffs()` (so an FDPF solver selected the way this driver selects
+it threw on the first solve), and the driver's iteration budget was a hard-coded 10
+where fast-decoupled needs ~50. Both are fixed; `max_iter` is now derived from
+`BaseAlgo::is_fdpf`.
 
 Measured and **not worth attacking**: the build side of the cache
 (`_build_into_cache` is ~1% of a case9241pegase solve, most of it the Sbus refill

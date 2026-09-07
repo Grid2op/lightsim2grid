@@ -22,8 +22,15 @@ void VoltageControl::update_state(
     const Eigen::Ref<const RealVect> & /*slack_weights*/
 )
 {
+    // READ, not re-derived: layer 3 of the plan the grid built into its AC cache
+    // during pre_process_solver (see LSGrid::_build_into_cache). Building it here
+    // meant walking every generator, SVC and converter station of the grid a second
+    // time per solve -- plus the free-Vm slack pass a third -- for an answer that
+    // cannot have changed since. It also means the controller list and the pv-pq
+    // split it is keyed on are now built from one another rather than from two
+    // independent walks of the containers.
     data_.clear();
-    if(lsgrid_ptr != nullptr) lsgrid_ptr->fill_voltage_control_solver_data(data_, true);
+    if(lsgrid_ptr != nullptr) data_ = lsgrid_ptr->get_ac_voltage_control_plan().controllers();
     my_size_ = data_.n_controllers();
     // per-solve init: the reactive injection state starts at 0 (gen convention)
     q_ = RealVect::Zero(my_size_);

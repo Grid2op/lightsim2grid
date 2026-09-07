@@ -114,6 +114,22 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         void add_slackbus(int gen_id, real_type weight, DualAlgoControl & solver_control){
             // TODO DEBUG MODE
             if(weight <= 0.) throw std::runtime_error("GeneratorContainer::add_slackbus Cannot assign a negative (<=0) weight to the slack bus.");
+            // Why `tell_slack_participate_changed()` and nothing about voltage: taking
+            // the slack role is an ACTIVE-power role, but the pv/pq split reads the
+            // slack set directly -- `fillpv` skips a bus that is in
+            // `slack_bus_id_solver` ("slack bus is not PV"), and the PQ loop right
+            // after it skips it too -- so a bus joining or leaving the slack set moves
+            // the split, whatever it does to voltage. That flag is what says so, and
+            // it is measured, not assumed: see the `[pv_pq]` cases in
+            // test_cache_reuse.cpp, which reach a state where it is the only term
+            // raised and fail if it is dropped.
+            //
+            // The voltage side needs no flag of its own for the same reason. It is
+            // real but secondary -- `is_pseudo_off()` answers false for a slack
+            // generator whatever its active power, so a zero-P slack generator IS a
+            // voltage controller where an ordinary one would not be -- and the
+            // voltage-control plan is built around the split this same flag rebuilds.
+            // See AlgoControl::need_recompute_voltage_control.
             if(!gen_slackbus_[gen_id]){ solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed(); }
             gen_slackbus_[gen_id] = true;
             if(abs(gen_slack_weight_[gen_id] - weight) > _tol_equal_float){
@@ -226,10 +242,20 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             _check_in_range(gen_id, regulated_bus_id_, "set_regulated_bus");
             if(regulated_bus_id_(gen_id) != bus_id){
                 regulated_bus_id_(gen_id) = bus_id;
-                solver_control.ac_algo_controler().tell_pv_changed();  // groups are rebuilt on topology init
-                solver_control.ac_algo_controler().tell_recompute_sbus();
-                solver_control.dc_algo_controler().tell_pv_changed();  // groups are rebuilt on topology init
-                solver_control.dc_algo_controler().tell_recompute_sbus();
+                // Only a generator that actually regulates reads this field: it decides
+                // whether the machine pins its own bus (PV) or joins a control group at
+                // another one, which is the pv/pq split and, through it, the whole
+                // voltage-control plan. For a non-regulating generator the value is
+                // stored and nothing else changes.
+                //
+                // No tell_recompute_sbus() (there used to be one): GeneratorContainer::
+                // fillSbus never reads regulated_bus_id_, and what it does read of a
+                // regulating generator -- target_p only, the reactive being free -- is
+                // the same either way.
+                if(voltage_regulator_on_[gen_id]){
+                    solver_control.ac_algo_controler().tell_pv_changed();
+                    solver_control.dc_algo_controler().tell_pv_changed();
+                }
             }
         }
         // true iff this generator is an ACTIVE remote voltage controller (joins a

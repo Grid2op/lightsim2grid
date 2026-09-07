@@ -153,6 +153,11 @@ void ConverterStationContainer::change_v(int station_id, real_type new_v_pu, Dua
     {
         solver_control.ac_algo_controler().tell_v_changed();
         solver_control.dc_algo_controler().tell_v_changed();
+        // Same as GeneratorContainer::change_v_nothrow: a setpoint is the one input of
+        // the voltage-control plan the pv/pq split does not read, so it needs a flag of
+        // its own -- and only for a station that regulates, target_vm_pu_ of one that
+        // does not being never read.
+        if(voltage_regulator_on_[station_id]) solver_control.ac_algo_controler().tell_voltage_control_changed();
         target_vm_pu_(station_id) = new_v_pu;
     }
 }
@@ -369,19 +374,27 @@ void ConverterStationContainer::_change_p(int station_id, real_type new_p, bool 
 
 bool ConverterStationContainer::_deactivate(int el_id, DualAlgoControl & solver_control) {
     if(!status_[el_id]) return false;  // nothing to do if it was already deactivated
+    // a station IS in Sbus (fillSbus_station stamps its active power, and its reactive
+    // personality when it does not regulate), so its status always moves the injections
     solver_control.ac_algo_controler().tell_recompute_sbus();
     solver_control.dc_algo_controler().tell_recompute_sbus();
-    solver_control.ac_algo_controler().tell_pv_changed();
-    solver_control.dc_algo_controler().tell_pv_changed();
+    // ... but only a REGULATING one pins a bus (fillpv skips the others), so only that
+    // one moves the pv/pq split -- and with it the voltage-control plan built on it
+    if(voltage_regulator_on_[el_id]){
+        solver_control.ac_algo_controler().tell_pv_changed();
+        solver_control.dc_algo_controler().tell_pv_changed();
+    }
     return true;
 }
 
 bool ConverterStationContainer::_reactivate(int el_id, DualAlgoControl & solver_control) {
     if(status_[el_id]) return false;  // nothing to do if station already connected
-    solver_control.ac_algo_controler().tell_recompute_sbus();
+    solver_control.ac_algo_controler().tell_recompute_sbus();  // see _deactivate
     solver_control.dc_algo_controler().tell_recompute_sbus();
-    solver_control.ac_algo_controler().tell_pv_changed();
-    solver_control.dc_algo_controler().tell_pv_changed();
+    if(voltage_regulator_on_[el_id]){
+        solver_control.ac_algo_controler().tell_pv_changed();
+        solver_control.dc_algo_controler().tell_pv_changed();
+    }
     return true;
 }
 

@@ -348,6 +348,10 @@ void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool /*my_status
         bool pseudo_off_now = abs(new_p) < _tol_equal_float;
         if((pseudo_off_before && !pseudo_off_now) || 
            (!pseudo_off_before && pseudo_off_now)){
+            // (crossing p == 0 also makes this generator start or stop being a voltage
+            // controller -- gen_is_voltage_controller gates on is_pseudo_off -- which
+            // the pv/pq split, and so the voltage-control plan built around it, already
+            // follows from the flag above.)
             solver_control.ac_algo_controler().tell_pv_changed(); solver_control.dc_algo_controler().tell_pv_changed();
            }
     }
@@ -392,6 +396,11 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, DualAl
     if (abs(target_vm_pu_(gen_id) - new_v_pu) > _tol_equal_float)
     {
         solver_control.ac_algo_controler().tell_v_changed(); solver_control.dc_algo_controler().tell_v_changed();
+        // A setpoint is the one input of the voltage-control plan the pv/pq split does
+        // not read: moving it changes no bus' class at all (the regulated bus of a
+        // group stays PQ), so nothing else would notice. Only for a generator that
+        // regulates -- target_vm_pu_ of one that does not is never read.
+        if(voltage_regulator_on_[gen_id]) solver_control.ac_algo_controler().tell_voltage_control_changed();
         target_vm_pu_(gen_id) = new_v_pu;
     }
 }
