@@ -1009,9 +1009,6 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   the check is free. What remains on the powerflow path is the ``allow_*_cache_reuse`` switch plus
   a debug-only assertion, so a future third claimant is caught by the C++ suite (run under ASan,
   UBSan and valgrind in CI) at no cost in release wheels.
-
-[1.0.0] 2026-08-28
---------------------
 - [FIXED] ``ContingencyAnalysis`` / ``SecurityAnalysis``'s ``handle_disconnected_grid`` mode no
   longer reports a DIVERGENCE for a contingency that strands a lone (single-controller) remote
   voltage regulator's own bus while leaving the bus it regulates connected -- e.g. a generator
@@ -1042,6 +1039,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   *regulated* bus itself (rather than a controller's bus) also stays a DIVERGENCE: unlike this
   case, that one has no well-defined fallback under the "same sparsity every contingency" masking
   design, and even a rebuilt single-shot topology has no support for it either (it raises).
+
+[1.0.0] 2026-08-28
+--------------------
 - [BREAKING] **solver cache reuse is now automatic and on by default**, per solver family.
   A powerflow reuses what the previous one of the same family built -- the compact bus labelling,
   ``Ybus`` / ``Sbus``, the PV / PQ split, the slack weights -- and only re-stamps what the grid
