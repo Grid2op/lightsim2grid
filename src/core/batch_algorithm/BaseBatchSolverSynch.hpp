@@ -178,6 +178,22 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             // NB: _nb_thread is deliberately NOT reset -- it is a setting, not a result.
         }
 
+        /**
+         * The linear-solver counters of this batch's own algorithm: how many symbolic
+         * analyses, numeric factorizations and refactorizations the whole compute()
+         * took. What a batch is FOR is that the first two stay at 1 however many rows
+         * it runs -- the labelling never changes, so the symbolic factorization is
+         * built once and every row after the first only refactorizes. A test (or a
+         * profiling session) reading nb_analyze > 1 is looking at a row that changed
+         * the pv/pq split, which is a bug, not a tuning question.
+         *
+         * Single-threaded runs only tell the whole story: with nb_thread > 1 each
+         * worker owns its own algorithm (see _compute_threaded) and these are the
+         * member one's counters -- the "n" warm-up solve, plus whatever range the
+         * calling thread took.
+         */
+        LinearSolverStats get_linear_solver_stats() const {return _algo.get_linear_solver_stats();}
+
         // results
         // this should not be const, see https://pybind11.readthedocs.io/en/stable/advanced/cast/eigen.html#pass-by-reference
         // tl;dr: const can make copies ! OR NOT I AM LOST

@@ -470,6 +470,27 @@ class LS2G_API BaseAlgo : public BaseConstants
         // _maybe_prepare_masks(). Default is a no-op so other algorithms are unaffected.
         virtual void set_may_mask_voltage_control(bool /*val*/) {}
 
+        // PV / PQ relabelling at constant sparsity (ScenarioSweep generator
+        // contingencies). Two calls, in this order:
+        //
+        //  - set_switchable_vm_buses: the PV buses that may lose their voltage
+        //    pinning during this run. Each is given a free Vm unknown + a Q
+        //    equation, so the Jacobian sparsity is the UNION over every scenario.
+        //    Same timing contract as set_may_mask_voltage_control above: call it
+        //    BEFORE the build_J_sparsity() it must affect, and force that rebuild
+        //    (tell_pv_changed()) if sparsity already exists.
+        //  - set_pv_pinned_buses: per solve, which of them are PV in THIS
+        //    scenario. Their Q row is identity-pinned, freezing |V| at the
+        //    generator setpoint; the others behave as ordinary PQ buses. Pure
+        //    value-level edit -- the symbolic factorization is reused.
+        //
+        // Only the Newton-Raphson family supports this (see supports_pv_pinning);
+        // the defaults are no-ops. DC needs nothing: it has no PV/PQ distinction,
+        // only the injection changes.
+        virtual bool supports_pv_pinning() const { return false; }
+        virtual void set_switchable_vm_buses(const std::vector<int> & /*solver_bus_ids*/) {}
+        virtual void set_pv_pinned_buses(const std::vector<int> & /*solver_bus_ids*/) {}
+
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}
         

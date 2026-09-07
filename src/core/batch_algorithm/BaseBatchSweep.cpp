@@ -41,11 +41,29 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     timer_modif_ybus += t1.duration();
 
     if(invertible){
-        conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
-                                     Ybus, V, _step_sbus(i),
-                                     active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
-                                     active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
-                                     max_iter, tol_solver);
+        if(!_has_gen_contingency()){
+            conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
+                                         Ybus, V, _step_sbus(i),
+                                         active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
+                                         active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
+                                         max_iter, tol_solver);
+        } else {
+            // generator contingencies: this row's buses that keep a live local voltage
+            // controller stay pinned (their Q row is the identity, so |V| holds at the
+            // setpoint); the ones that lost their last controller are released and
+            // behave as ordinary PQ buses. The pv / pq vectors handed to the solver are
+            // the SAME on every row -- that is the whole point, it is what keeps the
+            // symbolic factorization alive across the sweep. The slack weights are this
+            // row's own, re-derived without the participating machines it took out.
+            if(_has_pv_switching()) algo.set_pv_pinned_buses(_row_pv_pinned(i));
+            const RealVect sw = _row_slack_weights(i);
+            conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
+                                         Ybus, V, _step_sbus(i),
+                                         active_layout().slack_bus_id_solver.as_eigen(), sw,
+                                         active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
+                                         max_iter, tol_solver);
+            if(_has_pv_switching()) algo.set_pv_pinned_buses(_switchable_buses_);
+        }
     } else {
         conv = false;
     }
@@ -278,6 +296,14 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         // build_J_sparsity() already sees this), unlike _algo in
         // _maybe_prepare_masks() which may already have sparsity built.
         if(mask_mode) algos[t]->set_may_mask_voltage_control(true);
+        // same for the PV/PQ relabelling slots: a freshly spawned algo has no sparsity
+        // yet, so telling it here is enough -- its first build_J_sparsity() already
+        // accounts for them. Starts fully pinned, like _algo; each row releases what
+        // it must (see _run_one_step / _run_range_masked).
+        if(_has_pv_switching()){
+            algos[t]->set_switchable_vm_buses(_switchable_buses_);
+            algos[t]->set_pv_pinned_buses(_switchable_buses_);
+        }
         controls[t] = _algo_controler;
         ybus_copies[t] = ac_cache_.mat;
     };
@@ -379,6 +405,12 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // elsewhere -- and _handle_disconnected_grid can never be true elsewhere, since
     // no setter exists to set it there)
     _maybe_prepare_masks();
+
+    // generator contingencies (ScenarioSweep only; no-op elsewhere). Must run after
+    // prepare_solver_input_base (it reads the solver labelling) and BEFORE
+    // _finish_preprocessing, whose "n" solve builds the Jacobian sparsity this has to
+    // enlarge. See _maybe_prepare_gen_contingency.
+    _maybe_prepare_gen_contingency(nb_steps);
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager

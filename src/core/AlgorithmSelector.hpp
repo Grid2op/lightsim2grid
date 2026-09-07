@@ -267,6 +267,18 @@ class LS2G_API AlgorithmSelector final
             get_prt_solver("set_may_mask_voltage_control", false)->set_may_mask_voltage_control(val);
         }
 
+        // PV / PQ relabelling at constant sparsity (ScenarioSweep generator
+        // contingencies) -- see BaseAlgo for the two-call contract.
+        bool supports_pv_pinning() const {
+            return get_prt_solver("supports_pv_pinning", false)->supports_pv_pinning();
+        }
+        void set_switchable_vm_buses(const std::vector<int>& solver_bus_ids) {
+            get_prt_solver("set_switchable_vm_buses", false)->set_switchable_vm_buses(solver_bus_ids);
+        }
+        void set_pv_pinned_buses(const std::vector<int>& solver_bus_ids) {
+            get_prt_solver("set_pv_pinned_buses", false)->set_pv_pinned_buses(solver_bus_ids);
+        }
+
         Eigen::SparseMatrix<real_type> get_J_python() const {
             Eigen::SparseMatrix<real_type> res = get_J();
             return res;

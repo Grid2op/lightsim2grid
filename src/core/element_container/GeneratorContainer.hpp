@@ -206,6 +206,22 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         Retrieve the normalized (=sum to 1.000) slack weights for all the buses
         **/
         RealVect get_slack_weights_solver(size_t nb_bus_solver, const SolverBusIdVect & id_grid_to_solver);
+        /**
+         * Same normalised per-solver-bus slack weights as get_slack_weights_solver
+         * above, but evaluated as if the generators flagged in `gen_off` (sized nb())
+         * were disconnected -- what a batch sweep needs to re-weight the distributed
+         * slack for a row whose contingency takes a participating machine out.
+         *
+         * Shares get_slack_weights_solver's rules through _raw_slack_weights_solver,
+         * so the two can never drift apart. Unlike it, this one is const and does NOT
+         * refresh the cached bus_slack_weight_ (that cache belongs to the grid's own
+         * solve, not to a hypothetical row). Returns an ALL-ZERO vector when every
+         * participating generator is off -- there is no meaningful normalisation
+         * then, and it is the caller's business to decide what to do about it.
+         */
+        RealVect get_slack_weights_solver_without(size_t nb_bus_solver,
+                                                  const SolverBusIdVect & id_grid_to_solver,
+                                                  const std::vector<bool> & gen_off) const;
     
         GlobalBusIdVect get_slack_bus_id() const;
         void set_p_slack(const Eigen::Ref<const RealVect>& node_mismatch, const SolverBusIdVect & id_grid_to_solver) override;
@@ -281,6 +297,14 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         real_type get_target_vm_pu(int gen_id) const {return target_vm_pu_(gen_id);}
         real_type get_min_q(int gen_id) const {return min_q_.coeff(gen_id);}
         real_type get_max_q(int gen_id) const {return max_q_.coeff(gen_id);}
+        // the reactive setpoint a NON voltage-regulating generator injects (a
+        // regulating one's reactive output is solved for, not set -- see fillSbus,
+        // which only stamps this when voltage_regulator_on_ is false)
+        real_type get_target_q_mvar(int gen_id) const {return target_q_mvar_(gen_id);}
+        bool get_voltage_regulator_on(int gen_id) const {return voltage_regulator_on_[gen_id];}
+        // the generator's own (un-normalised) share of the distributed slack, as
+        // aggregated per bus by get_slack_weights_solver
+        real_type get_gen_slack_weight(int gen_id) const {return gen_slack_weight_[gen_id];}
         // write the converged reactive output (MVAr) of a remote-regulating gen,
         // supplied by the VoltageControl extension (LSGrid::compute_results)
         void set_voltage_control_q(int gen_id, real_type q_mvar) {res_q_(gen_id) = q_mvar;}
@@ -383,6 +407,16 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         /**
          * pseudo off generator (with p == 0) and with no contribution to the the slack bus
          */
+        /**
+         * The un-normalised per-solver-bus slack weights: one place holding the rule
+         * for who participates (connected, flagged a slack bus, non-zero weight) and
+         * the disconnected-bus checks. `gen_off`, when non-null, is a nb()-sized mask
+         * of generators to leave out on top of that.
+         */
+        RealVect _raw_slack_weights_solver(size_t nb_bus_solver,
+                                           const SolverBusIdVect & id_grid_to_solver,
+                                           const std::vector<bool> * gen_off) const;
+
         bool is_pseudo_off(int gen_id) const{
             if (gen_slackbus_[gen_id]) return false;  // slack is not pseudo off
             if ((abs(gen_slack_weight_[gen_id]) >= _tol_equal_float)) return false;  // slack is not pseudo off

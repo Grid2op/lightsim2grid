@@ -183,6 +183,29 @@ void GeneratorContainer::check_valid(int nb_bus,
 RealVect GeneratorContainer::get_slack_weights_solver(
     size_t nb_bus_solver,
     const SolverBusIdVect & id_grid_to_solver){
+    RealVect res = _raw_slack_weights_solver(nb_bus_solver, id_grid_to_solver, nullptr);
+    bus_slack_weight_ = res;
+    real_type sum_res = res.sum();
+    res /= sum_res;
+    return res;
+}
+
+RealVect GeneratorContainer::get_slack_weights_solver_without(
+    size_t nb_bus_solver,
+    const SolverBusIdVect & id_grid_to_solver,
+    const std::vector<bool> & gen_off) const{
+    RealVect res = _raw_slack_weights_solver(nb_bus_solver, id_grid_to_solver, &gen_off);
+    const real_type sum_res = res.sum();
+    // every participating generator is off: leave the vector at zero rather than
+    // dividing by it, and let the caller decide (see BaseBatchSweep::_row_slack_weights)
+    if(abs(sum_res) > _tol_equal_float) res /= sum_res;
+    return res;
+}
+
+RealVect GeneratorContainer::_raw_slack_weights_solver(
+    size_t nb_bus_solver,
+    const SolverBusIdVect & id_grid_to_solver,
+    const std::vector<bool> * gen_off) const{
     const int nb_gen = nb();
     GlobalBusId bus_id_me;
     SolverBusId bus_id_solver;
@@ -192,6 +215,8 @@ RealVect GeneratorContainer::get_slack_weights_solver(
         if(!status_[gen_id]) continue;
         if(!gen_slackbus_[gen_id]) continue;
         if(abs(gen_slack_weight_[gen_id]) < _tol_equal_float) continue;
+        // ... nor if the caller is evaluating a case where this one is off
+        if(gen_off != nullptr && (*gen_off)[gen_id]) continue;
 
         bus_id_me = bus_id_(gen_id);
         if(bus_id_me.cast_int() == _deactivated_bus_id){
@@ -213,9 +238,6 @@ RealVect GeneratorContainer::get_slack_weights_solver(
         }
         if(gen_slackbus_[gen_id]) res.coeffRef(bus_id_solver.cast_int()) += gen_slack_weight_[gen_id];
     }
-    bus_slack_weight_ = res;
-    real_type sum_res = res.sum();
-    res /= sum_res;
     return res;
 }
 

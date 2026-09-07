@@ -275,7 +275,10 @@ inline void NRSystem<Base, Rest...>::fill_J()
     // bus masking: overwrite the masked buses' rows with the identity (zero the
     // whole row, then set the diagonal to 1 -- ones last, since the diagonal is
     // itself part of a masked row). Pure value-level edit, J sparsity unchanged.
-    if (!masked_buses_.empty()) {
+    // Covers both families at once: a masked bus (P and Q rows, see
+    // set_masked_buses) and a PV-pinned bus (Q row only, see set_pv_pinned_buses)
+    // resolve into the same two position lists.
+    if (!masked_buses_.empty() || !pv_pinned_buses_.empty()) {
         if (masked_dirty_) _recompute_mask_positions();
         for (int p : masked_zero_pos_) J_values[p] = static_cast<real_type>(0.);
         for (int p : masked_one_pos_)  J_values[p] = static_cast<real_type>(1.);
@@ -552,6 +555,15 @@ inline void NRSystem<Base, Rest...>::_residual_into(
             const int qr = ledger_.q_row(b);
             if (qr >= 0) res(qr) = static_cast<real_type>(0.);
         }
+    }
+    // PV pinning: same, for the Q row alone. Zeroing it is what makes the bus PV
+    // again -- both because the identity row then yields dVm == 0 (the magnitude
+    // stays at the generator setpoint), and because the bus' reactive mismatch,
+    // which the generator absorbs and which no equation constrains, must not be
+    // allowed to hold up convergence. The P row is left as computed.
+    for (int b : pv_pinned_buses_) {
+        const int qr = ledger_.q_row(b);
+        if (qr >= 0) res(qr) = static_cast<real_type>(0.);
     }
 }
 

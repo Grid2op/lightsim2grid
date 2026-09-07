@@ -58,6 +58,13 @@ void bind_batch_sweep_common(py::class_<T> & cls)
         .def("amps_computation_time", &T::amps_computation_time, DocTimeSeries::amps_computation_time.c_str())
         .def("thread_init_time", &T::thread_init_time, DocTimeSeries::thread_init_time.c_str())
         .def("nb_solved", &T::nb_solved, DocTimeSeries::nb_solved.c_str())
+        .def("get_linear_solver_stats", &T::get_linear_solver_stats,
+             "Linear-solver counters of this batch's own algorithm (nb_analyze, "
+             "nb_factorize, nb_refactorize, ...). A batch keeps its labelling fixed "
+             "across rows, so nb_analyze should read 1 for the whole compute() however "
+             "many rows it ran -- everything after the first row is a refactorization. "
+             "With nb_thread > 1 these are the calling thread's algorithm's counters "
+             "only: each worker owns its own.")
         .def("nb_converged", &T::nb_converged, DocTimeSeries::nb_converged.c_str())
         .def("converged_mask", [](const T & self){
                  const std::vector<char> & c = self.converged_mask();  // char, not bool: see
@@ -229,6 +236,25 @@ void bind_batch(py::module_& m) {
         .def("set_contingency_trafos", &ScenarioSweep::set_contingency_trafos<>, py::arg("mask"),
              "Per-step trafo contingency mask, shape (n_simul, n_trafo), dtype bool. "
              "See set_contingency_lines().")
+        .def("set_contingency_gens", &ScenarioSweep::set_contingency_gens<>, py::arg("mask"),
+             "Per-step generator contingency mask, shape (n_simul, n_gen), dtype bool. "
+             "True means 'disconnect this generator for this simulation'.\n\n"
+             "Unlike the two branch masks this does not edit Ybus -- a generator has no "
+             "admittance. It removes the generator's active power (and, if it does not "
+             "regulate voltage, its reactive setpoint) from that step's injection, "
+             "re-weights the distributed slack without it, and -- when the LAST "
+             "generator regulating its own bus is taken out -- turns that bus from PV "
+             "to PQ for the step, so its voltage magnitude is solved for instead of "
+             "held at the setpoint. The lost MW is picked up by the slack; use "
+             "modify_gen_p to express a redispatch instead.\n\n"
+             "The PV/PQ relabelling costs no extra symbolic factorization: every bus "
+             "that can flip is given a voltage-magnitude unknown and a reactive "
+             "equation once, up front, and each step merely masks the equation of the "
+             "buses that are still PV. The whole sweep keeps running on one analysis.\n\n"
+             "Only generators regulating their OWN bus are supported. compute() raises "
+             "if the mask names a generator that regulates a remote bus, or one whose "
+             "bus a control group holds (a remote generator, an SVC or an HVDC "
+             "converter station): remote voltage control is not supported yet.")
 
         // limit violations + "handle disconnected grid": same names/semantics as
         // ContingencyAnalysisCPP (see below), now also available here. Deliberately

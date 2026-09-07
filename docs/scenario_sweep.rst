@@ -61,15 +61,16 @@ The setter-based API
 Unlike `TimeSerie` / `InjectionSweep`'s single bundled `compute_V_from_inj` call,
 `ScenarioSweep` is built up incrementally: call as many of `modify_gen_p` /
 `modify_sgen_p` / `modify_load_p` / `modify_load_q` / `modify_gen_v` /
-`set_contingency_lines` / `set_contingency_trafos` as are relevant, then `compute()`.
+`set_contingency_lines` / `set_contingency_trafos` / `set_contingency_gens` as are
+relevant, then `compute()`.
 
 - **Row-count locking.** The first setter you call fixes the number of simulations for
   the whole object; every later setter is checked against it immediately -- a shape
   mistake raises right at the call that made it, not later inside `compute()`.
 - **Unset axes.** Any injection axis you never call (eg `modify_gen_p`) defaults to the
   grid's own current target value, broadcast across every row -- not zero. Any
-  contingency mask you never call (`set_contingency_lines` / `set_contingency_trafos`)
-  defaults to all-`False` -- nothing disconnected. `compute()` raises if you never call
+  contingency mask you never call (`set_contingency_lines` / `set_contingency_trafos` /
+  `set_contingency_gens`) defaults to all-`False` -- nothing disconnected. `compute()` raises if you never call
   *any* setter (a degenerate call -- use `ac_pf()` / `dc_pf()` directly for a single
   powerflow).
 - **`modify_gen_v` is different from the other four `modify_*` setters.** It does not
@@ -104,6 +105,61 @@ naming inconsistency:
     Dense contingency masks cost real memory at scale (eg 10k simulations x 3k branches
     ~= 30 MB) -- fine for typical use, a lighter-weight representation may be added in a
     future release if that becomes a bottleneck.
+
+Generator contingencies
+------------------------------------
+
+`set_contingency_gens(mask)` takes a `(n_simul, n_gen)` boolean mask, `True` meaning
+"disconnect this generator for this simulation". Unlike the two branch masks it does
+not edit the admittance matrix -- a generator carries no admittance. It does three
+things instead:
+
+- takes the generator's active power out of that row's injection (and its reactive
+  setpoint too, if it is not a voltage-regulating machine);
+- re-weights the distributed slack without it, renormalised, so a row that drops a
+  participating machine redistributes its share over the others. The **set** of slack
+  buses is not touched: the angle reference is a property of the batch, chosen once;
+- and, when the **last** generator regulating its own bus is taken out, turns that bus
+  from PV to PQ for that row. Its voltage magnitude is then solved for rather than held
+  at the setpoint, and the reactive power that machine was supplying is no longer
+  available there.
+
+The lost MW is picked up by the slack. If you want a redispatch instead, express it
+with `modify_gen_p` -- that is what it is for.
+
+.. code-block:: python
+
+    import numpy as np
+    from lightsim2grid import ScenarioSweep
+
+    sweep = ScenarioSweep(env)
+    gen_mask = np.zeros((env.n_gen, env.n_gen), dtype=bool)
+    np.fill_diagonal(gen_mask, True)   # one row per generator: the "generator N-1" sweep
+    sweep.set_contingency_gens(gen_mask)
+    sweep.compute()
+    v = sweep.get_voltages()
+
+.. note::
+
+    The PV -> PQ relabelling would normally force a fresh symbolic factorization on
+    every row, which is exactly what makes `ScenarioSweep` fast (one analysis, one
+    factorization, refactorizations after that). It does not here: every bus that *can*
+    flip is given a voltage-magnitude unknown and a reactive equation once, up front, so
+    the Jacobian's sparsity is the union over all the rows; a row where the bus is still
+    PV simply masks that reactive equation to an identity row, freezing `|V|` at the
+    setpoint. That is a value-level edit, and the factorization survives it.
+
+    The cost is one extra row and column per *switchable* bus, on every row of the
+    sweep. A handful of candidate generators is negligible; masking every generator on
+    the grid grows the Jacobian's dimension by roughly the number of PV buses.
+
+.. warning::
+
+    Only generators that regulate their **own** bus are supported for now. `compute()`
+    raises if the mask names a generator that regulates a remote bus, or one standing on
+    a bus whose voltage a control group holds (a remote generator, an SVC or an HVDC
+    converter station). Those go through a different part of the Jacobian, with columns
+    and rows of their own that this feature does not yet reserve and mask.
 
 Handling disconnected grids and limit violations
 ------------------------------------------------------
