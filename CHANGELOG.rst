@@ -156,39 +156,18 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
-- [ADDED] ``ScenarioSweep.set_contingency_gens(mask)``: a third contingency axis, a
-  ``(n_simul, n_gen)`` boolean mask disconnecting generators row by row, alongside the
-  existing line and trafo masks. It takes the machine's active power out of that row's
-  injection (its reactive setpoint too when it does not regulate voltage), re-weights the
-  distributed slack without it, and -- when the LAST generator regulating its own bus goes
-  -- turns that bus from PV to PQ for the row. The slack **bus set** is untouched: the
-  angle reference is a property of the batch, picked once, and moving it per row would
-  raise ``has_slack_participate_changed()`` and cost the very re-analysis this is built to
-  avoid. Only generators regulating their own bus are in scope for now; a mask naming a
-  remote controller, or a generator standing on a group-controlled bus (a remote
-  generator, an SVC, an hvdc converter station), is refused by ``compute()`` with a message
-  saying so -- those live in the ``VoltageControl`` extension, whose own Jacobian columns
-  and rows nothing here reserves or masks yet.
-- [IMPROVED] the PV/PQ relabelling above costs **no extra symbolic factorization**, which
-  is the whole point: a sweep is fast because its labelling never changes, so one
-  ``analyze`` + one ``factorize`` serve every row and the rest are ``refactorize``. Rather
-  than re-analyzing per row, ``Base::set_switchable_vm_buses`` reserves a Vm unknown and a
-  Q equation for every bus that *can* flip -- so the sparsity is the union over the rows,
-  the "n" warm-up solve included -- and ``NRSystem::set_pv_pinned_buses`` then masks the Q
-  row of the buses that are still PV to the identity, freezing ``dVm`` at 0 so the
-  magnitude holds at the setpoint. Both reuse machinery that was already there: the
-  reservation follows ``free_vm_slack_buses_`` exactly, and the masking shares
-  ``masked_zero_pos_`` / ``masked_one_pos_`` and the single ``_recompute_mask_positions``
-  pass with ``set_masked_buses``, which ``handle_disconnected_grid`` has been driving per
-  contingency all along. Note the deliberate shape: a Vm unknown plus a Q *equation*, not
-  an explicit Q unknown -- the generator's reactive output is still recoverable from the
-  bus mismatch (``takes_q_residual_share``), and an explicit ``Q_c`` column is what
-  *remote* control needs, where controller and controlled bus differ. The cost is one row
-  and one column per switchable bus, on every row of the sweep.
+- [ADDED] ``ScenarioSweep.set_contingency_gens(mask)``: a per-step generator contingency mask,
+  next to the line and trafo ones. It removes the generator's injection from that step, re-weights
+  the distributed slack without it, and turns its bus PV -> PQ when it was the last machine
+  regulating it. Only generators regulating their own bus are supported for now.
+- [IMPROVED] the PV -> PQ relabelling above costs no extra symbolic factorization: every bus that
+  can change role is given a Vm unknown and a Q equation once, and each step masks the Q row of
+  the buses that are still PV. A sweep still pays one ``analyze`` + one ``factorize``.
 - [IMPROVED] ``GeneratorContainer::get_slack_weights_solver`` and the new
-  ``get_slack_weights_solver_without`` (same weights, evaluated as if some generators were
-  off) share ``_raw_slack_weights_solver``, so the rule for who participates and the
-  disconnected-bus checks live in one place and the two cannot drift apart.
+  ``get_slack_weights_solver_without`` share their implementation, so the rule for who
+  participates in the slack cannot drift between them.
+- [ADDED] ``get_linear_solver_stats()`` on the batch classes, to check a sweep really does reuse
+  its factorization.
 - [FIXED] a grid using voltage control that the selected algorithm cannot implement -- a
   generator or an hvdc converter station regulating a bus other than its own, several
   machines regulating one bus, or a voltage-mode SVC -- was **solved anyway, to a wrong

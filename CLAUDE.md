@@ -8,7 +8,7 @@ Every commit must end with a `Signed-off-by:` trailer naming **a human**, or the
 fails the pull request. This is the single most common reason a PR here is red.
 
 ```
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Assisted-by: Claude Code (claude-opus-5)
 Claude-Session: https://claude.ai/code/session_...
 Signed-off-by: Benjamin Donnot <benjamin.donnot@rte-france.com>
 ```
@@ -20,8 +20,10 @@ Rules:
   <noreply@anthropic.com>` is not acceptable even though one or two such commits slipped
   through in the past — do not copy them.
 - **The signoff must match the commit author**, so a Claude-written commit is authored by
-  the human signing it off, not by Claude. Claude's contribution is recorded in the
-  `Co-Authored-By:` trailer, naming the model used.
+  the human signing it off, not by Claude.
+- The assistant is credited with **`Assisted-by:`**, naming the tool and the model — not
+  `Co-Authored-By:`, and never as an author. This follows the kernel's convention for
+  coding assistants (https://docs.kernel.org/process/coding-assistants.html).
 - Set the identity once per session, then `-s` produces a matching trailer by itself:
 
   ```
@@ -44,13 +46,15 @@ The vendored dependencies are git submodules and start empty — a build fails w
 git submodule update --init --depth 1 eigen SuiteSparse Catch2   # Catch2 only for the C++ tests
 ```
 
-The build is driven by scikit-build-core. Installing the backend first makes repeated
-builds much faster than re-resolving it every time:
+The build is driven by scikit-build-core, which pip fetches on its own:
 
 ```
-pip install "scikit-build-core>=0.5.0" pybind11
-pip install -e . --no-build-isolation
+pip install -e .
 ```
+
+`--no-build-isolation` (with `pip install "scikit-build-core>=0.5.0" pybind11` first) only
+buys not re-resolving the build backend on every rebuild. Worth it when iterating on C++;
+not needed otherwise.
 
 For a quick syntax check of a single C++ change, without a full rebuild:
 
@@ -68,22 +72,22 @@ this reason.
 
 ## Tests
 
-Python, from `lightsim2grid/tests` — the tests import each other by bare module name, so the
-working directory matters:
+**grid2op has to be installed from source**, not from pypi: a sizeable part of the suite
+reads test data (`data_test/test_PandaPower/test_case14.json`,
+`data_test/test_multi_chronics`) that the released wheel does not ship, and those tests fail
+for that reason alone. If you see ~100 failures complaining about a missing powergrid or
+chronics path, that is this, not the code.
+
+The tests are written with **`unittest`**; run them that way. `pytest` does collect and run
+them, but it is not what is used here. From `lightsim2grid/tests` — the tests import each
+other by bare module name, so the working directory matters:
 
 ```
 cd lightsim2grid/tests
-python -m pytest .                                    # everything
-python -m pytest test_ScenarioSweep.py                # one file
-python -m pytest test_ScenarioSweep.py::TestScenarioSweepCPP::test_row_count_lock_fails_fast   # one test
-python -m pytest . -k "contingency"                   # by name
+python -m unittest discover                                     # everything
+python -m unittest test_ScenarioSweep                           # one file
+python -m unittest test_ScenarioSweep.TestScenarioSweepCPP.test_row_count_lock_fails_fast
 ```
-
-A bare full run reports roughly a hundred failures that have nothing to do with the code:
-missing optional dependencies (`pypowsybl`, gymnasium) and grid2op test data
-(`data_test/test_PandaPower/test_case14.json`, `data_test/test_multi_chronics`) that a plain
-`pip install grid2op` does not ship. Check a failure's message before assuming a change
-caused it.
 
 C++ unit tests (Catch2) build standalone — this is the path CI uses, and the one that works.
 Configuring the top-level `CMakeLists.txt` with `-DBUILD_TESTING=ON` needs scikit-build-core's
@@ -100,8 +104,10 @@ ctest --test-dir build_tests -R "some test name"      # one test; they are named
 
 Three layers: a standalone C++ core library (`src/core/`, buildable and usable with no
 Python at all — see `docs/cpp_library.rst`), pybind11 bindings (`src/bindings/python/`),
-and the Python package (`lightsim2grid/`) whose headline product is `LightSimBackend`, a
-grid2op backend.
+and the Python package (`lightsim2grid/`). `LightSimBackend` (the grid2op backend) is the
+best-known entry point but not the only one: the algorithms themselves (`NR_KLU` and the
+rest, via `lightsim2grid.algorithm`), and the batch classes `TimeSeries`, `InjectionSweep`,
+`ContingencyAnalysis` and `ScenarioSweep`, are used directly and stand on their own.
 
 ### `LSGrid` is the hub
 
@@ -112,13 +118,21 @@ algorithms consume; `compute_results` publishes flows and injections back onto t
 containers. It is a large file — start from the method you need rather than reading it
 through.
 
-### Two bus numbering spaces, and they are different C++ types
+### Three bus numbering spaces, and they are different C++ types
 
-A "grid" bus id and a "solver" bus id are not interchangeable, and `TaggedIdVec.hpp` makes
-mixing them a **compile error**: `GlobalBusId` / `GlobalBusIdVect` versus `SolverBusId` /
-`SolverBusIdVect`, converted through `id_me_to_solver` and `id_solver_to_me`. Deactivated
-entries read `BaseConstants::_deactivated_bus_id`. When adding an API, keep the tag — do not
-reach for a bare `int` to make a signature compile.
+`TaggedIdVec.hpp` / `Utils.hpp` give each its own type, so mixing them is a **compile
+error** rather than a silent wrong answer:
+
+- **`LocalBusId`** — the busbar *within a substation*, **1-based**, from 1 to
+  `n_busbar_per_sub`. This is what a grid2op topology action speaks. Converted with
+  `SubstationContainer::local_to_gridmodel(sub_id, LocalBusId)`.
+- **`GlobalBusId`** (a.k.a. `GridModelBusId` — the same tag) — the grid-wide bus id.
+- **`SolverBusId`** — the bus id inside the matrices actually handed to the solver, which
+  only covers connected buses. Converted through `id_me_to_solver` / `id_solver_to_me`.
+
+Deactivated entries read `BaseConstants::_deactivated_bus_id`. When adding an API, keep the
+tag — do not reach for a bare `int` to make a signature compile. Getting the 1-based local
+labelling wrong has caused real bugs (see the note in `SubstationContainer.hpp`).
 
 ### Element containers
 
@@ -156,7 +170,9 @@ Gauss-Seidel and NR implementations. The NR is where the design lives:
 - **`build_J_sparsity`** (`NRSystem.tpp`) is entirely ledger-driven: one pass over the Ybus
   nonzeros emits every dS-derived entry for all components at once. Give a bus a row/column
   in the ledger and the sparsity follows automatically.
-- **Value-level row masking** keeps the sparsity fixed across scenarios:
+- **Value-level row masking** keeps the sparsity fixed across scenarios. This is a
+  *batch-algorithm* concern — a plain solve, or solves called one after another, has no
+  need of it — and it is what lets a sweep reuse one symbolic factorization:
   `set_masked_buses` (P and Q rows → identity, for buses a contingency stranded) and
   `set_pv_pinned_buses` (Q row only, for a bus that is PV in this scenario but PQ in
   another). Both resolve to positions in `J_.valuePtr()` and rewrite values only, so the
@@ -211,5 +227,10 @@ exist.
 
 `CHANGELOG.rst`, under the current development version at the top — **not** under `[TODO]`,
 which is a list of open problems rather than a release. Entries are prefixed `[ADDED]`,
-`[FIXED]`, `[IMPROVED]` and explain *why*, at length where the reasoning is not obvious from
-the diff. Match the surrounding style; a one-line entry is out of place here.
+`[FIXED]`, `[IMPROVED]`, `[BREAKING]`.
+
+**Keep them short: one to four lines, roughly twenty words.** Read the `[0.13.x]` and
+earlier blocks for the register to aim at — say what changed and, where it is not obvious,
+why, then stop. The recent entries are far too verbose and are not the model to copy; a
+changelog is an index, and the reasoning belongs in the commit message and the code
+comments, which is where this repository already puts it at length.
