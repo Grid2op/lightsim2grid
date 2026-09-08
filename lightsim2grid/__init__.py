@@ -128,6 +128,12 @@ except ImportError as exc_:  # noqa: F841
     # grid2op is not installed, the ScenarioSweep module will not be available
     pass
 
+# the continuation powerflow works on an LSGrid directly, it needs no grid2op
+from lightsim2grid.continuationPowerflow import ContinuationPowerFlow, run_cpf  # noqa: F401
+__all__.append("ContinuationPowerFlow")
+__all__.append("run_cpf")
+__all__.append("continuationPowerflow")
+
 try:
     from lightsim2grid.rewards import N1ContingencyReward  # noqa: F401
     __all__.append("rewards")

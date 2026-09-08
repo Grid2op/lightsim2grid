@@ -279,6 +279,25 @@ class LS2G_API AlgorithmSelector final
             get_prt_solver("set_pv_pinned_buses", false)->set_pv_pinned_buses(solver_bus_ids);
         }
 
+        // continuation powerflow primitives (ContinuationSweep) -- NR-based
+        // algorithms only, guarded exactly like get_J: both read state the last
+        // powerflow left behind, so asking a solver that did not run it is a bug.
+        bool supports_cpf() const {
+            return get_prt_solver("supports_cpf", false)->supports_cpf();
+        }
+        bool cpf_tangent(const Eigen::Ref<const CplxVect>& dir_solver, RealVect& z) {
+            check_right_solver("cpf_tangent");
+            return get_prt_solver("cpf_tangent", false)->cpf_tangent(dir_solver, z);
+        }
+        void cpf_predict(const Eigen::Ref<const RealVect>& z, real_type coeff, CplxVect& V_pred) const {
+            check_right_solver("cpf_predict");
+            get_prt_solver("cpf_predict", false)->cpf_predict(z, coeff, V_pred);
+        }
+        bool cpf_refactorize_at_current() {
+            check_right_solver("cpf_refactorize_at_current");
+            return get_prt_solver("cpf_refactorize_at_current", false)->cpf_refactorize_at_current();
+        }
+
         Eigen::SparseMatrix<real_type> get_J_python() const {
             Eigen::SparseMatrix<real_type> res = get_J();
             return res;
