@@ -293,6 +293,7 @@ jobs:
                 command: |
                     source venv_test/bin/activate
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
+                    pip install matpowercaseframes  # optional dep, reads the ".m" of a matpower case
                     pip freeze
             - run:
                 name: "Build external algo plugin"
@@ -454,6 +455,7 @@ jobs:
                 command: |
                     source venv_test/bin/activate
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
+                    pip install matpowercaseframes  # optional dep, reads the ".m" of a matpower case
                     pip freeze
             - run:
                 name: "Build external algo plugin"
@@ -505,6 +507,7 @@ jobs:
                 command: |
                     .\venv_test\Scripts\activate
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
+                    pip install matpowercaseframes  # optional dep, reads the ".m" of a matpower case
                     pip freeze
             - run:
                 name: "Build external algo plugin"

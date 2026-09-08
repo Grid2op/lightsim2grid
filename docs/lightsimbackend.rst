@@ -159,13 +159,14 @@ What MATPOWER does not say, and what lightsim2grid does about it:
 
 - **substations**: MATPOWER has no notion of a busbar section within a bus, so there is
   exactly one grid2op substation per MATPOWER bus. How many busbar sections each of them
-  gets is up to you (`n_busbar_per_sub` of `grid2op.make`, or the `n_busbar_per_sub` /
-  `double_bus_per_sub` `loader_kwargs`); the extra ones start empty and deactivated,
-  waiting for a topology action.
-- **names**: MATPOWER numbers its buses and names nothing, so grid2op's default names are
-  used -- `sub_0`, `load_1_0`, `gen_5_3`, `0_4_1` (a powerline is named after the two
-  substations it joins and its own id), ... A chronics folder addressing the elements by
-  name has to use those.
+  gets is up to you (`n_busbar` of `grid2op.make`, or the `n_busbar_per_sub`
+  `loader_kwargs`); the extra ones start empty and deactivated, waiting for a topology
+  action.
+- **names**: MATPOWER numbers its buses and names nothing, so grid2op's own default names
+  are used -- `sub_0`, `load_1_0`, `gen_5_3`, `0_4_1` (a powerline is named after the two
+  substations it joins and its own id), ... They are made by grid2op itself
+  (`Backend._fill_names_obj`), so they are exactly what any other nameless grid gets. A
+  chronics folder addressing the elements by name has to use those.
 - **thermal limits**: MATPOWER's `RATE_A` is a branch MVA rating, not the ampere limit
   grid2op works with, and is 0 ("unlimited") in a fair share of the published cases. The
   limits are therefore left open by the loader and are read from the environment's

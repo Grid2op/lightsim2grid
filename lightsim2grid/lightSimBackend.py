@@ -104,7 +104,6 @@ class LightSimBackend(Backend):
     
     KEYS_MATPOWER_LOADER = {
         "grid",
-        "double_bus_per_sub",
         "n_busbar_per_sub",
     }
     
@@ -205,8 +204,9 @@ class LightSimBackend(Backend):
         #:     to `grid2op.make`.
         #:   - `n_busbar_per_sub` (``int``): number of independant buses for
         #:     each substation in the GridModel (same meaning as for pypowsybl).
-        #:   - `double_bus_per_sub` (``bool``): shorthand for
-        #:     `n_busbar_per_sub=2` (same meaning as for pypowsybl).
+        #:     There is no `double_bus_per_sub` here: that key predates grid2op
+        #:     supporting any number of busbars per substation, and only the
+        #:     pypowsybl loader keeps it for backward compatibility.
         #: 
         self._loader_kwargs :LOADER_KWARGS_TYPING = loader_kwargs
 
@@ -1274,27 +1274,40 @@ class LightSimBackend(Backend):
         # assign substation to each element (grid2op side)
         self._aux_read_subid_from_grid()
         
-        # the names: matpower has none, so use grid2op's default ones (and give them
-        # back to the grid, so a LSGrid error message names the same element grid2op does)
-        self.name_sub = np.array([f"sub_{i}" for i in range(self.n_sub)]).astype(str)
-        self.name_load = np.array([f"load_{sub_id}_{id_obj}"
-                                   for id_obj, sub_id in enumerate(self.load_to_subid)]).astype(str)
-        self.name_gen = np.array([f"gen_{sub_id}_{id_obj}"
-                                  for id_obj, sub_id in enumerate(self.gen_to_subid)]).astype(str)
-        self.name_line = np.array([f"{sub1}_{sub2}_{id_obj}" for id_obj, (sub1, sub2)
-                                   in enumerate(zip(self.line_or_to_subid, self.line_ex_to_subid))]).astype(str)
+        # the names. A matpower case names nothing -- it numbers buses -- so grid2op's
+        # own default names are used, and it is grid2op that makes them: leave them
+        # unset and let `Backend._fill_names_obj` fill them in from the substation ids
+        # just read. An environment loaded from a matpower case is then named exactly
+        # like any other grid2op grid whose backend leaves the names out, by the one
+        # piece of code that decides what those names look like.
+        if not hasattr(self, "_fill_names_obj"):
+            raise BackendError("Loading a grid from a matpower case needs a grid2op recent "
+                               "enough to provide `Backend._fill_names_obj`: matpower names "
+                               "nothing, so grid2op's default names are used and grid2op is "
+                               "what makes them. Please upgrade grid2op.")
+        self.name_sub = None
+        self.name_load = None
+        self.name_gen = None
+        self.name_line = None
+        self.name_storage = None
+        self.name_shunt = None
+        with warnings.catch_warnings():
+            # `_fill_names_obj` warns once per name vector, because a backend reaching
+            # it usually forgot to fill them. Here there is nothing to forget: the
+            # source format HAS no names, which the docstring above says and the
+            # documentation repeats.
+            warnings.simplefilter("ignore")
+            self._fill_names_obj()
+        # and give them back to the grid, so an LSGrid error message names the same
+        # element grid2op does
         self._grid.set_substation_names(self.name_sub)
         self._grid.set_gen_names(self.name_gen)
         self._grid.set_load_names(self.name_load)
         self._grid.set_line_names(self.name_line[:self.__nb_powerline])
         self._grid.set_trafo_names(self.name_line[self.__nb_powerline:])
         if self.__has_storage:
-            self.name_storage = np.array([f"storage_{sub_id}_{id_obj}"
-                                          for id_obj, sub_id in enumerate(self.storage_to_subid)]).astype(str)
             self._grid.set_storage_names(self.name_storage)
         if self.n_shunt is not None:
-            self.name_shunt = np.array([f"shunt_{sub_id}_{id_obj}"
-                                        for id_obj, sub_id in enumerate(self.shunt_to_subid)]).astype(str)
             self._grid.set_shunt_names(self.name_shunt)
         
         # complete the other vectors
@@ -1443,7 +1456,14 @@ class LightSimBackend(Backend):
         self._grid = init_from_pandapower(self._init_pp_backend._grid,
                                           self._init_pp_backend.n_sub,
                                           self.n_busbar_per_sub,
-                                          pp_orig_file=pp_orig_file)
+                                          pp_orig_file=pp_orig_file,
+                                          # grid2op's own pandapower backend is what says
+                                          # what a substation is on this path, and has been
+                                          # for as long as it has existed:
+                                          # `_aux_finish_setup_after_reading` copies its
+                                          # answer onto the grid. Let the loader work out
+                                          # its own and the two could disagree silently.
+                                          init_subid=False)
         self.__nb_bus_before = self._init_pp_backend.get_nb_active_bus()  
         self._aux_setup_right_after_grid_init()   
         self.__nb_powerline = self._init_pp_backend._grid.line.shape[0]

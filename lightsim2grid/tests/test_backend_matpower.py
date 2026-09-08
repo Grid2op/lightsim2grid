@@ -50,6 +50,15 @@ try:
 except ImportError:
     CAN_DO_MAT = False
 
+try:
+    import matpowercaseframes  # noqa: F401
+    CAN_READ_DOT_M = True
+except ImportError:
+    # reading the ".m" a matpower case is distributed as is what this optional package
+    # is for. Everything below reads `case_14_matpower/grid.m`, so without it there is
+    # nothing to test rather than something failing
+    CAN_READ_DOT_M = False
+
 
 PATH_CASE_14_MATPOWER = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                                      "case_14_matpower")
@@ -76,6 +85,7 @@ def _aux_prep_backend(backend, env_name):
     return backend
 
 
+@unittest.skipIf(not CAN_READ_DOT_M, "matpowercaseframes is not installed")
 class TestLoadGridMatpower(unittest.TestCase):
     """Reading `grid.m` gives a backend grid2op accepts, with the right shape."""
 
@@ -114,6 +124,31 @@ class TestLoadGridMatpower(unittest.TestCase):
             names = getattr(cls, attr_nm)
             assert len(set(names)) == len(names), f"duplicated name in {attr_nm}: {names}"
 
+    def test_names_are_grid2op_s_own_default_ones(self):
+        """matpower names nothing, so grid2op's `Backend._fill_names_obj` makes the
+        names -- the backend must not roll its own, or they would drift from what every
+        other nameless grid gets."""
+        cls = type(self.backend)
+        reference = LightSimBackend(loader_method="matpower")
+        reference.load_to_subid = cls.load_to_subid
+        reference.gen_to_subid = cls.gen_to_subid
+        reference.line_or_to_subid = cls.line_or_to_subid
+        reference.line_ex_to_subid = cls.line_ex_to_subid
+        reference.storage_to_subid = cls.storage_to_subid
+        reference.shunt_to_subid = cls.shunt_to_subid
+        reference.n_sub = cls.n_sub
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            reference._fill_names_obj()
+        for attr_nm in ["name_sub", "name_load", "name_gen", "name_line", "name_shunt"]:
+            np.testing.assert_array_equal(getattr(cls, attr_nm), getattr(reference, attr_nm),
+                                          err_msg=f"{attr_nm} is not grid2op's default")
+        # and the grid knows them too, so an LSGrid error names what grid2op names
+        np.testing.assert_array_equal([el.name for el in self.backend._grid.get_loads()],
+                                      cls.name_load)
+        np.testing.assert_array_equal([el.name for el in self.backend._grid.get_generators()],
+                                      cls.name_gen)
+
     def test_nominal_voltages(self):
         # the "baseKV" column of grid.m: 132 kV for buses 1-5, 11 kV for bus 8, 33 kV
         # for the rest -- and a substation's voltage is what its elements report
@@ -127,6 +162,7 @@ class TestLoadGridMatpower(unittest.TestCase):
         np.testing.assert_allclose(self.backend._sh_vnkv, expected[cls.shunt_to_subid])
 
 
+@unittest.skipIf(not CAN_READ_DOT_M, "matpowercaseframes is not installed")
 class TestSubidComeFromTheLoader(unittest.TestCase):
     """
     The substation each element sits in is a property of the file, so it is
@@ -227,6 +263,7 @@ class TestSubidComeFromTheLoader(unittest.TestCase):
             f"{cls.load_to_subid[3] + NB_SUB}")
 
 
+@unittest.skipIf(not CAN_READ_DOT_M, "matpowercaseframes is not installed")
 class TestRunpfMatpower(unittest.TestCase):
     def setUp(self) -> None:
         self.backend = _aux_prep_backend(LightSimBackend(loader_method="matpower"),
@@ -253,6 +290,7 @@ class TestRunpfMatpower(unittest.TestCase):
 
 
 @unittest.skipIf(not CAN_DO_PANDAPOWER, "pandapower is not installed")
+@unittest.skipIf(not CAN_READ_DOT_M, "matpowercaseframes is not installed")
 class TestAgainstPandapower(unittest.TestCase):
     """
     `case_14_matpower/grid.m` holds the same IEEE 14 bus system as
@@ -318,6 +356,7 @@ class TestAgainstPandapower(unittest.TestCase):
         np.testing.assert_allclose(sh_q, self.net.res_shunt["q_mvar"].values, rtol=1e-5, atol=1e-5)
 
 
+@unittest.skipIf(not CAN_READ_DOT_M, "matpowercaseframes is not installed")
 class TestLoaderKwargs(unittest.TestCase):
     def test_unknown_kwarg_raises(self):
         backend = LightSimBackend(loader_method="matpower",
@@ -358,23 +397,17 @@ class TestLoaderKwargs(unittest.TestCase):
         assert type(backend).n_busbar_per_sub == 3
         assert backend.nb_bus_total == 3 * NB_SUB
 
-    def test_double_bus_per_sub(self):
+    def test_double_bus_per_sub_is_not_a_matpower_kwarg(self):
+        # it predates grid2op supporting any number of busbars per substation; only
+        # the pypowsybl loader keeps it, for backward compatibility
         backend = LightSimBackend(loader_method="matpower",
                                   loader_kwargs={"double_bus_per_sub": True})
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            _aux_prep_backend(backend, type(self).__name__ + "_dbps")
-        assert backend.nb_bus_total == 2 * NB_SUB
-
-    def test_both_busbar_kwargs_raises(self):
-        backend = LightSimBackend(loader_method="matpower",
-                                  loader_kwargs={"double_bus_per_sub": True,
-                                                 "n_busbar_per_sub": 3})
-        with self.assertRaises(Exception):
+        with self.assertRaises(RuntimeError):
             backend.load_grid(PATH_CASE_14_MATPOWER, "grid.m")
 
 
-@unittest.skipIf(not CAN_DO_MAT, "scipy is not installed")
+@unittest.skipIf(not CAN_DO_MAT or not CAN_READ_DOT_M,
+                 "scipy or matpowercaseframes is not installed")
 class TestMatFile(unittest.TestCase):
     """An environment can just as well ship the ".mat" matpower saves."""
 
@@ -397,6 +430,7 @@ class TestMatFile(unittest.TestCase):
             assert conv, f"{exc_}"
 
 
+@unittest.skipIf(not CAN_READ_DOT_M, "matpowercaseframes is not installed")
 class TestEnvMatpower(unittest.TestCase):
     """The point of all this: a real grid2op environment on a `grid.m` file."""
 
@@ -485,7 +519,7 @@ class TestEnvMatpower(unittest.TestCase):
             env_cpy.close()
 
 
-if CAN_DO_TEST_SUITE:
+if CAN_DO_TEST_SUITE and CAN_READ_DOT_M:
     from grid2op.tests.aaa_test_backend_interface import AAATestBackendAPI
 
     class TestBackendAPI_MatpowerBk(AAATestBackendAPI, unittest.TestCase):

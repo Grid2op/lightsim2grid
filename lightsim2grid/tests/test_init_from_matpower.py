@@ -340,12 +340,13 @@ class TestInitFromMatpowerSubId(unittest.TestCase):
 
 
 class TestInitFromMatpowerBaseKv(unittest.TestCase):
-    """A matpower case that never leaves per unit leaves its BASE_KV column at 0,
+    """A matpower case that never leaves per unit leaves its whole BASE_KV column at 0,
     and several published ones do. lightsim2grid reports voltages in kV and refuses a
-    substation whose nominal voltage is 0, so read a 0 as "not specified" and fall back
-    to 1 kV -- which makes every voltage numerically its per-unit value."""
+    substation whose nominal voltage is 0, so an all-zero column is read at 1 kV --
+    which makes every voltage numerically its per-unit value. A PARTLY filled column,
+    on the other hand, means nothing and is refused."""
 
-    def test_zero_base_kv_falls_back_to_one(self):
+    def test_an_all_zero_column_falls_back_to_one(self):
         raw = _toy_mpc()
         raw["bus"][:, 9] = 0.
         with warnings.catch_warnings(record=True) as caught:
@@ -363,13 +364,22 @@ class TestInitFromMatpowerBaseKv(unittest.TestCase):
             model = init_from_matpower(_toy_mpc())
         np.testing.assert_allclose(model.get_bus_vn_kv(), [138., 138., 138., 138.])
 
-    def test_only_the_unspecified_buses_fall_back(self):
+    def test_a_partly_filled_column_is_refused(self):
+        # guessing 1 kV for bus 1 would put it a hundred times off its neighbours,
+        # silently: the powerflow is in per unit and would converge all the same
         raw = _toy_mpc()
         raw["bus"][1, 9] = 0.
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            model = init_from_matpower(raw)
-        np.testing.assert_allclose(model.get_bus_vn_kv(), [138., 1., 138., 138.])
+        with self.assertRaises(RuntimeError) as ctx:
+            init_from_matpower(raw)
+        self.assertIn("BASE_KV", str(ctx.exception))
+
+    def test_a_negative_or_nan_base_kv_is_refused_too(self):
+        for bad_value in (-138., np.nan):
+            with self.subTest(base_kv=bad_value):
+                raw = _toy_mpc()
+                raw["bus"][2, 9] = bad_value
+                with self.assertRaises(RuntimeError):
+                    init_from_matpower(raw)
 
 
 if __name__ == "__main__":

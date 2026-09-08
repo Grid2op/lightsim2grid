@@ -432,5 +432,97 @@ class MakeACTests(BaseTests, unittest.TestCase):
         pass
 
 
+class TestInitSubid(unittest.TestCase):
+    """
+    `init_from_pandapower` tells the LSGrid which substation each element belongs to,
+    by the same rule as every other loader: one substation per pandapower bus,
+    everything on busbar section 1. `init_subid=False` is for `LightSimBackend` alone,
+    whose pandapower path takes its substation ids from grid2op's own backend.
+    """
+
+    def setUp(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.net = pn.case14()
+
+    def _aux_init(self, **kwargs):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            return init_from_pandapower(self.net, **kwargs)
+
+    def test_subid_is_the_pandapower_bus(self):
+        model = self._aux_init()
+        np.testing.assert_array_equal([el.sub_id for el in model.get_loads()],
+                                      self.net.load["bus"].to_numpy())
+        np.testing.assert_array_equal([el.sub_id for el in model.get_shunts()],
+                                      self.net.shunt["bus"].to_numpy())
+        np.testing.assert_array_equal([el.sub1_id for el in model.get_lines()],
+                                      self.net.line["from_bus"].to_numpy())
+        np.testing.assert_array_equal([el.sub2_id for el in model.get_lines()],
+                                      self.net.line["to_bus"].to_numpy())
+        np.testing.assert_array_equal([el.sub1_id for el in model.get_trafos()],
+                                      self.net.trafo["hv_bus"].to_numpy())
+        np.testing.assert_array_equal([el.sub2_id for el in model.get_trafos()],
+                                      self.net.trafo["lv_bus"].to_numpy())
+
+    def test_the_generators_added_from_the_ext_grid_get_one_too(self):
+        """`case14` has no generator flagged as slack, so the converter adds one per
+        `ext_grid`: the generator container is longer than `pp_net.gen`, and the extra
+        machines must still know their substation."""
+        model = self._aux_init()
+        gens = [el for el in model.get_generators()]
+        self.assertEqual(len(gens), self.net.gen.shape[0] + self.net.ext_grid.shape[0])
+        expected = np.concatenate((self.net.gen["bus"].to_numpy(),
+                                   self.net.ext_grid["bus"].to_numpy()))
+        np.testing.assert_array_equal([el.sub_id for el in gens], expected)
+
+    def test_subid_is_the_substation_not_the_busbar_section(self):
+        # `LightSimBackend` hands this loader a net grid2op has already widened to
+        # n_sub * n_busbar_per_sub buses, so a bus id can be past the first section --
+        # a substation id never is
+        n_sub = self.net.bus.shape[0]
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            wide = pn.case14()
+            for _ in range(1):  # one extra busbar section per substation
+                pp.create_buses(wide, n_sub, vn_kv=wide.bus["vn_kv"].to_numpy(), in_service=False)
+            # move a load and a generator onto their substation's second busbar section
+            wide.load.loc[wide.load.index[0], "bus"] += n_sub
+            wide.gen.loc[wide.gen.index[0], "bus"] += n_sub
+            wide.bus.loc[wide.bus.index[n_sub:], "in_service"] = True
+            model = init_from_pandapower(wide, n_sub=n_sub, n_busbar_per_sub=2)
+        loads = [el for el in model.get_loads()]
+        self.assertEqual(loads[0].bus_id, self.net.load["bus"].to_numpy()[0] + n_sub,
+                         "the load should sit on busbar section 2")
+        self.assertEqual(loads[0].sub_id, self.net.load["bus"].to_numpy()[0],
+                         "...but in the same substation as before")
+        gens = [el for el in model.get_generators()]
+        self.assertEqual(gens[0].sub_id, self.net.gen["bus"].to_numpy()[0])
+
+    def test_subid_survives_an_out_of_service_element(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            net = pn.case14()
+            net.load.loc[net.load.index[2], "in_service"] = False
+            model = init_from_pandapower(net)
+        off_load = [el for el in model.get_loads()][2]
+        self.assertFalse(off_load.connected)
+        self.assertEqual(off_load.bus_id, -1, "a disconnected element has no bus...")
+        self.assertEqual(off_load.sub_id, net.load["bus"].to_numpy()[2],
+                         "...but it still belongs to a substation")
+
+    def test_init_subid_false_leaves_them_unset(self):
+        """What `LightSimBackend` asks for: the grid comes back without substation ids,
+        and it is grid2op's pandapower backend that provides them afterwards."""
+        model = self._aux_init(init_subid=False)
+        for el in model.get_loads():
+            self.assertEqual(el.sub_id, -1)
+        for el in model.get_generators():
+            self.assertEqual(el.sub_id, -1)
+        for el in model.get_lines():
+            self.assertEqual(el.sub1_id, -1)
+            self.assertEqual(el.sub2_id, -1)
+
+
 if __name__ == "__main__":
     unittest.main()
