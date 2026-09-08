@@ -268,6 +268,27 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
         }
         _algo.cpf_predict(z, this_step / norm, V_pred);
 
+        // A direction that moves no VOLTAGE. The zero-direction check above cannot see
+        // this one: the direction is genuinely non-zero and the tangent z is too, but
+        // its every non-zero component lies on an unknown that is not a voltage -- the
+        // slack-absorbed power, in the case that occurs in practice. Scaling the machine
+        // at a single slack bus is exactly that: its P equation exists and takes the
+        // direction, but the slack absorption cancels it one for one, so the machine's
+        // real output does not change and no bus moves. lambda would then march to its
+        // target along a curve on which nothing whatsoever happens, and the run would
+        // report success. Same meaningless run as a zero direction, so it is refused the
+        // same way. Checked on the first predictor only: which unknowns the direction
+        // reaches is a property of it and of the topology, and neither changes here.
+        if (it == 0 && V_pred == V_last) {
+            throw std::runtime_error(
+                "ContinuationSweep::compute: the direction moves no bus voltage. It is not "
+                "zero, but everything it does is absorbed by the slack: scaling the machine "
+                "at a single slack bus, for instance, changes its setpoint and nothing else, "
+                "because that setpoint is not what decides its output. Continuing would walk "
+                "lambda along a curve on which nothing changes. Steer at least one element "
+                "whose power the powerflow actually has to route.");
+        }
+
         // ---- corrector ---------------------------------------------------------
         CplxVect V = V_pred;
         const CplxVect Sbus = ac_cache_.inj + lam_pred * _direction;

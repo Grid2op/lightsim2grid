@@ -98,12 +98,27 @@ class ContinuationPowerFlow:
     - ``load_steering`` -- one coefficient per load, in ``[0, 1]``. A load with 0 does
       not move during the continuation; a load with 1 moves fully. Defaults to all ones
       (every load scaled).
-    - ``gen_steering`` -- the same, per generator. Defaults to 1 for every non-slack
-      generator and 0 for the slack ones, so generation follows the load and the slack
-      only picks up the incremental losses -- MATPOWER requires exactly that of a target
-      case ("same as base case w.r.t. Qg and slack Pg"). Pass ``0`` to hold generation
-      fixed and let the slack supply the whole increase instead; that traces a different
-      curve, with a different nose.
+    - ``gen_steering`` -- the same, per generator. Defaults to all ones, so generation
+      follows the load. Pass ``0`` to hold generation fixed and let the slack supply the
+      whole increase instead; that traces a different curve, with a different nose.
+
+    .. note::
+        MATPOWER requires a target case to be "same as base case w.r.t. Qg and slack Pg",
+        and the slack machines are deliberately NOT excluded here even so. The reason for
+        MATPOWER's rule is that a slack bus has no active-power equation, so its ``Pg`` is
+        an output of the powerflow rather than an input -- asking for it to change would
+        be asking for something the solver ignores. That reasoning transfers to a single
+        slack in lightsim2grid (scaling the slack machine's ``target_p`` there is provably
+        inert: the solution is bit-identical), which makes excluding it a no-op rather
+        than a correction. It does NOT transfer to a distributed slack, where every
+        participant's ``target_p`` genuinely enters its bus' equation -- and excluding
+        them all would silently freeze most of the generation on a grid whose slack is
+        spread over many machines. One rule for every generator is both simpler and right
+        in both cases.
+
+        Either way the slack machine's *output* still follows the load: with every other
+        machine scaled by ``k`` it ends up producing roughly ``k`` times its base power.
+        Holding its setpoint would never have held its production.
 
     .. warning::
         This is a *natural* parameterisation: the corrector solves at a fixed lambda, so
@@ -145,7 +160,6 @@ class ContinuationPowerFlow:
         self._base_load_q = np.array([el.target_q_mvar for el in grid.get_loads()], dtype=float)
         self._base_gen_p = np.array(grid.get_gen_target_p(), dtype=float)
         self._base_sgen_p = np.array(grid.get_sgen_target_p(), dtype=float)
-        self._gen_is_slack = np.array([el.is_slack for el in grid.get_generators()], dtype=bool)
 
     @property
     def cpp(self):
@@ -191,8 +205,10 @@ class ContinuationPowerFlow:
             alpha = _checked_steering(load_steering, self._base_load_p.shape[0], "load_steering")
 
         if gen_steering is None:
-            # MATPOWER-like: generation follows the load, the slack only takes the losses.
-            beta = (~self._gen_is_slack).astype(float)
+            # Every generator follows the load, the slack machines included -- see the
+            # class docstring for why they are NOT a special case here, unlike in
+            # MATPOWER's target-case rule.
+            beta = np.ones(self._base_gen_p.shape[0], dtype=float)
         elif np.isscalar(gen_steering):
             beta = _checked_steering(np.full(self._base_gen_p.shape[0], float(gen_steering)),
                                      self._base_gen_p.shape[0], "gen_steering")
@@ -238,9 +254,9 @@ class ContinuationPowerFlow:
             (default) means all ones.
         gen_steering: ``np.ndarray`` or ``float``, optional
             One coefficient per generator, in ``[0, 1]``, or a single number applied to
-            every generator. ``None`` (default) means 1 for non-slack generators and 0
-            for slack ones, so generation follows the load. Pass ``0`` to let the slack
-            supply the whole increase.
+            every generator. ``None`` (default) means all ones, so generation follows the
+            load. Pass ``0`` to hold generation fixed and let the slack supply the whole
+            increase. See the class docstring on why slack machines are not excluded.
         scale_q: ``bool``
             Scale each load's reactive power by the same coefficient as its active power
             (constant power factor, the default). ``False`` holds Q at its base value.

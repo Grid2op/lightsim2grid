@@ -61,12 +61,27 @@ By default every load grows together and generation follows, so the direction is
     # ... and this one grows at only 40% of the rate of the others
     steering[another_load_id] = 0.4
 
-``gen_steering`` is the same, per generator. Its default is 1 for every non-slack
-generator and 0 for the slack ones, so generation follows the load and the slack picks up
-only the incremental losses -- MATPOWER requires exactly that of a target case ("same as
-base case w.r.t. Qg and slack Pg"). Passing ``gen_steering=0`` instead holds generation
-fixed and makes the slack supply the whole increase; that is a legitimate study, but it
-traces a **different curve with a different nose**, so do not compare the two margins.
+``gen_steering`` is the same, per generator, and also defaults to all ones: generation
+follows the load. Passing ``gen_steering=0`` instead holds generation fixed and makes the
+slack supply the whole increase; that is a legitimate study, but it traces a **different
+curve with a different nose**, so do not compare the two margins.
+
+.. note::
+    MATPOWER requires a target case to be "same as base case w.r.t. Qg and slack Pg", and
+    slack machines are deliberately *not* excluded here even so. MATPOWER's rule exists
+    because a slack bus has no active-power equation, so its ``Pg`` is an output of the
+    powerflow rather than an input -- specifying a change there asks for something the
+    solver ignores. That reasoning holds for a **single slack** in lightsim2grid too
+    (scaling the slack machine's ``target_p`` leaves the solution bit-identical), which
+    makes excluding it a no-op rather than a correction. It does **not** hold for a
+    **distributed slack**, where every participant's ``target_p`` genuinely enters its
+    bus' equation -- excluding them would silently freeze most of the generation on a grid
+    whose slack is spread over many machines. One rule for every generator is simpler and
+    correct in both cases.
+
+    Either way the slack machine's *output* still follows the load: with every other
+    machine scaled by :math:`k` it ends up producing roughly :math:`k` times its base
+    power. Holding its setpoint would never have held its production.
 
 ``scale_q=True`` (the default) scales each load's reactive power by the same coefficient
 as its active power, i.e. at constant power factor. For a direction that no combination

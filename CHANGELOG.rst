@@ -162,8 +162,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   nose rather than rounding it.
 - [ADDED] ``load_steering`` / ``gen_steering``: per-element coefficients in [0, 1] steering which
   loads and generators move during a continuation (0 holds an element at its base value).
-  Generation follows the load by default, the slack taking only the losses, as MATPOWER requires
-  of a target case.
+  Generation follows the load by default, slack machines included: unlike in MATPOWER, whose
+  rule rests on a slack ``Pg`` being an output, a distributed-slack participant's setpoint is a
+  genuine input here.
 - [ADDED] ``ContinuationSweepCPP``, a batch algorithm alongside the four existing ones: the whole
   curve costs one symbolic factorization, whatever the number of points.
 - [ADDED] ``LightSimBackend(loader_method="matpower")``: a grid2op environment can now ship a

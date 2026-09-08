@@ -202,6 +202,43 @@ TEST_CASE("a zero direction is refused rather than traced", "[cpf]")
     REQUIRE_THROWS_AS(untargeted.compute(flat(grid), 20, 1e-10), std::runtime_error);
 }
 
+TEST_CASE("a direction the slack absorbs entirely is refused", "[cpf]")
+{
+    // The companion of the zero-direction guard, and the reason slack machines are NOT
+    // excluded from gen_steering the way MATPOWER excludes them from a target case: at a
+    // SINGLE slack bus the machine's target_p is inert, so a direction that only scales
+    // it is non-zero, produces a non-zero tangent (that bus does have a P equation, paired
+    // with the slack-absorbed unknown), and yet moves no voltage whatsoever -- the slack
+    // absorption cancels it one for one. Left alone, lambda marches to its target over a
+    // curve on which nothing happens, and the run reports success.
+    LSGrid grid = make_grid();
+    grid.change_p_gen(0, 30.);  // the slack machine, given a non-zero setpoint to scale
+    ContinuationSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+    RealVect gp(NB_GEN);
+    gp << 60., 20.;  // ONLY the slack machine moves
+    sweep.set_target_gen_p(gp);
+    REQUIRE_THROWS_AS(sweep.compute(flat(grid), 20, 1e-10), std::runtime_error);
+}
+
+TEST_CASE("a single slack machine's setpoint does not change the solution", "[cpf]")
+{
+    // What makes the test above true, stated on its own: with one slack bus the machine's
+    // target_p is an input the powerflow ignores -- its output is whatever balances the
+    // grid. (With a DISTRIBUTED slack this stops holding, which is exactly why excluding
+    // slack machines from the steering would be wrong there.)
+    LSGrid a = make_grid();
+    a.change_p_gen(0, 30.);
+    const CplxVect Va = a.ac_pf(flat(a), 30, 1e-11);
+
+    LSGrid b = make_grid();
+    b.change_p_gen(0, 60.);
+    const CplxVect Vb = b.ac_pf(flat(b), 30, 1e-11);
+
+    REQUIRE(Va.size() == Vb.size());
+    for (Eigen::Index i = 0; i < Va.size(); ++i) REQUIRE(Va(i) == Vb(i));
+}
+
 TEST_CASE("a continuation refuses an algorithm with no Jacobian", "[cpf]")
 {
     LSGrid grid = make_grid();

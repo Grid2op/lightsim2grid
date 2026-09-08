@@ -63,7 +63,7 @@ class TestContinuationPowerFlow(unittest.TestCase):
         if alpha is None:
             alpha = np.ones(self.nb_load)
         if beta is None:
-            beta = (~self.gen_is_slack).astype(float)
+            beta = np.ones(self.nb_gen)
         grid = _case14()
         for l_id, val in enumerate(self.base_load_p * (1.0 + alpha * lam * (k - 1.0))):
             grid.change_p_load(l_id, val)
@@ -81,13 +81,17 @@ class TestContinuationPowerFlow(unittest.TestCase):
         res = ContinuationPowerFlow(_case14()).run(loading_factor=k)
         self.assertTrue(res.success, res.msg)
         self.assertGreater(res.lam.size, 20)
-        # every 20th point, plus the last one before the nose (where both this and the
-        # reference solve are ill-conditioned, hence the looser tolerance there)
+        # Every 20th point. The tolerance is keyed on tangent_lam, which IS the
+        # conditioning of the point: near the nose the Jacobian is nearly singular and
+        # the reference solve is just as ill-conditioned as the traced one, so demanding
+        # 1e-8 there would be testing the arithmetic, not the algorithm.
         for i in list(range(1, res.lam.size - 1, 20)):
             V = self._solve_at(res.lam[i], k)
             self.assertGreater(V.shape[0], 0, f"the reference solve diverged at lam={res.lam[i]}")
-            np.testing.assert_allclose(V, res.V[i], atol=1e-8,
-                                       err_msg=f"traced point {i} (lam={res.lam[i]}) is not a solution")
+            atol = 1e-8 if res.tangent_lam[i] > 1e-3 else 1e-4
+            np.testing.assert_allclose(V, res.V[i], atol=atol,
+                                       err_msg=f"traced point {i} (lam={res.lam[i]}, "
+                                               f"tangent_lam={res.tangent_lam[i]:.2e}) is not a solution")
 
     def test_nose_matches_a_bisection_on_the_loading_factor(self):
         """
@@ -190,13 +194,67 @@ class TestContinuationPowerFlow(unittest.TestCase):
         self.assertAlmostEqual(target["load_p"][4], self.base_load_p[4])
         self.assertAlmostEqual(target["load_q"][4], self.base_load_q[4])
 
-    def test_gen_steering_default_scales_with_load_and_spares_the_slack(self):
+    def test_gen_steering_default_scales_every_generator_slack_included(self):
+        """
+        Slack machines are NOT a special case, unlike in MATPOWER's target-case rule --
+        see the class docstring. The two tests below pin the two facts that justify it.
+        """
         cpf = ContinuationPowerFlow(_case14())
         target = cpf._build_target(3.0, None, None, True, None)
-        np.testing.assert_allclose(target["gen_p"][self.gen_is_slack],
-                                   self.base_gen_p[self.gen_is_slack])
-        np.testing.assert_allclose(target["gen_p"][~self.gen_is_slack],
-                                   3.0 * self.base_gen_p[~self.gen_is_slack])
+        np.testing.assert_allclose(target["gen_p"], 3.0 * self.base_gen_p)
+
+    def test_single_slack_machine_setpoint_is_inert(self):
+        """
+        Why excluding the slack would be a no-op rather than a correction, with ONE slack:
+        that bus has no active-power equation, so the machine's target_p never reaches the
+        mismatch. Scaling it leaves the solution bit-identical -- and the machine's actual
+        output unchanged, because that output is what balances the grid, not what was asked
+        of it.
+        """
+        slack_id = int(np.flatnonzero(self.gen_is_slack)[0])
+        self.assertGreater(self.base_gen_p[slack_id], 0.0)  # or the test proves nothing
+
+        grid_a = _case14()
+        V_a = grid_a.ac_pf(self.v_init, 30, 1e-11)
+        grid_b = _case14()
+        grid_b.change_p_gen(slack_id, 2.0 * self.base_gen_p[slack_id])
+        V_b = grid_b.ac_pf(self.v_init, 30, 1e-11)
+
+        np.testing.assert_array_equal(V_a, V_b)
+        self.assertAlmostEqual(grid_a.get_generators()[slack_id].res_p_mw,
+                               grid_b.get_generators()[slack_id].res_p_mw, places=9)
+
+    def test_distributed_slack_participant_setpoint_is_not_inert(self):
+        """
+        ... and why the exclusion cannot simply be kept anyway: with a DISTRIBUTED slack a
+        participant's target_p does enter its bus' equation, so excluding every slack
+        machine would silently freeze real generation.
+        """
+        slack_id = int(np.flatnonzero(self.gen_is_slack)[0])
+
+        def solve(scale):
+            grid = _case14()
+            grid.add_gen_slackbus(1, 0.5)  # a second participant -> distributed slack
+            if scale:
+                grid.change_p_gen(slack_id, 2.0 * self.base_gen_p[slack_id])
+            return grid.ac_pf(self.v_init, 30, 1e-11)
+
+        V_a, V_b = solve(False), solve(True)
+        self.assertGreater(np.max(np.abs(V_a - V_b)), 1e-3)
+
+    def test_direction_that_moves_nothing_is_refused(self):
+        """
+        The companion of the zero-direction guard: steering ONLY the single slack machine
+        gives a non-zero direction whose every effect the slack absorption cancels, so no
+        bus voltage moves at all. Without the guard lambda marches to its target over a
+        thousand points on which |V| changes by 1e-15, and the run reports success.
+        """
+        beta = self.gen_is_slack.astype(float)
+        with self.assertRaises(RuntimeError) as ctx:
+            ContinuationPowerFlow(_case14()).run(loading_factor=2.0,
+                                                 load_steering=np.zeros(self.nb_load),
+                                                 gen_steering=beta)
+        self.assertIn("moves no bus voltage", str(ctx.exception))
 
     def test_gen_steering_zero_leaves_generation_fixed(self):
         cpf = ContinuationPowerFlow(_case14())
@@ -354,11 +412,11 @@ class TestContinuationPowerFlowMultiSlack(unittest.TestCase):
         base_load_p = np.array(self.grid.get_load_target_p(), dtype=float)
         base_load_q = np.array([el.target_q_mvar for el in self.grid.get_loads()], dtype=float)
         base_gen_p = np.array(self.grid.get_gen_target_p(), dtype=float)
-        # read is_slack off the DISTRIBUTED grid, not self.grid: update_slack_weights
-        # promotes further generators to slack participants, and gen_steering's default
-        # (scale with the load, spare the slack) keys off exactly that set.
-        is_slack = np.array([el.is_slack for el in self._distributed().get_generators()], dtype=bool)
-        beta = (~is_slack).astype(float)
+        # gen_steering's default is all ones -- slack participants included, which is
+        # exactly what matters here: with a distributed slack their setpoints are real
+        # inputs, so freezing them would trace a different curve (see
+        # test_distributed_slack_participant_setpoint_is_not_inert).
+        beta = np.ones(base_gen_p.shape[0])
 
         for i in [1, res.lam.size // 2]:
             lam = res.lam[i]
