@@ -62,6 +62,14 @@ def _aux_add_branch(model, network, pm_to_ls, isolated_ls_bus):
     isolated_ls_bus: numpy array
         lightsim2grid bus ids of isolated (`bus_type == 4`) buses
 
+    Returns
+    -------
+    (f_bus_line, t_bus_line, f_bus_trafo, t_bus_trafo): tuple of numpy arrays
+        The lightsim2grid bus id each side of each powerline / transformer was built
+        on. Returned (rather than read back from the model afterwards) because a
+        branch the source file declares out of service reports `bus1_id == -1`, while
+        the substation it belongs to is a property of the grid, not of its status.
+
     """
     branch = network["branch"]
     line_keys, trafo_keys = classify_branches(network)
@@ -112,3 +120,5 @@ def _aux_add_branch(model, network, pm_to_ls, isolated_ls_bus):
     for trafo_id, is_ok in enumerate(trafo_status):
         if not is_ok:
             model.deactivate_trafo(trafo_id)
+
+    return f_bus_line, t_bus_line, f_bus_trafo, t_bus_trafo

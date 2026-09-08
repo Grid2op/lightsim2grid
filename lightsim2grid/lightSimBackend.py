@@ -102,6 +102,12 @@ class LightSimBackend(Backend):
         # "grid"
     }
     
+    KEYS_MATPOWER_LOADER = {
+        "grid",
+        "double_bus_per_sub",
+        "n_busbar_per_sub",
+    }
+    
     
     def __init__(self,
                  detailed_infos_for_cascading_failures: bool=False,
@@ -113,7 +119,7 @@ class LightSimBackend(Backend):
                  turned_off_pv : bool=True,  # are gen turned off (or with p=0) contributing to voltage or not
                  dist_slack_non_renew: bool=False,  # distribute the slack on non renewable turned on (and with P>0) generators
                  use_static_gen: bool=False, # add the static generators as generator gri2dop side
-                 loader_method: Literal["pandapower", "pypowsybl"] = "pandapower",
+                 loader_method: Literal["pandapower", "pypowsybl", "matpower"] = "pandapower",
                  loader_kwargs : LOADER_KWARGS_TYPING= None,
                  stop_if_load_disco : Optional[bool] = None,
                  stop_if_gen_disco : Optional[bool] = None,
@@ -150,9 +156,14 @@ class LightSimBackend(Backend):
         self._use_static_gen = use_static_gen  # TODO implement it
 
         #: For now, you can initialize a "lightsim2grid" LightsimBackend
-        #: either from pypowsybl or from pandapower.
-        #: Use with `LightsimBackend(..., loader_method="pypowsybl")`
+        #: from pandapower, from pypowsybl or from a MATPOWER case file.
+        #: Use with `LightsimBackend(..., loader_method="pypowsybl")`,
+        #: `LightsimBackend(..., loader_method="matpower")`
         #: or `LightsimBackend(..., loader_method="pandapower")` (default)
+        #:
+        #: .. versionchanged:: 1.0.1
+        #:     added the `"matpower"` loader (reads the environment `grid.m`
+        #:     or `grid.mat` file directly)
         self._loader_method = loader_method
         
         #: Which key-word arguments will be used to initialize the Gridmodel
@@ -185,6 +196,17 @@ class LightSimBackend(Backend):
         #:   - `sort_index` 
         #:   - `init_vm_pu` 
         #:   - `sn_mva` 
+        #: 
+        #: For matpower it can contain the following keys:
+        #:
+        #:   - `grid` (``dict``): an already parsed matpower case (anything
+        #:     :func:`lightsim2grid.network.init_from_matpower` accepts as its
+        #:     `source`), used instead of reading the "path" / "filename" given
+        #:     to `grid2op.make`.
+        #:   - `n_busbar_per_sub` (``int``): number of independant buses for
+        #:     each substation in the GridModel (same meaning as for pypowsybl).
+        #:   - `double_bus_per_sub` (``bool``): shorthand for
+        #:     `n_busbar_per_sub=2` (same meaning as for pypowsybl).
         #: 
         self._loader_kwargs :LOADER_KWARGS_TYPING = loader_kwargs
 
@@ -264,14 +286,20 @@ class LightSimBackend(Backend):
         #: .. versionadded:: 0.8.0
         #:
         #: Which type of grid format can be read by your backend.
-        #: It is "json" if loaded from pandapower or
-        #: "xiidm" if loaded from pypowsybl.
+        #: It is "json" if loaded from pandapower,
+        #: "xiidm" if loaded from pypowsybl or
+        #: "m" / "mat" if loaded from matpower.
         self.supported_grid_format = None
         
         if loader_method == "pandapower":
             self.supported_grid_format = ("json", )  # new in 0.8.0
         elif loader_method == "pypowsybl":
             self.supported_grid_format = ("xiidm", )  # new in 0.8.0
+        elif loader_method == "matpower":
+            # a matpower case comes either as the ".m" script it is distributed as,
+            # or as the ".mat" binary matpower itself saves. `init_from_matpower`
+            # reads both, so an environment can ship either one as its "grid" file.
+            self.supported_grid_format = ("m", "mat", )  # new in 1.0.1
         else:
             raise BackendError(f"Uknown loader_method : '{loader_method}'")
         
@@ -314,6 +342,19 @@ class LightSimBackend(Backend):
         self._init_pp_backend = None
         #: the initial pypowsybl grid (if loaded from pypowsybl)
         self._orig_grid_pypowsybl = None
+        
+        #: .. versionadded:: 1.0.1
+        #:
+        #: Whether the loader in charge already told the :class:`lightsim2grid.network.LSGrid`
+        #: how its buses are grouped into substations / voltage levels.
+        #:
+        #: `init_from_pypowsybl` and `init_from_matpower` both build the grid substation
+        #: by substation (``init_bus(n_sub, n_busbar_per_sub, ...)``), so the substation
+        #: count and the number of busbar sections per substation are already right and
+        #: must not be overwritten by the backend. The pandapower converter, on the other
+        #: hand, is handed a bus table and no substation notion at all: grid2op's own
+        #: pandapower backend is what says how many substations there are.
+        self._grid_laid_out_by_loader = False
         
         self.V = None
 
@@ -892,6 +933,8 @@ class LightSimBackend(Backend):
             self._load_grid_pandapower(path, filename)
         elif self._loader_method == "pypowsybl":
             self._load_grid_pypowsybl(path, filename)
+        elif self._loader_method == "matpower":
+            self._load_grid_matpower(path, filename)
         else:
             raise BackendError(f"Impossible to initialize the backend with '{self._loader_method}'")
         self._grid.tell_solver_need_reset()
@@ -924,13 +967,13 @@ class LightSimBackend(Backend):
             res = DEFAULT_N_BUSBAR_PER_SUB
         if "n_busbar_per_sub" in loader_kwargs and loader_kwargs["n_busbar_per_sub"]:
             if res is not None:
-                raise BackendError("When intializing a grid from pypowsybl, you cannot "
+                raise BackendError(f"When intializing a grid from {self._loader_method}, you cannot "
                                    "set both `double_bus_per_sub` and `n_busbar_per_sub` "
                                    "in the `loader_kwargs`. "
                                    "You can only set `n_busbar_per_sub` in this case.")
             res = int(loader_kwargs["n_busbar_per_sub"])
             if loader_kwargs["n_busbar_per_sub"] != res:
-                raise BackendError("When initializing a grid from pypowsybl, the `n_busbar_per_sub` "
+                raise BackendError(f"When initializing a grid from {self._loader_method}, the `n_busbar_per_sub` "
                                    "loader kwargs should be properly convertible to an int "
                                    "giving the default number of busbar sections per substation.")
         if res is not None:
@@ -990,6 +1033,7 @@ class LightSimBackend(Backend):
                 pypowsybl_load_kwargs = {}
             grid_tmp = pypow_net.load(full_path, **pypowsybl_load_kwargs)
         self._orig_grid_pypowsybl = grid_tmp
+        self._grid_laid_out_by_loader = True
         
         buses_for_sub = False
         if "use_buses_for_sub" in loader_kwargs and loader_kwargs["use_buses_for_sub"]:
@@ -1064,17 +1108,11 @@ class LightSimBackend(Backend):
         else:
             self.n_shunt = None
             
-        # assign substation to each element (grid2op side)
-        self.load_to_subid = np.array(load_sub.values.ravel(), dtype=dt_int)
-        self.gen_to_subid = np.array(gen_sub["sub_id"].values.ravel(), dtype=dt_int)
-        self.line_or_to_subid = np.concatenate((lor_sub.values.ravel(), tor_sub.values.ravel())).astype(dt_int)
-        self.line_ex_to_subid = np.concatenate((lex_sub.values.ravel(), tex_sub.values.ravel())).astype(dt_int)
-        if self.__has_storage:
-            self.storage_to_subid = np.array(batt_sub.values.ravel(), dtype=dt_int)
-            
-        if self.n_shunt is not None:
-            self.shunt_to_subid = np.array(sh_sub.values.ravel(), dtype=dt_int)
-            
+        # assign substation to each element (grid2op side). `init_from_pypowsybl` has
+        # already put this on the grid (the same values it returns in the dataframes
+        # above), so read it back from there rather than deriving it twice
+        self._aux_read_subid_from_grid()
+        
         # handle the names
         if use_grid2op_default_names:
             self.name_load = np.array([f"load_{el.sub_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_loads())]).astype(str)
@@ -1142,6 +1180,150 @@ class LightSimBackend(Backend):
         self._sh_vnkv = bus_vn_kv[self.shunt_to_subid]
         self._aux_finish_setup_after_reading()
     
+    def _aux_read_subid_from_grid(self) -> None:
+        """
+        Read back, from the :class:`lightsim2grid.network.LSGrid` itself, the
+        substation / voltage level each element belongs to.
+
+        Which substation an element sits in is a property of the file the grid was read
+        from, so it is the loader (`init_from_pypowsybl`, `init_from_matpower` and the
+        shared `init_from_powermodels` engine behind it) that knows it, and the loader
+        sets it on the grid it returns -- see the `set_*_to_subid` block at the end of
+        `lightsim2grid/network/from_powermodels/initLSGrid.py`. Rather than deriving the
+        same information a second time here from whatever intermediate the loader
+        happened to hand back, read it off the grid: one source of truth, and one place
+        to fix when a source format numbers its substations in its own way.
+
+        Note that this is why the answer is read from `el.sub_id` and never from
+        `el.bus_id`: an element the source file declares out of service reports
+        ``bus_id == -1``, while the substation it belongs to is a property of the grid
+        rather than of its status.
+
+        The two "line" arrays are grid2op's, so they hold the powerlines then the
+        transformers, split at `self.__nb_powerline` -- which is the number of
+        powerlines of the very same grid, so the concatenation below and that split
+        point cannot disagree.
+        """
+        cls = type(self)
+        self.load_to_subid = np.array([el.sub_id for el in self._grid.get_loads()], dtype=dt_int)
+        self.gen_to_subid = np.array([el.sub_id for el in self._grid.get_generators()], dtype=dt_int)
+        self.line_or_to_subid = np.array([el.sub1_id for el in self._grid.get_lines()] +
+                                         [el.sub1_id for el in self._grid.get_trafos()], dtype=dt_int)
+        self.line_ex_to_subid = np.array([el.sub2_id for el in self._grid.get_lines()] +
+                                         [el.sub2_id for el in self._grid.get_trafos()], dtype=dt_int)
+        if self.__has_storage:
+            self.storage_to_subid = np.array([el.sub_id for el in self._grid.get_storages()], dtype=dt_int)
+        if cls.shunts_data_available:
+            self.shunt_to_subid = np.array([el.sub_id for el in self._grid.get_shunts()], dtype=dt_int)
+    
+    def _load_grid_matpower(self, path=None, filename=None):
+        """
+        Initialize the backend from a MATPOWER case (an environment shipping a `grid.m`
+        or a `grid.mat` file), through :func:`lightsim2grid.network.init_from_matpower`.
+
+        MATPOWER knows nothing about substations, busbar sections, element names or
+        thermal limits: a case is a set of numbered buses and the branches / generators
+        / loads hanging off them. So, exactly like a pypowsybl grid loaded with
+        `use_buses_for_sub=True`, there is one grid2op substation per MATPOWER bus, the
+        elements get grid2op's default names, and the thermal limits are left
+        "infinite" for the environment's `config.py` to set (the standard grid2op place
+        for them).
+        """
+        from lightsim2grid.network import init_from_matpower
+        loader_kwargs = {}
+        if self._loader_kwargs is not None:
+            loader_kwargs = self._loader_kwargs
+        self._aux_check_loader_kwargs(loader_kwargs, "matpower", type(self).KEYS_MATPOWER_LOADER)
+        
+        n_busbar_per_sub = self._aux_get_substation_handling_from_loader_kwargs(loader_kwargs)
+        if n_busbar_per_sub is None:
+            n_busbar_per_sub = self.n_busbar_per_sub
+        
+        if "grid" in loader_kwargs:
+            # an already parsed matpower case was given: use it and ignore the
+            # "path" / "filename" of `grid2op.make` (same contract as the pypowsybl
+            # loader's own "grid" kwarg)
+            source = loader_kwargs["grid"]
+        else:
+            try:
+                source = self.make_complete_path(path, filename)
+            except AttributeError as _:
+                warnings.warn("Please upgrade your grid2op version")
+                source = self._should_not_have_to_do_this(path, filename)
+        
+        self._grid = init_from_matpower(source, n_busbar_per_sub=n_busbar_per_sub)
+        # `init_from_matpower` laid the substations out itself (one per matpower bus,
+        # with `n_busbar_per_sub` busbar sections each): the backend must not redo it
+        self._grid_laid_out_by_loader = True
+        
+        self.__nb_powerline = len(self._grid.get_lines())
+        self.n_sub = self._grid.get_n_sub()
+        self.__nb_bus_before = self.n_sub
+        self._aux_setup_right_after_grid_init()
+        
+        # mandatory for the backend
+        self.n_line = len(self._grid.get_lines()) + len(self._grid.get_trafos())
+        self.n_gen = len(self._grid.get_generators())
+        self.n_load = len(self._grid.get_loads())
+        self.n_storage = len(self._grid.get_storages())
+        if type(self).shunts_data_available:
+            self.n_shunt = len(self._grid.get_shunts())
+        else:
+            self.n_shunt = None
+        
+        # assign substation to each element (grid2op side)
+        self._aux_read_subid_from_grid()
+        
+        # the names: matpower has none, so use grid2op's default ones (and give them
+        # back to the grid, so a LSGrid error message names the same element grid2op does)
+        self.name_sub = np.array([f"sub_{i}" for i in range(self.n_sub)]).astype(str)
+        self.name_load = np.array([f"load_{sub_id}_{id_obj}"
+                                   for id_obj, sub_id in enumerate(self.load_to_subid)]).astype(str)
+        self.name_gen = np.array([f"gen_{sub_id}_{id_obj}"
+                                  for id_obj, sub_id in enumerate(self.gen_to_subid)]).astype(str)
+        self.name_line = np.array([f"{sub1}_{sub2}_{id_obj}" for id_obj, (sub1, sub2)
+                                   in enumerate(zip(self.line_or_to_subid, self.line_ex_to_subid))]).astype(str)
+        self._grid.set_substation_names(self.name_sub)
+        self._grid.set_gen_names(self.name_gen)
+        self._grid.set_load_names(self.name_load)
+        self._grid.set_line_names(self.name_line[:self.__nb_powerline])
+        self._grid.set_trafo_names(self.name_line[self.__nb_powerline:])
+        if self.__has_storage:
+            self.name_storage = np.array([f"storage_{sub_id}_{id_obj}"
+                                          for id_obj, sub_id in enumerate(self.storage_to_subid)]).astype(str)
+            self._grid.set_storage_names(self.name_storage)
+        if self.n_shunt is not None:
+            self.name_shunt = np.array([f"shunt_{sub_id}_{id_obj}"
+                                        for id_obj, sub_id in enumerate(self.shunt_to_subid)]).astype(str)
+            self._grid.set_shunt_names(self.name_shunt)
+        
+        # complete the other vectors
+        self._compute_pos_big_topo()
+        
+        # and now things needed by the backend (legacy)
+        bus_vn_kv = np.array(self._grid.get_bus_vn_kv())
+        self.prod_pu_to_kv = bus_vn_kv[self.gen_to_subid].astype(dt_float)
+        self.load_pu_to_kv = bus_vn_kv[self.load_to_subid].astype(dt_float)
+        self.lines_or_pu_to_kv = bus_vn_kv[self.line_or_to_subid].astype(dt_float)
+        self.lines_ex_pu_to_kv = bus_vn_kv[self.line_ex_to_subid].astype(dt_float)
+        if self.__has_storage:
+            self.storage_pu_to_kv = bus_vn_kv[self.storage_to_subid].astype(dt_float)
+        if self.n_shunt is not None:
+            self._sh_vnkv = bus_vn_kv[self.shunt_to_subid]
+        
+        # matpower's RATE_A is a branch MVA rating, not the ampere limit grid2op wants,
+        # and is 0 ("unlimited") in a fair share of the published cases: leave the
+        # limits open here and let the environment's `config.py` set them, which is
+        # where a grid2op environment declares them anyway.
+        max_not_too_max = (np.finfo(dt_float).max * 0.5 - 1.)
+        self.thermal_limit_a = max_not_too_max * np.ones(self.n_line, dtype=dt_float)
+        
+        self.prod_p = np.array([el.target_p_mw for el in self._grid.get_generators()], dtype=dt_float)
+        self.next_prod_p = 1.0 * self.prod_p
+        self.nb_bus_total = len(bus_vn_kv)
+        self._big_topo_to_obj = [(None, None) for _ in range(type(self).dim_topo)]
+        self._aux_finish_setup_after_reading()
+    
     @property
     def available_solvers(self):
         warnings.warn(
@@ -1151,7 +1333,7 @@ class LightSimBackend(Backend):
         return self.available_default_algorithms
     
     def _aux_setup_right_after_grid_init(self):
-        if  self._orig_grid_pypowsybl is None:
+        if not self._grid_laid_out_by_loader:
             self._grid.set_n_sub(self.__nb_bus_before)
         self._handle_turnedoff_pv()
             
@@ -1173,7 +1355,7 @@ class LightSimBackend(Backend):
             self._grid.change_algorithm(self.__current_algo_type)
                     
         # handle multiple busbar per substations
-        if hasattr(type(self), "can_handle_more_than_2_busbar") and self._orig_grid_pypowsybl is None:
+        if hasattr(type(self), "can_handle_more_than_2_busbar") and not self._grid_laid_out_by_loader:
             # grid2op version >= 1.10.0 then we use this
             self._grid._max_nb_bus_per_sub = self.n_busbar_per_sub
             
@@ -2069,7 +2251,7 @@ class LightSimBackend(Backend):
                            "_stop_if_load_disco", "_stop_if_gen_disco", "_stop_if_storage_disco",
                            "_timer_fetch_data_cpp", "_next_pf_fails", "_automatically_disconnect",
                            "_need_islanding_detection",
-                           "_gen_slack_id"
+                           "_gen_slack_id", "_grid_laid_out_by_loader",
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):

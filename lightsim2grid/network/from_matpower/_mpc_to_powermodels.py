@@ -32,13 +32,29 @@ def mpc_to_powermodels(bus, gen, branch, dcline, baseMVA) -> dict:
     """
     network = {"baseMVA": float(baseMVA), "bus": {}, "gen": {}, "branch": {}, "load": {}, "shunt": {}}
 
+    # matpower's BASE_KV column is optional data: a case that never leaves per unit
+    # simply leaves it at 0, and several of the published ones do.
+    # lightsim2grid, on the other hand, reports voltages in kV and refuses a
+    # substation with a nominal voltage of 0 -- so read a 0 (or a negative, or a NaN)
+    # as "not specified" and fall back to 1 kV, which makes every voltage this grid
+    # reports numerically equal to its per-unit value. Say so once: it is the sort of
+    # thing that is obvious in a `.m` file and baffling three layers down.
+    unspecified_base_kv = [i for i in range(bus.shape[0])
+                           if not float(bus[i, BASE_KV]) > 0.]
+    if unspecified_base_kv:
+        warnings.warn(f"{len(unspecified_base_kv)} bus(es) of this matpower case have no nominal "
+                      "voltage (their BASE_KV column is 0, which matpower uses for a case that "
+                      "stays in per unit). They are given a nominal voltage of 1 kV, so every "
+                      "voltage lightsim2grid reports for them is numerically its per-unit value. "
+                      "Set the BASE_KV column of the case if you want voltages in actual kV.")
+
     for i in range(bus.shape[0]):
         bus_i = int(bus[i, BUS_I])
         key = str(i + 1)
         network["bus"][key] = {
             "bus_i": bus_i,
             "bus_type": int(bus[i, BUS_TYPE]),
-            "base_kv": float(bus[i, BASE_KV]),
+            "base_kv": float(bus[i, BASE_KV]) if float(bus[i, BASE_KV]) > 0. else 1.0,
             "vmax": float(bus[i, VMAX]),
             "vmin": float(bus[i, VMIN]),
         }

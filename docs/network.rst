@@ -37,6 +37,28 @@ An `LSGrid` can be built from several source formats, each with a dedicated ``in
 
 See the "Detailed documentation" section below for the full signature and caveats of each.
 
+A grid built by ``init_from_pypowsybl``, ``init_from_matpower``, ``init_from_powermodels``
+or ``init_from_pf_delta`` also knows **which substation / voltage level each of its elements
+belongs to** (``sub_id`` of an ``*Info`` object, set by the loader through
+``set_gen_to_subid`` and friends). That is a property of the source file, so the loader is
+where it is worked out -- and, unlike ``bus_id``, it stays available for an element the
+source declares out of service. It is what
+:func:`lightsim2grid.network.LSGrid.update_topo` needs to turn "busbar 2 of my substation"
+into a global bus id, so such a grid is ready for grid2op-style topology actions as it comes.
+
+``init_from_pandapower`` is the exception: pandapower has no substation notion of its own,
+and which of its buses make up a grid2op substation is decided by grid2op's own pandapower
+backend rather than by the file. There, it is
+:class:`lightsim2grid.lightSimBackend.LightSimBackend` that sets the substation ids, from
+what grid2op says.
+
+.. note::
+    If you want to use one of these formats as the powergrid of a **grid2op environment**,
+    you do not call these functions yourself:
+    :class:`lightsim2grid.lightSimBackend.LightSimBackend` does it, through its
+    ``loader_method`` argument (``"pandapower"``, ``"pypowsybl"`` or ``"matpower"``). See
+    :ref:`lightsimbackend_matpower` for the MATPOWER case.
+
 For example, you can init it from a pandapower grid like (NOT RECOMMENDED, though sometimes needed):
 
 .. code-block:: python
