@@ -37,6 +37,58 @@ Rules:
   followed by `git push --force-with-lease`. This is the case that actually bites: the
   mistake is usually noticed only after CI has run.
 
+## Pull requests: lead with the diff breakdown
+
+A PR here routinely runs to one or two thousand lines, which is daunting to open and tells
+a reviewer nothing about where the work actually is. **Start every PR body with a table
+splitting the diff by kind**, so the reader can see at a glance how much of it is code they
+have to reason about and how much is tests, docs and changelog:
+
+```
+| | added | removed |
+|---|---|---|
+| **C++ (src/core, src/bindings)** | +968 | -0 |
+| **Python (package)** | +384 | -0 |
+| **Tests** | +764 | -0 |
+| **Docs + changelog** | +160 | -0 |
+| total | +2277 | -0 |
+```
+
+Buckets, in this order (drop a row that is empty):
+
+- **C++** — `src/core/**` and `src/bindings/**` (`.cpp` / `.hpp` / `.tpp`), tests excluded.
+- **Python** — `lightsim2grid/**.py`, tests excluded.
+- **Tests** — `src/tests/**` and `lightsim2grid/tests/**`, whatever the language.
+- **Docs + changelog** — `docs/**` and any `.rst` / `.md`, `CHANGELOG.rst` included.
+- **Build / other** — everything left (CMake, CI, fixtures), so the total is the real total.
+
+Generate it against the PR's BASE branch rather than counting by hand:
+
+```
+python3 - "$(git merge-base origin/<base> HEAD)" <<'EOF'
+import subprocess, sys, fnmatch
+out = subprocess.run(["git", "diff", "--numstat", sys.argv[1] + "...HEAD"],
+                     capture_output=True, text=True).stdout
+def bucket(p):
+    if fnmatch.fnmatch(p, "src/tests/*") or fnmatch.fnmatch(p, "lightsim2grid/tests/*"): return "tests"
+    if p.startswith("docs/") or p.endswith((".rst", ".md")): return "docs"
+    if p.startswith(("src/core/", "src/bindings/")) and p.endswith((".cpp", ".hpp", ".tpp", ".h")): return "cpp"
+    if p.startswith("lightsim2grid/") and p.endswith(".py"): return "python"
+    return "other"
+tot = {}
+for line in out.strip().splitlines():
+    a, d, path = line.split("\t")
+    if a == "-": continue          # binary file
+    e = tot.setdefault(bucket(path), [0, 0]); e[0] += int(a); e[1] += int(d)
+rows = [("cpp", "C++ (src/core, src/bindings)"), ("python", "Python (package)"),
+        ("tests", "Tests"), ("docs", "Docs + changelog"), ("other", "Build / other")]
+print("| | added | removed |\n|---|---|---|")
+for k, label in rows:
+    if k in tot: print(f"| **{label}** | +{tot[k][0]} | -{tot[k][1]} |")
+print(f"| total | +{sum(v[0] for v in tot.values())} | -{sum(v[1] for v in tot.values())} |")
+EOF
+```
+
 ## Build
 
 The vendored dependencies are git submodules and start empty — a build fails with

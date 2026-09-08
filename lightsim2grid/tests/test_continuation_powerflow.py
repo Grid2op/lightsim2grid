@@ -242,19 +242,21 @@ class TestContinuationPowerFlow(unittest.TestCase):
         V_a, V_b = solve(False), solve(True)
         self.assertGreater(np.max(np.abs(V_a - V_b)), 1e-3)
 
-    def test_direction_that_moves_nothing_is_refused(self):
+    def test_direction_the_slack_absorbs_stops_instead_of_being_traced(self):
         """
-        The companion of the zero-direction guard: steering ONLY the single slack machine
-        gives a non-zero direction whose every effect the slack absorption cancels, so no
-        bus voltage moves at all. Without the guard lambda marches to its target over a
-        thousand points on which |V| changes by 1e-15, and the run reports success.
+        Steering ONLY the single slack machine is a legal thing to ask for -- it moves a
+        real input, just not one the powerflow reads -- so it is not refused. What it must
+        not do is look like a result: before this was handled, lambda marched to 20.8 over
+        a thousand points on which |V| changed by 3e-15, and the run reported success.
         """
         beta = self.gen_is_slack.astype(float)
-        with self.assertRaises(RuntimeError) as ctx:
-            ContinuationPowerFlow(_case14()).run(loading_factor=2.0,
-                                                 load_steering=np.zeros(self.nb_load),
-                                                 gen_steering=beta)
-        self.assertIn("moves no bus voltage", str(ctx.exception))
+        res = ContinuationPowerFlow(_case14()).run(loading_factor=2.0,
+                                                   load_steering=np.zeros(self.nb_load),
+                                                   gen_steering=beta)
+        self.assertFalse(res.success)
+        self.assertEqual(res.lam.size, 1)      # the base case, and nothing past it
+        self.assertEqual(res.lam_max, 0.0)
+        self.assertIn("absorbed by the slack", res.msg)
 
     def test_gen_steering_zero_leaves_generation_fixed(self):
         cpf = ContinuationPowerFlow(_case14())

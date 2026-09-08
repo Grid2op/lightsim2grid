@@ -25,6 +25,7 @@
 
 #include "LSGrid.hpp"
 #include "batch_algorithm/ContinuationSweep.hpp"
+#include "case_exotic_elements.hpp"
 
 using Catch::Approx;
 using ls2g::AlgorithmType;
@@ -202,7 +203,73 @@ TEST_CASE("a zero direction is refused rather than traced", "[cpf]")
     REQUIRE_THROWS_AS(untargeted.compute(flat(grid), 20, 1e-10), std::runtime_error);
 }
 
-TEST_CASE("a direction the slack absorbs entirely is refused", "[cpf]")
+TEST_CASE("a continuation is correct on a grid with HVDC droop and voltage control", "[cpf]")
+{
+    // The tangent's right-hand side is built from the NRLedger, which is what makes it
+    // correct for the AUGMENTED Jacobian rather than only for the plain P/Q block. This
+    // grid is where that claim is actually worth something: the exotic-elements case
+    // (IEEE14 + an SVC regulating in VOLTAGE mode + 3 HVDC lines, one of them with angle
+    // droop ENABLED + a phase-shifting transformer + storage) makes the Hvdc and
+    // VoltageControl extensions live, so the augmented J carries custom rows (the droop
+    // equation, the voltage-setpoint equations) and custom columns (the controllers'
+    // reactive unknowns) on top of the bus block.
+    //
+    // None of those rows depends on lambda, so the RHS must be exactly zero on every one
+    // of them. Get that wrong -- put the direction on a custom row, or shift the bus rows
+    // by the number of custom ones -- and the predictor pushes the state sideways: the
+    // corrector still converges (it is an ordinary NR at a fixed lambda) and the curve
+    // still looks plausible, so ONLY a check of this kind catches it.
+    LSGrid grid = ls2g_test::make_exotic_elements_grid();
+    const CplxVect v0 = CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), cplx_type(1., 0.));
+
+    // First: check this grid really does augment the Jacobian, so that the comparison
+    // below cannot pass vacuously if the fixture ever loses its exotic elements. The
+    // augmented J has strictly more rows than the bus block registers.
+    {
+        LSGrid probe = ls2g_test::make_exotic_elements_grid();
+        const CplxVect Vprobe = probe.ac_pf(v0, 30, 1e-10);
+        REQUIRE(Vprobe.size() > 0);
+        const Eigen::Index nb_bus_rows = probe.get_p_buses_solver().size() +
+                                         probe.get_q_buses_solver().size();
+        INFO("bus-owned rows: " << nb_bus_rows << ", augmented J: " << probe.get_J_python_solver().rows());
+        REQUIRE(probe.get_J_python_solver().rows() > nb_bus_rows);
+    }
+
+    // +50% on every load, generation left alone
+    const RealVect base_load_p = grid.get_load_target_p();
+    const RealVect base_load_q = grid.get_loads_as_data().get_target_q();
+    const RealVect target_load_p = base_load_p * static_cast<real_type>(1.5);
+    const RealVect target_load_q = base_load_q * static_cast<real_type>(1.5);
+
+    ContinuationSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+    sweep.set_target_load_p(target_load_p);
+    sweep.set_target_load_q(target_load_q);
+    sweep.set_stop_at_lam(1.0);
+    sweep.compute(v0, 20, 1e-9);
+
+    REQUIRE(sweep.get_status() == 1);
+    REQUIRE(sweep.nb_points() > 5);
+    REQUIRE(sweep.get_lam()(sweep.nb_points() - 1) == Approx(1.).margin(1e-12));
+    // still one symbolic factorization, extensions and all
+    REQUIRE(sweep.get_linear_solver_stats().nb_analyze == 1);
+
+    for (Eigen::Index i = 0; i < sweep.nb_points(); ++i) {
+        const real_type lam = sweep.get_lam()(i);
+        LSGrid ref = ls2g_test::make_exotic_elements_grid();
+        for (int l = 0; l < static_cast<int>(base_load_p.size()); ++l) {
+            ref.change_p_load(l, base_load_p(l) + lam * (target_load_p(l) - base_load_p(l)));
+            ref.change_q_load(l, base_load_q(l) + lam * (target_load_q(l) - base_load_q(l)));
+        }
+        const CplxVect V = ref.ac_pf(v0, 30, 1e-10);
+        REQUIRE(V.size() > 0);
+        for (Eigen::Index b = 0; b < V.size(); ++b) {
+            REQUIRE(std::abs(V(b) - sweep.get_voltages()(i, b)) < 1e-7);
+        }
+    }
+}
+
+TEST_CASE("a direction the slack absorbs entirely stops rather than being traced", "[cpf]")
 {
     // The companion of the zero-direction guard, and the reason slack machines are NOT
     // excluded from gen_steering the way MATPOWER excludes them from a target case: at a
@@ -218,7 +285,13 @@ TEST_CASE("a direction the slack absorbs entirely is refused", "[cpf]")
     RealVect gp(NB_GEN);
     gp << 60., 20.;  // ONLY the slack machine moves
     sweep.set_target_gen_p(gp);
-    REQUIRE_THROWS_AS(sweep.compute(flat(grid), 20, 1e-10), std::runtime_error);
+
+    // asking for this is legal, so it does not throw -- it just has nowhere to go
+    sweep.compute(flat(grid), 20, 1e-10);
+    CHECK(sweep.nb_points() == 1);           // the base case, and nothing past it
+    CHECK(sweep.get_status() == 0);
+    CHECK(sweep.get_lam_max() == Approx(0.).margin(1e-14));
+    CHECK(sweep.get_msg().find("absorbed by the slack") != std::string::npos);
 }
 
 TEST_CASE("a single slack machine's setpoint does not change the solution", "[cpf]")
