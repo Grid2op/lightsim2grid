@@ -156,6 +156,16 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] ``LightSimBackend(loader_method="matpower")``: a grid2op environment can now ship a
+  MATPOWER case (``grid.m`` / ``grid.mat``) as its powergrid, next to pandapower's ``grid.json``
+  and pypowsybl's ``grid.xiidm``. One substation per matpower bus, grid2op default names.
+- [IMPROVED] every loader now tells the ``LSGrid`` which substation each element belongs to,
+  as ``init_from_pypowsybl`` already did: one substation per source bus, everything on busbar
+  section 1. ``LightSimBackend`` reads that back instead of deriving it again -- except on its
+  pandapower path, where grid2op's own backend stays the authority (``init_subid=False``).
+- [IMPROVED] a matpower case whose ``BASE_KV`` column is 0 everywhere (matpower's "this case
+  stays in per unit") is read at 1 kV per bus with a warning, rather than being refused. A
+  partly filled column means nothing and is still refused, now with a message saying so.
 - [ADDED] ``ScenarioSweep.set_contingency_gens(mask)``: a per-step generator contingency mask,
   next to the line and trafo ones. It removes the generator's injection from that step, re-weights
   the distributed slack without it, and turns its bus PV -> PQ when it was the last machine

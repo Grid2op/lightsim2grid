@@ -84,10 +84,14 @@ other by bare module name, so the working directory matters:
 
 ```
 cd lightsim2grid/tests
-python -m unittest discover                                     # everything
 python -m unittest test_ScenarioSweep                           # one file
 python -m unittest test_ScenarioSweep.TestScenarioSweepCPP.test_row_count_lock_fails_fast
 ```
+
+**Do not run the whole Python suite** (`python -m unittest discover`, or a bare `pytest`).
+It takes more than two hours, so it is never a way to check a change here — CI is where it
+belongs. Run the files your change actually touches, plus the ones that exercise the same
+code from another angle, and say which ones you ran.
 
 C++ unit tests (Catch2) build standalone — this is the path CI uses, and the one that works.
 Configuring the top-level `CMakeLists.txt` with `-DBUILD_TESTING=ON` needs scikit-build-core's
@@ -114,9 +118,14 @@ rest, via `lightsim2grid.algorithm`), and the batch classes `TimeSeries`, `Injec
 A grid is never built by hand: it is loaded, and `lightsim2grid/network/` holds one
 converter per source — pandapower (`init_from_pandapower`), pypowsybl / iidm, MATPOWER and
 PowerModels.jl — plus `load_binary` for the fast binary format (`docs/network.rst`,
-`docs/binary_serialization.rst`). `LightSimBackend` goes through the pandapower or the
-pypowsybl path depending on the grid2op environment. When a bug looks like bad input, check
-which converter produced the grid before reading the solver.
+`docs/binary_serialization.rst`). `LightSimBackend` goes through the pandapower, the
+pypowsybl or the matpower path depending on the grid2op environment (its `loader_method`).
+When a bug looks like bad input, check which converter produced the grid before reading the
+solver.
+
+A converter also tells the `LSGrid` **which substation each element belongs to**
+(`set_gen_to_subid` and friends) — that is a property of the source file, so it is worked
+out there and not in `LightSimBackend`, which reads it back off the grid.
 
 `src/core/LSGrid.{hpp,cpp}` owns everything: the element containers, the grid↔solver bus
 labelling, and the construction of the solver input (`Ybus`, `Sbus`, the pv/pq split, the

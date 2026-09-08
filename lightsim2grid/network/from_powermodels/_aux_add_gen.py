@@ -31,10 +31,18 @@ def _aux_add_gen(model, network, pm_to_ls, isolated_ls_bus):
     isolated_ls_bus: numpy array
         lightsim2grid bus ids of isolated (`bus_type == 4`) buses
 
+    Returns
+    -------
+    gen_bus: numpy array
+        The lightsim2grid bus id each gen was built on. Returned (rather than read
+        back from the model afterwards) because a gen the source file declares out
+        of service reports `bus_id == -1`, while the substation it belongs to is a
+        property of the grid, not of its status.
+
     """
     gen = network.get("gen", {})
     if not gen:
-        return
+        return np.array([], dtype=int)
 
     gen_keys = sorted(gen, key=int)
     gen_bus = pm_bus_to_ls(np.array([int(gen[k]["gen_bus"]) for k in gen_keys]), pm_to_ls)
@@ -52,3 +60,5 @@ def _aux_add_gen(model, network, pm_to_ls, isolated_ls_bus):
     for gen_id, is_ok in enumerate(gen_status):
         if not is_ok:
             model.deactivate_gen(gen_id)
+
+    return gen_bus

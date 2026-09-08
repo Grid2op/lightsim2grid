@@ -34,10 +34,17 @@ def _aux_add_slack(
 
     Returns
     -------
+    added_gen_bus: numpy array
+        The lightsim2grid bus of the generators this function ADDED to the model, if
+        any. It adds one per `ext_grid` when no generator stands on the slack bus (see
+        below), which makes the generator container longer than `pp_net.gen` -- and
+        whoever needs to say something per generator (`init`, setting the substation
+        ids) has to know about them. Empty in every other case.
 
     """
     # TODO handle that better maybe, and warn only one slack bus is implemented
     slack_coeff = None
+    added_gen_bus = np.array([], dtype=int)  # no generator added, unless said otherwise below
     if np.any(pp_net.gen["slack"].to_numpy()):
         # most favorable cases
         # if np.sum(pp_net.gen["slack"].values) >= 2:
@@ -118,6 +125,7 @@ def _aux_add_slack(
             gen_min_q = np.concatenate((pp_net.gen["min_q_mvar"].to_numpy(), [-999999. for _ in range(nb_slack)]))
             gen_max_q = np.concatenate((pp_net.gen["max_q_mvar"].to_numpy(), [+99999. for _ in range(nb_slack)]))
             model.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus)
+            added_gen_bus = np.array(slack_bus_ids)
 
     # handle the possible distributed slack bus
     if slack_coeff is None:
@@ -129,3 +137,5 @@ def _aux_add_slack(
 
     for gid, slack_gen_id in enumerate(slack_gen_ids):
         model.add_gen_slackbus(slack_gen_id, slack_coeff[gid])
+
+    return added_gen_bus

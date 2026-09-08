@@ -299,5 +299,88 @@ class TestInitFromMatpowerFile(unittest.TestCase):
             init_from_matpower(path)
 
 
+class TestInitFromMatpowerSubId(unittest.TestCase):
+    """
+    The loader tells the LSGrid which substation / voltage level each element sits in
+    (`set_gen_to_subid` and friends). There is exactly one substation per matpower bus,
+    and the base-case lightsim2grid bus ids are the substation ids, so an element's
+    substation is the bus it was built on -- including when the case declares it out of
+    service, which is exactly the case `el.bus_id` cannot answer.
+    """
+
+    def test_subid_is_set_for_every_element(self):
+        # `_toy_mpc` numbers its buses 10 / 20 / 30 / 40, so a substation id is NOT the
+        # matpower bus number: the remap has to be applied
+        model = init_from_matpower(_toy_mpc())
+        # 4 generators: 3 on bus 10 (sub 0) and one on bus 30 (sub 2)
+        np.testing.assert_array_equal([el.sub_id for el in model.get_generators()], [0, 0, 0, 2])
+        # loads on buses 20 / 30 / 40 (buses with a non-zero PD/QD)
+        np.testing.assert_array_equal([el.sub_id for el in model.get_loads()], [1, 2, 3])
+        # the shunt on bus 40
+        np.testing.assert_array_equal([el.sub_id for el in model.get_shunts()], [3])
+        # branches 10-20, 20-30, 30-40 are plain lines, 40-10 (TAP=1.05) a transformer
+        np.testing.assert_array_equal([el.sub1_id for el in model.get_lines()], [0, 1, 2])
+        np.testing.assert_array_equal([el.sub2_id for el in model.get_lines()], [1, 2, 3])
+        np.testing.assert_array_equal([el.sub1_id for el in model.get_trafos()], [3])
+        np.testing.assert_array_equal([el.sub2_id for el in model.get_trafos()], [0])
+
+    def test_subid_survives_a_deactivated_element(self):
+        model = init_from_matpower(_toy_mpc(gen_status_row3=0))
+        off_gen = [el for el in model.get_generators()][2]
+        self.assertFalse(off_gen.connected)
+        self.assertEqual(off_gen.bus_id, -1, "a disconnected element has no bus...")
+        self.assertEqual(off_gen.sub_id, 0, "...but it still belongs to a substation")
+
+    def test_subid_is_the_substation_not_the_busbar_section(self):
+        # with several busbar sections, global bus ids run up to n_sub * n_busbar_per_sub
+        # while a substation id stays in [0, n_sub)
+        model = init_from_matpower(_toy_mpc(), n_busbar_per_sub=3)
+        np.testing.assert_array_equal([el.sub_id for el in model.get_generators()], [0, 0, 0, 2])
+        np.testing.assert_array_equal([el.sub_id for el in model.get_loads()], [1, 2, 3])
+
+
+class TestInitFromMatpowerBaseKv(unittest.TestCase):
+    """A matpower case that never leaves per unit leaves its whole BASE_KV column at 0,
+    and several published ones do. lightsim2grid reports voltages in kV and refuses a
+    substation whose nominal voltage is 0, so an all-zero column is read at 1 kV --
+    which makes every voltage numerically its per-unit value. A PARTLY filled column,
+    on the other hand, means nothing and is refused."""
+
+    def test_an_all_zero_column_falls_back_to_one(self):
+        raw = _toy_mpc()
+        raw["bus"][:, 9] = 0.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            model = init_from_matpower(raw)
+        np.testing.assert_allclose(model.get_bus_vn_kv(), [1., 1., 1., 1.])
+        self.assertTrue(any("nominal voltage" in str(w.message) for w in caught),
+                        "the fallback should be warned about, it is not obvious three layers down")
+        Vfinal = _run_pf(model)
+        self.assertGreater(Vfinal.shape[0], 0)
+
+    def test_a_specified_base_kv_is_kept(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # nothing to warn about here
+            model = init_from_matpower(_toy_mpc())
+        np.testing.assert_allclose(model.get_bus_vn_kv(), [138., 138., 138., 138.])
+
+    def test_a_partly_filled_column_is_refused(self):
+        # guessing 1 kV for bus 1 would put it a hundred times off its neighbours,
+        # silently: the powerflow is in per unit and would converge all the same
+        raw = _toy_mpc()
+        raw["bus"][1, 9] = 0.
+        with self.assertRaises(RuntimeError) as ctx:
+            init_from_matpower(raw)
+        self.assertIn("BASE_KV", str(ctx.exception))
+
+    def test_a_negative_or_nan_base_kv_is_refused_too(self):
+        for bad_value in (-138., np.nan):
+            with self.subTest(base_kv=bad_value):
+                raw = _toy_mpc()
+                raw["bus"][2, 9] = bad_value
+                with self.assertRaises(RuntimeError):
+                    init_from_matpower(raw)
+
+
 if __name__ == "__main__":
     unittest.main()

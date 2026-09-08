@@ -27,12 +27,14 @@ from ._aux_add_slack import _aux_add_slack
 from ._aux_add_storage import _aux_add_storage
 from ._aux_add_dc_line import _aux_add_dc_line
 from ._my_const import ALLOWED_PP_ORIG_FILE
+from ._pp_bus_to_ls_bus import pp_bus_to_ls
 
 
 def init(pp_net: "pandapower.auxiliary.pandapowerNet",
          n_sub: Optional[int]=None,  # number of voltage levels
          n_busbar_per_sub: Optional[int]=None,  # max number of buses allowed per substation / voltage level
-         pp_orig_file : ALLOWED_PP_ORIG_FILE = "pandapower_v2"
+         pp_orig_file : ALLOWED_PP_ORIG_FILE = "pandapower_v2",
+         init_subid: bool = True,
          ) -> LSGrid:
     """
     Convert a pandapower network as input into a LSGrid.
@@ -71,6 +73,20 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
         For grid2op environment, we recommed **NOT** to use it if the environment has been released
         before 2026 as the case files came from pandapower 2 (so it's better to use the pandapower 2 
         converter).
+
+    init_subid:
+        Whether to tell the resulting `LSGrid` which substation / voltage level each element
+        belongs to (`set_gen_to_subid` and friends). Default ``True``, and the same rule as
+        every other loader: one substation per pandapower bus, everything on busbar section
+        1, and `n_busbar_per_sub` sections allocated per substation.
+
+        :class:`lightsim2grid.lightSimBackend.LightSimBackend` passes ``False`` here, and
+        only here. Its pandapower path is built on grid2op's own pandapower backend, which
+        has been the one deciding what a substation is for as long as it has existed; the
+        `LSGrid` gets its substation ids from there, and this flag is what keeps that true.
+        Nothing else should need it.
+
+        .. versionadded:: 1.0.1
 
     Returns
     -------
@@ -169,10 +185,48 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
     _aux_add_dc_line(model, pp_net, pp_to_ls)
 
     # deal with slack bus
-    _aux_add_slack(model, pp_net, pp_to_ls, pp_orig_file)
+    added_gen_bus = _aux_add_slack(model, pp_net, pp_to_ls, pp_orig_file)
+
+    if init_subid:
+        # tell the LSGrid which substation / voltage level each element belongs to.
+        #
+        # One substation per pandapower bus, everything on busbar section 1: lightsim2grid
+        # lays its global bus ids out busbar-section-major, so section 1 is [0, n_sub) and
+        # section k is [k * n_sub, (k+1) * n_sub) -- an element's substation is therefore
+        # its bus modulo n_sub. The modulo is not decoration: `LightSimBackend` hands this
+        # loader a pandapower net grid2op has already widened to n_sub * n_busbar_per_sub
+        # buses, so a bus id there can genuinely be past the first section.
+        #
+        # The bus each element was BUILT on, and not `el.bus_id`, because an element
+        # pandapower declares out of service reads back as `bus_id == -1` while the
+        # substation it belongs to is a property of the grid, not of its status.
+        _aux_set_subid(model, pp_net, pp_to_ls, n_sub, added_gen_bus)
 
     # make sure the grid we just built is internally consistent (bus / substation
     # / topology-vector indices in range, no NaN/Inf in the physical inputs)
     model.check_grid()
 
     return model
+
+
+def _aux_set_subid(model, pp_net, pp_to_ls, n_sub, added_gen_bus):
+    """Assign every element's substation id, see the call site above."""
+    def sub_of(pp_bus_ids):
+        """pandapower bus ids -> substation ids"""
+        if len(pp_bus_ids) == 0:
+            return np.array([], dtype=int)
+        return np.asarray(pp_bus_to_ls(np.asarray(pp_bus_ids), pp_to_ls), dtype=int) % n_sub
+
+    # `_aux_add_slack` appends one generator per ext_grid when no generator stands on
+    # the slack bus, so the generator container is not always as long as `pp_net.gen`.
+    # The buses it returns are already lightsim2grid ones, hence the separate modulo.
+    gen_sub = np.concatenate((sub_of(pp_net.gen["bus"].to_numpy()),
+                              np.asarray(added_gen_bus, dtype=int) % n_sub))
+    model.set_gen_to_subid(gen_sub.astype(int))
+    model.set_load_to_subid(sub_of(pp_net.load["bus"].to_numpy()))
+    model.set_storage_to_subid(sub_of(pp_net.storage["bus"].to_numpy()))
+    model.set_shunt_to_subid(sub_of(pp_net.shunt["bus"].to_numpy()))
+    model.set_line_to_sub1_id(sub_of(pp_net.line["from_bus"].to_numpy()))
+    model.set_line_to_sub2_id(sub_of(pp_net.line["to_bus"].to_numpy()))
+    model.set_trafo_to_sub1_id(sub_of(pp_net.trafo["hv_bus"].to_numpy()))
+    model.set_trafo_to_sub2_id(sub_of(pp_net.trafo["lv_bus"].to_numpy()))

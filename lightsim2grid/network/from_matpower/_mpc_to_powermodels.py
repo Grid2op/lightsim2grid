@@ -32,13 +32,46 @@ def mpc_to_powermodels(bus, gen, branch, dcline, baseMVA) -> dict:
     """
     network = {"baseMVA": float(baseMVA), "bus": {}, "gen": {}, "branch": {}, "load": {}, "shunt": {}}
 
+    # matpower's BASE_KV column is optional data: a case that never leaves per unit
+    # simply leaves the whole column at 0, and several of the published ones do.
+    # lightsim2grid, on the other hand, reports voltages in kV and refuses a substation
+    # with a nominal voltage of 0 -- so a case that specifies NO nominal voltage at all
+    # is read at 1 kV, which makes every voltage it reports numerically equal to its
+    # per-unit value. Say so once: it is the sort of thing that is obvious in a `.m`
+    # file and baffling three layers down.
+    #
+    # A case that specifies SOME of them is a different matter, and is refused. "All
+    # zero" has a documented meaning; a handful of zeros among real voltages does not,
+    # and guessing 1 kV there would put a bus at a nominal voltage a hundred times off
+    # its neighbours' -- silently, since the powerflow itself is in per unit and would
+    # converge to a perfectly ordinary-looking answer. There is nothing to infer from:
+    # a bus' nominal voltage is not derivable from the branch impedances around it.
+    base_kv_col = np.array([float(bus[i, BASE_KV]) for i in range(bus.shape[0])])
+    unspecified = ~(base_kv_col > 0.)  # 0, negative, or NaN
+    if unspecified.all() and unspecified.size:
+        base_kv_col = np.ones(base_kv_col.shape[0])
+        warnings.warn("This matpower case specifies no nominal voltage at all (its BASE_KV "
+                      "column is 0 everywhere, which matpower uses for a case that stays in "
+                      "per unit). Every bus is given a nominal voltage of 1 kV, so every "
+                      "voltage lightsim2grid reports is numerically its per-unit value. Set "
+                      "the BASE_KV column of the case if you want voltages in actual kV.")
+    elif unspecified.any():
+        bad = np.where(unspecified)[0]
+        raise RuntimeError(
+            f"{len(bad)} bus(es) of this matpower case have no nominal voltage (their BASE_KV "
+            f"column is 0, negative or NaN) while the others do -- 0-based `bus` row ids: "
+            f"{bad.tolist()[:20]}{' ...' if len(bad) > 20 else ''}. A case that leaves BASE_KV "
+            "at 0 EVERYWHERE means \"this case stays in per unit\" and is read at 1 kV per bus, "
+            "but a partly filled column means nothing, and there is nothing to infer a missing "
+            "nominal voltage from. Fix the BASE_KV column of the case (or zero it out entirely).")
+
     for i in range(bus.shape[0]):
         bus_i = int(bus[i, BUS_I])
         key = str(i + 1)
         network["bus"][key] = {
             "bus_i": bus_i,
             "bus_type": int(bus[i, BUS_TYPE]),
-            "base_kv": float(bus[i, BASE_KV]),
+            "base_kv": float(base_kv_col[i]),
             "vmax": float(bus[i, VMAX]),
             "vmin": float(bus[i, VMIN]),
         }
