@@ -111,6 +111,13 @@ rest, via `lightsim2grid.algorithm`), and the batch classes `TimeSeries`, `Injec
 
 ### `LSGrid` is the hub
 
+A grid is never built by hand: it is loaded, and `lightsim2grid/network/` holds one
+converter per source — pandapower (`init_from_pandapower`), pypowsybl / iidm, MATPOWER and
+PowerModels.jl — plus `load_binary` for the fast binary format (`docs/network.rst`,
+`docs/binary_serialization.rst`). `LightSimBackend` goes through the pandapower or the
+pypowsybl path depending on the grid2op environment. When a bug looks like bad input, check
+which converter produced the grid before reading the solver.
+
 `src/core/LSGrid.{hpp,cpp}` owns everything: the element containers, the grid↔solver bus
 labelling, and the construction of the solver input (`Ybus`, `Sbus`, the pv/pq split, the
 slack). `build_solver_input` / `build_dc_solver_input` produce a `SolverBusLayout` the
@@ -202,11 +209,24 @@ instantiations, differing only in two policies and an init kind:
 
 Members that only make sense for some instantiations are SFINAE-gated on
 `YbusPolicy::supports_contingency` / `SbusPolicy::supports_vary` rather than split into
-subclasses. The performance premise of all four is that **the pv/pq labelling handed to the
-solver never changes between rows**, so the batch pays one `analyze` + one `factorize` and
-refactorizes thereafter. Anything that would vary the labelling per row has to be expressed
-as a value-level mask instead (see the NR section above), or the batch loses its reason to
-exist.
+subclasses.
+
+The performance premise of all four is that **the sparsity pattern of the Jacobian is fixed
+for every element of the batch**, so each algorithm pays one `analyze` + one `factorize` and
+refactorizes thereafter. Note what that does *not* say: a row is free to change a bus's
+role, as long as it does so by rewriting values inside a pattern that was reserved up front.
+Three things already work that way, and more are expected along the same line:
+
+- a bus switching **PV ↔ PQ** because a row disconnected the last generator regulating it
+  (`set_switchable_vm_buses` + `set_pv_pinned_buses`);
+- a trafo disconnection stranding the **single generator** that was regulating through it;
+- a contingency **splitting the grid**, where the smaller part's buses are masked out
+  entirely (`set_masked_buses`, `handle_disconnected_grid`).
+
+What is genuinely forbidden is changing the pattern itself per row — a different pv/pq
+vector handed to the solver, a different slack *set*. That raises `has_pv_changed()` /
+`has_slack_participate_changed()`, forces a fresh `analyze` on every row, and the batch
+loses its reason to exist. Reserve the slot up front and mask it instead.
 
 ### Python package
 

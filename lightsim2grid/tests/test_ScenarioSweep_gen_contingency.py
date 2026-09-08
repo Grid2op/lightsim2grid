@@ -241,8 +241,41 @@ class TestScenarioSweepGenContingency(unittest.TestCase):
         stats = sweep.get_linear_solver_stats()
         self.assertEqual(stats.nb_analyze, 1,
                          f"expected a single symbolic analysis for the whole sweep, "
-                         f"got {stats.nb_analyze} -- a row is changing the pv/pq split")
+                         f"got {stats.nb_analyze} -- a row is changing the sparsity pattern")
         self.assertGreater(stats.nb_refactorize, nb_rows,
+                           "the rows should be running on refactorizations")
+
+    def test_one_analysis_per_algorithm_when_threaded(self):
+        """Multi-threaded: one analyze per WORKER, not one per row and not one overall.
+
+        Each worker owns its own algorithm, so the count that stays flat is per algorithm.
+        The sum alone cannot tell "every algorithm analyzed once" from "one algorithm
+        analyzed four times", which is why the per-algorithm breakdown is checked instead.
+        """
+        nb_rows, nb_thread = 24, 4
+        non_slack = [g for g in range(self.n_gen)
+                     if not self.grid.get_generators()[g].is_slack]
+        gen_mask = np.zeros((nb_rows, self.n_gen), dtype=bool)
+        for row in range(nb_rows):
+            gen_mask[row, non_slack[row % len(non_slack)]] = True
+
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.nb_thread = nb_thread
+        sweep.set_contingency_gens(gen_mask)
+        sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
+
+        per_algo = sweep.get_linear_solver_stats_per_algo()
+        self.assertEqual(len(per_algo), 1 + nb_thread,
+                         "expected the member algorithm plus one per worker")
+        for i, st in enumerate(per_algo):
+            with self.subTest(algo=i):
+                self.assertLessEqual(st.nb_analyze, 1,
+                                     f"algorithm {i} analyzed {st.nb_analyze} times; "
+                                     f"each one should analyze at most once")
+        self.assertEqual(sweep.get_linear_solver_stats().nb_analyze,
+                         sum(st.nb_analyze for st in per_algo),
+                         "the aggregate must be the sum of the per-algorithm counts")
+        self.assertGreater(sum(st.nb_refactorize for st in per_algo), nb_rows,
                            "the rows should be running on refactorizations")
 
     def test_remote_controller_is_refused(self):
@@ -328,3 +361,131 @@ class TestScenarioSweepGenContingency(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGenContingencyWithRemoteControlAcrossTrafo(unittest.TestCase):
+    """Interaction with remote voltage control, which lives in a different part of J.
+
+    A generator regulating a bus on the far side of a transformer is a ``VoltageControl``
+    controller, not a PV bus: it owns a Q column and a setpoint row of its own, and
+    disconnecting a transformer on the path can strand it. That case is handled and tested
+    on the C++ side (``src/tests/test_batch_voltage_control.cpp``, "a contingency stranding
+    a lone controller's own bus falls back to plain PQ"). What is new here is the
+    combination: the generator-contingency axis has to compose with it, including on a row
+    that disconnects a transformer AND a generator at once.
+
+    Uses the same fixture as ``test_voltage_control_batch.py`` -- pandapower case14 with
+    generator 3 (on bus 7) regulating bus 9 -- so the two files describe the same grid.
+    """
+
+    GEN_REMOTE = 3     # on bus 7 ...
+    REG_BUS = 9        # ... regulating bus 9, remotely
+    TRAFO_ON_PATH = 4  # buses 6-8: on the way, and the row still solves without it
+    TRAFO_BEHIND = 3   # buses 6-7: the controller's OWN bus is behind this one
+    MAX_IT, TOL = 30, 1e-11
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import pandapower.networks as pn
+        except ImportError:
+            raise unittest.SkipTest("pandapower is needed for case14")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            cls._net = pn.case14()
+
+    def _grid(self, trafo_off=None, gens_off=()):
+        # imported here, not stored on the class: a plain function assigned to a class
+        # attribute becomes a bound method, and `self` would be passed as its first arg
+        from lightsim2grid.network import init_from_pandapower
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(self._net)
+        grid.set_gen_regulated_bus(self.GEN_REMOTE, self.REG_BUS)
+        if trafo_off is not None:
+            grid.deactivate_trafo(int(trafo_off))
+        for g in gens_off:
+            grid.deactivate_gen(int(g))
+        grid.tell_solver_need_reset()
+        return grid
+
+    def setUp(self):
+        self.grid = self._grid()
+        self.Vinit = np.ones(self.grid.total_bus(), dtype=complex)
+        self.n_gen = len(self.grid.get_generators())
+        self.n_trafo = len(self.grid.get_trafos())
+        self.buses = np.asarray(self.grid.id_ac_solver_to_me(), dtype=int)
+
+    def _reference(self, trafo_off, gens_off):
+        return self._grid(trafo_off, gens_off).ac_pf(1.0 * self.Vinit, self.MAX_IT, self.TOL)
+
+    def _sweep(self, trafo_mask, gen_mask):
+        sweep = ScenarioSweepCPP(self._grid())
+        sweep.set_contingency_trafos(trafo_mask)
+        sweep.set_contingency_gens(gen_mask)
+        sweep.compute(1.0 * self.Vinit, self.MAX_IT, self.TOL)
+        return sweep
+
+    def test_trafo_on_the_control_path_still_matches(self):
+        """Disconnect a transformer between the controller and the bus it regulates."""
+        trafo_mask = np.zeros((2, self.n_trafo), dtype=bool)
+        trafo_mask[1, self.TRAFO_ON_PATH] = True
+        gen_mask = np.zeros((2, self.n_gen), dtype=bool)   # axis on, but empty
+        sweep = self._sweep(trafo_mask, gen_mask)
+
+        for row, trafo in enumerate([None, self.TRAFO_ON_PATH]):
+            with self.subTest(row=row, trafo=trafo):
+                ref = self._reference(trafo, [])
+                self.assertGreater(ref.shape[0], 0, "the reference itself diverged")
+                self.assertTrue(sweep.converged_mask()[row])
+                np.testing.assert_allclose(sweep.get_voltages()[row][self.buses],
+                                           ref[self.buses], rtol=1e-8, atol=1e-8)
+
+    def test_trafo_and_generator_contingency_on_the_same_row(self):
+        """Both at once: a transformer out AND a bus turned PV -> PQ by a lost generator."""
+        candidates = [g for g in range(self.n_gen)
+                      if g != self.GEN_REMOTE
+                      and self._reference(self.TRAFO_ON_PATH, [g]).shape[0] > 0]
+        self.assertTrue(candidates, "no generator gives a converging reference")
+        gen_id = candidates[0]
+
+        trafo_mask = np.zeros((1, self.n_trafo), dtype=bool)
+        gen_mask = np.zeros((1, self.n_gen), dtype=bool)
+        trafo_mask[0, self.TRAFO_ON_PATH] = True
+        gen_mask[0, gen_id] = True
+        sweep = self._sweep(trafo_mask, gen_mask)
+
+        self.assertTrue(sweep.converged_mask()[0])
+        ref = self._reference(self.TRAFO_ON_PATH, [gen_id])
+        np.testing.assert_allclose(sweep.get_voltages()[0][self.buses], ref[self.buses],
+                                   rtol=1e-8, atol=1e-8)
+
+    def test_stranding_the_controller_agrees_with_the_one_off_solve(self):
+        """The controller's own bus goes behind a disconnected transformer.
+
+        Whatever the batch does here it must do what a one-off solve of the same case
+        does -- the point is that adding the generator-contingency axis does not make the
+        two disagree.
+        """
+        trafo_mask = np.zeros((1, self.n_trafo), dtype=bool)
+        trafo_mask[0, self.TRAFO_BEHIND] = True
+        gen_mask = np.zeros((1, self.n_gen), dtype=bool)
+        sweep = self._sweep(trafo_mask, gen_mask)
+
+        ref = self._reference(self.TRAFO_BEHIND, [])
+        ref_converged = ref.shape[0] > 0
+        self.assertEqual(bool(sweep.converged_mask()[0]), ref_converged,
+                         "batch and one-off solve disagree on whether this case solves")
+        if ref_converged:
+            np.testing.assert_allclose(sweep.get_voltages()[0][self.buses], ref[self.buses],
+                                       rtol=1e-8, atol=1e-8)
+
+    def test_masking_the_remote_controller_itself_is_still_refused(self):
+        """The scope guard must not be weakened by the transformer cases above."""
+        gen_mask = np.zeros((1, self.n_gen), dtype=bool)
+        gen_mask[0, self.GEN_REMOTE] = True
+        sweep = ScenarioSweepCPP(self._grid())
+        sweep.set_contingency_gens(gen_mask)
+        with self.assertRaises(RuntimeError) as ctx:
+            sweep.compute(1.0 * self.Vinit, self.MAX_IT, self.TOL)
+        self.assertIn("remote", str(ctx.exception).lower())

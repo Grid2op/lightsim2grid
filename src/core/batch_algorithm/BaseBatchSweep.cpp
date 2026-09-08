@@ -226,6 +226,15 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
 
     for(auto & th : threads) th.join();
 
+    // harvest each worker's linear-solver counters before its algorithm goes out of
+    // scope: get_linear_solver_stats() reports the whole compute(), not just whichever
+    // range the calling thread happened to take (see BaseBatchSolverSynch).
+    _thread_solver_stats_.clear();
+    _thread_solver_stats_.reserve(nb_thread);
+    for(int t = 0; t < nb_thread; ++t){
+        if(algos[t] != nullptr) _thread_solver_stats_.push_back(algos[t]->get_linear_solver_stats());
+    }
+
     for(int t = 0; t < nb_thread; ++t){
         if(th_err[t]) std::rethrow_exception(th_err[t]);
     }
@@ -345,6 +354,15 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     }
 
     for(auto & th : threads) th.join();
+
+    // harvest each worker's linear-solver counters before its algorithm goes out of
+    // scope: get_linear_solver_stats() reports the whole compute(), not just whichever
+    // range the calling thread happened to take (see BaseBatchSolverSynch).
+    _thread_solver_stats_.clear();
+    _thread_solver_stats_.reserve(nb_thread);
+    for(int t = 0; t < nb_thread; ++t){
+        if(algos[t] != nullptr) _thread_solver_stats_.push_back(algos[t]->get_linear_solver_stats());
+    }
 
     for(int t = 0; t < nb_thread; ++t){
         if(th_err[t]) std::rethrow_exception(th_err[t]);

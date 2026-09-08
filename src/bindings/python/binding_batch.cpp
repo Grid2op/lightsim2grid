@@ -59,12 +59,21 @@ void bind_batch_sweep_common(py::class_<T> & cls)
         .def("thread_init_time", &T::thread_init_time, DocTimeSeries::thread_init_time.c_str())
         .def("nb_solved", &T::nb_solved, DocTimeSeries::nb_solved.c_str())
         .def("get_linear_solver_stats", &T::get_linear_solver_stats,
-             "Linear-solver counters of this batch's own algorithm (nb_analyze, "
-             "nb_factorize, nb_refactorize, ...). A batch keeps its labelling fixed "
-             "across rows, so nb_analyze should read 1 for the whole compute() however "
-             "many rows it ran -- everything after the first row is a refactorization. "
-             "With nb_thread > 1 these are the calling thread's algorithm's counters "
-             "only: each worker owns its own.")
+             "Linear-solver counters of the whole compute() (nb_analyze, nb_factorize, "
+             "nb_refactorize, ...), summed over the member algorithm and every worker "
+             "thread's own.\n\n"
+             "A batch keeps the Jacobian's sparsity pattern fixed for the whole run, so "
+             "each algorithm analyzes ONCE and every row after its first only "
+             "refactorizes. That is 1 analyze per algorithm used: 1 single-threaded, and "
+             "with nb_thread > 1 one per worker plus the member one that solved the 'n' "
+             "warm-up case. More than that means a row changed the sparsity pattern.\n\n"
+             "Use get_linear_solver_stats_per_algo() to tell 'every algorithm analyzed "
+             "once' from 'one algorithm analyzed several times' -- the sum alone cannot.")
+        .def("get_linear_solver_stats_per_algo", &T::get_linear_solver_stats_per_algo,
+             "The same counters kept apart, one entry per algorithm: index 0 is the "
+             "member one (which solves the 'n' warm-up case, and the whole batch when "
+             "single-threaded), then one per worker thread of the last multi-threaded "
+             "compute().")
         .def("nb_converged", &T::nb_converged, DocTimeSeries::nb_converged.c_str())
         .def("converged_mask", [](const T & self){
                  const std::vector<char> & c = self.converged_mask();  // char, not bool: see
@@ -251,6 +260,12 @@ void bind_batch(py::module_& m) {
              "that can flip is given a voltage-magnitude unknown and a reactive "
              "equation once, up front, and each step merely masks the equation of the "
              "buses that are still PV. The whole sweep keeps running on one analysis.\n\n"
+             "It is NOT free, though: those reserved unknowns and equations make the "
+             "Jacobian bigger for EVERY step, whether or not that step disconnects "
+             "anything -- one extra row and column per bus that can flip. A handful of "
+             "candidate generators is negligible; masking every generator on the grid "
+             "grows the Jacobian's dimension by roughly the number of PV buses, and "
+             "every factorization and solve pays for it.\n\n"
              "Only generators regulating their OWN bus are supported. compute() raises "
              "if the mask names a generator that regulates a remote bus, or one whose "
              "bus a control group holds (a remote generator, an SVC or an HVDC "

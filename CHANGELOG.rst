@@ -162,12 +162,15 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   regulating it. Only generators regulating their own bus are supported for now.
 - [IMPROVED] the PV -> PQ relabelling above costs no extra symbolic factorization: every bus that
   can change role is given a Vm unknown and a Q equation once, and each step masks the Q row of
-  the buses that are still PV. A sweep still pays one ``analyze`` + one ``factorize``.
+  the buses that are still PV. Each algorithm still analyzes once (so once per thread when
+  multi-threaded). It is not free though: J gains a row and a column per bus that can change
+  role, on every step.
 - [IMPROVED] ``GeneratorContainer::get_slack_weights_solver`` and the new
   ``get_slack_weights_solver_without`` share their implementation, so the rule for who
   participates in the slack cannot drift between them.
-- [ADDED] ``get_linear_solver_stats()`` on the batch classes, to check a sweep really does reuse
-  its factorization.
+- [ADDED] ``get_linear_solver_stats()`` / ``get_linear_solver_stats_per_algo()`` on the batch
+  classes, to check a sweep really does reuse its factorization. The first sums over every
+  worker thread, the second keeps them apart.
 - [FIXED] a grid using voltage control that the selected algorithm cannot implement -- a
   generator or an hvdc converter station regulating a bus other than its own, several
   machines regulating one bus, or a voltage-mode SVC -- was **solved anyway, to a wrong

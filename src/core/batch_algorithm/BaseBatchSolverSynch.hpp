@@ -175,24 +175,62 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _timer_compute_P = 0.;
             _timer_solver = 0.;
             _timer_thread_init = 0.;
+            _thread_solver_stats_.clear();
             // NB: _nb_thread is deliberately NOT reset -- it is a setting, not a result.
         }
 
+        // field-wise +=, so get_linear_solver_stats() can report the whole compute()
+        // rather than whichever algorithm happened to be the member one.
+        static void _accumulate_solver_stats(LinearSolverStats & into, const LinearSolverStats & from){
+            into.nb_reset += from.nb_reset;
+            into.nb_analyze += from.nb_analyze;
+            into.nb_factorize += from.nb_factorize;
+            into.nb_refactorize += from.nb_refactorize;
+            into.nb_refactorize_failed += from.nb_refactorize_failed;
+            into.nb_fallback_factorize += from.nb_fallback_factorize;
+            into.nb_fallback_factorize_failed += from.nb_fallback_factorize_failed;
+            into.nb_solve += from.nb_solve;
+            into.timer_initialize_ += from.timer_initialize_;
+            into.timer_factor_ += from.timer_factor_;
+            into.timer_refactor_ += from.timer_refactor_;
+            into.timer_solve_ += from.timer_solve_;
+        }
+
         /**
-         * The linear-solver counters of this batch's own algorithm: how many symbolic
-         * analyses, numeric factorizations and refactorizations the whole compute()
-         * took. What a batch is FOR is that the first two stay at 1 however many rows
-         * it runs -- the labelling never changes, so the symbolic factorization is
-         * built once and every row after the first only refactorizes. A test (or a
-         * profiling session) reading nb_analyze > 1 is looking at a row that changed
-         * the pv/pq split, which is a bug, not a tuning question.
+         * The linear-solver counters of the whole compute(): how many symbolic analyses,
+         * numeric factorizations and refactorizations it took, summed over the member
+         * algorithm AND every worker thread's own (see _thread_solver_stats_).
          *
-         * Single-threaded runs only tell the whole story: with nb_thread > 1 each
-         * worker owns its own algorithm (see _compute_threaded) and these are the
-         * member one's counters -- the "n" warm-up solve, plus whatever range the
-         * calling thread took.
+         * What a batch is FOR is that the expensive half stays flat however many rows it
+         * runs: the Jacobian's sparsity pattern is fixed for the whole batch, so each
+         * algorithm analyzes ONCE and every row after its first only refactorizes.
+         * Counted per algorithm rather than per batch, because that is what the work
+         * actually is: single-threaded that means nb_analyze == 1; with nb_thread > 1 it
+         * means **one analyze per algorithm used**, ie one per worker plus the member
+         * one that solved the "n" warm-up case. Reading more than that is a row changing
+         * the sparsity pattern, which is a bug, not a tuning question.
          */
-        LinearSolverStats get_linear_solver_stats() const {return _algo.get_linear_solver_stats();}
+        LinearSolverStats get_linear_solver_stats() const {
+            LinearSolverStats res = _algo.get_linear_solver_stats();
+            for(const auto & th : _thread_solver_stats_) _accumulate_solver_stats(res, th);
+            return res;
+        }
+
+        /**
+         * The same counters, kept apart: index 0 is the member algorithm (which solves
+         * the "n" warm-up case, and the whole batch when single-threaded), then one entry
+         * per worker thread of the last multi-threaded compute(). Empty of worker entries
+         * after a single-threaded run. This is what to look at to tell "every algorithm
+         * analyzed once" from "one algorithm analyzed several times" -- the sum alone
+         * cannot distinguish them.
+         */
+        std::vector<LinearSolverStats> get_linear_solver_stats_per_algo() const {
+            std::vector<LinearSolverStats> res;
+            res.reserve(1 + _thread_solver_stats_.size());
+            res.push_back(_algo.get_linear_solver_stats());
+            for(const auto & th : _thread_solver_stats_) res.push_back(th);
+            return res;
+        }
 
         // results
         // this should not be const, see https://pybind11.readthedocs.io/en/stable/advanced/cast/eigen.html#pass-by-reference
@@ -756,6 +794,10 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         double _timer_total = 0.;
         double _timer_pre_proc = 0.;
         double _timer_thread_init = 0.;
+        // one entry per worker thread of the last multi-threaded compute(), harvested
+        // after the joins (see BaseBatchSweep::_compute_threaded). Empty after a
+        // single-threaded run: there the member _algo did everything.
+        std::vector<LinearSolverStats> _thread_solver_stats_;
 
         // inputs
         LSGrid _grid_model;
