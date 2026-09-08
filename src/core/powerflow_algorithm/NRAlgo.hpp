@@ -172,6 +172,15 @@ public:
     void set_may_mask_voltage_control(bool val) override {
         _system.set_may_mask_voltage_control(val);
     }
+
+    // ----- PV / PQ relabelling at constant sparsity -----------------------------
+    bool supports_pv_pinning() const override { return true; }
+    void set_switchable_vm_buses(const std::vector<int> & solver_bus_ids) override {
+        _system.set_switchable_vm_buses(solver_bus_ids);
+    }
+    void set_pv_pinned_buses(const std::vector<int> & solver_bus_ids) override {
+        _system.set_pv_pinned_buses(solver_bus_ids);
+    }
     
     // ----- scaling policy ------------------------------------------------------
     ScalingPolicyType get_scaling_policy_type()  const { return scaling_policy_->type(); }

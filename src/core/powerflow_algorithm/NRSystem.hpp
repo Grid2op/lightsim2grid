@@ -256,21 +256,58 @@ class LS2G_API Base
             for (int bus : pvpq_sorted) ledger.add_p_equation(bus);
             for (int bus : pq_sorted)   ledger.add_q_equation(bus);
 
-            // A slack bus whose magnitude is NOT pinned by a local PV
-            // generator must keep a free Vm unknown and a Q equation --
-            // exactly like an ordinary PQ bus (a PQ distributed-slack
-            // participant, or a slack bus regulated only remotely / by an
-            // SVC, to which the VoltageControl extension then attaches via
-            // vm_col(reg_bus) / q_row(bus)). free_vm_slack_buses_ is a
-            // std::set, so this iterates in increasing bus-id order. This
-            // set is empty (loop is a no-op) whenever every slack bus is
-            // pinned by a local PV generator -- the common case -- leaving
-            // the J layout bit-identical to before this change.
-            for (int bus : free_vm_slack_buses_) {
+            // Two families of bus need a free Vm unknown + a Q equation on top
+            // of the pv/pq block above -- exactly what an ordinary PQ bus owns:
+            //
+            //  - free_vm_slack_buses_: a slack bus whose magnitude is NOT pinned
+            //    by a local PV generator (a PQ distributed-slack participant, or
+            //    a slack bus regulated only remotely / by an SVC, to which the
+            //    VoltageControl extension then attaches via vm_col(reg_bus) /
+            //    q_row(bus));
+            //  - switchable_vm_buses_: a bus that is PV *now* but whose local
+            //    voltage-regulating generators a caller may disconnect later,
+            //    without rebuilding the sparsity (see set_switchable_vm_buses).
+            //    Its Q row is then pinned to the identity for as long as the bus
+            //    stays PV -- see NRSystem::set_pv_pinned_buses.
+            //
+            // Merged into one std::set so a bus in both is registered once, and
+            // so the whole block still runs in increasing bus-id order. Both are
+            // empty on the common grid (the loop is a no-op), leaving the J
+            // layout bit-identical to before either existed.
+            std::set<int> free_vm_buses(free_vm_slack_buses_);
+            free_vm_buses.insert(switchable_vm_buses_.begin(), switchable_vm_buses_.end());
+            for (int bus : free_vm_buses) {
+                // a bus already registered as PQ above owns the pair already;
+                // registering it twice would hand it a second Vm column the
+                // dS pass never fills (add_vm_unknown is last-registration-wins)
+                if (std::binary_search(pq_sorted.begin(), pq_sorted.end(), bus)) continue;
                 ledger.add_vm_unknown(bus);
                 ledger.add_q_equation(bus);
             }
         }
+
+        /**
+         * Solver-bus ids that are PV in the labelling this system is built for,
+         * but whose voltage pinning a caller may drop on a per-solve basis
+         * (a batch sweep disconnecting their local voltage-regulating
+         * generators, row by row).
+         *
+         * Each of them gets a Vm unknown + a Q equation reserved in the ledger
+         * -- so the Jacobian sparsity is the UNION over every scenario -- and
+         * NRSystem::set_pv_pinned_buses then masks that Q row to the identity
+         * in the scenarios where the bus is still PV. That is what lets a whole
+         * sweep run on one symbolic analysis.
+         *
+         * Caller-set run configuration, exactly like NRSystem's may_mask_: it
+         * must be set BEFORE the sparsity build that is to account for it (raise
+         * the solver control's pv_changed once to force that build), and it is
+         * deliberately NOT cleared by update_state() or clear() -- both run per
+         * solve, and losing it there would silently shrink J back.
+         */
+        void set_switchable_vm_buses(const std::vector<int>& solver_bus_ids) {
+            switchable_vm_buses_ = std::set<int>(solver_bus_ids.begin(), solver_bus_ids.end());
+        }
+        const std::set<int>& switchable_vm_buses() const { return switchable_vm_buses_; }
 
         void declare_feature_entries(FeatureSink& /*sink*/) {}
         void fill_feature_values(FeatureWriter& /*writer*/, const Eigen::Ref<const RealVect>& /*Va*/) const {}
@@ -289,6 +326,9 @@ class LS2G_API Base
             nb_pq_ = 0;
             nb_pvpq_ = 0;
             free_vm_slack_buses_.clear();
+            // switchable_vm_buses_ is deliberately NOT cleared: it is caller-set
+            // run configuration, like NRSystem's may_mask_, and clear() runs
+            // between solves. See set_switchable_vm_buses.
         }
 
     private:
@@ -298,6 +338,10 @@ class LS2G_API Base
         // set by update_state (needs LSGrid, hence out-of-line), consumed by
         // register_in. Empty in the common "slack is locally PV-pinned" case.
         std::set<int> free_vm_slack_buses_;
+        // solver-bus ids of PV buses that may lose their voltage pinning during
+        // this run; caller-set (see set_switchable_vm_buses), consumed by
+        // register_in, and NOT reset per solve. Empty unless a caller asked.
+        std::set<int> switchable_vm_buses_;
 
     public:
         Eigen::Ref<const IntVect> pv() const { return pv_; }
@@ -1027,6 +1071,27 @@ public:
         if (vc != nullptr) vc->set_masked_buses(masked_buses_);
     }
 
+    // Mark some solver buses as "PV pinned": ONLY their Q mismatch row is replaced
+    // by a trivial identity row (J[q_row, vm_col] = 1, rest of the row zero, residual
+    // zero), so dVm == 0 there and the bus keeps the magnitude it was initialised
+    // with -- its generator's setpoint. This is how a bus that Base reserved a Vm
+    // unknown + Q equation for (see Base::set_switchable_vm_buses) is made to behave
+    // as PV again, WITHOUT touching the J sparsity: the caller flips it per solve and
+    // the symbolic factorization is reused.
+    //
+    // The complement of set_masked_buses above, which identity-pins BOTH the P and
+    // the Q row of a bus the grid no longer reaches. A bus in both lists is fine --
+    // masking wins, and both its rows go to identity.
+    //
+    // An empty vector (the default) disables it and reproduces the unpinned
+    // behaviour bit-for-bit. A bus with no Q row (an ordinary PV bus Base reserved
+    // nothing for) is silently ignored: q_row() answers -1 and there is nothing to
+    // pin. Pass the buses that are PV in THIS scenario, not the ones that are PQ.
+    void set_pv_pinned_buses(const std::vector<int>& solver_bus_ids) {
+        pv_pinned_buses_ = solver_bus_ids;
+        masked_dirty_ = true;
+    }
+
     // Whether the stranded-controller Jacobian slot (see VoltageControl::
     // declare_feature_entries) is worth reserving at all: only set_masked_buses()
     // above is ever able to use it, and only ContingencyAnalysis / ScenarioSweep's
@@ -1037,6 +1102,16 @@ public:
     void set_may_mask_voltage_control(bool val) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_may_mask_voltage_control(val);
+    }
+
+    // Reserve a Vm unknown + a Q equation for each of these PV buses, so their
+    // labelling can be flipped later with set_pv_pinned_buses at no sparsity cost.
+    // Like set_may_mask_voltage_control, this must be called BEFORE the
+    // build_J_sparsity() that is to account for it -- the caller forces that build
+    // by raising the solver control's pv_changed once. See Base::
+    // set_switchable_vm_buses for the full contract.
+    void set_switchable_vm_buses(const std::vector<int>& solver_bus_ids) {
+        base_.set_switchable_vm_buses(solver_bus_ids);
     }
 
     // ----- NR iteration primitives -----------------------------------------------
@@ -1097,6 +1172,7 @@ public:
         sink_.clear();
         feature_pos_.clear();
         masked_buses_.clear();
+        pv_pinned_buses_.clear();
         masked_zero_pos_.clear();
         masked_one_pos_.clear();
         masked_dirty_ = false;
@@ -1272,7 +1348,11 @@ private:
     // P/Q rows are forced to identity. masked_zero_pos_ / masked_one_pos_ are the
     // J_.valuePtr() positions to overwrite with 0 / 1 in fill_J; they are derived
     // from masked_buses_ + the (fixed) J sparsity and recomputed lazily.
+    // pv_pinned_buses_ (see set_pv_pinned_buses) are solver bus ids whose Q row
+    // ALONE is forced to identity; they share masked_zero_pos_ / masked_one_pos_
+    // and the same lazy _recompute_mask_positions pass.
     std::vector<int>                       masked_buses_;
+    std::vector<int>                       pv_pinned_buses_;
     std::vector<int>                       masked_zero_pos_;
     std::vector<int>                       masked_one_pos_;
     bool                                   masked_dirty_;
@@ -1310,7 +1390,7 @@ private:
         masked_zero_pos_.clear();
         masked_one_pos_.clear();
         masked_dirty_ = false;
-        if (masked_buses_.empty() || J_.nonZeros() == 0) return;
+        if ((masked_buses_.empty() && pv_pinned_buses_.empty()) || J_.nonZeros() == 0) return;
         const int dim = static_cast<int>(J_.rows());
         std::vector<char> is_masked_row(dim, 0);
         std::vector<int>  one_col_of_row(dim, -1);  // for a masked row: the col forced to 1
@@ -1318,6 +1398,15 @@ private:
             const int pr = ledger_.p_row(b);
             const int tc = ledger_.theta_col(b);
             if (pr >= 0) { is_masked_row[pr] = 1; one_col_of_row[pr] = tc; }
+            const int qr = ledger_.q_row(b);
+            const int vc = ledger_.vm_col(b);
+            if (qr >= 0) { is_masked_row[qr] = 1; one_col_of_row[qr] = vc; }
+        }
+        // a PV-pinned bus keeps its P equation live -- only the Q row goes to
+        // identity, which freezes dVm at 0 and leaves dTheta to be solved for.
+        // A bus that is ALSO masked above is left as the mask set it (same Q row,
+        // same one-column: the two agree, so the order does not matter).
+        for (int b : pv_pinned_buses_) {
             const int qr = ledger_.q_row(b);
             const int vc = ledger_.vm_col(b);
             if (qr >= 0) { is_masked_row[qr] = 1; one_col_of_row[qr] = vc; }

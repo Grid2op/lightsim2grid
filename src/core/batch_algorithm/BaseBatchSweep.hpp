@@ -15,9 +15,11 @@
 #include "LimitViolation.hpp"
 
 #include <set>
+#include <map>
 #include <vector>
 #include <queue>
 #include <algorithm>
+#include <iterator>
 #include <exception>
 #include <sstream>
 #include <type_traits>
@@ -324,6 +326,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         void clear() override {
+            _gen_contingency_active_ = false;
+            _switchable_buses_.clear();
+            _row_pv_to_pq_.clear();
+            _row_slack_gens_off_.clear();
             BaseBatchSolverSynch::clear();
             sbus_policy_.clear();
             _reset_ybus_policy();
@@ -420,6 +426,40 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _check_cols_bool(mask, static_cast<Eigen::Index>(n_trafos_), "set_contingency_trafos");
             _lock_or_check_nb_steps(mask.rows(), "set_contingency_trafos");
             ybus_policy_.trafo_mask = mask;
+        }
+        /**
+         * ScenarioSweep only: row i, column g True means "disconnect generator g for
+         * step i". Unlike the two branch masks above this does NOT touch Ybus -- a
+         * generator carries no admittance -- it changes two other things:
+         *
+         *  - the injection: that step's Sbus loses the generator's active power (and,
+         *    if it does not regulate voltage, its reactive setpoint too), and the
+         *    distributed slack is re-weighted without it. The lost MW is picked up by
+         *    the slack; a caller wanting redispatch says so with modify_gen_p.
+         *  - the labelling: when the LAST generator regulating its own bus' voltage is
+         *    taken out, that bus stops being PV and becomes PQ for the step. Its
+         *    magnitude is then solved for instead of held at the setpoint.
+         *
+         * The second is what would normally cost a fresh symbolic factorization per
+         * row. It does not here: every bus that can flip is given a Vm unknown and a Q
+         * equation once, up front, so the Jacobian sparsity is the union over all the
+         * steps, and each step merely pins the Q row of the buses that are still PV
+         * (see _maybe_prepare_gen_contingency / NRSystem::set_pv_pinned_buses). One
+         * analysis, one factorization, refactorizations after that -- as before.
+         *
+         * Only generators that regulate their OWN bus are supported. A generator that
+         * regulates a remote bus, or one whose bus is held by an SVC or an HVDC
+         * converter station, is rejected by compute(): those go through the
+         * VoltageControl extension, whose own Jacobian rows and columns this does not
+         * yet know how to reserve and mask.
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_contingency_gens(const Eigen::Ref<const BoolMat> & mask) {
+            _check_cols_bool(mask, static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb()),
+                             "set_contingency_gens");
+            _lock_or_check_nb_steps(mask.rows(), "set_contingency_gens");
+            sbus_policy_.gen_off = mask;
         }
 
         // ========== legacy contingency-list API (Contingency && !Vary only) ======
@@ -758,8 +798,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
         }
-        RealVect _masked_slack_weights(const std::vector<int> & masked) const {
-            RealVect w = active_layout().slack_weights;
+        // `base_w` is the weight vector to mask, so a row that already re-weighted the
+        // slack for its own generator contingency (see _row_slack_weights) is masked
+        // on top of that rather than back on the layout's untouched weights.
+        RealVect _masked_slack_weights(const std::vector<int> & masked,
+                                       const Eigen::Ref<const RealVect> & base_w) const {
+            RealVect w = base_w;
             if(masked.empty()) return w;
             const real_type orig_sum = w.sum();
             for(int b : masked) if(b >= 0 && b < w.size()) w(b) = 0.;
@@ -1123,6 +1167,201 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_masks(){}
 
+        // ================= generator contingencies (ScenarioSweep only) ==========
+        // Turns sbus_policy_.gen_off into the two things the per-row loop needs, once
+        // per compute(): which buses can lose their voltage pinning at all
+        // (_switchable_buses_, handed to the algorithm so the Jacobian reserves a Vm
+        // unknown + Q equation for each), and which of them actually do, row by row
+        // (_row_pv_to_pq_). Also collects the slack-participating generators each row
+        // takes out, for _row_slack_weights.
+        //
+        // Runs BEFORE _finish_preprocessing, so the "n" warm-up solve -- the one that
+        // builds the sparsity, under its own tell_all_changed() -- already sees the
+        // enlarged layout. That is what makes the whole sweep share ONE symbolic
+        // analysis, the base case included.
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void _maybe_prepare_gen_contingency(size_t nb_steps){
+            _switchable_buses_.clear();
+            _row_pv_to_pq_.clear();
+            _row_slack_gens_off_.clear();
+            _gen_contingency_active_ = false;
+            const auto & gen_off = sbus_policy_.gen_off;
+            if(gen_off.rows() == 0){
+                // No mask this time. _algo is a member and outlives the compute() that
+                // reserved slots for it, so it has to be told the set is empty again --
+                // otherwise a bus a PREVIOUS compute() made switchable would keep its Vm
+                // unknown + Q equation with nothing pinning them, and silently solve as
+                // PQ. (_finish_preprocessing's tell_all_changed() rebuilds the sparsity.)
+                _push_switchable_to_algo();
+                return;
+            }
+            _gen_contingency_active_ = true;
+
+            const auto & generators = _grid_model.get_generators();
+            const int nb_gen = static_cast<int>(generators.nb());
+            const auto & id_me_to_solver = active_layout().id_me_to_solver;
+            const Eigen::Index nb_mask_cols = gen_off.cols();
+
+            // ---- the distributed slack, AC and DC alike ---------------------------
+            // Which participating machines each row takes out. Needed on both families
+            // (DC has a distributed slack too), and the only part of this that applies
+            // in DC at all -- see the early return below.
+            _row_slack_gens_off_.assign(nb_steps, std::vector<int>());
+            for(size_t step = 0; step < nb_steps && static_cast<Eigen::Index>(step) < gen_off.rows(); ++step){
+                for(Eigen::Index gen_id = 0; gen_id < nb_mask_cols; ++gen_id){
+                    if(!gen_off(static_cast<Eigen::Index>(step), gen_id)) continue;
+                    if(abs(generators.get_gen_slack_weight(static_cast<int>(gen_id))) < BaseConstants::_tol_equal_float) continue;
+                    _row_slack_gens_off_[step].push_back(static_cast<int>(gen_id));
+                }
+            }
+
+            // DC knows no PV / PQ distinction: |V| is not a variable there, so nothing
+            // is relabelled and no Jacobian slot has to be reserved. The injection
+            // correction (SbusPolicy::Vary::assemble) and the slack re-weighting above
+            // are the whole of the DC story.
+            if(!_algo.ac_solver_used()){
+                _push_switchable_to_algo();  // empty here: nothing is switchable in DC
+                return;
+            }
+
+            if(!_algo.supports_pv_pinning()){
+                std::ostringstream exc_;
+                exc_ << algo_name() << ": generator contingencies (`set_contingency_gens`) require a "
+                        "Newton-Raphson algorithm (the active algorithm cannot relabel a bus PV -> PQ "
+                        "without rebuilding the Jacobian). Use `change_algorithm` to select an NR "
+                        "solver (e.g. NR_KLU / NR_SLU), or the DC solver.";
+                throw std::runtime_error(exc_.str());
+            }
+
+            // ---- 1. reject what this version cannot model --------------------------
+            // Only a generator pinning its OWN bus is in scope. A remote controller --
+            // or a bus a group (remote generator, SVC, HVDC station) controls -- lives
+            // in the VoltageControl extension, which owns Jacobian columns and rows of
+            // its own that nothing here reserves or masks.
+            const std::set<int> & group_buses = _grid_model.get_ac_voltage_control_plan().group_controlled_buses();
+            for(int gen_id = 0; gen_id < nb_gen && gen_id < static_cast<int>(gen_off.cols()); ++gen_id){
+                bool ever_off = false;
+                for(Eigen::Index step = 0; step < gen_off.rows(); ++step){
+                    if(gen_off(step, gen_id)){ ever_off = true; break; }
+                }
+                if(!ever_off) continue;
+                const int bus_id_me = generators.get_bus_id()(gen_id).cast_int();
+                const bool remote = generators.gen_is_voltage_controller(gen_id);
+                const bool in_group = bus_id_me != BaseConstants::_deactivated_bus_id &&
+                                      group_buses.find(bus_id_me) != group_buses.end();
+                if(remote || in_group){
+                    std::ostringstream exc_;
+                    exc_ << algo_name() << "::set_contingency_gens: generator " << gen_id
+                         << (remote ? " regulates the voltage of a remote bus"
+                                    : " stands on a bus whose voltage a control group holds (a remote "
+                                      "generator, an SVC or an HVDC converter station)")
+                         << ". Only generators regulating their own bus can be disconnected for now: "
+                            "remote voltage control is not supported by this feature yet.";
+                    throw std::runtime_error(exc_.str());
+                }
+            }
+
+            // ---- 2. which bus does each local voltage controller pin? --------------
+            // -1 for a generator that pins nothing (disconnected, not regulating,
+            // regulating remotely, or "pseudo off" when that rule is active).
+            std::vector<int> pinned_bus_of_gen(nb_gen, -1);
+            std::map<int, std::vector<int> > gens_of_bus;  // solver bus -> its local controllers
+            for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+                if(!generators.gen_is_local_voltage_controller(gen_id)) continue;
+                const int bus_id_me = generators.get_bus_id()(gen_id).cast_int();
+                if(bus_id_me == BaseConstants::_deactivated_bus_id) continue;
+                const int bus_solver = id_me_to_solver[bus_id_me].cast_int();
+                if(bus_solver == BaseConstants::_deactivated_bus_id) continue;
+                pinned_bus_of_gen[gen_id] = bus_solver;
+                gens_of_bus[bus_solver].push_back(gen_id);
+            }
+
+            // ---- 3. per row: the buses that lose EVERY one of their controllers ----
+            _row_pv_to_pq_.assign(nb_steps, std::vector<int>());
+            std::set<int> switchable;
+            for(size_t step = 0; step < nb_steps && static_cast<Eigen::Index>(step) < gen_off.rows(); ++step){
+                for(const auto & bus_gens : gens_of_bus){
+                    bool all_off = true;
+                    for(int gen_id : bus_gens.second){
+                        if(gen_id >= static_cast<int>(nb_mask_cols) || !gen_off(static_cast<Eigen::Index>(step), gen_id)){
+                            all_off = false;
+                            break;
+                        }
+                    }
+                    if(all_off){
+                        _row_pv_to_pq_[step].push_back(bus_gens.first);
+                        switchable.insert(bus_gens.first);
+                    }
+                }
+            }
+            _switchable_buses_.assign(switchable.begin(), switchable.end());  // sorted (std::set)
+
+            // ---- 4. reserve the Jacobian slots, and start pinned ------------------
+            _push_switchable_to_algo();
+        }
+
+        // Hand _switchable_buses_ to the member algorithm, pinned. Every switchable bus
+        // is PV in the "n" case -- that is where its controller still stands -- so the
+        // base solve pins all of them and the per-row loop releases the ones that flip.
+        // Called on EVERY path out of _maybe_prepare_gen_contingency, the empty ones
+        // included: _algo is a member, and what a previous compute() reserved on it has
+        // to be taken back or the next one solves a bus as PQ that nothing pins.
+        void _push_switchable_to_algo(){
+            _algo.set_switchable_vm_buses(_switchable_buses_);
+            _algo.set_pv_pinned_buses(_switchable_buses_);
+        }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<!(Y::supports_contingency && S::supports_vary), int>::type = 0>
+        void _maybe_prepare_gen_contingency(size_t){}
+
+        // true when this compute() has generator contingencies to apply at all; every
+        // per-row helper below is skipped (and the loop stays bit-identical to before
+        // this feature) when it is false.
+        bool _has_gen_contingency() const { return _gen_contingency_active_; }
+        // ... and true when some bus can actually flip PV -> PQ, so the per-row
+        // set_pv_pinned_buses calls are worth making. False in DC, and false when the
+        // masked generators happen never to leave a bus without a controller.
+        bool _has_pv_switching() const { return !_switchable_buses_.empty(); }
+
+        // the switchable buses that are STILL PV in row i -- ie those to pin. The
+        // complement, _row_pv_to_pq_[i], is what becomes PQ. Both are sorted, so this
+        // is a linear set difference over two short vectors.
+        std::vector<int> _row_pv_pinned(size_t i) const {
+            if(i >= _row_pv_to_pq_.size()) return _switchable_buses_;
+            const std::vector<int> & to_pq = _row_pv_to_pq_[i];
+            if(to_pq.empty()) return _switchable_buses_;
+            std::vector<int> res;
+            res.reserve(_switchable_buses_.size());
+            std::set_difference(_switchable_buses_.begin(), _switchable_buses_.end(),
+                                to_pq.begin(), to_pq.end(), std::back_inserter(res));
+            return res;
+        }
+
+        // row i's distributed-slack weights: the layout's own unless the row takes a
+        // participating generator out, in which case they are re-derived without it
+        // and renormalised (GeneratorContainer::get_slack_weights_solver_without).
+        // Should a row somehow leave no participant at all, the reference slack bus
+        // keeps the whole share -- the angle reference is a property of the batch,
+        // picked once, and must not move from row to row.
+        RealVect _row_slack_weights(size_t i) const {
+            const RealVect & base_w = active_layout().slack_weights;
+            if(i >= _row_slack_gens_off_.size() || _row_slack_gens_off_[i].empty()) return base_w;
+            const auto & generators = _grid_model.get_generators();
+            std::vector<bool> gen_off(generators.nb(), false);
+            for(int gen_id : _row_slack_gens_off_[i]) gen_off[gen_id] = true;
+            RealVect w = generators.get_slack_weights_solver_without(
+                static_cast<size_t>(base_w.size()), active_layout().id_me_to_solver, gen_off);
+            if(abs(w.sum()) < BaseConstants::_tol_equal_float){
+                w = RealVect::Zero(base_w.size());
+                if(active_layout().slack_bus_id_solver.size() > 0){
+                    const int ref = active_layout().slack_bus_id_solver[static_cast<int>(0)].cast_int();
+                    if(ref >= 0 && ref < w.size()) w(ref) = 1.;
+                }
+            }
+            return w;
+        }
+
         // per-range worker: NON mask-mode path, shared by every instantiation.
         void _run_range(size_t step_begin, size_t step_end,
                         AlgorithmSelector & algo, AlgoControl & control,
@@ -1171,20 +1410,26 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         timer_modif_ybus += t1.duration();
 
                         algo.set_masked_buses(masked);
+                        // generator contingencies: release the pinning of the buses
+                        // this row turns PQ, keep it on the others (a no-op call when
+                        // no generator contingency was configured)
+                        if(_has_pv_switching()) algo.set_pv_pinned_buses(_row_pv_pinned(cont_id));
                         V = Vinit_solver;
                         _apply_step_gen_v(cont_id, V);
                         if(masked.empty()){
+                            const RealVect sw = _row_slack_weights(cont_id);
                             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id),
-                                                         active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
+                                                         active_layout().slack_bus_id_solver.as_eigen(), sw,
                                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         } else {
-                            const RealVect sw = _masked_slack_weights(masked);
+                            const RealVect sw = _masked_slack_weights(masked, _row_slack_weights(cont_id));
                             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id),
                                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         }
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
                         algo.set_masked_buses(std::vector<int>());
+                        if(_has_pv_switching()) algo.set_pv_pinned_buses(_switchable_buses_);
 
                         auto t2 = CustTimer();
                         YbusPolicy::Contingency::readd_to_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);
@@ -1362,6 +1607,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // (tell_pv_changed()) the first time a compute() actually turns masking on,
         // see _maybe_prepare_masks().
         bool _voltage_control_may_mask_wired_ = false;
+        // generator contingencies (ScenarioSweep only; plain, always-present state,
+        // like everything else here -- the SFINAE-gated methods above restrict who
+        // can fill it, and it stays empty on every other instantiation). Rebuilt by
+        // _maybe_prepare_gen_contingency at each compute().
+        //   _switchable_buses_    : solver bus ids that can flip PV -> PQ in SOME row,
+        //                           sorted; each owns a reserved Vm unknown + Q
+        //                           equation for the whole sweep.
+        //   _row_pv_to_pq_        : per row, the switchable buses that actually flip
+        //                           (sorted). Empty vector == that row keeps them all PV.
+        //   _row_slack_gens_off_  : per row, the disconnected generators that carried a
+        //                           non-zero distributed-slack weight. Usually empty.
+        bool _gen_contingency_active_ = false;
+        std::vector<int> _switchable_buses_;
+        std::vector<std::vector<int> > _row_pv_to_pq_;
+        std::vector<std::vector<int> > _row_slack_gens_off_;
         std::vector<std::vector<int> > _li_masked;
         std::vector<char> _skip_mask;
         bool _compute_limit_violations_ = false;

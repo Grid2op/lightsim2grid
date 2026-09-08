@@ -61,6 +61,7 @@ struct LS2G_API SbusPolicy
         // alias) so the two never collide and this struct stays embeddable anywhere.
         using RealMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
         using CplxMat = Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+        using BoolMat = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
         // one row per step, one column per solver-space bus. Moved verbatim from
         // BaseInjectionSweep::_Sbuses. Only valid after assemble() has run.
@@ -89,9 +90,23 @@ struct LS2G_API SbusPolicy
         // stays reachable from wherever gen_p etc. are.
         RealMat gen_v;
 
+        // per-step generator contingency mask, one row per step, one column per
+        // generator: true means "this generator is disconnected for this step"
+        // (ScenarioSweep only, see BaseBatchSweep::set_contingency_gens). Empty
+        // (0 rows) means "never set", like every axis above.
+        //
+        // Two effects, and they live in two different places. The injection side
+        // is here: assemble() takes the generator's active power -- and, for a NON
+        // voltage-regulating one, its reactive setpoint -- back out of `sbuses`.
+        // The labelling side is not: when the last locally voltage-regulating
+        // generator of a bus is masked off, that bus turns PQ for the step, which
+        // BaseBatchSweep drives through the algorithm's set_pv_pinned_buses.
+        BoolMat gen_off;
+
         void clear() {
             gen_p = RealMat(); sgen_p = RealMat(); load_p = RealMat(); load_q = RealMat();
             gen_v = RealMat();
+            gen_off = BoolMat();
             sbuses = CplxMat();
         }
 

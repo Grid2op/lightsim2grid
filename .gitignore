@@ -308,7 +308,6 @@ venv_old_glop/
 venv_pypobk/
 benchmarks/*.mat
 20260427_refacto.txt
-CLAUDE.md
 NR_refacto_cancel_last_step.txt
 _build_consumer/
 _build_core/

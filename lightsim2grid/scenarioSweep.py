@@ -35,17 +35,17 @@ from .contingencyAnalysis import (PreContingencyResult, ContingencyResult, Secur
 
 class ScenarioSweep:
     """
-    Batch powerflow that varies **both** the injection and a contingency (line / trafo
-    disconnection) per simulation, independently, row-aligned: row `i` of every
-    ``modify_*`` input is solved together with row `i` of ``set_contingency_lines`` /
-    ``set_contingency_trafos``.
+    Batch powerflow that varies **both** the injection and a contingency (line, trafo
+    or generator disconnection) per simulation, independently, row-aligned: row `i` of
+    every ``modify_*`` input is solved together with row `i` of
+    ``set_contingency_lines`` / ``set_contingency_trafos`` / ``set_contingency_gens``.
 
     Unlike :class:`lightsim2grid.timeSerie.TimeSerie` /
     :class:`lightsim2grid.injectionSweep.InjectionSweep` (a single bundled
     ``compute_V_from_inj`` call), this class uses a setter-based API: call as many of
     ``modify_gen_p`` / ``modify_sgen_p`` / ``modify_load_p`` / ``modify_load_q`` /
-    ``modify_gen_v`` / ``set_contingency_lines`` / ``set_contingency_trafos`` as are
-    relevant, then ``compute()``. Any axis you never set defaults to the grid's own
+    ``modify_gen_v`` / ``set_contingency_lines`` / ``set_contingency_trafos`` /
+    ``set_contingency_gens`` as are relevant, then ``compute()``. Any axis you never set defaults to the grid's own
     state for every row (its own target injection / voltage setpoint, or "nothing
     disconnected"). The first setter you call fixes the number of simulations; every
     later setter is checked against it immediately. Note ``modify_gen_v`` is different
@@ -307,6 +307,37 @@ class ScenarioSweep:
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_trafos(mask)
         self._trafo_mask = mask  # cached: see the note in __init__ (no C++-side getter)
+        self.__computed = False
+
+    def set_contingency_gens(self, mask):
+        """Per-step generator contingency mask, shape ``(n_simul, n_gen)``, dtype bool.
+        ``True`` means "disconnect this generator for this simulation".
+
+        Unlike :func:`set_contingency_lines` this does not edit the admittance matrix --
+        a generator carries no admittance. It removes the generator's active power
+        (and, if it does not regulate voltage, its reactive setpoint) from that step's
+        injection, re-weights the distributed slack without it, and -- when the **last**
+        generator regulating its own bus is taken out -- turns that bus from PV to PQ
+        for the step, so its voltage magnitude is solved for instead of held at the
+        setpoint. The lost MW is picked up by the slack; use :func:`modify_gen_p` to
+        express a redispatch instead.
+
+        The PV/PQ relabelling costs no extra symbolic factorization: every bus that can
+        flip is given a voltage-magnitude unknown and a reactive equation once, up
+        front, so the Jacobian's sparsity is the union over all the steps, and each step
+        merely masks the equation of the buses that are still PV. The whole sweep keeps
+        running on a single analysis, as it did before this axis existed.
+
+        Only generators regulating their **own** bus are supported for now.
+        :func:`compute` raises if the mask names a generator that regulates a remote
+        bus, or one whose bus a control group holds (a remote generator, an SVC or an
+        HVDC converter station).
+        """
+        mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
+        if mask.shape[1] != self.grid2op_env.n_gen:
+            raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "
+                               f"differs from the number of columns of the mask ({mask.shape[1]}).")
+        self.computer.set_contingency_gens(mask)
         self.__computed = False
 
     def compute(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):

@@ -47,6 +47,32 @@ void SbusPolicy::Vary::assemble(const LSGrid & grid_model,
     fill_SBus_real(sbuses, loads, load_p_use, id_me_to_solver, add_, algo_name);
     fill_SBus_imag(sbuses, loads, load_q_use, id_me_to_solver, add_, algo_name);
 
+    // generator contingencies: take back, per step, exactly what the gen pass above
+    // put in for a generator this step disconnects. Done here, in MW / MVAr and
+    // before the sn_mva division, so it is scaled with everything else.
+    //
+    // The reactive side only concerns a NON voltage-regulating generator: that one
+    // injects its target_q (GeneratorContainer::fillSbus), which reaches `sbuses`
+    // through constant_sbus_pu and must be removed too. A voltage-regulating one
+    // never has its Q in Sbus at all -- it is solved for -- so there is nothing to
+    // subtract there; dropping its voltage pinning is the labelling side of the
+    // problem, and belongs to BaseBatchSweep.
+    if(gen_off.rows() > 0){
+        RealMat off_p = RealMat::Zero(nb_steps, gen_p_use.cols());
+        RealMat off_q = RealMat::Zero(nb_steps, gen_p_use.cols());
+        for(Eigen::Index step = 0; step < nb_steps; ++step){
+            for(Eigen::Index gen_id = 0; gen_id < gen_off.cols(); ++gen_id){
+                if(!gen_off(step, gen_id)) continue;
+                off_p(step, gen_id) = gen_p_use(step, gen_id);
+                if(!generators.get_voltage_regulator_on(static_cast<int>(gen_id))){
+                    off_q(step, gen_id) = generators.get_target_q_mvar(static_cast<int>(gen_id));
+                }
+            }
+        }
+        fill_SBus_real(sbuses, generators, off_p, id_me_to_solver, add_, algo_name);
+        fill_SBus_imag(sbuses, generators, off_q, id_me_to_solver, add_, algo_name);
+    }
+
     if(abs(sn_mva - 1.0) > BaseConstants::_tol_equal_float) sbuses.array() /= static_cast<cplx_type>(sn_mva);
 
     // ... and then everything else the gridmodel stamps into Sbus that the four
