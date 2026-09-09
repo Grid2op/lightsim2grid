@@ -98,6 +98,65 @@ void setup_sweep(ContinuationSweep & sweep)
     sweep.set_target_load_q(lq);
 }
 
+// ---- exotic-elements helpers ------------------------------------------------------
+// A mutation of the exotic grid, applied identically to the grid the continuation runs
+// on and to every reference grid it is checked against.
+using ExoticMutation = void (*)(LSGrid &);
+
+void mut_none(LSGrid &) {}
+// an HVDC converter station's voltage setpoint: a VoltageControl input
+void mut_hvdc_station_v(LSGrid & g) { g.change_v1_dcline(1, 1.06); }
+// the transfer of the HVDC line that is NOT droop-controlled: an injection, which also
+// moves the droop-controlled line by moving the angles it responds to
+void mut_hvdc_transfer(LSGrid & g) { g.change_p_dcline(0, 15.); }
+
+// Traces a load-tripling continuation to the nose on the exotic grid under `mutate`,
+// checks the curve against ordinary powerflows on the SAME mutated grid, and returns the
+// nose. Returning the margin is what lets the caller compare two mutations; checking the
+// points is what makes "the margin moved" mean "it moved to another correct answer"
+// rather than "it moved because the run broke".
+real_type exotic_cpf_nose_checked(ExoticMutation mutate)
+{
+    LSGrid grid = ls2g_test::make_exotic_elements_grid();
+    mutate(grid);
+    const CplxVect v0 = CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), cplx_type(1., 0.));
+
+    const RealVect base_p = grid.get_load_target_p();
+    const RealVect base_q = grid.get_loads_as_data().get_target_q();
+    const RealVect tgt_p = base_p * static_cast<real_type>(3.);
+    const RealVect tgt_q = base_q * static_cast<real_type>(3.);
+
+    ContinuationSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+    sweep.set_target_load_p(tgt_p);
+    sweep.set_target_load_q(tgt_q);
+    sweep.compute(v0, 20, 1e-9);
+
+    REQUIRE(sweep.get_status() == 1);
+    REQUIRE(sweep.nb_points() > 20);
+    REQUIRE(sweep.get_linear_solver_stats().nb_analyze == 1);
+
+    for (Eigen::Index i = 0; i < sweep.nb_points(); i += 40) {
+        const real_type lam = sweep.get_lam()(i);
+        LSGrid ref = ls2g_test::make_exotic_elements_grid();
+        mutate(ref);
+        for (int l = 0; l < static_cast<int>(base_p.size()); ++l) {
+            ref.change_p_load(l, base_p(l) + lam * (tgt_p(l) - base_p(l)));
+            ref.change_q_load(l, base_q(l) + lam * (tgt_q(l) - base_q(l)));
+        }
+        const CplxVect V = ref.ac_pf(v0, 30, 1e-10);
+        REQUIRE(V.size() > 0);
+        // keyed on tangent_lam, which IS the conditioning of the point: at the nose the
+        // reference solve is as ill-conditioned as the traced one
+        const real_type atol = sweep.get_tangent_lam()(i) > 1e-3 ? 1e-6 : 1e-3;
+        for (Eigen::Index b = 0; b < V.size(); ++b) {
+            INFO("point " << i << " (lam=" << lam << ") bus " << b);
+            REQUIRE(std::abs(V(b) - sweep.get_voltages()(i, b)) < atol);
+        }
+    }
+    return sweep.get_lam_max();
+}
+
 }  // namespace
 
 TEST_CASE("a continuation traces points that are genuine powerflow solutions", "[cpf]")
@@ -267,6 +326,30 @@ TEST_CASE("a continuation is correct on a grid with HVDC droop and voltage contr
             REQUIRE(std::abs(V(b) - sweep.get_voltages()(i, b)) < 1e-7);
         }
     }
+}
+
+TEST_CASE("moving an exotic element moves the continuation", "[cpf]")
+{
+    // The test above shows a continuation RUNS on a grid with an SVC, HVDC and a phase
+    // shifter, and that its points solve. It does not show that any of those elements is
+    // actually READ: a continuation that quietly ignored the HVDC would trace a curve
+    // that still looked fine, because the corrector would ignore it consistently.
+    //
+    // So: move something exotic and require the margin to move with it. Each run is also
+    // checked point by point against ordinary powerflows on its own mutated grid (see
+    // exotic_cpf_nose_checked), so a margin that moved has moved to another CORRECT
+    // answer -- "different" and "still right", not just "different".
+    const real_type nose_base = exotic_cpf_nose_checked(mut_none);
+    const real_type nose_station_v = exotic_cpf_nose_checked(mut_hvdc_station_v);
+    const real_type nose_transfer = exotic_cpf_nose_checked(mut_hvdc_transfer);
+
+    // The nose is reproducible to ~1e-9 (see the bisection cross-check in the python
+    // suite), so 1e-4 is far outside anything numerical: these are real shifts.
+    INFO("base " << nose_base << ", station_v " << nose_station_v << ", transfer " << nose_transfer);
+    CHECK(std::abs(nose_station_v - nose_base) > 1e-4);
+    CHECK(std::abs(nose_transfer - nose_base) > 1e-4);
+    // and the two mutations are not accidentally the same perturbation
+    CHECK(std::abs(nose_station_v - nose_transfer) > 1e-4);
 }
 
 TEST_CASE("a direction the slack absorbs entirely stops rather than being traced", "[cpf]")
