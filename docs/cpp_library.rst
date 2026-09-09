@@ -227,6 +227,26 @@ diverged** (details via ``grid.get_algo().converged()`` /
 ``Vinit`` size, invalid slack) are reported as ``std::runtime_error`` /
 ``std::out_of_range`` exceptions.
 
+Adding an element type
+-----------------------
+
+Every element type is one class under ``src/core/element_container/`` behind one
+interface, ``GenericContainer``: public non-virtual entry points (``fillYbus``,
+``fillSbus``, ``fillpv``, ``compute_results``, ``check_valid``, ...) that each
+forward to a protected ``_xxx`` hook with a no-op default. A new element is:
+
+1. a leaf class deriving from the right mixin -- ``OneSideContainer_PQ`` for an
+   injection, ``VoltageSourceContainer<Leaf>`` for one that can regulate a
+   voltage, ``BranchContainer`` for a pi-model branch, ``TwoSidesContainer<Side>``
+   for any other two-terminal element -- overriding only the hooks it takes
+   part in, plus the ``_on_xxx`` notifications that raise the ``AlgoControl``
+   flags its changes invalidate;
+2. its ``StateRes`` tuple (with a ``StateResIdx`` enum next to it),
+   ``get_state`` / ``set_state``, ``save_binary`` / ``load_binary`` and an
+   ``Info`` class for the Python iteration;
+3. one member in ``LSGrid`` and one entry at the end of
+   ``LSGrid::_all_containers()``, which every bulk operation loops over.
+
 The C++ unit tests
 -------------------
 
