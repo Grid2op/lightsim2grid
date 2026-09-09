@@ -8,6 +8,7 @@
 
 #include "binding_declarations.hpp"
 #include "batch_algorithm/BaseBatchSweep.hpp"
+#include "batch_algorithm/ContinuationSweep.hpp"
 #include "batch_algorithm/LimitViolation.hpp"
 #include "help_fun_msg.hpp"
 
@@ -211,6 +212,126 @@ void bind_batch(py::module_& m) {
                       [](const TimeSeries & self){ return self.get_init_from_n_powerflow(); },
                       [](TimeSeries & self, bool val){ self.set_init_from_n_powerflow(val); },
                       DocTimeSeries::init_from_n_powerflow.c_str());
+
+    // ContinuationSweepCPP: a SIBLING of the four BaseBatchSweep instantiations, not
+    // a fifth one -- see batch_algorithm/ContinuationSweep.hpp for why. It shares the
+    // base class (and therefore the one-analyze-per-run guarantee, the timers and the
+    // result accessors) but decides its own rows, so it has its own binding block
+    // rather than going through bind_batch_sweep_common.
+    py::class_<ContinuationSweep>(m, "ContinuationSweepCPP",
+        "Continuation powerflow: traces the solution curve from the grid's own "
+        "injection state (lambda = 0) to a target one (lambda = 1), and stops at the "
+        "voltage-collapse 'nose' or at a requested lambda.\n\n"
+        "Set the target with set_target_load_p / set_target_load_q / set_target_gen_p "
+        "/ set_target_sgen_p (any axis left unset stays at the grid's own values), "
+        "then call compute(). The option names follow MATPOWER's cpf.* so a runcpf "
+        "user is on familiar ground. Newton-Raphson algorithms only.\n\n"
+        "Prefer the `lightsim2grid.continuationPowerflow.ContinuationPowerFlow` "
+        "wrapper, which builds the target from a loading factor and per-load / "
+        "per-generator steering vectors.")
+        .def(py::init<const LSGrid &>())
+
+        // solver control
+        .def("change_algorithm", py::overload_cast<const AlgorithmType&>(&ContinuationSweep::change_algorithm), DocLSGrid::change_algorithm.c_str())
+        .def("change_algorithm", py::overload_cast<const std::string&>(&ContinuationSweep::change_algorithm), DocLSGrid::change_algorithm_by_name.c_str())
+        .def("available_default_algorithms", &ContinuationSweep::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
+        .def("get_algo_type", &ContinuationSweep::get_algo_type, DocLSGrid::get_algo_type.c_str())
+        .def("get_algo_name", &ContinuationSweep::get_algo_name, "Registry name of the selected algorithm.")
+        .def("get_algo_config", &ContinuationSweep::get_algo_config, "Config of the internal solver.")
+        .def("set_algo_config", &ContinuationSweep::set_algo_config, py::arg("config"), "See get_algo_config().")
+
+        // the target state
+        .def("set_target_gen_p", &ContinuationSweep::set_target_gen_p, py::arg("gen_p"),
+             "Target active generator setpoints (n_gen,), in MW. Unset means 'unchanged'.")
+        .def("set_target_sgen_p", &ContinuationSweep::set_target_sgen_p, py::arg("sgen_p"),
+             "Target active static-generator setpoints (n_sgen,), in MW. Unset means 'unchanged'.")
+        .def("set_target_load_p", &ContinuationSweep::set_target_load_p, py::arg("load_p"),
+             "Target active load setpoints (n_load,), in MW. Unset means 'unchanged'.")
+        .def("set_target_load_q", &ContinuationSweep::set_target_load_q, py::arg("load_q"),
+             "Target reactive load setpoints (n_load,), in MVAr. Unset means 'unchanged'.")
+        .def("clear_target", &ContinuationSweep::clear_target, "Forget every target axis set so far.")
+
+        // options (MATPOWER cpf.* names and defaults)
+        .def_property("step", &ContinuationSweep::get_step, &ContinuationSweep::set_step,
+                      "Nominal continuation step, as an arc length along the unit tangent "
+                      "(MATPOWER cpf.step, default 0.05).")
+        .def_property("step_min", &ContinuationSweep::get_step_min, &ContinuationSweep::set_step_min,
+                      "Smallest step the corrector-failure retry may shrink to; failing at this "
+                      "step ends the curve (MATPOWER cpf.step_min, default 1e-4).")
+        .def_property("step_max", &ContinuationSweep::get_step_max, &ContinuationSweep::set_step_max,
+                      "Largest step the adaptation may grow to (MATPOWER cpf.step_max, default 0.2).")
+        .def_property("adapt_step", &ContinuationSweep::get_adapt_step, &ContinuationSweep::set_adapt_step,
+                      "Adapt the step to the predictor's error (MATPOWER cpf.adapt_step, default False).")
+        .def_property("adapt_step_damping", &ContinuationSweep::get_adapt_step_damping, &ContinuationSweep::set_adapt_step_damping,
+                      "Damping of the step adaptation (MATPOWER cpf.adapt_step_damping, default 0.7).")
+        .def_property("adapt_step_tol", &ContinuationSweep::get_adapt_step_tol, &ContinuationSweep::set_adapt_step_tol,
+                      "Target predictor error the adaptation aims at (MATPOWER cpf.adapt_step_tol, default 1e-3).")
+        .def_property("nose_tol", &ContinuationSweep::get_nose_tol, &ContinuationSweep::set_nose_tol,
+                      "The curve is declared at the nose when the tangent's lambda component falls "
+                      "below this (MATPOWER cpf.nose_tol, default 1e-5). Note that this "
+                      "parameterisation makes that component strictly positive, tending to zero at "
+                      "the nose -- it is a threshold, never a sign change.")
+        .def_property("stop_at_lam", &ContinuationSweep::get_stop_at_lam, &ContinuationSweep::set_stop_at_lam,
+                      "Stop once lambda reaches this value (MATPOWER's numeric cpf.stop_at). "
+                      "Non-positive (the default) means 'trace until the nose'.")
+        .def_property("max_steps", &ContinuationSweep::get_max_steps, &ContinuationSweep::set_max_steps,
+                      "Hard cap on the number of traced points (default 1000).")
+        .def_property("exact_tangent", &ContinuationSweep::get_exact_tangent, &ContinuationSweep::set_exact_tangent,
+                      "Rebuild and refactorize the Jacobian at each converged point before taking "
+                      "its tangent (default False). Off, the tangent uses the factorization the "
+                      "corrector left standing, which is one NR iterate behind the converged point.")
+
+        .def("compute", &ContinuationSweep::compute, py::call_guard<py::gil_scoped_release>(),
+             py::arg("Vinit"), py::arg("max_iter"), py::arg("tol"),
+             "Trace the curve. Raises if the target is identical to the base state, or if "
+             "the selected algorithm is not Newton-Raphson based.")
+
+        // results
+        .def("get_status", &ContinuationSweep::get_status,
+             "1 if the curve reached its requested end (the nose, or stop_at_lam), 0 otherwise.")
+        .def("get_msg", &ContinuationSweep::get_msg, "Why the run stopped, in words.")
+        .def("nb_points", &ContinuationSweep::nb_points,
+             "Number of traced points, the base case included.")
+        .def("get_lam", &ContinuationSweep::get_lam, py::return_value_policy::reference_internal,
+             "Lambda at each traced point; lam[0] == 0 is the base case, lam == 1 the target.")
+        .def("get_tangent_lam", &ContinuationSweep::get_tangent_lam, py::return_value_policy::reference_internal,
+             "The tangent's lambda component at each point, in (0, 1]; it tends to 0 at the "
+             "nose. The last point has none and reads 0.")
+        .def("get_lam_max", &ContinuationSweep::get_lam_max, "Largest lambda reached.")
+        .def("nb_retries", &ContinuationSweep::nb_retries,
+             "How many times a corrector failed and the step had to be halved.")
+        .def("get_direction_solver", &ContinuationSweep::get_direction_solver, py::return_value_policy::reference_internal,
+             "The direction actually used (Sbus_target - Sbus_base), in solver bus ordering "
+             "and per unit.")
+        .def("get_voltages", &ContinuationSweep::get_voltages, DocTimeSeries::get_voltages.c_str(), py::return_value_policy::reference_internal)
+        .def("compute_flows", &ContinuationSweep::compute_flows, DocTimeSeries::compute_flows.c_str())
+        .def("compute_power_flows", &ContinuationSweep::compute_power_flows, DocTimeSeries::compute_power_flows.c_str())
+        .def("get_flows", &ContinuationSweep::get_flows, DocTimeSeries::get_flows.c_str(), py::return_value_policy::reference_internal)
+        .def("get_power_flows", &ContinuationSweep::get_power_flows, DocTimeSeries::get_power_flows.c_str(), py::return_value_policy::reference_internal)
+
+        // timers / counters
+        .def("total_time", &ContinuationSweep::total_time, DocTimeSeries::total_time.c_str())
+        .def("solver_time", &ContinuationSweep::solver_time, DocTimeSeries::solver_time.c_str())
+        .def("preprocessing_time", &ContinuationSweep::preprocessing_time, DocTimeSeries::preprocessing_time.c_str())
+        .def("nb_solved", &ContinuationSweep::nb_solved, DocTimeSeries::nb_solved.c_str())
+        .def("nb_converged", &ContinuationSweep::nb_converged, DocTimeSeries::nb_converged.c_str())
+        .def("get_linear_solver_stats", &ContinuationSweep::get_linear_solver_stats,
+             "Linear-solver counters for the whole curve. nb_analyze must be 1 however many "
+             "points were traced -- that is the entire reason a continuation belongs in the "
+             "batch layer. More than 1 means something changed the Jacobian's sparsity.")
+        .def("clear", &ContinuationSweep::clear, DocTimeSeries::clear.c_str())
+        .def("close", &ContinuationSweep::clear, DocTimeSeries::clear.c_str())
+
+        // bound although any value but 1 is rejected, for the same reason TimeSeriesCPP
+        // binds it: a user who finds the attribute gets an explanation instead of an
+        // AttributeError. The points of a curve are chained, so there is nothing to split.
+        .def("set_nb_thread", &ContinuationSweep::set_nb_thread, py::arg("nb_thread"),
+             "Always 1: the points of a continuation are chained (each is predicted from "
+             "the previous one's tangent), so the curve cannot be split over threads.")
+        .def_property("nb_thread",
+                      [](const ContinuationSweep & self){ return self.get_nb_thread(); },
+                      [](ContinuationSweep & self, int val){ self.set_nb_thread(val); },
+                      DocTimeSeries::nb_thread.c_str());
 
     py::class_<InjectionSweep> injection_sweep(m, "InjectionSweepCPP", DocInjectionSweep::InjectionSweep.c_str());
     bind_batch_sweep_common(injection_sweep);

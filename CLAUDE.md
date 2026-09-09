@@ -37,6 +37,33 @@ Rules:
   followed by `git push --force-with-lease`. This is the case that actually bites: the
   mistake is usually noticed only after CI has run.
 
+## Pull requests: lead with the diff breakdown
+
+A PR here routinely runs to one or two thousand lines, which is daunting to open and tells
+a reviewer nothing about where the work actually is. **Start every PR body with a table
+splitting the diff by kind**, so the reader can see at a glance how much of it is code they
+have to reason about and how much is tests, docs and changelog:
+
+```
+| | added | removed |
+|---|---|---|
+| **C++ (src/core, src/bindings)** | +970 | -0 |
+| **Python (package)** | +384 | -0 |
+| **Tests** | +922 | -0 |
+| **Docs + changelog** | +212 | -0 |
+| total | +2489 | -0 |
+```
+
+`utils/pr_diff_stats.py` produces it — it holds the bucket definitions, so they stay in one
+place rather than being restated here:
+
+```
+python3 utils/pr_diff_stats.py                # against origin/dev_1.0.1 (the default)
+python3 utils/pr_diff_stats.py origin/main    # against another base branch
+```
+
+Run it against the PR's own base branch, and paste the table as the first thing in the body.
+
 ## Build
 
 The vendored dependencies are git submodules and start empty — a build fails with

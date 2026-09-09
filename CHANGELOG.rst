@@ -159,6 +159,17 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [IMPROVED] ``-march=native`` (``__COMPILE_MARCHNATIVE=1``) now also compiles KLU and its
   SuiteSparse dependencies, not just ``lightsim2grid_core``. Measured 5-16% faster solves on
   grids above ~1000 buses (``TimeSeries``, ``ContingencyAnalysis`` and plain powerflows alike).
+- [ADDED] ``ContinuationPowerFlow`` / ``run_cpf``: a continuation powerflow tracing the PV curve
+  from the grid's injections to a target state, stopping at the voltage-collapse nose. Options
+  and defaults follow MATPOWER's ``cpf.*``. Natural parameterisation, so the curve stops at the
+  nose rather than rounding it.
+- [ADDED] ``load_steering`` / ``gen_steering``: per-element coefficients in [0, 1] steering which
+  loads and generators move during a continuation (0 holds an element at its base value).
+  Generation follows the load by default, slack machines included: unlike in MATPOWER, whose
+  rule rests on a slack ``Pg`` being an output, a distributed-slack participant's setpoint is a
+  genuine input here.
+- [ADDED] ``ContinuationSweepCPP``, a batch algorithm alongside the four existing ones: the whole
+  curve costs one symbolic factorization, whatever the number of points.
 - [ADDED] ``LightSimBackend(loader_method="matpower")``: a grid2op environment can now ship a
   MATPOWER case (``grid.m`` / ``grid.mat``) as its powergrid, next to pandapower's ``grid.json``
   and pypowsybl's ``grid.xiidm``. One substation per matpower bus, grid2op default names.
