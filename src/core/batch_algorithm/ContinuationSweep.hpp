@@ -227,7 +227,7 @@ class LS2G_API ContinuationSweep final : public BaseBatchSolverSynch
         // one target axis as a 1-row matrix of DELTAS (target - base), or a 1 x n
         // zero matrix when the axis was never set. `base` is the grid's own target
         // vector for that element type.
-        static SbusPolicy::Vary::RealMat _delta_row(const RealVect & target,
+        static SbusPolicy::Vary::RealMat _delta_row(const Eigen::Ref<const RealVect> & target,
                                                     const Eigen::Ref<const RealVect> & base,
                                                     const char * axis_name);
 
@@ -239,7 +239,7 @@ class LS2G_API ContinuationSweep final : public BaseBatchSolverSynch
         // Re-solving from V_last converges immediately -- and precisely BECAUSE it
         // converges immediately it never enters the NR loop and so never
         // refactorizes, which is why the refactorization is asked for explicitly.
-        bool _restore_at(const CplxVect & V_last, real_type lam_last,
+        bool _restore_at(const Eigen::Ref<const CplxVect> & V_last, real_type lam_last,
                          int max_iter, real_type tol);
 
         // MATPOWER's predictor-error step control (cpf.adapt_step):
@@ -248,8 +248,8 @@ class LS2G_API ContinuationSweep final : public BaseBatchSolverSynch
         // clipped to [step_min, step_max]. MATPOWER's error also carries a lambda
         // term; here it is structurally zero (see the definition).
         real_type _adapted_step(real_type step,
-                                const CplxVect & V_corr,
-                                const CplxVect & V_pred) const;
+                                const Eigen::Ref<const CplxVect> & V_corr,
+                                const Eigen::Ref<const CplxVect> & V_pred) const;
 
     private:
         // target state (empty axis == unchanged from base)

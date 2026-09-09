@@ -35,7 +35,7 @@ void ContinuationSweep::set_max_steps(int x)
     _max_steps = x;
 }
 
-SbusPolicy::Vary::RealMat ContinuationSweep::_delta_row(const RealVect & target,
+SbusPolicy::Vary::RealMat ContinuationSweep::_delta_row(const Eigen::Ref<const RealVect> & target,
                                                         const Eigen::Ref<const RealVect> & base,
                                                         const char * axis_name)
 {
@@ -88,7 +88,7 @@ void ContinuationSweep::_build_direction(int nb_buses_solver,
     _direction = dir.row(0).transpose();
 }
 
-bool ContinuationSweep::_restore_at(const CplxVect & V_last, real_type lam_last,
+bool ContinuationSweep::_restore_at(const Eigen::Ref<const CplxVect> & V_last, real_type lam_last,
                                     int max_iter, real_type tol)
 {
     CplxVect V = V_last;
@@ -107,8 +107,8 @@ bool ContinuationSweep::_restore_at(const CplxVect & V_last, real_type lam_last,
 }
 
 real_type ContinuationSweep::_adapted_step(real_type step,
-                                           const CplxVect & V_corr,
-                                           const CplxVect & V_pred) const
+                                           const Eigen::Ref<const CplxVect> & V_corr,
+                                           const Eigen::Ref<const CplxVect> & V_pred) const
 {
     // MATPOWER's cpf_error: the infinity norm of (corrected - predicted) over the
     // free state variables -- angles at pv and pq buses, magnitudes at pq buses --
