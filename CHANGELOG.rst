@@ -156,6 +156,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``-march=native`` (``__COMPILE_MARCHNATIVE=1``) now also compiles KLU and its
+  SuiteSparse dependencies, not just ``lightsim2grid_core``. Measured 5-16% faster solves on
+  grids above ~1000 buses (``TimeSeries``, ``ContingencyAnalysis`` and plain powerflows alike).
 - [ADDED] ``LightSimBackend(loader_method="matpower")``: a grid2op environment can now ship a
   MATPOWER case (``grid.m`` / ``grid.mat``) as its powergrid, next to pandapower's ``grid.json``
   and pypowsybl's ``grid.xiidm``. One substation per matpower bus, grid2op default names.

@@ -191,6 +191,21 @@ if(NOT KLU_SOLVER_FOUND)
             set(KLU_SOLVER_FOUND     TRUE)
             set(KLU_LINK_TARGET      KLU_static)
             set(CXSPARSE_LINK_TARGET CXSparse_static)
+
+            # USE_MARCH_NATIVE (below) isn't defined yet at this point in the file,
+            # so read the same env var it derives from directly, as
+            # src/bindings/python/CMakeLists.txt already does for the same reason.
+            # These are plain C libraries with no Eigen types crossing into
+            # lightsim2grid_core, so unlike the march=native/Eigen-ABI hazard
+            # documented there, there is no correctness requirement to match --
+            # this is purely a "does it help" experiment.
+            set(ENV_COMPILE_MARCHNATIVE_SS "$ENV{__COMPILE_MARCHNATIVE}")
+            if(ENV_COMPILE_MARCHNATIVE_SS STREQUAL "1" OR ENV_COMPILE_MARCHNATIVE_SS STREQUAL "True")
+                foreach(_ss_target SuiteSparseConfig_static AMD_static BTF_static COLAMD_static CXSparse_static KLU_static)
+                    target_compile_options(${_ss_target} PRIVATE -march=native)
+                endforeach()
+            endif()
+            unset(ENV_COMPILE_MARCHNATIVE_SS)
             unset(_SS)
         endif()
     else()
