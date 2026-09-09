@@ -65,6 +65,7 @@ void ConverterStationContainer::init(const std::vector<int> & type,
     loss_factor_ = loss_factor;
     voltage_regulator_on_ = voltage_regulator_on;
     target_vm_pu_ = target_vm_pu;
+    regulated_bus_id_ = bus_id;  // a station regulates its own bus
     min_q_ = min_q;
     max_q_ = max_q;
     power_factor_ = power_factor;
@@ -117,6 +118,7 @@ void ConverterStationContainer::set_state(ConverterStationContainer::StateRes & 
     min_q_ = RealVect::Map(min_q.data(), min_q.size());
     max_q_ = RealVect::Map(max_q.data(), max_q.size());
     power_factor_ = RealVect::Map(power_factor.data(), power_factor.size());
+    regulated_bus_id_ = bus_id_.as_eigen();  // not serialised: a station regulates its own bus
     reset_results();
 }
 
@@ -134,29 +136,6 @@ void ConverterStationContainer::set_station_p(int station_id, real_type p_mw, Du
             solver_control.tell_recompute_sbus();
             target_q_mvar_(station_id) = new_q;
         }
-    }
-}
-
-void ConverterStationContainer::change_v(int station_id, real_type new_v_pu, DualAlgoControl & solver_control)
-{
-    bool my_status = status_.at(station_id);
-    if(!my_status)
-    {
-        std::ostringstream exc_;
-        exc_ << "ConverterStationContainer::change_v: Impossible to change the voltage setpoint of a disconnected converter station (check station id ";
-        exc_ << station_id;
-        exc_ << ")";
-        throw std::runtime_error(exc_.str());
-    }
-    if (abs(target_vm_pu_(station_id) - new_v_pu) > _tol_equal_float)
-    {
-        solver_control.tell_v_changed();
-        // Same as GeneratorContainer::change_v_nothrow: a setpoint is the one input of
-        // the voltage-control plan the pv/pq split does not read, so it needs a flag of
-        // its own -- and only for a station that regulates, target_vm_pu_ of one that
-        // does not being never read.
-        if(voltage_regulator_on_[station_id]) solver_control.ac_algo_controler().tell_voltage_control_changed();
-        target_vm_pu_(station_id) = new_v_pu;
     }
 }
 
@@ -204,155 +183,6 @@ void ConverterStationContainer::fillSbus_station(Eigen::Ref<CplxVect> Sbus,
     }
 }
 
-void ConverterStationContainer::_fillpv(std::vector<int> & bus_pv,
-                                       std::vector<bool> & has_bus_been_added,
-                                       const SolverBusIdVect & slack_bus_id_solver,
-                                       const SolverBusIdVect & id_grid_to_solver) const
-{
-    const int nb_station = nb();
-    GlobalBusId bus_id_me;
-    SolverBusId bus_id_solver;
-    for(int station_id = 0; station_id < nb_station; ++station_id){
-        if(!status_[station_id]) continue;
-        if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-
-        bus_id_me = bus_id_(station_id);
-        if(bus_id_me.cast_int() == _deactivated_bus_id){
-            // TODO DEBUG MODE: only check in debug mode
-            std::ostringstream exc_;
-            exc_ << "ConverterStationContainer::fillpv: Converter station with id ";
-            exc_ << station_id;
-            exc_ << " is connected to a disconnected bus while being connected to the grid.";
-            throw std::runtime_error(exc_.str());
-        }
-        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
-        if(bus_id_solver.cast_int() == _deactivated_bus_id){
-            // TODO DEBUG MODE only this in debug mode
-            std::ostringstream exc_;
-            exc_ << "ConverterStationContainer::fillpv: Converter station with id ";
-            exc_ << station_id;
-            exc_ << " is connected to a disconnected bus while being connected to the grid.";
-            throw std::runtime_error(exc_.str());
-        }
-
-        if(is_in_vect(bus_id_solver.cast_int(), slack_bus_id_solver.to_int_vector())) continue;  // slack bus is not PV
-        if(has_bus_been_added[bus_id_solver.cast_int()]) continue; // i already added this bus
-        bus_pv.push_back(bus_id_solver.cast_int());
-        has_bus_been_added[bus_id_solver.cast_int()] = true;  // don't add it a second time
-    }
-}
-
-void ConverterStationContainer::set_q(bool ac)
-{
-    const int nb_station = nb();
-    if(!ac){
-        // do not consider Q values in dc mode
-        for(int station_id = 0; station_id < nb_station; ++station_id) res_q_(station_id) = 0.;
-        return;
-    }
-
-    // The stations whose reactive output is known without looking at the powerflow.
-    // A voltage-regulating one is left alone: LSGrid either writes it back from the
-    // algorithm's controller list or gives it a share of its bus' reactive residual,
-    // which depends on the other elements of that bus. See takes_q_residual_share.
-    for(int station_id = 0; station_id < nb_station; ++station_id)
-    {
-        if(!status_[station_id]){
-            res_q_(station_id) = 0.;  // disconnected
-            continue;
-        }
-        if (!voltage_regulator_on_[station_id]){
-            // station is purposedly not pv, so output MVAr = input MVAr (just like a load)
-            res_q_(station_id) = target_q_mvar_(station_id);
-            continue;
-        }
-        // a voltage-regulating station: left for LSGrid, see the note above
-    }
-}
-
-void ConverterStationContainer::get_vm_for_dc(Eigen::Ref<RealVect> Vm)
-{
-    const int nb_station = nb();
-    GlobalBusId bus_id_me;
-    for(int station_id = 0; station_id < nb_station; ++station_id){
-        if(!status_[station_id]) continue;
-        if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-
-        bus_id_me = bus_id_(station_id);
-        real_type tmp = target_vm_pu_(station_id);
-        if(abs(tmp) > _tol_equal_float) Vm(bus_id_me.cast_int()) = tmp;
-    }
-}
-
-void ConverterStationContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const
-{
-    const int nb_station = nb();
-    GlobalBusId bus_id_me;
-    SolverBusId bus_id_solver;
-    for(int station_id = 0; station_id < nb_station; ++station_id){
-        if(!status_[station_id]) continue;
-        if (!voltage_regulator_on_[station_id]) continue;  // station is purposedly not pv
-
-        bus_id_me = bus_id_(station_id);
-        if(bus_id_me.cast_int() == _deactivated_bus_id){
-            // TODO DEBUG MODE: only check in debug mode
-            std::ostringstream exc_;
-            exc_ << "ConverterStationContainer::set_vm: Converter station with id ";
-            exc_ << station_id;
-            exc_ << " is connected to a disconnected bus while being connected to the grid.";
-            throw std::runtime_error(exc_.str());
-        }
-        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
-        if(bus_id_solver.cast_int() == _deactivated_bus_id){
-            // TODO DEBUG MODE only this in debug mode
-            std::ostringstream exc_;
-            exc_ << "ConverterStationContainer::set_vm: Converter station with id ";
-            exc_ << station_id;
-            exc_ << " is connected to a disconnected bus while being connected to the grid.";
-            throw std::runtime_error(exc_.str());
-        }
-        // scale the input V such that abs(V) = Vm for this station
-        real_type tmp = std::abs(V(bus_id_solver.cast_int()));
-        if(abs(tmp) < _tol_equal_float)
-        {
-            // if it was 0. i force it to 1. (otherwise the rest of the computation would make it O. still)
-            V(bus_id_solver.cast_int()) = 1.0;
-            tmp = 1.0;
-        }
-        tmp = 1.0 / tmp;
-        tmp *= target_vm_pu_(station_id);
-        V(bus_id_solver.cast_int()) *= tmp;
-    }
-}
-
-void ConverterStationContainer::_compute_res_pq(
-    const Eigen::Ref<const RealVect> & /*Va*/,
-    const Eigen::Ref<const RealVect> & /*Vm*/,
-    const Eigen::Ref<const CplxVect> & /*V*/,
-    const SolverBusIdVect & /*id_grid_to_solver*/,
-    const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
-    real_type /*sn_mva*/,
-    bool ac)
-{
-    set_osc_pq_res_p();
-    if(ac){
-        const int nb_station = nb();
-        for(int station_id = 0; station_id < nb_station; ++station_id)
-        {
-            if(!status_[station_id]){
-                // turned off station does not have q
-                res_q_[station_id] = 0.;
-                continue;
-            }
-            if(voltage_regulator_on_[station_id]) continue;  // filled later by set_q
-            res_q_(station_id) = target_q_mvar_(station_id);
-        }
-    }else{
-        // nothing special to do here
-        set_osc_pq_res_q(ac);
-    }
-}
-
 void ConverterStationContainer::_on_change_p(int station_id, real_type new_p, DualAlgoControl & solver_control)
 {
     if (abs(target_p_mw_(station_id) - new_p) > _tol_equal_float) {
@@ -364,32 +194,6 @@ void ConverterStationContainer::_on_change_p(int station_id, real_type new_p, Du
     bool pseudo_off_now = abs(new_p) < _tol_equal_float;
     if((pseudo_off_before && !pseudo_off_now) ||
        (!pseudo_off_before && pseudo_off_now)){
-        solver_control.tell_pv_changed();
-    }
-}
-
-void ConverterStationContainer::_on_deactivate(int el_id, DualAlgoControl & solver_control) {
-    // a station IS in Sbus (fillSbus_station stamps its active power, and its reactive
-    // personality when it does not regulate), so its status always moves the injections
-    solver_control.tell_recompute_sbus();
-    // ... but only a REGULATING one pins a bus (fillpv skips the others), so only that
-    // one moves the pv/pq split -- and with it the voltage-control plan built on it
-    if(voltage_regulator_on_[el_id]){
-        solver_control.tell_pv_changed();
-    }
-}
-
-void ConverterStationContainer::_on_reactivate(int el_id, DualAlgoControl & solver_control) {
-    solver_control.tell_recompute_sbus();  // see _on_deactivate
-    if(voltage_regulator_on_[el_id]){
-        solver_control.tell_pv_changed();
-    }
-}
-
-void ConverterStationContainer::_on_change_bus(int el_id, GridModelBusId /*new_bus_id*/, DualAlgoControl & solver_control) {
-    solver_control.tell_recompute_sbus();
-    solver_control.tell_one_el_changed_bus();
-    if(voltage_regulator_on_[el_id]) {
         solver_control.tell_pv_changed();
     }
 }

@@ -1247,7 +1247,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
                 if(!ever_off) continue;
                 const int bus_id_me = generators.get_bus_id()(gen_id).cast_int();
-                const bool remote = generators.gen_is_voltage_controller(gen_id);
+                const bool remote = generators.is_remote_voltage_controller(gen_id);
                 const bool in_group = bus_id_me != BaseConstants::_deactivated_bus_id &&
                                       group_buses.find(bus_id_me) != group_buses.end();
                 if(remote || in_group){
@@ -1268,7 +1268,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             std::vector<int> pinned_bus_of_gen(nb_gen, -1);
             std::map<int, std::vector<int> > gens_of_bus;  // solver bus -> its local controllers
             for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-                if(!generators.gen_is_local_voltage_controller(gen_id)) continue;
+                if(!generators.is_local_voltage_controller(gen_id)) continue;
                 const int bus_id_me = generators.get_bus_id()(gen_id).cast_int();
                 if(bus_id_me == BaseConstants::_deactivated_bus_id) continue;
                 const int bus_solver = id_me_to_solver[bus_id_me].cast_int();

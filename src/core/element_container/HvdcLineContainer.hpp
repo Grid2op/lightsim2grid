@@ -374,8 +374,8 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                              : side_2_.get_target_vm_pu(hvdc_id);
         }
         real_type get_station_q_range_mvar(int hvdc_id, int side) const {
-            return side == 1 ? side_1_.get_qmax(hvdc_id) - side_1_.get_qmin(hvdc_id)
-                             : side_2_.get_qmax(hvdc_id) - side_2_.get_qmin(hvdc_id);
+            return side == 1 ? side_1_.get_max_q(hvdc_id) - side_1_.get_min_q(hvdc_id)
+                             : side_2_.get_max_q(hvdc_id) - side_2_.get_min_q(hvdc_id);
         }
         void set_station_voltage_control_q(int hvdc_id, int side, real_type q_mvar) {
             if(side == 1) side_1_.set_voltage_control_q(hvdc_id, q_mvar);

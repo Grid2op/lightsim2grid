@@ -16,7 +16,7 @@
 #include "Eigen/SparseCore"
 
 #include "Utils.hpp"
-#include "OneSideContainer_PQ.hpp"
+#include "VoltageSourceContainer.hpp"
 
 namespace ls2g {
 
@@ -49,12 +49,17 @@ IIDM model of powsybl: three regulation modes
                      generator / a load): stamps Q (and P = 0) into Sbus;
   - OFF            : behaves as if disconnected (nothing anywhere).
 
+The voltage side is VoltageSourceContainer's, with `voltage_regulator_on_`
+derived from the mode (VOLTAGE) -- the mode has no setter, so the two cannot
+drift -- and the one thing an SVC does differently: it never takes the PV path.
+
 `b_min_` / `b_max_` are stored for introspection but NEVER enforced (no outer
 loop, no limit check), mirroring the generator Qmin/Qmax handling.
 **/
-class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorAdder<SvcContainer, SvcInfo>
+class LS2G_API SvcContainer final : public VoltageSourceContainer<SvcContainer>, public IteratorAdder<SvcContainer, SvcInfo>
 {
     friend class SvcInfo;
+    friend class VoltageSourceContainer<SvcContainer>;
 
     public:
         using DataInfo = SvcInfo;
@@ -109,50 +114,40 @@ class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorA
         SvcContainer::StateRes get_state() const;
         void set_state(SvcContainer::StateRes & my_state);
 
-    protected:
-        // Whole-grid semantic validation (see GenericContainer::check_valid): the
-        // one-side checks, plus the range of `regulated_bus_id_`. That last one is
-        // a *grid* bus id used directly as an index (`id_grid_to_solver[...]` in
-        // set_vm / LSGrid::fill_voltage_control_solver_data, `Vm(...)` in
-        // get_vm_for_dc), exactly like the generator field of the same name.
-        void _check_valid(int nb_bus,
-                          int nb_sub,
-                          const SubstationContainer & substations,
-                          std::vector<int> & all_pos_topo_vect) const override;
-
-    public:
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path, bool atomic = true) const;
         static SvcContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "SvcContainer"; }  // written into / checked against the binary file header
 
         // accessors
-        int get_regulation_mode(int svc_id) const {return regulation_mode_(svc_id);}
-        real_type get_target_vm_pu(int svc_id) const {return target_vm_pu_(svc_id);}
         real_type get_slope_pu(int svc_id) const {return slope_pu_.coeff(svc_id);}
         real_type get_b_min(int svc_id) const {return b_min_.coeff(svc_id);}
         real_type get_b_max(int svc_id) const {return b_max_.coeff(svc_id);}
-        int get_regulated_bus_id(int svc_id) const {return regulated_bus_id_(svc_id);}
-        bool regulates_remote(int svc_id) const {
-            return regulated_bus_id_(svc_id) != bus_id_(svc_id).cast_int();
-        }
-        // true iff this SVC is an ACTIVE voltage-mode controller (joins a group)
-        bool svc_is_voltage_controller(int svc_id) const {
-            return status_[svc_id] && (regulation_mode_(svc_id) == RegulationMode::VOLTAGE);
-        }
         bool has_slope(int svc_id) const {
             return std::abs(slope_pu_.coeff(svc_id)) > _tol_equal_float;
         }
-        // write the converged reactive output (MVAr) of a voltage-mode SVC,
-        // supplied by the VoltageControl extension (LSGrid::compute_results)
-        void set_voltage_control_q(int svc_id, real_type q_mvar) {res_q_(svc_id) = q_mvar;}
-
-        // solver interface
-        void get_vm_for_dc(Eigen::Ref<RealVect> Vm);
-        void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const;
 
     protected:
+        // ---- what VoltageSourceContainer asks of its leaf -------------------------
+        static const char * _element_name() { return "svc"; }
+        bool _treated_as_off(int /*svc_id*/) const { return false; }
+        // a sloped SVC does NOT hold its regulated bus exactly at the setpoint
+        // (Vm = v_set - s.Q): forcing it there would corrupt an already-solved V
+        // (e.g. in check_solution). The flat init is good enough for the NR.
+        bool _set_vm_skips(int svc_id) const { return has_slope(svc_id); }
+        // an SVC may point at a bus outside the solved system: skipped, not an error
+        static constexpr bool set_vm_throws_on_unresolved = false;
+
+        // an SVC is NEVER PV: in VOLTAGE mode it is always a group controller,
+        // local and non-sloped included (the bordered formulation)
+        void _fillpv(std::vector<int> & /*bus_pv*/,
+                     std::vector<bool> & /*has_bus_been_added*/,
+                     const SolverBusIdVect & /*slack_bus_id_solver*/,
+                     const SolverBusIdVect & /*id_grid_to_solver*/) const override final {}
+
         void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        // P is always 0; Q is the setpoint in REACTIVE_POWER mode, the write-back
+        // in VOLTAGE mode, nothing when OFF
         void _compute_res_pq(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
@@ -161,17 +156,19 @@ class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorA
             const Eigen::Ref<const RealVect> & bus_vn_kv,
             real_type sn_mva,
             bool ac) override;
+        // the voltage-source flags, plus `one_el_changed_bus` (kept from before the
+        // shared base: an SVC's status change raised it, a generator's did not)
         void _on_deactivate(int svc_id, DualAlgoControl & solver_control) override final;
         void _on_reactivate(int svc_id, DualAlgoControl & solver_control) override final;
-        void _on_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control) override final;
 
     private:
+        // voltage_regulator_on_ (the base's) is `regulation_mode_ == VOLTAGE`
+        void _derive_voltage_regulator_on();
+
         IntVect regulation_mode_;             // RegulationMode, per SVC
-        RealVect target_vm_pu_;               // VOLTAGE mode
         RealVect slope_pu_;                   // VOLTAGE mode (0 = no slope)
         RealVect b_min_;                      // stored, NEVER enforced
         RealVect b_max_;                      // stored, NEVER enforced
-        Eigen::VectorXi regulated_bus_id_;    // grid bus id (defaults to own bus = local)
 };
 
 inline SvcInfo::SvcInfo(const SvcContainer & r_data_svc, int my_id) noexcept:
