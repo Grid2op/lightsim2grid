@@ -161,10 +161,6 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
                               const SolverBusIdVect & id_grid_to_solver,
                               bool ac,
                               const std::vector<bool> & skip_p) const;
-        void fillpv(std::vector<int>& bus_pv,
-                            std::vector<bool> & has_bus_been_added,
-                            const SolverBusIdVect & slack_bus_id_solver,
-                            const SolverBusIdVect & id_grid_to_solver) const override;
         /// see GeneratorContainer::set_q
         void set_q(bool ac);
         /// see GeneratorContainer::takes_q_residual_share
@@ -179,7 +175,13 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
         void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const;
 
     protected:
-        void _compute_results(
+        // a station's PV role: through the ordinary fillpv path of its owning
+        // HvdcLineContainer, which calls this on each side
+        void _fillpv(std::vector<int>& bus_pv,
+                     std::vector<bool> & has_bus_been_added,
+                     const SolverBusIdVect & slack_bus_id_solver,
+                     const SolverBusIdVect & id_grid_to_solver) const override;
+        void _compute_res_pq(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,

@@ -140,13 +140,16 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             bool ac,
             const SolverBusIdVect & id_grid_to_solver);  // needed for dc mode
 
-        void compute_results(const Eigen::Ref<const RealVect> & Va,
-                             const Eigen::Ref<const RealVect> & Vm,
-                             const Eigen::Ref<const CplxVect> & V,
-                             const SolverBusIdVect & id_grid_to_solver,
-                             const Eigen::Ref<const RealVect> & bus_vn_kv,
-                             real_type sn_mva,
-                             bool ac)
+    protected:
+        bool _in_topo_vect() const override { return true; }
+
+        void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                              const Eigen::Ref<const RealVect> & Vm,
+                              const Eigen::Ref<const CplxVect> & V,
+                              const SolverBusIdVect & id_grid_to_solver,
+                              const Eigen::Ref<const RealVect> & bus_vn_kv,
+                              real_type sn_mva,
+                              bool ac) override
         {
             // compute base values
             compute_results_tsc_rxha_no_amps(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
@@ -168,11 +171,8 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             // compute amps flow
             compute_amps_after_all_set();
         }
-        
-        void reset_results(){
-            reset_results_tsc_rxha();
-        }
 
+    public:
         Eigen::Ref<const RealVect> dc_x_tau_shift() const {return dc_x_tau_shift_;}
 
         void change_ratio(
@@ -185,7 +185,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                     ratio_(el_id) = new_ratio;
                     // TODO speed: only some part needs to be recomputed
                     _update_internal_coeffs(el_id); 
-                    solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                    solver_control.tell_recompute_ybus();
                 }
         }
         
@@ -206,7 +206,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                     shift_(el_id) = new_shift_rad;
                     // TODO speed: only some part needs to be recomputed
                     _update_internal_coeffs(el_id); 
-                    solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                    solver_control.tell_recompute_ybus();
                     solver_control.dc_algo_controler().tell_recompute_sbus();  // only in DC however
                 }
         }

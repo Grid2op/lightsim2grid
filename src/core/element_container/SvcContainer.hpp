@@ -109,16 +109,18 @@ class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorA
         SvcContainer::StateRes get_state() const;
         void set_state(SvcContainer::StateRes & my_state);
 
+    protected:
         // Whole-grid semantic validation (see GenericContainer::check_valid): the
         // one-side checks, plus the range of `regulated_bus_id_`. That last one is
         // a *grid* bus id used directly as an index (`id_grid_to_solver[...]` in
         // set_vm / LSGrid::fill_voltage_control_solver_data, `Vm(...)` in
         // get_vm_for_dc), exactly like the generator field of the same name.
-        void check_valid(int nb_bus,
-                         int nb_sub,
-                         const SubstationContainer & substations,
-                         std::vector<int> & all_pos_topo_vect) const override;
+        void _check_valid(int nb_bus,
+                          int nb_sub,
+                          const SubstationContainer & substations,
+                          std::vector<int> & all_pos_topo_vect) const override;
 
+    public:
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path, bool atomic = true) const;
         static SvcContainer load_binary(const std::string & path);
@@ -146,12 +148,12 @@ class LS2G_API SvcContainer final : public OneSideContainer_PQ, public IteratorA
         void set_voltage_control_q(int svc_id, real_type q_mvar) {res_q_(svc_id) = q_mvar;}
 
         // solver interface
-        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
         void get_vm_for_dc(Eigen::Ref<RealVect> Vm);
         void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const;
 
     protected:
-        void _compute_results(
+        void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void _compute_res_pq(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,

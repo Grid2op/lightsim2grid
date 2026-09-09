@@ -82,18 +82,6 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         static LineContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "LineContainer"; }  // written into / checked against the binary file header
 
-        void compute_results(const Eigen::Ref<const RealVect> & Va,
-                             const Eigen::Ref<const RealVect> & Vm,
-                             const Eigen::Ref<const CplxVect> & V,
-                             const SolverBusIdVect & id_grid_to_solver,
-                             const Eigen::Ref<const RealVect> & bus_vn_kv,
-                             real_type sn_mva,
-                             bool ac){
-            compute_results_tsc_rxha(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
-        }
-
-        void reset_results() {reset_results_tsc_rxha();}
-
         // for consistency with trafo, when used for example in BaseMultiplePowerflow...
         // lines never have a phase shift: the Ref must point at something with a
         // lifetime that outlives the call, not a temporary (a plain `return RealVect();`
@@ -104,15 +92,7 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         }
 
     protected:
-        // physical properties
-
-        // specific grid2op
-
-        // input data
-
-        //output data
-
-        // model coefficients
+        bool _in_topo_vect() const override { return true; }
 };
 
 inline LineInfo::LineInfo(const LineContainer & r_data, int my_id) noexcept:

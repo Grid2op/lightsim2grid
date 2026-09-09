@@ -62,8 +62,8 @@ class OneSideContainer_PQ : public OneSideContainer
         Eigen::Ref<const RealVect> get_target_p() const {return target_p_mw_;}
         Eigen::Ref<const RealVect> get_target_q() const {return target_q_mvar_;}
 
-        // base function that can be called
-        void gen_p_per_bus(std::vector<real_type> & res) const override
+    protected:
+        void _gen_p_per_bus(std::vector<real_type> & res) const override
         {
             const int nb_gen = nb();
             for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
@@ -74,7 +74,8 @@ class OneSideContainer_PQ : public OneSideContainer
             }
         }
 
-        virtual void change_p(int el_id, real_type new_p, DualAlgoControl & solver_control) final {
+    public:
+        void change_p(int el_id, real_type new_p, DualAlgoControl & solver_control) {
             bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
             if(!my_status)
             {
@@ -86,7 +87,7 @@ class OneSideContainer_PQ : public OneSideContainer
             }
             change_p_nothrow(el_id, new_p, solver_control);
         }
-        virtual void change_p_nothrow(int el_id, real_type new_p, DualAlgoControl & solver_control) final
+        void change_p_nothrow(int el_id, real_type new_p, DualAlgoControl & solver_control)
         {
             bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
             this->_change_p(el_id, new_p, my_status, solver_control);
@@ -94,7 +95,7 @@ class OneSideContainer_PQ : public OneSideContainer
                 target_p_mw_(el_id) = new_p;
             }
         }
-        virtual void change_q(int el_id, real_type new_q, DualAlgoControl & solver_control) final
+        void change_q(int el_id, real_type new_q, DualAlgoControl & solver_control)
         {
             bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
             if(!my_status)
@@ -107,7 +108,7 @@ class OneSideContainer_PQ : public OneSideContainer
             }
             change_q_nothrow(el_id, new_q, solver_control);
         }
-        virtual void change_q_nothrow(int load_id, real_type new_q, DualAlgoControl & solver_control) final
+        void change_q_nothrow(int load_id, real_type new_q, DualAlgoControl & solver_control)
         {
             bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
             this->_change_q(load_id, new_q, my_status, solver_control);
@@ -197,53 +198,38 @@ class OneSideContainer_PQ : public OneSideContainer
         }
 
     protected:
-        void _reset_results() override {
-            // nothing to do by default, as this class should be used as template for "one side" (eg loads or generators)
-            // elements
-        };
-        void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
-                                      const Eigen::Ref<const RealVect> & /*Vm*/,
-                                      const Eigen::Ref<const CplxVect> & /*V*/,
-                                      const SolverBusIdVect & /*id_grid_to_solver*/,
-                                      const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
-                                      real_type /*sn_mva*/,
-                                      bool /*ac*/) override {
-            // nothing to do by default, as this class should be used as template for "one side" (eg loads or generators)
-            // elements
-                                      };
-
         bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
             if(status_[el_id]){
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
-                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
+                solver_control.tell_recompute_sbus();
+                solver_control.tell_one_el_changed_bus();
                 return true;
             }
             return false;
         };
         bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
             if(!status_[el_id]){
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
-                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
+                solver_control.tell_recompute_sbus();
+                solver_control.tell_one_el_changed_bus();
                 return true;
             }
             return false;
         };
         bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) override {
             if(bus_id_(el_id) != new_bus_id){
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
-                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
+                solver_control.tell_recompute_sbus();
+                solver_control.tell_one_el_changed_bus();
                 return true;
             }
             return false;
         };
         void _change_p(int el_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control) override {
             if (abs(target_p_mw_(el_id) - new_p) > _tol_equal_float) {
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
+                solver_control.tell_recompute_sbus();
             }
         };
         void _change_q(int el_id, real_type new_q, bool /*my_status*/,DualAlgoControl & solver_control) override {
             if (abs(target_q_mvar_(el_id) - new_q) > _tol_equal_float) {
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
+                solver_control.tell_recompute_sbus();
             }
         };
 

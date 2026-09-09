@@ -204,8 +204,7 @@ void TrafoContainer::set_shift_dependent_rx(
     }
     // re-apply the (possibly corrected) impedance at the current shift
     _update_model_coeffs();
-    solver_control.ac_algo_controler().tell_recompute_ybus();
-    solver_control.dc_algo_controler().tell_recompute_ybus();
+    solver_control.tell_recompute_ybus();
 }
 
 void TrafoContainer::_update_model_coeffs_one_el(int el_id)

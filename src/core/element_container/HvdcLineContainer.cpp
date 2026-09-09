@@ -356,12 +356,11 @@ void HvdcLineContainer::set_status_droop(int hvdc_id, int status, DualAlgoContro
         // the sparsity pattern of the jacobian does not change (the droop
         // entries are declared whatever the regime), only the values /
         // injections do: the symbolic factorization is fully reused.
-        solver_control.ac_algo_controler().tell_recompute_sbus();
-        solver_control.dc_algo_controler().tell_recompute_sbus();
+        solver_control.tell_recompute_sbus();
     }
 }
 
-void HvdcLineContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const
+void HvdcLineContainer::_fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const
 {
     const int nb_hvdc = static_cast<int>(nb());
     // for droop lines, the active power is NOT a fixed injection:
@@ -415,16 +414,15 @@ void HvdcLineContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVec
     }
 }
 
-void HvdcLineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                                        const Eigen::Ref<const RealVect> & Vm,
-                                        const Eigen::Ref<const CplxVect> & V,
-                                        const SolverBusIdVect & id_grid_to_solver,
-                                        const Eigen::Ref<const RealVect> & bus_vn_kv,
-                                        real_type sn_mva,
-                                        bool ac)
+void HvdcLineContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
+                                         const Eigen::Ref<const RealVect> & Vm,
+                                         const Eigen::Ref<const CplxVect> & V,
+                                         const SolverBusIdVect & id_grid_to_solver,
+                                         const Eigen::Ref<const RealVect> & bus_vn_kv,
+                                         real_type sn_mva,
+                                         bool ac)
 {
-    side_1_.compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
-    side_2_.compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
+    TwoSidesContainer<ConverterStationContainer>::_compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
 
     // droop lines: the active power is theta-dependent, recompute it from the
     // solved angles (the stations' "target" p only stores the fixed-setpoint

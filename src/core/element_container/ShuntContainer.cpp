@@ -25,7 +25,7 @@ void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
     reset_results();
 }
 
-void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+void ShuntContainer::_fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                               bool ac,
                               const SolverBusIdVect & id_grid_to_solver,
                               real_type sn_mva) const
@@ -68,7 +68,7 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
-void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
+void ShuntContainer::_fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
                                 const SolverBusIdVect & id_grid_to_solver,
                                 real_type sn_mva,
@@ -106,7 +106,7 @@ void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/
     }
 }
 
-void ShuntContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const  // in DC i need that
+void ShuntContainer::_fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const  // in DC i need that
 {
     if(ac) return;  // in AC I do not do that
     // std::cout << " ok i use this function" << std::endl;
@@ -138,7 +138,7 @@ void ShuntContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect &
     }
 }
 
-void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+void ShuntContainer::_compute_res_pq(const Eigen::Ref<const RealVect> & /*Va*/,
                                       const Eigen::Ref<const RealVect> & /*Vm*/,
                                       const Eigen::Ref<const CplxVect> & V,
                                       const SolverBusIdVect & id_grid_to_solver,

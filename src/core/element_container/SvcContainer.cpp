@@ -86,7 +86,7 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     reset_results();
 }
 
-void SvcContainer::check_valid(int nb_bus,
+void SvcContainer::_check_valid(int nb_bus,
                                int nb_sub,
                                const SubstationContainer & substations,
                                std::vector<int> & all_pos_topo_vect) const
@@ -119,7 +119,7 @@ void SvcContainer::check_valid(int nb_bus,
     }
 }
 
-void SvcContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const
+void SvcContainer::_fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const
 {
     const int nb_svc = nb();
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
@@ -188,7 +188,7 @@ void SvcContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_gri
     }
 }
 
-void SvcContainer::_compute_results(
+void SvcContainer::_compute_res_pq(
     const Eigen::Ref<const RealVect> & /*Va*/,
     const Eigen::Ref<const RealVect> & /*Vm*/,
     const Eigen::Ref<const CplxVect> & /*V*/,
@@ -221,13 +221,10 @@ void SvcContainer::_compute_results(
 bool SvcContainer::_deactivate(int svc_id, DualAlgoControl & solver_control)
 {
     if(status_[svc_id]){
-        solver_control.ac_algo_controler().tell_recompute_sbus();
-        solver_control.ac_algo_controler().tell_one_el_changed_bus();
-        solver_control.dc_algo_controler().tell_recompute_sbus();
-        solver_control.dc_algo_controler().tell_one_el_changed_bus();
+        solver_control.tell_recompute_sbus();
+        solver_control.tell_one_el_changed_bus();
         if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
-            solver_control.ac_algo_controler().tell_pv_changed();
-            solver_control.dc_algo_controler().tell_pv_changed();
+            solver_control.tell_pv_changed();
             // (a voltage-mode SVC is ALWAYS a group controller, so this creates or
             // dissolves the group at the bus it regulates -- which the pv/pq split,
             // and the voltage-control plan built around it, follow from the flags
@@ -241,13 +238,10 @@ bool SvcContainer::_deactivate(int svc_id, DualAlgoControl & solver_control)
 bool SvcContainer::_reactivate(int svc_id, DualAlgoControl & solver_control)
 {
     if(!status_[svc_id]){
-        solver_control.ac_algo_controler().tell_recompute_sbus();
-        solver_control.ac_algo_controler().tell_one_el_changed_bus();
-        solver_control.dc_algo_controler().tell_recompute_sbus();
-        solver_control.dc_algo_controler().tell_one_el_changed_bus();
+        solver_control.tell_recompute_sbus();
+        solver_control.tell_one_el_changed_bus();
         if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
-            solver_control.ac_algo_controler().tell_pv_changed();
-            solver_control.dc_algo_controler().tell_pv_changed();
+            solver_control.tell_pv_changed();
             // (a voltage-mode SVC is ALWAYS a group controller, so this creates or
             // dissolves the group at the bus it regulates -- which the pv/pq split,
             // and the voltage-control plan built around it, follow from the flags
@@ -272,13 +266,10 @@ bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoCo
     // tell (only the resolved bus id is stored), so it stays frozen and desynchronises
     // from the source grid. Tracking the regulated element id would let us follow it.
     if(regulated_bus_id_(svc_id) == bus_id_(svc_id).cast_int()) regulated_bus_id_(svc_id) = new_bus_id.cast_int();
-    solver_control.ac_algo_controler().tell_recompute_sbus();
-    solver_control.ac_algo_controler().tell_one_el_changed_bus();
-    solver_control.dc_algo_controler().tell_recompute_sbus();
-    solver_control.dc_algo_controler().tell_one_el_changed_bus();
+    solver_control.tell_recompute_sbus();
+    solver_control.tell_one_el_changed_bus();
     if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
-        solver_control.ac_algo_controler().tell_pv_changed();
-        solver_control.dc_algo_controler().tell_pv_changed();
+        solver_control.tell_pv_changed();
     }
     return true;
 }

@@ -93,13 +93,6 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         GeneratorContainer::StateRes get_state() const;
         void set_state(GeneratorContainer::StateRes & my_state );
 
-        // Whole-grid semantic validation (see GenericContainer::check_valid): the
-        // (p, q) one-side checks plus generator-specific ones -- slack weights and
-        // remote-regulated bus ids.
-        void check_valid(int nb_bus,
-                         int nb_sub,
-                         const SubstationContainer & substations,
-                         std::vector<int> & all_pos_topo_vect) const override;
 
         // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
         void save_binary(const std::string & path, bool atomic = true) const;
@@ -130,16 +123,16 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             // voltage controller where an ordinary one would not be -- and the
             // voltage-control plan is built around the split this same flag rebuilds.
             // See AlgoControl::need_recompute_voltage_control.
-            if(!gen_slackbus_[gen_id]){ solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed(); }
+            if(!gen_slackbus_[gen_id]){ solver_control.tell_slack_participate_changed(); }
             gen_slackbus_[gen_id] = true;
             if(abs(gen_slack_weight_[gen_id] - weight) > _tol_equal_float){
-                solver_control.ac_algo_controler().tell_slack_weight_changed(); solver_control.dc_algo_controler().tell_slack_weight_changed();
+                solver_control.tell_slack_weight_changed();
                 gen_slack_weight_[gen_id] = weight;
             }
         }
         void remove_slackbus(int gen_id, DualAlgoControl & solver_control){
-            if(gen_slackbus_[gen_id]){ solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed(); }
-            if(abs(gen_slack_weight_[gen_id]) > _tol_equal_float){ solver_control.ac_algo_controler().tell_slack_weight_changed(); solver_control.dc_algo_controler().tell_slack_weight_changed(); }
+            if(gen_slackbus_[gen_id]){ solver_control.tell_slack_participate_changed(); }
+            if(abs(gen_slack_weight_[gen_id]) > _tol_equal_float){ solver_control.tell_slack_weight_changed(); }
             gen_slackbus_[gen_id] = false;
             gen_slack_weight_[gen_id] = 0.;
         }
@@ -175,7 +168,18 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             return res_gen_id;
         }
 
-        void _compute_results(
+    protected:
+        bool _in_topo_vect() const override { return true; }
+
+        // Whole-grid semantic validation (see GenericContainer::check_valid): the
+        // (p, q) one-side checks plus generator-specific ones -- slack weights and
+        // remote-regulated bus ids.
+        void _check_valid(int nb_bus,
+                          int nb_sub,
+                          const SubstationContainer & substations,
+                          std::vector<int> & all_pos_topo_vect) const override;
+
+        void _compute_res_pq(
             const Eigen::Ref<const RealVect> & /*Va*/,
             const Eigen::Ref<const RealVect> & /*Vm*/,
             const Eigen::Ref<const CplxVect> & /*V*/,
@@ -202,6 +206,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
             }
         }
 
+    public:
         /**
         Retrieve the normalized (=sum to 1.000) slack weights for all the buses
         **/
@@ -224,17 +229,18 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
                                                   const std::vector<bool> & gen_off) const;
     
         GlobalBusIdVect get_slack_bus_id() const;
-        void set_p_slack(const Eigen::Ref<const RealVect>& node_mismatch, const SolverBusIdVect & id_grid_to_solver) override;
+        /** distribute the active mismatch of the slack buses onto the participating generators **/
+        void set_p_slack(const Eigen::Ref<const RealVect>& node_mismatch, const SolverBusIdVect & id_grid_to_solver);
     
         // modification
         void turnedoff_no_pv(DualAlgoControl & solver_control){
-            solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed();
-            solver_control.ac_algo_controler().tell_slack_weight_changed(); solver_control.dc_algo_controler().tell_slack_weight_changed();
+            solver_control.tell_slack_participate_changed();
+            solver_control.tell_slack_weight_changed();
             turnedoff_gen_pv_=false;  // turned off generators are not pv. This is NOT the default.
             }  
         void turnedoff_pv(DualAlgoControl & solver_control){
-            solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed();
-            solver_control.ac_algo_controler().tell_slack_weight_changed(); solver_control.dc_algo_controler().tell_slack_weight_changed();
+            solver_control.tell_slack_participate_changed();
+            solver_control.tell_slack_weight_changed();
             turnedoff_gen_pv_=true;  // turned off generators are pv. This is the default.
             }  
         bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
@@ -269,8 +275,7 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
                 // regulating generator -- target_p only, the reactive being free -- is
                 // the same either way.
                 if(voltage_regulator_on_[gen_id]){
-                    solver_control.ac_algo_controler().tell_pv_changed();
-                    solver_control.dc_algo_controler().tell_pv_changed();
+                    solver_control.tell_pv_changed();
                 }
             }
         }
@@ -312,11 +317,14 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         void change_v(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control);
         void change_v_nothrow(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control);
         
-        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
-        void fillpv(std::vector<int>& bus_pv,
-                            std::vector<bool> & has_bus_been_added,
-                            const SolverBusIdVect & slack_bus_id_solver,
-                            const SolverBusIdVect & id_grid_to_solver) const override;
+    protected:
+        void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void _fillpv(std::vector<int>& bus_pv,
+                     std::vector<bool> & has_bus_been_added,
+                     const SolverBusIdVect & slack_bus_id_solver,
+                     const SolverBusIdVect & id_grid_to_solver) const override;
+
+    public:
 
         /**
          * Publish the reactive output of the generators whose value is known without

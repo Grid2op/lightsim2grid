@@ -82,10 +82,12 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
             reset_results();
         }
 
-        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+    protected:
+        void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
     protected:
-        void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
+        bool _in_topo_vect() const override { return true; }
+        void _compute_res_pq(const Eigen::Ref<const RealVect> & /*Va*/,
                                     const Eigen::Ref<const RealVect> & /*Vm*/,
                                     const Eigen::Ref<const CplxVect> & /*V*/,
                                     const SolverBusIdVect & /*id_grid_to_solver*/,

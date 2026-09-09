@@ -30,8 +30,6 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         using TwoSidesContainer<OneSideType>::v_disco_el_;
         using TwoSidesContainer<OneSideType>::theta_disco_el_;
         using TwoSidesContainer<OneSideType>::my_180_pi_;
-        using TwoSidesContainer<OneSideType>::_generic_deactivate;
-        using TwoSidesContainer<OneSideType>::_generic_reactivate;
 
         using TwoSidesContainer<OneSideType>::nb;
         using TwoSidesContainer<OneSideType>::reset_results_tsc;
@@ -451,7 +449,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             compute_amps_after_all_set();
         }
         
-        void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const override
+    protected:
+        void _get_graph(std::vector<Eigen::Triplet<real_type> > & res) const override
         {
             const auto my_size = nb();
             for(size_t el_id = 0; el_id < my_size; ++el_id){
@@ -467,6 +466,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
         }
 
+    public:
         // model paramters (raw)
         Eigen::Ref<const CplxVect> yac_11() const {return yac_11_;}
         Eigen::Ref<const CplxVect> yac_12() const {return yac_12_;}
@@ -489,8 +489,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         const std::vector<bool>& get_status_side_2() const { return side_2_.get_status(); }
         const std::vector<bool>& get_status_global()  const { return status_global_; }
 
+    protected:
         // solver interface
-        void fillYbus(
+        void _fillYbus(
             std::vector<Eigen::Triplet<cplx_type> > & res,
             bool ac,
             const SolverBusIdVect & id_grid_to_solver,
@@ -585,7 +586,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
         // Real DC equivalent of fillYbus (DC branch): pushes the real susceptance coefficients
         // directly into a real triplet list (no complex temporary).
-        void fillBdc(
+        void _fillBdc(
             std::vector<Eigen::Triplet<real_type> > & res,
             const SolverBusIdVect & id_grid_to_solver,
             real_type /*sn_mva*/) const override
@@ -628,11 +629,11 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
         }
 
-        void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                                std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const SolverBusIdVect & id_grid_to_solver,
-                                real_type /*sn_mva*/,
-                                FDPFMethod xb_or_bx) const override
+        void _fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                         std::vector<Eigen::Triplet<real_type> > & Bpp,
+                         const SolverBusIdVect & id_grid_to_solver,
+                         real_type /*sn_mva*/,
+                         FDPFMethod xb_or_bx) const override
         {
 
             // For Bp
@@ -726,11 +727,11 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
         }
 
-        void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
-                             const SolverBusIdVect & id_grid_to_solver,
-                             real_type /*sn_mva*/,
-                             int nb_powerline,
-                             bool transpose) const override
+        void _fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                              const SolverBusIdVect & id_grid_to_solver,
+                              real_type /*sn_mva*/,
+                              int nb_powerline,
+                              bool transpose) const override
         {
             const size_t nb_line = nb();
             const std::vector<bool> & side1_conn = side_1_.get_status();
@@ -799,8 +800,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
          * live in OneSideContainer -- a line END has no idea the branch it belongs
          * to was deactivated as a whole.
          */
-        void contribute_to_buses(int el_id, SubstationContainer & substation,
-                                 int sign, bool & crossed) const override {
+        void _contribute_to_buses(int el_id, SubstationContainer & substation,
+                                  int sign, bool & crossed) const override {
             if(!status_global_[el_id]) return;                  // the gate
             const std::vector<bool> & st1 = this->get_status_side_1();
             const std::vector<bool> & st2 = this->get_status_side_2();
@@ -915,19 +916,29 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
         }
 
-        void reset_results_tsc_rxha(){
+        void _reset_results() override {
             reset_results_tsc();
             res_a_side_1_ = RealVect(nb());  // in kA
             res_a_side_2_ = RealVect(nb());  // in kA
+        }
+        void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                              const Eigen::Ref<const RealVect> & Vm,
+                              const Eigen::Ref<const CplxVect> & V,
+                              const SolverBusIdVect & id_grid_to_solver,
+                              const Eigen::Ref<const RealVect> & bus_vn_kv,
+                              real_type sn_mva,
+                              bool ac) override
+        {
+            compute_results_tsc_rxha(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
         }
 
         bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
             if(status_global_[el_id]){
                 // update solver control
-                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                solver_control.tell_recompute_ybus();
                 // but sparsity pattern do not change here (possibly one more coeff at 0.)
-                solver_control.ac_algo_controler().tell_ybus_some_coeffs_zero(); solver_control.dc_algo_controler().tell_ybus_some_coeffs_zero();
-                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.tell_ybus_some_coeffs_zero();
+                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
                 return true;
             }
             return false;
@@ -935,9 +946,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
             if(!status_global_[el_id]){
                 // update solver control
-                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
-                solver_control.ac_algo_controler().tell_ybus_change_sparsity_pattern(); solver_control.dc_algo_controler().tell_ybus_change_sparsity_pattern();  // this might change
-                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.tell_recompute_ybus();
+                solver_control.tell_ybus_change_sparsity_pattern();  // this might change
+                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
                 return true;
             }
             return false;

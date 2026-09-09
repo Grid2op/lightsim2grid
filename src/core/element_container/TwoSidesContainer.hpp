@@ -121,17 +121,35 @@ class TwoSidesContainer : public GenericContainer
         // public generic API
         size_t nb() const { return side_1_.nb(); }
 
+    protected:
         // Whole-grid semantic validation (see GenericContainer::check_valid):
         // each side is a full one-side container, so validate both. Derived
         // classes (eg TwoSidesContainer_rxh_A) add the branch electrical checks.
-        void check_valid(int nb_bus,
-                         int nb_sub,
-                         const SubstationContainer & substations,
-                         std::vector<int> & all_pos_topo_vect) const override
+        void _check_valid(int nb_bus,
+                          int nb_sub,
+                          const SubstationContainer & substations,
+                          std::vector<int> & all_pos_topo_vect) const override
         {
             side_1_.check_valid(nb_bus, nb_sub, substations, all_pos_topo_vect);
             side_2_.check_valid(nb_bus, nb_sub, substations, all_pos_topo_vect);
         }
+
+        void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                              const Eigen::Ref<const RealVect> & Vm,
+                              const Eigen::Ref<const CplxVect> & V,
+                              const SolverBusIdVect & id_grid_to_solver,
+                              const Eigen::Ref<const RealVect> & bus_vn_kv,
+                              real_type sn_mva,
+                              bool ac) override
+        {
+            side_1_.compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
+            side_2_.compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
+        }
+        void _reset_results() override {
+            reset_results_tsc();
+        }
+
+    public:
 
         GridModelBusId get_bus_side_1(int el_id) const {return side_1_.get_bus(el_id);}
         GridModelBusId get_bus_side_2(int el_id) const {return side_2_.get_bus(el_id);}
@@ -191,13 +209,14 @@ class TwoSidesContainer : public GenericContainer
          * delegates -- deliberately unlike TwoSidesContainer_rxh_A above, which gates
          * on `status_global_` first.
          */
-        void contribute_to_buses(int el_id, SubstationContainer & substation,
-                                 int sign, bool & crossed) const override {
+    protected:
+        void _contribute_to_buses(int el_id, SubstationContainer & substation,
+                                  int sign, bool & crossed) const override {
             side_1_.contribute_to_buses(el_id, substation, sign, crossed);
             side_2_.contribute_to_buses(el_id, substation, sign, crossed);
         }
 
-        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation, DualAlgoControl & solver_control) override {
+        void _disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation, DualAlgoControl & solver_control) override {
             const int nb_el = nb();
             const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
             const GlobalBusIdVect & bus_side_2_id_ = get_buses_side_2();
@@ -237,7 +256,7 @@ class TwoSidesContainer : public GenericContainer
                 }
             }
         }
-        void nb_line_end(std::vector<int> & res) const override final {
+        void _nb_line_end(std::vector<int> & res) const override final {
             const int nb_el = nb();
             for(int el_id = 0; el_id < nb_el; ++el_id){
                 // don't do anything if the element is disconnected
@@ -250,6 +269,7 @@ class TwoSidesContainer : public GenericContainer
             }
         }
 
+    public:
         void set_pos_topo_vect_side_1(const Eigen::Ref<const IntVect> & pos_topo_vect)
         {
             side_1_.set_pos_topo_vect(pos_topo_vect);
@@ -268,12 +288,13 @@ class TwoSidesContainer : public GenericContainer
             side_2_.set_subid(subid);
         }
 
-        virtual void update_topo(
+    protected:
+        std::vector<bool> _update_topo(
             const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
             const Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
             DualAlgoControl & solver_control,
             SubstationContainer & substations
-        ) final
+        ) override final
         {
             side_1_._check_pos_topo_vect_filled();
             side_2_._check_pos_topo_vect_filled();
@@ -326,22 +347,24 @@ class TwoSidesContainer : public GenericContainer
             {
                 if(real_changed[el_id]) this->_update_effective_coeffs_one_el(el_id);
             }
+            return real_changed;
         }
 
+    public:
         // setter (states)
         // methods used within lightsim
         // The branch as a whole does the bus counting, ONCE, around whatever the two
         // sides do -- see OneSideContainer::deactivate_no_bus_tracking for why the
         // sides must not count for themselves.
-        virtual void deactivate(int el_id, DualAlgoControl & solver_control,
-                                SubstationContainer & substation) final {
+        void deactivate(int el_id, DualAlgoControl & solver_control,
+                        SubstationContainer & substation) {
             _check_in_range(el_id, status_global_, "deactivate");  // before _apply_and_track_buses reads status_global_[el_id]
             bool one_changed = false;
             _apply_and_track_buses(el_id, substation, solver_control, [&]{
                 one_changed = side_1_.deactivate_no_bus_tracking(el_id, solver_control) || one_changed;
                 one_changed = side_2_.deactivate_no_bus_tracking(el_id, solver_control) || one_changed;
                 one_changed = this->_deactivate(el_id, solver_control) || one_changed;
-                _generic_deactivate(el_id, status_global_);
+                status_global_[el_id] = false;
                 if(ignore_status_global_) status_global_[el_id] = true;
             });
             if(one_changed){
@@ -349,44 +372,44 @@ class TwoSidesContainer : public GenericContainer
                 this->_update_effective_coeffs_one_el(el_id);
             }
         }
-        virtual void reactivate(int el_id, DualAlgoControl & solver_control,
-                                SubstationContainer & substation) final {
+        void reactivate(int el_id, DualAlgoControl & solver_control,
+                        SubstationContainer & substation) {
             _check_in_range(el_id, status_global_, "reactivate");  // before _apply_and_track_buses reads status_global_[el_id]
             bool one_changed = false;
             _apply_and_track_buses(el_id, substation, solver_control, [&]{
                 one_changed = side_1_.reactivate_no_bus_tracking(el_id, solver_control) || one_changed;
                 one_changed = side_2_.reactivate_no_bus_tracking(el_id, solver_control) || one_changed;
                 one_changed = this->_reactivate(el_id, solver_control) || one_changed;
-                _generic_reactivate(el_id, status_global_);
+                status_global_[el_id] = true;
                 if(ignore_status_global_) status_global_[el_id] = true;
             });
             if(one_changed){
                 this->_update_effective_coeffs_one_el(el_id);
             }
         }
-        virtual void deactivate_side_1(int el_id, DualAlgoControl & solver_control,
-                                       SubstationContainer & substation) final {
+        void deactivate_side_1(int el_id, DualAlgoControl & solver_control,
+                               SubstationContainer & substation) {
             _check_in_range(el_id, status_global_, "deactivate_side_1");  // before _apply_and_track_buses reads status_global_[el_id]
             _apply_and_track_buses(el_id, substation, solver_control, [&]{
                 if(side_1_.deactivate_no_bus_tracking(el_id, solver_control)) this->_update_effective_coeffs_one_el(el_id);
             });
         }
-        virtual void deactivate_side_2(int el_id, DualAlgoControl & solver_control,
-                                       SubstationContainer & substation) final {
+        void deactivate_side_2(int el_id, DualAlgoControl & solver_control,
+                               SubstationContainer & substation) {
             _check_in_range(el_id, status_global_, "deactivate_side_2");  // before _apply_and_track_buses reads status_global_[el_id]
             _apply_and_track_buses(el_id, substation, solver_control, [&]{
                 if(side_2_.deactivate_no_bus_tracking(el_id, solver_control)) this->_update_effective_coeffs_one_el(el_id);
             });
         }
-        virtual void reactivate_side_1(int el_id, DualAlgoControl & solver_control,
-                                       SubstationContainer & substation) final {
+        void reactivate_side_1(int el_id, DualAlgoControl & solver_control,
+                               SubstationContainer & substation) {
             _check_in_range(el_id, status_global_, "reactivate_side_1");  // before _apply_and_track_buses reads status_global_[el_id]
             _apply_and_track_buses(el_id, substation, solver_control, [&]{
                 if(side_1_.reactivate_no_bus_tracking(el_id, solver_control)) this->_update_effective_coeffs_one_el(el_id);
             });
         }
-        virtual void reactivate_side_2(int el_id, DualAlgoControl & solver_control,
-                                       SubstationContainer & substation) final {
+        void reactivate_side_2(int el_id, DualAlgoControl & solver_control,
+                               SubstationContainer & substation) {
             _check_in_range(el_id, status_global_, "reactivate_side_2");  // before _apply_and_track_buses reads status_global_[el_id]
             _apply_and_track_buses(el_id, substation, solver_control, [&]{
                 if(side_2_.reactivate_no_bus_tracking(el_id, solver_control)) this->_update_effective_coeffs_one_el(el_id);
@@ -403,7 +426,7 @@ class TwoSidesContainer : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */        
-        virtual void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, SubstationContainer & substation) final {
+        void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, SubstationContainer & substation) {
             _check_in_range(el_id, status_global_, "change_bus_side_1");  // before _apply_and_track_buses reads status_global_[el_id]
             // and the BUS id, before the bracket takes this element's contribution
             // away -- a call the grid will refuse must not touch the counts at all.
@@ -427,7 +450,7 @@ class TwoSidesContainer : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */  
-        virtual void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, SubstationContainer & substation) final {
+        void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, SubstationContainer & substation) {
             _check_in_range(el_id, status_global_, "change_bus_side_2");  // before _apply_and_track_buses reads status_global_[el_id]
             // and the BUS id, before the bracket takes this element's contribution
             // away -- a call the grid will refuse must not touch the counts at all.

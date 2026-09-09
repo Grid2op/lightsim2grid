@@ -404,15 +404,10 @@ void LSGrid::check_grid() const
     // one is inconsistent: collect them apart and reject.
     std::vector<int> all_pos_topo_vect;   // elements update_topo() drives
     std::vector<int> pos_topo_vect_not_in_topo;  // must stay empty
-    powerlines_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    trafos_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    generators_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    loads_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    storages_.check_valid(nb_bus, nb_sub, substations_, all_pos_topo_vect);
-    shunts_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
-    sgens_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
-    hvdc_lines_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
-    svcs_.check_valid(nb_bus, nb_sub, substations_, pos_topo_vect_not_in_topo);
+    for(const GenericContainer * container : _all_containers()){
+        container->check_valid(nb_bus, nb_sub, substations_,
+                               container->in_topo_vect() ? all_pos_topo_vect : pos_topo_vect_not_in_topo);
+    }
     if(!pos_topo_vect_not_in_topo.empty())
     {
         throw std::runtime_error(
@@ -1813,14 +1808,9 @@ void LSGrid::fillYbus(
     res.setZero();  // it should not be needed but might not hurt too much either.
     std::vector<Eigen::Triplet<cplx_type> > tripletList;
     tripletList.reserve(substations_.nb_bus() + 4*powerlines_.nb() + 4*trafos_.nb() + shunts_.nb());
-    powerlines_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);  // TODO have a function to dispatch that to all type of elements
-    shunts_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
-    trafos_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
-    loads_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
-    sgens_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
-    storages_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
-    generators_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
-    hvdc_lines_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
+    for(const GenericContainer * container : _all_containers()){
+        container->fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
+    }
     res.setFromTriplets(tripletList.begin(), tripletList.end());  // works because  "The initial contents of *this is destroyed"
     res.makeCompressed();
 }
@@ -1835,8 +1825,9 @@ void LSGrid::fillBdc(
     res.setZero();
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(4*powerlines_.nb() + 4*trafos_.nb());
-    powerlines_.fillBdc(tripletList, id_me_to_solver, sn_mva_);
-    trafos_.fillBdc(tripletList, id_me_to_solver, sn_mva_);
+    for(const GenericContainer * container : _all_containers()){
+        container->fillBdc(tripletList, id_me_to_solver, sn_mva_);
+    }
     res.setFromTriplets(tripletList.begin(), tripletList.end());
     res.makeCompressed();
 }
@@ -1845,15 +1836,9 @@ void LSGrid::fillSbus_me(Eigen::Ref<CplxVect> Sbus, bool ac, const SolverBusIdVe
 {
     // init the Sbus 
     Sbus.array() = 0.;  // reset to 0.
-    powerlines_.fillSbus(Sbus, id_me_to_solver, ac);  // TODO have a function to dispatch that to all type of elements
-    trafos_.fillSbus(Sbus, id_me_to_solver, ac);
-    shunts_.fillSbus(Sbus, id_me_to_solver, ac);
-    loads_.fillSbus(Sbus, id_me_to_solver, ac);
-    sgens_.fillSbus(Sbus, id_me_to_solver, ac);
-    storages_.fillSbus(Sbus, id_me_to_solver, ac);
-    generators_.fillSbus(Sbus, id_me_to_solver, ac);
-    hvdc_lines_.fillSbus(Sbus, id_me_to_solver, ac);
-    svcs_.fillSbus(Sbus, id_me_to_solver, ac);  // REACTIVE_POWER-mode SVCs only
+    for(const GenericContainer * container : _all_containers()){
+        container->fillSbus(Sbus, id_me_to_solver, ac);
+    }
     if (abs(sn_mva_ - 1.0) > BaseConstants::_tol_equal_float) Sbus /= sn_mva_;
     // in dc mode, this is used for the phase shifter, this should not be divided by sn_mva_ !
     trafos_.hack_Sbus_for_dc_phase_shifter(Sbus, ac, id_me_to_solver);
@@ -1867,11 +1852,23 @@ void LSGrid::fillSbus_me(Eigen::Ref<CplxVect> Sbus, bool ac, const SolverBusIdVe
 
 std::vector<const GenericContainer *> LSGrid::_pv_capable_containers() const
 {
-    // Everything that can pin a bus' voltage magnitude through the classical PV
-    // path, in the order the split used to ask them in (the order is immaterial --
-    // `fillpv` only ever sets flags -- but keeping it makes the move a no-op).
-    return {&powerlines_, &shunts_, &trafos_, &loads_,
-            &storages_, &sgens_, &generators_, &hvdc_lines_};
+    // Every container is asked; the ones that cannot pin a bus' magnitude keep the
+    // no-op `_fillpv` (the order is immaterial -- `fillpv` only ever sets flags).
+    const auto all = _all_containers();
+    return std::vector<const GenericContainer *>(all.begin(), all.end());
+}
+
+std::array<GenericContainer *, LSGrid::NB_CONTAINERS> LSGrid::_all_containers()
+{
+    // see the declaration for why the order is what it is
+    return {{&powerlines_, &shunts_, &trafos_, &loads_, &sgens_, &storages_,
+             &generators_, &hvdc_lines_, &svcs_}};
+}
+
+std::array<const GenericContainer *, LSGrid::NB_CONTAINERS> LSGrid::_all_containers() const
+{
+    return {{&powerlines_, &shunts_, &trafos_, &loads_, &sgens_, &storages_,
+             &generators_, &hvdc_lines_, &svcs_}};
 }
 
 void LSGrid::compute_results(bool ac){
@@ -1881,24 +1878,9 @@ void LSGrid::compute_results(bool ac){
     const auto & V = ac ? _algo.get_V() : _dc_algo.get_V();
 
     const SolverBusIdVect & id_me_to_solver = ac ? ac_cache_.id_me_to_solver : dc_cache_.id_me_to_solver;
-    // for powerlines
-    powerlines_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);  // TODO have a function to dispatch that to all type of elements
-    // for trafo
-    trafos_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
-    // for loads
-    loads_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
-    // for static gen
-    sgens_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
-    // for storage units
-    storages_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
-    // for shunts
-    shunts_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
-    // for prods
-    generators_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
-    // for dclines
-    hvdc_lines_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
-    // for static var compensators
-    svcs_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
+    for(GenericContainer * container : _all_containers()){
+        container->compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
+    }
 
     // ---- active power of the slack generator(s) ------------------------------
     RealVect reactive_mismatch;  // not used in dc mode (DO NOT ATTEMPT TO USE IT THERE)
@@ -2188,15 +2170,7 @@ void LSGrid::_write_back_controller_q(const RealVect & ctrl_q,
 }
 
 void LSGrid::reset_results(){
-    powerlines_.reset_results();  // TODO have a function to dispatch that to all type of elements
-    shunts_.reset_results();
-    trafos_.reset_results();
-    loads_.reset_results();
-    sgens_.reset_results();
-    storages_.reset_results();
-    generators_.reset_results();
-    hvdc_lines_.reset_results();
-    svcs_.reset_results();
+    for(GenericContainer * container : _all_containers()) container->reset_results();
 }
 
 CplxVect LSGrid::dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
@@ -2448,11 +2422,18 @@ void LSGrid::update_topo(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynami
              << "vector, so a shorter array would be read out of bounds.";
         throw std::runtime_error(exc_.str());
     }
+    // Deliberately NOT a loop over _all_containers(): only the containers with a
+    // position in the grid2op topology vector take part (in_topo_vect(); shunts,
+    // static gens, svcs and hvdc lines are not in "topo" in grid2op), and the ORDER
+    // is observable. Each container brackets its own mutations with the per-bus
+    // element counts, and a bus crossing 0 is what raises tell_dimension_changed:
+    // an action that moves element A off a bus and element B onto it raises it if
+    // A is walked first (1 -> 0 -> 1) and not if B is (1 -> 2 -> 1). Both are
+    // correct; keep the order stable so the flags a given action raises are too.
+    // A new topology-participating container goes at the end of this list.
     loads_.update_topo(has_changed, new_values, algo_controler_, substations_);
     generators_.update_topo(has_changed, new_values, algo_controler_, substations_);
     storages_.update_topo(has_changed, new_values, algo_controler_, substations_);
-    // shunts are not in "topo" in grid2op
-
     // NB we suppose that if a powerline (or a trafo) is disconnected, then both its ends are
     // and same for trafo, obviously
     powerlines_.update_topo(has_changed, new_values, algo_controler_, substations_);
@@ -2475,14 +2456,9 @@ void LSGrid::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp,
     tripletList_Bp.reserve(substations_.nb_bus() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
     tripletList_Bpp.reserve(substations_.nb_bus() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
     // run through the grid and get the parameters to fill them
-    powerlines_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, ac_cache_.id_me_to_solver, sn_mva_, xb_or_bx);  // TODO have a function to dispatch that to all type of elements
-    shunts_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, ac_cache_.id_me_to_solver, sn_mva_, xb_or_bx);
-    trafos_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, ac_cache_.id_me_to_solver, sn_mva_, xb_or_bx);
-    loads_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, ac_cache_.id_me_to_solver, sn_mva_, xb_or_bx);
-    sgens_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, ac_cache_.id_me_to_solver, sn_mva_, xb_or_bx);
-    storages_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, ac_cache_.id_me_to_solver, sn_mva_, xb_or_bx);
-    generators_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, ac_cache_.id_me_to_solver, sn_mva_, xb_or_bx);
-    hvdc_lines_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, ac_cache_.id_me_to_solver, sn_mva_, xb_or_bx);
+    for(const GenericContainer * container : _all_containers()){
+        container->fillBp_Bpp(tripletList_Bp, tripletList_Bpp, ac_cache_.id_me_to_solver, sn_mva_, xb_or_bx);
+    }
     // now make the matrices effectively
     Bp.setFromTriplets(tripletList_Bp.begin(), tripletList_Bp.end());
     Bp.makeCompressed();
@@ -2505,14 +2481,9 @@ void LSGrid::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(substations_.nb_bus() + 2 * powerlines_.nb() + 2 * trafos_.nb());
     
-    powerlines_.fillBf_for_PTDF(tripletList, dc_cache_.id_me_to_solver, sn_mva_, powerlines_.nb(), transpose);  // TODO have a function to dispatch that to all type of elements
-    shunts_.fillBf_for_PTDF(tripletList, dc_cache_.id_me_to_solver, sn_mva_, powerlines_.nb(), transpose);
-    trafos_.fillBf_for_PTDF(tripletList, dc_cache_.id_me_to_solver, sn_mva_, powerlines_.nb(), transpose);
-    loads_.fillBf_for_PTDF(tripletList, dc_cache_.id_me_to_solver, sn_mva_, powerlines_.nb(), transpose);
-    sgens_.fillBf_for_PTDF(tripletList, dc_cache_.id_me_to_solver, sn_mva_, powerlines_.nb(), transpose);
-    storages_.fillBf_for_PTDF(tripletList, dc_cache_.id_me_to_solver, sn_mva_, powerlines_.nb(), transpose);
-    generators_.fillBf_for_PTDF(tripletList, dc_cache_.id_me_to_solver, sn_mva_, powerlines_.nb(), transpose);
-    hvdc_lines_.fillBf_for_PTDF(tripletList, dc_cache_.id_me_to_solver, sn_mva_, powerlines_.nb(), transpose);
+    for(const GenericContainer * container : _all_containers()){
+        container->fillBf_for_PTDF(tripletList, dc_cache_.id_me_to_solver, sn_mva_, powerlines_.nb(), transpose);
+    }
 
     Bf.setFromTriplets(tripletList.begin(), tripletList.end());
     Bf.makeCompressed();
@@ -2530,24 +2501,10 @@ std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
     std::vector<int> nb_line_end_per_bus(nb_busbars, 0);
 
     // computes the total amount of power produce at each nodes
-    powerlines_.gen_p_per_bus(gen_p_per_bus);  // TODO have a function to dispatch that to all type of elements
-    shunts_.gen_p_per_bus(gen_p_per_bus);
-    trafos_.gen_p_per_bus(gen_p_per_bus);
-    loads_.gen_p_per_bus(gen_p_per_bus);
-    sgens_.gen_p_per_bus(gen_p_per_bus);
-    storages_.gen_p_per_bus(gen_p_per_bus);
-    generators_.gen_p_per_bus(gen_p_per_bus);
-    hvdc_lines_.gen_p_per_bus(gen_p_per_bus);
+    for(const GenericContainer * container : _all_containers()) container->gen_p_per_bus(gen_p_per_bus);
 
     // computes the total number of "neighbors" (extremity of connected powerlines and trafo, not real neighbors)
-    powerlines_.nb_line_end(nb_line_end_per_bus);  // TODO have a function to dispatch that to all type of elements
-    shunts_.nb_line_end(nb_line_end_per_bus);
-    trafos_.nb_line_end(nb_line_end_per_bus);
-    loads_.nb_line_end(nb_line_end_per_bus);
-    sgens_.nb_line_end(nb_line_end_per_bus);
-    storages_.nb_line_end(nb_line_end_per_bus);
-    generators_.nb_line_end(nb_line_end_per_bus);
-    hvdc_lines_.nb_line_end(nb_line_end_per_bus);
+    for(const GenericContainer * container : _all_containers()) container->nb_line_end(nb_line_end_per_bus);
     
     // now find the most connected buses
     for(unsigned int bus_id = 0; bus_id < nb_busbars; ++bus_id)
@@ -2584,14 +2541,7 @@ void LSGrid::consider_only_main_component(){
     const auto nb_busbars = substations_.nb_bus();
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(2 * powerlines_.nb() + 2 * trafos_.nb());
-    powerlines_.get_graph(tripletList);  // TODO have a function to dispatch that to all type of elements
-    shunts_.get_graph(tripletList);
-    trafos_.get_graph(tripletList);
-    loads_.get_graph(tripletList);
-    sgens_.get_graph(tripletList);
-    storages_.get_graph(tripletList);
-    generators_.get_graph(tripletList);
-    hvdc_lines_.get_graph(tripletList);
+    for(const GenericContainer * container : _all_containers()) container->get_graph(tripletList);
     Eigen::SparseMatrix<real_type> graph = Eigen::SparseMatrix<real_type>(nb_busbars, nb_busbars);
     graph.setFromTriplets(tripletList.begin(), tripletList.end());
     graph.makeCompressed();
@@ -2662,14 +2612,11 @@ void LSGrid::consider_only_main_component(){
         if(conn_comp[bus_id] == main_cc_id) bus_in_main_cc[bus_id] = true;
     }
     // disconnected elements not in main component
-    powerlines_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
-    shunts_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
-    trafos_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
-    loads_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
-    sgens_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
-    storages_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
-    generators_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
-    hvdc_lines_.disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
+    // (svcs_ is in the list now; it used to be left out, which kept a bus whose only
+    // element is an SVC in the solved system after its island was cut off)
+    for(GenericContainer * container : _all_containers()){
+        container->disconnect_if_not_in_main_component(bus_in_main_cc, substations_, algo_controler_);
+    }
     // and finally deal with the buses
     init_bus_status();
 }
