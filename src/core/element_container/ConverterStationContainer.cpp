@@ -122,8 +122,8 @@ void ConverterStationContainer::set_state(ConverterStationContainer::StateRes & 
 
 void ConverterStationContainer::set_station_p(int station_id, real_type p_mw, DualAlgoControl & solver_control)
 {
-    [[maybe_unused]] bool my_status = status_.at(station_id);  // also checks station_id is in range
-    this->_change_p(station_id, p_mw, my_status, solver_control);
+    _check_in_range(station_id, status_, "set_station_p");
+    _on_change_p(station_id, p_mw, solver_control);
     if (abs(target_p_mw_(station_id) - p_mw) > _tol_equal_float) {
         target_p_mw_(station_id) = p_mw;
     }
@@ -353,7 +353,7 @@ void ConverterStationContainer::_compute_res_pq(
     }
 }
 
-void ConverterStationContainer::_change_p(int station_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control)
+void ConverterStationContainer::_on_change_p(int station_id, real_type new_p, DualAlgoControl & solver_control)
 {
     if (abs(target_p_mw_(station_id) - new_p) > _tol_equal_float) {
         solver_control.tell_recompute_sbus();
@@ -368,8 +368,7 @@ void ConverterStationContainer::_change_p(int station_id, real_type new_p, bool 
     }
 }
 
-bool ConverterStationContainer::_deactivate(int el_id, DualAlgoControl & solver_control) {
-    if(!status_[el_id]) return false;  // nothing to do if it was already deactivated
+void ConverterStationContainer::_on_deactivate(int el_id, DualAlgoControl & solver_control) {
     // a station IS in Sbus (fillSbus_station stamps its active power, and its reactive
     // personality when it does not regulate), so its status always moves the injections
     solver_control.tell_recompute_sbus();
@@ -378,26 +377,21 @@ bool ConverterStationContainer::_deactivate(int el_id, DualAlgoControl & solver_
     if(voltage_regulator_on_[el_id]){
         solver_control.tell_pv_changed();
     }
-    return true;
 }
 
-bool ConverterStationContainer::_reactivate(int el_id, DualAlgoControl & solver_control) {
-    if(status_[el_id]) return false;  // nothing to do if station already connected
-    solver_control.tell_recompute_sbus();  // see _deactivate
+void ConverterStationContainer::_on_reactivate(int el_id, DualAlgoControl & solver_control) {
+    solver_control.tell_recompute_sbus();  // see _on_deactivate
     if(voltage_regulator_on_[el_id]){
         solver_control.tell_pv_changed();
     }
-    return true;
 }
 
-bool ConverterStationContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) {
-    if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
+void ConverterStationContainer::_on_change_bus(int el_id, GridModelBusId /*new_bus_id*/, DualAlgoControl & solver_control) {
     solver_control.tell_recompute_sbus();
     solver_control.tell_one_el_changed_bus();
     if(voltage_regulator_on_[el_id]) {
         solver_control.tell_pv_changed();
     }
-    return true;
 }
 
 } // namespace ls2g

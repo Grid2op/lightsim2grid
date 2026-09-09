@@ -211,7 +211,7 @@ void VoltageControlPlan::build_free_vm_slack(const GeneratorContainer & generato
     // the reclassification in build_pv_pq), and the group's voltage row needs
     // the free Vm this grants.
     const int nb_gen = static_cast<int>(generators.nb());
-    const GlobalBusIdVect & gen_buses = generators.get_buses();
+    const GlobalBusIdVect & gen_buses = generators.get_bus_id();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(!generators.gen_is_local_voltage_controller(gen_id)) continue;
         const int ctrl_grid = gen_buses(gen_id).cast_int();
@@ -280,7 +280,7 @@ void VoltageControlPlan::_collect_gen_controllers(const GeneratorContainer & gen
                                                   std::vector<Raw> & raws) const
 {
     const int nb_gen = static_cast<int>(generators.nb());
-    const GlobalBusIdVect & gen_buses = generators.get_buses();
+    const GlobalBusIdVect & gen_buses = generators.get_bus_id();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         // remote regulators are always controllers; a local one only when the bus it
         // regulates is group-controlled (something else remote/an SVC aims at it too)
@@ -342,7 +342,7 @@ void VoltageControlPlan::_collect_svc_controllers(const SvcContainer & svcs,
 {
     // the active VOLTAGE-mode SVCs (local or remote, with or without slope)
     const int nb_svc = static_cast<int>(svcs.nb());
-    const GlobalBusIdVect & svc_buses = svcs.get_buses();
+    const GlobalBusIdVect & svc_buses = svcs.get_bus_id();
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
         if(!svcs.svc_is_voltage_controller(svc_id)) continue;
         const int ctrl_grid = svc_buses(svc_id).cast_int();

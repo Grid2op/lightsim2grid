@@ -181,9 +181,6 @@ class TwoSidesContainer : public GenericContainer
             status_global_ = std::vector<bool>(els_bus1_id.size(), true);
         }
 
-        const GlobalBusIdVect & get_buses_side_1() const {return side_1_.get_buses();}
-        const GlobalBusIdVect & get_buses_side_2() const {return side_2_.get_buses();}
-
         tuple3d get_res_side_1() const {return side_1_.get_res();}
         tuple3d get_res_side_2() const {return side_2_.get_res();}
 
@@ -218,8 +215,8 @@ class TwoSidesContainer : public GenericContainer
 
         void _disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation, DualAlgoControl & solver_control) override {
             const int nb_el = nb();
-            const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
-            const GlobalBusIdVect & bus_side_2_id_ = get_buses_side_2();
+            const GlobalBusIdVect & bus_side_1_id_ = get_bus_id_side_1();
+            const GlobalBusIdVect & bus_side_2_id_ = get_bus_id_side_2();
             for(int i = 0; i < nb_el; ++i){
                 if(!status_global_[i]){
                     // the branch is globally off, so by contribute_to_buses it already
@@ -436,7 +433,7 @@ class TwoSidesContainer : public GenericContainer
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 1).");
             bool one_changed = false;
             _apply_and_track_buses(el_id, substation, solver_control, [&]{
-            one_changed = side_1_.change_bus_no_bus_tracking(el_id, new_gridmodel_bus_id, solver_control, substation);
+            one_changed = side_1_.change_bus_no_bus_tracking(el_id, new_gridmodel_bus_id, solver_control);
             one_changed = resolve_status(el_id, true, solver_control) || one_changed;
             });
             this-> _change_bus_side_1(el_id, new_gridmodel_bus_id, solver_control, substation, one_changed);
@@ -460,7 +457,7 @@ class TwoSidesContainer : public GenericContainer
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 2).");
             bool one_changed = false;
             _apply_and_track_buses(el_id, substation, solver_control, [&]{
-            one_changed = side_2_.change_bus_no_bus_tracking(el_id, new_gridmodel_bus_id, solver_control, substation);
+            one_changed = side_2_.change_bus_no_bus_tracking(el_id, new_gridmodel_bus_id, solver_control);
             one_changed = resolve_status(el_id, false, solver_control) || one_changed;
             });
             this-> _change_bus_side_2(el_id, new_gridmodel_bus_id, solver_control, substation, one_changed);

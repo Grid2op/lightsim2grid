@@ -1403,7 +1403,7 @@ class LS2G_API LSGrid final
         [[nodiscard]] Eigen::Ref<const RealVect> get_dcline_theta1() const {return hvdc_lines_.get_theta_side_1();}
         [[nodiscard]] Eigen::Ref<const RealVect> get_dcline_theta2() const {return hvdc_lines_.get_theta_side_2();}
 
-        [[nodiscard]] const GlobalBusIdVect & get_all_shunt_buses() const {return shunts_.get_buses();}
+        [[nodiscard]] const GlobalBusIdVect & get_all_shunt_buses() const {return shunts_.get_bus_id();}
         [[nodiscard]] Eigen::Ref<const IntVect> get_all_shunt_buses_numpy() const {return shunts_.get_bus_id_numpy();}
 
         [[nodiscard]] Eigen::Ref<const RealVect>  get_shunt_target_p() const {return shunts_.get_target_p();}

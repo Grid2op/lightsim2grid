@@ -352,7 +352,7 @@ void GeneratorContainer::get_vm_for_dc(Eigen::Ref<RealVect> Vm){
     }
 }
 
-void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control)
+void GeneratorContainer::_on_change_p(int gen_id, real_type new_p, DualAlgoControl & solver_control)
 {
     if (abs(target_p_mw_(gen_id) - new_p) > _tol_equal_float) {
         solver_control.tell_recompute_sbus();
@@ -379,23 +379,19 @@ void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool /*my_status
     }
 }
 
-bool GeneratorContainer::_deactivate(int el_id, DualAlgoControl & solver_control) {
-    if(!status_[el_id]) return false;  // nothing to do if it was already deactivated
+void GeneratorContainer::_on_deactivate(int el_id, DualAlgoControl & solver_control) {
     solver_control.tell_recompute_sbus();
     if(voltage_regulator_on_[el_id]){ solver_control.tell_pv_changed(); }
     if(!turnedoff_gen_pv_){ solver_control.tell_pv_changed(); }
     if(gen_slackbus_[el_id]){ solver_control.tell_slack_participate_changed(); }
-    return true;
-};
+}
 
-bool GeneratorContainer::_reactivate(int el_id, DualAlgoControl & solver_control) {
-    if(status_[el_id]) return false;  // nothing to do if gen already connected
+void GeneratorContainer::_on_reactivate(int el_id, DualAlgoControl & solver_control) {
     solver_control.tell_recompute_sbus();
     if(voltage_regulator_on_[el_id]){ solver_control.tell_pv_changed(); }
     if(!turnedoff_gen_pv_){ solver_control.tell_pv_changed(); }
     if(gen_slackbus_[el_id]){ solver_control.tell_slack_participate_changed(); }
-    return true;
-};
+}
 
 void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control)
 {
@@ -427,13 +423,7 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, DualAl
     }
 }
 
-bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) {
-    // el_id is validated (and the proper IndexError raised) by
-    // OneSideContainer::change_bus / change_bus_no_bus_tracking, which run *before*
-    // this function. Bail out here on an out-of-range id anyway so the
-    // `regulated_bus_id_` write below never touches memory out of bounds.
-    if(el_id < 0 || el_id >= nb()) return false;
-    if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
+void GeneratorContainer::_on_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control) {
     // keep a LOCAL regulator local across a bus change: its regulated bus follows
     // its own bus (bus_id_ is still the OLD bus here, reassigned by the caller after).
     // A REMOTE regulator keeps its independent target bus.
@@ -449,15 +439,7 @@ bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualA
     solver_control.tell_one_el_changed_bus();
     if(voltage_regulator_on_[el_id]) { solver_control.tell_pv_changed(); }
     if(gen_slackbus_[el_id]) { solver_control.tell_slack_participate_changed(); }
-    return true;
-// bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) {
-//     if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
-//     solver_control.tell_recompute_sbus();
-//     solver_control.tell_one_el_changed_bus();
-//     if(voltage_regulator_on_[el_id]){ solver_control.tell_pv_changed(); }
-//     if(gen_slackbus_[el_id]){ solver_control.tell_slack_participate_changed(); }
-    // return true;
-};
+}
 
 void GeneratorContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const
 {

@@ -27,39 +27,6 @@ void LoadContainer::set_state(LoadContainer::StateRes & my_state)
     reset_results();
 }
 
-void LoadContainer::_fillSbus(Eigen::Ref<CplxVect> Sbus,
-                             const SolverBusIdVect & id_grid_to_solver,
-                             bool /*ac*/) const
-{
-    int nb_load = nb();
-    GlobalBusId bus_id_me;
-    SolverBusId bus_id_solver;
-    cplx_type tmp;
-    for(int load_id = 0; load_id < nb_load; ++load_id){
-        //  i don't do anything if the load is disconnected
-        if(!status_[load_id]) continue;
-
-        bus_id_me = bus_id_(load_id);
-        if(bus_id_me.cast_int() == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "LoadContainer::fillSbus: the load with id ";
-            exc_ << load_id;
-            exc_ << " is connected to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
-        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
-        if(bus_id_solver.cast_int() == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "LoadContainer::fillSbus: the load with id ";
-            exc_ << load_id;
-            exc_ << " is connected to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
-        tmp = {target_p_mw_(load_id), target_q_mvar_(load_id)};
-        Sbus.coeffRef(bus_id_solver.cast_int()) -= tmp;
-    }
-}
-
 void LoadContainer::save_binary(const std::string & path, bool atomic) const {
     ls2g::save_binary_generic(*this, path, VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, atomic);
 }

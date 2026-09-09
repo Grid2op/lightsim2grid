@@ -218,49 +218,32 @@ void SvcContainer::_compute_res_pq(
     }
 }
 
-bool SvcContainer::_deactivate(int svc_id, DualAlgoControl & solver_control)
+void SvcContainer::_on_deactivate(int svc_id, DualAlgoControl & solver_control)
 {
-    if(status_[svc_id]){
-        solver_control.tell_recompute_sbus();
-        solver_control.tell_one_el_changed_bus();
-        if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
-            solver_control.tell_pv_changed();
-            // (a voltage-mode SVC is ALWAYS a group controller, so this creates or
-            // dissolves the group at the bus it regulates -- which the pv/pq split,
-            // and the voltage-control plan built around it, follow from the flags
-            // above.)
-        }
-        return true;
+    solver_control.tell_recompute_sbus();
+    solver_control.tell_one_el_changed_bus();
+    if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
+        solver_control.tell_pv_changed();
+        // (a voltage-mode SVC is ALWAYS a group controller, so this creates or
+        // dissolves the group at the bus it regulates -- which the pv/pq split,
+        // and the voltage-control plan built around it, follow from the flags
+        // above.)
     }
-    return false;
 }
 
-bool SvcContainer::_reactivate(int svc_id, DualAlgoControl & solver_control)
+void SvcContainer::_on_reactivate(int svc_id, DualAlgoControl & solver_control)
 {
-    if(!status_[svc_id]){
-        solver_control.tell_recompute_sbus();
-        solver_control.tell_one_el_changed_bus();
-        if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
-            solver_control.tell_pv_changed();
-            // (a voltage-mode SVC is ALWAYS a group controller, so this creates or
-            // dissolves the group at the bus it regulates -- which the pv/pq split,
-            // and the voltage-control plan built around it, follow from the flags
-            // above.)
-        }
-        return true;
+    solver_control.tell_recompute_sbus();
+    solver_control.tell_one_el_changed_bus();
+    if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
+        solver_control.tell_pv_changed();  // see _on_deactivate
     }
-    return false;
 }
 
-bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/)
+void SvcContainer::_on_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control)
 {
-    // el_id is validated (and the proper IndexError raised) by
-    // OneSideContainer::change_bus / change_bus_no_bus_tracking, which run *before*
-    // this function. Bail out here on an out-of-range id anyway so the
-    // `regulated_bus_id_` write below never touches memory out of bounds.
-    if(svc_id < 0 || svc_id >= nb()) return false;
-    if(bus_id_(svc_id) == new_bus_id) return false;
-    // a LOCAL voltage controller's regulated bus follows its own bus
+    // a LOCAL voltage controller's regulated bus follows its own bus (bus_id_ is
+    // still the OLD bus here, reassigned by the caller after)
     // TODO: a REMOTE controller's regulated bus is whatever was resolved at import time
     // (e.g. by `init_from_pypowsybl`); if the regulated *element* changes bus we cannot
     // tell (only the resolved bus id is stored), so it stays frozen and desynchronises
@@ -271,7 +254,6 @@ bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoCo
     if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
         solver_control.tell_pv_changed();
     }
-    return true;
 }
 
 void SvcContainer::save_binary(const std::string & path, bool atomic) const {

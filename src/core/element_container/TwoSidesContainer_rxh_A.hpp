@@ -260,8 +260,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             // Read once per branch, not once per use. These are std::vector<bool>,
             // so every `status1[el_id]` is a word offset, a shift and a mask rather
             // than a load, and the loop below used to ask each of them five times.
-            const GlobalBusIdVect & buses1 = side_1_.get_buses();
-            const GlobalBusIdVect & buses2 = side_2_.get_buses();
+            const GlobalBusIdVect & buses1 = side_1_.get_bus_id();
+            const GlobalBusIdVect & buses2 = side_2_.get_bus_id();
             for(int el_id = 0; el_id < nb_element; ++el_id){
                 const bool st1 = status1[el_id];
                 const bool st2 = status2[el_id];

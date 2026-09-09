@@ -228,8 +228,8 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // out-of-main one. A line with BOTH sides outside is still fully dropped.
         void _disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation, DualAlgoControl & solver_control) override {
             const int nb_el = nb();
-            const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
-            const GlobalBusIdVect & bus_side_2_id_ = get_buses_side_2();
+            const GlobalBusIdVect & bus_side_1_id_ = get_bus_id_side_1();
+            const GlobalBusIdVect & bus_side_2_id_ = get_bus_id_side_2();
             for(int i = 0; i < nb_el; ++i){
                 if(!status_global_[i]){
                     // see TwoSidesContainer::disconnect_if_not_in_main_component: the

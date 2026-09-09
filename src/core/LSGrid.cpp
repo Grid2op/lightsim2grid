@@ -2046,7 +2046,7 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
     std::vector<QShare> shares;
     const int nb_gen = static_cast<int>(generators_.nb());
     shares.reserve(static_cast<std::size_t>(nb_gen));
-    const GlobalBusIdVect & gen_buses = generators_.get_buses();
+    const GlobalBusIdVect & gen_buses = generators_.get_bus_id();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(!generators_.takes_q_residual_share(gen_id, gen_solved)) continue;
         shares.push_back({gen_buses(gen_id).cast_int(),

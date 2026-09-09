@@ -167,7 +167,7 @@ TEST_CASE("a no-op mutation moves no count at all", "[SubstationContainer][bus_c
     grid.recompute_bus_element_counts();
     const std::vector<std::size_t> before = grid.get_substations().get_nb_elements_per_bus();
 
-    grid.change_bus_load_python(0, grid.get_loads_as_data().get_buses()(0).cast_int());  // same bus
+    grid.change_bus_load_python(0, grid.get_loads_as_data().get_bus_id()(0).cast_int());  // same bus
     CHECK(grid.get_substations().get_nb_elements_per_bus() == before);
 
     grid.deactivate_load(2);
@@ -202,7 +202,7 @@ TEST_CASE("bus connectivity IS the element counts", "[SubstationContainer][bus_c
     REQUIRE(subs.connected_bus_count_is_exact());
 
     SECTION("a mutator that empties a bus takes that bus out of the system"){
-        const int bus8 = grid.get_loads_as_data().get_buses()(8).cast_int();
+        const int bus8 = grid.get_loads_as_data().get_bus_id()(8).cast_int();
         REQUIRE(subs.get_nb_elements_per_bus()[bus8] >= 1u);
         const std::size_t nb_conn_before = subs.nb_connected_bus();
 
@@ -311,7 +311,7 @@ TEST_CASE("an SVC holds its bus in the solved system, like every other element",
     grid.recompute_bus_element_counts();
 
     const auto & subs = grid.get_substations();
-    const int svc_bus = grid.get_svcs().get_buses()(0).cast_int();
+    const int svc_bus = grid.get_svcs().get_bus_id()(0).cast_int();
     const std::size_t with_svc = subs.get_nb_elements_per_bus()[svc_bus];
     REQUIRE(with_svc >= 1u);
 

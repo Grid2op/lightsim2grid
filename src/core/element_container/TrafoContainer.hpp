@@ -52,8 +52,6 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
     //////////////////////////////
     // access data from base class
     public:
-        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::get_buses_side_1;
-        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::get_buses_side_2;
 
     protected:
         using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::side_1_;
