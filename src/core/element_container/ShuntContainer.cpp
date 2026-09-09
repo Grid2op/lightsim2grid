@@ -21,7 +21,7 @@ ShuntContainer::StateRes ShuntContainer::get_state() const
 
 void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
 {
-    set_osc_pq_state(std::get<0>(my_state));
+    set_osc_pq_state(std::get<StateResIdx::OSC_PQ_STATE>(my_state));
     reset_results();
 }
 

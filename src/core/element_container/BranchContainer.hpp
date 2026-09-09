@@ -142,6 +142,18 @@ class LS2G_API BranchContainer : public TwoSidesContainer<BranchEndContainer>
                    std::vector<real_type>,  // limit_a1_ka (optional, empty if unset)
                    std::vector<real_type>  // limit_a2_ka (optional, empty if unset)
                >;
+        enum StateResIdx {
+            TSC_STATE = 0,
+            R,
+            X,
+            H_SIDE_1,
+            H_SIDE_2,
+            LIMIT_A1_KA,
+            LIMIT_A2_KA,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "BranchContainer::StateRes and StateResIdx do not match");
 
         // current limit, in kA, per side -- input, not a powerflow result.
         // Optional: empty (size 0) if never set (e.g. pandapower-origin grids).
@@ -717,13 +729,13 @@ class LS2G_API BranchContainer : public TwoSidesContainer<BranchEndContainer>
 
         void set_branch_state(StateRes & my_state)
         {
-            set_tsc_state(std::get<0>(my_state));
+            set_tsc_state(std::get<StateResIdx::TSC_STATE>(my_state));
             const int size = nb();
 
-            const std::vector<real_type> & branch_r = std::get<1>(my_state);
-            const std::vector<real_type> & branch_x = std::get<2>(my_state);
-            const std::vector<cplx_type> & branch_h1 = std::get<3>(my_state);
-            const std::vector<cplx_type> & branch_h2 = std::get<4>(my_state);
+            const std::vector<real_type> & branch_r = std::get<StateResIdx::R>(my_state);
+            const std::vector<real_type> & branch_x = std::get<StateResIdx::X>(my_state);
+            const std::vector<cplx_type> & branch_h1 = std::get<StateResIdx::H_SIDE_1>(my_state);
+            const std::vector<cplx_type> & branch_h2 = std::get<StateResIdx::H_SIDE_2>(my_state);
             check_size(branch_r, size, "branch r");
             check_size(branch_x, size, "branch x");
             check_size(branch_h1, size, "branch h (=g+j.b), side 1");
@@ -734,8 +746,8 @@ class LS2G_API BranchContainer : public TwoSidesContainer<BranchEndContainer>
             h_side_1_ = CplxVect::Map(branch_h1.data(), size);
             h_side_2_ = CplxVect::Map(branch_h2.data(), size);
 
-            const std::vector<real_type> & limit_a1_ka = std::get<5>(my_state);
-            const std::vector<real_type> & limit_a2_ka = std::get<6>(my_state);
+            const std::vector<real_type> & limit_a1_ka = std::get<StateResIdx::LIMIT_A1_KA>(my_state);
+            const std::vector<real_type> & limit_a2_ka = std::get<StateResIdx::LIMIT_A2_KA>(my_state);
             if(limit_a1_ka.size() > 0){
                 check_size(limit_a1_ka, size, "limit_a1_ka");
                 limit_a1_ka_ = RealVect::Map(limit_a1_ka.data(), size);

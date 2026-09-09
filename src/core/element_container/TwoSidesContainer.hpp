@@ -501,6 +501,17 @@ class TwoSidesContainer : public GenericContainer
             typename OneSideType::StateRes, // side_1
             typename OneSideType::StateRes  // side_2
             >;
+        enum StateResIdx {
+            IGNORE_STATUS_GLOBAL = 0,
+            SYNCH_STATUS_BOTH_SIDE,
+            NAMES,
+            STATUS_GLOBAL,
+            SIDE_1,
+            SIDE_2,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "TwoSidesContainer::StateRes and StateResIdx do not match");
 
         void set_ignore_status_global(bool ignore_status_global){
             ignore_status_global_ = ignore_status_global;
@@ -540,12 +551,12 @@ class TwoSidesContainer : public GenericContainer
 
         void set_tsc_state(TwoSidesContainer::StateRes & my_state)  // tsc: two sides container
         {
-            ignore_status_global_ = std::get<0>(my_state);
-            synch_status_both_side_ = std::get<1>(my_state);
-            names_ = std::get<2>(my_state);
-            status_global_ = std::get<3>(my_state);
-            side_1_.set_state(std::get<4>(my_state));
-            side_2_.set_state(std::get<5>(my_state));
+            ignore_status_global_ = std::get<StateResIdx::IGNORE_STATUS_GLOBAL>(my_state);
+            synch_status_both_side_ = std::get<StateResIdx::SYNCH_STATUS_BOTH_SIDE>(my_state);
+            names_ = std::get<StateResIdx::NAMES>(my_state);
+            status_global_ = std::get<StateResIdx::STATUS_GLOBAL>(my_state);
+            side_1_.set_state(std::get<StateResIdx::SIDE_1>(my_state));
+            side_2_.set_state(std::get<StateResIdx::SIDE_2>(my_state));
             const int size = nb();
             if(names_.size() > 0) check_size(names_, size, "names");  // names are optional
             if(side_1_.nb() != size) throw std::runtime_error("Side_1 do not have the proper size");

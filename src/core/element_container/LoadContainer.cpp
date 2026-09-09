@@ -23,7 +23,7 @@ LoadContainer::StateRes LoadContainer::get_state() const
 
 void LoadContainer::set_state(LoadContainer::StateRes & my_state)
 {
-    set_osc_pq_state(std::get<0>(my_state));  // osc : one side container
+    set_osc_pq_state(std::get<StateResIdx::OSC_PQ_STATE>(my_state));  // osc : one side container
     reset_results();
 }
 

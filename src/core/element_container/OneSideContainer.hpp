@@ -495,6 +495,18 @@ class OneSideContainer : public GenericContainer
             bool,  // has pos_topo_vect info
             std::vector<int>  // pos_topo_vect
             >;
+        enum StateResIdx {
+            NAMES = 0,
+            BUS_ID,
+            STATUS,
+            HAS_SUBID,
+            SUBID,
+            HAS_POS_TOPO_VECT,
+            POS_TOPO_VECT,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "OneSideContainer::StateRes and StateResIdx do not match");
 
     protected:
 
@@ -520,11 +532,11 @@ class OneSideContainer : public GenericContainer
         void set_osc_state(OneSideContainer::StateRes & my_state)  // osc: one side element
         {
             // read data
-            names_ = std::get<0>(my_state);
-            std::vector<int> & bus_id = std::get<1>(my_state);
-            std::vector<bool> & status = std::get<2>(my_state);
-            bool has_subid_info = std::get<3>(my_state);
-            bool has_topo_vect_info = std::get<5>(my_state);
+            names_ = std::get<StateResIdx::NAMES>(my_state);
+            std::vector<int> & bus_id = std::get<StateResIdx::BUS_ID>(my_state);
+            std::vector<bool> & status = std::get<StateResIdx::STATUS>(my_state);
+            bool has_subid_info = std::get<StateResIdx::HAS_SUBID>(my_state);
+            bool has_topo_vect_info = std::get<StateResIdx::HAS_POS_TOPO_VECT>(my_state);
 
             // check sizes
             size_t size = bus_id.size();
@@ -533,13 +545,13 @@ class OneSideContainer : public GenericContainer
             check_size(status, size, "status");
             if(has_subid_info)
             {
-                const std::vector<int> & subid = std::get<4>(my_state);
+                const std::vector<int> & subid = std::get<StateResIdx::SUBID>(my_state);
                 check_size(subid, size, "subid");
                 subid_ = IntVect::Map(subid.data(), subid.size());
             }
             if(has_topo_vect_info)
             {
-                const std::vector<int> & topo_vect = std::get<6>(my_state);
+                const std::vector<int> & topo_vect = std::get<StateResIdx::POS_TOPO_VECT>(my_state);
                 check_size(topo_vect, size, "topo_vect");
                 pos_topo_vect_ = IntVect::Map(topo_vect.data(), topo_vect.size());
             }

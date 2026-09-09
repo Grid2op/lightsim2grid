@@ -72,6 +72,20 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
            std::vector<real_type>,  // gen_slack_weight_
            std::vector<int>         // regulated_bus_id_ (appended; defaults to own bus)
         > ;
+        enum StateResIdx {
+            OSC_PQ_STATE = 0,
+            TURNEDOFF_GEN_PV,
+            VREG_ON,
+            TARGET_VM_PU,
+            MIN_Q,
+            MAX_Q,
+            GEN_SLACKBUS,
+            GEN_SLACK_WEIGHT,
+            REGULATED_BUS_ID,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "GeneratorContainer::StateRes and StateResIdx do not match");
 
         GeneratorContainer() noexcept :VoltageSourceContainer<GeneratorContainer>(), turnedoff_gen_pv_(true){};
         explicit GeneratorContainer(bool turnedoff_gen_pv) noexcept :VoltageSourceContainer<GeneratorContainer>(), turnedoff_gen_pv_(turnedoff_gen_pv) {};

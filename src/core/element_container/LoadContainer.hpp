@@ -55,6 +55,12 @@ class LS2G_API LoadContainer final: public OneSideContainer_PQ, public IteratorA
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes  // state of the base class 
            > ;
+        enum StateResIdx {
+            OSC_PQ_STATE = 0,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "LoadContainer::StateRes and StateResIdx do not match");
         
         LoadContainer() noexcept = default;
         ~LoadContainer() noexcept override = default;

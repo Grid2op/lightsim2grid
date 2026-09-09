@@ -45,6 +45,12 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
     public:
         // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<OneSideContainer_PQ::StateRes >;
+        enum StateResIdx {
+            OSC_PQ_STATE = 0,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "ShuntContainer::StateRes and StateResIdx do not match");
         
         ShuntContainer() noexcept = default;
         ~ShuntContainer() noexcept override = default;

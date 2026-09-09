@@ -93,17 +93,17 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one
 
 void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
 {
-    set_osc_pq_state(std::get<0>(my_state));
-    turnedoff_gen_pv_ = std::get<1>(my_state);
+    set_osc_pq_state(std::get<StateResIdx::OSC_PQ_STATE>(my_state));
+    turnedoff_gen_pv_ = std::get<StateResIdx::TURNEDOFF_GEN_PV>(my_state);
 
     // the generators themelves
-    std::vector<bool> & voltage_regulator_on = std::get<2>(my_state);
-    std::vector<real_type> & vm_pu = std::get<3>(my_state);
-    std::vector<real_type> & min_q = std::get<4>(my_state);
-    std::vector<real_type> & max_q = std::get<5>(my_state);
-    std::vector<bool> & slack_bus = std::get<6>(my_state);
-    std::vector<real_type> & slack_weight = std::get<7>(my_state);
-    std::vector<int> & regulated_bus = std::get<8>(my_state);
+    std::vector<bool> & voltage_regulator_on = std::get<StateResIdx::VREG_ON>(my_state);
+    std::vector<real_type> & vm_pu = std::get<StateResIdx::TARGET_VM_PU>(my_state);
+    std::vector<real_type> & min_q = std::get<StateResIdx::MIN_Q>(my_state);
+    std::vector<real_type> & max_q = std::get<StateResIdx::MAX_Q>(my_state);
+    std::vector<bool> & slack_bus = std::get<StateResIdx::GEN_SLACKBUS>(my_state);
+    std::vector<real_type> & slack_weight = std::get<StateResIdx::GEN_SLACK_WEIGHT>(my_state);
+    std::vector<int> & regulated_bus = std::get<StateResIdx::REGULATED_BUS_ID>(my_state);
 
     // check sizes
     const auto size = nb();

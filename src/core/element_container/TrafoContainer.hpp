@@ -67,6 +67,21 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
                    std::vector<std::vector<real_type> >,  // rx_corr_alpha_
                    std::vector<std::vector<real_type> >   // rx_corr_pct_
                >;
+        enum StateResIdx {
+            BRANCH_STATE = 0,
+            RATIO,
+            IS_TAP_SIDE1,
+            SHIFT,
+            IGNORE_TAP_SIDE_FOR_SHIFT,
+            SHIFT_DEPENDENT_RX,
+            BASE_R,
+            BASE_X,
+            RX_CORR_ALPHA,
+            RX_CORR_PCT,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "TrafoContainer::StateRes and StateResIdx do not match");
 
         TrafoContainer() noexcept = default;
         ~TrafoContainer() noexcept override = default;

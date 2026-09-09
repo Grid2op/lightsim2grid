@@ -48,12 +48,12 @@ SGenContainer::StateRes SGenContainer::get_state() const
 
 void SGenContainer::set_state(SGenContainer::StateRes & my_state )
 {    
-    set_osc_pq_state(std::get<0>(my_state));
+    set_osc_pq_state(std::get<StateResIdx::OSC_PQ_STATE>(my_state));
 
-    std::vector<real_type> & p_min = std::get<1>(my_state);
-    std::vector<real_type> & p_max = std::get<2>(my_state);
-    std::vector<real_type> & q_min = std::get<3>(my_state);
-    std::vector<real_type> & q_max = std::get<4>(my_state);
+    std::vector<real_type> & p_min = std::get<StateResIdx::P_MIN>(my_state);
+    std::vector<real_type> & p_max = std::get<StateResIdx::P_MAX>(my_state);
+    std::vector<real_type> & q_min = std::get<StateResIdx::Q_MIN>(my_state);
+    std::vector<real_type> & q_max = std::get<StateResIdx::Q_MAX>(my_state);
     const auto size = nb();
 
     GenericContainer::check_size(p_min, size, "p_min");

@@ -63,6 +63,16 @@ class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorA
            std::vector<real_type>, //  q_min
            std::vector<real_type> //  q_max
            >;
+        enum StateResIdx {
+            OSC_PQ_STATE = 0,
+            P_MIN,
+            P_MAX,
+            Q_MIN,
+            Q_MAX,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "SGenContainer::StateRes and StateResIdx do not match");
         
         SGenContainer() noexcept = default;
         ~SGenContainer() noexcept override = default;

@@ -57,6 +57,12 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes  // state of the base class
            > ;
+        enum StateResIdx {
+            OSC_PQ_STATE = 0,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "StorageContainer::StateRes and StateResIdx do not match");
 
         StorageContainer() noexcept = default;
         ~StorageContainer() noexcept override = default;

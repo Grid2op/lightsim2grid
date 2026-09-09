@@ -48,6 +48,12 @@ class BranchEndContainer : public OneSideContainer
         using StateRes = std::tuple<
             OneSideContainer::StateRes
             > ;
+        enum StateResIdx {
+            OSC_STATE = 0,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "BranchEndContainer::StateRes and StateResIdx do not match");
 
         StateRes get_state() const
         {
@@ -70,7 +76,7 @@ class BranchEndContainer : public OneSideContainer
         void set_osc_forB_state(BranchEndContainer::StateRes & my_state)  // osc: one side element
         {
             // read data from my_state
-            set_osc_state(std::get<0>(my_state));
+            set_osc_state(std::get<StateResIdx::OSC_STATE>(my_state));
         }
         
     protected:

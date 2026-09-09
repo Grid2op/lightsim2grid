@@ -130,6 +130,14 @@ class OneSideContainer_PQ : public OneSideContainer
             std::vector<real_type>, // p_mw
             std::vector<real_type> // q_mvar
             >;
+        enum StateResIdx {
+            OSC_STATE = 0,
+            TARGET_P_MW,
+            TARGET_Q_MVAR,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "OneSideContainer_PQ::StateRes and StateResIdx do not match");
 
     protected:
         OneSideContainer_PQ::StateRes get_osc_pq_state() const  // osc: one side element
@@ -146,11 +154,11 @@ class OneSideContainer_PQ : public OneSideContainer
         void set_osc_pq_state(OneSideContainer_PQ::StateRes & my_state)  // osc: one side element
         {
             // read data from my_state
-            set_osc_state(std::get<0>(my_state));
+            set_osc_state(std::get<StateResIdx::OSC_STATE>(my_state));
 
             // init target_p and target_q
-            std::vector<real_type> & p_mw = std::get<1>(my_state);
-            std::vector<real_type> & q_mvar = std::get<2>(my_state);
+            std::vector<real_type> & p_mw = std::get<StateResIdx::TARGET_P_MW>(my_state);
+            std::vector<real_type> & q_mvar = std::get<StateResIdx::TARGET_Q_MVAR>(my_state);
 
             // check sizes
             const auto size = nb();

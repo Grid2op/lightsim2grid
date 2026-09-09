@@ -44,6 +44,12 @@ class LS2G_API LineContainer final: public BranchContainer, public IteratorAdder
         using StateRes =  std::tuple<
                    BranchContainer::StateRes
                    >;
+        enum StateResIdx {
+            BRANCH_STATE = 0,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "LineContainer::StateRes and StateResIdx do not match");
         
         LineContainer() noexcept = default;
         ~LineContainer() noexcept override = default;
@@ -71,7 +77,7 @@ class LS2G_API LineContainer final: public BranchContainer, public IteratorAdder
         }
         void set_state(LineContainer::StateRes & my_state )
         {
-            set_branch_state(std::get<0>(my_state));
+            set_branch_state(std::get<StateResIdx::BRANCH_STATE>(my_state));
             _update_model_coeffs();
             reset_results();
         }
