@@ -78,6 +78,7 @@ void TrafoContainer::init(
     rx_corr_alpha_ = std::vector<std::vector<real_type> >(size, std::vector<real_type>());
     rx_corr_pct_ = std::vector<std::vector<real_type> >(size, std::vector<real_type>());
     init_tsc(trafo_hv_id, trafo_lv_id, "trafo");
+    dc_x_tau_shift_ = RealVect::Zero(size);  // written by _update_model_coeffs_one_el
     _update_model_coeffs();
     reset_results();
 }
@@ -90,7 +91,7 @@ TrafoContainer::StateRes TrafoContainer::get_state() const
      std::vector<real_type> base_r(base_r_.begin(), base_r_.end());
      std::vector<real_type> base_x(base_x_.begin(), base_x_.end());
      TrafoContainer::StateRes res(
-        get_tsc_rxha_state(),
+        get_branch_state(),
         ratio,
         is_tap_hv_side,
         shift,
@@ -105,13 +106,13 @@ TrafoContainer::StateRes TrafoContainer::get_state() const
 
 void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
 {
-    set_tsc_rxha_state(std::get<0>(my_state));
+    set_branch_state(std::get<0>(my_state));
 
     std::vector<real_type> & ratio = std::get<1>(my_state);
     std::vector<bool> & is_tap_side1 = std::get<2>(my_state);
     std::vector<real_type> & shift = std::get<3>(my_state);
 
-    auto size = nb();
+    const int size = nb();
     GenericContainer::check_size(ratio, size, "ratio");
     GenericContainer::check_size(is_tap_side1, size, "is_tap_side1");
     GenericContainer::check_size(shift, size, "shift");
@@ -167,6 +168,7 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     rx_corr_alpha_ = rx_corr_alpha;
     rx_corr_pct_ = rx_corr_pct;
 
+    dc_x_tau_shift_ = RealVect::Zero(size);  // written by _update_model_coeffs_one_el
     _update_model_coeffs();
     reset_results();
 }
@@ -177,10 +179,10 @@ void TrafoContainer::set_shift_dependent_rx(
     const std::vector<std::vector<real_type> > & rx_corr_pct,
     DualAlgoControl & solver_control)
 {
-    const auto size = nb();
-    if(alpha_rad.size() != static_cast<std::size_t>(size))
+    const std::size_t size = static_cast<std::size_t>(nb());
+    if(alpha_rad.size() != size)
         throw std::runtime_error("TrafoContainer::set_shift_dependent_rx: alpha_rad has a wrong size");
-    if(rx_corr_pct.size() != static_cast<std::size_t>(size))
+    if(rx_corr_pct.size() != size)
         throw std::runtime_error("TrafoContainer::set_shift_dependent_rx: rx_corr_pct has a wrong size");
     shift_dependent_rx_ = enable;
     rx_corr_alpha_ = alpha_rad;
@@ -327,7 +329,7 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
     }
 }
 
-TrafoContainer::FDPFCoeffs TrafoContainer::get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const{
+TrafoContainer::FDPFCoeffs TrafoContainer::_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const{
     TrafoContainer::FDPFCoeffs res;
     // get the coefficients
     // tau is needed for Bpp

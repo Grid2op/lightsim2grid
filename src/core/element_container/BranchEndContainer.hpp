@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef ONE_SIDE_CONTAINER_FORBRANCH_H
-#define ONE_SIDE_CONTAINER_FORBRANCH_H
+#ifndef BRANCH_END_CONTAINER_H
+#define BRANCH_END_CONTAINER_H
 
 
 #include "Eigen/Core"
@@ -22,48 +22,24 @@ namespace ls2g {
 
 
 /**
- * This class represents a "one side container". It handles "properly"
- * the "solver_control" when connecting or disconnecting powerlines.
- * 
- * TODO add res_a and other stuff (like ydc_11 and others here instead of in TwoSidesContainer_rxh_A
+ * One END of a line or a transformer: the side type of BranchContainer.
+ *
+ * A branch end stands in Ybus, not in Sbus, so what it adds to OneSideContainer
+ * is the set of flags its own connection changes raise (the `_on_xxx` hooks
+ * below). It never counts for the per-bus element counts itself: the branch's
+ * global status gates whether an end holds its bus, so TwoSidesContainer does
+ * the counting around both ends -- which is why only the `*_no_bus_tracking`
+ * mutators are ever called on it.
+ *
+ * Its StateRes wraps OneSideContainer's in a one-element tuple: that nesting is
+ * what every pickle and binary file of a line or transformer carries, so it
+ * stays even though the class adds no state of its own.
  */
-class OneSideContainer_ForBranch : public OneSideContainer
+class BranchEndContainer : public OneSideContainer
 {
-    protected:
-        class OneSideForBranchInfo: public OneSideContainer::OneSideInfo
-        {
-            public:
-                OneSideForBranchInfo(const OneSideContainer_ForBranch & r_data_pq, int my_id) noexcept:
-                OneSideInfo(r_data_pq, my_id) {}
-        };
-    
-    /////////////////////////////
-    // iterator
-    private:
-        using OSCC4BonstIterator = GenericContainerConstIterator<OneSideContainer_ForBranch>;
-
     public:
-        OSCC4BonstIterator begin() const {return OSCC4BonstIterator(this, 0); }
-        OSCC4BonstIterator end() const {return OSCC4BonstIterator(this, nb()); }
-        OneSideForBranchInfo operator[](int id) const
-        {
-            if(id < 0)
-            {
-                throw std::range_error("You cannot ask for a negative load id.");
-            }
-            if(id >= nb())
-            {
-                throw std::range_error("Load out of bound. Not enough loads on the grid.");
-            }
-            return OneSideForBranchInfo(*this, id);
-        }
-    ////////////////////////////
-
-    // regular implementation
-    public:
-        OneSideContainer_ForBranch() noexcept = default;
-        explicit OneSideContainer_ForBranch(bool /*is_trafo*/) noexcept{};
-        ~OneSideContainer_ForBranch() noexcept override = default;
+        BranchEndContainer() noexcept = default;
+        ~BranchEndContainer() noexcept override = default;
 
         // public generic API
 
@@ -84,29 +60,19 @@ class OneSideContainer_ForBranch : public OneSideContainer
         }
 
     protected:
-        OneSideContainer_ForBranch::StateRes get_osc_forB_state() const  // osc: one side element
+        BranchEndContainer::StateRes get_osc_forB_state() const  // osc: one side element
         {
-            OneSideContainer_ForBranch::StateRes res(
+            BranchEndContainer::StateRes res(
                 get_osc_state());
             return res;
         }
 
-        void set_osc_forB_state(OneSideContainer_ForBranch::StateRes & my_state)  // osc: one side element
+        void set_osc_forB_state(BranchEndContainer::StateRes & my_state)  // osc: one side element
         {
             // read data from my_state
             set_osc_state(std::get<0>(my_state));
         }
         
-        void init_osc_forB(
-            const Eigen::Ref<const RealVect> & /*els_p*/,
-            const Eigen::Ref<const RealVect> & /*els_q*/,
-            const Eigen::Ref<const Eigen::VectorXi> & els_bus_id,
-            const std::string & /*name_el*/
-            )  // osc: one side element
-        {
-            init_osc(els_bus_id);
-        }
-
     protected:
         // A branch end lives in Ybus, not in Sbus: opening / closing / moving it
         // changes the matrix (and, since the end may be alone on its bus, possibly
@@ -131,16 +97,9 @@ class OneSideContainer_ForBranch : public OneSideContainer
             solver_control.tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
         }
 
-    protected:
-        // physical properties
-
-        // data for grid2op compat
-
-        // input data
-
 };
 
 
 } // namespace ls2g
 
-#endif  //ONE_SIDE_CONTAINER_FORBRANCH_H
+#endif  //BRANCH_END_CONTAINER_H

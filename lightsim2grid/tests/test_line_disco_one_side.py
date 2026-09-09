@@ -724,7 +724,7 @@ class TestImportHalfOpen(unittest.TestCase):
         V0 = np.full(nb_bus, 1.0, dtype=complex)
 
         # reference: direct powerflow, using the already-correct per-branch
-        # compute_results path (TwoSidesContainer_rxh_A::compute_results_tsc_rxha)
+        # compute_results path (BranchContainer::_compute_results)
         V = model.dc_pf(V0, 1, 1e-8) if is_dc else model.ac_pf(V0, 10, 1e-8)
         assert V.shape[0] > 0, "powerflow diverged"
         line_ref = self._line(model)

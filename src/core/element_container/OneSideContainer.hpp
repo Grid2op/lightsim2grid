@@ -187,17 +187,18 @@ class OneSideContainer : public GenericContainer
             return res;
         }
 
+    protected:
         /**
          * The same mutation WITHOUT touching the per-bus element counts.
          *
          * For a container that owns its own contribution (a load, a generator, an
          * HVDC converter station) this is only ever called through `deactivate`
-         * above, which brackets it with the counting. It is public because
-         * TwoSidesContainer must call it directly: a line's two ends do NOT own
-         * their contribution -- `status_global_` gates it, and a side knows nothing
-         * about that -- so the branch as a whole does the counting, once, around
-         * both sides. Letting each side count here would decrement a bus the gate
-         * says the branch never held.
+         * above, which brackets it with the counting. TwoSidesContainer (a friend)
+         * calls it directly: a line's two ends do NOT own their contribution --
+         * `status_global_` gates it, and a side knows nothing about that -- so the
+         * branch as a whole does the counting, once, around both sides. Letting
+         * each side count here would decrement a bus the gate says the branch
+         * never held.
          */
         bool deactivate_no_bus_tracking(int el_id, DualAlgoControl & solver_control) {
             // Debug-only: every caller is inside an _apply_and_track_buses bracket whose
@@ -231,10 +232,11 @@ class OneSideContainer : public GenericContainer
             return true;
         }
 
+    public:
         /**
          * This function changes the bus. The bus_id is here given in the
          * "gridmodel" bus.
-         * 
+         *
          * Not the "solver" bus, nor the "substation" / "local" bus.
          */
         bool change_bus(
@@ -322,6 +324,7 @@ class OneSideContainer : public GenericContainer
             subid_.array() = subid;
         }
 
+    protected:
         /**
          * The position this element occupies in the grid2op topology vector, checked
          * against the length of the arrays that position is about to index.

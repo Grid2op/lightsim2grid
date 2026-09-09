@@ -2277,7 +2277,7 @@ RealMat LSGrid::get_lodf(){
             : (status1_trafo[el_id - n_line] && status2_trafo[el_id - n_line]);
         if(!is_dc_connected){
             // half-open (see keep_half_open_lines) or fully disconnected: this
-            // branch carries no DC flow at all (TwoSidesContainer_rxh_A::fillBdc
+            // branch carries no DC flow at all (BranchContainer::fillBdc
             // drops it from Bbus entirely -- "disco on one side == disco on both
             // sides"), and its open/stale bus id must not index
             // dc_cache_.id_me_to_solver -- propagate the deactivated sentinel instead,

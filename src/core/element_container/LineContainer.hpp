@@ -18,13 +18,12 @@
 
 #include "Utils.hpp"
 #include "SubstationContainer.hpp"
-#include "OneSideContainer_forBranch.hpp"
-#include "TwoSidesContainer_rxh_A.hpp"
+#include "BranchContainer.hpp"
 
 namespace ls2g {
 
 class LineContainer;
-class LS2G_API LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
+class LS2G_API LineInfo : public BranchContainer::BranchInfo
 {
     public:
         inline LineInfo(const LineContainer & r_data, int my_id) noexcept;
@@ -34,7 +33,7 @@ class LS2G_API LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBra
 This class is a container for all the powerlines on the grid.
 
 **/
-class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<LineContainer, LineInfo>
+class LS2G_API LineContainer final: public BranchContainer, public IteratorAdder<LineContainer, LineInfo>
 {
     friend class LineInfo;
     public:
@@ -43,7 +42,7 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
     public:
         // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes =  std::tuple<
-                   TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes
+                   BranchContainer::StateRes
                    >;
         
         LineContainer() noexcept = default;
@@ -67,12 +66,12 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         // pickle
         StateRes get_state() const
         {
-            StateRes res(get_tsc_rxha_state());
+            StateRes res(get_branch_state());
             return res;
         }
         void set_state(LineContainer::StateRes & my_state )
         {
-            set_tsc_rxha_state(std::get<0>(my_state));
+            set_branch_state(std::get<0>(my_state));
             _update_model_coeffs();
             reset_results();
         }
@@ -96,7 +95,7 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
 };
 
 inline LineInfo::LineInfo(const LineContainer & r_data, int my_id) noexcept:
-TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo(r_data, my_id) {}
+BranchContainer::BranchInfo(r_data, my_id) {}
 
 
 } // namespace ls2g
