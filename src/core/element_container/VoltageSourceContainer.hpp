@@ -49,6 +49,14 @@ namespace ls2g {
  *       whether `set_vm` throws when the regulated bus is not in the solved
  *       system (a generator: yes, the grid is inconsistent) or skips it (an SVC
  *       may point at a bus outside the main component, and that is legitimate).
+ *   static real_type _vm_scale(real_type target_vm, real_type current_vm);
+ *       the factor `set_vm` multiplies V by to bring |V| from `current_vm` to
+ *       `target_vm`. Mathematically `target_vm / current_vm` for everyone; the
+ *       generators (and stations) have always computed it as
+ *       `(1 / current_vm) * target_vm`, the SVCs as `target_vm / current_vm`, and
+ *       the two differ in the last bit. Each leaf keeps its own so that every
+ *       solve starts from exactly the voltage it started from before -- the
+ *       A/B harness of benchmarks/cache_profiling compares answers to the ulp.
  *   static const char * _element_name();
  *       the noun of the error messages ("generator", ...).
  *
@@ -271,9 +279,7 @@ class VoltageSourceContainer : public OneSideContainer_PQ
                 V(bus.cast_int()) = 1.0;
                 tmp = 1.0;
             }
-            tmp = 1.0 / tmp;
-            tmp *= target_vm;
-            V(bus.cast_int()) *= tmp;
+            V(bus.cast_int()) *= Leaf::_vm_scale(target_vm, tmp);
         }
 
         // ---- the hooks ------------------------------------------------------------

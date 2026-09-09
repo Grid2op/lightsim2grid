@@ -129,6 +129,7 @@ class LS2G_API SvcContainer final : public VoltageSourceContainer<SvcContainer>,
 
     protected:
         // ---- what VoltageSourceContainer asks of its leaf -------------------------
+        static real_type _vm_scale(real_type target_vm, real_type current_vm) { return target_vm / current_vm; }
         static const char * _element_name() { return "svc"; }
         bool _treated_as_off(int /*svc_id*/) const { return false; }
         // a sloped SVC does NOT hold its regulated bus exactly at the setpoint

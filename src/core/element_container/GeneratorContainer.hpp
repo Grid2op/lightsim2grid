@@ -249,6 +249,7 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
 
     protected:
         // ---- what VoltageSourceContainer asks of its leaf -------------------------
+        static real_type _vm_scale(real_type target_vm, real_type current_vm) { return (1.0 / current_vm) * target_vm; }
         static const char * _element_name() { return "generator"; }
         // a generator at 0 MW is switched off, voltage included, when `turnedoff_no_pv`
         // is set (except a slack generator, which is never pseudo off)
