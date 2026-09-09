@@ -47,47 +47,22 @@ have to reason about and how much is tests, docs and changelog:
 ```
 | | added | removed |
 |---|---|---|
-| **C++ (src/core, src/bindings)** | +968 | -0 |
+| **C++ (src/core, src/bindings)** | +970 | -0 |
 | **Python (package)** | +384 | -0 |
-| **Tests** | +764 | -0 |
-| **Docs + changelog** | +160 | -0 |
-| total | +2277 | -0 |
+| **Tests** | +922 | -0 |
+| **Docs + changelog** | +212 | -0 |
+| total | +2489 | -0 |
 ```
 
-Buckets, in this order (drop a row that is empty):
-
-- **C++** — `src/core/**` and `src/bindings/**` (`.cpp` / `.hpp` / `.tpp`), tests excluded.
-- **Python** — `lightsim2grid/**.py`, tests excluded.
-- **Tests** — `src/tests/**` and `lightsim2grid/tests/**`, whatever the language.
-- **Docs + changelog** — `docs/**` and any `.rst` / `.md`, `CHANGELOG.rst` included.
-- **Build / other** — everything left (CMake, CI, fixtures), so the total is the real total.
-
-Generate it against the PR's BASE branch rather than counting by hand:
+`utils/pr_diff_stats.py` produces it — it holds the bucket definitions, so they stay in one
+place rather than being restated here:
 
 ```
-python3 - "$(git merge-base origin/<base> HEAD)" <<'EOF'
-import subprocess, sys, fnmatch
-out = subprocess.run(["git", "diff", "--numstat", sys.argv[1] + "...HEAD"],
-                     capture_output=True, text=True).stdout
-def bucket(p):
-    if fnmatch.fnmatch(p, "src/tests/*") or fnmatch.fnmatch(p, "lightsim2grid/tests/*"): return "tests"
-    if p.startswith("docs/") or p.endswith((".rst", ".md")): return "docs"
-    if p.startswith(("src/core/", "src/bindings/")) and p.endswith((".cpp", ".hpp", ".tpp", ".h")): return "cpp"
-    if p.startswith("lightsim2grid/") and p.endswith(".py"): return "python"
-    return "other"
-tot = {}
-for line in out.strip().splitlines():
-    a, d, path = line.split("\t")
-    if a == "-": continue          # binary file
-    e = tot.setdefault(bucket(path), [0, 0]); e[0] += int(a); e[1] += int(d)
-rows = [("cpp", "C++ (src/core, src/bindings)"), ("python", "Python (package)"),
-        ("tests", "Tests"), ("docs", "Docs + changelog"), ("other", "Build / other")]
-print("| | added | removed |\n|---|---|---|")
-for k, label in rows:
-    if k in tot: print(f"| **{label}** | +{tot[k][0]} | -{tot[k][1]} |")
-print(f"| total | +{sum(v[0] for v in tot.values())} | -{sum(v[1] for v in tot.values())} |")
-EOF
+python3 utils/pr_diff_stats.py                # against origin/dev_1.0.1 (the default)
+python3 utils/pr_diff_stats.py origin/main    # against another base branch
 ```
+
+Run it against the PR's own base branch, and paste the table as the first thing in the body.
 
 ## Build
 

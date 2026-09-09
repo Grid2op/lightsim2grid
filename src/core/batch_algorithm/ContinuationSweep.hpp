@@ -83,7 +83,7 @@ and "stop at the nose" unless a target lambda is given. The one place this canno
 follow MATPOWER is the parameterisation, whose default there is pseudo arc length
 (see above).
 **/
-class LS2G_API ContinuationSweep : public BaseBatchSolverSynch
+class LS2G_API ContinuationSweep final : public BaseBatchSolverSynch
 {
     public:
         explicit ContinuationSweep(const LSGrid & init_grid_model):
@@ -114,10 +114,10 @@ class LS2G_API ContinuationSweep : public BaseBatchSolverSynch
         // nothing to the direction. Setting none of them at all is an error: the
         // direction would be zero and the continuation would walk lambda along a
         // curve that does not move.
-        void set_target_gen_p(const RealVect & values)  {_target_gen_p = values;}
-        void set_target_sgen_p(const RealVect & values) {_target_sgen_p = values;}
-        void set_target_load_p(const RealVect & values) {_target_load_p = values;}
-        void set_target_load_q(const RealVect & values) {_target_load_q = values;}
+        void set_target_gen_p(const Eigen::Ref<const RealVect> & values)  {_target_gen_p = values;}
+        void set_target_sgen_p(const Eigen::Ref<const RealVect> & values) {_target_sgen_p = values;}
+        void set_target_load_p(const Eigen::Ref<const RealVect> & values) {_target_load_p = values;}
+        void set_target_load_q(const Eigen::Ref<const RealVect> & values) {_target_load_q = values;}
         void clear_target(){
             _target_gen_p = RealVect(); _target_sgen_p = RealVect();
             _target_load_p = RealVect(); _target_load_q = RealVect();
@@ -125,29 +125,29 @@ class LS2G_API ContinuationSweep : public BaseBatchSolverSynch
 
         // ---- options (MATPOWER cpf.* names) ------------------------------------
         real_type get_step() const {return _step;}
-        void set_step(real_type v) {_step = _checked_positive(v, "step");}
+        void set_step(real_type x) {_step = _checked_positive(x, "step");}
         real_type get_step_min() const {return _step_min;}
-        void set_step_min(real_type v) {_step_min = _checked_positive(v, "step_min");}
+        void set_step_min(real_type x) {_step_min = _checked_positive(x, "step_min");}
         real_type get_step_max() const {return _step_max;}
-        void set_step_max(real_type v) {_step_max = _checked_positive(v, "step_max");}
+        void set_step_max(real_type x) {_step_max = _checked_positive(x, "step_max");}
         bool get_adapt_step() const {return _adapt_step;}
-        void set_adapt_step(bool v) {_adapt_step = v;}
+        void set_adapt_step(bool on) {_adapt_step = on;}
         real_type get_adapt_step_damping() const {return _adapt_step_damping;}
-        void set_adapt_step_damping(real_type v) {_adapt_step_damping = _checked_positive(v, "adapt_step_damping");}
+        void set_adapt_step_damping(real_type x) {_adapt_step_damping = _checked_positive(x, "adapt_step_damping");}
         real_type get_adapt_step_tol() const {return _adapt_step_tol;}
-        void set_adapt_step_tol(real_type v) {_adapt_step_tol = _checked_positive(v, "adapt_step_tol");}
+        void set_adapt_step_tol(real_type x) {_adapt_step_tol = _checked_positive(x, "adapt_step_tol");}
         real_type get_nose_tol() const {return _nose_tol;}
-        void set_nose_tol(real_type v) {_nose_tol = _checked_positive(v, "nose_tol");}
+        void set_nose_tol(real_type x) {_nose_tol = _checked_positive(x, "nose_tol");}
 
         // Stop when lambda reaches this value (MATPOWER's numeric `cpf.stop_at`).
         // A non-positive value means "trace until the nose" ('NOSE').
         real_type get_stop_at_lam() const {return _stop_at_lam;}
-        void set_stop_at_lam(real_type v) {_stop_at_lam = v;}
+        void set_stop_at_lam(real_type x) {_stop_at_lam = x;}
 
         // Hard cap on the number of traced points, so a pathological curve cannot
         // spin forever. Also the number of rows reserved up front.
         int get_max_steps() const {return _max_steps;}
-        void set_max_steps(int v);
+        void set_max_steps(int x);
 
         // Rebuild and refactorize J at each converged point before taking its
         // tangent. Off by default: compute_pf leaves a factorization from its last
@@ -155,7 +155,7 @@ class LS2G_API ContinuationSweep : public BaseBatchSolverSynch
         // approximate, but the corrector absorbs it. Worth turning on with a lazy
         // RefactorPolicy (Chord), where "one iterate behind" can be several.
         bool get_exact_tangent() const {return _exact_tangent;}
-        void set_exact_tangent(bool v) {_exact_tangent = v;}
+        void set_exact_tangent(bool on) {_exact_tangent = on;}
 
         // ---- run ----------------------------------------------------------------
         void compute(const Eigen::Ref<const CplxVect> & Vinit, int max_iter, real_type tol);
@@ -171,11 +171,11 @@ class LS2G_API ContinuationSweep : public BaseBatchSolverSynch
         Eigen::Index nb_points() const {return _nb_points;}
 
         // lambda at each traced point; lam(0) == 0 (the base case).
-        const RealVect & get_lam() const {return _lam;}
+        Eigen::Ref<const RealVect> get_lam() const {return _lam;}
         // the tangent's lambda component at each traced point, in (0, 1]. It tends to
         // zero at the nose -- that is the collapse indicator, see the class comment.
         // The last point has no tangent computed after it and reads 0.
-        const RealVect & get_tangent_lam() const {return _tangent_lam;}
+        Eigen::Ref<const RealVect> get_tangent_lam() const {return _tangent_lam;}
         // largest lambda reached (0 if only the base case was solved).
         real_type get_lam_max() const {return _nb_points > 0 ? _lam(_nb_points - 1) : static_cast<real_type>(0.);}
         // how many times a corrector failed and the step had to be reduced.
@@ -184,7 +184,7 @@ class LS2G_API ContinuationSweep : public BaseBatchSolverSynch
         // The direction actually used, in solver ordering and per unit (empty before
         // the first compute()). Exposed for tests and for anyone who wants to check
         // what a steering vector resolved to.
-        const CplxVect & get_direction_solver() const {return _direction;}
+        Eigen::Ref<const CplxVect> get_direction_solver() const {return _direction;}
 
         // Branch flows at every traced point, same contract as the other batch
         // algorithms' (one row per point, one column per powerline then trafo).
@@ -231,7 +231,7 @@ class LS2G_API ContinuationSweep : public BaseBatchSolverSynch
                                                     const Eigen::Ref<const RealVect> & base,
                                                     const char * axis_name);
 
-        static real_type _checked_positive(real_type v, const char * name);
+        static real_type _checked_positive(real_type x, const char * name);
 
         // Re-establish the algorithm's state at the last converged point after a
         // corrector diverged: the failed solve left (Va, Vm) and the standing

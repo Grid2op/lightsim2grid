@@ -14,25 +14,25 @@
 
 namespace ls2g {
 
-real_type ContinuationSweep::_checked_positive(real_type v, const char * name)
+real_type ContinuationSweep::_checked_positive(real_type x, const char * name)
 {
-    if(!std::isfinite(v) || (v <= 0.)){
+    if(!std::isfinite(x) || (x <= 0.)){
         std::ostringstream exc_;
         exc_ << "ContinuationSweep: " << name << " must be a finite, strictly positive "
-             << "number, got " << v << ".";
+             << "number, got " << x << ".";
         throw std::runtime_error(exc_.str());
     }
-    return v;
+    return x;
 }
 
-void ContinuationSweep::set_max_steps(int v)
+void ContinuationSweep::set_max_steps(int x)
 {
-    if(v < 1){
+    if(x < 1){
         std::ostringstream exc_;
-        exc_ << "ContinuationSweep: max_steps must be >= 1, got " << v << ".";
+        exc_ << "ContinuationSweep: max_steps must be >= 1, got " << x << ".";
         throw std::runtime_error(exc_.str());
     }
-    _max_steps = v;
+    _max_steps = x;
 }
 
 SbusPolicy::Vary::RealMat ContinuationSweep::_delta_row(const RealVect & target,
@@ -222,8 +222,16 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
     _nb_points = 1;
 
     real_type step = _step;
+    // Every buffer the loop needs, allocated ONCE here and assigned into afterwards:
+    // declared inside, each iteration would construct and free a fresh nb_bus vector,
+    // and a curve is hundreds of iterations long. They are four distinct vectors
+    // because each is read after the next is written: V_pred feeds the step adaptation
+    // AFTER the corrector has overwritten V_corr, and V_last must survive a corrector
+    // failure so the retry can be re-seeded from it (see _restore_at).
     RealVect z;
     CplxVect V_pred;
+    CplxVect V_corr;
+    CplxVect Sbus;
 
     for(int it = 0; it < _max_steps; ++it){
         // ---- predictor ---------------------------------------------------------
@@ -280,7 +288,8 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
         //
         // Checked on the first predictor only: which unknowns a direction reaches is a
         // property of it and of the topology, and neither changes along the curve.
-        if (it == 0 && V_pred == V_last) {
+        if (it == 0 &&
+            (V_pred - V_last).cwiseAbs().maxCoeff() <= BaseConstants::_tol_equal_float) {
             _msg = "the direction moves no bus voltage: everything it asks for is absorbed by "
                    "the slack. Scaling the machine at a single slack bus does this -- it "
                    "changes a real input, but not one the powerflow reads, since that bus' "
@@ -292,10 +301,10 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
         }
 
         // ---- corrector ---------------------------------------------------------
-        CplxVect V = V_pred;
-        const CplxVect Sbus = ac_cache_.inj + lam_pred * _direction;
+        V_corr = V_pred;   // compute_one_powerflow overwrites it with the solution
+        Sbus = ac_cache_.inj + lam_pred * _direction;
         const bool conv = compute_one_powerflow(
-            ac_cache_.mat, V, Sbus,
+            ac_cache_.mat, V_corr, Sbus,
             active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
             active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
             max_iter, tol);
@@ -327,10 +336,10 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
         }
 
         // ---- accept the point --------------------------------------------------
-        if(_adapt_step) step = _adapted_step(step, V, V_pred);
+        if(_adapt_step) step = _adapted_step(step, V_corr, V_pred);
 
         lam = lam_pred;
-        V_last = V;
+        V_last = V_corr;
         _voltages.row(_nb_points)(active_layout().id_solver_to_me.as_eigen()) = V_last.array();
         _lam(_nb_points) = lam;
         ++_nb_points;
