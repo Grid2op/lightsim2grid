@@ -429,6 +429,9 @@ class ContingencyAnalysis(object):
                 self._contingency_order[li_disc_tup] = my_id
                 self._all_contingencies.append(li_disc_tup)
                 self._contingency_names[li_disc_tup] = name
+                # the c++ side dropped its results: so must this side's cache, or the
+                # next get_flows() would index the previous results with the new order
+                self.__computed = False
             except Exception as exc_:
                 raise RuntimeError(f"Impossible to add the contingency {args}. The most likely cause "
                                    f"is that you try to disconnect a powerline that is not present "
@@ -508,6 +511,7 @@ class ContingencyAnalysis(object):
             self._contingency_order[li_disc_tup] = len(self._contingency_order)
             self._all_contingencies.append(li_disc_tup)
             self._contingency_names[li_disc_tup] = None
+        self.__computed = False   # see add_single_contingency
 
     def get_flows(self, *args):
         """

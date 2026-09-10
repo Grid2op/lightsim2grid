@@ -177,6 +177,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [IMPROVED] ``ContingencyAnalysis.add_all_n1_contingencies`` registers the sweep in one call
   (it reset the solver once per powerline); ``clear_results_only()`` is a no-op with nothing
   to clear; a contingency given by name no longer scans every name of the grid.
+- [FIXED] ``ContingencyAnalysis``: registering a contingency after a computation left the
+  python-side results cached, so the next ``get_flows()`` indexed stale arrays and raised.
 - [IMPROVED] the element containers share one interface (public non-virtual entry points,
   protected ``_xxx`` hooks, ``_on_xxx`` notifications, one ``LSGrid::_all_containers()`` list).
   ``TwoSidesContainer_rxh_A`` is now ``BranchContainer``, ``OneSideContainer_ForBranch`` is
