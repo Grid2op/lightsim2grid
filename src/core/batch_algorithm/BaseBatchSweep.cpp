@@ -185,8 +185,12 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
 
     if(nb_thread <= 1){
         // single-threaded path: reuse the (already warmed up) member solver and
-        // the member accumulators -> identical to the legacy code.
+        // the member accumulators -> identical to the legacy code. Every row of a
+        // FromSeed sweep starts from the same voltage: the solver may keep its
+        // polar form (see BaseAlgo::set_start_polar_cache); a chained sweep never
+        // repeats a start and is told so.
         _algo.set_lazy_v(use_dc_lazy_v);
+        _algo.set_start_polar_cache(INIT == BatchInitKind::FromSeed);
         int step_diverge = -1;
         std::exception_ptr err;
         _run_range(0, nb_steps, _algo, _algo_controler, ac_cache_.mat, Vinit_solver,
@@ -213,6 +217,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     auto init_thread = [&](int t){
         algos[t] = make_thread_algo();
         algos[t]->set_lazy_v(use_dc_lazy_v);
+        algos[t]->set_start_polar_cache(INIT == BatchInitKind::FromSeed);
         controls[t] = _algo_controler;
     };
 
@@ -281,6 +286,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         // single-threaded path: reuse the (already warmed-up) member solver, member
         // ac_cache_.mat and the member accumulators -> identical to the legacy code.
         _algo.set_lazy_v(use_dc_lazy_v);
+        _algo.set_start_polar_cache(INIT == BatchInitKind::FromSeed);
         std::exception_ptr err;
         int step_diverge = -1;
         if(mask_mode){
@@ -316,6 +322,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     auto init_thread = [&](int t){
         algos[t] = make_thread_algo();
         algos[t]->set_lazy_v(use_dc_lazy_v);
+        algos[t]->set_start_polar_cache(INIT == BatchInitKind::FromSeed);
         // freshly spawned -- no rebuild-invalidation needed (its very first
         // build_J_sparsity() already sees this), unlike _algo in
         // _maybe_prepare_masks() which may already have sparsity built.

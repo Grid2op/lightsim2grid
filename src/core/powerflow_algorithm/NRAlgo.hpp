@@ -181,6 +181,7 @@ public:
     void set_pv_pinned_buses(const std::vector<int> & solver_bus_ids) override {
         _system.set_pv_pinned_buses(solver_bus_ids);
     }
+    void set_start_polar_cache(bool val) override { _system.set_start_polar_cache(val); }
     
     // ----- scaling policy ------------------------------------------------------
     ScalingPolicyType get_scaling_policy_type()  const { return scaling_policy_->type(); }

@@ -395,3 +395,46 @@ before `_finish_preprocessing`, which then reset the algorithm -- and a reset dr
 the pinning. The per-row loop re-pinned every row, so the rows were right and the
 "n" case was not; the loop touching the pinning only where a row flips a bus is what
 exposed it. The reset now comes before the preparation hooks.
+
+### The polar form of the seed, once per seed
+
+`NRSystem::update_state` turned the starting voltage into its angle and magnitude on
+every solve -- an atan2 and a hypot per bus, 2.1M instructions on case9241pegase,
+1.75% of a row -- and every row of a contingency or injection sweep starts from the
+same seed. Asked to (`set_start_polar_cache`, which the `FromSeed` sweeps do), the
+system keeps the last starting voltage it was handed and its polar form; a call
+with the same *bits* (a memcmp, never a comparison of values) copies the polar form
+back, which is exact: it was computed from those bits.
+
+A/B, KLU, every row bit for bit identical:
+
+| grid | `ca_ac` | `ca_ac_mask` | `ts_ac` | `idem` / `inj` / `topo` |
+|---|---:|---:|---:|---:|
+| case30 | -2.0% | -2.1% | +0.00% | +0.01% / +0.01% / -0.05% |
+| case118 | -2.6% | -2.7% | +0.00% | +0.00% |
+| case1354pegase | -2.2% | -2.4% | +0.00% | +0.00% |
+| case9241pegase | -1.5% | -1.5% | +0.00% | +0.00% |
+| case118_fancy | -2.2% | -2.2% | +0.00% | +0.00% |
+| case1354pegase_fancy | -1.9% | -2.1% | +0.00% | +0.00% |
+| case9241pegase_fancy | -1.3% | -1.3% | +0.00% | +0.00% |
+
+Opt-in because the first version cached unconditionally, and a solve that never
+hits -- every single solve, every chained row -- paid the three copies into the
+cache for nothing: +0.1% to +0.7% on `idem` / `inj` / `topo` and on `ts_ac`. Off,
+the code path is the old one, and the table's last two columns say so.
+
+Measured and **declined** on the way: keeping the Newton loop's mismatch vector as
+a member instead of allocating it per solve. One malloc less per row, and
++0.1% to +0.35% on every solve: through a member reference the loop cannot keep
+the vector's pointer in a register the way it can for a local, and the sparse
+product in `_residual_into` compiled worse. The allocation is cheaper than the
+aliasing. Found by bisecting the two halves of the change on case1354pegase.
+
+The chained case was measured and **declined**: a TimeSeries row starts from the
+system's own last solution, whose polar form the system already holds -- to a
+rounding, not to the bit, since the solution is rebuilt from the angle and the
+magnitude. Reusing them was worth -0.4% to -2.9% of a row, with the same iteration
+counts everywhere, but the rows drift: 5e-15 pu on case30, 1.4e-12 on
+case9241pegase, 2.8e-11 on case9241pegase_fancy, growing along the chain. A warm
+start that is not the bits the caller handed in is a different contract, and the
+A/B compares traces bit for bit for a reason.

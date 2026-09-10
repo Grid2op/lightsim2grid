@@ -55,8 +55,44 @@ inline void NRSystem<Base, Rest...>::update_state(
     Sbus_data_ptr_ = Sbus.data();
     Sbus_size_ = Sbus.size();
 
-    Va_ = V_init.array().arg();
-    Vm_ = V_init.array().abs();
+    // The polar form of the starting voltage: an atan2 and a hypot per bus, which
+    // a batch that restarts every row from the same seed (a contingency sweep, an
+    // injection sweep) paid on every row for the same answer. Such a batch asks
+    // for the cache (set_start_polar_cache); then the same V_init as the previous
+    // call -- the same BITS, a memcmp, never a comparison of values -- gets the
+    // cached Va / Vm back: they are arg(V_init) / abs(V_init) computed then from
+    // these very bits, so the copy is exact. Anything else runs the two passes and
+    // refreshes the cache. Without the hint nothing is compared or copied: a
+    // single solve, which never hits, was measured at +0.1% to +0.7% when it paid
+    // for the cache anyway.
+    //
+    // A time series chains its rows, so its V_init is this system's own last V_,
+    // whose polar form Va_ / Vm_ already hold -- to a rounding, not to the bit
+    // (V_ is rebuilt from them, see apply_step). Reusing them was measured: the
+    // rows drift by up to 3e-11 pu on case9241pegase_fancy, the same iteration
+    // counts, for -0.4% to -2.9% of a row. Declined: a warm start that is not the
+    // bits the caller handed in is a different contract, and the audit compares
+    // traces bit for bit for a reason. See benchmarks/cache_profiling/README.md.
+    //
+    // The two passes are written once: a second copy of them (one per branch) made
+    // the compiler stop inlining the assignment loops and cost every solve 0.1-0.4%
+    // with the cache off -- measured, which is why this reads the way it does.
+    const Eigen::Index n = V_init.size();
+    const bool same_as_cached = start_polar_cache_ && init_V_cache_.size() == n && n > 0 &&
+        std::memcmp(init_V_cache_.data(), V_init.data(),
+                    static_cast<std::size_t>(n) * sizeof(cplx_type)) == 0;
+    if(same_as_cached){
+        Va_ = init_Va_cache_;
+        Vm_ = init_Vm_cache_;
+    } else {
+        Va_ = V_init.array().arg();
+        Vm_ = V_init.array().abs();
+        if(start_polar_cache_){
+            init_V_cache_  = V_init;
+            init_Va_cache_ = Va_;
+            init_Vm_cache_ = Vm_;
+        }
+    }
     V_  = V_init;
 
     // now inform the components

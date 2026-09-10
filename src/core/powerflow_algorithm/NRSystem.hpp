@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include <tuple>
 #include <vector>
 #include <set>
@@ -1114,6 +1115,17 @@ public:
         base_.set_switchable_vm_buses(solver_bus_ids);
     }
 
+    // see BaseAlgo::set_start_polar_cache and update_state. Turning it off drops
+    // the cache, so the next solve pays the two passes as it always did.
+    void set_start_polar_cache(bool val) {
+        start_polar_cache_ = val;
+        if(!val){
+            init_V_cache_  = CplxVect();
+            init_Va_cache_ = RealVect();
+            init_Vm_cache_ = RealVect();
+        }
+    }
+
     // ----- NR iteration primitives -----------------------------------------------
 
     RealVect   mismatch()                           const;
@@ -1158,6 +1170,9 @@ public:
 
         ybus_v_own_     = CplxVect();
         mis_own_        = CplxVect();
+        init_V_cache_   = CplxVect();
+        init_Va_cache_  = RealVect();
+        init_Vm_cache_  = RealVect();
         if(ybus_v_ptr_ != nullptr) *ybus_v_ptr_ = CplxVect();
         if(mis_ptr_ != nullptr)    *mis_ptr_    = CplxVect();
         Va_trial_cache_ = RealVect();
@@ -1280,6 +1295,13 @@ private:
     // ---- Shared data (one copy, shared by all components) -----------------------
     RealVect                               Va_, Vm_;
     CplxVect                               V_;
+    // the last starting voltage update_state was handed, with its polar form: a
+    // call with the same bits copies the polar form instead of recomputing it.
+    // Kept only when a caller asked (set_start_polar_cache): filling it costs three
+    // vector copies per solve, which a solve that never hits must not pay.
+    bool                                   start_polar_cache_ = false;
+    CplxVect                               init_V_cache_;
+    RealVect                               init_Va_cache_, init_Vm_cache_;
     // cache for mismatch(): a persistent all-zero dx, resized (and re-zeroed) only
     // when total_state_variables() changes; never written to otherwise, so it is
     // safe to reuse across calls instead of allocating a fresh RealVect::Zero(n)

@@ -167,6 +167,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   nonzeros each time); the violation checks copy a branch name only into a violation.
 - [FIXED] the "n" solve of a ``ScenarioSweep`` with generator contingencies ran with its
   switchable buses unpinned (solved as PQ): the solver reset came after the pinning.
+- [IMPROVED] ``BaseAlgo::set_start_polar_cache``: a Newton-Raphson solver told its starting
+  voltage repeats keeps its polar form (exact, keyed on the bits). The seeded sweeps ask for
+  it, so no row pays an atan2 and a hypot per bus.
 - [IMPROVED] the element containers share one interface (public non-virtual entry points,
   protected ``_xxx`` hooks, ``_on_xxx`` notifications, one ``LSGrid::_all_containers()`` list).
   ``TwoSidesContainer_rxh_A`` is now ``BranchContainer``, ``OneSideContainer_ForBranch`` is

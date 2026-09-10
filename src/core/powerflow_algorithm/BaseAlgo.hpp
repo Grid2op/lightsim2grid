@@ -433,6 +433,13 @@ class LS2G_API BaseAlgo : public BaseConstants
         // before this existed.
         virtual void set_lazy_v(bool) {}
         virtual bool lazy_v() const { return false; }
+        // Batch hint: the starting voltage handed to compute_pf will often be the
+        // same one, bit for bit (a sweep restarting every row from one seed). A
+        // solver that can then keep the seed's polar form from one solve to the next
+        // does so (see NRSystem::update_state); the default ignores the hint. Off,
+        // a solve costs exactly what it did -- the hint is never a promise the
+        // solver relies on, only a reason to pay for a cache.
+        virtual void set_start_polar_cache(bool) {}
         virtual void reset();
         // TODO speed: prevent copy and use Eigen::Ref here
         virtual RealMat get_ptdf(){
