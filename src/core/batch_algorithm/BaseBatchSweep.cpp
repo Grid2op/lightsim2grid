@@ -417,6 +417,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // initialize whatever varies (Ybus and/or Sbus -- each a no-op where the
     // corresponding policy is NOOP)
     _prepare_ybus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
+    // ... and settle, once, which contingencies split the grid and what they strand
+    // (a no-op where Ybus does not vary). Only where someone reads the answer: an AC
+    // row skips a contingency that splits the grid, and the masked mode strands the
+    // smaller side; a plain DC row leaves the split to the solver and never asks.
+    if(ac_solver_used || _handle_disconnected_grid) _prepare_connectivity();
     _prepare_sbus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
 
     // "handle disconnected grid" mode pre-pass (ContingencyAnalysis only; no-op

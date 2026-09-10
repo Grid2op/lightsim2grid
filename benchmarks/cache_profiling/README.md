@@ -336,3 +336,31 @@ What the baseline says, on case9241pegase:
 * a fresh ContingencyAnalysis per grid2op step costs 1.1G instructions for 8
   contingencies: 8 rows at 125M, plus ~110M of construction (the copy of the grid,
   the rebuild of the solver input, the "n" solve and its analysis).
+
+### One DFS tree per batch instead of a search per contingency
+
+A contingency was checked for connectivity by a breadth-first search over the whole
+Ybus pattern -- once per row in AC (`check_invertible`), and once more per row up
+front in `handle_disconnected_grid` mode (`_disconnected_buses`, to list what it
+strands). One depth-first search of the base graph per `compute()` now answers every
+N-1 in constant time (`BusGraph`: Tarjan's bridges, preorder subtree ranges), lists
+the stranded side in time proportional to its size, and leaves the search to the
+N-k it cannot settle. A plain DC row never asks -- the split is left to the solver
+there, as before -- so the tree is not built for it at all.
+
+A/B, KLU, every row's voltages compared bit for bit (`identical` on all 28 rows):
+
+| grid | `ca_ac` | `ca_ac_mask` | `ca_dc_mask` |
+|---|---:|---:|---:|
+| case30 | -2.2% | -4.0% | -5.3% |
+| case118 | -3.0% | -4.7% | -9.0% |
+| case1354pegase | -3.8% | -4.1% | -8.4% |
+| case9241pegase | -1.6% | -2.6% | -5.8% |
+| case118_fancy | -2.5% | -3.9% | -9.0% |
+| case1354pegase_fancy | -3.1% | -3.5% | -8.4% |
+| case9241pegase_fancy | -1.4% | -2.4% | -5.8% |
+
+The first version of the change built the tree unconditionally and cost a plain DC
+row +1.3% to +8.3% (the verdict computed, then never read); that is why the tree is
+now built only where AC or the masked mode consumes it: `ca_dc` then reads +0.0% on
+the pegase cases and +0.5% on case30 (a bounds check per row).

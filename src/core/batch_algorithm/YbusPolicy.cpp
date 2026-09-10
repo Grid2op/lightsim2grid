@@ -8,43 +8,7 @@
 
 #include "YbusPolicy.hpp"
 
-#include <queue>
-
 namespace ls2g {
-
-bool YbusPolicy::Contingency::check_invertible(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus)
-{
-    std::vector<bool> visited(Ybus.cols(), false);
-    std::vector<bool> already_added(Ybus.cols(), false);
-    std::queue<Eigen::Index> neighborhood;
-    size_t col_id = 0;  // start by node 0, why not
-    while (true)
-    {
-        visited[col_id] = true;
-        for (Eigen::Ref<const Eigen::SparseMatrix<cplx_type> >::InnerIterator it(Ybus, col_id); it; ++it)
-        {
-            // add in the queue all my neighbor (if the coefficient is big enough)
-            if(!visited[it.row()] && !already_added[it.row()] && abs(it.value()) > 1e-8){
-                neighborhood.push(it.row());
-                already_added[it.row()] = true;
-            }
-        }
-        if(neighborhood.empty()) break;
-        col_id = neighborhood.front();
-        neighborhood.pop();
-    }
-
-    bool ok = true;
-    for(auto el: visited){
-        if(!el)
-        {
-            // this node has not been visited, there is an error
-            ok=false;
-            break;
-        }
-    }
-    return ok;
-}
 
 std::vector<Coeff> YbusPolicy::Contingency::_coeffs_for_branch_ids(
     const std::vector<int> & branch_ids,
@@ -153,7 +117,7 @@ void YbusPolicy::Contingency::init_li_coeffs_from_masks(
     }
 }
 
-bool YbusPolicy::Contingency::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
+void YbusPolicy::Contingency::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                                                const std::vector<Coeff> & coeffs,
                                                bool ac_solver_used,
                                                AlgorithmSelector & algo)
@@ -163,16 +127,12 @@ bool YbusPolicy::Contingency::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & 
         for(const auto & coeff_to_remove: coeffs){
             Ybus.coeffRef(coeff_to_remove.row_id, coeff_to_remove.col_id) -= coeff_to_remove.value;
         }
-        return check_invertible(Ybus);
     } else{
         // DC solver stores the ybus internally, I update it
         // instead of building it over and over
         for(const Coeff& coeff : coeffs){
             algo.update_internal_Ybus(coeff, false);  // false => remove the coeff (using -= )
         }
-        // in DC mode the solver takes the responsibility
-        // so Ybus is always "connected".
-        return true;
     }
 }
 

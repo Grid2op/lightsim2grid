@@ -156,6 +156,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``ContingencyAnalysis`` / ``ScenarioSweep`` no longer run a connectivity search
+  per contingency: one DFS of the base graph (``BusGraph``: bridges, subtree ranges) settles
+  every N-1 up front, the search only remains for an N-k it cannot decide. Same answers;
+  ``modif_Ybus_time()`` no longer includes the check.
+- [ADDED] ``benchmarks/cache_profiling/profile_batch.cpp``: the instruction-count audit of
+  ``TimeSeries`` and ``ContingencyAnalysis``, per row, with its baseline in the README.
 - [IMPROVED] the element containers share one interface (public non-virtual entry points,
   protected ``_xxx`` hooks, ``_on_xxx`` notifications, one ``LSGrid::_all_containers()`` list).
   ``TwoSidesContainer_rxh_A`` is now ``BranchContainer``, ``OneSideContainer_ForBranch`` is
