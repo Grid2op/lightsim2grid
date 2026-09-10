@@ -275,3 +275,64 @@ Measured and **not worth attacking**: the build side of the cache
 (`_build_into_cache` is ~1% of a case9241pegase solve, most of it the Sbus refill
 that genuinely has to happen), `_get_results_back_to_orig_nodes` (0.2%), and the
 bus-labelling and pv/pq work, which the change flags keep from running at all.
+
+## The batch algorithms
+
+`profile_batch.cpp` is the same audit for `TimeSeries` and `ContingencyAnalysis`:
+one solve per row on a Jacobian whose sparsity is fixed for the whole batch, so a
+row should cost what a cached solve costs and not much more. It collects only the
+call under audit -- `compute()`, or the two flow computations -- and every number
+is **per row**. `run_profile_batch.sh` runs every compute phase twice, over N rows
+and over one, so the fixed cost of a `compute()` (the rebuild of the solver input,
+the "n" solve with its symbolic analysis) is read apart from the marginal cost of a
+row. `ab_test.sh` and `ab_wallclock.sh` drive it with `DRIVER=batch`; the trace
+they compare holds every row's voltages (or flows) with 17 significant digits.
+
+| phase | what it measures |
+|---|---|
+| `ts_ac` / `ts_dc` | `TimeSeries::compute()`, loads moved ~2% per row |
+| `ts_flows` | `compute_flows()` + `compute_power_flows()` after it |
+| `ca_ac` / `ca_dc` | `ContingencyAnalysis::compute()` over the first N-1 contingencies |
+| `ca_ac_mask` / `ca_dc_mask` | idem with `handle_disconnected_grid` |
+| `ca_flows` | the flows of a `ca_ac` run |
+| `ca_construct` | a fresh `ContingencyAnalysis` from a solved grid, 8 contingencies, `compute()`: what a grid2op loop pays per step |
+
+### Baseline: instructions per row, before any batch-side change
+
+KLU, `-O3`, `tol = 1e-8`; 200 / 50 / 20 rows by grid size. The marginal figures
+are the N-row run minus the 1-row run, over N-1.
+
+| grid | `ts_ac` /row | `ts_dc` /row | `ca_ac` /row | `ca_dc` /row | `ca_ac_mask` /row | `ca_dc_mask` /row | `ts_flows` /row | `ca_construct` |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| case30 | 176,971 | 10,910 | 50,162 | 3,548 | 54,841 | 5,724 | 13,628 | 2,509,541 |
+| case118 | 898,340 | 35,939 | 851,636 | 55,189 | 913,065 | 91,130 | 61,355 | 6,853,738 |
+| case1354pegase | 11,902,459 | 324,072 | 7,773,483 | 538,826 | 12,109,772 | 1,140,741 | 679,191 | 41,473,166 |
+| case9241pegase | 112,346,159 | 2,439,729 | 124,978,834 | 6,349,065 | 126,462,914 | 9,285,519 | 6,300,964 | 1,108,958,718 |
+
+What a `compute()` pays before its first row (the 1-row run):
+
+| grid | `ts_ac` | `ts_dc` | `ca_ac` | `ca_dc` |
+|---|---:|---:|---:|---:|
+| case118 | 1,899,303 | 718,719 | 2,134,573 | 692,431 |
+| case1354pegase | 27,127,175 | 6,585,505 | 15,221,480 | 6,146,207 |
+| case9241pegase | 239,920,456 | 51,417,924 | 239,125,746 | 53,029,954 |
+
+What the baseline says, on case9241pegase:
+
+* a TimeSeries row costs what a cached single solve costs (112M against 111M for
+  the `inj` phase above): 98.3% of it is the algorithm, the batch adds 1.7%.
+* a ContingencyAnalysis row costs 11% more than a TimeSeries row in AC (more Newton
+  iterations from the fixed seed, and a connectivity search per contingency:
+  `check_invertible`, 2.25M, 1.7% of the row). In `handle_disconnected_grid` mode a
+  second search per contingency is run up front (`_select_ref_slack_and_masks`,
+  1.45M per row). In DC, where a row is cheap, that pre-pass is **6.8%** of the row
+  (`ca_dc_mask`: 9.29M against 6.35M for `ca_dc`).
+* reading the flows back costs 6.3M per row -- 5% of an AC row, but **2.6x a DC
+  row**: `compute_amps_flows` walks a column of the row-major voltage matrix per
+  branch.
+* a DC TimeSeries row is 2.44M, of which the DC solve is ~1.3M: the rest is the
+  batch (the Sbus assembly, 0.9M per row on a 20-row run, is one full
+  `nb_steps x nb_bus` complex matrix built up front).
+* a fresh ContingencyAnalysis per grid2op step costs 1.1G instructions for 8
+  contingencies: 8 rows at 125M, plus ~110M of construction (the copy of the grid,
+  the rebuild of the solver input, the "n" solve and its analysis).
