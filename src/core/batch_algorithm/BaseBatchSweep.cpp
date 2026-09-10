@@ -19,7 +19,8 @@ namespace ls2g {
 template<class YbusPolicy, class SbusPolicy, BatchInitKind INIT>
 void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     size_t i, AlgorithmSelector & algo, AlgoControl & control,
-    Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & V, RealVect & sw_scratch,
+    Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & V,
+    CplxVect & sbus_scratch, RealVect & sw_scratch,
     bool ac_solver_used, int max_iter, real_type tol_solver,
     int & nb_solved, int & nb_converged, double & timer_solver, double & timer_modif_ybus,
     bool & conv, bool & invertible)
@@ -49,7 +50,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     if(invertible){
         if(!_has_gen_contingency()){
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
-                                         Ybus, V, _step_sbus(i),
+                                         Ybus, V, _step_sbus(i, sbus_scratch),
                                          active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
@@ -67,7 +68,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(i));
             const RealVect & sw = _row_slack_weights(i, sw_scratch);
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
-                                         Ybus, V, _step_sbus(i),
+                                         Ybus, V, _step_sbus(i, sbus_scratch),
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
@@ -97,7 +98,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
 {
     try {
         CplxVect V = Vinit_solver;
-        RealVect sw_scratch;   // the re-derived slack weights of a row that needs its own
+        CplxVect sbus_scratch;   // this row's injection, where it varies
+        RealVect sw_scratch;     // the re-derived slack weights of a row that needs its own
 
         if(needs_solver_init) control.tell_all_changed();
         if(!ac_solver_used) control.tell_recompute_sbus();
@@ -113,7 +115,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
 
             bool conv = false;
             bool invertible = true;
-            _run_one_step(i, algo, control, Ybus, V, sw_scratch, ac_solver_used, max_iter, tol_solver,
+            _run_one_step(i, algo, control, Ybus, V, sbus_scratch, sw_scratch, ac_solver_used, max_iter, tol_solver,
                           nb_solved, nb_converged, timer_solver, timer_modif_ybus, conv, invertible);
 
             control.tell_none_changed();

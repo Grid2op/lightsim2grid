@@ -706,9 +706,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             return _status;
         }
+        // the whole nb_steps x nb_bus injection matrix, built on request: the row
+        // loop itself never holds it (see SbusPolicy::Vary::fill_row)
         template<class S = SbusPolicy, class Y = YbusPolicy,
                  typename std::enable_if<S::supports_vary && !Y::supports_contingency, int>::type = 0>
-        Eigen::Ref<const typename S::CplxMat> get_sbuses() const {return sbus_policy_.sbuses;}
+        Eigen::Ref<const typename S::CplxMat> get_sbuses() const {return sbus_policy_.materialize();}
 
         // aggregate status (TimeSeries/InjectionSweep/ScenarioSweep -- everything
         // with SbusPolicy::supports_vary; ContingencyAnalysis reports per-row via
@@ -1007,8 +1009,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         void _prepare_sbus_varying(bool ac_solver_used, Eigen::Index nb_steps) {
             const CplxVect complete = ac_solver_used ? CplxVect(ac_cache_.inj) : CplxVect(dc_cache_.inj.template cast<cplx_type>());
-            sbus_policy_.assemble(_grid_model, ac_solver_used, nb_buses_solver_, active_layout().id_me_to_solver,
-                                  complete, _grid_model.get_sn_mva(), nb_steps, algo_name());
+            sbus_policy_.prepare(_grid_model, ac_solver_used, nb_buses_solver_, active_layout().id_me_to_solver,
+                                 complete, _grid_model.get_sn_mva(), nb_steps, algo_name());
         }
 
         // ----- reset ybus_policy_'s own state: 2-way --------------------------
@@ -1041,18 +1043,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _readd_step_coeffs(Eigen::SparseMatrix<cplx_type> &, size_t, bool, AlgorithmSelector &) {}
 
         // ----- per-step Sbus: 2-way (row of sbus_policy_ vs. the fixed member) ---
-        // A view: a row of the row-major sbuses is contiguous, and the fixed injection
-        // is a vector already -- neither needs the nb_bus complex copy per row a
-        // by-value return made.
+        // Row i's injection: built into `scratch` (one buffer per range: no row
+        // allocates, no two threads share it) where it varies, the fixed vector
+        // itself where it does not. Nothing the size of nb_steps x nb_bus exists.
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
-        Eigen::Map<const CplxVect> _step_sbus(size_t i) const {
-            return Eigen::Map<const CplxVect>(sbus_policy_.sbuses.row(static_cast<Eigen::Index>(i)).data(),
-                                              sbus_policy_.sbuses.cols());
+        const CplxVect & _step_sbus(size_t i, CplxVect & scratch) const {
+            sbus_policy_.fill_row(static_cast<Eigen::Index>(i), scratch);
+            return scratch;
         }
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
-        Eigen::Map<const CplxVect> _step_sbus(size_t) const {
-            return Eigen::Map<const CplxVect>(ac_cache_.inj.data(), ac_cache_.inj.size());
-        }
+        const CplxVect & _step_sbus(size_t, CplxVect &) const { return ac_cache_.inj; }
 
         // ----- per-step generator vm seeding: 2-way (SbusPolicy::Vary::gen_v row
         // applied via GeneratorContainer::set_vm, vs. a no-op leaving V's magnitude
@@ -1427,7 +1427,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         int & first_diverging_step, std::exception_ptr & err,
                         bool needs_solver_init);
         void _run_one_step(size_t i, AlgorithmSelector & algo, AlgoControl & control,
-                           Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & V, RealVect & sw_scratch,
+                           Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & V,
+                           CplxVect & sbus_scratch, RealVect & sw_scratch,
                            bool ac_solver_used, int max_iter, real_type tol_solver,
                            int & nb_solved, int & nb_converged, double & timer_solver, double & timer_modif_ybus,
                            bool & conv, bool & invertible);
@@ -1450,6 +1451,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         {
             try {
                 CplxVect V;
+                CplxVect sbus_scratch;   // this row's injection, where it varies
                 RealVect sw_scratch;
                 if(needs_solver_init) control.tell_all_changed();
                 // the loop's invariant: between two rows the algorithm masks nothing
@@ -1481,7 +1483,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         V = Vinit_solver;
                         _apply_step_gen_v(cont_id, V);
                         const RealVect & sw = _masked_slack_weights(masked, _row_slack_weights(cont_id, sw_scratch), sw_scratch);
-                        conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id),
+                        conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id, sbus_scratch),
                                                      active_layout().slack_bus_id_solver.as_eigen(), sw,
                                                      active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }

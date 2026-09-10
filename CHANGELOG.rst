@@ -170,6 +170,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [IMPROVED] ``BaseAlgo::set_start_polar_cache``: a Newton-Raphson solver told its starting
   voltage repeats keeps its polar form (exact, keyed on the bits). The seeded sweeps ask for
   it, so no row pays an atan2 and a hypot per bus.
+- [IMPROVED] ``TimeSeries`` / ``InjectionSweep`` / ``ScenarioSweep`` build each row's injection as
+  they go instead of one ``nb_steps x nb_bus`` complex matrix up front (``get_sbuses()`` builds
+  it on request); the flows of every batch are computed row by row, reading the voltages once,
+  instead of branch by branch down the columns of a row-major matrix.
 - [IMPROVED] the element containers share one interface (public non-virtual entry points,
   protected ``_xxx`` hooks, ``_on_xxx`` notifications, one ``LSGrid::_all_containers()`` list).
   ``TwoSidesContainer_rxh_A`` is now ``BranchContainer``, ``OneSideContainer_ForBranch`` is

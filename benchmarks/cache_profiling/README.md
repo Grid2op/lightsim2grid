@@ -438,3 +438,51 @@ counts everywhere, but the rows drift: 5e-15 pu on case30, 1.4e-12 on
 case9241pegase, 2.8e-11 on case9241pegase_fancy, growing along the chain. A warm
 start that is not the bits the caller handed in is a different contract, and the
 A/B compares traces bit for bit for a reason.
+
+### The injection per row, the flows per row
+
+Two things the size of `nb_steps x nb_bus` went away. The injection matrix
+(`SbusPolicy::Vary::assemble`) was built up front, complex, one full row per step
+-- 1.3 GB for a year of hourly rows on case9241pegase -- and read once; each row is
+now built into a buffer the range owns as the loop reaches it (`fill_row`: the same
+accumulation, in the same order, with the same operations, so the row is the row of
+that matrix bit for bit), and `get_sbuses()` builds the matrix only if asked. The
+flows were computed branch by branch, each branch reading a *column* of the
+row-major voltage matrix: a strided pass over every row per branch, two heap
+temporaries the size of the batch per branch, and on a big grid a matrix re-read
+from memory once per branch. They are now computed row by row: the row's voltages
+read once, contiguously, the row of flows written once (`_flows_of_row`).
+
+A/B, KLU, 100 rows, best of 5 on the clock, every trace bit for bit identical:
+
+| grid | `ts_flows` | `ca_flows` | `ts_dc` | `ts_ac` | peak rss, `ts_ac` |
+|---|---:|---:|---:|---:|---:|
+| case30 | -32% | -30% | -26% | +1.4% | 9.4 -> 8.6 MB |
+| case118 | -33% | -33% | -44% | -2.6% | 21.8 -> 17.9 MB |
+| case1354pegase | -33% | -38% | -46% | -2.6% | 43.2 -> 32.8 MB |
+| case9241pegase | -34% | -34% | -28% | +3.2% | 85.2 -> 71.0 MB |
+| case118_fancy | -37% | -38% | -47% | -1.8% | 21.8 -> 18.2 MB |
+| case1354pegase_fancy | -35% | -43% | -46% | +0.6% | 43.7 -> 33.0 MB |
+| case9241pegase_fancy | -32% | -43% | -31% | +3.1% | 89.5 -> 75.0 MB |
+
+The instruction counts tell the other half of the story: the flows cost **more**
+instructions on the small grids (+12% to +17% on case30 to case1354pegase, -2.7% on
+case9241pegase -- a scalar loop against Eigen's vectorized column operations) and
+are a third faster on the clock everywhere. That is the shape of a memory-bound
+change, and why the plan asked for the clock on this item.
+
+The `ts_ac` column on the two 9241-bus grids was measured again, the two binaries
+run alternately, best of three, with the driver's new split of the row between the
+solver's own timer and the rest: total 8.39 -> 8.47 ms per row (+1%), of which the
+solver 8.01 -> 8.20 (+2%, on code this change does not touch) and everything
+around it 0.38 -> 0.27 (-25%), preprocessing 33 -> 21 ms. The solver's 2% is
+placement or drift, not instructions (they fell 0.2%); the +3% of the table above
+came from runs that were not interleaved. Kept: a 1.3 GB matrix on a year of rows
+and a third off every flow computation are worth a percent of noise on one grid.
+
+A caveat for `-march=native` builds only: the complex division by `sn_mva` is
+Eigen's vectorized one, applied to a row of `nb_bus` entries instead of the whole
+matrix. With a two-complex packet (AVX) the elements that fall to Eigen's scalar
+tail can differ between the two layouts, so a last-bit difference on the last bus
+of odd-sized rows is possible there. The shipped build (SSE2, one complex per
+packet) has no tail and the traces are identical.
