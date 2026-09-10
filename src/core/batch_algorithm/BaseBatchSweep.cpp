@@ -19,7 +19,7 @@ namespace ls2g {
 template<class YbusPolicy, class SbusPolicy, BatchInitKind INIT>
 void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     size_t i, AlgorithmSelector & algo, AlgoControl & control,
-    Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & V,
+    Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & V, RealVect & sw_scratch,
     bool ac_solver_used, int max_iter, real_type tol_solver,
     int & nb_solved, int & nb_converged, double & timer_solver, double & timer_modif_ybus,
     bool & conv, bool & invertible)
@@ -36,9 +36,15 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     // unconditional call here re-applies the *current* row's target every time.
     _apply_step_gen_v(i, V);
 
-    auto t1 = CustTimer();
-    invertible = _remove_step_coeffs(Ybus, i, ac_solver_used, algo);
-    timer_modif_ybus += t1.duration();
+    // the Ybus edit, and its timer, only where Ybus varies at all: the hooks compile
+    // to nothing on a TimeSeries, the clock reads around them did not
+    if(YbusPolicy::supports_contingency){
+        auto t1 = CustTimer();
+        invertible = _remove_step_coeffs(Ybus, i, ac_solver_used, algo);
+        timer_modif_ybus += t1.duration();
+    } else {
+        invertible = true;
+    }
 
     if(invertible){
         if(!_has_gen_contingency()){
@@ -55,22 +61,27 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             // the SAME on every row -- that is the whole point, it is what keeps the
             // symbolic factorization alive across the sweep. The slack weights are this
             // row's own, re-derived without the participating machines it took out.
-            if(_has_pv_switching()) algo.set_pv_pinned_buses(_row_pv_pinned(i));
-            const RealVect sw = _row_slack_weights(i);
+            // The algorithm rests with every switchable bus pinned: only a row that
+            // actually flips one touches the pinning (see _row_flips_pv).
+            const bool flips = _row_flips_pv(i);
+            if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(i));
+            const RealVect & sw = _row_slack_weights(i, sw_scratch);
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
                                          Ybus, V, _step_sbus(i),
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
-            if(_has_pv_switching()) algo.set_pv_pinned_buses(_switchable_buses_);
+            if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
         }
     } else {
         conv = false;
     }
 
-    auto t2 = CustTimer();
-    _readd_step_coeffs(Ybus, i, ac_solver_used, algo);
-    timer_modif_ybus += t2.duration();
+    if(YbusPolicy::supports_contingency){
+        auto t2 = CustTimer();
+        _readd_step_coeffs(Ybus, i, ac_solver_used, algo);
+        timer_modif_ybus += t2.duration();
+    }
 }
 
 template<class YbusPolicy, class SbusPolicy, BatchInitKind INIT>
@@ -86,9 +97,13 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
 {
     try {
         CplxVect V = Vinit_solver;
+        RealVect sw_scratch;   // the re-derived slack weights of a row that needs its own
 
         if(needs_solver_init) control.tell_all_changed();
         if(!ac_solver_used) control.tell_recompute_sbus();
+        // the loop's resting state, established once: every switchable bus pinned, so
+        // that only a row that flips one touches the pinning (see _row_flips_pv)
+        if(_has_pv_switching()) algo.set_pv_pinned_buses(_switchable_buses_);
 
         for(size_t i = step_begin; i < step_end; ++i){
             // this single line is the whole difference between the FromSeed and
@@ -98,7 +113,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
 
             bool conv = false;
             bool invertible = true;
-            _run_one_step(i, algo, control, Ybus, V, ac_solver_used, max_iter, tol_solver,
+            _run_one_step(i, algo, control, Ybus, V, sw_scratch, ac_solver_used, max_iter, tol_solver,
                           nb_solved, nb_converged, timer_solver, timer_modif_ybus, conv, invertible);
 
             control.tell_none_changed();
@@ -413,6 +428,13 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     // prepare the gridmodel (compute Ybus, Sbus etc.)
     CplxVect Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used);
+
+    // A fresh solver for this batch -- reset HERE, before the hooks below configure
+    // it, not in _finish_preprocessing after them: a reset clears the PV pinning
+    // _maybe_prepare_gen_contingency hands it, and the "n" solve has to run pinned
+    // (every switchable bus is PV in the base case). It used to run unpinned, its
+    // switchable buses solved as PQ, the per-row pinning hiding it from the rows.
+    _algo.reset();
 
     // initialize whatever varies (Ybus and/or Sbus -- each a no-op where the
     // corresponding policy is NOOP)

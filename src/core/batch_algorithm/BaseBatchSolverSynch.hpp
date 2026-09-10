@@ -643,8 +643,10 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 _amps_flows = RealMat::Zero(0, n_total_);
                 _active_power_flows = RealMat::Zero(0, n_total_);
 
-                // reset the solver
-                _algo.reset();
+                // The solver is NOT reset here: the caller did, before the preparation
+                // hooks that configure it for the batch (BaseBatchSweep::compute) -- a
+                // reset drops the PV pinning a generator-contingency sweep hands the
+                // algorithm, which the "n" solve below must run with.
 
                 // perform the initial powerflow / "powerflow in n"
                 // (needed to init the underlying solver with the correct sparsity pattern in particular)

@@ -364,3 +364,34 @@ The first version of the change built the tree unconditionally and cost a plain 
 row +1.3% to +8.3% (the verdict computed, then never read); that is why the tree is
 now built only where AC or the masked mode consumes it: `ca_dc` then reads +0.0% on
 the pegase cases and +0.5% on case30 (a bounds check per row).
+
+### The row loop without its copies
+
+Per row, the loop returned the row's injection by value (`nb_bus` complex, from a
+row-major matrix whose row is contiguous) and the layout's slack weights by value
+(the same vector, every row), re-marked the algorithm's masks and pinning on rows
+that strand and flip nothing (each call a pass over the Jacobian's nonzeros at the
+next fill), read the clock around Ybus hooks that compile to nothing on a
+TimeSeries, and copied every branch's name into a `std::string` while checking its
+current. All views and references now; the algorithm's masks are touched only by a
+row that needs them; a name is copied into a violation, not per branch.
+
+A/B, KLU, every row bit for bit identical:
+
+| grid | `ts_ac` | `ts_dc` | `ca_ac` | `ca_ac_mask` | `ca_dc_mask` |
+|---|---:|---:|---:|---:|---:|
+| case30 | -0.3% | -3.9% | -0.1% | -0.3% | -1.1% |
+| case118 | -0.2% | -3.0% | -0.1% | -0.1% | -0.5% |
+| case1354pegase | -0.1% | -1.9% | -0.2% | -0.3% | -1.0% |
+| case9241pegase | -0.05% | -1.1% | -0.1% | -0.2% | -0.7% |
+
+Small, as the audit said they would be: what a row copies is O(nb_bus) and what it
+solves is O(nnz(L+U)). Worth having only because they are free, and because the DC
+row is small enough for its copies to show.
+
+Found on the way, by the test suite: the "n" solve of a `ScenarioSweep` with
+generator contingencies ran with its switchable buses unpinned. The sweep pins them
+before `_finish_preprocessing`, which then reset the algorithm -- and a reset drops
+the pinning. The per-row loop re-pinned every row, so the rows were right and the
+"n" case was not; the loop touching the pinning only where a row flips a bus is what
+exposed it. The reset now comes before the preparation hooks.

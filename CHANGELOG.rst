@@ -162,6 +162,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``modif_Ybus_time()`` no longer includes the check.
 - [ADDED] ``benchmarks/cache_profiling/profile_batch.cpp``: the instruction-count audit of
   ``TimeSeries`` and ``ContingencyAnalysis``, per row, with its baseline in the README.
+- [IMPROVED] the batch row loop no longer copies the row's injection and slack weights, nor
+  re-marks the Jacobian masks on a row that strands or flips nothing (a pass over its
+  nonzeros each time); the violation checks copy a branch name only into a violation.
+- [FIXED] the "n" solve of a ``ScenarioSweep`` with generator contingencies ran with its
+  switchable buses unpinned (solved as PQ): the solver reset came after the pinning.
 - [IMPROVED] the element containers share one interface (public non-virtual entry points,
   protected ``_xxx`` hooks, ``_on_xxx`` notifications, one ``LSGrid::_all_containers()`` list).
   ``TwoSidesContainer_rxh_A`` is now ``BranchContainer``, ``OneSideContainer_ForBranch`` is
