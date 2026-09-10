@@ -471,14 +471,23 @@ case9241pegase -- a scalar loop against Eigen's vectorized column operations) an
 are a third faster on the clock everywhere. That is the shape of a memory-bound
 change, and why the plan asked for the clock on this item.
 
-The `ts_ac` column on the two 9241-bus grids was measured again, the two binaries
-run alternately, best of three, with the driver's new split of the row between the
-solver's own timer and the rest: total 8.39 -> 8.47 ms per row (+1%), of which the
-solver 8.01 -> 8.20 (+2%, on code this change does not touch) and everything
-around it 0.38 -> 0.27 (-25%), preprocessing 33 -> 21 ms. The solver's 2% is
-placement or drift, not instructions (they fell 0.2%); the +3% of the table above
-came from runs that were not interleaved. Kept: a 1.3 GB matrix on a year of rows
-and a third off every flow computation are worth a percent of noise on one grid.
+The `ts_ac` column on the two 9241-bus grids was measured again on a quiet machine
+(the table above was taken during a scheduled antivirus scan), the two binaries run
+alternately, best of nine, with the driver's split of the row between the solver's
+own timer and the rest: on case9241pegase total 8.41 -> 8.44 ms per row (+0.3%),
+everything around the solve -25%, preprocessing 33 -> 21 ms; on case9241pegase_fancy
++3.0%, all of it in the solver's own timer (+3.4%) -- code this change does not
+touch, whose instruction count fell 0.2%. That is memory placement, not work, and
+it was checked: the row's injection now lives in a 148 KB buffer allocated at the
+first row instead of inside a 15 MB matrix allocated before the solver's own
+buffers, which moves where it lands against the solver's hot vectors. Shifting the
+allocator's placement for BOTH binaries (`MALLOC_MMAP_THRESHOLD_=65536`,
+`MALLOC_TOP_PAD_=4194304`) takes the solver gap on that grid from +3.2% to +0.6%,
++0.6% and +0.3% under the three settings tried -- the inter-binary noise floor
+(the contingency phase, near-identical code in the two builds, reads +0.4% the
+same way). Kept: a 1.3 GB matrix on a year of rows and a third off every flow
+computation, against a placement effect on one grid that any allocation before
+the solver's could flip either way.
 
 A caveat for `-march=native` builds only: the complex division by `sn_mva` is
 Eigen's vectorized one, applied to a row of `nb_bus` entries instead of the whole
