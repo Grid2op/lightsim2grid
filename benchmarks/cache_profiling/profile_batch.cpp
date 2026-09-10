@@ -251,6 +251,10 @@ int main(int argc, char ** argv)
     int nb_converged = 0;
     int nb_measured = 0;   // rows (or constructions) the collected region covers
     double secs = 0.;
+    // of the wall clock: what the solver itself took (the batch's own timers), so a
+    // change in the row's surroundings and one in the solve can be told apart
+    double solver_secs = 0.;
+    double preproc_secs = 0.;
 
     if(phase == "ca_construct"){
         // ---- one fresh object per "row", nothing warmed up on purpose ----------
@@ -268,6 +272,8 @@ int main(int argc, char ** argv)
             nb_solved += ca.nb_solved();
             nb_converged += ca.nb_converged();
             total_refactor += static_cast<long>(ca.get_linear_solver_stats().nb_refactorize);
+            solver_secs += ca.solver_time();
+            preproc_secs += ca.preprocessing_time();
             ++nb_measured;
             if(!trace_path.empty() && step == nb_rows - 1){
                 trace_voltages(trace, ca.get_voltages(), ca.converged_mask());
@@ -306,6 +312,8 @@ int main(int argc, char ** argv)
         nb_solved = ts.nb_solved();
         nb_converged = ts.nb_converged();
         total_refactor = static_cast<long>(ts.get_linear_solver_stats().nb_refactorize);
+        solver_secs = ts.solver_time();
+        preproc_secs = ts.preprocessing_time();
         nb_measured = nb_rows;
         if(ts.get_status() != 1){ std::cerr << phase << ": the time series did not converge\n"; return 4; }
         if(!trace_path.empty()){
@@ -341,6 +349,8 @@ int main(int argc, char ** argv)
         nb_solved = ca.nb_solved();
         nb_converged = ca.nb_converged();
         total_refactor = static_cast<long>(ca.get_linear_solver_stats().nb_refactorize);
+        solver_secs = ca.solver_time();
+        preproc_secs = ca.preprocessing_time();
         nb_measured = static_cast<int>(ca.my_defaults().size());
         if(!trace_path.empty()){
             if(flows) trace_flows(trace, ca.get_flows(), ca.get_power_flows(), ca.converged_mask());
@@ -362,7 +372,9 @@ int main(int argc, char ** argv)
               << (nb_measured > 0 ? static_cast<double>(total_refactor) / nb_measured : 0.)
               << " refactorizations/solve, "
               << (nb_measured > 0 ? secs / nb_measured * 1e3 : 0.)
-              << " ms/solve (wall, meaningless under valgrind), peak rss "
+              << " ms/solve (wall, meaningless under valgrind; of which solver "
+              << (nb_measured > 0 ? solver_secs / nb_measured * 1e3 : 0.)
+              << " ms/solve, preprocessing " << preproc_secs * 1e3 << " ms in all), peak rss "
               << peak_rss_kb() << " kB\n";
     return 0;
 }

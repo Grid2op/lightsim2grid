@@ -24,6 +24,9 @@
 
 set -euo pipefail
 
+# JOBS caps the parallelism of the two builds: the core's translation units are
+# Eigen-heavy, and nproc of them at once can take the machine down.
+
 GRIDS_DIR=$1
 OUT_DIR=$2
 PATCH=$3
@@ -95,7 +98,7 @@ for variant in A B; do
         echo "--- applying ${PATCH} ---"
         python3 "${PATCH}"
     fi
-    cmake --build "${BUILD}" -j"$(nproc)" > /dev/null
+    cmake --build "${BUILD}" -j"${JOBS:-$(nproc)}" > /dev/null
     for grid_path in $(grids_in_order "${GRIDS_DIR}"); do
         grid=$(basename "${grid_path}" .lsb)
         nb=$(nb_for "${grid}")
