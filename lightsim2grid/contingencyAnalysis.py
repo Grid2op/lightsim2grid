@@ -155,6 +155,7 @@ class ContingencyAnalysis(object):
                                "with a grid2op `Environment` or a `LightSimBackend`")
         self.computer = ContingencyAnalysisCPP(self._ls_backend._grid, bool(compute_limit_violations))
         self._contingency_order = {}  # key: contingency (as tuple), value: order in which it is entered
+        self.__name_line_to_id = None  # powerline name -> id, see _name_line_to_id
         self._all_contingencies = []
         self._contingency_names = {}  # key: contingency (as tuple), value: user-supplied name (or None)
         self.__computed = False
@@ -353,16 +354,24 @@ class ContingencyAnalysis(object):
 
         for stuff in single_cont:
             if isinstance(stuff, type(self).STR_TYPES):
-                stuff = (type(self._ls_backend).name_line == stuff).nonzero()
-                stuff = stuff[0]
-                if stuff.size == 0:
+                # a dict lookup, not a comparison against every name of the grid
+                # per element named
+                line_id = self._name_line_to_id().get(stuff)
+                if line_id is None:
                     # name is not found
                     raise RuntimeError(f"Impossible to find a powerline named \"{stuff}\" in the environment")
-                stuff = int(stuff[0])
+                stuff = int(line_id)
             else:
                 stuff = int(stuff)
             li_disc.append(stuff)
         return li_disc
+
+    def _name_line_to_id(self):
+        """powerline name -> id, built on first use (the names never change)"""
+        if self.__name_line_to_id is None:
+            self.__name_line_to_id = {str(name): i
+                                      for i, name in enumerate(type(self._ls_backend).name_line)}
+        return self.__name_line_to_id
 
     def add_single_contingency(self, *args, name=None):
         """
@@ -482,9 +491,23 @@ class ContingencyAnalysis(object):
         """
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
-        
-        for single_cont_id in range(type(self._ls_backend).n_line):
-            self.add_single_contingency(single_cont_id)
+
+        # one call into the c++ side for all of them (one results reset, one
+        # crossing), rather than one add per powerline; the bookkeeping is the one
+        # add_single_contingency does, per contingency
+        new_ids = [line_id for line_id in range(type(self._ls_backend).n_line)
+                   if (line_id,) not in self._contingency_order]
+        if not new_ids:
+            return
+        try:
+            self.computer.add_multiple_n1(new_ids)
+        except Exception as exc_:
+            raise RuntimeError("Impossible to add every N-1 contingency of the grid.") from exc_
+        for line_id in new_ids:
+            li_disc_tup = (line_id,)
+            self._contingency_order[li_disc_tup] = len(self._contingency_order)
+            self._all_contingencies.append(li_disc_tup)
+            self._contingency_names[li_disc_tup] = None
 
     def get_flows(self, *args):
         """

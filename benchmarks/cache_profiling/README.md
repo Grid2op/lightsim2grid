@@ -486,3 +486,36 @@ matrix. With a two-complex packet (AVX) the elements that fall to Eigen's scalar
 tail can differ between the two layouts, so a last-bit difference on the last bus
 of odd-sized rows is possible there. The shipped build (SSE2, one complex per
 packet) has no tail and the traces are identical.
+
+### Registering contingencies, and two steps measured and declined
+
+`ContingencyAnalysis.add_all_n1_contingencies` registered an N-1 sweep one
+powerline at a time -- one crossing into C++ and one `clear_results_only()` per
+powerline, each resetting the solver and dropping the result buffers even when
+nothing had been computed since the last one. `clear_results_only()` is now a
+no-op when there is nothing to drop, and the wrapper registers the whole sweep in
+one call; a contingency given by name is resolved through a dictionary rather than
+a comparison against every name of the grid.
+
+Two items of the plan were sized on the `ca_construct` profile (a fresh
+`ContingencyAnalysis` per grid2op step, 8 contingencies, case9241pegase, 1.1G
+instructions per step) and **declined**:
+
+* **A move constructor for `LSGrid`.** The copy the batch takes of the grid is
+  2.35M instructions of those 1.1G (0.2%); the two solvers it rebuilds and the
+  cache it starts cold are what a copy costs, and a move would rebuild them the
+  same way. On the Python side the copies are of the *environment*, and a pybind
+  constructor cannot take a Python-owned grid by move at all. Nothing to gain that
+  the profile can see.
+* **Keeping the batch's solver cache and factorization across two `compute()`
+  calls.** What it would skip is the input build (14.6M), one symbolic analysis
+  (40M) and one factorization (30M): 85M against the 110M of the "n" solve that
+  has to run either way, so a third of a one-row repeat and 8% of an eight-row
+  one -- and nothing for a fresh object, which is what the Python wrappers build
+  per step. Against that, every per-`compute()` configuration that changes the
+  Jacobian's sparsity (the switchable buses of a generator-contingency sweep, the
+  masked-controller slot) and the DC solver's cached injection would have to be
+  invalidated by hand, and a reused factorization refactorizes where a fresh one
+  factorizes, so the second `compute()` would no longer match a fresh object bit
+  for bit. The natural home for this is an `update_grid()` on the batch, which is
+  what would make reuse pay in a grid2op loop; out of scope here.

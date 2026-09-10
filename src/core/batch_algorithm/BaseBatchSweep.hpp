@@ -330,6 +330,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         void clear() override {
+            _results_present_ = false;
             _gen_contingency_active_ = false;
             _switchable_buses_.clear();
             _row_pv_to_pq_.clear();
@@ -362,6 +363,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // shared by the same two instantiations.
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void clear_results_only() {
+            // Every add_*/remove_* calls this, and the python wrapper registers an N-1
+            // sweep one contingency at a time: with nothing computed since the last
+            // clear there is nothing to drop, and resetting the solver n_line times
+            // over is what that loop used to cost. `_results_present_` is raised by
+            // whatever fills results or per-contingency state (compute(), the two
+            // public connectivity entry points), lowered here and by clear().
+            if(!_results_present_) return;
+            _results_present_ = false;
             BaseBatchSolverSynch::clear();
             _li_masked.clear();
             _cont_connected_.clear();
@@ -644,6 +653,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         IntVect is_grid_connected_after_contingency(){
+            _results_present_ = true;   // fills _li_masked / the solver caches
             const bool ac_solver_used = _algo.ac_solver_used();
             const bool inputs_ready = (ac_solver_used ? ac_cache_.mat.cols() != 0 : dc_cache_.mat.cols() != 0);
             if(!inputs_ready || ybus_policy_.li_coeffs.size() != ybus_policy_.li_defaults.size()){
@@ -663,6 +673,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         int pick_reference_slack(){
+            _results_present_ = true;   // fills _li_masked / _skip_mask / the solver caches
             const bool ac_solver_used = _algo.ac_solver_used();
             const bool inputs_ready = (ac_solver_used ? ac_cache_.mat.cols() != 0 : dc_cache_.mat.cols() != 0);
             if(!inputs_ready || ybus_policy_.li_coeffs.size() != ybus_policy_.li_defaults.size()){
@@ -1655,6 +1666,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // the row count itself. Plain, always-present; only read on
         // (Contingency, Vary) (see _maybe_check_results_match_defaults below).
         bool _results_stale_ = false;
+
+        // whether anything computed or per-contingency (results, masks, the solver
+        // caches) exists since the last clear: what clear_results_only() has to drop
+        // at all. See there.
+        bool _results_present_ = false;
 
         // "handle disconnected grid" mode + limit violations: plain, always-present
         // state (SFINAE-gated methods above restrict who can reach it); empty /

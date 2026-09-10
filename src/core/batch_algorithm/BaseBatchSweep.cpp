@@ -411,6 +411,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     // perform some initial checks and reset timers
     size_t nb_total_bus = _reset_data_and_check_vinit(Vinit);
+    _results_present_ = true;   // from here on there is something clear_results_only() must drop
     _status = 0;
     _timer_modif_Ybus = 0.;
     _timer_thread_init = 0.;

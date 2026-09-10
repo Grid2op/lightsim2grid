@@ -174,6 +174,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   they go instead of one ``nb_steps x nb_bus`` complex matrix up front (``get_sbuses()`` builds
   it on request); the flows of every batch are computed row by row, reading the voltages once,
   instead of branch by branch down the columns of a row-major matrix.
+- [IMPROVED] ``ContingencyAnalysis.add_all_n1_contingencies`` registers the sweep in one call
+  (it reset the solver once per powerline); ``clear_results_only()`` is a no-op with nothing
+  to clear; a contingency given by name no longer scans every name of the grid.
 - [IMPROVED] the element containers share one interface (public non-virtual entry points,
   protected ``_xxx`` hooks, ``_on_xxx`` notifications, one ``LSGrid::_all_containers()`` list).
   ``TwoSidesContainer_rxh_A`` is now ``BranchContainer``, ``OneSideContainer_ForBranch`` is
