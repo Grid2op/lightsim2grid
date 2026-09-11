@@ -90,13 +90,13 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;  // in DC i need that
         
     protected:
-        // a shunt is in Ybus (AC) AND in Sbus (DC, its active part): every change
-        // touches both
+        // a shunt is in Ybus (AC) AND in Sbus (DC only, its active part: _fillSbus
+        // stamps nothing in AC), so the Sbus flag is raised on the DC family alone
         void _on_change_p(int shunt_id, real_type new_p, DualAlgoControl & solver_control) override
         {
             if(abs(target_p_mw_(shunt_id) - new_p) > _tol_equal_float){
                 solver_control.tell_recompute_ybus();
-                solver_control.tell_recompute_sbus();  // needed for DC
+                solver_control.dc_algo_controler().tell_recompute_sbus();
             }
         }
         void _on_change_q(int shunt_id, real_type new_q, DualAlgoControl & solver_control) override
@@ -108,17 +108,17 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         void _on_change_bus(int /*el_id*/, GridModelBusId /*new_bus_id*/, DualAlgoControl & solver_control) override {
             solver_control.tell_recompute_ybus();
             solver_control.tell_one_el_changed_bus();
-            solver_control.tell_recompute_sbus();  // needed for DC
+            solver_control.dc_algo_controler().tell_recompute_sbus();
         }
         void _on_deactivate(int /*el_id*/, DualAlgoControl & solver_control) override {
             solver_control.tell_recompute_ybus();
             solver_control.tell_one_el_changed_bus();
-            solver_control.tell_recompute_sbus();  // needed for DC
+            solver_control.dc_algo_controler().tell_recompute_sbus();
         }
         void _on_reactivate(int /*el_id*/, DualAlgoControl & solver_control) override {
             solver_control.tell_recompute_ybus();
             solver_control.tell_one_el_changed_bus();
-            solver_control.tell_recompute_sbus();  // needed for DC
+            solver_control.dc_algo_controler().tell_recompute_sbus();
         }
 
         void _compute_res_pq(
