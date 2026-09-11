@@ -68,7 +68,7 @@ CplxVect kcl_residual(const LSGrid & grid)
         const RealVect & p = std::get<0>(resu);
         const RealVect & q = std::get<1>(resu);
         const std::vector<bool> & status = container.get_status();
-        const auto & buses = container.get_buses();
+        const auto & buses = container.get_bus_id();
         const int nb_el = static_cast<int>(container.nb());
         for (int el_id = 0; el_id < nb_el; ++el_id) {
             if (!status[el_id]) continue;

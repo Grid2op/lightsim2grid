@@ -23,42 +23,8 @@ StorageContainer::StateRes StorageContainer::get_state() const
 
 void StorageContainer::set_state(StorageContainer::StateRes & my_state)
 {
-    set_osc_pq_state(std::get<0>(my_state));  // osc : one side container
+    set_osc_pq_state(std::get<StateResIdx::OSC_PQ_STATE>(my_state));  // osc : one side container
     reset_results();
-}
-
-void StorageContainer::fillSbus(Eigen::Ref<CplxVect> Sbus,
-                                const SolverBusIdVect & id_grid_to_solver,
-                                bool /*ac*/) const
-{
-    int nb_storage = nb();
-    GlobalBusId bus_id_me;
-    SolverBusId bus_id_solver;
-    cplx_type tmp;
-    for(int storage_id = 0; storage_id < nb_storage; ++storage_id){
-        //  i don't do anything if the storage is disconnected
-        if(!status_[storage_id]) continue;
-
-        bus_id_me = bus_id_(storage_id);
-        if(bus_id_me.cast_int() == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "StorageContainer::fillSbus: the storage with id ";
-            exc_ << storage_id;
-            exc_ << " is connected to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
-        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
-        if(bus_id_solver.cast_int() == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "StorageContainer::fillSbus: the storage with id ";
-            exc_ << storage_id;
-            exc_ << " is connected to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
-        // load convention: positive target_p means power drawn from the grid
-        tmp = {target_p_mw_(storage_id), target_q_mvar_(storage_id)};
-        Sbus.coeffRef(bus_id_solver.cast_int()) -= tmp;
-    }
 }
 
 void StorageContainer::save_binary(const std::string & path, bool atomic) const {

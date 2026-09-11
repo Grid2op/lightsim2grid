@@ -78,6 +78,7 @@ void TrafoContainer::init(
     rx_corr_alpha_ = std::vector<std::vector<real_type> >(size, std::vector<real_type>());
     rx_corr_pct_ = std::vector<std::vector<real_type> >(size, std::vector<real_type>());
     init_tsc(trafo_hv_id, trafo_lv_id, "trafo");
+    dc_x_tau_shift_ = RealVect::Zero(size);  // written by _update_model_coeffs_one_el
     _update_model_coeffs();
     reset_results();
 }
@@ -90,7 +91,7 @@ TrafoContainer::StateRes TrafoContainer::get_state() const
      std::vector<real_type> base_r(base_r_.begin(), base_r_.end());
      std::vector<real_type> base_x(base_x_.begin(), base_x_.end());
      TrafoContainer::StateRes res(
-        get_tsc_rxha_state(),
+        get_branch_state(),
         ratio,
         is_tap_hv_side,
         shift,
@@ -105,13 +106,13 @@ TrafoContainer::StateRes TrafoContainer::get_state() const
 
 void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
 {
-    set_tsc_rxha_state(std::get<0>(my_state));
+    set_branch_state(std::get<StateResIdx::BRANCH_STATE>(my_state));
 
-    std::vector<real_type> & ratio = std::get<1>(my_state);
-    std::vector<bool> & is_tap_side1 = std::get<2>(my_state);
-    std::vector<real_type> & shift = std::get<3>(my_state);
+    std::vector<real_type> & ratio = std::get<StateResIdx::RATIO>(my_state);
+    std::vector<bool> & is_tap_side1 = std::get<StateResIdx::IS_TAP_SIDE1>(my_state);
+    std::vector<real_type> & shift = std::get<StateResIdx::SHIFT>(my_state);
 
-    auto size = nb();
+    const int size = nb();
     GenericContainer::check_size(ratio, size, "ratio");
     GenericContainer::check_size(is_tap_side1, size, "is_tap_side1");
     GenericContainer::check_size(shift, size, "shift");
@@ -119,11 +120,11 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     ratio_  = RealVect::Map(ratio.data(), size);
     shift_  = RealVect::Map(shift.data(), size);
     is_tap_side1_ = is_tap_side1;
-    ignore_tap_side_for_shift_ = std::get<4>(my_state);
+    ignore_tap_side_for_shift_ = std::get<StateResIdx::IGNORE_TAP_SIDE_FOR_SHIFT>(my_state);
 
-    shift_dependent_rx_ = std::get<5>(my_state);
-    std::vector<real_type> & base_r = std::get<6>(my_state);
-    std::vector<real_type> & base_x = std::get<7>(my_state);
+    shift_dependent_rx_ = std::get<StateResIdx::SHIFT_DEPENDENT_RX>(my_state);
+    std::vector<real_type> & base_r = std::get<StateResIdx::BASE_R>(my_state);
+    std::vector<real_type> & base_x = std::get<StateResIdx::BASE_X>(my_state);
     GenericContainer::check_size(base_r, size, "base_r");
     GenericContainer::check_size(base_x, size, "base_x");
     base_r_ = RealVect::Map(base_r.data(), size);
@@ -139,8 +140,8 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     // differ in length reads past the end of the shorter one. Neither is caught by
     // check_grid(): this runs *before* it. Validate both shapes here, exactly the
     // invariant init() and set_shift_dependent_rx() maintain.
-    const std::vector<std::vector<real_type> > & rx_corr_alpha = std::get<8>(my_state);
-    const std::vector<std::vector<real_type> > & rx_corr_pct = std::get<9>(my_state);
+    const std::vector<std::vector<real_type> > & rx_corr_alpha = std::get<StateResIdx::RX_CORR_ALPHA>(my_state);
+    const std::vector<std::vector<real_type> > & rx_corr_pct = std::get<StateResIdx::RX_CORR_PCT>(my_state);
     if(rx_corr_alpha.empty() && rx_corr_pct.empty()){
         // no table at all: only legal when nothing would index them
         if(shift_dependent_rx_ && (size > 0)){
@@ -167,6 +168,7 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     rx_corr_alpha_ = rx_corr_alpha;
     rx_corr_pct_ = rx_corr_pct;
 
+    dc_x_tau_shift_ = RealVect::Zero(size);  // written by _update_model_coeffs_one_el
     _update_model_coeffs();
     reset_results();
 }
@@ -177,10 +179,10 @@ void TrafoContainer::set_shift_dependent_rx(
     const std::vector<std::vector<real_type> > & rx_corr_pct,
     DualAlgoControl & solver_control)
 {
-    const auto size = nb();
-    if(alpha_rad.size() != static_cast<std::size_t>(size))
+    const std::size_t size = static_cast<std::size_t>(nb());
+    if(alpha_rad.size() != size)
         throw std::runtime_error("TrafoContainer::set_shift_dependent_rx: alpha_rad has a wrong size");
-    if(rx_corr_pct.size() != static_cast<std::size_t>(size))
+    if(rx_corr_pct.size() != size)
         throw std::runtime_error("TrafoContainer::set_shift_dependent_rx: rx_corr_pct has a wrong size");
     shift_dependent_rx_ = enable;
     rx_corr_alpha_ = alpha_rad;
@@ -204,8 +206,7 @@ void TrafoContainer::set_shift_dependent_rx(
     }
     // re-apply the (possibly corrected) impedance at the current shift
     _update_model_coeffs();
-    solver_control.ac_algo_controler().tell_recompute_ybus();
-    solver_control.dc_algo_controler().tell_recompute_ybus();
+    solver_control.tell_recompute_ybus();
 }
 
 void TrafoContainer::_update_model_coeffs_one_el(int el_id)
@@ -328,7 +329,7 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
     }
 }
 
-TrafoContainer::FDPFCoeffs TrafoContainer::get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const{
+TrafoContainer::FDPFCoeffs TrafoContainer::_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const{
     TrafoContainer::FDPFCoeffs res;
     // get the coefficients
     // tau is needed for Bpp

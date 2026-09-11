@@ -180,10 +180,42 @@ labelling wrong has caused real bugs (see the note in `SubstationContainer.hpp`)
 ### Element containers
 
 `src/core/element_container/` holds one container per element type (generators, loads,
-lines, trafos, shunts, storage, SVCs, HVDC lines and their converter stations), sharing
-`GenericContainer` plus the `OneSideContainer` / `TwoSidesContainer` mixins. A container's
-job is to stamp itself into `Ybus`/`Sbus` (`fillYbus`, `fillSbus`), declare its contribution
-to the pv/pq split (`fillpv`), and receive results.
+lines, trafos, shunts, storage, SVCs, HVDC lines and their converter stations). A
+container's job is to stamp itself into `Ybus`/`Sbus` (`fillYbus`, `fillSbus`), declare its
+contribution to the pv/pq split (`fillpv`), and receive results. The layout:
+
+```
+GenericContainer                 the one interface LSGrid drives them through
+├── OneSideContainer             a terminal: bus, status, (p, q, v, theta) result
+│   ├── BranchEndContainer       one end of a line / trafo (Ybus flags)
+│   └── OneSideContainer_PQ      + an active and a reactive setpoint
+│       ├── Load, Storage, SGen, Shunt
+│       └── VoltageSourceContainer<Leaf>   regulating / setpoint / regulated bus, set_vm, fillpv
+│           ├── Generator, ConverterStation, Svc   (a STATCOM goes here)
+└── TwoSidesContainer<Side>      two terminals + a global status, bus counting, update_topo
+    ├── BranchContainer          pi-model: r, x, h, yac_* / yac_eff_* / ydc_*   → Line, Trafo
+    └── HvdcLineContainer        Side = ConverterStationContainer
+```
+
+**The contract, same for every class.** Public entry points are non-virtual and never
+overridden; each forwards to one protected `_xxx` hook with a no-op default (`_fillYbus`,
+`_fillSbus`, `_fillpv`, `_compute_results`, `_check_valid`, ...). Hooks run once per
+container per operation — the per-element loop lives inside, so nothing is virtual per
+element (`VoltageSourceContainer` is a CRTP base for that reason). Mutators
+(`deactivate`, `change_bus`, `change_p`, ...) are non-virtual too: they check the id, test
+for a no-op, write the state, and notify the leaf through `_on_deactivate` /
+`_on_change_bus` / `_on_change_p` / ... whose only job is to raise `AlgoControl` flags.
+A two-sided element gets one `_on_connectivity_changed(el_id, ctrl)` after any change of
+either end or of its global status (a branch redoes its Kron-reduced block there).
+
+**Adding an element type** is one leaf class plus one line: derive from the right mixin,
+override the hooks the element takes part in, give it a `StateRes` + `StateResIdx`,
+`get_state`/`set_state`, `save_binary`/`load_binary` and an `Info` class for Python, then
+register the member in `LSGrid::_all_containers()` — every bulk operation (`fillYbus`,
+`fillSbus_me`, `compute_results`, `check_grid`, main-component clean-up, ...) loops over that
+list. The list's order is the order of the floating-point accumulations into `Ybus` and
+`Sbus`: append, do not reorder. Only `LSGrid::update_topo` keeps an explicit list (its order
+is observable through the per-bus counts); add the container there iff `_in_topo_vect()`.
 
 ### `AlgoControl` is the invalidation contract
 

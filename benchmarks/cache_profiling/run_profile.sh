@@ -39,6 +39,20 @@ PHASES="cold idem inj inj_nores dcac nocache topo
         inj:every2 inj:every3
         idem::NRSing_KLU inj::NRSing_KLU"
 
+# The grids in a fixed, locale-independent order: every plain case first, then the
+# `_fancy` ones, each family by increasing size (the number in the case name). A
+# plain `*.lsb` glob sorts by locale, and a French one puts `case9241pegase_fancy`
+# before `case9241pegase` -- which, with a phase that fails on the fancy grid, is
+# how the plain one got skipped.
+grids_in_order() {
+    for f in "$1"/*.lsb; do
+        local name fancy=0
+        name=$(basename "${f}" .lsb)
+        case "${name}" in *_fancy*) fancy=1 ;; esac
+        printf '%s %s %s\n' "${fancy}" "$(echo "${name}" | sed -E 's/^[a-z]*([0-9]+).*/\1/')" "${f}"
+    done | sort -k1,1n -k2,2n | awk '{print $3}'
+}
+
 run_one() {
     local grid_path=$1 grid=$2 spec=$3 nb=$4
     local phase refactor algo tag
@@ -60,7 +74,8 @@ run_one() {
              --cache-sim=no --branch-sim=no \
              --callgrind-out-file="${out}" \
              "${BIN}" "${grid_path}" "${phase}" "${nb}" "${algo}" "${refactor}" \
-             2> "${OUT_DIR}/valgrind.${grid}.${tag}.log"
+             2> "${OUT_DIR}/valgrind.${grid}.${tag}.log" \
+        || { echo "    driver failed (rc=$?): see valgrind.${grid}.${tag}.log -- phase skipped"; return 0; }
     echo "${nb}" > "${OUT_DIR}/nb.${grid}.${tag}.txt"
     callgrind_annotate --auto=no --threshold=99 "${out}" \
         > "${OUT_DIR}/annotate.${grid}.${tag}.txt"
@@ -68,7 +83,7 @@ run_one() {
         > "${OUT_DIR}/inclusive.${grid}.${tag}.txt"
 }
 
-for grid_path in "${GRIDS_DIR}"/*.lsb; do
+for grid_path in $(grids_in_order "${GRIDS_DIR}"); do
     grid=$(basename "${grid_path}" .lsb)
     # the big grids are ~50x slower under callgrind: fewer repeats there
     case "${grid}" in

@@ -16,7 +16,7 @@
 #include "Eigen/SparseCore"
 
 #include "Utils.hpp"
-#include "OneSideContainer_PQ.hpp"
+#include "VoltageSourceContainer.hpp"
 
 namespace ls2g {
 
@@ -52,15 +52,19 @@ Same for the LCC reactive consumption (stored in `target_q_mvar_`).
 
 Reactive "personality" (input data): `voltage_regulator_on_` + `target_vm_pu_`
 + [`min_q_`, `max_q_`] when regulating (VSC only), `target_q_mvar_` otherwise.
+The voltage side is VoltageSourceContainer's; a station always regulates its
+own bus (`regulated_bus_id_` is not an input and follows the bus), which is
+what leaves remote regulation by a station for later.
 
 A station with a (derived) active power of exactly 0 MW is considered
 "pseudo off": it is not PV and does not contribute to Sbus when regulating
 (this mirrors the behaviour of the legacy DC lines, whose embedded generators
 were configured with `turnedoff_no_pv`).
 **/
-class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, public IteratorAdder<ConverterStationContainer, ConverterStationInfo>
+class LS2G_API ConverterStationContainer final : public VoltageSourceContainer<ConverterStationContainer>, public IteratorAdder<ConverterStationContainer, ConverterStationInfo>
 {
     friend class ConverterStationInfo;
+    friend class VoltageSourceContainer<ConverterStationContainer>;
 
     public:
         using DataInfo = ConverterStationInfo;
@@ -118,28 +122,11 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
         void set_state(ConverterStationContainer::StateRes & my_state);
 
         // accessors (used by HvdcLineContainer, which owns the active power)
-        bool is_vsc(int station_id) const {return type_(station_id) == ConverterType::VSC;}
         bool is_lcc(int station_id) const {return type_(station_id) == ConverterType::LCC;}
         real_type get_loss_factor(int station_id) const {return loss_factor_(station_id);}
-        bool get_voltage_regulator_on(int station_id) const {return voltage_regulator_on_[station_id];}
-        real_type get_power_factor(int station_id) const {return power_factor_(station_id);}
-        real_type get_qmin(int station_id) const {return min_q_.coeff(station_id);}
-        real_type get_qmax(int station_id) const {return max_q_.coeff(station_id);}
+        real_type get_min_q(int station_id) const {return min_q_.coeff(station_id);}
+        real_type get_max_q(int station_id) const {return max_q_.coeff(station_id);}
         real_type get_target_p(int station_id) const {return target_p_mw_(station_id);}
-        real_type get_target_vm_pu(int station_id) const {return target_vm_pu_(station_id);}
-        // true iff this station is an ACTIVE voltage regulator, i.e. it pins the
-        // magnitude of its own bus -- exactly the gating `fillpv` below uses. When a
-        // control group regulates that bus instead, the station is enrolled as a
-        // member of the group (LSGrid::fill_voltage_control_solver_data) rather than
-        // pinning it, just like a generator in the same position.
-        bool is_voltage_controller(int station_id) const {
-            if(!status_[station_id]) return false;
-            if(!voltage_regulator_on_[station_id]) return false;
-            return true;
-        }
-        // write the converged reactive output (MVAr) of a station that took part in a
-        // VoltageControl group, supplied by the extension (LSGrid::compute_results)
-        void set_voltage_control_q(int station_id, real_type q_mvar) {res_q_(station_id) = q_mvar;}
 
         /**
          * Set the (derived) station active power, generator convention.
@@ -148,57 +135,33 @@ class LS2G_API ConverterStationContainer final : public OneSideContainer_PQ, pub
          */
         void set_station_p(int station_id, real_type p_mw, DualAlgoControl & solver_control);
 
-        void change_v(int station_id, real_type new_v_pu, DualAlgoControl & solver_control);
-
-        // solver interface (mirrors GeneratorContainer, with the converter personality)
         /**
          * Add the station injection to Sbus.
          * `skip_p` says, per station, that the active power is NOT handled here
          * (it is handled by the HVDC droop extension of the NR system, or by
          * the DC algorithm): only the reactive personality is stamped then.
+         * This is why the station's own `_fillSbus` hook stays empty: the owning
+         * HvdcLineContainer, which knows the droop regime, stamps its stations.
          */
         void fillSbus_station(Eigen::Ref<CplxVect> Sbus,
                               const SolverBusIdVect & id_grid_to_solver,
                               bool ac,
                               const std::vector<bool> & skip_p) const;
-        void fillpv(std::vector<int>& bus_pv,
-                            std::vector<bool> & has_bus_been_added,
-                            const SolverBusIdVect & slack_bus_id_solver,
-                            const SolverBusIdVect & id_grid_to_solver) const override;
-        /// see GeneratorContainer::set_q
-        void set_q(bool ac);
-        /// see GeneratorContainer::takes_q_residual_share
-        bool takes_q_residual_share(int station_id, const std::vector<bool> & solved_by_algo) const
-        {
-            if(!status_[station_id]) return false;
-            if(!voltage_regulator_on_[station_id]) return false;
-            if(_is_solved_by_algo(solved_by_algo, station_id)) return false;
-            return true;
-        }
-        void get_vm_for_dc(Eigen::Ref<RealVect> Vm);
-        void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const;
 
     protected:
-        void _compute_results(
-            const Eigen::Ref<const RealVect> & Va,
-            const Eigen::Ref<const RealVect> & Vm,
-            const Eigen::Ref<const CplxVect> & V,
-            const SolverBusIdVect & id_grid_to_solver,
-            const Eigen::Ref<const RealVect> & bus_vn_kv,
-            real_type sn_mva,
-            bool ac) override;
+        // ---- what VoltageSourceContainer asks of its leaf -------------------------
+        static real_type _vm_scale(real_type target_vm, real_type current_vm) { return (1.0 / current_vm) * target_vm; }
+        static const char * _element_name() { return "converter station"; }
+        bool _treated_as_off(int /*station_id*/) const { return false; }
+        bool _set_vm_skips(int /*station_id*/) const { return false; }
+        static constexpr bool set_vm_throws_on_unresolved = true;
 
-        void _change_p(int station_id, real_type new_p, bool my_status, DualAlgoControl & solver_control) override final;
-        bool _deactivate(int station_id, DualAlgoControl & solver_control) override final;
-        bool _reactivate(int station_id, DualAlgoControl & solver_control) override final;
-        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) override final;
+        void _on_change_p(int station_id, real_type new_p, DualAlgoControl & solver_control) override final;
 
     private:
         // input data
         IntVect type_;                           // ConverterType, per station
         RealVect loss_factor_;                   // fraction (0 - 1)
-        std::vector<bool> voltage_regulator_on_; // VSC only, always false for LCC
-        RealVect target_vm_pu_;                  // when regulating
         RealVect min_q_;                         // when regulating
         RealVect max_q_;                         // when regulating
         RealVect power_factor_;                  // LCC only

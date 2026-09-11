@@ -44,6 +44,7 @@ void SvcContainer::init(const std::vector<int> & regulation_mode,
     b_min_ = b_min;
     b_max_ = b_max;
     regulated_bus_id_ = regulated_bus_id;
+    _derive_voltage_regulator_on();
     reset_results();
 }
 
@@ -83,43 +84,20 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     b_min_ = RealVect::Map(bmin.data(), bmin.size());
     b_max_ = RealVect::Map(bmax.data(), bmax.size());
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
+    _derive_voltage_regulator_on();
     reset_results();
 }
 
-void SvcContainer::check_valid(int nb_bus,
-                               int nb_sub,
-                               const SubstationContainer & substations,
-                               std::vector<int> & all_pos_topo_vect) const
+void SvcContainer::_derive_voltage_regulator_on()
 {
-    // one-side index checks (bus / subid / pos_topo_vect)
-    check_valid_osc(nb_bus, nb_sub, substations, all_pos_topo_vect, "svc");
-
-    // `regulated_bus_id_` is a gridmodel bus id that the powerflow uses *as an index*
-    // without re-checking it: `id_grid_to_solver[regulated_bus_id_(svc_id)]` in
-    // SvcContainer::set_vm and in LSGrid::fill_voltage_control_solver_data, and
-    // `Vm(regulated_bus_id_(svc_id))` in get_vm_for_dc. Nothing on the way in bounds it
-    // (SvcContainer::init only checks the vector's length, and a pickle / binary file
-    // sets it verbatim), so an out-of-range value is an out-of-bounds read followed by
-    // an out-of-bounds write into V. Same check as the generator field of the same name.
     const int nb_svc = nb();
-    const bool has_reg_info = regulated_bus_id_.size() > 0;
-    if(!has_reg_info) return;
-    for(int svc_id = 0; svc_id < nb_svc; ++svc_id)
-    {
-        // -1 is legal: this SVC regulates no bus (disconnected / no remote target)
-        const int reg = regulated_bus_id_(svc_id);
-        if(reg == _deactivated_bus_id) continue;
-        if((reg < 0) || (reg >= nb_bus))
-        {
-            std::ostringstream exc_;
-            exc_ << "LSGrid::check_grid: svc id " << svc_id << " regulates bus id " << reg
-                 << " which is out of range [0, " << nb_bus << ").";
-            throw std::out_of_range(exc_.str());
-        }
+    voltage_regulator_on_ = std::vector<bool>(nb_svc, false);
+    for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
+        voltage_regulator_on_[svc_id] = regulation_mode_(svc_id) == RegulationMode::VOLTAGE;
     }
 }
 
-void SvcContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const
+void SvcContainer::_fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const
 {
     const int nb_svc = nb();
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
@@ -151,44 +129,7 @@ void SvcContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & i
     }
 }
 
-void SvcContainer::get_vm_for_dc(Eigen::Ref<RealVect> Vm)
-{
-    const int nb_svc = nb();
-    for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
-        if(!status_[svc_id]) continue;
-        if(regulation_mode_(svc_id) != RegulationMode::VOLTAGE) continue;
-        const int target_bus = regulated_bus_id_(svc_id);
-        const real_type tmp = target_vm_pu_(svc_id);
-        if(abs(tmp) > _tol_equal_float) Vm(target_bus) = tmp;
-    }
-}
-
-void SvcContainer::set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const
-{
-    const int nb_svc = nb();
-    for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
-        if(!status_[svc_id]) continue;
-        if(regulation_mode_(svc_id) != RegulationMode::VOLTAGE) continue;
-        // a sloped SVC does NOT hold its regulated bus exactly at the setpoint
-        // (Vm = v_set - s.Q): forcing it here would corrupt an already-solved V
-        // (e.g. in check_solution). The flat init is good enough for the NR.
-        if(has_slope(svc_id)) continue;
-
-        const int target_grid_bus = regulated_bus_id_(svc_id);
-        if(target_grid_bus == _deactivated_bus_id) continue;
-        const SolverBusId bus_id_solver = id_grid_to_solver[target_grid_bus];
-        if(bus_id_solver.cast_int() == _deactivated_bus_id) continue;
-        real_type tmp = std::abs(V(bus_id_solver.cast_int()));
-        if(abs(tmp) < _tol_equal_float){
-            V(bus_id_solver.cast_int()) = 1.0;
-            tmp = 1.0;
-        }
-        tmp = target_vm_pu_(svc_id) / tmp;
-        V(bus_id_solver.cast_int()) *= tmp;
-    }
-}
-
-void SvcContainer::_compute_results(
+void SvcContainer::_compute_res_pq(
     const Eigen::Ref<const RealVect> & /*Va*/,
     const Eigen::Ref<const RealVect> & /*Vm*/,
     const Eigen::Ref<const CplxVect> & /*V*/,
@@ -218,69 +159,20 @@ void SvcContainer::_compute_results(
     }
 }
 
-bool SvcContainer::_deactivate(int svc_id, DualAlgoControl & solver_control)
+void SvcContainer::_on_deactivate(int svc_id, DualAlgoControl & solver_control)
 {
-    if(status_[svc_id]){
-        solver_control.ac_algo_controler().tell_recompute_sbus();
-        solver_control.ac_algo_controler().tell_one_el_changed_bus();
-        solver_control.dc_algo_controler().tell_recompute_sbus();
-        solver_control.dc_algo_controler().tell_one_el_changed_bus();
-        if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
-            solver_control.ac_algo_controler().tell_pv_changed();
-            solver_control.dc_algo_controler().tell_pv_changed();
-            // (a voltage-mode SVC is ALWAYS a group controller, so this creates or
-            // dissolves the group at the bus it regulates -- which the pv/pq split,
-            // and the voltage-control plan built around it, follow from the flags
-            // above.)
-        }
-        return true;
-    }
-    return false;
+    // (a voltage-mode SVC is ALWAYS a group controller, so this creates or
+    // dissolves the group at the bus it regulates -- which the pv/pq split,
+    // and the voltage-control plan built around it, follow from the base's
+    // tell_pv_changed.)
+    VoltageSourceContainer<SvcContainer>::_on_deactivate(svc_id, solver_control);
+    solver_control.tell_one_el_changed_bus();
 }
 
-bool SvcContainer::_reactivate(int svc_id, DualAlgoControl & solver_control)
+void SvcContainer::_on_reactivate(int svc_id, DualAlgoControl & solver_control)
 {
-    if(!status_[svc_id]){
-        solver_control.ac_algo_controler().tell_recompute_sbus();
-        solver_control.ac_algo_controler().tell_one_el_changed_bus();
-        solver_control.dc_algo_controler().tell_recompute_sbus();
-        solver_control.dc_algo_controler().tell_one_el_changed_bus();
-        if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
-            solver_control.ac_algo_controler().tell_pv_changed();
-            solver_control.dc_algo_controler().tell_pv_changed();
-            // (a voltage-mode SVC is ALWAYS a group controller, so this creates or
-            // dissolves the group at the bus it regulates -- which the pv/pq split,
-            // and the voltage-control plan built around it, follow from the flags
-            // above.)
-        }
-        return true;
-    }
-    return false;
-}
-
-bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/)
-{
-    // el_id is validated (and the proper IndexError raised) by
-    // OneSideContainer::change_bus / change_bus_no_bus_tracking, which run *before*
-    // this function. Bail out here on an out-of-range id anyway so the
-    // `regulated_bus_id_` write below never touches memory out of bounds.
-    if(svc_id < 0 || svc_id >= nb()) return false;
-    if(bus_id_(svc_id) == new_bus_id) return false;
-    // a LOCAL voltage controller's regulated bus follows its own bus
-    // TODO: a REMOTE controller's regulated bus is whatever was resolved at import time
-    // (e.g. by `init_from_pypowsybl`); if the regulated *element* changes bus we cannot
-    // tell (only the resolved bus id is stored), so it stays frozen and desynchronises
-    // from the source grid. Tracking the regulated element id would let us follow it.
-    if(regulated_bus_id_(svc_id) == bus_id_(svc_id).cast_int()) regulated_bus_id_(svc_id) = new_bus_id.cast_int();
-    solver_control.ac_algo_controler().tell_recompute_sbus();
-    solver_control.ac_algo_controler().tell_one_el_changed_bus();
-    solver_control.dc_algo_controler().tell_recompute_sbus();
-    solver_control.dc_algo_controler().tell_one_el_changed_bus();
-    if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
-        solver_control.ac_algo_controler().tell_pv_changed();
-        solver_control.dc_algo_controler().tell_pv_changed();
-    }
-    return true;
+    VoltageSourceContainer<SvcContainer>::_on_reactivate(svc_id, solver_control);
+    solver_control.tell_one_el_changed_bus();
 }
 
 void SvcContainer::save_binary(const std::string & path, bool atomic) const {
