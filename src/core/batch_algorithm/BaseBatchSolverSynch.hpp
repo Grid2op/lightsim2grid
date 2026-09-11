@@ -402,7 +402,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // already Kron-reduced for whichever side is open, so this
                 // alone gives the correct "or"-side (side 1) flow either way
                 // (0 when side 1 itself is open, matching
-                // TwoSidesContainer_rxh_A::compute_results_tsc_rxha_no_amps);
+                // BranchContainer::_compute_branch_results_no_amps);
                 // DC has no such reduction (handled explicitly below).
                 GlobalBusId bus_from_me = bus_from(el_id);
                 GlobalBusId bus_to_me = bus_to(el_id);

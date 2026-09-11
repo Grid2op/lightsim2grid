@@ -255,7 +255,7 @@ TEST_CASE("every input of the plan retires it", "[voltage_control][cache_reuse]"
         same_as_freshly_built([](LSGrid & grid){ grid.change_bus_gen_python(2, 1); });
     }
     SECTION("a generator turned pseudo-off") {
-        // p crossing 0 flips gen_is_voltage_controller, so it changes who is in the group
+        // p crossing 0 flips is_remote_voltage_controller, so it changes who is in the group
         LSGrid g = make_group_grid();
         REQUIRE(solve(g).size() == NB_BUS);
         g.turnedoff_no_pv();

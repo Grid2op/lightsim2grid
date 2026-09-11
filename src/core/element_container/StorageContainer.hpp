@@ -57,6 +57,12 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
         using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes  // state of the base class
            > ;
+        enum StateResIdx {
+            OSC_PQ_STATE = 0,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "StorageContainer::StateRes and StateResIdx do not match");
 
         StorageContainer() noexcept = default;
         ~StorageContainer() noexcept override = default;
@@ -82,21 +88,15 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
             reset_results();
         }
 
-        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+    protected:
+        // load convention: the setpoint is drawn from the grid
+        void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const override
+        {
+            _stamp_pq(Sbus, id_grid_to_solver, -1., "StorageContainer::fillSbus");
+        }
 
     protected:
-        void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
-                                    const Eigen::Ref<const RealVect> & /*Vm*/,
-                                    const Eigen::Ref<const CplxVect> & /*V*/,
-                                    const SolverBusIdVect & /*id_grid_to_solver*/,
-                                    const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
-                                    real_type /*sn_mva*/,
-                                    bool ac) override
-                                    {
-
-                                            set_osc_pq_res_p();
-                                            set_osc_pq_res_q(ac);
-                                    }
+        bool _in_topo_vect() const override { return true; }
 };
 
 inline StorageInfo::StorageInfo(const StorageContainer & r_data_storage, int my_id) noexcept:

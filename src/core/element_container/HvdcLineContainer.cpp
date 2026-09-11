@@ -46,7 +46,7 @@ void HvdcLineContainer::init(const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
                              )
 {
     init_tsc(bus1_id, bus2_id, "hvdc lines");
-    const int size = static_cast<int>(nb());
+    const int size = nb();
     check_size(converters_mode, size, "converters_mode");
     check_size(p_setpoint_mw, size, "p_setpoint_mw");
     check_size(r_ohm, size, "r_ohm");
@@ -202,7 +202,7 @@ void HvdcLineContainer::set_state(HvdcLineContainer::StateRes & my_state)
     std::vector<real_type> & pmax_2to1_mw = std::get<StateResIdx::PMAX_2TO1_MW>(my_state);
     std::vector<int> & status_droop = std::get<StateResIdx::STATUS_DROOP>(my_state);
 
-    const auto size = nb();
+    const int size = nb();
     check_size(loss_percent, size, "loss_percent");
     check_size(loss_mw, size, "loss_mw");
     check_size(converters_mode, size, "converters_mode");
@@ -356,14 +356,13 @@ void HvdcLineContainer::set_status_droop(int hvdc_id, int status, DualAlgoContro
         // the sparsity pattern of the jacobian does not change (the droop
         // entries are declared whatever the regime), only the values /
         // injections do: the symbolic factorization is fully reused.
-        solver_control.ac_algo_controler().tell_recompute_sbus();
-        solver_control.dc_algo_controler().tell_recompute_sbus();
+        solver_control.tell_recompute_sbus();
     }
 }
 
-void HvdcLineContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const
+void HvdcLineContainer::_fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const
 {
-    const int nb_hvdc = static_cast<int>(nb());
+    const int nb_hvdc = nb();
     // for droop lines, the active power is NOT a fixed injection:
     //  - in AC it is handled by the Hvdc extension of the NR system (all regimes);
     //  - in DC the linear regime is handled by the DC algorithm and the
@@ -396,18 +395,8 @@ void HvdcLineContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVec
             }
             real_type p1_flow, p2_flow;
             droop_flows_mw(hvdc_id, 0., p1_flow, p2_flow);  // raw unused when saturated
-            const GlobalBusId bus_1 = get_bus_side_1(hvdc_id);
-            const GlobalBusId bus_2 = get_bus_side_2(hvdc_id);
-            const SolverBusId bus_1_solver = id_grid_to_solver[bus_1.cast_int()];
-            const SolverBusId bus_2_solver = id_grid_to_solver[bus_2.cast_int()];
-            if((bus_1_solver.cast_int() == _deactivated_bus_id) ||
-               (bus_2_solver.cast_int() == _deactivated_bus_id)){
-                std::ostringstream exc_;
-                exc_ << "HvdcLineContainer::fillSbus: hvdc line with id ";
-                exc_ << hvdc_id;
-                exc_ << " is connected to a disconnected bus while being connected to the grid.";
-                throw std::runtime_error(exc_.str());
-            }
+            const SolverBusId bus_1_solver = _solver_bus(hvdc_id, get_bus_side_1(hvdc_id), id_grid_to_solver, "HvdcLineContainer::fillSbus (side 1)");
+            const SolverBusId bus_2_solver = _solver_bus(hvdc_id, get_bus_side_2(hvdc_id), id_grid_to_solver, "HvdcLineContainer::fillSbus (side 2)");
             // the flows LEAVE the buses: injection = -flow
             Sbus.coeffRef(bus_1_solver.cast_int()) += cplx_type(-p1_flow, 0.);
             Sbus.coeffRef(bus_2_solver.cast_int()) += cplx_type(-p2_flow, 0.);
@@ -415,21 +404,20 @@ void HvdcLineContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVec
     }
 }
 
-void HvdcLineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                                        const Eigen::Ref<const RealVect> & Vm,
-                                        const Eigen::Ref<const CplxVect> & V,
-                                        const SolverBusIdVect & id_grid_to_solver,
-                                        const Eigen::Ref<const RealVect> & bus_vn_kv,
-                                        real_type sn_mva,
-                                        bool ac)
+void HvdcLineContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
+                                         const Eigen::Ref<const RealVect> & Vm,
+                                         const Eigen::Ref<const CplxVect> & V,
+                                         const SolverBusIdVect & id_grid_to_solver,
+                                         const Eigen::Ref<const RealVect> & bus_vn_kv,
+                                         real_type sn_mva,
+                                         bool ac)
 {
-    side_1_.compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
-    side_2_.compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
+    TwoSidesContainer<ConverterStationContainer>::_compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
 
     // droop lines: the active power is theta-dependent, recompute it from the
     // solved angles (the stations' "target" p only stores the fixed-setpoint
     // fallback values)
-    const int nb_hvdc = static_cast<int>(nb());
+    const int nb_hvdc = nb();
     Eigen::Ref<RealVect> res_p_1 = get_res_p_side_1();
     Eigen::Ref<RealVect> res_p_2 = get_res_p_side_2();
     for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
@@ -446,20 +434,8 @@ void HvdcLineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
                     "must be called whenever a side is opened.";
             throw std::runtime_error(exc_.str());
         }
-        const GlobalBusId bus_1 = get_bus_side_1(hvdc_id);
-        const GlobalBusId bus_2 = get_bus_side_2(hvdc_id);
-        const SolverBusId bus_1_solver = id_grid_to_solver[bus_1.cast_int()];
-        const SolverBusId bus_2_solver = id_grid_to_solver[bus_2.cast_int()];
-#ifndef NDEBUG
-        if((bus_1_solver.cast_int() == _deactivated_bus_id) ||
-           (bus_2_solver.cast_int() == _deactivated_bus_id)){
-            std::ostringstream exc_;
-            exc_ << "HvdcLineContainer::compute_results: hvdc line with id ";
-            exc_ << hvdc_id;
-            exc_ << " is connected to a disconnected bus while being connected to the grid.";
-            throw std::runtime_error(exc_.str());
-        }
-#endif
+        const SolverBusId bus_1_solver = _solver_bus(hvdc_id, get_bus_side_1(hvdc_id), id_grid_to_solver, "HvdcLineContainer::compute_results (side 1)");
+        const SolverBusId bus_2_solver = _solver_bus(hvdc_id, get_bus_side_2(hvdc_id), id_grid_to_solver, "HvdcLineContainer::compute_results (side 2)");
         const real_type theta_1 = Va(bus_1_solver.cast_int());
         const real_type theta_2 = Va(bus_2_solver.cast_int());
         const real_type raw = p0_mw_(hvdc_id) + k_mw_per_rad_(hvdc_id) * (theta_1 - theta_2);

@@ -16,11 +16,19 @@ namespace ls2g {
 
 const int GenericContainer::_deactivated_bus_id = BaseConstants::_deactivated_bus_id;
 
-// TODO all functions bellow are generic ! Make a base class for that
+void GenericContainer::_throw_on_disconnected_bus(const char * fun_name, int el_id, bool grid_side)
+{
+    std::ostringstream exc_;
+    exc_ << fun_name << ": the element with id " << el_id
+         << " is connected to a disconnected bus while being connected to the grid ("
+         << (grid_side ? "GlobalBusId" : "SolverBusId") << " is the deactivated bus id).";
+    throw std::runtime_error(exc_.str());
+}
+
 void GenericContainer::_get_amps(Eigen::Ref<RealVect> a,
-                                  const Eigen::Ref<const RealVect> & p,
-                                  const Eigen::Ref<const RealVect> & q,
-                                  const Eigen::Ref<const RealVect> & v) const {
+                                 const Eigen::Ref<const RealVect> & p,
+                                 const Eigen::Ref<const RealVect> & q,
+                                 const Eigen::Ref<const RealVect> & v) {
     // One pass, no temporaries. This was four: sum of squares into a vector,
     // square root over it, a copy of v, then a scan of that copy to replace the
     // zeros -- two full-length allocations per call, and this is called four
@@ -35,44 +43,6 @@ void GenericContainer::_get_amps(Eigen::Ref<RealVect> a,
         const real_type q_el = q(el_id);
         a(el_id) = std::sqrt(p_el * p_el + q_el * q_el) * _1_sqrt_3 / v_div;
     }
-}
-
-void GenericContainer::_generic_reactivate(int el_id, std::vector<bool> & eltype_status){
-    _check_in_range_internal(static_cast<std::vector<bool>::size_type>(el_id),
-                    eltype_status,
-                    "_generic_reactivate");  // debug-only: the public entry point already raised, see
-                    // OneSideContainer::deactivate_no_bus_tracking
-    eltype_status[el_id] = true;  //TODO why it's needed to do that again
-}
-
-void GenericContainer::_generic_deactivate(int el_id, std::vector<bool> & eltype_status){
-    _check_in_range_internal(static_cast<std::vector<bool>::size_type>(el_id),
-                    eltype_status,
-                    "_generic_deactivate");  // debug-only: the public entry point already raised, see
-                    // OneSideContainer::deactivate_no_bus_tracking
-    eltype_status[el_id] = false;   //TODO why it's needed to do that again
-}
-
-void GenericContainer::_generic_change_bus(
-    int el_id,
-    const GridModelBusId & new_gridmodel_bus_id,
-    GlobalBusIdVect & el_bus_ids,
-    DualAlgoControl & /*solver_control*/,
-    int nb_max_bus) const {
-    // bus id here "me_id" and NOT "solver_id"
-
-    // throw error: object id does not exist
-    _check_in_range_internal(static_cast<Eigen::Index>(el_id),
-                    el_bus_ids,
-                    "_change_bus");  // debug-only: the public entry point already raised, see
-                    // OneSideContainer::deactivate_no_bus_tracking
-
-    // The bus id is validated by _check_new_bus_id, which the mutators call BEFORE
-    // entering the _apply_and_track_buses bracket -- see the note there. Rejecting it
-    // from in here would mean rejecting it with the element's contribution already
-    // taken away.
-    auto bus_me_id = el_bus_ids(el_id);
-    bus_me_id = new_gridmodel_bus_id;
 }
 
 GridModelBusId GenericContainer::_get_bus(int el_id, const std::vector<bool> & status_, const GlobalBusIdVect & bus_id_) const
@@ -97,7 +67,7 @@ void GenericContainer::v_kv_theta_from_vpu(const Eigen::Ref<const RealVect> & Va
                                            const SolverBusIdVect & id_grid_to_solver,
                                            const Eigen::Ref<const RealVect> & bus_vn_kv,
                                            Eigen::Ref<RealVect> v,
-                                           Eigen::Ref<RealVect> theta) const
+                                           Eigen::Ref<RealVect> theta)
 {
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that
@@ -107,27 +77,8 @@ void GenericContainer::v_kv_theta_from_vpu(const Eigen::Ref<const RealVect> & Va
             continue;
         }
         const GlobalBusId el_bus_me_id = bus_me_id(el_id);
-#ifndef NDEBUG
-        if(el_bus_me_id.cast_int() == _deactivated_bus_id){
-            // TODO DEBUG MODE: only check in debug mode
-            std::ostringstream exc_;
-            exc_ << "GenericContainer::v_kv_theta_from_vpu: element with id ";
-            exc_ << el_id;
-            exc_ << " is connected to a disconnected bus while being connected to the grid.";
-            throw std::runtime_error(exc_.str());
-        }
-#endif
-        const SolverBusId bus_solver_id = id_grid_to_solver[el_bus_me_id.cast_int()];
-#ifndef NDEBUG
-        if(bus_solver_id.cast_int() == _deactivated_bus_id){
-            // TODO DEBUG MODE: only check in debug mode
-            std::ostringstream exc_;
-            exc_ << "GenericContainer::v_kv_theta_from_vpu: The element of id ";
-            exc_ << el_id;
-            exc_ << " is connected to a disconnected bus";
-            throw std::runtime_error(exc_.str());
-        }
-#endif
+        const SolverBusId bus_solver_id = _solver_bus(el_id, el_bus_me_id, id_grid_to_solver,
+                                                     "GenericContainer::v_kv_theta_from_vpu");
         v(el_id) = Vm(bus_solver_id.cast_int()) * bus_vn_kv(el_bus_me_id.cast_int());
         theta(el_id) = Va(bus_solver_id.cast_int()) * my_180_pi_;
     }

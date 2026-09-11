@@ -48,12 +48,12 @@ SGenContainer::StateRes SGenContainer::get_state() const
 
 void SGenContainer::set_state(SGenContainer::StateRes & my_state )
 {    
-    set_osc_pq_state(std::get<0>(my_state));
+    set_osc_pq_state(std::get<StateResIdx::OSC_PQ_STATE>(my_state));
 
-    std::vector<real_type> & p_min = std::get<1>(my_state);
-    std::vector<real_type> & p_max = std::get<2>(my_state);
-    std::vector<real_type> & q_min = std::get<3>(my_state);
-    std::vector<real_type> & q_max = std::get<4>(my_state);
+    std::vector<real_type> & p_min = std::get<StateResIdx::P_MIN>(my_state);
+    std::vector<real_type> & p_max = std::get<StateResIdx::P_MAX>(my_state);
+    std::vector<real_type> & q_min = std::get<StateResIdx::Q_MIN>(my_state);
+    std::vector<real_type> & q_max = std::get<StateResIdx::Q_MAX>(my_state);
     const auto size = nb();
 
     GenericContainer::check_size(p_min, size, "p_min");
@@ -66,40 +66,6 @@ void SGenContainer::set_state(SGenContainer::StateRes & my_state )
     q_min_mvar_ = RealVect::Map(q_min.data(), size);
     q_max_mvar_ = RealVect::Map(q_max.data(), size);
     reset_results();
-}
-
-void SGenContainer::fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const {
-    const int nb_sgen = nb();
-    GlobalBusId bus_id_me;
-    SolverBusId bus_id_solver;
-    cplx_type tmp;
-    for(int sgen_id = 0; sgen_id < nb_sgen; ++sgen_id){
-        //  i don't do anything if the static generator is disconnected
-        if(!status_[sgen_id]) continue;
-
-        bus_id_me = bus_id_(sgen_id);
-#ifndef NDEBUG
-        if(bus_id_me.cast_int() == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "SGenContainer::fillSbus: Static Generator with id ";
-            exc_ << sgen_id;
-            exc_ << " is connected to a disconnected bus while being connected to the grid.";
-            throw std::runtime_error(exc_.str());
-        }
-#endif
-        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
-#ifndef NDEBUG
-        if(bus_id_solver.cast_int() == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "SGenContainer::fillSbus: Static Generator with id ";
-            exc_ << sgen_id;
-            exc_ << " is connected to a disconnected bus while being connected to the grid.";
-            throw std::runtime_error(exc_.str());
-        }
-#endif
-        tmp = {target_p_mw_(sgen_id), target_q_mvar_(sgen_id)};
-        Sbus.coeffRef(bus_id_solver.cast_int()) += tmp;
-    }
 }
 
 void SGenContainer::save_binary(const std::string & path, bool atomic) const {

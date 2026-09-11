@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <vector>
+#include <array>
 #include <set>
 #include <map>
 #include <string>
@@ -1402,7 +1403,7 @@ class LS2G_API LSGrid final
         [[nodiscard]] Eigen::Ref<const RealVect> get_dcline_theta1() const {return hvdc_lines_.get_theta_side_1();}
         [[nodiscard]] Eigen::Ref<const RealVect> get_dcline_theta2() const {return hvdc_lines_.get_theta_side_2();}
 
-        [[nodiscard]] const GlobalBusIdVect & get_all_shunt_buses() const {return shunts_.get_buses();}
+        [[nodiscard]] const GlobalBusIdVect & get_all_shunt_buses() const {return shunts_.get_bus_id();}
         [[nodiscard]] Eigen::Ref<const IntVect> get_all_shunt_buses_numpy() const {return shunts_.get_bus_id_numpy();}
 
         [[nodiscard]] Eigen::Ref<const RealVect>  get_shunt_target_p() const {return shunts_.get_target_p();}
@@ -2369,6 +2370,30 @@ class LS2G_API LSGrid final
         // containers to ask, which is what owning them means.
         /// every container that can pin a bus' magnitude through the classical PV path
         [[nodiscard]] std::vector<const GenericContainer *> _pv_capable_containers() const;
+
+        /**
+         * Every element container, behind the one interface LSGrid drives them
+         * through (GenericContainer). This is THE list: every bulk operation --
+         * fillYbus, fillSbus_me, compute_results, reset_results, fillBp_Bpp,
+         * fillBf_for_PTDF, gen_p_per_bus, nb_line_end, get_graph,
+         * disconnect_if_not_in_main_component, check_grid -- loops over it, so a
+         * new element type is registered here once and takes part in all of them.
+         *
+         * The ORDER is not free. Ybus is assembled from triplets and Sbus is
+         * accumulated bus by bus, so the order in which the containers stamp their
+         * contributions is the order of the floating-point additions, and two
+         * orders can differ in the last bit. This one is the order the hand-written
+         * dispatch used before the list existed: lines, shunts, trafos for the
+         * matrices; shunts, loads, static gens, storages, generators, hvdc, svcs for
+         * the injections (lines and trafos stamp nothing there). Append new
+         * containers at the END unless you mean to change results.
+         *
+         * `update_topo` is the one bulk operation NOT driven from here: see it for
+         * why its order matters even more.
+         */
+        static constexpr std::size_t NB_CONTAINERS = 9;
+        [[nodiscard]] std::array<GenericContainer *, NB_CONTAINERS> _all_containers();
+        [[nodiscard]] std::array<const GenericContainer *, NB_CONTAINERS> _all_containers() const;
         /**
          * Refuse, by name, a grid whose voltage control the selected algorithm cannot
          * honour. Called by `ac_pf` when `_algo.supports_remote_voltage_control()` is

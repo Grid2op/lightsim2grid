@@ -167,6 +167,16 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   iterate stays readable (``get_V_solver``, ``get_J_solver``, ...) and the next solve rebuilds
   through ``algo_needs_rebuild`` instead. In particular ``max_iter=0``, documented as returning
   the pre-iteration state, came back empty and segfaulted an external solver seeding from it.
+- [IMPROVED] the element containers share one interface (public non-virtual entry points,
+  protected ``_xxx`` hooks, ``_on_xxx`` notifications, one ``LSGrid::_all_containers()`` list).
+  ``TwoSidesContainer_rxh_A`` is now ``BranchContainer``, ``OneSideContainer_ForBranch`` is
+  ``BranchEndContainer``, ``VoltageSourceContainer`` is what generators, SVCs and stations share.
+- [FIXED] an SVC alone on a bus outside the main component kept that bus in the solved
+  system: ``svcs_`` was missing from the main-component clean-up.
+- [FIXED] opening or closing one end of a phase-shifting transformer did not invalidate
+  the DC ``Sbus`` (its phase-shift term is only stamped when both ends are connected).
+- [IMPROVED] the "active element on a disconnected bus" consistency checks are debug-only
+  everywhere (``-UNDEBUG`` builds keep them), as they already were on the hot paths.
 - [IMPROVED] ``-march=native`` (``__COMPILE_MARCHNATIVE=1``) now also compiles KLU and its
   SuiteSparse dependencies, not just ``lightsim2grid_core``. Measured 5-16% faster solves on
   grids above ~1000 buses (``TimeSeries``, ``ContingencyAnalysis`` and plain powerflows alike).

@@ -1263,8 +1263,8 @@ void check_warm_equals_cold(LSGrid & grid)
 TEST_CASE("ybus_change_sparsity_pattern, on its own, does not move the split",
           "[LSGrid][cache_reuse][pv_pq]")
 {
-    // Raised by TwoSidesContainer_rxh_A::_reactivate and
-    // OneSideContainer_forBranch::_reactivate / _change_bus -- reconnecting a branch,
+    // Raised by BranchContainer::_on_reactivate and
+    // BranchEndContainer::_on_reactivate / _on_change_bus -- reconnecting a branch,
     // or moving one of its ends. Line 3 of the exotic grid joins two buses that both
     // carry other elements, so opening and closing it leaves the bus SET alone and
     // `change_dimension_` stays down: that is what makes the term isolable at all.

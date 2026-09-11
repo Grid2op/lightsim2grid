@@ -31,6 +31,20 @@ REPO=$(cd "${HERE}/../.." && pwd)
 BUILD="${OUT_DIR}/build_wall"
 mkdir -p "${OUT_DIR}"
 
+# The grids in a fixed, locale-independent order: every plain case first, then the
+# `_fancy` ones, each family by increasing size (the number in the case name). A
+# plain `*.lsb` glob sorts by locale, and a French one puts `case9241pegase_fancy`
+# before `case9241pegase` -- which, with a phase that fails on the fancy grid, is
+# how the plain one got skipped.
+grids_in_order() {
+    for f in "$1"/*.lsb; do
+        local name fancy=0
+        name=$(basename "${f}" .lsb)
+        case "${name}" in *_fancy*) fancy=1 ;; esac
+        printf '%s %s %s\n' "${fancy}" "$(echo "${name}" | sed -E 's/^[a-z]*([0-9]+).*/\1/')" "${f}"
+    done | sort -k1,1n -k2,2n | awk '{print $3}'
+}
+
 cleanup() { git -C "${REPO}" checkout -- src/core >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
@@ -48,7 +62,7 @@ nb_for() {
 for variant in A B; do
     if [ "${variant}" = "B" ]; then python3 "${PATCH}"; fi
     cmake --build "${BUILD}" -j"$(nproc)" > /dev/null
-    for grid_path in "${GRIDS_DIR}"/*.lsb; do
+    for grid_path in $(grids_in_order "${GRIDS_DIR}"); do
         grid=$(basename "${grid_path}" .lsb)
         nb=$(nb_for "${grid}")
         for phase in ${PHASES}; do

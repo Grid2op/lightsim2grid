@@ -346,10 +346,11 @@ matrices of *both* the AC and the DC solver. `DualAlgoControl` simply holds one 
 and resets `ac_algo_controler()` on an AC powerflow, the DC solver consumes and resets
 `dc_algo_controler()` on a DC powerflow, without clobbering each other).
 
-It is a plain composition (no inheritance, no virtual dispatch): callers forward a change to
-both families explicitly, eg.
-    dual.ac_algo_controler().tell_v_changed();
-    dual.dc_algo_controler().tell_v_changed();
+It is a plain composition (no inheritance, no virtual dispatch). Almost every change concerns
+both families the same way, so the `tell_xxx()` forwarders below raise a flag on both at once,
+which is what the element containers use. A change that only one family reads (the DC Sbus
+term of a phase shifter, the AC-only voltage-control plan) names its family explicitly:
+    dual.dc_algo_controler().tell_recompute_sbus();
 **/
 class DualAlgoControl final
 {
@@ -361,6 +362,20 @@ class DualAlgoControl final
         AlgoControl & dc_algo_controler() noexcept {return dc_algo_controler_;}
         const AlgoControl & ac_algo_controler() const noexcept {return ac_algo_controler_;}
         const AlgoControl & dc_algo_controler() const noexcept {return dc_algo_controler_;}
+
+        // raise the same flag on both families (see the AlgoControl method of the same name)
+        void tell_dimension_changed() noexcept {ac_algo_controler_.tell_dimension_changed(); dc_algo_controler_.tell_dimension_changed();}
+        void tell_pv_changed() noexcept {ac_algo_controler_.tell_pv_changed(); dc_algo_controler_.tell_pv_changed();}
+        void tell_pq_changed() noexcept {ac_algo_controler_.tell_pq_changed(); dc_algo_controler_.tell_pq_changed();}
+        void tell_slack_participate_changed() noexcept {ac_algo_controler_.tell_slack_participate_changed(); dc_algo_controler_.tell_slack_participate_changed();}
+        void tell_recompute_ybus() noexcept {ac_algo_controler_.tell_recompute_ybus(); dc_algo_controler_.tell_recompute_ybus();}
+        void tell_recompute_sbus() noexcept {ac_algo_controler_.tell_recompute_sbus(); dc_algo_controler_.tell_recompute_sbus();}
+        void tell_solver_need_reset() noexcept {ac_algo_controler_.tell_solver_need_reset(); dc_algo_controler_.tell_solver_need_reset();}
+        void tell_ybus_change_sparsity_pattern() noexcept {ac_algo_controler_.tell_ybus_change_sparsity_pattern(); dc_algo_controler_.tell_ybus_change_sparsity_pattern();}
+        void tell_v_changed() noexcept {ac_algo_controler_.tell_v_changed(); dc_algo_controler_.tell_v_changed();}
+        void tell_slack_weight_changed() noexcept {ac_algo_controler_.tell_slack_weight_changed(); dc_algo_controler_.tell_slack_weight_changed();}
+        void tell_ybus_some_coeffs_zero() noexcept {ac_algo_controler_.tell_ybus_some_coeffs_zero(); dc_algo_controler_.tell_ybus_some_coeffs_zero();}
+        void tell_one_el_changed_bus() noexcept {ac_algo_controler_.tell_one_el_changed_bus(); dc_algo_controler_.tell_one_el_changed_bus();}
 
     private:
         AlgoControl ac_algo_controler_;  // change tracking consumed by the AC solver

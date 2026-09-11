@@ -144,12 +144,17 @@ Measured and **declined**, recorded here so they are not re-proposed:
 ### The `_fancy` grids
 
 `make_grids.py` also writes a `_fancy` variant of case118, case1354pegase and
-case9241pegase: a few *pairs* of generators re-pointed at a common neighbouring
-load bus (a control **group**, solved by the bordered VoltageControl block) plus
-a few voltage-mode SVCs. Setpoints are the base case's own solved magnitudes, and
-each candidate is kept only if the grid still converges with it -- the same
-chunk-and-verify workaround `benchmarks/make_exotic_grid.cpp` uses, for the same
-reason (see the remote-voltage-control entry in the changelog's TODO).
+case9241pegase: a few voltage-mode SVCs, plus a few *pairs* of generators
+re-pointed at a common neighbouring load bus (a control **group**, solved by the
+bordered VoltageControl block). Every setpoint is a magnitude the grid already
+holds, so each controller is a no-op at the solution: the SVCs take the plain
+case's solved magnitudes, and the groups are pointed at the magnitudes of an AC
+solve of the grid *with* the SVCs -- every exotic element in place except the
+remote control. Each candidate is kept only if the grid still converges with it
+-- the same chunk-and-verify workaround `benchmarks/make_exotic_grid.cpp` uses,
+for the same reason (see the remote-voltage-control entry in the changelog's TODO).
+(Up to `make_grids.py`'s revision of September 2026 both took the plain case's
+magnitudes; the tables below were measured on those grids.)
 
 They exist because the plain pandapower cases have **no** remote voltage control
 and no SVC at all: the controller list is empty on every one of them, so nothing

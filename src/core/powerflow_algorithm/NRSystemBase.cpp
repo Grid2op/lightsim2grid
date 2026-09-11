@@ -30,7 +30,7 @@ void Base::update_state(
     // Slack buses not pinned by a LOCAL voltage-regulating generator need a
     // free Vm unknown + Q equation (added in register_in), exactly like an
     // ordinary PQ bus. See VoltageControlPlan::free_vm_slack_buses for the
-    // exact criterion (GeneratorContainer::gen_is_local_voltage_controller).
+    // exact criterion (VoltageSourceContainer::is_local_voltage_controller).
     //
     // READ, not re-derived: this is layer 2 of the plan the grid built into its AC
     // cache during pre_process_solver, in the very labelling this solve runs in.

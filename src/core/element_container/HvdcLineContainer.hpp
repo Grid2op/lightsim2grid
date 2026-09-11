@@ -210,11 +210,10 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                          const Eigen::Ref<const RealVect> & max_q_ex
                          );
 
-        // accessor / modifiers
-        void get_graph(std::vector<Eigen::Triplet<real_type> > & /*res*/) const override {
-            // for buses only connected through a hvdc line, i don't add them
-            // they are not in the same "connected component"
-        }
+    protected:
+        // (an HVDC line adds no edge to the AC graph -- `_get_graph` keeps the base
+        // no-op -- buses only connected through it are not in the same synchronous
+        // component)
 
         // An HVDC line bridges two AC grids that are NOT synchronous (no edge is
         // added in `get_graph`), so the connectivity BFS of
@@ -227,18 +226,15 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // NOT deactivate the whole line when a single side is outside the main
         // component: we keep the in-main converter injecting and open only the
         // out-of-main one. A line with BOTH sides outside is still fully dropped.
-        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation, DualAlgoControl & solver_control) override {
+        void _disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component, SubstationContainer & substation, DualAlgoControl & solver_control) override {
             const int nb_el = nb();
-            const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
-            const GlobalBusIdVect & bus_side_2_id_ = get_buses_side_2();
+            const GlobalBusIdVect & bus_side_1_id_ = get_bus_id_side_1();
+            const GlobalBusIdVect & bus_side_2_id_ = get_bus_id_side_2();
             for(int i = 0; i < nb_el; ++i){
                 if(!status_global_[i]){
-                    // see TwoSidesContainer::disconnect_if_not_in_main_component: the
-                    // branch does the counting, once, through its own rule.
-                    _apply_and_track_buses(i, substation, solver_control, [&]{
-                        side_1_.deactivate_no_bus_tracking(i, solver_control);
-                        side_2_.deactivate_no_bus_tracking(i, solver_control);
-                    });
+                    // see TwoSidesContainer::_disconnect_if_not_in_main_component: the
+                    // line does the counting, once, through its own rule.
+                    _open_sides(i, true, true, false, solver_control, substation);
                     continue;
                 }
                 const int b1 = bus_side_1_id_(i).cast_int();
@@ -247,11 +243,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                 const bool s2_outside = (b2 != _deactivated_bus_id) && !busbar_in_main_component[b2];
                 if(s1_outside && s2_outside){
                     // both converters in (an)other synchronous component: drop it all
-                    _apply_and_track_buses(i, substation, solver_control, [&]{
-                        side_1_.deactivate_no_bus_tracking(i, solver_control);
-                        side_2_.deactivate_no_bus_tracking(i, solver_control);
-                        if(!ignore_status_global_) status_global_[i] = false;
-                    });
+                    _open_sides(i, true, true, true, solver_control, substation);
                 } else if(s1_outside || s2_outside){
                     // exactly one converter in the main synchronous component: keep
                     // the HVDC line active and that converter injecting its scheduled
@@ -259,20 +251,13 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                     // Angle-droop ("AC emulation") cannot run across the cut (the
                     // remote angle is gone) -> fall back to the fixed power setpoint.
                     droop_enabled_[i] = false;
-                    _apply_and_track_buses(i, substation, solver_control, [&]{
-                        if(s1_outside) side_1_.deactivate_no_bus_tracking(i, solver_control);
-                        else           side_2_.deactivate_no_bus_tracking(i, solver_control);
-                    });
+                    _open_sides(i, s1_outside, s2_outside, false, solver_control, substation);
                     // status_global_[i] stays true: the line still injects in-main
                 }
             }
         }
 
-        real_type get_qmin_or(int hvdc_id) const {return side_1_.get_qmin(hvdc_id);}
-        real_type get_qmax_or(int hvdc_id) const {return side_1_.get_qmax(hvdc_id);}
-        real_type get_qmin_ex(int hvdc_id) const {return side_2_.get_qmin(hvdc_id);}
-        real_type get_qmax_ex(int hvdc_id) const {return side_2_.get_qmax(hvdc_id);}
-
+    public:
         /**
          * Change the active power of the line, legacy convention: `new_p` is
          * the side-1 station active power, generator convention (it is the
@@ -300,7 +285,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // bounds.
         void disable_droop(int hvdc_id) { droop_enabled_[hvdc_id] = false; }
         bool has_droop_active() const {
-            const int nb_hvdc = static_cast<int>(nb());
+            const int nb_hvdc = nb();
             for(int i = 0; i < nb_hvdc; ++i) if(is_droop_active(i)) return true;
             return false;
         }
@@ -346,16 +331,29 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
          */
         void droop_flows_mw(int hvdc_id, real_type raw_mw, real_type & p1_flow_mw, real_type & p2_flow_mw) const;
 
+    protected:
         // solver stuff
-        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
 
-        void fillpv(std::vector<int>& bus_pv,
-                    std::vector<bool> & has_bus_been_added,
-                    const SolverBusIdVect & slack_bus_id_solver,
-                    const SolverBusIdVect & id_grid_to_solver) const override {
+        void _fillpv(std::vector<int>& bus_pv,
+                     std::vector<bool> & has_bus_been_added,
+                     const SolverBusIdVect & slack_bus_id_solver,
+                     const SolverBusIdVect & id_grid_to_solver) const override {
             side_1_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);
             side_2_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);
         }
+
+        // the sides publish their own results (TwoSidesContainer); a droop line
+        // then recomputes its theta-dependent active power from the solved angles
+        void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                              const Eigen::Ref<const RealVect> & Vm,
+                              const Eigen::Ref<const CplxVect> & V,
+                              const SolverBusIdVect & id_grid_to_solver,
+                              const Eigen::Ref<const RealVect> & bus_vn_kv,
+                              real_type sn_mva,
+                              bool ac) override;
+
+    public:
 
         // ---- voltage-regulating converter stations as VoltageControl controllers ----
         // A VSC station with voltage_regulator_on pins its own bus through the PV
@@ -376,32 +374,12 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                              : side_2_.get_target_vm_pu(hvdc_id);
         }
         real_type get_station_q_range_mvar(int hvdc_id, int side) const {
-            return side == 1 ? side_1_.get_qmax(hvdc_id) - side_1_.get_qmin(hvdc_id)
-                             : side_2_.get_qmax(hvdc_id) - side_2_.get_qmin(hvdc_id);
+            return side == 1 ? side_1_.get_max_q(hvdc_id) - side_1_.get_min_q(hvdc_id)
+                             : side_2_.get_max_q(hvdc_id) - side_2_.get_min_q(hvdc_id);
         }
         void set_station_voltage_control_q(int hvdc_id, int side, real_type q_mvar) {
             if(side == 1) side_1_.set_voltage_control_q(hvdc_id, q_mvar);
             else          side_2_.set_voltage_control_q(hvdc_id, q_mvar);
-        }
-
-        void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & /*Bp*/,
-                        std::vector<Eigen::Triplet<real_type> > & /*Bpp*/,
-                        const SolverBusIdVect & /*id_grid_to_solver*/,
-                        real_type /*sn_mva*/,
-                        FDPFMethod /*xb_or_bx*/) const override {
-                            // no Bp coeffs for hvdc lines
-                        }
-
-        void compute_results(const Eigen::Ref<const RealVect> & Va,
-                             const Eigen::Ref<const RealVect> & Vm,
-                             const Eigen::Ref<const CplxVect> & V,
-                             const SolverBusIdVect & id_grid_to_solver,
-                             const Eigen::Ref<const RealVect> & bus_vn_kv,
-                             real_type sn_mva,
-                             bool ac);
-
-        void reset_results(){
-            reset_results_tsc();
         }
 
         /// see GeneratorContainer::set_q
@@ -415,17 +393,6 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             return (side == 1) ? side_1_.takes_q_residual_share(hvdc_id, solved_by_algo)
                                : side_2_.takes_q_residual_share(hvdc_id, solved_by_algo);
         }
-        void get_vm_for_dc(Eigen::Ref<RealVect> Vm){
-            side_1_.get_vm_for_dc(Vm);
-            side_2_.get_vm_for_dc(Vm);
-        }
-        void set_vm_or(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const{
-            side_1_.set_vm(V, id_grid_to_solver);
-        }
-        void set_vm_ex(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const{
-            side_2_.set_vm(V, id_grid_to_solver);
-        }
-
         /**
         this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
         the ac powerflow
@@ -494,7 +461,7 @@ inline HvdcLineInfo::HvdcLineInfo(const HvdcLineContainer & r_data_hvdc, int my_
     station_side_2(r_data_hvdc.side_2_, my_id)
 {
     if (my_id < 0) return;
-    if (my_id >= static_cast<int>(r_data_hvdc.nb())) return;
+    if (my_id >= r_data_hvdc.nb()) return;
     loss_pct = r_data_hvdc.loss_percent_(my_id);
     loss_mw = r_data_hvdc.loss_mw_(my_id);
 

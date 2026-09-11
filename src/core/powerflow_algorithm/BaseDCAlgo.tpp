@@ -553,7 +553,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_lodf(const Eigen::Ref<const IntVect> & fro
         auto t_bus = to_bus(line_id);
         if ((f_bus == BaseConstants::_deactivated_bus_id) || (t_bus == BaseConstants::_deactivated_bus_id)){
             // element carries no DC flow (disconnected, or half-open -- see
-            // TwoSidesContainer_rxh_A::fillBdc's "disco on one side == disco on
+            // BranchContainer::fillBdc's "disco on one side == disco on
             // both sides" convention): "outaging" it has no effect anywhere in
             // the grid, i.e. an identity column. Its own row is already all-0
             // too, since its PTDF row is 0 (fillBf_for_PTDF excludes it from Bf).

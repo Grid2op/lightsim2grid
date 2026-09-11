@@ -62,7 +62,7 @@ std::vector<Coeff> YbusPolicy::Contingency::_coeffs_for_branch_ids(
     bool status;
     for(auto br_id : branch_ids){
         int el_id;
-        const TwoSidesContainer_rxh_A<OneSideContainer_ForBranch> *p_branch;
+        const BranchContainer *p_branch;
         if(static_cast<size_t>(br_id) < n_line)
         {
             // this is a powerline

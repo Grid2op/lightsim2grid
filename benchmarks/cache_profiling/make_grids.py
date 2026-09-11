@@ -16,12 +16,14 @@ Two families are written:
 
 * the plain pandapower cases, which have no remote voltage control and no SVC:
   every generator regulates its own bus, the ordinary PV path;
-* a ``_fancy`` variant of the bigger ones, where a few *pairs* of generators are
-  re-pointed at a common neighbouring load bus (a control GROUP: the bordered
-  VoltageControl formulation, one voltage row and one reactive-sharing row per
-  group) and a few voltage-mode SVCs are added. That is the configuration the
+* a ``_fancy`` variant of the bigger ones, where a few voltage-mode SVCs are
+  added and a few *pairs* of generators are re-pointed at a common neighbouring
+  load bus (a control GROUP: the bordered VoltageControl formulation, one voltage
+  row and one reactive-sharing row per group). That is the configuration the
   voltage-control plan (``VoltageControlPlan``) is actually built for, and the
-  only one where the size of its controller list is not zero.
+  only one where the size of its controller list is not zero. Every setpoint is
+  a magnitude the grid already holds, so that each added controller is a no-op
+  at the solution -- see `make_fancy` for the order this imposes.
 
     python make_grids.py [output_dir]
 """
@@ -76,20 +78,33 @@ def _solves(grid):
     return grid.ac_pf(v0, MAX_ITER, TOL).shape[0] > 0
 
 
-def _build(net, groups, svc_buses, vm):
-    """One candidate grid: `groups` = [(gen_a, gen_b, regulated_bus)], `svc_buses` a list."""
+def _solved_vm(grid):
+    """the solved magnitudes of `grid`, per bus (raises if it does not converge)"""
+    v0 = np.full(grid.total_bus(), grid.get_init_vm_pu(), dtype=complex)
+    vm = np.abs(grid.ac_pf(v0, MAX_ITER, TOL))
+    if vm.size == 0:
+        raise RuntimeError("the grid does not converge")
+    return vm
+
+
+def _build(net, groups, svc_buses, vm_groups, vm_svc):
+    """
+    One candidate grid: `groups` = [(gen_a, gen_b, regulated_bus)], `svc_buses` a
+    list. `vm_svc` / `vm_groups` are the per-bus magnitudes the SVCs / the groups
+    take their setpoints from (see make_fancy for which solve each comes from).
+    """
     grid = init_from_pandapower(net)
     for gen_a, gen_b, reg_bus in groups:
         for gen_id in (gen_a, gen_b):
             grid.set_gen_regulated_bus(gen_id, reg_bus)
             # both members of a group must agree on the setpoint to the last bit,
             # or fill_voltage_control_solver_data rejects the configuration
-            grid.change_v_gen(gen_id, float(vm[reg_bus]))
+            grid.change_v_gen(gen_id, float(vm_groups[reg_bus]))
     nb_svc = len(svc_buses)
     if nb_svc:
         buses = np.array(svc_buses, dtype=np.int32)
         grid.init_svcs([1] * nb_svc,                       # RegulationMode::VOLTAGE
-                       np.array([vm[b] for b in svc_buses]),
+                       np.array([vm_svc[b] for b in svc_buses]),
                        np.zeros(nb_svc),                   # q setpoint (unused in voltage mode)
                        np.zeros(nb_svc),                   # slope: none
                        np.full(nb_svc, -50.), np.full(nb_svc, 50.),
@@ -100,57 +115,69 @@ def _build(net, groups, svc_buses, vm):
 
 def make_fancy(net, nb_groups, nb_svc):
     """
-    A copy of `net` with up to `nb_groups` two-generator control groups and up to
-    `nb_svc` voltage-mode SVCs, that still converges.
+    A copy of `net` with up to `nb_svc` voltage-mode SVCs and up to `nb_groups`
+    two-generator control groups, that still converges.
 
-    Setpoints are the BASE case's own solved magnitudes, so the added controllers
-    ask the grid for what it was doing anyway; without that the pegase cases
-    diverge outright. Even so, not every pair can be moved onto a neighbouring
-    bus and keep the grid solvable, so each candidate is accepted only if the
-    grid still converges with it -- which is why the counts above are upper
-    bounds and the function reports what it actually built. (Same chunk-and-verify
-    workaround as ``benchmarks/make_exotic_grid.cpp``, for the same reason: see the
+    Every setpoint is a magnitude the grid already holds, so that each added
+    controller is a no-op at the solution (the grid is asked for what it was doing
+    anyway; without that the pegase cases diverge outright). That fixes the order
+    things are built in:
+
+    1. the SVCs first, with the plain case's solved magnitudes at their buses;
+    2. then an AC solve of THAT grid -- every exotic element in place except the
+       remote control -- gives the magnitudes the generator groups are pointed at:
+       each group holds its target bus exactly where the grid with the SVCs
+       already puts it.
+
+    Even so, not every pair can be moved onto a neighbouring bus and keep the grid
+    solvable, so each candidate is accepted only if the grid still converges with
+    it -- which is why the counts above are upper bounds and the function reports
+    what it actually built. (Same chunk-and-verify workaround as
+    ``benchmarks/make_exotic_grid.cpp``, for the same reason: see the
     remote-voltage-control entry in the changelog's TODO section.)
     """
     base = init_from_pandapower(net)
     nb_bus = base.total_bus()
-    v0 = np.full(nb_bus, base.get_init_vm_pu(), dtype=complex)
-    vm = np.abs(base.ac_pf(v0, MAX_ITER, TOL))
-    if vm.size == 0:
-        raise RuntimeError("the base case does not converge")
+    vm_base = _solved_vm(base)
 
     gens = base.get_generators()
     gen_buses = {gens[i].bus_id for i in range(len(gens))}
     load_buses = {load.bus_id for load in base.get_loads()}
     adj = _adjacency(net, nb_bus)
-    # a group needs two ACTIVE local regulators to enrol; the slack is left alone
+
+    # 1. the SVCs, at load buses without a generator, held at the plain case's
+    #    magnitude (so each injects nothing at the plain solution)
+    svc_buses = []
+    for bus in sorted(load_buses - gen_buses):
+        if len(svc_buses) >= nb_svc:
+            break
+        if _solves(_build(net, [], svc_buses + [bus], vm_base, vm_base)):
+            svc_buses.append(bus)
+
+    # 2. the reference for the remote control: the grid with every exotic element
+    #    in place except the remote control itself
+    vm_ref = _solved_vm(_build(net, [], svc_buses, vm_base, vm_base))
+
+    # 3. the groups: a group needs two ACTIVE local regulators to enrol (the slack
+    #    is left alone), pointed at a load bus next to one of the two that no SVC
+    #    holds and no other group regulates, and held exactly where the grid of
+    #    step 2 already puts it
     candidates = [i for i in range(len(gens))
                   if gens[i].connected and not gens[i].is_slack and gens[i].voltage_regulator_on]
-
-    groups, taken, i = [], set(), 0
+    groups, taken, i = [], set(svc_buses), 0
     while len(groups) < nb_groups and i + 1 < len(candidates):
         gen_a, gen_b = candidates[i], candidates[i + 1]
         i += 2
-        # a load bus next to one of the two, not already regulated by a group
         common = [b for b in sorted(adj[gens[gen_a].bus_id] | adj[gens[gen_b].bus_id])
                   if b in load_buses and b not in gen_buses and b not in taken]
         if not common:
             continue
         reg_bus = common[0]
-        if _solves(_build(net, groups + [(gen_a, gen_b, reg_bus)], [], vm)):
+        if _solves(_build(net, groups + [(gen_a, gen_b, reg_bus)], svc_buses, vm_ref, vm_base)):
             groups.append((gen_a, gen_b, reg_bus))
             taken.add(reg_bus)
 
-    svc_buses = []
-    for bus in sorted(load_buses - gen_buses):
-        if len(svc_buses) >= nb_svc:
-            break
-        if bus in taken:
-            continue
-        if _solves(_build(net, groups, svc_buses + [bus], vm)):
-            svc_buses.append(bus)
-
-    grid = _build(net, groups, svc_buses, vm)
+    grid = _build(net, groups, svc_buses, vm_ref, vm_base)
     if not _solves(grid):
         raise RuntimeError("the fancy grid does not converge")
     return grid, len(groups), len(svc_buses)
