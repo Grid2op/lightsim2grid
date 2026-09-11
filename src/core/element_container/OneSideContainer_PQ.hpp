@@ -80,18 +80,6 @@ class OneSideContainer_PQ : public OneSideContainer
         }
 
     public:
-        void change_p(int el_id, real_type new_p, DualAlgoControl & solver_control) {
-            bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
-            if(!my_status)
-            {
-                std::ostringstream exc_;
-                exc_ << "OneSideContainer::change_p: Impossible to change the active value of a disconnected element (check load id ";
-                exc_ << el_id;
-                exc_ << ")";
-                throw std::runtime_error(exc_.str());
-            }
-            change_p_nothrow(el_id, new_p, solver_control);
-        }
         void change_p_nothrow(int el_id, real_type new_p, DualAlgoControl & solver_control)
         {
             _check_in_range(el_id, status_, "change_p");
@@ -100,19 +88,6 @@ class OneSideContainer_PQ : public OneSideContainer
             if (abs(target_p_mw_(el_id) - new_p) > _tol_equal_float) {
                 target_p_mw_(el_id) = new_p;
             }
-        }
-        void change_q(int el_id, real_type new_q, DualAlgoControl & solver_control)
-        {
-            bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
-            if(!my_status)
-            {
-                std::ostringstream exc_;
-                exc_ << "OneSideContainer::change_q: Impossible to change the reactive value of a disconnected element (check load id ";
-                exc_ << el_id;
-                exc_ << ")";
-                throw std::runtime_error(exc_.str());
-            }
-            change_q_nothrow(el_id, new_q, solver_control);
         }
         void change_q_nothrow(int el_id, real_type new_q, DualAlgoControl & solver_control)
         {
