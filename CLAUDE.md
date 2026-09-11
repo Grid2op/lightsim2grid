@@ -229,7 +229,10 @@ compiled in, behind `LinearSolverPolicy`. The three-way `analyze` (symbolic, exp
 `factorize` (numeric) / `refactorize` (numeric, reusing the symbolic analysis and pivot
 order) split is the performance story of the whole library — most optimisation work here is
 about not triggering `analyze`. `RefactorRetryLinearSolver` falls back to a full `factorize`
-when a `refactorize` fails, which is what makes aggressive value-level edits safe.
+when a `refactorize` fails, which is what makes aggressive value-level edits safe; the same
+fallback is a switch on every `LinearSolverPolicy` (`set_refactor_fallback`), and the batch
+algorithms turn it on whenever they mask buses or switch PV / PQ, because those edits can
+move a pivot that KLU's fixed pivot sequence then finds at zero.
 
 ### Batch algorithms
 

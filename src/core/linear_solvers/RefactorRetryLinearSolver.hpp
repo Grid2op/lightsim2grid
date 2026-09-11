@@ -17,42 +17,29 @@
 namespace ls2g {
 
 /**
-Same counting/timing behavior as LinearSolverPolicy<LinearSolver>, plus: if refactorize()
-fails, fall back to a full factorize() (reusing whatever symbolic state the underlying
-solver already holds) before giving up. This is a defensive measure recommended by
-SuiteSparse's own docs for KLU's klu_refactor/klu_factor pair, generalized here to any
-LinearSolver exposing a real factorize/refactorize distinction (KLU, CKTSO -- for
-SparseLU/NICSLU, factorize() and refactorize() are the same call, so the fallback is a
-harmless no-op there).
+LinearSolverPolicy<LinearSolver> with its refactorize-failure fallback switched on from
+construction (see LinearSolverPolicy::set_refactor_fallback): if refactorize() fails, a
+full numeric factorize() (reusing the symbolic analysis the underlying solver already
+holds) is tried before giving up. A defensive measure recommended by SuiteSparse's own
+docs for KLU's klu_refactor/klu_factor pair, generalized to any LinearSolver exposing a
+real factorize/refactorize distinction (KLU, CKTSO -- for SparseLU/NICSLU, factorize() and
+refactorize() are the same call, so the fallback is a harmless no-op there).
+
+The fallback itself lives in the policy, behind a switch, so that an algorithm which is
+NOT one of the NRRefactorRetry_* family can still turn it on when it knows its own edits
+may move a pivot -- the batch algorithms do, when they mask buses (BaseAlgo::
+set_refactor_fallback). This class only sets the default: the NRRefactorRetry_* names
+are "the fallback, always on".
 
 `final`: matches the project's existing convention (e.g. KLULinearSolver, NRAlgo) --
 this is meant to be used only as a concrete, leaf LinearSolver type, never derived from
-further. It does NOT enable any virtual-dispatch optimization (there is nothing virtual
-here to devirtualize): refactorize() below hides (does not override) the non-virtual
-base method of the same name, resolved entirely at compile time since this class is only
-ever used as a template parameter, never accessed through a LinearSolverPolicy<>&/* base
-reference.
+further.
 **/
 template<class LinearSolver>
 class RefactorRetryLinearSolver final : public LinearSolverPolicy<LinearSolver>
 {
     public:
-        ErrorType refactorize(const EigenRefConstRealSpMat & J) {
-            ++this->stats_.nb_refactorize;
-            auto timer = CustTimer();
-            ErrorType res = this->inner_.refactorize(J);
-            this->stats_.timer_refactor_ += timer.duration();
-            if (res != ErrorType::NoError) {
-                ++this->stats_.nb_refactorize_failed;
-                ++this->stats_.nb_fallback_factorize;
-                auto timer_f = CustTimer();
-                res = this->inner_.factorize(J);
-                this->stats_.timer_factor_ += timer_f.duration();
-                ++this->stats_.nb_factorize;
-                if (res != ErrorType::NoError) ++this->stats_.nb_fallback_factorize_failed;
-            }
-            return res;
-        }
+        RefactorRetryLinearSolver() noexcept { this->set_refactor_fallback(true); }
 };
 
 } // namespace ls2g

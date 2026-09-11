@@ -65,8 +65,37 @@ class LinearSolverPolicy
             auto timer = CustTimer();
             ErrorType res = inner_.refactorize(J);
             stats_.timer_refactor_ += timer.duration();
+            if (res != ErrorType::NoError) {
+                ++stats_.nb_refactorize_failed;
+                if (refactor_fallback_) {
+                    // A refactorize reuses the pivot sequence of the last factorize.
+                    // KLU halts on a pivot that is now exactly zero -- which is what a
+                    // value-level edit that changes a bus's role does (a masked bus,
+                    // a PV bus released to PQ, a stranded controller's row repurposed
+                    // into "Q_c = 0"): the entry the base matrix pivoted at is a zero
+                    // in the edited one. The symbolic analysis (ordering, pattern) is
+                    // still right; only the pivots must be chosen again, and that is
+                    // exactly a numeric factorize. SparseLU never gets here: its
+                    // refactorize IS a factorize.
+                    ++stats_.nb_fallback_factorize;
+                    auto timer_f = CustTimer();
+                    res = inner_.factorize(J);
+                    stats_.timer_factor_ += timer_f.duration();
+                    ++stats_.nb_factorize;
+                    if (res != ErrorType::NoError) ++stats_.nb_fallback_factorize_failed;
+                }
+            }
             return res;
         }
+
+        // Whether a failed refactorize() falls back to a numeric factorize() before
+        // reporting the failure (see there). Off by default: a plain algorithm
+        // reports the failure, so a systematic one stays visible in the stats.
+        // RefactorRetryLinearSolver is this policy with the switch on from
+        // construction; the batch algorithms turn it on for whatever algorithm they
+        // run when they mask buses or switch PV / PQ (BaseAlgo::set_refactor_fallback).
+        void set_refactor_fallback(bool val) noexcept { refactor_fallback_ = val; }
+        bool refactor_fallback() const noexcept { return refactor_fallback_; }
 
         ErrorType solve(Eigen::Ref<RealVect> b) {
             ++stats_.nb_solve;
@@ -92,6 +121,7 @@ class LinearSolverPolicy
     protected:
         LinearSolver inner_;
         LinearSolverStats stats_;
+        bool refactor_fallback_ = false;
 
     private:
         // no copy allowed (matches the concrete solver classes' own convention)

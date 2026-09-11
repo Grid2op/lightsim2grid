@@ -317,13 +317,6 @@ class LS2G_API BaseAlgo : public BaseConstants
         // non-converged when a (possibly plugin) solver returned non-finite
         // voltages while still claiming convergence -- see
         // LSGrid::process_results / LSGrid::_check_solver_output.
-        /**
-         * Restore the iteration count a solve reached. Same purpose as set_error:
-         * LSGrid::process_results resets a diverged algorithm and puts the diagnosis
-         * back, so that "it gave up after N iterations" survives the reset.
-         */
-        void set_nb_iter(int nb_iter) { nr_iter_ = nb_iter; }
-
         void set_error(ErrorType error) {
             err_ = error;
         }
@@ -469,6 +462,19 @@ class LS2G_API BaseAlgo : public BaseConstants
         // (e.g. via the solver control's tell_pv_changed()) -- see BaseBatchSweep::
         // _maybe_prepare_masks(). Default is a no-op so other algorithms are unaffected.
         virtual void set_may_mask_voltage_control(bool /*val*/) {}
+
+        // Refactorize-failure fallback of the linear solver (see LinearSolverPolicy::
+        // set_refactor_fallback). A value-level edit that changes a bus's role at
+        // constant sparsity -- a masked bus, a PV bus released to PQ, a stranded
+        // controller's row repurposed into "Q_c = 0" -- can put a zero where the base
+        // factorization had a pivot; a refactorize keeps that pivot sequence and KLU
+        // halts on the zero pivot. With this on, the linear solver redoes a numeric
+        // factorize (same symbolic analysis, fresh pivots) before reporting the
+        // failure. The batch algorithms turn it on whenever they mask or switch
+        // (BaseBatchSweep::_maybe_prepare_masks / _push_switchable_to_algo); the
+        // NRRefactorRetry_* algorithms have it on permanently. Default is a no-op for
+        // algorithms without a factorize / refactorize distinction to speak of.
+        virtual void set_refactor_fallback(bool /*val*/) {}
 
         // PV / PQ relabelling at constant sparsity (ScenarioSweep generator
         // contingencies). Two calls, in this order:

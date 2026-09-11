@@ -5243,7 +5243,12 @@ const std::string DocLSGrid::ac_pf = R"mydelimiter(
       initial guess of the resulting flows. This vector will be modified !
 
     max_iter: ``int``
-        Maximum number of iterations allowed (this might be ignored) and should be a >= 0 integer
+        Maximum number of iterations allowed (this might be ignored) and should be a >= 0 integer.
+        With ``0`` the algorithm builds its initial state and takes no step: the returned vector
+        is empty (nothing converged), but the pre-iteration state -- the seeded voltages, the
+        Jacobian's sparsity -- stays readable through :func:`lightsim2grid.network.LSGrid.get_V_solver`,
+        :func:`lightsim2grid.network.LSGrid.get_J_solver` and the related getters, exactly as the
+        last iterate of a diverged powerflow does.
     
     tol: ``float``
         Tolerance criteria to stop the computation. This should be > 0 real number.

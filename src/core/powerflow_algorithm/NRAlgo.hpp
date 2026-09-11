@@ -172,6 +172,9 @@ public:
     void set_may_mask_voltage_control(bool val) override {
         _system.set_may_mask_voltage_control(val);
     }
+    void set_refactor_fallback(bool val) override {
+        _linear_solver.set_refactor_fallback(val);
+    }
 
     // ----- PV / PQ relabelling at constant sparsity -----------------------------
     bool supports_pv_pinning() const override { return true; }
