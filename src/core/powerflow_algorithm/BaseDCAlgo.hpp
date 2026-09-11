@@ -132,6 +132,9 @@ class BaseDCAlgo final: public BaseAlgo
         void set_masked_buses(const std::vector<int> & solver_bus_ids) override{
             masked_buses_ = solver_bus_ids;
         }
+        void set_refactor_fallback(bool val) override {
+            _linear_solver.set_refactor_fallback(val);
+        }
 
         // see BaseAlgo::set_lazy_v / lazy_v
         void set_lazy_v(bool value) override { _lazy_v_ = value; }

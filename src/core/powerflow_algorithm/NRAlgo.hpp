@@ -172,6 +172,9 @@ public:
     void set_may_mask_voltage_control(bool val) override {
         _system.set_may_mask_voltage_control(val);
     }
+    void set_refactor_fallback(bool val) override {
+        _linear_solver.set_refactor_fallback(val);
+    }
 
     // ----- PV / PQ relabelling at constant sparsity -----------------------------
     bool supports_pv_pinning() const override { return true; }
@@ -183,6 +186,56 @@ public:
     }
     void set_start_polar_cache(bool val) override { _system.set_start_polar_cache(val); }
     
+    // ----- continuation powerflow (CPF) ----------------------------------------
+    // See BaseAlgo for the contract. Both operations are meaningful only right
+    // after a converged compute_pf: they read the converged (Va, Vm) and the
+    // factorization it left standing.
+    bool supports_cpf() const noexcept override { return true; }
+
+    bool cpf_tangent(const Eigen::Ref<const CplxVect> & dir_solver, RealVect & z) override {
+        const Eigen::Index n = _system.J().rows();
+        if(n <= 0){
+            throw std::runtime_error("NRAlgo::cpf_tangent: no Jacobian is available -- a "
+                                     "powerflow must have been solved first.");
+        }
+        if(dir_solver.size() != _system.Va().size()){
+            std::ostringstream exc_;
+            exc_ << "NRAlgo::cpf_tangent: the direction has " << dir_solver.size()
+                 << " entries while the solver has " << _system.Va().size() << " buses.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(z.size() != n) z.resize(n);
+        _system.cpf_rhs_into(z, dir_solver);
+        // solve() reuses the standing factorization: no analyze, no refactorize.
+        const ErrorType err = _linear_solver.solve(z);
+        if(err != ErrorType::NoError){
+            err_ = err;
+            return false;
+        }
+        return true;
+    }
+
+    void cpf_predict(const Eigen::Ref<const RealVect> & z,
+                     real_type coeff,
+                     CplxVect & V_pred) const override {
+        _system.cpf_predict_into(V_pred, z, coeff);
+    }
+
+    bool cpf_refactorize_at_current() override {
+        if(_system.J().rows() <= 0){
+            throw std::runtime_error("NRAlgo::cpf_refactorize_at_current: no Jacobian is "
+                                     "available -- a powerflow must have been solved first.");
+        }
+        _system.fill_internal_variables();
+        _system.fill_J();
+        const ErrorType err = _linear_solver.refactorize(_system.J());
+        if(err != ErrorType::NoError){
+            err_ = err;
+            return false;
+        }
+        return true;
+    }
+
     // ----- scaling policy ------------------------------------------------------
     ScalingPolicyType get_scaling_policy_type()  const { return scaling_policy_->type(); }
     void set_scaling_policy(ScalingPolicyType t)  { 

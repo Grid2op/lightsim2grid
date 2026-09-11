@@ -329,6 +329,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         // build_J_sparsity() already sees this), unlike _algo in
         // _maybe_prepare_masks() which may already have sparsity built.
         if(mask_mode) algos[t]->set_may_mask_voltage_control(true);
+        // the refactorize fallback the member algo got (see _maybe_prepare_masks /
+        // _push_switchable_to_algo): a fresh algo starts without it
+        if(mask_mode || _has_pv_switching()) algos[t]->set_refactor_fallback(true);
         // same for the PV/PQ relabelling slots: a freshly spawned algo has no sparsity
         // yet, so telling it here is enough -- its first build_J_sparsity() already
         // accounts for them. Starts fully pinned, like _algo; each row releases what

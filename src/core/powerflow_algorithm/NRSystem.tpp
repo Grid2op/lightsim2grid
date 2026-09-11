@@ -461,6 +461,62 @@ inline RealVect NRSystem<Base, Rest...>::mismatch() const
 }
 
 template <typename... Rest>
+inline void NRSystem<Base, Rest...>::cpf_rhs_into(Eigen::Ref<RealVect> rhs,
+                                                  const Eigen::Ref<const CplxVect>& dir) const
+{
+    assert(rhs.size() == static_cast<Eigen::Index>(total_state_variables()));
+    rhs.setZero();
+    // the SAME projection _residual_into applies to Sbus, sign included -- see the
+    // header comment. Accumulate, for the same multiplicity reason.
+    const std::vector<int>& p_buses = ledger_.p_buses();
+    const std::vector<int>& p_rows  = ledger_.p_rows();
+    for (size_t k = 0; k < p_buses.size(); ++k) rhs(p_rows[k]) += std::real(dir(p_buses[k]));
+    const std::vector<int>& q_buses = ledger_.q_buses();
+    const std::vector<int>& q_rows  = ledger_.q_rows();
+    for (size_t k = 0; k < q_buses.size(); ++k) rhs(q_rows[k]) += std::imag(dir(q_buses[k]));
+
+    // masked / PV-pinned rows are identity rows in J (see fill_J): zero them here so
+    // the tangent they produce is zero, exactly as _residual_into does for the residual.
+    if (!masked_buses_.empty()) {
+        for (int b : masked_buses_) {
+            const int pr = ledger_.p_row(b);
+            if (pr >= 0) rhs(pr) = static_cast<real_type>(0.);
+            const int qr = ledger_.q_row(b);
+            if (qr >= 0) rhs(qr) = static_cast<real_type>(0.);
+        }
+    }
+    for (int b : pv_pinned_buses_) {
+        const int qr = ledger_.q_row(b);
+        if (qr >= 0) rhs(qr) = static_cast<real_type>(0.);
+    }
+}
+
+template <typename... Rest>
+inline void NRSystem<Base, Rest...>::cpf_predict_into(CplxVect& V_pred,
+                                                      const Eigen::Ref<const RealVect>& z,
+                                                      real_type coeff) const
+{
+    // same (bus, col) walk as apply_step, but into scratch copies: the system's own
+    // (Va_, Vm_, V_) stay at the converged point, which is what the corrector falls
+    // back to if this prediction has to be retried with a smaller step.
+    if(Va_trial_cache_.size() != Va_.size()) Va_trial_cache_.resize(Va_.size());
+    if(Vm_trial_cache_.size() != Vm_.size()) Vm_trial_cache_.resize(Vm_.size());
+    Va_trial_cache_ = Va_;
+    Vm_trial_cache_ = Vm_;
+
+    const std::vector<int>& theta_buses = ledger_.theta_buses();
+    const std::vector<int>& theta_cols  = ledger_.theta_cols();
+    for (size_t k = 0; k < theta_buses.size(); ++k)
+        Va_trial_cache_(theta_buses[k]) += coeff * z(theta_cols[k]);
+    const std::vector<int>& vm_buses = ledger_.vm_buses();
+    const std::vector<int>& vm_cols  = ledger_.vm_cols();
+    for (size_t k = 0; k < vm_buses.size(); ++k)
+        Vm_trial_cache_(vm_buses[k]) += coeff * z(vm_cols[k]);
+
+    _reconstruct_V_into(V_pred, Va_trial_cache_, Vm_trial_cache_);
+}
+
+template <typename... Rest>
 inline void NRSystem<Base, Rest...>::apply_step(const Eigen::Ref<const RealVect>& dx)
 {
     // generic voltage updates, driven by the ledger's (bus, col) pair lists

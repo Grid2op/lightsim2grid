@@ -2391,7 +2391,7 @@ class LS2G_API LSGrid final
          * `update_topo` is the one bulk operation NOT driven from here: see it for
          * why its order matters even more.
          */
-        static const std::size_t NB_CONTAINERS = 9;
+        static constexpr std::size_t NB_CONTAINERS = 9;
         [[nodiscard]] std::array<GenericContainer *, NB_CONTAINERS> _all_containers();
         [[nodiscard]] std::array<const GenericContainer *, NB_CONTAINERS> _all_containers() const;
         /**
@@ -2413,6 +2413,9 @@ class LS2G_API LSGrid final
         // note on ac_pf). It is what gets marked "in sync" here -- never the member,
         // which stays "everything changed" until the caller publishes this copy back
         // on the success path.
+        // On divergence the algorithm is NOT reset -- its last iterate, error and
+        // iteration count stay readable -- and `algo_needs_rebuild` makes the next
+        // solve rebuild its internals instead. See the divergence branch.
         void process_results(bool conv, CplxVect & res, const Eigen::Ref<const CplxVect> & Vinit, bool ac,
                              SolverBusIdVect & id_me_to_solver, AlgoControl & solve_control);
 

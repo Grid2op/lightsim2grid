@@ -1156,6 +1156,33 @@ public:
     // "update these already-declared feature positions."
     void update_trailing_feature_values(int count, const Eigen::Ref<const RealVect>& deltas);
 
+    // ----- continuation powerflow (CPF) primitives --------------------------------
+    //
+    // Right-hand side of the tangent system J . z = rhs, for the parametrised
+    // problem F(x, lam) = Scomp(x) - Sbus - lam . dir, whose dF/dlam is -dir.
+    //
+    // The projection is exactly the one _residual_into performs on Sbus, and for the
+    // same reason: `res` there is `Sbus - Scomp` (the residual is NEGATED, see
+    // NRAlgo::compute_pf, which solves J . dx = res and applies +dx), so the Sbus
+    // term enters a P row with a PLUS sign. Hence rhs(p_row(b)) = +Re(dir(b)) and
+    // rhs(q_row(b)) = +Im(dir(b)).
+    //
+    // Custom rows (MultiSlack, Hvdc, VoltageControl) get zero: none of them depends
+    // on lam. Masked and PV-pinned rows get zero too, matching the identity rows
+    // fill_J writes for them -- so a masked bus contributes no tangent, exactly as it
+    // contributes no residual.
+    //
+    // Accumulates (+=) over the ledger's pair lists, like _residual_into, so a bus
+    // registered more than once sums rather than overwrites.
+    void cpf_rhs_into(Eigen::Ref<RealVect> rhs, const Eigen::Ref<const CplxVect>& dir) const;
+
+    // V_pred = (Va_ + coeff . z_theta, Vm_ + coeff . z_vm) in polar form, using the
+    // same ledger-driven (bus, col) walk as apply_step -- so a component that owns a
+    // voltage unknown is predicted exactly where the corrector would step it. The
+    // system's own state is NOT modified: this writes a trial voltage for the
+    // corrector to start from.
+    void cpf_predict_into(CplxVect& V_pred, const Eigen::Ref<const RealVect>& z, real_type coeff) const;
+
     // ----- Housekeeping ----------------------------------------------------------
 
     void clear_jacobian() {

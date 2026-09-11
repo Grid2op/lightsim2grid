@@ -80,6 +80,7 @@ add_executable(lightsim2grid_unit_tests
     test_timeseries_sbus.cpp
     test_bus_graph.cpp
     test_injection_sweep.cpp
+    test_continuation_sweep.cpp
     test_scenario_sweep_violations.cpp
     test_bus_element_count.cpp
     test_kcl_from_results.cpp

@@ -317,13 +317,6 @@ class LS2G_API BaseAlgo : public BaseConstants
         // non-converged when a (possibly plugin) solver returned non-finite
         // voltages while still claiming convergence -- see
         // LSGrid::process_results / LSGrid::_check_solver_output.
-        /**
-         * Restore the iteration count a solve reached. Same purpose as set_error:
-         * LSGrid::process_results resets a diverged algorithm and puts the diagnosis
-         * back, so that "it gave up after N iterations" survives the reset.
-         */
-        void set_nb_iter(int nb_iter) { nr_iter_ = nb_iter; }
-
         void set_error(ErrorType error) {
             err_ = error;
         }
@@ -477,6 +470,19 @@ class LS2G_API BaseAlgo : public BaseConstants
         // _maybe_prepare_masks(). Default is a no-op so other algorithms are unaffected.
         virtual void set_may_mask_voltage_control(bool /*val*/) {}
 
+        // Refactorize-failure fallback of the linear solver (see LinearSolverPolicy::
+        // set_refactor_fallback). A value-level edit that changes a bus's role at
+        // constant sparsity -- a masked bus, a PV bus released to PQ, a stranded
+        // controller's row repurposed into "Q_c = 0" -- can put a zero where the base
+        // factorization had a pivot; a refactorize keeps that pivot sequence and KLU
+        // halts on the zero pivot. With this on, the linear solver redoes a numeric
+        // factorize (same symbolic analysis, fresh pivots) before reporting the
+        // failure. The batch algorithms turn it on whenever they mask or switch
+        // (BaseBatchSweep::_maybe_prepare_masks / _push_switchable_to_algo); the
+        // NRRefactorRetry_* algorithms have it on permanently. Default is a no-op for
+        // algorithms without a factorize / refactorize distinction to speak of.
+        virtual void set_refactor_fallback(bool /*val*/) {}
+
         // PV / PQ relabelling at constant sparsity (ScenarioSweep generator
         // contingencies). Two calls, in this order:
         //
@@ -497,6 +503,59 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual bool supports_pv_pinning() const { return false; }
         virtual void set_switchable_vm_buses(const std::vector<int> & /*solver_bus_ids*/) {}
         virtual void set_pv_pinned_buses(const std::vector<int> & /*solver_bus_ids*/) {}
+
+        // ---- continuation powerflow (CPF) primitives ------------------------------
+        //
+        // The continuation loop itself lives in ContinuationSweep (a batch algorithm);
+        // what it needs from the algorithm is only these two operations, both of which
+        // require an augmented-Jacobian layout and a standing factorization, i.e. the
+        // Newton-Raphson family (see supports_cpf).
+        //
+        // The parametrised system is F(x, lam) = Scomp(x) - Sbus_base - lam . dir = 0,
+        // so dF/dlam = -dir and the tangent dx/dlam solves J . z = rhs(dir). Both calls
+        // are only meaningful right after a CONVERGED compute_pf: they read the
+        // algorithm's converged (Va, Vm) and reuse the factorization that solve left
+        // standing -- no analyze, no refactorize, which is the entire point of running
+        // a continuation in C++ rather than around it.
+        //
+        // Note that the standing factorization is J at the last iterate that actually
+        // (re)factorized, NOT at the converged point: compute_pf does not refactorize
+        // after its final convergence check. The tangent is therefore approximate --
+        // harmless, since the corrector fixes it, but it does mean the tangent quality
+        // degrades with a lazier RefactorPolicy (Chord in particular). Pass
+        // `exact_tangent` on the sweep to refactorize at the converged point instead.
+        virtual bool supports_cpf() const noexcept { return false; }
+
+        // Solves J . z = rhs(dir), where rhs projects the complex per-bus direction
+        // onto this algorithm's mismatch-equation ordering. `z` is resized to the
+        // number of unknowns. Returns false if the linear solve failed (`z` is then
+        // meaningless); throws if the algorithm has no J at all.
+        virtual bool cpf_tangent(const Eigen::Ref<const CplxVect> & /*dir_solver*/,
+                                 RealVect & /*z*/){
+            throw std::runtime_error("BaseAlgo::cpf_tangent: this algorithm is not "
+                                     "Newton-Raphson based and cannot support a continuation "
+                                     "powerflow (see supports_cpf).");
+        }
+
+        // Writes the predicted voltages V + coeff . (the (Va, Vm) part of z) into
+        // V_pred, reading the algorithm's own converged (Va, Vm). V_pred is resized.
+        virtual void cpf_predict(const Eigen::Ref<const RealVect> & /*z*/,
+                                 real_type /*coeff*/,
+                                 CplxVect & /*V_pred*/) const {
+            throw std::runtime_error("BaseAlgo::cpf_predict: this algorithm is not "
+                                     "Newton-Raphson based and cannot support a continuation "
+                                     "powerflow (see supports_cpf).");
+        }
+
+        // Rebuilds J at the current (converged) state and refactorizes it, so that a
+        // following cpf_tangent uses the exact Jacobian at that point rather than the
+        // one left standing by the last NR iteration. Numeric only -- the symbolic
+        // analysis (and therefore the whole batch's one-analyze premise) is untouched.
+        virtual bool cpf_refactorize_at_current(){
+            throw std::runtime_error("BaseAlgo::cpf_refactorize_at_current: this algorithm is "
+                                     "not Newton-Raphson based and cannot support a continuation "
+                                     "powerflow (see supports_cpf).");
+        }
 
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}

@@ -62,6 +62,7 @@ This is a work in progress at the moment
    time_series
    security_analysis
    scenario_sweep
+   continuation_powerflow
    cpp_library
    solver_plugin
    binary_serialization

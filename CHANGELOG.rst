@@ -179,6 +179,17 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   to clear; a contingency given by name no longer scans every name of the grid.
 - [FIXED] ``ContingencyAnalysis``: registering a contingency after a computation left the
   python-side results cached, so the next ``get_flows()`` indexed stale arrays and raised.
+- [FIXED] ``ContingencyAnalysis`` / ``ScenarioSweep`` in ``handle_disconnected_grid`` mode
+  reported a contingency stranding a lone remote-voltage controller as diverged under
+  ``NR_KLU`` / ``NRSing_KLU`` (fine under SparseLU and ``NRRefactorRetry_KLU``): the repurposed
+  control row moves a pivot, and KLU's refactorize halts on the zero. See the entry below.
+- [ADDED] ``BaseAlgo::set_refactor_fallback`` / ``LinearSolverPolicy::set_refactor_fallback``: the
+  numeric-factorize fallback of ``RefactorRetryLinearSolver`` as a switch on every linear
+  solver. The batch algorithms turn it on whenever they mask buses or switch PV / PQ.
+- [FIXED] a non-converged ``LSGrid.ac_pf`` / ``dc_pf`` no longer resets the algorithm: its last
+  iterate stays readable (``get_V_solver``, ``get_J_solver``, ...) and the next solve rebuilds
+  through ``algo_needs_rebuild`` instead. In particular ``max_iter=0``, documented as returning
+  the pre-iteration state, came back empty and segfaulted an external solver seeding from it.
 - [IMPROVED] the element containers share one interface (public non-virtual entry points,
   protected ``_xxx`` hooks, ``_on_xxx`` notifications, one ``LSGrid::_all_containers()`` list).
   ``TwoSidesContainer_rxh_A`` is now ``BranchContainer``, ``OneSideContainer_ForBranch`` is
@@ -192,6 +203,17 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [IMPROVED] ``-march=native`` (``__COMPILE_MARCHNATIVE=1``) now also compiles KLU and its
   SuiteSparse dependencies, not just ``lightsim2grid_core``. Measured 5-16% faster solves on
   grids above ~1000 buses (``TimeSeries``, ``ContingencyAnalysis`` and plain powerflows alike).
+- [ADDED] ``ContinuationPowerFlow`` / ``run_cpf``: a continuation powerflow tracing the PV curve
+  from the grid's injections to a target state, stopping at the voltage-collapse nose. Options
+  and defaults follow MATPOWER's ``cpf.*``. Natural parameterisation, so the curve stops at the
+  nose rather than rounding it.
+- [ADDED] ``load_steering`` / ``gen_steering``: per-element coefficients in [0, 1] steering which
+  loads and generators move during a continuation (0 holds an element at its base value).
+  Generation follows the load by default, slack machines included: unlike in MATPOWER, whose
+  rule rests on a slack ``Pg`` being an output, a distributed-slack participant's setpoint is a
+  genuine input here.
+- [ADDED] ``ContinuationSweepCPP``, a batch algorithm alongside the four existing ones: the whole
+  curve costs one symbolic factorization, whatever the number of points.
 - [ADDED] ``LightSimBackend(loader_method="matpower")``: a grid2op environment can now ship a
   MATPOWER case (``grid.m`` / ``grid.mat``) as its powergrid, next to pandapower's ``grid.json``
   and pypowsybl's ``grid.xiidm``. One substation per matpower bus, grid2op default names.
@@ -408,11 +430,6 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   takes the whole residual and computes no total at all. Costs +0.16% on an ordinary cached
   step and +0.95% on an identical re-solve, which is what leaving pre-processing (where the
   change flags could skip the build) is worth.
-- [FIXED] a diverged AC or DC powerflow reported ``NotInitError`` after ``0`` iterations, no
-  matter what actually went wrong: ``process_results`` resets the algorithm on divergence, and
-  ``BaseAlgo::reset()`` means "never been run". Every real diagnosis was destroyed one line
-  before a caller could read it, including through ``LightSimBackend``'s "Divergence of AC
-  powerflow. Detailed error: ...". The error and the iteration count now survive the reset.
 - [FIXED] the exotic-elements test fixture asked for an angle-droop gain of 180 MW/deg on an
   HVDC link rated 20 MW, which reaches its cap in 0.106 degrees of angle difference -- a switch
   rather than a droop, and a Newton chasing it from a moved angle reference failed with
@@ -734,7 +751,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   named static so the identity it rests on can be tested head-on. It has to be: its two interesting
   branches -- a negative magnitude, an angle several turns out of range -- turn out to be
   unreachable from any converging solve (a trajectory that overshoots a magnitude ends up
-  diverging, and a diverged solve clears ``Vm_`` / ``Va_`` / ``V_``), so no solve-level test can
+  diverging, and a diverged solve returns nothing), so no solve-level test can
   reach them.
 - [ADDED] ``src/tests/test_fdpf_algorithm.cpp``. The Fast-Decoupled family had no answer-level
   coverage at all -- it appeared in the suite only through ``test_cache_reuse.cpp`` (caching, not
