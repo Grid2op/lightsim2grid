@@ -2391,7 +2391,7 @@ class LS2G_API LSGrid final
          * `update_topo` is the one bulk operation NOT driven from here: see it for
          * why its order matters even more.
          */
-        static const std::size_t NB_CONTAINERS = 9;
+        static constexpr std::size_t NB_CONTAINERS = 9;
         [[nodiscard]] std::array<GenericContainer *, NB_CONTAINERS> _all_containers();
         [[nodiscard]] std::array<const GenericContainer *, NB_CONTAINERS> _all_containers() const;
         /**
