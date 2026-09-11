@@ -73,7 +73,11 @@ to get a :class:`lightsim2grid.algorithm.LinearSolverStats` with:
   object (not reset every powerflow), so a fallback or failure that fires occasionally is
   distinguishable from one that fires systematically.
 - ``nb_refactorize_failed`` / ``nb_fallback_factorize`` / ``nb_fallback_factorize_failed``:
-  see :class:`~lightsim2grid.algorithm.NRRefactorRetry_KLU` below.
+  see :class:`~lightsim2grid.algorithm.NRRefactorRetry_KLU` below. The fallback those two
+  last counters describe is also enabled, on whatever algorithm they run, by
+  ``ContingencyAnalysis`` / ``ScenarioSweep`` when they mask buses (``handle_disconnected_grid``)
+  or switch a bus PV / PQ (generator contingencies): such value-level edits can move a pivot
+  that a fixed-pivot refactorize (KLU) then finds at zero.
 - ``timer_initialize`` / ``timer_factor`` / ``timer_refactor`` / ``timer_solve``: matching
   durations, reset every ``compute_pf``/``compute_pf_dc`` call like
   :class:`~lightsim2grid.algorithm.TimerJac` (returned by ``get_timers_jacobian()``), which

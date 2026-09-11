@@ -156,6 +156,17 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [FIXED] ``ContingencyAnalysis`` / ``ScenarioSweep`` in ``handle_disconnected_grid`` mode
+  reported a contingency stranding a lone remote-voltage controller as diverged under
+  ``NR_KLU`` / ``NRSing_KLU`` (fine under SparseLU and ``NRRefactorRetry_KLU``): the repurposed
+  control row moves a pivot, and KLU's refactorize halts on the zero. See the entry below.
+- [ADDED] ``BaseAlgo::set_refactor_fallback`` / ``LinearSolverPolicy::set_refactor_fallback``: the
+  numeric-factorize fallback of ``RefactorRetryLinearSolver`` as a switch on every linear
+  solver. The batch algorithms turn it on whenever they mask buses or switch PV / PQ.
+- [FIXED] a non-converged ``LSGrid.ac_pf`` / ``dc_pf`` no longer resets the algorithm: its last
+  iterate stays readable (``get_V_solver``, ``get_J_solver``, ...) and the next solve rebuilds
+  through ``algo_needs_rebuild`` instead. In particular ``max_iter=0``, documented as returning
+  the pre-iteration state, came back empty and segfaulted an external solver seeding from it.
 - [IMPROVED] the element containers share one interface (public non-virtual entry points,
   protected ``_xxx`` hooks, ``_on_xxx`` notifications, one ``LSGrid::_all_containers()`` list).
   ``TwoSidesContainer_rxh_A`` is now ``BranchContainer``, ``OneSideContainer_ForBranch`` is
@@ -396,11 +407,6 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   takes the whole residual and computes no total at all. Costs +0.16% on an ordinary cached
   step and +0.95% on an identical re-solve, which is what leaving pre-processing (where the
   change flags could skip the build) is worth.
-- [FIXED] a diverged AC or DC powerflow reported ``NotInitError`` after ``0`` iterations, no
-  matter what actually went wrong: ``process_results`` resets the algorithm on divergence, and
-  ``BaseAlgo::reset()`` means "never been run". Every real diagnosis was destroyed one line
-  before a caller could read it, including through ``LightSimBackend``'s "Divergence of AC
-  powerflow. Detailed error: ...". The error and the iteration count now survive the reset.
 - [FIXED] the exotic-elements test fixture asked for an angle-droop gain of 180 MW/deg on an
   HVDC link rated 20 MW, which reaches its cap in 0.106 degrees of angle difference -- a switch
   rather than a droop, and a Newton chasing it from a moved angle reference failed with
@@ -722,7 +728,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   named static so the identity it rests on can be tested head-on. It has to be: its two interesting
   branches -- a negative magnitude, an angle several turns out of range -- turn out to be
   unreachable from any converging solve (a trajectory that overshoots a magnitude ends up
-  diverging, and a diverged solve clears ``Vm_`` / ``Va_`` / ``V_``), so no solve-level test can
+  diverging, and a diverged solve returns nothing), so no solve-level test can
   reach them.
 - [ADDED] ``src/tests/test_fdpf_algorithm.cpp``. The Fast-Decoupled family had no answer-level
   coverage at all -- it appeared in the suite only through ``test_cache_reuse.cpp`` (caching, not

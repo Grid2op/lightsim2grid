@@ -1434,10 +1434,12 @@ CplxVect LSGrid::_pre_process_own_cache(
                                    init_pv_vm_targets, supports_voltage_control);
 
     // `cache.algo_needs_rebuild` is set when this family's previous powerflow
-    // diverged and its algorithm was reset (see process_results). Every built-in
-    // algorithm also raises its own `need_factorize_` in reset() and would rebuild
-    // without being told, but an external (plugin) solver is under no such
-    // obligation: all it is promised is the AlgoControl it is handed. Only READ
+    // diverged (see process_results): the algorithm is NOT reset there, its last
+    // iterate stays readable, and this flag is what keeps it from reusing the
+    // internals of a system it gave up on. A built-in algorithm would rebuild on
+    // its own (a diverged Newton-Raphson never cleared `need_factorize_`), but an
+    // external (plugin) solver is under no such obligation: all it is promised is
+    // the AlgoControl it is handed. Only READ
     // here, and cleared by process_results once the algorithm has actually run --
     // check_solution() comes through this function too, without ever calling
     // compute_pf, and clearing the flag there would drop a rebuild the next real
@@ -1445,7 +1447,7 @@ CplxVect LSGrid::_pre_process_own_cache(
     if(cache_unusable || cache.algo_needs_rebuild){
         // Either the flags we were handed described a cache that did not exist
         // (so we rebuilt everything just now), or the previous solve of this
-        // family diverged and its algorithm was reset. Both mean the algorithm
+        // family diverged. Both mean the algorithm
         // must rebuild its own internals rather than skip on a "nothing
         // changed" it cannot honour.
         const AlgoControl all_changed;  // default ctor: everything changed
@@ -1632,29 +1634,23 @@ void LSGrid::process_results(bool conv,
         // split, the slack weights) is a correct picture of the grid: divergence
         // is a numerical failure, not a data one. Keep it -- the next attempt,
         // typically on a slightly different grid, should not have to re-stamp all
-        // of it. What must go is the ALGORITHM's own state: a half-converged
-        // iterate and a factorization of a system it gave up on. Reset it now and
-        // tell the next solve to rebuild the algorithm's internals from the
-        // (still valid) cached matrices.
+        // of it. The ALGORITHM's internals (its iterate, a factorization of a
+        // system it gave up on) must not be reused either, and `algo_needs_rebuild`
+        // is what guarantees that: the next solve of this family hands the
+        // algorithm an "everything changed" control (see _pre_process_own_cache)
+        // and it rebuilds from the cached matrices.
         //
-        // ... but not the DIAGNOSIS. reset() puts the algorithm back to "never been
-        // run", which means err_ = NotInitError and nr_iter_ = 0, and every caller
-        // reads those AFTERWARDS -- this is the divergence path, so reading them is
-        // the whole point. Left alone, a divergence reported NotInitError after zero
-        // iterations no matter what actually went wrong: a singular matrix, too many
-        // iterations, a non-finite value, all of them, every time, including through
-        // `LightSimBackend`'s "Divergence of AC powerflow. Detailed error: ...".
-        // So capture what the algorithm concluded and put it back on the far side of
-        // the reset. It costs an enum and an int, and the next solve overwrites both
-        // before using them (compute_pf opens with `err_ = NoError`).
-        const ErrorType err_diverged = ac ? _algo.get_error() : _dc_algo.get_error();
-        const int nb_iter_diverged = ac ? _algo.get_nb_iter() : _dc_algo.get_nb_iter();
-        if(ac) _algo.reset();
-        else _dc_algo.reset();
-        if(ac) _algo.set_error(err_diverged);
-        else _dc_algo.set_error(err_diverged);
-        if(ac) _algo.set_nb_iter(nb_iter_diverged);
-        else _dc_algo.set_nb_iter(nb_iter_diverged);
+        // That flag is the whole invalidation. The algorithm is deliberately NOT
+        // reset here: reset() would buy no correctness the flag does not already
+        // give, and it destroys the only things worth reading after a failed
+        // solve -- the last iterate through get_V_solver() and friends, the error
+        // type, the iteration count. It also broke the one legitimate
+        // "not converged" that is not a divergence at all: `max_iter == 0` (see
+        // BaseAlgo::check_iter_tol) builds the pre-iteration state -- the seeded
+        // V, the Jacobian's sparsity, the ledger -- and stops before its first
+        // step, precisely so a caller (an external batched solver seeding itself)
+        // can read that state back. Resetting turned it into empty vectors, and
+        // a segfault in the consumer that indexed them.
         algo_needs_rebuild = true;
     }
     // Automatic cache reuse: this family's solver-side data was just built against

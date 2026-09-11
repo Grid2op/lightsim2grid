@@ -493,6 +493,26 @@ TEST_CASE("a contingency stranding a regulated bus is reported, not silently wro
     }
 }
 
+// The algorithms the stranded-controller fallback is exercised under. SparseLU
+// re-pivots on every refactorize and never noticed anything; KLU keeps the pivot
+// sequence of the base factorization, and the repurposed control row ("Q_c = 0"
+// where "Vm(reg) = Vset" stood) puts a zero right where it pivoted, so
+// klu_refactor halts -- the row was reported diverged until the batch enabled the
+// numeric-factorize fallback (BaseAlgo::set_refactor_fallback) on its algorithm.
+static std::vector<AlgorithmType> stranding_algos()
+{
+    std::vector<AlgorithmType> res{AlgorithmType::NR_SparseLU};
+#ifdef KLU_SOLVER_AVAILABLE
+    res.push_back(AlgorithmType::NR_KLU);
+    res.push_back(AlgorithmType::NRSing_KLU);
+#endif
+    return res;
+}
+static bool refactorize_is_a_factorize(AlgorithmType algo)
+{
+    return algo == AlgorithmType::NR_SparseLU || algo == AlgorithmType::NRSing_SparseLU;
+}
+
 TEST_CASE("a contingency stranding a lone controller's own bus falls back to plain PQ", "[batch][vctrl][mask]")
 {
     // Mirror image of the previous test: the trafo strands bus 2 (B, the sole
@@ -511,10 +531,11 @@ TEST_CASE("a contingency stranding a lone controller's own bus falls back to pla
     // guard the guard: the reference really doesn't hold D at V_SET any more
     CHECK(std::abs(std::abs(ref(LEAF_BUS_D)) - V_SET) > 1e-4);
 
+    for (const AlgorithmType algo : stranding_algos())
     for (bool handle_disconnected : {false, true}) {
-        INFO("handle_disconnected_grid = " << handle_disconnected);
+        INFO("algorithm = " << static_cast<int>(algo) << ", handle_disconnected_grid = " << handle_disconnected);
         LSGrid grid = make_leaf_remote_gen_grid();
-        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        grid.change_algorithm(algo);
         ContingencyAnalysis ca(grid, /*compute_limit_violations=*/true);
         ca.set_handle_disconnected_grid(handle_disconnected);
         ca.add_n1(1);  // trafo 0: 1 powerline (id 0) precedes it, so its id is 1
@@ -536,6 +557,12 @@ TEST_CASE("a contingency stranding a lone controller's own bus falls back to pla
         // bus B (the masked/stranded one) reports 0, same convention as every
         // other masked bus
         CHECK(std::abs(ca.get_voltages()(0, LEAF_BUS_B)) == 0.);
+        // and under a fixed-pivot solver, this is the row the fallback exists for
+        if (!refactorize_is_a_factorize(algo)) {
+            CHECK(ca.get_linear_solver_stats().nb_refactorize_failed >= 1);
+            CHECK(ca.get_linear_solver_stats().nb_fallback_factorize >= 1);
+            CHECK(ca.get_linear_solver_stats().nb_fallback_factorize_failed == 0);
+        }
     }
 }
 
@@ -556,23 +583,26 @@ TEST_CASE("the fallback also works through the multi-threaded batch path", "[bat
         CplxVect::Constant(static_cast<Eigen::Index>(ref_grid.total_bus()), cplx_type(1., 0.)), 30, 1e-10);
     REQUIRE(ref.size() == LEAF_NB_BUS);
 
-    LSGrid grid = make_leaf_remote_gen_grid();
-    grid.change_algorithm(AlgorithmType::NR_SparseLU);
-    ContingencyAnalysis ca(grid, /*compute_limit_violations=*/true);
-    ca.set_handle_disconnected_grid(true);
-    ca.set_nb_thread(2);
-    ca.add_n1(0);  // the line: no stranding, just here to force nb_thread == 2
-    ca.add_n1(1);  // the trafo: strands ctrl's own bus, as in the test above
-    ca.compute(CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), cplx_type(1., 0.)), 30, 1e-10);
-    REQUIRE(ca.get_voltages().rows() == 2);
-    REQUIRE(ca.converged().size() == 2);
-    CHECK(ca.converged()[1] == 1);
-    for (int b : {0, LEAF_BUS_D}) {
-        INFO("bus " << b);
-        CHECK(std::abs(ca.get_voltages()(1, b)) == Approx(std::abs(ref(b))).epsilon(1e-8));
-        CHECK(std::arg(ca.get_voltages()(1, b)) == Approx(std::arg(ref(b))).margin(1e-9));
+    for (const AlgorithmType algo : stranding_algos()) {
+        INFO("algorithm = " << static_cast<int>(algo));
+        LSGrid grid = make_leaf_remote_gen_grid();
+        grid.change_algorithm(algo);
+        ContingencyAnalysis ca(grid, /*compute_limit_violations=*/true);
+        ca.set_handle_disconnected_grid(true);
+        ca.set_nb_thread(2);
+        ca.add_n1(0);  // the line: no stranding, just here to force nb_thread == 2
+        ca.add_n1(1);  // the trafo: strands ctrl's own bus, as in the test above
+        ca.compute(CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), cplx_type(1., 0.)), 30, 1e-10);
+        REQUIRE(ca.get_voltages().rows() == 2);
+        REQUIRE(ca.converged().size() == 2);
+        CHECK(ca.converged()[1] == 1);
+        for (int b : {0, LEAF_BUS_D}) {
+            INFO("bus " << b);
+            CHECK(std::abs(ca.get_voltages()(1, b)) == Approx(std::abs(ref(b))).epsilon(1e-8));
+            CHECK(std::arg(ca.get_voltages()(1, b)) == Approx(std::arg(ref(b))).margin(1e-9));
+        }
+        CHECK(std::abs(ca.get_voltages()(1, LEAF_BUS_B)) == 0.);
     }
-    CHECK(std::abs(ca.get_voltages()(1, LEAF_BUS_B)) == 0.);
 }
 
 TEST_CASE("a stranded member of a SHARED control group is unaffected by the cnt==1 fallback", "[batch][vctrl][mask]")

@@ -266,6 +266,9 @@ class LS2G_API AlgorithmSelector final
         void set_may_mask_voltage_control(bool val) {
             get_prt_solver("set_may_mask_voltage_control", false)->set_may_mask_voltage_control(val);
         }
+        void set_refactor_fallback(bool val) {
+            get_prt_solver("set_refactor_fallback", false)->set_refactor_fallback(val);
+        }
 
         // PV / PQ relabelling at constant sparsity (ScenarioSweep generator
         // contingencies) -- see BaseAlgo for the two-call contract.
@@ -410,10 +413,6 @@ class LS2G_API AlgorithmSelector final
 
         ErrorType get_error() const {
             return get_prt_solver("get_error", true)->get_error();
-        }
-
-        void set_nb_iter(int nb_iter) {
-            get_prt_solver("set_nb_iter", true)->set_nb_iter(nb_iter);
         }
 
         void set_error(ErrorType error) {

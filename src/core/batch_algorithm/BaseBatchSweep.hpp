@@ -1142,6 +1142,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_masks(){
             if(!_handle_disconnected_grid) return;
+            // Masking is a value-level edit at constant sparsity, and one that can
+            // move a pivot: the row of a stranded lone controller goes from "Vm(reg)
+            // = Vset" to "Q_c = 0", so the entry KLU pivoted at in the base
+            // factorization is a zero in that row's matrix, and klu_refactor halts
+            // on it (SparseLU re-pivots and never noticed). Let the linear solver
+            // fall back to a numeric factorize on such a row -- and on the next
+            // ordinary row, whose pivots the stranded matrix moved back. A bool
+            // store; the fallback itself only ever runs on a failure.
+            _algo.set_refactor_fallback(true);
             if(!_voltage_control_may_mask_wired_){
                 // first compute() with masking on for this object (or the first ever):
                 // _algo's VoltageControl extension needs its stranded-controller
@@ -1310,6 +1319,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _push_switchable_to_algo(){
             _algo.set_switchable_vm_buses(_switchable_buses_);
             _algo.set_pv_pinned_buses(_switchable_buses_);
+            // same reason as in _maybe_prepare_masks: a Q row pinned to identity in
+            // one row and live in the next is a pivot that may move
+            if(!_switchable_buses_.empty()) _algo.set_refactor_fallback(true);
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<!(Y::supports_contingency && S::supports_vary), int>::type = 0>

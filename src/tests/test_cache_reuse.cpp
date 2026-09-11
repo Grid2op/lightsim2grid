@@ -773,19 +773,26 @@ TEST_CASE("changing the algorithm invalidates that family's cache", "[LSGrid][ca
     CHECK((v - solve_ac(ref)).norm() < 1e-9);
 }
 
-TEST_CASE("a divergence keeps the cached data but resets the algorithm", "[LSGrid][cache_reuse]")
+TEST_CASE("a divergence keeps the cached data and the last iterate, and rebuilds next", "[LSGrid][cache_reuse]")
 {
     // Divergence is a numerical failure, not a data one: Ybus / Sbus and the
-    // labelling still describe the grid, and are kept. What is thrown away is the
-    // algorithm's own state (half-converged iterate, factorization of a system it
-    // gave up on), and the next solve rebuilds those from the cached matrices.
+    // labelling still describe the grid, and are kept. The algorithm is not
+    // reset either -- its last iterate, error and iteration count are what a
+    // caller wants to read after a failed solve -- and the next solve rebuilds
+    // the algorithm's internals from the cached matrices (algo_needs_rebuild)
+    // instead of reusing a factorization of a system it gave up on.
     LSGrid grid = make_grid();
     REQUIRE(solve_ac(grid).size() == 14);
+    const Eigen::Index nb_solver = grid.get_V_solver().size();
 
     // make it diverge: one iteration is not enough from a flat start
     const CplxVect diverged = grid.ac_pf(flat_start(grid), 1, 1e-12);
     CHECK(diverged.size() == 0);
     CHECK_FALSE(grid.get_algo().converged());
+    CHECK(grid.get_algo().get_error() == ls2g::ErrorType::TooManyIterations);
+    CHECK(grid.get_algo().get_nb_iter() == 1);
+    CHECK(grid.get_V_solver().size() == nb_solver);  // the iterate it stopped at
+    CHECK(grid.get_V_solver().allFinite());
 
     // the same grid, solved properly again, must reach the reference solution
     const CplxVect v = solve_ac(grid);
@@ -802,6 +809,48 @@ TEST_CASE("a divergence keeps the cached data but resets the algorithm", "[LSGri
     ref2.allow_cache_reuse(false);
     ref2.change_p_load(2, 55.);
     CHECK((v2 - solve_ac(ref2)).norm() < 1e-9);
+}
+
+TEST_CASE("max_iter = 0 leaves the pre-iteration state readable", "[LSGrid][cache_reuse]")
+{
+    // BaseAlgo::check_iter_tol documents max_iter = 0 as a legitimate call that
+    // returns the pre-iteration state: the algorithm seeds V, builds the
+    // Jacobian's sparsity and stops before its first step. It reports "not
+    // converged" -- it never had the chance to be -- and process_results used to
+    // reset the algorithm on any "not converged", destroying the very state the
+    // call exists to expose (an external batched solver seeds itself from
+    // get_V_solver / get_J_solver this way, and segfaulted on the empty vectors
+    // it found instead).
+    LSGrid grid = make_grid();
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    REQUIRE(solve_ac(grid).size() == 14);
+    const Eigen::Index nb_solver = grid.get_V_solver().size();
+    REQUIRE(nb_solver > 0);
+
+    const CplxVect res = grid.ac_pf(flat_start(grid), 0, 1e-10);
+    CHECK(res.size() == 0);  // not a converged solution, and not reported as one
+    CHECK_FALSE(grid.get_algo().converged());
+    CHECK(grid.get_algo().get_nb_iter() == 0);
+    CHECK(grid.get_algo().get_error() == ls2g::ErrorType::TooManyIterations);
+
+    // the pre-iteration state is there: the seeded voltages (flat angles, since
+    // the seed is a flat start) and a Jacobian with its sparsity built
+    REQUIRE(grid.get_V_solver().size() == nb_solver);
+    CHECK(grid.get_V_solver().allFinite());
+    CHECK(grid.get_Va_solver().size() == nb_solver);
+    CHECK(grid.get_Va_solver().cwiseAbs().maxCoeff() < 1e-12);
+    CHECK(grid.get_Vm_solver().size() == nb_solver);
+    CHECK(grid.get_J_solver().rows() > 0);
+    CHECK(grid.get_J_solver().rows() == grid.get_J_solver().cols());
+
+    // and the next real solve is unaffected
+    const CplxVect v = solve_ac(grid);
+    REQUIRE(v.size() == 14);
+    LSGrid ref = make_grid();
+    ref.allow_cache_reuse(false);
+    ref.change_algorithm(AlgorithmType::NR_SparseLU);
+    CHECK((v - solve_ac(ref)).norm() < 1e-9);
+
 }
 
 TEST_CASE("a divergence recovers under every built-in AC algorithm", "[LSGrid][cache_reuse]")
