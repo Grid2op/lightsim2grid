@@ -50,10 +50,10 @@ class LS2G_API SparseLULinearSolver final
         }
 
         // can this linear solver solve problem where RHS is a matrix
-        static const bool CAN_SOLVE_MAT;
+        static constexpr bool CAN_SOLVE_MAT = true;
 
         // can this linear solver solve J^T x = b out of the factorization of J
-        static const bool CAN_SOLVE_TRANSPOSE;
+        static constexpr bool CAN_SOLVE_TRANSPOSE = true;
     private:
         // solver initialization
         Eigen::SparseLU<Eigen::SparseMatrix<real_type>, Eigen::COLAMDOrdering<int> >  solver_;

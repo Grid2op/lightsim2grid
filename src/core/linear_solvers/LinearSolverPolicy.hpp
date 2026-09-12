@@ -37,11 +37,11 @@ class LinearSolverPolicy
         ~LinearSolverPolicy() noexcept = default;
 
         // can this linear solver solve problem where RHS is a matrix
-        static const bool CAN_SOLVE_MAT;
+        static constexpr bool CAN_SOLVE_MAT = LinearSolver::CAN_SOLVE_MAT;
 
         // can this linear solver solve J^T x = b using the factorization of J itself,
         // without ever forming J^T (see solve_transpose)
-        static const bool CAN_SOLVE_TRANSPOSE;
+        static constexpr bool CAN_SOLVE_TRANSPOSE = LinearSolver::CAN_SOLVE_TRANSPOSE;
 
         ErrorType reset() {
             ++stats_.nb_reset;
@@ -149,12 +149,6 @@ class LinearSolverPolicy
         LinearSolverPolicy & operator=(LinearSolverPolicy&&) = delete;
         LinearSolverPolicy & operator=(const LinearSolverPolicy&) = delete;
 };
-
-template<class LinearSolver>
-const bool LinearSolverPolicy<LinearSolver>::CAN_SOLVE_MAT = LinearSolver::CAN_SOLVE_MAT;
-
-template<class LinearSolver>
-const bool LinearSolverPolicy<LinearSolver>::CAN_SOLVE_TRANSPOSE = LinearSolver::CAN_SOLVE_TRANSPOSE;
 
 } // namespace ls2g
 

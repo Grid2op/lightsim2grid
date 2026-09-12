@@ -58,10 +58,10 @@ class LS2G_API KLULinearSolver final
         ErrorType solve_transpose(Eigen::Ref<RealVect> b);  // J^T x = b, out of the factorization of J
 
         // can this linear solver solve problem where RHS is a matrix
-        static const bool CAN_SOLVE_MAT;
+        static constexpr bool CAN_SOLVE_MAT = false;
 
         // can this linear solver solve J^T x = b out of the factorization of J
-        static const bool CAN_SOLVE_TRANSPOSE;
+        static constexpr bool CAN_SOLVE_TRANSPOSE = true;  // klu_tsolve
 
     private:
         // KLU frees its symbolic / numeric handles through a pair of functions that

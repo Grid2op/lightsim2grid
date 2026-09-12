@@ -12,15 +12,6 @@
 
 namespace ls2g {
 
-const bool NICSLULinearSolver::CAN_SOLVE_MAT = false;
-// NICSLU's own solve entry point is wrapped here as `Solve(b, x)` only. Whether the
-// library can walk its factors transposed was not established against its headers (it
-// ships separately from this repository and is not built in CI), so lightsim2grid does
-// not claim the capability: a caller needing J^T x = b with NICSLU has to form the
-// transpose itself and factorize it. Implementing this is a contained follow-up for
-// anyone with the NICSLU documentation at hand.
-const bool NICSLULinearSolver::CAN_SOLVE_TRANSPOSE = false;
-
 ErrorType NICSLULinearSolver::reset(){
     // free everything
     solver_.Free();

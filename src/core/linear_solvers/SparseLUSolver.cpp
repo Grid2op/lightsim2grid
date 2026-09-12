@@ -12,9 +12,6 @@
 
 namespace ls2g {
 
-const bool SparseLULinearSolver::CAN_SOLVE_MAT = true;
-const bool SparseLULinearSolver::CAN_SOLVE_TRANSPOSE = true;
-
 ErrorType SparseLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
     solver_.analyzePattern(J);
     // analyzePattern does not set solver_.info() to Success, so no check here

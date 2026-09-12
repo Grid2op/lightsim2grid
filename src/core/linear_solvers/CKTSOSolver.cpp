@@ -14,12 +14,6 @@
 
 namespace ls2g {
 
-const bool CKTSOLinearSolver::CAN_SOLVE_MAT = false;
-// Same as NICSLU (see NICSLUSolver.cpp): CKTSO ships separately from this repository
-// and is not built in CI, so its transposed solve -- if it has one -- is unverified
-// here and the capability is not claimed rather than claimed and wrong.
-const bool CKTSOLinearSolver::CAN_SOLVE_TRANSPOSE = false;
-
 
 ErrorType CKTSOLinearSolver::reset(){
     // free everything

@@ -138,8 +138,13 @@ TEST_CASE("LinearSolverPolicy times and counts the transposed solves separately"
     const RealVect b = make_rhs(n);
 
     ls2g::LinearSolverPolicy<ls2g::SparseLULinearSolver> solver;
-    REQUIRE(ls2g::LinearSolverPolicy<ls2g::SparseLULinearSolver>::CAN_SOLVE_TRANSPOSE ==
-            ls2g::SparseLULinearSolver::CAN_SOLVE_TRANSPOSE);
+    // the flags are constexpr: asserted at compile time, and deliberately NOT through
+    // REQUIRE, whose expression decomposition binds a reference to its operands -- that
+    // would odr-use a constexpr static member the headers no longer define out of line
+    // (needed before C++17, and this project still builds at C++14).
+    static_assert(ls2g::LinearSolverPolicy<ls2g::SparseLULinearSolver>::CAN_SOLVE_TRANSPOSE ==
+                  ls2g::SparseLULinearSolver::CAN_SOLVE_TRANSPOSE,
+                  "the policy must mirror the capability of the solver it wraps");
 
     REQUIRE(solver.analyze(J) == ErrorType::NoError);
     REQUIRE(solver.factorize(J) == ErrorType::NoError);
@@ -167,7 +172,7 @@ TEST_CASE("KLU solves the transposed system out of the factorization of J")
     const SpMat J = make_asym_matrix(n);
     const RealVect b = make_rhs(n);
 
-    REQUIRE(ls2g::KLULinearSolver::CAN_SOLVE_TRANSPOSE);
+    static_assert(ls2g::KLULinearSolver::CAN_SOLVE_TRANSPOSE, "KLU has klu_tsolve");
 
     ls2g::KLULinearSolver solver;
     REQUIRE(solver.analyze(J) == ErrorType::NoError);

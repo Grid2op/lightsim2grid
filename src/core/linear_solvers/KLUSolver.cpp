@@ -12,9 +12,6 @@
 
 namespace ls2g {
 
-const bool KLULinearSolver::CAN_SOLVE_MAT = false;
-const bool KLULinearSolver::CAN_SOLVE_TRANSPOSE = true;
-
 ErrorType KLULinearSolver::reset(){
     // release both handles (their deleters use common_) before resetting common_
     numeric_.reset();

@@ -91,10 +91,13 @@ class LS2G_API CKTSOLinearSolver final
         ErrorType solve_transpose(Eigen::Ref<RealVect> b);
 
         // can this linear solver solve problem where RHS is a matrix
-        static const bool CAN_SOLVE_MAT;
+        static constexpr bool CAN_SOLVE_MAT = false;
 
-        // can this linear solver solve J^T x = b out of the factorization of J
-        static const bool CAN_SOLVE_TRANSPOSE;
+        // Same as NICSLU (see NICSLUSolver.hpp): CKTSO ships separately from this
+        // repository and is not built in CI, so its transposed solve -- if it has one --
+        // is unverified here and the capability is not claimed rather than claimed and
+        // wrong.
+        static constexpr bool CAN_SOLVE_TRANSPOSE = false;
         
         // prevent copy and assignment
         CKTSOLinearSolver(const CKTSOLinearSolver&) = delete;
