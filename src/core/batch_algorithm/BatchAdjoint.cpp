@@ -18,10 +18,12 @@ namespace ls2g {
 
 std::unique_ptr<IAdjointLinearSolver> make_adjoint_linear_solver()
 {
+    // the derived unique_ptr converts to the base one on return (IAdjointLinearSolver
+    // has a virtual destructor), so no raw `new` has to be owned by hand here
     #ifdef KLU_SOLVER_AVAILABLE
-    return std::unique_ptr<IAdjointLinearSolver>(new AdjointLinearSolver<KLULinearSolver>());
+    return std::make_unique<AdjointLinearSolver<KLULinearSolver> >();
     #else
-    return std::unique_ptr<IAdjointLinearSolver>(new AdjointLinearSolver<SparseLULinearSolver>());
+    return std::make_unique<AdjointLinearSolver<SparseLULinearSolver> >();
     #endif
 }
 
