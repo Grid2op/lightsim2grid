@@ -64,6 +64,9 @@ std::ostream& operator<<(std::ostream& out, const ErrorType & error_type){
     case ErrorType::LicenseError:
         out << "LicenseError";
         break;
+    case ErrorType::NotImplemented:
+        out << "NotImplemented";
+        break;
     default:
         out << "unknown error (check utils.cpp)";
         break;

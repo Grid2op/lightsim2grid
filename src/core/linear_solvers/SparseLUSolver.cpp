@@ -13,6 +13,7 @@
 namespace ls2g {
 
 const bool SparseLULinearSolver::CAN_SOLVE_MAT = true;
+const bool SparseLULinearSolver::CAN_SOLVE_TRANSPOSE = true;
 
 ErrorType SparseLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
     solver_.analyzePattern(J);
@@ -30,6 +31,17 @@ ErrorType SparseLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
     solver_.factorize(J);
     if(solver_.info() != Eigen::Success) return ErrorType::SolverFactor;
     return ErrorType::NoError;
+}
+
+ErrorType SparseLULinearSolver::solve_transpose(Eigen::Ref<RealVect> b){
+    ErrorType err = ErrorType::NoError;
+    // Eigen reuses the L / U factors of J and walks them the other way round
+    // (transpose(), not adjoint(): both agree here since real_type is real, but
+    // adjoint() would conjugate if this were ever instantiated on a complex type).
+    RealVect Va = solver_.transpose().solve(b);
+    if(solver_.info() != Eigen::Success) err = ErrorType::SolverSolve;
+    b = Va;
+    return err;
 }
 
 ErrorType SparseLULinearSolver::solve(Eigen::Ref<RealVect> b) const{

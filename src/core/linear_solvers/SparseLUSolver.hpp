@@ -42,12 +42,18 @@ class LS2G_API SparseLULinearSolver final
         ErrorType factorize(const EigenRefConstRealSpMat & J); // numeric factorization (requires values)
         ErrorType refactorize(const EigenRefConstRealSpMat & J);  // re-numeric factorization, reuses symbolic
         ErrorType solve(Eigen::Ref<RealVect> b) const;
+        // NB not const, unlike solve(): Eigen's SparseLU::transpose() is a non-const
+        // member (it hands the view a pointer to the solver it must reuse).
+        ErrorType solve_transpose(Eigen::Ref<RealVect> b);
         ErrorType reset(){
             return ErrorType::NoError;
         }
 
         // can this linear solver solve problem where RHS is a matrix
         static const bool CAN_SOLVE_MAT;
+
+        // can this linear solver solve J^T x = b out of the factorization of J
+        static const bool CAN_SOLVE_TRANSPOSE;
     private:
         // solver initialization
         Eigen::SparseLU<Eigen::SparseMatrix<real_type>, Eigen::COLAMDOrdering<int> >  solver_;

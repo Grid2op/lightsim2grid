@@ -90,5 +90,6 @@ void bind_enums(py::module_& m) {
         .value("SolverSolve", ErrorType::SolverSolve, "The linear solve failed to solve the linear system J.X = b (*eg* `solve` for Eigen, `klu_solve` for KLU or `Solve` for NICSLU")
         .value("NotInitError", ErrorType::NotInitError, "Attempt to perform some powerflow computation when the linear solver is not initiliazed")
         .value("LicenseError", ErrorType::LicenseError, "Impossible to use the linear solver as the license cannot be found (*eg* unable to locate the `nicslu.lic` file")
+        .value("NotImplemented", ErrorType::NotImplemented, "The linear solver does not implement the operation that was asked of it (*eg* `solve_transpose` on a solver whose `CAN_SOLVE_TRANSPOSE` is False)")
         .export_values();
 }
