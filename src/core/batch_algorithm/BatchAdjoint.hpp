@@ -9,7 +9,9 @@
 #ifndef BATCH_ADJOINT_H
 #define BATCH_ADJOINT_H
 
+#include <cstddef>
 #include <cstring>
+#include <exception>   // std::exception_ptr: libc++ only forward-declares it in <vector>
 #include <memory>
 #include <vector>
 

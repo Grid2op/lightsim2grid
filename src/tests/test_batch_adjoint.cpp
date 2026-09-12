@@ -18,6 +18,9 @@
 // the implicit-function sign were flipped, the ledger read backwards, or the Jacobian
 // captured one Newton iterate before the solution, this is what would say so.
 
+#include <algorithm>
+#include <cmath>
+#include <complex>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>

@@ -9,6 +9,7 @@
 #include "BatchAdjoint.hpp"
 
 #include <algorithm>
+#include <exception>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
