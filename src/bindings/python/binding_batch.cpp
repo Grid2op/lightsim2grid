@@ -84,6 +84,66 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              },
              DocTimeSeries::converged_mask.c_str())
 
+        // reverse-mode differentiation (see BatchAdjoint.hpp)
+        .def_property("keep_jacobian",
+                      [](const T & self){ return self.get_keep_jacobian(); },
+                      [](T & self, bool val){ self.set_keep_jacobian(val); },
+                      "Whether each row's converged Jacobian is kept during compute(), so that "
+                      "solve_JT() can run afterwards. Defaults to ``False``; must be set BEFORE "
+                      "compute().\n\n"
+                      "This is what makes a batch differentiable: with the Jacobians kept, one "
+                      "transposed solve per row turns a loss's sensitivity to the voltages into "
+                      "its gradient with respect to every injection of every row (the adjoint "
+                      "method / the implicit function theorem).\n\n"
+                      "It costs `nb_rows * nnz(J)` floats -- see adjoint_memory_bytes(), and mind "
+                      "that on a large grid with many rows this is gigabytes -- plus one extra "
+                      "Jacobian evaluation per row (the Newton-Raphson loop stops on the Jacobian "
+                      "of its previous iterate, which is not quite the one at the solution). Only "
+                      "the AC Newton-Raphson algorithms build a Jacobian at all; compute() raises "
+                      "with any other.")
+        .def("adjoint_memory_bytes", &T::adjoint_memory_bytes,
+             "Bytes the kept Jacobians occupy after a compute() (0 when none were kept). "
+             "Grows as nb_rows * nnz(J): worth reading before scaling a batch up.")
+        .def("dim_J", &T::dim_J,
+             "Dimension of the augmented Newton-Raphson system -- the length of one "
+             "cotangent handed to solve_JT, and of one row of its result. 0 until a "
+             "compute() that kept the Jacobians.")
+        .def("get_theta_col_of_bus", &T::get_theta_col_of_bus,
+             "For each grid bus (same numbering as the columns of get_voltages()), the column "
+             "of the Jacobian holding its voltage-ANGLE unknown, or -1 where it has none (a "
+             "reference slack, a bus outside the solver). Where the angle part of that bus's "
+             "cotangent goes in solve_JT's input.")
+        .def("get_vm_col_of_bus", &T::get_vm_col_of_bus,
+             "Same as get_theta_col_of_bus for the voltage-MAGNITUDE unknown: -1 at a bus whose "
+             "magnitude is held fixed (a PV bus, unless a generator contingency may release it).")
+        .def("get_p_row_of_bus", &T::get_p_row_of_bus,
+             "For each grid bus, the row of the Jacobian holding its ACTIVE power mismatch "
+             "equation, or -1 where it has none. Where that bus's active injection gradient is "
+             "read out of solve_JT's result.")
+        .def("get_q_row_of_bus", &T::get_q_row_of_bus,
+             "Same as get_p_row_of_bus for the REACTIVE power mismatch equation.")
+        .def("solve_JT", &T::solve_JT, py::arg("xbar"),
+             "Solve the adjoint system `J_i^T . lambda_i = xbar_i` of every row, and return "
+             "lambda. Requires `keep_jacobian` to have been True during compute().\n\n"
+             "`xbar` has shape (nb_rows, k * dim_J): one row per simulation, holding k "
+             "cotangents of dim_J coefficients laid end to end. Differentiating a scalar loss "
+             "uses k = 1; several directions are only needed for a full Jacobian, and cost one "
+             "triangular solve each rather than one factorization each.\n\n"
+             "lambda is the gradient with respect to the per-unit bus injection: its real part "
+             "sits at get_p_row_of_bus()[bus], its imaginary part at get_q_row_of_bus()[bus]. "
+             "Rows that did not converge come back as zeros -- see adjoint_row_ok().")
+        .def("adjoint_row_ok", [](const T & self){
+                 const std::vector<char> & c = self.adjoint_row_ok();
+                 return std::vector<bool>(c.begin(), c.end());
+             },
+             "Per row: True where the last solve_JT() actually solved that row's adjoint "
+             "system. False for a row the batch never solved (it diverged, or a contingency "
+             "islanded it), whose lambda is zero.")
+        .def("adjoint_solver_stats", &T::adjoint_solver_stats,
+             "Linear-solver counters and timings of the last solve_JT(), summed over its "
+             "worker threads: how much of the backward pass went into refactorizing each "
+             "row's Jacobian versus into the transposed solves themselves.")
+
         // status
         // `<>`: see the comment above modify_gen_p -- Clang (used for the macOS/arm64
         // wheels) rejects `&T::get_status` outright for a member function template

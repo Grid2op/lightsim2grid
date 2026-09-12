@@ -101,9 +101,9 @@ class LS2G_API KLULinearSolver final
         KLULinearSolver & operator=(const KLULinearSolver&) = delete;
 };
 
-#endif // KLSOLVER_H
-
 } // namespace ls2g
+
+#endif // KLSOLVER_H
 
 #elif defined(_READ_THE_DOCS)
 #ifndef KLSOLVER_H

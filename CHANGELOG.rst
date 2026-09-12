@@ -156,6 +156,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] ``keep_jacobian`` and ``solve_JT`` on the batch algorithms: the adjoint of a whole
+  sweep, one transposed solve per row, which is what reverse-mode differentiation (a pytorch
+  backward) needs. See ``BatchAdjoint``.
+- [FIXED] the KLU / NICSLU / CKTSO headers closed their namespace outside their include guard,
+  so including one twice in a translation unit failed to compile.
 - [ADDED] ``solve_transpose`` on the linear solvers: :math:`J^T x = b` out of the
   factorization of :math:`J`, no transposed copy and no second factorization
   (``klu_tsolve`` for KLU, the transpose view for Eigen's SparseLU). ``CAN_SOLVE_TRANSPOSE``
