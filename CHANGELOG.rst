@@ -156,6 +156,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] ``lightsim2grid.differentiable.BatchCPUPowerFlow``: a batch of powerflows as a
+  pytorch operation, differentiable with respect to the injections through the adjoint of
+  :func:`solve_JT`. ``pip install lightsim2grid[torch]``; torch stays optional.
 - [ADDED] ``keep_jacobian`` and ``solve_JT`` on the batch algorithms: the adjoint of a whole
   sweep, one transposed solve per row, which is what reverse-mode differentiation (a pytorch
   backward) needs. See ``BatchAdjoint``.
