@@ -78,6 +78,7 @@ add_executable(lightsim2grid_unit_tests
     test_voltage_control_plan_cache.cpp
     test_batch_voltage_control.cpp
     test_timeseries_sbus.cpp
+    test_bus_graph.cpp
     test_injection_sweep.cpp
     test_continuation_sweep.cpp
     test_scenario_sweep_violations.cpp

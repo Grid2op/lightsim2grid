@@ -13,6 +13,7 @@
 #include "YbusPolicy.hpp"
 #include "SbusPolicy.hpp"
 #include "LimitViolation.hpp"
+#include "BusGraph.hpp"
 
 #include <set>
 #include <map>
@@ -235,14 +236,17 @@ inline void check_current_violations(
             amps2 = std::abs(p_to) / (sqrt_3 * v_to_kv);
         }
 
-        const std::string el_name = el_id < el_names.size() ? el_names[el_id] : std::string();
+        // the name is copied only into a violation: one std::string per element
+        // examined was a malloc per branch per row on a grid with long names
         if(has_lim1 && amps1 >= threshold * limit1(el_idx)){
             out.push_back(LimitViolation{el_type, static_cast<int>(el_id), 1,
-                                          LimitViolationType::CURRENT, amps1, limit1(el_idx), el_name});
+                                          LimitViolationType::CURRENT, amps1, limit1(el_idx),
+                                          el_id < el_names.size() ? el_names[el_id] : std::string()});
         }
         if(has_lim2 && amps2 >= threshold * limit2(el_idx)){
             out.push_back(LimitViolation{el_type, static_cast<int>(el_id), 2,
-                                          LimitViolationType::CURRENT, amps2, limit2(el_idx), el_name});
+                                          LimitViolationType::CURRENT, amps2, limit2(el_idx),
+                                          el_id < el_names.size() ? el_names[el_id] : std::string()});
         }
     }
 }
@@ -326,6 +330,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         void clear() override {
+            _results_present_ = false;
             _gen_contingency_active_ = false;
             _switchable_buses_.clear();
             _row_pv_to_pq_.clear();
@@ -337,6 +342,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _nb_steps_locked = -1;
             _handle_disconnected_grid = false;
             _li_masked.clear();
+            _cont_connected_.clear();
             _skip_mask.clear();
             _converged.clear();
             _converged_mask_.clear();
@@ -357,8 +363,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // shared by the same two instantiations.
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void clear_results_only() {
+            // Every add_*/remove_* calls this, and the python wrapper registers an N-1
+            // sweep one contingency at a time: with nothing computed since the last
+            // clear there is nothing to drop, and resetting the solver n_line times
+            // over is what that loop used to cost. `_results_present_` is raised by
+            // whatever fills results or per-contingency state (compute(), the two
+            // public connectivity entry points), lowered here and by clear().
+            if(!_results_present_) return;
+            _results_present_ = false;
             BaseBatchSolverSynch::clear();
             _li_masked.clear();
+            _cont_connected_.clear();
             _skip_mask.clear();
             _converged.clear();
             _converged_mask_.clear();
@@ -638,6 +653,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         IntVect is_grid_connected_after_contingency(){
+            _results_present_ = true;   // fills _li_masked / the solver caches
             const bool ac_solver_used = _algo.ac_solver_used();
             const bool inputs_ready = (ac_solver_used ? ac_cache_.mat.cols() != 0 : dc_cache_.mat.cols() != 0);
             if(!inputs_ready || ybus_policy_.li_coeffs.size() != ybus_policy_.li_defaults.size()){
@@ -647,31 +663,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 prepare_solver_input_base(Vinit, ac_solver_used);
                 ybus_policy_.init_li_coeffs(_grid_model, ac_solver_used, active_layout().id_me_to_solver, n_line_);
             }
-            IntVect res = IntVect::Constant(ybus_policy_.li_coeffs.size(), 0);
-            if(ac_solver_used){
-                Eigen::SparseMatrix<cplx_type> Ybus = ac_cache_.mat;
-                int cont_id = 0;
-                for(const auto & coeffs_modif: ybus_policy_.li_coeffs){
-                    if(YbusPolicy::Contingency::remove_from_Ybus(Ybus, coeffs_modif, true, _algo)) res(cont_id) = 1;
-                    else res(cont_id) = 0;
-                    YbusPolicy::Contingency::readd_to_Ybus(Ybus, coeffs_modif, true, _algo);
-                    ++cont_id;
-                }
-            } else {
-                Eigen::SparseMatrix<real_type> Bbus = dc_cache_.mat;
-                int cont_id = 0;
-                for(const auto & coeffs_modif: ybus_policy_.li_coeffs){
-                    for(const auto & c: coeffs_modif) Bbus.coeffRef(c.row_id, c.col_id) -= std::real(c.value);
-                    res(cont_id) = _disconnected_buses(Bbus).empty() ? 1 : 0;
-                    for(const auto & c: coeffs_modif) Bbus.coeffRef(c.row_id, c.col_id) += std::real(c.value);
-                    ++cont_id;
-                }
+            _prepare_connectivity();
+            IntVect res = IntVect::Constant(static_cast<Eigen::Index>(_cont_connected_.size()), 0);
+            for(size_t cont_id = 0; cont_id < _cont_connected_.size(); ++cont_id){
+                res(static_cast<Eigen::Index>(cont_id)) = _cont_connected_[cont_id] ? 1 : 0;
             }
             return res;
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         int pick_reference_slack(){
+            _results_present_ = true;   // fills _li_masked / _skip_mask / the solver caches
             const bool ac_solver_used = _algo.ac_solver_used();
             const bool inputs_ready = (ac_solver_used ? ac_cache_.mat.cols() != 0 : dc_cache_.mat.cols() != 0);
             if(!inputs_ready || ybus_policy_.li_coeffs.size() != ybus_policy_.li_defaults.size()){
@@ -681,6 +683,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 prepare_solver_input_base(Vinit, ac_solver_used);
                 ybus_policy_.init_li_coeffs(_grid_model, ac_solver_used, active_layout().id_me_to_solver, n_line_);
             }
+            _prepare_connectivity();
             _select_ref_slack_and_masks();
             if(active_layout().slack_bus_id_me.size() == 0) return -1;
             return active_layout().slack_bus_id_me[static_cast<int>(0)].cast_int();
@@ -714,9 +717,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             return _status;
         }
+        // the whole nb_steps x nb_bus injection matrix, built on request: the row
+        // loop itself never holds it (see SbusPolicy::Vary::fill_row)
         template<class S = SbusPolicy, class Y = YbusPolicy,
                  typename std::enable_if<S::supports_vary && !Y::supports_contingency, int>::type = 0>
-        Eigen::Ref<const typename S::CplxMat> get_sbuses() const {return sbus_policy_.sbuses;}
+        Eigen::Ref<const typename S::CplxMat> get_sbuses() const {return sbus_policy_.materialize();}
 
         // aggregate status (TimeSeries/InjectionSweep/ScenarioSweep -- everything
         // with SbusPolicy::supports_vary; ContingencyAnalysis reports per-row via
@@ -800,23 +805,29 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         // `base_w` is the weight vector to mask, so a row that already re-weighted the
         // slack for its own generator contingency (see _row_slack_weights) is masked
-        // on top of that rather than back on the layout's untouched weights.
-        RealVect _masked_slack_weights(const std::vector<int> & masked,
-                                       const Eigen::Ref<const RealVect> & base_w) const {
-            RealVect w = base_w;
-            if(masked.empty()) return w;
-            const real_type orig_sum = w.sum();
-            for(int b : masked) if(b >= 0 && b < w.size()) w(b) = 0.;
-            const real_type new_sum = w.sum();
-            if(new_sum > 1e-12 && orig_sum > 1e-12) w *= (orig_sum / new_sum);
-            return w;
+        // on top of that rather than back on the layout's untouched weights. Returns
+        // `base_w` itself when nothing is masked -- the common row -- and otherwise
+        // the masked copy written into `scratch` (which `base_w` may already be).
+        const RealVect & _masked_slack_weights(const std::vector<int> & masked,
+                                               const RealVect & base_w,
+                                               RealVect & scratch) const {
+            if(masked.empty()) return base_w;
+            if(&scratch != &base_w) scratch = base_w;
+            const real_type orig_sum = scratch.sum();
+            for(int b : masked) if(b >= 0 && b < scratch.size()) scratch(b) = 0.;
+            const real_type new_sum = scratch.sum();
+            if(new_sum > 1e-12 && orig_sum > 1e-12) scratch *= (orig_sum / new_sum);
+            return scratch;
         }
 
         // BFS connected-component labelling: returns the solver bus ids NOT part of
         // the largest connected component (empty if the whole matrix is connected).
-        // Called from is_grid_connected_after_contingency()/pick_reference_slack(),
-        // both public, hence this plain (non-SFINAE, but member-template-on-T)
-        // helper must also be fully inline.
+        // The search _prepare_connectivity falls back to for the contingencies the
+        // base graph's DFS tree cannot settle on its own (an N-k that removes several
+        // tree edges, a base graph that is not connected to begin with): its answer
+        // is the reference the tree's answer must agree with, bus for bus. Reached
+        // from pick_reference_slack() (public) hence this plain (non-SFINAE, but
+        // member-template-on-T) helper must also be fully inline.
         template<typename T>
         std::vector<int> _disconnected_buses(const Eigen::SparseMatrix<T> & mat) const {
             const int n = static_cast<int>(mat.cols());
@@ -857,40 +868,73 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return masked;
         }
 
-        // pre-pass run before the (n-)powerflow: fills _li_masked (the masked bus
-        // set of each contingency), chooses the reference slack that minimises the
-        // number of skipped contingencies (reordering active_layout().slack_bus_id_me so it is index 0)
-        // and fills _skip_mask. Keyed entirely off ybus_policy_.li_coeffs, which is
-        // representation-agnostic (populated from li_defaults on ContingencyAnalysis,
-        // from line_mask/trafo_mask on ScenarioSweep) -- shared by both. Called from
-        // _maybe_prepare_masks() (compute()-only, both instantiations) and
-        // pick_reference_slack() (public, ContingencyAnalysis-only, hence this too
-        // must be fully inline).
+        // Connectivity of every contingency, settled once per compute() before the
+        // row loop: _li_masked[i] is the (sorted) list of solver buses contingency i
+        // strands -- empty when the grid stays in one piece -- and _cont_connected_[i]
+        // says just that. One depth-first search of the base graph (BusGraph) answers
+        // an N-1 in constant time and lists the stranded side in time proportional to
+        // its size; the contingencies it cannot settle (an N-k removing several tree
+        // edges, a base graph that is not connected) get the breadth-first labelling
+        // this used to run for every one of them, on a patched copy of the matrix
+        // made only if such a contingency exists. Keyed off ybus_policy_.li_coeffs,
+        // representation-agnostic (li_defaults on ContingencyAnalysis, the masks on
+        // ScenarioSweep). Reached from the public is_grid_connected_after_contingency()
+        // / pick_reference_slack(), hence fully inline.
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void _prepare_connectivity(){
+            const size_t nb_cont = ybus_policy_.li_coeffs.size();
+            _li_masked.assign(nb_cont, std::vector<int>());
+            _cont_connected_.assign(nb_cont, 1);
+            const bool ac_solver_used = _algo.ac_solver_used();
+            const real_type threshold = BusGraph::default_threshold();
+            if(ac_solver_used) bus_graph_.build(ac_cache_.mat, threshold);
+            else bus_graph_.build(dc_cache_.mat, threshold);
+
+            std::vector<std::pair<int, int> > edges;
+            // the patched copy the fallback search walks, made on first need
+            Eigen::SparseMatrix<cplx_type> ybus_work;
+            Eigen::SparseMatrix<real_type> bbus_work;
+            bool work_ready = false;
+            for(size_t cont_id = 0; cont_id < nb_cont; ++cont_id){
+                const std::vector<Coeff> & coeffs = ybus_policy_.li_coeffs[cont_id];
+                BusGraph::Cut cut;
+                cut.verdict = BusGraph::Verdict::Unknown;
+                cut.child = -1;
+                const bool settled = ac_solver_used
+                    ? BusGraph::removed_edges(ac_cache_.mat, coeffs, threshold, edges)
+                    : BusGraph::removed_edges(dc_cache_.mat, coeffs, threshold, edges);
+                if(settled) cut = bus_graph_.cut(edges);
+                if(cut.verdict == BusGraph::Verdict::Connected) continue;
+                if(cut.verdict == BusGraph::Verdict::Split){
+                    bus_graph_.stranded_buses(cut, _li_masked[cont_id]);
+                } else if(ac_solver_used){
+                    if(!work_ready){ ybus_work = ac_cache_.mat; work_ready = true; }
+                    for(const auto & c: coeffs) ybus_work.coeffRef(c.row_id, c.col_id) -= c.value;
+                    _li_masked[cont_id] = _disconnected_buses(ybus_work);
+                    for(const auto & c: coeffs) ybus_work.coeffRef(c.row_id, c.col_id) += c.value;
+                } else {
+                    if(!work_ready){ bbus_work = dc_cache_.mat; work_ready = true; }
+                    for(const auto & c: coeffs) bbus_work.coeffRef(c.row_id, c.col_id) -= std::real(c.value);
+                    _li_masked[cont_id] = _disconnected_buses(bbus_work);
+                    for(const auto & c: coeffs) bbus_work.coeffRef(c.row_id, c.col_id) += std::real(c.value);
+                }
+                _cont_connected_[cont_id] = _li_masked[cont_id].empty() ? 1 : 0;
+            }
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        void _prepare_connectivity(){}
+
+        // pre-pass run before the (n-)powerflow in "handle disconnected grid" mode:
+        // from _li_masked (see _prepare_connectivity, which must have run), chooses
+        // the reference slack that minimises the number of skipped contingencies
+        // (reordering active_layout().slack_bus_id_me so it is index 0) and fills
+        // _skip_mask. Called from _maybe_prepare_masks() (compute()-only, both
+        // instantiations) and pick_reference_slack() (public, ContingencyAnalysis-only,
+        // hence this too must be fully inline).
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _select_ref_slack_and_masks(){
             const size_t nb_cont = ybus_policy_.li_coeffs.size();
-            _li_masked.assign(nb_cont, std::vector<int>());
             _skip_mask.assign(nb_cont, 0);
-
-            if(_algo.ac_solver_used()){
-                Eigen::SparseMatrix<cplx_type> Ybus = ac_cache_.mat;
-                size_t cont_id = 0;
-                for(const auto & coeffs_modif: ybus_policy_.li_coeffs){
-                    for(const auto & c: coeffs_modif) Ybus.coeffRef(c.row_id, c.col_id) -= c.value;
-                    _li_masked[cont_id] = _disconnected_buses(Ybus);
-                    for(const auto & c: coeffs_modif) Ybus.coeffRef(c.row_id, c.col_id) += c.value;
-                    ++cont_id;
-                }
-            } else {
-                Eigen::SparseMatrix<real_type> Bbus = dc_cache_.mat;
-                size_t cont_id = 0;
-                for(const auto & coeffs_modif: ybus_policy_.li_coeffs){
-                    for(const auto & c: coeffs_modif) Bbus.coeffRef(c.row_id, c.col_id) -= std::real(c.value);
-                    _li_masked[cont_id] = _disconnected_buses(Bbus);
-                    for(const auto & c: coeffs_modif) Bbus.coeffRef(c.row_id, c.col_id) += std::real(c.value);
-                    ++cont_id;
-                }
-            }
 
             const Eigen::Index nb_slack = active_layout().slack_bus_id_me.size();
             std::vector<int> candidates;
@@ -903,8 +947,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             if(candidates.empty()) return;
 
+            // every _li_masked entry is sorted (see _prepare_connectivity)
             auto is_masked = [](const std::vector<int> & masked, int bus){
-                return std::find(masked.begin(), masked.end(), bus) != masked.end();
+                return std::binary_search(masked.begin(), masked.end(), bus);
             };
             int best_bus = candidates[0];
             int best_strand = -1;
@@ -975,8 +1020,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         void _prepare_sbus_varying(bool ac_solver_used, Eigen::Index nb_steps) {
             const CplxVect complete = ac_solver_used ? CplxVect(ac_cache_.inj) : CplxVect(dc_cache_.inj.template cast<cplx_type>());
-            sbus_policy_.assemble(_grid_model, ac_solver_used, nb_buses_solver_, active_layout().id_me_to_solver,
-                                  complete, _grid_model.get_sn_mva(), nb_steps, algo_name());
+            sbus_policy_.prepare(_grid_model, ac_solver_used, nb_buses_solver_, active_layout().id_me_to_solver,
+                                 complete, _grid_model.get_sn_mva(), nb_steps, algo_name());
         }
 
         // ----- reset ybus_policy_'s own state: 2-way --------------------------
@@ -991,9 +1036,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _reset_ybus_policy() {}
 
         // ----- per-step Ybus edit (invertibility as the return value): 2-way -----
+        // AC: whether the grid stays connected was settled for every contingency
+        // before the loop (_prepare_connectivity). DC: the solver takes the
+        // responsibility, so the matrix is always reported "connected", as before.
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         bool _remove_step_coeffs(Eigen::SparseMatrix<cplx_type> & Ybus, size_t i, bool ac_solver_used, AlgorithmSelector & algo) {
-            return YbusPolicy::Contingency::remove_from_Ybus(Ybus, ybus_policy_.li_coeffs[i], ac_solver_used, algo);
+            YbusPolicy::Contingency::remove_from_Ybus(Ybus, ybus_policy_.li_coeffs[i], ac_solver_used, algo);
+            return !ac_solver_used || (i < _cont_connected_.size() && _cont_connected_[i] != 0);
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         bool _remove_step_coeffs(Eigen::SparseMatrix<cplx_type> &, size_t, bool, AlgorithmSelector &) { return true; }
@@ -1005,10 +1054,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _readd_step_coeffs(Eigen::SparseMatrix<cplx_type> &, size_t, bool, AlgorithmSelector &) {}
 
         // ----- per-step Sbus: 2-way (row of sbus_policy_ vs. the fixed member) ---
+        // Row i's injection: built into `scratch` (one buffer per range: no row
+        // allocates, no two threads share it) where it varies, the fixed vector
+        // itself where it does not. Nothing the size of nb_steps x nb_bus exists.
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
-        CplxVect _step_sbus(size_t i) const { return sbus_policy_.sbuses.row(i); }
+        const CplxVect & _step_sbus(size_t i, CplxVect & scratch) const {
+            sbus_policy_.fill_row(static_cast<Eigen::Index>(i), scratch);
+            return scratch;
+        }
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
-        CplxVect _step_sbus(size_t) const { return ac_cache_.inj; }
+        const CplxVect & _step_sbus(size_t, CplxVect &) const { return ac_cache_.inj; }
 
         // ----- per-step generator vm seeding: 2-way (SbusPolicy::Vary::gen_v row
         // applied via GeneratorContainer::set_vm, vs. a no-op leaving V's magnitude
@@ -1023,10 +1078,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 // target_vm_pu_ was already seeded once by _finish_preprocessing,
                 // before the very first step -- nothing to redo here, no per-row
                 // regression.
-            const RealVect target_vm_pu_row = sbus_policy_.gen_v.row(i);  // materialize:
-                // a RowMajor matrix row is not contiguous the way a plain RealVect
-                // is, so bind it to a real RealVect before handing it to set_vm's
-                // Eigen::Ref<const RealVect> parameter (same pattern as _step_sbus).
+            // a row of the row-major gen_v is contiguous: a view binds to set_vm's
+            // Eigen::Ref<const RealVect> parameter without a copy (as _step_sbus)
+            const Eigen::Map<const RealVect> target_vm_pu_row(sbus_policy_.gen_v.row(static_cast<Eigen::Index>(i)).data(),
+                                                              sbus_policy_.gen_v.cols());
             _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver, target_vm_pu_row);
         }
 
@@ -1356,22 +1411,33 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // Should a row somehow leave no participant at all, the reference slack bus
         // keeps the whole share -- the angle reference is a property of the batch,
         // picked once, and must not move from row to row.
-        RealVect _row_slack_weights(size_t i) const {
+        // Returns the layout's own vector by reference on the common row; the
+        // re-derived one is written into the caller's `scratch` (one per range, so
+        // no row allocates and no two threads share it).
+        const RealVect & _row_slack_weights(size_t i, RealVect & scratch) const {
             const RealVect & base_w = active_layout().slack_weights;
             if(i >= _row_slack_gens_off_.size() || _row_slack_gens_off_[i].empty()) return base_w;
             const auto & generators = _grid_model.get_generators();
             std::vector<bool> gen_off(generators.nb(), false);
             for(int gen_id : _row_slack_gens_off_[i]) gen_off[gen_id] = true;
-            RealVect w = generators.get_slack_weights_solver_without(
+            scratch = generators.get_slack_weights_solver_without(
                 static_cast<size_t>(base_w.size()), active_layout().id_me_to_solver, gen_off);
-            if(abs(w.sum()) < BaseConstants::_tol_equal_float){
-                w = RealVect::Zero(base_w.size());
+            if(abs(scratch.sum()) < BaseConstants::_tol_equal_float){
+                scratch.setZero();
                 if(active_layout().slack_bus_id_solver.size() > 0){
                     const int ref = active_layout().slack_bus_id_solver[static_cast<int>(0)].cast_int();
-                    if(ref >= 0 && ref < w.size()) w(ref) = 1.;
+                    if(ref >= 0 && ref < scratch.size()) scratch(ref) = 1.;
                 }
             }
-            return w;
+            return scratch;
+        }
+
+        // whether row i turns some switchable bus PQ -- only then is the algorithm's
+        // pinning (all switchable buses, its resting state) worth touching: every
+        // set_pv_pinned_buses call marks the mask positions dirty, which costs a pass
+        // over the Jacobian's nonzeros at the next fill.
+        bool _row_flips_pv(size_t i) const {
+            return _has_pv_switching() && i < _row_pv_to_pq_.size() && !_row_pv_to_pq_[i].empty();
         }
 
         // per-range worker: NON mask-mode path, shared by every instantiation.
@@ -1385,6 +1451,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         bool needs_solver_init);
         void _run_one_step(size_t i, AlgorithmSelector & algo, AlgoControl & control,
                            Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & V,
+                           CplxVect & sbus_scratch, RealVect & sw_scratch,
                            bool ac_solver_used, int max_iter, real_type tol_solver,
                            int & nb_solved, int & nb_converged, double & timer_solver, double & timer_modif_ybus,
                            bool & conv, bool & invertible);
@@ -1407,7 +1474,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         {
             try {
                 CplxVect V;
+                CplxVect sbus_scratch;   // this row's injection, where it varies
+                RealVect sw_scratch;
                 if(needs_solver_init) control.tell_all_changed();
+                // the loop's invariant: between two rows the algorithm masks nothing
+                // and pins every switchable bus, so a row that strands nothing and
+                // flips nothing leaves both alone (each call would cost a pass over the
+                // Jacobian's nonzeros at the next fill). Established once here rather
+                // than assumed of a member algorithm a previous compute() may have left
+                // mid-row.
+                algo.set_masked_buses(std::vector<int>());
+                if(_has_pv_switching()) algo.set_pv_pinned_buses(_switchable_buses_);
 
                 for(size_t cont_id = cont_begin; cont_id < cont_end; ++cont_id){
                     const std::vector<Coeff> & coeffs_modif = ybus_policy_.li_coeffs[cont_id];
@@ -1421,27 +1498,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         YbusPolicy::Contingency::remove_from_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);
                         timer_modif_ybus += t1.duration();
 
-                        algo.set_masked_buses(masked);
+                        if(!masked.empty()) algo.set_masked_buses(masked);
                         // generator contingencies: release the pinning of the buses
-                        // this row turns PQ, keep it on the others (a no-op call when
-                        // no generator contingency was configured)
-                        if(_has_pv_switching()) algo.set_pv_pinned_buses(_row_pv_pinned(cont_id));
+                        // this row turns PQ, keep it on the others
+                        const bool flips = _row_flips_pv(cont_id);
+                        if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(cont_id));
                         V = Vinit_solver;
                         _apply_step_gen_v(cont_id, V);
-                        if(masked.empty()){
-                            const RealVect sw = _row_slack_weights(cont_id);
-                            conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id),
-                                                         active_layout().slack_bus_id_solver.as_eigen(), sw,
-                                                         active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
-                        } else {
-                            const RealVect sw = _masked_slack_weights(masked, _row_slack_weights(cont_id));
-                            conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id),
-                                                         active_layout().slack_bus_id_solver.as_eigen(), sw,
-                                                         active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
-                        }
+                        const RealVect & sw = _masked_slack_weights(masked, _row_slack_weights(cont_id, sw_scratch), sw_scratch);
+                        conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id, sbus_scratch),
+                                                     active_layout().slack_bus_id_solver.as_eigen(), sw,
+                                                     active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
-                        algo.set_masked_buses(std::vector<int>());
-                        if(_has_pv_switching()) algo.set_pv_pinned_buses(_switchable_buses_);
+                        if(!masked.empty()) algo.set_masked_buses(std::vector<int>());
+                        if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
 
                         auto t2 = CustTimer();
                         YbusPolicy::Contingency::readd_to_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);
@@ -1609,6 +1679,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // (Contingency, Vary) (see _maybe_check_results_match_defaults below).
         bool _results_stale_ = false;
 
+        // whether anything computed or per-contingency (results, masks, the solver
+        // caches) exists since the last clear: what clear_results_only() has to drop
+        // at all. See there.
+        bool _results_present_ = false;
+
         // "handle disconnected grid" mode + limit violations: plain, always-present
         // state (SFINAE-gated methods above restrict who can reach it); empty /
         // false on every instantiation but ContingencyAnalysis.
@@ -1634,7 +1709,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<int> _switchable_buses_;
         std::vector<std::vector<int> > _row_pv_to_pq_;
         std::vector<std::vector<int> > _row_slack_gens_off_;
+        // per contingency, the solver buses it strands (sorted, empty if none) and
+        // whether the grid stays connected -- both settled by _prepare_connectivity
+        // from bus_graph_, the DFS tree of the base graph built there.
         std::vector<std::vector<int> > _li_masked;
+        std::vector<char> _cont_connected_;
+        BusGraph bus_graph_;
         std::vector<char> _skip_mask;
         bool _compute_limit_violations_ = false;
         real_type _violation_threshold_ = 1.0;

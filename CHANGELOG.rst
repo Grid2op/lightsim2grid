@@ -156,6 +156,29 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] ``ContingencyAnalysis`` / ``ScenarioSweep`` no longer run a connectivity search
+  per contingency: one DFS of the base graph (``BusGraph``: bridges, subtree ranges) settles
+  every N-1 up front, the search only remains for an N-k it cannot decide. Same answers;
+  ``modif_Ybus_time()`` no longer includes the check.
+- [ADDED] ``benchmarks/cache_profiling/profile_batch.cpp``: the instruction-count audit of
+  ``TimeSeries`` and ``ContingencyAnalysis``, per row, with its baseline in the README.
+- [IMPROVED] the batch row loop no longer copies the row's injection and slack weights, nor
+  re-marks the Jacobian masks on a row that strands or flips nothing (a pass over its
+  nonzeros each time); the violation checks copy a branch name only into a violation.
+- [FIXED] the "n" solve of a ``ScenarioSweep`` with generator contingencies ran with its
+  switchable buses unpinned (solved as PQ): the solver reset came after the pinning.
+- [IMPROVED] ``BaseAlgo::set_start_polar_cache``: a Newton-Raphson solver told its starting
+  voltage repeats keeps its polar form (exact, keyed on the bits). The seeded sweeps ask for
+  it, so no row pays an atan2 and a hypot per bus.
+- [IMPROVED] ``TimeSeries`` / ``InjectionSweep`` / ``ScenarioSweep`` build each row's injection as
+  they go instead of one ``nb_steps x nb_bus`` complex matrix up front (``get_sbuses()`` builds
+  it on request); the flows of every batch are computed row by row, reading the voltages once,
+  instead of branch by branch down the columns of a row-major matrix.
+- [IMPROVED] ``ContingencyAnalysis.add_all_n1_contingencies`` registers the sweep in one call
+  (it reset the solver once per powerline); ``clear_results_only()`` is a no-op with nothing
+  to clear; a contingency given by name no longer scans every name of the grid.
+- [FIXED] ``ContingencyAnalysis``: registering a contingency after a computation left the
+  python-side results cached, so the next ``get_flows()`` indexed stale arrays and raised.
 - [FIXED] ``ContingencyAnalysis`` / ``ScenarioSweep`` in ``handle_disconnected_grid`` mode
   reported a contingency stranding a lone remote-voltage controller as diverged under
   ``NR_KLU`` / ``NRSing_KLU`` (fine under SparseLU and ``NRRefactorRetry_KLU``): the repurposed

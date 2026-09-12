@@ -157,8 +157,6 @@ void BaseBatchSolverSynch::split_range(size_t nb_items, int nb_thread, int t,
 
 void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
 {
-    // TODO find a way to factorize that with TrafoContainer::compute_results
-    // TODO and LineContainer::compute_results
     if (_voltages.size() == 0 && _thetas.size() == 0)
     {
         std::ostringstream exc_;
@@ -170,21 +168,32 @@ void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
 
     auto timer_compute = CustTimer();
     const auto & sn_mva = _grid_model.get_sn_mva();
-    const auto & nb_steps = _nb_result_rows();
+    const Eigen::Index nb_steps = _nb_result_rows();
+    const bool is_ac = _algo.ac_solver_used();
+    // DC theta-only fast path (see BaseAlgo::set_lazy_v / BaseBatchSweep::compute):
+    // when active, _voltages is empty and the per-bus values are read straight from
+    // _thetas (real, no .arg() needed) + the small _dc_* reconstruction inputs
+    const bool dc_lazy = !is_ac && _dc_lazy_storage_used_;
 
-    // reset the results
-    if (amps) _amps_flows = RealMat::Zero(nb_steps, n_total_);
-    else _active_power_flows = RealMat::Zero(nb_steps, n_total_);
-    
-    // compute the flows for the powerlines
-    size_t lag_id = 0;
-    if (amps) compute_amps_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id, false);
-    else compute_active_power_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id, false);
+    // the result, reset: reallocated only if its shape changed
+    RealMat & out = amps ? _amps_flows : _active_power_flows;
+    if(out.rows() != nb_steps || out.cols() != static_cast<Eigen::Index>(n_total_)){
+        out.resize(nb_steps, static_cast<Eigen::Index>(n_total_));
+    }
+    out.setZero();
 
-    // compute the flows for the trafos
-    lag_id = n_line_;
-    if (amps) compute_amps_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id, true);
-    else compute_active_power_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id, true);
+    // row by row: the row's voltages read once, its flows written once (see
+    // _flows_of_row for what this replaced)
+    const auto & lines = _grid_model.get_powerlines_as_data();
+    const auto & trafos = _grid_model.get_trafos_as_data();
+    RealVect vm_scratch;
+    for(Eigen::Index i = 0; i < nb_steps; ++i){
+        const cplx_type * V_row = dc_lazy ? nullptr : _voltages.row(i).data();
+        const real_type * theta_row = dc_lazy ? _thetas.row(i).data() : nullptr;
+        const RealVect * vm_row = dc_lazy ? &_dc_vm_row_grid(i, vm_scratch) : nullptr;
+        _flows_of_row(lines, i, 0, false, amps, is_ac, sn_mva, V_row, theta_row, vm_row, out);
+        _flows_of_row(trafos, i, n_line_, true, amps, is_ac, sn_mva, V_row, theta_row, vm_row, out);
+    }
 
     if (amps) _timer_compute_A = timer_compute.duration();
     else _timer_compute_P = timer_compute.duration();

@@ -252,6 +252,10 @@ class LS2G_API AlgorithmSelector final
         void set_lazy_v(bool value) {
             get_prt_solver("set_lazy_v", false)->set_lazy_v(value);
         }
+        // see BaseAlgo::set_start_polar_cache
+        void set_start_polar_cache(bool value) {
+            get_prt_solver("set_start_polar_cache", false)->set_start_polar_cache(value);
+        }
         bool lazy_v() const {
             return get_prt_solver("lazy_v", false)->lazy_v();
         }

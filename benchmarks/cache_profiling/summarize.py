@@ -25,16 +25,29 @@ import re
 import sys
 from collections import OrderedDict, defaultdict
 
-PHASES = ["cold", "idem", "inj", "inj_nores", "dcac", "nocache", "topo",
-          "inj_every2", "inj_every3", "idem__NRSing_KLU", "inj__NRSing_KLU"]
+# the single-solve phases (run_profile.sh) ...
+SINGLE_PHASES = ["cold", "idem", "inj", "inj_nores", "dcac", "nocache", "topo",
+                 "inj_every2", "inj_every3", "idem__NRSing_KLU", "inj__NRSing_KLU"]
+# ... and the batch ones (run_profile_batch.sh), where "per solve" means per ROW.
+# Every compute phase comes with its `_1row` twin: the same phase over a single
+# row, which is the fixed cost of a compute() -- see the marginal-cost table.
+BATCH_COMPUTE_PHASES = ["ts_ac", "ts_dc", "ca_ac", "ca_dc", "ca_ac_mask", "ca_dc_mask"]
+BATCH_PHASES = (BATCH_COMPUTE_PHASES
+                + [p + "_1row" for p in BATCH_COMPUTE_PHASES]
+                + ["ts_flows", "ca_flows", "ca_construct"])
 # the phases the per-call-site ledger is printed for
-LEDGER_PHASES = ["idem", "inj", "nocache"]
-GRID_ORDER = ["case30", "case118", "case1354pegase", "case9241pegase"]
+LEDGER_PHASES = ["idem", "inj", "nocache", "ts_ac", "ts_dc", "ca_ac", "ca_ac_mask",
+                 "ca_dc_mask", "ts_flows", "ca_flows"]
+GRID_ORDER = ["case30", "case118", "case1354pegase", "case9241pegase",
+              "case118_fancy", "case1354pegase_fancy", "case9241pegase_fancy"]
 
 # inclusive costs worth naming, matched as substrings of the demangled symbol
 INCLUSIVE_OF_INTEREST = OrderedDict([
     ("ac_pf",            "LSGrid::ac_pf("),
     ("dc_pf",            "LSGrid::dc_pf("),
+    ("batch compute",    "BaseBatchSweep<"),
+    ("build_solver_in",  "LSGrid::build_solver_input("),
+    ("build_dc_sol_in",  "LSGrid::build_dc_solver_input("),
     ("NR compute_pf",    "NRAlgo<"),
     ("DC compute_pf",    "BaseDCAlgo<"),
     ("KLU analyze",      "KLULinearSolver::analyze("),
@@ -43,7 +56,26 @@ INCLUSIVE_OF_INTEREST = OrderedDict([
     ("KLU solve",        "KLULinearSolver::solve("),
     ("fill_J",           "::fill_J("),
     ("fill_internals",   "::fill_internal_variables("),
+    ("check_invertible", "Contingency::check_invertible("),
+    ("disconnected_bus", "::_disconnected_buses"),
+    ("select_ref_slack", "::_select_ref_slack_and_masks"),
+    ("Sbus assemble",    "SbusPolicy::Vary::assemble("),
+    ("amps flows",       "::compute_amps_flows"),
+    ("power flows",      "::compute_active_power_flows"),
+    ("violations",       "batch_sweep_detail::check_"),
+    ("LSGrid copy",      "LSGrid::LSGrid(ls2g::LSGrid const&)"),
 ])
+
+# the source files the per-call-site ledger is printed for, relative to the
+# repository root: what LSGrid.cpp does around a single solve, and what the
+# batch classes do around each row
+LEDGER_FILES = ["src/core/LSGrid.cpp",
+                "src/core/batch_algorithm/BaseBatchSweep.cpp",
+                "src/core/batch_algorithm/BaseBatchSweep.hpp",
+                "src/core/batch_algorithm/BaseBatchSolverSynch.hpp",
+                "src/core/batch_algorithm/BaseBatchSolverSynch.cpp",
+                "src/core/batch_algorithm/SbusPolicy.cpp",
+                "src/core/batch_algorithm/YbusPolicy.cpp"]
 
 _NUM = re.compile(r"^\s*([\d,]+)\s")
 
@@ -117,16 +149,26 @@ def _enclosing(starts, lineno):
     return name
 
 
+def _present(out_dir, phases):
+    """the phases of `phases` (in that order) that have at least one annotate file"""
+    names = os.listdir(out_dir)
+    return [p for p in phases
+            if any(n.startswith("annotate.") and n.endswith(f".{p}.txt") for n in names)]
+
+
 def main(out_dir, src_root):
+    PHASES = _present(out_dir, SINGLE_PHASES + BATCH_PHASES)
+    grids = [g for g in GRID_ORDER
+             if any(os.path.exists(os.path.join(out_dir, f"annotate.{g}.{p}.txt")) for p in PHASES)]
     print("=" * 100)
     print("INSTRUCTIONS RETIRED (Ir) PER POWERFLOW -- collected region only "
-          "(the ac_pf / dc_pf calls themselves)")
+          "(the ac_pf / dc_pf calls themselves; per ROW for the batch phases)")
     print("=" * 100)
-    header = f"{'grid':<16}" + "".join(f"{p:>18}" for p in PHASES)
+    header = f"{'grid':<22}" + "".join(f"{p:>18}" for p in PHASES)
     print(header)
     totals = {}
-    for grid in GRID_ORDER:
-        row = f"{grid:<16}"
+    for grid in grids:
+        row = f"{grid:<22}"
         for phase in PHASES:
             ann = os.path.join(out_dir, f"annotate.{grid}.{phase}.txt")
             nbf = os.path.join(out_dir, f"nb.{grid}.{phase}.txt")
@@ -137,14 +179,37 @@ def main(out_dir, src_root):
             nb = int(open(nbf).read().strip()) if os.path.exists(nbf) else 1
             per = total / nb
             totals[(grid, phase)] = per
+            totals[(grid, phase, "raw")] = (total, nb)
             row += f"{per:>18,.0f}"
         print(row)
+
+    # ---- batch: the fixed cost of a compute() apart from the marginal row ------
+    batch_compute = [p for p in BATCH_COMPUTE_PHASES if p in PHASES and p + "_1row" in PHASES]
+    if batch_compute:
+        print()
+        print("=" * 100)
+        print("BATCH: what a compute() pays BEFORE its first row (the 1-row run), and "
+              "what each further row costs\n(the N-row run minus the 1-row run, over N-1)")
+        print("=" * 100)
+        header = f"{'grid':<22}" + "".join(f"{p + ' fixed':>18}{p + ' /row':>18}" for p in batch_compute)
+        print(header)
+        for grid in grids:
+            row = f"{grid:<22}"
+            for phase in batch_compute:
+                n_run = totals.get((grid, phase, "raw"))
+                one = totals.get((grid, phase + "_1row", "raw"))
+                if n_run is None or one is None or n_run[1] <= 1:
+                    row += f"{'-':>18}{'-':>18}"
+                    continue
+                marginal = (n_run[0] - one[0]) / (n_run[1] - one[1])
+                row += f"{one[0]:>18,.0f}{marginal:>18,.0f}"
+            print(row)
 
     print()
     print("=" * 100)
     print("WHERE THOSE INSTRUCTIONS GO (inclusive Ir per solve)")
     print("=" * 100)
-    for grid in GRID_ORDER:
+    for grid in grids:
         for phase in PHASES:
             inc_path = os.path.join(out_dir, f"inclusive.{grid}.{phase}.txt")
             nbf = os.path.join(out_dir, f"nb.{grid}.{phase}.txt")
@@ -164,50 +229,78 @@ def main(out_dir, src_root):
                 print(f"    {label:<18} {val:>14,.0f}  ({pct:5.1f}%)")
             algo = (_pick(inclusive, INCLUSIVE_OF_INTEREST["NR compute_pf"]) +
                     _pick(inclusive, INCLUSIVE_OF_INTEREST["DC compute_pf"])) / nb
-            around = (ac + dc) - algo
+            if phase in BATCH_PHASES:
+                # a batch phase collects the batch call itself, not ac_pf / dc_pf:
+                # "around" is then everything the batch does that is not a solve
+                around = per_total - algo
+                label = "--> batch around"
+            else:
+                around = (ac + dc) - algo
+                label = "--> LSGrid around"
             if per_total:
                 print(f"    {'--> algorithms':<18} {algo:>14,.0f}  "
                       f"({100. * algo / per_total:5.1f}%)")
-                print(f"    {'--> LSGrid around':<18} {around:>14,.0f}  "
+                print(f"    {label:<18} {around:>14,.0f}  "
                       f"({100. * around / per_total:5.1f}%)")
 
-    # ---- the ledger: what each call site inside LSGrid.cpp costs -----------
+    # ---- the ledger: what each call site inside the files of interest costs ----
+    # A single-solve phase is read against LSGrid.cpp, a batch phase against the
+    # batch sources: a batch phase never enters ac_pf, and the single solve never
+    # enters the batch classes, so the other family's files would list nothing.
     lsgrid_cpp = os.path.join(src_root, "src", "core", "LSGrid.cpp")
     starts = _function_starts(lsgrid_cpp) if os.path.exists(lsgrid_cpp) else []
-    for grid in GRID_ORDER:
+    for grid in grids:
         for phase in LEDGER_PHASES:
             path = os.path.join(out_dir, f"callgrind.{grid}.{phase}.out")
             nbf = os.path.join(out_dir, f"nb.{grid}.{phase}.txt")
             if not os.path.exists(path):
                 continue
             nb = int(open(nbf).read().strip()) if os.path.exists(nbf) else 1
-            self_costs, call_costs = parse_callgrind(path)
+            self_costs, call_costs, self_by_fn = parse_callgrind(path)
+            is_batch = phase in BATCH_PHASES
+            files = [f for f in LEDGER_FILES if ("batch_algorithm" in f) == is_batch]
+            basenames = tuple(os.path.basename(f) for f in files)
 
             print()
             print("=" * 100)
-            print(f"{grid} / {phase}: what each CALL SITE in LSGrid.cpp costs "
+            print(f"{grid} / {phase}: what each CALL SITE in {', '.join(basenames)} costs "
                   f"(inclusive Ir per solve)")
             print("=" * 100)
             sites = [(cost, f, ln, callee)
                      for (f, ln, callee), cost in call_costs.items()
-                     if f and f.endswith("LSGrid.cpp")]
+                     if f and f.endswith(basenames)]
             sites.sort(reverse=True)
             for cost, f, ln, callee in sites[:18]:
-                print(f"    {cost / nb:>12,.0f}  L{ln:<5} {_src_line(src_root, f, ln)[:62]:<62}"
-                      f" -> {_demangle_short(callee)[:44]}")
+                print(f"    {cost / nb:>12,.0f}  {os.path.basename(f)[:22]:<22} L{ln:<5} "
+                      f"{_src_line(src_root, f, ln)[:50]:<50} -> {_demangle_short(callee)[:40]}")
 
-            print(f"    --- instructions executed IN LSGrid.cpp itself "
-                  f"(no callee), by function ---")
-            per_fn = defaultdict(int)
-            for (f, ln), cost in self_costs.items():
-                if f and f.endswith("LSGrid.cpp"):
-                    per_fn[_enclosing(starts, ln)] += cost
-            for fname, cost in sorted(per_fn.items(), key=lambda kv: -kv[1])[:10]:
-                print(f"    {cost / nb:>12,.0f}  {fname}")
+            if is_batch:
+                # the batch code is mostly member templates defined in headers, so
+                # bucket by the function callgrind attributes the instructions to
+                # (an inlined callee's instructions are charged to the function it
+                # was inlined into, on the callee's own source lines)
+                print(f"    --- instructions executed IN those files themselves "
+                      f"(no callee), by function ---")
+                per_fn = defaultdict(int)
+                for (f, fn), cost in self_by_fn.items():
+                    if f and f.endswith(basenames):
+                        per_fn[fn] += cost
+                for fname, cost in sorted(per_fn.items(), key=lambda kv: -kv[1])[:12]:
+                    print(f"    {cost / nb:>12,.0f}  {_demangle_short(fname)[:80]}")
+            else:
+                print(f"    --- instructions executed IN LSGrid.cpp itself "
+                      f"(no callee), by function ---")
+                per_fn = defaultdict(int)
+                for (f, ln), cost in self_costs.items():
+                    if f and f.endswith("LSGrid.cpp"):
+                        per_fn[_enclosing(starts, ln)] += cost
+                for fname, cost in sorted(per_fn.items(), key=lambda kv: -kv[1])[:10]:
+                    print(f"    {cost / nb:>12,.0f}  {fname}")
 
 
 def parse_callgrind(callgrind_out):
-    """(self_costs, call_costs) keyed by (file, line).
+    """(self_costs, call_costs, self_by_fn): the first two keyed by (file, line),
+    the third by (file, function name).
 
     The callgrind format writes, inside an `fn=` block, plain "<line> <Ir>" cost
     lines for the code of the function itself, and -- right after a `calls=`
@@ -222,9 +315,11 @@ def parse_callgrind(callgrind_out):
     """
     self_costs = defaultdict(int)
     call_costs = defaultdict(int)
+    self_by_fn = defaultdict(int)
     file_names = {}
     fn_names = {}
     cur_file = None
+    cur_fn = None
     cur_callee = None
     last_line = 0
     pending_call = False
@@ -251,7 +346,7 @@ def parse_callgrind(callgrind_out):
                 elif key in ("cfi", "cfl"):
                     _resolve(file_names, val)
                 elif key == "fn":
-                    _resolve(fn_names, val)
+                    cur_fn = _resolve(fn_names, val)
                     last_line = 0
                 elif key == "cfn":
                     cur_callee = _resolve(fn_names, val)
@@ -276,7 +371,8 @@ def parse_callgrind(callgrind_out):
                 pending_call = False
             else:
                 self_costs[(cur_file, lineno)] += cost
-    return self_costs, call_costs
+                self_by_fn[(cur_file, cur_fn)] += cost
+    return self_costs, call_costs, self_by_fn
 
 
 def _src_line(src_root, path, lineno):

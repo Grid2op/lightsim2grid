@@ -14,17 +14,30 @@
 #     count and full complex voltage vector, compared with 17 significant digits.
 #
 #   ./ab_test.sh <grids_dir> <out_dir> <patch_script> [phases...]
+#   DRIVER=batch ./ab_test.sh <grids_dir> <out_dir> <patch_script> [phases...]
 #
 # <patch_script> is a python script that edits src/core in place; the tree is
-# restored with `git checkout` afterwards, and again on exit.
+# restored with `git checkout` afterwards, and again on exit. DRIVER selects the
+# binary: `cached_pf` (default) audits a single powerflow with profile_cached_pf's
+# phases, `batch` audits TimeSeries / ContingencyAnalysis with profile_batch's
+# (see that file for the list); the numbers are then per ROW.
 
 set -euo pipefail
+
+# JOBS caps the parallelism of the two builds: the core's translation units are
+# Eigen-heavy, and nproc of them at once can take the machine down.
 
 GRIDS_DIR=$1
 OUT_DIR=$2
 PATCH=$3
 shift 3
-PHASES=${*:-"idem inj dcac topo nocache cold"}
+DRIVER=${DRIVER:-cached_pf}
+if [ "${DRIVER}" = "batch" ]; then
+    DEFAULT_PHASES="ts_ac ts_dc ca_ac ca_dc ca_ac_mask ca_dc_mask ts_flows ca_flows"
+else
+    DEFAULT_PHASES="idem inj dcac topo nocache cold"
+fi
+PHASES=${*:-${DEFAULT_PHASES}}
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "${HERE}/../.." && pwd)
@@ -51,6 +64,15 @@ grids_in_order() {
 }
 
 nb_for() {
+    if [ "${DRIVER}" = "batch" ]; then
+        # a row is a whole solve: the same budget as run_profile_batch.sh
+        case "$1" in
+            case9241pegase*) echo 20 ;;
+            case1354pegase*) echo 50 ;;
+            *)               echo 200 ;;
+        esac
+        return
+    fi
     case "$1" in
         case9241pegase) echo 5 ;;
         case1354pegase) echo 10 ;;
@@ -64,7 +86,7 @@ measure() {  # variant grid phase nb
     local trace="${OUT_DIR}/trace.${variant}.${grid}.${phase}.txt"
     valgrind --tool=callgrind --instr-atstart=no --collect-atstart=no \
              --cache-sim=no --branch-sim=no --callgrind-out-file="${out}" \
-             "${BUILD}/profile_cached_pf" "${GRIDS_DIR}/${grid}.lsb" "${phase}" \
+             "${BUILD}/profile_${DRIVER}" "${GRIDS_DIR}/${grid}.lsb" "${phase}" \
              "${nb}" KLU always "${trace}" \
              > "${OUT_DIR}/run.${variant}.${grid}.${phase}.log" 2>&1
     callgrind_annotate --threshold=1 "${out}" 2>/dev/null \
@@ -76,7 +98,7 @@ for variant in A B; do
         echo "--- applying ${PATCH} ---"
         python3 "${PATCH}"
     fi
-    cmake --build "${BUILD}" -j"$(nproc)" > /dev/null
+    cmake --build "${BUILD}" -j"${JOBS:-$(nproc)}" > /dev/null
     for grid_path in $(grids_in_order "${GRIDS_DIR}"); do
         grid=$(basename "${grid_path}" .lsb)
         nb=$(nb_for "${grid}")
