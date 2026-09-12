@@ -444,36 +444,47 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         _violations_n_.clear();
     }
 
-    // prepare the gridmodel (compute Ybus, Sbus etc.)
-    CplxVect Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used);
+    // Everything from here to the "n" solve is the batch's BASE CASE: reading the
+    // grid, walking its graph, and analyzing and factorizing the Jacobian. None of it
+    // depends on the injections, so a batch run again with only new rows can keep it
+    // -- if, and only if, the caller asked for that and nothing this class knows about
+    // has changed since (see set_reuse_base_case / invalidate_base_case).
+    const bool reuse_base_case = _can_reuse_base_case(nb_steps);
+    _base_case_was_reused_ = reuse_base_case;
+
+    // prepare the gridmodel (compute Ybus, Sbus etc.). Keeping the base case does not
+    // mean keeping the starting voltage: a call is free to start anywhere, so V is
+    // mapped onto the kept labelling every time -- microseconds, see _vinit_on_base_case.
+    CplxVect Vinit_solver = reuse_base_case ? _vinit_on_base_case(Vinit)
+                                            : prepare_solver_input_base(Vinit, ac_solver_used);
 
     // A fresh solver for this batch -- reset HERE, before the hooks below configure
     // it, not in _finish_preprocessing after them: a reset clears the PV pinning
     // _maybe_prepare_gen_contingency hands it, and the "n" solve has to run pinned
     // (every switchable bus is PV in the base case). It used to run unpinned, its
     // switchable buses solved as PQ, the per-row pinning hiding it from the rows.
-    _algo.reset();
+    if(!reuse_base_case) _algo.reset();
 
     // initialize whatever varies (Ybus and/or Sbus -- each a no-op where the
     // corresponding policy is NOOP)
-    _prepare_ybus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
+    if(!reuse_base_case) _prepare_ybus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
     // ... and settle, once, which contingencies split the grid and what they strand
     // (a no-op where Ybus does not vary). Only where someone reads the answer: an AC
     // row skips a contingency that splits the grid, and the masked mode strands the
     // smaller side; a plain DC row leaves the split to the solver and never asks.
-    if(ac_solver_used || _handle_disconnected_grid) _prepare_connectivity();
+    if(!reuse_base_case && (ac_solver_used || _handle_disconnected_grid)) _prepare_connectivity();
     _prepare_sbus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
 
     // "handle disconnected grid" mode pre-pass (ContingencyAnalysis only; no-op
     // elsewhere -- and _handle_disconnected_grid can never be true elsewhere, since
     // no setter exists to set it there)
-    _maybe_prepare_masks();
+    if(!reuse_base_case) _maybe_prepare_masks();
 
     // generator contingencies (ScenarioSweep only; no-op elsewhere). Must run after
     // prepare_solver_input_base (it reads the solver labelling) and BEFORE
     // _finish_preprocessing, whose "n" solve builds the Jacobian sparsity this has to
     // enlarge. See _maybe_prepare_gen_contingency.
-    _maybe_prepare_gen_contingency(nb_steps);
+    if(!reuse_base_case) _maybe_prepare_gen_contingency(nb_steps);
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager
@@ -484,7 +495,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     if(use_dc_lazy_v) _dc_gen_v_ = _sbus_gen_v();
 
     bool n_powerflow_has_conv = _finish_preprocessing(
-        nb_steps, nb_total_bus, Vinit_solver, max_iter, tol, timer_preproc, use_dc_lazy_v
+        nb_steps, nb_total_bus, Vinit_solver, max_iter, tol, timer_preproc, use_dc_lazy_v,
+        reuse_base_case, &_base_case_v_solver_
     );
 
     if(!n_powerflow_has_conv){
@@ -551,6 +563,17 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
             throw std::runtime_error(exc_.str());
         }
         _adjoint_.allocate(static_cast<Eigen::Index>(nb_steps), _algo.get_J());
+    }
+
+    // Remember this base case, so a later compute() with the same everything can keep
+    // it. Recorded HERE, after the "n" solve and before any row runs: _algo.get_V() is
+    // still that solve's answer at this point, and the rows are about to overwrite it.
+    if(_reuse_base_case_ && !reuse_base_case){
+        _base_case_grid_ = &_grid_model;
+        _base_case_nb_steps_ = nb_steps;
+        _base_case_nb_thread_ = _nb_thread;
+        _base_case_v_solver_ = _algo.get_V();
+        _base_case_ready_ = true;
     }
 
     // compute the powerflows, possibly split across several threads

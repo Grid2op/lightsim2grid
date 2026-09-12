@@ -532,7 +532,14 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             size_t max_iter,
             real_type tol,
             CustTimer  & timer_preproc,  // non const because double duration() is not const
-            bool use_dc_lazy_v = false  // see BaseBatchSweep::compute()
+            bool use_dc_lazy_v = false,  // see BaseBatchSweep::compute()
+            // The caller established, and vouches for, a base case this batch can keep
+            // (see BaseBatchSweep::set_reuse_base_case). The result buffers are still
+            // sized -- they belong to this run -- and the generators are still given
+            // this call's starting magnitudes, but the "n" powerflow, and with it the
+            // analysis and the factorization of the Jacobian, are not redone.
+            bool reuse_base_case = false,
+            const CplxVect * base_case_v_solver = nullptr
         ){
 
                 // init the results matrices: the DC theta-only fast path accumulates into
@@ -555,6 +562,20 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // hooks that configure it for the batch (BaseBatchSweep::compute) -- a
                 // reset drops the PV pinning a generator-contingency sweep hands the
                 // algorithm, which the "n" solve below must run with.
+
+                if(reuse_base_case){
+                    // The sparsity, the ledger and the factorization the kept base case
+                    // left on the algorithm are the ones this batch needs, and the
+                    // caller has already put this call's starting voltage on that
+                    // labelling (BaseBatchSweep::_vinit_on_base_case). Nothing is left
+                    // to prepare but the seed a row-from-"n" sweep asks for.
+                    _algo_controler.tell_none_changed();
+                    if(_init_from_n_powerflow && base_case_v_solver != nullptr){
+                        Vinit_solver = *base_case_v_solver;
+                    }
+                    _timer_pre_proc = timer_preproc.duration();
+                    return true;   // it converged when it was built, or it was not kept
+                }
 
                 // perform the initial powerflow / "powerflow in n"
                 // (needed to init the underlying solver with the correct sparsity pattern in particular)
