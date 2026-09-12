@@ -63,6 +63,7 @@ This is a work in progress at the moment
    security_analysis
    scenario_sweep
    continuation_powerflow
+   differentiable
    cpp_library
    solver_plugin
    binary_serialization

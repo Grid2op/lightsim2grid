@@ -25,6 +25,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+torch = [
+    "torch",
+]
 matpower = [
     "scipy",
     "matpowercaseframes",
