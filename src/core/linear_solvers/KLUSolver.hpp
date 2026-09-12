@@ -55,9 +55,13 @@ class LS2G_API KLULinearSolver final
         ErrorType factorize(const EigenRefConstRealSpMat & J); // numeric factorization (requires values)
         ErrorType refactorize(const EigenRefConstRealSpMat & J);  // re-numeric factorization, reuses symbolic
         ErrorType solve(Eigen::Ref<RealVect> b);
+        ErrorType solve_transpose(Eigen::Ref<RealVect> b);  // J^T x = b, out of the factorization of J
 
         // can this linear solver solve problem where RHS is a matrix
-        static const bool CAN_SOLVE_MAT;
+        static constexpr bool CAN_SOLVE_MAT = false;
+
+        // can this linear solver solve J^T x = b out of the factorization of J
+        static constexpr bool CAN_SOLVE_TRANSPOSE = true;  // klu_tsolve
 
     private:
         // KLU frees its symbolic / numeric handles through a pair of functions that
@@ -132,9 +136,13 @@ class LS2G_API KLULinearSolver final
         ErrorType factorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
         ErrorType refactorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
         ErrorType solve(Eigen::Ref<RealVect> /*b*/) { return ErrorType::NoError; }
+        ErrorType solve_transpose(Eigen::Ref<RealVect> /*b*/) { return ErrorType::NoError; }
 
         // can this linear solver solve problem where RHS is a matrix
         static constexpr bool CAN_SOLVE_MAT = false;
+
+        // can this linear solver solve J^T x = b out of the factorization of J
+        static constexpr bool CAN_SOLVE_TRANSPOSE = true;
 
     private:
         // no copy allowed (matches the real KLULinearSolver)

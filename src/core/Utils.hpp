@@ -60,7 +60,8 @@ enum class ErrorType {NoError,
                       SolverReFactor,
                       SolverSolve,
                       NotInitError,
-                      LicenseError};
+                      LicenseError,
+                      NotImplemented};
 std::ostream& operator<<(std::ostream& out, const ErrorType & error_type);
 
 // Escape (and truncate to 64 chars) a string of untrusted origin -- read from a

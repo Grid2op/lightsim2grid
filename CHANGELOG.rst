@@ -156,6 +156,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] ``solve_transpose`` on the linear solvers: :math:`J^T x = b` out of the
+  factorization of :math:`J`, no transposed copy and no second factorization
+  (``klu_tsolve`` for KLU, the transpose view for Eigen's SparseLU). ``CAN_SOLVE_TRANSPOSE``
+  says which solvers have it; it is what the adjoint of a batch needs.
 - [IMPROVED] ``ContingencyAnalysis`` / ``ScenarioSweep`` no longer run a connectivity search
   per contingency: one DFS of the base graph (``BusGraph``: bridges, subtree ranges) settles
   every N-1 up front, the search only remains for an N-k it cannot decide. Same answers;

@@ -14,8 +14,6 @@
 
 namespace ls2g {
 
-const bool CKTSOLinearSolver::CAN_SOLVE_MAT = false;
-
 
 ErrorType CKTSOLinearSolver::reset(){
     // free everything
@@ -105,6 +103,13 @@ ErrorType CKTSOLinearSolver::solve(Eigen::Ref<RealVect> b){
     }
     b = x;
     return ErrorType::NoError;
+}
+
+ErrorType CKTSOLinearSolver::solve_transpose(Eigen::Ref<RealVect> /*b*/){
+    // Deliberately not solving anything: see CAN_SOLVE_TRANSPOSE above. Returning an
+    // error rather than solving J x = b keeps a caller that ignored the flag from
+    // getting a plausible-looking answer to the wrong system.
+    return ErrorType::NotImplemented;
 }
 
 } // namespace ls2g

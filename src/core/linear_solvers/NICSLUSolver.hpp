@@ -74,9 +74,19 @@ class LS2G_API NICSLULinearSolver final
         ErrorType factorize(const EigenRefConstRealSpMat & J); // numeric factorization (requires values)
         ErrorType refactorize(const EigenRefConstRealSpMat & J);  // re-numeric factorization, reuses symbolic
         ErrorType solve(Eigen::Ref<RealVect> b);
+        // Not implemented: see the .cpp. Callers must honour CAN_SOLVE_TRANSPOSE.
+        ErrorType solve_transpose(Eigen::Ref<RealVect> b);
 
         // can this linear solver solve problem where RHS is a matrix
-        static const bool CAN_SOLVE_MAT;
+        static constexpr bool CAN_SOLVE_MAT = false;
+
+        // NICSLU's own solve entry point is wrapped here as `Solve(b, x)` only. Whether
+        // the library can walk its factors transposed was not established against its
+        // headers (it ships separately from this repository and is not built in CI), so
+        // lightsim2grid does not claim the capability: a caller needing J^T x = b with
+        // NICSLU has to form the transpose itself and factorize it. Implementing this is
+        // a contained follow-up for anyone with the NICSLU documentation at hand.
+        static constexpr bool CAN_SOLVE_TRANSPOSE = false;
 
         // prevent copy and assignment
         NICSLULinearSolver(const NICSLULinearSolver&) = delete;
@@ -130,9 +140,13 @@ class LS2G_API NICSLULinearSolver final
         ErrorType factorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
         ErrorType refactorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
         ErrorType solve(Eigen::Ref<RealVect> /*b*/) { return ErrorType::NoError; }
+        ErrorType solve_transpose(Eigen::Ref<RealVect> /*b*/) { return ErrorType::NotImplemented; }
 
         // can this linear solver solve problem where RHS is a matrix
         static constexpr bool CAN_SOLVE_MAT = false;
+
+        // can this linear solver solve J^T x = b out of the factorization of J
+        static constexpr bool CAN_SOLVE_TRANSPOSE = false;
 
         // prevent copy and assignment (matches the real NICSLULinearSolver)
         NICSLULinearSolver(const NICSLULinearSolver&) = delete;

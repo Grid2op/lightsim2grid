@@ -37,7 +37,11 @@ class LinearSolverPolicy
         ~LinearSolverPolicy() noexcept = default;
 
         // can this linear solver solve problem where RHS is a matrix
-        static const bool CAN_SOLVE_MAT;
+        static constexpr bool CAN_SOLVE_MAT = LinearSolver::CAN_SOLVE_MAT;
+
+        // can this linear solver solve J^T x = b using the factorization of J itself,
+        // without ever forming J^T (see solve_transpose)
+        static constexpr bool CAN_SOLVE_TRANSPOSE = LinearSolver::CAN_SOLVE_TRANSPOSE;
 
         ErrorType reset() {
             ++stats_.nb_reset;
@@ -105,6 +109,20 @@ class LinearSolverPolicy
             return res;
         }
 
+        // Solves J^T x = b reusing the factorization of J that factorize() /
+        // refactorize() produced -- no transposed copy of J, no second analyze, no
+        // second numeric factorization. Only meaningful where CAN_SOLVE_TRANSPOSE is
+        // true; the solvers where it is false return ErrorType::NotImplemented rather
+        // than silently solving the wrong system, so a caller that cannot check the
+        // flag at compile time can check the return value instead.
+        ErrorType solve_transpose(Eigen::Ref<RealVect> b) {
+            ++stats_.nb_solve_transpose;
+            auto timer = CustTimer();
+            ErrorType res = inner_.solve_transpose(b);
+            stats_.timer_solve_transpose_ += timer.duration();
+            return res;
+        }
+
         const LinearSolverStats & get_linear_solver_stats() const noexcept { return stats_; }
 
         // Called from the owning algorithm's reset_timer() (itself invoked at the start
@@ -116,6 +134,7 @@ class LinearSolverPolicy
             stats_.timer_factor_     = 0.;
             stats_.timer_refactor_   = 0.;
             stats_.timer_solve_      = 0.;
+            stats_.timer_solve_transpose_ = 0.;
         }
 
     protected:
@@ -130,9 +149,6 @@ class LinearSolverPolicy
         LinearSolverPolicy & operator=(LinearSolverPolicy&&) = delete;
         LinearSolverPolicy & operator=(const LinearSolverPolicy&) = delete;
 };
-
-template<class LinearSolver>
-const bool LinearSolverPolicy<LinearSolver>::CAN_SOLVE_MAT = LinearSolver::CAN_SOLVE_MAT;
 
 } // namespace ls2g
 

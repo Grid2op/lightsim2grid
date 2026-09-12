@@ -12,8 +12,6 @@
 
 namespace ls2g {
 
-const bool KLULinearSolver::CAN_SOLVE_MAT = false;
-
 ErrorType KLULinearSolver::reset(){
     // release both handles (their deleters use common_) before resetting common_
     numeric_.reset();
@@ -70,6 +68,20 @@ ErrorType KLULinearSolver::solve(Eigen::Ref<RealVect> b){
     int ok = klu_solve(symbolic_.get(), numeric_.get(), n, 1, &b(0), &common_);
     if(ok != 1){
         // std::cout << "\t KLU: klu_solve error" << std::endl;
+        return ErrorType::SolverSolve;
+    }
+    return ErrorType::NoError;
+}
+
+ErrorType KLULinearSolver::solve_transpose(Eigen::Ref<RealVect> b){
+    // klu_tsolve walks the very same L / U factors as klu_solve, backwards: J^T is
+    // never formed, and neither the symbolic analysis nor the numeric factorization
+    // is repeated. That is what makes an adjoint (a vector-Jacobian product, as
+    // reverse-mode differentiation of a powerflow needs) cost one triangular solve.
+    const int n = static_cast<int>(b.size());
+    int ok = klu_tsolve(symbolic_.get(), numeric_.get(), n, 1, &b(0), &common_);
+    if(ok != 1){
+        // std::cout << "\t KLU: klu_tsolve error" << std::endl;
         return ErrorType::SolverSolve;
     }
     return ErrorType::NoError;

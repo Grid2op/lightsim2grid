@@ -87,9 +87,17 @@ class LS2G_API CKTSOLinearSolver final
         ErrorType factorize(const EigenRefConstRealSpMat & J); // numeric factorization (requires values)
         ErrorType refactorize(const EigenRefConstRealSpMat & J);  // re-numeric factorization, reuses symbolic
         ErrorType solve(Eigen::Ref<RealVect> b);
+        // Not implemented: see the .cpp. Callers must honour CAN_SOLVE_TRANSPOSE.
+        ErrorType solve_transpose(Eigen::Ref<RealVect> b);
 
         // can this linear solver solve problem where RHS is a matrix
-        static const bool CAN_SOLVE_MAT;
+        static constexpr bool CAN_SOLVE_MAT = false;
+
+        // Same as NICSLU (see NICSLUSolver.hpp): CKTSO ships separately from this
+        // repository and is not built in CI, so its transposed solve -- if it has one --
+        // is unverified here and the capability is not claimed rather than claimed and
+        // wrong.
+        static constexpr bool CAN_SOLVE_TRANSPOSE = false;
         
         // prevent copy and assignment
         CKTSOLinearSolver(const CKTSOLinearSolver&) = delete;
@@ -144,9 +152,13 @@ class LS2G_API CKTSOLinearSolver final
         ErrorType factorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
         ErrorType refactorize(const EigenRefConstRealSpMat & /*J*/) { return ErrorType::NoError; }
         ErrorType solve(Eigen::Ref<RealVect> /*b*/) { return ErrorType::NoError; }
+        ErrorType solve_transpose(Eigen::Ref<RealVect> /*b*/) { return ErrorType::NotImplemented; }
 
         // can this linear solver solve problem where RHS is a matrix
         static constexpr bool CAN_SOLVE_MAT = false;
+
+        // can this linear solver solve J^T x = b out of the factorization of J
+        static constexpr bool CAN_SOLVE_TRANSPOSE = false;
 
         // prevent copy and assignment (matches the real CKTSOLinearSolver)
         CKTSOLinearSolver(const CKTSOLinearSolver&) = delete;
