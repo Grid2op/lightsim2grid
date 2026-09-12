@@ -54,6 +54,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
+            // while this row's Ybus edits are still in place -- see _maybe_store_jacobian
+            if(conv) _maybe_store_jacobian(i, algo);
         } else {
             // generator contingencies: this row's buses that keep a live local voltage
             // controller stay pinned (their Q row is the identity, so |V| holds at the
@@ -72,6 +74,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
+            // before the pinning is restored, and before the Ybus is put back: the
+            // refreshed Jacobian has to describe the system THIS row solved
+            if(conv) _maybe_store_jacobian(i, algo);
             if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
         }
     } else {
@@ -526,6 +531,27 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // pre-contingency ("n") case violations (ContingencyAnalysis only; no-op
     // elsewhere)
     _record_n_case_violations(_algo.get_V());
+
+    // Reverse-mode differentiation: size the Jacobian store ONCE, here. Everything it
+    // needs is known by now and none of it changes afterwards -- the number of rows is
+    // locked, and the "n" solve above has built the ledger, so the Jacobian's dimension
+    // and nonzero count are final (every row shares that pattern, which is the premise
+    // of the whole batch). The row loop below then only ever memcpy's into rows of a
+    // buffer that is never resized, from whichever thread owns them.
+    _adjoint_.clear();
+    _adjoint_row_ok_.clear();
+    if(_keep_jacobian_){
+        if(!ac_solver_used || !_algo.supports_jacobian()){
+            std::ostringstream exc_;
+            exc_ << algo_name() << "::compute: `keep_jacobian` needs an AC Newton-Raphson "
+                    "algorithm -- it is the Jacobian of the augmented Newton-Raphson system "
+                    "that the adjoint solves against, and no other algorithm builds one. "
+                    "Pick one of the NR_* algorithms (change_algorithm), or turn "
+                    "`keep_jacobian` off.";
+            throw std::runtime_error(exc_.str());
+        }
+        _adjoint_.allocate(static_cast<Eigen::Index>(nb_steps), _algo.get_J());
+    }
 
     // compute the powerflows, possibly split across several threads
     _compute_threaded(nb_steps, Vinit_solver, ac_solver_used, max_iter, tol, sn_mva, _timer_thread_init);

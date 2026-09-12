@@ -166,6 +166,18 @@ public:
 
     // ----- bus masking ---------------------------------------------------------
     bool supports_bus_masking() const override { return true; }
+    bool supports_jacobian() const override { return true; }
+
+    // see BaseAlgo::refresh_J_at_solution. _system holds the converged V (apply_step
+    // wrote it, and the final mismatch_into read it back), so re-deriving the
+    // intermediate quantities and re-filling J evaluates it exactly there. The masked
+    // / pinned identity rows are re-applied by fill_J as usual, so the refreshed J
+    // still describes the system this row actually solved.
+    void refresh_J_at_solution() override {
+        _system.fill_internal_variables();
+        _system.fill_J();
+    }
+
     void set_masked_buses(const std::vector<int> & solver_bus_ids) override {
         _system.set_masked_buses(solver_bus_ids);
     }

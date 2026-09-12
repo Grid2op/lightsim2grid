@@ -264,6 +264,12 @@ class LS2G_API AlgorithmSelector final
         bool supports_bus_masking() const {
             return get_prt_solver("supports_bus_masking", false)->supports_bus_masking();
         }
+        bool supports_jacobian() const {
+            return get_prt_solver("supports_jacobian", false)->supports_jacobian();
+        }
+        void refresh_J_at_solution() {
+            get_prt_solver("refresh_J_at_solution", false)->refresh_J_at_solution();
+        }
         void set_masked_buses(const std::vector<int>& solver_bus_ids) {
             get_prt_solver("set_masked_buses", false)->set_masked_buses(solver_bus_ids);
         }

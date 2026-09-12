@@ -118,9 +118,9 @@ class LS2G_API CKTSOLinearSolver final
 
 };
 
-#endif // CKTSOSOLVER_H
-
 } // namespace ls2g
+
+#endif // CKTSOSOLVER_H
 
 #elif defined(_READ_THE_DOCS)
 #ifndef CKTSOSOLVER_H

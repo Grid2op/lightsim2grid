@@ -105,9 +105,9 @@ class LS2G_API NICSLULinearSolver final
 
 };
 
-#endif // NICSLUSOLVER_H
-
 } // namespace ls2g
+
+#endif // NICSLUSOLVER_H
 
 #elif defined(_READ_THE_DOCS)
 #ifndef NICSLUSOLVER_H

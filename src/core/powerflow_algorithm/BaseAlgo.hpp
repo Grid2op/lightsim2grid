@@ -459,6 +459,28 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual bool supports_bus_masking() const { return false; }
         virtual void set_masked_buses(const std::vector<int> & /*solver_bus_ids*/) {}
 
+        // Whether get_J() / refresh_J_at_solution() mean anything for this algorithm,
+        // i.e. whether it is one of the Newton-Raphson family. Lets a caller that needs
+        // the Jacobian (the adjoint of a batch) say so before running rather than
+        // discover it through get_J()'s exception halfway through a sweep.
+        virtual bool supports_jacobian() const { return false; }
+
+        // Rebuild the Jacobian at the voltage the last compute_pf converged to.
+        //
+        // A Newton-Raphson loop tests the residual BEFORE deciding it needs a new
+        // Jacobian, so the J it rests on is the one it built at the previous iterate,
+        // not at the solution. For a solve that is the right economy -- the step it
+        // computed is what mattered. For an adjoint it is not: the gradient is exact
+        // only at the converged point, and the error is of the order of the last
+        // Newton step, which is the very thing the tolerance does NOT bound tightly.
+        //
+        // Costs one Jacobian fill and no factorization, so it is only worth paying
+        // where the Jacobian is about to be read (see BaseBatchSweep's keep_jacobian);
+        // nothing else in a solve depends on it. A no-op where there is no Jacobian to
+        // speak of (every non Newton-Raphson algorithm), which is safe: those cannot
+        // serve an adjoint at all (get_J already throws).
+        virtual void refresh_J_at_solution() {}
+
         // Tells the algorithm whether a stranded-controller Jacobian slot (see
         // VoltageControl::declare_feature_entries in NRSystem.hpp) is worth reserving
         // for THIS run: only ContingencyAnalysis/ScenarioSweep's handle_disconnected_grid

@@ -14,6 +14,7 @@
 #include "SbusPolicy.hpp"
 #include "LimitViolation.hpp"
 #include "BusGraph.hpp"
+#include "BatchAdjoint.hpp"
 
 #include <set>
 #include <map>
@@ -331,6 +332,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         void clear() override {
             _results_present_ = false;
+            _adjoint_.clear();
+            _adjoint_row_ok_.clear();
             _gen_contingency_active_ = false;
             _switchable_buses_.clear();
             _row_pv_to_pq_.clear();
@@ -371,6 +374,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // public connectivity entry points), lowered here and by clear().
             if(!_results_present_) return;
             _results_present_ = false;
+            _adjoint_.clear();
+            _adjoint_row_ok_.clear();
             BaseBatchSolverSynch::clear();
             _li_masked.clear();
             _cont_connected_.clear();
@@ -729,6 +734,68 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         int get_status() const { return _status; }
 
+        // ================= reverse-mode differentiation ============================
+        // See BatchAdjoint for the maths and the cost. In short: with this on, every
+        // row's converged Jacobian is kept, and solve_JT() then answers
+        // `J_i^T lambda_i = xbar_i` for the whole batch at one transposed solve per
+        // row -- which is the gradient of a scalar loss with respect to every
+        // injection of every row.
+
+        // Keep each row's converged Jacobian during compute(), so solve_JT() can run
+        // afterwards. Off by default: it costs nb_rows * nnz_J reals (see
+        // adjoint_memory_bytes(), answerable before compute() through
+        // BatchAdjoint::memory_bytes) plus one Jacobian fill per row, and a caller
+        // who only wants flows should pay neither. Only the Newton-Raphson family of
+        // AC algorithms has a Jacobian to keep; compute() raises if this is on with
+        // any other.
+        void set_keep_jacobian(bool val) {
+            if(val == _keep_jacobian_) return;
+            _keep_jacobian_ = val;
+            _adjoint_.clear();
+        }
+        bool get_keep_jacobian() const { return _keep_jacobian_; }
+
+        // Bytes the kept Jacobians occupy after a compute() (0 when none were kept).
+        std::size_t adjoint_memory_bytes() const { return _adjoint_.memory_bytes(); }
+
+        // Dimension of the augmented Newton-Raphson system: the length of one
+        // cotangent, and of one lambda. 0 before a compute() that kept the Jacobians.
+        int dim_J() const { return static_cast<int>(_adjoint_.dim_J()); }
+
+        // Where each GRID bus sits in the Jacobian, -1 where it owns no such
+        // row / column. Keyed by grid bus id -- the same numbering as the columns of
+        // get_voltages() -- rather than by the solver's own, which is an internal
+        // labelling a caller has no business reconstructing:
+        //   *_col_of_bus: the unknown (a voltage angle / magnitude) -> where a
+        //                 cotangent of that bus goes in xbar;
+        //   *_row_of_bus: the equation (an active / reactive mismatch) -> where that
+        //                 bus's injection gradient is read out of lambda.
+        IntVect get_theta_col_of_bus() const { return _bus_map_to_grid(_algo.get_theta_to_J_col_python()); }
+        IntVect get_vm_col_of_bus() const { return _bus_map_to_grid(_algo.get_vm_to_J_col_python()); }
+        IntVect get_p_row_of_bus() const { return _bus_map_to_grid(_algo.get_p_to_J_row_python()); }
+        IntVect get_q_row_of_bus() const { return _bus_map_to_grid(_algo.get_q_to_J_row_python()); }
+
+        // Solve the adjoint system of every row. `xbar` is (nb_rows, k * dim_J): one
+        // row per batch row, holding k cotangents of dim_J coefficients laid end to
+        // end (k = 1 for the gradient of a scalar loss). Returns lambda, same shape.
+        // Rows that did not converge come back zero -- see adjoint_row_ok().
+        BatchAdjoint::RealMatRM solve_JT(const Eigen::Ref<const BatchAdjoint::RealMatRM> & xbar) {
+            if(!_adjoint_.is_allocated()){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::solve_JT: no Jacobian was kept for this batch. Set "
+                        "`keep_jacobian` to True BEFORE calling compute().";
+                throw std::runtime_error(exc_.str());
+            }
+            return _adjoint_.solve_JT(xbar, _adjoint_identity_rows(), _nb_thread, _adjoint_row_ok_);
+        }
+
+        // Per row: 1 where solve_JT() actually solved that row's adjoint system.
+        const std::vector<char> & adjoint_row_ok() const { return _adjoint_row_ok_; }
+
+        // Linear-solver counters and timings of the last solve_JT: how much of the
+        // backward went into refactorizing versus into the transposed solves.
+        const LinearSolverStats & adjoint_solver_stats() const { return _adjoint_.get_linear_solver_stats(); }
+
         // ================= unified compute() ======================================
         void compute(const Eigen::Ref<const CplxVect> & Vinit, int max_iter, real_type tol);
 
@@ -757,6 +824,73 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         double solve_time() const {return _timer_solver;}
 
     protected:
+        // ----- reverse-mode differentiation helpers -------------------------------
+
+        // Re-key a solver-bus-keyed map onto grid bus ids (see get_p_row_of_bus).
+        IntVect _bus_map_to_grid(const IntVect & solver_keyed) const {
+            const auto me_to_solver = active_layout().id_me_to_solver.as_eigen();
+            IntVect res = IntVect::Constant(me_to_solver.size(), -1);
+            for(Eigen::Index bus_me = 0; bus_me < me_to_solver.size(); ++bus_me){
+                const int bus_solver = me_to_solver[bus_me];
+                if(bus_solver < 0) continue;   // bus not in the solver (deactivated, isolated)
+                if(bus_solver >= solver_keyed.size()) continue;
+                res[bus_me] = solver_keyed[bus_solver];
+            }
+            return res;
+        }
+
+        // Keep this row's converged Jacobian for the adjoint. MUST be called while the
+        // row's own state is still installed on the algorithm -- its Ybus edits, its
+        // masked buses, its PV pinning -- because refresh_J_at_solution() re-fills J
+        // from exactly that, and a J refreshed after the loop restored its resting
+        // state would describe a system this row never solved.
+        void _maybe_store_jacobian(size_t i, AlgorithmSelector & algo) {
+            if(!_adjoint_.is_allocated()) return;
+            algo.refresh_J_at_solution();
+            _adjoint_.store_row(static_cast<Eigen::Index>(i), algo.get_J());
+        }
+
+        // Which equations each row froze to the identity, as Jacobian row indices --
+        // what solve_JT drops from lambda (see BatchAdjoint::solve_JT). Two sources,
+        // and a row can have both:
+        //   - a bus a contingency stranded: masked, so BOTH its P and its Q equation;
+        //   - a bus still PV in this row (a reserved switchable bus whose generator
+        //     is still on): pinned, so its Q equation only.
+        // Empty when the batch does neither, which is the common case.
+        std::vector<std::vector<int> > _adjoint_identity_rows() const {
+            const Eigen::Index nb_rows = _adjoint_.nb_rows();
+            // _li_masked is filled whenever connectivity was analysed, but only the
+            // masked mode ever hands it to the algorithm: without it a contingency
+            // that strands a bus makes the row skipped entirely, not masked
+            const bool has_masking = _handle_disconnected_grid && !_li_masked.empty();
+            const bool has_pinning = _has_pv_switching();
+            if(nb_rows <= 0 || (!has_masking && !has_pinning)) return std::vector<std::vector<int> >();
+
+            const IntVect p_row = _algo.get_p_to_J_row_python();
+            const IntVect q_row = _algo.get_q_to_J_row_python();
+            auto push = [](const IntVect & map, int bus, std::vector<int> & out){
+                if(bus >= 0 && bus < map.size() && map[bus] >= 0) out.push_back(map[bus]);
+            };
+
+            std::vector<std::vector<int> > res(static_cast<size_t>(nb_rows));
+            for(Eigen::Index i = 0; i < nb_rows; ++i){
+                std::vector<int> & row = res[static_cast<size_t>(i)];
+                if(has_masking && static_cast<size_t>(i) < _li_masked.size()){
+                    for(int bus : _li_masked[static_cast<size_t>(i)]){
+                        push(p_row, bus, row);
+                        push(q_row, bus, row);
+                    }
+                }
+                if(has_pinning){
+                    // _row_pv_pinned falls back to the whole switchable set for a row
+                    // that flips nothing -- which is right: such a row leaves every
+                    // reserved bus pinned, exactly as the loop's resting state has it.
+                    for(int bus : _row_pv_pinned(static_cast<size_t>(i))) push(q_row, bus, row);
+                }
+            }
+            return res;
+        }
+
         // ----- bookkeeping shared by every instantiation (plain, always compiled) -
         void _check_ok_el(Eigen::Index el){
             if(el < 0 || el >= static_cast<Eigen::Index>(n_total_)){
@@ -1510,6 +1644,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                                      active_layout().slack_bus_id_solver.as_eigen(), sw,
                                                      active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
+                        // before the two restores below, and before the Ybus is put
+                        // back: see _maybe_store_jacobian
+                        if(conv) _maybe_store_jacobian(cont_id, algo);
                         if(!masked.empty()) algo.set_masked_buses(std::vector<int>());
                         if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
 
@@ -1731,6 +1868,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<std::vector<int> > _li_defaults_vect_cache_;
 
         double _timer_modif_Ybus = 0.;
+
+        // reverse-mode differentiation (see the public block above and BatchAdjoint)
+        bool _keep_jacobian_ = false;
+        BatchAdjoint _adjoint_;
+        std::vector<char> _adjoint_row_ok_;
 };
 
 /**
