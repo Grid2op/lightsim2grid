@@ -399,10 +399,11 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         the ac powerflow
         **/
         // the stations pin magnitudes, so they answer for what they would pin -- same
-        // forwarding as set_vm just below (see VoltageSourceContainer::collect_vm_targets)
-        void collect_vm_targets(std::vector<VmTarget> & out) const{
-            side_1_.collect_vm_targets(out);
-            side_2_.collect_vm_targets(out);
+        // forwarding as set_vm just below (see VoltageSourceContainer::for_each_vm_target)
+        template<class OnTarget>
+        void for_each_vm_target(OnTarget on_target) const{
+            side_1_.for_each_vm_target(on_target);
+            side_2_.for_each_vm_target(on_target);
         }
 
         void vm_targets_by_bus(const SolverBusIdVect & id_grid_to_solver,
