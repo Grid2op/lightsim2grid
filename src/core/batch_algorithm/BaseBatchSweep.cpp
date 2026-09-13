@@ -238,32 +238,29 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         controls[t] = _algo_controler;
     };
 
-    std::vector<std::thread> threads;
-    threads.reserve(nb_thread - 1);
-    for(int t = 1; t < nb_thread; ++t){
+    // one worker's whole share, whichever thread ends up running it
+    auto body = [&](int t){
         size_t b, e;
-        split_range(nb_steps, nb_thread, t, b, e);
-        threads.emplace_back([this, t, b, e, reuse_workers, ac_solver_used, max_iter, tol_,
-                              &init_thread, &algos, &controls, &th_nb_solved, &th_nb_converged,
-                              &th_timer_solver, &th_timer_modif_ybus, &th_diverge, &th_err, &Vinit_solver](){
-            init_thread(t);
-            _run_range(b, e, *algos[t], controls[t], ac_cache_.mat, Vinit_solver, ac_solver_used, max_iter, tol_,
-                      th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif_ybus[t], th_diverge[t], th_err[t],
-                      !reuse_workers);
-        });
-    }
-    timer_thread_init = timer_thread.duration();
-
-    {
-        size_t b, e;
-        split_range(nb_steps, nb_thread, 0, b, e);
-        init_thread(0);
-        _run_range(b, e, *algos[0], controls[0], ac_cache_.mat, Vinit_solver, ac_solver_used, max_iter, tol_,
-                  th_nb_solved[0], th_nb_converged[0], th_timer_solver[0], th_timer_modif_ybus[0], th_diverge[0], th_err[0],
+        split_range(nb_steps, nb_thread, static_cast<int>(t), b, e);
+        init_thread(t);
+        _run_range(b, e, *algos[t], controls[t], ac_cache_.mat, Vinit_solver, ac_solver_used, max_iter, tol_,
+                  th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif_ybus[t], th_diverge[t], th_err[t],
                   !reuse_workers);
-    }
+    };
 
-    for(auto & th : threads) th.join();
+    if(_reuse_threads_){
+        // the threads outlive the call too (see set_reuse_threads): worker 0 runs here,
+        // the rest are woken in the pool rather than created and destroyed
+        _pool_.run(nb_thread, body);
+        timer_thread_init = timer_thread.duration();
+    } else {
+        std::vector<std::thread> threads;
+        threads.reserve(nb_thread - 1);
+        for(int t = 1; t < nb_thread; ++t) threads.emplace_back([&body, t](){ body(t); });
+        timer_thread_init = timer_thread.duration();
+        body(0);
+        for(auto & th : threads) th.join();
+    }
 
     // harvest each worker's linear-solver counters before its algorithm goes out of
     // scope: get_linear_solver_stats() reports the whole compute(), not just whichever
@@ -379,44 +376,33 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     };
 
     auto timer_thread = CustTimer();
-    std::vector<std::thread> threads;
-    threads.reserve(nb_thread - 1);
-    for(int t = 1; t < nb_thread; ++t){
+    // one worker's whole share, whichever thread ends up running it
+    auto body = [&](int t){
         size_t b, e;
-        split_range(nb_steps, nb_thread, t, b, e);
-        threads.emplace_back([this, t, b, e, reuse_workers, ac_solver_used, max_iter, tol, tol_, sn_mva, mask_mode,
-                              &init_thread, &algos, &controls, &ybus_copies, &th_timer_modif,
-                              &th_nb_solved, &th_nb_converged, &th_timer_solver, &th_diverge, &th_err, &Vinit_solver](){
-            init_thread(t);
-            if(mask_mode){
-                _maybe_run_range_masked(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used,
-                                        max_iter, tol, sn_mva, th_timer_modif[t], th_nb_solved[t], th_nb_converged[t], th_timer_solver[t],
-                                        th_diverge[t], th_err[t], !reuse_workers);
-            } else {
-                _run_range(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used, max_iter, tol_,
-                          th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif[t], th_diverge[t], th_err[t],
-                          !reuse_workers);
-            }
-        });
-    }
-    timer_thread_init = timer_thread.duration();
-
-    {
-        size_t b, e;
-        split_range(nb_steps, nb_thread, 0, b, e);
-        init_thread(0);
+        split_range(nb_steps, nb_thread, static_cast<int>(t), b, e);
+        init_thread(t);
         if(mask_mode){
-            _maybe_run_range_masked(b, e, *algos[0], controls[0], ybus_copies[0], Vinit_solver, ac_solver_used,
-                                    max_iter, tol, sn_mva, th_timer_modif[0], th_nb_solved[0], th_nb_converged[0], th_timer_solver[0],
-                                    th_diverge[0], th_err[0], !reuse_workers);
+            _maybe_run_range_masked(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used,
+                                    max_iter, tol, sn_mva, th_timer_modif[t], th_nb_solved[t], th_nb_converged[t], th_timer_solver[t],
+                                    th_diverge[t], th_err[t], !reuse_workers);
         } else {
-            _run_range(b, e, *algos[0], controls[0], ybus_copies[0], Vinit_solver, ac_solver_used, max_iter, tol_,
-                      th_nb_solved[0], th_nb_converged[0], th_timer_solver[0], th_timer_modif[0], th_diverge[0], th_err[0],
+            _run_range(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used, max_iter, tol_,
+                      th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif[t], th_diverge[t], th_err[t],
                       !reuse_workers);
         }
-    }
+    };
 
-    for(auto & th : threads) th.join();
+    if(_reuse_threads_){
+        _pool_.run(nb_thread, body);
+        timer_thread_init = timer_thread.duration();
+    } else {
+        std::vector<std::thread> threads;
+        threads.reserve(nb_thread - 1);
+        for(int t = 1; t < nb_thread; ++t) threads.emplace_back([&body, t](){ body(t); });
+        timer_thread_init = timer_thread.duration();
+        body(0);
+        for(auto & th : threads) th.join();
+    }
 
     // harvest each worker's linear-solver counters before its algorithm goes out of
     // scope: get_linear_solver_stats() reports the whole compute(), not just whichever

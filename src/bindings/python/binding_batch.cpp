@@ -115,6 +115,14 @@ void bind_batch_sweep_common(py::class_<T> & cls)
         .def("base_case_was_reused", &T::base_case_was_reused,
              "Whether the last compute() kept a base case instead of building one. Mostly "
              "of interest when measuring where a batch's time goes.")
+        .def_property("reuse_threads",
+                      [](const T & self){ return self.get_reuse_threads(); },
+                      [](T & self, bool val){ self.set_reuse_threads(val); },
+                      "Whether the worker THREADS of the multi-threaded path are kept alive "
+                      "between compute() calls (default: ``True``). Independent of "
+                      "``reuse_thread_algos``, which keeps what those threads work with: this "
+                      "is only about not paying std::thread construction and destruction on "
+                      "every call.")
         .def_property("reuse_thread_algos",
                       [](const T & self){ return self.get_reuse_thread_algos(); },
                       [](T & self, bool val){ self.set_reuse_thread_algos(val); },

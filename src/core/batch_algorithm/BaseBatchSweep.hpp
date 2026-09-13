@@ -21,6 +21,11 @@
 #include <vector>
 #include <memory>
 #include <queue>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <functional>
+#include <cstdint>
 #include <algorithm>
 #include <iterator>
 #include <exception>
@@ -252,6 +257,103 @@ inline void check_current_violations(
         }
     }
 }
+
+/**
+ * A crude fixed-size thread pool: worker 0 always runs on the CALLING thread, the
+ * other nb_thread - 1 live in here and are woken per batch instead of being created
+ * and destroyed. std::thread construction is a clone(2) and a stack mapping each
+ * time; a batch that is called in a loop pays that on every call for nothing.
+ *
+ * Only ever driven by _compute_threaded, one run() at a time, and run() does not
+ * return until every worker has finished the job -- so `job` is written under the
+ * lock while nobody reads it, and the caller's stack frame (which the job captures
+ * by reference) outlives every use of it.
+ */
+class ThreadPool final {
+    public:
+        ThreadPool() = default;
+        ~ThreadPool() { shutdown(); }
+        ThreadPool(const ThreadPool &) = delete;
+        ThreadPool & operator=(const ThreadPool &) = delete;
+
+        int size() const { return static_cast<int>(workers_.size()) + 1; }
+
+        // Run `fn(t)` for t in [0, nb_thread), t == 0 on this thread, and return once
+        // they are all done. Anything a worker throws is rethrown here.
+        void run(int nb_thread, const std::function<void(int)> & fn) {
+            ensure(nb_thread - 1);
+            {
+                std::lock_guard<std::mutex> lk(m_);
+                job_ = &fn;
+                pending_ = nb_thread - 1;
+                err_ = std::exception_ptr();
+                ++generation_;
+            }
+            cv_start_.notify_all();
+            fn(0);
+            std::unique_lock<std::mutex> lk(m_);
+            cv_done_.wait(lk, [this]{ return pending_ == 0; });
+            job_ = nullptr;
+            if(err_){ std::exception_ptr e = err_; err_ = std::exception_ptr(); std::rethrow_exception(e); }
+        }
+
+        void shutdown() {
+            if(workers_.empty()) return;
+            {
+                std::lock_guard<std::mutex> lk(m_);
+                stop_ = true;
+            }
+            cv_start_.notify_all();
+            for(auto & t : workers_) if(t.joinable()) t.join();
+            workers_.clear();
+            stop_ = false;
+            generation_ = 0;
+        }
+
+    private:
+        void ensure(int n_extra) {
+            if(static_cast<int>(workers_.size()) == n_extra) return;
+            shutdown();                       // also resets generation_ to 0
+            workers_.reserve(n_extra);
+            for(int i = 0; i < n_extra; ++i){
+                workers_.emplace_back([this, i]{
+                    std::uint64_t seen = 0;
+                    for(;;){
+                        const std::function<void(int)> * my_job = nullptr;
+                        {
+                            std::unique_lock<std::mutex> lk(m_);
+                            cv_start_.wait(lk, [this, &seen]{ return stop_ || generation_ != seen; });
+                            if(stop_) return;
+                            seen = generation_;
+                            my_job = job_;
+                        }
+                        // a throw escaping here would terminate the process: the job
+                        // catches its own (see _run_range), this is the backstop
+                        try { (*my_job)(i + 1); }
+                        catch(...) {
+                            std::lock_guard<std::mutex> lk(m_);
+                            if(!err_) err_ = std::current_exception();
+                        }
+                        {
+                            std::lock_guard<std::mutex> lk(m_);
+                            --pending_;
+                        }
+                        cv_done_.notify_all();
+                    }
+                });
+            }
+        }
+
+        std::vector<std::thread> workers_;
+        mutable std::mutex m_;
+        std::condition_variable cv_start_;
+        std::condition_variable cv_done_;
+        const std::function<void(int)> * job_ = nullptr;
+        std::uint64_t generation_ = 0;
+        int pending_ = 0;
+        bool stop_ = false;
+        std::exception_ptr err_;
+};
 
 }  // namespace batch_sweep_detail
 
@@ -824,6 +926,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // Whether the last compute() kept a base case instead of building one. For
         // tests, and for anyone measuring where a batch's time goes.
         bool base_case_was_reused() const { return _base_case_was_reused_; }
+
+        // Whether the worker THREADS are kept alive between compute() calls (default:
+        // ``True``). Independent of reuse_thread_algos, which keeps what those threads
+        // WORK WITH: this one is only about not paying std::thread construction and
+        // destruction on every call.
+        void set_reuse_threads(bool val) {
+            if(val == _reuse_threads_) return;
+            _reuse_threads_ = val;
+            if(!val) _pool_.shutdown();
+        }
+        bool get_reuse_threads() const { return _reuse_threads_; }
 
         // Whether the worker algorithms of the multi-threaded path are kept between
         // compute() calls (default: ``True``), on top of the base case itself.
@@ -2022,6 +2135,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // thread, and every call gives thread t the same one back, so nothing is
         // shared between threads.
         std::vector<std::unique_ptr<AlgorithmSelector> > _thread_algos_;
+        batch_sweep_detail::ThreadPool _pool_;
+        bool _reuse_threads_ = true;
         bool _reuse_thread_algos_ = true;
         bool _thread_algos_were_reused_ = false;
 
