@@ -170,6 +170,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   set-points is now refused instead of silently applying whichever was written last. A bus
   has one magnitude; the two set-points cannot both hold. Previously only checked for a
   remote regulator or an SVC, never for machines on a shared busbar.
+- [FIXED] ``ContingencyAnalysisCPP`` was missing from python everything the other batch
+  classes gained since 1.0.0: ``reuse_base_case``, the solver-stats accessors and the whole
+  reverse-mode block (``keep_jacobian``, ``solve_JT``, ...). The C++ supported all of it;
+  only the binding was written by hand and never updated.
 - [ADDED] ``gen_v`` is differentiable in ``BatchCPUPowerFlow``: the gradient of a loss with
   respect to a generator's voltage set-point. Unlike an injection it fixes a bus magnitude
   the solver never revisits, so it needs the ``dS/dVm`` column the Jacobian does not store
