@@ -1486,37 +1486,53 @@ CplxVect LSGrid::_pre_process_own_cache(
 
 void LSGrid::_check_vm_targets_agree() const
 {
-    // every element that would pin a magnitude, from every container that can
-    std::vector<VmTarget> targets;
-    generators_.collect_vm_targets(targets);
-    svcs_.collect_vm_targets(targets);
-    hvdc_lines_.collect_vm_targets(targets);
-    if(targets.size() < 2) return;   // nothing can disagree with nothing
-
-    // first writer per bus, in a vector rather than a map: this runs on every solve,
-    // and the buses are already dense small integers
     const int nb_bus_ls = static_cast<int>(substations_.nb_bus());
-    std::vector<int> first_of_bus(static_cast<size_t>(nb_bus_ls), -1);
-    for(size_t i = 0; i < targets.size(); ++i){
-        const int bus = targets[i].bus_id;
-        if(bus < 0 || bus >= nb_bus_ls) continue;   // check_grid's business, not this one
-        const int first = first_of_bus[static_cast<size_t>(bus)];
-        if(first == -1){
-            first_of_bus[static_cast<size_t>(bus)] = static_cast<int>(i);
-            continue;
-        }
-        const VmTarget & a = targets[static_cast<size_t>(first)];
-        const VmTarget & b = targets[i];
-        if(std::abs(a.target_vm - b.target_vm) <= BaseConstants::_tol_equal_float) continue;
-        std::ostringstream exc_;
-        exc_ << "LSGrid: " << a.kind << " " << a.el_id << " and " << b.kind << " " << b.el_id
-             << " regulate the same bus (" << bus << ") with conflicting voltage setpoints ("
-             << a.target_vm << " vs " << b.target_vm << " pu). A bus has one magnitude, so "
-                "these two set-points cannot both hold; the powerflow would silently apply "
-                "whichever element it happened to write last. Give them the same target, or "
-                "turn one of the regulators off.";
-        throw std::runtime_error(exc_.str());
-    }
+    if(nb_bus_ls <= 0) return;
+
+    // One pass over the regulating elements, against one array indexed by bus. A
+    // voltage magnitude target is never negative, so -1 marks a bus nothing has claimed
+    // yet and needs no second array to say so: the first element to reach a bus writes
+    // its target there, every later one only has to agree with what it finds.
+    std::vector<real_type> target_of_bus(static_cast<size_t>(nb_bus_ls), -1.);
+    int bad_bus = -1;
+    real_type bad_first = 0., bad_second = 0.;
+
+    const auto visit = [&](int /*el_id*/, int bus, real_type vm, const char * /*kind*/){
+        if(bad_bus != -1) return;                   // already found one, report that
+        if(bus < 0 || bus >= nb_bus_ls) return;     // check_grid's business, not this one
+        real_type & claimed = target_of_bus[static_cast<size_t>(bus)];
+        if(claimed < 0.){ claimed = vm; return; }   // nobody there yet
+        if(std::abs(claimed - vm) <= BaseConstants::_tol_equal_float) return;   // agrees
+        bad_bus = bus;
+        bad_first = claimed;
+        bad_second = vm;
+    };
+    generators_.for_each_vm_target(visit);
+    svcs_.for_each_vm_target(visit);
+    hvdc_lines_.for_each_vm_target(visit);
+    if(bad_bus == -1) return;
+
+    // Only from here on does anything cost: naming both elements needs a second walk,
+    // and this one ends in a throw.
+    std::ostringstream first_name, second_name;
+    const auto name = [&](int el_id, int bus, real_type vm, const char * kind){
+        if(bus != bad_bus) return;
+        std::ostringstream & into = (std::abs(vm - bad_first) <= BaseConstants::_tol_equal_float)
+                                    ? first_name : second_name;
+        if(into.tellp() == std::streampos(0)) into << kind << " " << el_id;
+    };
+    generators_.for_each_vm_target(name);
+    svcs_.for_each_vm_target(name);
+    hvdc_lines_.for_each_vm_target(name);
+
+    std::ostringstream exc_;
+    exc_ << "LSGrid: " << first_name.str() << " and " << second_name.str()
+         << " regulate the same bus (" << bad_bus << ") with conflicting voltage setpoints ("
+         << bad_first << " vs " << bad_second << " pu). A bus has one magnitude, so "
+            "these two set-points cannot both hold; the powerflow would silently apply "
+            "whichever element it happened to write last. Give them the same target, or "
+            "turn one of the regulators off.";
+    throw std::runtime_error(exc_.str());
 }
 
 CplxVect LSGrid::build_solver_input(
