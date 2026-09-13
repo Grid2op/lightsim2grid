@@ -12,7 +12,6 @@
 
 #include "LSGrid.hpp"
 
-#include <type_traits>
 #include "AlgorithmSelector.hpp"  // to avoid circular references
 #include "BinaryArchive.hpp"
 
@@ -1340,6 +1339,21 @@ CplxVect LSGrid::_build_into_cache(
         V(bus_solver_id) = Vinit(bus_me_id.cast_int());
     }
     if(init_pv_vm_targets){
+        // The three set_vm calls below are last-writer-wins, so this is where two
+        // elements asking one bus for two magnitudes would be silently resolved -- and
+        // so this is where that is refused. Not once per solve: only when the cache is
+        // being rebuilt anyway, or when something actually moved a set-point
+        // (change_v_gen -> tell_v_changed) or changed who regulates what
+        // (tell_pv_changed). An injection-only step, which is what a batch and a
+        // grid2op episode are made of, pays nothing.
+        //
+        // NOT gated on the family: DC seeds |V| from the generators through this very
+        // block too, and echoes it back as the result's magnitude, so a contradiction
+        // is just as silent there.
+        if(force_full_rebuild || solver_control.has_v_changed() || solver_control.has_pv_changed()){
+            _check_vm_targets_agree();
+        }
+
         // NR-initialization heuristic only: snaps regulated buses with no droop/slope
         // to their own target voltage magnitude. Skipped by check_solution, which must
         // evaluate the caller-supplied voltage as given (see the `init_pv_vm_targets`
@@ -1383,12 +1397,6 @@ CplxVect LSGrid::_pre_process_own_cache(
 {
     // cplx_type matrix => AC solver family, real_type matrix => DC solver family
     const bool is_ac = SolverSideCache<MatScalar>::is_ac;
-
-    // Contradictory voltage set-points: refused before anything is built, and on every
-    // solve rather than only on a full rebuild -- change_v_gen() can create the
-    // contradiction without changing anything the cache is keyed on (AC only; see
-    // _check_vm_targets_agree).
-    if(is_ac) _check_vm_targets_agree();
 
     // ---- may the previous build be re-stamped rather than rebuilt? --------------
     // `solver_control` only records what changed SINCE the last solve of this
@@ -1544,11 +1552,6 @@ CplxVect LSGrid::_build_foreign_cache(
             "caller's own algorithm; to build this grid's own cache for its own "
             "powerflow, call pre_process_solver / pre_process_dc_solver instead.");
     }
-
-    // Contradictory voltage set-points are the grid's, not the caller's, so they are
-    // refused here rather than left for each batch class to notice (AC only -- a DC
-    // powerflow solves for no magnitude, so nothing there can contradict anything).
-    if(std::is_same<MatScalar, cplx_type>::value) _check_vm_targets_agree();
 
     // A foreign build never re-stamps: `solver_control` and the flags it carries
     // all describe THIS grid, and say nothing about what is in `out`.

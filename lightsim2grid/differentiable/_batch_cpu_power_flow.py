@@ -24,37 +24,44 @@ Differentiable: ``load_p``, ``load_q``, ``gen_p``, ``sgen_p``, ``gen_v``. Discre
 and carrying no gradient: ``line_status``, ``trafo_status``, ``gen_status``
 (booleans, True = connected, grid2op's convention).
 
-A bus has ONE voltage magnitude, so a row cannot ask one bus for two. A row that
-does is not solved: it comes back not converged, NaN in ``V`` and carrying no
-gradient, rather than silently taking whichever set-point was written last. Two
-cases:
-
-* several generators regulating the same bus, given different targets -- give them
-  the same one. Their set-points are then TIED, and the loss is a function only on
-  the diagonal ``v_1 = ... = v_n``: the partial derivative of one with the others
-  held fixed does not exist, because off that diagonal the row is refused rather
-  than solved differently. What exists is the derivative along the tie, and each of
-  the n generators carries ``1/n`` of it, so that they sum to it. Drive the group
-  from one parameter and the chain rule recovers it exactly; step on all n and they
-  move together, so the iterate stays where the function is defined;
-* a generator whose regulated bus is also regulated by a voltage-mode SVC or an
-  hvdc converter station, given anything other than THAT element's target.
-
-The second is a limitation rather than a rule: **only generator set-points vary per
-row**. There is no ``svc_v`` and no ``hvdc_v`` input, so a generator sharing its
-regulated bus with either cannot be moved by a batch at all -- it is fixed for the
-whole sweep and its ``gen_v`` gradient is zero. See the TODO at the top of
-CHANGELOG.rst.
-
 ``gen_v`` is differentiated differently from the other four, because it is not an
 injection: it FIXES the magnitude of the bus its generator regulates, which the
 Newton-Raphson therefore does not solve for. So lambda is not its gradient, and the
 two halves are put together by hand -- the ``dS/dVm`` column the Jacobian does not
 store for such a bus (``gen_v_indirect_grad``), plus the loss's own dependence on
-``V_k = v_k . exp(j.theta_k)`` at fixed unknowns. A generator whose set-point never
-reaches the solve -- disconnected, not regulating, overwritten by another generator
-on the same bus, or regulating a bus the solver gives a magnitude to anyway -- gets
-a zero gradient, which is the truth: its set-point is a dead input.
+``V_k = v_k . exp(j.theta_k)`` at fixed unknowns.
+
+.. warning::
+    **A bus has ONE voltage magnitude.** Where several voltage sources regulate the
+    same bus, that is a hard constraint on the inputs, and it changes both what you
+    may pass and what the gradient means.
+
+    *What you may pass.* Every generator regulating one bus must be given the SAME
+    ``gen_v`` in a row. And if that bus is also regulated by a voltage-mode SVC or an
+    hvdc converter station, they must be given THAT element's set-point: only
+    generator set-points vary per row -- there is no ``svc_v`` and no ``hvdc_v``
+    input -- so such a generator cannot be moved by a batch at all. A row that breaks
+    either rule is **not solved**: it comes back not converged, NaN in ``V`` and
+    carrying no gradient, rather than silently taking whichever set-point was written
+    last. See the TODO at the top of CHANGELOG.rst.
+
+    *What the gradient means.* Because the loss is a function only ON the diagonal
+    ``v_1 = ... = v_n`` -- off it there is no value to compare against, since the row
+    is refused rather than solved differently -- the partial derivative of one
+    set-point with the others held fixed **does not exist**. What exists is the
+    derivative along the tie, and each of the n generators is given ``1/n`` of it, so
+    that they SUM to it. Two consequences worth knowing:
+
+    * drive the group from a single parameter -- which is what the degree of freedom
+      really is -- and the chain rule recovers the true derivative exactly;
+    * treat them as n separate parameters and step on all of them, and they move
+      together, so the iterate stays where the function is defined. Stepping on only
+      one of them does not: the next row would be refused.
+
+    A generator that reaches the solve at all gets a share; one that does not --
+    disconnected, not regulating, on a bus the solver gives a magnitude to anyway, or
+    pinned by an SVC or a converter station -- gets exactly zero, which is the truth:
+    its set-point is a dead input.
 
 How the gradient is obtained
 ----------------------------
@@ -207,8 +214,8 @@ class BatchCPUPowerFlow:
         load_p, load_q : (n_scen, n_load) MW / MVAr        differentiable
         gen_p          : (n_scen, n_gen)  MW               differentiable
         sgen_p         : (n_scen, n_sgen) MW               differentiable
-        gen_v          : (n_scen, n_gen)  vm_pu            differentiable; only GENERATOR
-                                                           set-points vary -- see above
+        gen_v          : (n_scen, n_gen)  vm_pu            differentiable; generators on
+                                                           one bus must agree, see above
         line_status    : (n_scen, n_line)  bool, True = connected
         trafo_status   : (n_scen, n_trafo) bool, True = connected
         gen_status     : (n_scen, n_gen)   bool, True = connected
