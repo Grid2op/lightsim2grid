@@ -330,67 +330,74 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return INIT != BatchInitKind::FromPreviousStep;
         }
 
-        void clear() override {
-            _results_present_ = false;
+        // ================= the three cache levels ================================
+        // See BaseBatchSolverSynch's block comment for what each level holds and why
+        // dropping one drops every level below it. Each override extends its base with
+        // the state THIS class adds, and nothing else: no level reaches sideways into
+        // another's.
+
+        // L1 -- what was read off the grid. On top of the solver caches the base
+        // drops, the per-contingency Ybus coefficients: they are values read off that
+        // matrix, so they do not survive it (a change_algorithm() that switches AC <->
+        // DC is exactly this case -- same contingencies, coefficients read off a
+        // different matrix).
+        void clear_grid_results() override {
+            if(_grid_cache_valid_) _reset_ybus_coeffs();
+            BaseBatchSolverSynch::clear_grid_results();
+        }
+
+        // L2 -- what was built for this batch from that grid: what the graph walk
+        // settled about each contingency, the reference-slack choice and the skip
+        // mask that came with it, and the PV <-> PQ structure a generator contingency
+        // reserved. The base drops the algorithm, whose sparsity that structure is.
+        void clear_batch_inputs() override {
+            if(_batch_inputs_valid_){
+                _li_masked.clear();
+                _cont_connected_.clear();
+                _skip_mask.clear();
+                _gen_contingency_active_ = false;
+                _switchable_buses_.clear();
+                _row_pv_to_pq_.clear();
+                _row_slack_gens_off_.clear();
+                _li_defaults_vect_cache_.clear();
+            }
+            BaseBatchSolverSynch::clear_batch_inputs();
+        }
+
+        // L3 -- what the last run produced. On top of the voltages and the flows the
+        // base drops: convergence, limit violations, and the Jacobians the adjoint
+        // kept.
+        void clear_batch_outputs() override {
             _adjoint_.clear();
             _adjoint_row_ok_.clear();
-            _gen_contingency_active_ = false;
-            _switchable_buses_.clear();
-            _row_pv_to_pq_.clear();
-            _row_slack_gens_off_.clear();
-            BaseBatchSolverSynch::clear();
-            sbus_policy_.clear();
+            _converged.clear();
+            _converged_mask_.clear();
+            _violations.clear();
+            _converged_n_ = false;
+            _violations_n_.clear();
+            _timer_modif_Ybus = 0.;
+            BaseBatchSolverSynch::clear_batch_outputs();
+        }
+
+        // Everything: the three levels, plus what sits on a different axis from them
+        // -- the REGISTRATIONS (which contingencies, which injections) and the
+        // settings derived from them. A cache level answers "is what I built still
+        // right?"; this answers "start over".
+        void clear() override {
+            BaseBatchSolverSynch::clear();   // -> L1 -> L2 -> L3
             _reset_ybus_policy();
+            sbus_policy_.clear();
             _status = 1;
             _nb_steps_locked = -1;
             _handle_disconnected_grid = false;
-            _li_masked.clear();
-            _cont_connected_.clear();
-            _skip_mask.clear();
-            _converged.clear();
-            _converged_mask_.clear();
-            _violations.clear();
-            _converged_n_ = false;
-            _violations_n_.clear();
-            _li_defaults_vect_cache_.clear();
-            _timer_modif_Ybus = 0.;
-            _timer_total = 0.;
-            _timer_pre_proc = 0.;
         }
 
         // Contingency-varying instantiations only (ContingencyAnalysis AND
-        // ScenarioSweep): like clear() but keeps the registered contingencies /
-        // masks, only drops computed results (mirrors the pre-refactor
-        // ContingencyAnalysis::clear_results_only). Also used by
-        // set_violation_threshold/set_compute_limit_violations below, both now
-        // shared by the same two instantiations.
+        // ScenarioSweep): drop the results, and only the results (mirrors the
+        // pre-refactor ContingencyAnalysis::clear_results_only). Kept as the name the
+        // python binding has always used; clear_batch_outputs() is the same call.
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
-        void clear_results_only() {
-            // Every add_*/remove_* calls this, and the python wrapper registers an N-1
-            // sweep one contingency at a time: with nothing computed since the last
-            // clear there is nothing to drop, and resetting the solver n_line times
-            // over is what that loop used to cost. `_results_present_` is raised by
-            // whatever fills results or per-contingency state (compute(), the two
-            // public connectivity entry points), lowered here and by clear().
-            if(!_results_present_) return;
-            _results_present_ = false;
-            _adjoint_.clear();
-            _adjoint_row_ok_.clear();
-            BaseBatchSolverSynch::clear();
-            _li_masked.clear();
-            _cont_connected_.clear();
-            _skip_mask.clear();
-            _converged.clear();
-            _converged_mask_.clear();
-            _violations.clear();
-            _converged_n_ = false;
-            _violations_n_.clear();
-            _li_defaults_vect_cache_.clear();
-            _timer_total = 0.;
-            _timer_modif_Ybus = 0.;
-            _timer_thread_init = 0.;
-            _timer_pre_proc = 0.;
-        }
+        void clear_results_only() { clear_batch_outputs(); }
 
         // ================= new setter API (SbusPolicy::supports_vary only) =======
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
@@ -438,6 +445,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void set_contingency_lines(const Eigen::Ref<const BoolMat> & mask) {
             _check_cols_bool(mask, static_cast<Eigen::Index>(n_line_), "set_contingency_lines");
             _lock_or_check_nb_steps(mask.rows(), "set_contingency_lines");
+            // a contingency registration (L2): what the graph walk settled about the
+            // OLD set, the masks and the reserved pv/pq structure all go with it
+            clear_batch_inputs();
+
             ybus_policy_.line_mask = mask;
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
@@ -445,6 +456,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void set_contingency_trafos(const Eigen::Ref<const BoolMat> & mask) {
             _check_cols_bool(mask, static_cast<Eigen::Index>(n_trafos_), "set_contingency_trafos");
             _lock_or_check_nb_steps(mask.rows(), "set_contingency_trafos");
+            // a contingency registration (L2): what the graph walk settled about the
+            // OLD set, the masks and the reserved pv/pq structure all go with it
+            clear_batch_inputs();
+
             ybus_policy_.trafo_mask = mask;
         }
         /**
@@ -479,6 +494,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _check_cols_bool(mask, static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb()),
                              "set_contingency_gens");
             _lock_or_check_nb_steps(mask.rows(), "set_contingency_gens");
+            // a contingency registration (L2): what the graph walk settled about the
+            // OLD set, the masks and the reserved pv/pq structure all go with it
+            clear_batch_inputs();
+
             sbus_policy_.gen_off = mask;
         }
 
@@ -490,7 +509,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         void add_all_n1(){
-            clear_results_only();
+            // a contingency registration (L2): what the graph walk settled about the
+            // OLD set, the masks and the reserved pv/pq structure all go with it
+            clear_batch_inputs();
             for(int l_id = 0; l_id < static_cast<int>(n_total_); ++l_id){
                 std::set<int> this_default = {l_id};
                 ybus_policy_.li_defaults.insert(this_default);
@@ -500,7 +521,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         void add_n1(int line_id){
             _check_ok_el(line_id);
-            clear_results_only();
+            // a contingency registration (L2): what the graph walk settled about the
+            // OLD set, the masks and the reserved pv/pq structure all go with it
+            clear_batch_inputs();
             std::set<int> this_default = {line_id};
             ybus_policy_.li_defaults.insert(this_default);
         }
@@ -508,7 +531,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         void add_multiple_n1(const std::vector<int> & vect_n1s){
             for(const auto line_id : vect_n1s) _check_ok_el(line_id);
-            clear_results_only();
+            // a contingency registration (L2): what the graph walk settled about the
+            // OLD set, the masks and the reserved pv/pq structure all go with it
+            clear_batch_inputs();
             for(const auto line_id : vect_n1s){
                 std::set<int> this_default = {line_id};
                 ybus_policy_.li_defaults.insert(this_default);
@@ -522,14 +547,18 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _check_ok_el(line_id);
                 this_default.insert(line_id);
             }
-            clear_results_only();
+            // a contingency registration (L2): what the graph walk settled about the
+            // OLD set, the masks and the reserved pv/pq structure all go with it
+            clear_batch_inputs();
             ybus_policy_.li_defaults.insert(this_default);
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         bool remove_n1(int line_id){
             _check_ok_el(line_id);
-            clear_results_only();
+            // a contingency registration (L2): what the graph walk settled about the
+            // OLD set, the masks and the reserved pv/pq structure all go with it
+            clear_batch_inputs();
             std::set<int> this_default = {line_id};
             auto nb_removed = ybus_policy_.li_defaults.erase(this_default);
             return nb_removed >= 1;
@@ -538,7 +567,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         size_t remove_multiple_n1(const std::vector<int> & vect_n1s){
             for(const auto line_id : vect_n1s) _check_ok_el(line_id);
-            clear_results_only();
+            // a contingency registration (L2): what the graph walk settled about the
+            // OLD set, the masks and the reserved pv/pq structure all go with it
+            clear_batch_inputs();
             size_t nb_removed = 0;
             for(const auto line_id : vect_n1s){
                 std::set<int> this_default = {line_id};
@@ -554,7 +585,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _check_ok_el(line_id);
                 this_default.insert(line_id);
             }
-            clear_results_only();
+            // a contingency registration (L2): what the graph walk settled about the
+            // OLD set, the masks and the reserved pv/pq structure all go with it
+            clear_batch_inputs();
             auto nb_removed = ybus_policy_.li_defaults.erase(this_default);
             return nb_removed >= 1;
         }
@@ -579,7 +612,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         bool get_handle_disconnected_grid() const {return _handle_disconnected_grid;}
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
-        void set_handle_disconnected_grid(bool val) {_handle_disconnected_grid = val;}
+        void set_handle_disconnected_grid(bool val) {
+            if(val == _handle_disconnected_grid) return;
+            // L2: this decides whether a contingency that strands a component is
+            // masked out or skipped outright, and it is _maybe_prepare_masks() that
+            // settles the reference slack and the skip mask from it.
+            clear_batch_inputs();
+            _handle_disconnected_grid = val;
+        }
 
         // limit violations (ContingencyAnalysis AND ScenarioSweep -- see
         // get_violations()/get_violations_n() below; deliberately NO
@@ -590,10 +630,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // unchanged, below.)
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         bool get_compute_limit_violations() const noexcept {return _compute_limit_violations_;}
-        // NOTE: toggling this flag clear()s the whole object, not just the computed
-        // results (see test_ContingencyAnalysis_limit_violations.py's
-        // test_setter_toggle_clears_and_raises_when_off -- an intentional, tested
-        // contract, not an oversight). The established convention is therefore to set
+        // What this flag invalidates is only the RESULTS (L3): whether violations are
+        // recorded changes nothing about the grid, the Jacobian or the "n" solve. It
+        // nonetheless clear()s the whole object, registrations included -- a contract
+        // that predates the cache levels and is explicitly tested (see
+        // test_ContingencyAnalysis_limit_violations.py's
+        // test_setter_toggle_clears_and_raises_when_off), so it stays. The established convention is therefore to set
         // this flag FIRST, before handle_disconnected_grid / registering any
         // contingency or injection -- ContingencyAnalysis's 2-arg constructor enforces
         // this implicitly; ScenarioSweep has no such constructor and must follow the
@@ -614,7 +656,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         "a real number in the range ]0., 1.] (got " << val << ").";
                 throw std::runtime_error(exc_.str());
             }
-            if(val < _violation_threshold_) clear_results_only();
+            // L3: a tighter threshold reports violations the recorded ones do not
+            // contain, so those have to be recomputed. Nothing else changes -- the
+            // same grid, the same batch, the same solve.
+            if(val < _violation_threshold_) clear_batch_outputs();
             _violation_threshold_ = val;
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
@@ -658,10 +703,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         IntVect is_grid_connected_after_contingency(){
-            _results_present_ = true;   // fills _li_masked / the solver caches
             const bool ac_solver_used = _algo.ac_solver_used();
-            const bool inputs_ready = (ac_solver_used ? ac_cache_.mat.cols() != 0 : dc_cache_.mat.cols() != 0);
-            if(!inputs_ready || ybus_policy_.li_coeffs.size() != ybus_policy_.li_defaults.size()){
+            if(!_grid_cache_valid_ || ybus_policy_.li_coeffs.size() != ybus_policy_.li_defaults.size()){
                 const size_t nb_total_bus = _grid_model.total_bus();
                 CplxVect Vinit = CplxVect::Constant(static_cast<Eigen::Index>(nb_total_bus),
                                                     {_grid_model.get_init_vm_pu(), 0.});
@@ -678,10 +721,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         int pick_reference_slack(){
-            _results_present_ = true;   // fills _li_masked / _skip_mask / the solver caches
+            // this reorders the slack, which every row of the next batch is solved
+            // against: L2 state, changed here outside compute()
+            clear_batch_inputs();
             const bool ac_solver_used = _algo.ac_solver_used();
-            const bool inputs_ready = (ac_solver_used ? ac_cache_.mat.cols() != 0 : dc_cache_.mat.cols() != 0);
-            if(!inputs_ready || ybus_policy_.li_coeffs.size() != ybus_policy_.li_defaults.size()){
+            if(!_grid_cache_valid_ || ybus_policy_.li_coeffs.size() != ybus_policy_.li_defaults.size()){
                 const size_t nb_total_bus = _grid_model.total_bus();
                 CplxVect Vinit = CplxVect::Constant(static_cast<Eigen::Index>(nb_total_bus),
                                                     {_grid_model.get_init_vm_pu(), 0.});
@@ -734,6 +778,48 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         int get_status() const { return _status; }
 
+        // ================= base-case reuse ========================================
+        // Every compute() has a BASE CASE to establish before any row is solved: read
+        // the grid (admittance matrix, bus labelling, pv/pq split), walk the graph to
+        // settle what each contingency strands, solve one "n" powerflow, and analyze
+        // and factorize the Jacobian. None of it depends on the injections, so a
+        // second compute() on the same object repeats all of it for nothing -- which
+        // is exactly what a caller in a loop does, and what training a model on a
+        // batch does thousands of times.
+        //
+        // That base case is levels L1 and L2 (see BaseBatchSolverSynch's block comment
+        // on clear_grid_results / clear_batch_inputs / clear_batch_outputs): it is kept
+        // between calls, and rebuilt exactly when a modifier drops the level it belongs
+        // to. Every modifier of this class names its level, so there is no separate
+        // list to keep in sync. The grid cannot change underneath: this class holds its
+        // OWN copy of it, taken at construction, and offers no way to modify it.
+        //
+        // ON by default. Turn it off to have every compute() rebuild everything, as it
+        // did before this existed -- worth doing to tell a suspected caching bug from a
+        // real one, and the reason this is a public switch rather than an internal
+        // detail.
+        void set_reuse_base_case(bool val) {
+            if(val == _reuse_base_case_) return;
+            _reuse_base_case_ = val;
+            // L1: with reuse off, nothing kept may be believed -- and compute() starts
+            // from a clean slate every time while it stays off.
+            if(!val) clear_grid_results();
+        }
+        bool get_reuse_base_case() const { return _reuse_base_case_; }
+
+        // Throw the kept base case away, so the next compute() builds a fresh one.
+        // A synonym for clear_grid_results(), the top of the hierarchy. This class
+        // calls the right level itself whenever it changes anything a kept base case
+        // is made of, so there is normally nothing to do -- this is public for the one
+        // case this class cannot see: a grid handed to it that later grows a way of
+        // being modified in place (see the change_gridmodel TODO in
+        // BaseBatchSolverSynch).
+        void invalidate_base_case() { clear_grid_results(); }
+
+        // Whether the last compute() kept a base case instead of building one. For
+        // tests, and for anyone measuring where a batch's time goes.
+        bool base_case_was_reused() const { return _base_case_was_reused_; }
+
         // ================= reverse-mode differentiation ============================
         // See BatchAdjoint for the maths and the cost. In short: with this on, every
         // row's converged Jacobian is kept, and solve_JT() then answers
@@ -751,7 +837,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void set_keep_jacobian(bool val) {
             if(val == _keep_jacobian_) return;
             _keep_jacobian_ = val;
-            _adjoint_.clear();
+            // L3: the kept Jacobians are an output, and nothing else this flag touches
+            // outlives a compute().
+            clear_batch_outputs();
         }
         bool get_keep_jacobian() const { return _keep_jacobian_; }
 
@@ -824,6 +912,24 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         double solve_time() const {return _timer_solver;}
 
     protected:
+        // ----- base-case reuse ----------------------------------------------------
+
+        // The starting voltage, mapped onto the kept grid cache's bus labelling. This is
+        // LSGrid::_pre_process_own_cache's own two steps -- gather the caller's V onto
+        // the solver's buses, then snap every regulated bus to its target magnitude --
+        // and it is redone on every call rather than cached, because a call is free to
+        // start anywhere and doing it costs microseconds (a gather over the buses and
+        // three passes over the regulating elements) against the tens of milliseconds
+        // that keeping the grid cache saves.
+        CplxVect _vinit_on_grid_cache(const Eigen::Ref<const CplxVect> & Vinit) const {
+            CplxVect res = Vinit(active_layout().id_solver_to_me.as_eigen());
+            const SolverBusIdVect & me_to_solver = active_layout().id_me_to_solver;
+            _grid_model.get_generators().set_vm(res, me_to_solver);
+            _grid_model.get_dclines().set_vm(res, me_to_solver);
+            _grid_model.get_svcs().set_vm(res, me_to_solver);
+            return res;
+        }
+
         // ----- reverse-mode differentiation helpers -------------------------------
 
         // Re-key a solver-bus-keyed map onto grid bus ids (see get_p_row_of_bus).
@@ -1159,6 +1265,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         // ----- reset ybus_policy_'s own state: 2-way --------------------------
+        // The COEFFICIENTS only (L1): values read off Ybus / Bbus, so they go with the
+        // matrix they were read from. The contingencies themselves are registrations
+        // and stay -- _prepare_ybus_varying rebuilds the coefficients for them.
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void _reset_ybus_coeffs() { ybus_policy_.li_coeffs.clear(); }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        void _reset_ybus_coeffs() {}
+
+        // everything, the registrations included: see clear().
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _reset_ybus_policy() {
             ybus_policy_.li_defaults.clear();
@@ -1816,11 +1931,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // (Contingency, Vary) (see _maybe_check_results_match_defaults below).
         bool _results_stale_ = false;
 
-        // whether anything computed or per-contingency (results, masks, the solver
-        // caches) exists since the last clear: what clear_results_only() has to drop
-        // at all. See there.
-        bool _results_present_ = false;
-
         // "handle disconnected grid" mode + limit violations: plain, always-present
         // state (SFINAE-gated methods above restrict who can reach it); empty /
         // false on every instantiation but ContingencyAnalysis.
@@ -1868,6 +1978,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<std::vector<int> > _li_defaults_vect_cache_;
 
         double _timer_modif_Ybus = 0.;
+
+        // base-case reuse (see set_reuse_base_case): whether L1 / L2 may be kept at
+        // all, and whether the last compute() actually kept them.
+        bool _reuse_base_case_ = true;
+        bool _base_case_was_reused_ = false;
 
         // reverse-mode differentiation (see the public block above and BatchAdjoint)
         bool _keep_jacobian_ = false;

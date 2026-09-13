@@ -419,15 +419,28 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     // perform some initial checks and reset timers
     size_t nb_total_bus = _reset_data_and_check_vinit(Vinit);
-    _results_present_ = true;   // from here on there is something clear_results_only() must drop
-    _status = 0;
-    _timer_modif_Ybus = 0.;
-    _timer_thread_init = 0.;
 
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _algo.ac_solver_used();
 
     const size_t nb_steps = _nb_steps();
+
+    // ---- what of the three levels this call may keep ------------------------------
+    // Reuse turned off: nothing kept may be believed, so start from the top every
+    // time (this is what makes the switch a way of telling a suspected caching bug
+    // from a real one -- see set_reuse_base_case).
+    if(!_reuse_base_case_) clear_grid_results();
+    // A batch of a different size has different per-row state to prepare -- the Ybus
+    // edit lists, the connectivity verdicts, the per-row PV -> PQ flips are all
+    // nb_steps long. L2, not L1: the grid itself did not change.
+    if(nb_steps != _prepared_nb_steps_) clear_batch_inputs();
+    // The results of the previous run, always: they belong to it, not to this one.
+    clear_batch_outputs();
+    _base_case_was_reused_ = _batch_inputs_valid_;
+
+    _status = 0;
+    _timer_modif_Ybus = 0.;
+    _timer_thread_init = 0.;
 
     // per-row converged mask (converged_mask()): every instantiation, always on,
     // regardless of compute_limit_violations -- see BaseBatchSweep.hpp's comment
@@ -444,36 +457,46 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         _violations_n_.clear();
     }
 
-    // prepare the gridmodel (compute Ybus, Sbus etc.)
-    CplxVect Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used);
+    // ---- L1: what is read off the grid (Ybus / Bbus, the injections, the bus
+    // labelling, the pv/pq split, the slack) ----------------------------------------
+    // Keeping it does not mean keeping the STARTING VOLTAGE: a call is free to start
+    // anywhere, so V is mapped onto the kept labelling every time -- microseconds
+    // against the tens of milliseconds the cache saves, see _vinit_on_grid_cache.
+    CplxVect Vinit_solver = _grid_cache_valid_ ? _vinit_on_grid_cache(Vinit)
+                                               : prepare_solver_input_base(Vinit, ac_solver_used);
 
-    // A fresh solver for this batch -- reset HERE, before the hooks below configure
-    // it, not in _finish_preprocessing after them: a reset clears the PV pinning
-    // _maybe_prepare_gen_contingency hands it, and the "n" solve has to run pinned
-    // (every switchable bus is PV in the base case). It used to run unpinned, its
-    // switchable buses solved as PQ, the per-row pinning hiding it from the rows.
-    _algo.reset();
+    // ---- L2: what is built for THIS batch from that grid ---------------------------
+    if(!_batch_inputs_valid_){
+        // A fresh solver for this batch -- reset HERE, before the hooks below configure
+        // it, not in _finish_preprocessing after them: a reset clears the PV pinning
+        // _maybe_prepare_gen_contingency hands it, and the "n" solve has to run pinned
+        // (every switchable bus is PV in the base case). It used to run unpinned, its
+        // switchable buses solved as PQ, the per-row pinning hiding it from the rows.
+        _algo.reset();
 
-    // initialize whatever varies (Ybus and/or Sbus -- each a no-op where the
-    // corresponding policy is NOOP)
-    _prepare_ybus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
-    // ... and settle, once, which contingencies split the grid and what they strand
-    // (a no-op where Ybus does not vary). Only where someone reads the answer: an AC
-    // row skips a contingency that splits the grid, and the masked mode strands the
-    // smaller side; a plain DC row leaves the split to the solver and never asks.
-    if(ac_solver_used || _handle_disconnected_grid) _prepare_connectivity();
+        // the per-row Ybus edit lists (a no-op where Ybus does not vary)
+        _prepare_ybus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
+        // ... and settle, once, which contingencies split the grid and what they strand
+        // (a no-op where Ybus does not vary). Only where someone reads the answer: an AC
+        // row skips a contingency that splits the grid, and the masked mode strands the
+        // smaller side; a plain DC row leaves the split to the solver and never asks.
+        if(ac_solver_used || _handle_disconnected_grid) _prepare_connectivity();
+
+        // "handle disconnected grid" mode pre-pass (ContingencyAnalysis AND
+        // ScenarioSweep; no-op elsewhere -- and _handle_disconnected_grid can never be
+        // true elsewhere, since no setter exists to set it there)
+        _maybe_prepare_masks();
+
+        // generator contingencies (ScenarioSweep only; no-op elsewhere). Must run after
+        // prepare_solver_input_base (it reads the solver labelling) and BEFORE
+        // _finish_preprocessing, whose "n" solve builds the Jacobian sparsity this has to
+        // enlarge. See _maybe_prepare_gen_contingency.
+        _maybe_prepare_gen_contingency(nb_steps);
+    }
+
+    // the injections, on the other hand, are exactly what a second compute() came to
+    // change: always rebuilt (a no-op where Sbus does not vary).
     _prepare_sbus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
-
-    // "handle disconnected grid" mode pre-pass (ContingencyAnalysis only; no-op
-    // elsewhere -- and _handle_disconnected_grid can never be true elsewhere, since
-    // no setter exists to set it there)
-    _maybe_prepare_masks();
-
-    // generator contingencies (ScenarioSweep only; no-op elsewhere). Must run after
-    // prepare_solver_input_base (it reads the solver labelling) and BEFORE
-    // _finish_preprocessing, whose "n" solve builds the Jacobian sparsity this has to
-    // enlarge. See _maybe_prepare_gen_contingency.
-    _maybe_prepare_gen_contingency(nb_steps);
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager
@@ -483,6 +506,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     const bool use_dc_lazy_v = !ac_solver_used && !_handle_disconnected_grid;
     if(use_dc_lazy_v) _dc_gen_v_ = _sbus_gen_v();
 
+    // the "n" solve (L2 as well: it is what builds the ledger, the sparsity and the
+    // factorization every row refactorizes into), plus this call's result buffers
     bool n_powerflow_has_conv = _finish_preprocessing(
         nb_steps, nb_total_bus, Vinit_solver, max_iter, tol, timer_preproc, use_dc_lazy_v
     );
@@ -552,6 +577,13 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         }
         _adjoint_.allocate(static_cast<Eigen::Index>(nb_steps), _algo.get_J());
     }
+
+    // L2 is built and this batch converged on it (L1 was raised by
+    // prepare_solver_input_base): a later compute() that changes nothing above it may
+    // keep both. Raised HERE, past every throw above -- a batch that never got as far
+    // as a usable base case must not claim one.
+    _batch_inputs_valid_ = true;
+    _prepared_nb_steps_ = nb_steps;
 
     // compute the powerflows, possibly split across several threads
     _compute_threaded(nb_steps, Vinit_solver, ac_solver_used, max_iter, tol, sn_mva, _timer_thread_init);

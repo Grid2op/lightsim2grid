@@ -84,6 +84,38 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              },
              DocTimeSeries::converged_mask.c_str())
 
+        // base-case reuse (see BaseBatchSweep::set_reuse_base_case)
+        .def_property("reuse_base_case",
+                      [](const T & self){ return self.get_reuse_base_case(); },
+                      [](T & self, bool val){ self.set_reuse_base_case(val); },
+                      "Whether the base case is kept between two compute() calls on this object "
+                      "(default: ``True``).\n\n"
+                      "Before any row is solved, a batch has a base case to establish: read the "
+                      "grid (admittance matrix, bus labelling, pv/pq split), walk the graph to "
+                      "settle what each contingency strands, solve one 'n' powerflow, and analyze "
+                      "and factorize the Jacobian. None of that depends on the injections, so "
+                      "calling compute() again -- with new injections, which is what a loop over "
+                      "scenarios does -- repeats all of it for nothing. With this ``True`` it is "
+                      "done once and kept.\n\n"
+                      "It is dropped, and rebuilt on the next compute(), whenever something it is "
+                      "made of changes: clear(), change_algorithm(), algo_config, any contingency "
+                      "registration, handle_disconnected_grid, nb_thread, init_from_n_powerflow, "
+                      "or a different number of simulations. Every such modifier says so itself -- "
+                      "internally each names one of three nested cache levels (the grid, this "
+                      "batch's inputs, the results) and dropping one drops the levels below it. "
+                      "The grid cannot change underneath -- this object holds its own copy of it, "
+                      "taken when it was built, and offers no way to modify it.\n\n"
+                      "Set it to ``False`` to make every compute() rebuild everything, as it did "
+                      "before this existed: useful to tell a suspected caching problem from a real "
+                      "one.")
+        .def("invalidate_base_case", &T::invalidate_base_case,
+             "Drop the kept base case, so the next compute() builds a fresh one (see "
+             "``reuse_base_case``). This object already does this itself whenever it changes "
+             "anything the base case is made of, so there is normally no reason to call it.")
+        .def("base_case_was_reused", &T::base_case_was_reused,
+             "Whether the last compute() kept a base case instead of building one. Mostly "
+             "of interest when measuring where a batch's time goes.")
+
         // reverse-mode differentiation (see BatchAdjoint.hpp)
         .def_property("keep_jacobian",
                       [](const T & self){ return self.get_keep_jacobian(); },

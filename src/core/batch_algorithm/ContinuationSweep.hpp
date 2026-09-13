@@ -201,9 +201,9 @@ class LS2G_API ContinuationSweep final : public BaseBatchSolverSynch
         double total_time() const {return _timer_total;}
         double preprocessing_time() const {return _timer_pre_proc;}
 
-        void clear() override {
-            BaseBatchSolverSynch::clear();
-            clear_target();
+        // L3 (see BaseBatchSolverSynch's block comment on the three cache levels):
+        // the curve this class traces, on top of the voltages the base holds.
+        void clear_batch_outputs() override {
             _direction = CplxVect();
             _lam = RealVect();
             _tangent_lam = RealVect();
@@ -211,6 +211,12 @@ class LS2G_API ContinuationSweep final : public BaseBatchSolverSynch
             _nb_retries = 0;
             _status = 0;
             _msg.clear();
+            BaseBatchSolverSynch::clear_batch_outputs();
+        }
+
+        void clear() override {
+            BaseBatchSolverSynch::clear();   // -> L1 -> L2 -> L3
+            clear_target();                  // the target is a registration, not a level
         }
 
     protected:
