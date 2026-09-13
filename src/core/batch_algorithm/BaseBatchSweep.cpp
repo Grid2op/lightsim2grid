@@ -520,7 +520,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     _prepare_sbus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
     // ... and with them the buses several generators regulate at once, which is what a
     // per-row gen_v has to agree on (see _row_gen_v_conflicts)
-    _prepare_gen_v_groups();
+    _prepare_gen_v_constraints();
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager
@@ -640,6 +640,7 @@ BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::gen_v_indi
     }
 
     const IntVect target_bus = get_gen_v_target_bus();          // grid bus, or -1
+    const RealVect share = get_gen_v_share();                  // 1/n where n share a bus
     const IntVect p_row = _algo.get_p_to_J_row_python();        // solver bus -> J row
     const IntVect q_row = _algo.get_q_to_J_row_python();
     const auto me_to_solver = active_layout().id_me_to_solver.as_eigen();
@@ -696,7 +697,9 @@ BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::gen_v_indi
                 if(row_bus < p_row.size() && p_row[row_bus] >= 0) acc -= lambda(i, p_row[row_bus]) * dS.real();
                 if(row_bus < q_row.size() && q_row[row_bus] >= 0) acc -= lambda(i, q_row[row_bus]) * dS.imag();
             }
-            res(i, g) = acc;
+            // each generator of a shared bus carries its share of that bus' derivative,
+            // and only their sum is a derivative at all -- see get_gen_v_share
+            res(i, g) = acc * share[g];
         }
 
         _patch_ybus_values(Ybus, static_cast<size_t>(i), true);

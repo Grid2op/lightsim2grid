@@ -24,11 +24,27 @@ Differentiable: ``load_p``, ``load_q``, ``gen_p``, ``sgen_p``, ``gen_v``. Discre
 and carrying no gradient: ``line_status``, ``trafo_status``, ``gen_status``
 (booleans, True = connected, grid2op's convention).
 
-Where several generators regulate the SAME bus, a row must give them the same
-``gen_v``: a bus has one magnitude, and two different set-points cannot both hold.
-A row that asks for two is not solved -- it comes back as not converged, NaN in
-``V`` and carrying no gradient -- rather than silently taking whichever generator
-was written last.
+A bus has ONE voltage magnitude, so a row cannot ask one bus for two. A row that
+does is not solved: it comes back not converged, NaN in ``V`` and carrying no
+gradient, rather than silently taking whichever set-point was written last. Two
+cases:
+
+* several generators regulating the same bus, given different targets -- give them
+  the same one. Their set-points are then TIED, and the loss is a function only on
+  the diagonal ``v_1 = ... = v_n``: the partial derivative of one with the others
+  held fixed does not exist, because off that diagonal the row is refused rather
+  than solved differently. What exists is the derivative along the tie, and each of
+  the n generators carries ``1/n`` of it, so that they sum to it. Drive the group
+  from one parameter and the chain rule recovers it exactly; step on all n and they
+  move together, so the iterate stays where the function is defined;
+* a generator whose regulated bus is also regulated by a voltage-mode SVC or an
+  hvdc converter station, given anything other than THAT element's target.
+
+The second is a limitation rather than a rule: **only generator set-points vary per
+row**. There is no ``svc_v`` and no ``hvdc_v`` input, so a generator sharing its
+regulated bus with either cannot be moved by a batch at all -- it is fixed for the
+whole sweep and its ``gen_v`` gradient is zero. See the TODO at the top of
+CHANGELOG.rst.
 
 ``gen_v`` is differentiated differently from the other four, because it is not an
 injection: it FIXES the magnitude of the bus its generator regulates, which the
@@ -191,8 +207,8 @@ class BatchCPUPowerFlow:
         load_p, load_q : (n_scen, n_load) MW / MVAr        differentiable
         gen_p          : (n_scen, n_gen)  MW               differentiable
         sgen_p         : (n_scen, n_sgen) MW               differentiable
-        gen_v          : (n_scen, n_gen)  vm_pu            differentiable; generators
-                                                           regulating one bus must agree
+        gen_v          : (n_scen, n_gen)  vm_pu            differentiable; only GENERATOR
+                                                           set-points vary -- see above
         line_status    : (n_scen, n_line)  bool, True = connected
         trafo_status   : (n_scen, n_trafo) bool, True = connected
         gen_status     : (n_scen, n_gen)   bool, True = connected
@@ -470,11 +486,18 @@ def _make_op(torch):
                 grad_gen_v = torch.as_tensor(
                     sweep.gen_v_indirect_grad(np.ascontiguousarray(lam.numpy())))
                 target = np.asarray(sweep.get_gen_v_target_bus())
+                share = np.asarray(sweep.get_gen_v_share())
                 live = np.flatnonzero(target >= 0)   # a generator whose set-point never
                 if live.size:                        # reaches the solve keeps its zero
                     bus = torch.as_tensor(target[live])
                     v_hat = Vs[:, bus] / Vs[:, bus].abs()
-                    grad_gen_v[:, torch.as_tensor(live)] += (torch.conj(v_hat) * gV[:, bus]).real
+                    # weighted by the same share the indirect half already carries: where
+                    # several generators regulate one bus their set-points are tied, so
+                    # each holds a share of the one derivative that exists rather than a
+                    # partial of its own (see get_gen_v_share)
+                    grad_gen_v[:, torch.as_tensor(live)] += (
+                        (torch.conj(v_hat) * gV[:, bus]).real
+                        * torch.as_tensor(share[live]))
 
             return grad_load_p, grad_load_q, grad_gen_p, grad_sgen_p, grad_gen_v, None
 

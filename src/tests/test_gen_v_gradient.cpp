@@ -28,6 +28,7 @@
 #include "LSGrid.hpp"
 #include "Solvers.hpp"
 #include "batch_algorithm/BaseBatchSweep.hpp"
+#include "case_exotic_elements.hpp"
 
 using Catch::Approx;
 using ls2g::AlgorithmType;
@@ -168,13 +169,16 @@ RealMatRM gen_v_gradient(InjectionSweep & sweep, int nb_gen)
     REQUIRE(grad.cols() == nb_gen);
 
     const IntVect target = sweep.get_gen_v_target_bus();
+    const RealVect share = sweep.get_gen_v_share();
     for(int i = 0; i < NB_STEPS; ++i){
         for(int g = 0; g < nb_gen; ++g){
             const int b = target[g];
             if(b < 0) continue;
             const cplx_type gV(wr(b), wi(b));
             const cplx_type v = V(i, b);
-            grad(i, g) += (std::conj(v / std::abs(v)) * gV).real();
+            // the same share the indirect half already carries: tied set-points hold a
+            // share of one derivative, not a partial each (see get_gen_v_share)
+            grad(i, g) += (std::conj(v / std::abs(v)) * gV).real() * share[g];
         }
     }
     return grad;
@@ -220,13 +224,19 @@ TEST_CASE("the gen_v gradient is the one a finite difference measures")
 }
 
 
-TEST_CASE("only the generator whose setpoint reaches the solve carries its gradient")
+TEST_CASE("generators sharing a bus share the one derivative that exists")
 {
-    // Three generators regulate bus 1. set_vm walks them in order and the last one
-    // wins, so the first two never reach the solve at all: their setpoints are
-    // genuinely dead inputs, and a gradient spread over all three -- or given to the
-    // wrong one -- would be silently wrong on any grid with more than one machine per
-    // busbar, which is most of them.
+    // Three generators regulate bus 1, so their set-points are TIED: a row must give
+    // all three the same, because a bus has one magnitude. The loss is then a function
+    // only on the diagonal v1 = v2 = v3, and off it there is nothing to compare against
+    // -- such a row is refused, not solved differently. So no partial derivative of one
+    // of them exists, and what these three numbers are is not a gradient in the usual
+    // sense: what exists is the derivative along the tie, and they sum to it.
+    //
+    // Split equally, so that a caller driving the group from one parameter recovers it
+    // through the chain rule, and one stepping on all three keeps them equal -- and so
+    // that the answer does not depend on the order the generators sit in, which is what
+    // "whichever set_vm writes last" would have made it depend on.
     const int NB_ON_PV = 3;
     const int NB_GEN = 1 + NB_ON_PV;
     LSGrid grid = make_grid(NB_ON_PV);
@@ -240,10 +250,13 @@ TEST_CASE("only the generator whose setpoint reaches the solve carries its gradi
     REQUIRE(sweep.get_status() == 1);
 
     const IntVect target = sweep.get_gen_v_target_bus();
-    REQUIRE(target[0] == 0);                 // the slack, alone on its bus
-    REQUIRE(target[1] == -1);                // overwritten by generator 2
-    REQUIRE(target[2] == -1);                // overwritten by generator 3
-    REQUIRE(target[3] == GEN_BUS);           // the last writer
+    const RealVect share = sweep.get_gen_v_share();
+    REQUIRE(target[0] == 0);                 // the slack, alone on its bus ...
+    REQUIRE(share[0] == Approx(1.));         // ... so it owns its derivative outright
+    for(int g = 1; g < NB_GEN; ++g){
+        REQUIRE(target[g] == GEN_BUS);       // all three regulate it, none is privileged
+        REQUIRE(share[g] == Approx(1. / static_cast<real_type>(NB_ON_PV)));
+    }
 
     // A member of the group cannot be perturbed ALONE any more -- that is exactly the
     // contradiction the row now refuses -- so the group moves together, and what the
@@ -263,10 +276,11 @@ TEST_CASE("only the generator whose setpoint reaches the solve carries its gradi
         for(int g = 1; g < NB_GEN; ++g) sum += grad(i, g);
         REQUIRE(sum == Approx(fd).margin(2e-5));
         REQUIRE(std::abs(fd) > 1e-3);
-        // ... and the whole of it sits on the one generator that reaches the solve
-        REQUIRE(grad(i, 1) == 0.);
-        REQUIRE(grad(i, 2) == 0.);
-        REQUIRE(grad(i, NB_GEN - 1) == Approx(fd).margin(2e-5));
+        // ... split equally among them, rather than heaped on whichever set_vm writes
+        // last: nothing distinguishes them, and only the sum is a derivative at all
+        for(int g = 1; g < NB_GEN; ++g){
+            REQUIRE(grad(i, g) == Approx(fd / static_cast<real_type>(NB_ON_PV)).margin(2e-5));
+        }
 
         // the slack, alone on its bus, is still perturbed on its own
         Inputs sp = in, sm = in;
@@ -360,4 +374,66 @@ TEST_CASE("the gen_v gradient is an AC quantity and says so in DC")
     feed(sweep, in);
     sweep.compute(CplxVect::Constant(NB_BUS, cplx_type(1., 0.)), 30, 1e-12);
     REQUIRE_THROWS(sweep.gen_v_indirect_grad(RealMatRM::Zero(NB_STEPS, 1)));
+}
+
+
+// ===================== set-points modify_gen_v cannot move ====================
+
+TEST_CASE("a row cannot move a generator sharing its bus with an hvdc station")
+{
+    // ONLY GENERATOR set-points vary per row: there is no modify_svc_v and no
+    // modify_hvdc_v. So a generator whose regulated bus also carries a converter
+    // station (or a voltage-mode SVC) cannot actually be moved -- that element keeps
+    // asking the bus for its own, fixed magnitude, and a row that gives the generator
+    // a different one asks one bus for two.
+    //
+    // Left undetected this is the quiet kind of wrong: _apply_step_gen_v writes only
+    // the generators, so the station's target -- already applied when the starting
+    // voltage was built -- is simply overwritten, and the row solves at a set-point
+    // nobody asked for. See the TODO at the top of the changelog.
+    LSGrid grid = ls2g_test::make_exotic_elements_grid();
+    grid.deactivate_svc(0);
+    grid.deactivate_storage(0);
+    grid.change_bus_gen_python(1, 1);     // generator 1 onto the station's bus
+    grid.change_v_gen(1, 1.0);            // ... agreeing with it, so the GRID is valid
+
+    const int nb_gen = 5;                 // the fixture's generator count
+    const Eigen::Index nb_bus = static_cast<Eigen::Index>(grid.total_bus());
+    InjectionSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+
+    RealMatRM gen_v = RealMatRM::Zero(3, nb_gen);
+    for(int i = 0; i < 3; ++i){
+        for(int g = 0; g < nb_gen; ++g) gen_v(i, g) = 1.0;
+    }
+    gen_v(1, 1) = 1.04;                   // row 1 alone tries to move generator 1
+    sweep.modify_gen_v(gen_v);
+    sweep.compute(CplxVect::Constant(nb_bus, cplx_type(1., 0.)), 30, 1e-10);
+
+    REQUIRE(sweep.converged_mask()[1] == 0);   // refused, not silently applied
+    REQUIRE(sweep.converged_mask()[0] == 1);
+    REQUIRE(sweep.converged_mask()[2] == 1);
+}
+
+
+TEST_CASE("a generator alone on its bus is free to move")
+{
+    // the same grid without the co-location: nothing else asks that bus for anything,
+    // so every row may set whatever it likes
+    LSGrid grid = ls2g_test::make_exotic_elements_grid();
+    grid.deactivate_svc(0);
+    grid.deactivate_storage(0);
+
+    const int nb_gen = 5;
+    const Eigen::Index nb_bus = static_cast<Eigen::Index>(grid.total_bus());
+    InjectionSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+
+    RealMatRM gen_v = RealMatRM::Zero(3, nb_gen);
+    for(int i = 0; i < 3; ++i){
+        for(int g = 0; g < nb_gen; ++g) gen_v(i, g) = 1.0 + 0.01 * i;
+    }
+    sweep.modify_gen_v(gen_v);
+    sweep.compute(CplxVect::Constant(nb_bus, cplx_type(1., 0.)), 30, 1e-10);
+    for(int i = 0; i < 3; ++i) REQUIRE(sweep.converged_mask()[static_cast<size_t>(i)] == 1);
 }
