@@ -156,6 +156,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [BREAKING] a grid where several elements regulate the SAME bus with DIFFERENT voltage
+  set-points is now refused instead of silently applying whichever was written last. A bus
+  has one magnitude; the two set-points cannot both hold. Previously only checked for a
+  remote regulator or an SVC, never for machines on a shared busbar.
 - [ADDED] ``gen_v`` is differentiable in ``BatchCPUPowerFlow``: the gradient of a loss with
   respect to a generator's voltage set-point. Unlike an injection it fixes a bus magnitude
   the solver never revisits, so it needs the ``dS/dVm`` column the Jacobian does not store

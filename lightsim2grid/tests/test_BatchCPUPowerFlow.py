@@ -267,6 +267,18 @@ class TestBatchCPUPowerFlow(unittest.TestCase):
                                    1.02, rtol=1e-8)
 
     @staticmethod
+    def _regulating_groups(pf):
+        """generator ids grouped by the bus they regulate, for the buses with more than
+        one regulator. Asked of the grid rather than assumed: init_from_pandapower does
+        not preserve pandapower's generator order."""
+        by_bus = {}
+        for g in pf._grid.get_generators():
+            if not (g.connected and g.voltage_regulator_on):
+                continue
+            by_bus.setdefault(g.regulated_bus_id, []).append(g.id)
+        return [ids for ids in by_bus.values() if len(ids) > 1]
+
+    @staticmethod
     def _regulated_buses(pf):
         """the buses a gen_v set-point actually pins -- the ones whose magnitude it is
         fair to read back (see get_gen_v_target_bus)"""
@@ -304,12 +316,17 @@ class TestBatchCPUPowerFlow(unittest.TestCase):
                     msg=f"gen_v[{row},{g}]: adjoint {grad[row, g].item()} vs fd {fd}")
 
     def test_a_set_point_that_never_reaches_the_solve_has_no_gradient(self):
-        """set_vm is last-writer-wins, so of several generators regulating one bus only
-        the last one's set-point is applied. The others are dead inputs: their gradient
-        must be exactly zero, and a finite difference must agree that nothing moves.
+        """Of several generators regulating one bus, only the last one's set-point is
+        applied (set_vm is last-writer-wins). The others are dead inputs and their
+        gradient must be exactly zero.
 
-        case14 has one generator per bus and would never exercise this, so the grid
-        here deliberately doubles one up -- which is the ordinary case on a real grid,
+        Their set-points must AGREE, which is the constraint the grid now enforces: a
+        bus has one magnitude. So they cannot be perturbed one at a time -- the group
+        moves together, and what a finite difference then measures is the SUM of its
+        gradients, which is the only part of the split the constraint leaves meaningful.
+
+        case14 has one generator per bus and would never exercise any of this, so the
+        grid here deliberately doubles one up -- the ordinary case on a real grid,
         where a busbar carries several machines."""
         def make():
             grid = init_from_pandapower(_two_gens_on_one_bus())
@@ -321,6 +338,10 @@ class TestBatchCPUPowerFlow(unittest.TestCase):
         load_p = np.asarray(pf._grid.get_load_target_p())[None, :] * (
             1. + 0.1 * rng.standard_normal((n_scen, pf.n_load)))
         gen_v = 1.01 + 0.02 * rng.random((n_scen, n_gen))
+        groups = self._regulating_groups(pf)
+        self.assertEqual(len(groups), 1, "the fixture should double up exactly one bus")
+        group = groups[0]
+        gen_v[:, group] = gen_v[:, group[0]][:, None]   # one bus, one magnitude
         inputs = dict(load_p=load_p, gen_v=gen_v)
 
         tensors = {k: torch.tensor(v, requires_grad=True) for k, v in inputs.items()}
@@ -345,10 +366,43 @@ class TestBatchCPUPowerFlow(unittest.TestCase):
         for g in dead:
             np.testing.assert_array_equal(tensors["gen_v"].grad[:, g].numpy(),
                                           np.zeros(n_scen))
-            self.assertAlmostEqual(fd("gen_v", (0, int(g))), 0., places=8)
-        for g in live:          # ... and the one that DOES reach the solve is not zero
+        # the group moves together: its gradients must sum to what that move costs
+        def fd_group(delta=1e-6):
+            out = []
+            for sign in (+1., -1.):
+                pert = {k: v.copy() for k, v in inputs.items()}
+                for g in group:
+                    pert["gen_v"][0, g] += sign * delta
+                out.append(float(self._loss(make()(**{k: torch.tensor(v)
+                                                      for k, v in pert.items()}))))
+            return (out[0] - out[1]) / (2. * delta)
+        self.assertAlmostEqual(sum(tensors["gen_v"].grad[0, g].item() for g in group),
+                               fd_group(), places=5)
+        # every generator alone on its bus keeps an ordinary, individually measurable one
+        for g in live:
+            if g in group:
+                continue
             self.assertAlmostEqual(tensors["gen_v"].grad[0, g].item(),
                                    fd("gen_v", (0, int(g))), places=5)
+
+    def test_a_row_asking_one_bus_for_two_magnitudes_does_not_converge(self):
+        """A bus has one voltage magnitude, so two generators regulating it cannot be
+        given two different set-points. Such a row is not solved -- reported like any
+        row skipped before the solver -- rather than silently taking whichever
+        generator set_vm happens to write last."""
+        grid = init_from_pandapower(_two_gens_on_one_bus())
+        pf = self._cls.init_from_grid(grid, tol=self.TOL)
+        n_scen = 3
+        load_p = np.asarray(pf._grid.get_load_target_p())[None, :] * np.ones((n_scen, 1))
+        gen_v = np.full((n_scen, pf.n_gen), 1.03)
+        group = self._regulating_groups(pf)[0]
+        gen_v[1, group[-1]] = 1.05   # row 1 alone contradicts itself
+
+        V = pf(load_p=torch.tensor(load_p), gen_v=torch.tensor(gen_v))
+        conv = pf.converged()
+        self.assertFalse(conv[1])
+        self.assertTrue(conv[0] and conv[2])
+        self.assertTrue(torch.isnan(V[1]).all())   # and carries no result at all
 
     def test_gradcheck_gen_v(self):
         gen_v = torch.tensor(self._gen_v_inputs()[:2], requires_grad=True)

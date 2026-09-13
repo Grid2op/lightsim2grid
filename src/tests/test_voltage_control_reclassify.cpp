@@ -258,6 +258,39 @@ TEST_CASE("a remote regulator disagreeing with the local one is rejected on setp
     REQUIRE_THROWS_WITH(solve(g), Catch::Matchers::ContainsSubstring("conflicting voltage setpoints"));
 }
 
+TEST_CASE("two LOCAL regulators disagreeing about their shared bus are rejected too", "[reclassify]")
+{
+    // The same contradiction with nothing remote about it: two machines on one busbar,
+    // each regulating the bus it stands on, asking it for two magnitudes. A bus has one.
+    //
+    // This is the case that used to pass silently. The group check above only sees a
+    // group, and a group forms around a REMOTE regulator or an SVC -- an ordinary
+    // multi-machine PV bus never reaches it (VoltageControlPlan::build_groups says so
+    // in as many words). set_vm wrote both in turn and the last one won, which is not a
+    // resolution but an accident of iteration order. LSGrid::_check_vm_targets_agree now
+    // refuses it, on this grid's own powerflows and on every batch algorithm alike.
+    LSGrid g = make_skeleton();
+    add_gens(g, {0, 2, 2}, {1.02, V_SET, V_SET + 0.02}, {2000., 2000., 500.});
+    g.add_gen_slackbus(0, 1.);
+    g.tell_solver_need_reset();
+
+    REQUIRE_THROWS_WITH(solve(g), Catch::Matchers::ContainsSubstring("conflicting voltage setpoints"));
+}
+
+TEST_CASE("two local regulators AGREEING about their shared bus are fine", "[reclassify]")
+{
+    // the ordinary busbar: several machines, one target. Nothing to refuse, and the
+    // bus still lands on that target.
+    LSGrid g = make_skeleton();
+    add_gens(g, {0, 2, 2}, {1.02, V_SET, V_SET}, {2000., 2000., 500.});
+    g.add_gen_slackbus(0, 1.);
+    g.tell_solver_need_reset();
+
+    const CplxVect V = solve(g);
+    REQUIRE(V.size() == NB_BUS);
+    CHECK(std::abs(V(2)) == Approx(V_SET).epsilon(1e-8));
+}
+
 TEST_CASE("a remote regulator may target a locally pinned slack bus", "[reclassify]")
 {
     // the slack's own generator pins it, so before the reclassification the slack

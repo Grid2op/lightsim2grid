@@ -435,6 +435,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // that step's solve (see _apply_step_gen_v / GeneratorContainer::set_vm).
         // Left unset (0 rows), every row keeps using the grid's own target_vm_pu,
         // exactly as before this setter existed.
+        //
+        // Where several generators regulate the SAME bus, a row must give them the same
+        // target: a bus has one magnitude, and two different ones cannot both hold. A
+        // row that asks for two is not solved -- it reports as a row skipped before the
+        // solver (see _row_gen_v_conflicts), rather than silently taking whichever
+        // generator set_vm happens to visit last.
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         void modify_gen_v(const Eigen::Ref<const typename S::RealMat> & gen_v) {
             _check_cols(gen_v, static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb()), "modify_gen_v");
@@ -1421,6 +1427,46 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver, target_vm_pu_row);
         }
 
+        // ----- modify_gen_v: set-points that contradict each other ----------------
+        // A bus has ONE voltage magnitude. Two generators regulating it with two
+        // different targets state two constraints it cannot both satisfy, and set_vm
+        // resolves that by applying whichever generator it visits last -- an answer to
+        // a question nobody asked, and silent. A row whose set-points do that has an
+        // input that cannot be met, so it is not solved: it is reported exactly like a
+        // row skipped before the solver ever ran (converged_mask 0, a GRID /
+        // NOT_SIMULATED violation, zero voltages, and so no gradient).
+        //
+        // Only the groups matter -- the buses with more than one regulating generator,
+        // which most grids have few of and many have none -- and which generator writes
+        // which bus does not depend on the row. So the groups are found once per
+        // compute() and each row then only compares numbers.
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void _prepare_gen_v_groups() {
+            _gen_v_groups_.clear();
+            if(sbus_policy_.gen_v.rows() == 0) return;   // never set: the grid's own targets
+            _grid_model.get_generators().vm_target_groups(active_layout().id_me_to_solver, _gen_v_groups_);
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        void _prepare_gen_v_groups() {}
+
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _row_gen_v_conflicts(size_t i) const {
+            if(_gen_v_groups_.empty()) return false;
+            const Eigen::Index row = static_cast<Eigen::Index>(i);
+            if(row >= sbus_policy_.gen_v.rows()) return false;
+            for(size_t g = 0; g < _gen_v_groups_.size(); ++g){
+                const std::vector<int> & members = _gen_v_groups_[g];
+                const real_type first = sbus_policy_.gen_v(row, members[0]);
+                for(size_t k = 1; k < members.size(); ++k){
+                    if(std::abs(sbus_policy_.gen_v(row, members[k]) - first) >
+                       BaseConstants::_tol_equal_float) return true;
+                }
+            }
+            return false;
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _row_gen_v_conflicts(size_t) const { return false; }
+
         // ----- sbus_policy_.gen_v, generically (2-way, same split as above): feeds
         // BaseBatchSolverSynch's generic (SbusPolicy-agnostic) DC fast-path magnitude
         // reconstruction (_dc_gen_v_ / _dc_vm_row_grid) -- empty wherever
@@ -1828,7 +1874,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     bool do_store = false;
                     LimitViolationType div_reason = LimitViolationType::NOT_SIMULATED;
 
-                    if(!_skip_mask[cont_id]){
+                    // same as _run_one_step: a row whose gen_v set-points contradict
+                    // each other asks for a magnitude no solution can hold, so it is
+                    // skipped before the solver rather than silently resolved by
+                    // whichever generator set_vm visits last (_row_gen_v_conflicts)
+                    if(!_skip_mask[cont_id] && !_row_gen_v_conflicts(cont_id)){
                         const std::vector<int> & masked = _li_masked[cont_id];
                         auto t1 = CustTimer();
                         YbusPolicy::Contingency::remove_from_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);
@@ -2080,6 +2130,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // the same one back, so nothing is shared between threads.
         std::vector<std::unique_ptr<AlgorithmSelector> > _thread_algos_;
         bool _thread_algos_were_reused_ = false;
+
+        // the buses several generators regulate at once, as generator ids -- rebuilt by
+        // _prepare_gen_v_groups at each compute(), and empty unless modify_gen_v was
+        // used (the grid's own target_vm_pu_ is not this class's to validate). See
+        // _row_gen_v_conflicts.
+        std::vector<std::vector<int> > _gen_v_groups_;
 
         // reverse-mode differentiation (see the public block above and BatchAdjoint)
         bool _keep_jacobian_ = false;

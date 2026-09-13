@@ -397,6 +397,13 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
         the ac powerflow
         **/
+        // the stations pin magnitudes, so they answer for what they would pin -- same
+        // forwarding as set_vm just below (see VoltageSourceContainer::collect_vm_targets)
+        void collect_vm_targets(std::vector<VmTarget> & out) const{
+            side_1_.collect_vm_targets(out);
+            side_2_.collect_vm_targets(out);
+        }
+
         void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const{
             side_1_.set_vm(V, id_grid_to_solver);
             side_2_.set_vm(V, id_grid_to_solver);

@@ -35,6 +35,15 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     // (either freshly reset to Vinit_solver for FromSeed, or carried over from the
     // previous row's convergence for FromPreviousStep / TimeSeries), so a single
     // unconditional call here re-applies the *current* row's target every time.
+    // A row asking two generators on one bus for two different magnitudes has an input
+    // no solution can meet (see _row_gen_v_conflicts). Nothing to solve, so it is
+    // reported as a row skipped before the solver: not invertible, not converged.
+    if(_row_gen_v_conflicts(i)){
+        conv = false;
+        invertible = false;
+        return;
+    }
+
     _apply_step_gen_v(i, V);
 
     // the Ybus edit, and its timer, only where Ybus varies at all: the hooks compile
@@ -509,6 +518,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // the injections, on the other hand, are exactly what a second compute() came to
     // change: always rebuilt (a no-op where Sbus does not vary).
     _prepare_sbus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
+    // ... and with them the buses several generators regulate at once, which is what a
+    // per-row gen_v has to agree on (see _row_gen_v_conflicts)
+    _prepare_gen_v_groups();
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager
