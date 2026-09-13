@@ -291,6 +291,42 @@ TEST_CASE("two local regulators AGREEING about their shared bus are fine", "[rec
     CHECK(std::abs(V(2)) == Approx(V_SET).epsilon(1e-8));
 }
 
+TEST_CASE("a DC powerflow refuses the contradiction too", "[reclassify]")
+{
+    // DC solves for no magnitude, which is why the check was AC-only at first. That was
+    // wrong: DC seeds |V| from the generators through the very same block, and echoes
+    // it straight back as the result's magnitude -- so two set-points on one bus are
+    // just as silently resolved there, and just as wrong.
+    LSGrid g = make_skeleton();
+    add_gens(g, {0, 2, 2}, {1.02, V_SET, V_SET + 0.02}, {2000., 2000., 500.});
+    g.add_gen_slackbus(0, 1.);
+    g.change_algorithm(AlgorithmType::DC_SparseLU);
+    g.tell_solver_need_reset();
+
+    REQUIRE_THROWS_WITH(g.dc_pf(flat(g), 30, 1e-10),
+                        Catch::Matchers::ContainsSubstring("conflicting voltage setpoints"));
+}
+
+TEST_CASE("a set-point moved BETWEEN two solves is still caught", "[reclassify]")
+{
+    // The check does not run on every solve -- only when the cache is rebuilt anyway,
+    // or when something moved a set-point or changed who regulates what. This is the
+    // case that gating could have swallowed: a grid that was valid, solved, and then
+    // had one generator of a busbar moved on its own. change_v_gen raises
+    // tell_v_changed, which is what brings the check back.
+    LSGrid g = make_skeleton();
+    add_gens(g, {0, 2, 2}, {1.02, V_SET, V_SET}, {2000., 2000., 500.});
+    g.add_gen_slackbus(0, 1.);
+    g.tell_solver_need_reset();
+
+    const CplxVect V = solve(g);                        // agreeing: fine
+    CHECK(std::abs(V(2)) == Approx(V_SET).epsilon(1e-8));
+
+    g.change_v_gen(2, V_SET + 0.02);                    // ... and now they do not
+    REQUIRE_THROWS_WITH(g.ac_pf(flat(g), 30, 1e-10),
+                        Catch::Matchers::ContainsSubstring("conflicting voltage setpoints"));
+}
+
 TEST_CASE("a remote regulator may target a locally pinned slack bus", "[reclassify]")
 {
     // the slack's own generator pins it, so before the reclassification the slack

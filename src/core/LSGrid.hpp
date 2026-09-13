@@ -2337,10 +2337,13 @@ class LS2G_API LSGrid final
          * SVC. The ordinary case -- several machines on one busbar, each regulating the
          * bus it stands on -- never reaches it, which is how it stayed silent.
          *
-         * Called from both entry points into the pre-processing, so it holds for this
-         * grid's own powerflows (`_pre_process_own_cache`) and for every batch algorithm
-         * (`_build_foreign_cache`) alike. AC only: a DC powerflow does not solve for a
-         * magnitude, so nothing there can contradict anything.
+         * Called from `_build_into_cache`, where the three `set_vm` calls it is about
+         * actually happen -- so it holds for this grid's own powerflows and for every
+         * batch algorithm alike, both of which build through there, and it is skipped
+         * by `check_solution`, which must take the caller's voltage as given. Not gated
+         * on the family: DC seeds |V| from the generators through that same block and
+         * echoes it back as the result's magnitude, so a contradiction is just as
+         * silent there. `check_grid()` runs it too, for a caller validating explicitly.
          */
         void _check_vm_targets_agree() const;
 

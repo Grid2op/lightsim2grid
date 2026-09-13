@@ -39,8 +39,8 @@ except ImportError:
 
 def _two_gens_on_one_bus():
     """case14 with a second generator added on bus 1, regulating it as well. Both
-    set-points then aim at the same bus, and only the last one applied reaches the
-    solve (VoltageSourceContainer::set_vm is last-writer-wins)."""
+    set-points then aim at the same bus, so a row must give them the same value -- a
+    bus has one magnitude -- and they share that bus' derivative between them."""
     import pandapower as pp
     net = pn.case14()
     bus = int(net.gen.bus.iloc[0])
