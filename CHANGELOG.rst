@@ -3,6 +3,16 @@ Change Log
 
 [TODO]
 --------
+- ``modify_gen_v`` can only vary a GENERATOR's voltage set-point: there is no
+  ``modify_svc_v`` and no ``modify_hvdc_v``. So a generator whose regulated bus is also
+  regulated by a voltage-mode SVC or an hvdc converter station cannot be moved by a batch
+  at all -- that element keeps asking the bus for its own, fixed magnitude, and a bus has
+  only one. Such a row is refused (``_row_gen_v_conflicts``) rather than silently solved
+  at whichever set-point was written last, so the limitation is visible rather than
+  quiet, but it IS a limitation: those generators are effectively fixed for the whole
+  sweep, and their ``gen_v`` gradient is zero. Lifting it means a per-row set-point for
+  the other two families as well, and deciding what a control GROUP's set-point means
+  when its members are given different ones.
 - Several inputs of the voltage-control plan can only be set at construction, so a caller
   cannot change them on a live grid at all. None of them is a missing-flag bug -- there is no
   setter to raise a flag from -- but each is a missing capability, and adding the setter means
@@ -156,6 +166,14 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [BREAKING] a grid where several elements regulate the SAME bus with DIFFERENT voltage
+  set-points is now refused instead of silently applying whichever was written last. A bus
+  has one magnitude; the two set-points cannot both hold. Previously only checked for a
+  remote regulator or an SVC, never for machines on a shared busbar.
+- [ADDED] ``gen_v`` is differentiable in ``BatchCPUPowerFlow``: the gradient of a loss with
+  respect to a generator's voltage set-point. Unlike an injection it fixes a bus magnitude
+  the solver never revisits, so it needs the ``dS/dVm`` column the Jacobian does not store
+  (``gen_v_indirect_grad`` / ``get_gen_v_target_bus``).
 - [IMPROVED] a multi-threaded batch keeps its per-thread algorithms between ``compute()``
   calls, so each worker analyzes and factorizes the Jacobian once rather than once per
   call. Governed by ``reuse_base_case``, same as the member algorithm. 310 -> 289 ms on

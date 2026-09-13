@@ -163,6 +163,45 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              "read out of solve_JT's result.")
         .def("get_q_row_of_bus", &T::get_q_row_of_bus,
              "Same as get_p_row_of_bus for the REACTIVE power mismatch equation.")
+        .def("get_gen_v_target_bus", &T::get_gen_v_target_bus,
+             "Per generator, the GRID bus whose voltage magnitude its ``gen_v`` set-point "
+             "actually fixes -- or -1 where it fixes none, which is where its gradient is "
+             "zero.\n\n"
+             "A generator fixes nothing when it is disconnected, not regulating, or "
+             "treated as off; when a later generator on the same bus overwrites its "
+             "set-point (``set_vm`` is last-writer-wins, so at most one generator per bus "
+             "can carry a gradient); or when the bus it regulates gets a magnitude unknown "
+             "from the solver anyway (a PQ bus -- ``gen_v`` only moves its starting point "
+             "there, so it earns no gradient).")
+        .def("get_gen_v_share", &T::get_gen_v_share,
+             "How much of its bus' derivative each generator's ``gen_v`` carries: 1 where "
+             "it is the only regulator of that bus, 1/n where n of them share it, 0 where "
+             "it carries none (the -1 entries of get_gen_v_target_bus).\n\n"
+             "Generators regulating one bus must be given the SAME set-point, so the loss "
+             "is a function only on the diagonal ``v_1 = ... = v_n``; off it there is no "
+             "value to compare against, because such a row is refused rather than solved "
+             "differently. The partial derivative of one set-point with the others held "
+             "fixed therefore does not exist, and these n numbers are not a gradient in "
+             "the usual sense -- what exists is the derivative along the tie, and it is "
+             "what they SUM to.\n\n"
+             "Split equally because that is what behaves: tie them (one parameter driving "
+             "the group, which is what the degree of freedom really is) and the chain rule "
+             "adds the shares back to the true derivative; treat them as separate "
+             "parameters and step on all of them, and they move together, so the iterate "
+             "stays where the function is defined. And no generator is privileged by the "
+             "order it happens to sit in.")
+        .def("gen_v_indirect_grad", &T::gen_v_indirect_grad, py::arg("lambda_"),
+             "The indirect half of the ``gen_v`` gradient, ``(n_scenarios, n_gen)``: "
+             "``-lambda^T dF/dv``, keyed like get_gen_v_target_bus() and zero wherever "
+             "that reads -1, or on a row that did not converge.\n\n"
+             "``lambda_`` is what solve_JT() returned for this batch, so the adjoint "
+             "system is solved once and both halves of the gradient read it. The other "
+             "half is direct -- the loss depends on `V_k = v_k . exp(j.theta_k)` "
+             "explicitly -- and is `Re(conj(V_k/|V_k|) . dL/dV_k)`, the very quantity a PQ "
+             "bus instead contributes to ``xbar``: a bus whose magnitude is an unknown "
+             "hands it to the adjoint, a bus whose magnitude is a set-point hands it to "
+             "that set-point's gradient.\n\n"
+             "AC Newton-Raphson only; raises on a DC algorithm.")
         .def("solve_JT", &T::solve_JT, py::arg("xbar"),
              "Solve the adjoint system `J_i^T . lambda_i = xbar_i` of every row, and return "
              "lambda. Requires `keep_jacobian` to have been True during compute().\n\n"
@@ -226,7 +265,22 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              "Unlike modify_gen_p/modify_sgen_p/modify_load_p/modify_load_q, this does NOT "
              "feed the injection (Sbus) -- it only re-seeds |V| at each voltage-regulating "
              "generator's regulated bus before that step's solve. See modify_gen_p() for "
-             "the shared row-count-lock behavior.")
+             "the shared row-count-lock behavior.\n\n"
+             "A bus has ONE voltage magnitude, so a row cannot ask one bus for two. Two "
+             "cases are therefore refused -- such a row is not solved, and reports like "
+             "any row skipped before the solver (``converged_mask`` False, zero voltages, "
+             "no gradient) rather than silently taking whichever set-point was written "
+             "last:\n\n"
+             " - several generators regulating the same bus given different targets: give "
+             "them the same one;\n"
+             " - a generator whose regulated bus is also regulated by a voltage-mode SVC "
+             "or an hvdc converter station, given anything other than THAT element's "
+             "target.\n\n"
+             "The second is a limitation, not just a rule: **only generator set-points "
+             "vary per row**. There is no modify_svc_v and no modify_hvdc_v, so a "
+             "generator sharing its regulated bus with either is effectively fixed for "
+             "the whole sweep and its gen_v gradient is zero. See the TODO at the top of "
+             "the changelog.")
         .def("compute", &T::compute, py::call_guard<py::gil_scoped_release>(),
              py::arg("Vinit"), py::arg("max_iter"), py::arg("tol"),
              "Run the batch: one powerflow per simulation, using whatever was set by "

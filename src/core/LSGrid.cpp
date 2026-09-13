@@ -11,6 +11,7 @@
 #include <cstdint>    // for std::uint64_t
 
 #include "LSGrid.hpp"
+
 #include "AlgorithmSelector.hpp"  // to avoid circular references
 #include "BinaryArchive.hpp"
 
@@ -505,6 +506,13 @@ void LSGrid::check_grid() const
             }
         }
     }
+
+    // ... and that no two elements ask one bus for two voltage magnitudes. The solve
+    // refuses this too (see _check_vm_targets_agree, called from both entry points into
+    // the pre-processing), but a caller validating a grid explicitly -- or loading one
+    // from a file, which is set_state's reason for calling this -- should hear it here
+    // rather than at the next powerflow.
+    _check_vm_targets_agree();
 }
 
 void LSGrid::save_binary(const std::string & path, bool atomic) const {
@@ -1331,6 +1339,21 @@ CplxVect LSGrid::_build_into_cache(
         V(bus_solver_id) = Vinit(bus_me_id.cast_int());
     }
     if(init_pv_vm_targets){
+        // The three set_vm calls below are last-writer-wins, so this is where two
+        // elements asking one bus for two magnitudes would be silently resolved -- and
+        // so this is where that is refused. Not once per solve: only when the cache is
+        // being rebuilt anyway, or when something actually moved a set-point
+        // (change_v_gen -> tell_v_changed) or changed who regulates what
+        // (tell_pv_changed). An injection-only step, which is what a batch and a
+        // grid2op episode are made of, pays nothing.
+        //
+        // NOT gated on the family: DC seeds |V| from the generators through this very
+        // block too, and echoes it back as the result's magnitude, so a contradiction
+        // is just as silent there.
+        if(force_full_rebuild || solver_control.has_v_changed() || solver_control.has_pv_changed()){
+            _check_vm_targets_agree();
+        }
+
         // NR-initialization heuristic only: snaps regulated buses with no droop/slope
         // to their own target voltage magnitude. Skipped by check_solution, which must
         // evaluate the caller-supplied voltage as given (see the `init_pv_vm_targets`
@@ -1458,6 +1481,42 @@ CplxVect LSGrid::_pre_process_own_cache(
         else _dc_algo.tell_solver_control(solver_control);
     }
     return V;
+}
+
+
+void LSGrid::_check_vm_targets_agree() const
+{
+    // every element that would pin a magnitude, from every container that can
+    std::vector<VmTarget> targets;
+    generators_.collect_vm_targets(targets);
+    svcs_.collect_vm_targets(targets);
+    hvdc_lines_.collect_vm_targets(targets);
+    if(targets.size() < 2) return;   // nothing can disagree with nothing
+
+    // first writer per bus, in a vector rather than a map: this runs on every solve,
+    // and the buses are already dense small integers
+    const int nb_bus_ls = static_cast<int>(substations_.nb_bus());
+    std::vector<int> first_of_bus(static_cast<size_t>(nb_bus_ls), -1);
+    for(size_t i = 0; i < targets.size(); ++i){
+        const int bus = targets[i].bus_id;
+        if(bus < 0 || bus >= nb_bus_ls) continue;   // check_grid's business, not this one
+        const int first = first_of_bus[static_cast<size_t>(bus)];
+        if(first == -1){
+            first_of_bus[static_cast<size_t>(bus)] = static_cast<int>(i);
+            continue;
+        }
+        const VmTarget & a = targets[static_cast<size_t>(first)];
+        const VmTarget & b = targets[i];
+        if(std::abs(a.target_vm - b.target_vm) <= BaseConstants::_tol_equal_float) continue;
+        std::ostringstream exc_;
+        exc_ << "LSGrid: " << a.kind << " " << a.el_id << " and " << b.kind << " " << b.el_id
+             << " regulate the same bus (" << bus << ") with conflicting voltage setpoints ("
+             << a.target_vm << " vs " << b.target_vm << " pu). A bus has one magnitude, so "
+                "these two set-points cannot both hold; the powerflow would silently apply "
+                "whichever element it happened to write last. Give them the same target, or "
+                "turn one of the regulators off.";
+        throw std::runtime_error(exc_.str());
+    }
 }
 
 CplxVect LSGrid::build_solver_input(

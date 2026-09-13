@@ -37,6 +37,19 @@ except ImportError:
     PP_AVAILABLE = False
 
 
+def _two_gens_on_one_bus():
+    """case14 with a second generator added on bus 1, regulating it as well. Both
+    set-points then aim at the same bus, so a row must give them the same value -- a
+    bus has one magnitude -- and they share that bus' derivative between them."""
+    import pandapower as pp
+    net = pn.case14()
+    bus = int(net.gen.bus.iloc[0])
+    pp.create_gen(net, bus=bus, p_mw=float(net.gen.p_mw.iloc[0]) * 0.5,
+                  vm_pu=float(net.gen.vm_pu.iloc[0]), min_q_mvar=-500., max_q_mvar=500.,
+                  controllable=True)
+    return net
+
+
 @unittest.skipUnless(TORCH_AVAILABLE and PP_AVAILABLE, "needs pytorch and pandapower")
 class TestBatchCPUPowerFlow(unittest.TestCase):
     N_SCEN = 4
@@ -245,14 +258,177 @@ class TestBatchCPUPowerFlow(unittest.TestCase):
         np.testing.assert_allclose(after.detach().numpy(), fresh.detach().numpy(),
                                    rtol=1e-10, atol=1e-10)
 
-    def test_gen_v_is_usable_but_not_yet_differentiable(self):
+    def test_gen_v_is_usable(self):
         pf = self._make()
         gen_v = np.full((self.N_SCEN, self.pf.n_gen), 1.02)
         V = pf(load_p=torch.tensor(self.load_p), gen_v=torch.tensor(gen_v))
         self.assertTrue(pf.converged().all())
-        with self.assertRaises(NotImplementedError):
-            pf(load_p=torch.tensor(self.load_p),
-               gen_v=torch.tensor(gen_v, requires_grad=True))
+        np.testing.assert_allclose(np.abs(V.detach().numpy()[:, self._regulated_buses(pf)]),
+                                   1.02, rtol=1e-8)
+
+    @staticmethod
+    def _regulating_groups(pf):
+        """generator ids grouped by the bus they regulate, for the buses with more than
+        one regulator. Asked of the grid rather than assumed: init_from_pandapower does
+        not preserve pandapower's generator order."""
+        by_bus = {}
+        for g in pf._grid.get_generators():
+            if not (g.connected and g.voltage_regulator_on):
+                continue
+            by_bus.setdefault(g.regulated_bus_id, []).append(g.id)
+        return [ids for ids in by_bus.values() if len(ids) > 1]
+
+    @staticmethod
+    def _regulated_buses(pf):
+        """the buses a gen_v set-point actually pins -- the ones whose magnitude it is
+        fair to read back (see get_gen_v_target_bus)"""
+        target = np.asarray(pf._sweep.get_gen_v_target_bus())
+        return np.unique(target[target >= 0])
+
+    # ------------------------------------------------------- gen_v is differentiable
+    def _gen_v_inputs(self):
+        """a set-point per row and per generator, all distinct, and away from the
+        grid's own so nothing passes by accident"""
+        rng = np.random.default_rng(7)
+        return 1.02 + 0.02 * rng.random((self.N_SCEN, self.pf.n_gen))
+
+    def test_gradient_of_gen_v(self):
+        gen_v = self._gen_v_inputs()
+        inputs = dict(load_p=self.load_p, gen_v=gen_v)
+        pf = self._make()
+        tensors = {k: torch.tensor(v, requires_grad=True) for k, v in inputs.items()}
+        V = pf(**tensors)
+        self.assertTrue(pf.converged().all())
+        self._loss(V).backward()
+
+        grad = tensors["gen_v"].grad
+        self.assertIsNotNone(grad)
+        target = np.asarray(pf._sweep.get_gen_v_target_bus())
+        live = np.flatnonzero(target >= 0)
+        self.assertGreater(live.size, 0, "case14 should have at least one live set-point")
+
+        # every entry, live or dead, against a finite difference of the whole sweep
+        for g in range(self.pf.n_gen):
+            for row in (0, self.N_SCEN - 1):
+                fd = self._fd("gen_v", (row, g), delta=1e-6, **inputs)
+                self.assertAlmostEqual(
+                    grad[row, g].item(), fd, places=5,
+                    msg=f"gen_v[{row},{g}]: adjoint {grad[row, g].item()} vs fd {fd}")
+
+    def test_generators_sharing_a_bus_share_the_one_derivative(self):
+        """Their set-points are TIED -- a bus has one magnitude -- so the loss is a
+        function only on the diagonal v_1 = ... = v_n, and off it there is nothing to
+        compare against: such a row is refused, not solved differently. The partial
+        derivative of one of them with the others held fixed therefore does not exist,
+        and what autograd returns for them is not a gradient in the usual sense. What
+        exists is the derivative along the tie, and each carries 1/n of it, so they sum
+        to it -- and no generator is privileged by the order it sits in.
+
+        case14 has one generator per bus and would never exercise this, so the grid here
+        deliberately doubles one up -- the ordinary case on a real grid, where a busbar
+        carries several machines."""
+        def make():
+            grid = init_from_pandapower(_two_gens_on_one_bus())
+            return self._cls.init_from_grid(grid, tol=self.TOL)
+
+        pf = make()
+        n_scen, n_gen = 3, pf.n_gen
+        rng = np.random.default_rng(3)
+        load_p = np.asarray(pf._grid.get_load_target_p())[None, :] * (
+            1. + 0.1 * rng.standard_normal((n_scen, pf.n_load)))
+        gen_v = 1.01 + 0.02 * rng.random((n_scen, n_gen))
+        groups = self._regulating_groups(pf)
+        self.assertEqual(len(groups), 1, "the fixture should double up exactly one bus")
+        group = groups[0]
+        gen_v[:, group] = gen_v[:, group[0]][:, None]   # one bus, one magnitude
+        inputs = dict(load_p=load_p, gen_v=gen_v)
+
+        tensors = {k: torch.tensor(v, requires_grad=True) for k, v in inputs.items()}
+        self._loss(pf(**tensors)).backward()
+        self.assertTrue(pf.converged().all())
+
+        share = np.asarray(pf._sweep.get_gen_v_share())
+        target = np.asarray(pf._sweep.get_gen_v_target_bus())
+        # every member of the group reports the bus, and an equal share of it
+        for g in group:
+            self.assertGreaterEqual(target[g], 0)
+            self.assertAlmostEqual(share[g], 1. / len(group))
+
+        def fd(idxs, delta=1e-6):
+            """move every named entry together -- the only perturbation that stays where
+            the function is defined"""
+            out = []
+            for sign in (+1., -1.):
+                pert = {k: v.copy() for k, v in inputs.items()}
+                for g in idxs:
+                    pert["gen_v"][0, g] += sign * delta
+                out.append(float(self._loss(make()(**{k: torch.tensor(v)
+                                                      for k, v in pert.items()}))))
+            return (out[0] - out[1]) / (2. * delta)
+
+        # the tie: the shares sum to the derivative along it ...
+        total = fd(group)
+        self.assertAlmostEqual(sum(tensors["gen_v"].grad[0, g].item() for g in group),
+                               total, places=5)
+        # ... and each member holds the same piece of it
+        for g in group:
+            self.assertAlmostEqual(tensors["gen_v"].grad[0, g].item(),
+                                   total / len(group), places=5)
+
+        # a generator alone on its bus keeps an ordinary, individually measurable one
+        alone = [g for g in np.flatnonzero(target >= 0) if g not in group]
+        self.assertGreater(len(alone), 0)
+        for g in alone:
+            self.assertAlmostEqual(share[g], 1.)
+            self.assertAlmostEqual(tensors["gen_v"].grad[0, g].item(), fd([int(g)]),
+                                   places=5)
+
+    def test_a_row_asking_one_bus_for_two_magnitudes_does_not_converge(self):
+        """A bus has one voltage magnitude, so two generators regulating it cannot be
+        given two different set-points. Such a row is not solved -- reported like any
+        row skipped before the solver -- rather than silently taking whichever
+        generator set_vm happens to write last."""
+        grid = init_from_pandapower(_two_gens_on_one_bus())
+        pf = self._cls.init_from_grid(grid, tol=self.TOL)
+        n_scen = 3
+        load_p = np.asarray(pf._grid.get_load_target_p())[None, :] * np.ones((n_scen, 1))
+        gen_v = np.full((n_scen, pf.n_gen), 1.03)
+        group = self._regulating_groups(pf)[0]
+        gen_v[1, group[-1]] = 1.05   # row 1 alone contradicts itself
+
+        V = pf(load_p=torch.tensor(load_p), gen_v=torch.tensor(gen_v))
+        conv = pf.converged()
+        self.assertFalse(conv[1])
+        self.assertTrue(conv[0] and conv[2])
+        self.assertTrue(torch.isnan(V[1]).all())   # and carries no result at all
+
+    def test_gradcheck_gen_v(self):
+        gen_v = torch.tensor(self._gen_v_inputs()[:2], requires_grad=True)
+        load_p = torch.tensor(self.load_p[:2])
+        pf = self._make()
+        self.assertTrue(torch.autograd.gradcheck(
+            lambda gv: self._loss(pf(load_p=load_p, gen_v=gv)), (gen_v,),
+            eps=1e-6, atol=1e-5))
+
+    def test_gen_v_gradient_with_a_line_contingency(self):
+        """the indirect half is taken on the ROW's admittance matrix, so a row that
+        drops a line must get that row's gradient, not the base case's"""
+        gen_v = self._gen_v_inputs()
+        line_status = np.ones((self.N_SCEN, self.pf.n_line), dtype=bool)
+        line_status[1, 3] = False
+        inputs = dict(load_p=self.load_p, gen_v=gen_v, line_status=line_status)
+        pf = self._make()
+        tensors = {"load_p": torch.tensor(self.load_p),
+                   "gen_v": torch.tensor(gen_v, requires_grad=True),
+                   "line_status": torch.as_tensor(line_status)}
+        self._loss(pf(**tensors)).backward()
+
+        target = np.asarray(pf._sweep.get_gen_v_target_bus())
+        live = np.flatnonzero(target >= 0)
+        for g in live[:3]:
+            fd = self._fd("gen_v", (1, int(g)), delta=1e-6, **inputs)
+            self.assertAlmostEqual(tensors["gen_v"].grad[1, g].item(), fd, places=5,
+                                   msg=f"row 1 (line 3 out), gen {g}")
 
 
 class TestTorchStaysOptional(unittest.TestCase):

@@ -11,11 +11,28 @@
 
 #include <cmath>
 #include <sstream>
+#include <map>
+#include <vector>
 
 #include "Utils.hpp"
 #include "OneSideContainer_PQ.hpp"
 
 namespace ls2g {
+
+/**
+ * One element's answer to "what magnitude would your set_vm() pin, and where": the
+ * GRID bus, the target in pu, and who asked. Collected across every voltage-source
+ * container so that LSGrid can check the answers agree -- see
+ * VoltageSourceContainer::collect_vm_targets and LSGrid::_check_vm_targets_agree.
+ */
+struct VmTarget
+{
+    int bus_id;            ///< the regulated bus, in GRID numbering
+    real_type target_vm;   ///< pu
+    int el_id;             ///< the element's id within its own container
+    const char * kind;     ///< its container's _element_name(), for the error message
+};
+
 
 /**
  * A one-sided element that can regulate a voltage: a generator, an HVDC
@@ -197,6 +214,97 @@ class VoltageSourceContainer : public OneSideContainer_PQ
         }
 
         /**
+        Append what every element of this container would pin, and where (see VmTarget).
+        Reported in GRID bus numbering: the question is about the grid's own consistency,
+        and two elements asking one bus for two magnitudes contradict each other whether
+        or not that bus is in any solve.
+        **/
+        void collect_vm_targets(std::vector<VmTarget> & out) const
+        {
+            _for_each_vm_writer(nullptr, [&](int el_id, int bus){
+                VmTarget t;
+                t.bus_id = bus;
+                t.target_vm = target_vm_pu_(el_id);
+                t.el_id = el_id;
+                t.kind = Leaf::_element_name();
+                out.push_back(t);
+            });
+        }
+
+        /**
+        Which solver bus each element's set_vm() fixes the magnitude of -- keyed by
+        element id, `_deactivated_bus_id` where it fixes none.
+
+        Two elements can regulate one bus, and _set_vm_impl is "last writer wins" -- so
+        of a group regulating the same bus only the LAST reports it, and the others
+        report nothing. That is not a detail: for a caller differentiating through a
+        set-point (see BaseBatchSweep::get_gen_v_target_bus) it is the difference between
+        one gradient and several wrong ones, since the earlier elements' set-points do
+        not reach the solve at all.
+        **/
+        void vm_target_buses(const SolverBusIdVect & id_grid_to_solver, std::vector<int> & out) const
+        {
+            out.assign(static_cast<size_t>(nb()), _deactivated_bus_id);
+            std::map<int, int> last_writer;   // solver bus -> the element that writes it last
+            _for_each_vm_writer(&id_grid_to_solver, [&](int el_id, int bus){
+                last_writer[bus] = el_id;
+            });
+            for(const auto & bus_and_el : last_writer){
+                out[static_cast<size_t>(bus_and_el.second)] = bus_and_el.first;
+            }
+        }
+
+        /**
+        Every element set_vm() would write, grouped by the SOLVER bus it writes --
+        including the buses with a single writer, unlike vm_target_groups below.
+        Appends, so several containers can be asked in turn and answer into one map,
+        which is what tells a generator's set-point apart from a co-located SVC's.
+        **/
+        void vm_writers_by_bus(const SolverBusIdVect & id_grid_to_solver,
+                               std::map<int, std::vector<int> > & out) const
+        {
+            _for_each_vm_writer(&id_grid_to_solver, [&](int el_id, int bus){
+                out[bus].push_back(el_id);
+            });
+        }
+
+        /**
+        The set-point each element would write, by SOLVER bus. Same walk, the value
+        rather than the writer -- for a caller that has to compare against it.
+        **/
+        void vm_targets_by_bus(const SolverBusIdVect & id_grid_to_solver,
+                               std::map<int, real_type> & out) const
+        {
+            _for_each_vm_writer(&id_grid_to_solver, [&](int el_id, int bus){
+                out[bus] = target_vm_pu_(el_id);
+            });
+        }
+
+        /**
+        The groups of elements that set_vm() would have write the SAME solver bus: one
+        entry per regulated bus with more than one writer, holding those writers' ids.
+        Empty on the common grid, where each regulated bus has exactly one.
+
+        This is what makes last-writer-wins checkable. A bus has ONE voltage magnitude,
+        so two elements regulating it with two different targets state two constraints
+        that cannot both hold. A caller with its own per-row set-points to validate (see
+        BaseBatchSweep::modify_gen_v) finds the groups once and then only compares
+        numbers; for the grid's OWN set-points that job is LSGrid::_check_vm_targets_agree.
+        **/
+        void vm_target_groups(const SolverBusIdVect & id_grid_to_solver,
+                              std::vector<std::vector<int> > & out) const
+        {
+            out.clear();
+            std::map<int, std::vector<int> > writers;   // solver bus -> its writers
+            _for_each_vm_writer(&id_grid_to_solver, [&](int el_id, int bus){
+                writers[bus].push_back(el_id);
+            });
+            for(const auto & bus_and_els : writers){
+                if(bus_and_els.second.size() > 1) out.push_back(bus_and_els.second);
+            }
+        }
+
+        /**
          * Publish the reactive output of the elements whose value is known without
          * looking at the powerflow (disconnected, non-regulating, treated as off).
          * A voltage-regulating one is left untouched: its value is either written back
@@ -234,6 +342,43 @@ class VoltageSourceContainer : public OneSideContainer_PQ
 
     protected:
         const Leaf & leaf() const { return static_cast<const Leaf &>(*this); }
+
+        /**
+        THE walk: every element set_vm() would write, in the order it writes them, with
+        the bus it would write. `id_grid_to_solver` null answers in GRID numbering and
+        keeps every regulated bus; non-null answers in SOLVER numbering and drops the
+        buses no solve contains.
+
+        The three public questions above and _set_vm_impl below must agree on which
+        elements set_vm touches -- an answer about a set-point that is not applied, or a
+        set-point applied with nobody's answer covering it, is a wrong gradient or a
+        missed contradiction. So the four skips exist once, here, instead of four times.
+        **/
+        template<class OnWriter>
+        void _for_each_vm_writer(const SolverBusIdVect * id_grid_to_solver, OnWriter on_writer) const
+        {
+            const int nb_el = nb();
+            for(int el_id = 0; el_id < nb_el; ++el_id){
+                //  i don't do anything if the element is disconnected
+                if(!status_[el_id]) continue;
+                if (!voltage_regulator_on_[el_id]) continue;  // purposedly not pv
+                if (leaf()._treated_as_off(el_id)) continue;  // in this case turned off elements are not pv
+                if (leaf()._set_vm_skips(el_id)) continue;
+
+                // a remote-regulating element sets the magnitude of the REGULATED bus
+                const int target_grid_bus = regulated_bus_id_(el_id);
+                // where _set_vm_impl would throw, this reports nothing: it is asked what
+                // a set-point reaches, not whether the grid is consistent
+                if(target_grid_bus == _deactivated_bus_id) continue;
+                if(id_grid_to_solver == nullptr){
+                    on_writer(el_id, target_grid_bus);
+                    continue;
+                }
+                const int bus_solver = (*id_grid_to_solver)[target_grid_bus].cast_int();
+                if(bus_solver == _deactivated_bus_id) continue;
+                on_writer(el_id, bus_solver);
+            }
+        }
 
         // shared body of both set_vm() overloads -- `target_vm` is either the member
         // target_vm_pu_ or a caller-supplied per-element vector

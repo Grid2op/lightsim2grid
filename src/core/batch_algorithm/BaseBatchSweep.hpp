@@ -435,6 +435,19 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // that step's solve (see _apply_step_gen_v / GeneratorContainer::set_vm).
         // Left unset (0 rows), every row keeps using the grid's own target_vm_pu,
         // exactly as before this setter existed.
+        //
+        // A bus has ONE magnitude, so a row cannot ask one bus for two. That constrains
+        // this setter in two ways, and a row that breaks either is not solved -- it
+        // reports as a row skipped before the solver (see _row_gen_v_conflicts) rather
+        // than silently taking whichever element set_vm happens to visit last:
+        //
+        //  - several generators regulating the same bus must be given the same target;
+        //  - a generator sharing its regulated bus with an SVC or an hvdc converter
+        //    station must be given THAT element's target, because this setter cannot
+        //    move it. ONLY GENERATOR set-points vary per row: the batch has no
+        //    modify_svc_v / modify_hvdc_v, so such a generator's set-point is in
+        //    practice fixed for the whole sweep. See the TODO at the top of the
+        //    changelog.
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         void modify_gen_v(const Eigen::Ref<const typename S::RealMat> & gen_v) {
             _check_cols(gen_v, static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb()), "modify_gen_v");
@@ -897,6 +910,101 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return _adjoint_.solve_JT(xbar, _adjoint_identity_rows(), _nb_thread, _adjoint_row_ok_);
         }
 
+        // ---- the generator voltage setpoint (modify_gen_v) ------------------------
+        // A bus whose magnitude the Newton-Raphson does NOT solve for -- a PV bus, the
+        // slack -- holds it at whatever the starting voltage had, and modify_gen_v is
+        // what puts it there (GeneratorContainer::set_vm). So for those buses gen_v is
+        // a PARAMETER of the system, and a loss differentiates through it in two parts:
+        //
+        //   direct    L depends on V_k = v_k . e^{j.theta_k} explicitly, at fixed
+        //             unknowns: Re(conj(V_k/|V_k|) . dL/dV_k). Note this is the very
+        //             same quantity a PQ bus contributes to xbar -- a bus whose |V| is
+        //             an unknown hands it to the adjoint, a bus whose |V| is a
+        //             parameter hands it to that parameter's gradient.
+        //   indirect  v_k moves the solution: -lambda^T dF/dv_k, which is
+        //             gen_v_indirect_grad() below. dF/dv_k is the dS/d|V| column the
+        //             Jacobian does not store for such a bus, precisely because its
+        //             magnitude is not an unknown.
+        //
+        // The caller does the direct half (it is two lines of the same arithmetic that
+        // builds xbar) and asks for the indirect one here, where Ybus is.
+
+        // The GRID bus whose magnitude each generator's gen_v set-point helps fix, -1
+        // where it fixes none -- which is the case for a generator that is disconnected,
+        // not regulating or treated as off; for one regulating a bus the solve gives a
+        // magnitude unknown to anyway (a PQ bus: gen_v only moves its starting point
+        // there); and for one whose bus is pinned by an SVC or an hvdc converter station,
+        // whose set-point no batch can move, so the generator's is not free either.
+        IntVect get_gen_v_target_bus() const {
+            std::map<int, std::vector<int> > gens_of_bus;
+            _grid_model.get_generators().vm_writers_by_bus(active_layout().id_me_to_solver, gens_of_bus);
+            std::map<int, real_type> pinned;
+            _grid_model.get_svcs().vm_targets_by_bus(active_layout().id_me_to_solver, pinned);
+            _grid_model.get_dclines().vm_targets_by_bus(active_layout().id_me_to_solver, pinned);
+
+            const IntVect vm_col = _algo.get_vm_to_J_col_python();
+            const auto solver_to_me = active_layout().id_solver_to_me.as_eigen();
+            IntVect res = IntVect::Constant(
+                static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb()), -1);
+            for(const auto & bus_and_gens : gens_of_bus){
+                const int b = bus_and_gens.first;
+                if(b < 0 || b >= solver_to_me.size()) continue;
+                if(b < vm_col.size() && vm_col[b] >= 0) continue;      // |V| is an unknown there
+                if(pinned.find(b) != pinned.end()) continue;           // held by something else
+                for(size_t k = 0; k < bus_and_gens.second.size(); ++k){
+                    res[static_cast<Eigen::Index>(bus_and_gens.second[k])] = solver_to_me[b];
+                }
+            }
+            return res;
+        }
+
+        // How much of its bus' derivative each generator carries: 1 where it is the only
+        // regulator of that bus, 1/n where n of them share it, 0 where it carries none
+        // (the -1 entries of get_gen_v_target_bus).
+        //
+        // WHY A SHARE, AND NOT A DERIVATIVE EACH. Generators regulating one bus must be
+        // given the same set-point -- a bus has one magnitude -- so the loss is a
+        // function only ON the diagonal v_1 = ... = v_n. Off it there is no value to
+        // compare against: such a row is refused, not solved differently. So the partial
+        // derivative of one set-point with the others held fixed does not exist, and
+        // what these n numbers are is NOT a gradient in the usual sense. What does exist
+        // is the derivative along the tie, and that is what they sum to.
+        //
+        // Splitting it equally is the choice that behaves, for the two things a caller
+        // actually does. Tie them (one parameter driving the group, which is how the
+        // degree of freedom really looks) and the chain rule adds the shares back to the
+        // true derivative. Treat them as separate parameters and step on all of them,
+        // and they move together, so the iterate stays where the function is defined --
+        // which giving the whole derivative to one of them does not do: the next row
+        // would be refused. And nothing here depends on the order the generators happen
+        // to sit in their container, which is what "whichever set_vm writes last" would
+        // have made the answer depend on.
+        RealVect get_gen_v_share() const {
+            const IntVect target = get_gen_v_target_bus();
+            std::map<int, int> count;
+            for(Eigen::Index g = 0; g < target.size(); ++g){
+                if(target[g] >= 0) count[target[g]] += 1;
+            }
+            RealVect res = RealVect::Zero(target.size());
+            for(Eigen::Index g = 0; g < target.size(); ++g){
+                if(target[g] < 0) continue;
+                res[g] = 1. / static_cast<real_type>(count[target[g]]);
+            }
+            return res;
+        }
+
+        // The indirect half of the gen_v gradient: `-lambda^T dF/dv` per row and per
+        // generator, keyed like get_gen_v_target_bus() (zero wherever that says -1, and
+        // on a row that did not converge) and already carrying each generator's share of
+        // its bus (see get_gen_v_share -- the caller must weight the DIRECT half by the
+        // same thing). `lambda` is what solve_JT returned, so the
+        // adjoint system is solved once and both halves of the gradient read it.
+        //
+        // dF/dv_k is the dS/d|V_k| column, taken on THIS row's admittance matrix -- the
+        // base one with the row's own contingency edits applied, which is why this
+        // lives here and not in the caller.
+        BatchAdjoint::RealMatRM gen_v_indirect_grad(const Eigen::Ref<const BatchAdjoint::RealMatRM> & lambda);
+
         // Per row: 1 where solve_JT() actually solved that row's adjoint system.
         const std::vector<char> & adjoint_row_ok() const { return _adjoint_row_ok_; }
 
@@ -1322,6 +1430,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _readd_step_coeffs(Eigen::SparseMatrix<cplx_type> &, size_t, bool, AlgorithmSelector &) {}
 
+        // ----- per-row Ybus edit, matrix only: 2-way ------------------------------
+        // The pair above goes through YbusPolicy, which also tells the ALGORITHM its
+        // matrix changed. These touch nothing but the coefficients, for a reader that
+        // wants row i's matrix without disturbing a solver (gen_v_indirect_grad).
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void _patch_ybus_values(Eigen::SparseMatrix<cplx_type> & Ybus, size_t i, bool undo) const {
+            if(i >= ybus_policy_.li_coeffs.size()) return;
+            for(const auto & c : ybus_policy_.li_coeffs[i]){
+                if(undo) Ybus.coeffRef(c.row_id, c.col_id) += c.value;
+                else     Ybus.coeffRef(c.row_id, c.col_id) -= c.value;
+            }
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        void _patch_ybus_values(Eigen::SparseMatrix<cplx_type> &, size_t, bool) const {}
+
         // ----- per-step Sbus: 2-way (row of sbus_policy_ vs. the fixed member) ---
         // Row i's injection: built into `scratch` (one buffer per range: no row
         // allocates, no two threads share it) where it varies, the fixed vector
@@ -1353,6 +1476,73 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                                               sbus_policy_.gen_v.cols());
             _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver, target_vm_pu_row);
         }
+
+        // ----- modify_gen_v: set-points that contradict each other ----------------
+        // A bus has ONE voltage magnitude. Two generators regulating it with two
+        // different targets state two constraints it cannot both satisfy, and set_vm
+        // resolves that by applying whichever generator it visits last -- an answer to
+        // a question nobody asked, and silent. A row whose set-points do that has an
+        // input that cannot be met, so it is not solved: it is reported exactly like a
+        // row skipped before the solver ever ran (converged_mask 0, a GRID /
+        // NOT_SIMULATED violation, zero voltages, and so no gradient).
+        //
+        // Only the groups matter -- the buses with more than one regulating generator,
+        // which most grids have few of and many have none -- and which generator writes
+        // which bus does not depend on the row. So the groups are found once per
+        // compute() and each row then only compares numbers.
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void _prepare_gen_v_constraints() {
+            _gen_v_constraints_.clear();
+            if(sbus_policy_.gen_v.rows() == 0) return;   // never set: the grid's own targets
+            const SolverBusIdVect & me_to_solver = active_layout().id_me_to_solver;
+
+            // which generators write which bus ...
+            std::map<int, std::vector<int> > gens_of_bus;
+            _grid_model.get_generators().vm_writers_by_bus(me_to_solver, gens_of_bus);
+            // ... and what the elements whose set-point modify_gen_v CANNOT move ask of
+            // those same buses. A converter station and a voltage-mode SVC carry their
+            // own target and the batch has no per-row setter for either, so a row that
+            // moves a generator sharing their bus contradicts a value it cannot change.
+            std::map<int, real_type> fixed_of_bus;
+            _grid_model.get_svcs().vm_targets_by_bus(me_to_solver, fixed_of_bus);
+            _grid_model.get_dclines().vm_targets_by_bus(me_to_solver, fixed_of_bus);
+
+            for(const auto & bus_and_gens : gens_of_bus){
+                const std::map<int, real_type>::const_iterator fixed = fixed_of_bus.find(bus_and_gens.first);
+                const bool has_fixed = (fixed != fixed_of_bus.end());
+                // a bus one generator writes, with nothing else on it, can be given
+                // whatever this row likes: there is nothing to contradict
+                if(bus_and_gens.second.size() < 2 && !has_fixed) continue;
+                GenVConstraint c;
+                c.gens = bus_and_gens.second;
+                c.has_fixed = has_fixed;
+                c.fixed_vm = has_fixed ? fixed->second : 0.;
+                _gen_v_constraints_.push_back(c);
+            }
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        void _prepare_gen_v_constraints() {}
+
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _row_gen_v_conflicts(size_t i) const {
+            if(_gen_v_constraints_.empty()) return false;
+            const Eigen::Index row = static_cast<Eigen::Index>(i);
+            if(row >= sbus_policy_.gen_v.rows()) return false;
+            for(size_t c = 0; c < _gen_v_constraints_.size(); ++c){
+                const GenVConstraint & con = _gen_v_constraints_[c];
+                // whatever else is on the bus pins the value; otherwise the generators
+                // only have to agree among themselves
+                const real_type ref = con.has_fixed ? con.fixed_vm
+                                                    : sbus_policy_.gen_v(row, con.gens[0]);
+                for(size_t k = 0; k < con.gens.size(); ++k){
+                    if(std::abs(sbus_policy_.gen_v(row, con.gens[k]) - ref) >
+                       BaseConstants::_tol_equal_float) return true;
+                }
+            }
+            return false;
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _row_gen_v_conflicts(size_t) const { return false; }
 
         // ----- sbus_policy_.gen_v, generically (2-way, same split as above): feeds
         // BaseBatchSolverSynch's generic (SbusPolicy-agnostic) DC fast-path magnitude
@@ -1761,7 +1951,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     bool do_store = false;
                     LimitViolationType div_reason = LimitViolationType::NOT_SIMULATED;
 
-                    if(!_skip_mask[cont_id]){
+                    // same as _run_one_step: a row whose gen_v set-points contradict
+                    // each other asks for a magnitude no solution can hold, so it is
+                    // skipped before the solver rather than silently resolved by
+                    // whichever generator set_vm visits last (_row_gen_v_conflicts)
+                    if(!_skip_mask[cont_id] && !_row_gen_v_conflicts(cont_id)){
                         const std::vector<int> & masked = _li_masked[cont_id];
                         auto t1 = CustTimer();
                         YbusPolicy::Contingency::remove_from_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);
@@ -2013,6 +2207,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // the same one back, so nothing is shared between threads.
         std::vector<std::unique_ptr<AlgorithmSelector> > _thread_algos_;
         bool _thread_algos_were_reused_ = false;
+
+        // What a row's gen_v has to agree with, at the buses where it is not free:
+        // `gens` are the generators writing one bus, and `fixed_vm` the value something
+        // ELSE on that bus asks for -- an SVC or an hvdc converter station, whose
+        // set-point modify_gen_v cannot move. Rebuilt by _prepare_gen_v_constraints at
+        // each compute(), and empty unless modify_gen_v was used (the grid's own
+        // target_vm_pu_ is LSGrid's to validate, not this class's). One entry only for a
+        // bus that can actually be contradicted. See _row_gen_v_conflicts.
+        struct GenVConstraint
+        {
+            std::vector<int> gens;
+            bool has_fixed;
+            real_type fixed_vm;
+        };
+        std::vector<GenVConstraint> _gen_v_constraints_;
 
         // reverse-mode differentiation (see the public block above and BatchAdjoint)
         bool _keep_jacobian_ = false;
