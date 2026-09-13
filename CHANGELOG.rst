@@ -3,6 +3,16 @@ Change Log
 
 [TODO]
 --------
+- ``modify_gen_v`` can only vary a GENERATOR's voltage set-point: there is no
+  ``modify_svc_v`` and no ``modify_hvdc_v``. So a generator whose regulated bus is also
+  regulated by a voltage-mode SVC or an hvdc converter station cannot be moved by a batch
+  at all -- that element keeps asking the bus for its own, fixed magnitude, and a bus has
+  only one. Such a row is refused (``_row_gen_v_conflicts``) rather than silently solved
+  at whichever set-point was written last, so the limitation is visible rather than
+  quiet, but it IS a limitation: those generators are effectively fixed for the whole
+  sweep, and their ``gen_v`` gradient is zero. Lifting it means a per-row set-point for
+  the other two families as well, and deciding what a control GROUP's set-point means
+  when its members are given different ones.
 - Several inputs of the voltage-control plan can only be set at construction, so a caller
   cannot change them on a live grid at all. None of them is a missing-flag bug -- there is no
   setter to raise a flag from -- but each is a missing capability, and adding the setter means

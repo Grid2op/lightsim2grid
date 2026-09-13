@@ -315,19 +315,18 @@ class TestBatchCPUPowerFlow(unittest.TestCase):
                     grad[row, g].item(), fd, places=5,
                     msg=f"gen_v[{row},{g}]: adjoint {grad[row, g].item()} vs fd {fd}")
 
-    def test_a_set_point_that_never_reaches_the_solve_has_no_gradient(self):
-        """Of several generators regulating one bus, only the last one's set-point is
-        applied (set_vm is last-writer-wins). The others are dead inputs and their
-        gradient must be exactly zero.
+    def test_generators_sharing_a_bus_share_the_one_derivative(self):
+        """Their set-points are TIED -- a bus has one magnitude -- so the loss is a
+        function only on the diagonal v_1 = ... = v_n, and off it there is nothing to
+        compare against: such a row is refused, not solved differently. The partial
+        derivative of one of them with the others held fixed therefore does not exist,
+        and what autograd returns for them is not a gradient in the usual sense. What
+        exists is the derivative along the tie, and each carries 1/n of it, so they sum
+        to it -- and no generator is privileged by the order it sits in.
 
-        Their set-points must AGREE, which is the constraint the grid now enforces: a
-        bus has one magnitude. So they cannot be perturbed one at a time -- the group
-        moves together, and what a finite difference then measures is the SUM of its
-        gradients, which is the only part of the split the constraint leaves meaningful.
-
-        case14 has one generator per bus and would never exercise any of this, so the
-        grid here deliberately doubles one up -- the ordinary case on a real grid,
-        where a busbar carries several machines."""
+        case14 has one generator per bus and would never exercise this, so the grid here
+        deliberately doubles one up -- the ordinary case on a real grid, where a busbar
+        carries several machines."""
         def make():
             grid = init_from_pandapower(_two_gens_on_one_bus())
             return self._cls.init_from_grid(grid, tol=self.TOL)
@@ -348,42 +347,41 @@ class TestBatchCPUPowerFlow(unittest.TestCase):
         self._loss(pf(**tensors)).backward()
         self.assertTrue(pf.converged().all())
 
+        share = np.asarray(pf._sweep.get_gen_v_share())
         target = np.asarray(pf._sweep.get_gen_v_target_bus())
-        dead = np.flatnonzero(target < 0)
-        live = np.flatnonzero(target >= 0)
-        self.assertGreater(dead.size, 0, "the doubled-up generator should be a dead input")
-        self.assertGreater(live.size, 0)
+        # every member of the group reports the bus, and an equal share of it
+        for g in group:
+            self.assertGreaterEqual(target[g], 0)
+            self.assertAlmostEqual(share[g], 1. / len(group))
 
-        def fd(name, idx, delta=1e-6):
+        def fd(idxs, delta=1e-6):
+            """move every named entry together -- the only perturbation that stays where
+            the function is defined"""
             out = []
             for sign in (+1., -1.):
                 pert = {k: v.copy() for k, v in inputs.items()}
-                pert[name][idx] += sign * delta
-                out.append(float(self._loss(make()(**{k: torch.tensor(v)
-                                                      for k, v in pert.items()}))))
-            return (out[0] - out[1]) / (2. * delta)
-
-        for g in dead:
-            np.testing.assert_array_equal(tensors["gen_v"].grad[:, g].numpy(),
-                                          np.zeros(n_scen))
-        # the group moves together: its gradients must sum to what that move costs
-        def fd_group(delta=1e-6):
-            out = []
-            for sign in (+1., -1.):
-                pert = {k: v.copy() for k, v in inputs.items()}
-                for g in group:
+                for g in idxs:
                     pert["gen_v"][0, g] += sign * delta
                 out.append(float(self._loss(make()(**{k: torch.tensor(v)
                                                       for k, v in pert.items()}))))
             return (out[0] - out[1]) / (2. * delta)
+
+        # the tie: the shares sum to the derivative along it ...
+        total = fd(group)
         self.assertAlmostEqual(sum(tensors["gen_v"].grad[0, g].item() for g in group),
-                               fd_group(), places=5)
-        # every generator alone on its bus keeps an ordinary, individually measurable one
-        for g in live:
-            if g in group:
-                continue
+                               total, places=5)
+        # ... and each member holds the same piece of it
+        for g in group:
             self.assertAlmostEqual(tensors["gen_v"].grad[0, g].item(),
-                                   fd("gen_v", (0, int(g))), places=5)
+                                   total / len(group), places=5)
+
+        # a generator alone on its bus keeps an ordinary, individually measurable one
+        alone = [g for g in np.flatnonzero(target >= 0) if g not in group]
+        self.assertGreater(len(alone), 0)
+        for g in alone:
+            self.assertAlmostEqual(share[g], 1.)
+            self.assertAlmostEqual(tensors["gen_v"].grad[0, g].item(), fd([int(g)]),
+                                   places=5)
 
     def test_a_row_asking_one_bus_for_two_magnitudes_does_not_converge(self):
         """A bus has one voltage magnitude, so two generators regulating it cannot be

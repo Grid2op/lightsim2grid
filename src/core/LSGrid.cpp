@@ -507,6 +507,13 @@ void LSGrid::check_grid() const
             }
         }
     }
+
+    // ... and that no two elements ask one bus for two voltage magnitudes. The solve
+    // refuses this too (see _check_vm_targets_agree, called from both entry points into
+    // the pre-processing), but a caller validating a grid explicitly -- or loading one
+    // from a file, which is set_state's reason for calling this -- should hear it here
+    // rather than at the next powerflow.
+    _check_vm_targets_agree();
 }
 
 void LSGrid::save_binary(const std::string & path, bool atomic) const {

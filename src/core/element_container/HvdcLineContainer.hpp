@@ -9,6 +9,7 @@
 #ifndef HVDCLINECONTAINER_H
 #define HVDCLINECONTAINER_H
 
+#include <map>
 #include <vector>
 
 #include "Eigen/Core"
@@ -402,6 +403,12 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         void collect_vm_targets(std::vector<VmTarget> & out) const{
             side_1_.collect_vm_targets(out);
             side_2_.collect_vm_targets(out);
+        }
+
+        void vm_targets_by_bus(const SolverBusIdVect & id_grid_to_solver,
+                               std::map<int, real_type> & out) const{
+            side_1_.vm_targets_by_bus(id_grid_to_solver, out);
+            side_2_.vm_targets_by_bus(id_grid_to_solver, out);
         }
 
         void set_vm(Eigen::Ref<CplxVect> V, const SolverBusIdVect & id_grid_to_solver) const{

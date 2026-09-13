@@ -255,6 +255,32 @@ class VoltageSourceContainer : public OneSideContainer_PQ
         }
 
         /**
+        Every element set_vm() would write, grouped by the SOLVER bus it writes --
+        including the buses with a single writer, unlike vm_target_groups below.
+        Appends, so several containers can be asked in turn and answer into one map,
+        which is what tells a generator's set-point apart from a co-located SVC's.
+        **/
+        void vm_writers_by_bus(const SolverBusIdVect & id_grid_to_solver,
+                               std::map<int, std::vector<int> > & out) const
+        {
+            _for_each_vm_writer(&id_grid_to_solver, [&](int el_id, int bus){
+                out[bus].push_back(el_id);
+            });
+        }
+
+        /**
+        The set-point each element would write, by SOLVER bus. Same walk, the value
+        rather than the writer -- for a caller that has to compare against it.
+        **/
+        void vm_targets_by_bus(const SolverBusIdVect & id_grid_to_solver,
+                               std::map<int, real_type> & out) const
+        {
+            _for_each_vm_writer(&id_grid_to_solver, [&](int el_id, int bus){
+                out[bus] = target_vm_pu_(el_id);
+            });
+        }
+
+        /**
         The groups of elements that set_vm() would have write the SAME solver bus: one
         entry per regulated bus with more than one writer, holding those writers' ids.
         Empty on the common grid, where each regulated bus has exactly one.
