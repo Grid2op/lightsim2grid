@@ -375,31 +375,34 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // public connectivity entry points), lowered here and by clear().
             if(!_results_present_) return;
             _results_present_ = false;
-            // This DOES drop the base case, even when called for something as unrelated
-            // to it as a violation threshold. Not because of what the caller meant, but
-            // because of what the line below does: BaseBatchSolverSynch::clear() resets
-            // the algorithm, and with it the ledger, the sparsity and the factorization
-            // a kept base case IS. Leaving the cache marked usable across this is not a
-            // stale answer, it is a solve against a default-constructed system -- the
-            // segfault LSGrid::_pre_process_own_cache warns about in its own comment,
-            // and the one the limit-violation tests hit when this was left out.
-            invalidate_base_case();
+            // _clear_results(), not BaseBatchSolverSynch::clear(): this drops what a run
+            // produced and leaves the algorithm alone. The base case therefore survives,
+            // which is what a caller who only lowered a violation threshold wants -- and
+            // the contingency registrations, which need it gone, say so themselves.
+            //
+            // The reset that used to be here was never load-bearing: compute() resets the
+            // algorithm at its start too, so nothing could reach solver state that only
+            // this call had cleared. Leaving it in while keeping a base case across it is
+            // what it does NOT survive -- the ledger, the sparsity and the factorization
+            // go with the reset, and the next compute() then solves against a
+            // default-constructed system (the segfault LSGrid::_pre_process_own_cache
+            // warns about in its own comment, and the one the limit-violation suite hit).
             _adjoint_.clear();
             _adjoint_row_ok_.clear();
-            BaseBatchSolverSynch::clear();
-            _li_masked.clear();
-            _cont_connected_.clear();
-            _skip_mask.clear();
+            _clear_results();
+            // the results this class adds on top of the voltages and the flows
             _converged.clear();
             _converged_mask_.clear();
             _violations.clear();
             _converged_n_ = false;
             _violations_n_.clear();
-            _li_defaults_vect_cache_.clear();
-            _timer_total = 0.;
-            _timer_modif_Ybus = 0.;
-            _timer_thread_init = 0.;
-            _timer_pre_proc = 0.;
+            // NB _li_masked / _cont_connected_ / _skip_mask stay. They are what the
+            // graph walk settled about the REGISTERED contingencies -- base case, not
+            // results -- and a base case kept across this call would otherwise find
+            // them empty and treat every contingency as stranding nothing. The
+            // registrations that do change them drop the base case themselves.
+            // _li_defaults_vect_cache_ stays for the same reason; compute() refreshes
+            // it, and the timers it zeroed are zeroed again as the next one starts.
         }
 
         // ================= new setter API (SbusPolicy::supports_vary only) =======

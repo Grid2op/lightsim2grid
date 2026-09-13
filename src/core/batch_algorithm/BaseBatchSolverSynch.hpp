@@ -158,16 +158,10 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // Ybus) never reaches compute_one_powerflow, so it counts towards neither.
         int nb_converged() const {return _nb_converged;}
         virtual void clear() {
+            // the solver, the results, and everything said ABOUT the run that produced
+            // them. `_clear_results` alone is the middle one -- see there.
             _algo.reset();
-            _amps_flows = RealMat();
-            _active_power_flows = RealMat();
-            _voltages = CplxMat();
-            _thetas = RealMat();
-            _dc_row_solved_.clear();
-            _dc_lazy_storage_used_ = false;
-            _dc_base_vm_solver_ = RealVect();
-            _dc_base_vm_grid_ = RealVect();
-            _dc_gen_v_ = RealMat();
+            _clear_results();
             _nb_solved = 0;
             _nb_converged = 0;
             _timer_compute_A = 0.;
@@ -177,6 +171,29 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _thread_solver_stats_.clear();
             // NB: _nb_thread is deliberately NOT reset -- it is a setting, not a result.
         }
+
+        // THE RESULTS, and nothing else: the voltages and the two flow matrices derived
+        // from them. Not the algorithm -- an analysis and a factorization are not
+        // results, they are what the next run would otherwise redo (see
+        // BaseBatchSweep::set_reuse_base_case), and compute() resets the algorithm
+        // itself when it has to. Not the counters or the timers either: they describe a
+        // run rather than belong to it, and compute() zeroes them as it starts.
+        void _clear_results() {
+            _voltages = CplxMat();
+            _amps_flows = RealMat();
+            _active_power_flows = RealMat();
+            // the DC fast path holds the same voltages as an angle plus a shared
+            // magnitude (see _dc_vm_row_grid): one result in several pieces, so the
+            // pieces go together -- a stale one would be reconstructed into a voltage
+            // that was never solved
+            _thetas = RealMat();
+            _dc_row_solved_.clear();
+            _dc_lazy_storage_used_ = false;
+            _dc_base_vm_solver_ = RealVect();
+            _dc_base_vm_grid_ = RealVect();
+            _dc_gen_v_ = RealMat();
+        }
+    public:
 
         // field-wise +=, so get_linear_solver_stats() can report the whole compute()
         // rather than whichever algorithm happened to be the member one.

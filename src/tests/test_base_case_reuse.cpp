@@ -297,16 +297,18 @@ TEST_CASE("registering a contingency rebuilds the base case")
 }
 
 
-TEST_CASE("dropping computed results drops the base case with them")
+TEST_CASE("dropping computed results keeps the base case")
 {
-    // Tightening a violation threshold has nothing to do with a base case: it changes
-    // what is CHECKED of a row. It drops the base case anyway, and must -- it goes
-    // through clear_results_only(), whose BaseBatchSolverSynch::clear() resets the
-    // algorithm, and the ledger, the sparsity and the factorization a kept base case
-    // consists of go with it. Keeping the cache marked usable across that is not a
-    // stale answer but a solve against a default-constructed system. This test exists
-    // because reasoning about what the CALLER meant, instead of what the call does,
-    // got it wrong once and segfaulted the limit-violation suite.
+    // Tightening a violation threshold changes what is CHECKED of a row, and nothing
+    // the base case is made of: it goes through clear_results_only(), which drops what
+    // a run produced and leaves the algorithm alone.
+    //
+    // It did not always: clear_results_only() used to reset the algorithm, taking the
+    // ledger, the sparsity and the factorization with it, and a base case kept across
+    // that is not a stale answer but a solve against a default-constructed system --
+    // which is exactly how the limit-violation suite segfaulted. That reset was never
+    // load-bearing (compute() resets the algorithm itself), so it is gone; this test is
+    // here so it does not come back.
     LSGrid grid = make_grid();
     ContingencyAnalysis analysis(grid);
     analysis.change_algorithm(AlgorithmType::NR_SparseLU);
@@ -316,10 +318,12 @@ TEST_CASE("dropping computed results drops the base case with them")
 
     analysis.set_violation_threshold(0.5);        // tightened -> clear_results_only()
     analysis.compute(flat(), 30, 1e-11);
-    REQUIRE_FALSE(analysis.base_case_was_reused());
-    check_same(analysis.get_voltages(), before);  // ... and the answer is unchanged
+    REQUIRE(analysis.base_case_was_reused());
+    check_same(analysis.get_voltages(), before);
 
-    analysis.compute(flat(), 30, 1e-11);          // nothing dropped since: kept again
+    // the same through the public entry point a caller can reach directly
+    analysis.clear_results_only();
+    analysis.compute(flat(), 30, 1e-11);
     REQUIRE(analysis.base_case_was_reused());
     check_same(analysis.get_voltages(), before);
 }
