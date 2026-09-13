@@ -133,11 +133,15 @@ class TimeSerie:
         
     @property
     def compute_bus_q_violations(self):
-        """Whether every converged step reports the buses whose voltage-regulating generators
-        had to produce more (or less) reactive power than the **sum** of their
-        ``[min_q_mvar, max_q_mvar]`` -- see :func:`get_bus_q_violations`. Default: ``False``.
+        """Whether every converged step reports the buses whose machines had to produce more
+        (or less) reactive power than the **sum** of what they own -- see
+        :func:`get_bus_q_violations`. Default: ``False``.
 
-        A voltage-regulating generator has no reactive setpoint: its reactive output is solved
+        All three families that hold a bus' voltage are covered: a generator and an hvdc
+        converter station through their ``[min_q_mvar, max_q_mvar]``, a voltage-mode SVC through
+        its susceptance range ``[b_min, b_max]`` at that step's own voltage.
+
+        A voltage-regulating machine has no reactive setpoint: its reactive output is solved
         for, and lightsim2grid never clamps it. So a step can converge with a bus' machines
         having to produce reactive power they do not own -- which is not an operational limit
         one may choose to exceed but a solution the grid cannot reach at all (``violation_type``
@@ -193,9 +197,8 @@ class TimeSerie:
         """Per step (same order as the ``modify_*`` inputs): the list of ``LimitViolation`` of
         the buses that needed reactive power their machines do not have -- ``element_type``
         ``ViolationElementType.BUS``, ``element_id`` the grid bus id, ``violation_type``
-        ``LOW_Q`` / ``HIGH_Q``, ``value`` the reactive power that bus' voltage-regulating
-        generators had to produce (MVAr) and ``limit`` the **sum** of their
-        ``min_q_mvar`` / ``max_q_mvar``.
+        ``LOW_Q`` / ``HIGH_Q``, ``value`` the reactive power the machines holding that bus had
+        to produce (MVAr) and ``limit`` their **summed** capability.
 
         A step that did not converge has an **empty** entry, not a sentinel -- use
         ``self.computer.converged_mask()`` to tell that from "converged, no violation".

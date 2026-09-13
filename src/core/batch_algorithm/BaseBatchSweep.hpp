@@ -725,7 +725,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         // ---- reactive-capability check, per bus (EVERY instantiation) --------------
-        // The reactive power a voltage-regulating generator produces is not an input, it
+        // The reactive power a voltage-regulating machine produces is not an input, it
         // is solved for -- and never clamped. This opt-in flag has every converged row
         // report the buses whose machines had to produce more (or less) reactive power
         // than the sum of what they own. That is not an operational limit somebody may
@@ -733,6 +733,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // reach (see ViolationCategory::PHYSICAL), and it is the condition OpenLoadFlow's
         // `ReactiveLimits` outer loop acts on. Nothing is enforced here: no bus is
         // switched PV -> PQ, no row is re-solved.
+        //
+        // All three families that hold a bus' voltage are covered, since all three have a
+        // reactive output the solver computes rather than reads: a generator and an hvdc
+        // converter station through their [min_q, max_q] in MVAr, a voltage-mode SVC
+        // through its susceptance range at the row's own voltage (see BusQCheck.hpp).
         //
         // PER BUS, not per machine, on purpose: how a bus' reactive power is divided
         // between several machines standing on it is a sharing convention
@@ -788,9 +793,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          * that did not converge (or that was never simulated) has an EMPTY entry rather
          * than a sentinel -- ask converged_mask() to tell that apart from "converged, no
          * violation". Every entry has element_type BUS, element_id the grid bus id,
-         * violation_type LOW_Q / HIGH_Q (category PHYSICAL), `value` the reactive power
-         * that bus' voltage-regulating generators had to produce in MVAr, and `limit` the
-         * SUM of their min_q_mvar / max_q_mvar. Requires compute_bus_q_violations = true.
+         * violation_type LOW_Q / HIGH_Q (category PHYSICAL), `value` the reactive power the
+         * machines holding that bus had to produce in MVAr, and `limit` their SUMMED
+         * capability. Requires compute_bus_q_violations = true.
          */
         const std::vector<std::vector<LimitViolation> > & get_bus_q_violations() const {
             _check_bus_q_violations_enabled("get_bus_q_violations");
@@ -1733,7 +1738,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // _maybe_store_jacobian must: what is read here (the per-bus mismatch and the
         // controllers' reactive output) belongs to the system THIS row solved, and the
         // `algo` handed in is the one that solved it (the member one, or this thread's).
-        void _record_row_bus_q(size_t i, AlgorithmSelector & algo){
+        // `V_solver` is this row's converged complex voltage (solver numbering): a
+        // voltage-mode SVC's capability is a susceptance range, so what it is worth in MVAr
+        // depends on it.
+        void _record_row_bus_q(size_t i, AlgorithmSelector & algo,
+                               const Eigen::Ref<const CplxVect> & V_solver){
             if(!_compute_bus_q_violations_) return;
             if(_bus_q_plan_.empty()) return;
             if(i >= _bus_q_violations_.size()) return;
@@ -1743,7 +1752,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const RealVect ctrl_q = _bus_q_plan_.needs_controller_q ? algo.get_controller_q()
                                                                    : RealVect();
             bus_q_check::check_bus_q_violations(
-                _bus_q_plan_, _grid_model.get_generators(), algo.get_bus_mismatch(), ctrl_q,
+                _bus_q_plan_, _grid_model, algo.get_bus_mismatch(), V_solver, ctrl_q,
                 _grid_model.get_sn_mva(), _bus_q_tol_mvar_, _row_masked_ids(i),
                 [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
                 _bus_q_violations_[i]);
@@ -1850,7 +1859,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const RealVect ctrl_q = _bus_q_plan_.needs_controller_q ? _algo.get_controller_q()
                                                                    : RealVect();
             bus_q_check::check_bus_q_violations(
-                _bus_q_plan_, _grid_model.get_generators(), _algo.get_bus_mismatch(), ctrl_q,
+                _bus_q_plan_, _grid_model, _algo.get_bus_mismatch(), _algo.get_V(), ctrl_q,
                 _grid_model.get_sn_mva(), _bus_q_tol_mvar_, nullptr,
                 [](int){ return false; },  // the base case disconnects no generator
                 _bus_q_violations_n_);
@@ -2181,7 +2190,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         // reads the mismatch of the system this row solved)
                         if(conv){
                             _maybe_store_jacobian(cont_id, algo);
-                            _record_row_bus_q(cont_id, algo);
+                            _record_row_bus_q(cont_id, algo, V);
                         }
                         if(!masked.empty()) algo.set_masked_buses(std::vector<int>());
                         if(flips) algo.set_pv_pinned_buses(_switchable_buses_);

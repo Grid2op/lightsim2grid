@@ -29,15 +29,16 @@ enum class LS2G_API LimitViolationType : int {
     CURRENT = 2,
     NOT_SIMULATED = 3,  // a pre-check (graph connectivity) skipped the contingency: the solver was never invoked
     DIVERGENCE = 4,  // the solver was invoked (for the contingency, or the pre-contingency "n" case) but did not converge
-    // The reactive power the voltage-regulating machines of ONE BUS had to produce left
-    // what they are capable of, ie the sum of their [min_q_mvar, max_q_mvar]. Unlike the
-    // three above this is not a limit one may choose to exceed: a machine simply cannot
-    // produce reactive power it does not have, so the converged solution the solver
-    // returned is not a state the grid can reach -- its voltage set-point could not
-    // actually be held. See ViolationCategory::PHYSICAL and compute_bus_q_violations.
-    // Checked per bus, not per machine, because which machine of a bus "produces" which
-    // share of its reactive power is a modelling convention (see
-    // LSGrid::_split_q_residual_per_bus), while what the bus as a whole can produce is not.
+    // The reactive power the machines holding ONE BUS' voltage had to produce left what
+    // they are capable of -- the summed capability of its voltage-regulating generators,
+    // hvdc converter stations and voltage-mode SVCs. Unlike the three above this is not a
+    // limit one may choose to exceed: a machine simply cannot produce reactive power it
+    // does not have, so the converged solution the solver returned is not a state the grid
+    // can reach -- its voltage set-point could not actually be held. See
+    // ViolationCategory::PHYSICAL and compute_bus_q_violations. Checked per bus, not per
+    // machine, because which machine of a bus "produces" which share of its reactive power
+    // is a modelling convention (see LSGrid::_split_q_residual_per_bus), while what the
+    // bus as a whole can produce is not.
     LOW_Q = 5,
     HIGH_Q = 6
 };
@@ -94,12 +95,13 @@ struct LS2G_API LimitViolation {
     int element_id;
     int side;  // 1 or 2 for LINE / TRAFO ; unused (0) for BUS / GRID
     LimitViolationType violation_type;
-    // value reached (MVAr for LOW_Q / HIGH_Q: what the bus' voltage-regulating machines
-    // had to produce) ; unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    // value reached (MVAr for LOW_Q / HIGH_Q: what the machines holding that bus had to
+    // produce) ; unused (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type value;
-    // limit that was violated. For LOW_Q / HIGH_Q the SUMMED min_q_mvar / max_q_mvar of
-    // the machines regulating that bus, not one machine's. Unused (NaN) for
-    // NOT_SIMULATED / DIVERGENCE
+    // limit that was violated. For LOW_Q / HIGH_Q the SUMMED capability of the machines
+    // holding that bus, not one machine's: min_q_mvar / max_q_mvar for a generator or an
+    // hvdc converter station, b_min / b_max at the solved voltage for a voltage-mode SVC.
+    // Unused (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type limit;
     // element name: LINE / TRAFO (from LSGrid::set_line_names / set_trafo_names) or, for
     // BUS, the name of the *substation* the violating bus belongs to (from

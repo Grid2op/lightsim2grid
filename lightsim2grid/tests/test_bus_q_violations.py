@@ -168,6 +168,55 @@ class TestBusQViolationsCpp(unittest.TestCase):
         assert len(ca.get_bus_q_violations()) == 2
 
 
+class TestSvcCapabilityFromPython(unittest.TestCase):
+    """the one family whose capability is not already in MVAr: an SVC's `b_min` / `b_max` are
+    a susceptance range, and the reported `limit` is that range at the solved voltage. A user
+    must be able to reproduce it from the published data, which is what this pins."""
+
+    def test_limit_is_b_times_v_squared(self):
+        from lightsim2grid.lightsim2grid_cpp import LSGrid, SvcContainer
+        sn_mva, vn_kv, b_max = 100., 138., 0.2
+        grid = LSGrid()
+        grid.set_sn_mva(sn_mva)
+        grid.set_init_vm_pu(1.0)
+        grid.init_bus(2, 1, np.full(2, vn_kv), 0, 0)
+        grid.init_powerlines(np.array([0.01]), np.array([0.1]), np.zeros(1, dtype=complex),
+                             np.array([0]), np.array([1]))
+        grid.init_loads(np.array([40.]), np.array([30.]), np.array([1]))
+        grid.init_generators(np.array([0.]), np.array([1.02]), np.array([-1000.]),
+                             np.array([1000.]), np.array([0]))
+        grid.add_gen_slackbus(0, 1.)
+        # a voltage-mode SVC holding the load bus, with a susceptance range too small for it
+        grid.init_svcs([int(SvcContainer.RegulationMode.VOLTAGE)], np.array([1.05]), np.array([0.]),
+                       np.array([0.]), np.array([-b_max]), np.array([b_max]),
+                       np.array([1]), np.array([1]))
+        grid.tell_solver_need_reset()
+
+        ts = TimeSeriesCPP(grid)
+        ts.compute_bus_q_violations = True
+        ts.bus_q_violation_tol_mvar = 0.
+        ts.modify_gen_p(np.array([[gen.target_p_mw for gen in grid.get_generators()]]))
+        v_init = np.full(grid.total_bus(), 1.0 + 0j)
+        ts.compute(v_init, 20, 1e-11)
+        assert ts.converged_mask()[0]
+
+        viols = [v for v in ts.get_bus_q_violations()[0] if v.element_id == 1]
+        assert len(viols) == 1, "the SVC cannot hold 1.05 pu with 0.2 pu of susceptance"
+        viol = viols[0]
+        assert viol.violation_type == LimitViolationType.HIGH_Q
+        assert viol.category == ViolationCategory.PHYSICAL
+
+        # reproduce the limit from the published data alone: b_max . |V|^2 . sn_mva. The
+        # batch works on a private COPY of the grid, so this object has published nothing
+        # yet -- solve the same state on it to get the SVC's own results.
+        grid.ac_pf(v_init, 20, 1e-11)
+        svc = grid.get_svcs()[0]
+        v_pu = svc.res_v_kv / vn_kv
+        self.assertAlmostEqual(viol.limit, svc.b_max * v_pu ** 2 * sn_mva, places=6)
+        # ... and the value against what the SVC itself published
+        self.assertAlmostEqual(viol.value, svc.res_q_mvar, places=5)
+
+
 class TestBusQViolationsWrapper(unittest.TestCase):
     """the python wrappers: the properties they expose, what they invalidate, and the
     `bus_q_violations` field of the `run()` result"""

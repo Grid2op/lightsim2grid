@@ -26,6 +26,7 @@
 
 #include <cmath>
 #include <complex>
+#include <limits>
 #include <tuple>
 #include <vector>
 
@@ -44,6 +45,7 @@ using ls2g::LimitViolation;
 using ls2g::LimitViolationType;
 using ls2g::RealVect;
 using ls2g::ScenarioSweep;
+using ls2g::SvcContainer;
 using ls2g::TimeSeries;
 using ls2g::ViolationCategory;
 using ls2g::ViolationElementType;
@@ -62,6 +64,7 @@ const real_type LOAD_Q = 60.;
 const int NB_BUS = 4;
 const real_type WIDE_Q = 1000.;
 const int GEN_BUS = 1;
+const int SVC_BUS = NB_BUS - 1;  // the load bus
 
 struct GenSpec
 {
@@ -77,10 +80,11 @@ struct GenSpec
 // test_batch_voltage_control.cpp and test_scenario_sweep_violations.cpp, with the load on
 // bus 3. `meshed` adds a fourth line 0--3, so that a single line outage leaves the load
 // connected and the contingency rows actually converge. Generator 0 is the slack.
-// `station_on_gen_bus` also puts an hvdc VSC converter station on bus 1, regulating the bus
-// it stands on -- so bus 1's reactive power is then not the generators' alone.
+// `station_q_on_gen_bus`, when finite, also puts an hvdc VSC converter station on bus 1
+// regulating the bus it stands on, with reactive limits +/- that value: bus 1's reactive
+// power is then produced by the generators AND by the station, and so is its capability.
 LSGrid make_grid(const std::vector<GenSpec> & gens, bool meshed = false,
-                 bool station_on_gen_bus = false)
+                 real_type station_q_on_gen_bus = std::numeric_limits<real_type>::quiet_NaN())
 {
     LSGrid grid;
     grid.set_sn_mva(100.);
@@ -120,7 +124,7 @@ LSGrid make_grid(const std::vector<GenSpec> & gens, bool meshed = false,
     for (int k = 0; k < nb_gen; ++k) {
         if (gens[k].regulated_bus >= 0) grid.set_gen_regulated_bus(k, gens[k].regulated_bus);
     }
-    if (station_on_gen_bus) {
+    if (std::isfinite(station_q_on_gen_bus)) {
         // a VSC station on bus 1 regulating bus 1 (the ordinary PV path, like a local
         // generator: it shares the bus' reactive residual -- see
         // LSGrid::_collect_q_residual_shares), its other end on bus 2 in fixed-Q mode
@@ -135,7 +139,8 @@ LSGrid make_grid(const std::vector<GenSpec> & gens, bool meshed = false,
         loss1 << 0.; loss2 << 0.;
         vm1 << V_SET; vm2 << 1.;
         q1 << 0.; q2 << 0.;
-        minq1 << -WIDE_Q; maxq1 << WIDE_Q; minq2 << -WIDE_Q; maxq2 << WIDE_Q;
+        minq1 << -station_q_on_gen_bus; maxq1 << station_q_on_gen_bus;
+        minq2 << -WIDE_Q; maxq2 << WIDE_Q;
         pf1 << 1.; pf2 << 1.;
         p_set << 1.;
         r_ohm << 1.;
@@ -154,6 +159,37 @@ LSGrid make_grid(const std::vector<GenSpec> & gens, bool meshed = false,
 
 // the slack generator, with limits wide enough never to be reported
 GenSpec slack_gen() { return GenSpec{0, 1.02, 0., -WIDE_Q, WIDE_Q, -1}; }
+
+// the same feeder, with a voltage-mode SVC holding the LOAD bus at V_SET and the susceptance
+// range `[b_min_pu, b_max_pu]` (pu, base sn_mva). It is the only element regulating that bus
+// -- LSGrid refuses an SVC sharing its regulated bus with another controller -- so the bus'
+// whole reactive power is the SVC's own.
+//
+// A positive susceptance is CAPACITIVE and produces reactive power: a shunt `jb` consumes
+// `-j.b.|V|^2`, ie injects `+b.|V|^2` in generator convention. So `[0, b]` is a machine that
+// can only produce and `[-b, 0]` one that can only absorb -- which is what the asymmetric
+// section of the SVC test below pins down, and the symmetric case cannot.
+LSGrid make_svc_grid_asym(real_type b_min_pu, real_type b_max_pu);
+LSGrid make_svc_grid(real_type b_pu) { return make_svc_grid_asym(-b_pu, b_pu); }
+
+LSGrid make_svc_grid_asym(real_type b_min_pu, real_type b_max_pu)
+{
+    LSGrid grid = make_grid(std::vector<GenSpec>{slack_gen()});
+    std::vector<int> mode{SvcContainer::RegulationMode::VOLTAGE};
+    RealVect target_vm(1), q_set(1), slope(1), b_min(1), b_max(1);
+    target_vm << V_SET;
+    q_set << 0.;
+    slope << 0.;
+    b_min << b_min_pu;
+    b_max << b_max_pu;
+    Eigen::VectorXi reg_bus(1), svc_bus(1);
+    reg_bus << SVC_BUS;
+    svc_bus << SVC_BUS;
+    grid.init_svcs(mode, target_vm, q_set, slope, b_min, b_max, reg_bus, svc_bus);
+    grid.add_gen_slackbus(0, 1.);
+    grid.tell_solver_need_reset();
+    return grid;
+}
 
 CplxVect flat_start(const LSGrid & grid)
 {
@@ -376,25 +412,129 @@ TEST_CASE("a bus held through remote regulation reads its reactive power off the
                                               : LimitViolationType::LOW_Q));
 }
 
-TEST_CASE("a bus whose reactive power is not the generators' alone is not checked",
+TEST_CASE("an hvdc converter station's reactive capability counts towards its bus'",
           "[batch][bus_q][vctrl]")
 {
-    // an hvdc converter station regulating the bus it stands on has a free reactive output
-    // too, and takes its own share of that bus' reactive residual. The bus' reactive power
-    // would then include the station's part while the summed limits would only cover the
-    // generators, so the bus is skipped rather than reported against a capability that is
-    // not the whole story. (A voltage-mode SVC is treated the same way, though the case
-    // cannot be built today: LSGrid refuses an SVC that shares its regulated bus with any
-    // other controller.)
+    // a station regulating the bus it stands on holds that bus exactly like a local
+    // generator does, and its [min_q, max_q] is in the same currency (MVAr). So it belongs
+    // in the bus' capability: the SAME solution is feasible or not depending only on how
+    // much the station brings.
     std::vector<GenSpec> gens{slack_gen(), GenSpec{GEN_BUS, V_SET, 10., -10., 10., -1}};
-    LSGrid grid = make_grid(gens, /*meshed=*/false, /*station_on_gen_bus=*/true);
-    grid.change_algorithm(AlgorithmType::NR_SparseLU);
-    TimeSeries ts(grid);
-    setup_one_row(ts);
-    ts.compute(flat_start(grid), 30, 1e-11);
-    REQUIRE(ts.converged_mask()[0] == 1);
-    CHECK(ts.get_bus_q_violations()[0].empty());
-    CHECK(ts.get_bus_q_violations_n().empty());
+
+    // how much bus 1 needs, with the station present (the station changes the solution --
+    // it injects active power and pins the bus too -- so the reference must include it)
+    LSGrid ref_grid = make_grid(gens, /*meshed=*/false, /*station_q_on_gen_bus=*/WIDE_Q);
+    ref_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ref_grid.ac_pf(flat_start(ref_grid), 30, 1e-11);
+    const real_type q_gen = RealVect(std::get<1>(ref_grid.get_gen_res()))(1);
+    const real_type q_station = ref_grid.get_dclines()[0].res_q1_mvar;
+    const real_type q_bus = q_gen + q_station;
+    REQUIRE(q_bus > 10.);  // more than the generator alone owns
+
+    SECTION("a station that brings enough makes the bus feasible")
+    {
+        // generator 10 MVAr + station (q_bus - 10 + 5) MVAr > q_bus
+        LSGrid grid = make_grid(gens, /*meshed=*/false, q_bus - 10. + 5.);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(find_bus(ts.get_bus_q_violations()[0], GEN_BUS) == nullptr);
+    }
+
+    SECTION("a station that does not is reported, against the summed capability")
+    {
+        const real_type station_q = 0.25 * q_bus;
+        LSGrid grid = make_grid(gens, /*meshed=*/false, station_q);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        const LimitViolation * viol = find_bus(ts.get_bus_q_violations()[0], GEN_BUS);
+        REQUIRE(viol != nullptr);
+        CHECK(viol->violation_type == LimitViolationType::HIGH_Q);
+        // the value is the bus' whole reactive power (generator + station), and the limit
+        // the sum of the two capabilities -- 10 MVAr of generator plus the station's
+        CHECK(viol->value == Approx(q_bus).margin(1e-6));
+        CHECK(viol->limit == Approx(10. + station_q));
+    }
+}
+
+TEST_CASE("a voltage-mode SVC's susceptance range counts towards its bus'",
+          "[batch][bus_q][vctrl]")
+{
+    // an SVC's capability is a SUSCEPTANCE range, so what it is worth in MVAr depends on
+    // the solved voltage: q = b . |V|^2 . sn_mva. It holds bus 3 here (alone -- LSGrid
+    // refuses an SVC sharing its regulated bus with any other controller), so the bus'
+    // reactive power is the SVC's own and the check reduces to "is b enough at this V".
+    const real_type b_pu = 2.0;  // +/- 2 pu of susceptance: plenty at this voltage
+    LSGrid ref_grid = make_svc_grid(b_pu);
+    ref_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ref_grid.ac_pf(flat_start(ref_grid), 30, 1e-11);
+    const real_type q_svc = ref_grid.get_svcs()[0].res_q_mvar;
+    const real_type v_svc = ref_grid.get_svcs()[0].res_v_kv / 138.;  // pu
+    const real_type q_max = b_pu * v_svc * v_svc * 100.;             // b . |V|^2 . sn_mva
+    REQUIRE(q_svc > 0.);
+
+    SECTION("enough susceptance: nothing reported")
+    {
+        REQUIRE(q_svc < q_max);  // the case is only meaningful if b really does cover it
+        LSGrid grid = make_svc_grid(b_pu);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(find_bus(ts.get_bus_q_violations()[0], SVC_BUS) == nullptr);
+    }
+
+    SECTION("not enough: reported, against b . |V|^2 . sn_mva and not against b")
+    {
+        // half the susceptance the solution needs
+        const real_type b_small = 0.5 * q_svc / (v_svc * v_svc * 100.);
+        LSGrid grid = make_svc_grid(b_small);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        const LimitViolation * viol = find_bus(ts.get_bus_q_violations()[0], SVC_BUS);
+        REQUIRE(viol != nullptr);
+        CHECK(viol->violation_type == LimitViolationType::HIGH_Q);
+        CHECK(viol->value == Approx(q_svc).margin(1e-6));
+        // the reported limit is in MVAr, evaluated at the solved voltage
+        CHECK(viol->limit == Approx(b_small * v_svc * v_svc * 100.).margin(1e-6));
+        CHECK(viol->limit == Approx(0.5 * q_svc).margin(1e-6));
+    }
+
+    SECTION("an asymmetric range pins the sign: a positive susceptance PRODUCES reactive power")
+    {
+        // this bus needs reactive power produced (q_svc > 0), so a purely capacitive SVC
+        // ([0, b]) covers it and a purely inductive one ([-b, 0]) cannot. Were the sign
+        // convention inverted, the two verdicts would swap -- and a symmetric range, which
+        // is what the sections above use, could never tell.
+        LSGrid capacitive = make_svc_grid_asym(0., b_pu);
+        capacitive.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts_cap(capacitive);
+        setup_one_row(ts_cap);
+        ts_cap.compute(flat_start(capacitive), 30, 1e-11);
+        REQUIRE(ts_cap.converged_mask()[0] == 1);
+        CHECK(find_bus(ts_cap.get_bus_q_violations()[0], SVC_BUS) == nullptr);
+
+        LSGrid inductive = make_svc_grid_asym(-b_pu, 0.);
+        inductive.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts_ind(inductive);
+        setup_one_row(ts_ind);
+        ts_ind.compute(flat_start(inductive), 30, 1e-11);
+        REQUIRE(ts_ind.converged_mask()[0] == 1);
+        const LimitViolation * viol = find_bus(ts_ind.get_bus_q_violations()[0], SVC_BUS);
+        REQUIRE(viol != nullptr);
+        CHECK(viol->violation_type == LimitViolationType::HIGH_Q);
+        CHECK(viol->limit == Approx(0.).margin(1e-9));  // b_max = 0: it can produce nothing
+        CHECK(viol->value == Approx(q_svc).margin(1e-6));
+    }
 }
 
 TEST_CASE("the reactive-capability check is opt in, and says so when it is off",

@@ -53,11 +53,14 @@ void bind_batch_shared(py::class_<T> & cls)
         .def_property("compute_bus_q_violations",
                       [](const T & self){ return self.get_compute_bus_q_violations(); },
                       [](T & self, bool val){ self.set_compute_bus_q_violations(val); },
-                      "Whether every converged row reports the buses whose voltage-regulating "
-                      "generators had to produce more (or less) reactive power than the SUM of "
-                      "their [min_q_mvar, max_q_mvar] (see get_bus_q_violations()). Defaults to "
-                      "``False``.\n\n"
-                      "A voltage-regulating generator has no reactive setpoint: its reactive "
+                      "Whether every converged row reports the buses whose machines had to "
+                      "produce more (or less) reactive power than the SUM of what they own (see "
+                      "get_bus_q_violations()). Defaults to ``False``.\n\n"
+                      "All three families that hold a bus' voltage are covered: a generator and "
+                      "an hvdc converter station through their [min_q_mvar, max_q_mvar], a "
+                      "voltage-mode SVC through its susceptance range [b_min, b_max] at that "
+                      "row's own voltage.\n\n"
+                      "A voltage-regulating machine has no reactive setpoint: its reactive "
                       "output is solved for, and lightsim2grid never clamps it. So a row can "
                       "converge with a bus' machines having to produce reactive power they do "
                       "not own -- which is not an operational limit somebody may choose to "
@@ -89,8 +92,8 @@ void bind_batch_shared(py::class_<T> & cls)
              "Per row: the list of LimitViolation of the buses that needed reactive power their "
              "machines do not have (element_type ViolationElementType.BUS, element_id the grid "
              "bus id, violation_type LimitViolationType.LOW_Q / HIGH_Q, `value` the reactive "
-             "power that bus' voltage-regulating generators had to produce in MVAr, `limit` the "
-             "SUM of their min_q_mvar / max_q_mvar). A row that did not converge has an EMPTY "
+             "power the machines holding that bus had to produce in MVAr, `limit` their SUMMED "
+             "capability). A row that did not converge has an EMPTY "
              "entry, not a sentinel -- use converged_mask() to tell that from 'converged, no "
              "violation'. Requires compute_bus_q_violations=True.",
              py::return_value_policy::reference_internal)
@@ -732,10 +735,11 @@ void bind_batch(py::module_& m) {
         .def_property("compute_bus_q_violations",
                       [](const ContingencyAnalysis & self){ return self.get_compute_bus_q_violations(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_compute_bus_q_violations(val); },
-                      "Whether every converged contingency reports the buses whose "
-                      "voltage-regulating generators had to produce more (or less) reactive "
-                      "power than the SUM of their [min_q_mvar, max_q_mvar] (see "
-                      "get_bus_q_violations()). Defaults to ``False``. Not an operational limit "
+                      "Whether every converged contingency reports the buses whose machines "
+                      "had to produce more (or less) reactive power than the SUM of what they "
+                      "own -- voltage-regulating generators, hvdc converter stations and "
+                      "voltage-mode SVCs alike (see get_bus_q_violations()). Defaults to "
+                      "``False``. Not an operational limit "
                       "but a physical one (category ViolationCategory.PHYSICAL): such a "
                       "solution is not a state the grid can reach. Detection only, as "
                       "OpenLoadFlow's ``ReactiveLimits`` outer loop sees it: no bus is switched "
@@ -754,7 +758,8 @@ void bind_batch(py::module_& m) {
              "Per contingency: the list of LimitViolation of the buses that needed reactive "
              "power their machines do not have (element_type ViolationElementType.BUS, "
              "violation_type LimitViolationType.LOW_Q / HIGH_Q, `value` the reactive power in "
-             "MVAr, `limit` the summed capability of that bus' machines). A contingency that "
+             "MVAr, `limit` the summed capability of the machines holding that bus). A "
+             "contingency that "
              "did not converge, or that was never simulated, has an EMPTY entry -- use "
              "converged() to tell that from 'converged, no violation'. Requires "
              "compute_bus_q_violations=True.",

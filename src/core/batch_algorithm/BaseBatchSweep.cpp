@@ -68,7 +68,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             // solved)
             if(conv){
                 _maybe_store_jacobian(i, algo);
-                _record_row_bus_q(i, algo);
+                _record_row_bus_q(i, algo, V);
             }
         } else {
             // generator contingencies: this row's buses that keep a live local voltage
@@ -93,7 +93,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             // the mismatch the reactive-capability check reads
             if(conv){
                 _maybe_store_jacobian(i, algo);
-                _record_row_bus_q(i, algo);
+                _record_row_bus_q(i, algo, V);
             }
             if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
         }

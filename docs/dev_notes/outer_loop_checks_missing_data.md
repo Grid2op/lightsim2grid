@@ -16,13 +16,13 @@ Reference for the outer loops: PowSyBl OpenLoadFlow,
 
 | OLF outer loop | Result side | Control side | Post-solve check possible? |
 |---|---|---|---|
-| `ReactiveLimits` | complete | complete | **yes — implemented** for a batch (`compute_bus_q_violations`); a single solve already publishes `res_q_mvar` |
+| `ReactiveLimits` | complete | complete | **yes — implemented** for a batch (`compute_bus_q_violations`), for all three families that hold a bus' voltage; a single solve already publishes `res_q_mvar` |
 | `TransformerVoltageControl` | complete | **absent** | no |
 | `PhaseControl` / `IncrementalPhaseControl` | complete | **absent** | no |
 | `ShuntVoltageControl` | complete | **absent** | no |
 | `DistributedSlack` | complete | complete | n/a — lightsim2grid distributes the slack inside the Newton (`MultiSlack`), there is no trigger to detect |
 | `HvdcAcEmulationLimits` | complete | partial | limits are stored (`status_droop`); the droop itself is in the Newton (`Hvdc`) |
-| `VoltageMonitoring` (SVC stand-by automaton) | complete | partial | `b_min` / `b_max` and `target_vm_pu` are stored but **never enforced**; no stand-by band |
+| `VoltageMonitoring` (SVC stand-by automaton) | complete | partial | `b_min` / `b_max` are now **checked** (as part of the reactive capability above) but still never enforced; the stand-by band itself is not modelled |
 | `SecondaryVoltageControl` | complete | absent | no control zones / pilot points in the model |
 | `AreaInterchangeControl` | complete | absent | no `Area` concept in the model |
 | `AutomationSystem` | complete | absent | no overload-management systems in the model |
@@ -40,10 +40,23 @@ What it needs, and what answers it:
 
 | needed | where it is |
 |---|---|
-| is this machine regulating voltage? | `GeneratorContainer::is_voltage_controller` (connected + `voltage_regulator_on_` + not treated as off) |
-| its reactive range | `min_q_` / `max_q_`, exposed as `GenInfo.min_q_mvar` / `max_q_mvar` |
-| the reactive power it (or its bus) produced | `res_q_` (`GenInfo.res_q_mvar`) after a solve; re-derived per row for a batch |
-| which bus it holds | `regulated_bus_id_` (`GenInfo.regulated_bus_id`), local or remote |
+| is this machine regulating voltage? | `is_voltage_controller` on its container (connected + regulating + not treated as off); `HvdcLineContainer::station_is_voltage_controller` for a converter station |
+| its reactive capability | a generator: `min_q_` / `max_q_` (`GenInfo.min_q_mvar` / `max_q_mvar`). A converter station: the same, in MVAr (`get_station_min_q_mvar` / `get_station_max_q_mvar`). An SVC: `b_min_` / `b_max_` (`SvcInfo.b_min` / `b_max`), a **susceptance** range in pu, worth `b · \|V\|² · sn_mva` MVAr at the solved voltage |
+| the reactive power it (or its bus) produced | `res_q_` (`res_q_mvar` on all three `Info` classes) after a solve; re-derived per row for a batch |
+| which bus it holds | `regulated_bus_id_`, local or remote (a station always regulates the bus it stands on) |
+
+**All three families are covered, and they are all of them**: exactly three kinds of element
+have a reactive output the solver computes rather than reads — a voltage-regulating
+generator, a voltage-regulating hvdc converter station, and a voltage-mode SVC. Everything
+else standing on a bus injects reactive power that is *input* data, part of `Sbus`; its own
+limits are an input question, not something a solve produced.
+
+The SVC is the only one whose capability is not already in MVAr. `b_min` / `b_max` are
+inputs (pu, base `sn_mva`) and the realized susceptance is the result, so the conversion is
+one multiplication at the row's own voltage: a shunt `jb` consumes `-j·b·\|V\|²`, hence
+injects `+b·\|V\|²` in generator convention, and a positive (capacitive) susceptance
+produces reactive power. An asymmetric range (`[0, b]` versus `[-b, 0]`) is what pins that
+sign down in the tests — a symmetric one cannot.
 
 **The question is asked per bus, not per machine**, and that is not a shortcut. The
 reactive power a bus needs is a fact about the solution; how it is divided between several
@@ -84,16 +97,15 @@ What is still missing around it:
   when its voltage recrosses the set-point on the right side. lightsim2grid never pins a
   machine at a limit, so there is no such state to detect. This only becomes meaningful
   the day the limit is *enforced*.
-- **A bus whose reactive power is not the generators' alone is skipped**, because the sum
-  of the generators' limits is then not the bus' capability. Two families put it there:
-  a voltage-regulating hvdc converter station (its capability IS a `[min_q, max_q]` in
-  MVAr — `get_station_q_range_mvar` — so extending the sum to it is easy and is the
-  natural next step), and a voltage-mode SVC, whose capability is a susceptance range
-  marked *"stored, NEVER enforced"* in `SvcContainer.hpp` (turning `b_min`/`b_max` into
-  MVAr at the solved voltage is a modelling decision, not a lookup).
 - **Non-regulating machines are out of scope** by construction: their Q is their own
   setpoint, part of `Sbus`. A violation there is an input error, not something a solve
-  produced.
+  produced. Same for a REACTIVE_POWER-mode SVC and a fixed-Q converter station.
+- **A machine the algorithm never modelled is left out** rather than counted against a bus
+  that never saw its reactive power: a remote-regulating generator absent from the
+  controller list, which is what an algorithm that cannot do remote voltage control leaves
+  behind.
+- **`b_min` / `b_max` are checked, not enforced.** The check reports; nothing clamps an SVC
+  to its susceptance range, exactly as nothing clamps a generator to its `[min_q, max_q]`.
 
 ## 2. `TransformerVoltageControl` (RTC) — the control data does not exist
 

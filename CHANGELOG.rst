@@ -167,10 +167,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 [1.0.1] 2026-xx-yy
 --------------------
 - [ADDED] ``compute_bus_q_violations`` on the batch algorithms: every converged row reports
-  the buses whose voltage-regulating generators had to produce more reactive power than the
-  SUM of their limits (``get_bus_q_violations``). Per bus, not per machine: the split
-  between machines of one bus is a convention. Detection only, as OpenLoadFlow's
-  ``ReactiveLimits`` outer loop sees it -- no bus is switched PV -> PQ. Opt in, AC only.
+  the buses whose machines had to produce more reactive power than the SUM of what they own
+  (``get_bus_q_violations``) -- voltage-regulating generators, hvdc converter stations and
+  voltage-mode SVCs, the last through ``b_min`` / ``b_max`` at the solved voltage. Per bus,
+  not per machine: the split between machines of one bus is a convention. Detection only,
+  as OpenLoadFlow's ``ReactiveLimits`` outer loop sees it -- no bus is switched PV -> PQ.
+  Opt in, AC only.
 - [ADDED] ``compute_bus_q_violations`` on the python wrappers too (``TimeSerie``,
   ``InjectionSweep``, ``ContingencyAnalysis``, ``ScenarioSweep``), with
   ``bus_q_violation_tol_mvar``, ``get_bus_q_violations[_n]`` and a ``bus_q_violations`` field

@@ -231,9 +231,10 @@ class ScenarioSweep:
 
     @property
     def compute_bus_q_violations(self):
-        """Whether every converged row reports the buses whose voltage-regulating generators
-        had to produce more (or less) reactive power than the **sum** of their
-        ``[min_q_mvar, max_q_mvar]`` -- see :func:`get_bus_q_violations`. Default: ``False``.
+        """Whether every converged row reports the buses whose machines had to produce more
+        (or less) reactive power than the **sum** of what they own -- voltage-regulating
+        generators, hvdc converter stations and voltage-mode SVCs alike, see
+        :func:`get_bus_q_violations`. Default: ``False``.
         Same meaning as
         :attr:`lightsim2grid.timeSerie.TimeSerie.compute_bus_q_violations`; unlike
         :attr:`compute_limit_violations` this is a PHYSICAL limit (``ViolationCategory.PHYSICAL``):
@@ -477,8 +478,8 @@ class ScenarioSweep:
         """Per row: the list of :class:`LimitViolation` of the buses that needed reactive power
         their machines do not have -- ``element_type`` ``ViolationElementType.BUS``,
         ``element_id`` the grid bus id, ``violation_type`` ``LOW_Q`` / ``HIGH_Q``, ``value``
-        the reactive power that bus' voltage-regulating generators had to produce (MVAr) and
-        ``limit`` the **sum** of their ``min_q_mvar`` / ``max_q_mvar``.
+        the reactive power the machines holding that bus had to produce (MVAr) and ``limit``
+        their **summed** capability.
 
         A row that did not converge has an **empty** entry, not a sentinel (unlike
         :func:`get_violations`) -- use ``self.computer.converged_mask()`` to tell that from

@@ -311,10 +311,11 @@ class ContingencyAnalysis(object):
 
     @property
     def compute_bus_q_violations(self):
-        """Whether every converged contingency reports the buses whose voltage-regulating
-        generators had to produce more (or less) reactive power than the **sum** of their
-        ``[min_q_mvar, max_q_mvar]`` -- see :func:`get_bus_q_violations` and
-        `ContingencyResult.bus_q_violations`. Default: ``False``.
+        """Whether every converged contingency reports the buses whose machines had to
+        produce more (or less) reactive power than the **sum** of what they own --
+        voltage-regulating generators, hvdc converter stations and voltage-mode SVCs alike --
+        see :func:`get_bus_q_violations` and `ContingencyResult.bus_q_violations`. Default:
+        ``False``.
 
         This is a PHYSICAL limit (``ViolationCategory.PHYSICAL``) and not an operational one:
         a machine cannot produce reactive power it does not have, so such a converged solution
