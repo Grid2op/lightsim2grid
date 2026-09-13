@@ -17,48 +17,21 @@ using namespace ls2g;
 namespace {
 
 /**
- * The interface shared by TimeSeriesCPP, InjectionSweepCPP and ScenarioSweepCPP: every
- * instantiation of BaseBatchSweep whose SbusPolicy varies (see
- * batch_algorithm/BaseBatchSweep.hpp). Templated on the instantiation rather than
- * copy-pasted so the three Python classes cannot drift apart.
+ * The interface EVERY instantiation of BaseBatchSweep has, whatever its policies:
+ * what the linear solver did, what of the batch was kept between calls, and the
+ * reverse-mode differentiation block. None of it is SFINAE-gated on the C++ side.
  *
- * Deliberately does NOT bind compute_Vs()/get_sbuses(): those only exist on
- * TimeSeries/InjectionSweep (see bind_legacy_compute_vs below) -- ScenarioSweep never
- * had the old bundled-call API, so binding them unconditionally here would fail to
- * compile for it (the C++ side gates them out via SFINAE).
+ * Separate from bind_batch_sweep_common below, which is the SbusPolicy::Vary half
+ * (modify_*, get_status) and so cannot be given to ContingencyAnalysisCPP. That class
+ * spells its own interface out by hand -- and every feature added to the common binder
+ * silently skipped it, which is how it came to be missing base-case reuse and the whole
+ * adjoint API while the C++ had supported both all along. Anything shared belongs here,
+ * where both call sites pick it up.
  */
 template<class T>
-void bind_batch_sweep_common(py::class_<T> & cls)
+void bind_batch_shared(py::class_<T> & cls)
 {
     cls
-        .def(py::init<const LSGrid &>())
-
-        // solver control
-        .def("change_algorithm", py::overload_cast<const AlgorithmType&>(&T::change_algorithm), DocLSGrid::change_algorithm.c_str())
-        .def("change_algorithm", py::overload_cast<const std::string&>(&T::change_algorithm), DocLSGrid::change_algorithm_by_name.c_str())
-        .def("change_solver", py::overload_cast<const AlgorithmType&>(&T::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
-        .def("change_solver", py::overload_cast<const std::string&>(&T::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
-        .def("available_default_algorithms", &T::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
-        .def("available_algorithm_names", &T::available_algorithm_names, DocLSGrid::available_algorithm_names.c_str())
-        .def("get_algo_type", &T::get_algo_type, DocLSGrid::get_algo_type.c_str())
-        .def("get_algo_name", &T::get_algo_name,
-             "Registry name of the currently selected algorithm. Unlike get_algo_type(), stays "
-             "meaningful for plugin solvers (and built-ins with no dedicated AlgorithmType member).")
-        .def("get_algo_config", &T::get_algo_config,
-             "Config (eg ScalingPolicyType / damping parameters) of the internal solver used for "
-             "every step. Copied once from the grid model's own get_ac_algo_config() at "
-             "construction time, then independent of it; re-apply with set_algo_config() if you "
-             "change the grid model's config afterwards, or after change_algorithm().")
-        .def("set_algo_config", &T::set_algo_config, py::arg("config"),
-             "See get_algo_config().")
-
-        // timers
-        .def("total_time", &T::total_time, DocTimeSeries::total_time.c_str())
-        .def("solver_time", &T::solver_time, DocTimeSeries::solver_time.c_str())
-        .def("preprocessing_time", &T::preprocessing_time, DocTimeSeries::preprocessing_time.c_str())
-        .def("amps_computation_time", &T::amps_computation_time, DocTimeSeries::amps_computation_time.c_str())
-        .def("thread_init_time", &T::thread_init_time, DocTimeSeries::thread_init_time.c_str())
-        .def("nb_solved", &T::nb_solved, DocTimeSeries::nb_solved.c_str())
         .def("get_linear_solver_stats", &T::get_linear_solver_stats,
              "Linear-solver counters of the whole compute() (nb_analyze, nb_factorize, "
              "nb_refactorize, ...), summed over the member algorithm and every worker "
@@ -75,14 +48,6 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              "member one (which solves the 'n' warm-up case, and the whole batch when "
              "single-threaded), then one per worker thread of the last multi-threaded "
              "compute().")
-        .def("nb_converged", &T::nb_converged, DocTimeSeries::nb_converged.c_str())
-        .def("converged_mask", [](const T & self){
-                 const std::vector<char> & c = self.converged_mask();  // char, not bool: see
-                 // ContingencyAnalysis's own converged() binding below for why (disjoint
-                 // multi-threaded writes into std::vector<bool> are not safe, it is bit-packed).
-                 return std::vector<bool>(c.begin(), c.end());
-             },
-             DocTimeSeries::converged_mask.c_str())
 
         // reactive-capability check (see BaseBatchSweep::set_compute_bus_q_violations)
         .def_property("compute_bus_q_violations",
@@ -273,7 +238,61 @@ void bind_batch_sweep_common(py::class_<T> & cls)
         .def("adjoint_solver_stats", &T::adjoint_solver_stats,
              "Linear-solver counters and timings of the last solve_JT(), summed over its "
              "worker threads: how much of the backward pass went into refactorizing each "
-             "row's Jacobian versus into the transposed solves themselves.")
+             "row's Jacobian versus into the transposed solves themselves.");
+}
+
+/**
+ * The interface shared by TimeSeriesCPP, InjectionSweepCPP and ScenarioSweepCPP: every
+ * instantiation of BaseBatchSweep whose SbusPolicy varies (see
+ * batch_algorithm/BaseBatchSweep.hpp). Templated on the instantiation rather than
+ * copy-pasted so the three Python classes cannot drift apart.
+ *
+ * Deliberately does NOT bind compute_Vs()/get_sbuses(): those only exist on
+ * TimeSeries/InjectionSweep (see bind_legacy_compute_vs below) -- ScenarioSweep never
+ * had the old bundled-call API, so binding them unconditionally here would fail to
+ * compile for it (the C++ side gates them out via SFINAE).
+ */
+template<class T>
+void bind_batch_sweep_common(py::class_<T> & cls)
+{
+    bind_batch_shared(cls);
+    cls
+        .def(py::init<const LSGrid &>())
+
+        // solver control
+        .def("change_algorithm", py::overload_cast<const AlgorithmType&>(&T::change_algorithm), DocLSGrid::change_algorithm.c_str())
+        .def("change_algorithm", py::overload_cast<const std::string&>(&T::change_algorithm), DocLSGrid::change_algorithm_by_name.c_str())
+        .def("change_solver", py::overload_cast<const AlgorithmType&>(&T::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
+        .def("change_solver", py::overload_cast<const std::string&>(&T::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
+        .def("available_default_algorithms", &T::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
+        .def("available_algorithm_names", &T::available_algorithm_names, DocLSGrid::available_algorithm_names.c_str())
+        .def("get_algo_type", &T::get_algo_type, DocLSGrid::get_algo_type.c_str())
+        .def("get_algo_name", &T::get_algo_name,
+             "Registry name of the currently selected algorithm. Unlike get_algo_type(), stays "
+             "meaningful for plugin solvers (and built-ins with no dedicated AlgorithmType member).")
+        .def("get_algo_config", &T::get_algo_config,
+             "Config (eg ScalingPolicyType / damping parameters) of the internal solver used for "
+             "every step. Copied once from the grid model's own get_ac_algo_config() at "
+             "construction time, then independent of it; re-apply with set_algo_config() if you "
+             "change the grid model's config afterwards, or after change_algorithm().")
+        .def("set_algo_config", &T::set_algo_config, py::arg("config"),
+             "See get_algo_config().")
+
+        // timers
+        .def("total_time", &T::total_time, DocTimeSeries::total_time.c_str())
+        .def("solver_time", &T::solver_time, DocTimeSeries::solver_time.c_str())
+        .def("preprocessing_time", &T::preprocessing_time, DocTimeSeries::preprocessing_time.c_str())
+        .def("amps_computation_time", &T::amps_computation_time, DocTimeSeries::amps_computation_time.c_str())
+        .def("thread_init_time", &T::thread_init_time, DocTimeSeries::thread_init_time.c_str())
+        .def("nb_solved", &T::nb_solved, DocTimeSeries::nb_solved.c_str())
+        .def("nb_converged", &T::nb_converged, DocTimeSeries::nb_converged.c_str())
+        .def("converged_mask", [](const T & self){
+                 const std::vector<char> & c = self.converged_mask();  // char, not bool: see
+                 // ContingencyAnalysis's own converged() binding below for why (disjoint
+                 // multi-threaded writes into std::vector<bool> are not safe, it is bit-packed).
+                 return std::vector<bool>(c.begin(), c.end());
+             },
+             DocTimeSeries::converged_mask.c_str())
 
         // status
         // `<>`: see the comment above modify_gen_p -- Clang (used for the macOS/arm64
@@ -691,7 +710,9 @@ void bind_batch(py::module_& m) {
                       "contingency) or not. Default: false, meaning each simulation is "
                       "initialized with the given input vector.");
 
-    py::class_<ContingencyAnalysis>(m, "ContingencyAnalysisCPP", DocContingencyAnalysis::ContingencyAnalysis.c_str())
+    py::class_<ContingencyAnalysis> contingency_analysis(m, "ContingencyAnalysisCPP", DocContingencyAnalysis::ContingencyAnalysis.c_str());
+    bind_batch_shared(contingency_analysis);
+    contingency_analysis
         .def(py::init<const LSGrid &, bool>(), py::arg("grid_model"), py::arg("compute_limit_violations") = false)
         .def_property("compute_limit_violations",
                       [](const ContingencyAnalysis & self){ return self.get_compute_limit_violations(); },
