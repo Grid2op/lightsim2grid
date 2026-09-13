@@ -229,6 +229,57 @@ class ScenarioSweep:
             self.__computed = False
         self.computer.violation_threshold = val
 
+    @property
+    def compute_bus_q_violations(self):
+        """Whether every converged row reports the buses whose voltage-regulating generators
+        had to produce more (or less) reactive power than the **sum** of their
+        ``[min_q_mvar, max_q_mvar]`` -- see :func:`get_bus_q_violations`. Default: ``False``.
+        Same meaning as
+        :attr:`lightsim2grid.timeSerie.TimeSerie.compute_bus_q_violations`; unlike
+        :attr:`compute_limit_violations` this is a PHYSICAL limit (``ViolationCategory.PHYSICAL``):
+        a bus needing reactive power its machines do not own is not a state the grid can reach
+        at all, where a current or voltage violation is a reachable state nobody wants to sit
+        in. Detection only: no bus is switched PV -> PQ and no row is re-solved.
+
+        Checked per bus, not per machine (the split between the machines of one bus is a
+        sharing convention, not something the solver decides). Needs an AC algorithm that
+        publishes its per-bus mismatch. Unlike :attr:`compute_limit_violations`, changing this
+        flag keeps the registered injections and contingency masks -- only the results go.
+        """
+        return self.computer.compute_bus_q_violations
+
+    @compute_bus_q_violations.setter
+    def compute_bus_q_violations(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `compute_bus_q_violations` attribute must be a boolean.")
+        val = bool(val)
+        if val == self.computer.compute_bus_q_violations:
+            return  # no-op, matches the C++ side (which also no-ops and does not clear)
+        # the C++ setter drops this batch's base case and results only -- the registered
+        # injections and masks survive, so the python-side mask cache must NOT be dropped
+        # here (unlike in the compute_limit_violations setter above, whose C++ side clear()s
+        # the whole object)
+        self.computer.compute_bus_q_violations = val
+        self.__computed = False
+
+    @property
+    def bus_q_violation_tol_mvar(self):
+        """Slack (MVAr) on the comparison made by :attr:`compute_bus_q_violations`: a violation
+        needs ``q_bus < sum(min_q) - tol`` or ``q_bus > sum(max_q) + tol``. Default: ``1e-4``
+        MVAr. Changing it invalidates any previously-computed results."""
+        return self.computer.bus_q_violation_tol_mvar
+
+    @bus_q_violation_tol_mvar.setter
+    def bus_q_violation_tol_mvar(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `bus_q_violation_tol_mvar` attribute must be a real number.")
+        if val == self.computer.bus_q_violation_tol_mvar:
+            return
+        self.computer.bus_q_violation_tol_mvar = val  # validates, and drops base case + results
+        self.__computed = False
+
     def _check_2d(self, arr, name):
         arr = np.asarray(arr)
         if arr.ndim != 2:
@@ -422,6 +473,25 @@ class ScenarioSweep:
         :attr:`compute_limit_violations` to be ``True`` (raises otherwise)."""
         return self.computer.get_violations_n()
 
+    def get_bus_q_violations(self):
+        """Per row: the list of :class:`LimitViolation` of the buses that needed reactive power
+        their machines do not have -- ``element_type`` ``ViolationElementType.BUS``,
+        ``element_id`` the grid bus id, ``violation_type`` ``LOW_Q`` / ``HIGH_Q``, ``value``
+        the reactive power that bus' voltage-regulating generators had to produce (MVAr) and
+        ``limit`` the **sum** of their ``min_q_mvar`` / ``max_q_mvar``.
+
+        A row that did not converge has an **empty** entry, not a sentinel (unlike
+        :func:`get_violations`) -- use ``self.computer.converged_mask()`` to tell that from
+        "converged, no violation". Requires :attr:`compute_bus_q_violations` to be ``True``
+        (raises otherwise); :func:`run` returns the same lists in a structured result.
+        """
+        return self.computer.get_bus_q_violations()
+
+    def get_bus_q_violations_n(self):
+        """Same as :func:`get_bus_q_violations`, for the pre-batch ("n") case. Empty if that
+        solve did not converge. Requires :attr:`compute_bus_q_violations` to be ``True``."""
+        return self.computer.get_bus_q_violations_n()
+
     @staticmethod
     def _row_converged(limit_violations) -> bool:
         """No ``converged()`` / ``converged_n()`` on ScenarioSweep by design (see
@@ -443,7 +513,10 @@ class ScenarioSweep:
         Requires :attr:`compute_limit_violations` to be ``True`` (set via
         ``this_instance.compute_limit_violations = True`` -- there is no constructor
         argument for it, unlike :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis`),
-        else a ``RuntimeError`` is raised.
+        else a ``RuntimeError`` is raised. ``bus_q_violations`` is filled as well when
+        :attr:`compute_bus_q_violations` is on, and is an empty list otherwise -- it is kept
+        apart from ``limit_violations`` because a reactive-capability violation is a PHYSICAL
+        statement (the solution is unreachable) rather than an operational one.
 
         Unlike :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.run`,
         rows are already in caller-set order here (no dedup / reordering concept,
@@ -470,9 +543,15 @@ class ScenarioSweep:
             self.compute(ignore_errors=True)
 
         violations_n = list(self.computer.get_violations_n())
+        # the reactive-capability check is a separate opt-in: an empty list where it is off
+        # (see PreContingencyResult.bus_q_violations)
+        with_bus_q = self.computer.compute_bus_q_violations
+        bus_q_n = list(self.computer.get_bus_q_violations_n()) if with_bus_q else []
+        bus_q = self.computer.get_bus_q_violations() if with_bus_q else None
         pre_contingency_result = PreContingencyResult(
             converged=self._row_converged(violations_n),
             limit_violations=violations_n,
+            bus_q_violations=bus_q_n,
         )
 
         n_line = len(self.grid2op_env.backend._grid.get_lines())
@@ -493,6 +572,7 @@ class ScenarioSweep:
                 contingency_name=None,
                 converged=self._row_converged(row_violations),
                 limit_violations=row_violations,
+                bus_q_violations=list(bus_q[row_id]) if bus_q is not None else [],
             ))
         return SecurityAnalysisResult(pre_contingency_result, post_contingency_results)
 

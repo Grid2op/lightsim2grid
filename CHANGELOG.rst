@@ -171,6 +171,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   SUM of their limits (``get_bus_q_violations``). Per bus, not per machine: the split
   between machines of one bus is a convention. Detection only, as OpenLoadFlow's
   ``ReactiveLimits`` outer loop sees it -- no bus is switched PV -> PQ. Opt in, AC only.
+- [ADDED] ``compute_bus_q_violations`` on the python wrappers too (``TimeSerie``,
+  ``InjectionSweep``, ``ContingencyAnalysis``, ``ScenarioSweep``), with
+  ``bus_q_violation_tol_mvar``, ``get_bus_q_violations[_n]`` and a ``bus_q_violations`` field
+  on the ``run()`` result -- kept apart from ``limit_violations``, which are operational.
 - [ADDED] ``ViolationCategory`` on every ``LimitViolation``: OPERATIONAL (a limit the grid
   may leave -- voltage, current), PHYSICAL (one it cannot -- the reactive capability) or
   SOLVER (not a limit: NOT_SIMULATED, DIVERGENCE). Derived from ``violation_type``.

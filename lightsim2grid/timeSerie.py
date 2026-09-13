@@ -131,6 +131,84 @@ class TimeSerie:
             raise ValueError("The `init_from_n_powerflow` attribute must be a boolean.")
         self.computer.init_from_n_powerflow = bool(val)
         
+    @property
+    def compute_bus_q_violations(self):
+        """Whether every converged step reports the buses whose voltage-regulating generators
+        had to produce more (or less) reactive power than the **sum** of their
+        ``[min_q_mvar, max_q_mvar]`` -- see :func:`get_bus_q_violations`. Default: ``False``.
+
+        A voltage-regulating generator has no reactive setpoint: its reactive output is solved
+        for, and lightsim2grid never clamps it. So a step can converge with a bus' machines
+        having to produce reactive power they do not own -- which is not an operational limit
+        one may choose to exceed but a solution the grid cannot reach at all (``violation_type``
+        ``LOW_Q`` / ``HIGH_Q``, whose ``category`` is ``ViolationCategory.PHYSICAL``). It is the
+        condition PowSyBl OpenLoadFlow's ``ReactiveLimits`` outer loop acts on; this only
+        **reports** it, no bus is switched PV -> PQ and no step is re-solved.
+
+        Checked per bus, not per machine: how a bus' reactive power is divided between several
+        machines standing on it is a sharing convention rather than something the solver
+        decides, so a per-machine check would report the convention. Two 20 MVAr machines
+        covering 30 MVAr together is feasible and is not reported.
+
+        Needs an AC algorithm that publishes its per-bus mismatch (every built-in AC algorithm
+        does; a DC one has no reactive power at all): ``compute`` raises otherwise. Changing
+        this flag invalidates any previously-computed results, but not the injections already
+        given to ``modify_*``.
+        """
+        return self.computer.compute_bus_q_violations
+
+    @compute_bus_q_violations.setter
+    def compute_bus_q_violations(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `compute_bus_q_violations` attribute must be a boolean.")
+        val = bool(val)
+        if val == self.computer.compute_bus_q_violations:
+            return  # no-op, matches the C++ side (which also no-ops and does not clear)
+        # the C++ setter drops this batch's base case and results, and keeps the registered
+        # injections -- so only the python-side "already computed" bookkeeping follows it
+        self.computer.compute_bus_q_violations = val
+        self.__computed = False
+
+    @property
+    def bus_q_violation_tol_mvar(self):
+        """Slack (MVAr) on the comparison made by :attr:`compute_bus_q_violations`, so that a
+        bus resting exactly on its summed capability is not reported over solver noise: a
+        violation needs ``q_bus < sum(min_q) - tol`` or ``q_bus > sum(max_q) + tol``. Default:
+        ``1e-4`` MVAr. Changing it invalidates any previously-computed results.
+        """
+        return self.computer.bus_q_violation_tol_mvar
+
+    @bus_q_violation_tol_mvar.setter
+    def bus_q_violation_tol_mvar(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `bus_q_violation_tol_mvar` attribute must be a real number.")
+        if val == self.computer.bus_q_violation_tol_mvar:
+            return
+        self.computer.bus_q_violation_tol_mvar = val  # validates, and drops base case + results
+        self.__computed = False
+
+    def get_bus_q_violations(self):
+        """Per step (same order as the ``modify_*`` inputs): the list of ``LimitViolation`` of
+        the buses that needed reactive power their machines do not have -- ``element_type``
+        ``ViolationElementType.BUS``, ``element_id`` the grid bus id, ``violation_type``
+        ``LOW_Q`` / ``HIGH_Q``, ``value`` the reactive power that bus' voltage-regulating
+        generators had to produce (MVAr) and ``limit`` the **sum** of their
+        ``min_q_mvar`` / ``max_q_mvar``.
+
+        A step that did not converge has an **empty** entry, not a sentinel -- use
+        ``self.computer.converged_mask()`` to tell that from "converged, no violation".
+        Requires :attr:`compute_bus_q_violations` to be ``True`` (raises otherwise).
+        """
+        return self.computer.get_bus_q_violations()
+
+    def get_bus_q_violations_n(self):
+        """Same as :func:`get_bus_q_violations`, for the base ("n") case every step is solved
+        from (the grid's own state, no injection change). Empty if that solve did not converge.
+        Requires :attr:`compute_bus_q_violations` to be ``True`` (raises otherwise)."""
+        return self.computer.get_bus_q_violations_n()
+
     def get_injections(self, scenario_id=None, seed=None):
         """
         This function allows to retrieve the injection of the given scenario, for the given seed

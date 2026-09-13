@@ -7,18 +7,19 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 __all__ = ["ContingencyAnalysisCPP", "LimitViolation", "ViolationElementType",
-           "LimitViolationType", "PreContingencyResult",
+           "LimitViolationType", "ViolationCategory", "PreContingencyResult",
            "ContingencyResult", "SecurityAnalysisResult"]
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 import numpy as np
 from collections.abc import Iterable
 
 from lightsim2grid.algorithm import AlgorithmType
 from .lightsim2grid_cpp import (ContingencyAnalysisCPP, LimitViolation,
-                                 ViolationElementType, LimitViolationType)
+                                 ViolationElementType, LimitViolationType,
+                                 ViolationCategory)
 
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend
@@ -41,6 +42,13 @@ class PreContingencyResult:
     """
     converged: bool
     limit_violations: List[LimitViolation]
+    #: buses that needed reactive power their machines do not have, when
+    #: `ContingencyAnalysis.compute_bus_q_violations` is on (an empty list otherwise). Kept
+    #: apart from `limit_violations` because it is a different KIND of statement: every entry
+    #: here has `category == ViolationCategory.PHYSICAL` -- a state the grid cannot reach --
+    #: where `limit_violations` carries OPERATIONAL limits it can leave (and the SOLVER
+    #: sentinel of a non-converged case).
+    bus_q_violations: List[LimitViolation] = field(default_factory=list)
 
 
 @dataclass
@@ -59,6 +67,8 @@ class ContingencyResult:
     contingency_name: Optional[str]  #: user-supplied name, see `add_single_contingency`
     converged: bool
     limit_violations: List[LimitViolation]
+    #: see `PreContingencyResult.bus_q_violations`
+    bus_q_violations: List[LimitViolation] = field(default_factory=list)
 
 
 @dataclass
@@ -298,6 +308,85 @@ class ContingencyAnalysis(object):
             # empty result arrays. Keep the registered contingencies (with_contlist=False).
             self.clear(with_contlist=False)
         self.computer.violation_threshold = val
+
+    @property
+    def compute_bus_q_violations(self):
+        """Whether every converged contingency reports the buses whose voltage-regulating
+        generators had to produce more (or less) reactive power than the **sum** of their
+        ``[min_q_mvar, max_q_mvar]`` -- see :func:`get_bus_q_violations` and
+        `ContingencyResult.bus_q_violations`. Default: ``False``.
+
+        This is a PHYSICAL limit (``ViolationCategory.PHYSICAL``) and not an operational one:
+        a machine cannot produce reactive power it does not have, so such a converged solution
+        is not a state the grid can reach at all -- where a current or voltage violation is a
+        reachable state nobody wants to sit in. It is the condition PowSyBl OpenLoadFlow's
+        ``ReactiveLimits`` outer loop acts on; this only **reports** it, no bus is switched
+        PV -> PQ and no contingency is re-solved.
+
+        Checked per bus, not per machine: how a bus' reactive power is divided between several
+        machines standing on it is a sharing convention rather than something the solver
+        decides, so a per-machine check would report the convention. Two 20 MVAr machines
+        covering 30 MVAr together is feasible and is not reported.
+
+        Independent of `compute_limit_violations`: either can be on without the other (though
+        `run` still requires `compute_limit_violations`, and fills `bus_q_violations` only when
+        this one is on too). Needs an AC algorithm that publishes its per-bus mismatch (every
+        built-in AC algorithm does; a DC one has no reactive power at all). Changing this flag
+        invalidates any computed result but keeps the registered contingencies.
+        """
+        return self.computer.compute_bus_q_violations
+
+    @compute_bus_q_violations.setter
+    def compute_bus_q_violations(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `compute_bus_q_violations` attribute must be a boolean.")
+        val = bool(val)
+        if val == self.computer.compute_bus_q_violations:
+            return  # no-op, matches the C++ side (which also no-ops and does not clear)
+        # unlike `compute_limit_violations`, the C++ setter keeps the registered
+        # contingencies: it drops this batch's base case and results only. So the python-side
+        # contingency bookkeeping is kept too (with_contlist=False).
+        self.computer.compute_bus_q_violations = val
+        self.clear(with_contlist=False)
+
+    @property
+    def bus_q_violation_tol_mvar(self):
+        """Slack (MVAr) on the comparison made by :attr:`compute_bus_q_violations`, so that a
+        bus resting exactly on its summed capability is not reported over solver noise: a
+        violation needs ``q_bus < sum(min_q) - tol`` or ``q_bus > sum(max_q) + tol``. Default:
+        ``1e-4`` MVAr.
+
+        Unlike :attr:`violation_threshold` -- a fraction, and one that only invalidates results
+        when it is *lowered* -- this is an absolute tolerance in MVAr, and any change to it
+        invalidates the computed results (in either direction: a smaller one reports
+        violations the recorded results do not contain, a larger one leaves recorded ones that
+        should no longer be reported). The registered contingencies are kept.
+        """
+        return self.computer.bus_q_violation_tol_mvar
+
+    @bus_q_violation_tol_mvar.setter
+    def bus_q_violation_tol_mvar(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `bus_q_violation_tol_mvar` attribute must be a real number.")
+        if val == self.computer.bus_q_violation_tol_mvar:
+            return
+        self.computer.bus_q_violation_tol_mvar = val  # validates, and drops base case + results
+        self.clear(with_contlist=False)
+
+    def get_bus_q_violations(self):
+        """Per contingency, in the C++-side order (`my_defaults()`): the list of
+        :class:`LimitViolation` of the buses that needed reactive power their machines do not
+        have. Prefer :func:`run`, which returns them per contingency in the caller's own order
+        and alongside the operational ones. Requires :attr:`compute_bus_q_violations` to be
+        ``True`` (raises otherwise)."""
+        return self.computer.get_bus_q_violations()
+
+    def get_bus_q_violations_n(self):
+        """Same as :func:`get_bus_q_violations`, for the pre-contingency ("n") case. Requires
+        :attr:`compute_bus_q_violations` to be ``True`` (raises otherwise)."""
+        return self.computer.get_bus_q_violations_n()
 
     @property
     def nb_thread(self):
@@ -600,6 +689,16 @@ class ContingencyAnalysis(object):
                 cont.contingency_name  # optional, user-supplied via add_single_contingency(..., name=...)
                 cont.converged
                 cont.limit_violations
+                cont.bus_q_violations  # only if compute_bus_q_violations is on too
+
+        .. note::
+            `limit_violations` and `bus_q_violations` are kept apart because they are
+            different KINDS of statement, not two flavours of the same one (see
+            `LimitViolation.category`): an OPERATIONAL limit the grid can leave (a bus outside
+            its voltage band, a branch above its rating) versus a PHYSICAL one it cannot (a bus
+            needing reactive power its machines do not have, which makes the converged solution
+            unreachable rather than merely undesirable). `bus_q_violations` is an empty list
+            unless `compute_bus_q_violations` is also `True`.
 
         .. note::
             A `converged == False` post-contingency entry has exactly one `LimitViolation` in
@@ -627,10 +726,15 @@ class ContingencyAnalysis(object):
 
         converged = self.computer.converged()
         violations = self.computer.get_violations()
+        # the reactive-capability check is a separate opt-in: an empty list where it is off
+        # (see PreContingencyResult.bus_q_violations)
+        with_bus_q = self.computer.compute_bus_q_violations
+        bus_q = self.computer.get_bus_q_violations() if with_bus_q else None
 
         pre_contingency_result = PreContingencyResult(
             converged=self.computer.converged_n(),
             limit_violations=list(self.computer.get_violations_n()),
+            bus_q_violations=list(self.computer.get_bus_q_violations_n()) if with_bus_q else [],
         )
         post_contingency_results = [
             ContingencyResult(
@@ -639,6 +743,7 @@ class ContingencyAnalysis(object):
                 contingency_name=self._contingency_names.get(self._all_contingencies[id_me]),
                 converged=bool(converged[id_cpp]),
                 limit_violations=list(violations[id_cpp]),
+                bus_q_violations=list(bus_q[id_cpp]) if bus_q is not None else [],
             )
             for id_me, id_cpp in enumerate(orders_)
         ]
