@@ -604,6 +604,94 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     _timer_total = timer.duration();
 }
 
+template<class YbusPolicy, class SbusPolicy, BatchInitKind INIT>
+BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::gen_v_indirect_grad(
+    const Eigen::Ref<const BatchAdjoint::RealMatRM> & lambda)
+{
+    const Eigen::Index nb_gen = static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb());
+    const Eigen::Index nb_rows = _nb_result_rows();
+    BatchAdjoint::RealMatRM res = BatchAdjoint::RealMatRM::Zero(nb_rows, nb_gen);
+    if(nb_rows == 0 || nb_gen == 0) return res;
+
+    if(!_algo.ac_solver_used()){
+        std::ostringstream exc_;
+        exc_ << algo_name() << "::gen_v_indirect_grad: the gen_v gradient is an AC quantity -- "
+                "it is the sensitivity of the reactive balance to a voltage setpoint, and a DC "
+                "powerflow has neither. The current algorithm is a DC one.";
+        throw std::runtime_error(exc_.str());
+    }
+    if(lambda.rows() != nb_rows){
+        std::ostringstream exc_;
+        exc_ << algo_name() << "::gen_v_indirect_grad: got " << lambda.rows() << " rows of lambda "
+                "for a batch of " << nb_rows << ". Pass what solve_JT() returned for this batch.";
+        throw std::runtime_error(exc_.str());
+    }
+
+    const IntVect target_bus = get_gen_v_target_bus();          // grid bus, or -1
+    const IntVect p_row = _algo.get_p_to_J_row_python();        // solver bus -> J row
+    const IntVect q_row = _algo.get_q_to_J_row_python();
+    const auto me_to_solver = active_layout().id_me_to_solver.as_eigen();
+    const auto solver_to_me = active_layout().id_solver_to_me.as_eigen();
+
+    // the generators that carry a gradient at all, paired with their solver bus. Most
+    // grids leave the majority of this list empty (one regulating generator per bus,
+    // every other one skipped or overwritten), and a bus appears at most once.
+    std::vector<std::pair<int, Eigen::Index> > bus_and_gen;   // (solver bus, generator)
+    for(Eigen::Index g = 0; g < nb_gen && g < target_bus.size(); ++g){
+        const int bus_me = target_bus[g];
+        if(bus_me < 0 || bus_me >= me_to_solver.size()) continue;
+        const int bus_solver = me_to_solver[bus_me];
+        if(bus_solver < 0) continue;
+        bus_and_gen.push_back(std::make_pair(bus_solver, g));
+    }
+    if(bus_and_gen.empty()) return res;
+
+    // one copy for the whole call; each row's contingency edits are applied to it and
+    // taken back off, exactly as the forward row loop does to its own copy
+    Eigen::SparseMatrix<cplx_type> Ybus = ac_cache_.mat;
+    const CplxMat & voltages = get_voltages();
+    CplxVect V_solver(solver_to_me.size());
+    CplxVect I_solver(solver_to_me.size());
+
+    for(Eigen::Index i = 0; i < nb_rows; ++i){
+        if(static_cast<size_t>(i) < _converged_mask_.size() && !_converged_mask_[static_cast<size_t>(i)]) continue;
+        _patch_ybus_values(Ybus, static_cast<size_t>(i), false);
+
+        // this row's converged voltage, on the solver's buses
+        for(Eigen::Index b = 0; b < solver_to_me.size(); ++b) V_solver[b] = voltages(i, solver_to_me[b]);
+        // the injected current, hence the injected power, at every bus: one sparse
+        // product rather than a walk of row b of a column-major matrix per target bus
+        I_solver.noalias() = Ybus * V_solver;
+
+        for(size_t k = 0; k < bus_and_gen.size(); ++k){
+            const int b = bus_and_gen[k].first;
+            const Eigen::Index g = bus_and_gen[k].second;
+            const real_type vm_b = std::abs(V_solver[b]);
+            if(!(vm_b > 0.)) continue;
+            const cplx_type u_conj = std::conj(V_solver[b] / vm_b);   // conj of the unit phasor
+            // S_b = V_b . conj(I_b), so the "self" term of dS_b/d|V_b| -- e^{j.theta_b}
+            // times conj(I_b) -- is just S_b / |V_b|, no second walk of the matrix
+            const cplx_type s_over_vm = V_solver[b] * std::conj(I_solver[b]) / vm_b;
+
+            real_type acc = 0.;
+            // column b of Ybus: every bus whose injection this magnitude reaches
+            for(Eigen::SparseMatrix<cplx_type>::InnerIterator it(Ybus, b); it; ++it){
+                const int row_bus = static_cast<int>(it.row());
+                // dS_i/d|V_b| = V_i . conj(Y_ib) . conj(u_b), plus S_b/|V_b| on the diagonal
+                cplx_type dS = V_solver[row_bus] * std::conj(it.value()) * u_conj;
+                if(row_bus == b) dS += s_over_vm;
+                // ... contracted with lambda over the two mismatch equations of that bus
+                if(row_bus < p_row.size() && p_row[row_bus] >= 0) acc -= lambda(i, p_row[row_bus]) * dS.real();
+                if(row_bus < q_row.size() && q_row[row_bus] >= 0) acc -= lambda(i, q_row[row_bus]) * dS.imag();
+            }
+            res(i, g) = acc;
+        }
+
+        _patch_ybus_values(Ybus, static_cast<size_t>(i), true);
+    }
+    return res;
+}
+
 // Compile all 4 instantiations once, here, into the core library: every other
 // translation unit picks them up through the `extern template` declarations at the
 // bottom of BaseBatchSweep.hpp instead of instantiating the template again. This

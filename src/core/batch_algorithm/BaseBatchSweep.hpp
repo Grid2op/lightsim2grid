@@ -897,6 +897,58 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return _adjoint_.solve_JT(xbar, _adjoint_identity_rows(), _nb_thread, _adjoint_row_ok_);
         }
 
+        // ---- the generator voltage setpoint (modify_gen_v) ------------------------
+        // A bus whose magnitude the Newton-Raphson does NOT solve for -- a PV bus, the
+        // slack -- holds it at whatever the starting voltage had, and modify_gen_v is
+        // what puts it there (GeneratorContainer::set_vm). So for those buses gen_v is
+        // a PARAMETER of the system, and a loss differentiates through it in two parts:
+        //
+        //   direct    L depends on V_k = v_k . e^{j.theta_k} explicitly, at fixed
+        //             unknowns: Re(conj(V_k/|V_k|) . dL/dV_k). Note this is the very
+        //             same quantity a PQ bus contributes to xbar -- a bus whose |V| is
+        //             an unknown hands it to the adjoint, a bus whose |V| is a
+        //             parameter hands it to that parameter's gradient.
+        //   indirect  v_k moves the solution: -lambda^T dF/dv_k, which is
+        //             gen_v_indirect_grad() below. dF/dv_k is the dS/d|V| column the
+        //             Jacobian does not store for such a bus, precisely because its
+        //             magnitude is not an unknown.
+        //
+        // The caller does the direct half (it is two lines of the same arithmetic that
+        // builds xbar) and asks for the indirect one here, where Ybus is.
+
+        // The GRID bus whose magnitude each generator's gen_v setpoint actually fixes,
+        // -1 where it fixes none -- which is the case for a generator that is
+        // disconnected, not regulating or treated as off, for one whose setpoint a
+        // later generator on the same bus overwrites (set_vm is last-writer-wins, so
+        // only one generator per bus can carry a gradient), and for one regulating a
+        // bus the solve gives a magnitude unknown to anyway (a PQ bus: gen_v only moves
+        // its starting point, so it earns no gradient).
+        IntVect get_gen_v_target_bus() const {
+            std::vector<int> solver_bus;
+            _grid_model.get_generators().vm_target_buses(active_layout().id_me_to_solver, solver_bus);
+            const IntVect vm_col = _algo.get_vm_to_J_col_python();
+            const auto solver_to_me = active_layout().id_solver_to_me.as_eigen();
+            IntVect res = IntVect::Constant(static_cast<Eigen::Index>(solver_bus.size()), -1);
+            for(size_t g = 0; g < solver_bus.size(); ++g){
+                const int b = solver_bus[g];
+                if(b < 0) continue;
+                if(b < vm_col.size() && vm_col[b] >= 0) continue;   // |V| is an unknown there
+                if(b >= solver_to_me.size()) continue;
+                res[static_cast<Eigen::Index>(g)] = solver_to_me[b];
+            }
+            return res;
+        }
+
+        // The indirect half of the gen_v gradient: `-lambda^T dF/dv` per row and per
+        // generator, keyed like get_gen_v_target_bus() (zero wherever that says -1, and
+        // on a row that did not converge). `lambda` is what solve_JT returned, so the
+        // adjoint system is solved once and both halves of the gradient read it.
+        //
+        // dF/dv_k is the dS/d|V_k| column, taken on THIS row's admittance matrix -- the
+        // base one with the row's own contingency edits applied, which is why this
+        // lives here and not in the caller.
+        BatchAdjoint::RealMatRM gen_v_indirect_grad(const Eigen::Ref<const BatchAdjoint::RealMatRM> & lambda);
+
         // Per row: 1 where solve_JT() actually solved that row's adjoint system.
         const std::vector<char> & adjoint_row_ok() const { return _adjoint_row_ok_; }
 
@@ -1321,6 +1373,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _readd_step_coeffs(Eigen::SparseMatrix<cplx_type> &, size_t, bool, AlgorithmSelector &) {}
+
+        // ----- per-row Ybus edit, matrix only: 2-way ------------------------------
+        // The pair above goes through YbusPolicy, which also tells the ALGORITHM its
+        // matrix changed. These touch nothing but the coefficients, for a reader that
+        // wants row i's matrix without disturbing a solver (gen_v_indirect_grad).
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void _patch_ybus_values(Eigen::SparseMatrix<cplx_type> & Ybus, size_t i, bool undo) const {
+            if(i >= ybus_policy_.li_coeffs.size()) return;
+            for(const auto & c : ybus_policy_.li_coeffs[i]){
+                if(undo) Ybus.coeffRef(c.row_id, c.col_id) += c.value;
+                else     Ybus.coeffRef(c.row_id, c.col_id) -= c.value;
+            }
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        void _patch_ybus_values(Eigen::SparseMatrix<cplx_type> &, size_t, bool) const {}
 
         // ----- per-step Sbus: 2-way (row of sbus_policy_ vs. the fixed member) ---
         // Row i's injection: built into `scratch` (one buffer per range: no row

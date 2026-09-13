@@ -11,6 +11,8 @@
 
 #include <cmath>
 #include <sstream>
+#include <map>
+#include <vector>
 
 #include "Utils.hpp"
 #include "OneSideContainer_PQ.hpp"
@@ -194,6 +196,48 @@ class VoltageSourceContainer : public OneSideContainer_PQ
                 throw std::runtime_error(exc_.str());
             }
             _set_vm_impl(V, id_grid_to_solver, target_vm_pu_row);
+        }
+
+        /**
+        Which solver bus each element's set_vm() would actually fix the magnitude of:
+        the same walk _set_vm_impl does, answering with the bus instead of writing it.
+        `out` is keyed by element id, `_deactivated_bus_id` where that element fixes
+        nothing.
+
+        Two elements can regulate one bus, and _set_vm_impl is "last writer wins" --
+        so of a group regulating the same bus only the LAST reports it, and the others
+        report nothing. That is not a detail: for a caller differentiating through a
+        setpoint (see BaseBatchSweep::get_gen_v_target_bus) it is the difference
+        between one gradient and several wrong ones, since the earlier elements'
+        setpoints do not reach the solve at all.
+
+        Deliberately sitting next to _set_vm_impl rather than reconstructed from the
+        containers' public state: the two answer the same question and must skip the
+        same elements, and here that is one screen apart instead of two files.
+        **/
+        void vm_target_buses(const SolverBusIdVect & id_grid_to_solver, std::vector<int> & out) const
+        {
+            const int nb_el = nb();
+            out.assign(static_cast<size_t>(nb_el), _deactivated_bus_id);
+            std::map<int, int> last_writer;   // solver bus -> the element that writes it last
+            for(int el_id = 0; el_id < nb_el; ++el_id){
+                // ---- the same four skips as _set_vm_impl, in the same order
+                if(!status_[el_id]) continue;
+                if (!voltage_regulator_on_[el_id]) continue;
+                if (leaf()._treated_as_off(el_id)) continue;
+                if (leaf()._set_vm_skips(el_id)) continue;
+
+                const int target_grid_bus = regulated_bus_id_(el_id);
+                // where _set_vm_impl would throw or skip, this reports nothing: it is
+                // asked what a setpoint reaches, not whether the grid is consistent
+                if(target_grid_bus == _deactivated_bus_id) continue;
+                const SolverBusId bus_id_solver = id_grid_to_solver[target_grid_bus];
+                if(bus_id_solver.cast_int() == _deactivated_bus_id) continue;
+                last_writer[bus_id_solver.cast_int()] = el_id;
+            }
+            for(const auto & bus_and_el : last_writer){
+                out[static_cast<size_t>(bus_and_el.second)] = bus_and_el.first;
+            }
         }
 
         /**

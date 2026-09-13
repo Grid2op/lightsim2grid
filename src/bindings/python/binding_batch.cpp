@@ -163,6 +163,28 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              "read out of solve_JT's result.")
         .def("get_q_row_of_bus", &T::get_q_row_of_bus,
              "Same as get_p_row_of_bus for the REACTIVE power mismatch equation.")
+        .def("get_gen_v_target_bus", &T::get_gen_v_target_bus,
+             "Per generator, the GRID bus whose voltage magnitude its ``gen_v`` set-point "
+             "actually fixes -- or -1 where it fixes none, which is where its gradient is "
+             "zero.\n\n"
+             "A generator fixes nothing when it is disconnected, not regulating, or "
+             "treated as off; when a later generator on the same bus overwrites its "
+             "set-point (``set_vm`` is last-writer-wins, so at most one generator per bus "
+             "can carry a gradient); or when the bus it regulates gets a magnitude unknown "
+             "from the solver anyway (a PQ bus -- ``gen_v`` only moves its starting point "
+             "there, so it earns no gradient).")
+        .def("gen_v_indirect_grad", &T::gen_v_indirect_grad, py::arg("lambda_"),
+             "The indirect half of the ``gen_v`` gradient, ``(n_scenarios, n_gen)``: "
+             "``-lambda^T dF/dv``, keyed like get_gen_v_target_bus() and zero wherever "
+             "that reads -1, or on a row that did not converge.\n\n"
+             "``lambda_`` is what solve_JT() returned for this batch, so the adjoint "
+             "system is solved once and both halves of the gradient read it. The other "
+             "half is direct -- the loss depends on `V_k = v_k . exp(j.theta_k)` "
+             "explicitly -- and is `Re(conj(V_k/|V_k|) . dL/dV_k)`, the very quantity a PQ "
+             "bus instead contributes to ``xbar``: a bus whose magnitude is an unknown "
+             "hands it to the adjoint, a bus whose magnitude is a set-point hands it to "
+             "that set-point's gradient.\n\n"
+             "AC Newton-Raphson only; raises on a DC algorithm.")
         .def("solve_JT", &T::solve_JT, py::arg("xbar"),
              "Solve the adjoint system `J_i^T . lambda_i = xbar_i` of every row, and return "
              "lambda. Requires `keep_jacobian` to have been True during compute().\n\n"

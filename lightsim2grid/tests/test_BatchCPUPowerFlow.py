@@ -37,6 +37,19 @@ except ImportError:
     PP_AVAILABLE = False
 
 
+def _two_gens_on_one_bus():
+    """case14 with a second generator added on bus 1, regulating it as well. Both
+    set-points then aim at the same bus, and only the last one applied reaches the
+    solve (VoltageSourceContainer::set_vm is last-writer-wins)."""
+    import pandapower as pp
+    net = pn.case14()
+    bus = int(net.gen.bus.iloc[0])
+    pp.create_gen(net, bus=bus, p_mw=float(net.gen.p_mw.iloc[0]) * 0.5,
+                  vm_pu=float(net.gen.vm_pu.iloc[0]), min_q_mvar=-500., max_q_mvar=500.,
+                  controllable=True)
+    return net
+
+
 @unittest.skipUnless(TORCH_AVAILABLE and PP_AVAILABLE, "needs pytorch and pandapower")
 class TestBatchCPUPowerFlow(unittest.TestCase):
     N_SCEN = 4
@@ -245,14 +258,125 @@ class TestBatchCPUPowerFlow(unittest.TestCase):
         np.testing.assert_allclose(after.detach().numpy(), fresh.detach().numpy(),
                                    rtol=1e-10, atol=1e-10)
 
-    def test_gen_v_is_usable_but_not_yet_differentiable(self):
+    def test_gen_v_is_usable(self):
         pf = self._make()
         gen_v = np.full((self.N_SCEN, self.pf.n_gen), 1.02)
         V = pf(load_p=torch.tensor(self.load_p), gen_v=torch.tensor(gen_v))
         self.assertTrue(pf.converged().all())
-        with self.assertRaises(NotImplementedError):
-            pf(load_p=torch.tensor(self.load_p),
-               gen_v=torch.tensor(gen_v, requires_grad=True))
+        np.testing.assert_allclose(np.abs(V.detach().numpy()[:, self._regulated_buses(pf)]),
+                                   1.02, rtol=1e-8)
+
+    @staticmethod
+    def _regulated_buses(pf):
+        """the buses a gen_v set-point actually pins -- the ones whose magnitude it is
+        fair to read back (see get_gen_v_target_bus)"""
+        target = np.asarray(pf._sweep.get_gen_v_target_bus())
+        return np.unique(target[target >= 0])
+
+    # ------------------------------------------------------- gen_v is differentiable
+    def _gen_v_inputs(self):
+        """a set-point per row and per generator, all distinct, and away from the
+        grid's own so nothing passes by accident"""
+        rng = np.random.default_rng(7)
+        return 1.02 + 0.02 * rng.random((self.N_SCEN, self.pf.n_gen))
+
+    def test_gradient_of_gen_v(self):
+        gen_v = self._gen_v_inputs()
+        inputs = dict(load_p=self.load_p, gen_v=gen_v)
+        pf = self._make()
+        tensors = {k: torch.tensor(v, requires_grad=True) for k, v in inputs.items()}
+        V = pf(**tensors)
+        self.assertTrue(pf.converged().all())
+        self._loss(V).backward()
+
+        grad = tensors["gen_v"].grad
+        self.assertIsNotNone(grad)
+        target = np.asarray(pf._sweep.get_gen_v_target_bus())
+        live = np.flatnonzero(target >= 0)
+        self.assertGreater(live.size, 0, "case14 should have at least one live set-point")
+
+        # every entry, live or dead, against a finite difference of the whole sweep
+        for g in range(self.pf.n_gen):
+            for row in (0, self.N_SCEN - 1):
+                fd = self._fd("gen_v", (row, g), delta=1e-6, **inputs)
+                self.assertAlmostEqual(
+                    grad[row, g].item(), fd, places=5,
+                    msg=f"gen_v[{row},{g}]: adjoint {grad[row, g].item()} vs fd {fd}")
+
+    def test_a_set_point_that_never_reaches_the_solve_has_no_gradient(self):
+        """set_vm is last-writer-wins, so of several generators regulating one bus only
+        the last one's set-point is applied. The others are dead inputs: their gradient
+        must be exactly zero, and a finite difference must agree that nothing moves.
+
+        case14 has one generator per bus and would never exercise this, so the grid
+        here deliberately doubles one up -- which is the ordinary case on a real grid,
+        where a busbar carries several machines."""
+        def make():
+            grid = init_from_pandapower(_two_gens_on_one_bus())
+            return self._cls.init_from_grid(grid, tol=self.TOL)
+
+        pf = make()
+        n_scen, n_gen = 3, pf.n_gen
+        rng = np.random.default_rng(3)
+        load_p = np.asarray(pf._grid.get_load_target_p())[None, :] * (
+            1. + 0.1 * rng.standard_normal((n_scen, pf.n_load)))
+        gen_v = 1.01 + 0.02 * rng.random((n_scen, n_gen))
+        inputs = dict(load_p=load_p, gen_v=gen_v)
+
+        tensors = {k: torch.tensor(v, requires_grad=True) for k, v in inputs.items()}
+        self._loss(pf(**tensors)).backward()
+        self.assertTrue(pf.converged().all())
+
+        target = np.asarray(pf._sweep.get_gen_v_target_bus())
+        dead = np.flatnonzero(target < 0)
+        live = np.flatnonzero(target >= 0)
+        self.assertGreater(dead.size, 0, "the doubled-up generator should be a dead input")
+        self.assertGreater(live.size, 0)
+
+        def fd(name, idx, delta=1e-6):
+            out = []
+            for sign in (+1., -1.):
+                pert = {k: v.copy() for k, v in inputs.items()}
+                pert[name][idx] += sign * delta
+                out.append(float(self._loss(make()(**{k: torch.tensor(v)
+                                                      for k, v in pert.items()}))))
+            return (out[0] - out[1]) / (2. * delta)
+
+        for g in dead:
+            np.testing.assert_array_equal(tensors["gen_v"].grad[:, g].numpy(),
+                                          np.zeros(n_scen))
+            self.assertAlmostEqual(fd("gen_v", (0, int(g))), 0., places=8)
+        for g in live:          # ... and the one that DOES reach the solve is not zero
+            self.assertAlmostEqual(tensors["gen_v"].grad[0, g].item(),
+                                   fd("gen_v", (0, int(g))), places=5)
+
+    def test_gradcheck_gen_v(self):
+        gen_v = torch.tensor(self._gen_v_inputs()[:2], requires_grad=True)
+        load_p = torch.tensor(self.load_p[:2])
+        pf = self._make()
+        self.assertTrue(torch.autograd.gradcheck(
+            lambda gv: self._loss(pf(load_p=load_p, gen_v=gv)), (gen_v,),
+            eps=1e-6, atol=1e-5))
+
+    def test_gen_v_gradient_with_a_line_contingency(self):
+        """the indirect half is taken on the ROW's admittance matrix, so a row that
+        drops a line must get that row's gradient, not the base case's"""
+        gen_v = self._gen_v_inputs()
+        line_status = np.ones((self.N_SCEN, self.pf.n_line), dtype=bool)
+        line_status[1, 3] = False
+        inputs = dict(load_p=self.load_p, gen_v=gen_v, line_status=line_status)
+        pf = self._make()
+        tensors = {"load_p": torch.tensor(self.load_p),
+                   "gen_v": torch.tensor(gen_v, requires_grad=True),
+                   "line_status": torch.as_tensor(line_status)}
+        self._loss(pf(**tensors)).backward()
+
+        target = np.asarray(pf._sweep.get_gen_v_target_bus())
+        live = np.flatnonzero(target >= 0)
+        for g in live[:3]:
+            fd = self._fd("gen_v", (1, int(g)), delta=1e-6, **inputs)
+            self.assertAlmostEqual(tensors["gen_v"].grad[1, g].item(), fd, places=5,
+                                   msg=f"row 1 (line 3 out), gen {g}")
 
 
 class TestTorchStaysOptional(unittest.TestCase):

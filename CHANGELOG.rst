@@ -156,6 +156,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] ``gen_v`` is differentiable in ``BatchCPUPowerFlow``: the gradient of a loss with
+  respect to a generator's voltage set-point. Unlike an injection it fixes a bus magnitude
+  the solver never revisits, so it needs the ``dS/dVm`` column the Jacobian does not store
+  (``gen_v_indirect_grad`` / ``get_gen_v_target_bus``).
 - [IMPROVED] a multi-threaded batch keeps its per-thread algorithms between ``compute()``
   calls, so each worker analyzes and factorizes the Jacobian once rather than once per
   call. Governed by ``reuse_base_case``, same as the member algorithm. 310 -> 289 ms on

@@ -20,11 +20,19 @@ and its own set of disconnected elements. The whole batch is one
 :class:`ScenarioSweepCPP` call, so it pays one symbolic factorization and
 refactorizes per row.
 
-Differentiable: ``load_p``, ``load_q``, ``gen_p``, ``sgen_p``. Discrete and
-carrying no gradient: ``line_status``, ``trafo_status``, ``gen_status`` (booleans,
-True = connected, grid2op's convention). ``gen_v`` is accepted but is not
-differentiable yet -- passing one that requires a gradient raises rather than
-silently returning none for it.
+Differentiable: ``load_p``, ``load_q``, ``gen_p``, ``sgen_p``, ``gen_v``. Discrete
+and carrying no gradient: ``line_status``, ``trafo_status``, ``gen_status``
+(booleans, True = connected, grid2op's convention).
+
+``gen_v`` is differentiated differently from the other four, because it is not an
+injection: it FIXES the magnitude of the bus its generator regulates, which the
+Newton-Raphson therefore does not solve for. So lambda is not its gradient, and the
+two halves are put together by hand -- the ``dS/dVm`` column the Jacobian does not
+store for such a bus (``gen_v_indirect_grad``), plus the loss's own dependence on
+``V_k = v_k . exp(j.theta_k)`` at fixed unknowns. A generator whose set-point never
+reaches the solve -- disconnected, not regulating, overwritten by another generator
+on the same bus, or regulating a bus the solver gives a magnitude to anyway -- gets
+a zero gradient, which is the truth: its set-point is a dead input.
 
 How the gradient is obtained
 ----------------------------
@@ -177,7 +185,7 @@ class BatchCPUPowerFlow:
         load_p, load_q : (n_scen, n_load) MW / MVAr        differentiable
         gen_p          : (n_scen, n_gen)  MW               differentiable
         sgen_p         : (n_scen, n_sgen) MW               differentiable
-        gen_v          : (n_scen, n_gen)  vm_pu            NOT differentiable yet
+        gen_v          : (n_scen, n_gen)  vm_pu            differentiable
         line_status    : (n_scen, n_line)  bool, True = connected
         trafo_status   : (n_scen, n_trafo) bool, True = connected
         gen_status     : (n_scen, n_gen)   bool, True = connected
@@ -208,18 +216,12 @@ class BatchCPUPowerFlow:
 
         if gen_v is not None:
             gen_v = self._as_input(gen_v, self.n_gen, n_scen, "gen_v")
-            if gen_v.requires_grad:
-                raise NotImplementedError(
-                    "`gen_v` is not differentiable yet: its gradient needs the dS/dVm "
-                    "column the Jacobian does not store for a voltage-fixed bus. Pass "
-                    "`gen_v.detach()` to use it as a (fixed) set-point in the meantime.")
 
         self._apply_status(line_status, trafo_status, gen_status, n_scen)
         if gen_v is not None:
-            self._sweep.modify_gen_v(np.ascontiguousarray(gen_v.detach().numpy()))
             self._gen_v_set = True
 
-        return _BatchCPUPowerFlowOp.apply(load_p, load_q, gen_p, sgen_p, self)
+        return _BatchCPUPowerFlowOp.apply(load_p, load_q, gen_p, sgen_p, gen_v, self)
 
     # ----------------------------------------------------------------- results
     def converged(self):
@@ -361,21 +363,22 @@ class _BatchCPUPowerFlowOp:
     _impl = None
 
     @classmethod
-    def apply(cls, load_p, load_q, gen_p, sgen_p, pf):
+    def apply(cls, load_p, load_q, gen_p, sgen_p, gen_v, pf):
         if cls._impl is None:
             cls._impl = _make_op(_torch())
-        return cls._impl.apply(load_p, load_q, gen_p, sgen_p, pf)
+        return cls._impl.apply(load_p, load_q, gen_p, sgen_p, gen_v, pf)
 
 
 def _make_op(torch):
     class _Op(torch.autograd.Function):
         @staticmethod
-        def forward(ctx, load_p, load_q, gen_p, sgen_p, pf):
+        def forward(ctx, load_p, load_q, gen_p, sgen_p, gen_v, pf):
             sweep = pf._sweep
             for tensor, setter in ((load_p, sweep.modify_load_p),
                                    (load_q, sweep.modify_load_q),
                                    (gen_p, sweep.modify_gen_p),
-                                   (sgen_p, sweep.modify_sgen_p)):
+                                   (sgen_p, sweep.modify_sgen_p),
+                                   (gen_v, sweep.modify_gen_v)):
                 if tensor is not None:
                     setter(np.ascontiguousarray(tensor.detach().numpy()))
 
@@ -390,7 +393,7 @@ def _make_op(torch):
             V[~torch.as_tensor(converged)] = float("nan")
 
             ctx.pf = pf
-            ctx.needs = tuple(t is not None for t in (load_p, load_q, gen_p, sgen_p))
+            ctx.needs = tuple(t is not None for t in (load_p, load_q, gen_p, sgen_p, gen_v))
             ctx.save_for_backward(V)
             return V
 
@@ -438,11 +441,34 @@ def _make_op(torch):
                     grad[:, torch.as_tensor(sel)] = sign * lam[:, torch.as_tensor(rows[sel])] / pf.sn_mva
                 return grad
 
-            wants_lp, wants_lq, wants_gp, wants_sp = ctx.needs
+            wants_lp, wants_lq, wants_gp, wants_sp, wants_gv = ctx.needs
             grad_load_p = element_grad(pf._load_bus, p_row, -1.) if wants_lp else None
             grad_load_q = element_grad(pf._load_bus, q_row, -1.) if wants_lq else None
             grad_gen_p = element_grad(pf._gen_bus, p_row, +1.) if wants_gp else None
             grad_sgen_p = element_grad(pf._sgen_bus, p_row, +1.) if wants_sp else None
-            return grad_load_p, grad_load_q, grad_gen_p, grad_sgen_p, None
+
+            # gen_v is not an injection: it FIXES the magnitude of the bus it regulates,
+            # which the Newton-Raphson therefore does not solve for. So lambda is not
+            # its gradient, and the two halves have to be put together by hand:
+            #
+            #   indirect  -lambda^T dF/dv, the dS/dVm column the Jacobian does not store
+            #             for such a bus -- from the sweep, where Ybus is;
+            #   direct    the loss's own dependence on V_k = v_k . exp(j.theta_k) at
+            #             fixed unknowns, which is Re(conj(V_k/|V_k|) . gV_k) -- the very
+            #             quantity a PQ bus contributes to xbar above. A bus whose
+            #             magnitude is an unknown hands it to the adjoint; a bus whose
+            #             magnitude is a set-point hands it to that set-point.
+            grad_gen_v = None
+            if wants_gv:
+                grad_gen_v = torch.as_tensor(
+                    sweep.gen_v_indirect_grad(np.ascontiguousarray(lam.numpy())))
+                target = np.asarray(sweep.get_gen_v_target_bus())
+                live = np.flatnonzero(target >= 0)   # a generator whose set-point never
+                if live.size:                        # reaches the solve keeps its zero
+                    bus = torch.as_tensor(target[live])
+                    v_hat = Vs[:, bus] / Vs[:, bus].abs()
+                    grad_gen_v[:, torch.as_tensor(live)] += (torch.conj(v_hat) * gV[:, bus]).real
+
+            return grad_load_p, grad_load_q, grad_gen_p, grad_sgen_p, grad_gen_v, None
 
     return _Op
