@@ -191,6 +191,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     const bool use_dc_lazy_v = !ac_solver_used;
 
     if(nb_thread <= 1){
+        _thread_algos_were_reused_ = false;   // no workers on this path
         // single-threaded path: reuse the (already warmed up) member solver and
         // the member accumulators -> identical to the legacy code. Every row of a
         // FromSeed sweep starts from the same voltage: the solver may keep its
@@ -212,7 +213,16 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     // The admittance matrix is NOT copied per thread: the topology is fixed here,
     // so ac_cache_.mat/dc_cache_.mat stay read-only for the whole loop and are simply shared.
     auto timer_thread = CustTimer();
-    std::vector<std::unique_ptr<AlgorithmSelector> > algos(nb_thread);
+    // The workers are kept between calls, exactly like the member algorithm (both are
+    // L2 -- see clear_batch_inputs). A kept worker still holds the ledger, the Jacobian
+    // sparsity and the factorization its last call built, so its first row refactorizes
+    // instead of paying a fresh analyze; that is the same saving base-case reuse buys
+    // on the single-threaded path, which the workers did not get.
+    const bool reuse_workers = _reuse_base_case_ && _reuse_thread_algos_ &&
+                               static_cast<int>(_thread_algos_.size()) == nb_thread;
+    _thread_algos_were_reused_ = reuse_workers;
+    if(!reuse_workers){ _thread_algos_.clear(); _thread_algos_.resize(nb_thread); }
+    std::vector<std::unique_ptr<AlgorithmSelector> > & algos = _thread_algos_;
     std::vector<AlgoControl> controls(nb_thread);
     std::vector<int> th_nb_solved(nb_thread, 0);
     std::vector<int> th_nb_converged(nb_thread, 0);
@@ -222,7 +232,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     std::vector<std::exception_ptr> th_err(nb_thread);
 
     auto init_thread = [&](int t){
-        algos[t] = make_thread_algo();
+        if(algos[t] == nullptr) algos[t] = make_thread_algo();
         algos[t]->set_lazy_v(use_dc_lazy_v);
         algos[t]->set_start_polar_cache(INIT == BatchInitKind::FromSeed);
         controls[t] = _algo_controler;
@@ -233,12 +243,13 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     for(int t = 1; t < nb_thread; ++t){
         size_t b, e;
         split_range(nb_steps, nb_thread, t, b, e);
-        threads.emplace_back([this, t, b, e, ac_solver_used, max_iter, tol_,
+        threads.emplace_back([this, t, b, e, reuse_workers, ac_solver_used, max_iter, tol_,
                               &init_thread, &algos, &controls, &th_nb_solved, &th_nb_converged,
                               &th_timer_solver, &th_timer_modif_ybus, &th_diverge, &th_err, &Vinit_solver](){
             init_thread(t);
             _run_range(b, e, *algos[t], controls[t], ac_cache_.mat, Vinit_solver, ac_solver_used, max_iter, tol_,
-                      th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif_ybus[t], th_diverge[t], th_err[t], true);
+                      th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif_ybus[t], th_diverge[t], th_err[t],
+                      !reuse_workers);
         });
     }
     timer_thread_init = timer_thread.duration();
@@ -248,7 +259,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         split_range(nb_steps, nb_thread, 0, b, e);
         init_thread(0);
         _run_range(b, e, *algos[0], controls[0], ac_cache_.mat, Vinit_solver, ac_solver_used, max_iter, tol_,
-                  th_nb_solved[0], th_nb_converged[0], th_timer_solver[0], th_timer_modif_ybus[0], th_diverge[0], th_err[0], true);
+                  th_nb_solved[0], th_nb_converged[0], th_timer_solver[0], th_timer_modif_ybus[0], th_diverge[0], th_err[0],
+                  !reuse_workers);
     }
 
     for(auto & th : threads) th.join();
@@ -262,8 +274,15 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(algos[t] != nullptr) _thread_solver_stats_.push_back(algos[t]->get_linear_solver_stats());
     }
 
+    // A worker that threw is left wherever the exception caught it -- mid-row, with
+    // its Ybus edits possibly not put back and its masking / PV pinning not restored.
+    // Keeping such a worker would hand that state to the next call, so drop them all;
+    // the next compute() builds fresh ones (see reuse_thread_algos).
     for(int t = 0; t < nb_thread; ++t){
-        if(th_err[t]) std::rethrow_exception(th_err[t]);
+        if(th_err[t]){
+            _thread_algos_.clear();
+            std::rethrow_exception(th_err[t]);
+        }
     }
     bool all_conv = true;
     for(int t = 0; t < nb_thread; ++t){
@@ -290,6 +309,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     const bool use_dc_lazy_v = !ac_solver_used && !mask_mode;
 
     if(std::min(static_cast<int>(nb_steps), std::max(1, _nb_thread)) <= 1){
+        _thread_algos_were_reused_ = false;   // no workers on this path
         // single-threaded path: reuse the (already warmed-up) member solver, member
         // ac_cache_.mat and the member accumulators -> identical to the legacy code.
         _algo.set_lazy_v(use_dc_lazy_v);
@@ -316,8 +336,17 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     // (unlike the !Y::supports_contingency overload above: emulating a
     // disconnection means editing Ybus, so it cannot be shared read-only).
     const int nb_thread = std::min(static_cast<int>(nb_steps), std::max(1, _nb_thread));
-    std::vector<std::unique_ptr<AlgorithmSelector> > algos(nb_thread);
+    // see the other overload: the workers are L2, kept between calls
+    const bool reuse_workers = _reuse_base_case_ && _reuse_thread_algos_ &&
+                               static_cast<int>(_thread_algos_.size()) == nb_thread;
+    _thread_algos_were_reused_ = reuse_workers;
+    if(!reuse_workers){ _thread_algos_.clear(); _thread_algos_.resize(nb_thread); }
+    std::vector<std::unique_ptr<AlgorithmSelector> > & algos = _thread_algos_;
     std::vector<AlgoControl> controls(nb_thread);
+    // NB the Ybus copies are NOT kept: a row edits its worker's copy and puts it back
+    // afterwards, so a kept copy would accumulate the rounding of every add/subtract
+    // round-trip of every row of every call, and a row that threw would leave it
+    // edited. They are rebuilt from ac_cache_.mat each call, which is a memcpy.
     std::vector<Eigen::SparseMatrix<cplx_type> > ybus_copies(nb_thread);
     std::vector<double> th_timer_modif(nb_thread, 0.);
     std::vector<int> th_nb_solved(nb_thread, 0);
@@ -327,7 +356,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     std::vector<std::exception_ptr> th_err(nb_thread);
 
     auto init_thread = [&](int t){
-        algos[t] = make_thread_algo();
+        if(algos[t] == nullptr) algos[t] = make_thread_algo();
         algos[t]->set_lazy_v(use_dc_lazy_v);
         algos[t]->set_start_polar_cache(INIT == BatchInitKind::FromSeed);
         // freshly spawned -- no rebuild-invalidation needed (its very first
@@ -355,17 +384,18 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     for(int t = 1; t < nb_thread; ++t){
         size_t b, e;
         split_range(nb_steps, nb_thread, t, b, e);
-        threads.emplace_back([this, t, b, e, ac_solver_used, max_iter, tol, tol_, sn_mva, mask_mode,
+        threads.emplace_back([this, t, b, e, reuse_workers, ac_solver_used, max_iter, tol, tol_, sn_mva, mask_mode,
                               &init_thread, &algos, &controls, &ybus_copies, &th_timer_modif,
                               &th_nb_solved, &th_nb_converged, &th_timer_solver, &th_diverge, &th_err, &Vinit_solver](){
             init_thread(t);
             if(mask_mode){
                 _maybe_run_range_masked(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used,
                                         max_iter, tol, sn_mva, th_timer_modif[t], th_nb_solved[t], th_nb_converged[t], th_timer_solver[t],
-                                        th_diverge[t], th_err[t], true);
+                                        th_diverge[t], th_err[t], !reuse_workers);
             } else {
                 _run_range(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used, max_iter, tol_,
-                          th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif[t], th_diverge[t], th_err[t], true);
+                          th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif[t], th_diverge[t], th_err[t],
+                          !reuse_workers);
             }
         });
     }
@@ -378,10 +408,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(mask_mode){
             _maybe_run_range_masked(b, e, *algos[0], controls[0], ybus_copies[0], Vinit_solver, ac_solver_used,
                                     max_iter, tol, sn_mva, th_timer_modif[0], th_nb_solved[0], th_nb_converged[0], th_timer_solver[0],
-                                    th_diverge[0], th_err[0], true);
+                                    th_diverge[0], th_err[0], !reuse_workers);
         } else {
             _run_range(b, e, *algos[0], controls[0], ybus_copies[0], Vinit_solver, ac_solver_used, max_iter, tol_,
-                      th_nb_solved[0], th_nb_converged[0], th_timer_solver[0], th_timer_modif[0], th_diverge[0], th_err[0], true);
+                      th_nb_solved[0], th_nb_converged[0], th_timer_solver[0], th_timer_modif[0], th_diverge[0], th_err[0],
+                      !reuse_workers);
         }
     }
 
@@ -396,8 +427,15 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(algos[t] != nullptr) _thread_solver_stats_.push_back(algos[t]->get_linear_solver_stats());
     }
 
+    // A worker that threw is left wherever the exception caught it -- mid-row, with
+    // its Ybus edits possibly not put back and its masking / PV pinning not restored.
+    // Keeping such a worker would hand that state to the next call, so drop them all;
+    // the next compute() builds fresh ones (see reuse_thread_algos).
     for(int t = 0; t < nb_thread; ++t){
-        if(th_err[t]) std::rethrow_exception(th_err[t]);
+        if(th_err[t]){
+            _thread_algos_.clear();
+            std::rethrow_exception(th_err[t]);
+        }
     }
     bool all_conv = true;
     for(int t = 0; t < nb_thread; ++t){

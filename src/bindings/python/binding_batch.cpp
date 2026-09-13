@@ -115,6 +115,24 @@ void bind_batch_sweep_common(py::class_<T> & cls)
         .def("base_case_was_reused", &T::base_case_was_reused,
              "Whether the last compute() kept a base case instead of building one. Mostly "
              "of interest when measuring where a batch's time goes.")
+        .def_property("reuse_thread_algos",
+                      [](const T & self){ return self.get_reuse_thread_algos(); },
+                      [](T & self, bool val){ self.set_reuse_thread_algos(val); },
+                      "Whether the worker algorithms of the multi-threaded path are kept "
+                      "between compute() calls (default: ``True``), on top of the base case "
+                      "itself.\n\n"
+                      "At ``nb_thread == 1`` the rows are run by the member algorithm, so "
+                      "``reuse_base_case`` alone already keeps its factorization. At "
+                      "``nb_thread > 1`` the rows are run by workers, which used to be "
+                      "rebuilt every call -- each paying a fresh Jacobian analysis on its "
+                      "first row. This gives a threaded batch the same treatment.\n\n"
+                      "Has no effect when ``reuse_base_case`` is ``False``: the workers are "
+                      "part of the same batch state.")
+        .def("thread_algos_were_reused", &T::thread_algos_were_reused,
+             "Whether the last compute() also kept the WORKER algorithms of the "
+             "multi-threaded path, instead of building and analyzing one per thread. "
+             "Always False for a single-threaded batch: it has no workers (the member "
+             "algorithm runs the rows itself, and keeping that is base_case_was_reused).")
 
         // reverse-mode differentiation (see BatchAdjoint.hpp)
         .def_property("keep_jacobian",
