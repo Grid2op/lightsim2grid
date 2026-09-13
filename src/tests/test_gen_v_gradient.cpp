@@ -94,9 +94,11 @@ struct Inputs
             for(int k = 1; k < nb_gen; ++k) gen_p(i, k) = (10. + 15. * jitter) / (nb_gen - 1);
             load_p(i, 0) = 30. + 40. * jitter;
             load_q(i, 0) = 5. + 10. * jitter;
-            // a different setpoint per row and per generator, so no two are confused
+            // a different setpoint per row, and a different one for the slack than for
+            // the PV bus -- but every generator OF ONE BUS agrees, which a row must do:
+            // a bus has one magnitude (see _row_gen_v_conflicts)
             gen_v(i, 0) = 1.02 + 0.004 * i;
-            for(int k = 1; k < nb_gen; ++k) gen_v(i, k) = 1.005 + 0.003 * i + 0.002 * k;
+            for(int k = 1; k < nb_gen; ++k) gen_v(i, k) = 1.005 + 0.003 * i;
         }
     }
 };
@@ -243,19 +245,86 @@ TEST_CASE("only the generator whose setpoint reaches the solve carries its gradi
     REQUIRE(target[2] == -1);                // overwritten by generator 3
     REQUIRE(target[3] == GEN_BUS);           // the last writer
 
+    // A member of the group cannot be perturbed ALONE any more -- that is exactly the
+    // contradiction the row now refuses -- so the group moves together, and what the
+    // finite difference measures is the SUM of its gradients. That sum is the only part
+    // of the split the constraint leaves meaningful, and it is what a chain rule through
+    // a tied set of inputs consumes.
     const RealMatRM grad = gen_v_gradient(sweep, NB_GEN);
     const real_type delta = 1e-6;
     for(int i = 0; i < NB_STEPS; ++i){
-        for(int g = 0; g < NB_GEN; ++g){
-            Inputs plus = in, minus = in;
+        Inputs plus = in, minus = in;
+        for(int g = 1; g < NB_GEN; ++g){      // every generator of bus 1, together
             plus.gen_v(i, g) += delta;
             minus.gen_v(i, g) -= delta;
-            const real_type fd = (run_loss(plus, NB_ON_PV) - run_loss(minus, NB_ON_PV)) / (2. * delta);
-            REQUIRE(grad(i, g) == Approx(fd).margin(2e-5));
-            if(target[g] < 0) REQUIRE(fd == Approx(0.).margin(1e-9));   // a dead input
-            else REQUIRE(std::abs(fd) > 1e-3);
         }
+        const real_type fd = (run_loss(plus, NB_ON_PV) - run_loss(minus, NB_ON_PV)) / (2. * delta);
+        real_type sum = 0.;
+        for(int g = 1; g < NB_GEN; ++g) sum += grad(i, g);
+        REQUIRE(sum == Approx(fd).margin(2e-5));
+        REQUIRE(std::abs(fd) > 1e-3);
+        // ... and the whole of it sits on the one generator that reaches the solve
+        REQUIRE(grad(i, 1) == 0.);
+        REQUIRE(grad(i, 2) == 0.);
+        REQUIRE(grad(i, NB_GEN - 1) == Approx(fd).margin(2e-5));
+
+        // the slack, alone on its bus, is still perturbed on its own
+        Inputs sp = in, sm = in;
+        sp.gen_v(i, 0) += delta;
+        sm.gen_v(i, 0) -= delta;
+        const real_type fd0 = (run_loss(sp, NB_ON_PV) - run_loss(sm, NB_ON_PV)) / (2. * delta);
+        REQUIRE(grad(i, 0) == Approx(fd0).margin(2e-5));
     }
+}
+
+
+TEST_CASE("a row asking one bus for two magnitudes is not solved")
+{
+    // |V| at a bus is unique: two generators regulating it with two different targets
+    // state two constraints that cannot both hold. set_vm resolves that by applying
+    // whichever generator it visits last -- silently, and with no reason to prefer
+    // either. Such a row has an unsatisfiable input, so it is not solved at all.
+    const int NB_ON_PV = 2;
+    const int NB_GEN = 1 + NB_ON_PV;
+    LSGrid grid = make_grid(NB_ON_PV);
+    InjectionSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+
+    Inputs in(NB_GEN);
+    // row 1 alone disagrees with itself: generators 1 and 2 both regulate bus 1
+    in.gen_v(1, 2) = in.gen_v(1, 1) + 0.01;
+    feed(sweep, in);
+    sweep.compute(CplxVect::Constant(NB_BUS, cplx_type(1., 0.)), 30, 1e-12);
+
+    REQUIRE(sweep.converged_mask()[1] == 0);
+    // and only that row: its neighbours, which agree, are solved as usual
+    for(int i = 0; i < NB_STEPS; ++i){
+        if(i == 1) continue;
+        REQUIRE(sweep.converged_mask()[static_cast<size_t>(i)] == 1);
+    }
+    // a row that is not solved reads back as exact zero, like any skipped row
+    const auto V = sweep.get_voltages();
+    for(int b = 0; b < NB_BUS; ++b) REQUIRE(V(1, b) == cplx_type(0., 0.));
+}
+
+
+TEST_CASE("agreeing set-points on one bus are not a conflict")
+{
+    // the ordinary case: several machines on a busbar, all asked for the same
+    // magnitude. Nothing to refuse -- and the tolerance is the float one, so a value
+    // that differs only in the last bits still agrees.
+    const int NB_ON_PV = 3;
+    const int NB_GEN = 1 + NB_ON_PV;
+    LSGrid grid = make_grid(NB_ON_PV);
+    InjectionSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+
+    Inputs in(NB_GEN);
+    in.gen_v(2, 2) = in.gen_v(2, 1) * (1. + 1e-15);
+    feed(sweep, in);
+    sweep.compute(CplxVect::Constant(NB_BUS, cplx_type(1., 0.)), 30, 1e-12);
+    REQUIRE(sweep.get_status() == 1);
+    for(int i = 0; i < NB_STEPS; ++i) REQUIRE(sweep.converged_mask()[static_cast<size_t>(i)] == 1);
 }
 
 

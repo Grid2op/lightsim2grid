@@ -11,6 +11,8 @@
 #include <cstdint>    // for std::uint64_t
 
 #include "LSGrid.hpp"
+
+#include <type_traits>
 #include "AlgorithmSelector.hpp"  // to avoid circular references
 #include "BinaryArchive.hpp"
 
@@ -1375,6 +1377,12 @@ CplxVect LSGrid::_pre_process_own_cache(
     // cplx_type matrix => AC solver family, real_type matrix => DC solver family
     const bool is_ac = SolverSideCache<MatScalar>::is_ac;
 
+    // Contradictory voltage set-points: refused before anything is built, and on every
+    // solve rather than only on a full rebuild -- change_v_gen() can create the
+    // contradiction without changing anything the cache is keyed on (AC only; see
+    // _check_vm_targets_agree).
+    if(is_ac) _check_vm_targets_agree();
+
     // ---- may the previous build be re-stamped rather than rebuilt? --------------
     // `solver_control` only records what changed SINCE the last solve of this
     // family. It cannot say whether that family was ever solved at all, so nothing
@@ -1460,6 +1468,42 @@ CplxVect LSGrid::_pre_process_own_cache(
     return V;
 }
 
+
+void LSGrid::_check_vm_targets_agree() const
+{
+    // every element that would pin a magnitude, from every container that can
+    std::vector<VmTarget> targets;
+    generators_.collect_vm_targets(targets);
+    svcs_.collect_vm_targets(targets);
+    hvdc_lines_.collect_vm_targets(targets);
+    if(targets.size() < 2) return;   // nothing can disagree with nothing
+
+    // first writer per bus, in a vector rather than a map: this runs on every solve,
+    // and the buses are already dense small integers
+    const int nb_bus_ls = static_cast<int>(substations_.nb_bus());
+    std::vector<int> first_of_bus(static_cast<size_t>(nb_bus_ls), -1);
+    for(size_t i = 0; i < targets.size(); ++i){
+        const int bus = targets[i].bus_id;
+        if(bus < 0 || bus >= nb_bus_ls) continue;   // check_grid's business, not this one
+        const int first = first_of_bus[static_cast<size_t>(bus)];
+        if(first == -1){
+            first_of_bus[static_cast<size_t>(bus)] = static_cast<int>(i);
+            continue;
+        }
+        const VmTarget & a = targets[static_cast<size_t>(first)];
+        const VmTarget & b = targets[i];
+        if(std::abs(a.target_vm - b.target_vm) <= BaseConstants::_tol_equal_float) continue;
+        std::ostringstream exc_;
+        exc_ << "LSGrid: " << a.kind << " " << a.el_id << " and " << b.kind << " " << b.el_id
+             << " regulate the same bus (" << bus << ") with conflicting voltage setpoints ("
+             << a.target_vm << " vs " << b.target_vm << " pu). A bus has one magnitude, so "
+                "these two set-points cannot both hold; the powerflow would silently apply "
+                "whichever element it happened to write last. Give them the same target, or "
+                "turn one of the regulators off.";
+        throw std::runtime_error(exc_.str());
+    }
+}
+
 CplxVect LSGrid::build_solver_input(
     const Eigen::Ref<const CplxVect> & Vinit,
     AcSolverCache & out,
@@ -1493,6 +1537,11 @@ CplxVect LSGrid::_build_foreign_cache(
             "caller's own algorithm; to build this grid's own cache for its own "
             "powerflow, call pre_process_solver / pre_process_dc_solver instead.");
     }
+
+    // Contradictory voltage set-points are the grid's, not the caller's, so they are
+    // refused here rather than left for each batch class to notice (AC only -- a DC
+    // powerflow solves for no magnitude, so nothing there can contradict anything).
+    if(std::is_same<MatScalar, cplx_type>::value) _check_vm_targets_agree();
 
     // A foreign build never re-stamps: `solver_control` and the flags it carries
     // all describe THIS grid, and say nothing about what is in `out`.

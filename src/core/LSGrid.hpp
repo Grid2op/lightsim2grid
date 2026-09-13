@@ -2317,7 +2317,33 @@ class LS2G_API LSGrid final
          * policy and this grid's algorithm, wrapped around `_build_into_cache`.
          * `cache` is always ac_cache_ or dc_cache_ -- the public entry points are the
          * only callers and they pass the member that matches MatScalar.
+         *
+         * (the declaration it documents is below _check_vm_targets_agree)
          */
+
+        /**
+         * Refuse a grid whose voltage set-points contradict each other: several
+         * elements regulating ONE bus, asking it for DIFFERENT magnitudes.
+         *
+         * A bus has one voltage magnitude. Two such set-points state two constraints it
+         * cannot both satisfy, and what the code did with them was an accident of
+         * iteration order -- `VoltageSourceContainer::set_vm` writes each in turn, so
+         * the last one visited wins and the others are silently discarded. That is not a
+         * resolution: nothing makes the last generator of a busbar more authoritative
+         * than the first, and the answer would change if the elements were reordered.
+         *
+         * `VoltageControlPlan` already refuses exactly this for a group it manages (see
+         * `_group_and_emit`), but a group only forms around a REMOTE regulator or an
+         * SVC. The ordinary case -- several machines on one busbar, each regulating the
+         * bus it stands on -- never reaches it, which is how it stayed silent.
+         *
+         * Called from both entry points into the pre-processing, so it holds for this
+         * grid's own powerflows (`_pre_process_own_cache`) and for every batch algorithm
+         * (`_build_foreign_cache`) alike. AC only: a DC powerflow does not solve for a
+         * magnitude, so nothing there can contradict anything.
+         */
+        void _check_vm_targets_agree() const;
+
         template<class MatScalar>
         CplxVect _pre_process_own_cache(const Eigen::Ref<const CplxVect> & Vinit,
                                         SolverSideCache<MatScalar> & cache,

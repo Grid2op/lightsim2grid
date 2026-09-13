@@ -289,6 +289,8 @@ TEST_CASE("KCL holds with a generator on the same bus as an angle-droop HVDC sta
     grid.deactivate_svc(0);
     grid.deactivate_storage(0);
     grid.change_bus_gen_python(1, 1);   // generator 1: bus 6 -> bus 1
+    grid.change_v_gen(1, 1.0);          // agree with the station's setpoint: one bus,
+                                        // one magnitude (see LSGrid::_check_vm_targets_agree)
     solve(grid);
 
     // Regression guard: this bus carries a generator and a converter station whose
@@ -336,6 +338,7 @@ TEST_CASE("KCL holds with the slack generator on an angle-droop HVDC bus",
     grid.deactivate_svc(0);
     grid.deactivate_storage(0);
     grid.change_bus_gen_python(0, 1);   // slack generator: bus 0 -> bus 1
+    grid.change_v_gen(0, 1.0);          // agree with the station's setpoint, as above
     solve(grid);
 
     const CplxVect residual = kcl_residual(grid);

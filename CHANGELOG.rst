@@ -156,6 +156,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [BREAKING] a grid where several elements regulate the SAME bus with DIFFERENT voltage
+  set-points is now refused instead of silently applying whichever was written last. A bus
+  has one magnitude; the two set-points cannot both hold. Previously only checked for a
+  remote regulator or an SVC, never for machines on a shared busbar.
 - [FIXED] ``ContingencyAnalysisCPP`` was missing from python everything the other batch
   classes gained since 1.0.0: ``reuse_base_case``, the solver-stats accessors and the whole
   reverse-mode block (``keep_jacobian``, ``solve_JT``, ...). The C++ supported all of it;

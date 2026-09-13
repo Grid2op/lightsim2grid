@@ -24,6 +24,12 @@ Differentiable: ``load_p``, ``load_q``, ``gen_p``, ``sgen_p``, ``gen_v``. Discre
 and carrying no gradient: ``line_status``, ``trafo_status``, ``gen_status``
 (booleans, True = connected, grid2op's convention).
 
+Where several generators regulate the SAME bus, a row must give them the same
+``gen_v``: a bus has one magnitude, and two different set-points cannot both hold.
+A row that asks for two is not solved -- it comes back as not converged, NaN in
+``V`` and carrying no gradient -- rather than silently taking whichever generator
+was written last.
+
 ``gen_v`` is differentiated differently from the other four, because it is not an
 injection: it FIXES the magnitude of the bus its generator regulates, which the
 Newton-Raphson therefore does not solve for. So lambda is not its gradient, and the
@@ -185,7 +191,8 @@ class BatchCPUPowerFlow:
         load_p, load_q : (n_scen, n_load) MW / MVAr        differentiable
         gen_p          : (n_scen, n_gen)  MW               differentiable
         sgen_p         : (n_scen, n_sgen) MW               differentiable
-        gen_v          : (n_scen, n_gen)  vm_pu            differentiable
+        gen_v          : (n_scen, n_gen)  vm_pu            differentiable; generators
+                                                           regulating one bus must agree
         line_status    : (n_scen, n_line)  bool, True = connected
         trafo_status   : (n_scen, n_trafo) bool, True = connected
         gen_status     : (n_scen, n_gen)   bool, True = connected
