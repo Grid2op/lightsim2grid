@@ -156,6 +156,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] a multi-threaded batch keeps its per-thread algorithms between ``compute()``
+  calls, so each worker analyzes and factorizes the Jacobian once rather than once per
+  call. Governed by ``reuse_base_case``, same as the member algorithm. 310 -> 289 ms on
+  case9241pegase (32 rows, 4 threads).
 - [ADDED] the batch algorithms hold their cache as three nested levels:
   ``clear_grid_results()`` (what was read off the grid), ``clear_batch_inputs()`` (what was
   built for this batch, the algorithm included) and ``clear_batch_outputs()`` (the results).
