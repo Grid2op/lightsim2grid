@@ -84,6 +84,47 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              },
              DocTimeSeries::converged_mask.c_str())
 
+        // generator reactive-limit check (see BaseBatchSweep::set_compute_gen_q_violations)
+        .def_property("compute_gen_q_violations",
+                      [](const T & self){ return self.get_compute_gen_q_violations(); },
+                      [](T & self, bool val){ self.set_compute_gen_q_violations(val); },
+                      "Whether every converged row reports the voltage-regulating generators "
+                      "whose reactive output left [min_q_mvar, max_q_mvar] (see "
+                      "get_gen_q_violations()). Defaults to ``False``.\n\n"
+                      "A voltage-regulating generator has no reactive setpoint: its reactive "
+                      "output is solved for, and lightsim2grid never clamps it. So a row can "
+                      "converge with a machine producing far more reactive power than it "
+                      "physically can -- which is the condition PowSyBl OpenLoadFlow's "
+                      "``ReactiveLimits`` outer loop acts on. This only REPORTS it: no bus is "
+                      "switched PV -> PQ and no row is re-solved.\n\n"
+                      "Needs an AC algorithm that publishes its per-bus mismatch: every "
+                      "built-in AC algorithm does, a plugin solver has to opt in, and a DC "
+                      "powerflow has no reactive power at all -- compute() raises in the two "
+                      "cases it cannot serve. Setting this drops this batch's base case and "
+                      "results, but not the registered contingencies / injections (unlike "
+                      "compute_limit_violations, which clears everything), so it can be set at "
+                      "any point before compute().")
+        .def_property("gen_q_violation_tol_mvar",
+                      [](const T & self){ return self.get_gen_q_violation_tol_mvar(); },
+                      [](T & self, real_type val){ self.set_gen_q_violation_tol_mvar(val); },
+                      "Slack (MVAr) on the comparison made by compute_gen_q_violations, so that "
+                      "a machine resting exactly on its limit is not reported over solver "
+                      "noise: a violation needs ``q < min_q - tol`` or ``q > max_q + tol``. "
+                      "Defaults to 1e-4 MVAr.")
+        .def("get_gen_q_violations", &T::get_gen_q_violations,
+             "Per row: the list of LimitViolation of the generators whose reactive output left "
+             "their limits (element_type ViolationElementType.GENERATOR, element_id the "
+             "generator id, violation_type LimitViolationType.LOW_Q / HIGH_Q, `value` the "
+             "reactive output in MVAr, `limit` the limit it left). A row that did not converge "
+             "has an EMPTY entry, not a sentinel -- use converged_mask() to tell that from "
+             "'converged, no violation'. Requires compute_gen_q_violations=True.",
+             py::return_value_policy::reference_internal)
+        .def("get_gen_q_violations_n", &T::get_gen_q_violations_n,
+             "The same, for the base (\"n\") case every row is solved from (no injection "
+             "change, no contingency). Empty if that solve did not converge. Requires "
+             "compute_gen_q_violations=True.",
+             py::return_value_policy::reference_internal)
+
         // base-case reuse (see BaseBatchSweep::set_reuse_base_case)
         .def_property("reuse_base_case",
                       [](const T & self){ return self.get_reuse_base_case(); },
@@ -331,7 +372,9 @@ void bind_batch(py::module_& m) {
         .value("TRAFO", ViolationElementType::TRAFO)
         .value("GRID", ViolationElementType::GRID,
                "The whole grid / contingency, not a specific element (see LimitViolationType.NOT_SIMULATED "
-               "/ LimitViolationType.DIVERGENCE).");
+               "/ LimitViolationType.DIVERGENCE).")
+        .value("GENERATOR", ViolationElementType::GENERATOR,
+               "A generator (see LimitViolationType.LOW_Q / HIGH_Q and compute_gen_q_violations).");
 
     py::enum_<LimitViolationType>(m, "LimitViolationType", DocContingencyAnalysis::LimitViolationType.c_str())
         .value("LOW_VOLTAGE", LimitViolationType::LOW_VOLTAGE)
@@ -340,6 +383,14 @@ void bind_batch(py::module_& m) {
         .value("NOT_SIMULATED", LimitViolationType::NOT_SIMULATED,
                "A pre-check (graph connectivity) skipped this contingency: the solver was never "
                "invoked (element_type is ViolationElementType.GRID).")
+        .value("LOW_Q", LimitViolationType::LOW_Q,
+               "A voltage-regulating generator's reactive output went BELOW its min_q_mvar "
+               "(element_type is ViolationElementType.GENERATOR). Reported by "
+               "compute_gen_q_violations, never enforced.")
+        .value("HIGH_Q", LimitViolationType::HIGH_Q,
+               "A voltage-regulating generator's reactive output went ABOVE its max_q_mvar "
+               "(element_type is ViolationElementType.GENERATOR). Reported by "
+               "compute_gen_q_violations, never enforced.")
         .value("DIVERGENCE", LimitViolationType::DIVERGENCE,
                "The solver was invoked for this contingency but did not converge (element_type is "
                "ViolationElementType.GRID).");
@@ -616,6 +667,37 @@ void bind_batch(py::module_& m) {
                       [](const ContingencyAnalysis & self){ return self.get_violation_threshold(); },
                       [](ContingencyAnalysis & self, real_type val){ self.set_violation_threshold(val); },
                       DocContingencyAnalysis::violation_threshold.c_str())
+        // generator reactive-limit check: same names and semantics as on the three
+        // batch_sweep_common classes (this class is bound by hand, see the note above)
+        .def_property("compute_gen_q_violations",
+                      [](const ContingencyAnalysis & self){ return self.get_compute_gen_q_violations(); },
+                      [](ContingencyAnalysis & self, bool val){ self.set_compute_gen_q_violations(val); },
+                      "Whether every converged contingency reports the voltage-regulating "
+                      "generators whose reactive output left [min_q_mvar, max_q_mvar] (see "
+                      "get_gen_q_violations()). Defaults to ``False``. Detection only, as "
+                      "OpenLoadFlow's ``ReactiveLimits`` outer loop sees it: no bus is switched "
+                      "PV -> PQ and no contingency is re-solved. Needs an AC algorithm that "
+                      "publishes its per-bus mismatch: every built-in AC algorithm does, a "
+                      "plugin solver has to opt in, and DC is refused -- compute() raises in "
+                      "the two cases it cannot serve.")
+        .def_property("gen_q_violation_tol_mvar",
+                      [](const ContingencyAnalysis & self){ return self.get_gen_q_violation_tol_mvar(); },
+                      [](ContingencyAnalysis & self, real_type val){ self.set_gen_q_violation_tol_mvar(val); },
+                      "Slack (MVAr) on the comparison made by compute_gen_q_violations: a "
+                      "violation needs ``q < min_q - tol`` or ``q > max_q + tol``. Defaults to "
+                      "1e-4 MVAr.")
+        .def("get_gen_q_violations", &ContingencyAnalysis::get_gen_q_violations,
+             "Per contingency: the list of LimitViolation of the generators whose reactive "
+             "output left their limits (element_type ViolationElementType.GENERATOR, "
+             "violation_type LimitViolationType.LOW_Q / HIGH_Q, `value` the reactive output in "
+             "MVAr). A contingency that did not converge, or that was never simulated, has an "
+             "EMPTY entry -- use converged() to tell that from 'converged, no violation'. "
+             "Requires compute_gen_q_violations=True.",
+             py::return_value_policy::reference_internal)
+        .def("get_gen_q_violations_n", &ContingencyAnalysis::get_gen_q_violations_n,
+             "The same, for the pre-contingency (\"n\") case. Requires "
+             "compute_gen_q_violations=True.",
+             py::return_value_policy::reference_internal)
         .def_property("init_from_n_powerflow",
                       [](const ContingencyAnalysis & self){ return self.get_init_from_n_powerflow(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_init_from_n_powerflow(val); },

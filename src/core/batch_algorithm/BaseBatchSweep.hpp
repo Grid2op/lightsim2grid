@@ -13,6 +13,7 @@
 #include "YbusPolicy.hpp"
 #include "SbusPolicy.hpp"
 #include "LimitViolation.hpp"
+#include "GenQCheck.hpp"
 #include "BusGraph.hpp"
 #include "BatchAdjoint.hpp"
 
@@ -365,6 +366,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _row_pv_to_pq_.clear();
                 _row_slack_gens_off_.clear();
                 _li_defaults_vect_cache_.clear();
+                _gen_q_violations_n_.clear();
             }
             BaseBatchSolverSynch::clear_batch_inputs();
         }
@@ -380,6 +382,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _violations.clear();
             _converged_n_ = false;
             _violations_n_.clear();
+            _gen_q_violations_.clear();
+            _gen_q_plan_.clear();
+            // NOT _gen_q_violations_n_: it describes the BASE CASE, which is L2 (see
+            // clear_batch_inputs). A compute() that reuses the base case does not re-solve
+            // it -- so the report of the solve that built it is the only correct one
+            // there, and re-deriving it from a stale algorithm state is exactly the bug
+            // this split avoids.
             _timer_modif_Ybus = 0.;
             BaseBatchSolverSynch::clear_batch_outputs();
         }
@@ -713,6 +722,77 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         const std::vector<LimitViolation> & get_violations_n() const {
             _check_limit_violations_enabled("get_violations_n");
             return _violations_n_;
+        }
+
+        // ---- generator reactive-limit check (EVERY instantiation) ------------------
+        // The reactive output of a voltage-regulating generator is not an input, it is
+        // solved for -- and never clamped. This opt-in flag has every converged row
+        // report the generators whose reactive output left [min_q_mvar, max_q_mvar],
+        // which is the condition OpenLoadFlow's `ReactiveLimits` outer loop acts on.
+        // Nothing is enforced: no bus is switched PV -> PQ, no row is re-solved.
+        //
+        // Available on all four instantiations (unlike compute_limit_violations, which is
+        // contingency-only): a time series that walks a load curve is exactly as likely
+        // to drive a machine past its reactive range as a contingency is.
+        //
+        // Requires an AC algorithm that publishes its per-bus mismatch
+        // (BaseAlgo::fills_bus_mismatch -- every built-in AC family does: Newton-Raphson,
+        // fast-decoupled AND Gauss-Seidel; a plugin solver has to opt in). DC is refused
+        // outright, having no reactive power at all. compute() raises in both cases
+        // rather than reporting nothing.
+        //
+        // Setting this drops this batch's base case and results, but NOT its
+        // registrations (the contingencies / injections), so unlike
+        // compute_limit_violations -- which clear()s the whole object -- it can be set at
+        // any point before compute().
+        bool get_compute_gen_q_violations() const noexcept {return _compute_gen_q_violations_;}
+        void set_compute_gen_q_violations(bool val){
+            if(val == _compute_gen_q_violations_) return;
+            _compute_gen_q_violations_ = val;
+            // L2, not L3: the base case's own report (get_gen_q_violations_n) can only be
+            // read off the solve that built it, and a kept base case is not re-solved. So
+            // a change of what is reported has to drop that base case with the results --
+            // cheaper than compute_limit_violations, which drops the registrations too,
+            // and unlike it this can be set at any point before compute().
+            clear_batch_inputs();
+        }
+        // Slack (MVAr) on the comparison, so that a machine resting exactly on its limit
+        // is not reported over solver noise: a violation needs
+        // q < min_q - tol  or  q > max_q + tol. Defaults to 1e-4 MVAr (0.1 kVAr), well
+        // above what a converged solve leaves behind and well below anything meaningful.
+        real_type get_gen_q_violation_tol_mvar() const noexcept {return _gen_q_tol_mvar_;}
+        void set_gen_q_violation_tol_mvar(real_type val){
+            // isfinite unqualified, like everywhere else in this header (see the note on
+            // the <math.h> include at the top)
+            if(!(val >= 0.) || !isfinite(val)){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::set_gen_q_violation_tol_mvar: the tolerance should be "
+                        "a finite, non-negative number of MVAr (got " << val << ").";
+                throw std::runtime_error(exc_.str());
+            }
+            // any change, in either direction: a smaller tolerance reports violations the
+            // recorded ones do not contain, a larger one leaves recorded ones that should
+            // no longer be reported. L2 for the same reason as the flag above.
+            if(val != _gen_q_tol_mvar_) clear_batch_inputs();
+            _gen_q_tol_mvar_ = val;
+        }
+        /**
+         * Per row: the generators whose reactive output left their limits. A row that did
+         * not converge (or that was never simulated) has an EMPTY entry rather than a
+         * sentinel -- ask converged_mask() to tell that apart from "converged, no
+         * violation". Every entry has element_type GENERATOR, element_id the generator
+         * id, violation_type LOW_Q / HIGH_Q, `value` the reactive output in MVAr and
+         * `limit` the limit it left. Requires compute_gen_q_violations = true.
+         */
+        const std::vector<std::vector<LimitViolation> > & get_gen_q_violations() const {
+            _check_gen_q_violations_enabled("get_gen_q_violations");
+            return _gen_q_violations_;
+        }
+        /// The same, for the base ("n") case every row is solved from (no injection
+        /// change, no contingency). Empty if that solve did not converge.
+        const std::vector<LimitViolation> & get_gen_q_violations_n() const {
+            _check_gen_q_violations_enabled("get_gen_q_violations_n");
+            return _gen_q_violations_n_;
         }
 
         // contingency-list inspection (ContingencyAnalysis only). Public (directly
@@ -1171,6 +1251,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
         }
+        void _check_gen_q_violations_enabled(const std::string & fun_name) const {
+            if(!_compute_gen_q_violations_){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::" << fun_name << ": the generator reactive-limit "
+                        "check was not requested. Set `compute_gen_q_violations = True` before "
+                        "compute() to use this feature.";
+                throw std::runtime_error(exc_.str());
+            }
+        }
         // `base_w` is the weight vector to mask, so a row that already re-weighted the
         // slack for its own generator contingency (see _row_slack_weights) is masked
         // on top of that rather than back on the layout's untouched weights. Returns
@@ -1607,6 +1696,52 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _record_row_violations_dispatch(size_t, const CplxVect &, const std::vector<int> *) {}
 
+        // ----- per-row generator reactive-limit recording -------------------------
+        // Whether THIS row disconnected that generator (a ScenarioSweep generator
+        // contingency); always false where no such mask exists.
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _gen_off_in_row(size_t i, int gen_id) const {
+            const auto & mask = sbus_policy_.gen_off;
+            if(mask.rows() == 0) return false;
+            const Eigen::Index row = static_cast<Eigen::Index>(i);
+            if(row >= mask.rows() || gen_id >= mask.cols()) return false;
+            return mask(row, gen_id);
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _gen_off_in_row(size_t, int) const { return false; }
+
+        // This row's masked (stranded) solver buses, or nullptr when it masks none.
+        // Only the "handle disconnected grid" mode ever hands _li_masked to the
+        // algorithm; without it a contingency that strands a bus makes the row skipped
+        // outright, so nothing is masked (see _adjoint_identity_rows, same reasoning).
+        const std::vector<int> * _row_masked_ids(size_t i) const {
+            if(!_handle_disconnected_grid) return nullptr;
+            if(i >= _li_masked.size()) return nullptr;
+            return _li_masked[i].empty() ? nullptr : &_li_masked[i];
+        }
+
+        // MUST be called while the row's own state is still installed on the algorithm
+        // -- its Ybus edits, its masked buses, its PV pinning -- for the same reason
+        // _maybe_store_jacobian must: what is read here (the per-bus mismatch and the
+        // controllers' reactive output) belongs to the system THIS row solved, and the
+        // `algo` handed in is the one that solved it (the member one, or this thread's).
+        void _record_row_gen_q(size_t i, AlgorithmSelector & algo){
+            if(!_compute_gen_q_violations_) return;
+            if(_gen_q_plan_.empty()) return;
+            if(i >= _gen_q_violations_.size()) return;
+            // get_controller_q() returns by value: asked for only where a generator's
+            // reactive output actually comes from it (see GenQPlan::needs_controller_q),
+            // so an ordinary grid of local PV machines pays no per-row allocation.
+            const RealVect ctrl_q = _gen_q_plan_.needs_controller_q ? algo.get_controller_q()
+                                                                    : RealVect();
+            gen_q_check::check_gen_q_violations(
+                _gen_q_plan_, algo.get_bus_mismatch(), ctrl_q,
+                _grid_model.get_sn_mva(), _gen_q_tol_mvar_, _row_masked_ids(i),
+                _grid_model.get_generators().get_names(),
+                [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
+                _gen_q_violations_[i]);
+        }
+
         void _store_row_status(size_t i, bool conv, bool invertible, const CplxVect & V_solver){
             _converged_mask_[i] = conv ? 1 : 0;
             if(!_compute_limit_violations_) return;
@@ -1652,6 +1787,68 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _record_n_case_violations(const CplxVect &){}
+
+        // Once per compute(), before anything is solved: the one capability check (made
+        // here, once, rather than discovered row by row) and this call's result buffers.
+        // Sized even though the plan is not built yet, so that a batch whose base case
+        // diverges answers get_gen_q_violations() with one empty entry per row rather
+        // than with an empty list.
+        void _prepare_gen_q_check(size_t nb_steps, bool ac_solver_used){
+            _gen_q_plan_.clear();
+            _gen_q_violations_.clear();
+            if(!_compute_gen_q_violations_) return;
+            if(!ac_solver_used){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::compute: `compute_gen_q_violations` needs an AC "
+                        "algorithm -- a DC powerflow has no reactive power at all, so there is "
+                        "no reactive output to compare against a generator's limits. Pick an AC "
+                        "algorithm (change_algorithm), or turn `compute_gen_q_violations` off.";
+                throw std::runtime_error(exc_.str());
+            }
+            if(!_algo.fills_bus_mismatch()){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::compute: `compute_gen_q_violations` needs an algorithm "
+                        "that publishes its per-bus mismatch -- that mismatch IS the reactive "
+                        "output of the machines pinning each bus. Every built-in AC algorithm "
+                        "does; the active one (" << _algo.get_name() << ") does not, so it "
+                        "is a plugin solver that has not opted in (see "
+                        "BaseAlgo::fills_bus_mismatch). Pick a built-in AC algorithm "
+                        "(change_algorithm), or turn `compute_gen_q_violations` off.";
+                throw std::runtime_error(exc_.str());
+            }
+            _gen_q_violations_.assign(nb_steps, std::vector<LimitViolation>());
+        }
+
+        // ... and the routing itself, once the labelling and the control plan this batch
+        // solves against are settled (`active_layout()`, which the L1 / L2 preparation
+        // above has built or kept). A plan means nothing against another labelling, so it
+        // is never carried across a compute().
+        void _build_gen_q_plan(){
+            if(!_compute_gen_q_violations_) return;
+            gen_q_check::build_gen_q_plan(_grid_model, active_layout().id_me_to_solver,
+                                          active_layout().voltage_control.controllers(),
+                                          _gen_q_plan_);
+        }
+
+        // The base ("n") case's own generator reactive-limit report, read off the solve
+        // _finish_preprocessing just ran on the member algorithm. Only called when that
+        // solve actually ran: a compute() that REUSED the base case leaves the member
+        // algorithm holding the mismatch of the last row of the PREVIOUS call, and the
+        // report already stored (of the same base case, under the same settings -- both
+        // setters drop it) is the right one to keep.
+        void _record_n_case_gen_q(){
+            if(!_compute_gen_q_violations_) return;
+            if(_gen_q_plan_.empty()) return;
+            _gen_q_violations_n_.clear();
+            const RealVect ctrl_q = _gen_q_plan_.needs_controller_q ? _algo.get_controller_q()
+                                                                   : RealVect();
+            gen_q_check::check_gen_q_violations(
+                _gen_q_plan_, _algo.get_bus_mismatch(), ctrl_q,
+                _grid_model.get_sn_mva(), _gen_q_tol_mvar_, nullptr,
+                _grid_model.get_generators().get_names(),
+                [](int){ return false; },  // the base case disconnects no generator
+                _gen_q_violations_n_);
+        }
 
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_masks(){
@@ -1974,8 +2171,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                                      active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
                         // before the two restores below, and before the Ybus is put
-                        // back: see _maybe_store_jacobian
-                        if(conv) _maybe_store_jacobian(cont_id, algo);
+                        // back: see _maybe_store_jacobian (and _record_row_gen_q, which
+                        // reads the mismatch of the system this row solved)
+                        if(conv){
+                            _maybe_store_jacobian(cont_id, algo);
+                            _record_row_gen_q(cont_id, algo);
+                        }
                         if(!masked.empty()) algo.set_masked_buses(std::vector<int>());
                         if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
 
@@ -2187,6 +2388,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<std::vector<LimitViolation> > _violations;
         bool _converged_n_ = false;
         std::vector<LimitViolation> _violations_n_;
+        // generator reactive-limit check (every instantiation, see
+        // set_compute_gen_q_violations). The plan is the routing the per-row check needs
+        // and is rebuilt once per compute(), from the labelling and the controller list
+        // the batch solves in -- like every other solver-keyed thing here it means
+        // nothing against another labelling, so it is dropped with the results.
+        bool _compute_gen_q_violations_ = false;
+        real_type _gen_q_tol_mvar_ = 1e-4;
+        gen_q_check::GenQPlan _gen_q_plan_;
+        std::vector<std::vector<LimitViolation> > _gen_q_violations_;
+        std::vector<LimitViolation> _gen_q_violations_n_;
         // per-row branch-id cache (ContingencyAnalysis only), refreshed once per
         // compute() call -- avoids rebuilding my_defaults_vect() per row / per thread.
         std::vector<std::vector<int> > _li_defaults_vect_cache_;

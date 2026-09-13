@@ -1,0 +1,158 @@
+# What lightsim2grid would need to detect an outer loop's trigger
+
+**Status note, not documentation.** Written while adding the generator reactive-limit
+check to the batch algorithms (`compute_gen_q_violations`, see
+`src/core/batch_algorithm/GenQCheck.hpp`). It records, loop by loop, what a post-solve
+"would this outer loop have fired?" check needs, what the `LSGrid` already holds, and what
+is missing — so the next piece of this work does not have to re-derive it. It is not part
+of the built documentation (`docs/*.rst`).
+
+Reference for the outer loops: PowSyBl OpenLoadFlow,
+`src/main/java/com/powsybl/openloadflow/lf/outerloop/config/DefaultAcOuterLoopConfig.java`
+(the registration order *is* the nesting order, innermost first) and the loop classes in
+`ac/outerloop/`.
+
+## The short version
+
+| OLF outer loop | Result side | Control side | Post-solve check possible? |
+|---|---|---|---|
+| `ReactiveLimits` | complete | complete | **yes — implemented** for a batch (`compute_gen_q_violations`); a single solve already publishes `res_q_mvar` |
+| `TransformerVoltageControl` | complete | **absent** | no |
+| `PhaseControl` / `IncrementalPhaseControl` | complete | **absent** | no |
+| `ShuntVoltageControl` | complete | **absent** | no |
+| `DistributedSlack` | complete | complete | n/a — lightsim2grid distributes the slack inside the Newton (`MultiSlack`), there is no trigger to detect |
+| `HvdcAcEmulationLimits` | complete | partial | limits are stored (`status_droop`); the droop itself is in the Newton (`Hvdc`) |
+| `VoltageMonitoring` (SVC stand-by automaton) | complete | partial | `b_min` / `b_max` and `target_vm_pu` are stored but **never enforced**; no stand-by band |
+| `SecondaryVoltageControl` | complete | absent | no control zones / pilot points in the model |
+| `AreaInterchangeControl` | complete | absent | no `Area` concept in the model |
+| `AutomationSystem` | complete | absent | no overload-management systems in the model |
+
+"Result side complete" everywhere is worth stating plainly: the powerflow results a check
+would compare against are all published already — bus voltages, per-branch P/Q/I on both
+sides, per-element reactive output, and even the inputs a limit check needs
+(`limit_a1_ka` / `limit_a2_ka` per branch, `vmin_kv` / `vmax_kv` per bus). **Every gap
+below is on the control-description side, and every one of them is lost in the
+converters**, not in the solver.
+
+## 1. `ReactiveLimits` — done
+
+What it needs, and what answers it:
+
+| needed | where it is |
+|---|---|
+| is this machine regulating voltage? | `GeneratorContainer::is_voltage_controller` (connected + `voltage_regulator_on_` + not treated as off) |
+| its reactive range | `min_q_` / `max_q_`, exposed as `GenInfo.min_q_mvar` / `max_q_mvar` |
+| its reactive output | `res_q_` (`GenInfo.res_q_mvar`) after a solve; re-derived per row for a batch |
+| which bus it holds | `regulated_bus_id_` (`GenInfo.regulated_bus_id`), local or remote |
+
+The single-solve case needed nothing: `LSGrid::compute_results` publishes each
+generator's reactive output, so the check is a comparison in Python. Note that
+`LSGrid::check_solution(V, check_q_limits=True)` is **not** that check — it answers "is
+this V a solution", aggregates **per bus** (`check_solution_q_values_onegen`), and returns
+a mismatch vector; a bus with two machines, one saturated and one with headroom, reads as
+one number.
+
+The batch case is what the new code does, because a batch keeps the voltages and drops
+everything else. It re-derives the reactive output from the two sources
+`LSGrid::compute_results` itself uses — the algorithm's per-bus mismatch
+(`BaseAlgo::get_bus_mismatch`) for an ordinary PV machine, and the controller list
+(`get_controller_q()`) for one whose Q is a Jacobian unknown — and mirrors
+`LSGrid::_split_q_residual_per_bus` where several machines share a bus.
+
+What is still missing around it:
+
+- **The PQ → PV direction does not exist.** OLF's loop also switches a bus *back* to PV
+  when its voltage recrosses the set-point on the right side. lightsim2grid never pins a
+  machine at a limit, so there is no such state to detect. This only becomes meaningful
+  the day the limit is *enforced*.
+- **SVC reactive limits are never enforced and never checked.** `b_min_` / `b_max_` are
+  marked *"stored, NEVER enforced"* in `SvcContainer.hpp`, and
+  `LSGrid::check_solution_q_values` deliberately passes `0., 0.` with enforcement off. A
+  check is computable (`SvcInfo.res_q_mvar` against `-b·V²`) but nothing does it.
+- **Converter-station reactive limits** are in `check_solution` but only per bus, like the
+  generators were.
+
+## 2. `TransformerVoltageControl` (RTC) — the control data does not exist
+
+`TrafoContainer` keeps `ratio_` and `shift_` and says so outright: *"lightsim2grid has no
+'tap' concept"*. The tap is folded into the pi-model at load time and nothing about the
+regulation survives.
+
+| needed | present? |
+|---|---|
+| is there a ratio tap changer, and is it regulating? | **no** |
+| its target voltage + deadband | **no** |
+| the regulated terminal (which bus/side it watches) | **no** |
+| tap position, low/high tap position, step | **no** — only the resulting `ratio` |
+| the regulated bus' voltage | yes (`res_v1_kv` / `res_v2_kv`, bus V) |
+
+Where it is lost:
+
+- pandapower (`network/from_pandapower/_aux_add_trafo.py`): reads `tap_step_percent` and
+  `tap_pos`, collapses them into `ratio = 1 + 0.01·step·pos` (`TrafoContainer.cpp`).
+  `tap_min`, `tap_max`, `tap_side`, `tap_phase_shifter` are never read.
+- pypowsybl (`network/from_pypowsybl/_aux_add_buses.py`, `_aux_trafo_rho`): takes the
+  current `rho` from `get_ratio_tap_changers()`. `regulating`, `target_v`,
+  `target_deadband`, `regulating_bus_id`, `low_tap_position` / `high_tap_position` are
+  never read.
+
+## 3. `PhaseControl` / `IncrementalPhaseControl` (PST) — same, plus the regulation mode
+
+| needed | present? |
+|---|---|
+| is there a phase tap changer, and is it regulating? | **no** |
+| its regulation mode (`CURRENT_LIMITER` / `ACTIVE_POWER_CONTROL`) | **no** |
+| its regulation value (the P or I target) and the monitored terminal | **no** |
+| tap position / range / step | **no** — only the resulting `shift_` (rad) |
+| the monitored flow | yes (`res_p1_mw`, `res_a1_ka`) |
+| a per-branch current limit | yes (`limit_a1_ka` / `limit_a2_ka`), but that is a *thermal rating*, not the loop's regulation value |
+
+`get_phase_tap_changers()` is not read at all on the pypowsybl path. A
+`CURRENT_LIMITER`-mode check is the closest thing to feasible today, and only by abusing
+the thermal rating as the regulation value — which is not what OLF regulates against.
+
+## 4. `ShuntVoltageControl` — a shunt is a fixed admittance
+
+`ShuntContainer` stores `target_p_mw` / `target_q_mvar` and stamps
+`{p, -q} / sn_mva` on the `Ybus` diagonal. There are no sections and no regulation.
+
+| needed | present? |
+|---|---|
+| `section_count` / `max_section_count`, per-section b | **no** |
+| `voltage_regulation_on`, `target_v`, `target_deadband`, regulated bus | **no** |
+| the regulated bus' voltage, the shunt's own reactive output | yes (`ShuntInfo.res_v_kv`, `res_q_mvar`) |
+
+Where it is lost: pandapower (`_aux_add_shunt.py`) reads `p_mw` / `q_mvar` only;
+pypowsybl (`_aux_add_shunts.py`) reads `g` / `b` and scales them by the nominal voltage.
+`get_shunt_compensators()`'s section and regulation columns are never read.
+
+## The minimum addition that would unblock 2, 3 and 4
+
+One **pure-input control descriptor per element**, which the solver never reads:
+
+- `TapChangerData` on `TrafoContainer`, in two flavours — RTC (regulating flag, target V,
+  deadband, regulated bus + side, tap position, low/high position, step) and PST
+  (regulation mode, regulation value, monitored terminal, same tap fields);
+- `SectionData` on `ShuntContainer` (section, max section, per-section b, regulating flag,
+  target V, deadband, regulated bus).
+
+Why it is cheap: it takes no part in `fillYbus` / `fillSbus`, raises no `AlgoControl` flag,
+needs no `_on_*` hook, and so cannot break the invalidation contract or the refactorization
+path the batch algorithms depend on. It does need the usual leaf paperwork — `StateRes`,
+`get_state` / `set_state`, `save_binary` / `load_binary`, an `Info` class — and the two
+converters have to read it (everything is available upstream: pypowsybl's tap-changer and
+shunt-compensator frames, pandapower's `tap_min` / `tap_max` / `tap_phase_shifter` and
+`shunt.step` / `max_step`).
+
+Then the checks themselves are small, and they belong next to the generator one:
+per element, "would have moved, in this direction, by this much, and has / has not a tap
+left in that direction".
+
+## Why this is worth having beyond curiosity
+
+`network/from_pypowsybl/_olf_params.py` currently **disables** these loops
+(`_INLINE_MODE` / `_LEGACY_TRIGGER`) so that OLF solves the same single-shot,
+outer-loop-free problem lightsim2grid solves. That is the right way to compare, but it
+leaves one thing unknown: whether a given comparison case agrees because both sides were
+prevented from acting, or because the loops were genuinely idle. A trigger check answers
+exactly that, and is the natural companion to the comparison harness.
