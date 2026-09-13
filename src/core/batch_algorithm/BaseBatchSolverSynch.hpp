@@ -67,7 +67,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         BaseBatchSolverSynch & operator=(const BaseBatchSolverSynch&) = delete;
     
         bool get_init_from_n_powerflow() const noexcept {return _init_from_n_powerflow;}
-        void set_init_from_n_powerflow(bool do_it) noexcept {_init_from_n_powerflow = do_it;}
+        void set_init_from_n_powerflow(bool do_it) {
+            if(do_it == _init_from_n_powerflow) return;
+            // L2: this decides what every row starts from -- the "n" solve's answer or
+            // the caller's own Vinit.
+            clear_batch_inputs();
+            _init_from_n_powerflow = do_it;
+        }
 
         // Whether the elements of this batch may be solved concurrently. This is a
         // property of the algorithm, not a user setting: it is false exactly when one
@@ -99,13 +105,23 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                         "of one another (and of their ordering).";
                 throw std::runtime_error(exc_.str());
             }
-            _nb_thread = (n < 1 ? 1 : n);
+            const int val = (n < 1 ? 1 : n);
+            if(val == _nb_thread) return;
+            // L2: the batch is split differently, and each worker gets its own solver
+            // warmed up from the base case -- so the base case is rebuilt with it.
+            clear_batch_inputs();
+            _nb_thread = val;
         }
 
         // solver "control"
+        // L1, on purpose: a different algorithm may be a different FAMILY (AC <-> DC),
+        // and then not one of the three levels survives -- the matrix, the injections
+        // and the bus labelling are all the other family's. Telling the two cases apart
+        // would buy a cache hit on a call nobody makes in a loop, so this stays the
+        // blunt, safe drop.
         virtual void change_algorithm(const AlgorithmType & type){
             _algo.change_algorithm(type);
-            this->clear();
+            this->clear_grid_results();
         }
         // String-based overload: looks up the solver by registry name, so it
         // works for plugin solvers (and built-ins with no dedicated AlgorithmType
@@ -113,7 +129,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // cannot reach (AlgorithmType::Custom is rejected there).
         virtual void change_algorithm(const std::string & name){
             _algo.change_algorithm(name);
-            this->clear();
+            this->clear_grid_results();
         }
 
         // Returns the enum-typed solvers available in this build.
@@ -138,7 +154,14 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // it here if you change it on the grid model after building this object (or
         // after a change_algorithm(), which resets to that new algorithm's defaults).
         AlgoConfig get_algo_config() const {return _algo.get_config(); }
-        void set_algo_config(const AlgoConfig & cfg) {_algo.set_config(cfg); }
+        // L1, for the same reason as change_algorithm above: a config change (damping,
+        // scaling policy, ...) changes what the "n" solve converges to, and possibly
+        // whether it converges at all. Not a call anyone makes per batch, so it is not
+        // worth reasoning about which levels a given field really touches.
+        void set_algo_config(const AlgoConfig & cfg) {
+            _algo.set_config(cfg);
+            this->clear_grid_results();
+        }
 
         // // TODO
         // void change_gridmodel(const GridModel & new_grid_model){
@@ -157,28 +180,75 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // <= nb_solved(): a row skipped outright (eg a non-invertible / islanding
         // Ybus) never reaches compute_one_powerflow, so it counts towards neither.
         int nb_converged() const {return _nb_converged;}
-        virtual void clear() {
-            // the solver, the results, and everything said ABOUT the run that produced
-            // them. `_clear_results` alone is the middle one -- see there.
-            _algo.reset();
-            _clear_results();
-            _nb_solved = 0;
-            _nb_converged = 0;
-            _timer_compute_A = 0.;
-            _timer_compute_P = 0.;
-            _timer_solver = 0.;
-            _timer_thread_init = 0.;
-            _thread_solver_stats_.clear();
-            // NB: _nb_thread is deliberately NOT reset -- it is a setting, not a result.
+        /**
+         * ================= the three cache levels =================================
+         *
+         * A batch holds three tiers of state, each built from the one above it, and
+         * each kept across compute() calls so a caller in a loop does not pay for it
+         * again (see BaseBatchSweep::set_reuse_base_case). Dropping a level drops
+         * every level below it -- that nesting IS the contract, and it is why these
+         * three are the only entry points: a modifier names the highest level it
+         * invalidates and never has to enumerate the rest.
+         *
+         *   L1  clear_grid_results()   what was read off the GRID: Ybus / Bbus, the
+         *                              injections, the grid<->solver bus labelling,
+         *                              the pv/pq split, the slack and its weights.
+         *                              Only a different grid invalidates this (see
+         *                              the change_gridmodel TODO below), or the
+         *                              caller opting out of reuse entirely.
+         *
+         *   L2  clear_batch_inputs()   what was built for THIS BATCH from that grid:
+         *                              the per-row Ybus edit lists, what the graph
+         *                              walk settled about each contingency, the
+         *                              masks, the reserved PV<->PQ structure, the
+         *                              "n" powerflow that seeds the rows -- and the
+         *                              algorithm itself, whose ledger, Jacobian
+         *                              sparsity and factorization are exactly what
+         *                              that "n" solve built.
+         *
+         *   L3  clear_batch_outputs()  what the last run PRODUCED: voltages, flows,
+         *                              convergence, limit violations, the kept
+         *                              Jacobians -- plus the counters and timers
+         *                              that describe that run.
+         *
+         * Each is idempotent by design: dropping a level that is already invalid
+         * costs nothing but the (cheap) recursion downwards. That matters -- the
+         * python wrapper registers an N-1 sweep one contingency at a time, so L2
+         * runs once per line, and only the first of them has anything to do.
+         */
+
+        // L1 -- see above.
+        virtual void clear_grid_results() {
+            if(_grid_cache_valid_){
+                _grid_cache_valid_ = false;
+                ac_cache_.clear();
+                dc_cache_.clear();
+                nb_buses_solver_ = -1;
+            }
+            clear_batch_inputs();
         }
 
-        // THE RESULTS, and nothing else: the voltages and the two flow matrices derived
-        // from them. Not the algorithm -- an analysis and a factorization are not
-        // results, they are what the next run would otherwise redo (see
-        // BaseBatchSweep::set_reuse_base_case), and compute() resets the algorithm
-        // itself when it has to. Not the counters or the timers either: they describe a
-        // run rather than belong to it, and compute() zeroes them as it starts.
-        void _clear_results() {
+        // L2 -- see above. The algorithm goes with it: an analysis and a
+        // factorization are not results, they are what the "n" solve built and what
+        // the next batch would otherwise redo. Dropping one without the other is the
+        // one combination that cannot be made safe -- a kept base case solving
+        // against a freshly reset (so default-constructed) system is a segfault, not
+        // a wrong answer.
+        virtual void clear_batch_inputs() {
+            if(_batch_inputs_valid_){
+                _batch_inputs_valid_ = false;
+                _algo.reset();
+                _base_case_v_solver_ = CplxVect();
+                _prepared_nb_steps_ = _nb_steps_none;
+            }
+            clear_batch_outputs();
+        }
+
+        // L3 -- see above. THE RESULTS, and nothing else: the voltages and the two
+        // flow matrices derived from them, plus the counters and the timers of the
+        // run that produced them (compute() zeroes those again as the next one
+        // starts). Not the algorithm, not the caches.
+        virtual void clear_batch_outputs() {
             _voltages = CplxMat();
             _amps_flows = RealMat();
             _active_power_flows = RealMat();
@@ -192,6 +262,23 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _dc_base_vm_solver_ = RealVect();
             _dc_base_vm_grid_ = RealVect();
             _dc_gen_v_ = RealMat();
+            _nb_solved = 0;
+            _nb_converged = 0;
+            _timer_compute_A = 0.;
+            _timer_compute_P = 0.;
+            _timer_solver = 0.;
+            _timer_thread_init = 0.;
+            _timer_total = 0.;
+            _timer_pre_proc = 0.;
+            _thread_solver_stats_.clear();
+        }
+
+        // Drop everything: the three levels above, and (in BaseBatchSweep) the
+        // registrations and settings on top of them -- a different axis, which is why
+        // this is not a fourth level.
+        virtual void clear() {
+            clear_grid_results();
+            // NB: _nb_thread is deliberately NOT reset -- it is a setting, not a result.
         }
     public:
 
@@ -513,6 +600,10 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 res = _grid_model.build_dc_solver_input(Vinit, dc_cache_, _algo_controler);
                 nb_buses_solver_ = static_cast<int>(dc_cache_.mat.cols());
             }
+            // L1 is now built: every later compute() may map its own starting voltage
+            // onto this labelling instead of reading the grid again (see
+            // BaseBatchSweep::_vinit_on_grid_cache).
+            _grid_cache_valid_ = true;
             return res;
         }
 
@@ -535,6 +626,33 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             return nb_total_bus;
         }
 
+        // Size this run's result buffers. Purely per-call (L3): a kept base case says
+        // nothing about how many rows the NEXT batch has -- it only guarantees the
+        // grid and the batch inputs behind them are still the right ones.
+        void _size_result_buffers(size_t nb_steps, size_t nb_total_bus, bool use_dc_lazy_v){
+            // the DC theta-only fast path accumulates into _thetas (real) instead of
+            // _voltages (complex) -- see get_voltages() / _flows_of_row.
+            _dc_lazy_storage_used_ = use_dc_lazy_v;
+            if(use_dc_lazy_v){
+                _thetas = RealMat::Zero(nb_steps, nb_total_bus);
+                _dc_row_solved_.assign(nb_steps, 0);
+                _voltages = CplxMat();
+            } else {
+                _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus);
+                _thetas = RealMat();
+                _dc_row_solved_.clear();
+            }
+            _amps_flows = RealMat::Zero(0, n_total_);
+            _active_power_flows = RealMat::Zero(0, n_total_);
+        }
+
+        // The "n" powerflow: the batch's base case (L2). Besides its own answer --
+        // kept in _base_case_v_solver_, the seed a set_init_from_n_powerflow() batch
+        // starts every row from -- this is what builds the ledger, the Jacobian
+        // sparsity and the factorization every row afterwards refactorizes into. That
+        // is why it belongs to L2 and not to the results: keeping it is the whole
+        // point of keeping a base case.
+        //
         // Vinit_solver as Eigen::Ref relies on the reassignment below
         // (Vinit_solver = _algo.get_V()) always being same-size as the caller's
         // Vinit_solver: both trace back to the same ac_cache_.mat/dc_cache_.mat solver-space
@@ -542,6 +660,79 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // structurally, not by luck. No virtual dispatch here to enforce it --
         // if that invariant is ever broken, Eigen::Ref's operator= will assert
         // (debug) or corrupt memory (release), same risk as any Eigen::Ref sink.
+        bool _solve_n_case(
+            Eigen::Ref<CplxVect> Vinit_solver,  // is modified if _init_from_n_powerflow is true !
+            size_t max_iter,
+            real_type tol
+        ){
+            // The solver is NOT reset here: the caller did, before the preparation
+            // hooks that configure it for the batch (BaseBatchSweep::compute) -- a
+            // reset drops the PV pinning a generator-contingency sweep hands the
+            // algorithm, which this solve must run with.
+            _algo_controler.tell_all_changed();
+            _algo.tell_solver_control(_algo_controler);
+            _grid_model.get_generators().set_vm(Vinit_solver, active_layout().id_me_to_solver);
+            CplxVect Vinit_solver2 = Vinit_solver;
+            bool conv;
+            // the "n" powerflow warm-up solve always needs the full complex V: its
+            // result may seed every row (_init_from_n_powerflow below) and, for
+            // ContingencyAnalysis / ScenarioSweep, feeds _record_n_case_violations --
+            // so it must never be lazy, even when the per-row sweep that follows will be.
+            _algo.set_lazy_v(false);
+            if(_algo.ac_solver_used()){
+                // ac_cache_.inj is already per-unit (pre_process_solver / fillSbus_me divides by
+                // sn_mva when != 1), same convention as LSGrid::ac_pf's acSbus_ -- so tol
+                // (a physical MW/MVAr tolerance) must be converted the same way LSGrid::ac_pf
+                // does (`tol / sn_mva_`), or this initial solve accepts a per-unit mismatch
+                // up to sn_mva times looser than what the caller asked for.
+                conv = _algo.compute_pf(
+                    ac_cache_.mat,
+                    Vinit_solver2,
+                    ac_cache_.inj,
+                    active_layout().slack_bus_id_solver.as_eigen(),
+                    active_layout().slack_weights,
+                    active_layout().bus_pv.as_eigen(),
+                    active_layout().bus_pq.as_eigen(),
+                    max_iter,
+                    tol / _grid_model.get_sn_mva());
+            } else {
+                conv = _algo.compute_pf_dc(
+                    dc_cache_.mat,
+                    Vinit_solver2,
+                    dc_cache_.inj,
+                    active_layout().slack_bus_id_solver.as_eigen(),
+                    active_layout().slack_weights,
+                    active_layout().bus_pv.as_eigen(),
+                    active_layout().bus_pq.as_eigen());
+            }
+            if(conv) _base_case_v_solver_ = _algo.get_V();
+            return conv;
+        }
+
+        // DC theta-only fast path: the shared magnitude every row's |V| is
+        // reconstructed from (see _dc_vm_row_grid). Read off THIS call's starting
+        // voltage, so it is redone on every compute() -- a kept base case says
+        // nothing about where the caller chose to start.
+        //
+        // Magnitude is a pure echo of the input in DC (see BaseDCAlgo::compute_pf_dc)
+        // and never changes across the sweep except where a row explicitly re-seeds it
+        // (BaseBatchSweep::_apply_step_gen_v). Grid buses outside
+        // active_layout().id_solver_to_me (eg an unused substation's second bus)
+        // default to 0, not 1: they are never part of the solved system, and the
+        // legacy (eager) _voltages was CplxMat::Zero(...)-initialized and never wrote
+        // them -- 0 magnitude reproduces that "untouched column reads back as exact
+        // complex 0" contract regardless of theta (also 0 there, for the same reason).
+        void _init_dc_base_vm(const Eigen::Ref<const CplxVect> & Vinit_solver, size_t nb_total_bus){
+            _dc_base_vm_solver_ = Vinit_solver.array().abs();
+            _dc_base_vm_grid_ = RealVect::Zero(static_cast<Eigen::Index>(nb_total_bus));
+            _dc_base_vm_grid_(active_layout().id_solver_to_me.as_eigen()) = _dc_base_vm_solver_;
+        }
+
+        // The two above, in the order compute() needs them, plus the L2 short circuit:
+        // with the batch inputs still valid there is no "n" solve to redo -- the
+        // sparsity, the ledger and the factorization on the algorithm are the ones
+        // this batch needs, and the caller has already put this call's starting
+        // voltage on the kept labelling (BaseBatchSweep::_vinit_on_grid_cache).
         bool _finish_preprocessing(
             size_t nb_steps,
             size_t nb_total_bus,
@@ -549,115 +740,27 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             size_t max_iter,
             real_type tol,
             CustTimer  & timer_preproc,  // non const because double duration() is not const
-            bool use_dc_lazy_v = false,  // see BaseBatchSweep::compute()
-            // The caller established, and vouches for, a base case this batch can keep
-            // (see BaseBatchSweep::set_reuse_base_case). The result buffers are still
-            // sized -- they belong to this run -- and the generators are still given
-            // this call's starting magnitudes, but the "n" powerflow, and with it the
-            // analysis and the factorization of the Jacobian, are not redone.
-            bool reuse_base_case = false,
-            const CplxVect * base_case_v_solver = nullptr
+            bool use_dc_lazy_v = false   // see BaseBatchSweep::compute()
         ){
+            _size_result_buffers(nb_steps, nb_total_bus, use_dc_lazy_v);
 
-                // init the results matrices: the DC theta-only fast path accumulates into
-                // _thetas (real) instead of _voltages (complex) -- see get_voltages() /
-                // _flows_of_row.
-                _dc_lazy_storage_used_ = use_dc_lazy_v;
-                if(use_dc_lazy_v){
-                    _thetas = RealMat::Zero(nb_steps, nb_total_bus);
-                    _dc_row_solved_.assign(nb_steps, 0);
-                    _voltages = CplxMat();
-                } else {
-                    _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus);
-                    _thetas = RealMat();
-                    _dc_row_solved_.clear();
-                }
-                _amps_flows = RealMat::Zero(0, n_total_);
-                _active_power_flows = RealMat::Zero(0, n_total_);
-
-                // The solver is NOT reset here: the caller did, before the preparation
-                // hooks that configure it for the batch (BaseBatchSweep::compute) -- a
-                // reset drops the PV pinning a generator-contingency sweep hands the
-                // algorithm, which the "n" solve below must run with.
-
-                if(reuse_base_case){
-                    // The sparsity, the ledger and the factorization the kept base case
-                    // left on the algorithm are the ones this batch needs, and the
-                    // caller has already put this call's starting voltage on that
-                    // labelling (BaseBatchSweep::_vinit_on_base_case). Nothing is left
-                    // to prepare but the seed a row-from-"n" sweep asks for.
-                    _algo_controler.tell_none_changed();
-                    if(_init_from_n_powerflow && base_case_v_solver != nullptr){
-                        Vinit_solver = *base_case_v_solver;
-                    }
-                    _timer_pre_proc = timer_preproc.duration();
-                    return true;   // it converged when it was built, or it was not kept
-                }
-
-                // perform the initial powerflow / "powerflow in n"
-                // (needed to init the underlying solver with the correct sparsity pattern in particular)
-                _algo_controler.tell_all_changed();
-                _algo.tell_solver_control(_algo_controler);
-                _grid_model.get_generators().set_vm(Vinit_solver, active_layout().id_me_to_solver);
-                CplxVect Vinit_solver2 = Vinit_solver;
-                bool conv;
-                // the "n" powerflow warm-up solve always needs the full complex V: its
-                // result may seed every row (_init_from_n_powerflow below) and, for
-                // ContingencyAnalysis / ScenarioSweep, feeds _record_n_case_violations --
-                // so it must never be lazy, even when the per-row sweep that follows will be.
-                _algo.set_lazy_v(false);
-                if(_algo.ac_solver_used()){
-                    // ac_cache_.inj is already per-unit (pre_process_solver / fillSbus_me divides by
-                    // sn_mva when != 1), same convention as LSGrid::ac_pf's acSbus_ -- so tol
-                    // (a physical MW/MVAr tolerance) must be converted the same way LSGrid::ac_pf
-                    // does (`tol / sn_mva_`), or this initial solve accepts a per-unit mismatch
-                    // up to sn_mva times looser than what the caller asked for.
-                    conv = _algo.compute_pf(
-                        ac_cache_.mat,
-                        Vinit_solver2,
-                        ac_cache_.inj,
-                        active_layout().slack_bus_id_solver.as_eigen(),
-                        active_layout().slack_weights,
-                        active_layout().bus_pv.as_eigen(),
-                        active_layout().bus_pq.as_eigen(),
-                        max_iter,
-                        tol / _grid_model.get_sn_mva());
-                } else {
-                    conv = _algo.compute_pf_dc(
-                        dc_cache_.mat,
-                        Vinit_solver2,
-                        dc_cache_.inj,
-                        active_layout().slack_bus_id_solver.as_eigen(),
-                        active_layout().slack_weights,
-                        active_layout().bus_pv.as_eigen(),
-                        active_layout().bus_pq.as_eigen());
-                }
-
-                // check if we init the n-1 cases with results from the n cases
-                // or not
-                if(_init_from_n_powerflow) Vinit_solver = _algo.get_V();
-
-                if(use_dc_lazy_v && conv){
-                    // magnitude is a pure echo of the input in DC (see BaseDCAlgo::compute_pf_dc)
-                    // and never changes across the sweep except where a row explicitly re-seeds it
-                    // (BaseBatchSweep::_apply_step_gen_v) -- this is the shared base every row's
-                    // magnitude is reconstructed from, see _dc_vm_row_grid.
-                    // Grid buses outside active_layout().id_solver_to_me (eg an unused substation's second bus)
-                    // default to 0, not 1: they are never part of the solved system, and the legacy
-                    // (eager) _voltages was CplxMat::Zero(...)-initialized and never wrote them --
-                    // 0 magnitude reproduces that "untouched column reads back as exact complex 0"
-                    // contract regardless of theta (also 0 there, for the same reason).
-                    _dc_base_vm_solver_ = Vinit_solver.array().abs();
-                    _dc_base_vm_grid_ = RealVect::Zero(static_cast<Eigen::Index>(nb_total_bus));
-                    _dc_base_vm_grid_(active_layout().id_solver_to_me.as_eigen()) = _dc_base_vm_solver_;
-                }
-
-                // everything init from n-case above
+            bool conv;
+            if(_batch_inputs_valid_){
                 _algo_controler.tell_none_changed();
+                conv = true;   // it converged when it was built, or it was not kept
+            } else {
+                conv = _solve_n_case(Vinit_solver, max_iter, tol);
+            }
+            // check if we init the n-1 cases with results from the n cases or not
+            if(conv && _init_from_n_powerflow) Vinit_solver = _base_case_v_solver_;
+            if(use_dc_lazy_v && conv) _init_dc_base_vm(Vinit_solver, nb_total_bus);
 
-                // end of pre processing
-                _timer_pre_proc = timer_preproc.duration();
-                return conv;
+            // everything init from n-case above
+            _algo_controler.tell_none_changed();
+
+            // end of pre processing
+            _timer_pre_proc = timer_preproc.duration();
+            return conv;
         }
 
         // number of computed rows, whichever accumulator (_voltages or, DC fast
@@ -711,6 +814,24 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         }
 
     protected:
+        // ----- the three cache levels (see clear_grid_results / clear_batch_inputs /
+        // clear_batch_outputs above) -------------------------------------------------
+        // Each says "the corresponding tier of state is built and still describes this
+        // batch". Raised by compute() as it builds each tier, lowered by the matching
+        // clear_*(). There is no flag for L3: results are sized by every compute() and
+        // never reused, so there is nothing to remember about them.
+        bool _grid_cache_valid_ = false;
+        bool _batch_inputs_valid_ = false;
+        // the row count the kept batch inputs were built for: a batch of a different
+        // size has different per-row state to prepare, so compute() drops L2 on a
+        // change. _nb_steps_none (never a legal row count) means "nothing prepared".
+        static const size_t _nb_steps_none = static_cast<size_t>(-1);
+        size_t _prepared_nb_steps_ = _nb_steps_none;
+        // the "n" solve's voltages, in solver space -- the seed a
+        // set_init_from_n_powerflow() batch starts every row from. Part of L2: it is
+        // that solve's answer, and it is kept with the factorization that produced it.
+        CplxVect _base_case_v_solver_;
+
         bool _init_from_n_powerflow = false;
         // number of OS threads used to solve the batch (see set_nb_thread)
         int _nb_thread = 1;

@@ -12,6 +12,11 @@
 // same batch run on a fresh one. What differs is what happened in between -- a
 // contingency registered, the thread count changed, the grid solved by somebody else
 // -- and each of those either invalidates the cache or must not affect the answer.
+//
+// The cache is three nested levels (see BaseBatchSolverSynch's block comment):
+// clear_grid_results() (L1) -> clear_batch_inputs() (L2) -> clear_batch_outputs()
+// (L3). "The base case was kept" is exactly "neither L1 nor L2 was dropped since the
+// last compute()", which is what base_case_was_reused() reports.
 
 #include <vector>
 
@@ -300,15 +305,14 @@ TEST_CASE("registering a contingency rebuilds the base case")
 TEST_CASE("dropping computed results keeps the base case")
 {
     // Tightening a violation threshold changes what is CHECKED of a row, and nothing
-    // the base case is made of: it goes through clear_results_only(), which drops what
-    // a run produced and leaves the algorithm alone.
+    // the base case is made of: it is an L3 modifier, and L3 leaves the algorithm alone.
     //
     // It did not always: clear_results_only() used to reset the algorithm, taking the
     // ledger, the sparsity and the factorization with it, and a base case kept across
     // that is not a stale answer but a solve against a default-constructed system --
-    // which is exactly how the limit-violation suite segfaulted. That reset was never
-    // load-bearing (compute() resets the algorithm itself), so it is gone; this test is
-    // here so it does not come back.
+    // which is exactly how the limit-violation suite segfaulted. The levels make that
+    // combination unrepresentable: the algorithm belongs to L2, so nothing can drop it
+    // without also dropping the base case that would have used it.
     LSGrid grid = make_grid();
     ContingencyAnalysis analysis(grid);
     analysis.change_algorithm(AlgorithmType::NR_SparseLU);
@@ -326,4 +330,124 @@ TEST_CASE("dropping computed results keeps the base case")
     analysis.compute(flat(), 30, 1e-11);
     REQUIRE(analysis.base_case_was_reused());
     check_same(analysis.get_voltages(), before);
+}
+
+
+TEST_CASE("the three cache levels nest")
+{
+    // L3 drops the results; L2 also drops the batch inputs and the algorithm they
+    // configured; L1 also drops what was read off the grid. Each is observable: the
+    // results by their row count, L2 by base_case_was_reused() and by a fresh symbolic
+    // analysis, and every one of them by the answer still being right afterwards.
+    LSGrid grid = make_grid();
+    InjectionSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+
+    const Inputs in;
+    run(sweep, in);
+    const CplxMat expected = sweep.get_voltages();
+    check_same(expected, fresh_result(in));
+
+    // ---- L3: the results, and only the results
+    sweep.clear_batch_outputs();
+    REQUIRE(sweep.get_voltages().rows() == 0);
+    const std::size_t analyze_before_l3 = sweep.get_linear_solver_stats().nb_analyze;
+    run(sweep, in);
+    REQUIRE(sweep.base_case_was_reused());
+    REQUIRE(sweep.get_linear_solver_stats().nb_analyze == analyze_before_l3);
+    check_same(sweep.get_voltages(), expected);
+
+    // ---- L2: + the batch inputs and the algorithm
+    sweep.clear_batch_inputs();
+    REQUIRE(sweep.get_voltages().rows() == 0);   // L3 went with it
+    const std::size_t analyze_before_l2 = sweep.get_linear_solver_stats().nb_analyze;
+    run(sweep, in);
+    REQUIRE_FALSE(sweep.base_case_was_reused());
+    REQUIRE(sweep.get_linear_solver_stats().nb_analyze > analyze_before_l2);
+    check_same(sweep.get_voltages(), expected);
+
+    // ---- L1: + what was read off the grid
+    sweep.clear_grid_results();
+    REQUIRE(sweep.get_voltages().rows() == 0);   // L2 and L3 went with it
+    run(sweep, in);
+    REQUIRE_FALSE(sweep.base_case_was_reused());
+    check_same(sweep.get_voltages(), expected);
+}
+
+
+TEST_CASE("a cache level is not a registration")
+{
+    // Dropping a level says "what I built from this is stale", never "forget what you
+    // were asked to compute". Only clear() does the latter -- a different axis, which
+    // is why it is not a fourth level.
+    LSGrid grid = make_grid();
+    ContingencyAnalysis analysis(grid);
+    analysis.change_algorithm(AlgorithmType::NR_SparseLU);
+    analysis.add_n1(1);
+    analysis.add_n1(2);
+    REQUIRE(analysis.my_defaults().size() == 2);
+
+    analysis.compute(flat(), 30, 1e-11);
+    const CplxMat expected = analysis.get_voltages();
+
+    analysis.clear_grid_results();                 // the top of the hierarchy
+    REQUIRE(analysis.my_defaults().size() == 2);   // ... and the set is still registered
+    analysis.compute(flat(), 30, 1e-11);
+    REQUIRE_FALSE(analysis.base_case_was_reused());
+    check_same(analysis.get_voltages(), expected);
+
+    analysis.clear();
+    REQUIRE(analysis.my_defaults().empty());
+}
+
+
+TEST_CASE("switching algorithm rebuilds everything but keeps the contingencies")
+{
+    // change_algorithm() is L1 on purpose: a different algorithm may be a different
+    // family (AC <-> DC), and then nothing read off the grid survives. It is not a
+    // clear(): the contingencies were registered by the caller, not derived from the
+    // algorithm.
+    LSGrid grid = make_grid();
+    ContingencyAnalysis analysis(grid);
+    analysis.change_algorithm(AlgorithmType::NR_SparseLU);
+    analysis.add_n1(1);
+    analysis.compute(flat(), 30, 1e-11);
+
+    analysis.change_algorithm(AlgorithmType::NR_SparseLU);
+    REQUIRE(analysis.my_defaults().size() == 1);
+    analysis.compute(flat(), 30, 1e-11);
+    REQUIRE_FALSE(analysis.base_case_was_reused());
+
+    LSGrid grid2 = make_grid();
+    ContingencyAnalysis fresh(grid2);
+    fresh.change_algorithm(AlgorithmType::NR_SparseLU);
+    fresh.add_n1(1);
+    fresh.compute(flat(), 30, 1e-11);
+    check_same(analysis.get_voltages(), fresh.get_voltages());
+}
+
+
+TEST_CASE("the seed a row starts from is part of the base case")
+{
+    // set_init_from_n_powerflow decides whether every row starts from the "n" solve's
+    // answer or from the caller's own Vinit -- L2, and it has to be, because the kept
+    // base case is where that answer is kept.
+    LSGrid grid = make_grid();
+    InjectionSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+
+    const Inputs in;
+    run(sweep, in);
+    const CplxMat from_vinit = sweep.get_voltages();
+
+    sweep.set_init_from_n_powerflow(true);
+    run(sweep, in);
+    REQUIRE_FALSE(sweep.base_case_was_reused());
+    // same root either way (a converged powerflow does not depend on its seed here),
+    // which is the point: what must not happen is reading a seed that was never stored
+    check_same(sweep.get_voltages(), from_vinit);
+
+    run(sweep, in);
+    REQUIRE(sweep.base_case_was_reused());
+    check_same(sweep.get_voltages(), from_vinit);
 }
