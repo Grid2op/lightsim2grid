@@ -97,6 +97,10 @@ void bind_batch_sweep_common(py::class_<T> & cls)
                       "calling compute() again -- with new injections, which is what a loop over "
                       "scenarios does -- repeats all of it for nothing. With this ``True`` it is "
                       "done once and kept.\n\n"
+                      "That covers the worker algorithms of a multi-threaded batch too: with "
+                      "``nb_thread > 1`` the rows are run by one algorithm per thread, and those "
+                      "are kept -- and re-analyzed -- on exactly the same terms as the member "
+                      "one.\n\n"
                       "It is dropped, and rebuilt on the next compute(), whenever something it is "
                       "made of changes: clear(), change_algorithm(), algo_config, any contingency "
                       "registration, handle_disconnected_grid, nb_thread, init_from_n_powerflow, "
@@ -115,6 +119,11 @@ void bind_batch_sweep_common(py::class_<T> & cls)
         .def("base_case_was_reused", &T::base_case_was_reused,
              "Whether the last compute() kept a base case instead of building one. Mostly "
              "of interest when measuring where a batch's time goes.")
+        .def("thread_algos_were_reused", &T::thread_algos_were_reused,
+             "Whether the last compute() also kept the WORKER algorithms of the "
+             "multi-threaded path, instead of building and analyzing one per thread. "
+             "Always False for a single-threaded batch: it has no workers (the member "
+             "algorithm runs the rows itself, and keeping that is base_case_was_reused).")
 
         // reverse-mode differentiation (see BatchAdjoint.hpp)
         .def_property("keep_jacobian",

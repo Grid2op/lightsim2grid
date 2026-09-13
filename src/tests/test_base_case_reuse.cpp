@@ -451,3 +451,169 @@ TEST_CASE("the seed a row starts from is part of the base case")
     REQUIRE(sweep.base_case_was_reused());
     check_same(sweep.get_voltages(), from_vinit);
 }
+
+
+// ===================== the workers of a threaded batch =======================
+// The base case lives on the MEMBER algorithm, which is what the single-threaded
+// path runs the rows with. At nb_thread > 1 the rows are run by one algorithm per
+// thread instead, and keeping the base case has to mean keeping those too -- or a
+// threaded batch re-analyzes nb_thread Jacobians on every call while its
+// single-threaded twin re-analyzes none.
+
+namespace {
+
+// total refactorizations charged to the WORKERS (the last nb_thread entries; index 0
+// is the member algorithm). A kept worker accumulates them across every call it ever
+// ran, a rebuilt one is a fresh object and can only show the last call's -- which is
+// how "the workers survived" is told apart from "the flag was set". The analyze
+// counters cannot do it: a rebuilt worker also reports exactly one, its own.
+std::size_t worker_refactorizes(const InjectionSweep & sweep, int nb_thread)
+{
+    const auto per_algo = sweep.get_linear_solver_stats_per_algo();
+    REQUIRE(static_cast<int>(per_algo.size()) >= nb_thread);
+    std::size_t res = 0;
+    for(std::size_t i = per_algo.size() - static_cast<std::size_t>(nb_thread); i < per_algo.size(); ++i){
+        res += per_algo[i].nb_refactorize;
+    }
+    return res;
+}
+
+std::size_t worker_analyzes(const InjectionSweep & sweep, int nb_thread)
+{
+    const auto per_algo = sweep.get_linear_solver_stats_per_algo();
+    std::size_t res = 0;
+    for(std::size_t i = per_algo.size() - static_cast<std::size_t>(nb_thread); i < per_algo.size(); ++i){
+        res += per_algo[i].nb_analyze;
+    }
+    return res;
+}
+
+}  // namespace
+
+
+TEST_CASE("a threaded batch keeps its workers, and gives what a fresh one would have")
+{
+    const int NB_THREAD = 3;
+    LSGrid grid = make_grid();
+    InjectionSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+    sweep.set_nb_thread(NB_THREAD);
+
+    const Inputs first;
+    run(sweep, first);
+    REQUIRE_FALSE(sweep.thread_algos_were_reused());   // nothing to reuse yet
+    check_same(sweep.get_voltages(), fresh_result(first));
+    const std::size_t refac_after_first = worker_refactorizes(sweep, NB_THREAD);
+    REQUIRE(refac_after_first > 0);
+    REQUIRE(worker_analyzes(sweep, NB_THREAD) == static_cast<std::size_t>(NB_THREAD));
+
+    // ... and again, with different injections: the workers are the same objects
+    const Inputs second(0.7);
+    run(sweep, second);
+    REQUIRE(sweep.thread_algos_were_reused());
+    check_same(sweep.get_voltages(), fresh_result(second));
+
+    // they really are the same objects: their refactorize counters carried over
+    REQUIRE(worker_refactorizes(sweep, NB_THREAD) > refac_after_first);
+    // and not one of them analyzed a second time -- the whole point
+    REQUIRE(worker_analyzes(sweep, NB_THREAD) == static_cast<std::size_t>(NB_THREAD));
+}
+
+
+TEST_CASE("a threaded batch gives what the same batch on one thread gives")
+{
+    // the workers start from a kept factorization on the second call and the member
+    // algorithm from its own: the answer must not depend on either, nor on how many
+    // threads split the rows
+    const Inputs in;
+
+    LSGrid grid1 = make_grid();
+    InjectionSweep one(grid1);
+    one.change_algorithm(AlgorithmType::NR_SparseLU);
+    run(one, in);
+    run(one, in);
+    const CplxMat single = one.get_voltages();
+
+    for(int nb_thread : {2, 3}){
+        LSGrid grid2 = make_grid();
+        InjectionSweep many(grid2);
+        many.change_algorithm(AlgorithmType::NR_SparseLU);
+        many.set_nb_thread(nb_thread);
+        run(many, in);
+        run(many, in);
+        REQUIRE(many.thread_algos_were_reused());
+        check_same(many.get_voltages(), single);
+    }
+}
+
+
+TEST_CASE("dropping the batch inputs drops the workers with them")
+{
+    // The workers hold a ledger, a sparsity and a factorization built from the batch
+    // inputs -- so they are L2, and every level at or above it takes them out. If they
+    // ever outlived one, the next call would solve against a Jacobian describing a
+    // batch that no longer exists.
+    const int NB_THREAD = 3;
+    const Inputs in;
+
+    LSGrid grid = make_grid();
+    InjectionSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+    sweep.set_nb_thread(NB_THREAD);
+    run(sweep, in);
+    run(sweep, in);
+    REQUIRE(sweep.thread_algos_were_reused());
+    const CplxMat expected = sweep.get_voltages();
+
+    SECTION("L2 directly"){
+        sweep.clear_batch_inputs();
+        run(sweep, in);
+        REQUIRE_FALSE(sweep.thread_algos_were_reused());
+        check_same(sweep.get_voltages(), expected);
+    }
+    SECTION("L1, which reaches L2"){
+        sweep.clear_grid_results();
+        run(sweep, in);
+        REQUIRE_FALSE(sweep.thread_algos_were_reused());
+        check_same(sweep.get_voltages(), expected);
+    }
+    SECTION("L3 does NOT: results are not what a worker holds"){
+        sweep.clear_batch_outputs();
+        run(sweep, in);
+        REQUIRE(sweep.thread_algos_were_reused());
+        check_same(sweep.get_voltages(), expected);
+    }
+    SECTION("a different thread count cannot reuse workers built for another"){
+        sweep.set_nb_thread(2);
+        run(sweep, in);
+        REQUIRE_FALSE(sweep.thread_algos_were_reused());
+        check_same(sweep.get_voltages(), expected);
+        run(sweep, in);
+        REQUIRE(sweep.thread_algos_were_reused());
+        check_same(sweep.get_voltages(), expected);
+    }
+    SECTION("reuse turned off rebuilds them every call"){
+        sweep.set_reuse_base_case(false);
+        run(sweep, in);
+        REQUIRE_FALSE(sweep.thread_algos_were_reused());
+        check_same(sweep.get_voltages(), expected);
+        run(sweep, in);
+        REQUIRE_FALSE(sweep.thread_algos_were_reused());
+        check_same(sweep.get_voltages(), expected);
+    }
+}
+
+
+TEST_CASE("a single-threaded batch never claims to have kept workers")
+{
+    // it has none: the member algorithm runs the rows itself, and keeping THAT is
+    // what base_case_was_reused reports
+    LSGrid grid = make_grid();
+    InjectionSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+    const Inputs in;
+    run(sweep, in);
+    run(sweep, in);
+    REQUIRE(sweep.base_case_was_reused());
+    REQUIRE_FALSE(sweep.thread_algos_were_reused());
+}

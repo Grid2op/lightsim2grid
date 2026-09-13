@@ -19,6 +19,7 @@
 #include <set>
 #include <map>
 #include <vector>
+#include <memory>
 #include <queue>
 #include <algorithm>
 #include <iterator>
@@ -352,6 +353,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // reserved. The base drops the algorithm, whose sparsity that structure is.
         void clear_batch_inputs() override {
             if(_batch_inputs_valid_){
+                // the workers go with the member algorithm the base drops: each holds a
+                // ledger, a Jacobian sparsity and a factorization built from exactly the
+                // batch inputs being dropped here (see _compute_threaded)
+                _thread_algos_.clear();
                 _li_masked.clear();
                 _cont_connected_.clear();
                 _skip_mask.clear();
@@ -794,6 +799,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // list to keep in sync. The grid cannot change underneath: this class holds its
         // OWN copy of it, taken at construction, and offers no way to modify it.
         //
+        // That includes the WORKER algorithms of a multi-threaded batch. The base case
+        // lives on the member algorithm, which is what the single-threaded path runs the
+        // rows with -- so at nb_thread == 1 keeping the base case already meant keeping
+        // the factorization. At nb_thread > 1 the rows are run by one algorithm per
+        // thread instead, and those were rebuilt every call: a fresh AlgorithmSelector
+        // each, and a first row under tell_all_changed(), so build_J_sparsity + analyze
+        // + factorize rather than a refactorize -- the one thing a batch exists to pay
+        // once. They are kept on exactly the same terms now.
+        //
         // ON by default. Turn it off to have every compute() rebuild everything, as it
         // did before this existed -- worth doing to tell a suspected caching bug from a
         // real one, and the reason this is a public switch rather than an internal
@@ -819,6 +833,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // Whether the last compute() kept a base case instead of building one. For
         // tests, and for anyone measuring where a batch's time goes.
         bool base_case_was_reused() const { return _base_case_was_reused_; }
+
+        // Whether the last compute() also kept the WORKER algorithms of the
+        // multi-threaded path, rather than building and analyzing one per thread. False
+        // for a single-threaded batch, which has no workers (the member algorithm does
+        // the rows itself, and keeping that is base_case_was_reused above).
+        bool thread_algos_were_reused() const { return _thread_algos_were_reused_; }
 
         // ================= reverse-mode differentiation ============================
         // See BatchAdjoint for the maths and the cost. In short: with this on, every
@@ -1983,6 +2003,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // all, and whether the last compute() actually kept them.
         bool _reuse_base_case_ = true;
         bool _base_case_was_reused_ = false;
+
+        // The worker algorithms of a multi-threaded compute(), kept between calls --
+        // part of L2, same as the member _algo (see clear_batch_inputs), and kept on
+        // the same terms (set_reuse_base_case governs both: there is no separate switch,
+        // because there is no state in which keeping one and rebuilding the other would
+        // be the right answer). Empty on the single-threaded path, and whenever the
+        // batch inputs were dropped. Indexed by thread, and every call gives thread t
+        // the same one back, so nothing is shared between threads.
+        std::vector<std::unique_ptr<AlgorithmSelector> > _thread_algos_;
+        bool _thread_algos_were_reused_ = false;
 
         // reverse-mode differentiation (see the public block above and BatchAdjoint)
         bool _keep_jacobian_ = false;
