@@ -166,10 +166,14 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
-- [ADDED] ``compute_gen_q_violations`` on the batch algorithms: every converged row reports
-  the voltage-regulating generators whose reactive output left ``[min_q_mvar, max_q_mvar]``
-  (``get_gen_q_violations``). Detection only, as OpenLoadFlow's ``ReactiveLimits`` outer
-  loop sees it -- no bus is switched PV -> PQ. Opt in, AC only.
+- [ADDED] ``compute_bus_q_violations`` on the batch algorithms: every converged row reports
+  the buses whose voltage-regulating generators had to produce more reactive power than the
+  SUM of their limits (``get_bus_q_violations``). Per bus, not per machine: the split
+  between machines of one bus is a convention. Detection only, as OpenLoadFlow's
+  ``ReactiveLimits`` outer loop sees it -- no bus is switched PV -> PQ. Opt in, AC only.
+- [ADDED] ``ViolationCategory`` on every ``LimitViolation``: OPERATIONAL (a limit the grid
+  may leave -- voltage, current), PHYSICAL (one it cannot -- the reactive capability) or
+  SOLVER (not a limit: NOT_SIMULATED, DIVERGENCE). Derived from ``violation_type``.
 - [BREAKING] a grid where several elements regulate the SAME bus with DIFFERENT voltage
   set-points is now refused instead of silently applying whichever was written last. A bus
   has one magnitude; the two set-points cannot both hold. Previously only checked for a

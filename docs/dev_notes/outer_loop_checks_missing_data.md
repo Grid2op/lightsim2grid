@@ -1,8 +1,8 @@
 # What lightsim2grid would need to detect an outer loop's trigger
 
-**Status note, not documentation.** Written while adding the generator reactive-limit
-check to the batch algorithms (`compute_gen_q_violations`, see
-`src/core/batch_algorithm/GenQCheck.hpp`). It records, loop by loop, what a post-solve
+**Status note, not documentation.** Written while adding the bus reactive-capability
+check to the batch algorithms (`compute_bus_q_violations`, see
+`src/core/batch_algorithm/BusQCheck.hpp`). It records, loop by loop, what a post-solve
 "would this outer loop have fired?" check needs, what the `LSGrid` already holds, and what
 is missing — so the next piece of this work does not have to re-derive it. It is not part
 of the built documentation (`docs/*.rst`).
@@ -16,7 +16,7 @@ Reference for the outer loops: PowSyBl OpenLoadFlow,
 
 | OLF outer loop | Result side | Control side | Post-solve check possible? |
 |---|---|---|---|
-| `ReactiveLimits` | complete | complete | **yes — implemented** for a batch (`compute_gen_q_violations`); a single solve already publishes `res_q_mvar` |
+| `ReactiveLimits` | complete | complete | **yes — implemented** for a batch (`compute_bus_q_violations`); a single solve already publishes `res_q_mvar` |
 | `TransformerVoltageControl` | complete | **absent** | no |
 | `PhaseControl` / `IncrementalPhaseControl` | complete | **absent** | no |
 | `ShuntVoltageControl` | complete | **absent** | no |
@@ -42,22 +42,41 @@ What it needs, and what answers it:
 |---|---|
 | is this machine regulating voltage? | `GeneratorContainer::is_voltage_controller` (connected + `voltage_regulator_on_` + not treated as off) |
 | its reactive range | `min_q_` / `max_q_`, exposed as `GenInfo.min_q_mvar` / `max_q_mvar` |
-| its reactive output | `res_q_` (`GenInfo.res_q_mvar`) after a solve; re-derived per row for a batch |
+| the reactive power it (or its bus) produced | `res_q_` (`GenInfo.res_q_mvar`) after a solve; re-derived per row for a batch |
 | which bus it holds | `regulated_bus_id_` (`GenInfo.regulated_bus_id`), local or remote |
 
-The single-solve case needed nothing: `LSGrid::compute_results` publishes each
-generator's reactive output, so the check is a comparison in Python. Note that
+**The question is asked per bus, not per machine**, and that is not a shortcut. The
+reactive power a bus needs is a fact about the solution; how it is divided between several
+machines standing on that bus is not — the solver never decides it,
+`LSGrid::_split_q_residual_per_bus` does, by a sharing convention (proportional to each
+machine's reactive range). A per-machine check would therefore report the convention: two
+20 MVAr machines covering 30 MVAr together is feasible, while the same solution read
+machine by machine can show both 5 MVAr "over". So the check compares a bus' reactive
+power against the **sum** of its machines' `[min_q, max_q]`.
+
+The single-solve case needed nothing: `LSGrid::compute_results` publishes each generator's
+reactive output, so summing it per bus is a comparison in Python. Note that
 `LSGrid::check_solution(V, check_q_limits=True)` is **not** that check — it answers "is
-this V a solution", aggregates **per bus** (`check_solution_q_values_onegen`), and returns
-a mismatch vector; a bus with two machines, one saturated and one with headroom, reads as
-one number.
+this V a solution", and clamps per bus against ONE machine's limits at a time
+(`check_solution_q_values_onegen`), which is the per-machine reading this note argues
+against.
 
 The batch case is what the new code does, because a batch keeps the voltages and drops
-everything else. It re-derives the reactive output from the two sources
-`LSGrid::compute_results` itself uses — the algorithm's per-bus mismatch
-(`BaseAlgo::get_bus_mismatch`) for an ordinary PV machine, and the controller list
-(`get_controller_q()`) for one whose Q is a Jacobian unknown — and mirrors
-`LSGrid::_split_q_residual_per_bus` where several machines share a bus.
+everything else. Per bus it re-derives the raw reactive residual — the algorithm's own
+per-bus mismatch (`BaseAlgo::get_bus_mismatch`) with every `VoltageControl` controller's
+own injection added back (`get_controller_q()`) — which is exactly what the machines
+pinning that bus produced, whether they pin it through the classical PV path or through a
+bordered control group.
+
+It is also **a different kind of statement from a voltage or current violation**, and the
+report says so: `ViolationCategory::PHYSICAL` vs `OPERATIONAL`. A bus outside its voltage
+band or a line above its rating is a state the grid *can* reach and nobody wants to sit
+in. A bus needing reactive power its machines do not have is a state the grid *cannot*
+reach at all: the converged solution assumes a set-point that could not be held, so it is
+a statement about the model's assumptions rather than about how the grid is operated. The
+third category, `SOLVER` (`NOT_SIMULATED`, `DIVERGENCE`), is not a limit at all — a
+divergence does not distinguish "no solution exists" from "this algorithm did not find
+one".
 
 What is still missing around it:
 
@@ -65,12 +84,16 @@ What is still missing around it:
   when its voltage recrosses the set-point on the right side. lightsim2grid never pins a
   machine at a limit, so there is no such state to detect. This only becomes meaningful
   the day the limit is *enforced*.
-- **SVC reactive limits are never enforced and never checked.** `b_min_` / `b_max_` are
-  marked *"stored, NEVER enforced"* in `SvcContainer.hpp`, and
-  `LSGrid::check_solution_q_values` deliberately passes `0., 0.` with enforcement off. A
-  check is computable (`SvcInfo.res_q_mvar` against `-b·V²`) but nothing does it.
-- **Converter-station reactive limits** are in `check_solution` but only per bus, like the
-  generators were.
+- **A bus whose reactive power is not the generators' alone is skipped**, because the sum
+  of the generators' limits is then not the bus' capability. Two families put it there:
+  a voltage-regulating hvdc converter station (its capability IS a `[min_q, max_q]` in
+  MVAr — `get_station_q_range_mvar` — so extending the sum to it is easy and is the
+  natural next step), and a voltage-mode SVC, whose capability is a susceptance range
+  marked *"stored, NEVER enforced"* in `SvcContainer.hpp` (turning `b_min`/`b_max` into
+  MVAr at the solved voltage is a modelling decision, not a lookup).
+- **Non-regulating machines are out of scope** by construction: their Q is their own
+  setpoint, part of `Sbus`. A violation there is an input error, not something a solve
+  produced.
 
 ## 2. `TransformerVoltageControl` (RTC) — the control data does not exist
 
@@ -144,9 +167,11 @@ converters have to read it (everything is available upstream: pypowsybl's tap-ch
 shunt-compensator frames, pandapower's `tap_min` / `tap_max` / `tap_phase_shifter` and
 `shunt.step` / `max_step`).
 
-Then the checks themselves are small, and they belong next to the generator one:
+Then the checks themselves are small, and they belong next to the reactive-capability one:
 per element, "would have moved, in this direction, by this much, and has / has not a tap
-left in that direction".
+left in that direction". Note that these three are **operational**, not physical: a tap
+that should have moved and did not is a control that was not modelled, not an impossible
+state — so they report in `ViolationCategory::OPERATIONAL`, unlike the reactive one.
 
 ## Why this is worth having beyond curiosity
 

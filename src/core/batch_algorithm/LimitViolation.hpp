@@ -19,8 +19,7 @@ enum class LS2G_API ViolationElementType : int {
     BUS = 0,
     LINE = 1,
     TRAFO = 2,
-    GRID = 3,  // the whole grid / contingency, not a specific element (see LimitViolationType::DIVERGENCE)
-    GENERATOR = 4  // see LimitViolationType::LOW_Q / HIGH_Q and compute_gen_q_violations
+    GRID = 3  // the whole grid / contingency, not a specific element (see LimitViolationType::DIVERGENCE)
 };
 
 // the kind of limit that was violated
@@ -30,33 +29,87 @@ enum class LS2G_API LimitViolationType : int {
     CURRENT = 2,
     NOT_SIMULATED = 3,  // a pre-check (graph connectivity) skipped the contingency: the solver was never invoked
     DIVERGENCE = 4,  // the solver was invoked (for the contingency, or the pre-contingency "n" case) but did not converge
-    // a voltage-regulating generator's reactive output left [min_q_mvar, max_q_mvar]: what
-    // OpenLoadFlow's `ReactiveLimits` outer loop would act on. Reported (see
-    // compute_gen_q_violations), never enforced -- lightsim2grid does not switch the bus
-    // PV -> PQ and re-solve.
+    // The reactive power the voltage-regulating machines of ONE BUS had to produce left
+    // what they are capable of, ie the sum of their [min_q_mvar, max_q_mvar]. Unlike the
+    // three above this is not a limit one may choose to exceed: a machine simply cannot
+    // produce reactive power it does not have, so the converged solution the solver
+    // returned is not a state the grid can reach -- its voltage set-point could not
+    // actually be held. See ViolationCategory::PHYSICAL and compute_bus_q_violations.
+    // Checked per bus, not per machine, because which machine of a bus "produces" which
+    // share of its reactive power is a modelling convention (see
+    // LSGrid::_split_q_residual_per_bus), while what the bus as a whole can produce is not.
     LOW_Q = 5,
     HIGH_Q = 6
 };
 
+/**
+ * What KIND of statement a violation is -- a property of its `LimitViolationType`, and the
+ * first thing to read: the three kinds do not mean the same thing and must not be acted on
+ * the same way.
+ *
+ * A pure function of the type (`violation_category`), not a field, so the two can never
+ * disagree.
+ */
+enum class LS2G_API ViolationCategory : int {
+    /// A limit chosen by an operator, which the grid CAN leave: a bus outside its voltage
+    /// range, a branch above its current rating. The solution is a state the grid can
+    /// reach -- it is just a state nobody wants to sit in, and things eventually break.
+    /// LOW_VOLTAGE, HIGH_VOLTAGE, CURRENT.
+    OPERATIONAL = 0,
+    /// A limit of the equipment itself, which nothing can leave. A violation here says the
+    /// converged solution is NOT physically realizable, whatever anyone decides: the
+    /// control it assumes (a voltage set-point held by machines that would have to produce
+    /// reactive power they do not have) cannot happen. It is a statement about the model's
+    /// assumptions, not about how the grid is being operated. LOW_Q, HIGH_Q.
+    PHYSICAL = 1,
+    /// Not a limit at all: what the solver did. A divergence in particular says nothing
+    /// about the grid -- the state may be perfectly feasible and the algorithm simply
+    /// failed to find it, or there may be no solution; this does not distinguish the two.
+    /// NOT_SIMULATED, DIVERGENCE.
+    SOLVER = 2
+};
+
+/// The category of a violation type. Every type has exactly one; see ViolationCategory.
+inline ViolationCategory violation_category(LimitViolationType violation_type) noexcept
+{
+    switch(violation_type){
+        case LimitViolationType::LOW_VOLTAGE:
+        case LimitViolationType::HIGH_VOLTAGE:
+        case LimitViolationType::CURRENT:
+            return ViolationCategory::OPERATIONAL;
+        case LimitViolationType::LOW_Q:
+        case LimitViolationType::HIGH_Q:
+            return ViolationCategory::PHYSICAL;
+        default:  // NOT_SIMULATED, DIVERGENCE
+            return ViolationCategory::SOLVER;
+    }
+}
+
 // a single limit violation, as detected by ContingencyAnalysis (see compute_limit_violations)
+// and by the reactive-capability check (see compute_bus_q_violations)
 struct LS2G_API LimitViolation {
     ViolationElementType element_type;
-    // grid-model bus id for BUS ; local (0-based, own type) line / trafo / generator id
-    // otherwise ; unused (-1) for GRID
+    // grid-model bus id for BUS ; local (0-based, own type) line / trafo id otherwise ;
+    // unused (-1) for GRID
     int element_id;
-    int side;  // 1 or 2 for LINE / TRAFO ; unused (0) for BUS / GENERATOR / GRID
+    int side;  // 1 or 2 for LINE / TRAFO ; unused (0) for BUS / GRID
     LimitViolationType violation_type;
-    // value reached (MVAr for LOW_Q / HIGH_Q) ; unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    // value reached (MVAr for LOW_Q / HIGH_Q: what the bus' voltage-regulating machines
+    // had to produce) ; unused (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type value;
-    // limit that was violated (min_q_mvar for LOW_Q, max_q_mvar for HIGH_Q) ; unused (NaN)
-    // for NOT_SIMULATED / DIVERGENCE
+    // limit that was violated. For LOW_Q / HIGH_Q the SUMMED min_q_mvar / max_q_mvar of
+    // the machines regulating that bus, not one machine's. Unused (NaN) for
+    // NOT_SIMULATED / DIVERGENCE
     real_type limit;
-    // element name: LINE / TRAFO / GENERATOR (from LSGrid::set_line_names /
-    // set_trafo_names / set_gen_names) or, for BUS, the name of the *substation* the
-    // violating bus belongs to (from LSGrid::set_substation_names) -- there is no per-bus
-    // name in LSGrid, only per-substation ones. Empty string if the grid never had names
-    // set for the relevant kind, or for GRID.
+    // element name: LINE / TRAFO (from LSGrid::set_line_names / set_trafo_names) or, for
+    // BUS, the name of the *substation* the violating bus belongs to (from
+    // LSGrid::set_substation_names) -- there is no per-bus name in LSGrid, only
+    // per-substation ones. Empty string if the grid never had names set for the relevant
+    // kind, or for GRID.
     std::string name{};
+
+    /// see ViolationCategory: what kind of statement this violation is
+    ViolationCategory category() const noexcept { return violation_category(violation_type); }
 };
 
 } // namespace ls2g

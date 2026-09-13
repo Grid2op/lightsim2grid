@@ -82,7 +82,7 @@ add_executable(lightsim2grid_unit_tests
     test_injection_sweep.cpp
     test_continuation_sweep.cpp
     test_scenario_sweep_violations.cpp
-    test_batch_gen_q_violations.cpp
+    test_batch_bus_q_violations.cpp
     test_gen_v_gradient.cpp
     test_bus_element_count.cpp
     test_kcl_from_results.cpp

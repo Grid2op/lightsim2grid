@@ -64,11 +64,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
             // while this row's Ybus edits are still in place -- see _maybe_store_jacobian
-            // (and _record_row_gen_q, which reads the mismatch of the system this row
+            // (and _record_row_bus_q, which reads the mismatch of the system this row
             // solved)
             if(conv){
                 _maybe_store_jacobian(i, algo);
-                _record_row_gen_q(i, algo);
+                _record_row_bus_q(i, algo);
             }
         } else {
             // generator contingencies: this row's buses that keep a live local voltage
@@ -90,10 +90,10 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          max_iter, tol_solver);
             // before the pinning is restored, and before the Ybus is put back: the
             // refreshed Jacobian has to describe the system THIS row solved, and so does
-            // the mismatch the generator reactive-limit check reads
+            // the mismatch the reactive-capability check reads
             if(conv){
                 _maybe_store_jacobian(i, algo);
-                _record_row_gen_q(i, algo);
+                _record_row_bus_q(i, algo);
             }
             if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
         }
@@ -487,10 +487,10 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         _violations_n_.clear();
     }
 
-    // generator reactive-limit check (every instantiation): the capability check and
-    // this call's buffers now, the per-row routing once the labelling is settled (see
-    // _build_gen_q_plan below)
-    _prepare_gen_q_check(nb_steps, ac_solver_used);
+    // reactive-capability check (every instantiation): the capability check and this
+    // call's buffers now, the per-row routing once the labelling is settled (see
+    // _build_bus_q_plan below)
+    _prepare_bus_q_check(nb_steps, ac_solver_used);
 
     // ---- L1: what is read off the grid (Ybus / Bbus, the injections, the bus
     // labelling, the pv/pq split, the slack) ----------------------------------------
@@ -595,11 +595,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // elsewhere)
     _record_n_case_violations(_algo.get_V());
 
-    // the generator reactive-limit routing, and the base case's own report -- read off
-    // the "n" solve the member algorithm has just run, before any row touches it
-    _build_gen_q_plan();
-    // ... and only where the "n" solve actually ran this call (see _record_n_case_gen_q)
-    if(!_base_case_was_reused_) _record_n_case_gen_q();
+    // the reactive-capability routing, and the base case's own report -- read off the
+    // "n" solve the member algorithm has just run, before any row touches it
+    _build_bus_q_plan();
+    // ... and only where the "n" solve actually ran this call (see _record_n_case_bus_q)
+    if(!_base_case_was_reused_) _record_n_case_bus_q();
 
     // Reverse-mode differentiation: size the Jacobian store ONCE, here. Everything it
     // needs is known by now and none of it changes afterwards -- the number of rows is
