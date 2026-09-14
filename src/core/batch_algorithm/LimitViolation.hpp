@@ -19,7 +19,8 @@ enum class LS2G_API ViolationElementType : int {
     BUS = 0,
     LINE = 1,
     TRAFO = 2,
-    GRID = 3  // the whole grid / contingency, not a specific element (see LimitViolationType::DIVERGENCE)
+    GRID = 3,  // the whole grid / contingency, not a specific element (see LimitViolationType::DIVERGENCE)
+    HVDC = 4  // an hvdc line, by its own id (see LimitViolationType::HIGH_P)
 };
 
 // the kind of limit that was violated
@@ -35,12 +36,21 @@ enum class LS2G_API LimitViolationType : int {
     // limit one may choose to exceed: a machine simply cannot produce reactive power it
     // does not have, so the converged solution the solver returned is not a state the grid
     // can reach -- its voltage set-point could not actually be held. See
-    // ViolationCategory::PHYSICAL and compute_bus_q_violations. Checked per bus, not per
+    // ViolationCategory::PHYSICAL and compute_physical_violations. Checked per bus, not per
     // machine, because which machine of a bus "produces" which share of its reactive power
     // is a modelling convention (see LSGrid::_split_q_residual_per_bus), while what the
     // bus as a whole can produce is not.
     LOW_Q = 5,
-    HIGH_Q = 6
+    HIGH_Q = 6,
+    // The active power of an angle-droop ("AC emulation") hvdc line left what its
+    // converters can transmit: `side` says which direction and therefore which limit
+    // (1 for 1 -> 2, against pmax_1to2_mw; 2 for the other way, against pmax_2to1_mw).
+    // Physical for the same reason as LOW_Q / HIGH_Q and unlike CURRENT: a branch above
+    // its thermal rating is a state the grid reaches and should not sit in, while a
+    // converter beyond its maximum power is a state it does not reach -- its own control
+    // saturates first, which is what `status_droop = +/-1` models. Reported (see
+    // compute_physical_violations), never enforced: nothing clamps the droop.
+    HIGH_P = 7
 };
 
 /**
@@ -60,8 +70,9 @@ enum class LS2G_API ViolationCategory : int {
     /// A limit of the equipment itself, which nothing can leave. A violation here says the
     /// converged solution is NOT physically realizable, whatever anyone decides: the
     /// control it assumes (a voltage set-point held by machines that would have to produce
-    /// reactive power they do not have) cannot happen. It is a statement about the model's
-    /// assumptions, not about how the grid is being operated. LOW_Q, HIGH_Q.
+    /// reactive power they do not have, an hvdc converter transmitting more than it can)
+    /// cannot happen. It is a statement about the model's assumptions, not about how the
+    /// grid is being operated. LOW_Q, HIGH_Q, HIGH_P.
     PHYSICAL = 1,
     /// Not a limit at all: what the solver did. A divergence in particular says nothing
     /// about the grid -- the state may be perfectly feasible and the algorithm simply
@@ -80,6 +91,7 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
             return ViolationCategory::OPERATIONAL;
         case LimitViolationType::LOW_Q:
         case LimitViolationType::HIGH_Q:
+        case LimitViolationType::HIGH_P:
             return ViolationCategory::PHYSICAL;
         default:  // NOT_SIMULATED, DIVERGENCE
             return ViolationCategory::SOLVER;
@@ -87,25 +99,29 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
 }
 
 // a single limit violation, as detected by ContingencyAnalysis (see compute_limit_violations)
-// and by the reactive-capability check (see compute_bus_q_violations)
+// and by the physical-limit checks (see compute_physical_violations)
 struct LS2G_API LimitViolation {
     ViolationElementType element_type;
-    // grid-model bus id for BUS ; local (0-based, own type) line / trafo id otherwise ;
-    // unused (-1) for GRID
+    // grid-model bus id for BUS ; local (0-based, own type) line / trafo / hvdc line id
+    // otherwise ; unused (-1) for GRID
     int element_id;
-    int side;  // 1 or 2 for LINE / TRAFO ; unused (0) for BUS / GRID
+    // 1 or 2 for LINE / TRAFO (the terminal) and for HVDC (the direction: 1 means the flow
+    // leaves side 1, ie 1 -> 2) ; unused (0) for BUS / GRID
+    int side;
     LimitViolationType violation_type;
-    // value reached (MVAr for LOW_Q / HIGH_Q: what the machines holding that bus had to
-    // produce) ; unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    // value reached: MVAr for LOW_Q / HIGH_Q (what the machines holding that bus had to
+    // produce), MW for HIGH_P (the flow leaving `side`, always positive) ; unused (NaN) for
+    // NOT_SIMULATED / DIVERGENCE
     real_type value;
     // limit that was violated. For LOW_Q / HIGH_Q the SUMMED capability of the machines
     // holding that bus, not one machine's: min_q_mvar / max_q_mvar for a generator or an
     // hvdc converter station, b_min / b_max at the solved voltage for a voltage-mode SVC.
-    // Unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    // For HIGH_P the pmax of the direction `side` names. Unused (NaN) for
+    // NOT_SIMULATED / DIVERGENCE
     real_type limit;
-    // element name: LINE / TRAFO (from LSGrid::set_line_names / set_trafo_names) or, for
-    // BUS, the name of the *substation* the violating bus belongs to (from
-    // LSGrid::set_substation_names) -- there is no per-bus name in LSGrid, only
+    // element name: LINE / TRAFO / HVDC (from LSGrid::set_line_names / set_trafo_names /
+    // set_dcline_names) or, for BUS, the name of the *substation* the violating bus belongs
+    // to (from LSGrid::set_substation_names) -- there is no per-bus name in LSGrid, only
     // per-substation ones. Empty string if the grid never had names set for the relevant
     // kind, or for GRID.
     std::string name{};

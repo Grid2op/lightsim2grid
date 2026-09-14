@@ -6,14 +6,14 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-"""Tests for the (opt-in) reactive-capability reporting of the batch algorithms:
-`compute_bus_q_violations` / `bus_q_violation_tol_mvar` / `get_bus_q_violations` /
-`get_bus_q_violations_n`, on the C++ classes and on the python wrappers
+"""Tests for the (opt-in) physical-limit reporting of the batch algorithms:
+`compute_physical_violations` / `physical_violation_tol_mva` / `get_physical_violations` /
+`get_physical_violations_n`, on the C++ classes and on the python wrappers
 (`TimeSerie`, `InjectionSweep`, `ContingencyAnalysis`, `ScenarioSweep`).
 
 The reported VALUES are pinned against a single-shot `ac_pf` here as they are in
-`src/tests/test_batch_bus_q_violations.cpp`; what this file adds is the python layer --
-the properties, what they invalidate, and the `bus_q_violations` field of the
+`src/tests/test_batch_physical_violations.cpp`; what this file adds is the python layer --
+the properties, what they invalidate, and the `physical_violations` field of the
 `run()` result.
 """
 
@@ -48,7 +48,7 @@ def _case14_tight_q(max_q_mvar=5.):
 
 def _reference_bus_q(grid):
     """what a single ac_pf publishes, summed per bus over the voltage-regulating generators:
-    exactly what `get_bus_q_violations` reports a value for"""
+    exactly what `get_physical_violations` reports a value for"""
     v_init = np.full(grid.total_bus(), grid.get_init_vm_pu() + 0j)
     grid.ac_pf(v_init, 20, 1e-11)
     per_bus = {}
@@ -63,26 +63,26 @@ def _one_row_time_series(grid):
     """a TimeSeriesCPP with a single row: the grid's own generator set-points, so the row
     solves the very state `ac_pf` solves"""
     ts = TimeSeriesCPP(grid)
-    ts.compute_bus_q_violations = True
-    ts.bus_q_violation_tol_mvar = 0.
+    ts.compute_physical_violations = True
+    ts.physical_violation_tol_mva = 0.
     gen_p = np.array([[gen.target_p_mw for gen in grid.get_generators()]])
     ts.modify_gen_p(gen_p)
     return ts
 
 
-class TestBusQViolationsCpp(unittest.TestCase):
+class TestPhysicalViolationsCpp(unittest.TestCase):
     """the C++ classes, through their bindings"""
 
     def test_default_is_off_and_raises(self):
         grid = _case14_tight_q()
         for cls in (TimeSeriesCPP, ContingencyAnalysisCPP, ScenarioSweepCPP):
             algo = cls(grid)
-            assert algo.compute_bus_q_violations is False, cls.__name__
-            assert algo.bus_q_violation_tol_mvar == 1e-4, cls.__name__
+            assert algo.compute_physical_violations is False, cls.__name__
+            assert algo.physical_violation_tol_mva == 1e-4, cls.__name__
             with self.assertRaises(RuntimeError):
-                algo.get_bus_q_violations()
+                algo.get_physical_violations()
             with self.assertRaises(RuntimeError):
-                algo.get_bus_q_violations_n()
+                algo.get_physical_violations_n()
 
     def test_reports_what_ac_pf_publishes_per_bus(self):
         grid = _case14_tight_q()
@@ -94,7 +94,7 @@ class TestBusQViolationsCpp(unittest.TestCase):
         ts.compute(v_init, 20, 1e-11)
         assert ts.converged_mask()[0]
 
-        viols = ts.get_bus_q_violations()
+        viols = ts.get_physical_violations()
         assert len(viols) == 1, "one row in, one row out"
         assert len(viols[0]) > 0, "+/- 5 MVAr per machine cannot hold case14's voltages"
         for v in viols[0]:
@@ -107,16 +107,16 @@ class TestBusQViolationsCpp(unittest.TestCase):
             # the limit is the SUM over that bus' machines, so a multiple of 5 MVAr here
             self.assertAlmostEqual(abs(v.limit) % 5., 0., places=9)
         # the base ("n") case solves the same state, so it reports the same thing
-        assert len(ts.get_bus_q_violations_n()) == len(viols[0])
+        assert len(ts.get_physical_violations_n()) == len(viols[0])
 
     def test_a_wide_tolerance_hides_everything(self):
         grid = _case14_tight_q()
         ts = _one_row_time_series(grid)
-        ts.bus_q_violation_tol_mvar = 1e6
+        ts.physical_violation_tol_mva = 1e6
         v_init = np.full(grid.total_bus(), grid.get_init_vm_pu() + 0j)
         ts.compute(v_init, 20, 1e-11)
-        assert len(ts.get_bus_q_violations()[0]) == 0
-        assert len(ts.get_bus_q_violations_n()) == 0
+        assert len(ts.get_physical_violations()[0]) == 0
+        assert len(ts.get_physical_violations_n()) == 0
 
     def test_wide_limits_report_nothing(self):
         # the same grid, with the reactive ranges pandapower's case14 actually carries
@@ -127,32 +127,36 @@ class TestBusQViolationsCpp(unittest.TestCase):
         v_init = np.full(grid.total_bus(), grid.get_init_vm_pu() + 0j)
         ts.compute(v_init, 20, 1e-11)
         assert ts.converged_mask()[0]
-        assert len(ts.get_bus_q_violations()[0]) == 0
+        assert len(ts.get_physical_violations()[0]) == 0
 
-    def test_dc_is_refused(self):
+    def test_dc_reports_no_reactive_violation_and_does_not_raise(self):
+        # a DC powerflow has no reactive power at all, so the reactive half is not
+        # applicable rather than missing -- and the hvdc active-power half (nothing here to
+        # trigger it on case14) still runs, so compute() must not raise
         grid = _case14_tight_q()
         ts = _one_row_time_series(grid)
         ts.change_algorithm(AlgorithmType.DC_SparseLU)
         v_init = np.full(grid.total_bus(), grid.get_init_vm_pu() + 0j)
-        with self.assertRaises(RuntimeError):
-            ts.compute(v_init, 20, 1e-11)
+        ts.compute(v_init, 20, 1e-11)
+        assert ts.converged_mask()[0]
+        assert len(ts.get_physical_violations()[0]) == 0
 
     def test_independent_of_compute_limit_violations(self):
         # the two flags are separate opt-ins, and a reactive violation never lands in
-        # get_violations() (nor a current one in get_bus_q_violations())
+        # get_violations() (nor a current one in get_physical_violations())
         grid = _case14_tight_q()
         ca = ContingencyAnalysisCPP(grid)
-        ca.compute_bus_q_violations = True
-        ca.bus_q_violation_tol_mvar = 0.
+        ca.compute_physical_violations = True
+        ca.physical_violation_tol_mva = 0.
         ca.add_n1(0)
         v_init = np.full(grid.total_bus(), grid.get_init_vm_pu() + 0j)
         ca.compute(v_init, 20, 1e-11)
         assert ca.compute_limit_violations is False
         with self.assertRaises(RuntimeError):
             ca.get_violations()
-        assert len(ca.get_bus_q_violations()) == 1
-        assert len(ca.get_bus_q_violations()[0]) > 0
-        for v in ca.get_bus_q_violations()[0]:
+        assert len(ca.get_physical_violations()) == 1
+        assert len(ca.get_physical_violations()[0]) > 0
+        for v in ca.get_physical_violations()[0]:
             assert violation_category(v.violation_type) == ViolationCategory.PHYSICAL
 
     def test_toggling_the_flag_keeps_the_registered_contingencies(self):
@@ -161,11 +165,11 @@ class TestBusQViolationsCpp(unittest.TestCase):
         ca = ContingencyAnalysisCPP(grid)
         ca.add_n1(0)
         ca.add_n1(1)
-        ca.compute_bus_q_violations = True
+        ca.compute_physical_violations = True
         assert len(ca.my_defaults()) == 2
         v_init = np.full(grid.total_bus(), grid.get_init_vm_pu() + 0j)
         ca.compute(v_init, 20, 1e-11)
-        assert len(ca.get_bus_q_violations()) == 2
+        assert len(ca.get_physical_violations()) == 2
 
 
 class TestSvcCapabilityFromPython(unittest.TestCase):
@@ -193,14 +197,14 @@ class TestSvcCapabilityFromPython(unittest.TestCase):
         grid.tell_solver_need_reset()
 
         ts = TimeSeriesCPP(grid)
-        ts.compute_bus_q_violations = True
-        ts.bus_q_violation_tol_mvar = 0.
+        ts.compute_physical_violations = True
+        ts.physical_violation_tol_mva = 0.
         ts.modify_gen_p(np.array([[gen.target_p_mw for gen in grid.get_generators()]]))
         v_init = np.full(grid.total_bus(), 1.0 + 0j)
         ts.compute(v_init, 20, 1e-11)
         assert ts.converged_mask()[0]
 
-        viols = [v for v in ts.get_bus_q_violations()[0] if v.element_id == 1]
+        viols = [v for v in ts.get_physical_violations()[0] if v.element_id == 1]
         assert len(viols) == 1, "the SVC cannot hold 1.05 pu with 0.2 pu of susceptance"
         viol = viols[0]
         assert viol.violation_type == LimitViolationType.HIGH_Q
@@ -217,9 +221,105 @@ class TestSvcCapabilityFromPython(unittest.TestCase):
         self.assertAlmostEqual(viol.value, svc.res_q_mvar, places=5)
 
 
-class TestBusQViolationsWrapper(unittest.TestCase):
+class TestHvdcPFromPython(unittest.TestCase):
+    """the active-power half: an angle-droop hvdc line beyond what its converters can
+    transmit. `status_droop` is an input of the solve, so nothing saturates the droop -- see
+    `LSGrid.set_status_droop_hvdc`, whose documentation says the saturation belongs between
+    two solves, which is the outer loop this detects."""
+
+    @staticmethod
+    def _droop_grid(pmax_1to2, pmax_2to1=1000., p0_mw=30., k_mw_per_deg=400.):
+        from lightsim2grid.lightsim2grid_cpp import LSGrid
+        grid = LSGrid()
+        grid.set_sn_mva(100.)
+        grid.set_init_vm_pu(1.0)
+        grid.init_bus(4, 1, np.full(4, 138.), 0, 0)
+        grid.init_powerlines(np.full(3, 0.01), np.full(3, 0.1), np.zeros(3, dtype=complex),
+                             np.array([0, 1, 2]), np.array([1, 2, 3]))
+        grid.init_loads(np.array([80.]), np.array([60.]), np.array([3]))
+        grid.init_generators(np.array([0.]), np.array([1.02]), np.array([-1e3]),
+                             np.array([1e3]), np.array([0]))
+        grid.add_gen_slackbus(0, 1.)
+        one = np.ones(1)
+        # bus 1 -> bus 3, no converter or dc-line losses, so the flow leaving side 1 is
+        # exactly p0 + k.(theta1 - theta3). NB: the slope argument is MW per DEGREE.
+        grid.init_hvdc_lines(np.array([1]), np.array([3]), [0], [0], np.zeros(1), np.zeros(1),
+                             [False], [False], one, one, np.zeros(1), np.zeros(1),
+                             np.full(1, -1e3), np.full(1, 1e3), np.full(1, -1e3), np.full(1, 1e3),
+                             one, one, [0], np.zeros(1), np.zeros(1), np.zeros(1),
+                             [True], np.array([p0_mw]), np.array([k_mw_per_deg]),
+                             np.array([pmax_1to2]), np.array([pmax_2to1]))
+        grid.tell_solver_need_reset()
+        return grid
+
+    def _one_row(self, grid):
+        ts = TimeSeriesCPP(grid)
+        ts.compute_physical_violations = True
+        ts.physical_violation_tol_mva = 0.
+        ts.modify_gen_p(np.array([[gen.target_p_mw for gen in grid.get_generators()]]))
+        v_init = np.full(grid.total_bus(), 1.0 + 0j)
+        ts.compute(v_init, 30, 1e-11)
+        assert ts.converged_mask()[0]
+        return ts
+
+    def test_reports_the_flow_ac_pf_publishes(self):
+        ref = self._droop_grid(pmax_1to2=1000.)
+        ref.ac_pf(np.full(ref.total_bus(), 1.0 + 0j), 30, 1e-11)
+        hv = ref.get_dclines()[0]
+        # generator convention: side 1 DRAWS this much from the AC grid
+        p_flow = -hv.res_p1_mw
+        assert p_flow > 1., "the fixture must actually flow 1 -> 2"
+        self.assertAlmostEqual(p_flow, hv.res_p2_mw, places=6)  # lossless here
+
+        pmax = p_flow - 5.
+        grid = self._droop_grid(pmax_1to2=pmax)
+        grid.set_dcline_names(["dc_link"])
+        viols = self._one_row(grid).get_physical_violations()[0]
+        assert len(viols) == 1
+        assert viols[0].element_type == ViolationElementType.HVDC
+        assert viols[0].element_id == 0
+        assert viols[0].side == 1  # the flow leaves side 1
+        assert viols[0].violation_type == LimitViolationType.HIGH_P
+        assert viols[0].category == ViolationCategory.PHYSICAL
+        self.assertAlmostEqual(viols[0].value, p_flow, places=6)
+        self.assertAlmostEqual(viols[0].limit, pmax, places=9)
+        assert viols[0].name == "dc_link"
+
+    def test_within_the_limit_reports_nothing(self):
+        grid = self._droop_grid(pmax_1to2=1000.)
+        assert len(self._one_row(grid).get_physical_violations()[0]) == 0
+
+    def test_an_already_saturated_droop_is_not_reported(self):
+        # status_droop != 0: the solver pins the flow at the very limit this would compare
+        # against, so there is nothing left to detect
+        grid = self._droop_grid(pmax_1to2=5.)
+        grid.set_status_droop_hvdc(0, 1)
+        assert len(self._one_row(grid).get_physical_violations()[0]) == 0
+
+    def test_it_works_in_dc_too(self):
+        # the hvdc half needs only the bus angles, which a DC powerflow solves
+        ref = self._droop_grid(pmax_1to2=5.)
+        ref.change_algorithm(AlgorithmType.DC_SparseLU)
+        ref.dc_pf(np.full(ref.total_bus(), 1.0 + 0j), 30, 1e-11)
+        p_dc = -ref.get_dclines()[0].res_p1_mw
+        assert p_dc > 5.
+
+        grid = self._droop_grid(pmax_1to2=5.)
+        ts = TimeSeriesCPP(grid)
+        ts.change_algorithm(AlgorithmType.DC_SparseLU)
+        ts.compute_physical_violations = True
+        ts.physical_violation_tol_mva = 0.
+        ts.modify_gen_p(np.array([[0.]]))
+        ts.compute(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        viols = ts.get_physical_violations()[0]
+        assert len(viols) == 1
+        assert viols[0].violation_type == LimitViolationType.HIGH_P
+        self.assertAlmostEqual(viols[0].value, p_dc, places=6)
+
+
+class TestPhysicalViolationsWrapper(unittest.TestCase):
     """the python wrappers: the properties they expose, what they invalidate, and the
-    `bus_q_violations` field of the `run()` result"""
+    `physical_violations` field of the `run()` result"""
 
     def setUp(self):
         import grid2op
@@ -235,35 +335,35 @@ class TestBusQViolationsWrapper(unittest.TestCase):
     def test_time_serie_properties(self):
         from lightsim2grid import TimeSerie
         ts = TimeSerie(self.env)
-        assert ts.compute_bus_q_violations is False
-        assert ts.bus_q_violation_tol_mvar == 1e-4
+        assert ts.compute_physical_violations is False
+        assert ts.physical_violation_tol_mva == 1e-4
         with self.assertRaises(RuntimeError):
-            ts.get_bus_q_violations()
+            ts.get_physical_violations()
         with self.assertRaises(ValueError):
-            ts.compute_bus_q_violations = "yes"
+            ts.compute_physical_violations = "yes"
         with self.assertRaises(ValueError):
-            ts.bus_q_violation_tol_mvar = "tight"
+            ts.physical_violation_tol_mva = "tight"
         with self.assertRaises(RuntimeError):
-            ts.bus_q_violation_tol_mvar = -1.  # rejected C++-side
+            ts.physical_violation_tol_mva = -1.  # rejected C++-side
 
-        ts.compute_bus_q_violations = True
+        ts.compute_physical_violations = True
         ts.compute_V(scenario_id=0)
-        viols = ts.get_bus_q_violations()
+        viols = ts.get_physical_violations()
         assert len(viols) == ts.computer.get_voltages().shape[0]
         for row in viols:
             for v in row:
                 assert v.element_type == ViolationElementType.BUS
                 assert v.category == ViolationCategory.PHYSICAL
-        ts.get_bus_q_violations_n()
+        ts.get_physical_violations_n()
         ts.close()
 
     def test_injection_sweep_inherits_it(self):
         from lightsim2grid import InjectionSweep
         sweep = InjectionSweep(self.env)
-        assert sweep.compute_bus_q_violations is False
-        sweep.compute_bus_q_violations = True
+        assert sweep.compute_physical_violations is False
+        sweep.compute_physical_violations = True
         sweep.compute_V(scenario_id=0)
-        assert len(sweep.get_bus_q_violations()) == sweep.computer.get_voltages().shape[0]
+        assert len(sweep.get_physical_violations()) == sweep.computer.get_voltages().shape[0]
         sweep.close()
 
     def test_contingency_analysis_run_carries_the_field(self):
@@ -274,17 +374,17 @@ class TestBusQViolationsWrapper(unittest.TestCase):
 
         # off: the field is there and empty, so a caller can read it unconditionally
         res = sa.run()
-        assert res.pre_contingency_result.bus_q_violations == []
+        assert res.pre_contingency_result.physical_violations == []
         for cont in res.post_contingency_results:
-            assert cont.bus_q_violations == []
+            assert cont.physical_violations == []
 
         # on: the contingencies survive the flag change (unlike compute_limit_violations)
-        sa.compute_bus_q_violations = True
+        sa.compute_physical_violations = True
         assert len(sa.computer.my_defaults()) == 2
         res = sa.run()
         assert len(res.post_contingency_results) == 2
         for cont in res.post_contingency_results:
-            for v in cont.bus_q_violations:
+            for v in cont.physical_violations:
                 assert v.category == ViolationCategory.PHYSICAL
             # the two lists never mix
             for v in cont.limit_violations:
@@ -296,7 +396,7 @@ class TestBusQViolationsWrapper(unittest.TestCase):
         from lightsim2grid import ScenarioSweep
         sweep = ScenarioSweep(self.env)
         sweep.compute_limit_violations = True
-        sweep.compute_bus_q_violations = True
+        sweep.compute_physical_violations = True
         n_line = len(self.env.backend._grid.get_lines())
         mask = np.zeros((2, n_line), dtype=bool)
         mask[1, 0] = True
@@ -304,11 +404,11 @@ class TestBusQViolationsWrapper(unittest.TestCase):
         res = sweep.run()
         assert len(res.post_contingency_results) == 2
         for cont in res.post_contingency_results:
-            for v in cont.bus_q_violations:
+            for v in cont.physical_violations:
                 assert v.element_type == ViolationElementType.BUS
                 assert v.category == ViolationCategory.PHYSICAL
-        assert sweep.get_bus_q_violations() is not None
-        sweep.get_bus_q_violations_n()
+        assert sweep.get_physical_violations() is not None
+        sweep.get_physical_violations_n()
         sweep.close()
 
 

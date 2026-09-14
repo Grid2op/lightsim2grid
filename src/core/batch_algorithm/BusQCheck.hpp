@@ -21,7 +21,8 @@
 namespace ls2g {
 
 /**
- * Post-solve reactive-capability check, PER BUS.
+ * Post-solve reactive-capability check, PER BUS -- one half of
+ * `compute_physical_violations` (the other is HvdcPCheck.hpp).
  *
  * WHAT THIS ANSWERS. A voltage-regulating machine has no reactive setpoint: its Q is
  * whatever it takes to hold the set-point, and lightsim2grid never clamps it. So a row

@@ -68,7 +68,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             // solved)
             if(conv){
                 _maybe_store_jacobian(i, algo);
-                _record_row_bus_q(i, algo, V);
+                _record_row_physical(i, algo, V);
             }
         } else {
             // generator contingencies: this row's buses that keep a live local voltage
@@ -90,10 +90,10 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          max_iter, tol_solver);
             // before the pinning is restored, and before the Ybus is put back: the
             // refreshed Jacobian has to describe the system THIS row solved, and so does
-            // the mismatch the reactive-capability check reads
+            // the state the physical-limit checks read
             if(conv){
                 _maybe_store_jacobian(i, algo);
-                _record_row_bus_q(i, algo, V);
+                _record_row_physical(i, algo, V);
             }
             if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
         }
@@ -487,10 +487,10 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         _violations_n_.clear();
     }
 
-    // reactive-capability check (every instantiation): the capability check and this
-    // call's buffers now, the per-row routing once the labelling is settled (see
-    // _build_bus_q_plan below)
-    _prepare_bus_q_check(nb_steps, ac_solver_used);
+    // physical-limit checks (every instantiation): the capability check and this call's
+    // buffers now, the per-row routing once the labelling is settled (see
+    // _build_physical_plans below)
+    _prepare_physical_check(nb_steps, ac_solver_used);
 
     // ---- L1: what is read off the grid (Ybus / Bbus, the injections, the bus
     // labelling, the pv/pq split, the slack) ----------------------------------------
@@ -595,11 +595,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // elsewhere)
     _record_n_case_violations(_algo.get_V());
 
-    // the reactive-capability routing, and the base case's own report -- read off the
-    // "n" solve the member algorithm has just run, before any row touches it
-    _build_bus_q_plan();
-    // ... and only where the "n" solve actually ran this call (see _record_n_case_bus_q)
-    if(!_base_case_was_reused_) _record_n_case_bus_q();
+    // the physical-limit routing, and the base case's own report -- read off the "n"
+    // solve the member algorithm has just run, before any row touches it
+    _build_physical_plans();
+    // ... and only where the "n" solve actually ran this call (see _record_n_case_physical)
+    if(!_base_case_was_reused_) _record_n_case_physical();
 
     // Reverse-mode differentiation: size the Jacobian store ONCE, here. Everything it
     // needs is known by now and none of it changes afterwards -- the number of rows is

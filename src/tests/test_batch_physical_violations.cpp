@@ -6,8 +6,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-// `compute_bus_q_violations`: the batch-side reactive-capability check of the buses whose
-// voltage is held by generators (see batch_algorithm/BusQCheck.hpp).
+// `compute_physical_violations`: the batch-side checks whose violation means the row is not
+// a state the grid can reach -- the reactive capability of a bus (batch_algorithm/
+// BusQCheck.hpp) and the active power of an angle-droop hvdc line (HvdcPCheck.hpp).
 //
 // Two things are tested, and they are different:
 //
@@ -191,6 +192,76 @@ LSGrid make_svc_grid_asym(real_type b_min_pu, real_type b_max_pu)
     return grid;
 }
 
+// The same feeder plus an ANGLE-DROOP ("AC emulation") hvdc line from bus 1 to bus 3, in
+// parallel with the 1-2-3 path: `p = p0_mw + k_mw_per_rad . (theta_1 - theta_3)`, with no
+// converter or dc-line losses (lf = 0, r = 0) so that the flow leaving bus 1 into the hvdc
+// is exactly that `p` and the reference below can be read straight off `res_p1_mw`.
+//
+// `nb_spare_bus` prepends buses that carry NOTHING: they are therefore outside the solved
+// system, every element's grid bus id is shifted up by that many, and the solver ids of the
+// live buses no longer equal their grid ids -- the labelling mistake this check could make
+// silently (reading one bus' angle as another's).
+// `reverse_ends` swaps which end of the line is side 1: the same physical flow (bus 1 ->
+// bus 3, pulled by the load) is then described as leaving SIDE 2, and bounded by
+// pmax_2to1 instead. Note `init_hvdc_lines` takes the droop slope in MW per DEGREE (it
+// stores MW/rad, see HvdcLineContainer::init).
+LSGrid make_droop_grid(real_type pmax_1to2, real_type pmax_2to1,
+                       real_type p0_mw = 30., real_type k_mw_per_deg = 400.,
+                       int nb_spare_bus = 0, bool reverse_ends = false)
+{
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+
+    const int off = nb_spare_bus;  // grid bus id of what would otherwise be bus 0
+    const int nb_bus = NB_BUS + off;
+    grid.init_bus(static_cast<unsigned int>(nb_bus), 1, RealVect::Constant(nb_bus, 138.), 0, 0);
+    const int n_line = NB_BUS - 1;
+    Eigen::VectorXi from_id(n_line), to_id(n_line);
+    for (int i = 0; i < n_line; ++i) { from_id(i) = off + i; to_id(i) = off + i + 1; }
+    grid.init_powerlines(RealVect::Constant(n_line, 0.01), RealVect::Constant(n_line, 0.1),
+                         CplxVect::Zero(n_line), from_id, to_id);
+
+    RealVect load_p(1), load_q(1);
+    load_p << LOAD_P;
+    load_q << LOAD_Q;
+    Eigen::VectorXi load_bus(1);
+    load_bus << off + NB_BUS - 1;
+    grid.init_loads(load_p, load_q, load_bus);
+
+    RealVect gen_p(1), gen_v(1), gen_min_q(1), gen_max_q(1);
+    Eigen::VectorXi gen_bus(1);
+    gen_p << 0.;
+    gen_v << 1.02;
+    gen_min_q << -WIDE_Q;
+    gen_max_q << WIDE_Q;
+    gen_bus << off;
+    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+
+    Eigen::VectorXi bus1(1), bus2(1);
+    const int hvdc_end_a = off + GEN_BUS;        // 1 (+ the spare offset)
+    const int hvdc_end_b = off + NB_BUS - 1;     // 3, the load bus
+    bus1 << (reverse_ends ? hvdc_end_b : hvdc_end_a);
+    bus2 << (reverse_ends ? hvdc_end_a : hvdc_end_b);
+    const std::vector<int> type1{0}, type2{0}, mode{0};       // VSC, SIDE_1_RECTIFIER
+    const std::vector<bool> vreg1{false}, vreg2{false}, droop_on{true};
+    const RealVect zero = RealVect::Zero(1);
+    RealVect vm(1), q_lim(1), pf(1), p0(1), k(1), pmax12(1), pmax21(1);
+    vm << 1.;
+    q_lim << WIDE_Q;
+    pf << 1.;
+    p0 << p0_mw;
+    k << k_mw_per_deg;
+    pmax12 << pmax_1to2;
+    pmax21 << pmax_2to1;
+    grid.init_hvdc_lines(bus1, bus2, type1, type2, zero, zero, vreg1, vreg2, vm, vm,
+                         zero, zero, -q_lim, q_lim, -q_lim, q_lim, pf, pf, mode, zero,
+                         zero, zero, droop_on, p0, k, pmax12, pmax21);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
 CplxVect flat_start(const LSGrid & grid)
 {
     return CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), {1.0, 0.});
@@ -234,8 +305,8 @@ const LimitViolation * find_bus(const std::vector<LimitViolation> & viols, int b
 // so it is built by the caller and configured here.
 void setup_one_row(TimeSeries & ts)
 {
-    ts.set_compute_bus_q_violations(true);
-    ts.set_bus_q_violation_tol_mvar(0.);
+    ts.set_compute_physical_violations(true);
+    ts.set_physical_violation_tol_mva(0.);
     RealMat load_p(1, 1);
     load_p << LOAD_P;
     ts.modify_load_p(load_p);
@@ -246,7 +317,7 @@ void setup_one_row(TimeSeries & ts)
 
 }  // namespace
 
-TEST_CASE("every violation type says what kind of statement it is", "[batch][bus_q]")
+TEST_CASE("every violation type says what kind of statement it is", "[batch][physical]")
 {
     // the three categories are the point of the taxonomy: an operational limit the grid may
     // leave, a physical one it cannot, and the solver's own verdict -- which is not a limit
@@ -264,7 +335,7 @@ TEST_CASE("every violation type says what kind of statement it is", "[batch][bus
     CHECK(viol.category() == ViolationCategory::PHYSICAL);
 }
 
-TEST_CASE("a bus reports the reactive power its machines had to produce", "[batch][bus_q]")
+TEST_CASE("a bus reports the reactive power its machines had to produce", "[batch][physical]")
 {
     SECTION("within what the machines own: nothing reported")
     {
@@ -275,9 +346,9 @@ TEST_CASE("a bus reports the reactive power its machines had to produce", "[batc
         setup_one_row(ts);
         ts.compute(flat_start(grid), 30, 1e-11);
         REQUIRE(ts.converged_mask()[0] == 1);
-        REQUIRE(ts.get_bus_q_violations().size() == 1);
-        CHECK(ts.get_bus_q_violations()[0].empty());
-        CHECK(ts.get_bus_q_violations_n().empty());
+        REQUIRE(ts.get_physical_violations().size() == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+        CHECK(ts.get_physical_violations_n().empty());
     }
 
     SECTION("beyond it: reported, with the value ac_pf publishes and the SUMMED limit")
@@ -297,7 +368,7 @@ TEST_CASE("a bus reports the reactive power its machines had to produce", "[batc
         ts.compute(flat_start(grid), 30, 1e-11);
 
         REQUIRE(ts.converged_mask()[0] == 1);
-        const std::vector<LimitViolation> & viols = ts.get_bus_q_violations()[0];
+        const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
         REQUIRE(viols.size() == 1);
         CHECK(viols[0].element_type == ViolationElementType::BUS);
         CHECK(viols[0].element_id == GEN_BUS);
@@ -308,8 +379,8 @@ TEST_CASE("a bus reports the reactive power its machines had to produce", "[batc
         CHECK(viols[0].limit == Approx(10.));
         CHECK(viols[0].name == "sub1");  // the bus' substation, as for a voltage violation
         // the base ("n") case solves that same grid, so it reports the same thing
-        REQUIRE(ts.get_bus_q_violations_n().size() == 1);
-        CHECK(ts.get_bus_q_violations_n()[0].value == Approx(q_bus).margin(1e-6));
+        REQUIRE(ts.get_physical_violations_n().size() == 1);
+        CHECK(ts.get_physical_violations_n()[0].value == Approx(q_bus).margin(1e-6));
     }
 
     SECTION("the tolerance is what keeps a bus resting on its capability quiet")
@@ -322,13 +393,13 @@ TEST_CASE("a bus reports the reactive power its machines had to produce", "[batc
         TimeSeries ts(grid);
         setup_one_row(ts);
         // a tolerance wider than the overshoot hides it
-        ts.set_bus_q_violation_tol_mvar(q_bus - 10. + 1.);
+        ts.set_physical_violation_tol_mva(q_bus - 10. + 1.);
         ts.compute(flat_start(grid), 30, 1e-11);
-        CHECK(ts.get_bus_q_violations()[0].empty());
+        CHECK(ts.get_physical_violations()[0].empty());
     }
 }
 
-TEST_CASE("a bus is fine while one of its machines is not", "[batch][bus_q]")
+TEST_CASE("a bus is fine while one of its machines is not", "[batch][physical]")
 {
     // THE test that separates a bus-level check from a per-machine one. Two machines hold
     // bus 1; together they own more than the bus needs, so the bus is feasible and nothing
@@ -366,7 +437,7 @@ TEST_CASE("a bus is fine while one of its machines is not", "[batch][bus_q]")
     setup_one_row(ts);
     ts.compute(flat_start(grid), 30, 1e-11);
     REQUIRE(ts.converged_mask()[0] == 1);
-    CHECK(ts.get_bus_q_violations()[0].empty());
+    CHECK(ts.get_physical_violations()[0].empty());
 
     SECTION("... and the same bus IS reported once the two of them cannot cover it")
     {
@@ -379,7 +450,7 @@ TEST_CASE("a bus is fine while one of its machines is not", "[batch][bus_q]")
         setup_one_row(ts2);
         ts2.compute(flat_start(grid2), 30, 1e-11);
         REQUIRE(ts2.converged_mask()[0] == 1);
-        const LimitViolation * viol = find_bus(ts2.get_bus_q_violations()[0], GEN_BUS);
+        const LimitViolation * viol = find_bus(ts2.get_physical_violations()[0], GEN_BUS);
         REQUIRE(viol != nullptr);
         CHECK(viol->violation_type == LimitViolationType::HIGH_Q);
         CHECK(viol->value == Approx(q_bus).margin(1e-6));
@@ -388,7 +459,7 @@ TEST_CASE("a bus is fine while one of its machines is not", "[batch][bus_q]")
 }
 
 TEST_CASE("a bus held through remote regulation reads its reactive power off the controllers",
-          "[batch][bus_q][vctrl]")
+          "[batch][physical][vctrl]")
 {
     // gen 1 stands on bus 1 and regulates bus 3: its reactive output is a Jacobian unknown
     // of the VoltageControl extension, and bus 1 keeps a reactive equation of its own (so
@@ -405,7 +476,7 @@ TEST_CASE("a bus held through remote regulation reads its reactive power off the
     ts.compute(flat_start(grid), 30, 1e-11);
     REQUIRE(ts.converged_mask()[0] == 1);
 
-    const LimitViolation * viol = find_bus(ts.get_bus_q_violations()[0], GEN_BUS);
+    const LimitViolation * viol = find_bus(ts.get_physical_violations()[0], GEN_BUS);
     REQUIRE(viol != nullptr);
     CHECK(viol->value == Approx(q_bus).margin(1e-6));
     CHECK(viol->violation_type == (q_bus > 0. ? LimitViolationType::HIGH_Q
@@ -413,7 +484,7 @@ TEST_CASE("a bus held through remote regulation reads its reactive power off the
 }
 
 TEST_CASE("an hvdc converter station's reactive capability counts towards its bus'",
-          "[batch][bus_q][vctrl]")
+          "[batch][physical][vctrl]")
 {
     // a station regulating the bus it stands on holds that bus exactly like a local
     // generator does, and its [min_q, max_q] is in the same currency (MVAr). So it belongs
@@ -440,7 +511,7 @@ TEST_CASE("an hvdc converter station's reactive capability counts towards its bu
         setup_one_row(ts);
         ts.compute(flat_start(grid), 30, 1e-11);
         REQUIRE(ts.converged_mask()[0] == 1);
-        CHECK(find_bus(ts.get_bus_q_violations()[0], GEN_BUS) == nullptr);
+        CHECK(find_bus(ts.get_physical_violations()[0], GEN_BUS) == nullptr);
     }
 
     SECTION("a station that does not is reported, against the summed capability")
@@ -452,7 +523,7 @@ TEST_CASE("an hvdc converter station's reactive capability counts towards its bu
         setup_one_row(ts);
         ts.compute(flat_start(grid), 30, 1e-11);
         REQUIRE(ts.converged_mask()[0] == 1);
-        const LimitViolation * viol = find_bus(ts.get_bus_q_violations()[0], GEN_BUS);
+        const LimitViolation * viol = find_bus(ts.get_physical_violations()[0], GEN_BUS);
         REQUIRE(viol != nullptr);
         CHECK(viol->violation_type == LimitViolationType::HIGH_Q);
         // the value is the bus' whole reactive power (generator + station), and the limit
@@ -463,7 +534,7 @@ TEST_CASE("an hvdc converter station's reactive capability counts towards its bu
 }
 
 TEST_CASE("a voltage-mode SVC's susceptance range counts towards its bus'",
-          "[batch][bus_q][vctrl]")
+          "[batch][physical][vctrl]")
 {
     // an SVC's capability is a SUSCEPTANCE range, so what it is worth in MVAr depends on
     // the solved voltage: q = b . |V|^2 . sn_mva. It holds bus 3 here (alone -- LSGrid
@@ -487,7 +558,7 @@ TEST_CASE("a voltage-mode SVC's susceptance range counts towards its bus'",
         setup_one_row(ts);
         ts.compute(flat_start(grid), 30, 1e-11);
         REQUIRE(ts.converged_mask()[0] == 1);
-        CHECK(find_bus(ts.get_bus_q_violations()[0], SVC_BUS) == nullptr);
+        CHECK(find_bus(ts.get_physical_violations()[0], SVC_BUS) == nullptr);
     }
 
     SECTION("not enough: reported, against b . |V|^2 . sn_mva and not against b")
@@ -500,7 +571,7 @@ TEST_CASE("a voltage-mode SVC's susceptance range counts towards its bus'",
         setup_one_row(ts);
         ts.compute(flat_start(grid), 30, 1e-11);
         REQUIRE(ts.converged_mask()[0] == 1);
-        const LimitViolation * viol = find_bus(ts.get_bus_q_violations()[0], SVC_BUS);
+        const LimitViolation * viol = find_bus(ts.get_physical_violations()[0], SVC_BUS);
         REQUIRE(viol != nullptr);
         CHECK(viol->violation_type == LimitViolationType::HIGH_Q);
         CHECK(viol->value == Approx(q_svc).margin(1e-6));
@@ -521,7 +592,7 @@ TEST_CASE("a voltage-mode SVC's susceptance range counts towards its bus'",
         setup_one_row(ts_cap);
         ts_cap.compute(flat_start(capacitive), 30, 1e-11);
         REQUIRE(ts_cap.converged_mask()[0] == 1);
-        CHECK(find_bus(ts_cap.get_bus_q_violations()[0], SVC_BUS) == nullptr);
+        CHECK(find_bus(ts_cap.get_physical_violations()[0], SVC_BUS) == nullptr);
 
         LSGrid inductive = make_svc_grid_asym(-b_pu, 0.);
         inductive.change_algorithm(AlgorithmType::NR_SparseLU);
@@ -529,7 +600,7 @@ TEST_CASE("a voltage-mode SVC's susceptance range counts towards its bus'",
         setup_one_row(ts_ind);
         ts_ind.compute(flat_start(inductive), 30, 1e-11);
         REQUIRE(ts_ind.converged_mask()[0] == 1);
-        const LimitViolation * viol = find_bus(ts_ind.get_bus_q_violations()[0], SVC_BUS);
+        const LimitViolation * viol = find_bus(ts_ind.get_physical_violations()[0], SVC_BUS);
         REQUIRE(viol != nullptr);
         CHECK(viol->violation_type == LimitViolationType::HIGH_Q);
         CHECK(viol->limit == Approx(0.).margin(1e-9));  // b_max = 0: it can produce nothing
@@ -537,45 +608,219 @@ TEST_CASE("a voltage-mode SVC's susceptance range counts towards its bus'",
     }
 }
 
-TEST_CASE("the reactive-capability check is opt in, and says so when it is off",
-          "[batch][bus_q]")
+TEST_CASE("the physical-limit checks are opt in, and say so when they are off",
+          "[batch][physical]")
 {
     std::vector<GenSpec> gens{slack_gen(), GenSpec{GEN_BUS, V_SET, 10., -10., 10., -1}};
     LSGrid grid = make_grid(gens);
     grid.change_algorithm(AlgorithmType::NR_SparseLU);
     TimeSeries ts(grid);
-    CHECK_FALSE(ts.get_compute_bus_q_violations());
-    CHECK_THROWS_AS(ts.get_bus_q_violations(), std::runtime_error);
-    CHECK_THROWS_AS(ts.get_bus_q_violations_n(), std::runtime_error);
-    CHECK(ts.get_bus_q_violation_tol_mvar() == Approx(1e-4));
-    CHECK_THROWS_AS(ts.set_bus_q_violation_tol_mvar(-1.), std::runtime_error);
+    CHECK_FALSE(ts.get_compute_physical_violations());
+    CHECK_THROWS_AS(ts.get_physical_violations(), std::runtime_error);
+    CHECK_THROWS_AS(ts.get_physical_violations_n(), std::runtime_error);
+    CHECK(ts.get_physical_violation_tol_mva() == Approx(1e-4));
+    CHECK_THROWS_AS(ts.set_physical_violation_tol_mva(-1.), std::runtime_error);
 }
 
-TEST_CASE("the reactive-capability check refuses an algorithm that cannot feed it",
-          "[batch][bus_q]")
+TEST_CASE("the reactive half needs an algorithm that can feed it; the hvdc half does not",
+          "[batch][physical]")
 {
-    std::vector<GenSpec> gens{slack_gen(), GenSpec{GEN_BUS, V_SET, 10., -10., 10., -1}};
-
     // Every built-in AC family publishes its per-bus mismatch (NR, fast-decoupled AND
     // Gauss-Seidel -- see BaseAlgo::FILLS_BUS_MISMATCH and its overrides), so the only
-    // rejections reachable from here are DC and a plugin that does not opt in. Gauss-Seidel
-    // is checked below to AGREE with the NR reference instead.
+    // algorithm this could refuse is a plugin that has not opted in. DC is NOT refused: a DC
+    // powerflow has no reactive power at all, so the reactive half is not applicable rather
+    // than missing, and the hvdc half -- which needs nothing but the bus angles -- still
+    // runs.
     //
     // The algorithm a batch runs is its OWN: inherited from the grid at construction, and
     // changed afterwards through the BATCH, never through the grid (see
     // BaseBatchSolverSynch's constructor).
-    LSGrid grid = make_grid(gens);
+    LSGrid grid = make_droop_grid(/*pmax_1to2=*/5., /*pmax_2to1=*/500.);
     TimeSeries ts(grid);
     ts.change_algorithm(AlgorithmType::DC_SparseLU);
-    ts.set_compute_bus_q_violations(true);
+    ts.set_compute_physical_violations(true);
+    ts.set_physical_violation_tol_mva(0.);
     RealMat load_p(1, 1);
     load_p << LOAD_P;
     ts.modify_load_p(load_p);
-    CHECK_THROWS_AS(ts.compute(flat_start(grid), 30, 1e-11), std::runtime_error);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+
+    // the hvdc limit is reported, and against the DC solution's own angles: the reference is
+    // a DC single shot of the same grid
+    LSGrid ref = make_droop_grid(/*pmax_1to2=*/5., /*pmax_2to1=*/500.);
+    ref.change_algorithm(AlgorithmType::DC_SparseLU);
+    ref.dc_pf(flat_start(ref), 30, 1e-11);
+    const real_type p_dc = -ref.get_dclines()[0].res_p1_mw;  // leaving bus 1 into the hvdc
+    REQUIRE(p_dc > 5.);
+
+    const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+    REQUIRE(viols.size() == 1);
+    CHECK(viols[0].element_type == ViolationElementType::HVDC);
+    CHECK(viols[0].violation_type == LimitViolationType::HIGH_P);
+    CHECK(viols[0].value == Approx(p_dc).margin(1e-6));
+    // ... and nothing about reactive power, which a DC solve does not have
+    for (std::size_t k = 0; k < viols.size(); ++k) {
+        CHECK(viols[k].violation_type != LimitViolationType::LOW_Q);
+        CHECK(viols[k].violation_type != LimitViolationType::HIGH_Q);
+    }
+}
+
+TEST_CASE("an angle-droop hvdc beyond what its converters can transmit is reported",
+          "[batch][physical][hvdc]")
+{
+    // `status_droop` is an INPUT of the solve (0 = linear), so nothing saturates the droop:
+    // the flow is whatever the angle difference asks for, and a row can converge with a
+    // converter transmitting power it does not have. That is the condition OpenLoadFlow's
+    // HvdcAcEmulationLimits outer loop acts on.
+    LSGrid ref = make_droop_grid(/*pmax_1to2=*/1000., /*pmax_2to1=*/1000.);
+    ref.change_algorithm(AlgorithmType::NR_SparseLU);
+    ref.ac_pf(flat_start(ref), 30, 1e-11);
+    // no losses on this fixture, so the flow leaving bus 1 into the hvdc is p0 + k.dtheta
+    const real_type p_flow = -ref.get_dclines()[0].res_p1_mw;
+    CHECK(p_flow == Approx(ref.get_dclines()[0].res_p2_mw).margin(1e-9));
+    REQUIRE(p_flow > 1.);  // it really does flow 1 -> 2
+
+    SECTION("within the limits: nothing reported")
+    {
+        LSGrid grid = make_droop_grid(p_flow + 5., 1000.);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+    }
+
+    SECTION("beyond them: reported, with the flow ac_pf publishes and that direction's max")
+    {
+        const real_type pmax = p_flow - 5.;
+        LSGrid grid = make_droop_grid(pmax, 1000.);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        std::vector<std::string> names{"dc_link"};
+        grid.set_dcline_names(names);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+
+        const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+        REQUIRE(viols.size() == 1);
+        CHECK(viols[0].element_type == ViolationElementType::HVDC);
+        CHECK(viols[0].element_id == 0);
+        CHECK(viols[0].side == 1);  // the flow leaves side 1
+        CHECK(viols[0].violation_type == LimitViolationType::HIGH_P);
+        CHECK(viols[0].category() == ViolationCategory::PHYSICAL);
+        CHECK(viols[0].value == Approx(p_flow).margin(1e-6));
+        CHECK(viols[0].limit == Approx(pmax));
+        CHECK(viols[0].name == "dc_link");
+        // the base ("n") case solves the same grid, so it reports the same thing
+        REQUIRE(ts.get_physical_violations_n().size() == 1);
+        CHECK(ts.get_physical_violations_n()[0].value == Approx(p_flow).margin(1e-6));
+    }
+
+    SECTION("each direction is judged against ITS OWN maximum")
+    {
+        // the flow goes 1 -> 2 here, so only pmax_1to2 can bound it: a tiny pmax_2to1 is
+        // irrelevant, and swapping the two changes the verdict. A check comparing |p|
+        // against whichever limit came to hand would pass one of these and fail the other.
+        LSGrid wrong_way = make_droop_grid(/*pmax_1to2=*/1000., /*pmax_2to1=*/1.);
+        wrong_way.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts_ok(wrong_way);
+        setup_one_row(ts_ok);
+        ts_ok.compute(flat_start(wrong_way), 30, 1e-11);
+        REQUIRE(ts_ok.converged_mask()[0] == 1);
+        CHECK(ts_ok.get_physical_violations()[0].empty());
+
+        LSGrid right_way = make_droop_grid(/*pmax_1to2=*/1., /*pmax_2to1=*/1000.);
+        right_way.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts_bad(right_way);
+        setup_one_row(ts_bad);
+        ts_bad.compute(flat_start(right_way), 30, 1e-11);
+        REQUIRE(ts_bad.converged_mask()[0] == 1);
+        REQUIRE(ts_bad.get_physical_violations()[0].size() == 1);
+        CHECK(ts_bad.get_physical_violations()[0][0].side == 1);
+        CHECK(ts_bad.get_physical_violations()[0][0].limit == Approx(1.));
+    }
+}
+
+TEST_CASE("a droop flowing 2 -> 1 is reported on side 2, against pmax_2to1",
+          "[batch][physical][hvdc]")
+{
+    // the same physical flow (bus 1 -> bus 3, pulled by the load), described from the other
+    // end: side 1 now sits at the load bus, so the hvdc carries power OUT of its side 2 and
+    // it is pmax_2to1 that bounds it.
+    LSGrid ref = make_droop_grid(1000., 1000., 30., 400., 0, /*reverse_ends=*/true);
+    ref.change_algorithm(AlgorithmType::NR_SparseLU);
+    ref.ac_pf(flat_start(ref), 30, 1e-11);
+    const real_type p_flow = ref.get_dclines()[0].res_p1_mw;  // positive: received at side 1
+    REQUIRE(p_flow > 1.);
+
+    const real_type pmax = p_flow - 5.;
+    LSGrid grid = make_droop_grid(1000., pmax, 30., 400., 0, /*reverse_ends=*/true);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+
+    const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+    REQUIRE(viols.size() == 1);
+    CHECK(viols[0].side == 2);  // the flow leaves side 2
+    CHECK(viols[0].violation_type == LimitViolationType::HIGH_P);
+    CHECK(viols[0].value == Approx(p_flow).margin(1e-6));  // reported positive
+    CHECK(viols[0].limit == Approx(pmax));
+
+    // ... and the other direction's maximum has no say in it
+    LSGrid other_way = make_droop_grid(/*pmax_1to2=*/1., 1000., 30., 400., 0, true);
+    other_way.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts_ok(other_way);
+    setup_one_row(ts_ok);
+    ts_ok.compute(flat_start(other_way), 30, 1e-11);
+    REQUIRE(ts_ok.converged_mask()[0] == 1);
+    CHECK(ts_ok.get_physical_violations()[0].empty());
+}
+
+TEST_CASE("a droop the caller already saturated is not reported", "[batch][physical][hvdc]")
+{
+    // status_droop != 0 means someone has run the saturation logic between two solves (what
+    // LSGrid::set_status_droop_hvdc is for): the solver then PINS the flow at the very limit
+    // this would compare against, so there is nothing left to detect.
+    LSGrid grid = make_droop_grid(/*pmax_1to2=*/5., /*pmax_2to1=*/1000.);
+    grid.set_status_droop_hvdc(0, 1);  // saturated 1 -> 2
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+    CHECK(ts.get_physical_violations()[0].empty());
+    CHECK(ts.get_physical_violations_n().empty());
+}
+
+TEST_CASE("the hvdc flow is read in the batch's own bus labelling", "[batch][physical][hvdc]")
+{
+    // Deactivated spare buses shift the solver ids away from the grid ones, so a check
+    // reading theta through the wrong map takes another bus' angle -- a wrong number, not an
+    // error. The reported flow must still be the one a single shot publishes.
+    const int nb_spare = 3;
+    LSGrid ref = make_droop_grid(1000., 1000., 30., 400., nb_spare);
+    ref.change_algorithm(AlgorithmType::NR_SparseLU);
+    ref.ac_pf(flat_start(ref), 30, 1e-11);
+    const real_type p_flow = -ref.get_dclines()[0].res_p1_mw;
+    REQUIRE(p_flow > 1.);
+
+    LSGrid grid = make_droop_grid(p_flow - 5., 1000., 30., 400., nb_spare);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+    REQUIRE(ts.get_physical_violations()[0].size() == 1);
+    CHECK(ts.get_physical_violations()[0][0].value == Approx(p_flow).margin(1e-6));
 }
 
 TEST_CASE("a second compute() that reuses the base case reports the same thing",
-          "[batch][bus_q]")
+          "[batch][physical]")
 {
     // `reuse_base_case` (on by default) skips the "n" solve of the second call, which
     // leaves the member algorithm holding the mismatch of the LAST ROW of the first call.
@@ -585,8 +830,8 @@ TEST_CASE("a second compute() that reuses the base case reports the same thing",
     LSGrid grid = make_grid(gens);
     grid.change_algorithm(AlgorithmType::NR_SparseLU);
     TimeSeries ts(grid);
-    ts.set_compute_bus_q_violations(true);
-    ts.set_bus_q_violation_tol_mvar(0.);
+    ts.set_compute_physical_violations(true);
+    ts.set_physical_violation_tol_mva(0.);
     // two rows with DIFFERENT loads, so the last row's reactive power is not the base
     // case's and a stale read is visible
     RealMat load_p(2, 1);
@@ -597,24 +842,24 @@ TEST_CASE("a second compute() that reuses the base case reports the same thing",
     ts.modify_load_q(load_q);
 
     ts.compute(flat_start(grid), 30, 1e-11);
-    REQUIRE(ts.get_compute_bus_q_violations());
-    REQUIRE(ts.get_bus_q_violations_n().size() == 1);
-    const real_type q_n_first = ts.get_bus_q_violations_n()[0].value;
+    REQUIRE(ts.get_compute_physical_violations());
+    REQUIRE(ts.get_physical_violations_n().size() == 1);
+    const real_type q_n_first = ts.get_physical_violations_n()[0].value;
     REQUIRE(ts.converged_mask()[1] == 1);
-    REQUIRE(ts.get_bus_q_violations().size() == 2);
-    REQUIRE(ts.get_bus_q_violations()[1].size() == 1);
-    const real_type q_row1_first = ts.get_bus_q_violations()[1][0].value;
+    REQUIRE(ts.get_physical_violations().size() == 2);
+    REQUIRE(ts.get_physical_violations()[1].size() == 1);
+    const real_type q_row1_first = ts.get_physical_violations()[1][0].value;
     REQUIRE(std::abs(q_row1_first - q_n_first) > 1.);  // the rows differ from the base case
 
     ts.compute(flat_start(grid), 30, 1e-11);
     REQUIRE(ts.base_case_was_reused());
-    REQUIRE(ts.get_bus_q_violations_n().size() == 1);
-    CHECK(ts.get_bus_q_violations_n()[0].value == Approx(q_n_first));
-    REQUIRE(ts.get_bus_q_violations()[1].size() == 1);
-    CHECK(ts.get_bus_q_violations()[1][0].value == Approx(q_row1_first));
+    REQUIRE(ts.get_physical_violations_n().size() == 1);
+    CHECK(ts.get_physical_violations_n()[0].value == Approx(q_n_first));
+    REQUIRE(ts.get_physical_violations()[1].size() == 1);
+    CHECK(ts.get_physical_violations()[1][0].value == Approx(q_row1_first));
 }
 
-TEST_CASE("Gauss-Seidel reports the same reactive power as Newton-Raphson", "[batch][bus_q]")
+TEST_CASE("Gauss-Seidel reports the same reactive power as Newton-Raphson", "[batch][physical]")
 {
     // the value is read off the ALGORITHM's mismatch, so it has to be right for every
     // family that publishes one -- not just for the Newton-Raphson the rest of this file
@@ -628,13 +873,13 @@ TEST_CASE("Gauss-Seidel reports the same reactive power as Newton-Raphson", "[ba
     setup_one_row(ts);
     ts.compute(flat_start(grid), 10000, 1e-9);
     REQUIRE(ts.converged_mask()[0] == 1);
-    const LimitViolation * viol = find_bus(ts.get_bus_q_violations()[0], GEN_BUS);
+    const LimitViolation * viol = find_bus(ts.get_physical_violations()[0], GEN_BUS);
     REQUIRE(viol != nullptr);
     CHECK(viol->value == Approx(q_bus).margin(1e-4));
 }
 
 TEST_CASE("a contingency row reports its own reactive power, not the base case's",
-          "[batch][bus_q][contingency]")
+          "[batch][physical][contingency]")
 {
     // meshed: line 2 (bus2--bus3) can go without islanding the load, which now reaches bus
     // 3 through line 3 (bus0--bus3). The outage moves the reactive flows, so the base case
@@ -652,24 +897,24 @@ TEST_CASE("a contingency row reports its own reactive power, not the base case's
     LSGrid grid = make_grid(gens, /*meshed=*/true);
     grid.change_algorithm(AlgorithmType::NR_SparseLU);
     ContingencyAnalysis ca(grid);
-    ca.set_compute_bus_q_violations(true);
-    ca.set_bus_q_violation_tol_mvar(0.);
+    ca.set_compute_physical_violations(true);
+    ca.set_physical_violation_tol_mva(0.);
     ca.add_n1(2);
     ca.compute(flat_start(grid), 30, 1e-11);
 
     REQUIRE(ca.converged_mask()[0] == 1);
-    const LimitViolation * viol_n = find_bus(ca.get_bus_q_violations_n(), GEN_BUS);
+    const LimitViolation * viol_n = find_bus(ca.get_physical_violations_n(), GEN_BUS);
     REQUIRE(viol_n != nullptr);
     CHECK(viol_n->value == Approx(q_n).margin(1e-6));
     CHECK(viol_n->limit == Approx(10.));
 
-    REQUIRE(ca.get_bus_q_violations().size() == 1);
-    const LimitViolation * viol_c = find_bus(ca.get_bus_q_violations()[0], GEN_BUS);
+    REQUIRE(ca.get_physical_violations().size() == 1);
+    const LimitViolation * viol_c = find_bus(ca.get_physical_violations()[0], GEN_BUS);
     REQUIRE(viol_c != nullptr);
     CHECK(viol_c->value == Approx(q_c).margin(1e-6));
 }
 
-TEST_CASE("a row that was never simulated reports nothing at all", "[batch][bus_q][contingency]")
+TEST_CASE("a row that was never simulated reports nothing at all", "[batch][physical][contingency]")
 {
     // line 0 (bus0--bus1) carries the whole radial feeder: taking it out islands everything
     // past bus 0, so the row is skipped before the solver. A skipped row must come back
@@ -678,19 +923,19 @@ TEST_CASE("a row that was never simulated reports nothing at all", "[batch][bus_
     LSGrid grid = make_grid(gens);
     grid.change_algorithm(AlgorithmType::NR_SparseLU);
     ContingencyAnalysis ca(grid);
-    ca.set_compute_bus_q_violations(true);
+    ca.set_compute_physical_violations(true);
     ca.add_n1(0);
     ca.compute(flat_start(grid), 30, 1e-11);
 
     CHECK(ca.converged_mask()[0] == 0);
-    REQUIRE(ca.get_bus_q_violations().size() == 1);
-    CHECK(ca.get_bus_q_violations()[0].empty());
+    REQUIRE(ca.get_physical_violations().size() == 1);
+    CHECK(ca.get_physical_violations()[0].empty());
     // ... while the base case, which did converge, still reports on its own
-    CHECK(find_bus(ca.get_bus_q_violations_n(), GEN_BUS) != nullptr);
+    CHECK(find_bus(ca.get_physical_violations_n(), GEN_BUS) != nullptr);
 }
 
 TEST_CASE("a row that disconnects a machine checks the bus against what is left",
-          "[batch][bus_q][scenario_sweep]")
+          "[batch][physical][scenario_sweep]")
 {
     // two machines hold bus 1 and together cover what it needs; row 1 disconnects one of
     // them, and the bus' capability shrinks with it. So the same bus is feasible in row 0
@@ -713,8 +958,8 @@ TEST_CASE("a row that disconnects a machine checks the bus against what is left"
     LSGrid grid = make_grid(gens);
     grid.change_algorithm(AlgorithmType::NR_SparseLU);
     ScenarioSweep sweep(grid);
-    sweep.set_compute_bus_q_violations(true);
-    sweep.set_bus_q_violation_tol_mvar(0.);
+    sweep.set_compute_physical_violations(true);
+    sweep.set_physical_violation_tol_mva(0.);
     RealMat load_p(2, 1);
     load_p << LOAD_P, LOAD_P;
     sweep.modify_load_p(load_p);
@@ -731,9 +976,9 @@ TEST_CASE("a row that disconnects a machine checks the bus against what is left"
     REQUIRE(sweep.converged_mask()[1] == 1);
 
     // row 0: both machines on, together they cover the bus
-    CHECK(sweep.get_bus_q_violations()[0].empty());
+    CHECK(sweep.get_physical_violations()[0].empty());
     // row 1: one machine left, and it cannot
-    const LimitViolation * row1 = find_bus(sweep.get_bus_q_violations()[1], GEN_BUS);
+    const LimitViolation * row1 = find_bus(sweep.get_physical_violations()[1], GEN_BUS);
     REQUIRE(row1 != nullptr);
     CHECK(row1->violation_type == LimitViolationType::HIGH_Q);
     CHECK(row1->value == Approx(q_alone).margin(1e-6));

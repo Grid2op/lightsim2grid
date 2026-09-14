@@ -132,85 +132,97 @@ class TimeSerie:
         self.computer.init_from_n_powerflow = bool(val)
         
     @property
-    def compute_bus_q_violations(self):
-        """Whether every converged step reports the buses whose machines had to produce more
-        (or less) reactive power than the **sum** of what they own -- see
-        :func:`get_bus_q_violations`. Default: ``False``.
+    def compute_physical_violations(self):
+        """Whether every converged step reports the PHYSICAL limits its solution leaves --
+        the ones whose violation means the step is not a state the grid can reach at all
+        (``ViolationCategory.PHYSICAL``). Default: ``False``. See
+        :func:`get_physical_violations`.
 
-        All three families that hold a bus' voltage are covered: a generator and an hvdc
-        converter station through their ``[min_q_mvar, max_q_mvar]``, a voltage-mode SVC through
-        its susceptance range ``[b_min, b_max]`` at that step's own voltage.
+        Two checks, both conditions a PowSyBl OpenLoadFlow outer loop acts on, and neither
+        enforced here (nothing is switched PV -> PQ, nothing is clamped, no step is
+        re-solved):
 
-        A voltage-regulating machine has no reactive setpoint: its reactive output is solved
-        for, and lightsim2grid never clamps it. So a step can converge with a bus' machines
-        having to produce reactive power they do not own -- which is not an operational limit
-        one may choose to exceed but a solution the grid cannot reach at all (``violation_type``
-        ``LOW_Q`` / ``HIGH_Q``, whose ``category`` is ``ViolationCategory.PHYSICAL``). It is the
-        condition PowSyBl OpenLoadFlow's ``ReactiveLimits`` outer loop acts on; this only
-        **reports** it, no bus is switched PV -> PQ and no step is re-solved.
+        * the **reactive capability** of every bus whose voltage is held by machines
+          (``LOW_Q`` / ``HIGH_Q`` on the ``BUS``): did it need more reactive power than the
+          **sum** of what its voltage-regulating generators, hvdc converter stations and
+          voltage-mode SVCs can produce? A machine has no reactive setpoint -- its output is
+          solved for and never clamped -- so a step can converge asking for reactive power
+          that does not exist. Per bus, not per machine: the split between the machines of
+          one bus is a sharing convention rather than something the solver decides.
+          OpenLoadFlow's ``ReactiveLimits``.
+        * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
+          linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
+          ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is an *input* of the solve,
+          so nothing saturates the droop on its own. OpenLoadFlow's
+          ``HvdcAcEmulationLimits``.
 
-        Checked per bus, not per machine: how a bus' reactive power is divided between several
-        machines standing on it is a sharing convention rather than something the solver
-        decides, so a per-machine check would report the convention. Two 20 MVAr machines
-        covering 30 MVAr together is feasible and is not reported.
+        The hvdc check needs only the bus angles, so it works in DC too; the reactive one
+        needs an AC algorithm that publishes its per-bus mismatch (every built-in AC
+        algorithm does) and ``compute`` raises for one that does not. A DC batch reports the
+        active-power half alone -- a DC powerflow has no reactive power at all, so nothing is
+        hidden by that.
 
-        Needs an AC algorithm that publishes its per-bus mismatch (every built-in AC algorithm
-        does; a DC one has no reactive power at all): ``compute`` raises otherwise. Changing
-        this flag invalidates any previously-computed results, but not the injections already
-        given to ``modify_*``.
+        Changing this flag invalidates any previously-computed results, but not the
+        injections already given to ``modify_*``.
         """
-        return self.computer.compute_bus_q_violations
+        return self.computer.compute_physical_violations
 
-    @compute_bus_q_violations.setter
-    def compute_bus_q_violations(self, val: bool):
+    @compute_physical_violations.setter
+    def compute_physical_violations(self, val: bool):
         if bool(val) != val:
-            raise ValueError("The `compute_bus_q_violations` attribute must be a boolean.")
+            raise ValueError("The `compute_physical_violations` attribute must be a boolean.")
         val = bool(val)
-        if val == self.computer.compute_bus_q_violations:
+        if val == self.computer.compute_physical_violations:
             return  # no-op, matches the C++ side (which also no-ops and does not clear)
         # the C++ setter drops this batch's base case and results, and keeps the registered
         # injections -- so only the python-side "already computed" bookkeeping follows it
-        self.computer.compute_bus_q_violations = val
+        self.computer.compute_physical_violations = val
         self.__computed = False
 
     @property
-    def bus_q_violation_tol_mvar(self):
-        """Slack (MVAr) on the comparison made by :attr:`compute_bus_q_violations`, so that a
-        bus resting exactly on its summed capability is not reported over solver noise: a
-        violation needs ``q_bus < sum(min_q) - tol`` or ``q_bus > sum(max_q) + tol``. Default:
-        ``1e-4`` MVAr. Changing it invalidates any previously-computed results.
+    def physical_violation_tol_mva(self):
+        """Absolute slack on every comparison :attr:`compute_physical_violations` makes, so
+        that an element resting exactly on its limit is not reported over solver noise: a
+        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q``).
+        Default: ``1e-4``. In MVA -- one noise floor for both halves, MW and MVAr being the
+        same scale. Changing it invalidates any previously-computed results.
         """
-        return self.computer.bus_q_violation_tol_mvar
+        return self.computer.physical_violation_tol_mva
 
-    @bus_q_violation_tol_mvar.setter
-    def bus_q_violation_tol_mvar(self, val):
+    @physical_violation_tol_mva.setter
+    def physical_violation_tol_mva(self, val):
         try:
             val = float(val)
         except (TypeError, ValueError):
-            raise ValueError("The `bus_q_violation_tol_mvar` attribute must be a real number.")
-        if val == self.computer.bus_q_violation_tol_mvar:
+            raise ValueError("The `physical_violation_tol_mva` attribute must be a real number.")
+        if val == self.computer.physical_violation_tol_mva:
             return
-        self.computer.bus_q_violation_tol_mvar = val  # validates, and drops base case + results
+        self.computer.physical_violation_tol_mva = val  # validates, and drops base case + results
         self.__computed = False
 
-    def get_bus_q_violations(self):
-        """Per step (same order as the ``modify_*`` inputs): the list of ``LimitViolation`` of
-        the buses that needed reactive power their machines do not have -- ``element_type``
-        ``ViolationElementType.BUS``, ``element_id`` the grid bus id, ``violation_type``
-        ``LOW_Q`` / ``HIGH_Q``, ``value`` the reactive power the machines holding that bus had
-        to produce (MVAr) and ``limit`` their **summed** capability.
+    def get_physical_violations(self):
+        """Per step (same order as the ``modify_*`` inputs): the list of ``LimitViolation``
+        of the physical limits that step's solution leaves. Every entry has ``category ==
+        ViolationCategory.PHYSICAL`` and one of two shapes:
+
+        * ``element_type`` ``BUS``, ``violation_type`` ``LOW_Q`` / ``HIGH_Q``,
+          ``element_id`` the grid bus id, ``value`` the reactive power the machines holding
+          that bus had to produce (MVAr) and ``limit`` their **summed** capability;
+        * ``element_type`` ``HVDC``, ``violation_type`` ``HIGH_P``, ``element_id`` the hvdc
+          line id, ``side`` the direction (1 for 1 -> 2), ``value`` the active power leaving
+          that side (MW, positive) and ``limit`` that direction's ``pmax``.
 
         A step that did not converge has an **empty** entry, not a sentinel -- use
         ``self.computer.converged_mask()`` to tell that from "converged, no violation".
-        Requires :attr:`compute_bus_q_violations` to be ``True`` (raises otherwise).
+        Requires :attr:`compute_physical_violations` to be ``True`` (raises otherwise).
         """
-        return self.computer.get_bus_q_violations()
+        return self.computer.get_physical_violations()
 
-    def get_bus_q_violations_n(self):
-        """Same as :func:`get_bus_q_violations`, for the base ("n") case every step is solved
-        from (the grid's own state, no injection change). Empty if that solve did not converge.
-        Requires :attr:`compute_bus_q_violations` to be ``True`` (raises otherwise)."""
-        return self.computer.get_bus_q_violations_n()
+    def get_physical_violations_n(self):
+        """Same as :func:`get_physical_violations`, for the base ("n") case every step is
+        solved from (the grid's own state, no injection change). Empty if that solve did not
+        converge. Requires :attr:`compute_physical_violations` to be ``True``."""
+        return self.computer.get_physical_violations_n()
 
     def get_injections(self, scenario_id=None, seed=None):
         """

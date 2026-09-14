@@ -1,8 +1,8 @@
 # What lightsim2grid would need to detect an outer loop's trigger
 
-**Status note, not documentation.** Written while adding the bus reactive-capability
-check to the batch algorithms (`compute_bus_q_violations`, see
-`src/core/batch_algorithm/BusQCheck.hpp`). It records, loop by loop, what a post-solve
+**Status note, not documentation.** Written while adding the physical-limit checks to the
+batch algorithms (`compute_physical_violations`, see `src/core/batch_algorithm/BusQCheck.hpp`
+and `HvdcPCheck.hpp`). It records, loop by loop, what a post-solve
 "would this outer loop have fired?" check needs, what the `LSGrid` already holds, and what
 is missing — so the next piece of this work does not have to re-derive it. It is not part
 of the built documentation (`docs/*.rst`).
@@ -16,12 +16,12 @@ Reference for the outer loops: PowSyBl OpenLoadFlow,
 
 | OLF outer loop | Result side | Control side | Post-solve check possible? |
 |---|---|---|---|
-| `ReactiveLimits` | complete | complete | **yes — implemented** for a batch (`compute_bus_q_violations`), for all three families that hold a bus' voltage; a single solve already publishes `res_q_mvar` |
+| `ReactiveLimits` | complete | complete | **yes — implemented** for a batch (`compute_physical_violations`), for all three families that hold a bus' voltage; a single solve already publishes `res_q_mvar` |
 | `TransformerVoltageControl` | complete | **absent** | no |
 | `PhaseControl` / `IncrementalPhaseControl` | complete | **absent** | no |
 | `ShuntVoltageControl` | complete | **absent** | no |
 | `DistributedSlack` | complete | complete | n/a — lightsim2grid distributes the slack inside the Newton (`MultiSlack`), there is no trigger to detect |
-| `HvdcAcEmulationLimits` | complete | partial | limits are stored (`status_droop`); the droop itself is in the Newton (`Hvdc`) |
+| `HvdcAcEmulationLimits` | complete | complete | **yes — implemented** for a batch (`compute_physical_violations`): `status_droop` is an *input*, so the linear regime is exactly where the trigger lives |
 | `VoltageMonitoring` (SVC stand-by automaton) | complete | partial | `b_min` / `b_max` are now **checked** (as part of the reactive capability above) but still never enforced; the stand-by band itself is not modelled |
 | `SecondaryVoltageControl` | complete | absent | no control zones / pilot points in the model |
 | `AreaInterchangeControl` | complete | absent | no `Area` concept in the model |
@@ -107,7 +107,34 @@ What is still missing around it:
 - **`b_min` / `b_max` are checked, not enforced.** The check reports; nothing clamps an SVC
   to its susceptance range, exactly as nothing clamps a generator to its `[min_q, max_q]`.
 
-## 2. `TransformerVoltageControl` (RTC) — the control data does not exist
+## 2. `HvdcAcEmulationLimits` — done
+
+The other physical one, and the one that needed no new data at all.
+
+An angle-droop ("AC emulation") hvdc line transmits `p = p0 + k·(θ1 − θ2)` and
+lightsim2grid solves that as written: `status_droop` is an **input** of the solve (0 linear,
+±1 saturated), and `LSGrid::set_status_droop_hvdc`'s own doc says where the saturation
+belongs — *"meant to be run between two solves"*. So the linear regime is exactly where the
+trigger lives, and nothing else is needed:
+
+| needed | where it is |
+|---|---|
+| is this line angle-droop, and in service? | `HvdcLineContainer::is_droop_active` |
+| is it still unsaturated? | `get_status_droop == 0` — anything else means the caller already ran the saturation, and the solver then pins the flow at the very limit a check would compare against |
+| the droop itself | `get_droop_p0_mw` / `get_droop_k_mw_per_rad` (note `init_hvdc_lines` takes the slope in MW per **degree** and stores MW/rad) |
+| the two maxima | `get_pmax_1to2_mw` / `get_pmax_2to1_mw` |
+| the flow | `p0 + k·(θ1 − θ2)` from the solved angles (`BaseAlgo::get_Va`) — nothing else from the solve, so **this half works in DC too** |
+
+What is compared is the **sending end** in each direction, against that direction's own
+maximum (`−pmax_2to1 ≤ p ≤ pmax_1to2`) — the same quantity the solver's own saturation pins
+(`HvdcDroopSolverData::flows_pu`), so a reported row is one the saturated regime would have
+moved. The receiving end carries less (converter and dc-line losses) and has no separate
+limit.
+
+Not answered here: whether an already-saturated line should be *released* — the other half
+of OLF's loop. That is a question about a flow this row never computed.
+
+## 3. `TransformerVoltageControl` (RTC) — the control data does not exist
 
 `TrafoContainer` keeps `ratio_` and `shift_` and says so outright: *"lightsim2grid has no
 'tap' concept"*. The tap is folded into the pi-model at load time and nothing about the
@@ -131,7 +158,7 @@ Where it is lost:
   `target_deadband`, `regulating_bus_id`, `low_tap_position` / `high_tap_position` are
   never read.
 
-## 3. `PhaseControl` / `IncrementalPhaseControl` (PST) — same, plus the regulation mode
+## 4. `PhaseControl` / `IncrementalPhaseControl` (PST) — same, plus the regulation mode
 
 | needed | present? |
 |---|---|
@@ -146,7 +173,7 @@ Where it is lost:
 `CURRENT_LIMITER`-mode check is the closest thing to feasible today, and only by abusing
 the thermal rating as the regulation value — which is not what OLF regulates against.
 
-## 4. `ShuntVoltageControl` — a shunt is a fixed admittance
+## 5. `ShuntVoltageControl` — a shunt is a fixed admittance
 
 `ShuntContainer` stores `target_p_mw` / `target_q_mvar` and stamps
 `{p, -q} / sn_mva` on the `Ybus` diagonal. There are no sections and no regulation.
@@ -161,7 +188,14 @@ Where it is lost: pandapower (`_aux_add_shunt.py`) reads `p_mw` / `q_mvar` only;
 pypowsybl (`_aux_add_shunts.py`) reads `g` / `b` and scales them by the nominal voltage.
 `get_shunt_compensators()`'s section and regulation columns are never read.
 
-## The minimum addition that would unblock 2, 3 and 4
+## The physical ones are done
+
+`ReactiveLimits` and `HvdcAcEmulationLimits` are the two OLF loops whose trigger is a limit
+of the equipment rather than a choice of the operator, and both are now detected
+(`ViolationCategory::PHYSICAL`). Everything below is **operational**: a tap that should have
+moved and did not is a control that was not modelled, not an impossible state.
+
+## The minimum addition that would unblock 3, 4 and 5
 
 One **pure-input control descriptor per element**, which the solver never reads:
 
@@ -179,11 +213,9 @@ converters have to read it (everything is available upstream: pypowsybl's tap-ch
 shunt-compensator frames, pandapower's `tap_min` / `tap_max` / `tap_phase_shifter` and
 `shunt.step` / `max_step`).
 
-Then the checks themselves are small, and they belong next to the reactive-capability one:
-per element, "would have moved, in this direction, by this much, and has / has not a tap
-left in that direction". Note that these three are **operational**, not physical: a tap
-that should have moved and did not is a control that was not modelled, not an impossible
-state — so they report in `ViolationCategory::OPERATIONAL`, unlike the reactive one.
+Then the checks themselves are small, and they belong next to the two physical ones: per
+element, "would have moved, in this direction, by this much, and has / has not a tap left in
+that direction" — reported in `ViolationCategory::OPERATIONAL`, for the reason above.
 
 ## Why this is worth having beyond curiosity
 
