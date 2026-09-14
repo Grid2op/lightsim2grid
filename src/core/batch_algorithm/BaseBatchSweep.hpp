@@ -13,6 +13,8 @@
 #include "YbusPolicy.hpp"
 #include "SbusPolicy.hpp"
 #include "LimitViolation.hpp"
+#include "BusQCheck.hpp"
+#include "HvdcPCheck.hpp"
 #include "BusGraph.hpp"
 #include "BatchAdjoint.hpp"
 
@@ -365,6 +367,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _row_pv_to_pq_.clear();
                 _row_slack_gens_off_.clear();
                 _li_defaults_vect_cache_.clear();
+                _physical_violations_n_.clear();
             }
             BaseBatchSolverSynch::clear_batch_inputs();
         }
@@ -380,6 +383,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _violations.clear();
             _converged_n_ = false;
             _violations_n_.clear();
+            _physical_violations_.clear();
+            _bus_q_plan_.clear();
+            // NOT _physical_violations_n_: it describes the BASE CASE, which is L2 (see
+            // clear_batch_inputs). A compute() that reuses the base case does not re-solve
+            // it -- so the report of the solve that built it is the only correct one
+            // there, and re-deriving it from a stale algorithm state is exactly the bug
+            // this split avoids.
             _timer_modif_Ybus = 0.;
             BaseBatchSolverSynch::clear_batch_outputs();
         }
@@ -713,6 +723,96 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         const std::vector<LimitViolation> & get_violations_n() const {
             _check_limit_violations_enabled("get_violations_n");
             return _violations_n_;
+        }
+
+        // ---- physical-limit checks (EVERY instantiation) ---------------------------
+        // Opt in to the checks whose violation says the converged row is not a state the
+        // grid can reach at all -- ViolationCategory::PHYSICAL, as opposed to the
+        // operational limits `compute_limit_violations` reports (a voltage band, a thermal
+        // rating: states the grid does reach and should not sit in). Two today, both
+        // conditions an OpenLoadFlow outer loop acts on, and neither enforced here -- no
+        // bus is switched PV -> PQ, no droop is clamped, no row is re-solved:
+        //
+        //   * the REACTIVE CAPABILITY of each bus whose voltage is held by machines
+        //     (LOW_Q / HIGH_Q on the BUS, see BusQCheck.hpp): did it need more reactive
+        //     power than the sum of what its voltage-regulating generators, hvdc converter
+        //     stations and voltage-mode SVCs can produce? OpenLoadFlow's `ReactiveLimits`;
+        //   * the ACTIVE POWER of each angle-droop ("AC emulation") hvdc line still in the
+        //     linear regime (HIGH_P on the HVDC, see HvdcPCheck.hpp): did it transmit more
+        //     than `pmax_1to2_mw` / `pmax_2to1_mw` allow in that direction? OpenLoadFlow's
+        //     `HvdcAcEmulationLimits`.
+        //
+        // Available on all four instantiations (unlike compute_limit_violations, which is
+        // contingency-only): a time series that walks a load curve is exactly as likely to
+        // ask a bus for reactive power it does not have, or a converter for power it cannot
+        // transmit, as a contingency is.
+        //
+        // WHAT EACH CHECK NEEDS. The hvdc one needs only the bus angles, which every
+        // algorithm solves -- AC and DC alike. The reactive one needs an AC algorithm that
+        // publishes its per-bus mismatch (BaseAlgo::fills_bus_mismatch -- every built-in AC
+        // family does; a plugin solver has to opt in), and compute() raises for one that
+        // does not rather than reporting nothing. In DC it is simply not applicable: a DC
+        // powerflow has no reactive power at all, so a DC batch reports the active-power
+        // half and nothing is hidden by it.
+        //
+        // Setting this drops this batch's base case and results, but NOT its registrations
+        // (the contingencies / injections), so unlike compute_limit_violations -- which
+        // clear()s the whole object -- it can be set at any point before compute().
+        bool get_compute_physical_violations() const noexcept {return _compute_physical_violations_;}
+        void set_compute_physical_violations(bool val){
+            if(val == _compute_physical_violations_) return;
+            _compute_physical_violations_ = val;
+            // L2, not L3: the base case's own report (get_physical_violations_n) can only be
+            // read off the solve that built it, and a kept base case is not re-solved. So
+            // a change of what is reported has to drop that base case with the results.
+            clear_batch_inputs();
+        }
+        // Absolute slack on every comparison these checks make, so that an element resting
+        // exactly on its limit is not reported over solver noise: a violation needs
+        // `value > limit + tol` (or, for LOW_Q, `value < limit - tol`). Defaults to 1e-4,
+        // well above what a converged solve leaves behind and well below anything
+        // meaningful. In MVA: one noise floor for both halves, since MW and MVAr are the
+        // same scale and this is a numerical threshold rather than a physical parameter.
+        real_type get_physical_violation_tol_mva() const noexcept {return _physical_tol_mva_;}
+        void set_physical_violation_tol_mva(real_type val){
+            // isfinite unqualified, like everywhere else in this header (see the note on
+            // the <math.h> include at the top)
+            if(!(val >= 0.) || !isfinite(val)){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::set_physical_violation_tol_mva: the tolerance should "
+                        "be a finite, non-negative number of MVA (got " << val << ").";
+                throw std::runtime_error(exc_.str());
+            }
+            // any change, in either direction: a smaller tolerance reports violations the
+            // recorded ones do not contain, a larger one leaves recorded ones that should
+            // no longer be reported. L2 for the same reason as the flag above.
+            if(val != _physical_tol_mva_) clear_batch_inputs();
+            _physical_tol_mva_ = val;
+        }
+        /**
+         * Per row: the physical limits this row's solution leaves. A row that did not
+         * converge (or that was never simulated) has an EMPTY entry rather than a sentinel
+         * -- ask converged_mask() to tell that apart from "converged, no violation". Every
+         * entry has category PHYSICAL, and one of two shapes:
+         *
+         *   - element_type BUS, element_id the grid bus id, violation_type LOW_Q / HIGH_Q,
+         *     `value` the reactive power the machines holding that bus had to produce
+         *     (MVAr) and `limit` their summed capability;
+         *   - element_type HVDC, element_id the hvdc line id, violation_type HIGH_P, `side`
+         *     the direction (1 for 1 -> 2), `value` the active power leaving that side (MW,
+         *     positive) and `limit` that direction's pmax.
+         *
+         * Requires compute_physical_violations = true.
+         */
+        const std::vector<std::vector<LimitViolation> > & get_physical_violations() const {
+            _check_physical_violations_enabled("get_physical_violations");
+            return _physical_violations_;
+        }
+        /// The same, for the base ("n") case every row is solved from (no injection
+        /// change, no contingency). Empty if that solve did not converge.
+        const std::vector<LimitViolation> & get_physical_violations_n() const {
+            _check_physical_violations_enabled("get_physical_violations_n");
+            return _physical_violations_n_;
         }
 
         // contingency-list inspection (ContingencyAnalysis only). Public (directly
@@ -1171,6 +1271,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
         }
+        void _check_physical_violations_enabled(const std::string & fun_name) const {
+            if(!_compute_physical_violations_){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::" << fun_name << ": the physical-limit checks were not "
+                        "requested. Set `compute_physical_violations = True` before compute() "
+                        "to use this feature.";
+                throw std::runtime_error(exc_.str());
+            }
+        }
         // `base_w` is the weight vector to mask, so a row that already re-weighted the
         // slack for its own generator contingency (see _row_slack_weights) is masked
         // on top of that rather than back on the layout's untouched weights. Returns
@@ -1607,6 +1716,62 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _record_row_violations_dispatch(size_t, const CplxVect &, const std::vector<int> *) {}
 
+        // ----- per-row reactive-capability recording ------------------------------
+        // Whether THIS row disconnected that generator (a ScenarioSweep generator
+        // contingency); always false where no such mask exists.
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _gen_off_in_row(size_t i, int gen_id) const {
+            const auto & mask = sbus_policy_.gen_off;
+            if(mask.rows() == 0) return false;
+            const Eigen::Index row = static_cast<Eigen::Index>(i);
+            if(row >= mask.rows() || gen_id >= mask.cols()) return false;
+            return mask(row, gen_id);
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _gen_off_in_row(size_t, int) const { return false; }
+
+        // This row's masked (stranded) solver buses, or nullptr when it masks none.
+        // Only the "handle disconnected grid" mode ever hands _li_masked to the
+        // algorithm; without it a contingency that strands a bus makes the row skipped
+        // outright, so nothing is masked (see _adjoint_identity_rows, same reasoning).
+        const std::vector<int> * _row_masked_ids(size_t i) const {
+            if(!_handle_disconnected_grid) return nullptr;
+            if(i >= _li_masked.size()) return nullptr;
+            return _li_masked[i].empty() ? nullptr : &_li_masked[i];
+        }
+
+        // MUST be called while the row's own state is still installed on the algorithm
+        // -- its Ybus edits, its masked buses, its PV pinning -- for the same reason
+        // _maybe_store_jacobian must: what is read here (the per-bus mismatch, the
+        // controllers' reactive output, the bus angles) belongs to the system THIS row
+        // solved, and the `algo` handed in is the one that solved it (the member one, or
+        // this thread's). `V_solver` is this row's converged complex voltage: a
+        // voltage-mode SVC's capability is a susceptance range, so what it is worth in MVAr
+        // depends on it.
+        void _record_row_physical(size_t i, AlgorithmSelector & algo,
+                                  const Eigen::Ref<const CplxVect> & V_solver){
+            if(!_compute_physical_violations_) return;
+            if(i >= _physical_violations_.size()) return;
+            const std::vector<int> * masked = _row_masked_ids(i);
+            if(_bus_q_check_on_ && !_bus_q_plan_.empty()){
+                // get_controller_q() returns by value: asked for only where a bus' reactive
+                // power actually needs it (see BusQPlan::needs_controller_q), so an ordinary
+                // grid of local PV machines pays no per-row allocation.
+                const RealVect ctrl_q = _bus_q_plan_.needs_controller_q ? algo.get_controller_q()
+                                                                       : RealVect();
+                bus_q_check::check_bus_q_violations(
+                    _bus_q_plan_, _grid_model, algo.get_bus_mismatch(), V_solver, ctrl_q,
+                    _grid_model.get_sn_mva(), _physical_tol_mva_, masked,
+                    [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
+                    _physical_violations_[i]);
+            }
+            if(!_hvdc_p_plan_.empty()){
+                hvdc_p_check::check_hvdc_p_violations(_hvdc_p_plan_, algo.get_Va(),
+                                                      _physical_tol_mva_, masked,
+                                                      _physical_violations_[i]);
+            }
+        }
+
         void _store_row_status(size_t i, bool conv, bool invertible, const CplxVect & V_solver){
             _converged_mask_[i] = conv ? 1 : 0;
             if(!_compute_limit_violations_) return;
@@ -1652,6 +1817,77 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _record_n_case_violations(const CplxVect &){}
+
+        // Once per compute(), before anything is solved: the one capability check (made
+        // here, once, rather than discovered row by row) and this call's result buffers.
+        // Sized even though the plans are not built yet, so that a batch whose base case
+        // diverges answers get_physical_violations() with one empty entry per row rather
+        // than with an empty list.
+        void _prepare_physical_check(size_t nb_steps, bool ac_solver_used){
+            _bus_q_plan_.clear();
+            _hvdc_p_plan_.clear();
+            _physical_violations_.clear();
+            _bus_q_check_on_ = false;
+            if(!_compute_physical_violations_) return;
+            // the reactive half needs a per-bus mismatch; the hvdc half needs only the bus
+            // angles, which every algorithm solves (see the flag's own doc)
+            if(ac_solver_used){
+                if(!_algo.fills_bus_mismatch()){
+                    std::ostringstream exc_;
+                    exc_ << algo_name() << "::compute: `compute_physical_violations` needs an "
+                            "algorithm that publishes its per-bus mismatch -- that mismatch IS "
+                            "the reactive power the machines pinning each bus had to produce. "
+                            "Every built-in AC algorithm does; the active one ("
+                         << _algo.get_name() << ") does not, so it is a plugin solver that has "
+                            "not opted in (see BaseAlgo::fills_bus_mismatch). Pick a built-in AC "
+                            "algorithm (change_algorithm), or turn "
+                            "`compute_physical_violations` off.";
+                    throw std::runtime_error(exc_.str());
+                }
+                _bus_q_check_on_ = true;
+            }
+            _physical_violations_.assign(nb_steps, std::vector<LimitViolation>());
+        }
+
+        // ... and the routing itself, once the labelling and the control plan this batch
+        // solves against are settled (`active_layout()`, which the L1 / L2 preparation
+        // above has built or kept). A plan means nothing against another labelling, so it
+        // is never carried across a compute().
+        void _build_physical_plans(){
+            if(!_compute_physical_violations_) return;
+            if(_bus_q_check_on_){
+                bus_q_check::build_bus_q_plan(_grid_model, active_layout().id_me_to_solver,
+                                              active_layout().voltage_control.controllers(),
+                                              _bus_q_plan_);
+            }
+            hvdc_p_check::build_hvdc_p_plan(_grid_model, active_layout().id_me_to_solver,
+                                            _hvdc_p_plan_);
+        }
+
+        // The base ("n") case's own report, read off the solve _finish_preprocessing just
+        // ran on the member algorithm. Only called when that solve actually ran: a
+        // compute() that REUSED the base case leaves the member algorithm holding the state
+        // of the last row of the PREVIOUS call, and the report already stored (of the same
+        // base case, under the same settings -- both setters drop it) is the right one to
+        // keep.
+        void _record_n_case_physical(){
+            if(!_compute_physical_violations_) return;
+            _physical_violations_n_.clear();
+            if(_bus_q_check_on_ && !_bus_q_plan_.empty()){
+                const RealVect ctrl_q = _bus_q_plan_.needs_controller_q ? _algo.get_controller_q()
+                                                                       : RealVect();
+                bus_q_check::check_bus_q_violations(
+                    _bus_q_plan_, _grid_model, _algo.get_bus_mismatch(), _algo.get_V(), ctrl_q,
+                    _grid_model.get_sn_mva(), _physical_tol_mva_, nullptr,
+                    [](int){ return false; },  // the base case disconnects no generator
+                    _physical_violations_n_);
+            }
+            if(!_hvdc_p_plan_.empty()){
+                hvdc_p_check::check_hvdc_p_violations(_hvdc_p_plan_, _algo.get_Va(),
+                                                      _physical_tol_mva_, nullptr,
+                                                      _physical_violations_n_);
+            }
+        }
 
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_masks(){
@@ -1974,8 +2210,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                                      active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
                         // before the two restores below, and before the Ybus is put
-                        // back: see _maybe_store_jacobian
-                        if(conv) _maybe_store_jacobian(cont_id, algo);
+                        // back: see _maybe_store_jacobian (and _record_row_physical, which
+                        // reads the mismatch of the system this row solved)
+                        if(conv){
+                            _maybe_store_jacobian(cont_id, algo);
+                            _record_row_physical(cont_id, algo, V);
+                        }
                         if(!masked.empty()) algo.set_masked_buses(std::vector<int>());
                         if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
 
@@ -2187,6 +2427,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<std::vector<LimitViolation> > _violations;
         bool _converged_n_ = false;
         std::vector<LimitViolation> _violations_n_;
+        // physical-limit checks (every instantiation, see
+        // set_compute_physical_violations). The plans are the routing the per-row checks
+        // need and are rebuilt once per compute(), from the labelling the batch solves in
+        // -- like every other solver-keyed thing here they mean nothing against another
+        // labelling, so they are dropped with the results. `_bus_q_check_on_` is whether
+        // the algorithm of THIS compute() can feed the reactive half at all (see
+        // _prepare_physical_check): false in DC, where there is no reactive power to check.
+        bool _compute_physical_violations_ = false;
+        real_type _physical_tol_mva_ = 1e-4;
+        bool _bus_q_check_on_ = false;
+        bus_q_check::BusQPlan _bus_q_plan_;
+        hvdc_p_check::HvdcPPlan _hvdc_p_plan_;
+        std::vector<std::vector<LimitViolation> > _physical_violations_;
+        std::vector<LimitViolation> _physical_violations_n_;
         // per-row branch-id cache (ContingencyAnalysis only), refreshed once per
         // compute() call -- avoids rebuilding my_defaults_vect() per row / per thread.
         std::vector<std::vector<int> > _li_defaults_vect_cache_;
