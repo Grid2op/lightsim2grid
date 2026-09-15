@@ -409,6 +409,20 @@ void LSGrid::check_grid() const
         container->check_valid(nb_bus, nb_sub, substations_,
                                container->in_topo_vect() ? all_pos_topo_vect : pos_topo_vect_not_in_topo);
     }
+    // If a slack is declared at all, at least one slack participant must be connected
+    // (the powerflow cannot solve otherwise) -- a grid-wide question, since generators
+    // and storage units share the distributed slack. We do NOT require a slack to exist:
+    // that stays the solver's responsibility, exactly as before.
+    {
+        bool any_slack = false;
+        bool any_connected_slack = false;
+        generators_.slack_summary(any_slack, any_connected_slack);
+        storages_.slack_summary(any_slack, any_connected_slack);
+        if(any_slack && !any_connected_slack){
+            throw std::runtime_error("LSGrid::check_grid: at least one generator or storage unit is flagged as a "
+                                     "slack, but none of the slack participants is connected.");
+        }
+    }
     if(!pos_topo_vect_not_in_topo.empty())
     {
         throw std::runtime_error(
@@ -905,7 +919,7 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     if(!ac) return;  // DC: no voltage control (no-op, SVC contributes nothing)
     VoltageControlPlan plan;
     plan.build_groups(generators_, svcs_);
-    plan.build_solver_side(generators_, svcs_, hvdc_lines_,
+    plan.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                            ac_cache_.id_me_to_solver, ac_cache_.id_solver_to_me,
                            ac_cache_.slack_bus_id_solver, ac_cache_.bus_pq);
     data = plan.controllers();
@@ -972,7 +986,7 @@ std::set<int> LSGrid::get_free_vm_slack_solver_buses() const
     // the bordered formulation cannot express.
     VoltageControlPlan plan;
     plan.build_groups(generators_, svcs_);
-    plan.build_free_vm_slack(generators_, ac_cache_.id_me_to_solver,
+    plan.build_free_vm_slack(generators_, storages_, ac_cache_.id_me_to_solver,
                              ac_cache_.id_solver_to_me, ac_cache_.slack_bus_id_solver);
     return plan.free_vm_slack_buses();
 }
@@ -1038,8 +1052,15 @@ void LSGrid::check_solution_q_values(Eigen::Ref<CplxVect> res, bool check_q_limi
     // not stamp it), a non-regulating unit's is real Sbus data
     for(const auto & sto: storages_)
     {
-        if(!sto.connected || !sto.voltage_regulator_on) continue;
-        check_solution_q_values_onegen(res, sto.bus_id, sto.min_q_mvar, sto.max_q_mvar, check_q_limits);
+        if(!sto.connected) continue;
+        if(sto.voltage_regulator_on){
+            check_solution_q_values_onegen(res, sto.bus_id, sto.min_q_mvar, sto.max_q_mvar, check_q_limits);
+        }
+        // a storage unit taking part in the distributed slack absorbs active power at
+        // its bus, exactly like a slack generator
+        if(sto.is_slack){
+            res.coeffRef(sto.bus_id) = {BaseConstants::my_zero_, std::imag(res.coeff(sto.bus_id))};
+        }
     }
 
     // then do the same for the hvdc converter stations
@@ -1211,7 +1232,7 @@ CplxVect LSGrid::_build_into_cache(
             solver_control.has_dimension_changed();
 
     if (redo_all || solver_control.has_slack_participate_changed()){
-        cache.slack_bus_id_me = generators_.get_slack_bus_id();
+        cache.slack_bus_id_me = _slack_bus_id_me();
         // this is the slack bus ids with the gridmodel ordering, not the solver ordering.
         // conversion to solver ordering is done in init_slack_bus
 
@@ -1325,7 +1346,7 @@ CplxVect LSGrid::_build_into_cache(
     // is a compile-time constant, so the DC instantiation of this template does not
     // even contain the call.
     if (rebuild_voltage_control && supports_voltage_control && is_ac_family){
-        cache.voltage_control.build_solver_side(generators_, svcs_, hvdc_lines_,
+        cache.voltage_control.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                                                 cache.id_me_to_solver, cache.id_solver_to_me,
                                                 cache.slack_bus_id_solver, cache.bus_pq);
     }
@@ -1377,7 +1398,10 @@ CplxVect LSGrid::_build_into_cache(
        solver_control.has_slack_participate_changed() ||
        solver_control.has_pv_changed() ||
        solver_control.has_slack_weight_changed()){
-        cache.slack_weights = generators_.get_slack_weights_solver(cache.mat.rows(), cache.id_me_to_solver);
+        // generators and storage units share the distributed slack: the raw weights are
+        // kept, per family, to split each bus' share back onto its participants
+        cache.slack_raw_weights = _raw_slack_weights_solver(static_cast<size_t>(cache.mat.rows()), cache.id_me_to_solver, nullptr);
+        cache.slack_weights = cache.slack_raw_weights / cache.slack_raw_weights.sum();
     }
 
     return V;
@@ -1965,12 +1989,16 @@ void LSGrid::compute_results(bool ac){
         container->compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     }
 
-    // ---- active power of the slack generator(s) ------------------------------
+    // ---- active power of the slack participants (generators, storage units) ---
     RealVect reactive_mismatch;  // not used in dc mode (DO NOT ATTEMPT TO USE IT THERE)
     RealVect active_mismatch;
     if(ac) _fill_bus_mismatch_ac(V, active_mismatch, reactive_mismatch);
     else _fill_bus_mismatch_dc(V.size(), active_mismatch);
-    generators_.set_p_slack(active_mismatch, id_me_to_solver);
+    // each bus' share is split by raw weight over EVERY participant of that bus, so
+    // both families read the same per-bus total
+    const RealVect & slack_raw_weights = ac ? ac_cache_.slack_raw_weights : dc_cache_.slack_raw_weights;
+    generators_.set_p_slack(active_mismatch, id_me_to_solver, slack_raw_weights);
+    storages_.set_p_slack(active_mismatch, id_me_to_solver, slack_raw_weights);
 
     // ---- reactive output of every element ------------------------------------
     // Two mechanisms publish one, and every element is served by exactly one: either
@@ -2459,6 +2487,70 @@ void LSGrid::remove_gen_slackbus(int gen_id){
     generators_.remove_slackbus(gen_id, algo_controler_);
 }
 
+void LSGrid::add_storage_slackbus(int storage_id, real_type weight){
+    if((storage_id < 0) || (storage_id >= storages_.nb()))
+    {
+        std::ostringstream exc_;
+        exc_ << "LSGrid::add_storage_slackbus: There are " << storages_.nb() << " storage units on the grid. ";
+        exc_ << "Storage unit with id " << storage_id << " does not exist and can't take part in the slack.";
+        throw std::runtime_error(exc_.str());
+    }
+    if(weight <= 0.){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::add_storage_slackbus: please enter a valid weight for the slack bus (> 0.)";
+        throw std::runtime_error(exc_.str());
+    }
+    storages_.add_slackbus(storage_id, weight, algo_controler_);
+}
+
+void LSGrid::remove_storage_slackbus(int storage_id){
+    if((storage_id < 0) || (storage_id >= storages_.nb()))
+    {
+        std::ostringstream exc_;
+        exc_ << "LSGrid::remove_storage_slackbus: There are " << storages_.nb() << " storage units on the grid. ";
+        exc_ << "Storage unit with id " << storage_id << " does not exist.";
+        throw std::runtime_error(exc_.str());
+    }
+    storages_.remove_slackbus(storage_id, algo_controler_);
+}
+
+GlobalBusIdVect LSGrid::_slack_bus_id_me() const{
+    // the generators' buses first, in the order they always came in, then the storage
+    // units' that are not already there: a grid where no storage unit takes part keeps
+    // its slack order -- and so its angle reference, slack_ids[0] -- bit for bit
+    std::vector<int> buses;
+    generators_.append_slack_bus_id(buses);
+    storages_.append_slack_bus_id(buses);
+    if(buses.empty()) throw std::runtime_error("LSGrid: no generator nor storage unit is tagged slack bus for this grid.");
+    return GlobalBusIdVect(buses);
+}
+
+RealVect LSGrid::_raw_slack_weights_solver(size_t nb_bus_solver,
+                                           const SolverBusIdVect & id_me_to_solver,
+                                           const std::vector<bool> * gen_off) const{
+    RealVect res = RealVect::Zero(static_cast<Eigen::Index>(nb_bus_solver));
+    generators_.accumulate_slack_weights_solver(res, id_me_to_solver, gen_off);
+    storages_.accumulate_slack_weights_solver(res, id_me_to_solver);
+    return res;
+}
+
+RealVect LSGrid::get_slack_weights_solver_without(size_t nb_bus_solver,
+                                                  const SolverBusIdVect & id_me_to_solver,
+                                                  const std::vector<bool> & gen_off) const{
+    if(gen_off.size() != static_cast<std::size_t>(generators_.nb())){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::get_slack_weights_solver_without: 'gen_off' has " << gen_off.size()
+             << " elements but this grid has " << generators_.nb() << " generators.";
+        throw std::runtime_error(exc_.str());
+    }
+    RealVect res = _raw_slack_weights_solver(nb_bus_solver, id_me_to_solver, &gen_off);
+    const real_type sum_res = res.sum();
+    // no participant left: leave the vector at zero rather than dividing by it, and let
+    // the caller decide (see BaseBatchSweep::_row_slack_weights)
+    if(std::abs(sum_res) > BaseConstants::_tol_equal_float) res /= sum_res;
+    return res;
+}
+
 /** GRID2OP SPECIFIC REPRESENTATION **/
 void LSGrid::update_gens_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
                               const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values)
@@ -2621,6 +2713,7 @@ std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
 
     // and reset the slack bus
     generators_.remove_all_slackbus();
+    storages_.remove_all_slackbus();
     res_gen_id = generators_.assign_slack_bus(res_bus_id, gen_p_per_bus, algo_controler_);
     std::get<1>(res) = res_gen_id;
     ac_cache_.slack_bus_id_solver = SolverBusIdVect();
@@ -2632,7 +2725,7 @@ std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
 
 // TODO DC LINE: one side might be in the connected comp and not the other !
 void LSGrid::consider_only_main_component(){
-    const auto & slack_buses_id = generators_.get_slack_bus_id();
+    const GlobalBusIdVect slack_buses_id = _slack_bus_id_me();
 
     // TODO DEBUG MODE
     if(slack_buses_id.size() == 0) throw std::runtime_error("LSGrid::consider_only_main_component: no slack is defined on your grid. This function cannot be used.");

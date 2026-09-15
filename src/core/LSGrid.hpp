@@ -653,6 +653,26 @@ class LS2G_API LSGrid final
 
         void add_gen_slackbus(int gen_id, real_type weight);
         void remove_gen_slackbus(int gen_id);
+        // the same for a storage unit: storage units take part in the distributed slack
+        // like generators (OpenLoadFlow distributes it on batteries with the same rule)
+        void add_storage_slackbus(int storage_id, real_type weight);
+        void remove_storage_slackbus(int storage_id);
+
+        /**
+         * The normalised per-solver-bus distributed-slack weights, in the labelling of
+         * `id_me_to_solver`, evaluated as if the generators flagged in `gen_off` (sized by
+         * the number of generators) were disconnected -- what a batch sweep needs for a row
+         * whose contingency takes a participating machine out. The participating storage
+         * units always count: no row disconnects one.
+         *
+         * Same participation rule as the grid's own weights (see SlackParticipation), so
+         * the two can never drift apart. Returns an ALL-ZERO vector when no participant
+         * is left -- there is no meaningful normalisation then, and it is the caller's
+         * business to decide what to do about it.
+         */
+        [[nodiscard]] RealVect get_slack_weights_solver_without(size_t nb_bus_solver,
+                                                                const SolverBusIdVect & id_me_to_solver,
+                                                                const std::vector<bool> & gen_off) const;
 
         //pickle
         LSGrid::StateRes get_state() const ;
@@ -2171,6 +2191,14 @@ class LS2G_API LSGrid final
                                    GlobalBusIdVect& id_solver_to_me);
 
         // converts the slack_bus_id from gridmodel ordering into solver ordering
+        // the slack bus set, grid labelling: the generators' buses, then the storage
+        // units' not already in
+        [[nodiscard]] GlobalBusIdVect _slack_bus_id_me() const;
+        // the raw (un-normalised) slack weight per solver bus, every participant of both
+        // families summed; `gen_off` (nullable) takes generators out as if disconnected
+        [[nodiscard]] RealVect _raw_slack_weights_solver(size_t nb_bus_solver,
+                                                         const SolverBusIdVect & id_me_to_solver,
+                                                         const std::vector<bool> * gen_off) const;
         void init_slack_bus(const SolverBusIdVect & id_me_to_solver,
                             const GlobalBusIdVect& id_solver_to_me,
                             const GlobalBusIdVect & slack_bus_id_me,

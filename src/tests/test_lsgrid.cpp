@@ -481,6 +481,105 @@ TEST_CASE("distributed slack splits the mismatch by weight", "[LSGrid][slack]")
     CHECK(p0 / 0.7 == Approx(p1 / 0.3).epsilon(1e-6));
 }
 
+namespace {
+
+// a 0 MW storage unit on bus 1, next to generator 1 of make_three_bus_grid_two_gens
+void add_idle_storage_on_bus1(LSGrid & grid)
+{
+    RealVect storage_p(1), storage_q(1);
+    storage_p << 0.;
+    storage_q << 0.;
+    Eigen::VectorXi storage_bus(1);
+    storage_bus << 1;
+    grid.init_storages(storage_p, storage_q, storage_bus);
+}
+
+CplxVect solve(LSGrid & grid, bool ac)
+{
+    return ac ? solve_ac(grid) : grid.dc_pf(flat_start(grid), 10, 1e-8);
+}
+
+}  // anonymous namespace
+
+TEST_CASE("a storage unit takes its share of the distributed slack like a generator", "[LSGrid][slack][storage]")
+{
+    // same grid, same elements: only who holds bus 1's share (0.3) differs
+    LSGrid grid_sto = make_three_bus_grid_two_gens();
+    add_idle_storage_on_bus1(grid_sto);
+    grid_sto.add_gen_slackbus(0, 0.7);
+    grid_sto.add_storage_slackbus(0, 0.3);
+    LSGrid grid_gen = make_three_bus_grid_two_gens();
+    add_idle_storage_on_bus1(grid_gen);
+    grid_gen.add_gen_slackbus(0, 0.7);
+    grid_gen.add_gen_slackbus(1, 0.3);
+
+    for(const bool ac : {true, false}){
+        CAPTURE(ac);
+        const CplxVect V_sto = solve(grid_sto, ac);
+        const CplxVect V_gen = solve(grid_gen, ac);
+        REQUIRE(V_sto.size() == 3);
+        REQUIRE(V_gen.size() == 3);
+        for(Eigen::Index bus = 0; bus < 3; ++bus) CHECK(std::abs(V_sto(bus) - V_gen(bus)) < 1e-9);
+
+        const real_type share_gen = std::get<0>(grid_gen.get_gen_res())(1);
+        const real_type share_sto = -std::get<0>(grid_sto.get_storages_res())(0);  // load convention
+        CHECK(share_gen > 1.);
+        CHECK(share_sto == Approx(share_gen).epsilon(1e-8));
+        CHECK(std::get<0>(grid_sto.get_gen_res())(0) == Approx(std::get<0>(grid_gen.get_gen_res())(0)).epsilon(1e-8));
+        // generator 1 stays at its setpoint when the storage unit holds the share
+        CHECK(std::abs(std::get<0>(grid_sto.get_gen_res())(1)) < 1e-8);
+    }
+}
+
+TEST_CASE("a generator and a storage unit on one bus split its share by weight", "[LSGrid][slack][storage]")
+{
+    LSGrid grid_mix = make_three_bus_grid_two_gens();
+    add_idle_storage_on_bus1(grid_mix);
+    grid_mix.add_gen_slackbus(0, 0.7);
+    grid_mix.add_gen_slackbus(1, 0.15);
+    grid_mix.add_storage_slackbus(0, 0.15);
+    LSGrid grid_gen = make_three_bus_grid_two_gens();
+    add_idle_storage_on_bus1(grid_gen);
+    grid_gen.add_gen_slackbus(0, 0.7);
+    grid_gen.add_gen_slackbus(1, 0.3);
+
+    for(const bool ac : {true, false}){
+        CAPTURE(ac);
+        const CplxVect V_mix = solve(grid_mix, ac);
+        const CplxVect V_gen = solve(grid_gen, ac);
+        REQUIRE(V_mix.size() == 3);
+        REQUIRE(V_gen.size() == 3);
+        for(Eigen::Index bus = 0; bus < 3; ++bus) CHECK(std::abs(V_mix(bus) - V_gen(bus)) < 1e-9);
+
+        const real_type bus_share = std::get<0>(grid_gen.get_gen_res())(1);
+        const real_type share_gen = std::get<0>(grid_mix.get_gen_res())(1);
+        const real_type share_sto = -std::get<0>(grid_mix.get_storages_res())(0);
+        CHECK(share_gen == Approx(share_sto).epsilon(1e-8));
+        CHECK(share_gen + share_sto == Approx(bus_share).epsilon(1e-8));
+    }
+}
+
+TEST_CASE("the slack can rest on storage units alone", "[LSGrid][slack][storage]")
+{
+    LSGrid grid = make_three_bus_grid_two_gens();
+    add_idle_storage_on_bus1(grid);
+    grid.add_storage_slackbus(0, 1.);
+    CHECK_NOTHROW(grid.check_grid());
+    REQUIRE(solve_ac(grid).size() == 3);
+    CHECK(-std::get<0>(grid.get_storages_res())(0) > 50.);  // the load and the losses
+
+    SECTION("but a connected participant is needed") {
+        grid.deactivate_storage(0);
+        CHECK_THROWS_WITH(grid.check_grid(), ContainsSubstring("none of the slack participants is connected"));
+    }
+    SECTION("invalid storage slack declarations") {
+        CHECK_THROWS_AS(grid.add_storage_slackbus(1, 1.), std::runtime_error);
+        CHECK_THROWS_AS(grid.add_storage_slackbus(-1, 1.), std::runtime_error);
+        CHECK_THROWS_AS(grid.add_storage_slackbus(0, 0.), std::runtime_error);
+        CHECK_THROWS_AS(grid.remove_storage_slackbus(1), std::runtime_error);
+    }
+}
+
 TEST_CASE("remote voltage control pins the regulated bus", "[LSGrid][vctrl]")
 {
     // the PV generator at bus 1 (target 1.04 pu) regulates bus 2 instead of

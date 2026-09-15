@@ -166,6 +166,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] storage units can take part in the distributed slack (``add_storage_slackbus``,
+  ``StorageInfo.is_slack``); ``init_from_pypowsybl`` distributes it on batteries as OpenLoadFlow
+  does. Binary format bumped to 8.
+- [FIXED] a slack bus held by a voltage-regulating storage unit got a free voltage magnitude.
 - [ADDED] storage units can regulate the voltage of their own bus (``init_storages_full``,
   ``change_v_storage``, ``StorageInfo.voltage_regulator_on`` / ``target_vm_pu`` / ``min_q_mvar`` /
   ``max_q_mvar``): a PV bus like a local generator, the reactive output solved for.

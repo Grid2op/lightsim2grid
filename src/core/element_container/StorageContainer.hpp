@@ -16,6 +16,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.hpp"
+#include "SlackParticipation.hpp"
 #include "VoltageSourceContainer.hpp"
 
 namespace ls2g {
@@ -30,6 +31,8 @@ class LS2G_API StorageInfo : public OneSideContainer_PQ::OneSidePQInfo
         real_type min_q_mvar;
         real_type max_q_mvar;
         int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id: local control, the only kind supported)
+        bool is_slack;
+        real_type slack_weight;
 
         inline StorageInfo(const StorageContainer & r_data_storage, int my_id) noexcept;
 };
@@ -55,6 +58,11 @@ LOCAL regulation is supported: a storage unit regulating another bus is refused
 by `check_grid` (a remote controller would have to be enrolled in the
 VoltageControl plan, which knows generators, SVCs and converter stations).
 
+A storage unit can also **take part in the distributed slack**, like a generator
+(OpenLoadFlow distributes the slack on batteries with the same rule): see
+SlackParticipation. The share it absorbs is written back to its active result in
+the load convention.
+
 NOTE: PowSyBl / IIDM batteries use the opposite (generator) convention for their
 `target_p` / `target_q` setpoints; the pypowsybl converter
 (`init_from_pypowsybl`) negates them before feeding this container.
@@ -79,7 +87,9 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
            std::vector<real_type>,         // target_vm_pu_
            std::vector<real_type>,         // min_q_
            std::vector<real_type>,         // max_q_
-           std::vector<int>                // regulated_bus_id_ (== own bus)
+           std::vector<int>,               // regulated_bus_id_ (== own bus)
+           std::vector<bool>,              // slack participation flag
+           std::vector<real_type>          // slack weight
            > ;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -88,6 +98,8 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
             MIN_Q,
             MAX_Q,
             REGULATED_BUS_ID,
+            SLACKBUS,
+            SLACK_WEIGHT,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -132,6 +144,31 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         /// Hides VoltageSourceContainer's, which LSGrid reaches statically.
         void set_voltage_control_q(int storage_id, real_type q_mvar) {res_q_(storage_id) = -q_mvar;}
 
+        // ---- distributed slack (see SlackParticipation; LSGrid validates the ids) ----
+        void add_slackbus(int storage_id, real_type weight, DualAlgoControl & solver_control){
+            slack_.add(storage_id, weight, solver_control, "StorageContainer::add_slackbus");
+        }
+        void remove_slackbus(int storage_id, DualAlgoControl & solver_control){
+            slack_.remove(storage_id, solver_control);
+        }
+        void remove_all_slackbus(){ slack_.remove_all(); }
+        bool is_slack(int storage_id) const {return slack_.is_slack(storage_id);}
+        /// the unit's own (un-normalised) share of the distributed slack
+        real_type get_slack_weight(int storage_id) const {return slack_.weight(storage_id);}
+        /// add every participating unit's raw weight to its solver bus
+        void accumulate_slack_weights_solver(RealVect & res, const SolverBusIdVect & id_grid_to_solver) const {
+            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, nullptr, _element_name());
+        }
+        void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}
+        void slack_summary(bool & any_flagged, bool & any_connected) const {slack_.summary(status_, any_flagged, any_connected);}
+        /// write the share of the slack each participating unit absorbed (load convention)
+        void set_p_slack(const Eigen::Ref<const RealVect> & node_mismatch,
+                         const SolverBusIdVect & id_grid_to_solver,
+                         const Eigen::Ref<const RealVect> & bus_raw_total){
+            slack_.split(res_p_, -1., node_mismatch, bus_raw_total, status_, bus_id_, id_grid_to_solver,
+                         "StorageContainer::set_p_slack");
+        }
+
     protected:
         // ---- what VoltageSourceContainer asks of its leaf -------------------------
         static real_type _vm_scale(real_type target_vm, real_type current_vm) { return (1.0 / current_vm) * target_vm; }
@@ -144,11 +181,16 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         // one too, unless the unit regulates its bus (its Q is then solved for)
         void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const override;
 
-        // the voltage-source checks, plus "local regulation only"
+        // the voltage-source checks, plus "local regulation only" and the slack weights
         void _check_valid(int nb_bus,
                           int nb_sub,
                           const SubstationContainer & substations,
                           std::vector<int> & all_pos_topo_vect) const override;
+
+        // the voltage-source flags plus the slack role
+        void _on_deactivate(int storage_id, DualAlgoControl & solver_control) override final;
+        void _on_reactivate(int storage_id, DualAlgoControl & solver_control) override final;
+        void _on_change_bus(int storage_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control) override final;
 
     protected:
         bool _in_topo_vect() const override { return true; }
@@ -157,6 +199,9 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         // reactive range (MVAr, generator convention), read by the reactive-residual split
         RealVect min_q_;
         RealVect max_q_;
+
+        // distributed slack participation
+        SlackParticipation slack_;
 };
 
 inline StorageInfo::StorageInfo(const StorageContainer & r_data_storage, int my_id) noexcept:
@@ -165,7 +210,9 @@ inline StorageInfo::StorageInfo(const StorageContainer & r_data_storage, int my_
         target_vm_pu(0.),
         min_q_mvar(0.),
         max_q_mvar(0.),
-        regulated_bus_id(-1)
+        regulated_bus_id(-1),
+        is_slack(false),
+        slack_weight(-1.0)
 {
     if((my_id >= 0) && (my_id < r_data_storage.nb()))
     {
@@ -174,6 +221,8 @@ inline StorageInfo::StorageInfo(const StorageContainer & r_data_storage, int my_
         min_q_mvar = r_data_storage.min_q_.coeff(my_id);
         max_q_mvar = r_data_storage.max_q_.coeff(my_id);
         regulated_bus_id = r_data_storage.regulated_bus_id_(my_id);
+        is_slack = r_data_storage.slack_.is_slack(my_id);
+        slack_weight = r_data_storage.slack_.weight(my_id);
     }
 }
 

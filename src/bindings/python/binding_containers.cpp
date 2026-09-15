@@ -176,6 +176,8 @@ void bind_containers(py::module_& m) {
         .def_readonly("min_q_mvar", &StorageInfo::min_q_mvar, DocIterator::storage_min_q_mvar.c_str())
         .def_readonly("max_q_mvar", &StorageInfo::max_q_mvar, DocIterator::storage_max_q_mvar.c_str())
         .def_readonly("regulated_bus_id", &StorageInfo::regulated_bus_id, DocIterator::storage_regulated_bus_id.c_str())
+        .def_readonly("is_slack", &StorageInfo::is_slack, DocIterator::storage_is_slack.c_str())
+        .def_readonly("slack_weight", &StorageInfo::slack_weight, DocIterator::storage_slack_weight.c_str())
         .def_readonly("has_res", &StorageInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_mw", &StorageInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &StorageInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())

@@ -11,12 +11,16 @@ from collections import deque
 import numpy as np
 
 from ._aux_handle_slack import handle_slack_iterable, handle_slack_one_el
-
 # OpenLoadFlow's hardcoded fallback droop (in `AbstractLfGenerator.DEFAULT_DROOP`,
 # "why not") used for every generator whose `activePowerControl` extension does not
 # set its own droop, under the ``PROPORTIONAL_TO_GENERATION_P_MAX`` balance type --
 # see `_default_distributed_slack`.
-_OLF_DEFAULT_DROOP = 4.0
+from ._aux_battery_apc import (
+    _OLF_DEFAULT_DROOP,
+    BATTERY_APC_SOURCES,
+    battery_active_power_control as _battery_active_power_control,
+    olf_participation_weight,
+)
 
 
 def _default_distributed_slack(net, df_gen):
@@ -63,6 +67,9 @@ def _default_distributed_slack(net, df_gen):
       ``checkActivePowerControl`` only rejects ``target_p > max_p``): OLF caps it
       when the mismatch is positive and redistributes, so its share is direction
       dependent there -- a dynamic effect no static weight can reproduce.
+
+    The batteries take part too, with the same key (see :func:`_default_battery_slack`);
+    they are added by :func:`_aux_add_slack`, not here.
 
     The reference generator (angle datum, ``slack_ids[0]``) is a separate concern
     from the participant/weight logic above and IS restricted to the main country
@@ -199,20 +206,62 @@ def _default_distributed_slack(net, df_gen):
     return {names[i]: float(weight[i]) for i in order}
 
 
-def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id):
+def _default_battery_slack(net, df_batt, source="auto"):
+    """The batteries' part of OpenLoadFlow's default distributed slack.
+
+    Returns ``{position in df_batt: weight}``, the weights in the unit of
+    :func:`_default_distributed_slack`'s (``max_p / droop``), so that both are normalised
+    together. OpenLoadFlow distributes the slack on a battery with the generators' rule
+    (:func:`~._aux_battery_apc.olf_participation_weight`, whose docstring lists it); like a
+    generator, a battery must also be connected and in the main synchronous component.
+    ``source`` says where the battery's ``activePowerControl`` extension is read from, see
+    :func:`~._aux_battery_apc.battery_active_power_control`.
+    """
+    if df_batt is None or not len(df_batt):
+        return {}
+    for col in ("connected", "target_p", "min_p", "max_p", "bus_id"):
+        if col not in df_batt.columns:
+            return {}
+    participate, droop, min_target_p, max_target_p = _battery_active_power_control(net, df_batt, source)
+    weight = olf_participation_weight(df_batt["target_p"].to_numpy(float),
+                                      df_batt["min_p"].to_numpy(float),
+                                      df_batt["max_p"].to_numpy(float),
+                                      participate, droop, min_target_p, max_target_p)
+    df_bus = net.get_buses(attributes=["synchronous_component"])
+    main_sync = df_bus["synchronous_component"].value_counts().idxmax()
+    batt_sync = df_batt["bus_id"].map(df_bus["synchronous_component"]).to_numpy()
+    mask = df_batt["connected"].to_numpy(bool) & (weight > 0.) & (batt_sync == main_sync)
+    return {int(i): float(weight[i]) for i in np.flatnonzero(mask)}
+
+
+def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
+                   df_batt=None, battery_active_power_control="auto"):
     """Resolve and assign the slack bus(es) of ``model``: an explicit
     ``gen_slack_id`` / ``slack_bus_id``, else OpenLoadFlow's default distributed
     slack (see :func:`_default_distributed_slack`), else a single slack on the
     most-connected generator bus. Returns ``gen_slack_ids_int``, the (0-based,
     ``df_gen``-indexed) list of slack generator ids -- used by `initLSGrid.py`
-    to mark ``gen_sub["desired_slack"]``."""
+    to mark ``gen_sub["desired_slack"]``.
+
+    Only OpenLoadFlow's default distributed slack also distributes on the batteries of
+    ``df_batt`` (:func:`_default_battery_slack`, in the order and labelling the storage
+    units were added to ``model``): an explicit ``gen_slack_id`` / ``slack_bus_id`` is
+    taken as the whole slack. Generator and battery weights are normalised together --
+    they are in the same unit, and normalising each family on its own would change
+    their ratio."""
+    if battery_active_power_control not in BATTERY_APC_SOURCES:
+        raise RuntimeError(f"Unknown `battery_active_power_control` {battery_active_power_control!r}, "
+                           f"use one of {BATTERY_APC_SOURCES}.")
+    battery_weights = {}
     if gen_slack_id is None and slack_bus_id is None:
         # Default: reproduce OpenLoadFlow's distributed slack, sharing the
         # active-power mismatch over the participating generators (see
-        # _default_distributed_slack). Returns None -- handled by the single
-        # most-connected slack fallback below -- when no participating generator
-        # is found.
+        # _default_distributed_slack) and batteries. Returns None -- handled by the
+        # single most-connected slack fallback below -- when no participating
+        # generator is found.
         gen_slack_id = _default_distributed_slack(net, df_gen)
+        if gen_slack_id is not None:
+            battery_weights = _default_battery_slack(net, df_batt, battery_active_power_control)
 
     if gen_slack_id is not None:
         if slack_bus_id is not None:
@@ -225,6 +274,7 @@ def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id):
             single_slack = False
             fun_slack = handle_slack_iterable
         gen_slack_ids_int, gen_slack_weights = fun_slack(df_gen, gen_slack_id)
+        total_weight = None
         if single_slack:
             if gen_slack_weights is None:
                 raise RuntimeError(f"The slack {gen_slack_id} is disconnected.")
@@ -235,11 +285,15 @@ def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id):
             mask_finite = np.isfinite(gen_slack_weights_fixed)
             if not mask_finite.any():
                 raise RuntimeError(f"No connected generators match the slack {gen_slack_id}")
-            gen_slack_weights_fixed[mask_finite] /= gen_slack_weights_fixed[mask_finite].sum()
+            total_weight = gen_slack_weights_fixed[mask_finite].sum() + sum(battery_weights.values())
+            gen_slack_weights_fixed[mask_finite] /= total_weight
 
         for gen_slack_id_int, gen_slack_weight in zip(gen_slack_ids_int, gen_slack_weights_fixed):
             if np.isfinite(gen_slack_weight):
                 model.add_gen_slackbus(gen_slack_id_int, gen_slack_weight)
+        if total_weight is not None:
+            for storage_id, weight in battery_weights.items():
+                model.add_storage_slackbus(storage_id, weight / total_weight)
     elif slack_bus_id is not None:
         gen_bus = np.array([el.bus_id for el in model.get_generators()])
         gen_is_conn_slack = gen_bus == model._orig_to_ls[slack_bus_id]

@@ -63,6 +63,8 @@ void StorageContainer::init_full(const Eigen::Ref<const RealVect> & storage_p_mw
     voltage_regulator_on_ = voltage_regulator_on;
     // local control only: the regulated bus is the unit's own bus (see _check_valid)
     regulated_bus_id_ = storage_bus_id;
+    // no unit takes part in the distributed slack until told so (LSGrid::add_storage_slackbus)
+    slack_.reset(static_cast<std::size_t>(size));
     reset_results();
 }
 
@@ -77,7 +79,9 @@ StorageContainer::StateRes StorageContainer::get_state() const
                                    vm_pu,
                                    min_q,
                                    max_q,
-                                   regulated_bus);
+                                   regulated_bus,
+                                   slack_.flags(),
+                                   slack_.weights());
     return res;
 }
 
@@ -90,6 +94,8 @@ void StorageContainer::set_state(StorageContainer::StateRes & my_state)
     std::vector<real_type> & min_q = std::get<StateResIdx::MIN_Q>(my_state);
     std::vector<real_type> & max_q = std::get<StateResIdx::MAX_Q>(my_state);
     std::vector<int> & regulated_bus = std::get<StateResIdx::REGULATED_BUS_ID>(my_state);
+    std::vector<bool> & slack_bus = std::get<StateResIdx::SLACKBUS>(my_state);
+    std::vector<real_type> & slack_weight = std::get<StateResIdx::SLACK_WEIGHT>(my_state);
 
     const auto size = nb();
     check_size(voltage_regulator_on, size, "voltage_regulator_on");
@@ -97,12 +103,15 @@ void StorageContainer::set_state(StorageContainer::StateRes & my_state)
     check_size(min_q, size, "min_q");
     check_size(max_q, size, "max_q");
     check_size(regulated_bus, size, "regulated_bus");
+    check_size(slack_bus, size, "slack_bus");
+    check_size(slack_weight, size, "slack_weight");
 
     voltage_regulator_on_ = voltage_regulator_on;
     target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
     min_q_ = RealVect::Map(min_q.data(), min_q.size());
     max_q_ = RealVect::Map(max_q.data(), max_q.size());
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
+    slack_.set(slack_bus, slack_weight);
     reset_results();
 }
 
@@ -149,6 +158,25 @@ void StorageContainer::_check_valid(int nb_bus,
              << ": remote voltage regulation is not supported for storage units (only the unit's own bus).";
         throw std::runtime_error(exc_.str());
     }
+
+    // a unit flagged as a slack participant carries a usable weight (whether ANY
+    // participant is connected is a grid-wide question, see LSGrid::check_grid)
+    slack_.check_weights(_element_name());
+}
+
+void StorageContainer::_on_deactivate(int storage_id, DualAlgoControl & solver_control) {
+    VoltageSourceContainer<StorageContainer>::_on_deactivate(storage_id, solver_control);
+    if(slack_.is_slack(storage_id)){ solver_control.tell_slack_participate_changed(); }
+}
+
+void StorageContainer::_on_reactivate(int storage_id, DualAlgoControl & solver_control) {
+    VoltageSourceContainer<StorageContainer>::_on_reactivate(storage_id, solver_control);
+    if(slack_.is_slack(storage_id)){ solver_control.tell_slack_participate_changed(); }
+}
+
+void StorageContainer::_on_change_bus(int storage_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control) {
+    VoltageSourceContainer<StorageContainer>::_on_change_bus(storage_id, new_bus_id, solver_control);
+    if(slack_.is_slack(storage_id)){ solver_control.tell_slack_participate_changed(); }
 }
 
 } // namespace ls2g

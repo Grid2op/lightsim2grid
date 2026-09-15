@@ -91,7 +91,9 @@ namespace ls2g {
 //     (regulating flag, target magnitude, reactive range, regulated bus) -- a
 //     storage unit can now hold its bus' voltage like a generator; and
 //     GeneratorContainer::StateRes carries its reactive sharing key.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 7;
+// v8: StorageContainer::StateRes carries the distributed-slack participation of a
+//     storage unit (flag and weight), like a generator's.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 8;
 
 class LS2G_API BinaryArchive
 {

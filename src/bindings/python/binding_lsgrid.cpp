@@ -114,6 +114,8 @@ void bind_gridmodel(py::module_& m) {
         .def("init_svcs", &LSGrid::init_svcs, DocLSGrid::init_svcs.c_str())
         .def("add_gen_slackbus", &LSGrid::add_gen_slackbus, DocLSGrid::add_gen_slackbus.c_str())
         .def("remove_gen_slackbus", &LSGrid::remove_gen_slackbus, DocLSGrid::remove_gen_slackbus.c_str())
+        .def("add_storage_slackbus", &LSGrid::add_storage_slackbus, DocLSGrid::add_storage_slackbus.c_str())
+        .def("remove_storage_slackbus", &LSGrid::remove_storage_slackbus, DocLSGrid::remove_storage_slackbus.c_str())
         .def("get_bus_vn_kv", &LSGrid::get_bus_vn_kv, DocLSGrid::get_bus_vn_kv.c_str(), py::return_value_policy::reference_internal)
         // NB no return_value_policy::reference: get_bus_status() now BUILDS the vector from the
         // per-bus element counts and returns it by value, so pybind must copy (the default).

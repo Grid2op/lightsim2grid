@@ -277,7 +277,7 @@ def bake_outer_loops(
         (and load p0/q0 if ``balance_on_loads``).
     bake_active_power_control_participation
         Zero out (``activePowerControl`` extension ``participate=False``)
-        slack-distribution participation for generators OLF's own
+        slack-distribution participation for generators and batteries OLF's own
         ``checkActivePowerControl`` would exclude (see
         :func:`_bake_active_power_control_participation`). Also gated by
         ``bake_active_power`` -- has no effect if that is off.
@@ -1090,9 +1090,10 @@ def _bake_remote_voltage_control(network, keep_only_main_comp=True):
     network.update_generators(upd)
 
 
-def _bake_active_power_control_participation(network, gen):
-    """Zero out active-power (slack-distribution) participation for generators that
-    PowSyBl OLF's own ``AbstractLfGenerator.checkActivePowerControl`` would exclude:
+def _bake_active_power_control_participation(network, gen, bat=None):
+    """Zero out active-power (slack-distribution) participation for generators (and
+    batteries, see below) that PowSyBl OLF's own
+    ``AbstractLfGenerator.checkActivePowerControl`` would exclude:
 
     * dispatched at (approximately) zero MW (``POWER_EPSILON_SI``, regardless of
       ``min_p`` -- unlike :func:`_bake_generator_not_started`, this check has no
@@ -1130,7 +1131,26 @@ def _bake_active_power_control_participation(network, gen):
     computing slack weights, so this single write keeps both lightsim2grid and any
     subsequent pypowsybl OLF re-solve from putting slack mismatch back onto a
     generator OLF itself excluded from participating.
+
+    Batteries (``bat``, the same pre-bake frame) follow the same rules -- OLF runs
+    ``checkActivePowerControl`` on them too -- read off their own extension
+    (:func:`~._aux_battery_apc.battery_active_power_control`), with one more detail of
+    the capping: a unit is never pushed across 0 MW, so a charging battery is capped at
+    0 by a positive mismatch (and a discharging one by a negative mismatch). The sign of
+    the reference mismatch is taken over the generators and the batteries together.
+
+    Returns the batteries OLF capped that this pypowsybl cannot mark in their extension
+    (<= 1.16.1 rejects a battery id there): the caller pins their active range on their
+    realized dispatch (``min_p = max_p``), a degenerate range both OLF and lightsim2grid
+    exclude from the slack.
     """
+    # not at the top: _aux_battery_apc reads its OLF constants from this module
+    from ._aux_battery_apc import (
+        _pypowsybl_exposes_battery_apc,
+        battery_active_power_control,
+        olf_participation_weight,
+        olf_target_p_range,
+    )
     apc = network.get_extensions("activePowerControl")
     min_target_p = gen["min_p"].to_numpy(copy=True)
     max_target_p = gen["max_p"].to_numpy(copy=True)
@@ -1165,26 +1185,56 @@ def _bake_active_power_control_participation(network, gen):
     realized = -gen["p"].to_numpy()
     solved = np.isfinite(realized)
     cand = solved & participate & ~excluded
+
+    # the batteries: OLF's rule, read off their own extension, and a range cut at 0 on
+    # the side opposite their dispatch (OLF keeps the sign of a unit when it caps it)
+    has_bat = bat is not None and len(bat) > 0
+    if has_bat:
+        b_participate, b_droop, b_min_tp, b_max_tp = battery_active_power_control(network, bat)
+        b_target_p = bat["target_p"].to_numpy(float)
+        b_min_p = bat["min_p"].to_numpy(float)
+        b_max_p = bat["max_p"].to_numpy(float)
+        b_weight = olf_participation_weight(b_target_p, b_min_p, b_max_p,
+                                            b_participate, b_droop, b_min_tp, b_max_tp)
+        b_min_tp, b_max_tp = olf_target_p_range(b_min_p, b_max_p, b_min_tp, b_max_tp)
+        b_max_tp = np.where(b_target_p < 0., np.minimum(b_max_tp, 0.), b_max_tp)
+        b_min_tp = np.where(b_target_p < 0., b_min_tp, np.maximum(b_min_tp, 0.))
+        b_realized = -bat["p"].to_numpy(float)
+        b_cand = np.isfinite(b_realized) & (b_weight > 0.)
+        b_capped = np.zeros(len(bat), dtype=bool)
+
+    # the sign of the reference mismatch, over every participant
     mismatch = float(np.sum((realized - target_p)[cand]))
+    if has_bat:
+        mismatch += float(np.sum((b_realized - b_target_p)[b_cand]))
     if mismatch > _ZERO_P_TOL:
         excluded |= cand & (realized >= max_target_p - _ZERO_P_TOL)
+        if has_bat:
+            b_capped = b_cand & (b_realized >= b_max_tp - _ZERO_P_TOL)
     elif mismatch < -_ZERO_P_TOL:
         excluded |= cand & (realized <= min_target_p + _ZERO_P_TOL)
-    if not excluded.any():
-        return
+        if has_bat:
+            b_capped = b_cand & (b_realized <= b_min_tp + _ZERO_P_TOL)
 
     excluded_ids = gen.index[excluded]
-    already_apc = excluded_ids.intersection(apc.index) if len(apc) else excluded_ids[:0]
-    new_apc = excluded_ids.difference(already_apc)
+    pinned_batteries = bat.index[b_capped] if has_bat else gen.index[:0]
+    if has_bat and _pypowsybl_exposes_battery_apc():
+        # this pypowsybl writes the extension on a battery as on a generator
+        excluded_ids = excluded_ids.append(pinned_batteries)
+        pinned_batteries = pinned_batteries[:0]
 
-    if len(already_apc):
-        network.update_extensions(
-            "activePowerControl", pd.DataFrame({"participate": False}, index=already_apc)
-        )
-    if len(new_apc):
-        network.create_extensions(
-            "activePowerControl", pd.DataFrame({"participate": False}, index=new_apc)
-        )
+    if len(excluded_ids):
+        already_apc = excluded_ids.intersection(apc.index) if len(apc) else excluded_ids[:0]
+        new_apc = excluded_ids.difference(already_apc)
+        if len(already_apc):
+            network.update_extensions(
+                "activePowerControl", pd.DataFrame({"participate": False}, index=already_apc)
+            )
+        if len(new_apc):
+            network.create_extensions(
+                "activePowerControl", pd.DataFrame({"participate": False}, index=new_apc)
+            )
+    return pinned_batteries
 
 
 def _bake_active_power(
@@ -1199,21 +1249,33 @@ def _bake_active_power(
     gen = network.get_generators(attributes=["p", "target_p", "min_p", "max_p", "connected", "bus_id"])
     if keep_only_main_comp:
         gen = _keep_only_main_comp(gen, df_bus)
+    # the batteries' frame is read before any target_p is overwritten too: they take part
+    # in the slack (see _bake_active_power_control_participation)
+    bat = network.get_batteries(attributes=["p", "target_p", "min_p", "max_p", "connected", "bus_id"])
+    if keep_only_main_comp:
+        bat = _keep_only_main_comp(bat, df_bus)
+    pinned_batteries = bat.index[:0]
+    if bake_active_power_control_participation and (len(gen) or len(bat)):
+        pinned_batteries = _bake_active_power_control_participation(network, gen, bat)
+
     if len(gen):
-        if bake_active_power_control_participation:
-            _bake_active_power_control_participation(network, gen)
         # result p is load convention; target_p is generator convention
         network.update_generators(
             pd.DataFrame({"target_p": -gen["p"]}, index=gen.index)
         )
 
-    bat = network.get_batteries(attributes=["p", "connected", "bus_id"])
-    if keep_only_main_comp:
-        bat = _keep_only_main_comp(bat, df_bus)
     if len(bat):
         network.update_batteries(
             pd.DataFrame({"target_p": -bat["p"]}, index=bat.index)
         )
+        if len(pinned_batteries):
+            # a battery OLF capped, on a pypowsybl that cannot mark its extension: a
+            # degenerate active range at its realized dispatch takes it out of the slack,
+            # in OLF (checkActivePowerControl) and in lightsim2grid alike
+            realized = -bat.loc[pinned_batteries, "p"]
+            network.update_batteries(
+                pd.DataFrame({"min_p": realized, "max_p": realized}, index=pinned_batteries)
+            )
 
     if balance_on_loads:
         load = network.get_loads(attributes=["p", "q", "connected", "bus_id"])

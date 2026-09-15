@@ -65,8 +65,7 @@ void GeneratorContainer::init_full(const Eigen::Ref<const RealVect> & generators
             throw std::runtime_error(exc_.str());
         }
     }
-    gen_slackbus_ = std::vector<bool>(generators_p.size(), false);
-    gen_slack_weight_ = std::vector<real_type>(generators_p.size(), 0.);
+    slack_.reset(static_cast<std::size_t>(generators_p.size()));
     turnedoff_gen_pv_ = true;
     voltage_regulator_on_ = voltage_regulator_on;
     // local control by default: the regulated bus is the generator's own bus
@@ -89,8 +88,8 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one
                                       vm_pu,
                                       min_q,
                                       max_q,
-                                      gen_slackbus_,
-                                      gen_slack_weight_,
+                                      slack_.flags(),
+                                      slack_.weights(),
                                       regulated_bus,
                                       reactive_key);
      return res;
@@ -127,8 +126,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
     min_q_ = RealVect::Map(min_q.data(), min_q.size());
     max_q_ = RealVect::Map(max_q.data(), max_q.size());
-    gen_slackbus_ = slack_bus;
-    gen_slack_weight_ = slack_weight;
+    slack_.set(slack_bus, slack_weight);
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
     reactive_key_ = RealVect::Map(reactive_key.data(), reactive_key.size());
     reset_results();
@@ -142,97 +140,10 @@ void GeneratorContainer::_check_valid(int nb_bus,
     // one-side index checks (bus / subid / pos_topo_vect) + the regulated bus range
     VoltageSourceContainer<GeneratorContainer>::_check_valid(nb_bus, nb_sub, substations, all_pos_topo_vect);
 
-    // slack coherence
-    const int nb_gen = nb();
-    const bool has_slack_info = !gen_slackbus_.empty();
-    bool any_slack = false;
-    bool any_connected_slack = false;
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
-    {
-        if(has_slack_info && gen_slackbus_[gen_id])
-        {
-            any_slack = true;
-            const real_type w = gen_slack_weight_[gen_id];
-            if((!std::isfinite(w)) || (w <= _tol_equal_float))
-            {
-                std::ostringstream exc_;
-                exc_ << "LSGrid::check_grid: generator id " << gen_id
-                     << " is flagged as a slack but has a non-positive or non-finite slack weight ("
-                     << w << ").";
-                throw std::runtime_error(exc_.str());
-            }
-            if(status_[gen_id]) any_connected_slack = true;
-        }
-    }
-    // if a slack is declared at all, at least one slack generator must be connected
-    // (the powerflow cannot solve otherwise). We do NOT require a slack to exist:
-    // that stays the solver's responsibility, exactly as before.
-    if(any_slack && !any_connected_slack)
-    {
-        throw std::runtime_error("LSGrid::check_grid: at least one generator is flagged as a "
-                                 "slack, but none of the slack generators is connected.");
-    }
-}
-
-RealVect GeneratorContainer::get_slack_weights_solver(
-    size_t nb_bus_solver,
-    const SolverBusIdVect & id_grid_to_solver){
-    RealVect res = _raw_slack_weights_solver(nb_bus_solver, id_grid_to_solver, nullptr);
-    bus_slack_weight_ = res;
-    real_type sum_res = res.sum();
-    res /= sum_res;
-    return res;
-}
-
-RealVect GeneratorContainer::get_slack_weights_solver_without(
-    size_t nb_bus_solver,
-    const SolverBusIdVect & id_grid_to_solver,
-    const std::vector<bool> & gen_off) const{
-    RealVect res = _raw_slack_weights_solver(nb_bus_solver, id_grid_to_solver, &gen_off);
-    const real_type sum_res = res.sum();
-    // every participating generator is off: leave the vector at zero rather than
-    // dividing by it, and let the caller decide (see BaseBatchSweep::_row_slack_weights)
-    if(abs(sum_res) > _tol_equal_float) res /= sum_res;
-    return res;
-}
-
-RealVect GeneratorContainer::_raw_slack_weights_solver(
-    size_t nb_bus_solver,
-    const SolverBusIdVect & id_grid_to_solver,
-    const std::vector<bool> * gen_off) const{
-    const int nb_gen = nb();
-    GlobalBusId bus_id_me;
-    SolverBusId bus_id_solver;
-    RealVect res = RealVect::Zero(nb_bus_solver);
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        //  i don't do anything if the load is disconnected
-        if(!status_[gen_id]) continue;
-        if(!gen_slackbus_[gen_id]) continue;
-        if(abs(gen_slack_weight_[gen_id]) < _tol_equal_float) continue;
-        // ... nor if the caller is evaluating a case where this one is off
-        if(gen_off != nullptr && (*gen_off)[gen_id]) continue;
-
-        bus_id_me = bus_id_(gen_id);
-        if(bus_id_me.cast_int() == _deactivated_bus_id){
-            // TODO DEBUG MODE: only check in debug mode
-            std::ostringstream exc_;
-            exc_ << "GeneratorContainer::get_slack_weights_solver: Generator with id ";
-            exc_ << gen_id;
-            exc_ << " is connected to a disconnected bus while being connected to the grid.";
-            throw std::runtime_error(exc_.str());
-        }
-        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
-        if(bus_id_solver.cast_int() == _deactivated_bus_id){
-            // TODO DEBUG MODE: only check in debug mode
-            std::ostringstream exc_;
-            exc_ << "GeneratorContainer::get_slack_weights_solver: Generator with id ";
-            exc_ << gen_id;
-            exc_ << " is connected to a disconnected bus while being connected to the grid.";
-            throw std::runtime_error(exc_.str());
-        }
-        if(gen_slackbus_[gen_id]) res.coeffRef(bus_id_solver.cast_int()) += gen_slack_weight_[gen_id];
-    }
-    return res;
+    // a generator flagged as a slack participant carries a usable weight. Whether ANY
+    // participant is connected is a grid-wide question -- storage units take part in
+    // the slack too -- answered by LSGrid::check_grid.
+    slack_.check_weights(_element_name());
 }
 
 void GeneratorContainer::_fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const {
@@ -245,7 +156,7 @@ void GeneratorContainer::_fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdV
         if(!status_[gen_id]) continue;
 
         // a pv gen that is "pseudo off" (if the flag is set) is turned off, so disconnected
-        if ((!turnedoff_gen_pv_) && is_pseudo_off(gen_id) && voltage_regulator_on_[gen_id]) continue;  
+        if ((!turnedoff_gen_pv_) && is_pseudo_off(gen_id) && voltage_regulator_on_[gen_id]) continue;
 
         bus_id_me = bus_id_(gen_id);
 #ifndef NDEBUG
@@ -289,12 +200,12 @@ void GeneratorContainer::_on_change_p(int gen_id, real_type new_p, DualAlgoContr
         // the list of pv buses, so I need to refactorize the solver
         // on the other hand, if all generators are pv then I do not need to refactorize in this case
 
-        if (gen_slackbus_[gen_id]) return;  // slack is not pseudo off
-        if ((abs(gen_slack_weight_[gen_id]) >= _tol_equal_float)) return;  // slack is not pseudo off
+        if (slack_.is_slack(gen_id)) return;  // slack is not pseudo off
+        if (slack_.has_weight(gen_id)) return;  // slack is not pseudo off
 
         bool pseudo_off_before = abs(target_p_mw_(gen_id)) < _tol_equal_float;
         bool pseudo_off_now = abs(new_p) < _tol_equal_float;
-        if((pseudo_off_before && !pseudo_off_now) || 
+        if((pseudo_off_before && !pseudo_off_now) ||
            (!pseudo_off_before && pseudo_off_now)){
             // (crossing p == 0 also makes this generator start or stop being a voltage
             // controller -- is_remote_voltage_controller gates on is_pseudo_off -- which
@@ -308,57 +219,18 @@ void GeneratorContainer::_on_change_p(int gen_id, real_type new_p, DualAlgoContr
 void GeneratorContainer::_on_deactivate(int el_id, DualAlgoControl & solver_control) {
     VoltageSourceContainer<GeneratorContainer>::_on_deactivate(el_id, solver_control);
     if(!turnedoff_gen_pv_){ solver_control.tell_pv_changed(); }
-    if(gen_slackbus_[el_id]){ solver_control.tell_slack_participate_changed(); }
+    if(slack_.is_slack(el_id)){ solver_control.tell_slack_participate_changed(); }
 }
 
 void GeneratorContainer::_on_reactivate(int el_id, DualAlgoControl & solver_control) {
     VoltageSourceContainer<GeneratorContainer>::_on_reactivate(el_id, solver_control);
     if(!turnedoff_gen_pv_){ solver_control.tell_pv_changed(); }
-    if(gen_slackbus_[el_id]){ solver_control.tell_slack_participate_changed(); }
+    if(slack_.is_slack(el_id)){ solver_control.tell_slack_participate_changed(); }
 }
 
 void GeneratorContainer::_on_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control) {
     VoltageSourceContainer<GeneratorContainer>::_on_change_bus(el_id, new_bus_id, solver_control);
-    if(gen_slackbus_[el_id]) { solver_control.tell_slack_participate_changed(); }
-}
-
-GlobalBusIdVect GeneratorContainer::get_slack_bus_id() const{
-    std::vector<int> tmp;
-    tmp.reserve(gen_slackbus_.size());
-    GlobalBusIdVect res;
-    const int nb_gen = nb();
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(gen_slackbus_[gen_id]){
-            const GlobalBusId my_bus = bus_id_(gen_id);
-            // do not add twice the same "slack bus"
-            if(!is_in_vect(my_bus.cast_int(), tmp)) tmp.push_back(my_bus.cast_int());
-        }
-    }
-    if(tmp.empty()) throw std::runtime_error("GeneratorContainer::get_slack_bus_id: no generator are tagged slack bus for this grid.");
-    res = GlobalBusIdVect(tmp);
-    return res;
-}
-
-void GeneratorContainer::set_p_slack(const Eigen::Ref<const RealVect>& node_mismatch,
-                                     const SolverBusIdVect & id_grid_to_solver)
-{
-    if(bus_slack_weight_.size() == 0){
-        // TODO DEBUG MODE: perform this check only in debug mode
-        throw std::runtime_error("Generator::set_p_slack: Impossible to set the active value of generators for the slack bus: no known slack (you should haved called Generator::get_slack_weights_solver first)");
-    }
-    const auto nb_gen = nb();
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(!status_[gen_id]) continue;  // nothing to do if gen is disconnected
-        if(!gen_slackbus_[gen_id]) continue;  // nothing to do if it's not a slack
-        if(abs(gen_slack_weight_[gen_id]) < _tol_equal_float) continue; // nothing to do if no weights are associated to it
-        const GlobalBusId bus_id_me = bus_id_(gen_id);
-        const SolverBusId bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
-        // TODO DEBUG MODE: check bus_id_solver >= 0
-        // TODO DEBUG MODE: check bus_slack_weight_[bus_id_solver] > 0
-        const real_type total_contrib_slack = bus_slack_weight_(bus_id_solver.cast_int());
-        const real_type my_contrib_slack = gen_slack_weight_[gen_id];
-        res_p_(gen_id) += node_mismatch(bus_id_solver.cast_int()) * my_contrib_slack / total_contrib_slack;
-    }
+    if(slack_.is_slack(el_id)) { solver_control.tell_slack_participate_changed(); }
 }
 
 void GeneratorContainer::update_slack_weights(
@@ -393,7 +265,7 @@ void GeneratorContainer::update_slack_weights_by_id(
 {
     // TODO speed: the solver_control will always tell that the slacks changed
     // even if it's not the case.
-    // Because the 
+    // Because the
     int nb_gen = nb();
     std::vector<bool> maybe_slack_bus(nb_gen, false);
 
@@ -419,7 +291,7 @@ void GeneratorContainer::update_slack_weights_by_id(
         // slacks weights are equal for all generators
         real_type slack_weight = 1. / static_cast<real_type>(gen_slack_id.size());
         for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-            if(maybe_slack_bus[gen_id]) 
+            if(maybe_slack_bus[gen_id])
                 add_slackbus(gen_id, slack_weight, solver_control);
             else remove_slackbus(gen_id, solver_control);
         }
@@ -427,7 +299,7 @@ void GeneratorContainer::update_slack_weights_by_id(
         // slack weights prop to abs(target_p)
         for(int gen_id : gen_slack_id)
         {
-            if(maybe_slack_bus[gen_id] && (abs(target_p_mw_[gen_id]) > _tol_equal_float)) 
+            if(maybe_slack_bus[gen_id] && (abs(target_p_mw_[gen_id]) > _tol_equal_float))
                 add_slackbus(gen_id, abs(target_p_mw_[gen_id]), solver_control);
             else remove_slackbus(gen_id, solver_control);
         }

@@ -2102,7 +2102,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         // row i's distributed-slack weights: the layout's own unless the row takes a
         // participating generator out, in which case they are re-derived without it
-        // and renormalised (GeneratorContainer::get_slack_weights_solver_without).
+        // and renormalised (LSGrid::get_slack_weights_solver_without -- the storage
+        // units taking part in the slack stay in: no row disconnects one).
         // Should a row somehow leave no participant at all, the reference slack bus
         // keeps the whole share -- the angle reference is a property of the batch,
         // picked once, and must not move from row to row.
@@ -2115,7 +2116,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const auto & generators = _grid_model.get_generators();
             std::vector<bool> gen_off(generators.nb(), false);
             for(int gen_id : _row_slack_gens_off_[i]) gen_off[gen_id] = true;
-            scratch = generators.get_slack_weights_solver_without(
+            scratch = _grid_model.get_slack_weights_solver_without(
                 static_cast<size_t>(base_w.size()), active_layout().id_me_to_solver, gen_off);
             if(abs(scratch.sum()) < BaseConstants::_tol_equal_float){
                 scratch.setZero();

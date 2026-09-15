@@ -5857,6 +5857,48 @@ const std::string DocLSGrid::remove_gen_slackbus = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::add_storage_slackbus = R"mydelimiter(
+    Make storage unit ``storage_id`` participate in the distributed slack, with the given
+    (strictly positive) weight -- see :attr:`~lightsim2grid.elements.StorageInfo.is_slack` /
+    :attr:`~lightsim2grid.elements.StorageInfo.slack_weight`. Calling it again on the same unit
+    updates its weight. Raises for an invalid ``storage_id`` or a non-positive weight.
+
+    Storage units and generators share one distributed slack: a bus' weight is the sum of the
+    weights of every participant on it, whatever its kind, and the share it absorbs is split
+    back onto them in proportion to their weight (OpenLoadFlow distributes the slack on
+    batteries with the same rule as on generators).
+
+)mydelimiter";
+
+const std::string DocLSGrid::remove_storage_slackbus = R"mydelimiter(
+    Remove storage unit ``storage_id`` from the distributed slack (the opposite of
+    :func:`add_storage_slackbus`) -- see :attr:`~lightsim2grid.elements.StorageInfo.is_slack`.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_is_slack = R"mydelimiter(
+    Tells whether or not this storage unit participates to the distributed slack (like a
+    generator, see :attr:`~lightsim2grid.elements.GenInfo.is_slack`). The share it absorbs is
+    part of its active power result, in the load convention.
+
+    Read-only here, together with :attr:`slack_weight`. To make this unit participate (or
+    stop participating) in the distributed slack, call
+    :func:`lightsim2grid.network.LSGrid.add_storage_slackbus` /
+    :func:`lightsim2grid.network.LSGrid.remove_storage_slackbus`.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_slack_weight = R"mydelimiter(
+    The participation of this storage unit to the distributed slack.
+
+    .. note::
+        Weights do not sum to one: this number has no meaning by itself and should be compared
+        with the weights of the other participants, generators included.
+
+    Read-only here, see :attr:`is_slack` for how to change it.
+
+)mydelimiter";
+
 // ---------------------------------------------------------------------------
 // substation names (bulk)
 // ---------------------------------------------------------------------------
