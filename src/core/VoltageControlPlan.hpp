@@ -274,9 +274,10 @@ class LS2G_API VoltageControlPlan
             int reg_bus;      ///< regulated solver bus
             real_type v_set;  ///< pu
             real_type slope;  ///< pu (0 except for a sloped SVC)
-            real_type weight; ///< sharing key
+            real_type weight; ///< reactive range, the sharing key when `key` cannot be used
             int kind;         ///< VoltageControlSolverData::Kind
             int elem_id;
+            real_type key;    ///< explicit reactive sharing key (> 0), NaN when there is none
         };
 
         /// the three per-container passes that fill `raws`

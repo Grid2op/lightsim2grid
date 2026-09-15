@@ -330,7 +330,8 @@ void VoltageControlPlan::_collect_gen_controllers(const GeneratorContainer & gen
         }
         const real_type w = generators.get_max_q(gen_id) - generators.get_min_q(gen_id);
         raws.push_back({ctrl_solver, reg_solver, generators.get_target_vm_pu(gen_id),
-                        static_cast<real_type>(0.), w, VoltageControlSolverData::GEN, gen_id});
+                        static_cast<real_type>(0.), w, VoltageControlSolverData::GEN, gen_id,
+                        generators.get_reactive_key(gen_id)});
     }
 }
 
@@ -488,6 +489,36 @@ void VoltageControlPlan::_group_and_emit(const std::vector<Raw> & raws)
     data.v_set = RealVect(ng);
     data.grp_start = Eigen::VectorXi(ng);
     data.grp_count = Eigen::VectorXi(ng);
+    // The sharing key, OpenLoadFlow's rule, which works bus by bus. Inside one
+    // controller bus the controllers share by their keys when they all have one, by
+    // their reactive ranges otherwise; the buses of the group share by the sum of
+    // their controllers' keys when every bus has one, by the sum of their ranges
+    // otherwise. The sharing rows hold Q_i / w_i equal across the group, so
+    // w_i = (share of its bus) * (its share inside the bus), which reduces to the key
+    // when every bus is keyed and to the range when its own bus is not.
+    const auto has_key = [](real_type key) { return std::isfinite(key) && key > 0.; };
+    const auto sharing_weight = [&](const std::vector<int> & members, int idx) {
+        const Raw & r = raws[idx];
+        bool all_buses_keyed = true;
+        bool own_bus_keyed = true;
+        real_type own_bus_keys = 0.;
+        real_type own_bus_range = 0.;
+        for(int other : members){
+            const Raw & o = raws[other];
+            bool other_bus_keyed = true;
+            for(int third : members){
+                if(raws[third].bus == o.bus && !has_key(raws[third].key)) other_bus_keyed = false;
+            }
+            all_buses_keyed = all_buses_keyed && other_bus_keyed;
+            if(o.bus != r.bus) continue;
+            own_bus_range += o.weight;
+            if(has_key(o.key)) own_bus_keys += o.key; else own_bus_keyed = false;
+        }
+        if(all_buses_keyed) return r.key;
+        if(own_bus_keyed) return own_bus_range * (r.key / own_bus_keys);
+        return r.weight;
+    };
+
     int cursor = 0;
     for(int g = 0; g < ng; ++g){
         data.reg_bus(g) = grp_reg[g];
@@ -501,7 +532,8 @@ void VoltageControlPlan::_group_and_emit(const std::vector<Raw> & raws)
             data.elem_id(cursor) = r.elem_id;
             data.slope(cursor) = r.slope;
             // floor the sharing key to keep the N>1 sharing rows non-singular
-            data.weight(cursor) = (std::abs(r.weight) > BaseConstants::_tol_equal_float) ? r.weight : BaseConstants::_tol_equal_float;
+            const real_type w = sharing_weight(grp_members[g], idx);
+            data.weight(cursor) = (std::abs(w) > BaseConstants::_tol_equal_float) ? w : BaseConstants::_tol_equal_float;
             data.group(cursor) = g;
             ++cursor;
         }

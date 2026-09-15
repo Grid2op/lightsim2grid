@@ -87,7 +87,11 @@ namespace ls2g {
 //     "at least one element holds it", counted from the elements -- whose own
 //     status IS serialized. Storing it was storing a cache of something already
 //     in the file, with a way for a crafted file to make the two disagree.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 6;
+// v7: StorageContainer::StateRes carries the voltage side of a storage unit
+//     (regulating flag, target magnitude, reactive range, regulated bus) -- a
+//     storage unit can now hold its bus' voltage like a generator; and
+//     GeneratorContainer::StateRes carries its reactive sharing key.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 7;
 
 class LS2G_API BinaryArchive
 {

@@ -158,6 +158,7 @@ struct LS2G_API DocIterator
     // ConverterStationInfo (VSC only)
     static const std::string voltage_regulator_on;
     static const std::string regulated_bus_id;
+    static const std::string reactive_key;
     static const std::string line_model;
     static const std::string r_pu;
     static const std::string x_pu;
@@ -334,6 +335,11 @@ struct LS2G_API DocIterator
     static const std::string shunt_target_q_mvar;
     static const std::string sgen_target_q_mvar;
     static const std::string storage_target_q_mvar;
+    static const std::string storage_voltage_regulator_on;
+    static const std::string storage_target_vm_pu;
+    static const std::string storage_min_q_mvar;
+    static const std::string storage_max_q_mvar;
+    static const std::string storage_regulated_bus_id;
 
     static const std::string gen_target_vm_pu;
 
@@ -460,6 +466,7 @@ struct LS2G_API DocLSGrid
 
     // remote voltage control (generators)
     static const std::string set_gen_regulated_bus;
+    static const std::string set_gen_reactive_key;
 
     // hvdc angle-droop regime
     static const std::string set_status_droop_hvdc;
@@ -736,6 +743,8 @@ struct LS2G_API DocLSGrid
     static const std::string init_generators_full;
     static const std::string init_loads;
     static const std::string init_storages;
+    static const std::string init_storages_full;
+    static const std::string change_v_storage;
     static const std::string init_sgens;
     static const std::string init_dclines;
     static const std::string init_hvdc_lines;

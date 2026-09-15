@@ -41,13 +41,14 @@ What it needs, and what answers it:
 | needed | where it is |
 |---|---|
 | is this machine regulating voltage? | `is_voltage_controller` on its container (connected + regulating + not treated as off); `HvdcLineContainer::station_is_voltage_controller` for a converter station |
-| its reactive capability | a generator: `min_q_` / `max_q_` (`GenInfo.min_q_mvar` / `max_q_mvar`). A converter station: the same, in MVAr (`get_station_min_q_mvar` / `get_station_max_q_mvar`). An SVC: `b_min_` / `b_max_` (`SvcInfo.b_min` / `b_max`), a **susceptance** range in pu, worth `b · \|V\|² · sn_mva` MVAr at the solved voltage |
-| the reactive power it (or its bus) produced | `res_q_` (`res_q_mvar` on all three `Info` classes) after a solve; re-derived per row for a batch |
-| which bus it holds | `regulated_bus_id_`, local or remote (a station always regulates the bus it stands on) |
+| its reactive capability | a generator: `min_q_` / `max_q_` (`GenInfo.min_q_mvar` / `max_q_mvar`). A storage unit: the same, generator convention (`StorageInfo.min_q_mvar` / `max_q_mvar`). A converter station: the same, in MVAr (`get_station_min_q_mvar` / `get_station_max_q_mvar`). An SVC: `b_min_` / `b_max_` (`SvcInfo.b_min` / `b_max`), a **susceptance** range in pu, worth `b · \|V\|² · sn_mva` MVAr at the solved voltage |
+| the reactive power it (or its bus) produced | `res_q_` (`res_q_mvar` on all four `Info` classes; load convention for a storage unit) after a solve; re-derived per row for a batch |
+| which bus it holds | `regulated_bus_id_`, local or remote (a station and a storage unit always regulate the bus they stand on) |
 
-**All three families are covered, and they are all of them**: exactly three kinds of element
+**All four families are covered, and they are all of them**: exactly four kinds of element
 have a reactive output the solver computes rather than reads — a voltage-regulating
-generator, a voltage-regulating hvdc converter station, and a voltage-mode SVC. Everything
+generator, a voltage-regulating storage unit, a voltage-regulating hvdc converter station,
+and a voltage-mode SVC. Everything
 else standing on a bus injects reactive power that is *input* data, part of `Sbus`; its own
 limits are an input question, not something a solve produced.
 

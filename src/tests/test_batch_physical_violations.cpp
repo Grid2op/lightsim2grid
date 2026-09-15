@@ -533,6 +533,92 @@ TEST_CASE("an hvdc converter station's reactive capability counts towards its bu
     }
 }
 
+TEST_CASE("a voltage-regulating storage unit's reactive capability counts towards its bus'",
+          "[batch][physical][vctrl]")
+{
+    // a storage unit regulating its own bus is a PV bus exactly like a local generator's:
+    // its reactive output is solved for, so its [min_q, max_q] (generator convention)
+    // belongs in the bus' capability. A unit that does not regulate brings nothing -- its
+    // reactive power is Sbus data.
+    const auto add_storage = [](LSGrid & grid, int bus, real_type max_q, bool regulating){
+        RealVect p(1), q(1), vm(1), min_q(1), max_q_v(1);
+        Eigen::VectorXi sto_bus(1);
+        p << 0.;
+        q << 0.;
+        vm << V_SET;
+        min_q << -max_q;
+        max_q_v << max_q;
+        sto_bus << bus;
+        grid.init_storages_full(p, q, std::vector<bool>{regulating}, vm, min_q, max_q_v, sto_bus);
+        grid.tell_solver_need_reset();
+    };
+    const auto run_one_row = [](LSGrid & grid){
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        return ts.get_physical_violations()[0];
+    };
+
+    SECTION("shared with a generator: the limit is the sum of the two")
+    {
+        const std::vector<GenSpec> gens{slack_gen(), GenSpec{GEN_BUS, V_SET, 10., -10., 10., -1}};
+        // how much bus 1 needs, generator and storage unit together (the storage unit, at
+        // 0 MW on an already pinned bus, changes the split and not the solution)
+        LSGrid ref_grid = make_grid(gens);
+        add_storage(ref_grid, GEN_BUS, WIDE_Q, true);
+        ref_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        ref_grid.ac_pf(flat_start(ref_grid), 30, 1e-11);
+        const real_type q_gen = RealVect(std::get<1>(ref_grid.get_gen_res()))(1);
+        const real_type q_sto = -ref_grid.get_storages()[0].res_q_mvar;  // load convention there
+        const real_type q_bus = q_gen + q_sto;
+        REQUIRE(q_bus > 10.);  // more than the generator alone owns
+
+        {
+            // generator 10 MVAr + storage unit (q_bus - 10 + 5) MVAr > q_bus
+            LSGrid grid = make_grid(gens);
+            add_storage(grid, GEN_BUS, q_bus - 10. + 5., true);
+            CHECK(find_bus(run_one_row(grid), GEN_BUS) == nullptr);
+        }
+        {
+            const real_type sto_q = 0.25 * q_bus;
+            LSGrid grid = make_grid(gens);
+            add_storage(grid, GEN_BUS, sto_q, true);
+            const std::vector<LimitViolation> viols = run_one_row(grid);
+            const LimitViolation * viol = find_bus(viols, GEN_BUS);
+            REQUIRE(viol != nullptr);
+            CHECK(viol->violation_type == LimitViolationType::HIGH_Q);
+            CHECK(viol->value == Approx(q_bus).margin(1e-6));
+            CHECK(viol->limit == Approx(10. + sto_q));
+        }
+        {
+            // the same unit NOT regulating: its range is not counted, however wide
+            LSGrid grid = make_grid(gens);
+            add_storage(grid, GEN_BUS, WIDE_Q, false);
+            const std::vector<LimitViolation> viols = run_one_row(grid);
+            const LimitViolation * viol = find_bus(viols, GEN_BUS);
+            REQUIRE(viol != nullptr);
+            CHECK(viol->limit == Approx(10.));
+        }
+    }
+
+    SECTION("alone on its bus: reported in generator convention")
+    {
+        // holding the load bus at V_SET takes far more than 5 MVAr of production
+        LSGrid grid = make_grid(std::vector<GenSpec>{slack_gen()});
+        add_storage(grid, SVC_BUS, 5., true);
+        const std::vector<LimitViolation> viols = run_one_row(grid);
+        const LimitViolation * viol = find_bus(viols, SVC_BUS);
+        REQUIRE(viol != nullptr);
+        CHECK(viol->violation_type == LimitViolationType::HIGH_Q);
+        CHECK(viol->limit == Approx(5.));
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        grid.ac_pf(flat_start(grid), 30, 1e-11);
+        CHECK(viol->value == Approx(-grid.get_storages()[0].res_q_mvar).margin(1e-6));
+    }
+}
+
 TEST_CASE("a voltage-mode SVC's susceptance range counts towards its bus'",
           "[batch][physical][vctrl]")
 {

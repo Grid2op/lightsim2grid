@@ -221,6 +221,54 @@ class TestSvcCapabilityFromPython(unittest.TestCase):
         self.assertAlmostEqual(viol.value, svc.res_q_mvar, places=5)
 
 
+class TestStorageCapabilityFromPython(unittest.TestCase):
+    """a storage unit regulating its own bus (``init_storages_full``) holds it like a local
+    generator: its reactive range counts, and the reported value is the reactive power it
+    produced -- GENERATOR convention, whereas ``StorageInfo.res_q_mvar`` is in load
+    convention."""
+    BUS = 9  # a load bus of case14, no generator on it
+
+    def _grid(self, max_q_mvar):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(pn.case14())
+        grid.init_storages_full(np.array([0.]), np.array([0.]), [True], np.array([1.035]),
+                                np.array([-max_q_mvar]), np.array([max_q_mvar]),
+                                np.array([self.BUS], dtype=np.int32))
+        grid.tell_solver_need_reset()
+        return grid
+
+    def _bus_viols(self, grid):
+        ts = _one_row_time_series(grid)
+        v_init = np.full(grid.total_bus(), grid.get_init_vm_pu() + 0j)
+        ts.compute(v_init, 20, 1e-11)
+        assert ts.converged_mask()[0]
+        return [v for v in ts.get_physical_violations()[0] if v.element_id == self.BUS]
+
+    def test_limits_of_a_regulating_storage_unit(self):
+        # what the unit has to produce, from a single solve with a range wide enough
+        grid = self._grid(1e3)
+        assert len(self._bus_viols(grid)) == 0
+        v_init = np.full(grid.total_bus(), grid.get_init_vm_pu() + 0j)
+        grid.ac_pf(v_init, 20, 1e-11)
+        q_prod = -grid.get_storages()[0].res_q_mvar
+        assert abs(q_prod) > 1., "the fixture needs the unit to actually produce or absorb"
+
+        half = 0.5 * abs(q_prod)
+        viols = self._bus_viols(self._grid(half))
+        assert len(viols) == 1, "half of what it produces cannot hold the bus"
+        viol = viols[0]
+        assert viol.element_type == ViolationElementType.BUS
+        assert viol.category == ViolationCategory.PHYSICAL
+        if q_prod > 0.:
+            assert viol.violation_type == LimitViolationType.HIGH_Q
+            self.assertAlmostEqual(viol.limit, half, places=9)
+        else:
+            assert viol.violation_type == LimitViolationType.LOW_Q
+            self.assertAlmostEqual(viol.limit, -half, places=9)
+        self.assertAlmostEqual(viol.value, q_prod, places=5)
+
+
 class TestHvdcPFromPython(unittest.TestCase):
     """the active-power half: an angle-droop hvdc line beyond what its converters can
     transmit. `status_droop` is an input of the solve, so nothing saturates the droop -- see

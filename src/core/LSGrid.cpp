@@ -1033,6 +1033,15 @@ void LSGrid::check_solution_q_values(Eigen::Ref<CplxVect> res, bool check_q_limi
         }
     }
 
+    // ... and the voltage-regulating storage units, a PV bus exactly like a local
+    // generator's: their reactive output is free (StorageContainer::_fillSbus does
+    // not stamp it), a non-regulating unit's is real Sbus data
+    for(const auto & sto: storages_)
+    {
+        if(!sto.connected || !sto.voltage_regulator_on) continue;
+        check_solution_q_values_onegen(res, sto.bus_id, sto.min_q_mvar, sto.max_q_mvar, check_q_limits);
+    }
+
     // then do the same for the hvdc converter stations
     for(const auto & hvdc: hvdc_lines_)
     {
@@ -1361,6 +1370,7 @@ CplxVect LSGrid::_build_into_cache(
         generators_.set_vm(V, cache.id_me_to_solver);
         hvdc_lines_.set_vm(V, cache.id_me_to_solver);
         svcs_.set_vm(V, cache.id_me_to_solver);  // VOLTAGE-mode SVCs (init quality at the regulated bus)
+        storages_.set_vm(V, cache.id_me_to_solver);  // voltage-regulating storage units (local PV)
     }
 
     if(redo_all ||
@@ -1510,6 +1520,7 @@ void LSGrid::_check_vm_targets_agree() const
     generators_.for_each_vm_target(visit);
     svcs_.for_each_vm_target(visit);
     hvdc_lines_.for_each_vm_target(visit);
+    storages_.for_each_vm_target(visit);
     if(bad_bus == -1) return;
 
     // Only from here on does anything cost: naming both elements needs a second walk,
@@ -1524,6 +1535,7 @@ void LSGrid::_check_vm_targets_agree() const
     generators_.for_each_vm_target(name);
     svcs_.for_each_vm_target(name);
     hvdc_lines_.for_each_vm_target(name);
+    storages_.for_each_vm_target(name);
 
     std::ostringstream exc_;
     exc_ << "LSGrid: " << first_name.str() << " and " << second_name.str()
@@ -1974,6 +1986,7 @@ void LSGrid::compute_results(bool ac){
     // first the elements whose reactive output needs no powerflow to be known
     generators_.set_q(ac);
     hvdc_lines_.set_q(ac);
+    storages_.set_q(ac);
 
     if(ac){
         std::vector<bool> gen_solved(generators_.nb(), false);
@@ -2136,6 +2149,19 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
                               hvdc_id});
         }
     }
+    // a voltage-regulating storage unit pins its own bus (never a controller of the
+    // plan, so nothing of it is ever solved by the algorithm: an all-false mask)
+    const int nb_storage = static_cast<int>(storages_.nb());
+    if(nb_storage > 0){
+        const std::vector<bool> storage_solved(static_cast<std::size_t>(nb_storage), false);
+        const GlobalBusIdVect & storage_buses = storages_.get_bus_id();
+        for(int storage_id = 0; storage_id < nb_storage; ++storage_id){
+            if(!storages_.takes_q_residual_share(storage_id, storage_solved)) continue;
+            shares.push_back({storage_buses(storage_id).cast_int(),
+                              storages_.get_max_q(storage_id) - storages_.get_min_q(storage_id),
+                              VoltageControlSolverData::STORAGE, storage_id});
+        }
+    }
     return shares;
 }
 
@@ -2197,6 +2223,9 @@ void LSGrid::_split_q_residual_per_bus(const std::vector<QShare> & shares,
             switch(sh.kind){
                 case VoltageControlSolverData::GEN:
                     generators_.set_voltage_control_q(sh.elem_id, q);
+                    break;
+                case VoltageControlSolverData::STORAGE:
+                    storages_.set_voltage_control_q(sh.elem_id, q);  // stored in the load convention there
                     break;
                 case VoltageControlSolverData::HVDC_SIDE_1:
                     hvdc_lines_.set_station_voltage_control_q(sh.elem_id, 1, q);

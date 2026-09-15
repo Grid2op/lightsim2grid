@@ -1283,6 +1283,20 @@ const std::string DocIterator::regulated_bus_id = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::reactive_key = R"mydelimiter(
+    The reactive sharing key of this generator, ``NaN`` when it has none. Read from the
+    ``coordinatedReactiveControl`` extension (``q_percent``) when the grid comes from pypowsybl.
+
+    It only matters for generators holding the voltage of the same bus together. They share
+    their reactive power proportionally to their keys (the keys of the generators of one bus add
+    up) when every one of them has a strictly positive key, and proportionally to their reactive
+    range ``max_q - min_q`` otherwise -- OpenLoadFlow's rule.
+
+    .. seealso::
+        :func:`lightsim2grid.network.LSGrid.set_gen_reactive_key` to change it.
+
+)mydelimiter";
+
 const std::string DocIterator::line_model = R"mydelimiter(
     The "line model" (also valid for transformers) is:
 
@@ -3130,9 +3144,43 @@ const std::string DocIterator::sgen_target_q_mvar = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::storage_target_q_mvar = R"mydelimiter(
-    Get the reactive power setpoint (MVAr, load convention) of this storage unit.
+    Get the reactive power setpoint (MVAr, load convention) of this storage unit. Ignored when
+    the unit regulates its bus' voltage (:attr:`voltage_regulator_on`).
 
     Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_q_storage`.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_voltage_regulator_on = R"mydelimiter(
+    Whether this storage unit regulates the voltage magnitude of its bus (a PV bus, like a local
+    voltage-regulating generator; ``False``: a plain PQ injection). Set by the grid loaders
+    (:func:`lightsim2grid.network.LSGrid.init_storages_full`).
+
+)mydelimiter";
+
+const std::string DocIterator::storage_target_vm_pu = R"mydelimiter(
+    Get the voltage magnitude setpoint (pu, NOT kV) of this storage unit, read only when
+    :attr:`voltage_regulator_on` is ``True``.
+
+    Read-only here. To change it, call :func:`lightsim2grid.network.LSGrid.change_v_storage`.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_min_q_mvar = R"mydelimiter(
+    Minimum reactive power (MVAr, generator convention) of this storage unit, the lower end of
+    the range used to split its bus' reactive residual when it regulates the voltage.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_max_q_mvar = R"mydelimiter(
+    Maximum reactive power (MVAr, generator convention) of this storage unit, see
+    :attr:`min_q_mvar`.
+
+)mydelimiter";
+
+const std::string DocIterator::storage_regulated_bus_id = R"mydelimiter(
+    Grid bus id whose voltage this storage unit regulates: always its own bus (remote voltage
+    regulation is not supported for storage units).
 
 )mydelimiter";
 
@@ -3800,6 +3848,12 @@ const std::string DocLSGrid::set_trafo_shift_dependent_rx = R"mydelimiter(
 const std::string DocLSGrid::set_gen_regulated_bus = R"mydelimiter(
     Set the grid bus whose voltage a generator regulates ("remote voltage control", see
     :attr:`lightsim2grid.elements.GenInfo.regulated_bus_id`; ``bus == own bus`` for local control).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_gen_reactive_key = R"mydelimiter(
+    Set the reactive sharing key of a generator (see
+    :attr:`lightsim2grid.elements.GenInfo.reactive_key`; ``NaN``, 0 or a negative value remove it).
 
 )mydelimiter";
 
@@ -6126,6 +6180,8 @@ const std::string DocLSGrid::change_p_gen = R"mydelimiter(
 
 )mydelimiter";
 
+// (change_v_storage is defined next to init_storages_full)
+
 const std::string DocLSGrid::change_v_gen = R"mydelimiter(
     Change generator ``gen_id``'s voltage setpoint (sets
     :attr:`~lightsim2grid.elements.GenInfo.target_vm_pu`), see :func:`change_p_load` for the
@@ -6677,7 +6733,26 @@ const std::string DocLSGrid::init_loads = R"mydelimiter(
 const std::string DocLSGrid::init_storages = R"mydelimiter(
     Construct every storage unit of the grid at once from these per-storage arrays (active /
     reactive power and bus) -- see :class:`~lightsim2grid.elements.StorageContainer` /
-    :class:`~lightsim2grid.elements.StorageInfo`. Called once by the grid loaders.
+    :class:`~lightsim2grid.elements.StorageInfo`. Called once by the grid loaders. Every unit is a
+    plain PQ injection; see :func:`init_storages_full` for units regulating their bus' voltage.
+
+)mydelimiter";
+
+const std::string DocLSGrid::init_storages_full = R"mydelimiter(
+    Same as :func:`init_storages`, but also taking, per storage unit, whether it regulates the
+    voltage of its own bus (``voltage_regulator_on``), the magnitude it holds there
+    (``target_vm_pu``, in pu) and its reactive range (``min_q`` / ``max_q``, MVAr, generator
+    convention: what the unit can inject), used to split the bus' reactive residual among the
+    machines holding it. A regulating unit is a PV bus exactly like a local voltage-regulating
+    generator (an IIDM battery with a ``voltageRegulation`` extension, which OpenLoadFlow runs
+    that way); its ``target_q`` is then ignored and its reactive output solved for. Only the
+    unit's OWN bus can be regulated. Active / reactive setpoints stay in the load convention.
+
+)mydelimiter";
+
+const std::string DocLSGrid::change_v_storage = R"mydelimiter(
+    Change the voltage magnitude setpoint (pu, NOT kV) of a storage unit regulating its bus
+    (see :func:`init_storages_full`). Has no effect on a unit that does not regulate.
 
 )mydelimiter";
 

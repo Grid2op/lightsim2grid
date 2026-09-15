@@ -9,6 +9,7 @@
 #include "GeneratorContainer.hpp"
 #include "BinaryArchive.hpp"
 
+#include <limits>
 #include <sstream>
 #include <cmath>  // for std::isfinite (check_valid)
 
@@ -70,6 +71,8 @@ void GeneratorContainer::init_full(const Eigen::Ref<const RealVect> & generators
     voltage_regulator_on_ = voltage_regulator_on;
     // local control by default: the regulated bus is the generator's own bus
     regulated_bus_id_ = generators_bus_id;
+    // no reactive sharing key: the reactive range decides (see has_reactive_key)
+    reactive_key_ = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
     reset_results();
 }
 
@@ -79,6 +82,7 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one
      std::vector<real_type> min_q(min_q_.begin(), min_q_.end());
      std::vector<real_type> max_q(max_q_.begin(), max_q_.end());
      std::vector<int> regulated_bus(regulated_bus_id_.begin(), regulated_bus_id_.end());
+     std::vector<real_type> reactive_key(reactive_key_.begin(), reactive_key_.end());
      GeneratorContainer::StateRes res(get_osc_pq_state(),  // osc : one side container
                                       turnedoff_gen_pv_,
                                       voltage_regulator_on_,
@@ -87,7 +91,8 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one
                                       max_q,
                                       gen_slackbus_,
                                       gen_slack_weight_,
-                                      regulated_bus);
+                                      regulated_bus,
+                                      reactive_key);
      return res;
 }
 
@@ -104,6 +109,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     std::vector<bool> & slack_bus = std::get<StateResIdx::GEN_SLACKBUS>(my_state);
     std::vector<real_type> & slack_weight = std::get<StateResIdx::GEN_SLACK_WEIGHT>(my_state);
     std::vector<int> & regulated_bus = std::get<StateResIdx::REGULATED_BUS_ID>(my_state);
+    std::vector<real_type> & reactive_key = std::get<StateResIdx::REACTIVE_KEY>(my_state);
 
     // check sizes
     const auto size = nb();
@@ -114,6 +120,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     check_size(slack_bus, size, "slack_bus");
     check_size(slack_weight, size, "slack_weight");
     check_size(regulated_bus, size, "regulated_bus");
+    check_size(reactive_key, size, "reactive_key");
 
     // assign data
     voltage_regulator_on_ = voltage_regulator_on;
@@ -123,6 +130,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     gen_slackbus_ = slack_bus;
     gen_slack_weight_ = slack_weight;
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
+    reactive_key_ = RealVect::Map(reactive_key.data(), reactive_key.size());
     reset_results();
 }
 

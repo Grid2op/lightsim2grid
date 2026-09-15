@@ -33,11 +33,14 @@ namespace ls2g {
  * OpenLoadFlow's `ReactiveLimits` outer loop acts on (it would switch the bus PV -> PQ
  * and re-solve); nothing here re-solves anything, it only reports.
  *
- * WHAT HOLDS A BUS' VOLTAGE, AND WHAT IT CAN DO. Exactly three families have a reactive
- * output the solver computes rather than reads, and all three are checked -- the sum of
+ * WHAT HOLDS A BUS' VOLTAGE, AND WHAT IT CAN DO. Exactly four families have a reactive
+ * output the solver computes rather than reads, and all four are checked -- the sum of
  * their capability is the bus' capability:
  *
  *   - a voltage-regulating GENERATOR: [min_q_mvar, max_q_mvar], fixed;
+ *   - a voltage-regulating STORAGE UNIT: the same [min_q_mvar, max_q_mvar] in generator
+ *     convention (what it can inject, see StorageContainer::init_full), fixed. It only
+ *     ever pins its own bus through the PV path, never as a controller of the plan;
  *   - a voltage-regulating hvdc CONVERTER STATION: its own [min_q, max_q], also in MVAr
  *     and also fixed (`get_station_min_q_mvar` / `get_station_max_q_mvar`);
  *   - a voltage-mode SVC: a SUSCEPTANCE range `[b_min, b_max]` (pu, base sn_mva), so its
@@ -46,7 +49,7 @@ namespace ls2g {
  *     `[b_min, b_max] . |V|^2 . sn_mva` MVAr, re-evaluated every row.
  *
  * Anything else standing on the bus has a reactive injection that is INPUT data, part of
- * `Sbus` (a load, a shunt, a storage unit, a non-regulating generator, a REACTIVE_POWER
+ * `Sbus` (a load, a shunt, a non-regulating storage unit or generator, a REACTIVE_POWER
  * mode SVC, a fixed-Q station): it is not what holds the voltage, and a violation of its
  * own limits would be an input error rather than something a solve produced. Those are
  * not in the picture at all.
@@ -103,6 +106,9 @@ struct BusQEntry
     /// the generators holding this bus: a row that disconnects one takes its limits out of
     /// the sum (`min_q_mvar` / `max_q_mvar`, fixed)
     std::vector<int> gen_ids;
+    /// the voltage-regulating storage units holding it (always through the PV path, so
+    /// never part of `ctrl_pos`): a fixed [min_q, max_q] in MVAr, generator convention
+    std::vector<int> storage_ids;
     /// the hvdc converter stations holding it, as (hvdc line id, side): also a fixed
     /// [min_q, max_q] in MVAr
     std::vector<std::pair<int, int> > station_ids;
@@ -192,6 +198,18 @@ inline void build_bus_q_plan(const LSGrid & grid_model,
         if(bus_me < 0 || bus_me >= nb_bus_grid) continue;
         gens_of_bus[static_cast<std::size_t>(bus_me)].push_back(gen_id);
     }
+    // a storage unit only regulates its own bus (LSGrid::check_grid refuses anything else),
+    // so it is never a controller of the plan: the PV path is the whole rule for it
+    const StorageContainer & storages = grid_model.get_storages();
+    const int nb_storage = storages.nb();
+    std::vector<std::vector<int> > storages_of_bus(static_cast<std::size_t>(nb_bus_grid));
+    const GlobalBusIdVect & storage_buses = storages.get_bus_id();
+    for(int storage_id = 0; storage_id < nb_storage; ++storage_id){
+        if(!storages.is_local_voltage_controller(storage_id)) continue;
+        const int bus_me = storage_buses(storage_id).cast_int();
+        if(bus_me < 0 || bus_me >= nb_bus_grid) continue;
+        storages_of_bus[static_cast<std::size_t>(bus_me)].push_back(storage_id);
+    }
     // a station always regulates the bus it stands on, so it is either a group controller
     // or an ordinary PV pin -- `station_is_voltage_controller` covers both
     for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
@@ -217,7 +235,8 @@ inline void build_bus_q_plan(const LSGrid & grid_model,
 
     for(int bus_me = 0; bus_me < nb_bus_grid; ++bus_me){
         const std::size_t b = static_cast<std::size_t>(bus_me);
-        if(gens_of_bus[b].empty() && stations_of_bus[b].empty() && svcs_of_bus[b].empty()) continue;
+        if(gens_of_bus[b].empty() && storages_of_bus[b].empty() && stations_of_bus[b].empty() &&
+           svcs_of_bus[b].empty()) continue;
         const int bus_solver = id_me_to_solver[bus_me].cast_int();
         if(bus_solver == BaseConstants::_deactivated_bus_id) continue;  // not in the solved system
 
@@ -225,6 +244,7 @@ inline void build_bus_q_plan(const LSGrid & grid_model,
         entry.bus_solver = bus_solver;
         entry.bus_grid = bus_me;
         entry.gen_ids = gens_of_bus[b];
+        entry.storage_ids = storages_of_bus[b];
         entry.station_ids = stations_of_bus[b];
         entry.svc_ids = svcs_of_bus[b];
         for(int c = 0; c < nb_ctrl; ++c){
@@ -271,6 +291,7 @@ inline void check_bus_q_violations(const BusQPlan & plan,
     if(bus_mismatch.size() == 0) return;
 
     const GeneratorContainer & generators = grid_model.get_generators();
+    const StorageContainer & storages = grid_model.get_storages();
     const SvcContainer & svcs = grid_model.get_svcs();
     const HvdcLineContainer & hvdcs = grid_model.get_dclines();
     const bool has_masked = (masked_solver_ids != nullptr) && !masked_solver_ids->empty();
@@ -292,6 +313,13 @@ inline void check_bus_q_violations(const BusQPlan & plan,
             ++nb_live;
             q_min += generators.get_min_q(gen_id);
             q_max += generators.get_max_q(gen_id);
+        }
+        for(std::size_t s = 0; s < entry.storage_ids.size(); ++s){
+            // no row disconnects a storage unit: always live
+            const int storage_id = entry.storage_ids[s];
+            ++nb_live;
+            q_min += storages.get_min_q(storage_id);
+            q_max += storages.get_max_q(storage_id);
         }
         for(std::size_t s = 0; s < entry.station_ids.size(); ++s){
             const int hvdc_id = entry.station_ids[s].first;

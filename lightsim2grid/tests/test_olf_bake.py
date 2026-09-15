@@ -201,6 +201,19 @@ def ieee14_implausible_target_v():
     return n
 
 
+def star_shared_remote_control_one_switched():
+    """Two generators on DIFFERENT buses, G1@B1 and G2@B3, remotely regulating the
+    same load bus B2 at 405 kV. G1's upper reactive limit (5 MVAr) is well under its
+    share of the group's reactive output, so OLF's reactive-limit loop switches it
+    to PQ at 5 MVAr and G2 alone keeps holding B2 -- whose voltage therefore still
+    reads as on target, for G1 as much as for G2. How much each one injects sets
+    the voltage of its own bus (B1, B3), so a bake that keeps G1 regulating hands
+    the loop-free solve a different split and moves B3 by ~2 kV."""
+    from test_voltage_control_pypowsybl import _star
+    return _star(extra_q_g1=(-100.0, 5.0), extra_q_g2=(-100.0, 200.0),
+                 g1_reg="LD", g2_reg="LD", g1_tv=405.0, g2_tv=405.0)
+
+
 def _olf_roundtrip_max_dev(network_factory):
     """Return (max |dV| kV, max |dAngle| deg) between OLF-with-loops and the
     baked OLF-loop-free solve. Pure pypowsybl; no lightsim2grid. This is the
@@ -424,6 +437,158 @@ class TestOlfBake(unittest.TestCase):
     # reactive range and implausible target_v
     # (_bake_generator_voltage_control_discards).
     # -----------------------------------------------------------------
+    def test_olf_shared_remote_control_switched_member_frozen(self):
+        """A member of a shared remote voltage control switched to PQ at its limit
+        is frozen even though the group's regulated bus is still held (by the other
+        member), and the loop-free solve then reproduces the with-loops voltages at
+        the controller buses too. Regression: the "target held" test is read at the
+        regulated bus, so it used to keep every member of such a group regulating."""
+        n = star_shared_remote_control_one_switched()
+        lf.run_ac(n, _with_loops_params())
+        gen = n.get_generators(attributes=["q", "voltage_regulator_on"])
+        self.assertAlmostEqual(-gen.at["G1", "q"], 5.0, places=6, msg="fixture: G1 is not switched at its limit")
+        bake_outer_loops(n)
+        gen = n.get_generators(attributes=["target_q", "voltage_regulator_on"])
+        self.assertFalse(gen.at["G1", "voltage_regulator_on"])
+        self.assertAlmostEqual(gen.at["G1", "target_q"], 5.0, places=6)
+        self.assertTrue(gen.at["G2", "voltage_regulator_on"])
+
+        dvm, dva = _olf_roundtrip_max_dev(star_shared_remote_control_one_switched)
+        self.assertLess(dvm, TOL_VM_KV)
+        self.assertLess(dva, 1e-2)
+
+    def test_hit_qlimit_picks_the_nearer_limit(self):
+        from lightsim2grid.network.from_pypowsybl._olf_bake import _hit_qlimit
+        import pandas as pd
+        df = pd.DataFrame({"min_q": [-10.0, -10.0, np.nan, -4.0], "max_q": [5.0, 5.0, 3.0, np.nan]},
+                          index=["at_max", "at_min", "no_min", "no_max"])
+        q_gen = pd.Series([4.9995, -9.998, 2.999, -3.99], index=df.index)
+        hit = _hit_qlimit(df, q_gen)
+        self.assertEqual(hit.to_dict(), {"at_max": 5.0, "at_min": -10.0, "no_min": 3.0, "no_max": -4.0})
+
+    def test_olf_switched_unit_baked_at_its_limit_not_reported_q(self):
+        """A unit switched at its Q limit injects that limit, but OLF does not always
+        report it (on RTE snapshots it re-splits a bus' reactive target among the units
+        of the bus when writing results). The bake must write the limit: here the
+        reported q of one of two switched units is overwritten slightly inside its limit
+        after the solve, standing for such a report."""
+        n = pp.network.create_ieee14()
+        g0 = n.get_generators(attributes=["bus_breaker_bus_id", "voltage_level_id", "target_v"]).loc["B2-G"]
+        n.create_generators(id="B2-G2", voltage_level_id=g0["voltage_level_id"], bus_id=g0["bus_breaker_bus_id"],
+                            target_p=10.0, target_q=0.0, target_v=g0["target_v"], voltage_regulator_on=True,
+                            max_p=100.0, min_p=0.0)
+        n.create_minmax_reactive_limits(id=["B2-G", "B2-G2"], min_q=[-10.0, -10.0], max_q=[5.0, 3.0])
+        lf.run_ac(n, _with_loops_params())
+        q = n.get_generators(attributes=["q"])["q"]
+        self.assertAlmostEqual(-q["B2-G"], 5.0, places=6, msg="fixture: B2-G not switched at its limit")
+        self.assertAlmostEqual(-q["B2-G2"], 3.0, places=6, msg="fixture: B2-G2 not switched at its limit")
+        # B2-G2 reported 5e-4 MVAr inside the limit it injects (a misreport: baked at the
+        # limit); B2-G reported 0.05 MVAr inside its limit, within the relative at-limit
+        # tolerance (0.075) but too far for a misreport: a unit that settled there
+        # injects what it reports, baked as reported
+        n.update_generators(id=["B2-G", "B2-G2"], q=[-4.95, -2.9995])
+        bake_outer_loops(n)
+        gen = n.get_generators(attributes=["target_q", "voltage_regulator_on"])
+        self.assertFalse(gen.at["B2-G", "voltage_regulator_on"])
+        self.assertFalse(gen.at["B2-G2", "voltage_regulator_on"])
+        self.assertEqual(gen.at["B2-G2", "target_q"], 3.0)
+        self.assertAlmostEqual(gen.at["B2-G", "target_q"], 4.95, places=9)
+
+    @staticmethod
+    def _ieee14_below_curve():
+        """IEEE-14 with B3-G (dispatched at 0 MW) on a reactive capability curve that
+        only covers 50-100 MW (max_q 20 -> 21), every other limit wide open. OLF's
+        ``extrapolateReactiveLimits`` extends the curve's first segment down to 0 MW:
+        max_q 19, where pypowsybl's max_q_at_p clamps to 20."""
+        n = pp.network.create_ieee14()
+        n.update_generators(id=list(n.get_generators().index), min_q=[-9999] * 5, max_q=[9999] * 5)
+        n.create_curve_reactive_limits(id=["B3-G", "B3-G"], p=[50.0, 100.0],
+                                       min_q=[-9999.0, -9999.0], max_q=[20.0, 21.0])
+        return n
+
+    @staticmethod
+    def _extrapolating_params():
+        params = _with_loops_params()
+        prov = dict(params.provider_parameters)
+        prov["extrapolateReactiveLimits"] = "true"
+        params.provider_parameters = prov
+        return params
+
+    def test_extrapolate_curve_limits(self):
+        from lightsim2grid.network.from_pypowsybl._olf_bake import _extrapolate_curve_limits
+        n = self._ieee14_below_curve()
+        n.create_curve_reactive_limits(id=["B2-G", "B2-G"], p=[0.0, 100.0], min_q=[-30.0, -40.0], max_q=[30.0, 50.0])
+        lf.run_ac(n, self._extrapolating_params())
+        gen = n.get_generators(attributes=["p", "min_q_at_p", "max_q_at_p"])
+        self.assertAlmostEqual(gen.at["B3-G", "max_q_at_p"], 20.0, places=9, msg="pypowsybl no longer clamps")
+        out = _extrapolate_curve_limits(n, gen)
+        self.assertAlmostEqual(out.at["B3-G", "max_q_at_p"], 19.0, places=9)
+        self.assertAlmostEqual(out.at["B3-G", "min_q_at_p"], -9999.0, places=9)
+        # inside its curve: untouched; without a curve: untouched
+        self.assertEqual(out.at["B2-G", "max_q_at_p"], gen.at["B2-G", "max_q_at_p"])
+        self.assertEqual(out.at["B6-G", "max_q_at_p"], gen.at["B6-G", "max_q_at_p"])
+
+    def test_olf_switched_below_its_curve_baked_at_extrapolated_limit(self):
+        """OLF switches B3-G at its extrapolated limit (19 MVAr); its reported q, nudged
+        5e-4 MVAr away, must be baked at 19 -- not kept as reported because the clamped
+        limit (20) is a whole MVAr away -- and the loop-free solve must reproduce the
+        voltages. With ``extrapolate_reactive_limits=False`` the reported value is kept."""
+        with_loops = self._extrapolating_params()
+        n_ref = self._ieee14_below_curve()
+        lf.run_ac(n_ref, with_loops)
+        self.assertAlmostEqual(-n_ref.get_generators().at["B3-G", "q"], 19.0, places=6,
+                               msg="fixture: OLF no longer switches B3-G at the extrapolated limit")
+        ref = n_ref.get_buses()[["v_mag", "v_angle"]].copy()
+
+        for extrapolate, expected in ((True, 19.0), (False, 18.9995)):
+            n = self._ieee14_below_curve()
+            lf.run_ac(n, with_loops)
+            n.update_generators(id="B3-G", q=-18.9995)
+            bake_outer_loops(n, extrapolate_reactive_limits=extrapolate)
+            gen = n.get_generators(attributes=["target_q", "voltage_regulator_on"])
+            self.assertFalse(gen.at["B3-G", "voltage_regulator_on"], f"extrapolate={extrapolate}")
+            self.assertAlmostEqual(gen.at["B3-G", "target_q"], expected, places=9, msg=f"extrapolate={extrapolate}")
+            if extrapolate:
+                res = lf.run_ac(n, remove_outer_loops(with_loops))
+                self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+                cmp = ref.join(n.get_buses()[["v_mag", "v_angle"]], lsuffix="_r", rsuffix="_b")
+                self.assertLess((cmp["v_mag_r"] - cmp["v_mag_b"]).abs().max(), TOL_VM_KV)
+                self.assertLess((cmp["v_angle_r"] - cmp["v_angle_b"]).abs().max(), 1e-2)
+
+    def test_olf_pq_target_q_forced_in_limits_baked(self):
+        """A non-regulating generator whose target_q lies outside its reactive limits
+        injects the limit under OLF's ``forceTargetQInReactiveLimits`` (the default of
+        recent OLF, pinned off in _REF_PROVIDER_PARAMS, hence turned on here). The
+        loop-free solve, reactive limits off, would inject the raw target: the bake must
+        write the clamped value into target_q."""
+        def factory():
+            n = pp.network.create_ieee14()
+            n.update_generators(id="B8-G", voltage_regulator_on=False, target_q=0.0)
+            n.create_minmax_reactive_limits(id="B8-G", min_q=5.0, max_q=20.0)
+            return n
+
+        with_loops = _with_loops_params()
+        prov = dict(with_loops.provider_parameters)
+        prov["forceTargetQInReactiveLimits"] = "true"
+        with_loops.provider_parameters = prov
+        loop_free = remove_outer_loops(with_loops)
+
+        n_ref = factory()
+        lf.run_ac(n_ref, with_loops)
+        self.assertAlmostEqual(-n_ref.get_generators().at["B8-G", "q"], 5.0, places=6,
+                               msg="fixture: OLF does not clamp target_q into the limits")
+        ref = n_ref.get_buses()[["v_mag", "v_angle"]].copy()
+
+        n = factory()
+        lf.run_ac(n, with_loops)
+        bake_outer_loops(n)
+        self.assertAlmostEqual(n.get_generators().at["B8-G", "target_q"], 5.0, places=6)
+        res = lf.run_ac(n, loop_free)
+        self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+        cmp = ref.join(n.get_buses()[["v_mag", "v_angle"]], lsuffix="_r", rsuffix="_b")
+        self.assertLess((cmp["v_mag_r"] - cmp["v_mag_b"]).abs().max(), TOL_VM_KV)
+        self.assertLess((cmp["v_angle_r"] - cmp["v_angle_b"]).abs().max(), 1e-2)
+
     def test_olf_reactive_range_too_small_frozen(self):
         """A CURVE-kind generator with a sub-1-MVar reactive range is not
         actually voltage-controlled by OLF: its realized Q sits far outside

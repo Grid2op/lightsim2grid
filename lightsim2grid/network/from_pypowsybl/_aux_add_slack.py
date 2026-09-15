@@ -48,11 +48,21 @@ def _default_distributed_slack(net, df_gen):
     * the per-generator weight matches OLF's default ``PROPORTIONAL_TO_GENERATION_P_MAX``
       balance type exactly (``GenerationActivePowerDistributionStep.getParticipationFactor``,
       ``MAX`` case): ``max_p / droop``, where ``droop`` is the ``activePowerControl``
-      extension's own droop when it sets one (> 0), otherwise OLF's hardcoded
-      ``DEFAULT_DROOP = 4`` for *every* generator regardless of the extension.
+      extension's droop; a generator WITHOUT an extension row gets OLF's hardcoded
+      ``DEFAULT_DROOP = 4``. A generator whose extension row carries ``droop = 0``
+      (which is also what pypowsybl reports for an unset droop) does **not**
+      participate: measured on a real 7k-bus RTE snapshot, OLF's effective
+      distribution (the generators whose P moved for a load change) was exactly
+      the ``droop > 0`` set, with shares equal to ``max_p / droop`` to 1e-13,
+      while every ``droop = 0`` participant of an earlier version of this rule
+      (which gave them the default droop) got nothing.
       **Not** the extension's ``participation_factor`` -- that key is only used
       under the (different, not reproduced here) ``PROPORTIONAL_TO_GENERATION_PARTICIPATION_FACTOR``
-      balance type, even though real grids often set both fields together.
+      balance type, even though real grids often set both fields together;
+    * a generator dispatched *at* its ``max_p`` stays a participant (OLF's
+      ``checkActivePowerControl`` only rejects ``target_p > max_p``): OLF caps it
+      when the mismatch is positive and redistributes, so its share is direction
+      dependent there -- a dynamic effect no static weight can reproduce.
 
     The reference generator (angle datum, ``slack_ids[0]``) is a separate concern
     from the participant/weight logic above and IS restricted to the main country
@@ -95,12 +105,15 @@ def _default_distributed_slack(net, df_gen):
         participate = np.ones(n, bool)  # no (or empty) extension -> everything participates
         droop = np.full(n, np.nan)
 
-    # sharing key (PROPORTIONAL_TO_GENERATION_P_MAX): max_p / droop, OLF's own
-    # DEFAULT_DROOP=4 when the extension does not set a droop of its own (pypowsybl
-    # reports an unset droop as 0.0, not NaN, hence the `> 0.` guard rather than
-    # `np.isfinite`).
-    droop_used = np.where(np.isfinite(droop) & (droop > 0.), droop, _OLF_DEFAULT_DROOP)
-    weight = max_p / droop_used
+    # sharing key (PROPORTIONAL_TO_GENERATION_P_MAX): max_p / droop. OLF's own
+    # DEFAULT_DROOP=4 only for a generator with NO extension row (NaN after the
+    # reindex above); a row carrying droop = 0 (pypowsybl reports an unset droop
+    # as 0.0, not NaN) makes OLF's participation factor max_p / 0 unusable and
+    # the generator does not participate (see the docstring: measured, not read
+    # off the Java source).
+    droop_used = np.where(np.isfinite(droop), droop, _OLF_DEFAULT_DROOP)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        weight = np.where(droop_used > 0., max_p / droop_used, 0.)
 
     # participants: connected, *started* (positive target P -- OLF does not
     # distribute on zero-MW generators), participating, with a usable positive weight.

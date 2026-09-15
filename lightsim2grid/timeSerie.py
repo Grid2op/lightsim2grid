@@ -144,8 +144,8 @@ class TimeSerie:
 
         * the **reactive capability** of every bus whose voltage is held by machines
           (``LOW_Q`` / ``HIGH_Q`` on the ``BUS``): did it need more reactive power than the
-          **sum** of what its voltage-regulating generators, hvdc converter stations and
-          voltage-mode SVCs can produce? A machine has no reactive setpoint -- its output is
+          **sum** of what its voltage-regulating generators, storage units, hvdc converter
+          stations and voltage-mode SVCs can produce? A machine has no reactive setpoint -- its output is
           solved for and never clamped -- so a step can converge asking for reactive power
           that does not exist. Per bus, not per machine: the split between the machines of
           one bus is a sharing convention rather than something the solver decides.

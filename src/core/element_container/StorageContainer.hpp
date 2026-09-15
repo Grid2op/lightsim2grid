@@ -16,7 +16,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.hpp"
-#include "OneSideContainer_PQ.hpp"
+#include "VoltageSourceContainer.hpp"
 
 namespace ls2g {
 
@@ -25,6 +25,12 @@ class StorageContainer;
 class LS2G_API StorageInfo : public OneSideContainer_PQ::OneSidePQInfo
 {
     public:
+        bool voltage_regulator_on;
+        real_type target_vm_pu;
+        real_type min_q_mvar;
+        real_type max_q_mvar;
+        int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id: local control, the only kind supported)
+
         inline StorageInfo(const StorageContainer & r_data_storage, int my_id) noexcept;
 };
 
@@ -37,16 +43,29 @@ in pandapower and grid2op): positive `target_p` means the unit is charging (powe
 taken from the grid), negative `target_p` means the unit is discharging (power is
 injected in the grid).
 
+A storage unit can also **regulate the voltage of its own bus** (an IIDM battery
+carrying a ``voltageRegulation`` extension, which OpenLoadFlow runs exactly like a
+PV generator): it then holds `target_vm_pu` there and its reactive output is
+solved for -- within `min_q_` / `max_q_` for the reactive-residual split -- instead
+of being the `target_q_mvar` setpoint. The voltage side (regulating or not, the
+setpoint, `set_vm`, the PV path, `set_q`) is VoltageSourceContainer's, shared with
+the generators, converter stations and SVCs; what this leaf adds is the load
+convention of its injection and of the reactive output written back to it. Only
+LOCAL regulation is supported: a storage unit regulating another bus is refused
+by `check_grid` (a remote controller would have to be enrolled in the
+VoltageControl plan, which knows generators, SVCs and converter stations).
+
 NOTE: PowSyBl / IIDM batteries use the opposite (generator) convention for their
 `target_p` / `target_q` setpoints; the pypowsybl converter
 (`init_from_pypowsybl`) negates them before feeding this container.
 
 This is a dedicated container (rather than reusing :class:`LoadContainer`) so that
-storage-specific behaviour can diverge in the future without affecting loads.
+storage-specific behaviour can diverge from loads -- as the voltage regulation does.
 **/
-class LS2G_API StorageContainer final: public OneSideContainer_PQ, public IteratorAdder<StorageContainer, StorageInfo>
+class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageContainer>, public IteratorAdder<StorageContainer, StorageInfo>
 {
     friend class StorageInfo;
+    friend class VoltageSourceContainer<StorageContainer>;
 
     public:
         using DataInfo = StorageInfo;
@@ -55,10 +74,20 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
     public:
         // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
-           OneSideContainer_PQ::StateRes  // state of the base class
+           OneSideContainer_PQ::StateRes,  // state of the base class
+           std::vector<bool>,              // voltage_regulator_on_
+           std::vector<real_type>,         // target_vm_pu_
+           std::vector<real_type>,         // min_q_
+           std::vector<real_type>,         // max_q_
+           std::vector<int>                // regulated_bus_id_ (== own bus)
            > ;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
+            VREG_ON,
+            TARGET_VM_PU,
+            MIN_Q,
+            MAX_Q,
+            REGULATED_BUS_ID,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -76,31 +105,77 @@ class LS2G_API StorageContainer final: public OneSideContainer_PQ, public Iterat
         static StorageContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "StorageContainer"; }  // written into / checked against the binary file header
 
+        /// plain PQ storage units (no voltage regulation), the historical entry point
         void init(const Eigen::Ref<const RealVect> & storage_p_mw,
                   const Eigen::Ref<const RealVect> & storage_q_mvar,
                   const Eigen::Ref<const Eigen::VectorXi> & storage_bus_id
-                  )
-        {
-            init_osc_pq(storage_p_mw,
-                        storage_q_mvar,
-                        storage_bus_id,
-                        "storages");
-            reset_results();
-        }
+                  );
+
+        /// same, plus the voltage side: which units regulate their bus, at what
+        /// magnitude (pu), and their reactive range (MVAr, generator convention:
+        /// `min_q <= max_q`, what the unit can inject) used to split the bus'
+        /// reactive residual between the machines holding it
+        void init_full(const Eigen::Ref<const RealVect> & storage_p_mw,
+                       const Eigen::Ref<const RealVect> & storage_q_mvar,
+                       const std::vector<bool> & voltage_regulator_on,
+                       const Eigen::Ref<const RealVect> & storage_target_vm_pu,
+                       const Eigen::Ref<const RealVect> & storage_min_q,
+                       const Eigen::Ref<const RealVect> & storage_max_q,
+                       const Eigen::Ref<const Eigen::VectorXi> & storage_bus_id
+                       );
+
+        real_type get_min_q(int storage_id) const {return min_q_.coeff(storage_id);}
+        real_type get_max_q(int storage_id) const {return max_q_.coeff(storage_id);}
+
+        /// the reactive output (MVAr, GENERATOR convention, what the split hands every
+        /// machine) of a regulating unit, stored in this container's load convention.
+        /// Hides VoltageSourceContainer's, which LSGrid reaches statically.
+        void set_voltage_control_q(int storage_id, real_type q_mvar) {res_q_(storage_id) = -q_mvar;}
 
     protected:
-        // load convention: the setpoint is drawn from the grid
-        void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const override
-        {
-            _stamp_pq(Sbus, id_grid_to_solver, -1., "StorageContainer::fillSbus");
-        }
+        // ---- what VoltageSourceContainer asks of its leaf -------------------------
+        static real_type _vm_scale(real_type target_vm, real_type current_vm) { return (1.0 / current_vm) * target_vm; }
+        static const char * _element_name() { return "storage"; }
+        bool _treated_as_off(int /*storage_id*/) const { return false; }
+        bool _set_vm_skips(int /*storage_id*/) const { return false; }
+        static constexpr bool set_vm_throws_on_unresolved = true;
+
+        // load convention: the active setpoint is drawn from the grid; the reactive
+        // one too, unless the unit regulates its bus (its Q is then solved for)
+        void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const override;
+
+        // the voltage-source checks, plus "local regulation only"
+        void _check_valid(int nb_bus,
+                          int nb_sub,
+                          const SubstationContainer & substations,
+                          std::vector<int> & all_pos_topo_vect) const override;
 
     protected:
         bool _in_topo_vect() const override { return true; }
+
+    private:
+        // reactive range (MVAr, generator convention), read by the reactive-residual split
+        RealVect min_q_;
+        RealVect max_q_;
 };
 
 inline StorageInfo::StorageInfo(const StorageContainer & r_data_storage, int my_id) noexcept:
-        OneSidePQInfo(r_data_storage, my_id) {}
+        OneSidePQInfo(r_data_storage, my_id),
+        voltage_regulator_on(false),
+        target_vm_pu(0.),
+        min_q_mvar(0.),
+        max_q_mvar(0.),
+        regulated_bus_id(-1)
+{
+    if((my_id >= 0) && (my_id < r_data_storage.nb()))
+    {
+        voltage_regulator_on = r_data_storage.voltage_regulator_on_[my_id];
+        target_vm_pu = r_data_storage.target_vm_pu_.coeff(my_id);
+        min_q_mvar = r_data_storage.min_q_.coeff(my_id);
+        max_q_mvar = r_data_storage.max_q_.coeff(my_id);
+        regulated_bus_id = r_data_storage.regulated_bus_id_(my_id);
+    }
+}
 
 
 } // namespace ls2g

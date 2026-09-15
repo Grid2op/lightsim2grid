@@ -475,6 +475,17 @@ class LS2G_API LSGrid final
             storages_.init(storages_p, storages_q, storages_bus_id);
             _elements_replaced_wholesale();
         }
+        void init_storages_full(const Eigen::Ref<const RealVect> & storages_p,
+                                const Eigen::Ref<const RealVect> & storages_q,
+                                const std::vector<bool> & voltage_regulator_on,
+                                const Eigen::Ref<const RealVect> & storages_target_vm_pu,
+                                const Eigen::Ref<const RealVect> & storages_min_q,
+                                const Eigen::Ref<const RealVect> & storages_max_q,
+                                const Eigen::Ref<const Eigen::VectorXi> & storages_bus_id){
+            storages_.init_full(storages_p, storages_q, voltage_regulator_on, storages_target_vm_pu,
+                                storages_min_q, storages_max_q, storages_bus_id);
+            _elements_replaced_wholesale();
+        }
         void init_dclines(const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
                           const Eigen::Ref<const Eigen::VectorXi> & branch_to_id,
                           const Eigen::Ref<const RealVect> & p_mw,
@@ -1214,6 +1225,8 @@ class LS2G_API LSGrid final
                storages_.change_p_nothrow(storage_id, new_p, algo_controler_);
             }
         void change_q_storage(int storage_id, real_type new_q) {storages_.change_q_nothrow(storage_id, new_q, algo_controler_); }
+        /// the voltage setpoint (pu) of a storage unit that regulates its bus (see init_storages_full)
+        void change_v_storage(int storage_id, real_type new_v_pu) {storages_.change_v_nothrow(storage_id, new_v_pu, algo_controler_); }
         [[nodiscard]] int get_bus_storage(int storage_id) const {return storages_.get_bus(storage_id).cast_int();}
 
         //deactivate a powerline (disconnect it)
@@ -1338,6 +1351,13 @@ class LS2G_API LSGrid final
                 throw std::out_of_range(exc_.str());
             }
             generators_.set_regulated_bus(gen_id, bus_id, algo_controler_);
+        }
+        /**
+         * Set the reactive sharing key of generator `gen_id` (NaN, 0 or a negative
+         * value: no key). See GeneratorContainer::set_reactive_key.
+         */
+        void set_gen_reactive_key(int gen_id, real_type key) {
+            generators_.set_reactive_key(gen_id, key, algo_controler_);
         }
         /**
          * Change the bus on the dc line "side 1" dcline_id.
@@ -2467,7 +2487,7 @@ class LS2G_API LSGrid final
         struct QShare {
             int bus_id;      ///< GRID bus id
             real_type span;  ///< reactive range max_q - min_q, possibly +inf
-            int kind;        ///< VoltageControlSolverData::GEN / HVDC_SIDE_1 / HVDC_SIDE_2
+            int kind;        ///< VoltageControlSolverData::GEN / HVDC_SIDE_1 / HVDC_SIDE_2 / STORAGE
             int elem_id;
         };
 

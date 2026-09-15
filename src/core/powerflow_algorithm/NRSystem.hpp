@@ -518,9 +518,15 @@ class LS2G_API MultiSlack   // distributed-slack extension
  *     between two solves does NOT change the J sparsity pattern and the
  *     symbolic factorization of the linear solver is reused;
  *   - adds the theta-dependent flows to the per-bus mismatch;
- *   - writes the (piecewise constant) droop slopes: on the controller side
- *     +/- k, on the non-controller side +/- k * (1 - lf1) * (1 - lf2), the
- *     derivative of the resistive dc-line loss being neglected (OLF parity).
+ *   - writes the droop slopes, the exact derivative of the flows it adds to
+ *     the mismatch: on the controller side +/- k, on the non-controller side
+ *     +/- k * (1 - lf1) * (1 - lf2) * (1 - 2 * r * line_in) -- the resistive
+ *     dc-line loss is quadratic in the line current, so its slope is not a
+ *     constant. An earlier version dropped that last factor (OLF's own Jacobian
+ *     does); Newton-Raphson converges to the same point either way, but the
+ *     adjoint solve (``solve_JT``, the batch classes' gradients) inherits any
+ *     Jacobian error -- ~1e-4 relative on the active-power gradients of a real
+ *     7k-bus grid, measured against finite differences.
  *     Saturated lines are pure constant injections: zero slopes.
  *
  * When the grid has no droop hvdc line, every loop below is empty: the
@@ -586,10 +592,17 @@ class LS2G_API Hvdc
             for (int k = 0; k < my_size_; ++k) {
                 if (data_.status(k) != 0) continue;  // saturated: constant injection, zero slopes
                 const real_type raw = data_.p0(k) + data_.k(k) * (Va(data_.bus1(k)) - Va(data_.bus2(k)));
-                const real_type loss_mult = (1. - data_.lf1(k)) * (1. - data_.lf2(k));
-                // dp1 = dp1/dtheta1, dp2 = dp2/dtheta1; d/dtheta2 = -d/dtheta1
-                const real_type dp1 = (raw >= 0.) ? data_.k(k) : data_.k(k) * loss_mult;
-                const real_type dp2 = (raw < 0.) ? -data_.k(k) : -data_.k(k) * loss_mult;
+                const bool side1_ctrl = raw >= 0.;
+                // d recv_pu / d |raw|, with recv = (1-lf_recv)(line_in - r line_in^2)
+                // and line_in = (1-lf_ctrl) |raw|  (see HvdcDroopData::recv_pu)
+                const real_type lf_ctrl = side1_ctrl ? data_.lf1(k) : data_.lf2(k);
+                const real_type line_in = (1. - lf_ctrl) * (side1_ctrl ? raw : -raw);
+                const real_type recv_slope = (1. - data_.lf1(k)) * (1. - data_.lf2(k)) * (1. - 2. * data_.r(k) * line_in);
+                // dp1 = dp1/dtheta1, dp2 = dp2/dtheta1; d/dtheta2 = -d/dtheta1.
+                // Controller side: p = +/-raw, slope +/-k. Receiving side:
+                // p = -recv(|raw|) with d|raw|/dtheta1 = +/-k, slope -/+ k recv'.
+                const real_type dp1 = side1_ctrl ?  data_.k(k) :  data_.k(k) * recv_slope;
+                const real_type dp2 = side1_ctrl ? -data_.k(k) * recv_slope : -data_.k(k);
                 if (h11_[k] >= 0) writer.add(h11_[k], dp1);
                 if (h12_[k] >= 0) writer.add(h12_[k], -dp1);
                 if (h21_[k] >= 0) writer.add(h21_[k], dp2);

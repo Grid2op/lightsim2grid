@@ -107,6 +107,7 @@ void bind_gridmodel(py::module_& m) {
         .def("init_generators_full", &LSGrid::init_generators_full, DocLSGrid::init_generators_full.c_str())
         .def("init_loads", &LSGrid::init_loads, DocLSGrid::init_loads.c_str())
         .def("init_storages", &LSGrid::init_storages, DocLSGrid::init_storages.c_str())
+        .def("init_storages_full", &LSGrid::init_storages_full, DocLSGrid::init_storages_full.c_str())
         .def("init_sgens", &LSGrid::init_sgens, DocLSGrid::init_sgens.c_str())
         .def("init_dclines", &LSGrid::init_dclines, DocLSGrid::init_dclines.c_str())
         .def("init_hvdc_lines", &LSGrid::init_hvdc_lines, DocLSGrid::init_hvdc_lines.c_str())
@@ -218,6 +219,7 @@ void bind_gridmodel(py::module_& m) {
         .def("change_p_gen", &LSGrid::change_p_gen, DocLSGrid::change_p_gen.c_str())
         .def("change_v_gen", &LSGrid::change_v_gen, DocLSGrid::change_v_gen.c_str())
         .def("set_gen_regulated_bus", &LSGrid::set_gen_regulated_bus, DocLSGrid::set_gen_regulated_bus.c_str())
+        .def("set_gen_reactive_key", &LSGrid::set_gen_reactive_key, DocLSGrid::set_gen_reactive_key.c_str())
         .def("deactivate_svc", &LSGrid::deactivate_svc, DocLSGrid::deactivate_svc.c_str())
         .def("reactivate_svc", &LSGrid::reactivate_svc, DocLSGrid::reactivate_svc.c_str())
         .def("change_bus_svc", &LSGrid::change_bus_svc_python, DocLSGrid::change_bus_svc.c_str())
@@ -244,6 +246,7 @@ void bind_gridmodel(py::module_& m) {
         .def("get_bus_storage", &LSGrid::get_bus_storage, DocLSGrid::get_bus_storage.c_str(), py::return_value_policy::reference)
         .def("change_p_storage", &LSGrid::change_p_storage, DocLSGrid::change_p_storage.c_str())
         .def("change_q_storage", &LSGrid::change_q_storage, DocLSGrid::change_q_storage.c_str())
+        .def("change_v_storage", &LSGrid::change_v_storage, DocLSGrid::change_v_storage.c_str())
 
         .def("deactivate_dcline", &LSGrid::deactivate_dcline, DocLSGrid::deactivate_dcline.c_str())
         .def("deactivate_dcline_side1", &LSGrid::deactivate_dcline_side1, DocLSGrid::deactivate_dcline_side1.c_str())

@@ -9,6 +9,8 @@
 #ifndef GENERATORCONTAINER_H
 #define GENERATORCONTAINER_H
 
+#include <cmath>
+#include <limits>
 #include <vector>
 
 #include "Eigen/Core"
@@ -33,6 +35,7 @@ class LS2G_API GenInfo : public OneSideContainer_PQ::OneSidePQInfo
         real_type min_q_mvar;
         real_type max_q_mvar;
         int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id for local control)
+        real_type reactive_key; // reactive sharing key, NaN when there is none
 
         inline GenInfo(const GeneratorContainer & r_data_gen, int my_id) noexcept;
 };
@@ -70,7 +73,8 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
            std::vector<real_type>,  // max_q_
            std::vector<bool>,       // gen_slackbus
            std::vector<real_type>,  // gen_slack_weight_
-           std::vector<int>         // regulated_bus_id_ (appended; defaults to own bus)
+           std::vector<int>,        // regulated_bus_id_ (appended; defaults to own bus)
+           std::vector<real_type>   // reactive_key_ (NaN: no key)
         > ;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -82,6 +86,7 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             GEN_SLACKBUS,
             GEN_SLACK_WEIGHT,
             REGULATED_BUS_ID,
+            REACTIVE_KEY,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -229,6 +234,19 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
 
         real_type get_min_q(int gen_id) const {return min_q_.coeff(gen_id);}
         real_type get_max_q(int gen_id) const {return max_q_.coeff(gen_id);}
+        // reactive sharing key among the generators holding one bus together (see
+        // VoltageControlPlan::build_controllers); no key -- NaN, 0 or negative -- lets
+        // the reactive range decide
+        real_type get_reactive_key(int gen_id) const {return reactive_key_.coeff(gen_id);}
+        void set_reactive_key(int gen_id, real_type key, DualAlgoControl & solver_control){
+            _check_in_range(gen_id, reactive_key_, "set_reactive_key");
+            const real_type old_key = reactive_key_(gen_id);
+            if((std::isnan(old_key) && std::isnan(key)) || old_key == key) return;
+            reactive_key_(gen_id) = key;
+            // the sharing weights of the voltage-control plan (AC only); the pattern of
+            // the sharing rows does not depend on them
+            if(voltage_regulator_on_[gen_id]) solver_control.ac_algo_controler().tell_voltage_control_changed();
+        }
         // the reactive setpoint a NON voltage-regulating generator injects (a
         // regulating one's reactive output is solved for, not set -- see fillSbus,
         // which only stamps this when voltage_regulator_on_ is false)
@@ -287,6 +305,7 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         // physical properties
         RealVect min_q_;
         RealVect max_q_;
+        RealVect reactive_key_;  // reactive sharing key, NaN when there is none
 
         // remember which generators are "slack bus"
         std::vector<bool> gen_slackbus_;  // say for each generator if it's a slack or not
@@ -307,7 +326,8 @@ voltage_regulator_on(false),
 target_vm_pu(0.),
 min_q_mvar(0.),
 max_q_mvar(0.),
-regulated_bus_id(-1)
+regulated_bus_id(-1),
+reactive_key(std::numeric_limits<real_type>::quiet_NaN())
 {
     if((my_id >= 0) && (my_id < r_data_gen.nb()))
     {
@@ -319,6 +339,7 @@ regulated_bus_id(-1)
         min_q_mvar = r_data_gen.min_q_.coeff(my_id);
         max_q_mvar = r_data_gen.max_q_.coeff(my_id);
         regulated_bus_id = r_data_gen.regulated_bus_id_(my_id);
+        reactive_key = r_data_gen.reactive_key_.coeff(my_id);
     }
 }
 
