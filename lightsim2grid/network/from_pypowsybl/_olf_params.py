@@ -177,14 +177,25 @@ def _copy_parameters(parameters: _lf.Parameters) -> _lf.Parameters:
     state -- is not guaranteed to hold the same way on every pypowsybl version
     this module supports (1.0.0 to 1.15.0). Explicit getattr/setattr only
     relies on the property interface already used everywhere else here.
+
+    ``connected_component_mode`` is the deprecated alias of ``component_mode``
+    and is skipped whenever the latter exists: its getter reads ``None`` for a
+    mode it cannot express (``MAIN_SYNCHRONOUS``, the pypowsybl 1.16 default)
+    and its setter turns ``None`` into ``ALL_CONNECTED``, so copying it after
+    ``component_mode`` silently widened the solve to every island -- and
+    ``_PARAM_SIG`` being a set, whether it came after depended on the hash seed.
     """
     out = _lf.Parameters()
-    for name in _PARAM_SIG:
+    for name in sorted(_PARAM_SIG):
         if name in ("self", "provider_parameters"):
+            continue
+        if name == "connected_component_mode" and "component_mode" in _PARAM_SIG:
             continue
         try:
             value = getattr(parameters, name)
         except AttributeError:
+            continue
+        if value is None:
             continue
         setattr(out, name, value)
     out.provider_parameters = dict(parameters.provider_parameters)

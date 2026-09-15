@@ -176,6 +176,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] a reactive sharing key per generator (``set_gen_reactive_key``, ``GenInfo.reactive_key``),
   read from pypowsybl's ``coordinatedReactiveControl.q_percent``: generators holding one bus share
   Q by key when all have one, by reactive range otherwise (OpenLoadFlow's rule).
+- [ADDED] ``bake_outer_loops(bake_saturated_voltage_control=True)`` freezes at its limit a generator
+  still holding its target with its Q exactly at a limit, instead of keeping it PV.
+- [FIXED] ``remove_outer_loops`` could switch ``component_mode`` from ``MAIN_SYNCHRONOUS`` to
+  ``ALL_CONNECTED`` (pypowsybl >= 1.16), depending on the process's hash seed.
 - [FIXED] ``bake_outer_loops`` froze no member of a shared voltage control that OpenLoadFlow
   switched to PQ at its limit, the regulated bus being still held by the others.
 - [FIXED] ``bake_outer_loops`` now writes the injected reactive power into ``target_q`` of a PQ

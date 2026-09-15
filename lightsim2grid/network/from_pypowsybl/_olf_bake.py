@@ -72,7 +72,9 @@ What gets baked
   snapshot this fixed 30 generators the rules alone froze although OLF held
   their target (mostly a target-voltage check that used the generator's own
   terminal nominal voltage instead of the regulated bus's) and ~100 they left
-  regulating although OLF did not.
+  regulating although OLF did not. One opt-in exception:
+  ``bake_saturated_voltage_control=True`` also freezes a held unit whose Q sits
+  at a limit, at that limit.
 * Generators OLF's own voltage-control consistency checks would discard for a
   reason other than "not started": too small a reactive range (default
   ``reactiveRangeCheckMode``, widest ``max_q - min_q`` below 1 MVar) or an
@@ -245,6 +247,7 @@ def bake_outer_loops(
     load_power_factor_constant: bool = False,
     keep_only_main_comp: bool=True,
     extrapolate_reactive_limits: bool = True,
+    bake_saturated_voltage_control: bool = False,
 ):
     """Rewrite ``network`` input setpoints to the converged outer-loop state.
 
@@ -299,6 +302,13 @@ def bake_outer_loops(
         what the reference solve used, or a unit switched at an extrapolated limit
         reads as a visible distance from its limit (see
         :func:`_extrapolate_curve_limits`).
+    bake_saturated_voltage_control
+        Also freeze, at its limit, a generator whose reactive output sits at a Q
+        limit although the reference solve held its target voltage (a PV unit
+        exactly saturated). The base case is unchanged, but any change of the grid
+        asking it for more reactive power would make OLF switch it to PQ anyway;
+        kept regulating, it reports a reactive-limit violation for almost every
+        contingency. ``False`` (default) keeps it regulating, as OLF did.
 
     Notes
     -----
@@ -311,7 +321,7 @@ def bake_outer_loops(
     if bake_reactive_limits:
         _bake_reactive_limit_switches(
             network, keep_only_main_comp, bake_generator_voltage_control_discards,
-            extrapolate_reactive_limits
+            extrapolate_reactive_limits, bake_saturated_voltage_control
         )
     if bake_active_power:
         _bake_active_power(
@@ -855,7 +865,8 @@ def _bake_reactive_limit_switches(
     network,
     keep_only_main_comp=True,
     bake_generator_voltage_control_discards=True,
-    extrapolate_reactive_limits=True):
+    extrapolate_reactive_limits=True,
+    bake_saturated_voltage_control=False):
     # What OLF actually did with each generator's voltage control, read off the
     # reference solve itself: every rule below defers to it (a generator whose
     # target was held is never frozen, one whose target was not is always frozen
@@ -896,7 +907,9 @@ def _bake_reactive_limit_switches(
     # member is still inside its range was switched (OLF drops it from the group
     # and the others keep the target), and the split it leaves behind decides the
     # voltages behind each unit's step-up transformer (2e-3 pu on an RTE snapshot).
-    mask &= ~held.reindex(gen.index).fillna(False).astype(bool) | _switched_group_members(network, gen, q_gen)
+    # bake_saturated_voltage_control freezes the exactly saturated ones too.
+    if not bake_saturated_voltage_control:
+        mask &= ~held.reindex(gen.index).fillna(False).astype(bool) | _switched_group_members(network, gen, q_gen)
     if mask.any():
         upd = pd.DataFrame(index=gen.index[mask])
         # the limit it was switched at rather than a misreported q (see _baked_q_at_limit)

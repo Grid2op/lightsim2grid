@@ -457,6 +457,34 @@ class TestOlfBake(unittest.TestCase):
         self.assertLess(dvm, TOL_VM_KV)
         self.assertLess(dva, 1e-2)
 
+    def test_olf_saturated_held_unit_frozen_on_request(self):
+        """A unit whose target OLF held while its Q sits exactly at a limit stays PV
+        by default; bake_saturated_voltage_control=True freezes it at that limit. The
+        loop-free solve reproduces the with-loops voltages either way."""
+        loop_free = remove_outer_loops(_with_loops_params())
+        for flag in (False, True):
+            n = pp.network.create_ieee14()
+            n.update_generators(id=list(n.get_generators().index), min_q=[-9999] * 5, max_q=[9999] * 5)
+            lf.run_ac(n, _with_loops_params())
+            ref = n.get_buses()[["v_mag", "v_angle"]].copy()
+            # the upper limit put where B3-G already sits: target held, Q at max_q
+            q_b3 = -n.get_generators(attributes=["q"]).at["B3-G", "q"]
+            n.update_generators(id="B3-G", max_q=q_b3)
+            bake_outer_loops(n, bake_saturated_voltage_control=flag)
+            gen = n.get_generators(attributes=["target_q", "voltage_regulator_on"])
+            self.assertEqual(gen.at["B3-G", "voltage_regulator_on"], not flag)
+            if flag:
+                self.assertAlmostEqual(gen.at["B3-G", "target_q"], q_b3, places=9)
+            # no other unit is at a limit: nothing else frozen
+            others = gen.drop(index="B3-G")
+            self.assertTrue(others["voltage_regulator_on"].all())
+
+            res = lf.run_ac(n, loop_free)
+            self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+            cmp = ref.join(n.get_buses()[["v_mag", "v_angle"]], lsuffix="_r", rsuffix="_b")
+            self.assertLess((cmp["v_mag_r"] - cmp["v_mag_b"]).abs().max(), TOL_VM_KV)
+            self.assertLess((cmp["v_angle_r"] - cmp["v_angle_b"]).abs().max(), 1e-2)
+
     def test_hit_qlimit_picks_the_nearer_limit(self):
         from lightsim2grid.network.from_pypowsybl._olf_bake import _hit_qlimit
         import pandas as pd
@@ -757,6 +785,21 @@ class TestOlfBake(unittest.TestCase):
 
         spread = np.max(np.abs(olf_vm - ls_vm))
         self.assertGreater(spread, 1e-2, f"expected disagreement, got {spread:.2e}")
+
+    def test_copy_parameters_keeps_component_mode(self):
+        """The deprecated ``connected_component_mode`` alias reads None for
+        MAIN_SYNCHRONOUS and writes None back as ALL_CONNECTED; copying it after
+        ``component_mode`` (hash-seed dependent) used to widen the solve to every
+        island, and a warm-started solve then read an unsolved island's NaN V."""
+        from lightsim2grid.network.from_pypowsybl._olf_params import _copy_parameters
+        modes = [lf.Parameters().component_mode]  # the version's own default
+        modes += [lf.ComponentMode.MAIN_CONNECTED, lf.ComponentMode.ALL_CONNECTED]
+        if hasattr(lf.ComponentMode, "MAIN_SYNCHRONOUS"):
+            modes.append(lf.ComponentMode.MAIN_SYNCHRONOUS)
+        for mode in modes:
+            params = lf.Parameters(component_mode=mode)
+            self.assertEqual(_copy_parameters(params).component_mode, mode)
+            self.assertEqual(remove_outer_loops(params).component_mode, mode)
 
 
 if __name__ == "__main__":
