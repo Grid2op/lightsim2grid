@@ -166,6 +166,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [FIXED] batch ``modify_gen_v`` ignored the set-point of a generator regulating a bus a
+  voltage-control group holds (a remote regulator): it now sets that group's ``v_set`` per row,
+  and ``gen_v_indirect_grad`` returns its gradient (``get_gen_v_vc_row``).
 - [ADDED] storage units can take part in the distributed slack (``add_storage_slackbus``,
   ``StorageInfo.is_slack``); ``init_from_pypowsybl`` distributes it on batteries as OpenLoadFlow
   does. Binary format bumped to 8.

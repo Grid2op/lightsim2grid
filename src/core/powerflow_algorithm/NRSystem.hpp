@@ -765,6 +765,23 @@ class LS2G_API VoltageControl
         // set_may_mask_voltage_control / BaseAlgo::set_may_mask_voltage_control.
         void set_may_mask_voltage_control(bool val) { may_mask_ = val; }
 
+        // Per-solve override of the groups' voltage set-points, indexed by group
+        // (the grid's own plan order). A finite entry replaces that group's v_set for
+        // every following solve; NaN (or an empty vector) keeps the grid's own. A
+        // generator regulating a bus a group holds does not fix |V| anywhere: its
+        // set-point IS this v_set, so a batch that varies generator set-points per row
+        // (BaseBatchSweep::modify_gen_v) has to hand it over here -- re-seeding |V| at
+        // the regulated bus only moves the starting point, the voltage row then puts it
+        // back at the grid's own target. Caller-set, NOT reset by clear() or
+        // update_state(), like the pinning above.
+        void set_v_set_override(const RealVect& v_set) { v_set_override_ = v_set; }
+
+        // J row of each group's voltage constraint (group order), what the gradient of
+        // a loss with respect to that group's v_set is read from (dF_v/dv_set = -1).
+        IntVect group_v_row() const {
+            return Eigen::Map<const IntVect>(v_rows_.data(), static_cast<Eigen::Index>(v_rows_.size()));
+        }
+
         // claims, per group: N q-unknown columns, 1 voltage row, N-1 sharing rows;
         // caches the controller q rows and the regulated-bus vm columns (the ledger
         // is fully populated by Base / MultiSlack before this runs)
@@ -971,6 +988,7 @@ class LS2G_API VoltageControl
         bool                           may_mask_ = false;
         int                            my_size_;     // number of controllers
         VoltageControlSolverData       data_;        // per-solve controller data (refreshed every update_state)
+        RealVect                       v_set_override_;  // per group, NaN = grid's own (see set_v_set_override)
         RealVect                       q_;           // running reactive injection per controller (pu, gen convention)
         std::vector<int>               q_cols_;      // J column of each controller's Q unknown
         std::vector<int>               q_rows_;      // q_row of each controller bus (-1 if none)
@@ -1116,6 +1134,13 @@ public:
     void set_may_mask_voltage_control(bool val) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_may_mask_voltage_control(val);
+    }
+
+    // Per-solve group set-points of the VoltageControl extension (NaN = the grid's
+    // own), see VoltageControl::set_v_set_override. No-op without the extension.
+    void set_voltage_control_v_set(const RealVect& v_set) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_v_set_override(v_set);
     }
 
     // Reserve a Vm unknown + a Q equation for each of these PV buses, so their
@@ -1299,6 +1324,10 @@ public:
     IntVect controller_q_col() const {
         const VoltageControl* vc = _find_extension<VoltageControl>();
         return vc ? IntVect(vc->controller_q_col()) : IntVect();
+    }
+    IntVect group_v_row() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? IntVect(vc->group_v_row()) : IntVect();
     }
 
     // ----- MultiSlack: slack_absorbed J column (-1 when the extension is absent) --

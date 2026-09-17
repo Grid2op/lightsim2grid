@@ -115,6 +115,7 @@ public:
     IntVect  get_controller_kind()    const override { return _system.controller_kind(); }
     IntVect  get_controller_elem_id() const override { return _system.controller_elem_id(); }
     IntVect  get_controller_q_col()   const override { return _system.controller_q_col(); }
+    IntVect  get_group_v_row()        const override { return _system.group_v_row(); }
     int      get_slack_col()          const override { return _system.slack_col(); }
     real_type get_slack_absorbed()    const override { return _system.slack_absorbed(); }
 
@@ -183,6 +184,9 @@ public:
     }
     void set_may_mask_voltage_control(bool val) override {
         _system.set_may_mask_voltage_control(val);
+    }
+    void set_voltage_control_v_set(const RealVect & v_set) override {
+        _system.set_voltage_control_v_set(v_set);
     }
     void set_refactor_fallback(bool val) override {
         _linear_solver.set_refactor_fallback(val);

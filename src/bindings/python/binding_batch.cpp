@@ -195,15 +195,25 @@ void bind_batch_shared(py::class_<T> & cls)
              "actually fixes -- or -1 where it fixes none, which is where its gradient is "
              "zero.\n\n"
              "A generator fixes nothing when it is disconnected, not regulating, or "
-             "treated as off; when a later generator on the same bus overwrites its "
-             "set-point (``set_vm`` is last-writer-wins, so at most one generator per bus "
-             "can carry a gradient); or when the bus it regulates gets a magnitude unknown "
-             "from the solver anyway (a PQ bus -- ``gen_v`` only moves its starting point "
-             "there, so it earns no gradient).")
+             "treated as off; when the bus it regulates is pinned by an SVC or an hvdc "
+             "converter station (whose set-point no batch moves); or when that bus keeps "
+             "a magnitude unknown because a voltage-control group holds it (a remote "
+             "regulator): its ``gen_v`` is then the group's set-point, and its gradient "
+             "is read at the group's voltage row instead -- see get_gen_v_vc_row.")
+        .def("get_gen_v_vc_row", &T::get_gen_v_vc_row,
+             "Per generator, the Jacobian row of the voltage constraint "
+             "``|V_reg| + sum s.Q_c - v_set = 0`` of the voltage-control group whose "
+             "set-point its ``gen_v`` is (a generator regulating a bus a group holds: a "
+             "remote regulator, or a local one on a group-controlled bus), -1 otherwise "
+             "-- and -1 for a group holding an SVC or an hvdc station, whose set-point no "
+             "batch moves. ``dF_v/dv_set = -1``, so that generator's gradient is lambda at "
+             "that row (times its get_gen_v_share), which gen_v_indirect_grad already "
+             "returns; it has no direct half.")
         .def("get_gen_v_share", &T::get_gen_v_share,
              "How much of its bus' derivative each generator's ``gen_v`` carries: 1 where "
-             "it is the only regulator of that bus, 1/n where n of them share it, 0 where "
-             "it carries none (the -1 entries of get_gen_v_target_bus).\n\n"
+             "it is the only regulator of that bus (or of that voltage-control group), 1/n "
+             "where n of them share it, 0 where it carries none (-1 in both "
+             "get_gen_v_target_bus and get_gen_v_vc_row).\n\n"
              "Generators regulating one bus must be given the SAME set-point, so the loss "
              "is a function only on the diagonal ``v_1 = ... = v_n``; off it there is no "
              "value to compare against, because such a row is refused rather than solved "
@@ -219,8 +229,12 @@ void bind_batch_shared(py::class_<T> & cls)
              "order it happens to sit in.")
         .def("gen_v_indirect_grad", &T::gen_v_indirect_grad, py::arg("lambda_"),
              "The indirect half of the ``gen_v`` gradient, ``(n_scenarios, n_gen)``: "
-             "``-lambda^T dF/dv``, keyed like get_gen_v_target_bus() and zero wherever "
-             "that reads -1, or on a row that did not converge.\n\n"
+             "``-lambda^T dF/dv``, zero on a row that did not converge. For a generator "
+             "fixing a bus magnitude (get_gen_v_target_bus) it is the dS/d|V| contraction; "
+             "for one setting a voltage-control group's set-point (get_gen_v_vc_row) it "
+             "is lambda at the group's voltage row, and the WHOLE gradient (zero on a row "
+             "where handle_disconnected_grid stranded the group); zero elsewhere. Each "
+             "already carries its get_gen_v_share.\n\n"
              "``lambda_`` is what solve_JT() returned for this batch, so the adjoint "
              "system is solved once and both halves of the gradient read it. The other "
              "half is direct -- the loss depends on `V_k = v_k . exp(j.theta_k)` "
