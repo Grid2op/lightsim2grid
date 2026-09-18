@@ -1,0 +1,109 @@
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#ifndef LINE_CONTAINER_H
+#define LINE_CONTAINER_H
+
+#include <iostream>
+
+#include "Eigen/Core"
+#include "Eigen/Dense"
+#include "Eigen/SparseCore"
+#include "Eigen/SparseLU"
+
+#include "Utils.hpp"
+#include "SubstationContainer.hpp"
+#include "BranchContainer.hpp"
+
+namespace ls2g {
+
+class LineContainer;
+class LS2G_API LineInfo : public BranchContainer::BranchInfo
+{
+    public:
+        inline LineInfo(const LineContainer & r_data, int my_id) noexcept;
+};
+
+/**
+This class is a container for all the powerlines on the grid.
+
+**/
+class LS2G_API LineContainer final: public BranchContainer, public IteratorAdder<LineContainer, LineInfo>
+{
+    friend class LineInfo;
+    public:
+        using DataInfo = LineInfo;
+
+    public:
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
+        using StateRes =  std::tuple<
+                   BranchContainer::StateRes
+                   >;
+        enum StateResIdx {
+            BRANCH_STATE = 0,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "LineContainer::StateRes and StateResIdx do not match");
+        
+        LineContainer() noexcept = default;
+        ~LineContainer() noexcept override = default;
+        
+        void init(const Eigen::Ref<const RealVect> & branch_r,
+                  const Eigen::Ref<const RealVect> & branch_x,
+                  const Eigen::Ref<const CplxVect> & branch_h,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
+                  );
+
+        void init(const Eigen::Ref<const RealVect> & branch_r,
+                  const Eigen::Ref<const RealVect> & branch_x,
+                  const Eigen::Ref<const CplxVect> & branch_h_or,
+                  const Eigen::Ref<const CplxVect> & branch_h_ex,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
+                  const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
+                  );
+              
+        // pickle
+        StateRes get_state() const
+        {
+            StateRes res(get_branch_state());
+            return res;
+        }
+        void set_state(LineContainer::StateRes & my_state )
+        {
+            set_branch_state(std::get<StateResIdx::BRANCH_STATE>(my_state));
+            _update_model_coeffs();
+            reset_results();
+        }
+
+        // fast binary serialization (additive alternative to pickle, see BinaryArchive.hpp)
+        void save_binary(const std::string & path, bool atomic = true) const;
+        static LineContainer load_binary(const std::string & path);
+        static const char * binary_type_tag() { return "LineContainer"; }  // written into / checked against the binary file header
+
+        // for consistency with trafo, when used for example in BaseMultiplePowerflow...
+        // lines never have a phase shift: the Ref must point at something with a
+        // lifetime that outlives the call, not a temporary (a plain `return RealVect();`
+        // would bind the Ref to a temporary destroyed before the caller sees it).
+        Eigen::Ref<const RealVect> dc_x_tau_shift() const {
+            static const RealVect empty_dc_x_tau_shift{};
+            return empty_dc_x_tau_shift;
+        }
+
+    protected:
+        bool _in_topo_vect() const override { return true; }
+};
+
+inline LineInfo::LineInfo(const LineContainer & r_data, int my_id) noexcept:
+BranchContainer::BranchInfo(r_data, my_id) {}
+
+
+} // namespace ls2g
+
+#endif  //LINE_CONTAINER_H

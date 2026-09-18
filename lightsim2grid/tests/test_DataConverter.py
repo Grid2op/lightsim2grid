@@ -9,7 +9,7 @@
 import unittest
 import numpy as np
 import pandapower.networks as pn
-from lightsim2grid_cpp import PandaPowerConverter
+from lightsim2grid.lightsim2grid_cpp import PandaPowerConverter
 
 
 class TestDataConverterLegacy(unittest.TestCase):

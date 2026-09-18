@@ -31,10 +31,27 @@ class _AuxCorrectGraph:
     def get_n_busbar_per_sub(self):
         return None
     
+    def has_element_disco(self):
+        return False
+    
     def setUp(self) -> None:
         self.pypo_grid_name = self.get_pypo_grid_name()
         self.fetch_network_ref()
         
+        if self.has_element_disco() and self.use_buses_for_sub():
+            # I ask pypowsybl to use its buses as "substation" in grid2op
+            # but some elements are disconnected (unknown buses)
+            # the converter now raises an error (instead of doing some 
+            # unexpected "magic" like it used to before 0.13.1)
+            with self.assertRaises(RuntimeError):
+                init_from_pypowsybl(self.network_ref,
+                                    gen_slack_id=0,  # we don't really care here
+                                    sort_index=self.sort_index(),
+                                    return_sub_id=True,
+                                    buses_for_sub=self.use_buses_for_sub(),
+                                    n_busbar_per_sub=self.get_n_busbar_per_sub())
+            self.skipTest("Impossible to init gridmodel in this case")
+            
         # init lightsim2grid model
         self.gridmodel, self.el_ids = init_from_pypowsybl(self.network_ref,
                                                           gen_slack_id=0,  # we don't really care here
@@ -253,6 +270,9 @@ class Test_CorrectGraph_TT_disco(_AuxCorrectGraph, unittest.TestCase):
         # disconnect a line
         df = self.network_ref.get_lines()
         self.network_ref.update_lines(id=df.index[0], connected1=False, connected2=False)
+        
+    def has_element_disco(self):
+        return True
 
 
 class Test_CorrectGraph_TF_disco(_AuxCorrectGraph, unittest.TestCase):
@@ -261,6 +281,9 @@ class Test_CorrectGraph_TF_disco(_AuxCorrectGraph, unittest.TestCase):
         # disconnect a trafo
         df = self.network_ref.get_2_windings_transformers()
         self.network_ref.update_2_windings_transformers(id=df.index[0], connected1=False, connected2=False)
+        
+    def has_element_disco(self):
+        return True
     
     def sort_index(self):
         return False
@@ -272,6 +295,9 @@ class Test_CorrectGraph_FT_disco(_AuxCorrectGraph, unittest.TestCase):
         # disconnect a load
         df = self.network_ref.get_loads()
         self.network_ref.update_loads(id=df.index[0], connected=False)
+        
+    def has_element_disco(self):
+        return True
     
     def use_buses_for_sub(self):
         return False
@@ -286,6 +312,9 @@ class Test_CorrectGraph_FF_disco(_AuxCorrectGraph, unittest.TestCase):
     
     def sort_index(self):
         return False
+    
+    def has_element_disco(self):
+        return True
         
         
 class Test_CorrectGraph_TT_mult_busbar(_AuxCorrectGraph, unittest.TestCase):

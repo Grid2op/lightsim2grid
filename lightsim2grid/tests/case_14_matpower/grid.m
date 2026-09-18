@@ -1,0 +1,78 @@
+function mpc = grid
+%GRID  The IEEE 14 bus test case, in MATPOWER's case format.
+%
+%   The powergrid of the grid2op environment lightsim2grid's own tests load
+%   through `LightSimBackend(loader_method="matpower")`. The data is the IEEE 14
+%   bus system as it ships with pandapower (`pandapower.networks.case14`, itself
+%   imported from MATPOWER), so a powerflow run on this file can be compared
+%   against pandapower's on `case14()` element by element -- which is what
+%   `test_backend_matpower.py` does.
+%
+%   Two deliberate departures from the published case14. The BASE_KV column
+%   carries the IEEE 14's usual nominal voltages (132 / 33 / 11 kV), because a
+%   grid2op backend reports voltages in kV and lightsim2grid refuses a
+%   substation whose nominal voltage is 0. And the
+%   reference-bus machine is the LAST row of mpc.gen rather than the first --
+%   matpower reads no meaning into the order of that table, and a grid whose
+%   generator 0 is the slack would let a test pass for the wrong reason.
+
+%% MATPOWER Case Format : Version 2
+mpc.version = '2';
+
+%%-----  Power Flow Data  -----%%
+%% system MVA base
+mpc.baseMVA = 100;
+
+%% bus data
+%	bus_i	type	Pd	Qd	Gs	Bs	area	Vm	Va	baseKV	zone	Vmax	Vmin
+mpc.bus = [
+	1	3	0	0	0	0	1	1.06	0	132	1	1.06	0.94;
+	2	2	21.7	12.7	0	0	1	1.045	0	132	1	1.06	0.94;
+	3	2	94.2	19	0	0	1	1.01	0	132	1	1.06	0.94;
+	4	1	47.8	-3.9	0	0	1	1.019	0	132	1	1.06	0.94;
+	5	1	7.6	1.6	0	0	1	1.02	0	132	1	1.06	0.94;
+	6	2	11.2	7.5	0	0	1	1.07	0	33	1	1.06	0.94;
+	7	1	0	0	0	0	1	1.062	0	33	1	1.06	0.94;
+	8	2	0	0	0	0	1	1.09	0	11	1	1.06	0.94;
+	9	1	29.5	16.6	0	19	1	1.056	0	33	1	1.06	0.94;
+	10	1	9	5.8	0	0	1	1.051	0	33	1	1.06	0.94;
+	11	1	3.5	1.8	0	0	1	1.057	0	33	1	1.06	0.94;
+	12	1	6.1	1.6	0	0	1	1.055	0	33	1	1.06	0.94;
+	13	1	13.5	5.8	0	0	1	1.05	0	33	1	1.06	0.94;
+	14	1	14.9	5	0	0	1	1.036	0	33	1	1.06	0.94;
+];
+
+%% generator data
+%	bus	Pg	Qg	Qmax	Qmin	Vg	mBase	status	Pmax	Pmin
+mpc.gen = [
+	2	40	42.4	50	-40	1.045	100	1	140	0;
+	3	0	23.4	40	0	1.01	100	1	100	0;
+	6	0	12.2	24	-6	1.07	100	1	100	0;
+	8	0	17.4	24	-6	1.09	100	1	100	0;
+	1	232.4	-16.9	10	0	1.06	100	1	332.4	0;
+];
+
+%% branch data
+%	fbus	tbus	r	x	b	rateA	rateB	rateC	ratio	angle	status	angmin	angmax
+mpc.branch = [
+	1	2	0.01938	0.05917	0.0528	0	0	0	0	0	1	-360	360;
+	1	5	0.05403	0.22304	0.0492	0	0	0	0	0	1	-360	360;
+	2	3	0.04699	0.19797	0.0438	0	0	0	0	0	1	-360	360;
+	2	4	0.05811	0.17632	0.034	0	0	0	0	0	1	-360	360;
+	2	5	0.05695	0.17388	0.0346	0	0	0	0	0	1	-360	360;
+	3	4	0.06701	0.17103	0.0128	0	0	0	0	0	1	-360	360;
+	4	5	0.01335	0.04211	0	0	0	0	0	0	1	-360	360;
+	6	11	0.09498	0.1989	0	0	0	0	0	0	1	-360	360;
+	6	12	0.12291	0.25581	0	0	0	0	0	0	1	-360	360;
+	6	13	0.06615	0.13027	0	0	0	0	0	0	1	-360	360;
+	9	10	0.03181	0.0845	0	0	0	0	0	0	1	-360	360;
+	9	14	0.12711	0.27038	0	0	0	0	0	0	1	-360	360;
+	10	11	0.08205	0.19207	0	0	0	0	0	0	1	-360	360;
+	12	13	0.22092	0.19988	0	0	0	0	0	0	1	-360	360;
+	13	14	0.17093	0.34802	0	0	0	0	0	0	1	-360	360;
+	4	7	0	0.20912	0	0	0	0	0.978	0	1	-360	360;
+	4	9	0	0.55618	0	0	0	0	0.969	0	1	-360	360;
+	5	6	0	0.25202	0	0	0	0	0.932	0	1	-360	360;
+	7	8	0	0.17615	0	0	0	0	0	0	1	-360	360;
+	7	9	0	0.11001	0	0	0	0	0	0	1	-360	360;
+];

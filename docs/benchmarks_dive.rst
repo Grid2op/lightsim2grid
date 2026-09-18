@@ -47,7 +47,7 @@ Results in the "TL;DR" section:
 - **time (TimeSerie)**: equivalent to `2e3` but when using the `TimeSerie` lightsim2grid module
 - **time (ContingencyAnalysis)**: equivalent to `2e3` but when using the `ContingencyAnalysis` lightsim2grid module.
 
-Tesults in the "Computation time using grid2op" section:
+Results in the "Computation time using grid2op" section:
 
 - **avg step duration (ms)**: average time to perform a step in grid2op, so to compute all `2`
 - **time [DC + AC] (ms / pf)** : average time taken over the 288 runs of `2e1`, `2e2` and `2e3`
@@ -179,8 +179,8 @@ For example, this can mean that:
        `pp_net.res_line`, `pp_net.res_load`, etc. for read-only attribute)
      - `pypowsybl` where the "external layer" also consists of dataframes, accessible with `pp_grid.get_lines()` or `pp_grid.get_loads()`
        and the data within this model can be modified with `pp_grid.update_lines` or `pp_grid.update_loads`
-     - `lightsim2grid` where the "gridmodel" data can be inspected with *eg* `gridmodel.get_lines()` or `gridmodel.get_loads()` And
-       modified with `gridmodel.update_loads_p`, `gridmodel.update_loads_q` or `gridmodel.update_topology`
+     - `lightsim2grid` where the "LSGrid" data can be inspected with *eg* `lsgrid.get_lines()` or `lsgrid.get_loads()` And
+       modified with `lsgrid.update_loads_p`, `lsgrid.update_loads_q` or `lsgrid.update_topo`
 
 
 .. note::
@@ -204,13 +204,13 @@ When we benchmark lightsim2grid in the page :ref:`benchmark-solvers` all 3 algor
 let us know, no problem at all).
 
 Pandapower
-++++++++++++
+~~~~~~~~~~~~
 
 When pandapower is benchmarked, only the Newton-Raphson algorithm is used, we will not detail the exact implementatoin of pandapower. Its implementation
 the python scipy package to perform the linear algebra operations needed.
 
 Pypowsybl
-++++++++++++
+~~~~~~~~~~~~
 
 When pypowsybl is benchmarked, only the Newton-Raphson algorithm is used. It internally uses some java implementation relying on powsybl framework and
 open-loadflow (for the default parameters) powerflow.
@@ -218,19 +218,19 @@ open-loadflow (for the default parameters) powerflow.
 Let us know if you are interested with more detail and more algorithm (powsybl can do much more than what is exposed here).
 
 Lightsim2grid
-++++++++++++++
+~~~~~~~~~~~~~~
 
-In the benchmarks, lightsim2grid counts the most reported algorithms. In this section we detail a "concisely" the bahviour all some of them. 
+In the benchmarks, lightsim2grid counts the most reported algorithms. In this section we detail a "concisely" the bahviour all some of them.
 
 Gauss Seidel
-~~~~~~~~~~~~~
+^^^^^^^^^^^^^
 
-Lightsim2grid comes with two different Gauss-Seidel algorithms. They are not very efficient for the kind of problem at hand, so 
+Lightsim2grid comes with two different Gauss-Seidel algorithms. They are not very efficient for the kind of problem at hand, so
 we will not spend lot of time discussing them here.
 
 
 Fast decoupled and Newton Raphson
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 These two types of algorithms comes each with different variants (we will not enter into too their detail here):
 

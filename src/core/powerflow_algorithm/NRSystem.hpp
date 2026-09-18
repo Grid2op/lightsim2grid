@@ -1,0 +1,1701 @@
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#ifndef NR_SYSTEM_H
+#define NR_SYSTEM_H
+
+#include "Utils.hpp"
+#include "BaseConstants.hpp"
+#include "CustTimer.hpp"
+#include "NRLedger.hpp"
+#include "HvdcDroopData.hpp"
+#include "VoltageControlData.hpp"
+#include "Eigen/Core"
+#include "Eigen/SparseCore"
+
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <cstring>
+#include <tuple>
+#include <vector>
+#include <set>
+#include <stdexcept>
+
+// Public API (used by NRAlgo, in order)
+// init_topology : if Ybus changed
+// update_state : unconditionnally
+// build_J_sparsity : if init_topology was called
+// mismatch (before NR loop)
+// ---------------- ENTERING NR LOOP
+// if need factorize:
+//     fill_internal_variables
+//     fill_J
+// apply_step
+// mismatch
+// ---------------- END NR LOOP
+// V(), Vm(), Va()
+// timer_dSbus()
+// timer_fillJ()
+// J()  (public accessor of NRAlgo)
+
+// Public API (bus id -> Jacobian column converters, built in init_topology)
+// theta_to_J_col() : bus id -> column of that bus' theta (ΔVa) unknown, -1 if none
+// vm_to_J_col()    : bus id -> column of that bus' vm (ΔVm) unknown, -1 if none
+// q_to_J_col()     : bus id -> column of that bus' q unknown, -1 if none
+
+// Public API (used by scaling policy)
+// mismatch_sq_norm_at()
+// max_abs_dtheta()
+// max_abs_dvm()
+
+
+namespace ls2g {
+
+static const Eigen::SparseMatrix<cplx_type> _EmptySpMat = Eigen::SparseMatrix<cplx_type>();
+
+class LSGrid;  // only a pointer travels through the component protocol
+
+// ---- Primary template declaration (no definition) -----------------------------
+
+template <typename... Extensions>
+class NRSystem;
+
+enum LS2G_API dSdX { dSdVa_r, dSdVa_i, dSdVm_r, dSdVm_i };
+
+// One dS-derived Jacobian entry: J(jrow, jcol) takes the real or imaginary
+// part (whichmat) of the dS_dVa / dS_dVm value stored at Ybus nnz position
+// ybus_k. Produced by the generic dS pass of NRSystem::build_J_sparsity.
+class LS2G_API Contrib final
+{
+    private:
+        int jrow_;
+        int jcol_;
+        int ybus_k_;
+        dSdX whichmat_;
+
+    public:
+       // constexpr throughout: these are four ints wrapped in accessors, on the hot
+       // path of build_J_sparsity, and C++14 is enough for all of it (a constexpr
+       // member function is not implicitly const there, hence the explicit `const`).
+       constexpr Contrib(int jrow, int jcol, int ybus_k, dSdX whichmat) noexcept:
+           jrow_(jrow),
+           jcol_(jcol),
+           ybus_k_(ybus_k),
+           whichmat_(whichmat) {}
+
+       // A structural-only entry: it claims a J coefficient but carries no dS
+       // value (used for the feature coefficients, which fill_J writes itself).
+       static constexpr Contrib structural(int jrow, int jcol) noexcept {
+           return Contrib(jrow, jcol, -1, dSdVa_r);
+       }
+
+       constexpr int jrow() const noexcept {return jrow_;}
+       constexpr int jcol() const noexcept {return jcol_;}
+       constexpr int ybus_k() const noexcept {return ybus_k_;}
+       constexpr dSdX whichmat() const noexcept {return whichmat_;}
+
+       // Eigen's "triplet" protocol: build_J_sparsity hands the contributions
+       // straight to setFromTriplets instead of copying them into a vector of
+       // Eigen::Triplet just to attach the zero. That pass builds the sparsity
+       // pattern only, so every value is zero; fill_J writes the numbers.
+       constexpr int row() const noexcept {return jrow_;}
+       constexpr int col() const noexcept {return jcol_;}
+       constexpr real_type value() const noexcept {return static_cast<real_type>(0.);}
+};
+
+// ---- Component protocol --------------------------------------------------------
+//
+// The Base block and every extension implement the same interface; NRSystem
+// composes them (Base is the first, special-cased member; extensions live in a
+// tuple). A component NEVER manipulates global J offsets: it claims its rows /
+// columns in the NRLedger and keeps the returned indices.
+//
+//  - update_state(...)            : per-solve state refresh (cheap, always).
+//  - init_topology(...)           : computes the component's own index sets only.
+//  - register_in(NRLedger&)       : claims bus-owned rows/cols and allocates
+//                                   custom rows/cols; stores the returned indices.
+//  - declare_feature_entries(FeatureSink&) : declares the component's non-dS
+//                                   Jacobian entries; stores the handles.
+//  - fill_feature_values(FeatureWriter&, Va) : writes the feature values
+//                                   (called at every fill_J; J was zeroed first).
+//                                   Va is the CURRENT voltage-angle vector (all
+//                                   solver buses), for state-dependent slopes.
+//  - adjust_mismatch(V_t, dx, mis): adds the component's physical injections to
+//                                   the per-bus complex mismatch, evaluated at
+//                                   the trial voltages V_t. dx is the FULL
+//                                   step vector (zero vector of full size when
+//                                   evaluating at the current state); the
+//                                   component indexes it with its stored column ids.
+//  - fill_custom_rows(res, Va, Vm, dx) : accumulates (+=) residuals ONLY into
+//                                   custom rows the component allocated. Bus-owned
+//                                   P/Q rows are filled generically by NRSystem.
+//  - apply_step(dx)               : updates ONLY the component's own non-voltage
+//                                   state. Voltage updates are generic.
+//  - clear()                      : reset.
+
+/**
+ * Base Newton-Raphson system block (single-slack core).
+ *
+ * Jacobian orientation (applies to the whole augmented J):
+ *   - each ROW is an EQUATION   : a power-mismatch residual
+ *       (ΔP at a pv/pq bus, ΔQ at a pq bus)
+ *   - each COLUMN is an UNKNOWN  : a state-variable correction
+ *       (ΔVa at a pv/pq bus, ΔVm at a pq bus, ... extensions add more)
+ *
+ * i.e. J[row, col] = d(equation row) / d(unknown col), used to solve
+ *   J . dx = -F(x). So there is one row per equation and one column per
+ *   unknown (NOT one row per unknown).
+ *
+ * The base block registers, in INCREASING BUS INDEX order (the pv / pq input
+ * arrays are NOT assumed sorted; they are sorted internally):
+ *   - theta unknowns for sorted(pv ∪ pq),
+ *   - vm unknowns for sorted(pq),
+ *   - P equations for sorted(pv ∪ pq),
+ *   - Q equations for sorted(pq),
+ *   - vm unknowns + Q equations for slack buses NOT pinned by a LOCAL
+ *     voltage-regulating generator (increasing bus-id order, appended last):
+ *     PQ distributed-slack participants, remote-voltage / SVC-controlled
+ *     slack buses. This is unconditional -- present whether or not the
+ *     NRSystem instantiation has a MultiSlack extension -- because it is a
+ *     property of ANY bus' voltage pinning, not of distributed-slack
+ *     bookkeeping (see update_state, defined out-of-line in NRSystemBase.cpp).
+ */
+class LS2G_API Base
+{
+    public:
+        Base():
+            nb_pv_(0),
+            nb_pq_(0),
+            nb_pvpq_(0)
+            {}
+
+        // Position of (row, col) in a compressed column-major matrix' value
+        // array, -1 if that coefficient is not stored. Nothing in the solve
+        // path calls this any more -- build_J_sparsity used to, once per
+        // Jacobian coefficient, and now records each position as it writes the
+        // pattern instead -- but it stays part of the component protocol for
+        // components and external consumers that need to locate a coefficient
+        // in an already-built J. The overload taking the index arrays rather
+        // than the matrix is the one to use in a loop: the Eigen::Ref the
+        // matrix-taking overload binds, free as it is to construct, is still a
+        // per-call cost paid to read two pointers that do not change.
+        static int find_J_pos(const int* outer_index,
+                              const int* inner_index,
+                              int row,
+                              int col){
+            const int start = outer_index[col];
+            const int end   = outer_index[col + 1];
+            auto it = std::lower_bound(inner_index + start, inner_index + end, row);
+            if (it == inner_index + end || *it != row) return -1;
+            return static_cast<int>(it - inner_index);
+        }
+
+        // same, on a matrix (the convenient entry point for a one-off lookup)
+        static int find_J_pos (
+            const Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > & J_csc,
+            int row,
+            int col){
+            return find_J_pos(J_csc.outerIndexPtr(), J_csc.innerIndexPtr(), row, col);
+        };
+
+        // call at the beginning of each solve. Defined out-of-line
+        // (NRSystemBase.cpp) because it needs the full LSGrid type (this
+        // header only forward-declares it) to query the slack buses that
+        // need a free Vm unknown + Q equation -- shared by EVERY NRSystem
+        // instantiation (SingleSlackNRSystem has no MultiSlack extension to
+        // do this, so Base must own it).
+        // Ybus stays a plain reference (not Eigen::Ref): this update_state
+        // caches its address (Ybus_ptr_, see below) across phases (this call
+        // -> build_J_sparsity), which needs the caller's actual, long-lived
+        // matrix, not a call-site Eigen::Ref temporary.
+        void update_state(
+            const LSGrid                     * lsgrid_ptr,
+            const EigenRefConstCplxSpMat     & Ybus,
+            const Eigen::Ref<const CplxVect> & Sbus,
+            const Eigen::Ref<const RealVect> & slack_weights
+        );
+
+        // call after update_state
+        // at the beginning of each solve
+        // only if the topology has changed
+        void init_topology(
+            const Eigen::Ref<const IntVect>  & /*slack_ids*/,
+            const Eigen::Ref<const RealVect> & /*slack_weights*/,
+            const Eigen::Ref<const IntVect>  & pv,
+            const Eigen::Ref<const IntVect>  & pq
+        ) {
+            // plain assignment, not `pv_ = IntVect(pv)`: the explicit temporary
+            // allocated a fresh buffer on every topology change, where a direct
+            // assignment reuses pv_'s own storage whenever the size is unchanged.
+            pv_ = pv;
+            pq_ = pq;
+
+            nb_pv_ = static_cast<int>(pv_.size());
+            nb_pq_ = static_cast<int>(pq_.size());
+
+            pvpq_.resize(nb_pv_ + nb_pq_);
+            pvpq_ << pv_, pq_;
+
+            nb_pvpq_ = static_cast<int>(pvpq_.size());
+        }
+
+        void register_in(NRLedger& ledger) const
+        {
+            std::vector<int> pvpq_sorted(pvpq_.data(), pvpq_.data() + nb_pvpq_);
+            std::sort(pvpq_sorted.begin(), pvpq_sorted.end());
+            std::vector<int> pq_sorted(pq_.data(), pq_.data() + nb_pq_);
+            std::sort(pq_sorted.begin(), pq_sorted.end());
+
+            for (int bus : pvpq_sorted) ledger.add_theta_unknown(bus);
+            for (int bus : pq_sorted)   ledger.add_vm_unknown(bus);
+            for (int bus : pvpq_sorted) ledger.add_p_equation(bus);
+            for (int bus : pq_sorted)   ledger.add_q_equation(bus);
+
+            // Two families of bus need a free Vm unknown + a Q equation on top
+            // of the pv/pq block above -- exactly what an ordinary PQ bus owns:
+            //
+            //  - free_vm_slack_buses_: a slack bus whose magnitude is NOT pinned
+            //    by a local PV generator (a PQ distributed-slack participant, or
+            //    a slack bus regulated only remotely / by an SVC, to which the
+            //    VoltageControl extension then attaches via vm_col(reg_bus) /
+            //    q_row(bus));
+            //  - switchable_vm_buses_: a bus that is PV *now* but whose local
+            //    voltage-regulating generators a caller may disconnect later,
+            //    without rebuilding the sparsity (see set_switchable_vm_buses).
+            //    Its Q row is then pinned to the identity for as long as the bus
+            //    stays PV -- see NRSystem::set_pv_pinned_buses.
+            //
+            // Merged into one std::set so a bus in both is registered once, and
+            // so the whole block still runs in increasing bus-id order. Both are
+            // empty on the common grid (the loop is a no-op), leaving the J
+            // layout bit-identical to before either existed.
+            std::set<int> free_vm_buses(free_vm_slack_buses_);
+            free_vm_buses.insert(switchable_vm_buses_.begin(), switchable_vm_buses_.end());
+            for (int bus : free_vm_buses) {
+                // a bus already registered as PQ above owns the pair already;
+                // registering it twice would hand it a second Vm column the
+                // dS pass never fills (add_vm_unknown is last-registration-wins)
+                if (std::binary_search(pq_sorted.begin(), pq_sorted.end(), bus)) continue;
+                ledger.add_vm_unknown(bus);
+                ledger.add_q_equation(bus);
+            }
+        }
+
+        /**
+         * Solver-bus ids that are PV in the labelling this system is built for,
+         * but whose voltage pinning a caller may drop on a per-solve basis
+         * (a batch sweep disconnecting their local voltage-regulating
+         * generators, row by row).
+         *
+         * Each of them gets a Vm unknown + a Q equation reserved in the ledger
+         * -- so the Jacobian sparsity is the UNION over every scenario -- and
+         * NRSystem::set_pv_pinned_buses then masks that Q row to the identity
+         * in the scenarios where the bus is still PV. That is what lets a whole
+         * sweep run on one symbolic analysis.
+         *
+         * Caller-set run configuration, exactly like NRSystem's may_mask_: it
+         * must be set BEFORE the sparsity build that is to account for it (raise
+         * the solver control's pv_changed once to force that build), and it is
+         * deliberately NOT cleared by update_state() or clear() -- both run per
+         * solve, and losing it there would silently shrink J back.
+         */
+        void set_switchable_vm_buses(const std::vector<int>& solver_bus_ids) {
+            switchable_vm_buses_ = std::set<int>(solver_bus_ids.begin(), solver_bus_ids.end());
+        }
+        const std::set<int>& switchable_vm_buses() const { return switchable_vm_buses_; }
+
+        void declare_feature_entries(FeatureSink& /*sink*/) {}
+        void fill_feature_values(FeatureWriter& /*writer*/, const Eigen::Ref<const RealVect>& /*Va*/) const {}
+        void adjust_mismatch(const Eigen::Ref<const CplxVect>& /*V_t*/, const Eigen::Ref<const RealVect>& /*dx*/, Eigen::Ref<CplxVect> /*mis*/) const {}
+        void fill_custom_rows(Eigen::Ref<RealVect> /*res*/,
+                              const Eigen::Ref<const RealVect>& /*Va*/,
+                              const Eigen::Ref<const RealVect>& /*Vm*/,
+                              const Eigen::Ref<const RealVect>& /*dx*/) const {}
+        void apply_step(const Eigen::Ref<const RealVect>& /*dx*/) {}
+
+        void clear() {
+            pv_ = IntVect();
+            pq_ = IntVect();
+            pvpq_ = IntVect();
+            nb_pv_ = 0;
+            nb_pq_ = 0;
+            nb_pvpq_ = 0;
+            free_vm_slack_buses_.clear();
+            // switchable_vm_buses_ is deliberately NOT cleared: it is caller-set
+            // run configuration, like NRSystem's may_mask_, and clear() runs
+            // between solves. See set_switchable_vm_buses.
+        }
+
+    private:
+        IntVect pv_, pq_, pvpq_;
+        int     nb_pv_, nb_pq_, nb_pvpq_;
+        // solver-bus ids of slack buses NOT pinned by a local PV generator;
+        // set by update_state (needs LSGrid, hence out-of-line), consumed by
+        // register_in. Empty in the common "slack is locally PV-pinned" case.
+        std::set<int> free_vm_slack_buses_;
+        // solver-bus ids of PV buses that may lose their voltage pinning during
+        // this run; caller-set (see set_switchable_vm_buses), consumed by
+        // register_in, and NOT reset per solve. Empty unless a caller asked.
+        std::set<int> switchable_vm_buses_;
+
+    public:
+        Eigen::Ref<const IntVect> pv() const { return pv_; }
+        Eigen::Ref<const IntVect> pq() const { return pq_; }
+        Eigen::Ref<const IntVect> pvpq() const { return pvpq_; }
+        int                       nb_pv() const {return nb_pv_;}
+        int                       nb_pq() const {return nb_pq_;}
+        int                       nb_pvpq() const {return nb_pvpq_;}
+};
+
+// ---- Extension tag types ------------------------------------------------------
+
+/**
+ * This extension adds the ability to have a distributed slack directly in the jacobian.
+ *
+ * It adds exactly "nb slack" extra rows and columns (nb_slack being the
+ * number of slacks in the grid). It registers, after the base block:
+ *   - for each non-ref slack bus (sorted by bus id): a theta unknown and a
+ *     P equation;
+ *   - a P equation for the ref slack bus (slack_ids[0]);
+ *   - one custom column: the slack_absorbed unknown.
+ *
+ * A slack bus not locally voltage-pinned also gets a free Vm unknown + Q
+ * equation -- that is now Base's responsibility (Base::register_in), not
+ * this extension's: it is a property of bus voltage pinning shared by every
+ * NRSystem instantiation, single- or multi-slack (see Base's doc comment).
+ *
+ * All the dS-derived Jacobian entries of those rows / columns are generated by
+ * the generic dS pass of NRSystem. The only feature-specific entries are the
+ * slack_absorbed column coefficients: slack_weights(bus) at each slack bus'
+ * P row.
+ */
+class LS2G_API MultiSlack   // distributed-slack extension
+{
+    public:
+        MultiSlack():
+            my_size_(0),
+            ref_slack_id_(0),
+            slack_col_(-1),
+            slack_absorbed_(static_cast<real_type>(0.)) {}
+
+        // call at the beginning of each NR solve once. It is not called for NR
+        // iterations. Caches slack_weights / initial slack_absorbed.
+        void update_state(
+            const Base                       * nr_system_base_ptr,
+            const LSGrid                     * lsgrid_ptr,
+            const EigenRefConstCplxSpMat     & Ybus,
+            const Eigen::Ref<const CplxVect> & Sbus,
+            const Eigen::Ref<const RealVect> & slack_weights
+        );
+
+        // call after update_state
+        // at the beginning of each solve
+        // only if the topology has changed
+        void init_topology(
+            const Eigen::Ref<const IntVect>  & slack_ids,
+            const Eigen::Ref<const RealVect> & /*slack_weights*/,
+            const Eigen::Ref<const IntVect>  & /*pv*/,
+            const Eigen::Ref<const IntVect>  & /*pq*/
+        ) {
+            my_size_ = static_cast<int>(slack_ids.size());
+            // `slack_ids[0]` is the reference bus by convention, shared with every other
+            // algorithm family -- see BaseAlgo::retrieve_pv_with_slack's doc comment for why
+            // getting this wrong is silent and hard to debug, not a crash.
+            ref_slack_id_ = slack_ids[0];
+            // slack buses in registration order: non-ref slacks sorted by bus
+            // id, then the ref slack last
+            slack_buses_.assign(slack_ids.data() + 1, slack_ids.data() + my_size_);
+            std::sort(slack_buses_.begin(), slack_buses_.end());
+            slack_buses_.push_back(ref_slack_id_);
+        }
+
+        void register_in(NRLedger& ledger)
+        {
+            slack_p_rows_.clear();
+            slack_p_rows_.reserve(my_size_);
+            for (int k = 0; k + 1 < my_size_; ++k) {
+                ledger.add_theta_unknown(slack_buses_[k]);
+                slack_p_rows_.push_back(ledger.add_p_equation(slack_buses_[k]));
+            }
+            slack_p_rows_.push_back(ledger.add_p_equation(ref_slack_id_));
+            slack_col_ = ledger.add_custom_col();  // slack_absorbed unknown
+        }
+
+        // one entry per slack bus: (that bus' P row, slack_absorbed column)
+        void declare_feature_entries(FeatureSink& sink)
+        {
+            feature_handles_.clear();
+            feature_handles_.reserve(my_size_);
+            for (int k = 0; k < my_size_; ++k)
+                feature_handles_.push_back(sink.add(slack_p_rows_[k], slack_col_));
+        }
+
+        void fill_feature_values(FeatureWriter& writer, const Eigen::Ref<const RealVect>& /*Va*/) const
+        {
+            for (int k = 0; k < my_size_; ++k)
+                writer.add(feature_handles_[k], slack_weights_(slack_buses_[k]));
+        }
+
+        // adjust the per-bus complex power mismatch by (slack_absorbed + dx step) * slack_weights
+        void adjust_mismatch(const Eigen::Ref<const CplxVect>& /*V_t*/, const Eigen::Ref<const RealVect>& dx, Eigen::Ref<CplxVect> mis) const
+        {
+            const real_type sa = slack_absorbed_ + dx(slack_col_);
+            mis.array() += (sa * slack_weights_.array()).cast<cplx_type>();
+        }
+
+        // all this extension's rows are bus-owned P equations,
+        // filled generically by NRSystem
+        void fill_custom_rows(Eigen::Ref<RealVect> /*res*/,
+                              const Eigen::Ref<const RealVect>& /*Va*/,
+                              const Eigen::Ref<const RealVect>& /*Vm*/,
+                              const Eigen::Ref<const RealVect>& /*dx*/) const {}
+
+        // voltage updates (the non-ref slack thetas) are generic; only the
+        // slack_absorbed state is owned by this extension
+        void apply_step(const Eigen::Ref<const RealVect>& dx)
+        {
+            slack_absorbed_ += dx(slack_col_);
+        }
+
+        void clear(){
+            my_size_ = 0;
+            ref_slack_id_ = 0;
+            slack_col_ = -1;
+            slack_buses_.clear();
+            slack_p_rows_.clear();
+            feature_handles_.clear();
+            slack_weights_ = RealVect();
+            slack_absorbed_ = static_cast<real_type>(0.);
+        }
+
+    public:
+        // J column of the slack_absorbed unknown (custom column, not recorded in
+        // any bus-keyed map). -1 before register_in. Consumed by external batched
+        // solvers that re-stamp the slack feature entries on the GPU.
+        int slack_col() const { return slack_col_; }
+        // Converged value of the slack_absorbed unknown (pu), i.e. the TRUE
+        // per-solve state -- NOT 0, which is only the per-solve INITIAL guess
+        // (see update_state). External batched solvers that re-derive this
+        // state via a linearized correction from 0 can use this ground truth
+        // to check their derivation independently.
+        real_type slack_absorbed() const { return slack_absorbed_; }
+
+    private:
+        int                my_size_;
+        int                ref_slack_id_;
+        int                slack_col_;        // J column of the slack_absorbed unknown
+        std::vector<int>   slack_buses_;      // non-ref slacks sorted, then ref slack
+        std::vector<int>   slack_p_rows_;     // P row of each slack bus (same order)
+        std::vector<int>   feature_handles_;  // FeatureSink handles (same order)
+        RealVect           slack_weights_;    // size: nb_bus
+        real_type          slack_absorbed_;
+
+};
+
+/**
+ * Hvdc angle-droop ("AC emulation") extension.
+ *
+ * For every CONNECTED droop-enabled hvdc line, the active power follows
+ *   raw = p0 + k * (theta1 - theta2)
+ * instead of a fixed setpoint (the HvdcLineContainer does NOT stamp those
+ * lines in Sbus in AC). The flows / derivatives mirror pyloadflow
+ * `equations/ac_emulation.py` (itself a port of open-loadflow's
+ * HvdcAcEmulationSide{1,2}ActiveFlowEquationTerm).
+ *
+ * The extension claims NO row / column: its equations are the existing bus
+ * P mismatches and its unknowns the existing bus thetas. It only:
+ *   - declares up to 4 dP/dtheta Jacobian entries per line,
+ *     (p_row(b1) | p_row(b2)) x (theta_col(b1) | theta_col(b2)), where the
+ *     row / column exists (a slack end simply drops its entries: its theta is
+ *     not an unknown / its P balance not an equation of the base block).
+ *     They are declared whatever the droop regime, so a `status_droop` flip
+ *     between two solves does NOT change the J sparsity pattern and the
+ *     symbolic factorization of the linear solver is reused;
+ *   - adds the theta-dependent flows to the per-bus mismatch;
+ *   - writes the droop slopes, the exact derivative of the flows it adds to
+ *     the mismatch: on the controller side +/- k, on the non-controller side
+ *     +/- k * (1 - lf1) * (1 - lf2) * (1 - 2 * r * line_in) -- the resistive
+ *     dc-line loss is quadratic in the line current, so its slope is not a
+ *     constant. An earlier version dropped that last factor (OLF's own Jacobian
+ *     does); Newton-Raphson converges to the same point either way, but the
+ *     adjoint solve (``solve_JT``, the batch classes' gradients) inherits any
+ *     Jacobian error -- ~1e-4 relative on the active-power gradients of a real
+ *     7k-bus grid, measured against finite differences.
+ *     Saturated lines are pure constant injections: zero slopes.
+ *
+ * When the grid has no droop hvdc line, every loop below is empty: the
+ * behaviour (and the J pattern) is strictly identical to a build without
+ * this extension.
+ */
+class LS2G_API Hvdc
+{
+    public:
+        Hvdc(): my_size_(0) {}
+
+        // pulls the droop data (solver bus ids, pu) from the grid;
+        // defined in NRSystemHvdc.cpp (needs the full LSGrid type)
+        void update_state(
+            const Base                       * nr_system_base_ptr,
+            const LSGrid                     * lsgrid_ptr,
+            const EigenRefConstCplxSpMat     & Ybus,
+            const Eigen::Ref<const CplxVect> & Sbus,
+            const Eigen::Ref<const RealVect> & slack_weights
+        );
+
+        void init_topology(
+            const Eigen::Ref<const IntVect> &              /*slack_ids*/,
+            const Eigen::Ref<const RealVect> &              /*slack_weights*/,
+            const Eigen::Ref<const IntVect> &              /*pv*/,
+            const Eigen::Ref<const IntVect> &              /*pq*/
+        ) {}
+
+        // claims nothing: only caches the rows / columns of the two end buses
+        // (the ledger is fully populated by the previous components: Hvdc must
+        // be the LAST extension of the tuple)
+        void register_in(NRLedger& ledger)
+        {
+            p_row_1_.resize(my_size_);
+            p_row_2_.resize(my_size_);
+            theta_col_1_.resize(my_size_);
+            theta_col_2_.resize(my_size_);
+            for (int k = 0; k < my_size_; ++k) {
+                p_row_1_[k] = ledger.p_row(data_.bus1(k));
+                p_row_2_[k] = ledger.p_row(data_.bus2(k));
+                theta_col_1_[k] = ledger.theta_col(data_.bus1(k));
+                theta_col_2_[k] = ledger.theta_col(data_.bus2(k));
+            }
+        }
+
+        // up to 4 dP/dtheta entries per line, declared whatever the regime
+        void declare_feature_entries(FeatureSink& sink)
+        {
+            h11_.assign(my_size_, -1);
+            h12_.assign(my_size_, -1);
+            h21_.assign(my_size_, -1);
+            h22_.assign(my_size_, -1);
+            for (int k = 0; k < my_size_; ++k) {
+                if ((p_row_1_[k] >= 0) && (theta_col_1_[k] >= 0)) h11_[k] = sink.add(p_row_1_[k], theta_col_1_[k]);
+                if ((p_row_1_[k] >= 0) && (theta_col_2_[k] >= 0)) h12_[k] = sink.add(p_row_1_[k], theta_col_2_[k]);
+                if ((p_row_2_[k] >= 0) && (theta_col_1_[k] >= 0)) h21_[k] = sink.add(p_row_2_[k], theta_col_1_[k]);
+                if ((p_row_2_[k] >= 0) && (theta_col_2_[k] >= 0)) h22_[k] = sink.add(p_row_2_[k], theta_col_2_[k]);
+            }
+        }
+
+        void fill_feature_values(FeatureWriter& writer, const Eigen::Ref<const RealVect>& Va) const
+        {
+            for (int k = 0; k < my_size_; ++k) {
+                if (data_.status(k) != 0) continue;  // saturated: constant injection, zero slopes
+                const real_type raw = data_.p0(k) + data_.k(k) * (Va(data_.bus1(k)) - Va(data_.bus2(k)));
+                const bool side1_ctrl = raw >= 0.;
+                // d recv_pu / d |raw|, with recv = (1-lf_recv)(line_in - r line_in^2)
+                // and line_in = (1-lf_ctrl) |raw|  (see HvdcDroopData::recv_pu)
+                const real_type lf_ctrl = side1_ctrl ? data_.lf1(k) : data_.lf2(k);
+                const real_type line_in = (1. - lf_ctrl) * (side1_ctrl ? raw : -raw);
+                const real_type recv_slope = (1. - data_.lf1(k)) * (1. - data_.lf2(k)) * (1. - 2. * data_.r(k) * line_in);
+                // dp1 = dp1/dtheta1, dp2 = dp2/dtheta1; d/dtheta2 = -d/dtheta1.
+                // Controller side: p = +/-raw, slope +/-k. Receiving side:
+                // p = -recv(|raw|) with d|raw|/dtheta1 = +/-k, slope -/+ k recv'.
+                const real_type dp1 = side1_ctrl ?  data_.k(k) :  data_.k(k) * recv_slope;
+                const real_type dp2 = side1_ctrl ? -data_.k(k) * recv_slope : -data_.k(k);
+                if (h11_[k] >= 0) writer.add(h11_[k], dp1);
+                if (h12_[k] >= 0) writer.add(h12_[k], -dp1);
+                if (h21_[k] >= 0) writer.add(h21_[k], dp2);
+                if (h22_[k] >= 0) writer.add(h22_[k], -dp2);
+            }
+        }
+
+        // the flows LEAVE the buses into the hvdc: they ADD to the computed
+        // power, ie to the mismatch (mis = V conj(Ybus V) - Sbus + ...)
+        void adjust_mismatch(
+            const Eigen::Ref<const CplxVect>& V_t,
+            const Eigen::Ref<const RealVect>& /*dx*/,
+            Eigen::Ref<CplxVect> mis) const
+        {
+            real_type p1_flow, p2_flow;
+            for (int k = 0; k < my_size_; ++k) {
+                const real_type theta_1 = std::arg(V_t(data_.bus1(k)));
+                const real_type theta_2 = std::arg(V_t(data_.bus2(k)));
+                const real_type raw = data_.p0(k) + data_.k(k) * (theta_1 - theta_2);
+                data_.flows_pu(k, raw, p1_flow, p2_flow);
+                mis(data_.bus1(k)) += p1_flow;
+                mis(data_.bus2(k)) += p2_flow;
+            }
+        }
+
+        void fill_custom_rows(Eigen::Ref<RealVect> /*res*/,
+                              const Eigen::Ref<const RealVect>& /*Va*/,
+                              const Eigen::Ref<const RealVect>& /*Vm*/,
+                              const Eigen::Ref<const RealVect>& /*dx*/) const {}
+
+        void apply_step(const Eigen::Ref<const RealVect>& /*dx*/) {}
+
+        void clear() {
+            my_size_ = 0;
+            data_.clear();
+            p_row_1_.clear();
+            p_row_2_.clear();
+            theta_col_1_.clear();
+            theta_col_2_.clear();
+            h11_.clear();
+            h12_.clear();
+            h21_.clear();
+            h22_.clear();
+        }
+
+    private:
+        int                  my_size_;
+        HvdcDroopSolverData  data_;
+        std::vector<int>     p_row_1_, p_row_2_;          // P row of each end bus (-1 if none)
+        std::vector<int>     theta_col_1_, theta_col_2_;  // theta column of each end bus (-1 if none)
+        std::vector<int>     h11_, h12_, h21_, h22_;      // FeatureSink handles (-1 if entry dropped)
+};
+
+/**
+ * Remote voltage control (generators) + Static Var Compensators (SVC).
+ *
+ * BORDERED formulation. Per control group g = { controllers c1..cN (remote
+ * regulating generators and/or voltage-mode SVCs) regulating the SAME solver bus
+ * reg_bus(g) at setpoint v_set(g) }, the regulated bus and all controller buses
+ * REMAIN ordinary PQ buses (Base keeps their theta/vm unknowns and P/Q
+ * equations untouched). This extension only borders the system with, per group:
+ *   - N custom columns Q_c : the reactive injection (pu, GENERATOR convention)
+ *     of each controller, claimed with ledger.add_q_unknown(c.bus);
+ *   - 1 custom row (voltage constraint)
+ *         F_v = Vm(reg) + sum_c s_c.Q_c - v_set = 0
+ *     where s_c = slope(c) is non-zero only for a sloped SVC (0 for gens and
+ *     non-sloped SVCs: structurally identical, non-singular);
+ *   - N-1 custom rows (reactive sharing), with the FIRST controller as reference
+ *         F_k = w_1.Q_{k+1} - w_{k+1}.Q_1 = 0,   k = 1..N-1
+ *     w_i the sharing keys (cross-weight form, units cancel).
+ * N columns vs 1 + (N-1) rows per group: square. With zero groups every loop
+ * below is empty: the ledger / J sparsity / results are bit-identical to a build
+ * without this extension.
+ *
+ * Conventions PINNED empirically against pypowsybl OpenLoadFlow (Phase 0 probes,
+ * see lightsim2grid/tests/probe_olf_*.py):
+ *   - probe #1: OLF satisfies Vm(reg) = v_set - s_pu.Q_c with Q_c in GENERATOR
+ *     convention and s_pu = slope_kV_per_MVar * sn_mva / vn_kv(reg). Hence the
+ *     +s.Q sign of F_v above (no flip).
+ *   - probe #2: reactive sharing is pure proportional-to-range,
+ *     Q_i/(qmax_i-qmin_i) = const, so w_i = qmax_i - qmin_i (set in Python).
+ *   - probe #3: OLF converges on the singular-for-us configs (controller at a
+ *     PV/slack bus, regulated bus = slack or already-PV-via-local-gen, sloped SVC
+ *     sharing a bus) but with fallbacks needing bus reclassification we forbid in
+ *     v1; LSGrid::fill_voltage_control_solver_data rejects them with a clear error.
+ *
+ * Sign conventions matched to NRSystem.tpp (_residual: mis = V conj(YV) - Sbus,
+ * res(row) -= mis_part; J = dF/dx, solver solves J dx = res = -F):
+ *   - adjust_mismatch : mis(c.bus) -= cplx(0, q_c + dx(q_col_c));   (like Sbus)
+ *   - fill_custom_rows: res(v_row)     -= Vm(reg)+dx(vm_col) + sum s_c(q_c+dx) - v_set;
+ *                       res(share_k)   -= w_1.Qt_{k+1} - w_{k+1}.Qt_1;
+ *   - feature J values : (q_row(c.bus), q_col_c) = -1;
+ *                        (v_row, vm_col(reg))    = +1;
+ *                        (v_row, q_col_svc)      = s_c  (declared for SVC kind);
+ *                        (share_k, q_col_{k+1})  = w_1;
+ *                        (share_k, q_col_1)      = -w_{k+1};
+ *   - apply_step      : q_c += dx(q_col_c);
+ *   - update_state    : re-pull the data and reset every q_c = 0 (per-solve init).
+ *
+ * Feature entries are declared UNCONDITIONALLY (the slope entry is declared for
+ * every SVC controller even when its slope is 0) so a setpoint / slope change
+ * never alters the J sparsity pattern (KLU symbolic reuse for TimeSeries /
+ * ContingencyAnalysis).
+ *
+ * Must be registered AFTER Base and MultiSlack (it reads q_row(c.bus) and
+ * vm_col(reg) from the ledger) and BEFORE Hvdc (which reads the ledger last).
+ */
+class LS2G_API VoltageControl
+{
+    public:
+        VoltageControl(): my_size_(0) {}
+
+        // pulls the controller data (solver bus ids, pu) from the grid and resets
+        // the per-controller reactive state; defined in NRSystemVoltageControl.cpp
+        // (needs the full LSGrid type)
+        void update_state(
+            const Base                       * nr_system_base_ptr,
+            const LSGrid                     * lsgrid_ptr,
+            const EigenRefConstCplxSpMat     & Ybus,
+            const Eigen::Ref<const CplxVect> & Sbus,
+            const Eigen::Ref<const RealVect> & slack_weights
+        );
+
+        void init_topology(
+            const Eigen::Ref<const IntVect>  & /*slack_ids*/,
+            const Eigen::Ref<const RealVect> & /*slack_weights*/,
+            const Eigen::Ref<const IntVect>  & /*pv*/,
+            const Eigen::Ref<const IntVect>  & /*pq*/
+        ) {}
+
+        // ContingencyAnalysis "handle_disconnected_grid" mode (see NRSystem::
+        // set_masked_buses, which forwards here): scope is a SINGLETON group
+        // (cnt == 1) whose sole controller sits on a bus this contingency masks.
+        // That controller's own equipment is isolated from the live component --
+        // there is nobody left to hold the regulated bus at v_set -- so its
+        // voltage row is repurposed (fill_feature_values / fill_custom_rows) from
+        // the voltage constraint into a plain "Q_c = 0" pin, freeing the
+        // regulated bus back to its own ordinary PQ equations. That reproduces
+        // what a rebuilt (single-shot) topology does once the disconnected
+        // controller drops out of the group. A multi-controller (cnt > 1) group
+        // with a stranded member is NOT covered: the row/column structure stays
+        // singular for it, exactly as before this method existed.
+        //
+        // Only STORES the list here: `data_` may still hold the previous contingency's
+        // (or, on a freshly spawned per-thread algo, no) content at this point -- the
+        // multi-threaded path calls this before that thread's first update_state() ever
+        // runs. group_stranded_ is (re)computed from data_ + masked_buses_ inside
+        // update_state() itself, which always runs right after this, once per
+        // compute_pf() call, so it is guaranteed to see data_ freshly rebuilt for the
+        // very contingency this masked_buses_ belongs to.
+        void set_masked_buses(const std::vector<int>& masked_buses)
+        {
+            masked_buses_ = masked_buses;
+        }
+
+        // Gates the extra (v_row, q_col) slot declare_feature_entries reserves for a
+        // lone (cnt==1) GEN controller (see there): only worth it when THIS run might
+        // ever call set_masked_buses with a non-empty list. Caller-set, once, before
+        // the first declare_feature_entries() it should affect -- see NRSystem::
+        // set_may_mask_voltage_control / BaseAlgo::set_may_mask_voltage_control.
+        void set_may_mask_voltage_control(bool val) { may_mask_ = val; }
+
+        // Per-solve override of the groups' voltage set-points, indexed by group
+        // (the grid's own plan order). A finite entry replaces that group's v_set for
+        // every following solve; NaN (or an empty vector) keeps the grid's own. A
+        // generator regulating a bus a group holds does not fix |V| anywhere: its
+        // set-point IS this v_set, so a batch that varies generator set-points per row
+        // (BaseBatchSweep::modify_gen_v) has to hand it over here -- re-seeding |V| at
+        // the regulated bus only moves the starting point, the voltage row then puts it
+        // back at the grid's own target. Caller-set, NOT reset by clear() or
+        // update_state(), like the pinning above.
+        void set_v_set_override(const RealVect& v_set) { v_set_override_ = v_set; }
+
+        // J row of each group's voltage constraint (group order), what the gradient of
+        // a loss with respect to that group's v_set is read from (dF_v/dv_set = -1).
+        IntVect group_v_row() const {
+            return Eigen::Map<const IntVect>(v_rows_.data(), static_cast<Eigen::Index>(v_rows_.size()));
+        }
+
+        // claims, per group: N q-unknown columns, 1 voltage row, N-1 sharing rows;
+        // caches the controller q rows and the regulated-bus vm columns (the ledger
+        // is fully populated by Base / MultiSlack before this runs)
+        void register_in(NRLedger& ledger)
+        {
+            const int nc = data_.n_controllers();
+            const int ng = data_.n_groups();
+            q_cols_.assign(nc, -1);
+            q_rows_.assign(nc, -1);
+            v_rows_.assign(ng, -1);
+            vm_cols_.assign(ng, -1);
+            share_rows_.assign(ng, std::vector<int>());
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    q_cols_[j] = ledger.add_q_unknown(data_.bus(j));
+                    q_rows_[j] = ledger.q_row(data_.bus(j));
+                }
+                v_rows_[g]  = ledger.add_custom_row();
+                vm_cols_[g] = ledger.vm_col(data_.reg_bus(g));
+                share_rows_[g].assign(cnt - 1, -1);
+                for (int k = 0; k < cnt - 1; ++k) share_rows_[g][k] = ledger.add_custom_row();
+            }
+        }
+
+        // declares, unconditionally, every feature entry of the bordered block
+        void declare_feature_entries(FeatureSink& sink)
+        {
+            const int nc = data_.n_controllers();
+            const int ng = data_.n_groups();
+            h_qrow_.assign(nc, -1);
+            h_slope_.assign(nc, -1);
+            h_vm_.assign(ng, -1);
+            h_shareA_.assign(ng, std::vector<int>());
+            h_shareB_.assign(ng, std::vector<int>());
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                const int v_row = v_rows_[g];
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    if (q_rows_[j] >= 0 && q_cols_[j] >= 0) h_qrow_[j] = sink.add(q_rows_[j], q_cols_[j]);
+                    // slope coupling Vm(reg) <- s.Q_c, declared for every SVC (slope-independent
+                    // pattern, needed regardless of masking) and, ONLY when this run might ever
+                    // mask a bus (may_mask_, see set_may_mask_voltage_control), for a lone
+                    // (cnt == 1) controller of any kind: reserved with value 0 in the normal case
+                    // so set_masked_buses can repurpose it into a "pin Q_c to 0" coefficient (see
+                    // fill_feature_values) without ever touching J's sparsity pattern. Gating this
+                    // on may_mask_ keeps every other caller -- plain ac_pf, TimeSeries, an
+                    // un-masked batch -- exactly as cheap as before this feature existed.
+                    if ((data_.kind(j) == VoltageControlSolverData::SVC || (cnt == 1 && may_mask_)) &&
+                        v_row >= 0 && q_cols_[j] >= 0)
+                        h_slope_[j] = sink.add(v_row, q_cols_[j]);
+                }
+                if (v_row >= 0 && vm_cols_[g] >= 0) h_vm_[g] = sink.add(v_row, vm_cols_[g]);
+                h_shareA_[g].assign(cnt - 1, -1);
+                h_shareB_[g].assign(cnt - 1, -1);
+                for (int k = 0; k < cnt - 1; ++k) {
+                    const int row = share_rows_[g][k];
+                    const int col_first = q_cols_[first];
+                    const int col_kp1   = q_cols_[first + (k + 1)];
+                    if (row >= 0 && col_kp1   >= 0) h_shareA_[g][k] = sink.add(row, col_kp1);
+                    if (row >= 0 && col_first >= 0) h_shareB_[g][k] = sink.add(row, col_first);
+                }
+            }
+        }
+
+        void fill_feature_values(FeatureWriter& writer, const Eigen::Ref<const RealVect>& /*Va*/) const
+        {
+            const int ng = data_.n_groups();
+            const bool have_stranded = !group_stranded_.empty();
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                const bool stranded = have_stranded && group_stranded_[g];
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    if (h_qrow_[j]  >= 0) writer.add(h_qrow_[j],  static_cast<real_type>(-1.));
+                    if (h_slope_[j] >= 0) writer.add(h_slope_[j], stranded ? static_cast<real_type>(1.) : data_.slope(j));
+                }
+                // stranded (singleton, masked controller): drop the Vm(reg) coupling -- the row
+                // is now "Q_c = 0" (see fill_custom_rows), not the voltage constraint.
+                if (h_vm_[g] >= 0) writer.add(h_vm_[g], stranded ? static_cast<real_type>(0.) : static_cast<real_type>(1.));
+                const real_type w_first = data_.weight(first);
+                for (int k = 0; k < cnt - 1; ++k) {
+                    if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], w_first);
+                    if (h_shareB_[g][k] >= 0) writer.add(h_shareB_[g][k], -data_.weight(first + (k + 1)));
+                }
+            }
+        }
+
+        // the controller reactive injection subtracts from the mismatch like Sbus
+        void adjust_mismatch(const Eigen::Ref<const CplxVect>& /*V_t*/, const Eigen::Ref<const RealVect>& dx, Eigen::Ref<CplxVect> mis) const
+        {
+            const int nc = data_.n_controllers();
+            for (int j = 0; j < nc; ++j)
+                mis(data_.bus(j)) -= cplx_type(static_cast<real_type>(0.), q_(j) + dx(q_cols_[j]));
+        }
+
+        // the bordered voltage and sharing rows
+        void fill_custom_rows(Eigen::Ref<RealVect> res,
+                              const Eigen::Ref<const RealVect>& /*Va*/,
+                              const Eigen::Ref<const RealVect>& Vm,
+                              const Eigen::Ref<const RealVect>& dx) const
+        {
+            const int ng = data_.n_groups();
+            const bool have_stranded = !group_stranded_.empty();
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                if (have_stranded && group_stranded_[g]) {
+                    // stranded singleton controller: pin Q_c = 0 instead of the voltage
+                    // constraint (see set_masked_buses); cnt == 1 here, so there are no
+                    // sharing rows to fill for this group.
+                    const real_type Qt_first = q_(first) + dx(q_cols_[first]);
+                    res(v_rows_[g]) -= Qt_first;
+                    continue;
+                }
+                // voltage constraint  Vm(reg) + sum s_c.Q_c - v_set
+                real_type vm_trial = Vm(data_.reg_bus(g));
+                if (vm_cols_[g] >= 0) vm_trial += dx(vm_cols_[g]);
+                real_type slope_term = static_cast<real_type>(0.);
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    slope_term += data_.slope(j) * (q_(j) + dx(q_cols_[j]));
+                }
+                res(v_rows_[g]) -= vm_trial + slope_term - data_.v_set(g);
+                // sharing rows w_1.Q_{k+1} - w_{k+1}.Q_1
+                const real_type w_first  = data_.weight(first);
+                const real_type Qt_first = q_(first) + dx(q_cols_[first]);
+                for (int k = 0; k < cnt - 1; ++k) {
+                    const int j = first + (k + 1);
+                    const real_type Qt_j = q_(j) + dx(q_cols_[j]);
+                    res(share_rows_[g][k]) -= w_first * Qt_j - data_.weight(j) * Qt_first;
+                }
+            }
+        }
+
+        void apply_step(const Eigen::Ref<const RealVect>& dx)
+        {
+            const int nc = data_.n_controllers();
+            for (int j = 0; j < nc; ++j) q_(j) += dx(q_cols_[j]);
+        }
+
+        void clear() {
+            my_size_ = 0;
+            data_.clear();
+            q_ = RealVect();
+            q_cols_.clear();
+            q_rows_.clear();
+            v_rows_.clear();
+            vm_cols_.clear();
+            share_rows_.clear();
+            h_qrow_.clear();
+            h_slope_.clear();
+            h_vm_.clear();
+            h_shareA_.clear();
+            h_shareB_.clear();
+            masked_buses_.clear();
+            group_stranded_.clear();
+        }
+
+        // converged reactive injection per controller (pu, registration order)
+        Eigen::Ref<const RealVect>  controller_q()       const { return q_; }
+        Eigen::Ref<const IntVect>   controller_kind()    const { return data_.kind; }
+        Eigen::Ref<const IntVect>   controller_elem_id() const { return data_.elem_id; }
+        // J column of each controller's own Q unknown (controller registration
+        // order, matching controller_q()/controller_kind()/controller_elem_id()).
+        // NOT the same as the ledger's bus-keyed q_to_J_col (NRLedger::
+        // add_q_unknown's own doc: that map is "sugar" for introspection and
+        // only keeps the LAST controller registered at a given bus) -- callers
+        // needing the true per-controller column (e.g. an external solver
+        // rebuilding this bordered block, like gpusim2grid) whenever two
+        // controllers share a bus MUST use this, not q_to_J_col.
+        IntVect controller_q_col() const {
+            return Eigen::Map<const IntVect>(q_cols_.data(), static_cast<Eigen::Index>(q_cols_.size()));
+        }
+
+    private:
+        // (re)derive group_stranded_ from the just-refreshed data_ and the stored
+        // masked_buses_ (see set_masked_buses above for why this can't run there
+        // directly). Called from update_state(), once per compute_pf() call, right
+        // after data_ is rebuilt -- cheap: ng and masked_buses_ are both tiny.
+        void _recompute_group_stranded()
+        {
+            const int ng = data_.n_groups();
+            group_stranded_.assign(ng, 0);
+            if (masked_buses_.empty()) return;
+            for (int g = 0; g < ng; ++g) {
+                if (data_.grp_count(g) != 1) continue;
+                const int ctrl_bus = data_.bus(data_.grp_start(g));
+                if (std::find(masked_buses_.begin(), masked_buses_.end(), ctrl_bus) != masked_buses_.end())
+                    group_stranded_[g] = 1;
+            }
+        }
+
+        // Caller-set run config, NOT reset by clear() (see set_may_mask_voltage_control):
+        // whether a lone controller's Jacobian slot is worth reserving in
+        // declare_feature_entries. The batch code that owns this decision
+        // (BaseBatchSweep::_maybe_prepare_masks) re-asserts it before every
+        // compute(), so it never actually goes stale across a clear_jacobian().
+        bool                           may_mask_ = false;
+        int                            my_size_;     // number of controllers
+        VoltageControlSolverData       data_;        // per-solve controller data (refreshed every update_state)
+        RealVect                       v_set_override_;  // per group, NaN = grid's own (see set_v_set_override)
+        RealVect                       q_;           // running reactive injection per controller (pu, gen convention)
+        std::vector<int>               q_cols_;      // J column of each controller's Q unknown
+        std::vector<int>               q_rows_;      // q_row of each controller bus (-1 if none)
+        std::vector<int>               v_rows_;      // voltage row of each group
+        std::vector<int>               vm_cols_;     // vm column of each group's regulated bus (-1 if none)
+        std::vector<std::vector<int> > share_rows_;  // sharing rows of each group (size N-1)
+        std::vector<int>               h_qrow_;      // handle (q_row, q_col) per controller
+        std::vector<int>               h_slope_;     // handle (v_row, q_col) per controller (-1 unless
+                                                       // SVC or a lone (cnt==1) controller -- see
+                                                       // declare_feature_entries / set_masked_buses)
+        std::vector<int>               h_vm_;        // handle (v_row, vm_col) per group
+        std::vector<std::vector<int> > h_shareA_;    // handle (share_row, q_col_{k+1}) per group
+        std::vector<std::vector<int> > h_shareB_;    // handle (share_row, q_col_1) per group
+        std::vector<int>               masked_buses_;    // last set_masked_buses() argument, verbatim
+        std::vector<char>              group_stranded_;  // per group: 1 iff cnt==1 and its lone
+                                                           // controller's bus is masked; derived from
+                                                           // masked_buses_ by _recompute_group_stranded(),
+                                                           // called from update_state(); empty when unset
+};
+
+
+// ---- NRSystem<Base, Rest...> ----------------------------------------------------
+
+/**
+ * Composable Newton-Raphson system: a Base block (single-slack core) plus any
+ * number of extensions (e.g. MultiSlack), all registered in a central NRLedger.
+ *
+ * 3-phase interface:
+ *   Phase 1  — init_topology(): components compute their index sets, then claim
+ *              their equations (J rows) / unknowns (J columns) in the ledger.
+ *              Call when pv/pq/slack topology changes.
+ *   Phase 1.5— update_state():  updates V/Sbus pointers. Call every compute_pf.
+ *   Phase 2  — build_J_sparsity(): symbolic J build + value maps. Call when
+ *              topology changes.
+ *   Phase 3  — fill_J(): fast numerical fill via the value maps. Call each
+ *              factorisation.
+ *
+ * All the dS-derived Jacobian entries (∂(P or Q mismatch at bus i)/∂(θ or Vm
+ * at bus j), which exist iff Ybus(i, j) != 0) are generated by ONE generic
+ * pass over the Ybus nonzeros, for every component at once: the ledger says
+ * which buses own a P/Q equation and a θ/Vm unknown. Components only declare
+ * their feature-specific (non dS-derived) entries through the FeatureSink.
+ *
+ * Likewise the residual P/Q rows, the voltage updates (apply_step /
+ * _compute_trial_V) and the scaling reductions (max_abs_dtheta / max_abs_dvm)
+ * are generic loops over the ledger's (bus, row) / (bus, col) pair lists;
+ * components only handle their own custom rows and non-voltage state.
+ *
+ * Layout: each component registers its bus-owned rows / columns in INCREASING
+ * BUS INDEX order, components in declaration order (Base first). Several
+ * contributions may resolve to the same J position, so fill_J zeroes J then
+ * accumulates (+=).
+ */
+template <typename... Rest>
+class NRSystem<Base, Rest...>
+{
+public:
+    NRSystem() noexcept:
+        timer_dSbus_(0.),
+        timer_fillJ_(0.),
+        masked_dirty_(false),
+        lsgrid_ptr_(nullptr),
+        Ybus_ref_(_EmptySpMat),
+        Sbus_data_ptr_(nullptr),
+        Sbus_size_(0) {}
+
+    virtual ~NRSystem() = default;
+
+    // ----- Phase 1: topology init (call when pv/pq/slack topology changes) -------
+
+    void init_topology(
+        const Eigen::Ref<const IntVect>  & slack_ids,
+        const Eigen::Ref<const RealVect> & slack_weights,
+        const Eigen::Ref<const IntVect>  & pv,
+        const Eigen::Ref<const IntVect>  & pq);
+
+    // ----- Phase 1.5: per-compute_pf state update (cheap) -----------------------
+
+    void update_state(
+        const LSGrid                     * lsgrid_ptr,
+        const EigenRefConstCplxSpMat     & Ybus,
+        const Eigen::Ref<const CplxVect> & V_init,
+        const Eigen::Ref<const CplxVect> & Sbus,
+        const Eigen::Ref<const RealVect> & slack_weights);
+
+    // ----- Phase 2: build J sparsity + value maps -------------------------------
+
+    void build_J_sparsity();
+
+    // ----- Phase 3: fill J numerically -------------------------------------------
+
+    void fill_J();
+    void fill_internal_variables();
+
+    // ----- bus masking (ContingencyAnalysis "handle disconnected grid" mode) ------
+    // Mark some solver buses as "masked": their P/Q mismatch rows are replaced by
+    // trivial identity rows (so dx == 0 on those buses), which keeps the Jacobian
+    // non-singular when a contingency isolates them from the live component. This
+    // is a pure value-level change: the J sparsity pattern / dimension are NOT
+    // touched, so the symbolic factorization is reused (no analyze()). An empty
+    // vector (the default) disables masking and reproduces the unmasked behaviour
+    // bit-for-bit. solver_bus_ids must never include the reference slack.
+    void set_masked_buses(const std::vector<int>& solver_bus_ids) {
+        masked_buses_ = solver_bus_ids;
+        masked_dirty_ = true;
+        // forward to the VoltageControl extension when present (both AC
+        // instantiations carry it -- see the SingleSlackNRSystem / MultiSlackNRSystem
+        // aliases below): lets a stranded singleton controller's voltage row be
+        // repurposed instead of staying structurally singular. A no-op elsewhere
+        // (_find_extension returns nullptr when VoltageControl is not in Rest...).
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_masked_buses(masked_buses_);
+    }
+
+    // Mark some solver buses as "PV pinned": ONLY their Q mismatch row is replaced
+    // by a trivial identity row (J[q_row, vm_col] = 1, rest of the row zero, residual
+    // zero), so dVm == 0 there and the bus keeps the magnitude it was initialised
+    // with -- its generator's setpoint. This is how a bus that Base reserved a Vm
+    // unknown + Q equation for (see Base::set_switchable_vm_buses) is made to behave
+    // as PV again, WITHOUT touching the J sparsity: the caller flips it per solve and
+    // the symbolic factorization is reused.
+    //
+    // The complement of set_masked_buses above, which identity-pins BOTH the P and
+    // the Q row of a bus the grid no longer reaches. A bus in both lists is fine --
+    // masking wins, and both its rows go to identity.
+    //
+    // An empty vector (the default) disables it and reproduces the unpinned
+    // behaviour bit-for-bit. A bus with no Q row (an ordinary PV bus Base reserved
+    // nothing for) is silently ignored: q_row() answers -1 and there is nothing to
+    // pin. Pass the buses that are PV in THIS scenario, not the ones that are PQ.
+    void set_pv_pinned_buses(const std::vector<int>& solver_bus_ids) {
+        pv_pinned_buses_ = solver_bus_ids;
+        masked_dirty_ = true;
+    }
+
+    // Whether the stranded-controller Jacobian slot (see VoltageControl::
+    // declare_feature_entries) is worth reserving at all: only set_masked_buses()
+    // above is ever able to use it, and only ContingencyAnalysis / ScenarioSweep's
+    // handle_disconnected_grid mode ever calls that. Must be called before the
+    // first build_J_sparsity() this should affect (see BaseAlgo::
+    // set_may_mask_voltage_control's doc for the caller-side invalidation this
+    // implies if it is ever flipped after sparsity was already built).
+    void set_may_mask_voltage_control(bool val) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_may_mask_voltage_control(val);
+    }
+
+    // Per-solve group set-points of the VoltageControl extension (NaN = the grid's
+    // own), see VoltageControl::set_v_set_override. No-op without the extension.
+    void set_voltage_control_v_set(const RealVect& v_set) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_v_set_override(v_set);
+    }
+
+    // Reserve a Vm unknown + a Q equation for each of these PV buses, so their
+    // labelling can be flipped later with set_pv_pinned_buses at no sparsity cost.
+    // Like set_may_mask_voltage_control, this must be called BEFORE the
+    // build_J_sparsity() that is to account for it -- the caller forces that build
+    // by raising the solver control's pv_changed once. See Base::
+    // set_switchable_vm_buses for the full contract.
+    void set_switchable_vm_buses(const std::vector<int>& solver_bus_ids) {
+        base_.set_switchable_vm_buses(solver_bus_ids);
+    }
+
+    // see BaseAlgo::set_start_polar_cache and update_state. Turning it off drops
+    // the cache, so the next solve pays the two passes as it always did.
+    void set_start_polar_cache(bool val) {
+        start_polar_cache_ = val;
+        if(!val){
+            init_V_cache_  = CplxVect();
+            init_Va_cache_ = RealVect();
+            init_Vm_cache_ = RealVect();
+        }
+    }
+
+    // ----- NR iteration primitives -----------------------------------------------
+
+    RealVect   mismatch()                           const;
+    // same value as mismatch(), written into a caller-owned vector (which must
+    // already have total_state_variables() coefficients). Lets the NR loop
+    // refresh its residual in place instead of allocating -- and then freeing
+    // -- a fresh one on every iteration.
+    void       mismatch_into(Eigen::Ref<RealVect> res) const;
+    void       apply_step(const Eigen::Ref<const RealVect>& dx);
+    real_type  mismatch_sq_norm_at(const Eigen::Ref<const RealVect>& dx) const;
+    // ||mismatch at the current state||^2, i.e. mismatch_sq_norm_at(0) without
+    // materialising the zero step vector the caller would otherwise build on
+    // every call (a line search does this once per NR iteration). It really is
+    // the zero-step call -- same reconstruct-then-evaluate path, same value to
+    // the last bit -- not a shortcut through V_.
+    real_type  mismatch_sq_norm_at_current() const;
+
+    // Direct, allocation-light update of the LAST-registered extension's
+    // `count` feature entries, identified purely by count and position (the
+    // caller -- e.g. an extension whose declare_feature_entries reserved
+    // exactly `count` trailing slots -- is responsible for knowing its own
+    // count). Adds deltas[i] into the J_.valuePtr() position already
+    // resolved (in build_J_sparsity) for feature handle
+    // `sink_.size() - count + i`, bypassing fill_internal_variables()/
+    // fill_J() entirely. For extensions whose value needs to change faster
+    // than the rest of J (e.g. Levenberg-Marquardt diagonal damping; see
+    // examples/lm_algorithm/). Not diagonal- or LM-specific: it only knows
+    // "update these already-declared feature positions."
+    void update_trailing_feature_values(int count, const Eigen::Ref<const RealVect>& deltas);
+
+    // ----- continuation powerflow (CPF) primitives --------------------------------
+    //
+    // Right-hand side of the tangent system J . z = rhs, for the parametrised
+    // problem F(x, lam) = Scomp(x) - Sbus - lam . dir, whose dF/dlam is -dir.
+    //
+    // The projection is exactly the one _residual_into performs on Sbus, and for the
+    // same reason: `res` there is `Sbus - Scomp` (the residual is NEGATED, see
+    // NRAlgo::compute_pf, which solves J . dx = res and applies +dx), so the Sbus
+    // term enters a P row with a PLUS sign. Hence rhs(p_row(b)) = +Re(dir(b)) and
+    // rhs(q_row(b)) = +Im(dir(b)).
+    //
+    // Custom rows (MultiSlack, Hvdc, VoltageControl) get zero: none of them depends
+    // on lam. Masked and PV-pinned rows get zero too, matching the identity rows
+    // fill_J writes for them -- so a masked bus contributes no tangent, exactly as it
+    // contributes no residual.
+    //
+    // Accumulates (+=) over the ledger's pair lists, like _residual_into, so a bus
+    // registered more than once sums rather than overwrites.
+    void cpf_rhs_into(Eigen::Ref<RealVect> rhs, const Eigen::Ref<const CplxVect>& dir) const;
+
+    // V_pred = (Va_ + coeff . z_theta, Vm_ + coeff . z_vm) in polar form, using the
+    // same ledger-driven (bus, col) walk as apply_step -- so a component that owns a
+    // voltage unknown is predicted exactly where the corrector would step it. The
+    // system's own state is NOT modified: this writes a trial voltage for the
+    // corrector to start from.
+    void cpf_predict_into(CplxVect& V_pred, const Eigen::Ref<const RealVect>& z, real_type coeff) const;
+
+    // ----- Housekeeping ----------------------------------------------------------
+
+    void clear_jacobian() {
+        J_         = Eigen::SparseMatrix<real_type, Eigen::ColMajor>();
+        base_.clear();
+        _clear_extensions(std::make_index_sequence<sizeof...(Rest)>{});
+
+        dS_dVm_vals_ = CplxVect();
+        dS_dVa_vals_ = CplxVect();
+        Ibus_cache_   = CplxVect();
+        inv_vm_cache_ = RealVect();
+
+        ybus_v_own_     = CplxVect();
+        mis_own_        = CplxVect();
+        init_V_cache_   = CplxVect();
+        init_Va_cache_  = RealVect();
+        init_Vm_cache_  = RealVect();
+        if(ybus_v_ptr_ != nullptr) *ybus_v_ptr_ = CplxVect();
+        if(mis_ptr_ != nullptr)    *mis_ptr_    = CplxVect();
+        Va_trial_cache_ = RealVect();
+        Vm_trial_cache_ = RealVect();
+        V_trial_cache_  = CplxVect();
+        res_cache_      = RealVect();
+
+        map_dsdva_r_.clear();
+        map_dsdva_i_.clear();
+        map_dsdvm_r_.clear();
+        map_dsdvm_i_.clear();
+        sink_.clear();
+        feature_pos_.clear();
+        masked_buses_.clear();
+        pv_pinned_buses_.clear();
+        masked_zero_pos_.clear();
+        masked_one_pos_.clear();
+        masked_dirty_ = false;
+        ledger_.reset(0);
+    }
+
+    Eigen::Ref<const Eigen::SparseMatrix<real_type> > J()  const { return J_; }
+    /**
+     * Point this system at the mismatch buffers of the algorithm that owns it.
+     * Called once, before the first solve; the buffers must outlive this system,
+     * which they do -- they are members of the same object that holds it.
+     */
+    void set_mismatch_buffers(CplxVect & mis, CplxVect & ybus_v) noexcept {
+        mis_ptr_ = &mis;
+        ybus_v_ptr_ = &ybus_v;
+    }
+
+    Eigen::Ref<const CplxVect> V()  const { return V_; }
+    Eigen::Ref<const RealVect> Va() const { return Va_; }
+    Eigen::Ref<const RealVect> Vm() const { return Vm_; }
+
+    // bus_id -> Jacobian column of that bus' theta / vm / q unknown (-1 if none).
+    // Each vector has size n_bus and spans the full augmented J (base + extensions).
+    const std::vector<int>& theta_to_J_col() const { return ledger_.theta_col_of_bus(); }
+    const std::vector<int>& vm_to_J_col()    const { return ledger_.vm_col_of_bus(); }
+    const std::vector<int>& q_to_J_col()     const { return ledger_.q_col_of_bus(); }
+
+    // bus_id -> Jacobian row of that bus' P / Q mismatch equation (-1 if none).
+    // The row counterpart of *_to_J_col; size n_bus, spans the augmented J. Used
+    // by external batched solvers to rebuild the dS scatter / residual layout.
+    const std::vector<int>& p_to_J_row() const { return ledger_.p_row_of_bus(); }
+    const std::vector<int>& q_to_J_row() const { return ledger_.q_row_of_bus(); }
+
+    // Compact (bus, row/col) registration pair lists -- the row/col counterpart
+    // of the *_to_J_col / *_to_J_row bus-keyed maps above. Unlike those maps
+    // (one slot per bus, "last registration wins"), these preserve EVERY
+    // registration in order: a bus may appear more than once (or not appear
+    // in the bus-keyed map's current value at all, if a later registration
+    // shadowed it there -- see NRLedger's "Multiplicity rules"). External
+    // batched solvers (e.g. gpusim2grid) that rebuild the dS scatter maps and
+    // the per-row residual assembly MUST iterate these, not the bus-keyed
+    // maps, to get every contribution NRSystem::_residual() itself sums.
+    const std::vector<int>& p_buses()     const { return ledger_.p_buses(); }
+    const std::vector<int>& p_rows()      const { return ledger_.p_rows(); }
+    const std::vector<int>& q_buses()     const { return ledger_.q_buses(); }
+    const std::vector<int>& q_rows()      const { return ledger_.q_rows(); }
+    const std::vector<int>& theta_buses() const { return ledger_.theta_buses(); }
+    const std::vector<int>& theta_cols()  const { return ledger_.theta_cols(); }
+    const std::vector<int>& vm_buses()    const { return ledger_.vm_buses(); }
+    const std::vector<int>& vm_cols()     const { return ledger_.vm_cols(); }
+
+    size_t total_state_variables() const { return static_cast<size_t>(ledger_.size()); }
+
+    // ----- VoltageControl results (empty when the extension is not in the tuple) --
+    // converged reactive injection / kind / element id per controller (pu, in the
+    // controller registration order of VoltageControlSolverData).
+    RealVect controller_q() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? RealVect(vc->controller_q()) : RealVect();
+    }
+    IntVect controller_kind() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? IntVect(vc->controller_kind()) : IntVect();
+    }
+    IntVect controller_elem_id() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? IntVect(vc->controller_elem_id()) : IntVect();
+    }
+    IntVect controller_q_col() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? IntVect(vc->controller_q_col()) : IntVect();
+    }
+    IntVect group_v_row() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? IntVect(vc->group_v_row()) : IntVect();
+    }
+
+    // ----- MultiSlack: slack_absorbed J column (-1 when the extension is absent) --
+    int slack_col() const {
+        const MultiSlack* ms = _find_extension<MultiSlack>();
+        return ms ? ms->slack_col() : -1;
+    }
+    // ----- MultiSlack: converged slack_absorbed VALUE (0 when the extension is absent) --
+    real_type slack_absorbed() const {
+        const MultiSlack* ms = _find_extension<MultiSlack>();
+        return ms ? ms->slack_absorbed() : static_cast<real_type>(0.);
+    }
+
+    // ----- Scaling reductions ----------------------------------------------------
+    // max |angle step| / max |voltage-magnitude step| across all state variables.
+    real_type max_abs_dtheta(const Eigen::Ref<const RealVect>& dx) const {
+        real_type m = static_cast<real_type>(0.);
+        for (int col : ledger_.theta_cols()) m = std::max(m, std::abs(dx(col)));
+        return m;
+    }
+    real_type max_abs_dvm(const Eigen::Ref<const RealVect>& dx) const {
+        real_type m = static_cast<real_type>(0.);
+        for (int col : ledger_.vm_cols()) m = std::max(m, std::abs(dx(col)));
+        return m;
+    }
+
+    // ----- Timers ----------------------------------------------------------------
+
+    double timer_dSbus() const { return timer_dSbus_; }
+    double timer_fillJ() const { return timer_fillJ_; }
+    void   reset_timers()      { timer_dSbus_ = 0.; timer_fillJ_ = 0.; }
+
+private:
+    // ---- Shared data (one copy, shared by all components) -----------------------
+    RealVect                               Va_, Vm_;
+    CplxVect                               V_;
+    // the last starting voltage update_state was handed, with its polar form: a
+    // call with the same bits copies the polar form instead of recomputing it.
+    // Kept only when a caller asked (set_start_polar_cache): filling it costs three
+    // vector copies per solve, which a solve that never hits must not pay.
+    bool                                   start_polar_cache_ = false;
+    CplxVect                               init_V_cache_;
+    RealVect                               init_Va_cache_, init_Vm_cache_;
+    // cache for mismatch(): a persistent all-zero dx, resized (and re-zeroed) only
+    // when total_state_variables() changes; never written to otherwise, so it is
+    // safe to reuse across calls instead of allocating a fresh RealVect::Zero(n)
+    // every time (mismatch() runs at least twice per NR iteration).
+    mutable RealVect                       dx_zero_cache_;
+    // scratch for _residual_into / _compute_trial_V_into / mismatch_sq_norm_at.
+    // These run at least twice per NR iteration -- and once per backtracking
+    // trial of a line search, i.e. up to ~20 times -- so every one of them used
+    // to heap-allocate (and free) a full nb_bus / nb_unknown vector on each
+    // call. They are mutable because the calls are const: like dx_zero_cache_
+    // above they are pure scratch, never state (an NRSystem is owned by exactly
+    // one solver, and a multi-threaded batch gives each thread its own solver).
+    // The per-bus complex mismatch and the Ybus * V scratch are NOT ours: they live
+    // in the BaseAlgo that owns this system (NRAlgo), which hands us their addresses
+    // in set_mismatch_buffers. Same two buffers the FDPF fills, so a caller can read
+    // the mismatch off any algorithm without knowing which family produced it.
+    //
+    // Pointers rather than references so the system stays assignable, and `* const`
+    // through a const method, which is what lets _residual_into stay const while
+    // writing through them -- exactly what `mutable` bought when they were members.
+    //
+    // Null until an owner claims them, and then the system falls back to the two
+    // below: an NRSystem is usable on its own (the algorithm tests build one and call
+    // mismatch() on it with no NRAlgo anywhere), so "nobody told me where to write"
+    // has to mean "write to my own buffer", not a null dereference. NRAlgo re-points
+    // them at the top of every compute_pf rather than once at construction, so a
+    // copied algorithm cannot end up writing into the buffers of the original.
+    CplxVect *                             ybus_v_ptr_ = nullptr;   // Ybus * V_t
+    CplxVect *                             mis_ptr_ = nullptr;      // per-bus complex mismatch
+    mutable CplxVect                       ybus_v_own_;  // used iff ybus_v_ptr_ is null
+    mutable CplxVect                       mis_own_;     // used iff mis_ptr_ is null
+    mutable RealVect                       Va_trial_cache_, Vm_trial_cache_;
+    mutable CplxVect                       V_trial_cache_;
+    mutable RealVect                       res_cache_;      // residual at the trial point
+    Eigen::SparseMatrix<real_type, Eigen::ColMajor>         J_;
+    double                                 timer_dSbus_, timer_fillJ_;
+    // dS_dVm / dS_dVa VALUES only, one per Ybus nonzero, in Ybus' own
+    // (compressed) storage order. They used to be two full
+    // Eigen::SparseMatrix copies of Ybus, but nothing ever indexed them by
+    // (row, col): fill_internal_variables writes them and fill_J reads them
+    // purely by nnz position, exactly as they are laid out here. Dropping the
+    // sparse wrapper removes the two structure copies (outer + inner index
+    // arrays) init_topology made of Ybus on every topology change -- the
+    // "TODO speed: copy only the sparsity pattern and not the values" that
+    // used to sit there.
+    CplxVect                               dS_dVm_vals_, dS_dVa_vals_;
+    // scratch for fill_internal_variables, kept across calls so the two
+    // nb_bus-sized vectors it needs are allocated once per topology instead of
+    // once per Jacobian fill
+    CplxVect                               Ibus_cache_;    // Ybus * V
+    RealVect                               inv_vm_cache_;  // 1 / |V|
+
+    // dS value maps: Ybus nnz position -> position in J_.valuePtr() (-1 if unused)
+    std::vector<int>                       map_dsdva_r_;
+    std::vector<int>                       map_dsdva_i_;
+    std::vector<int>                       map_dsdvm_r_;
+    std::vector<int>                       map_dsdvm_i_;
+
+    // central registry of equations / unknowns (defines the J layout)
+    NRLedger                               ledger_;
+    // feature (non dS-derived) entries: (row, col) list + resolved valuePtr positions
+    FeatureSink                            sink_;
+    std::vector<int>                       feature_pos_;
+
+    // bus masking (see set_masked_buses): masked_buses_ are solver bus ids whose
+    // P/Q rows are forced to identity. masked_zero_pos_ / masked_one_pos_ are the
+    // J_.valuePtr() positions to overwrite with 0 / 1 in fill_J; they are derived
+    // from masked_buses_ + the (fixed) J sparsity and recomputed lazily.
+    // pv_pinned_buses_ (see set_pv_pinned_buses) are solver bus ids whose Q row
+    // ALONE is forced to identity; they share masked_zero_pos_ / masked_one_pos_
+    // and the same lazy _recompute_mask_positions pass.
+    std::vector<int>                       masked_buses_;
+    std::vector<int>                       pv_pinned_buses_;
+    std::vector<int>                       masked_zero_pos_;
+    std::vector<int>                       masked_one_pos_;
+    bool                                   masked_dirty_;
+
+    // one dS -> J pass over a value map: for every Ybus nonzero that feeds a
+    // Jacobian coefficient, J[pos] = real/imag(ds[k]). TakeReal picks the part,
+    // so the four passes of fill_J share one loop. The dS values are read
+    // straight through (sequentially, one per Ybus nonzero), which is what the
+    // -1 holes in the map buy: no index indirection.
+    //
+    // ASSIGNS, and that is what lets fill_J skip zeroing J. No Jacobian
+    // coefficient is ever written by two dS entries: the four families live at
+    // (p_row, theta_col), (p_row, vm_col), (q_row, theta_col) and (q_row,
+    // vm_col), and a row is a P equation or a Q equation and a column a theta
+    // unknown or a vm unknown, never both -- so the families are pairwise
+    // disjoint -- while within one family the Ybus coefficient (i, j) maps to
+    // (row(i), col(j)) injectively, the ledger handing every bus its own row
+    // and column. Asserted below in debug builds, on every topology.
+    template <bool TakeReal>
+    static void _assign_ds(real_type* J_values,
+                           const std::vector<int>& map,
+                           const cplx_type* ds)
+    {
+        const std::size_t n = map.size();
+        const int* pos = map.data();
+        for (std::size_t k = 0; k < n; ++k) {
+            if (pos[k] < 0) continue;
+            J_values[pos[k]] = TakeReal ? std::real(ds[k]) : std::imag(ds[k]);
+        }
+    }
+
+    // resolve masked_zero_pos_ / masked_one_pos_ from masked_buses_ and J_'s
+    // sparsity (one pass over the nonzeros). Call only when J_ is built.
+    void _recompute_mask_positions() {
+        masked_zero_pos_.clear();
+        masked_one_pos_.clear();
+        masked_dirty_ = false;
+        if ((masked_buses_.empty() && pv_pinned_buses_.empty()) || J_.nonZeros() == 0) return;
+        const int dim = static_cast<int>(J_.rows());
+        std::vector<char> is_masked_row(dim, 0);
+        std::vector<int>  one_col_of_row(dim, -1);  // for a masked row: the col forced to 1
+        for (int b : masked_buses_) {
+            const int pr = ledger_.p_row(b);
+            const int tc = ledger_.theta_col(b);
+            if (pr >= 0) { is_masked_row[pr] = 1; one_col_of_row[pr] = tc; }
+            const int qr = ledger_.q_row(b);
+            const int vc = ledger_.vm_col(b);
+            if (qr >= 0) { is_masked_row[qr] = 1; one_col_of_row[qr] = vc; }
+        }
+        // a PV-pinned bus keeps its P equation live -- only the Q row goes to
+        // identity, which freezes dVm at 0 and leaves dTheta to be solved for.
+        // A bus that is ALSO masked above is left as the mask set it (same Q row,
+        // same one-column: the two agree, so the order does not matter).
+        for (int b : pv_pinned_buses_) {
+            const int qr = ledger_.q_row(b);
+            const int vc = ledger_.vm_col(b);
+            if (qr >= 0) { is_masked_row[qr] = 1; one_col_of_row[qr] = vc; }
+        }
+        const int* outer = J_.outerIndexPtr();
+        const int* inner = J_.innerIndexPtr();
+        for (int col = 0; col < dim; ++col) {
+            for (int p = outer[col]; p < outer[col + 1]; ++p) {
+                const int row = inner[p];
+                if (!is_masked_row[row]) continue;
+                if (one_col_of_row[row] == col) masked_one_pos_.push_back(p);
+                else                            masked_zero_pos_.push_back(p);
+            }
+        }
+    }
+
+    // Holds the base things
+    Base                                   base_;
+
+    // Holds the state for HVDC, DistSlack, etc.
+    std::tuple<Rest...>                    extensions_;
+
+protected:
+    // visible attribute for derived class (non owning ptr)
+    const LSGrid *                                         lsgrid_ptr_;
+    EigenRefConstCplxSpMat Ybus_ref_;
+    // Sbus is cached as a raw data pointer + size (reconstructed as an
+    // Eigen::Map on demand via _Sbus_view()) rather than a `const CplxVect*`:
+    // update_state() now receives Sbus as an Eigen::Ref, which is itself a
+    // function-local wrapper object -- taking its address (as was done
+    // previously for the concrete-reference version) would dangle the moment
+    // update_state() returns. `.data()` instead points at the real,
+    // caller-owned buffer the Ref views, which is what must outlive the
+    // whole solve (same contract as Ybus_ref_ above).
+    const cplx_type*                                       Sbus_data_ptr_;
+    Eigen::Index                                            Sbus_size_;
+    Eigen::Map<const CplxVect> _Sbus_view() const { return Eigen::Map<const CplxVect>(Sbus_data_ptr_, Sbus_size_); }
+
+    // V = Vm * exp(i.Va), written into V_out (resized only when needed).
+    static void _reconstruct_V_into(CplxVect& V_out,
+                                    const Eigen::Ref<const RealVect>& Va,
+                                    const Eigen::Ref<const RealVect>& Vm);
+    void _compute_trial_V_into(CplxVect& V_out, const Eigen::Ref<const RealVect>& dx) const;
+    // assemble the (negated) residual at trial voltages V_t into `res` (which
+    // must already have total_state_variables() coefficients); dx is the step
+    // that produced V_t (used by components that carry extra state, e.g. slack
+    // absorbed).
+    void _residual_into(Eigen::Ref<RealVect> res,
+                        const Eigen::Ref<const CplxVect>& V_t,
+                        const Eigen::Ref<const RealVect>& dx) const;
+
+    // value-returning wrappers, kept for out-of-tree derived algorithms: the
+    // *_into forms above are what the hot path uses.
+    static CplxVect _reconstruct_V(const Eigen::Ref<const RealVect>& Va, const Eigen::Ref<const RealVect>& Vm);
+    CplxVect _compute_trial_V(const Eigen::Ref<const RealVect>& dx) const;
+    RealVect _residual(const Eigen::Ref<const CplxVect>& V_t, const Eigen::Ref<const RealVect>& dx) const;
+
+private:
+    // ---- component hook fold helpers (C++14 index_sequence/dummy-array idiom) ---
+    template <std::size_t... Is>
+    void _init_topology_extensions(
+        const Eigen::Ref<const IntVect>  & slack_ids,
+        const Eigen::Ref<const RealVect> & slack_weights,
+        const Eigen::Ref<const IntVect>  & pv,
+        const Eigen::Ref<const IntVect>  & pq,
+        std::index_sequence<Is...>) {
+        int dummy[] = { 0, (std::get<Is>(extensions_).init_topology(
+            slack_ids,
+            slack_weights,
+            pv,
+            pq
+            ), 0)... };
+        (void)dummy;
+    }
+
+    template <std::size_t... Is>
+    void _update_state_extensions(
+        const LSGrid                     * lsgrid_ptr,
+        const EigenRefConstCplxSpMat     & Ybus,
+        const Eigen::Ref<const CplxVect> & Sbus,
+        const Eigen::Ref<const RealVect> & slack_weights,
+        std::index_sequence<Is...>){
+        int dummy[] = { 0, (std::get<Is>(extensions_).update_state(
+            &base_,
+            lsgrid_ptr,
+            Ybus,
+            Sbus,
+            slack_weights
+            ), 0)... };
+        (void)dummy;
+        // silence unused-parameter warnings when the extension pack is empty
+        (void)lsgrid_ptr; (void)Ybus; (void)Sbus; (void)slack_weights;
+    }
+
+    template <std::size_t... Is>
+    void _register_in_extensions(NRLedger& ledger, std::index_sequence<Is...>) {
+        int dummy[] = { 0, (std::get<Is>(extensions_).register_in(ledger), 0)... };
+        (void)dummy;
+    }
+
+    template <std::size_t... Is>
+    void _declare_feature_entries_extensions(FeatureSink& sink, std::index_sequence<Is...>) {
+        int dummy[] = { 0, (std::get<Is>(extensions_).declare_feature_entries(sink), 0)... };
+        (void)dummy;
+    }
+
+    template <std::size_t... Is>
+    void _fill_feature_values_extensions(FeatureWriter& writer, std::index_sequence<Is...>) const {
+        int dummy[] = { 0, (std::get<Is>(extensions_).fill_feature_values(writer, Va_), 0)... };
+        (void)dummy;
+    }
+
+    template <std::size_t... Is>
+    void _adjust_mismatch_extensions(const Eigen::Ref<const CplxVect>& V_t, const Eigen::Ref<const RealVect>& dx, Eigen::Ref<CplxVect> mis,
+                                     std::index_sequence<Is...>) const {
+        int dummy[] = { 0, (std::get<Is>(extensions_).adjust_mismatch(V_t, dx, mis), 0)... };
+        (void)dummy;
+        (void)V_t;
+    }
+
+    template <std::size_t... Is>
+    void _fill_custom_rows_extensions(Eigen::Ref<RealVect> res,
+                                      const Eigen::Ref<const RealVect>& Va, 
+                                      const Eigen::Ref<const RealVect>& Vm,
+                                      const Eigen::Ref<const RealVect>& dx,
+                                      std::index_sequence<Is...>) const {
+        int dummy[] = { 0, (std::get<Is>(extensions_).fill_custom_rows(res, Va, Vm, dx), 0)... };
+        (void)dummy;
+    }
+
+    template <std::size_t... Is>
+    void _apply_step_extensions(const Eigen::Ref<const RealVect>& dx, std::index_sequence<Is...>) {
+        int dummy[] = { 0, (std::get<Is>(extensions_).apply_step(dx), 0)... };
+        (void)dummy;
+    }
+
+    template <std::size_t... Is>
+    void _clear_extensions(std::index_sequence<Is...>) {
+        int dummy[] = { 0, (std::get<Is>(extensions_).clear(), 0)... };
+        (void)dummy;
+    }
+
+    // ---- compile-time search of the extension tuple for a given type ------------
+    // (the more specialized single-parameter overload wins when U == T)
+    template <class T, class U>
+    static void _maybe_set_ext(const T*& /*found*/, const U& /*ext*/) {}
+    template <class T>
+    static void _maybe_set_ext(const T*& found, const T& ext) { found = &ext; }
+
+    template <class T, std::size_t... Is>
+    const T* _find_extension_impl(std::index_sequence<Is...>) const {
+        const T* found = nullptr;
+        int dummy[] = { 0, (_maybe_set_ext<T>(found, std::get<Is>(extensions_)), 0)... };
+        (void)dummy;
+        return found;
+    }
+    template <class T>
+    const T* _find_extension() const {
+        return _find_extension_impl<T>(std::make_index_sequence<sizeof...(Rest)>{});
+    }
+
+    // ---- same search, mutable overload -------------------------------------------
+    // Needed by set_masked_buses() (non-const) to forward into VoltageControl; kept
+    // separate from the const version above rather than const_cast-ing its result.
+    template <class T, class U>
+    static void _maybe_set_ext_mut(T*& /*found*/, U& /*ext*/) {}
+    template <class T>
+    static void _maybe_set_ext_mut(T*& found, T& ext) { found = &ext; }
+
+    template <class T, std::size_t... Is>
+    T* _find_extension_impl(std::index_sequence<Is...>) {
+        T* found = nullptr;
+        int dummy[] = { 0, (_maybe_set_ext_mut<T>(found, std::get<Is>(extensions_)), 0)... };
+        (void)dummy;
+        return found;
+    }
+    template <class T>
+    T* _find_extension() {
+        return _find_extension_impl<T>(std::make_index_sequence<sizeof...(Rest)>{});
+    }
+
+private:
+    NRSystem(const NRSystem&)            = delete;
+    NRSystem(NRSystem&&)                 = delete;
+    NRSystem& operator=(const NRSystem&) = delete;
+    NRSystem& operator=(NRSystem&&)      = delete;
+};
+
+// ---- Type aliases (keep existing names working) --------------------------------
+// VoltageControl is registered after Base / MultiSlack (it reads q_row / vm_col
+// from the ledger) and before Hvdc; Hvdc must stay the LAST extension (it reads
+// the ledger populated by all the others).
+
+using SingleSlackNRSystem = NRSystem<Base, VoltageControl, Hvdc>;
+using MultiSlackNRSystem  = NRSystem<Base, MultiSlack, VoltageControl, Hvdc>;
+
+} // namespace ls2g
+
+#include "NRSystem.tpp"
+
+#endif // NR_SYSTEM_H

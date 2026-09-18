@@ -1,0 +1,83 @@
+# Static analysis: runs clang-tidy's performance-* / readability-const-return-type
+# checks over src/core (the checks that would have caught the unnecessary Eigen
+# copies found and fixed across several PRs). Report-only for now (see the
+# "Summarize" step): findings are posted to the job summary and uploaded as an
+# artifact, but do not fail the job. Once the baseline noise level is known,
+# flip `continue-on-error` below (and drop the `|| true`) to make this a real
+# gate -- e.g. restricted to the master / tag triggers already below, so a
+# regression blocks a release without slowing down every topic-branch push.
+#
+# Triggers: on demand (Actions tab -> this workflow -> "Run workflow"), on
+# every push to master, and on every version tag -- not on topic branches,
+# since this is advisory / slower than the test suites that do run there.
+name: clang-tidy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  clang-tidy:
+    name: performance / readability checks (src/core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # eigen (transitive include of the core headers), Catch2 (needed to
+          # configure src/tests, even though test files are not analyzed) and
+          # SuiteSparse (KLU headers)
+          submodules: true
+
+      - name: Install clang-tidy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy
+          clang-tidy --version
+
+      - name: Configure (generates compile_commands.json for src/core)
+        # standalone test project: no python / pybind11 involved, matching
+        # the C++ unit tests workflow. -DCMAKE_EXPORT_COMPILE_COMMANDS=ON is
+        # the only addition -- clang-tidy needs it to see the real include
+        # paths / defines each translation unit was configured with.
+        run: cmake -S src/tests -B build_tidy -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run clang-tidy over src/core
+        # Not built: clang-tidy re-parses each translation unit itself via
+        # libTooling and does not need object files or a link step.
+        # `|| true`: see the report-only note above -- warnings must not fail
+        # this job yet, only errors in clang-tidy's own invocation would
+        # (caught separately by checking the report is non-empty below).
+        run: |
+          find src/core -name '*.cpp' | sort > /tmp/tidy_files.txt
+          wc -l < /tmp/tidy_files.txt
+          clang-tidy -p build_tidy $(cat /tmp/tidy_files.txt) > clang-tidy-report.txt 2>&1 || true
+
+      - name: Summarize
+        run: |
+          {
+            echo "## clang-tidy (performance-*, readability-const-return-type)"
+            echo
+            if [ ! -s clang-tidy-report.txt ]; then
+              echo "clang-tidy produced no output -- something upstream (configure/invocation) likely failed silently. Check the previous step's log."
+            else
+              n_warnings=$(grep -c 'warning:' clang-tidy-report.txt || true)
+              echo "**${n_warnings} finding(s)** across $(wc -l < /tmp/tidy_files.txt) files in \`src/core\`."
+              echo
+              echo "This workflow is report-only: it does not fail the job. See \`.github/workflows/clang-tidy.yml\` for how to promote it to a gate."
+              echo
+              echo '```'
+              head -c 60000 clang-tidy-report.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload full report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: clang-tidy-report
+          path: clang-tidy-report.txt
+          retention-days: 30

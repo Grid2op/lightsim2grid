@@ -1,0 +1,260 @@
+// Copyright (c) 2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#ifndef LS2G_SOLVER_SIDE_CACHE_H
+#define LS2G_SOLVER_SIDE_CACHE_H
+
+#include <type_traits>
+#include <vector>
+
+#include "Eigen/Core"
+#include "Eigen/Sparse"
+
+#include "TaggedIdVec.hpp"
+#include "Utils.hpp"
+#include "VoltageControlPlan.hpp"
+#include "ls2g_api.hpp"
+
+namespace ls2g {
+
+// ---------------------------------------------------------------------------
+// WHY A SOLVER-SIDE CACHE IS ONE OBJECT
+//
+// The bus labelling, the matrix, the injections, the slack and the pv-pq split
+// are not independent things. They are one picture of the grid taken at one
+// instant, and all of it is expressed in ONE bus labelling -- the compact solver
+// numbering `id_me_to_solver` defines. Mix two instants, or two labellings, and
+// nothing complains: the sizes still match (the bus count rarely changes), the
+// powerflow still converges, and the answer is quietly wrong. No assertion can
+// catch it after the fact, because every number is individually plausible.
+//
+// They used to be nine (then twelve, then eighteen) separate members of LSGrid,
+// built by a function that took six of them as parameters and reached for the
+// other three itself. That is how a batch algorithm building into its own
+// vectors ended up writing its pv-pq split into the grid's cache, next to the
+// grid's own matrix. One object makes that class of mistake unspeakable rather
+// than merely unlikely: you cannot hand a function half of a struct.
+//
+// The split below is by TYPE, not by lifetime: SolverBusLayout is the part whose
+// type does not mention the family's scalar, SolverSideCache<MatScalar> adds the
+// two that do. Both halves are per family and are built, reused and retired as
+// one unit.
+// ---------------------------------------------------------------------------
+
+/**
+ * The half of a solver-side cache whose TYPE does not depend on the family: the
+ * bus labelling, the slack, the pv-pq split, and the bookkeeping that says
+ * whether any of it is still valid.
+ *
+ * Split out from SolverSideCache so that code which is generic over the family
+ * -- the batch algorithms, which run AC or DC but never both in one sweep -- can
+ * name and pass it without knowing which of Ybus/Bbus sits next to it. The VALUES
+ * are still per family: an AC and a DC cache each own a full one of these, they
+ * are never shared. That is the whole point; sharing them across families is what
+ * used to make a "nothing changed" claim unsound.
+ *
+ * New per-family state that is not a matrix or an injection vector (remote /
+ * shared voltage-control layouts, HVDC droop data, ...) belongs here.
+ */
+struct SolverBusLayout
+{
+    // ---- the bus labelling everything is expressed in ---------------------
+    /// grid ("me") bus id -> solver bus id; sized by the grid's total bus count,
+    /// `_deactivated_bus_id` wherever a bus carries nothing
+    SolverBusIdVect id_me_to_solver;
+    /// solver bus id -> grid bus id; sized by the number of buses actually solved
+    GlobalBusIdVect id_solver_to_me;
+
+    // ---- the slack ---------------------------------------------------------
+    GlobalBusIdVect slack_bus_id_me;      ///< slack buses, grid numbering
+    SolverBusIdVect slack_bus_id_solver;  ///< the same, solver numbering
+    RealVect slack_weights;               ///< distributed-slack share per solver bus
+    /// the same, before normalisation: the raw weight of every participant of each solver
+    /// bus, generators and storage units alike -- what splits a bus' share back onto them
+    RealVect slack_raw_weights;
+
+    // ---- the pv / pq split -------------------------------------------------
+    SolverBusIdVect bus_pv;  ///< solver ids, NOT grid ids
+    SolverBusIdVect bus_pq;  ///< solver ids, NOT grid ids
+
+    // ---- the "fancy" voltage controllers -----------------------------------
+    /**
+     * Remote voltage control, several machines regulating one bus, and voltage-mode
+     * SVCs, as the NR extensions consume them (see VoltageControlPlan). Derived from
+     * the elements AND from the six members above -- it is expressed in this
+     * labelling and in this pv-pq split -- which is exactly why it belongs here
+     * rather than in the extensions that read it: a plan and the labelling it was
+     * built against are one picture of the grid, and mixing two of them is not stale
+     * data, it is a different grid.
+     *
+     * Both families carry the group layout -- the pv/pq split is one rule and its
+     * rule is the same either way -- but only the AC family fills the two
+     * solver-side layers: a DC solve has no voltage control, so nothing reads a DC
+     * plan's free-Vm slack set or its controller list.
+     */
+    VoltageControlPlan voltage_control;
+
+    // ---- what makes the above reusable, or not -----------------------------
+    /**
+     * The grid size this cache was built for, or 0 for "nothing built / retired".
+     *
+     * This used to be a full std::vector<bool> photograph of the grid's bus
+     * connectivity, compared bus-by-bus on every powerflow to decide whether the
+     * labelling above still described the grid. It no longer has to be: a bus
+     * enters or leaves the solved system exactly when its element count crosses 0,
+     * and SubstationContainer now notices that as it happens and raises
+     * `tell_dimension_changed` there. So the photograph, the O(nb_bus) copy that
+     * refreshed it every powerflow, and the two O(nb_bus) walks that compared it
+     * are all gone -- what is left is one integer, which is all `is_consistent`
+     * ever needed it for.
+     *
+     * 0 is also how a cache is retired without throwing its contents away: the
+     * publication step at the end of LSGrid::_pre_process_solver_impl leaves the
+     * labelling in place for the NR extensions to read, but not usable as a cache.
+     */
+    std::size_t built_for_nb_bus = 0;
+    /**
+     * Durable "never reuse this" switch (LSGrid::allow_ac_cache_reuse etc.). The
+     * answer is identical either way, so this is a debugging switch and an escape
+     * hatch for code that mutates the grid behind LSGrid's back.
+     */
+    bool allow_reuse = true;
+    /**
+     * Set when this family's previous powerflow diverged and its algorithm was
+     * reset: the DATA is still a correct picture of the grid (divergence is a
+     * numerical failure, not a data one) but the algorithm must rebuild its own
+     * internals from it rather than skip on a "nothing changed" it cannot honour.
+     * Cleared once the algorithm has actually run.
+     */
+    bool algo_needs_rebuild = false;
+
+    /// number of buses in the solved system (0 when nothing was ever built)
+    [[nodiscard]] Eigen::Index nb_bus_solver() const noexcept {
+        return static_cast<Eigen::Index>(id_solver_to_me.size());
+    }
+
+    /// Back to "this family has never solved", for everything in this half.
+    void clear_layout(){
+        id_me_to_solver = SolverBusIdVect();
+        id_solver_to_me = GlobalBusIdVect();
+        slack_bus_id_me = GlobalBusIdVect();
+        slack_bus_id_solver = SolverBusIdVect();
+        slack_weights = RealVect();
+        slack_raw_weights = RealVect();
+        bus_pv = SolverBusIdVect();
+        bus_pq = SolverBusIdVect();
+        voltage_control.clear();
+        built_for_nb_bus = 0;
+    }
+
+    /// the family-agnostic half of is_consistent(); see there for why this exists
+    [[nodiscard]] bool layout_is_consistent(std::size_t nb_bus_grid) const noexcept {
+        const Eigen::Index nb_solver = nb_bus_solver();
+        if(nb_solver == 0) return false;            // never built
+        if(id_me_to_solver.size() != nb_bus_grid) return false;  // built for another grid size
+        if(slack_weights.size() != nb_solver) return false;
+        // every bus is pv, pq, or slack: the split can never outnumber the system
+        if(bus_pv.size() + bus_pq.size() > static_cast<std::size_t>(nb_solver)) return false;
+        // built for another grid, or retired: see built_for_nb_bus
+        if(built_for_nb_bus != nb_bus_grid) return false;
+        return true;
+    }
+};
+
+/**
+ * One solver family's complete cache: the layout above, plus the two things whose
+ * type depends on the family.
+ *
+ * The template parameter picks the family: `cplx_type` is AC (complex admittance
+ * Ybus, complex injection Sbus), `real_type` is DC (real susceptance Bbus, real
+ * active injection Pbus). Everything else is inherited, which is why the two
+ * families share one definition instead of two hand-kept-in-sync copies.
+ */
+template<class MatScalar>
+struct SolverSideCache final : SolverBusLayout
+{
+    static_assert(std::is_same<MatScalar, cplx_type>::value ||
+                  std::is_same<MatScalar, real_type>::value,
+                  "SolverSideCache: MatScalar must be cplx_type (AC) or real_type (DC)");
+
+    /// complex Sbus for the AC family, real Pbus for the DC one
+    using InjVect = typename std::conditional<std::is_same<MatScalar, cplx_type>::value,
+                                              CplxVect, RealVect>::type;
+    using Matrix = Eigen::SparseMatrix<MatScalar>;
+
+    /// true for the AC family. A compile-time constant, usable wherever the old
+    /// runtime `is_ac` flag was threaded through by hand.
+    static constexpr bool is_ac = std::is_same<MatScalar, cplx_type>::value;
+
+    /// Ybus (AC, complex) / Bbus (DC, real), square, nb_bus_solver()
+    Matrix mat;
+    /// Sbus (AC, complex) / Pbus (DC, real), per unit, nb_bus_solver()
+    InjVect inj;
+
+    /// Back to "this family has never solved". Everything that describes a built
+    /// system goes, the two policy flags stay: `allow_reuse` is the caller's
+    /// standing choice, not derived state, and `algo_needs_rebuild` is about the
+    /// algorithm, which a caller resets separately when it means to.
+    void clear(){
+        clear_layout();
+        mat = Matrix();
+        inj = InjVect();
+    }
+
+    /**
+     * Is there really a system in here, of the shape a caller claiming "nothing
+     * changed" is about to be believed about, for a grid with `nb_bus_grid` buses?
+     *
+     * This answers "is the DATA there and self-consistent", not "may it be reused"
+     * (`allow_reuse`) and not "has the grid changed since" -- that last one is not a
+     * question a cache can answer about itself, and it is not this object's job:
+     * the element containers declare every change through AlgoControl as they are
+     * modified, and AlgoControl::nothing_changed() is what reads it back.
+     *
+     * It exists because a powerflow's change flags only record what happened SINCE
+     * that family last solved; they cannot say whether it ever solved at all. A
+     * caller asserting "nothing changed" about a family whose data is still
+     * default-constructed used to take the "nothing to rebuild" path with an empty
+     * `id_me_to_solver` / `mat` / `inj`, and everything downstream indexes them with
+     * bus ids in the hundreds. Release wheels are -O3 -DNDEBUG, so that is a
+     * segfault, not an error.
+     *
+     * Every size here is O(1) to read, so this is a handful of integer comparisons.
+     * It is still off the powerflow path: the only way into the library to claim
+     * "nothing changed" without having built anything is LSGrid::unset_changes(),
+     * and that is where this is checked. The powerflow path keeps it as a debug
+     * assertion -- free in release, and it fires in the C++ suite (which CI runs
+     * under ASan and valgrind) if a future caller finds another way in.
+     */
+    [[nodiscard]] bool is_consistent(std::size_t nb_bus_grid) const noexcept {
+        if(!layout_is_consistent(nb_bus_grid)) return false;
+        const Eigen::Index nb_solver = nb_bus_solver();
+        if(mat.rows() != nb_solver) return false;
+        if(mat.cols() != mat.rows()) return false;
+        if(inj.size() != nb_solver) return false;
+        return true;
+    }
+
+    /**
+     * The powerflow path's question: may the next solve of this family reuse what
+     * is in here? Just the switch -- see is_consistent() for why nothing else is
+     * needed here, and _pre_process_solver_impl for the debug assertion that keeps
+     * that reasoning honest.
+     */
+    [[nodiscard]] bool may_be_reused() const noexcept { return allow_reuse; }
+
+};
+
+/// the AC family: complex Ybus / Sbus
+using AcSolverCache = SolverSideCache<cplx_type>;
+/// the DC family: real Bbus / Pbus
+using DcSolverCache = SolverSideCache<real_type>;
+
+} // namespace ls2g
+
+#endif // LS2G_SOLVER_SIDE_CACHE_H

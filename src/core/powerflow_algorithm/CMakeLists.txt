@@ -1,0 +1,10 @@
+list(APPEND SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/GaussSeidelAlgo.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/GaussSeidelSynchAlgo.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/BaseAlgo.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemBase.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemHvdc.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemVoltageControl.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemMultiSlack.cpp"
+)
+set(SOURCES ${SOURCES} PARENT_SCOPE)

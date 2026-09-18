@@ -19,6 +19,7 @@ except ImportError:
 
 from grid2op.Parameters import Parameters
 import lightsim2grid
+from lightsim2grid import AlgorithmType
 from lightsim2grid.lightSimBackend import LightSimBackend
 from utils_benchmark import print_res, run_env, str2bool, get_env_name_displayed
 TABULATE_AVAIL = False
@@ -72,10 +73,10 @@ def main(max_ts, ENV_NAME, test=True):
 
     # NOW PRINT THE RESULTS
     env_name = get_env_name_displayed(ENV_NAME)
-    hds = [f"{env_name} ({nb_ts_pp} iter)", f"speed (it/s)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
+    hds = [f"{env_name} ({nb_ts_pp} iter)", "speed (it/s)", "Δ aor (amps)", "Δ gen_p (MW)", "Δ gen_q (MVAr)"]
     tab = [["PP", int(nb_ts_pp/time_pp), "0.00", "0.00", "0.00"]]
     for i, tol in enumerate(li_tols):
-        if lightsim2grid.SolverType.GaussSeidel:
+        if AlgorithmType.GaussSeidel:
             tab.append([f"{tol:.2e}",
                         f"{int(nb_ts[i] / time[i])}",
                         f"{np.max(np.abs(aor[i] - aor_pp)):.2e}",

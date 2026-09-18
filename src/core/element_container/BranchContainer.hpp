@@ -1,0 +1,970 @@
+// Copyright (c) 2025-2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#ifndef BRANCH_CONTAINER_H
+#define BRANCH_CONTAINER_H
+
+#include <limits>
+
+#include "TwoSidesContainer.hpp"
+#include "BranchEndContainer.hpp"
+
+namespace ls2g {
+
+/**
+ * A pi-model branch -- a line or a transformer: two BranchEndContainer ends, a
+ * series impedance (r, x) and a shunt admittance at each end (h = g + j.b), all
+ * in pu, and the 2x2 admittance blocks derived from them: `yac_*` (raw, from the
+ * physics), `yac_eff_*` (what is actually stamped: the raw block with an open
+ * end Kron-reduced out, kept up to date by `_on_connectivity_changed`) and
+ * `ydc_*` (the DC counterpart). Results are the flows at both ends, in MW, MVar
+ * and kA.
+ *
+ * A leaf (LineContainer, TrafoContainer) provides `_update_model_coeffs_one_el`
+ * (the raw block from its own parameters) and, for the DC / FDPF / PTDF paths,
+ * `_ptdf_x`, `_ptdf_row` and `_fdpf_coeffs`.
+ *
+ * (This class was `TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>` up to
+ * lightsim2grid 1.0.0: a template with a single instantiation.)
+ */
+class LS2G_API BranchContainer : public TwoSidesContainer<BranchEndContainer>
+{
+    using StateResSuper = TwoSidesContainer<BranchEndContainer>::StateRes;
+
+    public:
+        class BranchInfo : public TwoSidesContainer<BranchEndContainer>::TwoSidesInfo
+        {
+            public:
+                // members
+                real_type r_pu;
+                real_type x_pu;
+                cplx_type h1_pu;
+                cplx_type h2_pu;
+
+                bool has_res;
+                real_type res_a1_ka;
+                real_type res_a2_ka;
+
+                // thermal (current) limit, in kA -- input, not a powerflow result;
+                // NaN if not provided when the grid was built
+                real_type limit_a1_ka;
+                real_type limit_a2_ka;
+
+                cplx_type yac_11;
+                cplx_type yac_12;
+                cplx_type yac_21;
+                cplx_type yac_22;
+                cplx_type yac_eff_11;
+                cplx_type yac_eff_12;
+                cplx_type yac_eff_21;
+                cplx_type yac_eff_22;
+                cplx_type ydc_11;
+                cplx_type ydc_12;
+                cplx_type ydc_21;
+                cplx_type ydc_22;
+
+                BranchInfo(const BranchContainer & r_data, int my_id) noexcept:
+                TwoSidesContainer<BranchEndContainer>::TwoSidesInfo(r_data, my_id),
+                r_pu(-1.0),
+                x_pu(-1.0),
+                h1_pu(0., 0.),
+                h2_pu(0., 0.),
+                has_res(false),
+                res_a1_ka(0.),
+                res_a2_ka(0.),
+                limit_a1_ka(std::numeric_limits<real_type>::quiet_NaN()),
+                limit_a2_ka(std::numeric_limits<real_type>::quiet_NaN()),
+                yac_11(0., 0.),
+                yac_12(0., 0.),
+                yac_21(0., 0.),
+                yac_22(0., 0.),
+                yac_eff_11(0., 0.),
+                yac_eff_12(0., 0.),
+                yac_eff_21(0., 0.),
+                yac_eff_22(0., 0.),
+                ydc_11(0., 0.),
+                ydc_12(0., 0.),
+                ydc_21(0., 0.),
+                ydc_22(0., 0.)
+                {
+                    if(my_id < 0) return;
+                    if(my_id >= r_data.nb()) return;
+                    r_pu = r_data.r_.coeff(my_id);
+                    x_pu = r_data.x_.coeff(my_id);
+                    h1_pu = r_data.h_side_1_.coeff(my_id);
+                    h2_pu = r_data.h_side_2_.coeff(my_id);
+
+                    has_res = r_data.res_a_side_1_.size() > 0;  // allocated with the sides' results
+                    if(has_res)
+                    {
+                        res_a1_ka = r_data.res_a_side_1_.coeff(my_id);
+                        res_a2_ka = r_data.res_a_side_2_.coeff(my_id);
+                    }
+
+                    if(r_data.limit_a1_ka_.size() > 0) limit_a1_ka = r_data.limit_a1_ka_.coeff(my_id);
+                    if(r_data.limit_a2_ka_.size() > 0) limit_a2_ka = r_data.limit_a2_ka_.coeff(my_id);
+
+                    // coeffs
+                    yac_11 = r_data.yac_11_.coeff(my_id);
+                    yac_12 = r_data.yac_12_.coeff(my_id);
+                    yac_21 = r_data.yac_21_.coeff(my_id);
+                    yac_22 = r_data.yac_22_.coeff(my_id);
+                    yac_eff_11 = r_data.yac_eff_11_.coeff(my_id);
+                    yac_eff_12 = r_data.yac_eff_12_.coeff(my_id);
+                    yac_eff_21 = r_data.yac_eff_21_.coeff(my_id);
+                    yac_eff_22 = r_data.yac_eff_22_.coeff(my_id);
+                    ydc_11 = r_data.ydc_11_.coeff(my_id);
+                    ydc_12 = r_data.ydc_12_.coeff(my_id);
+                    ydc_21 = r_data.ydc_21_.coeff(my_id);
+                    ydc_22 = r_data.ydc_22_.coeff(my_id);
+
+                }
+        };
+        using DataInfo = BranchInfo;
+
+    public:
+        BranchContainer() noexcept = default;
+        ~BranchContainer() noexcept override = default;
+
+        // pickle
+        // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
+        using StateRes = std::tuple<
+                   StateResSuper,
+                   std::vector<real_type>,  // branch_r
+                   std::vector<real_type>,  // branch_x
+                   std::vector<cplx_type>,   // branch_h1
+                   std::vector<cplx_type>,   // branch_h2
+                   std::vector<real_type>,  // limit_a1_ka (optional, empty if unset)
+                   std::vector<real_type>  // limit_a2_ka (optional, empty if unset)
+               >;
+        enum StateResIdx {
+            TSC_STATE = 0,
+            R,
+            X,
+            H_SIDE_1,
+            H_SIDE_2,
+            LIMIT_A1_KA,
+            LIMIT_A2_KA,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "BranchContainer::StateRes and StateResIdx do not match");
+
+        // current limit, in kA, per side -- input, not a powerflow result.
+        // Optional: empty (size 0) if never set (e.g. pandapower-origin grids).
+        void set_limit_a1_ka(const Eigen::Ref<const RealVect> & limit_a1_ka){
+            check_size(limit_a1_ka, nb(), "BranchContainer::set_limit_a1_ka");
+            limit_a1_ka_ = limit_a1_ka;
+        }
+        void set_limit_a2_ka(const Eigen::Ref<const RealVect> & limit_a2_ka){
+            check_size(limit_a2_ka, nb(), "BranchContainer::set_limit_a2_ka");
+            limit_a2_ka_ = limit_a2_ka;
+        }
+        Eigen::Ref<const RealVect> get_limit_a1_ka() const {return limit_a1_ka_;}
+        Eigen::Ref<const RealVect> get_limit_a2_ka() const {return limit_a2_ka_;}
+
+        // getter (results)
+        tuple4d get_res_side_1() const {
+            const tuple3d & side_1_res = TwoSidesContainer<BranchEndContainer>::get_res_side_1();
+            return tuple4d(
+                std::get<0>(side_1_res),
+                std::get<1>(side_1_res),
+                std::get<2>(side_1_res),
+                res_a_side_1_);
+        }
+        tuple4d get_res_side_2() const {
+            const tuple3d & side_2_res = TwoSidesContainer<BranchEndContainer>::get_res_side_2();
+            return tuple4d(
+                std::get<0>(side_2_res),
+                std::get<1>(side_2_res),
+                std::get<2>(side_2_res),
+                res_a_side_2_);
+        }
+        tuple5d get_res_full_side_1() const {
+            const tuple4d & side_1_res = TwoSidesContainer<BranchEndContainer>::get_res_full_side_1();
+            return tuple5d(
+                std::get<0>(side_1_res),
+                std::get<1>(side_1_res),
+                std::get<2>(side_1_res),
+                res_a_side_1_,
+                std::get<3>(side_1_res));
+        }
+        tuple5d get_res_full_side_2() const {
+            const tuple4d & side_2_res = TwoSidesContainer<BranchEndContainer>::get_res_full_side_2();
+            return tuple5d(
+                std::get<0>(side_2_res),
+                std::get<1>(side_2_res),
+                std::get<2>(side_2_res),
+                res_a_side_2_,
+                std::get<3>(side_2_res));
+        }
+
+        void init_fdpf_coeffs(){
+            if(BX_fpdf_coeffs_.are_cached() && XB_fpdf_coeffs_.are_cached()) return;  // coefficients have already been computed
+            
+            BX_fpdf_coeffs_.init(nb());
+            XB_fpdf_coeffs_.init(nb());
+            for(int el_id = 0; el_id < nb(); ++el_id){
+                BX_fpdf_coeffs_.assign_el(el_id, _fdpf_coeffs(el_id, FDPFMethod::BX));
+                XB_fpdf_coeffs_.assign_el(el_id, _fdpf_coeffs(el_id, FDPFMethod::XB));
+            }
+            BX_fpdf_coeffs_.set_computed(true);
+            XB_fpdf_coeffs_.set_computed(true);
+        }
+
+    protected:
+        // the flows (MW, MVar) and voltages (kV, deg) at both ends; the amps are
+        // done afterwards by _compute_amps, from those (TrafoContainer corrects the
+        // DC active flow of a phase shifter in between)
+        void _compute_branch_results_no_amps(
+            const Eigen::Ref<const RealVect> & Va,
+            const Eigen::Ref<const RealVect> & Vm,
+            const Eigen::Ref<const CplxVect> & V,
+            const SolverBusIdVect & id_grid_to_solver,
+            const Eigen::Ref<const RealVect> & bus_vn_kv,
+            real_type sn_mva,
+            bool ac
+            )
+        {
+            // it needs to be initialized at 0.
+            const int nb_element = nb();
+            Eigen::Ref<RealVect> res_p_side_1 = get_res_p_side_1();
+            Eigen::Ref<RealVect> res_q_side_1 = get_res_q_side_1();
+            Eigen::Ref<RealVect> res_v_side_1 = get_res_v_side_1();
+            Eigen::Ref<RealVect> res_theta_side_1 = get_res_theta_side_1();
+
+            Eigen::Ref<RealVect> res_p_side_2 = get_res_p_side_2();
+            Eigen::Ref<RealVect> res_q_side_2 = get_res_q_side_2();
+            Eigen::Ref<RealVect> res_v_side_2 = get_res_v_side_2();
+            Eigen::Ref<RealVect> res_theta_side_2 = get_res_theta_side_2();
+
+            const std::vector<bool> & status1 = side_1_.get_status();
+            const std::vector<bool> & status2 = side_2_.get_status();
+            // Read once per branch, not once per use. These are std::vector<bool>,
+            // so every `status1[el_id]` is a word offset, a shift and a mask rather
+            // than a load, and the loop below used to ask each of them five times.
+            const GlobalBusIdVect & buses1 = side_1_.get_bus_id();
+            const GlobalBusIdVect & buses2 = side_2_.get_bus_id();
+            for(int el_id = 0; el_id < nb_element; ++el_id){
+                const bool st1 = status1[el_id];
+                const bool st2 = status2[el_id];
+
+                // don't do anything if the element is disconnected
+                if(!status_global_[el_id] || (!st1 && !st2)) {
+                    res_p_side_1(el_id) = 0.0;  // in MW
+                    res_q_side_1(el_id) = 0.0;  // in MVar
+                    res_v_side_1(el_id) = v_disco_el_;  // in kV
+                    res_a_side_1_(el_id) = 0.0;  // in kA
+                    res_p_side_2(el_id) = 0.0;  // in MW
+                    res_q_side_2(el_id) = 0.0;  // in MVar
+                    res_v_side_2(el_id) = v_disco_el_;  // in kV
+                    res_a_side_2_(el_id) = 0.0;  // in kA
+                    res_theta_side_1(el_id) = theta_disco_el_;  // in degree
+                    res_theta_side_2(el_id) = theta_disco_el_;  // in degree            
+                    continue;
+                }
+
+                // connectivity
+                GridModelBusId bus_hv_id_me, bus_lv_id_me;
+                SolverBusId bus_hv_solver_id, bus_lv_solver_id;
+                if(st1){
+                    // the side is connected: read the bus id itself rather than
+                    // going through get_bus_side_1_internal, which re-reads the
+                    // status bit we just tested (and does not inline)
+                    bus_hv_id_me = GridModelBusId(buses1(el_id).cast_int());
+#ifndef NDEBUG
+                    if(bus_hv_id_me.cast_int() == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "BranchContainer::compute_results: (GlobalBusId) the branch with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 1) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+#endif
+                    bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me.cast_int()];
+#ifndef NDEBUG
+                    if(bus_hv_solver_id.cast_int() == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "BranchContainer::compute_results: (SolverBusId) the branch with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 1) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+#endif
+                }else{
+                    bus_hv_id_me = GridModelBusId(_deactivated_bus_id);
+                    bus_hv_solver_id = SolverBusId(_deactivated_bus_id);
+                }
+
+                if(st2){
+                    bus_lv_id_me = GridModelBusId(buses2(el_id).cast_int());
+#ifndef NDEBUG
+                    if(bus_lv_id_me.cast_int() == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "BranchContainer::compute_results: (GlobalBusId) the branch with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 2) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+#endif
+                    bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me.cast_int()];
+#ifndef NDEBUG
+                    if(bus_lv_solver_id.cast_int() == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "BranchContainer::compute_results: (SolverBusId) the branch with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 2) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+#endif
+                }else{
+                    bus_lv_id_me = GridModelBusId(_deactivated_bus_id);
+                    bus_lv_solver_id = SolverBusId(_deactivated_bus_id);
+                }
+
+                // retrieve voltages magnitude in kv instead of pu
+                if(st1){
+                    real_type v_hv = Vm(bus_hv_solver_id.cast_int());
+                    real_type bus_vn_kv_hv = bus_vn_kv(bus_hv_id_me.cast_int());
+                    res_v_side_1(el_id) = v_hv * bus_vn_kv_hv;
+                    res_theta_side_1(el_id) = Va(bus_hv_solver_id.cast_int()) * my_180_pi_;
+                }else{
+                    res_v_side_1(el_id) = v_disco_el_;
+                    res_theta_side_1(el_id) = theta_disco_el_;
+                }
+
+                if(st2){
+                    real_type v_lv = Vm(bus_lv_solver_id.cast_int());
+                    real_type bus_vn_kv_lv = bus_vn_kv(bus_lv_id_me.cast_int());  
+                    res_v_side_2(el_id) = v_lv * bus_vn_kv_lv;
+                    res_theta_side_2(el_id) = Va(bus_lv_solver_id.cast_int()) * my_180_pi_;
+                }else{
+                    res_v_side_2(el_id) = v_disco_el_;
+                    res_theta_side_2(el_id) = theta_disco_el_;
+                }
+
+                if(ac){
+                    // results of the ac powerflow
+                    // open-end voltage is 0; yac_eff_* already encodes the Kron-reduced contribution
+                    const cplx_type Ehv = st1 ? V(bus_hv_solver_id.cast_int()) : cplx_type(0., 0.);
+                    const cplx_type Elv = st2 ? V(bus_lv_solver_id.cast_int()) : cplx_type(0., 0.);
+
+                    // TODO for DC with yff, ...
+                    // trafo equations
+                    //   I_hvlv = conj(y11.Ehv + y12.Elv), s_hvlv = Ehv.I_hvlv
+                    //   I_lvhv = conj(y22.Elv + y21.Ehv), s_lvhv = Elv.I_lvhv
+                    // written on real and imaginary parts: that is six
+                    // complex-times-complex products per branch, and
+                    // std::complex follows every one of them with a branch that
+                    // re-derives the result if it came out NaN. Bit-identical --
+                    // the products are grouped exactly as std::complex groups
+                    // them, the recovery path only fires on a non-finite result,
+                    // and conj is an exact sign flip.
+                    const real_type ehv_r = std::real(Ehv), ehv_i = std::imag(Ehv);
+                    const real_type elv_r = std::real(Elv), elv_i = std::imag(Elv);
+                    const real_type y11_r = std::real(yac_eff_11_(el_id)), y11_i = std::imag(yac_eff_11_(el_id));
+                    const real_type y12_r = std::real(yac_eff_12_(el_id)), y12_i = std::imag(yac_eff_12_(el_id));
+                    const real_type y21_r = std::real(yac_eff_21_(el_id)), y21_i = std::imag(yac_eff_21_(el_id));
+                    const real_type y22_r = std::real(yac_eff_22_(el_id)), y22_i = std::imag(yac_eff_22_(el_id));
+
+                    const real_type a_r = y11_r * ehv_r - y11_i * ehv_i;   // y11 . Ehv
+                    const real_type a_i = y11_r * ehv_i + y11_i * ehv_r;
+                    const real_type b_r = y12_r * elv_r - y12_i * elv_i;   // y12 . Elv
+                    const real_type b_i = y12_r * elv_i + y12_i * elv_r;
+                    const real_type c_r = y22_r * elv_r - y22_i * elv_i;   // y22 . Elv
+                    const real_type c_i = y22_r * elv_i + y22_i * elv_r;
+                    const real_type d_r = y21_r * ehv_r - y21_i * ehv_i;   // y21 . Ehv
+                    const real_type d_i = y21_r * ehv_i + y21_i * ehv_r;
+
+                    const real_type ih_r = a_r + b_r, ih_i = -(a_i + b_i);  // conj(y11.Ehv + y12.Elv)
+                    const real_type il_r = c_r + d_r, il_i = -(c_i + d_i);  // conj(y22.Elv + y21.Ehv)
+
+                    const real_type sh_r = ehv_r * ih_r - ehv_i * ih_i;    // s_hvlv = Ehv . I_hvlv
+                    const real_type sh_i = ehv_r * ih_i + ehv_i * ih_r;
+                    const real_type sl_r = elv_r * il_r - elv_i * il_i;    // s_lvhv = Elv . I_lvhv
+                    const real_type sl_i = elv_r * il_i + elv_i * il_r;
+
+                    res_p_side_1(el_id) = sh_r * sn_mva;
+                    res_q_side_1(el_id) = sh_i * sn_mva;
+                    res_p_side_2(el_id) = sl_r * sn_mva;
+                    res_q_side_2(el_id) = sl_i * sn_mva;
+                }else{
+                    // result of the dc powerflow
+                    if(st1 && st2){
+                        real_type Va_hv = Va(bus_hv_solver_id.cast_int());
+                        real_type Va_lv = Va(bus_lv_solver_id.cast_int());
+                        res_p_side_1(el_id) = (ydc_11_(el_id) * Va_hv + ydc_12_(el_id) * Va_lv) * sn_mva;
+                        res_p_side_2(el_id) = (ydc_22_(el_id) * Va_lv + ydc_21_(el_id) * Va_hv) * sn_mva;
+                    }else{
+                        res_p_side_1(el_id) = 0.;
+                        res_p_side_2(el_id) = 0.;
+                    }
+                    res_q_side_1(el_id) = 0.;
+                    res_q_side_2(el_id) = 0.;
+                    
+                    // for voltages, because vm = 1. pu by hypothesis
+                    // res_v_hv_(trafo_id) = bus_vn_kv_hv;
+                    // res_v_lv_(trafo_id) = bus_vn_kv_lv;
+                }
+
+            }
+        }
+        
+        // the flows in kA, from the (p, q, v) already published at each end
+        void _compute_amps(){
+            const auto & res_side1 = side_1_.get_res();
+            _get_amps(res_a_side_1_, std::get<0>(res_side1), std::get<1>(res_side1), std::get<2>(res_side1));
+            const auto & res_side2 = side_2_.get_res();
+            _get_amps(res_a_side_2_, std::get<0>(res_side2), std::get<1>(res_side2), std::get<2>(res_side2));
+        }
+
+        void _get_graph(std::vector<Eigen::Triplet<real_type> > & res) const override
+        {
+            const int my_size = nb();
+            for(int el_id = 0; el_id < my_size; ++el_id){
+                // don't do anything if the element is disconnected
+                if(!status_global_[el_id]) continue;
+                const GridModelBusId bus_or = get_bus_side_1_internal(el_id);
+                const GridModelBusId bus_ex = get_bus_side_2_internal(el_id);
+                if((bus_or.cast_int() != _deactivated_bus_id) && 
+                   (bus_ex.cast_int() != _deactivated_bus_id)){
+                    res.push_back(Eigen::Triplet<real_type>(bus_or.cast_int(), bus_ex.cast_int(), 1.));
+                    res.push_back(Eigen::Triplet<real_type>(bus_ex.cast_int(), bus_or.cast_int(), 1.));
+                }
+            }
+        }
+
+    public:
+        // model paramters (raw)
+        Eigen::Ref<const CplxVect> yac_11() const {return yac_11_;}
+        Eigen::Ref<const CplxVect> yac_12() const {return yac_12_;}
+        Eigen::Ref<const CplxVect> yac_21() const {return yac_21_;}
+        Eigen::Ref<const CplxVect> yac_22() const {return yac_22_;}
+
+        // model parameters (Kron-reduced, accounting for per-side connection status)
+        Eigen::Ref<const CplxVect> yac_eff_11() const {return yac_eff_11_;}
+        Eigen::Ref<const CplxVect> yac_eff_12() const {return yac_eff_12_;}
+        Eigen::Ref<const CplxVect> yac_eff_21() const {return yac_eff_21_;}
+        Eigen::Ref<const CplxVect> yac_eff_22() const {return yac_eff_22_;}
+
+        Eigen::Ref<const RealVect> ydc_11() const {return ydc_11_;}
+        Eigen::Ref<const RealVect> ydc_12() const {return ydc_12_;}
+        Eigen::Ref<const RealVect> ydc_21() const {return ydc_21_;}
+        Eigen::Ref<const RealVect> ydc_22() const {return ydc_22_;}
+
+        // connection status accessors (explicit, needed by external Ybus builders)
+        const std::vector<bool>& get_status_side_1() const { return side_1_.get_status(); }
+        const std::vector<bool>& get_status_side_2() const { return side_2_.get_status(); }
+        const std::vector<bool>& get_status_global()  const { return status_global_; }
+
+    protected:
+        // solver interface
+        void _fillYbus(
+            std::vector<Eigen::Triplet<cplx_type> > & res,
+            bool ac,
+            const SolverBusIdVect & id_grid_to_solver,
+            real_type /*sn_mva*/) const override
+        {
+            const int nb_els = nb();
+            const std::vector<bool> & status1 = side_1_.get_status();
+            const std::vector<bool> & status2 = side_2_.get_status();
+            const GlobalBusIdVect & buses1 = side_1_.get_bus_id();
+            const GlobalBusIdVect & buses2 = side_2_.get_bus_id();
+
+            cplx_type yft, ytf, yff, ytt;
+            for(int el_id = 0; el_id < nb_els; ++el_id){
+                // i don't do anything if the trafo is disconnected
+                if(!status_global_[el_id]  || (!status1[el_id] && !status2[el_id])) continue;
+
+                // compute from / to (a side's status is known, so its bus is read
+                // straight off the vector: see _solver_bus for the checks)
+                SolverBusId bus_side1_solver_id, bus_side2_solver_id;
+                bool status1_me = status1[el_id];
+                bool status2_me = status2[el_id];
+                if(status1_me) bus_side1_solver_id = _solver_bus(el_id, buses1(el_id), id_grid_to_solver, "BranchContainer::fillYbus (side 1)");
+                if(status2_me) bus_side2_solver_id = _solver_bus(el_id, buses2(el_id), id_grid_to_solver, "BranchContainer::fillYbus (side 2)");
+                
+                if(ac){
+                    // ac mode — use pre-computed Kron-reduced coefficients
+                    yff = yac_eff_11_(el_id);
+                    yft = yac_eff_12_(el_id);
+                    ytf = yac_eff_21_(el_id);
+                    ytt = yac_eff_22_(el_id);
+                }else{
+                    // dc mode
+                    yft = ydc_12_(el_id);
+                    ytf = ydc_21_(el_id);
+                    yff = ydc_11_(el_id);
+                    ytt = ydc_22_(el_id);
+                    // In DC disconnected on one side == disco on both sides
+                    if((!status1_me) || (!status2_me)){
+                        status1_me = false;
+                        status2_me = false;
+                    }
+                }
+                if(status1_me) res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id.cast_int(), bus_side1_solver_id.cast_int(), yff));
+                if(status2_me) res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id.cast_int(), bus_side2_solver_id.cast_int(), ytt));
+                if(status1_me && status2_me){
+                    res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id.cast_int(), bus_side2_solver_id.cast_int(), yft));
+                    res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id.cast_int(), bus_side1_solver_id.cast_int(), ytf));
+                }
+            }
+        }
+
+        // Real DC equivalent of fillYbus (DC branch): pushes the real susceptance coefficients
+        // directly into a real triplet list (no complex temporary).
+        void _fillBdc(
+            std::vector<Eigen::Triplet<real_type> > & res,
+            const SolverBusIdVect & id_grid_to_solver,
+            real_type /*sn_mva*/) const override
+        {
+            const int nb_els = nb();
+            const std::vector<bool> & status1 = side_1_.get_status();
+            const std::vector<bool> & status2 = side_2_.get_status();
+            const GlobalBusIdVect & buses1 = side_1_.get_bus_id();
+            const GlobalBusIdVect & buses2 = side_2_.get_bus_id();
+
+            for(int el_id = 0; el_id < nb_els; ++el_id){
+                // i don't do anything if the branch is disconnected
+                if(!status_global_[el_id]  || (!status1[el_id] && !status2[el_id])) continue;
+                // In DC disconnected on one side == disco on both sides
+                if((!status1[el_id]) || (!status2[el_id])) continue;
+
+                const SolverBusId bus_side1_solver_id = _solver_bus(el_id, buses1(el_id), id_grid_to_solver, "BranchContainer::fillBdc (side 1)");
+                const SolverBusId bus_side2_solver_id = _solver_bus(el_id, buses2(el_id), id_grid_to_solver, "BranchContainer::fillBdc (side 2)");
+
+                res.push_back(Eigen::Triplet<real_type> (bus_side1_solver_id.cast_int(), bus_side1_solver_id.cast_int(), ydc_11_(el_id)));
+                res.push_back(Eigen::Triplet<real_type> (bus_side2_solver_id.cast_int(), bus_side2_solver_id.cast_int(), ydc_22_(el_id)));
+                res.push_back(Eigen::Triplet<real_type> (bus_side1_solver_id.cast_int(), bus_side2_solver_id.cast_int(), ydc_12_(el_id)));
+                res.push_back(Eigen::Triplet<real_type> (bus_side2_solver_id.cast_int(), bus_side1_solver_id.cast_int(), ydc_21_(el_id)));
+            }
+        }
+
+        void _fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                         std::vector<Eigen::Triplet<real_type> > & Bpp,
+                         const SolverBusIdVect & id_grid_to_solver,
+                         real_type /*sn_mva*/,
+                         FDPFMethod xb_or_bx) const override
+        {
+
+            // For Bp
+            // temp_branch[:, BR_B] = zeros(nl)           ## zero out line charging shunts
+            // temp_branch[:, TAP] = ones(nl)             ## cancel out taps
+            // if alg == 2:                               ## if XB method
+            //    temp_branch[:, BR_R] = zeros(nl)       ## zero out line resistance
+
+            // For Bpp
+            // temp_branch[:, SHIFT] = zeros(nl)          ## zero out phase shifters
+            // if alg == 3:                               ## if BX method
+            //     temp_branch[:, BR_R] = zeros(nl)    ## zero out line resistance
+            const int nb_trafo = nb();
+            const FDPFCoeffsContainer & fdpf_coeffs = xb_or_bx == FDPFMethod::XB ? XB_fpdf_coeffs_ : BX_fpdf_coeffs_;
+
+            if(!fdpf_coeffs.are_cached()){
+                std::ostringstream exc_;
+                exc_ << "BranchContainer::fillBp_Bpp: the FDPF ";
+                exc_ << "coefficients are not cached, you need to call ";
+                exc_ << "the method gridmodel.init_fdpf_coeffs() before ";
+                exc_ << "computing a powerflow with the FDPF method";
+                throw std::runtime_error(exc_.str());
+            }
+            const std::vector<bool> & status1 = side_1_.get_status();
+            const std::vector<bool> & status2 = side_2_.get_status();
+            const GlobalBusIdVect & buses1 = side_1_.get_bus_id();
+            const GlobalBusIdVect & buses2 = side_2_.get_bus_id();
+            for(int el_id = 0; el_id < nb_trafo; ++el_id){
+                // i only add this if the powerline is connected
+                if(!status_global_[el_id]) continue;
+                if(!status1[el_id] || !status2[el_id]){
+                    throw std::runtime_error("FDPF algorithm does not handle lines / trafos disconnected at only one side at the moment.");
+                }
+                // get the from / to bus id
+                const SolverBusId bus_or_solver_id = _solver_bus(el_id, buses1(el_id), id_grid_to_solver, "BranchContainer::fillBp_Bpp (side 1)");
+                const SolverBusId bus_ex_solver_id = _solver_bus(el_id, buses2(el_id), id_grid_to_solver, "BranchContainer::fillBp_Bpp (side 2)");
+
+                const FDPFCoeffs & coeffs = fdpf_coeffs[el_id];
+
+                // and now add them (both sides are connected here)
+                Bp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id.cast_int(), bus_or_solver_id.cast_int(), -coeffs.yff_bp));
+                Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id.cast_int(), bus_or_solver_id.cast_int(), -coeffs.yff_bpp));
+                Bp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id.cast_int(), bus_ex_solver_id.cast_int(), -coeffs.ytt_bp));
+                Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id.cast_int(), bus_ex_solver_id.cast_int(), -coeffs.ytt_bpp));
+                Bp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id.cast_int(), bus_ex_solver_id.cast_int(), -coeffs.yft_bp));
+                Bp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id.cast_int(), bus_or_solver_id.cast_int(), -coeffs.ytf_bp));
+                Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id.cast_int(), bus_ex_solver_id.cast_int(), -coeffs.yft_bpp));
+                Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id.cast_int(), bus_or_solver_id.cast_int(), -coeffs.ytf_bpp));
+            }
+        }
+
+        void _fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                              const SolverBusIdVect & id_grid_to_solver,
+                              real_type /*sn_mva*/,
+                              int nb_powerline,
+                              bool transpose) const override
+        {
+            const int nb_line = nb();
+            const std::vector<bool> & side1_conn = side_1_.get_status();
+            const std::vector<bool> & side2_conn = side_2_.get_status();
+            const GlobalBusIdVect & buses1 = side_1_.get_bus_id();
+            const GlobalBusIdVect & buses2 = side_2_.get_bus_id();
+            for(int line_id = 0; line_id < nb_line; ++line_id){
+                // i only add this if the powerline is connected
+                if(!status_global_[line_id]) continue;
+                if(!side1_conn[line_id]) continue;
+                if(!side2_conn[line_id]) continue;
+
+                // get the from / to bus id
+                const SolverBusId bus_or_solver_id = _solver_bus(line_id, buses1(line_id), id_grid_to_solver, "BranchContainer::fillBf_for_PTDF (side 1)");
+                const SolverBusId bus_ex_solver_id = _solver_bus(line_id, buses2(line_id), id_grid_to_solver, "BranchContainer::fillBf_for_PTDF (side 2)");
+                const real_type x = _ptdf_x(line_id);
+                const int id_ = _ptdf_row(line_id, nb_powerline);
+                
+                // TODO
+                // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
+                // and -1. / x / tap for (1..nb_branch, to_bus) 
+                if(transpose){
+                    Bf.push_back(Eigen::Triplet<real_type> (bus_or_solver_id.cast_int(), id_, 1. / x));
+                    Bf.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id.cast_int(), id_, -1. / x));
+                }else{
+                    Bf.push_back(Eigen::Triplet<real_type> (id_, bus_or_solver_id.cast_int(), 1. / x));
+                    Bf.push_back(Eigen::Triplet<real_type> (id_, bus_ex_solver_id.cast_int(), -1. / x));
+                }
+            }
+
+        }
+
+        // gridmodel utilities
+        /**
+         * A line or transformer is gated by `status_global_` FIRST: a globally
+         * deactivated branch holds nothing, whatever its two sides say. Only then
+         * does each side count, on its own status. This gate is why the rule cannot
+         * live in OneSideContainer -- a line END has no idea the branch it belongs
+         * to was deactivated as a whole.
+         */
+        void _contribute_to_buses(int el_id, SubstationContainer & substation,
+                                  int sign, bool & crossed) const override {
+            if(!status_global_[el_id]) return;                  // the gate
+            const std::vector<bool> & st1 = get_status_side_1();
+            const std::vector<bool> & st2 = get_status_side_2();
+            if(st1[el_id]){
+                const GlobalBusId b = get_bus_side_1(el_id);
+                if(b.cast_int() != _deactivated_bus_id){
+                    crossed |= (sign > 0) ? substation.bus_gained_element(b)
+                                          : substation.bus_lost_element(b);
+                }
+            }
+            if(st2[el_id]){
+                const GlobalBusId b = get_bus_side_2(el_id);
+                if(b.cast_int() != _deactivated_bus_id){
+                    crossed |= (sign > 0) ? substation.bus_gained_element(b)
+                                          : substation.bus_lost_element(b);
+                }
+            }
+        }
+
+    protected:
+
+        // TODO save that somewhere (and don't forget to template that)
+        // with FDPFXB or FPDFBX if saved !
+        struct FDPFCoeffs
+        {
+            real_type yft_bp;
+            real_type ytf_bp;
+            real_type yff_bp;
+            real_type ytt_bp;
+            real_type yft_bpp;
+            real_type ytf_bpp;
+            real_type yff_bpp;
+            real_type ytt_bpp;
+        };
+
+        class FDPFCoeffsContainer final
+        {
+            private:
+                std::vector<FDPFCoeffs> m_coeffs;
+                bool is_computed;
+            
+            public:
+                FDPFCoeffsContainer() noexcept: m_coeffs(), is_computed(false){}
+                bool are_cached() const { return is_computed; }
+                void set_computed(bool comp_) { is_computed = comp_; }
+
+                void init(int size){
+                    m_coeffs.clear();
+                    m_coeffs = std::vector<FDPFCoeffs>(size);
+                }
+                void assign_el(int el_id, const FDPFCoeffs & coeff){
+                    m_coeffs[el_id] = coeff;
+                    // TODO only in debug MODE: use at here instead
+                }
+                const FDPFCoeffs & operator[](int el_id) const {
+                    return m_coeffs[el_id];
+                }
+        };
+
+        StateRes get_branch_state() const
+        {
+            std::vector<real_type> branch_r(r_.begin(), r_.end());
+            std::vector<real_type> branch_x(x_.begin(), x_.end());
+            std::vector<cplx_type> branch_h1(h_side_1_.begin(), h_side_1_.end());
+            std::vector<cplx_type> branch_h2(h_side_2_.begin(), h_side_2_.end());
+            std::vector<real_type> limit_a1_ka(limit_a1_ka_.begin(), limit_a1_ka_.end());
+            std::vector<real_type> limit_a2_ka(limit_a2_ka_.begin(), limit_a2_ka_.end());
+            StateRes res(
+                get_tsc_state(),
+                branch_r,
+                branch_x,
+                branch_h1,
+                branch_h2,
+                limit_a1_ka,
+                limit_a2_ka
+            );
+            return res;
+        }
+
+        void set_branch_state(StateRes & my_state)
+        {
+            set_tsc_state(std::get<StateResIdx::TSC_STATE>(my_state));
+            const int size = nb();
+
+            const std::vector<real_type> & branch_r = std::get<StateResIdx::R>(my_state);
+            const std::vector<real_type> & branch_x = std::get<StateResIdx::X>(my_state);
+            const std::vector<cplx_type> & branch_h1 = std::get<StateResIdx::H_SIDE_1>(my_state);
+            const std::vector<cplx_type> & branch_h2 = std::get<StateResIdx::H_SIDE_2>(my_state);
+            check_size(branch_r, size, "branch r");
+            check_size(branch_x, size, "branch x");
+            check_size(branch_h1, size, "branch h (=g+j.b), side 1");
+            check_size(branch_h2, size, "branch h (=g+j.b), side 2");
+
+            r_ = RealVect::Map(branch_r.data(), size);
+            x_ = RealVect::Map(branch_x.data(), size);
+            h_side_1_ = CplxVect::Map(branch_h1.data(), size);
+            h_side_2_ = CplxVect::Map(branch_h2.data(), size);
+
+            const std::vector<real_type> & limit_a1_ka = std::get<StateResIdx::LIMIT_A1_KA>(my_state);
+            const std::vector<real_type> & limit_a2_ka = std::get<StateResIdx::LIMIT_A2_KA>(my_state);
+            if(limit_a1_ka.size() > 0){
+                check_size(limit_a1_ka, size, "limit_a1_ka");
+                limit_a1_ka_ = RealVect::Map(limit_a1_ka.data(), size);
+            } else {
+                limit_a1_ka_ = RealVect();
+            }
+            if(limit_a2_ka.size() > 0){
+                check_size(limit_a2_ka, size, "limit_a2_ka");
+                limit_a2_ka_ = RealVect::Map(limit_a2_ka.data(), size);
+            } else {
+                limit_a2_ka_ = RealVect();
+            }
+        }
+
+        void _reset_results() override {
+            TwoSidesContainer<BranchEndContainer>::_reset_results();
+            res_a_side_1_ = RealVect(nb());  // in kA
+            res_a_side_2_ = RealVect(nb());  // in kA
+        }
+        // a line's results: the flows, then the amps. A transformer inserts its DC
+        // phase-shift correction between the two.
+        void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                              const Eigen::Ref<const RealVect> & Vm,
+                              const Eigen::Ref<const CplxVect> & V,
+                              const SolverBusIdVect & id_grid_to_solver,
+                              const Eigen::Ref<const RealVect> & bus_vn_kv,
+                              real_type sn_mva,
+                              bool ac) override
+        {
+            _compute_branch_results_no_amps(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
+            _compute_amps();
+        }
+
+        // the global status flips: the whole block leaves / enters Ybus
+        void _on_deactivate(int /*el_id*/, DualAlgoControl & solver_control) override {
+            solver_control.tell_recompute_ybus();
+            // but sparsity pattern do not change here (possibly one more coeff at 0.)
+            solver_control.tell_ybus_some_coeffs_zero();
+            solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+        }
+        void _on_reactivate(int /*el_id*/, DualAlgoControl & solver_control) override {
+            solver_control.tell_recompute_ybus();
+            solver_control.tell_ybus_change_sparsity_pattern();  // this might change
+            solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+        }
+        // any connectivity change: the stamped block follows the open ends
+        void _on_connectivity_changed(int el_id, DualAlgoControl & /*solver_control*/) override {
+            _update_kron_coeffs(el_id);
+        }
+
+        // ---- what a leaf provides for the DC / FDPF / PTDF paths -------------------
+        /// the reactance the PTDF divides by (a transformer folds its ratio in)
+        virtual real_type _ptdf_x(int el_id) const{
+            return x_(el_id);
+        }
+        /// the row of this element in the (lines, then transformers) Bf matrix
+        virtual int _ptdf_row(int el_id, int /*nb_powerline*/) const{
+            return el_id;
+        }
+        virtual FDPFCoeffs _fdpf_coeffs(int line_id, FDPFMethod xb_or_bx) const{
+            FDPFCoeffs res;        
+            cplx_type ys_bp, ys_bpp;
+            if(xb_or_bx==FDPFMethod::XB){
+                ys_bp = 1. / (cplx_type(0., x_(line_id)));
+                ys_bpp = 1. / (cplx_type(r_(line_id), x_(line_id)));
+            }else if (xb_or_bx==FDPFMethod::BX){
+                ys_bp = 1. / (cplx_type(r_(line_id), x_(line_id)));
+                ys_bpp = 1. / (cplx_type(0., x_(line_id)));
+            }else{
+                std::ostringstream exc_;
+                exc_ << "fillBp_Bpp: unknown method for the FDPF powerflow for line id ";
+                exc_ << line_id;
+                throw std::runtime_error(exc_.str());            
+            }
+            const real_type ys_bp_r = std::imag(ys_bp); 
+            res.yff_bp = ys_bp_r;
+            res.ytt_bp = ys_bp_r;
+            res.yft_bp = -ys_bp_r;
+            res.ytf_bp = -ys_bp_r;
+            const real_type ys_bpp_r = std::imag(ys_bpp); 
+            res.yff_bpp = ys_bpp_r + std::imag(h_side_1_(line_id));
+            res.ytt_bpp = ys_bpp_r + std::imag(h_side_2_(line_id));
+            res.yft_bpp = -ys_bpp_r;
+            res.ytf_bpp = -ys_bpp_r;
+            return res;
+        }
+
+        void _update_model_coeffs()
+        {
+            const int my_size = nb();
+
+            yac_11_ = CplxVect::Zero(my_size);
+            yac_12_ = CplxVect::Zero(my_size);
+            yac_21_ = CplxVect::Zero(my_size);
+            yac_22_ = CplxVect::Zero(my_size);
+
+            yac_eff_11_ = CplxVect::Zero(my_size);
+            yac_eff_12_ = CplxVect::Zero(my_size);
+            yac_eff_21_ = CplxVect::Zero(my_size);
+            yac_eff_22_ = CplxVect::Zero(my_size);
+
+            ydc_11_ = RealVect::Zero(my_size);
+            ydc_12_ = RealVect::Zero(my_size);
+            ydc_21_ = RealVect::Zero(my_size);
+            ydc_22_ = RealVect::Zero(my_size);
+            for(int i = 0; i < my_size; ++i)
+            {
+                // coeff for Ybus matrices (AC and DC)
+                _update_internal_coeffs(i);
+            }
+        }
+
+        // a parameter of `el_id` changed (init, a tap, a shift): its raw block, its
+        // stamped block and its FDPF coefficients follow
+        void _update_internal_coeffs(int el_id){
+            // update coeffs for Ybus (AC and DC)
+            _update_model_coeffs_one_el(el_id);
+            // update Kron-reduced effective coefficients
+            _update_kron_coeffs(el_id);
+
+            // for FDPF matrices (if cached)
+            if(BX_fpdf_coeffs_.are_cached()){
+                // update the cache in this case
+                BX_fpdf_coeffs_.assign_el(el_id, _fdpf_coeffs(el_id, FDPFMethod::BX));
+            }
+            if(XB_fpdf_coeffs_.are_cached()){
+                // update the cache in this case
+                XB_fpdf_coeffs_.assign_el(el_id, _fdpf_coeffs(el_id, FDPFMethod::XB));
+            }
+        }
+
+        /**
+         * The stamped (Kron-reduced) block of `el_id` from its raw block and the
+         * status of its two ends and of the element, which must be up to date.
+         */
+        void _update_kron_coeffs(int el_id) {
+            const bool s1 = side_1_.get_status(el_id);
+            const bool s2 = side_2_.get_status(el_id);
+            if (!status_global_[el_id] || (!s1 && !s2)) {
+                yac_eff_11_(el_id) = yac_eff_12_(el_id) = 0.;
+                yac_eff_21_(el_id) = yac_eff_22_(el_id) = 0.;
+            } else if (!s1) {
+                // side 1 open, side 2 connected: Kron-reduce out the open end
+                yac_eff_11_(el_id) = yac_eff_12_(el_id) = yac_eff_21_(el_id) = 0.;
+                yac_eff_22_(el_id) = yac_22_(el_id) - yac_21_(el_id) * yac_12_(el_id) / yac_11_(el_id);
+            } else if (!s2) {
+                // side 1 connected, side 2 open: Kron-reduce out the open end
+                yac_eff_12_(el_id) = yac_eff_21_(el_id) = yac_eff_22_(el_id) = 0.;
+                yac_eff_11_(el_id) = yac_11_(el_id) - yac_21_(el_id) * yac_12_(el_id) / yac_22_(el_id);
+            } else {
+                // both sides connected
+                yac_eff_11_(el_id) = yac_11_(el_id);
+                yac_eff_12_(el_id) = yac_12_(el_id);
+                yac_eff_21_(el_id) = yac_21_(el_id);
+                yac_eff_22_(el_id) = yac_22_(el_id);
+            }
+        }
+
+        virtual void _update_model_coeffs_one_el(int el_id){
+            // for AC
+            // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
+            const cplx_type ys = 1. / cplx_type(r_(el_id), x_(el_id));
+            const cplx_type h_or = h_side_1_(el_id);
+            const cplx_type h_ex = h_side_2_(el_id);
+            yac_11_(el_id) = (ys + h_or);
+            yac_22_(el_id) = (ys + h_ex);
+            yac_12_(el_id) = -ys;
+            yac_21_(el_id) = -ys;
+
+            // for DC
+            // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
+            // except here I only care about the real part (1/x), so I remove the "1/j"
+            const real_type tmp = 1. / x_(el_id);
+            ydc_11_(el_id) = tmp;
+            ydc_22_(el_id) = tmp;
+            ydc_21_(el_id) = -tmp;
+            ydc_12_(el_id) = -tmp;
+        }
+
+    protected:
+        // physical properties
+        RealVect r_;  // in pu
+        RealVect x_;  // in pu
+        CplxVect h_side_1_;  // in pu
+        CplxVect h_side_2_;  // in pu
+
+        // input data (optional, empty if unset)
+        RealVect limit_a1_ka_;  // thermal (current) limit, side 1, in kA
+        RealVect limit_a2_ka_;  // thermal (current) limit, side 2, in kA
+
+        //output data
+        RealVect res_a_side_1_;  // in kA
+        RealVect res_a_side_2_;  // in kA
+
+        // model coefficients (raw)
+        CplxVect yac_11_;
+        CplxVect yac_12_;
+        CplxVect yac_21_;
+        CplxVect yac_22_;
+
+        // model coefficients (Kron-reduced for per-side connection state; derived, not pickled)
+        CplxVect yac_eff_11_;
+        CplxVect yac_eff_12_;
+        CplxVect yac_eff_21_;
+        CplxVect yac_eff_22_;
+
+        // DC admittance coefficients: real (DC only uses the real susceptance 1/x), see _update_model_coeffs_one_el
+        RealVect ydc_11_;
+        RealVect ydc_12_;
+        RealVect ydc_21_;
+        RealVect ydc_22_;
+
+        // For FDPF
+        FDPFCoeffsContainer BX_fpdf_coeffs_;
+        FDPFCoeffsContainer XB_fpdf_coeffs_;
+};
+
+} // namespace ls2g
+
+#endif  // BRANCH_CONTAINER_H

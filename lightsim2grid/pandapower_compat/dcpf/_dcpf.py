@@ -9,10 +9,10 @@
 import numpy as np
 from scipy import sparse
 
-from lightsim2grid.solver import DCSolver
+from lightsim2grid.algorithm import DC_SparseLU
 
 try:
-    from lightsim2grid.solver import KLUDCSolver
+    from lightsim2grid.algorithm import DC_KLU
     KLU_solver_available = True
 except ImportError:
     KLU_solver_available = False
@@ -31,7 +31,7 @@ def _isolate_slack_ids(Sbus, pv, pq):
 def _get_valid_solver(options, Bbus):
     # initialize the solver
     # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)
-    solver = KLUDCSolver() if KLU_solver_available else DCSolver()
+    solver = DC_KLU() if KLU_solver_available else DC_SparseLU()
 
     if not sparse.isspmatrix_csc(Bbus):
         Bbus = sparse.csc_matrix(Bbus)

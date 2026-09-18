@@ -33,18 +33,18 @@ NR single (SLU)                       1020                                  0.16
 NR (SLU)                               982                                  0.216                        0.0683
 NR single (KLU)                       1080                                  0.117                        0.0194
 NR (KLU)                              1080                                  0.115                        0.0179
-NR single (NICSLU *)                  1030                                  0.123                        0.02
-NR (NICSLU *)                         1080                                  0.114                        0.0175
-NR single (CKTSO *)                   1160                                  0.108                        0.0167
-NR (CKTSO *)                          1150                                  0.108                        0.0156
+NR single (NICSLU\*)                  1030                                  0.123                        0.02
+NR (NICSLU\*)                         1080                                  0.114                        0.0175
+NR single (CKTSO\*)                   1160                                  0.108                        0.0167
+NR (CKTSO\*)                          1150                                  0.108                        0.0156
 FDPF XB (SLU)                         1070                                  0.126                        0.029
 FDPF BX (SLU)                         1060                                  0.138                        0.0413
 FDPF XB (KLU)                         1080                                  0.12                         0.024
 FDPF BX (KLU)                         1060                                  0.132                        0.0347
-FDPF XB (NICSLU *)                    1140                                  0.114                        0.0233
-FDPF BX (NICSLU *)                    1130                                  0.123                        0.0332
-FDPF XB (CKTSO *)                     1150                                  0.113                        0.0227
-FDPF BX (CKTSO *)                     1130                                  0.124                        0.0324
+FDPF XB (NICSLU\*)                    1140                                  0.114                        0.0233
+FDPF BX (NICSLU\*)                    1130                                  0.123                        0.0332
+FDPF XB (CKTSO\*)                     1150                                  0.113                        0.0227
+FDPF BX (CKTSO\*)                     1130                                  0.124                        0.0324
 ====================  ======================  ===================================  ============================
 
 ============================  ==============  ==============  ================
@@ -57,18 +57,18 @@ NR single (SLU)                     0.000122        7.63e-06          7.63e-06
 NR (SLU)                            0.000122        7.63e-06          7.63e-06
 NR single (KLU)                     0.000122        7.63e-06          7.63e-06
 NR (KLU)                            0.000122        7.63e-06          7.63e-06
-NR single (NICSLU *)                0.000122        7.63e-06          7.63e-06
-NR (NICSLU *)                       0.000122        7.63e-06          7.63e-06
-NR single (CKTSO *)                 0.000122        7.63e-06          7.63e-06
-NR (CKTSO *)                        0.000122        7.63e-06          7.63e-06
+NR single (NICSLU\*)                0.000122        7.63e-06          7.63e-06
+NR (NICSLU\*)                       0.000122        7.63e-06          7.63e-06
+NR single (CKTSO\*)                 0.000122        7.63e-06          7.63e-06
+NR (CKTSO\*)                        0.000122        7.63e-06          7.63e-06
 FDPF XB (SLU)                       0.000122        7.63e-06          7.63e-06
 FDPF BX (SLU)                       0.000122        7.63e-06          7.63e-06
 FDPF XB (KLU)                       0.000122        7.63e-06          7.63e-06
 FDPF BX (KLU)                       0.000122        7.63e-06          7.63e-06
-FDPF XB (NICSLU *)                  0.000122        7.63e-06          7.63e-06
-FDPF BX (NICSLU *)                  0.000122        7.63e-06          7.63e-06
-FDPF XB (CKTSO *)                   0.000122        7.63e-06          7.63e-06
-FDPF BX (CKTSO *)                   0.000122        7.63e-06          7.63e-06
+FDPF XB (NICSLU\*)                  0.000122        7.63e-06          7.63e-06
+FDPF BX (NICSLU\*)                  0.000122        7.63e-06          7.63e-06
+FDPF XB (CKTSO\*)                   0.000122        7.63e-06          7.63e-06
+FDPF BX (CKTSO\*)                   0.000122        7.63e-06          7.63e-06
 ============================  ==============  ==============  ================
 
 l2rpn_neurips_2020_track2_small
@@ -103,18 +103,18 @@ NR single (SLU)                         600                                  0.7
 NR (SLU)                                594                                  0.774                        0.649
 NR single (KLU)                         871                                  0.244                        0.122
 NR (KLU)                                881                                  0.23                         0.109
-NR single (NICSLU *)                    928                                  0.223                        0.108
-NR (NICSLU *)                           882                                  0.227                        0.105
-NR single (CKTSO *)                     932                                  0.217                        0.102
-NR (CKTSO *)                            941                                  0.207                        0.0932
+NR single (NICSLU\*)                    928                                  0.223                        0.108
+NR (NICSLU\*)                           882                                  0.227                        0.105
+NR single (CKTSO\*)                     932                                  0.217                        0.102
+NR (CKTSO\*)                            941                                  0.207                        0.0932
 FDPF XB (SLU)                           809                                  0.33                         0.213
 FDPF BX (SLU)                           793                                  0.352                        0.233
 FDPF XB (KLU)                           835                                  0.292                        0.176
 FDPF BX (KLU)                           824                                  0.309                        0.192
-FDPF XB (NICSLU *)                      883                                  0.276                        0.166
-FDPF BX (NICSLU *)                      875                                  0.29                         0.181
-FDPF XB (CKTSO *)                       886                                  0.275                        0.165
-FDPF BX (CKTSO *)                       875                                  0.29                         0.18
+FDPF XB (NICSLU\*)                      883                                  0.276                        0.166
+FDPF BX (NICSLU\*)                      875                                  0.29                         0.181
+FDPF XB (CKTSO\*)                       886                                  0.275                        0.165
+FDPF BX (CKTSO\*)                       875                                  0.29                         0.18
 =====================  ======================  ===================================  ============================
 
 =================================  ==============  ==============  ================
@@ -127,16 +127,16 @@ NR single (SLU)                           6.1e-05        0                 9.54e
 NR (SLU)                                  6.1e-05        0                 9.54e-07
 NR single (KLU)                           6.1e-05        0                 9.54e-07
 NR (KLU)                                  6.1e-05        0                 9.54e-07
-NR single (NICSLU *)                      6.1e-05        0                 9.54e-07
-NR (NICSLU *)                             6.1e-05        0                 9.54e-07
-NR single (CKTSO *)                       6.1e-05        0                 9.54e-07
-NR (CKTSO *)                              6.1e-05        0                 9.54e-07
+NR single (NICSLU\*)                      6.1e-05        0                 9.54e-07
+NR (NICSLU\*)                             6.1e-05        0                 9.54e-07
+NR single (CKTSO\*)                       6.1e-05        0                 9.54e-07
+NR (CKTSO\*)                              6.1e-05        0                 9.54e-07
 FDPF XB (SLU)                             6.1e-05        1.91e-06          1.53e-05
 FDPF BX (SLU)                             6.1e-05        1.91e-06          7.63e-06
 FDPF XB (KLU)                             6.1e-05        1.91e-06          1.53e-05
 FDPF BX (KLU)                             6.1e-05        1.91e-06          7.63e-06
-FDPF XB (NICSLU *)                        6.1e-05        1.91e-06          1.53e-05
-FDPF BX (NICSLU *)                        6.1e-05        1.91e-06          7.63e-06
-FDPF XB (CKTSO *)                         6.1e-05        1.91e-06          1.53e-05
-FDPF BX (CKTSO *)                         6.1e-05        1.91e-06          7.63e-06
+FDPF XB (NICSLU\*)                        6.1e-05        1.91e-06          1.53e-05
+FDPF BX (NICSLU\*)                        6.1e-05        1.91e-06          7.63e-06
+FDPF XB (CKTSO\*)                         6.1e-05        1.91e-06          1.53e-05
+FDPF BX (CKTSO\*)                         6.1e-05        1.91e-06          7.63e-06
 =================================  ==============  ==============  ================

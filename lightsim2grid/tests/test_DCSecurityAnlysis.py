@@ -13,7 +13,7 @@ from pandapower.pypower.makeLODF import update_LODF_diag
 
 import grid2op
 
-from lightsim2grid.solver import SolverType
+from lightsim2grid.algorithm import AlgorithmType
 from lightsim2grid import ContingencyAnalysis, LightSimBackend
 import warnings
 import pdb
@@ -35,11 +35,11 @@ class TestDCSecurityAnalysis(unittest.TestCase):
 
     def test_can_create(self):
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
     
     def test_clear(self):
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
 
         # add simple contingencies
         sa.add_multiple_contingencies(0, 1, 2, 3)
@@ -55,7 +55,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
 
     def test_add_single_contingency(self):
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
         
         with self.assertRaises(RuntimeError):
             sa.add_single_contingency("toto")
@@ -75,7 +75,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
 
     def test_add_multiple_contingencies(self):
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
         # add simple contingencies
         sa.add_multiple_contingencies(0, 1, 2, 3)
         all_conts = sa.computer.my_defaults()
@@ -103,7 +103,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
 
     def test_add_all_n1_contingencies(self):
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
         sa.add_all_n1_contingencies()
         all_conts = sa.computer.my_defaults()
         assert len(all_conts) == self.env.n_line
@@ -113,7 +113,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method in the most simplest way: ask for all contingencies,
         contingencies are given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows()
         assert res_a.shape == (3, self.env.n_line)
@@ -125,7 +125,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method: ask for all contingencies , 
         contingencies are NOT given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows()
         assert res_a.shape == (3, self.env.n_line)
@@ -137,7 +137,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method: don't ask for all contingencies (same order as given), 
         contingencies are given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows(0, 1)
         assert res_a.shape == (2, self.env.n_line)
@@ -148,7 +148,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method in the most simplest way: not all contingencies (not same order as given), 
         contingencies are given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows(0, 2)
         assert res_a.shape == (2, self.env.n_line)
@@ -159,7 +159,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method: don't ask for all contingencies (same order as given), 
         contingencies are NOT given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows(0, 2)
         assert res_a.shape == (2, self.env.n_line)
@@ -170,7 +170,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method in the most simplest way: not all contingencies (not same order as given), 
         contingencies are NOT given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows(0, 1)
         assert res_a.shape == (2, self.env.n_line)
@@ -180,7 +180,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
     def test_get_flows_multiple(self):
         """test the get_flows function when multiple contingencies"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
         sa.add_multiple_contingencies(0, [0, 4], [5, 7], 4)
 
         # everything
@@ -217,12 +217,12 @@ class TestDCSecurityAnalysis(unittest.TestCase):
     def test_change_injection(self):
         """test the capacity of the things to handle different steps"""
         sa1 = ContingencyAnalysis(self.env)
-        sa1.change_solver(SolverType.DC)
+        sa1.change_algorithm(AlgorithmType.DC_SparseLU)
         conts = [0, [0, 4], [5, 7], 4]
         sa1.add_multiple_contingencies(*conts)
         obs = self.env.reset()
         sa2 = ContingencyAnalysis(self.env)
-        sa2.change_solver(SolverType.DC)
+        sa2.change_algorithm(AlgorithmType.DC_SparseLU)
         sa2.add_multiple_contingencies(*conts)
         
         res_p1, res_a1, res_v1 = sa1.get_flows()
@@ -295,7 +295,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
             assert not info["is_illegal_reco"]
         
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_algorithm(AlgorithmType.DC_SparseLU)
         sa.add_all_n1_contingencies()
         
         # compute with security analysis
@@ -303,7 +303,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         
         # compute with LODF
         gridmodel = self.env.backend._grid.copy()
-        gridmodel.change_solver(SolverType.DC)
+        gridmodel.change_algorithm(AlgorithmType.DC_SparseLU)
         res = gridmodel.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)   
         lor_p, *_ = gridmodel.get_line_res1()
         tor_p, *_ = gridmodel.get_trafo_res1()
@@ -332,7 +332,19 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         den = (np.ones((nbr, 1)) * h.T * -1 + 1.)
         with np.errstate(divide='ignore', invalid='ignore'):
             LODF_pypower = (H / den)
-        update_LODF_diag(LODF_pypower)  
+        update_LODF_diag(LODF_pypower)
+
+        # lines / trafos already out of service in `gridmodel` carry no flow, so "outaging"
+        # them changes nothing elsewhere: lightsim2grid represents this as an identity column
+        # (see BaseDCAlgo::get_lodf). The pypower-style formula above is unaware of this (it
+        # builds f_/t_ from the topological bus id regardless of connection status), so its
+        # column for such an element is generally non-zero garbage. Align it with lightsim2grid's
+        # convention before comparing.
+        already_disco = np.concatenate((~np.array(gridmodel.get_lines_status()),
+                                         ~np.array(gridmodel.get_trafo_status())))
+        LODF_pypower[:, already_disco] = 0.
+        LODF_pypower[already_disco, already_disco] = 1.
+
         # nan and inf etc are handled below
         isfinite_pypower = np.isfinite(LODF_pypower)
         isfinite_ls = np.isfinite(LODF_mat)
@@ -369,6 +381,61 @@ class TestDCSecurityAnalysis(unittest.TestCase):
 
         assert np.abs(por_lodf[has_conv] - res_p1[has_conv]).max() <= 1e-6
         
+    def test_lodf_formula_flow_reconstruction_deact_line(self):
+        """test that the LODF formula used to reconstruct post-contingency flows
+        (flow_after = flow_before + LODF[:, k] * flow_before[k]) is still correct
+        when a line was already disconnected *before* the LODF is computed:
+        - flows reconstructed for contingencies unrelated to the already-off line
+          must match a direct DC powerflow (in particular the already-off line
+          must stay at 0 flow, before and after the extra contingency)
+        - "outaging" the already-off line itself must be a no-op (identity)
+        """
+        obs = self._aux_do_reset()
+        act = self.env.action_space({"set_line_status": [(1, -1)]})
+        obs, reward, done, info = self.env.step(act)
+        assert not done, "Unable to do the action, powerflow diverges"
+        assert not info["is_ambiguous"]
+        assert not info["is_illegal"]
+        assert not info["is_illegal_reco"]
+
+        gridmodel = self.env.backend._grid.copy()
+        gridmodel.change_algorithm(AlgorithmType.DC_SparseLU)
+        gridmodel.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)
+        lor_p, *_ = gridmodel.get_line_res1()
+        tor_p, *_ = gridmodel.get_trafo_res1()
+        flow_before = np.concatenate((lor_p, tor_p))
+        nb_real_line = len(lor_p)
+        LODF_mat = 1. * gridmodel.get_lodf()
+
+        # sanity: the already-disconnected line carries no flow
+        assert abs(flow_before[1]) <= 1e-6
+
+        # contingencies unrelated to the already-disconnected line 1 (all converge, see setUp)
+        for l_id in [2, 4, 7, 10, 15, 19]:
+            flow_after_formula = flow_before + LODF_mat[:, l_id] * flow_before[l_id]
+
+            gridmodel_tmp = gridmodel.copy()
+            if l_id < nb_real_line:
+                gridmodel_tmp.deactivate_powerline(l_id)
+            else:
+                gridmodel_tmp.deactivate_trafo(l_id - nb_real_line)
+            res_tmp = gridmodel_tmp.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)
+            assert res_tmp.shape[0] != 0, f"powerflow should converge for contingency {l_id}"
+            lor_tmp, *_ = gridmodel_tmp.get_line_res1()
+            tor_tmp, *_ = gridmodel_tmp.get_trafo_res1()
+            flow_after_ref = np.concatenate((lor_tmp, tor_tmp))
+
+            assert np.abs(flow_after_formula - flow_after_ref).max() <= 1e-6, \
+                f"LODF-reconstructed flows wrong for contingency {l_id}: {np.abs(flow_after_formula - flow_after_ref)}"
+            # the already-disconnected line must still carry 0 flow, both in the
+            # reconstructed and the reference flows
+            assert abs(flow_after_formula[1]) <= 1e-6
+            assert abs(flow_after_ref[1]) <= 1e-6
+
+        # outaging the already-disconnected line itself is a no-op: it changes nothing
+        flow_after_formula = flow_before + LODF_mat[:, 1] * flow_before[1]
+        assert np.abs(flow_after_formula - flow_before).max() <= 1e-6
+
     def test_compare_lodf_topo(self):
         self.test_compare_lodf(act=self.env.action_space({"set_bus": {"substations_id": [(1, (1, 2, 1, 2, 1, 2))]}}))
     

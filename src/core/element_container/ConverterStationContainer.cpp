@@ -1,0 +1,201 @@
+// Copyright (c) 2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#include "ConverterStationContainer.hpp"
+
+#include <cmath>
+#include <sstream>
+
+namespace ls2g {
+
+void ConverterStationContainer::init(const std::vector<int> & type,
+                                     const Eigen::Ref<const RealVect> & loss_factor,
+                                     const std::vector<bool> & voltage_regulator_on,
+                                     const Eigen::Ref<const RealVect> & target_vm_pu,
+                                     const Eigen::Ref<const RealVect> & q_setpoint_mvar,
+                                     const Eigen::Ref<const RealVect> & min_q,
+                                     const Eigen::Ref<const RealVect> & max_q,
+                                     const Eigen::Ref<const RealVect> & power_factor,
+                                     const Eigen::Ref<const Eigen::VectorXi> & bus_id)
+{
+    // active power is derived (owned by the HvdcLineContainer), it starts at 0
+    const auto p_init = RealVect::Zero(bus_id.size());
+    init_osc_pq(p_init, q_setpoint_mvar, bus_id, "converter_stations");
+
+    const int size = nb();
+    check_size(type, size, "type");
+    check_size(loss_factor, size, "loss_factor");
+    check_size(voltage_regulator_on, size, "voltage_regulator_on");
+    check_size(target_vm_pu, size, "target_vm_pu");
+    check_size(min_q, size, "min_q");
+    check_size(max_q, size, "max_q");
+    check_size(power_factor, size, "power_factor");
+
+    type_ = IntVect(size);
+    for(int station_id = 0; station_id < size; ++station_id){
+        if((type[station_id] != ConverterType::VSC) && (type[station_id] != ConverterType::LCC)){
+            std::ostringstream exc_;
+            exc_ << "ConverterStationContainer::init: unknown converter type ";
+            exc_ << type[station_id];
+            exc_ << " for station ";
+            exc_ << station_id;
+            exc_ << " (0 = VSC, 1 = LCC).";
+            throw std::runtime_error(exc_.str());
+        }
+        type_(station_id) = type[station_id];
+        if((type[station_id] == ConverterType::LCC) && voltage_regulator_on[station_id]){
+            std::ostringstream exc_;
+            exc_ << "ConverterStationContainer::init: LCC station ";
+            exc_ << station_id;
+            exc_ << " cannot regulate voltage.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(min_q(station_id) > max_q(station_id)){
+            std::ostringstream exc_;
+            exc_ << "ConverterStationContainer::init: Impossible to initialize converter station with min_q being above max_q for station ";
+            exc_ << station_id;
+            throw std::runtime_error(exc_.str());
+        }
+    }
+    loss_factor_ = loss_factor;
+    voltage_regulator_on_ = voltage_regulator_on;
+    target_vm_pu_ = target_vm_pu;
+    regulated_bus_id_ = bus_id;  // a station regulates its own bus
+    min_q_ = min_q;
+    max_q_ = max_q;
+    power_factor_ = power_factor;
+    reset_results();
+}
+
+ConverterStationContainer::StateRes ConverterStationContainer::get_state() const
+{
+    std::vector<int> type(type_.begin(), type_.end());
+    std::vector<real_type> loss_factor(loss_factor_.begin(), loss_factor_.end());
+    std::vector<real_type> vm_pu(target_vm_pu_.begin(), target_vm_pu_.end());
+    std::vector<real_type> min_q(min_q_.begin(), min_q_.end());
+    std::vector<real_type> max_q(max_q_.begin(), max_q_.end());
+    std::vector<real_type> power_factor(power_factor_.begin(), power_factor_.end());
+    ConverterStationContainer::StateRes res(get_osc_pq_state(),
+                                            type,
+                                            loss_factor,
+                                            voltage_regulator_on_,
+                                            vm_pu,
+                                            min_q,
+                                            max_q,
+                                            power_factor);
+    return res;
+}
+
+void ConverterStationContainer::set_state(ConverterStationContainer::StateRes & my_state)
+{
+    set_osc_pq_state(std::get<StateResIdx::OSC_PQ_STATE>(my_state));
+    std::vector<int> & type = std::get<StateResIdx::TYPE>(my_state);
+    std::vector<real_type> & loss_factor = std::get<StateResIdx::LOSS_FACTOR>(my_state);
+    std::vector<bool> & voltage_regulator_on = std::get<StateResIdx::VREG_ON>(my_state);
+    std::vector<real_type> & vm_pu = std::get<StateResIdx::TARGET_VM_PU>(my_state);
+    std::vector<real_type> & min_q = std::get<StateResIdx::MIN_Q>(my_state);
+    std::vector<real_type> & max_q = std::get<StateResIdx::MAX_Q>(my_state);
+    std::vector<real_type> & power_factor = std::get<StateResIdx::POWER_FACTOR>(my_state);
+
+    const auto size = nb();
+    check_size(type, size, "type");
+    check_size(loss_factor, size, "loss_factor");
+    check_size(voltage_regulator_on, size, "voltage_regulator_on");
+    check_size(vm_pu, size, "vm_pu");
+    check_size(min_q, size, "min_q");
+    check_size(max_q, size, "max_q");
+    check_size(power_factor, size, "power_factor");
+
+    type_ = IntVect::Map(type.data(), type.size());
+    loss_factor_ = RealVect::Map(loss_factor.data(), loss_factor.size());
+    voltage_regulator_on_ = voltage_regulator_on;
+    target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
+    min_q_ = RealVect::Map(min_q.data(), min_q.size());
+    max_q_ = RealVect::Map(max_q.data(), max_q.size());
+    power_factor_ = RealVect::Map(power_factor.data(), power_factor.size());
+    regulated_bus_id_ = bus_id_.as_eigen();  // not serialised: a station regulates its own bus
+    reset_results();
+}
+
+void ConverterStationContainer::set_station_p(int station_id, real_type p_mw, DualAlgoControl & solver_control)
+{
+    _check_in_range(station_id, status_, "set_station_p");
+    _on_change_p(station_id, p_mw, solver_control);
+    if (abs(target_p_mw_(station_id) - p_mw) > _tol_equal_float) {
+        target_p_mw_(station_id) = p_mw;
+    }
+    if(is_lcc(station_id)){
+        // LCC always consumes Q = |P| * tan(acos(power_factor)) (generator sign convention)
+        const real_type new_q = -abs(p_mw) * std::tan(std::acos(power_factor_(station_id)));
+        if (abs(target_q_mvar_(station_id) - new_q) > _tol_equal_float) {
+            solver_control.tell_recompute_sbus();
+            target_q_mvar_(station_id) = new_q;
+        }
+    }
+}
+
+void ConverterStationContainer::fillSbus_station(Eigen::Ref<CplxVect> Sbus,
+                                                 const SolverBusIdVect & id_grid_to_solver,
+                                                 bool /*ac*/,
+                                                 const std::vector<bool> & skip_p) const
+{
+    const int nb_station = nb();
+    GlobalBusId bus_id_me;
+    SolverBusId bus_id_solver;
+    cplx_type tmp;
+    for(int station_id = 0; station_id < nb_station; ++station_id){
+        //  i don't do anything if the station is disconnected
+        if(!status_[station_id]) continue;
+
+        bus_id_me = bus_id_(station_id);
+#ifndef NDEBUG
+        if(bus_id_me.cast_int() == _deactivated_bus_id){
+            // TODO DEBUG MODE: only check in debug mode
+            std::ostringstream exc_;
+            exc_ << "ConverterStationContainer::fillSbus_station: Converter station with id ";
+            exc_ << station_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
+#endif
+        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
+#ifndef NDEBUG
+        if(bus_id_solver.cast_int() == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "ConverterStationContainer::fillSbus_station: Converter station with id ";
+            exc_ << station_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
+#endif
+        tmp = {skip_p[station_id] ? 0. : target_p_mw_(station_id), 0.};
+        if(!voltage_regulator_on_[station_id]){
+            // station is pq if voltage regulation is off (VSC q setpoint or LCC consumption)
+            tmp += my_i * target_q_mvar_(station_id);
+        }
+        Sbus.coeffRef(bus_id_solver.cast_int()) += tmp;
+    }
+}
+
+void ConverterStationContainer::_on_change_p(int station_id, real_type new_p, DualAlgoControl & solver_control)
+{
+    if (abs(target_p_mw_(station_id) - new_p) > _tol_equal_float) {
+        solver_control.tell_recompute_sbus();
+    }
+    // turned off stations (p == 0) are not pv: if the active power changes,
+    // the list of pv buses may change (legacy dcline behaviour, cf `turnedoff_no_pv`)
+    bool pseudo_off_before = abs(target_p_mw_(station_id)) < _tol_equal_float;
+    bool pseudo_off_now = abs(new_p) < _tol_equal_float;
+    if((pseudo_off_before && !pseudo_off_now) ||
+       (!pseudo_off_before && pseudo_off_now)){
+        solver_control.tell_pv_changed();
+    }
+}
+
+} // namespace ls2g

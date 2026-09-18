@@ -9,7 +9,7 @@
 import copy
 import warnings
 import numpy as np
-from lightsim2grid_cpp import PandaPowerConverter
+from lightsim2grid.lightsim2grid_cpp import PandaPowerConverter
 import pandapower as pp
 import pandapower.networks as pn
 from pandapower.build_branch import (

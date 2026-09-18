@@ -15,22 +15,22 @@ import warnings
 
 
 try:
-    from grid2op.Chronics import Multifolder, GridStateFromFile
+    from grid2op.Chronics import Multifolder, GridStateFromFile # type: ignore
     from lightsim2grid.lightSimBackend import LightSimBackend
     __all__.append("TimeSerie")
     GRID2OP_INSTALLED = True
-except ImportError as exc_:
+except ImportError as exc_:  # noqa: F841
     # grid2Op is not installed
     GRID2OP_INSTALLED = False
 
-from lightsim2grid.solver import SolverType
-from lightsim2grid_cpp import TimeSeriesCPP
+from lightsim2grid.algorithm import AlgorithmType
+from .lightsim2grid_cpp import TimeSeriesCPP
 
 # deprecated
 Computers = TimeSeriesCPP
 
 
-class ___TimeSerie:
+class TimeSerie:
     """
     This helper class, that only works with grid2op when using a LightSimBackend allows to compute
     the flows (at the origin side of the powerline / transformers). It is roughly equivalent to the
@@ -41,7 +41,7 @@ class ___TimeSerie:
         import grid2op
         import numpy as np
         from grid2op.Parameters import Parameters
-        from lightsim2grid.LightSimBackend import LightSimBackend
+        from lightsim2grid import LightSimBackend
 
         env_name = ...
         param = Parameters()
@@ -74,7 +74,7 @@ class ___TimeSerie:
 
         from lightsim2grid import TimeSerie
         import grid2op
-        from lightsim2grid.LightSimBackend import LightSimBackend
+        from lightsim2grid import LightSimBackend
 
         env_name = ...
         env = grid2op.make(env_name, param=param, backend=LightSimBackend())
@@ -83,32 +83,155 @@ class ___TimeSerie:
         res_p, res_a, res_v = time_series.get_flows(scenario_id=..., seed=...)
 
     """
+
+    #: the c++ class this wrapper drives. Overridden by
+    #: :class:`lightsim2grid.injectionSweep.InjectionSweep`, which shares this entire
+    #: wrapper and only swaps the underlying computer.
+    _CPP_CLASS = TimeSeriesCPP
+
     def __init__(self, grid2op_env):
         if not GRID2OP_INSTALLED:
-            raise RuntimeError("Impossible to use the python wrapper `TimeSerie` "
+            raise RuntimeError(f"Impossible to use the python wrapper `{type(self).__name__}` "
                                "when grid2op is not installed. Please fall back to the "
                                "c++ version (available in python) with:\n"
-                               "\tfrom lightsim2grid.timeSerie import TimeSerieCPP\n"
+                               f"\tfrom lightsim2grid.timeSerie import {type(self)._CPP_CLASS.__name__}\n"
                                "and refer to the appropriate documentation.")
-            
-        from grid2op.Environment import Environment  # otherwise i got issues...
+
+        from grid2op.Environment import Environment  # type: ignore # otherwise i got issues...
         if not isinstance(grid2op_env.backend, LightSimBackend):
             raise RuntimeError("This class only works with LightSimBackend")
         if not isinstance(grid2op_env, Environment):
             raise RuntimeError("Please an environment of class \"Environment\", "
                                "and not \"MultimixEnv\" or \"BaseMultiProcessEnv\"")
         self.grid2op_env = grid2op_env.copy()
-        self.computer = TimeSeriesCPP(self.grid2op_env.backend._grid)
+        self.computer = type(self)._CPP_CLASS(self.grid2op_env.backend._grid)
         self.prod_p = None
         self.load_p = None
         self.load_q = None
         self.__computed = False
         
-        self.available_solvers = self.computer.available_solvers()
-        if SolverType.KLU in self.available_solvers:
+        self.available_default_algorithms = self.computer.available_default_algorithms()
+        if AlgorithmType.NR_KLU in self.available_default_algorithms:
             # use the faster KLU if available
-            self.computer.change_solver(SolverType.KLU)
+            self.computer.change_algorithm(AlgorithmType.NR_KLU)
     
+    @property
+    def init_from_n_powerflow(self):
+        """Whether to initialize the complex voltages of the first step of the batch with
+        the results of a "n" powerflow (a powerflow at the current state of the grid)
+        instead of a flat start. Default: ``False``. Must be set before the computation
+        actually runs (eg before ``compute_V`` is called); it has no effect on a powerflow
+        that has already been solved.
+        """
+        return self.computer.init_from_n_powerflow
+
+    @init_from_n_powerflow.setter
+    def init_from_n_powerflow(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `init_from_n_powerflow` attribute must be a boolean.")
+        self.computer.init_from_n_powerflow = bool(val)
+        
+    @property
+    def compute_physical_violations(self):
+        """Whether every converged step reports the PHYSICAL limits its solution leaves --
+        the ones whose violation means the step is not a state the grid can reach at all
+        (``ViolationCategory.PHYSICAL``). Default: ``False``. See
+        :func:`get_physical_violations`.
+
+        Three checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        enforced here (nothing is switched PV -> PQ, nothing is clamped, no machine leaves
+        the slack distribution, no step is re-solved):
+
+        * the **reactive capability** of every bus whose voltage is held by machines
+          (``LOW_Q`` / ``HIGH_Q`` on the ``BUS``): did it need more reactive power than the
+          **sum** of what its voltage-regulating generators, storage units, hvdc converter
+          stations and voltage-mode SVCs can produce? A machine has no reactive setpoint -- its output is
+          solved for and never clamped -- so a step can converge asking for reactive power
+          that does not exist. Per bus, not per machine: the split between the machines of
+          one bus is a sharing convention rather than something the solver decides.
+          OpenLoadFlow's ``ReactiveLimits``.
+        * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
+          linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
+          ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is an *input* of the solve,
+          so nothing saturates the droop on its own. OpenLoadFlow's
+          ``HvdcAcEmulationLimits``.
+        * the **active power** of every generator carrying the **distributed slack**
+          (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR``): the slack is solved inside the
+          Jacobian by fixed participation factors that know nothing about limits, so
+          ``target_p + its share of the imbalance`` can land beyond ``min_p_mw`` /
+          ``max_p_mw``. Per machine, unlike the reactive check: the active split is not a
+          convention, it is the participation factors the caller chose. Needs those limits,
+          which are optional (:func:`lightsim2grid.network.LSGrid.set_gen_p_limits`); a grid
+          without them reports nothing here. OpenLoadFlow's ``DistributedSlack``.
+
+        The hvdc and generator checks need only the bus angles and the slack the step
+        distributed, so they work in DC too; the reactive one needs an AC algorithm that
+        publishes its per-bus mismatch (every built-in AC algorithm does) and ``compute``
+        raises for one that does not. A DC batch reports the two active-power checks alone --
+        a DC powerflow has no reactive power at all, so nothing is hidden by that.
+
+        Changing this flag invalidates any previously-computed results, but not the
+        injections already given to ``modify_*``.
+        """
+        return self.computer.compute_physical_violations
+
+    @compute_physical_violations.setter
+    def compute_physical_violations(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `compute_physical_violations` attribute must be a boolean.")
+        val = bool(val)
+        if val == self.computer.compute_physical_violations:
+            return  # no-op, matches the C++ side (which also no-ops and does not clear)
+        # the C++ setter drops this batch's base case and results, and keeps the registered
+        # injections -- so only the python-side "already computed" bookkeeping follows it
+        self.computer.compute_physical_violations = val
+        self.__computed = False
+
+    @property
+    def physical_violation_tol_mva(self):
+        """Absolute slack on every comparison :attr:`compute_physical_violations` makes, so
+        that an element resting exactly on its limit is not reported over solver noise: a
+        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q``).
+        Default: ``1e-4``. In MVA -- one noise floor for both halves, MW and MVAr being the
+        same scale. Changing it invalidates any previously-computed results.
+        """
+        return self.computer.physical_violation_tol_mva
+
+    @physical_violation_tol_mva.setter
+    def physical_violation_tol_mva(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `physical_violation_tol_mva` attribute must be a real number.")
+        if val == self.computer.physical_violation_tol_mva:
+            return
+        self.computer.physical_violation_tol_mva = val  # validates, and drops base case + results
+        self.__computed = False
+
+    def get_physical_violations(self):
+        """Per step (same order as the ``modify_*`` inputs): the list of ``LimitViolation``
+        of the physical limits that step's solution leaves. Every entry has ``category ==
+        ViolationCategory.PHYSICAL`` and one of two shapes:
+
+        * ``element_type`` ``BUS``, ``violation_type`` ``LOW_Q`` / ``HIGH_Q``,
+          ``element_id`` the grid bus id, ``value`` the reactive power the machines holding
+          that bus had to produce (MVAr) and ``limit`` their **summed** capability;
+        * ``element_type`` ``HVDC``, ``violation_type`` ``HIGH_P``, ``element_id`` the hvdc
+          line id, ``side`` the direction (1 for 1 -> 2), ``value`` the active power leaving
+          that side (MW, positive) and ``limit`` that direction's ``pmax``.
+
+        A step that did not converge has an **empty** entry, not a sentinel -- use
+        ``self.computer.converged_mask()`` to tell that from "converged, no violation".
+        Requires :attr:`compute_physical_violations` to be ``True`` (raises otherwise).
+        """
+        return self.computer.get_physical_violations()
+
+    def get_physical_violations_n(self):
+        """Same as :func:`get_physical_violations`, for the base ("n") case every step is
+        solved from (the grid's own state, no injection change). Empty if that solve did not
+        converge. Requires :attr:`compute_physical_violations` to be ``True``."""
+        return self.computer.get_physical_violations_n()
+
     def get_injections(self, scenario_id=None, seed=None):
         """
         This function allows to retrieve the injection of the given scenario, for the given seed
@@ -118,7 +241,7 @@ class ___TimeSerie:
             self.grid2op_env.set_id(scenario_id)
         if seed is not None:
             self.grid2op_env.seed(seed)
-        obs = self.grid2op_env.reset()
+        _ = self.grid2op_env.reset()
         self.__computed = False
         return self._extract_inj()
 
@@ -172,11 +295,105 @@ class ___TimeSerie:
         elif status != 1:
             # only raise a warning in this case
             warnings.warn(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
-        Vs = 1.0 * self.computer.get_voltages()  # If I don't copy, lazy eval may break stuff... 
+        Vs = self.computer.get_voltages().copy()  # If I don't copy, lazy eval may break stuff... 
         # eg test_time_series_dc.py does behave stochastically
         self.__computed = True
         return Vs
         
+    def modify_gen_p(self, gen_p):
+        """Per-step active generator setpoints, shape ``(n_simul, n_gen)``. Part of the
+        new setter-based API (see :func:`compute`); an alternative to
+        :func:`compute_V_from_inj`, not required if you use that call instead."""
+        gen_p = np.asarray(gen_p)
+        if gen_p.ndim != 2:
+            raise RuntimeError("gen_p should be a matrix with rows representing time steps "
+                               "and columns representing individual production.")
+        if gen_p.shape[1] != self.grid2op_env.n_gen:
+            raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "
+                               f"differs from the number of columns of gen_p ({gen_p.shape[1]}).")
+        self.computer.modify_gen_p(gen_p)
+        self.__computed = False
+
+    def modify_sgen_p(self, sgen_p):
+        """Per-step active static generator setpoints, shape ``(n_simul, n_sgen)``. See
+        :func:`modify_gen_p`."""
+        sgen_p = np.asarray(sgen_p)
+        if sgen_p.ndim != 2:
+            raise RuntimeError("sgen_p should be a matrix with rows representing time steps "
+                               "and columns representing individual static generation.")
+        n_sgen = len(self.grid2op_env.backend._grid.get_static_generators())
+        if sgen_p.shape[1] != n_sgen:
+            raise RuntimeError(f"The number of static generators on the grid ({n_sgen}) "
+                               f"differs from the number of columns of sgen_p ({sgen_p.shape[1]}).")
+        self.computer.modify_sgen_p(sgen_p)
+        self.__computed = False
+
+    def modify_load_p(self, load_p):
+        """Per-step active load setpoints, shape ``(n_simul, n_load)``. See
+        :func:`modify_gen_p`."""
+        load_p = np.asarray(load_p)
+        if load_p.ndim != 2:
+            raise RuntimeError("load_p should be a matrix with rows representing time steps "
+                               "and columns representing individual loads.")
+        if load_p.shape[1] != self.grid2op_env.n_load:
+            raise RuntimeError(f"The number of loads on the grid ({self.grid2op_env.n_load}) "
+                               f"differs from the number of columns of load_p ({load_p.shape[1]}).")
+        self.computer.modify_load_p(load_p)
+        self.__computed = False
+
+    def modify_load_q(self, load_q):
+        """Per-step reactive load setpoints, shape ``(n_simul, n_load)``. See
+        :func:`modify_gen_p`."""
+        load_q = np.asarray(load_q)
+        if load_q.ndim != 2:
+            raise RuntimeError("load_q should be a matrix with rows representing time steps "
+                               "and columns representing individual loads.")
+        if load_q.shape[1] != self.grid2op_env.n_load:
+            raise RuntimeError(f"The number of loads on the grid ({self.grid2op_env.n_load}) "
+                               f"differs from the number of columns of load_q ({load_q.shape[1]}).")
+        self.computer.modify_load_q(load_q)
+        self.__computed = False
+
+    def modify_gen_v(self, gen_v):
+        """Per-step generator target voltage magnitude, shape ``(n_simul, n_gen)``, in
+        pu (``vm_pu``), NOT kV. Unlike :func:`modify_gen_p`/:func:`modify_load_p`/
+        :func:`modify_load_q`, this does NOT feed the injection (Sbus) -- it only
+        re-seeds ``|V|`` at each voltage-regulating generator's regulated bus before
+        that step's solve. See :func:`modify_gen_p`."""
+        gen_v = np.asarray(gen_v)
+        if gen_v.ndim != 2:
+            raise RuntimeError("gen_v should be a matrix with rows representing time steps "
+                               "and columns representing individual production.")
+        if gen_v.shape[1] != self.grid2op_env.n_gen:
+            raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "
+                               f"differs from the number of columns of gen_v ({gen_v.shape[1]}).")
+        self.computer.modify_gen_v(gen_v)
+        self.__computed = False
+
+    def compute(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):
+        """
+        Run the batch using whatever was set by :func:`modify_gen_p` / :func:`modify_sgen_p`
+        / :func:`modify_load_p` / :func:`modify_load_q` (the new setter-based API -- an
+        alternative to the single bundled :func:`compute_V_from_inj` call). ``max_iter`` /
+        ``tol`` default to the backend's own values when not given.
+        """
+        if v_init is None:
+            v_init_comp = self.grid2op_env.backend.V
+        else:
+            v_init_comp = 1.0 * v_init  # make a copy !
+        if max_iter is None:
+            max_iter = self.grid2op_env.backend.max_it
+        if tol is None:
+            tol = self.grid2op_env.backend.tol
+        self.computer.compute(v_init_comp, max_iter, tol)
+        status = self.computer.get_status()
+        if status != 1 and not ignore_errors:
+            raise RuntimeError(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
+        elif status != 1:
+            warnings.warn(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
+        self.__computed = True
+        return self.computer.get_voltages().copy()
+
     def compute_V(self, scenario_id=None, seed=None, v_init=None, ignore_errors=False):
         """
         This function allows to retrieve the complex voltage at each bus of the grid for each step.
@@ -279,6 +496,3 @@ class ___TimeSerie:
         return self.prod_p, self.load_p, self.load_q
 
 
-if GRID2OP_INSTALLED:
-    TimeSerie = ___TimeSerie
-    

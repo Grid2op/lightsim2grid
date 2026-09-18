@@ -8,6 +8,7 @@
 
 import warnings
 import pandapower as pp
+from pandapower.auxiliary import LoadflowNotConverged
 import numpy as np
 import pandapower.networks as pn
 import grid2op
@@ -137,7 +138,24 @@ class TestMultipleL2RPN(unittest.TestCase):
                 return
             self.pp_net.gen.loc[1, "slack_weight"] = 1.
             pp.rundcpp(self.pp_net)  # to forget the result
-            pp.runpp(self.pp_net, distributed_slack=True, init_vm_pu="flat", init_va_degree="flat")
+            # Compute the reference with pandapower's OWN solver (lightsim2grid=False):
+            # recent pandapower defaults to lightsim2grid=True, which would make this
+            # test compare lightsim2grid against itself instead of against an
+            # independent reference.
+            runpp_kwargs = dict(distributed_slack=True, init_vm_pu="flat", init_va_degree="flat")
+            try:
+                pp.runpp(self.pp_net, lightsim2grid=False, **runpp_kwargs)
+            except TypeError:
+                # older pandapower without the "lightsim2grid" option
+                try:
+                    pp.runpp(self.pp_net, **runpp_kwargs)
+                except LoadflowNotConverged as exc_:
+                    self.skipTest(f"pandapower reference power flow did not converge: {exc_}")
+            except LoadflowNotConverged as exc_:
+                # the reference (pandapower) power flow itself did not converge on this
+                # grid / pandapower version, so there is nothing meaningful to compare
+                # lightsim2grid against: skip rather than report a spurious failure.
+                self.skipTest(f"pandapower reference power flow did not converge: {exc_}")
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
                 ls_grid = init_from_pandapower(self.pp_net, pp_orig_file="pandapower_v3")

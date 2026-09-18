@@ -1,6 +1,6 @@
 import time
-from lightsim2grid_cpp import LightEnv
-from lightsim2grid_cpp import Protections
+from lightsim2grid.lightsim2grid_cpp import LightEnv
+from lightsim2grid.lightsim2grid_cpp import Protections
 import numpy as np
 import grid2op
 

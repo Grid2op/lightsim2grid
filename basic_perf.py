@@ -92,7 +92,7 @@ if __name__ == "__main__":
         ls_solver =  env.backend._grid.get_solver()
         nb_iter_solver = ls_solver.get_nb_iter()
         timers = ls_solver.get_timers_jacobian()
-        (timer_Fx, timer_solve, timer_init, timer_check, 
+        (timer_Fx, timer_solve, timer_refactor, timer_init, timer_check,
         timer_compute_dS, timer_fillJ, timer_compVa_Vm, timer_preproc, timer_total) = timers
         print(f"Total time for the powerflow (=pre proc + NR + post proc): {env.backend._grid.timer_last_ac_pf:.2e}s")
         print(f"Total time spent in the Newton Raphson: {timer_total:.2e}s")

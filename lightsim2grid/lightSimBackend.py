@@ -10,6 +10,17 @@ import os
 import copy
 from typing import Any, Dict, Tuple, Optional, Union
 from packaging import version
+
+# NOT `from lightsim2grid.solver import SolverType`: lightsim2grid.solver is itself
+# deprecated and warns unconditionally on import, which would make every
+# `import lightsim2grid` (which imports this module) print that warning regardless of
+# whether solver_type / SolverType is ever used. SolverType itself is not deprecated to
+# reference for back-compat bridging, so it lives in this private module instead. It is
+# deliberately a plain top-level module and NOT inside lightsim2grid._utils: see
+# lightsim2grid/_solver_type.py for why (importing it eagerly, from here, while nested
+# inside that subpackage broke grid2op.make(..., backend=LightSimBackend()) entirely by
+# reentering lightsim2grid._utils's own grid2op.Backend import mid-circular-import).
+from lightsim2grid._solver_type import SolverType
 try:
     from typing import Self
 except ImportError:
@@ -28,7 +39,7 @@ from grid2op.Exceptions import BackendError, Grid2OpException
 from grid2op.dtypes import dt_float, dt_int, dt_bool
 try:
     from grid2op.Action._backendAction import _BackendAction
-except ImportError as exc_:
+except ImportError as exc_:  # noqa: F841
     from grid2op.Action._BackendAction import _BackendAction
 
 try:
@@ -48,7 +59,7 @@ try:
 except ImportError:
     from typing_extensions import Literal
     
-from lightsim2grid.solver import SolverType
+from lightsim2grid.algorithm import AlgorithmType, AlgoConfig
 
 LOADER_KWARGS_TYPING = Dict[str, Any]  # TODO improve this
 grid2op_min_cls_attr_ver = version.parse("1.6.4")
@@ -91,35 +102,48 @@ class LightSimBackend(Backend):
         # "grid"
     }
     
+    KEYS_MATPOWER_LOADER = {
+        "grid",
+        "n_busbar_per_sub",
+    }
+    
     
     def __init__(self,
                  detailed_infos_for_cascading_failures: bool=False,
                  can_be_copied: bool=True,
                  max_iter: int=10,
                  tol: float=1e-8,
-                 solver_type: Optional[SolverType]=None,
+                 solver_type: Optional[AlgorithmType]=None,
+                 algo_type: Optional[Union[AlgorithmType, str]]=None,
                  turned_off_pv : bool=True,  # are gen turned off (or with p=0) contributing to voltage or not
                  dist_slack_non_renew: bool=False,  # distribute the slack on non renewable turned on (and with P>0) generators
                  use_static_gen: bool=False, # add the static generators as generator gri2dop side
-                 loader_method: Literal["pandapower", "pypowsybl"] = "pandapower",
+                 loader_method: Literal["pandapower", "pypowsybl", "matpower"] = "pandapower",
                  loader_kwargs : LOADER_KWARGS_TYPING= None,
                  stop_if_load_disco : Optional[bool] = None,
                  stop_if_gen_disco : Optional[bool] = None,
                  stop_if_storage_disco : Optional[bool] = None,
-                 automatically_disconnect : bool = False, 
+                 automatically_disconnect : bool = False,
                  gen_slack_id=None,
                  ):
         #: ``int`` maximum number of iteration allowed for the solver
-        #: if the solver has not converge after this, it will 
+        #: if the solver has not converge after this, it will
         #: send a "divergence error"
         self.max_it = max_iter
-        
+
         #: ``float`` tolerance of the solver
         self.tol = tol  # tolerance for the solver
-        
-        self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
-        self.__current_solver_type = solver_type
-        
+
+        algo_type = self._aux_merge_solver_type_algo_type(solver_type, algo_type)
+        real_algo_type = self._check_suitable_solver_type(algo_type, check_in_avail_solver=False)
+        self.__current_algo_type = real_algo_type
+
+        #: :class:`~lightsim2grid.algorithm.AlgoConfig` set through :func:`set_ac_algo_config`
+        #: / :func:`set_dc_algo_config` (``None`` if never customized), re-applied after
+        #: every `env.reset()` and preserved by `backend.copy()`.
+        self.__current_ac_algo_config = None
+        self.__current_dc_algo_config = None
+
         #: does the "turned off" generators (including when p=0)
         #: are pv buses
         self._turned_off_pv = turned_off_pv
@@ -131,9 +155,14 @@ class LightSimBackend(Backend):
         self._use_static_gen = use_static_gen  # TODO implement it
 
         #: For now, you can initialize a "lightsim2grid" LightsimBackend
-        #: either from pypowsybl or from pandapower.
-        #: Use with `LightsimBackend(..., loader_method="pypowsybl")`
+        #: from pandapower, from pypowsybl or from a MATPOWER case file.
+        #: Use with `LightsimBackend(..., loader_method="pypowsybl")`,
+        #: `LightsimBackend(..., loader_method="matpower")`
         #: or `LightsimBackend(..., loader_method="pandapower")` (default)
+        #:
+        #: .. versionchanged:: 1.0.1
+        #:     added the `"matpower"` loader (reads the environment `grid.m`
+        #:     or `grid.mat` file directly)
         self._loader_method = loader_method
         
         #: Which key-word arguments will be used to initialize the Gridmodel
@@ -147,7 +176,7 @@ class LightSimBackend(Backend):
         #:      So the "path", "filename" of grid2op.make and "pypowsybl_load_kwargs"
         #:      will be ignored if this is set.
         #:   - `pypowsybl_load_kwargs` (``dict``): addition keywords arguments
-        #:      passed to "pypowsybl.network.load(grid, **pypowsybl_load_kwargs)"
+        #:      passed to ``pypowsybl.network.load(grid, **pypowsybl_load_kwargs)``
         #:      Not used when grid is provided.
         #:   - `n_busbar_per_sub` (``int``): number of independant buses for
         #:     each substation in the GridModel.
@@ -166,6 +195,18 @@ class LightSimBackend(Backend):
         #:   - `sort_index` 
         #:   - `init_vm_pu` 
         #:   - `sn_mva` 
+        #: 
+        #: For matpower it can contain the following keys:
+        #:
+        #:   - `grid` (``dict``): an already parsed matpower case (anything
+        #:     :func:`lightsim2grid.network.init_from_matpower` accepts as its
+        #:     `source`), used instead of reading the "path" / "filename" given
+        #:     to `grid2op.make`.
+        #:   - `n_busbar_per_sub` (``int``): number of independant buses for
+        #:     each substation in the GridModel (same meaning as for pypowsybl).
+        #:     There is no `double_bus_per_sub` here: that key predates grid2op
+        #:     supporting any number of busbars per substation, and only the
+        #:     pypowsybl loader keeps it for backward compatibility.
         #: 
         self._loader_kwargs :LOADER_KWARGS_TYPING = loader_kwargs
 
@@ -201,6 +242,7 @@ class LightSimBackend(Backend):
         self._stop_if_storage_disco = stop_if_storage_disco
         
         #: .. versionadded:: 0.11.0
+        #:
         #: if set to ``True`` the backend will automatically
         #: disconnect any load / generator not in the main
         #: connected component. The default is ``False``
@@ -212,7 +254,7 @@ class LightSimBackend(Backend):
             
         self._aux_init_super(detailed_infos_for_cascading_failures,
                              can_be_copied,
-                             solver_type,
+                             algo_type,
                              max_iter,
                              tol,
                              turned_off_pv,
@@ -244,14 +286,20 @@ class LightSimBackend(Backend):
         #: .. versionadded:: 0.8.0
         #:
         #: Which type of grid format can be read by your backend.
-        #: It is "json" if loaded from pandapower or
-        #: "xiidm" if loaded from pypowsybl.
+        #: It is "json" if loaded from pandapower,
+        #: "xiidm" if loaded from pypowsybl or
+        #: "m" / "mat" if loaded from matpower.
         self.supported_grid_format = None
         
         if loader_method == "pandapower":
             self.supported_grid_format = ("json", )  # new in 0.8.0
         elif loader_method == "pypowsybl":
             self.supported_grid_format = ("xiidm", )  # new in 0.8.0
+        elif loader_method == "matpower":
+            # a matpower case comes either as the ".m" script it is distributed as,
+            # or as the ".mat" binary matpower itself saves. `init_from_matpower`
+            # reads both, so an environment can ship either one as its "grid" file.
+            self.supported_grid_format = ("m", "mat", )  # new in 1.0.1
         else:
             raise BackendError(f"Uknown loader_method : '{loader_method}'")
         
@@ -294,6 +342,19 @@ class LightSimBackend(Backend):
         self._init_pp_backend = None
         #: the initial pypowsybl grid (if loaded from pypowsybl)
         self._orig_grid_pypowsybl = None
+        
+        #: .. versionadded:: 1.0.1
+        #:
+        #: Whether the loader in charge already told the :class:`lightsim2grid.network.LSGrid`
+        #: how its buses are grouped into substations / voltage levels.
+        #:
+        #: `init_from_pypowsybl` and `init_from_matpower` both build the grid substation
+        #: by substation (``init_bus(n_sub, n_busbar_per_sub, ...)``), so the substation
+        #: count and the number of busbar sections per substation are already right and
+        #: must not be overwritten by the backend. The pandapower converter, on the other
+        #: hand, is handed a bus table and no substation notion at all: grid2op's own
+        #: pandapower backend is what says how many substations there are.
+        self._grid_laid_out_by_loader = False
         
         self.V = None
 
@@ -349,7 +410,7 @@ class LightSimBackend(Backend):
         self.__init_shunt_bus = None
 
         # available solver in lightsim
-        self.available_solvers = []
+        self.available_default_algorithms = []
         
         # computation time of just the powerflow (when the grid is formatted 
         # by the gridmodel already)
@@ -387,6 +448,7 @@ class LightSimBackend(Backend):
         self._next_pf_fails : Optional[BackendError] = None
         
         #: .. versionadded:: 0.11.1
+        #:
         #: generator to assign to the slack
         #: for now only used for pypowsybl
         self._gen_slack_id = gen_slack_id
@@ -399,9 +461,6 @@ class LightSimBackend(Backend):
             raise RuntimeError("Choosing the generators in the slak is only possible when "
                                "loading a grid from pypowsybl at the moment. Please fill a feature request "
                                "(github issue) if this feature interest you.")
-        
-        # issue if dc then ac powerflow
-        self._last_dc = True
         
         # speed optimization
         self._lineor_res = None
@@ -425,10 +484,10 @@ class LightSimBackend(Backend):
             # (before 1.9.1)
             self._init_pp_backend = _DoNotUseAnywherePandaPowerBackend()
         
-    def _aux_init_super(self, 
+    def _aux_init_super(self,
                         detailed_infos_for_cascading_failures,
                         can_be_copied,
-                        solver_type,
+                        algo_type,
                         max_iter,
                         tol,
                         turned_off_pv,
@@ -446,7 +505,7 @@ class LightSimBackend(Backend):
             Backend.__init__(self,
                              detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
                              can_be_copied=can_be_copied,
-                             solver_type=solver_type,
+                             algo_type=algo_type,
                              max_iter=max_iter,
                              tol=tol,
                              turned_off_pv=turned_off_pv,
@@ -462,7 +521,7 @@ class LightSimBackend(Backend):
                              )
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
-                          "you cannot set max_iter, tol nor solver_type arguments.")
+                          "you cannot set max_iter, tol nor algo_type arguments.")
             Backend.__init__(self,
                              detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
         
@@ -509,7 +568,7 @@ class LightSimBackend(Backend):
                self.cst_1 * self.gen_theta, \
                self.cst_1 * self.storage_theta
 
-    def get_solver_types(self) -> Union[SolverType, SolverType]:
+    def get_algo_types(self) -> Tuple[AlgorithmType, AlgorithmType]:
         """Return the types of solver that are used in the form a tuple with 2 elements.
         
         The first one is the solver used for AC computation, the second one for DC computation (and also for
@@ -521,23 +580,28 @@ class LightSimBackend(Backend):
 
             import grid2op
             import lightsim2grid
-            from ligthsim2grid import LightSimBackend
+            from lightsim2grid import LightSimBackend
             
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
-            print(env.backend.get_solver_types())
-            # >>> (<SolverType.KLUSingleSlack: 7>, <SolverType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
+            print(env.backend.get_algo_types())
+            # >>> (<AlgorithmType.NRSing_KLU: 7>, <AlgorithmType.DC_KLU: 9>)  [can depend on your installation of lightsim2grid]
             
-            env2 = grid2op.make(env_name, backend=LightSimBackend(solver_type=lightsim2grid.solver.SolverType.SparseLU))
-            print(env2.backend.get_solver_types())
-            # >>> (<SolverType.SparseLU: 0>, <SolverType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
+            env2 = grid2op.make(env_name, backend=LightSimBackend(algo_type=lightsim2grid.algorithm.AlgorithmType.NR_SparseLU))
+            print(env2.backend.get_algo_types())
+            # >>> (<AlgorithmType.NR_SparseLU: 0>, <AlgorithmType.DC_KLU: 9>)  [can depend on your installation of lightsim2grid]
             
         """
-        return self._grid.get_solver_type(), self._grid.get_dc_solver_type()
-        
-    def set_solver_type(self, solver_type: SolverType) -> None:
+        return self._grid.get_algo_type(), self._grid.get_dc_algo_type()
+    
+    def set_solver_type(self, algo_type: AlgorithmType) -> None:
+        """DEPRECATED use :func:`set_algo_type` instead"""
+        self.set_algo_type(algo_type)
+
+    def set_algo_type(self, algo_type: Union[AlgorithmType, str]) -> None:
         """
-        Change the type of solver you want to use.
+        Change the type of solver you want to use, and remember the choice so it is
+        applied again after every `env.reset()` and preserved by `backend.copy()`.
 
         Note that a powergrid should have been loaded for this function to work.
 
@@ -555,28 +619,136 @@ class LightSimBackend(Backend):
 
         Parameters
         ----------
-        solver_type: lightsim2grid.SolverType
-            The new type of solver you want to use. See backend.available_solvers for a list of available solver
-            on your machine.
+        algo_type: Union[lightsim2grid.AlgorithmType, str]
+            The new algorithm you want to use, either as an :class:`~lightsim2grid.algorithm.AlgorithmType`
+            enum value, or (since lightsim2grid 1.0) as a plain ``str``: the registry name of a
+            string-only built-in algorithm with no ``AlgorithmType`` enum value (eg
+            ``"NRRefactorRetry_KLU"``) or of a plugin registered through
+            ``lightsim2grid.load_algorithm_plugin`` (see :ref:`solver_plugin`). See
+            ``env.backend._grid.available_algorithm_names()`` for the list of valid names.
+        """
+        if algo_type is None:
+            raise BackendError("Impossible to change the algorithm type to None. Please enter a valid algorithm type.")
+        real_algo_type = self._check_suitable_solver_type(algo_type)
+        self.__current_algo_type = copy.deepcopy(real_algo_type)
+        self._grid.change_algorithm(self.__current_algo_type)
+
+    @staticmethod
+    def _aux_algo_config_to_state(config: AlgoConfig) -> Tuple[list, list]:
+        # AlgoConfig (pybind11) supports neither pickling nor copy.deepcopy (it would
+        # break pickling the whole backend, see test_save_load in test_pickleable.py,
+        # if stored as an attribute directly). Its `int_params` / `real_params` are
+        # plain python lists though (returned by value), so this plain (picklable,
+        # deepcopy-able) tuple of lists is what is actually kept on the backend;
+        # `_aux_algo_config_from_state` rebuilds a real AlgoConfig from it whenever
+        # one needs to be re-applied (reset(), copy()).
+        return (list(config.int_params), list(config.real_params))
+
+    @staticmethod
+    def _aux_algo_config_from_state(state: Tuple[list, list]) -> AlgoConfig:
+        int_params, real_params = state
+        config = AlgoConfig()
+        config.int_params = list(int_params)
+        config.real_params = list(real_params)
+        return config
+
+    def set_ac_algo_config(self, config: AlgoConfig) -> None:
+        """
+        Change the :class:`~lightsim2grid.algorithm.AlgoConfig` (scaling / refactor
+        policy and their per-policy parameters) used by the AC algorithm, and remember
+        it so it is applied again after every `env.reset()` and preserved by
+        `backend.copy()`.
+
+        Unlike calling ``env.backend._grid.set_ac_algo_config(...)`` directly, which is
+        silently reverted on the next `env.reset()`, this is the persistent, supported
+        way to customize the AC :class:`~lightsim2grid.algorithm.AlgoConfig`. Note that
+        a powergrid should have been loaded for this function to work.
+
+        Parameters
+        ----------
+        config: lightsim2grid.algorithm.AlgoConfig
+            The new AlgoConfig to use for the AC algorithm.
+        """
+        if self._grid is None:
+            raise BackendError("Impossible to set an AlgoConfig before a powergrid has been loaded.")
+        self.__current_ac_algo_config = self._aux_algo_config_to_state(config)
+        self._grid.set_ac_algo_config(config)
+
+    def get_ac_algo_config(self) -> AlgoConfig:
+        """Return the :class:`~lightsim2grid.algorithm.AlgoConfig` currently used by the AC algorithm."""
+        return self._grid.get_ac_algo_config()
+
+    def set_dc_algo_config(self, config: AlgoConfig) -> None:
+        """Same as :func:`LightSimBackend.set_ac_algo_config`, for the DC algorithm."""
+        if self._grid is None:
+            raise BackendError("Impossible to set an AlgoConfig before a powergrid has been loaded.")
+        self.__current_dc_algo_config = self._aux_algo_config_to_state(config)
+        self._grid.set_dc_algo_config(config)
+
+    def get_dc_algo_config(self) -> AlgoConfig:
+        """Same as :func:`LightSimBackend.get_ac_algo_config`, for the DC algorithm."""
+        return self._grid.get_dc_algo_config()
+
+    def _aux_merge_solver_type_algo_type(
+        self,
+        solver_type: Optional[Union[AlgorithmType, SolverType]],
+        algo_type: Optional[AlgorithmType]) -> Optional[AlgorithmType]:
+        """Merge the deprecated `solver_type` kwarg into the canonical `algo_type` one.
+
+        "solver" now refers specifically to the *linear* solver (KLU, SparseLU, NICSLU,
+        CKTSO), not the powerflow algorithm nor the combination of both that
+        `AlgorithmType` enumerates -- hence the rename. `solver_type` is kept only so
+        existing code keeps working.
         """
         if solver_type is None:
-            raise BackendError("Impossible to change the solver type to None. Please enter a valid solver type.")
-        self._check_suitable_solver_type(solver_type)
-        self.__current_solver_type = copy.deepcopy(solver_type)
-        self._grid.change_solver(self.__current_solver_type)
+            return algo_type
+        warnings.warn("The `solver_type` kwarg is deprecated: \"solver\" now refers to the "
+                      "linear solver only (KLU, SparseLU, NICSLU, CKTSO), not the powerflow "
+                      "algorithm. Use `algo_type` instead.",
+                      DeprecationWarning,
+                      3)
+        # normalize only for the comparison: a `SolverType` and the `AlgorithmType` it
+        # aliases are not `==` to one another (different Enum classes), even though they
+        # designate the same algorithm.
+        solver_type_normalized = solver_type.value if isinstance(solver_type, SolverType) else solver_type
+        if algo_type is not None and algo_type != solver_type_normalized:
+            raise BackendError("Both `solver_type` (deprecated) and `algo_type` were provided "
+                               "with different values. Pass only `algo_type`.")
+        return solver_type
 
-    def _check_suitable_solver_type(self, solver_type, check_in_avail_solver=True):
-        if solver_type is None:
+    def _check_suitable_solver_type(
+        self,
+        algo_type: Union[AlgorithmType, SolverType, str], check_in_avail_solver=True) -> Union[AlgorithmType, str]:
+        if algo_type is None:
             return
-        
-        if not isinstance(solver_type, SolverType):
-            raise BackendError(f"The solver type must be from type \"lightsim2grid.SolverType\" and not "
-                               f"{type(solver_type)}")
-            
-        if check_in_avail_solver and solver_type not in self.available_solvers:
-            raise BackendError(f"The solver type provided \"{solver_type}\" is not available on your system. Available"
-                               f"solvers are {self.available_solvers}")
-            
+
+        if isinstance(algo_type, SolverType):
+            warnings.warn("Passing a SolverType is deprecated. Please use lightsim2grid.AlgorithmType "
+                          "(via the `algo_type` kwarg / `set_algo_type`) instead.",
+                          DeprecationWarning,
+                          2)
+            algo_type = algo_type.value
+
+        if isinstance(algo_type, str):
+            # a registry name: either a string-only built-in (eg "NRRefactorRetry_KLU",
+            # which has no AlgorithmType enum value) or a plugin registered through
+            # load_algorithm_plugin(). Can only be checked once a grid is loaded.
+            if check_in_avail_solver and getattr(self, "_grid", None) is not None:
+                avail_names = self._grid.available_algorithm_names()
+                if algo_type not in avail_names:
+                    raise BackendError(f"The algorithm name \"{algo_type}\" is not available on your system "
+                                       f"(nor registered). Available algorithm names are {avail_names}")
+            return algo_type
+
+        if not isinstance(algo_type, AlgorithmType):
+            raise BackendError(f"The algorithm type must be from type \"lightsim2grid.AlgorithmType\", a plain "
+                               f"`str` (a registered algorithm name), and not {type(algo_type)}")
+
+        if check_in_avail_solver and algo_type not in self.available_default_algorithms:
+            raise BackendError(f"The algorithm type provided \"{algo_type}\" is not available on your system. Available"
+                               f"algorithms are {self.available_default_algorithms}")
+        return algo_type
+
     def set_solver_max_iter(self, max_iter: int) -> None:
         """
         Set the maximum number of iteration the solver is allowed to perform.
@@ -586,9 +758,9 @@ class LightSimBackend(Backend):
 
         Recommendation, for medium sized grid (**eg** based on the ieee 118):
 
-        - for SolverType.SparseLU: 10
-        - for SolverType.GaussSeidel: 10000
-        - for SolverType.SparseKLU: 10
+        - for AlgorithmType.NR_SparseLU: 10
+        - for AlgorithmType.GaussSeidel: 10000
+        - for AlgorithmType.NR_KLU: 10
 
         Parameters
         ----------
@@ -645,22 +817,25 @@ class LightSimBackend(Backend):
             self._grid.turnedoff_no_pv()
     
     def _assign_right_solver(self):
-        slack_weights = np.array([el.slack_weight for el in self._grid.get_generators()])
+        # storage units share the distributed slack with the generators: a battery
+        # taking part in it makes the slack distributed even beside a single slack generator
+        slack_weights = np.array([el.slack_weight for el in self._grid.get_generators()] +
+                                 [el.slack_weight for el in self._grid.get_storages()])
         nb_slack_nonzero = (np.abs(slack_weights) > 1e-5).sum()
         has_single_slack = nb_slack_nonzero == 1
         if has_single_slack and not self._dist_slack_non_renew:
-            if SolverType.KLUSingleSlack in self.available_solvers:
+            if AlgorithmType.NRSing_KLU in self.available_default_algorithms:
                 # use the faster KLU if available
-                self._grid.change_solver(SolverType.KLUSingleSlack)
+                self._grid.change_algorithm(AlgorithmType.NRSing_KLU)
             else:
-                self._grid.change_solver(SolverType.SparseLUSingleSlack)
+                self._grid.change_algorithm(AlgorithmType.NRSing_SparseLU)
         else:
             # grid has multiple slacks      
-            if SolverType.KLU in self.available_solvers:
+            if AlgorithmType.NR_KLU in self.available_default_algorithms:
                 # use the faster KLU if available
-                self._grid.change_solver(SolverType.KLU)
+                self._grid.change_algorithm(AlgorithmType.NR_KLU)
             else:
-                self._grid.change_solver(SolverType.SparseLU)
+                self._grid.change_algorithm(AlgorithmType.NR_SparseLU)
     
     def _aux_set_correct_detach_flags_d_allowed(self):
         # user allowed detachment, I check the correct flags
@@ -761,6 +936,8 @@ class LightSimBackend(Backend):
             self._load_grid_pandapower(path, filename)
         elif self._loader_method == "pypowsybl":
             self._load_grid_pypowsybl(path, filename)
+        elif self._loader_method == "matpower":
+            self._load_grid_matpower(path, filename)
         else:
             raise BackendError(f"Impossible to initialize the backend with '{self._loader_method}'")
         self._grid.tell_solver_need_reset()
@@ -793,13 +970,13 @@ class LightSimBackend(Backend):
             res = DEFAULT_N_BUSBAR_PER_SUB
         if "n_busbar_per_sub" in loader_kwargs and loader_kwargs["n_busbar_per_sub"]:
             if res is not None:
-                raise BackendError("When intializing a grid from pypowsybl, you cannot "
+                raise BackendError(f"When intializing a grid from {self._loader_method}, you cannot "
                                    "set both `double_bus_per_sub` and `n_busbar_per_sub` "
                                    "in the `loader_kwargs`. "
                                    "You can only set `n_busbar_per_sub` in this case.")
             res = int(loader_kwargs["n_busbar_per_sub"])
             if loader_kwargs["n_busbar_per_sub"] != res:
-                raise BackendError("When initializing a grid from pypowsybl, the `n_busbar_per_sub` "
+                raise BackendError(f"When initializing a grid from {self._loader_method}, the `n_busbar_per_sub` "
                                    "loader kwargs should be properly convertible to an int "
                                    "giving the default number of busbar sections per substation.")
         if res is not None:
@@ -831,7 +1008,7 @@ class LightSimBackend(Backend):
         return res
     
     def _load_grid_pypowsybl(self, path=None, filename=None):
-        from lightsim2grid.gridmodel.from_pypowsybl import init as init_from_pypowsybl
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
         import pypowsybl.network as pypow_net
         loader_kwargs = {}
         if self._loader_kwargs is not None:
@@ -859,6 +1036,7 @@ class LightSimBackend(Backend):
                 pypowsybl_load_kwargs = {}
             grid_tmp = pypow_net.load(full_path, **pypowsybl_load_kwargs)
         self._orig_grid_pypowsybl = grid_tmp
+        self._grid_laid_out_by_loader = True
         
         buses_for_sub = False
         if "use_buses_for_sub" in loader_kwargs and loader_kwargs["use_buses_for_sub"]:
@@ -933,17 +1111,11 @@ class LightSimBackend(Backend):
         else:
             self.n_shunt = None
             
-        # assign substation to each element (grid2op side)
-        self.load_to_subid = np.array(load_sub.values.ravel(), dtype=dt_int)
-        self.gen_to_subid = np.array(gen_sub["sub_id"].values.ravel(), dtype=dt_int)
-        self.line_or_to_subid = np.concatenate((lor_sub.values.ravel(), tor_sub.values.ravel())).astype(dt_int)
-        self.line_ex_to_subid = np.concatenate((lex_sub.values.ravel(), tex_sub.values.ravel())).astype(dt_int)
-        if self.__has_storage:
-            self.storage_to_subid = np.array(batt_sub.values.ravel(), dtype=dt_int)
-            
-        if self.n_shunt is not None:
-            self.shunt_to_subid = np.array(sh_sub.values.ravel(), dtype=dt_int)
-            
+        # assign substation to each element (grid2op side). `init_from_pypowsybl` has
+        # already put this on the grid (the same values it returns in the dataframes
+        # above), so read it back from there rather than deriving it twice
+        self._aux_read_subid_from_grid()
+        
         # handle the names
         if use_grid2op_default_names:
             self.name_load = np.array([f"load_{el.sub_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_loads())]).astype(str)
@@ -1011,30 +1183,195 @@ class LightSimBackend(Backend):
         self._sh_vnkv = bus_vn_kv[self.shunt_to_subid]
         self._aux_finish_setup_after_reading()
     
+    def _aux_read_subid_from_grid(self) -> None:
+        """
+        Read back, from the :class:`lightsim2grid.network.LSGrid` itself, the
+        substation / voltage level each element belongs to.
+
+        Which substation an element sits in is a property of the file the grid was read
+        from, so it is the loader (`init_from_pypowsybl`, `init_from_matpower` and the
+        shared `init_from_powermodels` engine behind it) that knows it, and the loader
+        sets it on the grid it returns -- see the `set_*_to_subid` block at the end of
+        `lightsim2grid/network/from_powermodels/initLSGrid.py`. Rather than deriving the
+        same information a second time here from whatever intermediate the loader
+        happened to hand back, read it off the grid: one source of truth, and one place
+        to fix when a source format numbers its substations in its own way.
+
+        Note that this is why the answer is read from `el.sub_id` and never from
+        `el.bus_id`: an element the source file declares out of service reports
+        ``bus_id == -1``, while the substation it belongs to is a property of the grid
+        rather than of its status.
+
+        The two "line" arrays are grid2op's, so they hold the powerlines then the
+        transformers, split at `self.__nb_powerline` -- which is the number of
+        powerlines of the very same grid, so the concatenation below and that split
+        point cannot disagree.
+        """
+        cls = type(self)
+        self.load_to_subid = np.array([el.sub_id for el in self._grid.get_loads()], dtype=dt_int)
+        self.gen_to_subid = np.array([el.sub_id for el in self._grid.get_generators()], dtype=dt_int)
+        self.line_or_to_subid = np.array([el.sub1_id for el in self._grid.get_lines()] +
+                                         [el.sub1_id for el in self._grid.get_trafos()], dtype=dt_int)
+        self.line_ex_to_subid = np.array([el.sub2_id for el in self._grid.get_lines()] +
+                                         [el.sub2_id for el in self._grid.get_trafos()], dtype=dt_int)
+        if self.__has_storage:
+            self.storage_to_subid = np.array([el.sub_id for el in self._grid.get_storages()], dtype=dt_int)
+        if cls.shunts_data_available:
+            self.shunt_to_subid = np.array([el.sub_id for el in self._grid.get_shunts()], dtype=dt_int)
+    
+    def _load_grid_matpower(self, path=None, filename=None):
+        """
+        Initialize the backend from a MATPOWER case (an environment shipping a `grid.m`
+        or a `grid.mat` file), through :func:`lightsim2grid.network.init_from_matpower`.
+
+        MATPOWER knows nothing about substations, busbar sections, element names or
+        thermal limits: a case is a set of numbered buses and the branches / generators
+        / loads hanging off them. So, exactly like a pypowsybl grid loaded with
+        `use_buses_for_sub=True`, there is one grid2op substation per MATPOWER bus, the
+        elements get grid2op's default names, and the thermal limits are left
+        "infinite" for the environment's `config.py` to set (the standard grid2op place
+        for them).
+        """
+        from lightsim2grid.network import init_from_matpower
+        loader_kwargs = {}
+        if self._loader_kwargs is not None:
+            loader_kwargs = self._loader_kwargs
+        self._aux_check_loader_kwargs(loader_kwargs, "matpower", type(self).KEYS_MATPOWER_LOADER)
+        
+        n_busbar_per_sub = self._aux_get_substation_handling_from_loader_kwargs(loader_kwargs)
+        if n_busbar_per_sub is None:
+            n_busbar_per_sub = self.n_busbar_per_sub
+        
+        if "grid" in loader_kwargs:
+            # an already parsed matpower case was given: use it and ignore the
+            # "path" / "filename" of `grid2op.make` (same contract as the pypowsybl
+            # loader's own "grid" kwarg)
+            source = loader_kwargs["grid"]
+        else:
+            try:
+                source = self.make_complete_path(path, filename)
+            except AttributeError as _:
+                warnings.warn("Please upgrade your grid2op version")
+                source = self._should_not_have_to_do_this(path, filename)
+        
+        self._grid = init_from_matpower(source, n_busbar_per_sub=n_busbar_per_sub)
+        # `init_from_matpower` laid the substations out itself (one per matpower bus,
+        # with `n_busbar_per_sub` busbar sections each): the backend must not redo it
+        self._grid_laid_out_by_loader = True
+        
+        self.__nb_powerline = len(self._grid.get_lines())
+        self.n_sub = self._grid.get_n_sub()
+        self.__nb_bus_before = self.n_sub
+        self._aux_setup_right_after_grid_init()
+        
+        # mandatory for the backend
+        self.n_line = len(self._grid.get_lines()) + len(self._grid.get_trafos())
+        self.n_gen = len(self._grid.get_generators())
+        self.n_load = len(self._grid.get_loads())
+        self.n_storage = len(self._grid.get_storages())
+        if type(self).shunts_data_available:
+            self.n_shunt = len(self._grid.get_shunts())
+        else:
+            self.n_shunt = None
+        
+        # assign substation to each element (grid2op side)
+        self._aux_read_subid_from_grid()
+        
+        # the names. A matpower case names nothing -- it numbers buses -- so grid2op's
+        # own default names are used, and it is grid2op that makes them: leave them
+        # unset and let `Backend._fill_names_obj` fill them in from the substation ids
+        # just read. An environment loaded from a matpower case is then named exactly
+        # like any other grid2op grid whose backend leaves the names out, by the one
+        # piece of code that decides what those names look like.
+        if not hasattr(self, "_fill_names_obj"):
+            raise BackendError("Loading a grid from a matpower case needs a grid2op recent "
+                               "enough to provide `Backend._fill_names_obj`: matpower names "
+                               "nothing, so grid2op's default names are used and grid2op is "
+                               "what makes them. Please upgrade grid2op.")
+        self.name_sub = None
+        self.name_load = None
+        self.name_gen = None
+        self.name_line = None
+        self.name_storage = None
+        self.name_shunt = None
+        with warnings.catch_warnings():
+            # `_fill_names_obj` warns once per name vector, because a backend reaching
+            # it usually forgot to fill them. Here there is nothing to forget: the
+            # source format HAS no names, which the docstring above says and the
+            # documentation repeats.
+            warnings.simplefilter("ignore")
+            self._fill_names_obj()
+        # and give them back to the grid, so an LSGrid error message names the same
+        # element grid2op does
+        self._grid.set_substation_names(self.name_sub)
+        self._grid.set_gen_names(self.name_gen)
+        self._grid.set_load_names(self.name_load)
+        self._grid.set_line_names(self.name_line[:self.__nb_powerline])
+        self._grid.set_trafo_names(self.name_line[self.__nb_powerline:])
+        if self.__has_storage:
+            self._grid.set_storage_names(self.name_storage)
+        if self.n_shunt is not None:
+            self._grid.set_shunt_names(self.name_shunt)
+        
+        # complete the other vectors
+        self._compute_pos_big_topo()
+        
+        # and now things needed by the backend (legacy)
+        bus_vn_kv = np.array(self._grid.get_bus_vn_kv())
+        self.prod_pu_to_kv = bus_vn_kv[self.gen_to_subid].astype(dt_float)
+        self.load_pu_to_kv = bus_vn_kv[self.load_to_subid].astype(dt_float)
+        self.lines_or_pu_to_kv = bus_vn_kv[self.line_or_to_subid].astype(dt_float)
+        self.lines_ex_pu_to_kv = bus_vn_kv[self.line_ex_to_subid].astype(dt_float)
+        if self.__has_storage:
+            self.storage_pu_to_kv = bus_vn_kv[self.storage_to_subid].astype(dt_float)
+        if self.n_shunt is not None:
+            self._sh_vnkv = bus_vn_kv[self.shunt_to_subid]
+        
+        # matpower's RATE_A is a branch MVA rating, not the ampere limit grid2op wants,
+        # and is 0 ("unlimited") in a fair share of the published cases: leave the
+        # limits open here and let the environment's `config.py` set them, which is
+        # where a grid2op environment declares them anyway.
+        max_not_too_max = (np.finfo(dt_float).max * 0.5 - 1.)
+        self.thermal_limit_a = max_not_too_max * np.ones(self.n_line, dtype=dt_float)
+        
+        self.prod_p = np.array([el.target_p_mw for el in self._grid.get_generators()], dtype=dt_float)
+        self.next_prod_p = 1.0 * self.prod_p
+        self.nb_bus_total = len(bus_vn_kv)
+        self._big_topo_to_obj = [(None, None) for _ in range(type(self).dim_topo)]
+        self._aux_finish_setup_after_reading()
+    
+    @property
+    def available_solvers(self):
+        warnings.warn(
+            "deprecated, please use :attr:`available_default_algorithms` instead",
+            category=DeprecationWarning,
+            stacklevel=2)
+        return self.available_default_algorithms
+    
     def _aux_setup_right_after_grid_init(self):
-        if  self._orig_grid_pypowsybl is None:
+        if not self._grid_laid_out_by_loader:
             self._grid.set_n_sub(self.__nb_bus_before)
         self._handle_turnedoff_pv()
             
-        self.available_solvers = self._grid.available_solvers()
-        if self.__current_solver_type is None:
+        self.available_default_algorithms = self._grid.available_default_algorithms()
+        if self.__current_algo_type is None:
             # previous default behaviour (< 0.7)
             # by default it builds the backend with the fastest solver
             # automatically found
             self._assign_right_solver()
             
-            if SolverType.KLUDC in self.available_solvers:
+            if AlgorithmType.DC_KLU in self.available_default_algorithms:
                 # use the faster KLU if available even for DC approximation
-                self._grid.change_solver(SolverType.KLUDC)
+                self._grid.change_algorithm(AlgorithmType.DC_KLU)
                 
-            self.__current_solver_type = copy.deepcopy(self._grid.get_solver_type())
+            self.__current_algo_type = copy.deepcopy(self._grid.get_algo_type())
         else:
             # check that the solver type provided is installed with lightsim2grid
-            self._check_suitable_solver_type(self.__current_solver_type)
-            self._grid.change_solver(self.__current_solver_type)
+            self._check_suitable_solver_type(self.__current_algo_type)
+            self._grid.change_algorithm(self.__current_algo_type)
                     
         # handle multiple busbar per substations
-        if hasattr(type(self), "can_handle_more_than_2_busbar") and self._orig_grid_pypowsybl is None:
+        if hasattr(type(self), "can_handle_more_than_2_busbar") and not self._grid_laid_out_by_loader:
             # grid2op version >= 1.10.0 then we use this
             self._grid._max_nb_bus_per_sub = self.n_busbar_per_sub
             
@@ -1109,7 +1446,7 @@ class LightSimBackend(Backend):
                                    f"{sorted(allowed_loader_kwargs)}.")
         
     def _aux_init_pandapower(self):
-        from lightsim2grid.gridmodel import init_from_pandapower
+        from lightsim2grid.network import init_from_pandapower
         pp_orig_file = "pandapower_v2"
         loader_kwargs = {}
         if self._loader_kwargs is not None:
@@ -1119,11 +1456,17 @@ class LightSimBackend(Backend):
                 
         if "pp_orig_file" in loader_kwargs and str(loader_kwargs["pp_orig_file"]) == loader_kwargs["pp_orig_file"]:
             pp_orig_file = str(loader_kwargs["pp_orig_file"])
-            
         self._grid = init_from_pandapower(self._init_pp_backend._grid,
                                           self._init_pp_backend.n_sub,
                                           self.n_busbar_per_sub,
-                                          pp_orig_file=pp_orig_file)
+                                          pp_orig_file=pp_orig_file,
+                                          # grid2op's own pandapower backend is what says
+                                          # what a substation is on this path, and has been
+                                          # for as long as it has existed:
+                                          # `_aux_finish_setup_after_reading` copies its
+                                          # answer onto the grid. Let the loader work out
+                                          # its own and the two could disagree silently.
+                                          init_subid=False)
         self.__nb_bus_before = self._init_pp_backend.get_nb_active_bus()  
         self._aux_setup_right_after_grid_init()   
         self.__nb_powerline = self._init_pp_backend._grid.line.shape[0]
@@ -1166,10 +1509,10 @@ class LightSimBackend(Backend):
         self.name_sub = pp_cls.name_sub
         self._grid.set_substation_names(self.name_sub)
 
-        self.prod_pu_to_kv = self._init_pp_backend.prod_pu_to_kv
-        self.load_pu_to_kv = self._init_pp_backend.load_pu_to_kv
-        self.lines_or_pu_to_kv = self._init_pp_backend.lines_or_pu_to_kv
-        self.lines_ex_pu_to_kv = self._init_pp_backend.lines_ex_pu_to_kv
+        self.prod_pu_to_kv = self._init_pp_backend.prod_pu_to_kv.copy()
+        self.load_pu_to_kv = self._init_pp_backend.load_pu_to_kv.copy()
+        self.lines_or_pu_to_kv = self._init_pp_backend.lines_or_pu_to_kv.copy()
+        self.lines_ex_pu_to_kv = self._init_pp_backend.lines_ex_pu_to_kv.copy()
 
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
@@ -1365,13 +1708,14 @@ class LightSimBackend(Backend):
         # TODO speed optimization here to read it "better"
         cls = type(self)
         # handle object in topo vect
-        res[cls.load_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_loads()]),
-                                                                        cls.load_to_subid)
-        res[cls.gen_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_generators()]),
-                                                                        cls.gen_to_subid)
+        res[cls.load_pos_topo_vect] = cls.global_bus_to_local(
+            np.array([el.bus_id for el in self._grid.get_loads()]), cls.load_to_subid)
+        res[cls.gen_pos_topo_vect] = cls.global_bus_to_local(
+            np.array([el.bus_id for el in self._grid.get_generators()]), cls.gen_to_subid)
         if self.__has_storage:
-            res[cls.storage_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_storages()]),
-                                                                                cls.storage_to_subid)
+            res[cls.storage_pos_topo_vect] = cls.global_bus_to_local(
+                np.array([el.bus_id for el in self._grid.get_storages()]), cls.storage_to_subid)
+            
         lor_glob_bus = np.concatenate((np.array([el.bus1_id for el in self._grid.get_lines()]),
                                         np.array([el.bus1_id for el in self._grid.get_trafos()])))
         res[cls.line_or_pos_topo_vect] = cls.global_bus_to_local(lor_glob_bus, cls.line_or_to_subid)
@@ -1383,7 +1727,8 @@ class LightSimBackend(Backend):
         # handle shunts (not in topo vect)
         if cls.shunts_data_available:
             self.sh_bus.flags.writeable = True
-            self.sh_bus[:] = cls.global_bus_to_local(self._grid.get_shunts().get_bus_id(),
+            sh_bus_global = np.asarray([el.bus_id for el in self._grid.get_shunts()])
+            self.sh_bus[:] = cls.global_bus_to_local(sh_bus_global,
                                                      cls.shunt_to_subid).copy()
             self.sh_bus.flags.writeable = False
         
@@ -1403,14 +1748,6 @@ class LightSimBackend(Backend):
             self._init_pp_backend.__class__ = type(self._init_pp_backend).init_grid(type(self))
         self._backend_action_class = _BackendAction.init_grid(type(self))
         
-        # self._init_action_to_set = self._backend_action_class()
-        # try:
-        #     _init_action_to_set = self.get_action_to_set()
-        # except TypeError:
-        #     # I am in legacy grid2op version...
-        #     _init_action_to_set = _dont_use_get_action_to_set_legacy(self)
-            
-        # self._init_action_to_set += _init_action_to_set
         if self.prod_pu_to_kv is not None:
             assert np.isfinite(self.prod_pu_to_kv).all()
         if self.load_pu_to_kv is not None:
@@ -1422,6 +1759,13 @@ class LightSimBackend(Backend):
         if self.__has_storage and self.n_storage > 0 and self.storage_pu_to_kv is not None:
             assert np.isfinite(self.storage_pu_to_kv).all()
 
+        if self._dist_slack_non_renew and not type(self).redispatching_unit_commitment_availble:
+            raise Grid2OpException("You asked to distribute the slack on renewable generators, "
+                                   "yet the environment does not seem to know which generators are "
+                                   "renewables or not. Make sure env.redispatching_unit_commitment_availble is True "
+                                   "(this include having a 'prods_charac.csv' properly formatted and "
+                                   "at the right location)")
+            
     def _count_object_per_bus(self):
         # should be called only when self.topo_vect and self.shunt_topo_vect are set
         # todo factor that more properly to update it when it's modified, and not each time
@@ -1459,7 +1803,12 @@ class LightSimBackend(Backend):
             # self.init_pp_backend.close()  # should not close it, the same init_pp_backend is used when copied
             self._init_pp_backend = None
         self._reset_res_pointers()
-        self._fill_nans()
+        try:
+            self._fill_nans()
+        except AttributeError:
+            # some attributes are not completely filled
+            
+            pass
         self._grid = None
         self.__me_at_init = None
 
@@ -1487,11 +1836,14 @@ class LightSimBackend(Backend):
                 self._need_islanding_detection = True
         
         # update the injections
+        gen_v = backendAction.prod_v.values.copy()
+        gen_v[~backendAction.prod_v.changed] = 0.  # sometimes there were nan here, which lead to a warnings
+        gen_v /= self.prod_pu_to_kv
         try:
             self._grid.update_gens_p(backendAction.prod_p.changed,
                                      backendAction.prod_p.values)
             self._grid.update_gens_v(backendAction.prod_v.changed,
-                                     backendAction.prod_v.values / self.prod_pu_to_kv)
+                                     gen_v)
             self._grid.update_loads_p(backendAction.load_p.changed,
                                       backendAction.load_p.values)
             self._grid.update_loads_q(backendAction.load_q.changed,
@@ -1541,6 +1893,7 @@ class LightSimBackend(Backend):
         
         self._handle_dist_slack()
         self._timer_apply_act += time.perf_counter() - tick
+        # self._grid.tell_solver_need_reset()  # bug 128 added
         
     def _handle_dist_slack(self):
         if self._dist_slack_non_renew:
@@ -1586,7 +1939,6 @@ class LightSimBackend(Backend):
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
                 # one everywhere...
                 # But not when it initializes in DC mode... (see below)
-                self._last_dc = True
                 self.V = np.ones(self.nb_bus_total, dtype=complex) #  * self._grid.get_init_vm_pu()
                 tick = time.perf_counter()
                 self._timer_preproc += tick - beg_preproc
@@ -1616,11 +1968,6 @@ class LightSimBackend(Backend):
                     V_init = copy.deepcopy(self.V)
                 tick = time.perf_counter()
                 self._timer_preproc += tick - beg_preproc
-                if self._last_dc:
-                    # otherwise might segfault is a dc powerflow as 
-                    # been run before an ac one
-                    self._grid.tell_solver_need_reset()
-                    self._last_dc = False
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
                 self._timer_solver += time.perf_counter() - tick
                 if V.shape[0] == 0:
@@ -1714,6 +2061,10 @@ class LightSimBackend(Backend):
             if (np.abs(self.line_or_theta) >= 1e6).any() or (np.abs(self.line_ex_theta) >= 1e6).any():
                 raise BackendError("Some theta are above 1e6 which should not be happening !")
             res = True
+            # `unset_changes()` is a no-op since lightsim2grid 1.0.0: the grid marks
+            # its own solver cache in sync after every powerflow. Kept so a backend
+            # instance whose grid had `allow_cache_reuse(False)` still behaves the
+            # way it used to.
             self._grid.unset_changes()
             self._disallow_modif()
         
@@ -1735,7 +2086,7 @@ class LightSimBackend(Backend):
                 my_exc_ = BackendError(f"Converted the error of type {type(my_exc_)}, message was: {my_exc_}")
             if is_dc:
                 # set back the solver to its previous state
-                self._grid.change_solver(self.__current_solver_type)
+                self._grid.change_algorithm(self.__current_algo_type)
             self._grid.tell_solver_need_reset()
             self._grid.reactivate_result_computation()
             if self._automatically_disconnect:
@@ -1840,7 +2191,6 @@ class LightSimBackend(Backend):
             self.V[:] = self._grid.get_init_vm_pu()  # reset the V to its "original" value (see issue 30)
         self._reset_res_pointers()
         self._disallow_modif()
-        self._last_dc = True
     
     def _reset_res_pointers(self):
         self._lineor_res  = None
@@ -1883,7 +2233,7 @@ class LightSimBackend(Backend):
         # in particular with "new" attributes in future grid2op Backend
         res._aux_init_super(self.detailed_infos_for_cascading_failures,
                             self._can_be_copied,
-                            self.__current_solver_type,
+                            self.__current_algo_type,
                             self.max_it,
                             self.tol,
                             self._turned_off_pv,
@@ -1906,7 +2256,9 @@ class LightSimBackend(Backend):
 
         # copy the regular attribute
         res.__has_storage = self.__has_storage
-        res.__current_solver_type = self.__current_solver_type  # forced here because of special `__`
+        res.__current_algo_type = self.__current_algo_type  # forced here because of special `__`
+        res.__current_ac_algo_config = copy.deepcopy(self.__current_ac_algo_config)
+        res.__current_dc_algo_config = copy.deepcopy(self.__current_dc_algo_config)
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
         res.cst_1 = dt_float(1.0)
@@ -1922,7 +2274,7 @@ class LightSimBackend(Backend):
                            "_stop_if_load_disco", "_stop_if_gen_disco", "_stop_if_storage_disco",
                            "_timer_fetch_data_cpp", "_next_pf_fails", "_automatically_disconnect",
                            "_need_islanding_detection",
-                           "_last_dc", "_gen_slack_id"
+                           "_gen_slack_id", "_grid_laid_out_by_loader",
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
@@ -1994,7 +2346,7 @@ class LightSimBackend(Backend):
         res.__init_topo_vect = self.__init_topo_vect  # this is const
         res.__init_shunt_bus = self.__init_shunt_bus  # this is const
         
-        res.available_solvers = self.available_solvers
+        res.available_default_algorithms = self.available_default_algorithms
         res._orig_grid_pypowsybl = self._orig_grid_pypowsybl 
         
         # assign back "self" attributes
@@ -2052,8 +2404,8 @@ class LightSimBackend(Backend):
         self.topo_vect[self.line_or_pos_topo_vect[id_]] = -1
         self.topo_vect.flags.writeable = False
 
-    def get_current_solver_type(self) -> SolverType:
-        return self.__current_solver_type
+    def get_current_algo_type(self) -> AlgorithmType:
+        return self.__current_algo_type
 
     def reset(self,
               path : Union[os.PathLike, str],
@@ -2061,7 +2413,11 @@ class LightSimBackend(Backend):
         self._reset_res_pointers()
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
-        self._grid.change_solver(self.__current_solver_type)
+        self._grid.change_algorithm(self.__current_algo_type)
+        if self.__current_ac_algo_config is not None:
+            self._grid.set_ac_algo_config(self._aux_algo_config_from_state(self.__current_ac_algo_config))
+        if self.__current_dc_algo_config is not None:
+            self._grid.set_dc_algo_config(self._aux_algo_config_from_state(self.__current_dc_algo_config))
         self._handle_turnedoff_pv()
         self._grid.tell_solver_need_reset()
         self.comp_time = 0.

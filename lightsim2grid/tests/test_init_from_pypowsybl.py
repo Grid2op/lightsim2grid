@@ -7,7 +7,9 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 
+import io
 import pdb
+import pickle
 from packaging import version
 import pypowsybl as pp
 import pypowsybl.loadflow as lf
@@ -15,12 +17,13 @@ import numpy as np
 import unittest
 import warnings
 
-from lightsim2grid.gridmodel import init_from_pypowsybl, GridModel
+from lightsim2grid import gridmodel
+from lightsim2grid.network import init_from_pypowsybl, LSGrid
 
 try:
     import pandapower.networks as pn
     import pandapower as pdp
-    from lightsim2grid.gridmodel import init_from_pandapower
+    from lightsim2grid.network import init_from_pandapower
     PDP_AVAIL = True
 except ImportError:
     # pandapower not available, eg if testing with numpy 2
@@ -103,6 +106,9 @@ class AuxInitFromPyPowSyBlBusesForSub:
         self.tol_eq_kcl = self.get_tol_eq_kcl()
         return super().setUp()
     
+    def test_correct_trafo_flag(self):
+        assert not self.gridmodel.get_trafos().ignore_tap_side_for_shift 
+        
     def test_basic(self):
         """check that all elements are ok"""
         assert len(self.gridmodel.get_lines()) == self.network_ref.get_lines().shape[0]    
@@ -112,7 +118,7 @@ class AuxInitFromPyPowSyBlBusesForSub:
         assert len(self.gridmodel.get_shunts()) == self.network_ref.get_shunt_compensators().shape[0]    
     
     def test_compare_pp(self):
-        """compare from the reference case14"""
+        """test I get the same results than pypowsybl, in AC"""
         if not self.can_pp:
             self.skipTest("no equivalent pandapower grid")
         if not self.compare_pp():
@@ -158,11 +164,12 @@ class AuxInitFromPyPowSyBlBusesForSub:
             assert max_ <= self.tol_eq, f"error for dc Sbus : {max_:.2e}"
 
     def test_dc_pf(self):
-        """test I get the same results as pandapower in dc"""
+        """test I get the same results as pypowsybl in dc"""
         # if CURRENT_PYPOW_VERSION >= MIN_PYPO_DC_NOT_WORKING:
             # self.skipTest("Test not correct: pypowsybl change DC approx, see https://github.com/powsybl/pypowsybl/issues/1127")
         v_ls = self.gridmodel.dc_pf(self.V_init_dc, 2, self.tol)
         reorder = self.gridmodel._orig_to_ls.reshape(1, -1)
+            
         if self.compare_pp():
             v_ls_ref = self.ref_samecase.dc_pf(self.V_init_dc, 2, self.tol)
             assert np.abs(v_ls[reorder] - v_ls_ref).max() <= self.tol_eq, f"error for vresults for dc: {np.abs(v_ls[reorder] - v_ls_ref).max():.2e}"
@@ -175,7 +182,27 @@ class AuxInitFromPyPowSyBlBusesForSub:
         # v_mag not really relevant in dc so i study only va
         v_ang_pypo = self.network_ref.get_buses()["v_angle"].values
         v_ang_ls = np.rad2deg(np.angle(v_ls))
-        # np.where(np.abs(v_ang_ls[reorder] - v_ang_pypo) >= 9.)
+        # for case300
+        # self.gridmodel.get_2_windings_transformers()[85]
+        # shift of 0.19896753472735357 radian
+        # 161 (bus1_id) and 424 (bus2_id)
+        # DC
+        # -9.859724243884386
+        # 9.859724243884614
+        # AC
+        # 83.57031489368106
+        # -83.56243958793598
+        
+        # self.network_ref.get_2_windings_transformers(all_attributes=True).iloc[85]
+        # alpha = 11.4 deg
+        # bus1_id VL196_0, bus2_id VL196_1
+        # self.network_ref.get_buses().loc[["VL196_0", "VL196_1"]]
+        # DC
+        # p1                         88.74429
+        # p2                        -88.74429
+        # AC
+        # p1                          83.570175
+        # p2                           -83.5623
         if self.compare_pp():
             v_ang_pp = self.pp_samecase.res_bus["va_degree"].values
             assert np.abs(v_ang_ls[reorder] - v_ang_pp).max() <= self.tol_eq, f"error for va results for dc: {np.abs(v_ang_ls[reorder] - v_ang_pp).max():.2e}"
@@ -355,12 +382,12 @@ class TestBusesForSub_dosort(unittest.TestCase):
         # self.pypow_grid = pp.network.load(os.path.join(self.path, self.file_name))
         self.pypo_slack_name, _ = get_same_slack("ieee14")
         self.pypow_grid = pp.network.create_ieee14()
-        self.ls_grid_b4s : GridModel = init_from_pypowsybl(
+        self.ls_grid_b4s : LSGrid = init_from_pypowsybl(
             self.pypow_grid,
             buses_for_sub=True,
             sort_index=self.do_i_sort(), 
             gen_slack_id=0)
-        self.ls_grid : GridModel = init_from_pypowsybl(
+        self.ls_grid : LSGrid = init_from_pypowsybl(
             self.pypow_grid,
             buses_for_sub=False,
             sort_index=self.do_i_sort(), 
@@ -491,13 +518,46 @@ class TestBusesForSub_nosort(TestBusesForSub_dosort):
         
     def get_sub_names_b4s(self):
         return np.asarray(
-            ['VL1_0', 'VL2_0', 'VL3_0', 'VL4_0', 'VL5_0', 'VL6_0', 
-             'VL7_0', 'VL8_0', 
+            ['VL1_0', 'VL2_0', 'VL3_0', 'VL4_0', 'VL5_0', 'VL6_0',
+             'VL7_0', 'VL8_0',
              'VL9_0', 'VL10_0', 'VL11_0', 'VL12_0', 'VL13_0', 'VL14_0'],
             dtype=str
         )
-        
-    
+
+
+class TestPickleFromPypo(unittest.TestCase):
+    """A pypowsybl-sourced LSGrid sets a non-empty `_ls_to_orig` (unlike a grid built
+    directly through `init_bus`/etc, whose `_ls_to_orig` stays empty). `LSGrid.set_state`
+    used to call `set_ls_to_orig` (which validates the vector size against
+    `substations_.nb_bus()`) *before* `substations_.set_state(...)` had restored the
+    real bus count on the freshly default-constructed instance pickle/binary restore
+    into -- so `substations_.nb_bus()` was still 0 and any non-empty `_ls_to_orig` was
+    wrongly rejected as a size mismatch. Fixed by restoring `substations_` first."""
+
+    def test_pickle_roundtrip(self):
+        net = pp.network.create_ieee14()
+        model = init_from_pypowsybl(net)
+        model2 = pickle.loads(pickle.dumps(model))
+        np.testing.assert_array_equal(np.asarray(model._ls_to_orig), np.asarray(model2._ls_to_orig))
+        np.testing.assert_allclose(np.asarray(model.get_bus_vn_kv()), np.asarray(model2.get_bus_vn_kv()))
+        nb_bus = len(model.get_bus_status())
+        v_init = np.ones(nb_bus, dtype=np.complex128)
+        v1 = model.ac_pf(v_init, 30, 1e-10)
+        v2 = model2.ac_pf(v_init, 30, 1e-10)
+        np.testing.assert_allclose(v1, v2)
+
+    def test_binary_roundtrip(self):
+        import os
+        import tempfile
+        net = pp.network.create_ieee14()
+        model = init_from_pypowsybl(net)
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "model.bin")
+            model.save_binary(path)
+            model2 = LSGrid.load_binary(path)
+        np.testing.assert_array_equal(np.asarray(model._ls_to_orig), np.asarray(model2._ls_to_orig))
+
+
 if __name__ == "__main__":
     unittest.main()
     

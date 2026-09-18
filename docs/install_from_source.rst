@@ -1,3 +1,5 @@
+.. _page_install_from_source:
+
 Installation from source
 ==========================
 
@@ -8,14 +10,28 @@ Installation from source
 
 At a glance, to install from source you will have to:
 
-- :ref:`clone_repo` clone this repository and get the code of Eigen (mandatory for compilation) and SparseSuite (optional, but recommended)
+- :ref:`clone_repo` clone this repository and get the code of Eigen (mandatory for compilation) and SuiteSparse (optional, but recommended)
 
-  - :ref:`compile_suitesparse` compile a piece of SparseSuite
   - :ref:`include_nicslu`: retrieve and get a proper license for the NICSLU linear solver (see https://github.com/chenxm1986/nicslu)
   - :ref:`include_cktso`: retrieve and get a proper license for the CKTSO linear solver (see https://github.com/chenxm1986/cktso)
   - :ref:`other_customization` specify some compilation flags to make the package run faster on your machine see 
 
 - :ref:`install_python`: install the python package see 
+
+.. warning::
+    Everything here is better done inside a python "virtual environment" (also known as `venv`) or even better
+    using the excellent uv package. 
+
+    We only provide the commands related to lightsim2grid in this documentation. 
+
+    It's probably safer and better to execute them in a venv, *eg* (on macos / linux) with :
+
+    .. code-block::
+
+        uv venv
+        source .venv/bin/activate
+
+    And then proceed as described below.
 
 
 Important note
@@ -42,69 +58,17 @@ First, you can download it with git with:
 
     git clone https://github.com/Grid2Op/lightsim2grid.git
     cd lightsim2grid
-    # it is recommended to do a python virtual environment
-    python -m virtualenv venv  # optional
-    source venv/bin/activate  # optional
 
-    # retrieve the code of SparseSuite and Eigen (dependencies, mandatory)
+    # retrieve the code of SuiteSparse and Eigen (dependencies, mandatory)
     git submodule init
     git submodule update
 
-.. _compile_suitesparse:
-
-(optional, recommended) Compilation of SuiteSparse
-++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-SuiteSparse comes with the faster KLU linear solver. 
-
-Since version 0.3.0 this requirement has been removed. This entails
-that on linux / macos you can still benefit from the faster KLU solver. You can still benefit from the
-speed up of lightsim (versus the default PandaPowerBackend) but this speed up will be less than if you manage
-to compile SuiteSparse (see the subsection [Benchmark](#benchmark) for more information).
-
-**NB** in both cases the algorithm to compute the powerflow is exactly the same. It is a 
-Newton-Raphson based method. But to carry out this algorithm, one need to solver some linear equations. The only
-difference in the two version (with KLU and without) is that the linear equation solver is different. Up to the
-double float precision, both results (with and without KLU) should match.
-
-There are 2 ways to install this package. Either you use "make" (preferred method on linux / unix -- including MacOS) or you use "cmake", which works on all platforms but takes more time and is less automatic (mainly because SuiteSparse
-cannot be directly built with "cmake" so we need extra steps to make it possible.)
-
-(optional) option A. Compilation of SuiteSparse using "make"
-**************************************************************
-
-This is the easiest method to compile SuiteSparse on your system but unfortunately it only works on OS where "make" is
-available (*eg* Linux or MacOS) but this will not work on Windows... The compilation on windows is covered in the next
-paragraph :ref:`optionB`
-
-Anyway, in this case, it's super easy. Just do:
-
-.. code-block::
-
-    make
-
-And you are good to go. Nothing more.
-
-.. _optionB:
-
-(optional) option B. Compilation of SuiteSparse using "cmake"
-**************************************************************
-
-This works on most platform including MacOS, Linux and Windows.
-
-It requires to install the free `cmake` program and to do a bit more works than for other system. This is why we
-only recommend to use it on Windows.
-
-The main steps (for windows, somme commands needs to be adapted on linux / macos) are:
-
-1) `cd build_cmake`
-2) `py generate_c_files.py`
-3) `mkdir build` and cd there: `cd build`
-4) `cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_BUILD_TYPE=Release ..`
-5) `cmake --build . --config Release`
-6) `cmake --build . --config Release --target install`
-
-For more information, feel free to read the dedicated [README](build_cmake/README.md).
+The build itself is driven by `scikit-build-core <https://scikit-build-core.readthedocs.io/>`_ from
+``pyproject.toml``, which in turn runs CMake to compile the ``lightsim2grid_core`` C++ library and its
+pybind11 bindings (see :ref:`cpp_library` if you want to build and use that C++ library directly, without
+python, or run its own unit test suite). SuiteSparse (for the faster ``KLU`` linear solver) is compiled
+automatically as part of this process, now that its sources are available -- you don't have anything more
+to do than run the install command in :ref:`install_python` below.
 
 .. _include_nicslu:
 
@@ -165,20 +129,26 @@ on linux and `$CKTSO_GIT/win7_x64` on windows.
 If you bother to compile from source the package, you might also want to benefit from some
 extra speed ups.
 
-This can be achieve by specifying the `__O3_OPTIM` and `__COMPILE_MARCHNATIVE` environment variables. 
+This can be achieve by specifying the `__O3_OPTIM` and `__COMPILE_MARCHNATIVE` environment variables.
 
-The first one will compile the package using the `-O3` compiler flag (`/O2` on windows) which will tell the compiler to optimize the code for speed even more.
+The first one controls whether the package is compiled using the `-O3` compiler flag (`/O2` on windows) which tells the compiler to optimize the code for speed even more. It is **enabled by default**.
 
-The second one will compile the package using the `-march=native` flag (on macos and linux)
+The second one will compile the package using the `-march=native` flag (on macos and linux). It is **disabled by default**.
 
-And example to do such things on a linux based machine is:
+And example to enable `-march=native` on a linux based machine is:
 
 .. code-block::
 
-    export __O3_OPTIM=1
     export __COMPILE_MARCHNATIVE=1
 
-If you want to disable them, you simply need to set their respective value to 0.
+If you want to disable the O3 optimization (for example to reduce compilation time), you need to explicitly set it to 0:
+
+.. code-block::
+
+    export __O3_OPTIM=0
+
+.. note::
+    By default the package (including the one on pypi) is compiled with O3 optimization activated.
 
 .. _install_python:
 
@@ -189,9 +159,8 @@ Now you simply need to install the lightsim2grid package this way, like any pyth
 
 .. code-block::
 
-    # install the dependency
-    pip install -U pybind11
     # compile and install the python package
     pip install -U .
 
 And you are done :-)
+

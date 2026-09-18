@@ -1,0 +1,172 @@
+cmake_minimum_required(VERSION 3.15...4.99)
+
+project(lightsim2grid
+        VERSION "${SKBUILD_PROJECT_VERSION}"
+        LANGUAGES CXX)
+
+# LS2G_CXX_STANDARD: force a specific C++ standard instead of auto-detecting
+# the newest one the compiler supports. Used by CI to pin builds to the
+# oldest (14) and latest claimed (26) supported standards -- see
+# .github/workflows/cpp-standards.yml -- e.g.:
+#   pip install -C "cmake.define.LS2G_CXX_STANDARD=14" .
+set(LS2G_CXX_STANDARD "" CACHE STRING "Force a specific C++ standard (14/17/20/23/26) instead of auto-detecting the newest supported")
+if(LS2G_CXX_STANDARD)
+    if(NOT "cxx_std_${LS2G_CXX_STANDARD}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+        message(FATAL_ERROR "LS2G_CXX_STANDARD=${LS2G_CXX_STANDARD} requested but the compiler does not support C++${LS2G_CXX_STANDARD}.")
+    endif()
+    set(CMAKE_CXX_STANDARD ${LS2G_CXX_STANDARD})
+# cxx_std_26 only appears in CMAKE_CXX_COMPILE_FEATURES when both CMake
+# (>= 3.30) and the compiler know C++26; elsewhere it is simply never selected.
+elseif("cxx_std_26" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 26)
+elseif("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 23)
+elseif("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 20)
+elseif("cxx_std_17" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 17)
+elseif("cxx_std_14" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 14)
+else()
+    message(FATAL_ERROR "lightsim2grid requires at least C++14, but the compiler does not support it.")
+endif()
+message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# lightsim2grid does not use C++20/23/26 modules. With MSVC + C++23 (/std:c++latest)
+# CMake otherwise enables module dependency scanning and tries to build the
+# `import std` library modules (std.ixx / std.compat.ixx), which is fragile and
+# breaks the Windows build (notably the ARM64 cross-compile). Turn it off.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
+# --- Dependencies ---
+find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(pybind11 CONFIG REQUIRED)
+
+# Eigen (header-only)
+include_directories("eigen")
+
+# --- Options that affect only the Python layer ---
+
+# Documentation build
+if(DEFINED ENV{_READ_THE_DOCS})
+    option(BUILD_DOCS_ONLY "Flag for documentation generation" ON)
+else()
+    option(BUILD_DOCS_ONLY "Flag for documentation generation" OFF)
+endif()
+
+# Legacy install: also place lightsim2grid_cpp at site-packages root so that
+# "from lightsim2grid_cpp import XXX" still works (deprecated).
+option(INSTALL_LEGACY_LIGHTSIM2GRID_CPP
+    "Also install lightsim2grid_cpp at site-packages root for legacy compatibility (deprecated)"
+    ON)
+
+# --- Core install-dir overrides for Python wheel layout ---
+# src/core/CMakeLists.txt defaults to a standard FHS layout (lib/, include/, ...).
+# When building a wheel via scikit-build-core, everything must land inside the
+# lightsim2grid/ package directory so it's importable after pip install.
+if(SKBUILD)
+    set(LS2G_INSTALL_LIBDIR     "${SKBUILD_PROJECT_NAME}"
+        CACHE STRING "" FORCE)
+    # On Windows, DLLs are RUNTIME targets.  They must land in the Python package
+    # directory (alongside lightsim2grid_cpp.pyd) so the OS loader finds them.
+    set(LS2G_INSTALL_RUNTIMEDIR "${SKBUILD_PROJECT_NAME}"
+        CACHE STRING "" FORCE)
+    set(LS2G_INSTALL_INCLUDEDIR "${SKBUILD_PROJECT_NAME}/include"
+        CACHE STRING "" FORCE)
+    set(LS2G_INSTALL_CMAKEDIR   "${SKBUILD_PROJECT_NAME}/share/cmake/lightsim2grid_core"
+        CACHE STRING "" FORCE)
+endif()
+
+# --- Build ---
+# All solver detection (KLU/NICSLU/CKTSO), build flags (O3, march-native), and
+# the lightsim2grid_core target are defined in src/core/CMakeLists.txt.
+# src/bindings/python/CMakeLists.txt includes core if needed, then builds the
+# pybind11 extension.
+add_subdirectory("src/bindings/python")
+
+# --- C++ unit tests (Catch2) ---
+# OFF by default so pip / wheel builds are unaffected. The tests can also be
+# configured standalone, without python or pybind11: cmake -S src/tests
+option(BUILD_TESTING "Build the C++ unit tests (src/tests, Catch2)" OFF)
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory("src/tests")
+endif()
+
+# --- Python-only compile definitions (applied after targets exist) ---
+
+# Read The Docs: lets Sphinx document KLU/NICSLU/CKTSO solver classes without the
+# real (proprietary/licensed) libraries, via doc-only no-op stand-in classes (see
+# src/core/linear_solvers/*.hpp). Those stand-ins -- and the explicit template
+# instantiations of BaseFDPFAlgo<...> that go with them in SolverInstantiations.cpp --
+# live in lightsim2grid_core, not just the bindings, so the definition must reach
+# both targets. lightsim2grid_core is only actually (re)compiled here when it was
+# built from source via add_subdirectory above; when a pre-built (IMPORTED) library
+# was found instead, its compile definitions can no longer change what was baked in.
+if(BUILD_DOCS_ONLY)
+    target_compile_definitions(lightsim2grid_cpp PRIVATE _READ_THE_DOCS)
+    get_target_property(_ls2g_core_imported lightsim2grid_core IMPORTED)
+    if(NOT _ls2g_core_imported)
+        target_compile_definitions(lightsim2grid_core PRIVATE _READ_THE_DOCS)
+    endif()
+endif()
+
+# Version macros — used in pickle_helpers.hpp (binding side only)
+target_compile_definitions(lightsim2grid_cpp PRIVATE
+    VERSION="${SKBUILD_PROJECT_VERSION_FULL}"
+    VERSION_MAJOR="${CMAKE_PROJECT_VERSION_MAJOR}"
+    VERSION_MEDIUM="${CMAKE_PROJECT_VERSION_MINOR}"
+    VERSION_MINOR="${CMAKE_PROJECT_VERSION_PATCH}"
+)
+
+# --- Install rules ---
+# lightsim2grid_core + its headers + CMake config are installed by src/core/CMakeLists.txt.
+
+# Python extension module
+install(TARGETS lightsim2grid_cpp DESTINATION ${SKBUILD_PROJECT_NAME})
+
+if(INSTALL_LEGACY_LIGHTSIM2GRID_CPP)
+    install(TARGETS lightsim2grid_cpp DESTINATION .)
+    # The root-level copy has rpath $ORIGIN/@loader_path (= site-packages root),
+    # but liblightsim2grid_core lives in the lightsim2grid/ subdirectory.
+    # Add a second rpath entry so auditwheel/delocate and the dynamic linker find it.
+    if(APPLE)
+        install(CODE "
+            file(GLOB _legacy_sos
+                \"\${CMAKE_INSTALL_PREFIX}/lightsim2grid_cpp*.so\")
+            foreach(_so IN LISTS _legacy_sos)
+                execute_process(
+                    COMMAND install_name_tool
+                        -add_rpath \"@loader_path/${SKBUILD_PROJECT_NAME}\"
+                        \"\${_so}\"
+                    RESULT_VARIABLE _ret)
+                if(NOT _ret EQUAL 0)
+                    message(WARNING \"install_name_tool failed for \${_so}\")
+                endif()
+            endforeach()
+        ")
+    elseif(UNIX)
+        install(CODE "
+            file(GLOB _legacy_sos
+                \"\${CMAKE_INSTALL_PREFIX}/lightsim2grid_cpp*.so\")
+            foreach(_so IN LISTS _legacy_sos)
+                execute_process(
+                    COMMAND patchelf --add-rpath \"\$ORIGIN/${SKBUILD_PROJECT_NAME}\"
+                        \"\${_so}\"
+                    RESULT_VARIABLE _ret)
+                if(NOT _ret EQUAL 0)
+                    message(WARNING \"patchelf failed for \${_so}\")
+                endif()
+            endforeach()
+        ")
+    endif()
+    # No WIN32 branch: Windows has no rpath equivalent, and delvewheel's
+    # dependency search (see .github/workflows/main.yml's
+    # CIBW_REPAIR_WHEEL_COMMAND_WINDOWS) only checks directories already
+    # inside the wheel when --ignore-existing is passed, or PATH -- never
+    # "the same directory as the module being analyzed". So making the
+    # root-level lightsim2grid_cpp.pyd findable on Windows is a CI-side
+    # concern (--ignore-existing), not something CMake install rules can fix.
+endif()

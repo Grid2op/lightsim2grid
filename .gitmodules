@@ -6,3 +6,7 @@
 	path = eigen
 	url = https://gitlab.com/libeigen/eigen.git
 	ignore = dirty
+[submodule "Catch2"]
+	path = Catch2
+	url = https://github.com/catchorg/Catch2.git
+	ignore = dirty
