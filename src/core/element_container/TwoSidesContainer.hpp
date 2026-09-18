@@ -210,6 +210,9 @@ class TwoSidesContainer : public GenericContainer
         Eigen::Ref<const RealVect> get_theta_side_2() const {return side_2_.get_theta();}
 
         const std::vector<bool>& get_status_global() const {return status_global_;}
+        // substation of each side, as given by set_subid_side_X(); empty if never called
+        const IntVect & get_subid_side_1() const {return side_1_.get_subid();}
+        const IntVect & get_subid_side_2() const {return side_2_.get_subid();}
         const std::vector<bool>& get_status_side_1() const {return side_1_.get_status();}
         const std::vector<bool>& get_status_side_2() const {return side_2_.get_status();}
 

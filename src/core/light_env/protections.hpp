@@ -75,7 +75,24 @@ class Protections
             max_line_time_step_overflow_ = max_line_time_step_overflow;
         }
 
+        // lines (grid2op numbering: powerlines then transformers) disconnected by the
+        // protections during the last call to next_grid_state, all iterations together
+        std::vector<int> lines_disconnected_this_step() const {
+            std::vector<int> res;
+            for(const auto & iter : line_disconnected_) res.insert(res.end(), iter.begin(), iter.end());
+            return res;
+        }
+
         // bellow: use only inside light_env
+
+        // start a new episode: forget the overflow counters (requires check_validity first)
+        void reset_episode(){
+            if(!has_been_checked_){
+                throw std::runtime_error("Protections::reset_episode: check_validity should be called first.");
+            }
+            reset_cooldowns();
+            line_disconnected_.clear();
+        }
 
         // TODO check compliance (correct number of elements etc.)
         void check_validity(const LSGrid & grid) {
@@ -128,9 +145,11 @@ class Protections
                 }
                 // std::cout << "\t\t after update overflow\n";
 
-                // disconnect line / trafo if needed
+                // disconnect line / trafo if needed (only the ones still connected)
+                const std::vector<bool> & line_status = grid.get_lines_status();
+                const std::vector<bool> & trafo_status = grid.get_trafo_status();
                 for(int line_id=0; line_id < nb_line_; ++line_id){
-                    if(line_time_step_overflow_(line_id) > max_line_time_step_overflow_(line_id)){
+                    if(line_status[line_id] && line_time_step_overflow_(line_id) > max_line_time_step_overflow_(line_id)){
                         // line has been overflow for too much
                         grid.deactivate_powerline(line_id);
                         need_another = true;
@@ -138,7 +157,7 @@ class Protections
                     }
                 }
                 for(int tr_id=nb_line_; tr_id < nb_line_trafo_; ++tr_id){
-                    if(line_time_step_overflow_(tr_id) > max_line_time_step_overflow_(tr_id)){
+                    if(trafo_status[tr_id - nb_line_] && line_time_step_overflow_(tr_id) > max_line_time_step_overflow_(tr_id)){
                         // line has been overflow for too much
                         grid.deactivate_trafo(tr_id - nb_line_);
                         need_another = true;
@@ -149,13 +168,41 @@ class Protections
 
                 if(!need_another){
                     // no powerfline disconnection
-                    // I can terminate
+                    // I can terminate: a line not on overflow at the end of the step
+                    // starts again from 0 (grid2op `_timestep_overflow`)
+                    for(int br_id = 0; br_id < nb_line_trafo_; ++br_id){
+                        if(!is_overflow(br_id)) line_time_step_overflow_(br_id) = 0;
+                    }
                     timer_total_ += timer_total.duration();
                     return res;
                 }
                 line_disconnected_.push_back(line_id_disco_this_iter);
             }
-            // TODO update overflow: set them to 0 if not on overflow after the routine
+        }
+
+        // recompute `rho` from the flows currently stored in the grid (run_powerflow does not)
+        void update_rho(const LSGrid & grid){
+            auto timer_update_rho = CustTimer();
+            Eigen::Ref<const RealVect> vectl_or = std::get<3>(grid.get_line_res1());
+            Eigen::Ref<const RealVect> vectt_or = std::get<3>(grid.get_trafo_res1());
+            // std::cout << "\t\t\t after get or side\n";
+
+            Eigen::Ref<const RealVect> vectl_ex = std::get<3>(grid.get_line_res2());
+            Eigen::Ref<const RealVect> vectt_ex = std::get<3>(grid.get_trafo_res2());
+            // std::cout << "\t\t\t after get ex side\n";
+
+            const auto & th_lim_or = get_thermal_limit_or();
+            const auto & th_lim_ex = get_thermal_limit_ex();
+            // std::cout << "\t\t\t after get_thermal_limit\n";
+            RealVect vect_or(nb_line_trafo_);
+            vect_or << vectl_or, vectt_or;  // TODO maybe an error if not evaluated on the right order...
+            RealVect vect_ex(nb_line_trafo_);
+            vect_ex << vectl_ex, vectt_ex;
+            // std::cout << "\t\t\t after the << \n";
+
+            rho_.array() = (vect_or.array() / th_lim_or.array()).cwiseMax(vect_ex.array() / th_lim_ex.array());
+            // std::cout << "\t\t\t after rho update \n";
+            timer_update_rho_ = timer_update_rho.duration();
         }
 
         CplxVect run_powerflow(LSGrid & grid, int max_iter, float tol){
@@ -208,29 +255,6 @@ class Protections
             }
         }
 
-        void update_rho(const LSGrid & grid){
-            auto timer_update_rho = CustTimer();
-            Eigen::Ref<const RealVect> vectl_or = std::get<3>(grid.get_line_res1());
-            Eigen::Ref<const RealVect> vectt_or = std::get<3>(grid.get_trafo_res1());
-            // std::cout << "\t\t\t after get or side\n";
-
-            Eigen::Ref<const RealVect> vectl_ex = std::get<3>(grid.get_line_res2());
-            Eigen::Ref<const RealVect> vectt_ex = std::get<3>(grid.get_trafo_res2());
-            // std::cout << "\t\t\t after get ex side\n";
-
-            const auto & th_lim_or = get_thermal_limit_or();
-            const auto & th_lim_ex = get_thermal_limit_ex();
-            // std::cout << "\t\t\t after get_thermal_limit\n";
-            RealVect vect_or(nb_line_trafo_);
-            vect_or << vectl_or, vectt_or;  // TODO maybe an error if not evaluated on the right order...
-            RealVect vect_ex(nb_line_trafo_);
-            vect_ex << vectl_ex, vectt_ex;
-            // std::cout << "\t\t\t after the << \n";
-
-            rho_.array() = (vect_or.array() / th_lim_or.array()).cwiseMax(vect_ex.array() / th_lim_ex.array());
-            // std::cout << "\t\t\t after rho update \n";
-            timer_update_rho_ = timer_update_rho.duration();
-        }
 
     protected:
         bool has_been_checked_;

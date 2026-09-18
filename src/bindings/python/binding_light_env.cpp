@@ -32,9 +32,25 @@ void bind_light_env(py::module_& m) {
         .export_values();
 
     // topology action
-    py::class_<TopoAction>(m, "TopoAction", "Limited topological action used for the light environment")
+    py::class_<TopoAction>(m, "TopoAction",
+                           "Limited topological action used for the light environment, with grid2op semantics: "
+                           "`add_element` is grid2op `set_bus` (local busbar id: -1 disconnect, 0 nothing, 1..n_busbar_per_sub), "
+                           "`set_line_status` is grid2op `set_line_status` (-1, 0, +1). Line ids follow grid2op numbering "
+                           "(powerlines then transformers). `check_validity(grid)` validates the action and must be called "
+                           "before it can be applied (LightEnv.init_actions does it).")
         .def(py::init<>())
-        .def("add_element", &TopoAction::add_element, "allows to add an element that will be affected by this topological action (add_element(ElementType el_type, int el_id, int bus_global_id))")
+        .def("add_element", &TopoAction::add_element, py::arg("el_type"), py::arg("el_id"), py::arg("local_bus_id"),
+             "grid2op `set_bus` on one element: add_element(ElementType el_type, int el_id, int local_bus_id) with "
+             "local_bus_id -1 (disconnect), 0 (nothing) or 1..n_busbar_per_sub.")
+        .def("set_line_status", &TopoAction::set_line_status, py::arg("line_id"), py::arg("status"),
+             "grid2op `set_line_status` on one line (grid2op numbering): -1 disconnect, 0 nothing, +1 reconnect.")
+        .def("check_validity", &TopoAction::check_validity, py::arg("grid"),
+             "Check the action against a grid (element exists, busbar exists, no contradiction) and resolve the busbars. "
+             "Raises ValueError / IndexError on an invalid action.")
+        .def("is_do_nothing", &TopoAction::is_do_nothing, "True if the action does not modify anything")
+        .def("has_been_checked", &TopoAction::has_been_checked, "True if check_validity was called since the last modification")
+        .def_property_readonly("nb_set_bus", &TopoAction::nb_set_bus, "Number of (resolved) set_bus entries, after check_validity")
+        .def_property_readonly("nb_set_line_status", &TopoAction::nb_set_line_status, "Number of (resolved) set_line_status entries, after check_validity")
         ;
 
     // protections
@@ -52,6 +68,7 @@ void bind_light_env(py::module_& m) {
         .def_property_readonly("v_init_ac", &Protections::get_v_init_ac, "Complex voltage used to initialize the last AC powerflow (result of a DC powerflow)")
         .def_property_readonly("v_res_ac", &Protections::get_v_res_ac, "Complex voltage at the end of the last powerflow")
 
+        .def("lines_disconnected_this_step", &Protections::lines_disconnected_this_step, "Lines (grid2op numbering) disconnected by the protections during the last step, all iterations together")
         .def("get_thermal_limit_or", &Protections::get_thermal_limit_or, "TODO")
         .def("get_thermal_limit_ex", &Protections::get_thermal_limit_ex, "TODO")
         .def("get_max_line_time_step_overflow", &Protections::get_max_line_time_step_overflow, "TODO")
@@ -73,9 +90,26 @@ void bind_light_env(py::module_& m) {
         .def_property("protections", &LightEnv::get_protections, &LightEnv::assign_protections, "The current protections of the env")
         .def_property("tol", &LightEnv::get_tol, &LightEnv::set_tol, "Tolerance used to compute the powerflows")
         .def_property("max_iter", &LightEnv::get_max_iter, &LightEnv::set_max_iter, "Maximum number of iterations for the powerflows")
+        .def_property("nb_timestep_cooldown_sub", &LightEnv::get_nb_timestep_cooldown_sub, &LightEnv::set_nb_timestep_cooldown_sub,
+                      "Number of steps a substation cannot be acted on after an action modified it (grid2op NB_TIMESTEP_COOLDOWN_SUB)")
+        .def_property("nb_timestep_cooldown_line", &LightEnv::get_nb_timestep_cooldown_line, &LightEnv::set_nb_timestep_cooldown_line,
+                      "Number of steps a line cannot be acted on after an action modified its status (grid2op NB_TIMESTEP_COOLDOWN_LINE)")
+        .def_property("nb_timestep_reconnection", &LightEnv::get_nb_timestep_reconnection, &LightEnv::set_nb_timestep_reconnection,
+                      "Number of steps a line disconnected by the protections cannot be reconnected (grid2op NB_TIMESTEP_RECONNECTION)")
+        .def_property_readonly("time_before_cooldown_sub", &LightEnv::get_time_before_cooldown_sub,
+                               "For each substation, number of steps before it can be acted on again (grid2op obs.time_before_cooldown_sub)")
+        .def_property_readonly("time_before_cooldown_line", &LightEnv::get_time_before_cooldown_line,
+                               "For each line (grid2op numbering), number of steps before its status can be changed again (grid2op obs.time_before_cooldown_line)")
+        .def_property_readonly("nb_actions", &LightEnv::nb_actions, "Number of actions registered with init_actions")
+        .def("init_actions", &LightEnv::init_actions, py::arg("actions"),
+             "Register the actions the agent can take: step(i) plays actions[i]. Every action is checked against the "
+             "initial grid and a ValueError naming the invalid action is raised (and nothing registered) if one is invalid.")
+        .def("get_actions", &LightEnv::get_actions, "The (checked) actions registered with init_actions")
         .def("assign_time_series", &LightEnv::assign_time_series, "TODO")
         .def("reset", &LightEnv::reset, "TODO")
-        .def("step", &LightEnv::step, "TODO")
+        .def("step", &LightEnv::step, py::arg("act_id"),
+             "Play one step with the action of id act_id (see init_actions). Without any action registered, only act_id = 0 (do nothing) is valid. "
+             "Returns (obs, reward, done, truncated, info), info['is_illegal'] is 'true' if the action was refused because of a cooldown.")
         .def("get_obs", &LightEnv::get_obs, "Last computed observation")
         ;
 }

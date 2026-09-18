@@ -132,6 +132,8 @@ class OneSideContainer : public GenericContainer
         
         Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
         const std::vector<bool>& get_status() const {return status_;}
+        // substation of each element, as given by set_subid(); empty if set_subid() was never called
+        const IntVect & get_subid() const {return subid_;}
         bool get_status(int el_id) const {return status_.at(el_id);}
         const GlobalBusIdVect & get_bus_id() const {return bus_id_;}
         Eigen::Ref<const IntVect> get_bus_id_numpy() const {

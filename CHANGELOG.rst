@@ -175,6 +175,14 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] light environment: ``LightEnv.init_actions`` registers the actions the agent can take,
+  given as grid2op actions (``set_bus`` / ``set_line_status``) or ``TopoAction``; every action is
+  checked against the grid (element and busbar exist, no contradiction) and an invalid one is
+  refused. ``step(act_id)`` now applies the action, with grid2op-like cooldowns
+  (``nb_timestep_cooldown_sub``, ``nb_timestep_cooldown_line``, ``nb_timestep_reconnection``)
+  and ``info["is_illegal"]``; ``reset`` restores the initial topology.
+- [FIXED] light environment: the protections looped for ever once a line had been disconnected
+  for overflow, and never reset the overflow counter of a line back in its limits.
 - [ADDED] ``compute_physical_violations`` also reports a generator the distributed slack
   pushed below ``min_p_mw`` or above ``max_p_mw``. The slack is solved in the Jacobian by
   participation factors that ignore limits, which is what OpenLoadFlow's
