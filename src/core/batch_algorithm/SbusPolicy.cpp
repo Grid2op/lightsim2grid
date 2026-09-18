@@ -59,6 +59,7 @@ void SbusPolicy::Vary::prepare(const LSGrid & grid_model,
     gen_bus_ = route(generators, id_me_to_solver, algo_name, "fill_SBus_real");
     sgen_bus_ = route(s_generators, id_me_to_solver, algo_name, "fill_SBus_real");
     load_bus_ = route(loads, id_me_to_solver, algo_name, "fill_SBus_real");
+    storage_bus_ = route(grid_model.get_storages(), id_me_to_solver, algo_name, "fill_SBus_real");
 
     gen_target_p_ = grid_model.get_gen_target_p();
     sgen_target_p_ = grid_model.get_sgen_target_p();
@@ -73,6 +74,22 @@ void SbusPolicy::Vary::prepare(const LSGrid & grid_model,
     }
 
     constant_pu_ = constant_sbus_pu(grid_model, complete_sbus_pu, nb_buses_solver, id_me_to_solver, algo_name);
+    // the storage units' own share of it, one by one (StorageContainer::_fillSbus, per unit)
+    {
+        const auto & storages = grid_model.get_storages();
+        const int nb_storage = storages.nb();
+        storage_pu_ = CplxVect::Zero(nb_storage);
+        const auto & st_status = storages.get_status();
+        const Eigen::Ref<const RealVect> st_p = storages.get_target_p();
+        const Eigen::Ref<const RealVect> st_q = storages.get_target_q();
+        for(int s_id = 0; s_id < nb_storage; ++s_id){
+            if(!st_status[s_id]) continue;
+            cplx_type tmp = {-st_p(s_id), 0.};
+            if(!storages.get_voltage_regulator_on(s_id)) tmp -= BaseConstants::my_i * st_q(s_id);
+            if(abs(sn_mva - 1.0) > BaseConstants::_tol_equal_float) tmp /= static_cast<cplx_type>(sn_mva);
+            storage_pu_(s_id) = tmp;
+        }
+    }
     sn_mva_ = sn_mva;
     nb_buses_solver_ = nb_buses_solver;
     nb_steps_ = nb_steps;
@@ -115,24 +132,36 @@ void SbusPolicy::Vary::fill_row(Eigen::Index i, CplxVect & row) const
         row(load_bus_[l]) -= BaseConstants::my_i * cplx_type(q, 0.);
     }
 
-    // generator contingencies: take back, for this row, exactly what the gen pass
-    // above put in for a generator this row disconnects -- and, for one that does
-    // not regulate voltage, the reactive setpoint that reached the row through
-    // constant_pu_. A generator this row keeps subtracted a zero in the whole-matrix
-    // build, which leaves every value as it is: skipped here.
-    if(gen_off.rows() > 0 && i < gen_off.rows()){
-        const Eigen::Index nb_cols = gen_off.cols();
+    // generator contingencies (the mask, or the row's topological action): take
+    // back, for this row, exactly what the gen pass above put in for a generator
+    // this row disconnects -- and, for one that does not regulate voltage, the
+    // reactive setpoint that reached the row through constant_pu_. A generator this
+    // row keeps subtracted a zero in the whole-matrix build, which leaves every value
+    // as it is: skipped here.
+    if(has_gen_off()){
         for(size_t g = 0; g < gen_bus_.size(); ++g){
             const Eigen::Index gen_id = static_cast<Eigen::Index>(g);
-            if(gen_bus_[g] < 0 || gen_id >= nb_cols || !gen_off(i, gen_id)) continue;
+            if(gen_bus_[g] < 0 || !gen_off_in(i, gen_id)) continue;
             const real_type p = own_gen_p ? gen_p(i, gen_id) : gen_target_p_(gen_id);
             row(gen_bus_[g]) -= cplx_type(p, 0.);
         }
         for(size_t g = 0; g < gen_bus_.size(); ++g){
             const Eigen::Index gen_id = static_cast<Eigen::Index>(g);
-            if(gen_bus_[g] < 0 || gen_id >= nb_cols || !gen_off(i, gen_id)) continue;
+            if(gen_bus_[g] < 0 || !gen_off_in(i, gen_id)) continue;
             if(gen_vreg_[g]) continue;
             row(gen_bus_[g]) -= BaseConstants::my_i * cplx_type(gen_target_q_(gen_id), 0.);
+        }
+    }
+    // the loads the row's topological action disconnects: the two load passes above
+    // drew them, put them back
+    if(static_cast<size_t>(i) < topo_loads_off.size()){
+        for(int l : topo_loads_off[static_cast<size_t>(i)]){
+            const Eigen::Index load_id = static_cast<Eigen::Index>(l);
+            if(load_bus_[static_cast<size_t>(l)] < 0) continue;
+            const real_type p = own_load_p ? load_p(i, load_id) : load_target_p_(load_id);
+            const real_type q = own_load_q ? load_q(i, load_id) : load_target_q_(load_id);
+            row(load_bus_[static_cast<size_t>(l)]) += cplx_type(p, 0.);
+            row(load_bus_[static_cast<size_t>(l)]) += BaseConstants::my_i * cplx_type(q, 0.);
         }
     }
 
@@ -145,6 +174,14 @@ void SbusPolicy::Vary::fill_row(Eigen::Index i, CplxVect & row) const
     // matrices above do not cover (storage/SVC/HVDC/..., see constant_sbus_pu), same
     // for every step
     row += constant_pu_;
+    // ... minus the storage units the row's topological action disconnects (their
+    // share of that constant is known unit by unit, see storage_pu_)
+    if(static_cast<size_t>(i) < topo_storages_off.size() && !topo_storages_off[static_cast<size_t>(i)].empty()){
+        for(int s_id : topo_storages_off[static_cast<size_t>(i)]){
+            if(storage_bus_[static_cast<size_t>(s_id)] < 0) continue;
+            row(storage_bus_[static_cast<size_t>(s_id)]) -= storage_pu_(s_id);
+        }
+    }
 }
 
 const SbusPolicy::Vary::CplxMat & SbusPolicy::Vary::materialize() const

@@ -8,6 +8,9 @@
 
 #include "YbusPolicy.hpp"
 
+#include <algorithm>
+#include <iterator>
+
 namespace ls2g {
 
 std::vector<Coeff> YbusPolicy::Contingency::_coeffs_for_branch_ids(
@@ -99,6 +102,15 @@ std::vector<int> YbusPolicy::Contingency::branch_ids_for_row(Eigen::Index row, s
         for(Eigen::Index col = 0; col < trafo_mask.cols(); ++col){
             if(trafo_mask(row, col)) branch_ids.push_back(static_cast<int>(n_line + static_cast<size_t>(col)));
         }
+    }
+    if(static_cast<size_t>(row) < topo_branches_off.size() && !topo_branches_off[static_cast<size_t>(row)].empty()){
+        // both lists are sorted and, by construction, disjoint (see
+        // BaseBatchSweep::_maybe_resolve_topology)
+        const std::vector<int> & topo = topo_branches_off[static_cast<size_t>(row)];
+        std::vector<int> merged;
+        merged.reserve(branch_ids.size() + topo.size());
+        std::set_union(branch_ids.begin(), branch_ids.end(), topo.begin(), topo.end(), std::back_inserter(merged));
+        branch_ids.swap(merged);
     }
     return branch_ids;
 }

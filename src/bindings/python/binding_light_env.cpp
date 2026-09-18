@@ -47,6 +47,9 @@ void bind_light_env(py::module_& m) {
         .def("check_validity", &TopoAction::check_validity, py::arg("grid"),
              "Check the action against a grid (element exists, busbar exists, no contradiction) and resolve the busbars. "
              "Raises ValueError / IndexError on an invalid action.")
+        .def("apply_to_gridmodel", &TopoAction::apply_to_gridmodel, py::arg("grid"),
+             "Play the (checked) action on a grid: disconnect / reconnect / move its elements. The grid should be "
+             "the one it was checked against, or a copy of it.")
         .def("is_do_nothing", &TopoAction::is_do_nothing, "True if the action does not modify anything")
         .def("has_been_checked", &TopoAction::has_been_checked, "True if check_validity was called since the last modification")
         .def_property_readonly("nb_set_bus", &TopoAction::nb_set_bus, "Number of (resolved) set_bus entries, after check_validity")

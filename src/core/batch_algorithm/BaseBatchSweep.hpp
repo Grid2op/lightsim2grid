@@ -11,6 +11,7 @@
 
 #include "BaseBatchSolverSynch.hpp"
 #include "YbusPolicy.hpp"
+#include "TopoPlan.hpp"
 #include "SbusPolicy.hpp"
 #include "LimitViolation.hpp"
 #include "BusQCheck.hpp"
@@ -370,6 +371,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _row_slack_gens_off_.clear();
                 _li_defaults_vect_cache_.clear();
                 _physical_violations_n_.clear();
+                // what the topological actions were resolved into for this batch
+                // (the actions themselves are a registration and stay)
+                _row_topo_.clear();
+                _topology_active_ = false;
+                _reset_topo_policy_state();
             }
             BaseBatchSolverSynch::clear_batch_inputs();
         }
@@ -406,6 +412,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             BaseBatchSolverSynch::clear();   // -> L1 -> L2 -> L3
             _reset_ybus_policy();
             sbus_policy_.clear();
+            topo_actions_.clear();
             _status = 1;
             _nb_steps_locked = -1;
             _handle_disconnected_grid = false;
@@ -531,6 +538,73 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             clear_batch_inputs();
 
             sbus_policy_.gen_off = mask;
+        }
+
+        /**
+         * ScenarioSweep only: one topological action per row (a `TopoAction`, grid2op
+         * semantics: set_bus on loads / generators / storage units / line and trafo
+         * ends, set_line_status), played by that row on top of its injections and
+         * masks. An action that changes nothing is a plain row.
+         *
+         * Every action is checked against the grid here (the element and the busbar
+         * exist, no contradiction -- see TopoAction::check_validity) and a
+         * `std::invalid_argument` naming the row is raised, nothing registered, if one
+         * is invalid. What THIS version can play is settled at compute() (see
+         * _maybe_resolve_topology): disconnections only -- a branch (set_line_status
+         * -1, or set_bus -1 on one of its ends), a generator, a load or a storage unit
+         * (set_bus -1). A branch or a generator is disconnected exactly as the
+         * set_contingency_* masks do it -- same Ybus edit, same PV -> PQ handling, one
+         * symbolic analysis for the whole sweep -- and a row naming an element in both
+         * a mask and its action is refused. Moving an element to a busbar, reconnecting
+         * one, and the DC algorithm are refused for now (TODO in the changelog).
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_topo_actions(const std::vector<TopoAction> & actions) {
+            std::vector<TopoAction> checked;
+            checked.reserve(actions.size());
+            for(size_t i = 0; i < actions.size(); ++i){
+                TopoAction act = actions[i];
+                try{
+                    act.check_validity(_grid_model);
+                }catch(const std::exception & exc_){
+                    std::ostringstream msg;
+                    msg << algo_name() << "::set_topo_actions: action " << i << " is invalid: " << exc_.what();
+                    throw std::invalid_argument(msg.str());
+                }
+                checked.push_back(act);
+            }
+            _lock_or_check_nb_steps(static_cast<Eigen::Index>(actions.size()), "set_topo_actions");
+            // a registration (L2), like the masks: what was resolved from the OLD
+            // actions goes with it
+            clear_batch_inputs();
+            topo_actions_ = checked;
+        }
+        // the (checked) actions registered with set_topo_actions
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        const std::vector<TopoAction> & get_topo_actions() const { return topo_actions_; }
+
+        // the branches (gridmodel numbering, powerlines then transformers, sorted) row
+        // `row` disconnects, by its masks and by its topological action together --
+        // what the row's flows are zeroed for and its current checks skip. Needs a
+        // compute() (the actions are resolved there).
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        std::vector<int> get_row_disconnected_branches(Eigen::Index row) const {
+            if(row < 0 || row >= _nb_steps_locked){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::get_row_disconnected_branches: row " << row
+                     << " does not exist, the batch has " << _nb_steps_locked << " rows.";
+                throw std::out_of_range(exc_.str());
+            }
+            if(!topo_actions_.empty() && !_batch_inputs_valid_){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::get_row_disconnected_branches: the topological actions "
+                        "are resolved by compute(); call it first.";
+                throw std::runtime_error(exc_.str());
+            }
+            return ybus_policy_.branch_ids_for_row(row, n_line_);
         }
 
         // ========== legacy contingency-list API (Contingency && !Vary only) ======
@@ -1841,11 +1915,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // contingency); always false where no such mask exists.
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         bool _gen_off_in_row(size_t i, int gen_id) const {
-            const auto & mask = sbus_policy_.gen_off;
-            if(mask.rows() == 0) return false;
-            const Eigen::Index row = static_cast<Eigen::Index>(i);
-            if(row >= mask.rows() || gen_id >= mask.cols()) return false;
-            return mask(row, gen_id);
+            return sbus_policy_.gen_off_in(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(gen_id));
         }
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         bool _gen_off_in_row(size_t, int) const { return false; }
@@ -2113,6 +2183,137 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_masks(){}
 
+        // ================= topological actions (ScenarioSweep only) ==============
+        // Turns topo_actions_ into what the row loop consumes, once per compute()
+        // (L2, before _prepare_ybus_varying): the branches each row disconnects
+        // (ybus_policy_.topo_branches_off -- read wherever the masks are, so the Ybus
+        // edit, the connectivity, the current checks and the flow cleaning all see
+        // them), the generators (sbus_policy_.topo_gen_off -- read wherever gen_off
+        // is, so the injection, the slack re-weighting and the PV -> PQ pinning all
+        // see them) and the loads / storage units (sbus_policy_.topo_loads_off /
+        // topo_storages_off, injection only).
+        //
+        // What is refused here, and why, is the frontier of this version: a row that
+        // MOVES an element (set_bus > 0) or reconnects one changes the bus set or the
+        // Ybus pattern, which the fixed solver layout cannot take yet (TODO in the
+        // changelog); a row naming an element in both a mask and its action is
+        // ambiguous; the DC path is not wired.
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void _maybe_resolve_topology(size_t nb_steps){
+            _row_topo_.clear();
+            _topology_active_ = false;
+            _reset_topo_policy_state();
+            if(topo_actions_.empty()) return;
+            if(topo_actions_.size() != nb_steps){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::set_topo_actions: " << topo_actions_.size()
+                     << " actions were registered for a batch of " << nb_steps << " rows.";
+                throw std::runtime_error(exc_.str());
+            }
+            const int nb_gen = static_cast<int>(_grid_model.get_generators_as_data().nb());
+            const int nb_line = static_cast<int>(n_line_);
+            _row_topo_.resize(nb_steps);
+            ybus_policy_.topo_branches_off.assign(nb_steps, std::vector<int>());
+            sbus_policy_.topo_loads_off.assign(nb_steps, std::vector<int>());
+            sbus_policy_.topo_storages_off.assign(nb_steps, std::vector<int>());
+            bool any_gen = false;
+            for(size_t row = 0; row < nb_steps; ++row){
+                RowTopoPlan & plan = _row_topo_[row];
+                resolve_row_topo(topo_actions_[row], _grid_model, plan);
+                if(plan.empty()) continue;
+                _topology_active_ = true;
+                if(!_algo.ac_solver_used()){
+                    std::ostringstream exc_;
+                    exc_ << algo_name() << "::set_topo_actions: row " << row << " carries a topological "
+                            "action, which the DC algorithm does not support yet. Use an AC "
+                            "Newton-Raphson algorithm (change_algorithm), or an action that changes nothing.";
+                    throw std::runtime_error(exc_.str());
+                }
+                for(const TopoBranchPlacement & br : plan.branches){
+                    if(br.row_on){
+                        _throw_topo_not_supported(row, br.base_on ? "moves an end of" : "reconnects",
+                                                  br.branch_id < nb_line ? "powerline" : "transformer",
+                                                  br.branch_id < nb_line ? br.branch_id : br.branch_id - nb_line);
+                    }
+                    // a disconnection: the same as a mask entry, so exactly one of the two
+                    const bool masked = br.branch_id < nb_line
+                        ? (ybus_policy_.line_mask.rows() > 0 && ybus_policy_.line_mask(static_cast<Eigen::Index>(row), br.branch_id))
+                        : (ybus_policy_.trafo_mask.rows() > 0 && ybus_policy_.trafo_mask(static_cast<Eigen::Index>(row), br.branch_id - nb_line));
+                    if(masked){
+                        _throw_topo_overlap(row, br.branch_id < nb_line ? "powerline" : "transformer",
+                                            br.branch_id < nb_line ? br.branch_id : br.branch_id - nb_line,
+                                            br.branch_id < nb_line ? "set_contingency_lines" : "set_contingency_trafos");
+                    }
+                    ybus_policy_.topo_branches_off[row].push_back(br.branch_id);
+                }
+                std::sort(ybus_policy_.topo_branches_off[row].begin(), ybus_policy_.topo_branches_off[row].end());
+                for(const TopoElPlacement & g : plan.gens){
+                    if(g.row_bus_me != BaseConstants::_deactivated_bus_id){
+                        _throw_topo_not_supported(row, g.base_bus_me == BaseConstants::_deactivated_bus_id ? "reconnects" : "moves",
+                                                  "generator", g.el_id);
+                    }
+                    if(sbus_policy_.gen_off.rows() > 0 && sbus_policy_.gen_off(static_cast<Eigen::Index>(row), g.el_id)){
+                        _throw_topo_overlap(row, "generator", g.el_id, "set_contingency_gens");
+                    }
+                    if(!any_gen){
+                        sbus_policy_.topo_gen_off = BoolMat::Constant(static_cast<Eigen::Index>(nb_steps), nb_gen, false);
+                        any_gen = true;
+                    }
+                    sbus_policy_.topo_gen_off(static_cast<Eigen::Index>(row), g.el_id) = true;
+                }
+                for(const TopoElPlacement & l : plan.loads){
+                    if(l.row_bus_me != BaseConstants::_deactivated_bus_id){
+                        _throw_topo_not_supported(row, l.base_bus_me == BaseConstants::_deactivated_bus_id ? "reconnects" : "moves",
+                                                  "load", l.el_id);
+                    }
+                    sbus_policy_.topo_loads_off[row].push_back(l.el_id);
+                }
+                for(const TopoElPlacement & st : plan.storages){
+                    if(st.row_bus_me != BaseConstants::_deactivated_bus_id){
+                        _throw_topo_not_supported(row, st.base_bus_me == BaseConstants::_deactivated_bus_id ? "reconnects" : "moves",
+                                                  "storage unit", st.el_id);
+                    }
+                    sbus_policy_.topo_storages_off[row].push_back(st.el_id);
+                }
+            }
+            if(!_topology_active_){
+                // every action is a no-op: nothing for the row loop to read
+                _reset_topo_policy_state();
+            }
+        }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<!(Y::supports_contingency && S::supports_vary), int>::type = 0>
+        void _maybe_resolve_topology(size_t){}
+
+        [[noreturn]] void _throw_topo_not_supported(size_t row, const char * what, const char * el_kind, int el_id) const {
+            std::ostringstream exc_;
+            exc_ << algo_name() << "::set_topo_actions: the action of row " << row << " " << what << " "
+                 << el_kind << " " << el_id << ". This version only plays disconnections "
+                    "(set_line_status -1, set_bus -1): moving an element to a busbar or "
+                    "reconnecting one is not supported yet (see the TODO in the changelog).";
+            throw std::runtime_error(exc_.str());
+        }
+        [[noreturn]] void _throw_topo_overlap(size_t row, const char * el_kind, int el_id, const char * setter) const {
+            std::ostringstream exc_;
+            exc_ << algo_name() << "::set_topo_actions: row " << row << " disconnects " << el_kind << " "
+                 << el_id << " both through " << setter << " and through its topological action. "
+                    "Name it in one of the two only.";
+            throw std::runtime_error(exc_.str());
+        }
+
+        // what _maybe_resolve_topology wrote into the two policies (2-way: the
+        // fields only exist on the (Contingency, Vary) instantiation)
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void _reset_topo_policy_state(){
+            ybus_policy_.topo_branches_off.clear();
+            sbus_policy_.clear_topo();
+        }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<!(Y::supports_contingency && S::supports_vary), int>::type = 0>
+        void _reset_topo_policy_state(){}
+
         // ================= generator contingencies (ScenarioSweep only) ==========
         // Turns sbus_policy_.gen_off into the two things the per-row loop needs, once
         // per compute(): which buses can lose their voltage pinning at all
@@ -2132,8 +2333,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _row_pv_to_pq_.clear();
             _row_slack_gens_off_.clear();
             _gen_contingency_active_ = false;
-            const auto & gen_off = sbus_policy_.gen_off;
-            if(gen_off.rows() == 0){
+            // a generator is taken out by the set_contingency_gens mask or by the row's
+            // topological action (set_bus -1, see _maybe_resolve_topology): the two
+            // axes are read together through sbus_policy_.gen_off_in
+            if(!sbus_policy_.has_gen_off()){
                 // No mask this time. _algo is a member and outlives the compute() that
                 // reserved slots for it, so it has to be told the set is empty again --
                 // otherwise a bus a PREVIOUS compute() made switchable would keep its Vm
@@ -2147,24 +2350,24 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const auto & generators = _grid_model.get_generators();
             const int nb_gen = static_cast<int>(generators.nb());
             const auto & id_me_to_solver = active_layout().id_me_to_solver;
-            const Eigen::Index nb_mask_cols = gen_off.cols();
+            const Eigen::Index nb_rows = static_cast<Eigen::Index>(nb_steps);
 
             // ---- the distributed slack, AC and DC alike ---------------------------
             // Which participating machines each row takes out. Needed on both families
             // (DC has a distributed slack too), and the only part of this that applies
             // in DC at all -- see the early return below.
             _row_slack_gens_off_.assign(nb_steps, std::vector<int>());
-            for(size_t step = 0; step < nb_steps && static_cast<Eigen::Index>(step) < gen_off.rows(); ++step){
-                for(Eigen::Index gen_id = 0; gen_id < nb_mask_cols; ++gen_id){
-                    if(!gen_off(static_cast<Eigen::Index>(step), gen_id)) continue;
-                    if(abs(generators.get_gen_slack_weight(static_cast<int>(gen_id))) < BaseConstants::_tol_equal_float) continue;
-                    _row_slack_gens_off_[step].push_back(static_cast<int>(gen_id));
+            for(Eigen::Index step = 0; step < nb_rows; ++step){
+                for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+                    if(!sbus_policy_.gen_off_in(step, gen_id)) continue;
+                    if(abs(generators.get_gen_slack_weight(gen_id)) < BaseConstants::_tol_equal_float) continue;
+                    _row_slack_gens_off_[static_cast<size_t>(step)].push_back(gen_id);
                 }
             }
 
             // DC knows no PV / PQ distinction: |V| is not a variable there, so nothing
             // is relabelled and no Jacobian slot has to be reserved. The injection
-            // correction (SbusPolicy::Vary::assemble) and the slack re-weighting above
+            // correction (SbusPolicy::Vary::fill_row) and the slack re-weighting above
             // are the whole of the DC story.
             if(!_algo.ac_solver_used()){
                 _push_switchable_to_algo();  // empty here: nothing is switchable in DC
@@ -2173,7 +2376,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
             if(!_algo.supports_pv_pinning()){
                 std::ostringstream exc_;
-                exc_ << algo_name() << ": generator contingencies (`set_contingency_gens`) require a "
+                exc_ << algo_name() << ": generator contingencies (`set_contingency_gens` / "
+                        "`set_topo_actions`) require a "
                         "Newton-Raphson algorithm (the active algorithm cannot relabel a bus PV -> PQ "
                         "without rebuilding the Jacobian). Use `change_algorithm` to select an NR "
                         "solver (e.g. NR_KLU / NR_SLU), or the DC solver.";
@@ -2186,10 +2390,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // in the VoltageControl extension, which owns Jacobian columns and rows of
             // its own that nothing here reserves or masks.
             const std::set<int> & group_buses = _grid_model.get_ac_voltage_control_plan().group_controlled_buses();
-            for(int gen_id = 0; gen_id < nb_gen && gen_id < static_cast<int>(gen_off.cols()); ++gen_id){
+            for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
                 bool ever_off = false;
-                for(Eigen::Index step = 0; step < gen_off.rows(); ++step){
-                    if(gen_off(step, gen_id)){ ever_off = true; break; }
+                for(Eigen::Index step = 0; step < nb_rows; ++step){
+                    if(sbus_policy_.gen_off_in(step, gen_id)){ ever_off = true; break; }
                 }
                 if(!ever_off) continue;
                 const int bus_id_me = generators.get_bus_id()(gen_id).cast_int();
@@ -2226,17 +2430,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // ---- 3. per row: the buses that lose EVERY one of their controllers ----
             _row_pv_to_pq_.assign(nb_steps, std::vector<int>());
             std::set<int> switchable;
-            for(size_t step = 0; step < nb_steps && static_cast<Eigen::Index>(step) < gen_off.rows(); ++step){
+            for(Eigen::Index step = 0; step < nb_rows; ++step){
                 for(const auto & bus_gens : gens_of_bus){
                     bool all_off = true;
                     for(int gen_id : bus_gens.second){
-                        if(gen_id >= static_cast<int>(nb_mask_cols) || !gen_off(static_cast<Eigen::Index>(step), gen_id)){
+                        if(!sbus_policy_.gen_off_in(step, gen_id)){
                             all_off = false;
                             break;
                         }
                     }
                     if(all_off){
-                        _row_pv_to_pq_[step].push_back(bus_gens.first);
+                        _row_pv_to_pq_[static_cast<size_t>(step)].push_back(bus_gens.first);
                         switchable.insert(bus_gens.first);
                     }
                 }
@@ -2499,7 +2703,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 std::ostringstream exc_;
                 exc_ << algo_name() << "::" << fun_name << ": the injections and/or the contingency "
                         "masks were modified (modify_gen_p / modify_sgen_p / modify_load_p / "
-                        "modify_load_q / set_contingency_lines / set_contingency_trafos) after the "
+                        "modify_load_q / set_contingency_lines / set_contingency_trafos / "
+                        "set_contingency_gens / set_topo_actions) after the "
                         "last compute(); call compute() again before reading the flows.";
                 throw std::runtime_error(exc_.str());
             }
@@ -2527,21 +2732,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _maybe_clean_flows(bool is_amps){
             auto timer = CustTimer();
             const Eigen::Index nb_steps = _nb_result_rows();
+            // the masks and the row's topological action alike (branch_ids_for_row
+            // merges them): a branch the row disconnected carries no flow
             for(Eigen::Index row = 0; row < nb_steps; ++row){
-                if(ybus_policy_.line_mask.rows() > 0){
-                    for(Eigen::Index col = 0; col < ybus_policy_.line_mask.cols(); ++col){
-                        if(!ybus_policy_.line_mask(row, col)) continue;
-                        real_type & el = is_amps ? _amps_flows(row, col) : _active_power_flows(row, col);
-                        if(isfinite(el)) el = 0.;
-                    }
-                }
-                if(ybus_policy_.trafo_mask.rows() > 0){
-                    for(Eigen::Index col = 0; col < ybus_policy_.trafo_mask.cols(); ++col){
-                        if(!ybus_policy_.trafo_mask(row, col)) continue;
-                        const Eigen::Index l_id = static_cast<Eigen::Index>(n_line_) + col;
-                        real_type & el = is_amps ? _amps_flows(row, l_id) : _active_power_flows(row, l_id);
-                        if(isfinite(el)) el = 0.;
-                    }
+                for(int br_id : ybus_policy_.branch_ids_for_row(row, n_line_)){
+                    real_type & el = is_amps ? _amps_flows(row, br_id) : _active_power_flows(row, br_id);
+                    if(isfinite(el)) el = 0.;
                 }
             }
             if (is_amps) _timer_compute_A += timer.duration();
@@ -2600,6 +2796,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<int> _switchable_buses_;
         std::vector<std::vector<int> > _row_pv_to_pq_;
         std::vector<std::vector<int> > _row_slack_gens_off_;
+        // topological actions (ScenarioSweep only; plain, always-present state like
+        // the above). topo_actions_ is a registration (one checked TopoAction per
+        // row, see set_topo_actions); _row_topo_ / _topology_active_ are what
+        // _maybe_resolve_topology made of it for this batch (L2).
+        std::vector<TopoAction> topo_actions_;
+        std::vector<RowTopoPlan> _row_topo_;
+        bool _topology_active_ = false;
         // per contingency, the solver buses it strands (sorted, empty if none) and
         // whether the grid stays connected -- both settled by _prepare_connectivity
         // from bus_graph_, the DFS tree of the base graph built there.

@@ -106,12 +106,40 @@ struct LS2G_API SbusPolicy
         // BaseBatchSweep drives through the algorithm's set_pv_pinned_buses.
         BoolMat gen_off;
 
+        // ---- what a row's topological action disconnects (ScenarioSweep
+        // set_topo_actions; filled once per compute() by
+        // BaseBatchSweep::_maybe_resolve_topology, empty otherwise) ----------------
+        // generators, same shape and meaning as gen_off (a row disconnecting a
+        // generator through both is refused upstream, so the two never overlap)
+        BoolMat topo_gen_off;
+        // per row, the loads / storage units (ids, sorted) the row disconnects: their
+        // injection is taken back out of the row (a load's p and q; a storage unit's
+        // constant share, see storage_pu_)
+        std::vector<std::vector<int> > topo_loads_off;
+        std::vector<std::vector<int> > topo_storages_off;
+
+        // whether ANY row disconnects a generator, by either axis
+        bool has_gen_off() const { return gen_off.rows() > 0 || topo_gen_off.rows() > 0; }
+        // whether row i disconnects generator g, by either axis
+        bool gen_off_in(Eigen::Index i, Eigen::Index g) const {
+            if(gen_off.rows() > 0 && i < gen_off.rows() && g < gen_off.cols() && gen_off(i, g)) return true;
+            if(topo_gen_off.rows() > 0 && i < topo_gen_off.rows() && g < topo_gen_off.cols() && topo_gen_off(i, g)) return true;
+            return false;
+        }
+        void clear_topo() {
+            topo_gen_off = BoolMat();
+            topo_loads_off.clear();
+            topo_storages_off.clear();
+        }
+
         void clear() {
             gen_p = RealMat(); sgen_p = RealMat(); load_p = RealMat(); load_q = RealMat();
             gen_v = RealMat();
             gen_off = BoolMat();
+            clear_topo();
+            storage_pu_ = CplxVect();
             sbuses = CplxMat();
-            gen_bus_.clear(); sgen_bus_.clear(); load_bus_.clear();
+            gen_bus_.clear(); sgen_bus_.clear(); load_bus_.clear(); storage_bus_.clear();
             gen_target_p_ = RealVect(); sgen_target_p_ = RealVect();
             load_target_p_ = RealVect(); load_target_q_ = RealVect();
             gen_target_q_ = RealVect(); gen_vreg_.clear();
@@ -172,11 +200,14 @@ struct LS2G_API SbusPolicy
                                   const char * algo_name) const;
 
         // ---- what prepare() leaves for fill_row() ---------------------------------
-        std::vector<int> gen_bus_, sgen_bus_, load_bus_;   // solver bus per element, -1 if inactive
+        std::vector<int> gen_bus_, sgen_bus_, load_bus_, storage_bus_;   // solver bus per element, -1 if inactive
         RealVect gen_target_p_, sgen_target_p_, load_target_p_, load_target_q_;  // the grid's own
         RealVect gen_target_q_;          // a non-regulating generator's reactive setpoint
         std::vector<char> gen_vreg_;     // whether each generator regulates voltage
         CplxVect constant_pu_;
+        // each storage unit's own per-unit share of constant_pu_ (0 for an inactive
+        // one): what a row disconnecting it takes back out
+        CplxVect storage_pu_;
         real_type sn_mva_ = 1.;
         int nb_buses_solver_ = 0;
         Eigen::Index nb_steps_ = 0;

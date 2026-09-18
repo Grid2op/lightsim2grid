@@ -79,6 +79,14 @@ struct LS2G_API YbusPolicy
         Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> line_mask;
         Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> trafo_mask;
 
+        // per row, the branches (gridmodel numbering, lines then trafos, sorted) that
+        // the row's topological action disconnects on top of the masks (ScenarioSweep
+        // set_topo_actions; see BaseBatchSweep::_maybe_resolve_topology, which fills it
+        // once per compute() and refuses a branch named by both a mask and the action).
+        // Empty (0 rows) means "no topological action". Read wherever the masks are:
+        // branch_ids_for_row merges the two.
+        std::vector<std::vector<int> > topo_branches_off;
+
         // builds li_coeffs from li_defaults (see the pre-refactor
         // ContingencyAnalysis::init_li_coeffs). `grid_model`/`n_line` supply what used
         // to come from the owning class's _grid_model/n_line_ members.
@@ -103,8 +111,8 @@ struct LS2G_API YbusPolicy
         // ContingencyAnalysis's my_defaults_vect()-derived skip list (used by
         // BaseBatchSweep::_row_skip_branch_ids to exclude a row's own disconnected
         // branches from that row's current-limit checks), read directly off the row
-        // instead of a precomputed cache. Empty if neither mask was ever set, or if
-        // `row` has no True entry in either.
+        // instead of a precomputed cache, merged with topo_branches_off[row]. Empty
+        // if neither mask was ever set and no action disconnects a branch on that row.
         std::vector<int> branch_ids_for_row(Eigen::Index row, size_t n_line) const;
 
         // remove / re-add one contingency's coefficients from/to Ybus (AC) or the

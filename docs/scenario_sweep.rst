@@ -161,6 +161,48 @@ with `modify_gen_p` -- that is what it is for.
     converter station). Those go through a different part of the Jacobian, with columns
     and rows of their own that this feature does not yet reserve and mask.
 
+Topological actions
+---------------------
+
+A row can also carry a **topological action**, the same object the light environment plays
+(:class:`lightsim2grid.lightEnv.TopoAction`, grid2op semantics), given as a grid2op action or
+as a ``TopoAction``, one per row:
+
+.. code-block:: python
+
+    import grid2op
+    from lightsim2grid import LightSimBackend
+    from lightsim2grid.scenarioSweep import ScenarioSweep
+
+    env = grid2op.make("l2rpn_case14_sandbox", backend=LightSimBackend())
+    obs = env.reset()
+
+    actions = [
+        env.action_space({}),                                   # a plain row
+        env.action_space({"set_line_status": [(3, -1)]}),       # line 3 off
+        env.action_space({"set_bus": {"loads_id": [(0, -1)]}}), # load 0 off
+        env.action_space({"set_bus": {"generators_id": [(1, -1)]}}),  # gen 1 off: its bus turns PQ
+    ]
+    sweep = ScenarioSweep(env)
+    sweep.set_topo_actions(actions)
+    sweep.compute()
+    Vs = sweep.get_voltages()
+
+Every action is checked against the grid when it is registered (the element exists, the
+busbar exists, no contradiction) and an invalid one raises a ``ValueError`` naming the row.
+
+This version plays **disconnections only**: a line or a trafo (``set_line_status -1``, or
+``set_bus -1`` on one of its ends), a generator, a load or a storage unit (``set_bus -1``).
+A branch or a generator is disconnected exactly as the ``set_contingency_*`` masks do it --
+the same admittance edit, the same PV -> PQ handling, one symbolic analysis for the whole
+sweep -- so a row is free to combine an action with injections and masks, as long as it does
+not name one element in both a mask and its action (``compute`` refuses that).
+
+.. warning::
+
+    Moving an element to a busbar (``set_bus > 0``), reconnecting a disconnected one, and the
+    DC algorithm are refused by ``compute`` for now. See the TODO section of the changelog.
+
 Handling disconnected grids and limit violations
 ------------------------------------------------------
 

@@ -43,9 +43,7 @@ namespace ls2g {
  */
 class TopoAction
 {
-    protected:
-        typedef std::map<int, int> ElBusMapping;
-
+    public:
         enum class Kind {load, gen, storage, line_side1, line_side2, trafo_side1, trafo_side2};
 
         struct SetBusEntry {
@@ -63,8 +61,23 @@ class TopoAction
             int status;  // -1 or +1 (0 entries are dropped)
         };
 
+    protected:
+        typedef std::map<int, int> ElBusMapping;
+
     public:
         TopoAction(): checked_(false) {}
+
+        // the resolved entries (require check_validity): what apply_to_gridmodel plays,
+        // for a reader that wants to replay the action without a grid to mutate
+        // (the batch sweeps)
+        const std::vector<SetBusEntry> & set_bus_entries() const {
+            aux_require_checked("set_bus_entries");
+            return set_bus_;
+        }
+        const std::vector<LineStatusEntry> & line_status_entries() const {
+            aux_require_checked("line_status_entries");
+            return line_status_;
+        }
 
         /**
          * grid2op `set_bus` on one element. See the class documentation for the meaning of

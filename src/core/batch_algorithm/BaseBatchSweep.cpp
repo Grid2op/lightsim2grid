@@ -516,6 +516,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         // switchable buses solved as PQ, the per-row pinning hiding it from the rows.
         _algo.reset();
 
+        // the topological actions, resolved into what every hook below reads (a
+        // no-op where none is registered -- ScenarioSweep only)
+        _maybe_resolve_topology(nb_steps);
         // the per-row Ybus edit lists (a no-op where Ybus does not vary)
         _prepare_ybus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
         // ... and settle, once, which contingencies split the grid and what they strand
