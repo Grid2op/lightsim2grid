@@ -80,7 +80,8 @@ enum class FakeEnum : int { kOff = 0, kOn = 1, kAuto = 42 };
 
 // One field per ValueArchiver specialization in BinaryArchive.hpp: arithmetic
 // scalars, bool, cplx_type, enum, string, raw vectors (real / int / cplx),
-// vector<bool>, vector<string>, vector<vector<T>> and a nested tuple.
+// vector<bool>, vector<string>, vector<vector<T>>, a nested tuple and a
+// vector of tuples (a StateRes per substation, see SubstationContainer).
 struct FakeContainer
 {
     using SubState = std::tuple<int, std::vector<ls2g::real_type> >;
@@ -97,7 +98,8 @@ struct FakeContainer
         std::vector<bool>,
         std::vector<std::string>,
         std::vector<std::vector<ls2g::real_type> >,
-        SubState
+        SubState,
+        std::vector<SubState>
     >;
 
     StateRes state{};
@@ -123,7 +125,8 @@ inline FakeContainer make_reference_container()
         {true, false, true, true},
         {"", "one", "two words"},
         {{1., 2.}, {}, {3.}},
-        FakeContainer::SubState(99, {4., 5., 6.})
+        FakeContainer::SubState(99, {4., 5., 6.}),
+        {FakeContainer::SubState(1, {7.}), FakeContainer::SubState(2, {}), FakeContainer::SubState(-3, {8., 9.})}
     );
     return res;
 }

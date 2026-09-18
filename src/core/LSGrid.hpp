@@ -1988,38 +1988,156 @@ class LS2G_API LSGrid final
             trafos_.set_pos_topo_vect_side_2(trafo_lv_pos_topo_vect);
         }
 
+        // (a node id of the detailed topology is local to a substation, so the
+        // terminal lists follow the substation ids too: see _on_terminal_layout_changed)
         void set_load_to_subid(const Eigen::Ref<const IntVect> & load_to_subid)
         {
             loads_.set_subid(load_to_subid);
+            _on_terminal_layout_changed();
         }
         void set_gen_to_subid(const Eigen::Ref<const IntVect> & gen_to_subid)
         {
             generators_.set_subid(gen_to_subid);
+            _on_terminal_layout_changed();
         }
         void set_storage_to_subid(const Eigen::Ref<const IntVect> & storage_to_subid)
         {
             storages_.set_subid(storage_to_subid);
+            _on_terminal_layout_changed();
         }
         void set_shunt_to_subid(const Eigen::Ref<const IntVect> & shunt_to_subid)
         {
             shunts_.set_subid(shunt_to_subid);
+            _on_terminal_layout_changed();
         }
         void set_line_to_sub1_id(const Eigen::Ref<const IntVect> & line_or_to_subid)
         {
             powerlines_.set_subid_side_1(line_or_to_subid);
+            _on_terminal_layout_changed();
         }
         void set_line_to_sub2_id(const Eigen::Ref<const IntVect> & line_ex_to_subid)
         {
             powerlines_.set_subid_side_2(line_ex_to_subid);
+            _on_terminal_layout_changed();
         }
         void set_trafo_to_sub1_id(const Eigen::Ref<const IntVect> & trafo_hv_to_subid)
         {
             trafos_.set_subid_side_1(trafo_hv_to_subid);
+            _on_terminal_layout_changed();
         }
         void set_trafo_to_sub2_id(const Eigen::Ref<const IntVect> & trafo_lv_to_subid)
         {
             trafos_.set_subid_side_2(trafo_lv_to_subid);
+            _on_terminal_layout_changed();
         }
+        void set_dcline_to_sub1_id(const Eigen::Ref<const IntVect> & station1_to_subid)
+        {
+            hvdc_lines_.set_subid_side_1(station1_to_subid);
+            _on_terminal_layout_changed();
+        }
+        void set_dcline_to_sub2_id(const Eigen::Ref<const IntVect> & station2_to_subid)
+        {
+            hvdc_lines_.set_subid_side_2(station2_to_subid);
+            _on_terminal_layout_changed();
+        }
+
+        // ---- detailed topology: which node each terminal stands on ------------
+        // Node ids are LOCAL to the terminal's substation (set_*_to_subid above),
+        // -1 for a terminal the detailed topology does not describe. See
+        // OneSideContainer::set_node_id. Each setter refreshes the per-substation
+        // terminal lists when the grid has a detailed topology (cheap, and the
+        // loader calls these a dozen times at most).
+        void set_load_to_node_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            loads_.set_node_id(node_id);
+            _on_terminal_layout_changed();
+        }
+        void set_gen_to_node_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            generators_.set_node_id(node_id);
+            _on_terminal_layout_changed();
+        }
+        void set_sgen_to_node_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            sgens_.set_node_id(node_id);
+            _on_terminal_layout_changed();
+        }
+        void set_storage_to_node_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            storages_.set_node_id(node_id);
+            _on_terminal_layout_changed();
+        }
+        void set_shunt_to_node_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            shunts_.set_node_id(node_id);
+            _on_terminal_layout_changed();
+        }
+        void set_svc_to_node_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            svcs_.set_node_id(node_id);
+            _on_terminal_layout_changed();
+        }
+        void set_line_to_node1_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            powerlines_.set_node_id_side_1(node_id);
+            _on_terminal_layout_changed();
+        }
+        void set_line_to_node2_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            powerlines_.set_node_id_side_2(node_id);
+            _on_terminal_layout_changed();
+        }
+        void set_trafo_to_node1_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            trafos_.set_node_id_side_1(node_id);
+            _on_terminal_layout_changed();
+        }
+        void set_trafo_to_node2_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            trafos_.set_node_id_side_2(node_id);
+            _on_terminal_layout_changed();
+        }
+        void set_dcline_to_node1_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            hvdc_lines_.set_node_id_side_1(node_id);
+            _on_terminal_layout_changed();
+        }
+        void set_dcline_to_node2_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            hvdc_lines_.set_node_id_side_2(node_id);
+            _on_terminal_layout_changed();
+        }
+
+        /**
+         * Declare the detailed topology (the node-breaker view) of every substation
+         * at once, from flat arrays: `nb_nodes_per_sub` has one entry per substation;
+         * each busbar section is (`bbs_sub`, `bbs_node`) and each switch is (`sw_sub`,
+         * `sw_node1`, `sw_node2`, `sw_kind`, `sw_open`, `sw_retained`), node ids LOCAL
+         * to their substation. Both `bbs_sub` and `sw_sub` must be sorted (non-
+         * decreasing): the position of a switch / busbar section in these arrays is
+         * then its grid-wide id, which is what `get_switches()`, `set_switch_names`,
+         * ... speak.
+         *
+         * Declares only. Which bus each element ends up on is a separate step (the
+         * projection of the switch positions onto the elements). The terminal lists
+         * are rebuilt from the node ids already set on the elements, if any.
+         */
+        void init_detailed_topology(const Eigen::Ref<const IntVect> & nb_nodes_per_sub,
+                                    const Eigen::Ref<const IntVect> & bbs_sub,
+                                    const Eigen::Ref<const IntVect> & bbs_node,
+                                    const Eigen::Ref<const IntVect> & sw_sub,
+                                    const Eigen::Ref<const IntVect> & sw_node1,
+                                    const Eigen::Ref<const IntVect> & sw_node2,
+                                    const std::vector<int> & sw_kind,
+                                    const std::vector<bool> & sw_open,
+                                    const std::vector<bool> & sw_retained);
+        [[nodiscard]] bool has_detailed_topology() const { return substations_.has_detailed_topology(); }
+        void set_switch_names(const std::vector<std::string> & names) { substations_.set_switch_names(names); }
+        void set_busbar_section_names(const std::vector<std::string> & names) { substations_.set_busbar_section_names(names); }
+        [[nodiscard]] SwitchContainer get_switches() const { return substations_.get_switches(); }
+        [[nodiscard]] BusbarSectionContainer get_busbar_sections() const { return substations_.get_busbar_sections(); }
+        [[nodiscard]] const SubstationTopology & get_substation_topology(int sub_id) const { return substations_.topology(sub_id); }
+
         void set_n_sub(int n_sub)
         {
             n_sub_ = n_sub;
@@ -2490,6 +2608,19 @@ class LS2G_API LSGrid final
         static constexpr std::size_t NB_CONTAINERS = 9;
         [[nodiscard]] std::array<GenericContainer *, NB_CONTAINERS> _all_containers();
         [[nodiscard]] std::array<const GenericContainer *, NB_CONTAINERS> _all_containers() const;
+
+        /**
+         * Re-index the terminals of the detailed topology: for every substation,
+         * which element ends stand on which of its nodes. Read off the node ids the
+         * containers carry (see set_*_to_node_id), so it is derived state and this
+         * is the only writer. A no-op without detailed topology.
+         *
+         * Not a loop over _all_containers(): the terminal kind is the concrete
+         * container, and a branch contributes one terminal per END.
+         */
+        void _rebuild_terminal_lists();
+        /// the substation or node id of some terminals changed: re-index them
+        void _on_terminal_layout_changed(){ if(substations_.has_detailed_topology()) _rebuild_terminal_lists(); }
         /**
          * Refuse, by name, a grid whose voltage control the selected algorithm cannot
          * honour. Called by `ac_pf` when `_algo.supports_remote_voltage_control()` is

@@ -68,6 +68,7 @@ class OneSideContainer : public GenericContainer
                 std::string name;
                 int sub_id;
                 int pos_topo_vect;
+                int node_id;  // node of the detailed topology (local to sub_id), -1 when none
 
                 bool connected;
                 int bus_id;
@@ -83,6 +84,7 @@ class OneSideContainer : public GenericContainer
                 name(""),
                 sub_id(-1),
                 pos_topo_vect(-1),
+                node_id(-1),
                 connected(false),
                 bus_id(_deactivated_bus_id),
                 has_res(false),
@@ -102,6 +104,9 @@ class OneSideContainer : public GenericContainer
                         }
                         if(r_data_one_side.pos_topo_vect_.size()){
                             pos_topo_vect = r_data_one_side.pos_topo_vect_(my_id);
+                        }
+                        if(r_data_one_side.node_id_.size()){
+                            node_id = r_data_one_side.node_id_(my_id);
                         }
                         connected = r_data_one_side.status_[my_id];
                         if(connected) bus_id = r_data_one_side.bus_id_[my_id].cast_int();
@@ -137,6 +142,9 @@ class OneSideContainer : public GenericContainer
         Eigen::Ref<const IntVect> get_bus_id_numpy() const {
             return bus_id_.as_eigen();
         }
+        // both optional: empty unless the loader set them (see set_subid / set_node_id)
+        const IntVect & get_subid() const {return subid_;}
+        const IntVect & get_node_id() const {return node_id_;}
 
     protected:
         /// one-sided: this element holds its own bus, and only while it is active
@@ -324,6 +332,29 @@ class OneSideContainer : public GenericContainer
             subid_.array() = subid;
         }
 
+        /**
+         * The connectivity node each terminal stands on in the detailed topology
+         * of ITS substation (so a node id only means something together with
+         * subid_), or -1 for a terminal the detailed topology does not describe.
+         *
+         * Like subid_, optional and range-checked later: the upper bound (the
+         * substation's node count) lives in SubstationContainer, which check_grid()
+         * has and this setter does not. Anything below -1 is never valid.
+         */
+        void set_node_id(const Eigen::Ref<const IntVect> & node_id)
+        {
+            check_size(node_id, nb(), "node_id");
+            for(Eigen::Index i = 0; i < node_id.size(); ++i){
+                if(node_id(i) < _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::set_node_id: element " << i
+                         << " has node id " << node_id(i) << "; it must be -1 (no node) or >= 0.";
+                    throw std::out_of_range(exc_.str());
+                }
+            }
+            node_id_ = node_id;
+        }
+
     protected:
         /**
          * The position this element occupies in the grid2op topology vector, checked
@@ -493,7 +524,9 @@ class OneSideContainer : public GenericContainer
             bool,  // has subid info
             std::vector<int>,  // sub_id
             bool,  // has pos_topo_vect info
-            std::vector<int>  // pos_topo_vect
+            std::vector<int>,  // pos_topo_vect
+            bool,  // has node_id info (detailed topology)
+            std::vector<int>  // node_id (local to the element's substation, -1 = none)
             >;
         enum StateResIdx {
             NAMES = 0,
@@ -503,6 +536,8 @@ class OneSideContainer : public GenericContainer
             SUBID,
             HAS_POS_TOPO_VECT,
             POS_TOPO_VECT,
+            HAS_NODE_ID,
+            NODE_ID,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -518,6 +553,8 @@ class OneSideContainer : public GenericContainer
             std::vector<int> subid(subid_.begin(), subid_.end());
             bool has_topo_vect_info = pos_topo_vect_.size() > 0;
             std::vector<int> pos_topo_vect(pos_topo_vect_.begin(), pos_topo_vect_.end());
+            bool has_node_id_info = node_id_.size() > 0;
+            std::vector<int> node_id(node_id_.begin(), node_id_.end());
             OneSideContainer::StateRes res(
                 names_,
                 bus_id,
@@ -525,7 +562,9 @@ class OneSideContainer : public GenericContainer
                 has_subid_info,
                 subid,
                 has_topo_vect_info,
-                pos_topo_vect);
+                pos_topo_vect,
+                has_node_id_info,
+                node_id);
             return res;
         }
 
@@ -537,6 +576,7 @@ class OneSideContainer : public GenericContainer
             std::vector<bool> & status = std::get<StateResIdx::STATUS>(my_state);
             bool has_subid_info = std::get<StateResIdx::HAS_SUBID>(my_state);
             bool has_topo_vect_info = std::get<StateResIdx::HAS_POS_TOPO_VECT>(my_state);
+            bool has_node_id_info = std::get<StateResIdx::HAS_NODE_ID>(my_state);
 
             // check sizes
             size_t size = bus_id.size();
@@ -555,6 +595,13 @@ class OneSideContainer : public GenericContainer
                 check_size(topo_vect, size, "topo_vect");
                 pos_topo_vect_ = IntVect::Map(topo_vect.data(), topo_vect.size());
             }
+            if(has_node_id_info)
+            {
+                const std::vector<int> & node_id = std::get<StateResIdx::NODE_ID>(my_state);
+                check_size(node_id, size, "node_id");
+                node_id_ = IntVect::Map(node_id.data(), node_id.size());
+            }
+            else node_id_ = IntVect();
 
             // input data
             bus_id_ = GlobalBusIdVect(bus_id);
@@ -662,6 +709,27 @@ class OneSideContainer : public GenericContainer
             const int nb_el = nb();
             const bool has_subid = subid_.size() > 0;          // optional
             const bool has_topo  = pos_topo_vect_.size() > 0;  // optional
+            const bool has_node  = node_id_.size() > 0;        // optional
+            // node_id_ (and subid_, which a node id is read together with) are
+            // assigned by setters that check them against nb() at the time of the
+            // call, and not re-run when the element count changes (init() leaves
+            // them alone): a shorter vector would be read past its end below. Same
+            // guard update_topo has for subid_.
+            if(has_node && (node_id_.size() != nb_el)){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: the " << el_name << " container has " << nb_el
+                     << " elements but " << node_id_.size() << " node ids (set_node_id was "
+                     << "called for a different element count).";
+                throw std::runtime_error(exc_.str());
+            }
+            if(has_node && has_subid && (subid_.size() != nb_el)){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::check_grid: the " << el_name << " container has " << nb_el
+                     << " elements but " << subid_.size() << " substation ids (set_subid was "
+                     << "called for a different element count), and its node ids are read "
+                     << "together with them.";
+                throw std::runtime_error(exc_.str());
+            }
             for(int el_id = 0; el_id < nb_el; ++el_id)
             {
                 const int bus = bus_id_(el_id).cast_int();
@@ -716,6 +784,46 @@ class OneSideContainer : public GenericContainer
                     }
                     all_pos_topo_vect.push_back(pos);
                 }
+                if(has_node)
+                {
+                    // a node id is local to the element's substation: it needs one,
+                    // and the substation needs a detailed topology holding that node
+                    const int node = node_id_(el_id);
+                    if(node == _deactivated_bus_id) continue;  // not described: fine
+                    if(node < 0)
+                    {
+                        std::ostringstream exc_;
+                        exc_ << "LSGrid::check_grid: " << el_name << " id " << el_id
+                             << " has node id " << node << "; it must be -1 (no node) or >= 0.";
+                        throw std::out_of_range(exc_.str());
+                    }
+                    if(!has_subid)
+                    {
+                        std::ostringstream exc_;
+                        exc_ << "LSGrid::check_grid: " << el_name << " id " << el_id
+                             << " stands on node " << node << " of the detailed topology but has no "
+                             << "substation id (a node id is local to a substation: set_subid first).";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    if(!substations.has_detailed_topology())
+                    {
+                        std::ostringstream exc_;
+                        exc_ << "LSGrid::check_grid: " << el_name << " id " << el_id
+                             << " stands on node " << node << " but the grid has no detailed "
+                             << "topology (see init_detailed_topology).";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    const int sub = subid_(el_id);  // already range-checked above
+                    const int nb_nodes = substations.topology(sub).nb_nodes();
+                    if(node >= nb_nodes)
+                    {
+                        std::ostringstream exc_;
+                        exc_ << "LSGrid::check_grid: " << el_name << " id " << el_id
+                             << " stands on node " << node << " of substation " << sub
+                             << ", which only has " << nb_nodes << " node(s).";
+                        throw std::out_of_range(exc_.str());
+                    }
+                }
             }
         }
 
@@ -725,6 +833,9 @@ class OneSideContainer : public GenericContainer
         // data for grid2op compat
         IntVect subid_;
         IntVect pos_topo_vect_;
+        // detailed topology: the node (local to subid_) each terminal stands on,
+        // -1 when not described. Optional, like subid_.
+        IntVect node_id_;
 
         // input data
         GlobalBusIdVect bus_id_;

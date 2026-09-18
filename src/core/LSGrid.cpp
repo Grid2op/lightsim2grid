@@ -231,6 +231,11 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // hvdc lines
     hvdc_lines_.set_state(state_hvdc_lines);
     svcs_.set_state(state_svcs);
+    // the detailed topology's terminal lists are derived from the node ids the
+    // containers just restored (and not serialized): rebuild them. check_grid()
+    // below is what validates those node ids; this only indexes them, and refuses
+    // an out-of-range one itself on the way.
+    _on_terminal_layout_changed();
 
     // handle the solver
     reset(true, true, true);
@@ -2630,6 +2635,162 @@ void LSGrid::update_topo(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynami
     // and same for trafo, obviously
     powerlines_.update_topo(has_changed, new_values, algo_controler_, substations_);
     trafos_.update_topo(has_changed, new_values, algo_controler_, substations_);
+}
+
+// ---- detailed topology ------------------------------------------------------
+
+void LSGrid::init_detailed_topology(const Eigen::Ref<const IntVect> & nb_nodes_per_sub,
+                                    const Eigen::Ref<const IntVect> & bbs_sub,
+                                    const Eigen::Ref<const IntVect> & bbs_node,
+                                    const Eigen::Ref<const IntVect> & sw_sub,
+                                    const Eigen::Ref<const IntVect> & sw_node1,
+                                    const Eigen::Ref<const IntVect> & sw_node2,
+                                    const std::vector<int> & sw_kind,
+                                    const std::vector<bool> & sw_open,
+                                    const std::vector<bool> & sw_retained)
+{
+    const int n_sub = substations_.nb_sub();
+    if(n_sub <= 0){
+        throw std::runtime_error("LSGrid::init_detailed_topology: the substations must be declared "
+                                 "first (see init_bus).");
+    }
+    if(nb_nodes_per_sub.size() != n_sub){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::init_detailed_topology: 'nb_nodes_per_sub' has " << nb_nodes_per_sub.size()
+             << " entries for " << n_sub << " substations.";
+        throw std::runtime_error(exc_.str());
+    }
+    const Eigen::Index nb_bbs = bbs_sub.size();
+    if(bbs_node.size() != nb_bbs){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::init_detailed_topology: 'bbs_sub' has " << nb_bbs << " entries but "
+             << "'bbs_node' has " << bbs_node.size() << " (one per busbar section each).";
+        throw std::runtime_error(exc_.str());
+    }
+    const Eigen::Index nb_sw = sw_sub.size();
+    const auto check_sw_len = [&](Eigen::Index actual, const char * name){
+        if(actual != nb_sw){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::init_detailed_topology: 'sw_sub' has " << nb_sw << " entries but '"
+                 << name << "' has " << actual << " (one per switch each).";
+            throw std::runtime_error(exc_.str());
+        }
+    };
+    check_sw_len(sw_node1.size(), "sw_node1");
+    check_sw_len(sw_node2.size(), "sw_node2");
+    check_sw_len(static_cast<Eigen::Index>(sw_kind.size()), "sw_kind");
+    check_sw_len(static_cast<Eigen::Index>(sw_open.size()), "sw_open");
+    check_sw_len(static_cast<Eigen::Index>(sw_retained.size()), "sw_retained");
+
+    // the substation of every busbar section / switch must exist, and the arrays
+    // must be sorted by substation: the position in the array IS the grid-wide id
+    // (see SubstationContainer::_rebuild_topology_offsets), so an unsorted input
+    // would silently renumber everything
+    const auto check_sorted_subs = [&](const Eigen::Ref<const IntVect> & subs, const char * what){
+        for(Eigen::Index i = 0; i < subs.size(); ++i){
+            if((subs(i) < 0) || (subs(i) >= n_sub)){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::init_detailed_topology: " << what << " " << i << " belongs to substation "
+                     << subs(i) << ", out of range [0, " << n_sub << ").";
+                throw std::out_of_range(exc_.str());
+            }
+            if((i > 0) && (subs(i) < subs(i - 1))){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::init_detailed_topology: the " << what << "s must be given sorted by "
+                     << "substation (their position is their grid-wide id), but " << what << " " << i
+                     << " belongs to substation " << subs(i) << " after substation " << subs(i - 1) << ".";
+                throw std::runtime_error(exc_.str());
+            }
+        }
+    };
+    check_sorted_subs(bbs_sub, "busbar section");
+    check_sorted_subs(sw_sub, "switch");
+
+    // slice per substation (each slice is contiguous, the arrays being sorted)
+    std::vector<SubstationTopology> topologies(static_cast<std::size_t>(n_sub));
+    Eigen::Index bbs_begin = 0;
+    Eigen::Index sw_begin = 0;
+    for(int sub_id = 0; sub_id < n_sub; ++sub_id){
+        Eigen::Index bbs_end = bbs_begin;
+        while((bbs_end < nb_bbs) && (bbs_sub(bbs_end) == sub_id)) ++bbs_end;
+        Eigen::Index sw_end = sw_begin;
+        while((sw_end < nb_sw) && (sw_sub(sw_end) == sub_id)) ++sw_end;
+
+        const IntVect my_bbs_node = bbs_node.segment(bbs_begin, bbs_end - bbs_begin);
+        const IntVect my_sw_node1 = sw_node1.segment(sw_begin, sw_end - sw_begin);
+        const IntVect my_sw_node2 = sw_node2.segment(sw_begin, sw_end - sw_begin);
+        std::vector<SwitchKind> my_sw_kind;
+        my_sw_kind.reserve(static_cast<std::size_t>(sw_end - sw_begin));
+        // an unknown integer becomes an unknown kind, which SubstationTopology::init refuses
+        for(Eigen::Index i = sw_begin; i < sw_end; ++i) my_sw_kind.push_back(static_cast<SwitchKind>(sw_kind[static_cast<std::size_t>(i)]));
+        const std::vector<bool> my_sw_open(sw_open.begin() + sw_begin, sw_open.begin() + sw_end);
+        const std::vector<bool> my_sw_retained(sw_retained.begin() + sw_begin, sw_retained.begin() + sw_end);
+        try{
+            topologies[static_cast<std::size_t>(sub_id)].init(nb_nodes_per_sub(sub_id), my_bbs_node,
+                                                              my_sw_node1, my_sw_node2, my_sw_kind,
+                                                              my_sw_open, my_sw_retained);
+        } catch(const std::exception & exc) {
+            std::ostringstream exc_;
+            exc_ << "LSGrid::init_detailed_topology: substation " << sub_id << ": " << exc.what();
+            throw std::runtime_error(exc_.str());
+        }
+        bbs_begin = bbs_end;
+        sw_begin = sw_end;
+    }
+    substations_.init_detailed_topology(std::move(topologies));
+    _rebuild_terminal_lists();
+}
+
+void LSGrid::_rebuild_terminal_lists()
+{
+    if(!substations_.has_detailed_topology()) return;
+    const int n_sub = substations_.nb_sub();
+    for(int sub_id = 0; sub_id < n_sub; ++sub_id) substations_.topology(sub_id).clear_terminals();
+
+    // one terminal per element end that carries a node id. A container with no
+    // node ids at all is simply not described (fine: the loader may not have
+    // reached it yet); a node id without a substation id is an error, the node
+    // being local to the substation.
+    const auto add_all = [&](const IntVect & subid, const IntVect & node_id, TerminalKind kind, int nb_el, const char * what){
+        if(node_id.size() == 0) return;
+        if(node_id.size() != nb_el){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::_rebuild_terminal_lists: the " << what << " container has " << nb_el
+                 << " elements but " << node_id.size() << " node ids.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(subid.size() != nb_el){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::_rebuild_terminal_lists: the " << what << " container has node ids but "
+                 << subid.size() << " substation ids for " << nb_el << " elements (a node id is local "
+                 << "to a substation: set the substation ids first).";
+            throw std::runtime_error(exc_.str());
+        }
+        for(int el_id = 0; el_id < nb_el; ++el_id){
+            const int node = node_id(el_id);
+            if(node == GenericContainer::_deactivated_bus_id) continue;
+            const int sub = subid(el_id);
+            if((sub < 0) || (sub >= n_sub)){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::_rebuild_terminal_lists: " << what << " " << el_id << " has substation id "
+                     << sub << ", out of range [0, " << n_sub << ").";
+                throw std::out_of_range(exc_.str());
+            }
+            substations_.topology(sub).add_terminal(kind, el_id, node);
+        }
+    };
+    add_all(loads_.get_subid(), loads_.get_node_id(), TerminalKind::LOAD, loads_.nb(), "load");
+    add_all(generators_.get_subid(), generators_.get_node_id(), TerminalKind::GEN, generators_.nb(), "generator");
+    add_all(sgens_.get_subid(), sgens_.get_node_id(), TerminalKind::SGEN, sgens_.nb(), "static generator");
+    add_all(storages_.get_subid(), storages_.get_node_id(), TerminalKind::STORAGE, storages_.nb(), "storage unit");
+    add_all(shunts_.get_subid(), shunts_.get_node_id(), TerminalKind::SHUNT, shunts_.nb(), "shunt");
+    add_all(svcs_.get_subid(), svcs_.get_node_id(), TerminalKind::SVC, svcs_.nb(), "svc");
+    add_all(powerlines_.get_subid_side_1(), powerlines_.get_node_id_side_1(), TerminalKind::LINE_1, powerlines_.nb(), "line (side 1)");
+    add_all(powerlines_.get_subid_side_2(), powerlines_.get_node_id_side_2(), TerminalKind::LINE_2, powerlines_.nb(), "line (side 2)");
+    add_all(trafos_.get_subid_side_1(), trafos_.get_node_id_side_1(), TerminalKind::TRAFO_1, trafos_.nb(), "trafo (side 1)");
+    add_all(trafos_.get_subid_side_2(), trafos_.get_node_id_side_2(), TerminalKind::TRAFO_2, trafos_.nb(), "trafo (side 2)");
+    add_all(hvdc_lines_.get_subid_side_1(), hvdc_lines_.get_node_id_side_1(), TerminalKind::HVDC_1, hvdc_lines_.nb(), "hvdc line (station 1)");
+    add_all(hvdc_lines_.get_subid_side_2(), hvdc_lines_.get_node_id_side_2(), TerminalKind::HVDC_2, hvdc_lines_.nb(), "hvdc line (station 2)");
 }
 
 // for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF

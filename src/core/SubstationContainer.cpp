@@ -22,6 +22,9 @@ SubstationContainer::StateRes SubstationContainer::get_state() const
      std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
      std::vector<real_type> bus_vmin_kv(bus_vmin_kv_.begin(), bus_vmin_kv_.end());
      std::vector<real_type> bus_vmax_kv(bus_vmax_kv_.begin(), bus_vmax_kv_.end());
+     std::vector<SubstationTopology::StateRes> topologies;
+     topologies.reserve(topologies_.size());
+     for(const SubstationTopology & topo : topologies_) topologies.push_back(topo.get_state());
      SubstationContainer::StateRes res(
         n_sub_,
         nmax_busbar_per_sub_,
@@ -29,7 +32,8 @@ SubstationContainer::StateRes SubstationContainer::get_state() const
         bus_vn_kv,
         sub_names_,
         bus_vmin_kv,
-        bus_vmax_kv);
+        bus_vmax_kv,
+        topologies);
      return res;
 }
 
@@ -53,6 +57,7 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     const std::vector<std::string> & sub_names = std::get<4>(my_state);
     std::vector<real_type> & bus_vmin_kv = std::get<5>(my_state);
     std::vector<real_type> & bus_vmax_kv = std::get<6>(my_state);
+    std::vector<SubstationTopology::StateRes> & topo_states = std::get<7>(my_state);
 
     // a default-constructed container has n_sub_ == nmax_busbar_per_sub_ == -1 and
     // no bus at all: that state must still round-trip, so it is the one case where
@@ -66,7 +71,6 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
                                                    "SubstationContainer::set_state"));
 
     // check sizes
-    // TODO dev switches
     // bus_vn_kv_ defines nb_bus(), the bound every other index is checked against.
     const auto check_len = [](std::size_t actual, std::int64_t expected, const char * name){
         if(static_cast<std::int64_t>(actual) != expected){
@@ -86,6 +90,14 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     if(!sub_names.empty()) check_len(sub_names.size(), n_sub, "sub_names");
     if(!bus_vmin_kv.empty()) check_len(bus_vmin_kv.size(), static_cast<std::int64_t>(bus_vn_kv.size()), "bus_vmin_kv");
     if(!bus_vmax_kv.empty()) check_len(bus_vmax_kv.size(), static_cast<std::int64_t>(bus_vn_kv.size()), "bus_vmax_kv");
+    // The detailed topology: absent, or one entry per substation. Each entry
+    // validates itself (SubstationTopology::set_state) before anything is
+    // assigned here, so a poisoned switch table is refused with the rest.
+    if(!topo_states.empty()) check_len(topo_states.size(), n_sub, "detailed topology");
+    std::vector<SubstationTopology> topologies(topo_states.size());
+    for(std::size_t sub_id = 0; sub_id < topo_states.size(); ++sub_id){
+        topologies[sub_id].set_state(topo_states[sub_id]);
+    }
 
     // assign data (nothing above has modified `this`, so a rejected state leaves
     // the container untouched)
@@ -102,6 +114,146 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     sub_names_ = sub_names;
     bus_vmin_kv_ = bus_vmin_kv.empty() ? RealVect() : RealVect::Map(bus_vmin_kv.data(), bus_vmin_kv.size());
     bus_vmax_kv_ = bus_vmax_kv.empty() ? RealVect() : RealVect::Map(bus_vmax_kv.data(), bus_vmax_kv.size());
+    topologies_ = std::move(topologies);
+    _rebuild_topology_offsets();
+}
+
+// ---- detailed topology ------------------------------------------------------
+
+void SubstationContainer::init_detailed_topology(std::vector<SubstationTopology> topologies)
+{
+    if(topologies.empty()){
+        clear_detailed_topology();
+        return;
+    }
+    if(n_sub_ <= 0){
+        throw std::runtime_error("SubstationContainer::init_detailed_topology: the substations must be "
+                                 "declared first (see init_bus).");
+    }
+    if(static_cast<int>(topologies.size()) != n_sub_){
+        std::ostringstream exc_;
+        exc_ << "SubstationContainer::init_detailed_topology: " << topologies.size()
+             << " substation topologies for " << n_sub_ << " substations (one per substation, "
+             << "possibly with zero nodes, is required).";
+        throw std::runtime_error(exc_.str());
+    }
+    for(std::size_t sub_id = 0; sub_id < topologies.size(); ++sub_id){
+        topologies[sub_id].check_valid(static_cast<int>(sub_id));
+    }
+    topologies_ = std::move(topologies);
+    _rebuild_topology_offsets();
+}
+
+void SubstationContainer::clear_detailed_topology()
+{
+    topologies_.clear();
+    _rebuild_topology_offsets();
+}
+
+void SubstationContainer::_rebuild_topology_offsets()
+{
+    node_offset_.clear();
+    switch_offset_.clear();
+    bbs_offset_.clear();
+    switch_sub_.clear();
+    bbs_sub_.clear();
+    if(topologies_.empty()) return;
+    const std::size_t n_sub = topologies_.size();
+    node_offset_.assign(n_sub + 1, 0);
+    switch_offset_.assign(n_sub + 1, 0);
+    bbs_offset_.assign(n_sub + 1, 0);
+    for(std::size_t sub_id = 0; sub_id < n_sub; ++sub_id){
+        const SubstationTopology & topo = topologies_[sub_id];
+        node_offset_[sub_id + 1] = node_offset_[sub_id] + topo.nb_nodes();
+        switch_offset_[sub_id + 1] = switch_offset_[sub_id] + topo.nb_switches();
+        bbs_offset_[sub_id + 1] = bbs_offset_[sub_id] + topo.nb_busbar_sections();
+    }
+    switch_sub_.reserve(static_cast<std::size_t>(switch_offset_.back()));
+    bbs_sub_.reserve(static_cast<std::size_t>(bbs_offset_.back()));
+    for(std::size_t sub_id = 0; sub_id < n_sub; ++sub_id){
+        const SubstationTopology & topo = topologies_[sub_id];
+        switch_sub_.insert(switch_sub_.end(), static_cast<std::size_t>(topo.nb_switches()), static_cast<int>(sub_id));
+        bbs_sub_.insert(bbs_sub_.end(), static_cast<std::size_t>(topo.nb_busbar_sections()), static_cast<int>(sub_id));
+    }
+}
+
+int SubstationContainer::_checked_sub_id(int sub_id, const char * fun_name) const
+{
+    if(topologies_.empty()){
+        std::ostringstream exc_;
+        exc_ << "SubstationContainer::" << fun_name << ": this grid has no detailed topology "
+             << "(see init_detailed_topology).";
+        throw std::runtime_error(exc_.str());
+    }
+    if((sub_id < 0) || (sub_id >= static_cast<int>(topologies_.size()))){
+        std::ostringstream exc_;
+        exc_ << "SubstationContainer::" << fun_name << ": substation id " << sub_id
+             << " is out of range [0, " << topologies_.size() << ").";
+        throw std::out_of_range(exc_.str());
+    }
+    return sub_id;
+}
+
+int SubstationContainer::_checked_switch_id(int switch_id, const char * fun_name) const
+{
+    if((switch_id < 0) || (switch_id >= nb_switches())){
+        std::ostringstream exc_;
+        exc_ << "SubstationContainer::" << fun_name << ": switch id " << switch_id
+             << " is out of range [0, " << nb_switches() << ").";
+        throw std::out_of_range(exc_.str());
+    }
+    return switch_id;
+}
+
+int SubstationContainer::_checked_bbs_id(int bbs_id, const char * fun_name) const
+{
+    if((bbs_id < 0) || (bbs_id >= nb_busbar_sections())){
+        std::ostringstream exc_;
+        exc_ << "SubstationContainer::" << fun_name << ": busbar section id " << bbs_id
+             << " is out of range [0, " << nb_busbar_sections() << ").";
+        throw std::out_of_range(exc_.str());
+    }
+    return bbs_id;
+}
+
+const SubstationTopology & SubstationContainer::topology(int sub_id) const
+{
+    return topologies_[static_cast<std::size_t>(_checked_sub_id(sub_id, "topology"))];
+}
+
+SubstationTopology & SubstationContainer::topology(int sub_id)
+{
+    return topologies_[static_cast<std::size_t>(_checked_sub_id(sub_id, "topology"))];
+}
+
+void SubstationContainer::set_switch_names(const std::vector<std::string> & names)
+{
+    if(static_cast<int>(names.size()) != nb_switches()){
+        std::ostringstream exc_;
+        exc_ << "SubstationContainer::set_switch_names: " << names.size() << " names for "
+             << nb_switches() << " switches.";
+        throw std::runtime_error(exc_.str());
+    }
+    for(std::size_t sub_id = 0; sub_id < topologies_.size(); ++sub_id){
+        const auto first = names.begin() + switch_offset_[sub_id];
+        const auto last = names.begin() + switch_offset_[sub_id + 1];
+        topologies_[sub_id].set_sw_names(std::vector<std::string>(first, last));
+    }
+}
+
+void SubstationContainer::set_busbar_section_names(const std::vector<std::string> & names)
+{
+    if(static_cast<int>(names.size()) != nb_busbar_sections()){
+        std::ostringstream exc_;
+        exc_ << "SubstationContainer::set_busbar_section_names: " << names.size() << " names for "
+             << nb_busbar_sections() << " busbar sections.";
+        throw std::runtime_error(exc_.str());
+    }
+    for(std::size_t sub_id = 0; sub_id < topologies_.size(); ++sub_id){
+        const auto first = names.begin() + bbs_offset_[sub_id];
+        const auto last = names.begin() + bbs_offset_[sub_id + 1];
+        topologies_[sub_id].set_bbs_names(std::vector<std::string>(first, last));
+    }
 }
 
 void SubstationContainer::check_valid() const
@@ -184,6 +336,30 @@ void SubstationContainer::check_valid() const
              << bus_vmax_kv_.size() << "). They are consumed together, one indexed by the other's "
              << "length, so a mismatch would cause an out-of-bounds read.";
         throw std::runtime_error(exc_.str());
+    }
+
+    // the detailed topology: absent, or one entry per substation, each consistent
+    // on its own, with the derived grid-wide numbering sized for it
+    if(!topologies_.empty()){
+        if(topologies_.size() != static_cast<std::size_t>(n_sub_)){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::check_grid: the detailed topology describes " << topologies_.size()
+                 << " substations while the grid has " << n_sub_ << " (it must describe all of them "
+                 << "or none).";
+            throw std::runtime_error(exc_.str());
+        }
+        for(std::size_t sub_id = 0; sub_id < topologies_.size(); ++sub_id){
+            topologies_[sub_id].check_valid(static_cast<int>(sub_id));
+        }
+        const std::size_t expected = topologies_.size() + 1;
+        if((node_offset_.size() != expected) || (switch_offset_.size() != expected) ||
+           (bbs_offset_.size() != expected) ||
+           (switch_sub_.size() != static_cast<std::size_t>(switch_offset_.back())) ||
+           (bbs_sub_.size() != static_cast<std::size_t>(bbs_offset_.back()))){
+            throw std::runtime_error("LSGrid::check_grid: the grid-wide numbering of the detailed "
+                                     "topology is out of step with the substations (a bug: it is "
+                                     "derived, see SubstationContainer::_rebuild_topology_offsets).");
+        }
     }
 
     // every nominal voltage must be a finite, strictly positive number

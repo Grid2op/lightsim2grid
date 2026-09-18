@@ -97,7 +97,12 @@ namespace ls2g {
 //     GeneratorContainer::StateRes carries its reactive sharing key.
 // v9: StorageContainer::StateRes carries the distributed-slack participation of a
 //     storage unit (flag and weight), like a generator's.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 9;
+// v10: the detailed topology (switches inside each substation).
+//     SubstationContainer::StateRes carries one SubstationTopology::StateRes per
+//     substation (empty vector = no detailed topology), and
+//     OneSideContainer::StateRes carries the OPTIONAL node id of every terminal
+//     -- hence every container that embeds a terminal changes layout too.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 10;
 
 class LS2G_API BinaryArchive
 {
@@ -363,6 +368,28 @@ struct ValueArchiver<Tuple, typename std::enable_if<is_tuple_like<Tuple>::value>
     }
     static void read(BinaryArchive & ar, Tuple & t) {
         read_impl(ar, t, std::make_index_sequence<std::tuple_size<Tuple>::value>{});
+    }
+};
+
+// std::vector<std::tuple<...>> (a StateRes per substation, see
+// SubstationContainer::StateRes): outer count, then each tuple field by field
+// through the tuple archiver above.
+template<typename Tuple>
+struct ValueArchiver<std::vector<Tuple>, typename std::enable_if<is_tuple_like<Tuple>::value>::type> {
+    static void write(BinaryArchive & ar, const std::vector<Tuple> & v) {
+        std::uint64_t n = static_cast<std::uint64_t>(v.size());
+        ar.write_scalar(n);
+        for (const auto & t : v) ValueArchiver<Tuple>::write(ar, t);
+    }
+    static void read(BinaryArchive & ar, std::vector<Tuple> & v) {
+        std::uint64_t n = 0;
+        ar.read_scalar(n);
+        // a tuple with no field at all would be free, but every StateRes stored
+        // this way has several: one byte each is a safe lower bound on what a
+        // legitimate count must be backed by in the file
+        ar.require_count(n, std::tuple_size<Tuple>::value);
+        v.resize(static_cast<std::size_t>(n));
+        for (auto & t : v) ValueArchiver<Tuple>::read(ar, t);
     }
 };
 

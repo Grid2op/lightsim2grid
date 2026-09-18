@@ -64,6 +64,39 @@ enum class ErrorType {NoError,
                       NotImplemented};
 std::ostream& operator<<(std::ostream& out, const ErrorType & error_type);
 
+// ---- detailed topology (switches inside a substation) -------------------------
+// What a switch of the node-breaker view is. The values are serialized verbatim
+// (binary files and pickles, see SubstationTopology::StateRes): renumbering them
+// requires bumping BINARY_FORMAT_VERSION (BinaryArchive.hpp).
+//
+// INTERNAL_CONNECTION is pypowsybl's "internal connection": a zero-impedance,
+// always-closed link between two nodes that no operator can open. Modelling it
+// as a switch that is permanently closed keeps one graph and one rule.
+enum class SwitchKind : int {
+    BREAKER = 0,
+    DISCONNECTOR = 1,
+    LOAD_BREAK_SWITCH = 2,
+    INTERNAL_CONNECTION = 3
+};
+
+// Which element, and which end of it, a terminal of the detailed topology is.
+// Derived state only (rebuilt from the containers, see
+// LSGrid::_rebuild_terminal_lists), never serialized.
+enum class TerminalKind : int {
+    LOAD = 0,
+    GEN,
+    SGEN,
+    STORAGE,
+    SHUNT,
+    SVC,
+    LINE_1,
+    LINE_2,
+    TRAFO_1,
+    TRAFO_2,
+    HVDC_1,
+    HVDC_2
+};
+
 // Escape (and truncate to 64 chars) a string of untrusted origin -- read from a
 // possibly-corrupted file, or supplied by a plugin -- before embedding it in an
 // exception message. pybind11 converts what() to a python str as UTF-8, so raw

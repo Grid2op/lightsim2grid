@@ -23,6 +23,7 @@
 
 #include "Utils.hpp"
 #include "BaseConstants.hpp"
+#include "SubstationTopology.hpp"
 #include "element_container/Container_IteratorUtils.hpp"
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
@@ -36,6 +37,8 @@ namespace ls2g {
 
 
 class SubstationContainer;
+class SwitchContainer;
+class BusbarSectionContainer;
 
 class SubstationInfo
 {
@@ -44,6 +47,16 @@ class SubstationInfo
         std::string name;
         int nb_max_busbars;
         real_type vn_kv;
+
+        // detailed topology of this substation (0 / -1 when the grid has none):
+        // its node, switch and busbar-section counts, and where its switches and
+        // busbar sections start in the grid-wide numbering
+        int nb_nodes;
+        int nb_switches;
+        int nb_busbar_sections;
+        int first_node;
+        int first_switch;
+        int first_busbar_section;
 
         inline SubstationInfo(const SubstationContainer & r_data, int my_id);
 };
@@ -81,9 +94,13 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             std::vector<real_type>,  // bus_vn_kv_;
             std::vector<std::string>,  // sub_names_
             std::vector<real_type>,  // bus_vmin_kv_ (optional, empty if unset)
-            std::vector<real_type>  // bus_vmax_kv_ (optional, empty if unset)
+            std::vector<real_type>,  // bus_vmax_kv_ (optional, empty if unset)
+            // the detailed topology: one entry per substation, or empty when the
+            // grid has none (see has_detailed_topology). Local to each substation;
+            // the grid-wide offsets are derived from it, not stored.
+            std::vector<SubstationTopology::StateRes>
             >;
-        
+
         int nb() const {return n_sub_;}
 
         SubstationContainer::StateRes get_state() const;
@@ -506,6 +523,59 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             return gridmodel_bus_id % n_sub_;
         }
 
+        // ---- detailed topology (switches inside each substation) --------------
+        /**
+         * One SubstationTopology per substation, or none at all: a grid either
+         * describes its switches for every substation or for no substation (a
+         * substation with nothing to describe has a topology with zero nodes).
+         *
+         * Everything inside a SubstationTopology is local to its substation. The
+         * grid-wide ids the python surface uses -- "switch 1234", "node 56" -- are
+         * a numbering of those local ids in substation order, held in the
+         * `*_offset_` vectors below and derived from the topologies, never stored.
+         */
+        bool has_detailed_topology() const { return !topologies_.empty(); }
+        /**
+         * Declare the detailed topology of every substation at once: exactly
+         * `nb_sub()` entries, in substation order. Validated first (every entry's
+         * own check_valid), so a rejected call leaves the container untouched.
+         * An empty vector clears it.
+         */
+        void init_detailed_topology(std::vector<SubstationTopology> topologies);
+        void clear_detailed_topology();
+        const SubstationTopology & topology(int sub_id) const;  // range-checked
+        SubstationTopology & topology(int sub_id);              // range-checked
+
+        // grid-wide counts (0 without detailed topology)
+        int nb_nodes() const { return topologies_.empty() ? 0 : node_offset_.back(); }
+        int nb_switches() const { return topologies_.empty() ? 0 : switch_offset_.back(); }
+        int nb_busbar_sections() const { return topologies_.empty() ? 0 : bbs_offset_.back(); }
+        // where a substation's local ids start in the grid-wide numbering
+        int first_node(int sub_id) const { return node_offset_[static_cast<std::size_t>(_checked_sub_id(sub_id, "first_node"))]; }
+        int first_switch(int sub_id) const { return switch_offset_[static_cast<std::size_t>(_checked_sub_id(sub_id, "first_switch"))]; }
+        int first_busbar_section(int sub_id) const { return bbs_offset_[static_cast<std::size_t>(_checked_sub_id(sub_id, "first_busbar_section"))]; }
+        // a grid-wide switch / busbar-section id, resolved to (substation, local id)
+        int switch_sub(int switch_id) const { return switch_sub_[static_cast<std::size_t>(_checked_switch_id(switch_id, "switch_sub"))]; }
+        int switch_local(int switch_id) const { return switch_id - switch_offset_[static_cast<std::size_t>(switch_sub(switch_id))]; }
+        int bbs_sub(int bbs_id) const { return bbs_sub_[static_cast<std::size_t>(_checked_bbs_id(bbs_id, "bbs_sub"))]; }
+        int bbs_local(int bbs_id) const { return bbs_id - bbs_offset_[static_cast<std::size_t>(bbs_sub(bbs_id))]; }
+
+        // names, in the grid-wide order (one per switch / per busbar section)
+        void set_switch_names(const std::vector<std::string> & names);
+        void set_busbar_section_names(const std::vector<std::string> & names);
+
+        // iterable views of every switch / every busbar section, by grid-wide id
+        // (defined after this class; they only hold a pointer to this container)
+        inline SwitchContainer get_switches() const;
+        inline BusbarSectionContainer get_busbar_sections() const;
+
+    private:
+        int _checked_sub_id(int sub_id, const char * fun_name) const;
+        int _checked_switch_id(int switch_id, const char * fun_name) const;
+        int _checked_bbs_id(int bbs_id, const char * fun_name) const;
+        // the grid-wide numbering, from the per-substation counts
+        void _rebuild_topology_offsets();
+
     private:
         int n_sub_;
         int nmax_busbar_per_sub_;
@@ -553,16 +623,167 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         RealVect bus_vmin_kv_;  // optional, empty if unset
         RealVect bus_vmax_kv_;  // optional, empty if unset
 
+        // detailed topology: empty, or one per substation (see has_detailed_topology)
+        std::vector<SubstationTopology> topologies_;
+        // derived from topologies_ (never serialized): cumulative counts, size
+        // n_sub_ + 1 when there is a detailed topology, empty otherwise, so that
+        // substation `s` owns the grid-wide ids [offset[s], offset[s+1])
+        std::vector<int> node_offset_;
+        std::vector<int> switch_offset_;
+        std::vector<int> bbs_offset_;
+        // the reverse lookups, one entry per grid-wide switch / busbar section
+        std::vector<int> switch_sub_;
+        std::vector<int> bbs_sub_;
+
 };
+
+/**
+ * One switch of the detailed topology, seen by its grid-wide id: the substation
+ * it belongs to, its id inside that substation, the two (substation-local)
+ * nodes it joins, and its state.
+ */
+class SwitchInfo
+{
+    public:
+        int id;        // grid-wide
+        std::string name;
+        int sub_id;
+        int local_id;  // inside the substation
+        int node1;     // substation-local
+        int node2;     // substation-local
+        SwitchKind kind;
+        bool open;
+        bool retained;
+
+        inline SwitchInfo(const SwitchContainer & r_data, int my_id);
+};
+
+/**
+ * Every switch of the grid, iterable by grid-wide id. A view: it holds a pointer
+ * to the SubstationContainer the switches live in, and nothing else, so it must
+ * not outlive it.
+ */
+class SwitchContainer final : public IteratorAdder<SwitchContainer, SwitchInfo>
+{
+    friend class SwitchInfo;
+
+    public:
+        using DataInfo = SwitchInfo;
+
+        explicit SwitchContainer(const SubstationContainer & substations) noexcept:
+            substations_(&substations) {}
+
+        int nb() const { return substations_->nb_switches(); }
+
+    private:
+        const SubstationContainer * substations_;
+};
+
+/**
+ * One busbar section of the detailed topology, seen by its grid-wide id.
+ */
+class BusbarSectionInfo
+{
+    public:
+        int id;        // grid-wide
+        std::string name;
+        int sub_id;
+        int local_id;  // inside the substation
+        int node;      // substation-local
+
+        inline BusbarSectionInfo(const BusbarSectionContainer & r_data, int my_id);
+};
+
+/**
+ * Every busbar section of the grid, iterable by grid-wide id. A view over the
+ * SubstationContainer, like SwitchContainer.
+ */
+class BusbarSectionContainer final : public IteratorAdder<BusbarSectionContainer, BusbarSectionInfo>
+{
+    friend class BusbarSectionInfo;
+
+    public:
+        using DataInfo = BusbarSectionInfo;
+
+        explicit BusbarSectionContainer(const SubstationContainer & substations) noexcept:
+            substations_(&substations) {}
+
+        int nb() const { return substations_->nb_busbar_sections(); }
+
+    private:
+        const SubstationContainer * substations_;
+};
+
+inline SwitchContainer SubstationContainer::get_switches() const { return SwitchContainer(*this); }
+inline BusbarSectionContainer SubstationContainer::get_busbar_sections() const { return BusbarSectionContainer(*this); }
+
+inline SwitchInfo::SwitchInfo(const SwitchContainer & r_data, int my_id):
+    id(-1),
+    name(""),
+    sub_id(-1),
+    local_id(-1),
+    node1(-1),
+    node2(-1),
+    kind(SwitchKind::BREAKER),
+    open(false),
+    retained(false)
+{
+    if(my_id < 0) return;
+    if(my_id >= r_data.nb()) return;
+    const SubstationContainer & subs = *r_data.substations_;
+    id = my_id;
+    sub_id = subs.switch_sub(my_id);
+    local_id = subs.switch_local(my_id);
+    const SubstationTopology & topo = subs.topology(sub_id);
+    name = topo.sw_name(local_id);
+    node1 = topo.sw_node1(local_id);
+    node2 = topo.sw_node2(local_id);
+    kind = topo.sw_kind(local_id);
+    open = topo.is_open(local_id);
+    retained = topo.is_retained(local_id);
+}
+
+inline BusbarSectionInfo::BusbarSectionInfo(const BusbarSectionContainer & r_data, int my_id):
+    id(-1),
+    name(""),
+    sub_id(-1),
+    local_id(-1),
+    node(-1)
+{
+    if(my_id < 0) return;
+    if(my_id >= r_data.nb()) return;
+    const SubstationContainer & subs = *r_data.substations_;
+    id = my_id;
+    sub_id = subs.bbs_sub(my_id);
+    local_id = subs.bbs_local(my_id);
+    const SubstationTopology & topo = subs.topology(sub_id);
+    name = topo.bbs_name(local_id);
+    node = topo.bbs_node(local_id);
+}
 
 inline SubstationInfo::SubstationInfo(const SubstationContainer & r_data, int my_id):
     id(my_id),
     name(""),
     nb_max_busbars(-1),
-    vn_kv(-1.)
+    vn_kv(-1.),
+    nb_nodes(0),
+    nb_switches(0),
+    nb_busbar_sections(0),
+    first_node(-1),
+    first_switch(-1),
+    first_busbar_section(-1)
 {
     if(my_id < 0) return;
     if(my_id >= r_data.nb()) return;
+    if(r_data.has_detailed_topology()){
+        const SubstationTopology & topo = r_data.topology(my_id);
+        nb_nodes = topo.nb_nodes();
+        nb_switches = topo.nb_switches();
+        nb_busbar_sections = topo.nb_busbar_sections();
+        first_node = r_data.first_node(my_id);
+        first_switch = r_data.first_switch(my_id);
+        first_busbar_section = r_data.first_busbar_section(my_id);
+    }
     // sub_names_ is OPTIONAL (empty unless set_substation_names() was called, which
     // eg the pandapower / matpower / powermodels loaders never do) and bus_vn_kv_ is
     // empty on a substation container that was declared but never given its buses:

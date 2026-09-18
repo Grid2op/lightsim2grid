@@ -56,6 +56,8 @@ class TwoSidesContainer : public GenericContainer
                 int sub_2_id;
                 int pos_1_topo_vect;
                 int pos_2_topo_vect;
+                int node_1_id;  // detailed topology, local to sub_1_id (-1 when none)
+                int node_2_id;  // idem, local to sub_2_id
 
                 bool connected_global;
                 bool connected_1;
@@ -81,6 +83,8 @@ class TwoSidesContainer : public GenericContainer
                 sub_2_id(-1),
                 pos_1_topo_vect(-1),
                 pos_2_topo_vect(-1),
+                node_1_id(-1),
+                node_2_id(-1),
                 connected_global(false),
                 connected_1(false),
                 connected_2(false),
@@ -113,6 +117,8 @@ class TwoSidesContainer : public GenericContainer
                     sub_2_id = side_2_info.sub_id;
                     pos_1_topo_vect = side_1_info.pos_topo_vect;
                     pos_2_topo_vect = side_2_info.pos_topo_vect;
+                    node_1_id = side_1_info.node_id;
+                    node_2_id = side_2_info.node_id;
                     connected_1 = side_1_info.connected;
                     connected_2 = side_2_info.connected;
                     bus_1_id = side_1_info.bus_id;
@@ -325,6 +331,20 @@ class TwoSidesContainer : public GenericContainer
         {
             side_2_.set_subid(subid);
         }
+        const IntVect & get_subid_side_1() const { return side_1_.get_subid(); }
+        const IntVect & get_subid_side_2() const { return side_2_.get_subid(); }
+
+        // detailed topology: the node each end stands on (see OneSideContainer::set_node_id)
+        void set_node_id_side_1(const Eigen::Ref<const IntVect> & node_id)
+        {
+            side_1_.set_node_id(node_id);
+        }
+        void set_node_id_side_2(const Eigen::Ref<const IntVect> & node_id)
+        {
+            side_2_.set_node_id(node_id);
+        }
+        const IntVect & get_node_id_side_1() const { return side_1_.get_node_id(); }
+        const IntVect & get_node_id_side_2() const { return side_2_.get_node_id(); }
 
     protected:
         std::vector<bool> _update_topo(
