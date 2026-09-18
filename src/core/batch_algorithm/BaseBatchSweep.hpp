@@ -368,6 +368,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _gen_contingency_active_ = false;
                 _switchable_buses_.clear();
                 _row_pv_to_pq_.clear();
+                _row_pv_pinned_.clear();
+                _row_vm_seed_.clear();
+                _pv_pinning_active_ = false;
                 _row_slack_gens_off_.clear();
                 _li_defaults_vect_cache_.clear();
                 _physical_violations_n_.clear();
@@ -2211,12 +2214,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                      << " actions were registered for a batch of " << nb_steps << " rows.";
                 throw std::runtime_error(exc_.str());
             }
-            const int nb_gen = static_cast<int>(_grid_model.get_generators_as_data().nb());
+            const auto & generators = _grid_model.get_generators();
+            const int nb_gen = static_cast<int>(generators.nb());
             const int nb_line = static_cast<int>(n_line_);
+            const auto & id_me_to_solver = active_layout().id_me_to_solver;
             _row_topo_.resize(nb_steps);
             ybus_policy_.topo_branches_off.assign(nb_steps, std::vector<int>());
             sbus_policy_.topo_loads_off.assign(nb_steps, std::vector<int>());
             sbus_policy_.topo_storages_off.assign(nb_steps, std::vector<int>());
+            sbus_policy_.topo_gens_on.assign(nb_steps, std::vector<std::pair<int, int> >());
             bool any_gen = false;
             for(size_t row = 0; row < nb_steps; ++row){
                 RowTopoPlan & plan = _row_topo_[row];
@@ -2250,8 +2256,37 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 std::sort(ybus_policy_.topo_branches_off[row].begin(), ybus_policy_.topo_branches_off[row].end());
                 for(const TopoElPlacement & g : plan.gens){
                     if(g.row_bus_me != BaseConstants::_deactivated_bus_id){
-                        _throw_topo_not_supported(row, g.base_bus_me == BaseConstants::_deactivated_bus_id ? "reconnects" : "moves",
-                                                  "generator", g.el_id);
+                        // a generator off in the base grid, back on the bus it was last on
+                        // (a bus of the layout): its bus turns PV for the row, at constant
+                        // sparsity (see _maybe_prepare_gen_contingency). Anything else
+                        // moves an element, which changes the bus set: not yet.
+                        const int last_bus = generators.get_bus_id()(g.el_id).cast_int();
+                        const bool reactivation = g.base_bus_me == BaseConstants::_deactivated_bus_id &&
+                                                  g.row_bus_me == last_bus &&
+                                                  last_bus != BaseConstants::_deactivated_bus_id &&
+                                                  id_me_to_solver[last_bus].cast_int() != BaseConstants::_deactivated_bus_id;
+                        if(!reactivation){
+                            _throw_topo_not_supported(row, g.base_bus_me == BaseConstants::_deactivated_bus_id ?
+                                                      "reconnects on another busbar" : "moves", "generator", g.el_id);
+                        }
+                        if(abs(generators.get_gen_slack_weight(g.el_id)) > BaseConstants::_tol_equal_float){
+                            std::ostringstream exc_;
+                            exc_ << algo_name() << "::set_topo_actions: the action of row " << row
+                                 << " reactivates generator " << g.el_id << ", which takes part in the "
+                                    "distributed slack. The slack set would change with the row: not "
+                                    "supported yet (see the TODO in the changelog).";
+                            throw std::runtime_error(exc_.str());
+                        }
+                        if(_keep_jacobian_ || _compute_physical_violations_){
+                            std::ostringstream exc_;
+                            exc_ << algo_name() << "::set_topo_actions: the action of row " << row
+                                 << " reactivates generator " << g.el_id << ", which `keep_jacobian` and "
+                                    "`compute_physical_violations` do not support yet (their plans are "
+                                    "keyed on the base placement of the generators). Turn them off.";
+                            throw std::runtime_error(exc_.str());
+                        }
+                        sbus_policy_.topo_gens_on[row].push_back(std::make_pair(g.el_id, id_me_to_solver[last_bus].cast_int()));
+                        continue;
                     }
                     if(sbus_policy_.gen_off.rows() > 0 && sbus_policy_.gen_off(static_cast<Eigen::Index>(row), g.el_id)){
                         _throw_topo_overlap(row, "generator", g.el_id, "set_contingency_gens");
@@ -2290,8 +2325,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             std::ostringstream exc_;
             exc_ << algo_name() << "::set_topo_actions: the action of row " << row << " " << what << " "
                  << el_kind << " " << el_id << ". This version only plays disconnections "
-                    "(set_line_status -1, set_bus -1): moving an element to a busbar or "
-                    "reconnecting one is not supported yet (see the TODO in the changelog).";
+                    "(set_line_status -1, set_bus -1) and the reactivation of a generator on the "
+                    "bus it was last on: moving an element to a busbar or reconnecting anything "
+                    "else is not supported yet (see the TODO in the changelog).";
             throw std::runtime_error(exc_.str());
         }
         [[noreturn]] void _throw_topo_overlap(size_t row, const char * el_kind, int el_id, const char * setter) const {
@@ -2331,12 +2367,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _maybe_prepare_gen_contingency(size_t nb_steps){
             _switchable_buses_.clear();
             _row_pv_to_pq_.clear();
+            _row_pv_pinned_.clear();
+            _row_vm_seed_.clear();
+            _pv_pinning_active_ = false;
             _row_slack_gens_off_.clear();
             _gen_contingency_active_ = false;
             // a generator is taken out by the set_contingency_gens mask or by the row's
             // topological action (set_bus -1, see _maybe_resolve_topology): the two
-            // axes are read together through sbus_policy_.gen_off_in
-            if(!sbus_policy_.has_gen_off()){
+            // axes are read together through sbus_policy_.gen_off_in. The row's action
+            // may also put a base-off generator back (topo_gens_on): its bus turns PV.
+            const bool has_gens_on = sbus_policy_.has_gens_on();
+            if(!sbus_policy_.has_gen_off() && !has_gens_on){
                 // No mask this time. _algo is a member and outlives the compute() that
                 // reserved slots for it, so it has to be told the set is empty again --
                 // otherwise a bus a PREVIOUS compute() made switchable would keep its Vm
@@ -2429,7 +2470,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
             // ---- 3. per row: the buses that lose EVERY one of their controllers ----
             _row_pv_to_pq_.assign(nb_steps, std::vector<int>());
-            std::set<int> switchable;
             for(Eigen::Index step = 0; step < nb_rows; ++step){
                 for(const auto & bus_gens : gens_of_bus){
                     bool all_off = true;
@@ -2439,13 +2479,118 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                             break;
                         }
                     }
-                    if(all_off){
-                        _row_pv_to_pq_[static_cast<size_t>(step)].push_back(bus_gens.first);
-                        switchable.insert(bus_gens.first);
+                    if(all_off) _row_pv_to_pq_[static_cast<size_t>(step)].push_back(bus_gens.first);
+                }
+            }
+
+            // ---- 3b. per row: the buses a reactivated generator pins ----------------
+            // A base-off generator the row puts back on its bus (a bus of the layout,
+            // see _maybe_resolve_topology) regulating that bus locally makes it PV for
+            // the row. A base-PQ bus already owns a Vm unknown and a Q equation, so
+            // nothing is reserved: the row pins its Q row (set_pv_pinned_buses) and
+            // seeds |V| there at the set-point (_row_vm_seed_). A base-PV bus whose own
+            // controllers the row takes out stays PV through it -- provided both ask
+            // the same magnitude.
+            std::vector<std::set<int> > extra_pv(nb_steps);
+            _row_vm_seed_.assign(nb_steps, std::vector<std::pair<int, real_type> >());
+            if(has_gens_on){
+                const std::vector<int> & slack_solver = active_layout().slack_bus_id_solver.to_int_vector();
+                for(size_t step = 0; step < nb_steps && step < sbus_policy_.topo_gens_on.size(); ++step){
+                    std::vector<int> & to_pq = _row_pv_to_pq_[step];
+                    for(const auto & gen_and_bus : sbus_policy_.topo_gens_on[step]){
+                        const int gen_id = gen_and_bus.first;
+                        const int bus_solver = gen_and_bus.second;
+                        if(!generators.would_be_local_voltage_controller(gen_id)){
+                            // does not regulate (or regulates remotely): an injection, the
+                            // bus keeps its label. A remote one lives in the VoltageControl
+                            // extension, out of scope here.
+                            if(generators.regulates_remote(gen_id) && generators.get_voltage_regulator_on(gen_id)){
+                                std::ostringstream exc_;
+                                exc_ << algo_name() << "::set_topo_actions: the action of row " << step
+                                     << " reactivates generator " << gen_id << ", which regulates the voltage "
+                                        "of a remote bus. Only generators regulating their own bus can be "
+                                        "reactivated for now.";
+                                throw std::runtime_error(exc_.str());
+                            }
+                            continue;
+                        }
+                        const int bus_me = generators.get_bus_id()(gen_id).cast_int();
+                        if(group_buses.find(bus_me) != group_buses.end()){
+                            std::ostringstream exc_;
+                            exc_ << algo_name() << "::set_topo_actions: the action of row " << step
+                                 << " reactivates generator " << gen_id << " on a bus whose voltage a control "
+                                    "group holds (a remote generator, an SVC or an HVDC converter station): "
+                                    "not supported yet.";
+                            throw std::runtime_error(exc_.str());
+                        }
+                        if(std::find(slack_solver.begin(), slack_solver.end(), bus_solver) != slack_solver.end()){
+                            std::ostringstream exc_;
+                            exc_ << algo_name() << "::set_topo_actions: the action of row " << step
+                                 << " reactivates generator " << gen_id << " on a slack bus: not supported yet.";
+                            throw std::runtime_error(exc_.str());
+                        }
+                        // the magnitude this generator asks of the bus: the row's own
+                        // (modify_gen_v) or the grid's
+                        real_type vm = generators.get_target_vm_pu(gen_id);
+                        if(sbus_policy_.gen_v.rows() > 0 && static_cast<Eigen::Index>(step) < sbus_policy_.gen_v.rows()){
+                            const real_type own = sbus_policy_.gen_v(static_cast<Eigen::Index>(step), gen_id);
+                            if(std::isfinite(own)) vm = own;
+                        }
+                        const auto base_gens = gens_of_bus.find(bus_solver);
+                        if(base_gens != gens_of_bus.end()){
+                            // a base-PV bus: kept PV whatever the row does to its own
+                            // controllers, whose set-point it must share
+                            real_type bus_vm = generators.get_target_vm_pu(base_gens->second[0]);
+                            if(sbus_policy_.gen_v.rows() > 0 && static_cast<Eigen::Index>(step) < sbus_policy_.gen_v.rows()){
+                                const real_type own = sbus_policy_.gen_v(static_cast<Eigen::Index>(step), base_gens->second[0]);
+                                if(std::isfinite(own)) bus_vm = own;
+                            }
+                            if(std::abs(bus_vm - vm) > BaseConstants::_tol_equal_float){
+                                std::ostringstream exc_;
+                                exc_ << algo_name() << "::set_topo_actions: the action of row " << step
+                                     << " reactivates generator " << gen_id << " (set-point " << vm
+                                     << " pu) on a bus another generator holds at " << bus_vm
+                                     << " pu. A bus has one magnitude: give them the same set-point.";
+                                throw std::runtime_error(exc_.str());
+                            }
+                            std::vector<int>::iterator it = std::find(to_pq.begin(), to_pq.end(), bus_solver);
+                            if(it != to_pq.end()) to_pq.erase(it);
+                            continue;
+                        }
+                        // a base-PQ bus: PV for this row, at this magnitude
+                        bool seeded = false;
+                        for(const auto & seed : _row_vm_seed_[step]){
+                            if(seed.first != bus_solver) continue;
+                            seeded = true;
+                            if(std::abs(seed.second - vm) > BaseConstants::_tol_equal_float){
+                                std::ostringstream exc_;
+                                exc_ << algo_name() << "::set_topo_actions: the action of row " << step
+                                     << " reactivates two generators on one bus with different set-points ("
+                                     << seed.second << " and " << vm << " pu). A bus has one magnitude.";
+                                throw std::runtime_error(exc_.str());
+                            }
+                        }
+                        if(!seeded) _row_vm_seed_[step].push_back(std::make_pair(bus_solver, vm));
+                        extra_pv[step].insert(bus_solver);
                     }
                 }
             }
+
+            // ---- 3c. the union, and each row's pinned set ---------------------------
+            std::set<int> switchable;
+            for(size_t step = 0; step < nb_steps; ++step) switchable.insert(_row_pv_to_pq_[step].begin(), _row_pv_to_pq_[step].end());
             _switchable_buses_.assign(switchable.begin(), switchable.end());  // sorted (std::set)
+            _row_pv_pinned_.assign(nb_steps, std::vector<int>());
+            for(size_t step = 0; step < nb_steps; ++step){
+                std::vector<int> & pinned = _row_pv_pinned_[step];
+                std::sort(_row_pv_to_pq_[step].begin(), _row_pv_to_pq_[step].end());
+                std::set_difference(_switchable_buses_.begin(), _switchable_buses_.end(),
+                                    _row_pv_to_pq_[step].begin(), _row_pv_to_pq_[step].end(), std::back_inserter(pinned));
+                pinned.insert(pinned.end(), extra_pv[step].begin(), extra_pv[step].end());
+                std::sort(pinned.begin(), pinned.end());
+                if(pinned != _switchable_buses_) _pv_pinning_active_ = true;
+            }
+            if(!_switchable_buses_.empty()) _pv_pinning_active_ = true;
 
             // ---- 4. reserve the Jacobian slots, and start pinned ------------------
             _push_switchable_to_algo();
@@ -2462,7 +2607,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _algo.set_pv_pinned_buses(_switchable_buses_);
             // same reason as in _maybe_prepare_masks: a Q row pinned to identity in
             // one row and live in the next is a pivot that may move
-            if(!_switchable_buses_.empty()) _algo.set_refactor_fallback(true);
+            if(_pv_pinning_active_) _algo.set_refactor_fallback(true);
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<!(Y::supports_contingency && S::supports_vary), int>::type = 0>
@@ -2475,20 +2620,27 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // ... and true when some bus can actually flip PV -> PQ, so the per-row
         // set_pv_pinned_buses calls are worth making. False in DC, and false when the
         // masked generators happen never to leave a bus without a controller.
-        bool _has_pv_switching() const { return !_switchable_buses_.empty(); }
+        bool _has_pv_switching() const { return _pv_pinning_active_; }
 
-        // the switchable buses that are STILL PV in row i -- ie those to pin. The
-        // complement, _row_pv_to_pq_[i], is what becomes PQ. Both are sorted, so this
-        // is a linear set difference over two short vectors.
-        std::vector<int> _row_pv_pinned(size_t i) const {
-            if(i >= _row_pv_to_pq_.size()) return _switchable_buses_;
-            const std::vector<int> & to_pq = _row_pv_to_pq_[i];
-            if(to_pq.empty()) return _switchable_buses_;
-            std::vector<int> res;
-            res.reserve(_switchable_buses_.size());
-            std::set_difference(_switchable_buses_.begin(), _switchable_buses_.end(),
-                                to_pq.begin(), to_pq.end(), std::back_inserter(res));
-            return res;
+        // the buses to pin PV in row i: the switchable buses that are STILL PV there
+        // (the complement, _row_pv_to_pq_[i], is what becomes PQ) plus the base-PQ
+        // buses a reactivated generator pins. Sorted, precomputed per row.
+        const std::vector<int> & _row_pv_pinned(size_t i) const {
+            if(i >= _row_pv_pinned_.size()) return _switchable_buses_;
+            return _row_pv_pinned_[i];
+        }
+
+        // |V| of the buses row i turns PV with a reactivated generator, seeded at that
+        // generator's set-point before the solve (a pinned bus keeps its starting
+        // magnitude). A no-op on every other row.
+        void _apply_step_topo_seed(size_t i, CplxVect & V) const {
+            if(i >= _row_vm_seed_.size()) return;
+            for(const auto & seed : _row_vm_seed_[i]){
+                const int b = seed.first;
+                if(b < 0 || b >= V.size()) continue;
+                const real_type vm = std::abs(V(b));
+                V(b) = vm > 0. ? V(b) * (seed.second / vm) : cplx_type(seed.second, 0.);
+            }
         }
 
         // row i's distributed-slack weights: the layout's own unless the row takes a
@@ -2524,7 +2676,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // set_pv_pinned_buses call marks the mask positions dirty, which costs a pass
         // over the Jacobian's nonzeros at the next fill.
         bool _row_flips_pv(size_t i) const {
-            return _has_pv_switching() && i < _row_pv_to_pq_.size() && !_row_pv_to_pq_[i].empty();
+            return _has_pv_switching() && i < _row_pv_pinned_.size() && _row_pv_pinned_[i] != _switchable_buses_;
         }
 
         // per-range worker: NON mask-mode path, shared by every instantiation.
@@ -2596,6 +2748,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(cont_id));
                         V = Vinit_solver;
                         _apply_step_gen_v(cont_id, V);
+                        _apply_step_topo_seed(cont_id, V);
                         _apply_step_vc_v_set(cont_id, algo);
                         const RealVect & sw = _masked_slack_weights(masked, _row_slack_weights(cont_id, sw_scratch), sw_scratch);
                         const CplxVect & sb = _step_sbus(cont_id, sbus_scratch);
@@ -2792,9 +2945,19 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //                           (sorted). Empty vector == that row keeps them all PV.
         //   _row_slack_gens_off_  : per row, the disconnected generators that carried a
         //                           non-zero distributed-slack weight. Usually empty.
+        //   _row_pv_pinned_       : per row, the buses to pin PV (sorted): the switchable
+        //                           ones still PV plus the base-PQ buses a reactivated
+        //                           generator pins (set_topo_actions).
+        //   _row_vm_seed_         : per row, (solver bus, |V|) of the latter, seeded before
+        //                           the solve.
+        //   _pv_pinning_active_   : whether any row pins differently from the resting
+        //                           state (every switchable bus pinned, nothing else).
         bool _gen_contingency_active_ = false;
         std::vector<int> _switchable_buses_;
         std::vector<std::vector<int> > _row_pv_to_pq_;
+        std::vector<std::vector<int> > _row_pv_pinned_;
+        std::vector<std::vector<std::pair<int, real_type> > > _row_vm_seed_;
+        bool _pv_pinning_active_ = false;
         std::vector<std::vector<int> > _row_slack_gens_off_;
         // topological actions (ScenarioSweep only; plain, always-present state like
         // the above). topo_actions_ is a registration (one checked TopoAction per

@@ -191,17 +191,28 @@ as a ``TopoAction``, one per row:
 Every action is checked against the grid when it is registered (the element exists, the
 busbar exists, no contradiction) and an invalid one raises a ``ValueError`` naming the row.
 
-This version plays **disconnections only**: a line or a trafo (``set_line_status -1``, or
-``set_bus -1`` on one of its ends), a generator, a load or a storage unit (``set_bus -1``).
-A branch or a generator is disconnected exactly as the ``set_contingency_*`` masks do it --
-the same admittance edit, the same PV -> PQ handling, one symbolic analysis for the whole
-sweep -- so a row is free to combine an action with injections and masks, as long as it does
-not name one element in both a mask and its action (``compute`` refuses that).
+This version plays:
+
+- **disconnections**: a line or a trafo (``set_line_status -1``, or ``set_bus -1`` on one of
+  its ends), a generator, a load or a storage unit (``set_bus -1``). A branch or a generator is
+  disconnected exactly as the ``set_contingency_*`` masks do it -- the same admittance edit,
+  the same PV -> PQ handling -- so a row is free to combine an action with injections and
+  masks, as long as it does not name one element in both a mask and its action (``compute``
+  refuses that);
+- the **reactivation of a generator** disconnected in the base grid, on the bus it was last
+  on (``set_bus`` to that busbar). Its bus turns PQ -> PV for the row: the bus already owns a
+  magnitude unknown and a reactive equation, so the row only pins that equation and seeds
+  the magnitude at the generator's set-point (the row's own if ``modify_gen_v`` gives one).
+  A generator that does not regulate voltage is an injection and its bus keeps its label.
+
+Either way the whole sweep keeps running on one symbolic analysis.
 
 .. warning::
 
-    Moving an element to a busbar (``set_bus > 0``), reconnecting a disconnected one, and the
-    DC algorithm are refused by ``compute`` for now. See the TODO section of the changelog.
+    Moving an element to a busbar (``set_bus > 0`` elsewhere than a generator's last bus),
+    reconnecting a line or a trafo, reactivating a slack participant or a generator on a slack
+    bus, and the DC algorithm are refused by ``compute`` for now. See the TODO section of the
+    changelog.
 
 Handling disconnected grids and limit violations
 ------------------------------------------------------

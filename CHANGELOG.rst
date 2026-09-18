@@ -8,14 +8,15 @@ Change Log
 
   * a row naming an element both in a ``set_contingency_*`` mask and in its action is refused
     rather than merged.
-  * moving a slack generator (or one with a slack weight) to another busbar, and moving or
-    reactivating a generator that regulates a remote bus or whose bus a control group holds:
-    the per-row slack set / control plan would move. Disconnecting them (``set_bus -1``) is
-    supported through the generator-contingency path.
+  * moving a slack generator (or one with a slack weight) to another busbar or reactivating one,
+    reactivating a generator on a slack bus, and moving or reactivating a generator that
+    regulates a remote bus or whose bus a control group holds: the per-row slack set / control
+    plan would move. Disconnecting them (``set_bus -1``) is supported through the
+    generator-contingency path.
   * the DC algorithm: a row carrying a topological action is refused on it, the coefficient
     edits are the same as AC but the masking / connectivity path is not wired for ``Bbus``.
-  * ``keep_jacobian``, ``compute_physical_violations`` and ``modify_gen_v`` combined with a
-    generator move (their plans are keyed on the base placement).
+  * ``keep_jacobian`` and ``compute_physical_violations`` combined with a generator reactivation
+    or move (their plans are keyed on the base placement of the generators).
 - ``modify_gen_v`` can only vary a GENERATOR's voltage set-point: there is no
   ``modify_svc_v`` and no ``modify_hvdc_v``. So a generator whose regulated bus is also
   regulated by a voltage-mode SVC or an hvdc converter station cannot be moved by a batch
@@ -191,8 +192,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``ScenarioSweep.set_topo_actions``: one topological action per row (a grid2op action
   or a ``TopoAction``: ``set_bus`` / ``set_line_status``), checked against the grid and played
   on top of the row's injections and masks. This first version plays disconnections (a branch,
-  a generator, a load, a storage unit) through the same fixed-sparsity path as the masks; see
-  the TODO section for what is refused.
+  a generator, a load, a storage unit) through the same fixed-sparsity path as the masks, and the
+  reactivation of a generator disconnected in the base grid on the bus it was last on (its bus
+  turns PQ -> PV for the row, at constant sparsity); see the TODO section for what is refused.
 - [ADDED] light environment: ``LightEnv.init_actions`` registers the actions the agent can take,
   given as grid2op actions (``set_bus`` / ``set_line_status``) or ``TopoAction``; every action is
   checked against the grid (element and busbar exist, no contradiction) and an invalid one is

@@ -117,9 +117,19 @@ struct LS2G_API SbusPolicy
         // constant share, see storage_pu_)
         std::vector<std::vector<int> > topo_loads_off;
         std::vector<std::vector<int> > topo_storages_off;
+        // per row, the generators (id, solver bus) the row reactivates on a bus of the
+        // layout: their active power (and, for one that does not regulate voltage,
+        // their reactive setpoint) is added to the row -- the gen pass skips them,
+        // they are off in the base grid
+        std::vector<std::vector<std::pair<int, int> > > topo_gens_on;
 
         // whether ANY row disconnects a generator, by either axis
         bool has_gen_off() const { return gen_off.rows() > 0 || topo_gen_off.rows() > 0; }
+        // whether ANY row reactivates a generator
+        bool has_gens_on() const {
+            for(const auto & row : topo_gens_on) if(!row.empty()) return true;
+            return false;
+        }
         // whether row i disconnects generator g, by either axis
         bool gen_off_in(Eigen::Index i, Eigen::Index g) const {
             if(gen_off.rows() > 0 && i < gen_off.rows() && g < gen_off.cols() && gen_off(i, g)) return true;
@@ -130,6 +140,7 @@ struct LS2G_API SbusPolicy
             topo_gen_off = BoolMat();
             topo_loads_off.clear();
             topo_storages_off.clear();
+            topo_gens_on.clear();
         }
 
         void clear() {

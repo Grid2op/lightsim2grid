@@ -36,6 +36,7 @@ using ls2g::real_type;
 namespace {
 
 using BoolMat = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using RealMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
 const int N_SUB = 4;
 const int N_BUSBAR = 2;
@@ -69,20 +70,25 @@ LSGrid make_grid()
     load_bus << 2, 3;
     grid.init_loads(load_p, load_q, load_bus);
 
-    RealVect gen_p(2), gen_v(2), gen_min_q(2), gen_max_q(2);
-    Eigen::VectorXi gen_bus(2);
-    gen_p << 0., 20.;
-    gen_v << 1.04, 1.02;
-    gen_min_q << -1000., -1000.;
-    gen_max_q << 1000., 1000.;
-    gen_bus << 0, 2;
-    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+    // generator 2, at 3, does not regulate voltage (a PQ injection) and is OFF in the
+    // base grid: what a row may put back
+    RealVect gen_p(3), gen_v(3), gen_q(3), gen_min_q(3), gen_max_q(3);
+    Eigen::VectorXi gen_bus(3);
+    gen_p << 0., 20., 15.;
+    gen_v << 1.04, 1.02, 1.0;
+    gen_q << 0., 0., 5.;
+    gen_min_q << -1000., -1000., -1000.;
+    gen_max_q << 1000., 1000., 1000.;
+    gen_bus << 0, 2, 3;
+    const std::vector<bool> regulates = {true, true, false};
+    grid.init_generators_full(gen_p, gen_v, gen_q, regulates, gen_min_q, gen_max_q, gen_bus);
     grid.add_gen_slackbus(0, 1.);
+    grid.deactivate_gen(2);
 
     // what a TopoAction needs: the substation of every element and the busbar count
-    Eigen::VectorXi load_sub(2), gen_sub(2);
+    Eigen::VectorXi load_sub(2), gen_sub(3);
     load_sub << 2, 3;
-    gen_sub << 0, 2;
+    gen_sub << 0, 2, 3;
     grid.set_load_to_subid(load_sub);
     grid.set_gen_to_subid(gen_sub);
     grid.set_line_to_sub1_id(from_id);
@@ -237,5 +243,80 @@ TEST_CASE("what this version refuses: moves, reconnections, DC, invalid actions"
         REQUIRE_THROWS_AS(sweep.set_topo_actions(actions), std::invalid_argument);
         // the row count is still free
         REQUIRE_NOTHROW(sweep.set_topo_actions(std::vector<TopoAction>(3)));
+    }
+}
+
+TEST_CASE("a base-off generator reactivated on its bus: PQ -> PV at constant sparsity", "[batch][scenario_sweep][topo]")
+{
+    SECTION("a regulating generator: its bus turns PV, held at the set-point") {
+        LSGrid grid = make_grid();
+        grid.deactivate_gen(1);   // bus 2 is PQ in this base grid
+        REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() > 0);
+
+        std::vector<TopoAction> actions(4);
+        actions[0].add_element(ElementType::gen, 1, 1);        // back on busbar 1 of substation 2
+        actions[2].add_element(ElementType::gen, 1, 1);
+        actions[2].set_line_status(3, -1);                     // ... with a line out
+        actions[3].add_element(ElementType::gen, 1, 1);
+        actions[3].add_element(ElementType::load, 0, -1);      // ... and the load of its bus out
+
+        ScenarioSweep sweep(grid);
+        sweep.set_topo_actions(actions);
+        sweep.compute(flat_start(grid), 30, 1e-10);
+        REQUIRE(sweep.get_status() == 1);
+        for(int row = 0; row < 4; ++row) require_row_matches(sweep, row, grid, actions[static_cast<size_t>(row)]);
+        REQUIRE(sweep.get_linear_solver_stats().nb_analyze == 1);
+        REQUIRE(std::abs(sweep.get_voltages()(0, 2)) == Approx(1.02).margin(1e-8));
+        REQUIRE(std::abs(sweep.get_voltages()(1, 2)) != Approx(1.02).margin(1e-4));
+
+        // a per-row set-point (modify_gen_v) is what the bus is held at
+        RealMat gen_v(2, 3);
+        gen_v << 1.04, 1.03, 1.0,
+                 1.04, 1.01, 1.0;
+        ScenarioSweep with_v(grid);
+        with_v.modify_gen_v(gen_v);
+        with_v.set_topo_actions(std::vector<TopoAction>(2, actions[0]));
+        with_v.compute(flat_start(grid), 30, 1e-10);
+        REQUIRE(with_v.get_status() == 1);
+        for(int row = 0; row < 2; ++row){
+            LSGrid ref_grid(grid);
+            ref_grid.change_v_gen(1, gen_v(row, 1));
+            require_row_matches(with_v, row, ref_grid, actions[0]);
+            REQUIRE(std::abs(with_v.get_voltages()(row, 2)) == Approx(gen_v(row, 1)).margin(1e-8));
+        }
+    }
+    SECTION("a non-regulating generator: an injection, its bus stays PQ") {
+        LSGrid grid = make_grid();   // generator 2 (PQ, at bus 3) is off in it
+        std::vector<TopoAction> actions(3);
+        actions[0].add_element(ElementType::gen, 2, 1);
+        actions[2].add_element(ElementType::gen, 2, 1);
+        actions[2].add_element(ElementType::gen, 1, -1);       // ... while bus 2 loses its PV generator
+
+        ScenarioSweep sweep(grid);
+        sweep.set_topo_actions(actions);
+        sweep.compute(flat_start(grid), 30, 1e-10);
+        REQUIRE(sweep.get_status() == 1);
+        for(int row = 0; row < 3; ++row) require_row_matches(sweep, row, grid, actions[static_cast<size_t>(row)]);
+        REQUIRE(sweep.get_linear_solver_stats().nb_analyze == 1);
+        // the injection really reached the row: bus 3 is not where it is without it
+        REQUIRE(std::abs(sweep.get_voltages()(0, 3) - sweep.get_voltages()(1, 3)) > 1e-4);
+    }
+    SECTION("refused: a slack participant, another busbar") {
+        LSGrid grid = make_grid();
+        grid.add_gen_slackbus(1, 0.5);
+        grid.deactivate_gen(1);
+        std::vector<TopoAction> actions(1);
+        actions[0].add_element(ElementType::gen, 1, 1);
+        ScenarioSweep sweep(grid);
+        sweep.set_topo_actions(actions);
+        REQUIRE_THROWS_AS(sweep.compute(flat_start(grid), 30, 1e-10), std::runtime_error);
+
+        LSGrid plain = make_grid();
+        plain.deactivate_gen(1);
+        actions[0] = TopoAction();
+        actions[0].add_element(ElementType::gen, 1, 2);
+        ScenarioSweep moved(plain);
+        moved.set_topo_actions(actions);
+        REQUIRE_THROWS_AS(moved.compute(flat_start(plain), 30, 1e-10), std::runtime_error);
     }
 }

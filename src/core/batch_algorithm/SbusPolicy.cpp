@@ -152,6 +152,19 @@ void SbusPolicy::Vary::fill_row(Eigen::Index i, CplxVect & row) const
             row(gen_bus_[g]) -= BaseConstants::my_i * cplx_type(gen_target_q_(gen_id), 0.);
         }
     }
+    // the generators the row's topological action reactivates: off in the base grid,
+    // the gen pass above skipped them (same operands as it uses, and as the gen
+    // contingency block takes back)
+    if(static_cast<size_t>(i) < topo_gens_on.size()){
+        for(const auto & gen_and_bus : topo_gens_on[static_cast<size_t>(i)]){
+            const Eigen::Index gen_id = static_cast<Eigen::Index>(gen_and_bus.first);
+            const real_type p = own_gen_p ? gen_p(i, gen_id) : gen_target_p_(gen_id);
+            row(gen_and_bus.second) += cplx_type(p, 0.);
+            if(!gen_vreg_[static_cast<size_t>(gen_id)]){
+                row(gen_and_bus.second) += BaseConstants::my_i * cplx_type(gen_target_q_(gen_id), 0.);
+            }
+        }
+    }
     // the loads the row's topological action disconnects: the two load passes above
     // drew them, put them back
     if(static_cast<size_t>(i) < topo_loads_off.size()){

@@ -709,13 +709,15 @@ void bind_batch(py::module_& m) {
              "is checked against the grid here (element and busbar exist, no contradiction) "
              "and a ValueError naming the row is raised, nothing registered, if one is "
              "invalid.\n\n"
-             "This version plays disconnections only: a branch (set_line_status -1, or "
-             "set_bus -1 on one of its ends), a generator, a load or a storage unit (set_bus "
-             "-1). A branch or a generator is disconnected exactly as set_contingency_lines / "
-             "trafos / gens do it (same Ybus edit, same PV -> PQ handling, one symbolic "
-             "analysis for the whole sweep), and compute() refuses a row naming an element "
-             "in both a mask and its action. Moving an element to a busbar, reconnecting one, "
-             "and the DC algorithm are refused by compute() for now.")
+             "This version plays disconnections -- a branch (set_line_status -1, or set_bus "
+             "-1 on one of its ends), a generator, a load or a storage unit (set_bus -1), "
+             "exactly as set_contingency_lines / trafos / gens do it (same Ybus edit, same "
+             "PV -> PQ handling) -- and the reactivation of a generator disconnected in the "
+             "base grid on the bus it was last on (PQ -> PV for the row, at constant "
+             "sparsity). One symbolic analysis for the whole sweep either way. compute() "
+             "refuses a row naming an element in both a mask and its action, a move to "
+             "another busbar, the reconnection of a branch, the reactivation of a slack "
+             "participant, and the DC algorithm.")
         .def("get_topo_actions", &ScenarioSweep::get_topo_actions<>,
              "The (checked) actions registered with set_topo_actions.")
         .def("get_row_disconnected_branches", &ScenarioSweep::get_row_disconnected_branches<>, py::arg("row"),

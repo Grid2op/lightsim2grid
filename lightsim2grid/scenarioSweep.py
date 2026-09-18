@@ -404,15 +404,19 @@ class ScenarioSweep:
         unsupported modification (``change_bus``, ``redispatch``, ...) or a contradiction
         raises a ``ValueError`` naming the action, and nothing is registered.
 
-        This version plays **disconnections only**: a line or trafo (``set_line_status``
+        This version plays **disconnections**: a line or trafo (``set_line_status``
         ``-1``, or ``set_bus`` ``-1`` on one of its ends), a generator, a load or a
         storage unit (``set_bus`` ``-1``). A branch or a generator is disconnected exactly
         as :func:`set_contingency_lines` / :func:`set_contingency_trafos` /
         :func:`set_contingency_gens` do it -- same admittance edit, same PV -> PQ
-        handling, one symbolic analysis for the whole sweep -- and :func:`compute` raises
-        if a row names an element in both a mask and its action. Moving an element to a
-        busbar, reconnecting one, and the DC algorithm are refused by :func:`compute` for
-        now.
+        handling -- and :func:`compute` raises if a row names an element in both a mask
+        and its action. It also plays the **reactivation of a generator** disconnected in
+        the base grid, on the bus it was last on: the bus turns PQ -> PV for the row (its
+        magnitude is seeded at the generator's set-point, the row's own if
+        :func:`modify_gen_v` gives one). Either way the sweep keeps running on one
+        symbolic analysis. Moving an element to a busbar, reconnecting a line or a trafo,
+        reactivating a slack participant, and the DC algorithm are refused by
+        :func:`compute` for now.
         """
         from lightsim2grid.lightEnv import TopoAction, topo_action_from_grid2op
         from grid2op.Action import BaseAction

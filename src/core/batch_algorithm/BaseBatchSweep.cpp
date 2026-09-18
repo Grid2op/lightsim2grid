@@ -45,6 +45,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     }
 
     _apply_step_gen_v(i, V);
+    _apply_step_topo_seed(i, V);
     _apply_step_vc_v_set(i, algo);
 
     // the Ybus edit, and its timer, only where Ybus varies at all: the hooks compile
