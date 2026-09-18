@@ -5,6 +5,7 @@
 .. ^ for subsubsections
 .. " for paragraphs
 
+.. _comparison_with_pypowsybl:
 
 Comparison with pypowsybl default load-flow
 ============================================
@@ -95,6 +96,14 @@ Whether a given outer loop could instead be folded into the inner NR formulation
 distributed slack was) or fundamentally needs iteration around the solve (like discrete
 tap positions, which are not differentiable) is a case-by-case question, and remains
 open for most of OLF's outer loops as far as lightsim2grid is concerned.
+
+.. seealso::
+    :ref:`nr_control_limits` is a design note arguing that it is largely *not*
+    case-by-case: reactive limits, tap ratio limits, area interchange and secondary
+    voltage control are the same mathematical object (a bounded control resource
+    complementary to a regulated quantity), one in-Jacobian formulation covers all four,
+    and only tap *discreteness* genuinely needs iteration around the solve. Nothing in it
+    is implemented.
 
 .. seealso::
     ``examples/dist_slack_algorithm/`` is a solver plugin (see

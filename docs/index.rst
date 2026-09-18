@@ -68,6 +68,7 @@ This is a work in progress at the moment
    solver_plugin
    binary_serialization
    security
+   nr_control_limits
 
 
 Indices and tables

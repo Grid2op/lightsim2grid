@@ -3,6 +3,19 @@ Change Log
 
 [TODO]
 --------
+- Control limits are not handled at all inside the Newton-Raphson: a generator has no
+  ``pmin`` / ``pmax`` (see the ``TODO`` in ``GeneratorContainer.hpp``), so a distributed-slack
+  participant can be driven past its limits; and reactive limits, tap-ratio control, area
+  interchange and secondary voltage control have neither an outer loop nor an in-Jacobian
+  equivalent (see ``docs/comparison_with_pypowsybl.rst``). ``docs/nr_control_limits.rst`` is a
+  design note arguing these are one mathematical object -- a bounded control resource
+  complementary to a regulated quantity -- expressible as projection rows solved by a
+  semismooth Newton, inside the existing fixed-sparsity / value-level-masking contract, with
+  only tap *discreteness* left needing iteration around the solve. It also covers
+  state-dependent slack weights (OLF's ``balanceType``) and the hydro produce / absorb mode
+  question. Nothing of it is implemented, and none of its cost claims is benchmarked; the
+  smallest useful first step is ``pmin`` / ``pmax`` on generators plus clamp-and-renormalise
+  on the slack.
 - ``modify_gen_v`` can only vary a GENERATOR's voltage set-point: there is no
   ``modify_svc_v`` and no ``modify_hvdc_v``. So a generator whose regulated bus is also
   regulated by a voltage-mode SVC or an hvdc converter station cannot be moved by a batch
