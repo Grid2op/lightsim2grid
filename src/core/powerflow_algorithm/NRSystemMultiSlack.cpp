@@ -19,7 +19,13 @@ void MultiSlack::update_state(
 )
 {
     slack_weights_ = slack_weights;
-    // initial slack absorbed (see MultiSlackPolicy::initial_slack_absorbed)
+    // A seed for the distributed slack, and only a seed: generation minus load,
+    // which answers the active balance at a flat start of a lossless grid whose
+    // whole right-hand side is Sbus, and nowhere else. NRAlgo::compute_pf
+    // replaces it with the value that closes the balance at the STARTING
+    // voltages as soon as it has a residual to read that off
+    // (NRSystem::calibrate_slack_absorbed / absorb_balance below), which is why
+    // this stays a one-liner that needs nothing but Sbus.
     slack_absorbed_ = std::real(Sbus.sum());
 }
 

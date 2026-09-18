@@ -166,6 +166,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [IMPROVED] the Newton-Raphson starts its distributed slack from the active balance of
+  the first residual instead of ``sum(Sbus)``, which ignored the losses and every
+  injection outside Sbus (hvdc droop). A voltage that already meets the KCL now converges
+  in 0 iterations instead of 1, for one pass over the P rows.
 - [BREAKING] a grid where several elements regulate the SAME bus with DIFFERENT voltage
   set-points is now refused instead of silently applying whichever was written last. A bus
   has one magnitude; the two set-points cannot both hold. Previously only checked for a

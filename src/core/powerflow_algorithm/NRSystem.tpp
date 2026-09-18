@@ -461,6 +461,49 @@ inline RealVect NRSystem<Base, Rest...>::mismatch() const
 }
 
 template <typename... Rest>
+inline bool NRSystem<Base, Rest...>::calibrate_slack_absorbed(Eigen::Ref<RealVect> res)
+{
+    MultiSlack* ms = _find_extension<MultiSlack>();
+    if (ms == nullptr) return false;  // single-slack instantiation: no such unknown
+    assert(res.size() == static_cast<Eigen::Index>(total_state_variables()));
+
+    // The sum of every P equation IS the grid's global active power balance --
+    // every bus owns exactly one P row here (Base claims the pv / pq ones,
+    // MultiSlack the slack ones), and a row index is handed out once, so this
+    // sums each bus' active mismatch exactly once. A masked bus contributes 0:
+    // _residual_into already forced its row to zero, which is what we want --
+    // an island the contingency stranded is not part of the balance.
+    real_type sum_p = static_cast<real_type>(0.);
+    const std::vector<int>& p_rows = ledger_.p_rows();
+    for (size_t k = 0; k < p_rows.size(); ++k) sum_p += res(p_rows[k]);
+
+    const real_type delta = ms->absorb_balance(sum_p, res);
+    if (delta == static_cast<real_type>(0.)) return false;
+
+    // Keep the per-bus mismatch buffer in step with the state it was computed
+    // for: LSGrid::compute_results reads it back together with slack_absorbed
+    // (`mis.real() - slack_absorbed * slack_weights`, see _fill_bus_mismatch_ac)
+    // to publish what the generators produced, and a solve that converges on
+    // this very residual -- the whole point of this calibration -- never
+    // evaluates another one.
+    CplxVect & mis = (mis_ptr_ != nullptr) ? *mis_ptr_ : mis_own_;
+    const RealVect& w = ms->slack_weights();
+    if (mis.size() == w.size()) mis.array() += (delta * w.array()).template cast<cplx_type>();
+
+    // A masked bus that kept a participation weight (nothing in-tree produces
+    // one -- the sweeps zero and renormalise those weights themselves, see
+    // BaseBatchSweep::_masked_slack_weights) would have had its pinned row
+    // written above. Restore the invariant the identity rows of J rely on.
+    if (!masked_buses_.empty()) {
+        for (int b : masked_buses_) {
+            const int pr = ledger_.p_row(b);
+            if (pr >= 0) res(pr) = static_cast<real_type>(0.);
+        }
+    }
+    return true;
+}
+
+template <typename... Rest>
 inline void NRSystem<Base, Rest...>::cpf_rhs_into(Eigen::Ref<RealVect> rhs,
                                                   const Eigen::Ref<const CplxVect>& dir) const
 {

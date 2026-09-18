@@ -78,6 +78,17 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
 
     // Initial mismatch (negated: Sbus - Scomp)
     RealVect F = _system.mismatch();
+
+    // Distributed slack: the per-solve initial guess for `slack_absorbed` is
+    // `Re(sum(Sbus))`, which is the right answer only at a flat start of a
+    // lossless grid whose entire right-hand side is Sbus. Now that the residual
+    // is on the table, the exact value follows from it -- the sum of the P
+    // equations is affine in `slack_absorbed` and in nothing else -- and the
+    // residual is corrected in place rather than re-evaluated. A seed that
+    // already satisfies the KCL (another powerflow's output) then converges in
+    // zero iterations instead of one. No-op for the single-slack systems.
+    _system.calibrate_slack_absorbed(F);
+
     timer_pre_proc_ += timer_pre.duration(); 
     bool converged = _check_for_convergence(F, tol);  // counted in timer_check_
     nr_iter_       = 0;
