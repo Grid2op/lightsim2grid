@@ -86,6 +86,7 @@ add_executable(lightsim2grid_unit_tests
     test_gen_v_gradient.cpp
     test_bus_element_count.cpp
     test_substation_topology.cpp
+    test_topology_labelling.cpp
     test_kcl_from_results.cpp
     test_solve_transpose.cpp
     test_batch_adjoint.cpp

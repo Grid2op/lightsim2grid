@@ -2137,6 +2137,9 @@ class LS2G_API LSGrid final
         [[nodiscard]] SwitchContainer get_switches() const { return substations_.get_switches(); }
         [[nodiscard]] BusbarSectionContainer get_busbar_sections() const { return substations_.get_busbar_sections(); }
         [[nodiscard]] const SubstationTopology & get_substation_topology(int sub_id) const { return substations_.topology(sub_id); }
+        /// the grid bus of every node of the detailed topology, by grid-wide node
+        /// id (-1: in no valid component); see SubstationContainer::get_node_bus
+        [[nodiscard]] IntVect get_node_bus() const { return substations_.get_node_bus(); }
 
         void set_n_sub(int n_sub)
         {

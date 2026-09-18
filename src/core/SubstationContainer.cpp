@@ -241,6 +241,34 @@ void SubstationContainer::set_switch_names(const std::vector<std::string> & name
     }
 }
 
+void SubstationContainer::label_all()
+{
+    for(std::size_t sub_id = 0; sub_id < topologies_.size(); ++sub_id){
+        topologies_[sub_id].label(nmax_busbar_per_sub_, static_cast<int>(sub_id));
+    }
+}
+
+IntVect SubstationContainer::get_node_bus() const
+{
+    IntVect res = IntVect::Constant(nb_nodes(), BaseConstants::_deactivated_bus_id);
+    for(std::size_t sub_id = 0; sub_id < topologies_.size(); ++sub_id){
+        const SubstationTopology & topo = topologies_[sub_id];
+        if(!topo.labels_ready()){
+            std::ostringstream exc_;
+            exc_ << "SubstationContainer::get_node_bus: the labels of substation " << sub_id
+                 << " have not been computed for its current switch positions (see label_all).";
+            throw std::runtime_error(exc_.str());
+        }
+        const IntVect & local = topo.node_bus();
+        const int first = node_offset_[sub_id];
+        for(Eigen::Index node = 0; node < local.size(); ++node){
+            if(local(node) == BaseConstants::_deactivated_bus_id) continue;
+            res(first + node) = local_to_gridmodel(static_cast<int>(sub_id), LocalBusId(local(node))).cast_int();
+        }
+    }
+    return res;
+}
+
 void SubstationContainer::set_busbar_section_names(const std::vector<std::string> & names)
 {
     if(static_cast<int>(names.size()) != nb_busbar_sections()){

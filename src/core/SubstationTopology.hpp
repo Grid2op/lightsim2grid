@@ -120,11 +120,55 @@ class LS2G_API SubstationTopology final
         std::string sw_name(int sw_id) const;  // "" when no names were set
         const std::vector<std::string> & sw_names() const { return sw_names_; }
         void set_sw_names(const std::vector<std::string> & names);  // one per switch
+        /**
+         * Open or close a switch. Returns whether anything changed. An internal
+         * connection cannot be opened (it is not a switch anybody operates).
+         *
+         * Changes the DECLARED position only: the labels below are stale until
+         * label() runs again, and whoever owns the elements is the one to push the
+         * new labels onto them (see LSGrid).
+         */
+        bool set_open(int sw_id, bool open);
+
+        // ---- labels: the electrical buses the closed switches make ---------------
+        /**
+         * Label the connected components of the closed-switch graph as electrical
+         * buses, pypowsybl's way (powsybl-core `Networks.isBusValid`): a component
+         * is a bus iff
+         *
+         *     (n_busbar_sections >= 1 && n_feeders >= 1) || (n_branches >= 1 && n_feeders >= 2)
+         *
+         * where every terminal is a feeder, and a branch is a line end, a
+         * transformer end or an HVDC converter station. An isolated busbar section,
+         * a lone line end behind an open breaker, a load with a generator and
+         * nothing else: none of these is a bus, and their elements are disconnected.
+         *
+         * Numbering, 1-based like LocalBusId: the components holding a busbar
+         * section first, in busbar-section order (what grid2op's
+         * `from_switches_position` does too), then the remaining valid ones by
+         * lowest node. Deterministic: a function of the switch positions only.
+         *
+         * `nmax_busbar_per_sub` is the substation's capacity in the grid's bus
+         * layout: more buses than that cannot be numbered, and this throws BEFORE
+         * touching the current labels (the loader sizes every substation for its
+         * true maximum, so that is a hand-built grid's error). `sub_id` only names
+         * the substation in that message.
+         */
+        void label(int nmax_busbar_per_sub, int sub_id = -1);
+        /// have the labels been computed for the current switch positions?
+        bool labels_ready() const { return labels_ready_; }
+        /// how many electrical buses the current labels count
+        int nb_buses() const { return nb_buses_; }
+        /// the local bus (1-based) of every node, -1 for a node in no valid component
+        const IntVect & node_bus() const { return node_bus_; }
+        int node_bus(int node) const;  // range-checked
+        /// the local bus of a busbar section (-1: isolated, or no feeder reaches it)
+        int bbs_bus(int bbs_id) const { return node_bus(bbs_node(bbs_id)); }
 
         // ---- terminals: which element ends stand on which node -----------------
         // Derived, rebuilt by LSGrid from the containers (see
         // LSGrid::_rebuild_terminal_lists); not part of StateRes.
-        void clear_terminals() { terminals_.clear(); }
+        void clear_terminals() { terminals_.clear(); _invalidate_labels(); }
         void add_terminal(TerminalKind kind, int el_id, int node);  // node is range-checked
         const std::vector<Terminal> & terminals() const { return terminals_; }
 
@@ -155,6 +199,11 @@ class LS2G_API SubstationTopology final
                            int sub_id);
         int _checked_bbs_id(int bbs_id, const char * fun_name) const;
         int _checked_sw_id(int sw_id, const char * fun_name) const;
+        /// the labels no longer describe the switch positions (a switch moved, a
+        /// terminal was added, the declaration changed)
+        void _invalidate_labels() { labels_ready_ = false; }
+        // union-find over the nodes (scratch for label())
+        int _find(int node);
 
     private:
         int nb_nodes_ = 0;
@@ -173,6 +222,12 @@ class LS2G_API SubstationTopology final
 
         // derived, never serialized
         std::vector<Terminal> terminals_;
+        // labels (derived, never serialized): see label()
+        bool labels_ready_ = false;
+        int nb_buses_ = 0;
+        IntVect node_bus_;
+        // union-find scratch, sized nb_nodes_ by label()
+        std::vector<int> uf_parent_;
 };
 
 }  // namespace ls2g

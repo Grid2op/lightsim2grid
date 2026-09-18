@@ -146,6 +146,127 @@ void SubstationTopology::init(int nb_nodes,
     sw_retained_ = sw_retained;
     sw_names_.clear();
     terminals_.clear();
+    node_bus_ = IntVect::Constant(nb_nodes_, -1);
+    nb_buses_ = 0;
+    _invalidate_labels();
+}
+
+bool SubstationTopology::set_open(int sw_id, bool open)
+{
+    _checked_sw_id(sw_id, "set_open");
+    const std::size_t idx = static_cast<std::size_t>(sw_id);
+    if(sw_kind_[idx] == SwitchKind::INTERNAL_CONNECTION){
+        std::ostringstream exc_;
+        exc_ << "SubstationTopology::set_open: switch " << sw_id;
+        if(!sw_names_.empty()) exc_ << " ('" << sw_names_[idx] << "')";
+        exc_ << " is an internal connection: it is always closed and cannot be operated.";
+        throw std::runtime_error(exc_.str());
+    }
+    if(sw_open_[idx] == open) return false;
+    sw_open_[idx] = open;
+    _invalidate_labels();
+    return true;
+}
+
+int SubstationTopology::_find(int node)
+{
+    // path halving: every other node on the way up is re-pointed at its grandparent
+    while(uf_parent_[static_cast<std::size_t>(node)] != node){
+        const int parent = uf_parent_[static_cast<std::size_t>(node)];
+        const int grand_parent = uf_parent_[static_cast<std::size_t>(parent)];
+        uf_parent_[static_cast<std::size_t>(node)] = grand_parent;
+        node = grand_parent;
+    }
+    return node;
+}
+
+void SubstationTopology::label(int nmax_busbar_per_sub, int sub_id)
+{
+    const std::size_t n = static_cast<std::size_t>(nb_nodes_);
+
+    // 1. the components of the closed-switch graph
+    uf_parent_.resize(n);
+    for(std::size_t i = 0; i < n; ++i) uf_parent_[i] = static_cast<int>(i);
+    const int nb_sw = nb_switches();
+    for(int sw = 0; sw < nb_sw; ++sw){
+        if(sw_open_[static_cast<std::size_t>(sw)]) continue;  // an internal connection is never open
+        const int root1 = _find(sw_node1_(sw));
+        const int root2 = _find(sw_node2_(sw));
+        if(root1 != root2) uf_parent_[static_cast<std::size_t>(root1)] = root2;
+    }
+
+    // 2. what each component holds, indexed by root
+    std::vector<int> n_bbs(n, 0), n_branch(n, 0), n_feeder(n, 0);
+    for(Eigen::Index i = 0; i < bbs_node_.size(); ++i) ++n_bbs[static_cast<std::size_t>(_find(bbs_node_(i)))];
+    for(const Terminal & term : terminals_){
+        const std::size_t root = static_cast<std::size_t>(_find(term.node));
+        ++n_feeder[root];
+        switch(term.kind){
+            case TerminalKind::LINE_1:
+            case TerminalKind::LINE_2:
+            case TerminalKind::TRAFO_1:
+            case TerminalKind::TRAFO_2:
+            case TerminalKind::HVDC_1:
+            case TerminalKind::HVDC_2:
+                ++n_branch[root];
+                break;
+            case TerminalKind::LOAD:
+            case TerminalKind::GEN:
+            case TerminalKind::SGEN:
+            case TerminalKind::STORAGE:
+            case TerminalKind::SHUNT:
+            case TerminalKind::SVC:
+                break;
+        }
+    }
+
+    // 3. number the valid components: busbar-section holders first, in busbar-
+    //    section order, then the rest by lowest node. Into scratch, so that a
+    //    component count the layout cannot hold leaves the current labels alone.
+    std::vector<int> root_bus(n, -1);
+    int nb_buses = 0;
+    const auto number_root = [&](int root){
+        const std::size_t r = static_cast<std::size_t>(root);
+        if(root_bus[r] != -1) return;
+        const bool valid = ((n_bbs[r] >= 1) && (n_feeder[r] >= 1)) ||
+                           ((n_branch[r] >= 1) && (n_feeder[r] >= 2));
+        if(!valid) return;
+        root_bus[r] = ++nb_buses;  // LocalBusId is 1-based
+    };
+    for(Eigen::Index i = 0; i < bbs_node_.size(); ++i) number_root(_find(bbs_node_(i)));
+    for(std::size_t node = 0; node < n; ++node) number_root(_find(static_cast<int>(node)));
+
+    if(nb_buses > nmax_busbar_per_sub){
+        std::ostringstream exc_;
+        exc_ << sub_label(sub_id) << "::label: the switch positions make " << nb_buses
+             << " electrical buses, but the grid's bus layout holds at most " << nmax_busbar_per_sub
+             << " per substation (nmax_busbar_per_sub). Declare the substations with a larger "
+             << "capacity (init_bus / n_busbar_per_sub).";
+        throw std::runtime_error(exc_.str());
+    }
+
+    // 4. commit
+    node_bus_.resize(nb_nodes_);
+    for(std::size_t node = 0; node < n; ++node){
+        node_bus_(static_cast<Eigen::Index>(node)) = root_bus[static_cast<std::size_t>(_find(static_cast<int>(node)))];
+    }
+    nb_buses_ = nb_buses;
+    labels_ready_ = true;
+}
+
+int SubstationTopology::node_bus(int node) const
+{
+    if((node < 0) || (node >= nb_nodes_)){
+        std::ostringstream exc_;
+        exc_ << "SubstationTopology::node_bus: node " << node << " is out of range [0, "
+             << nb_nodes_ << ").";
+        throw std::out_of_range(exc_.str());
+    }
+    if(!labels_ready_){
+        throw std::runtime_error("SubstationTopology::node_bus: the labels have not been computed for "
+                                 "the current switch positions (see label()).");
+    }
+    return node_bus_(node);
 }
 
 int SubstationTopology::_checked_bbs_id(int bbs_id, const char * fun_name) const
@@ -216,6 +337,7 @@ void SubstationTopology::add_terminal(TerminalKind kind, int el_id, int node)
         throw std::out_of_range(exc_.str());
     }
     terminals_.push_back(Terminal{kind, el_id, node});
+    _invalidate_labels();
 }
 
 SubstationTopology::StateRes SubstationTopology::get_state() const
@@ -265,6 +387,9 @@ void SubstationTopology::set_state(StateRes & my_state)
     sw_retained_ = sw_retained;
     sw_names_ = sw_names;
     terminals_.clear();  // derived: whoever restores the elements rebuilds it
+    node_bus_ = IntVect::Constant(nb_nodes_, -1);
+    nb_buses_ = 0;
+    _invalidate_labels();
 }
 
 void SubstationTopology::check_valid(int sub_id) const

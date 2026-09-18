@@ -2791,6 +2791,9 @@ void LSGrid::_rebuild_terminal_lists()
     add_all(trafos_.get_subid_side_2(), trafos_.get_node_id_side_2(), TerminalKind::TRAFO_2, trafos_.nb(), "trafo (side 2)");
     add_all(hvdc_lines_.get_subid_side_1(), hvdc_lines_.get_node_id_side_1(), TerminalKind::HVDC_1, hvdc_lines_.nb(), "hvdc line (station 1)");
     add_all(hvdc_lines_.get_subid_side_2(), hvdc_lines_.get_node_id_side_2(), TerminalKind::HVDC_2, hvdc_lines_.nb(), "hvdc line (station 2)");
+
+    // the terminals are what the validity rule counts: fresh terminals, fresh labels
+    substations_.label_all();
 }
 
 // for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF

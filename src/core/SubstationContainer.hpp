@@ -564,6 +564,21 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
         void set_switch_names(const std::vector<std::string> & names);
         void set_busbar_section_names(const std::vector<std::string> & names);
 
+        /**
+         * Label every substation's components as electrical buses (see
+         * SubstationTopology::label), against this container's capacity
+         * `nmax_busbar_per_sub_`. Run by LSGrid whenever the terminals were
+         * re-indexed. A no-op without detailed topology.
+         */
+        void label_all();
+        /**
+         * The grid bus of every node, by grid-wide node id (see first_node): the
+         * substation's local label turned into a GridModelBusId through the usual
+         * bus layout, -1 for a node in no valid component. Empty without detailed
+         * topology.
+         */
+        IntVect get_node_bus() const;
+
         // iterable views of every switch / every busbar section, by grid-wide id
         // (defined after this class; they only hold a pointer to this container)
         inline SwitchContainer get_switches() const;
@@ -690,6 +705,12 @@ class BusbarSectionInfo
         int sub_id;
         int local_id;  // inside the substation
         int node;      // substation-local
+        // the electrical bus this section is part of, given the current switch
+        // positions: `connected` iff its component is a bus (see
+        // SubstationTopology::label), `bus_id` that bus in the grid numbering
+        // (-1 otherwise)
+        bool connected;
+        int bus_id;
 
         inline BusbarSectionInfo(const BusbarSectionContainer & r_data, int my_id);
 };
@@ -748,7 +769,9 @@ inline BusbarSectionInfo::BusbarSectionInfo(const BusbarSectionContainer & r_dat
     name(""),
     sub_id(-1),
     local_id(-1),
-    node(-1)
+    node(-1),
+    connected(false),
+    bus_id(BaseConstants::_deactivated_bus_id)
 {
     if(my_id < 0) return;
     if(my_id >= r_data.nb()) return;
@@ -759,6 +782,13 @@ inline BusbarSectionInfo::BusbarSectionInfo(const BusbarSectionContainer & r_dat
     const SubstationTopology & topo = subs.topology(sub_id);
     name = topo.bbs_name(local_id);
     node = topo.bbs_node(local_id);
+    if(topo.labels_ready()){
+        const int local_bus = topo.bbs_bus(local_id);
+        if(local_bus != BaseConstants::_deactivated_bus_id){
+            connected = true;
+            bus_id = subs.local_to_gridmodel(sub_id, LocalBusId(local_bus)).cast_int();
+        }
+    }
 }
 
 inline SubstationInfo::SubstationInfo(const SubstationContainer & r_data, int my_id):
