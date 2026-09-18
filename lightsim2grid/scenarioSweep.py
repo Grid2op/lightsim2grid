@@ -420,8 +420,9 @@ class ScenarioSweep:
         island of one: that bus is masked and its injection left out). Refused by
         :func:`compute` for now: moving or reactivating a slack participant, a generator
         on a slack bus or one that regulates a remote bus, a storage unit that regulates
-        voltage, ``keep_jacobian`` / ``compute_physical_violations`` with a generator
-        move, and the DC algorithm.
+        voltage, ``keep_jacobian`` with a generator move or reactivation, and the DC
+        algorithm. :attr:`compute_physical_violations` follows the row: a generator the
+        row moves or reactivates is checked on the bus the row gives it.
         """
         from lightsim2grid.lightEnv import TopoAction, topo_action_from_grid2op
         from grid2op.Action import BaseAction

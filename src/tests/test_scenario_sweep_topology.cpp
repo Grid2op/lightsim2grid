@@ -21,12 +21,16 @@
 #include "LSGrid.hpp"
 #include "batch_algorithm/BaseBatchSweep.hpp"
 #include "light_env/topo_action.hpp"
+#include "batch_algorithm/LimitViolation.hpp"
 
 using Catch::Approx;
 using ls2g::AlgorithmType;
 using ls2g::CplxVect;
 using ls2g::ElementType;
 using ls2g::LSGrid;
+using ls2g::LimitViolation;
+using ls2g::LimitViolationType;
+using ls2g::ViolationElementType;
 using ls2g::RealVect;
 using ls2g::ScenarioSweep;
 using ls2g::TopoAction;
@@ -44,7 +48,7 @@ const int N_BUSBAR = 2;
 // a 4-substation feeder 0-1-2-3 with a second line between 1 and 2, a slack generator
 // at 0, a PV generator and a load at 2, a load at 3; two busbars per substation (the
 // elements all on busbar 1) so that a "move" can be expressed
-LSGrid make_grid()
+LSGrid make_grid(real_type q_lim = 1000.)
 {
     LSGrid grid;
     grid.set_sn_mva(100.);
@@ -77,8 +81,8 @@ LSGrid make_grid()
     gen_p << 0., 20., 15.;
     gen_v << 1.04, 1.02, 1.0;
     gen_q << 0., 0., 5.;
-    gen_min_q << -1000., -1000., -1000.;
-    gen_max_q << 1000., 1000., 1000.;
+    gen_min_q << -q_lim, -q_lim, -q_lim;
+    gen_max_q << q_lim, q_lim, q_lim;
     gen_bus << 0, 2, 3;
     const std::vector<bool> regulates = {true, true, false};
     grid.init_generators_full(gen_p, gen_v, gen_q, regulates, gen_min_q, gen_max_q, gen_bus);
@@ -414,5 +418,99 @@ TEST_CASE("elements moved between busbars: a bus created or merged, at constant 
                 REQUIRE(std::abs(one.get_voltages()(row, b) - four.get_voltages()(row, b)) == Approx(0.).margin(1e-10));
             }
         }
+    }
+}
+
+namespace {
+// the physical violations a plain sweep (no action) reports on the grid rewired for real
+std::vector<LimitViolation> physical_reference(const LSGrid & base, const TopoAction & action)
+{
+    LSGrid grid(base);
+    TopoAction act = action;
+    act.check_validity(grid);
+    act.apply_to_gridmodel(grid);
+    ScenarioSweep plain(grid);
+    plain.set_compute_physical_violations(true);
+    plain.set_physical_violation_tol_mva(0.);
+    RealMat load_p(1, 2);
+    load_p << 10., 50.;
+    plain.modify_load_p(load_p);
+    plain.compute(flat_start(grid), 30, 1e-10);
+    REQUIRE(plain.get_status() == 1);
+    return plain.get_physical_violations()[0];
+}
+void require_same_violations(const std::vector<LimitViolation> & got, const std::vector<LimitViolation> & ref)
+{
+    REQUIRE(got.size() == ref.size());
+    for(const LimitViolation & r : ref){
+        bool found = false;
+        for(const LimitViolation & g : got){
+            if(g.element_type != r.element_type || g.element_id != r.element_id || g.violation_type != r.violation_type) continue;
+            INFO("bus " << r.element_id);
+            REQUIRE(g.value == Approx(r.value).margin(1e-6));
+            REQUIRE(g.limit == Approx(r.limit).margin(1e-9));
+            found = true;
+        }
+        REQUIRE(found);
+    }
+}
+}  // namespace
+
+TEST_CASE("the reactive-capability check follows a generator the row moves or reactivates", "[batch][scenario_sweep][topo][physical]")
+{
+    // +/- 0.5 MVAr per machine: every regulated bus violates, so what is reported is
+    // exactly which buses hold a generator in the row, and how much they ask
+    SECTION("a generator moved to a new busbar with a line") {
+        LSGrid grid = make_grid(0.5);
+        std::vector<TopoAction> actions(3);
+        actions[0].add_element(ElementType::gen, 1, 2);
+        actions[0].add_element(ElementType::line_ex, 3, 2);
+        actions[2].add_element(ElementType::gen, 1, -1);
+        ScenarioSweep sweep(grid);
+        sweep.set_compute_physical_violations(true);
+        sweep.set_physical_violation_tol_mva(0.);
+        RealMat load_p(3, 2);
+        load_p << 10., 50., 10., 50., 10., 50.;
+        sweep.modify_load_p(load_p);
+        sweep.set_topo_actions(actions);
+        sweep.compute(flat_start(grid), 30, 1e-10);
+        REQUIRE(sweep.get_status() == 1);
+        for(int row = 0; row < 3; ++row){
+            INFO("row " << row);
+            require_same_violations(sweep.get_physical_violations()[static_cast<size_t>(row)],
+                                    physical_reference(grid, actions[static_cast<size_t>(row)]));
+        }
+        // the moved generator is reported on its new bus (6), no longer on bus 2
+        bool at_new = false, at_old = false;
+        for(const LimitViolation & v : sweep.get_physical_violations()[0]){
+            if(v.element_type != ViolationElementType::BUS) continue;
+            if(v.element_id == 2 + N_SUB) at_new = true;
+            if(v.element_id == 2) at_old = true;
+        }
+        REQUIRE(at_new);
+        REQUIRE(!at_old);
+    }
+    SECTION("a generator reactivated on its bus") {
+        LSGrid grid = make_grid(0.5);
+        grid.deactivate_gen(1);
+        std::vector<TopoAction> actions(2);
+        actions[0].add_element(ElementType::gen, 1, 1);
+        ScenarioSweep sweep(grid);
+        sweep.set_compute_physical_violations(true);
+        sweep.set_physical_violation_tol_mva(0.);
+        RealMat load_p(2, 2);
+        load_p << 10., 50., 10., 50.;
+        sweep.modify_load_p(load_p);
+        sweep.set_topo_actions(actions);
+        sweep.compute(flat_start(grid), 30, 1e-10);
+        REQUIRE(sweep.get_status() == 1);
+        for(int row = 0; row < 2; ++row){
+            INFO("row " << row);
+            require_same_violations(sweep.get_physical_violations()[static_cast<size_t>(row)],
+                                    physical_reference(grid, actions[static_cast<size_t>(row)]));
+        }
+        bool at_bus_2 = false;
+        for(const LimitViolation & v : sweep.get_physical_violations()[0]) if(v.element_id == 2) at_bus_2 = true;
+        REQUIRE(at_bus_2);
     }
 }

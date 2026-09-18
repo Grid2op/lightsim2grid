@@ -15,8 +15,9 @@ Change Log
     generator-contingency path.
   * the DC algorithm: a row carrying a topological action is refused on it, the coefficient
     edits are the same as AC but the masking / connectivity path is not wired for ``Bbus``.
-  * ``keep_jacobian`` and ``compute_physical_violations`` combined with a generator reactivation
-    or move (their plans are keyed on the base placement of the generators).
+  * ``keep_jacobian`` combined with a generator reactivation or move: the ``gen_v`` gradient
+    (``get_gen_v_target_bus`` / ``gen_v_indirect_grad``) maps every generator to the bus it
+    holds in the base grid, once for the batch, where it should follow the row.
 - ``modify_gen_v`` can only vary a GENERATOR's voltage set-point: there is no
   ``modify_svc_v`` and no ``modify_hvdc_v``. So a generator whose regulated bus is also
   regulated by a voltage-mode SVC or an hvdc converter station cannot be moved by a batch
@@ -196,7 +197,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   analysis: the solver labelling is built for the union of the buses the rows use, the
   admittance entries a row writes are reserved as stored zeros, and a row is value edits
   (coefficients, injections, PV pinning, masking of the buses it leaves empty). See the TODO
-  section for what is refused.
+  section for what is refused. ``compute_physical_violations`` follows the row: a generator the
+  row moves or reactivates is checked on the bus the row gives it.
 - [ADDED] light environment: ``LightEnv.init_actions`` registers the actions the agent can take,
   given as grid2op actions (``set_bus`` / ``set_line_status``) or ``TopoAction``; every action is
   checked against the grid (element and busbar exist, no contradiction) and an invalid one is

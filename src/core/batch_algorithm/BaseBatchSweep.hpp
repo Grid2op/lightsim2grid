@@ -2018,6 +2018,55 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return _li_masked[i].empty() ? nullptr : &_li_masked[i];
         }
 
+        // the (generator, solver bus) pairs row i's topological action places, restricted
+        // to the generators that pin their bus there (a non-regulating one is an
+        // injection, out of the reactive check); empty where the row places none
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        std::vector<std::pair<int, int> > _row_gens_placed(size_t i) const {
+            std::vector<std::pair<int, int> > res;
+            if(i >= sbus_policy_.topo_gens_on.size()) return res;
+            const auto & generators = _grid_model.get_generators();
+            for(const auto & gen_on : sbus_policy_.topo_gens_on[i]){
+                if(!generators.would_be_local_voltage_controller(gen_on.gen_id)) continue;
+                res.push_back(std::make_pair(gen_on.gen_id, gen_on.bus_solver));
+            }
+            return res;
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        std::vector<std::pair<int, int> > _row_gens_placed(size_t) const { return std::vector<std::pair<int, int> >(); }
+
+        // the reactive-capability plan of a row that places generators: the batch's plan
+        // with each placed generator taken off the bus it holds in the base grid and put
+        // on the bus the row gives it -- an entry of its own where no controller of the
+        // base grid stands there
+        void _row_bus_q_plan(const std::vector<std::pair<int, int> > & gens_placed,
+                             bus_q_check::BusQPlan & out) const {
+            out = _bus_q_plan_;
+            const auto solver_to_me = active_layout().id_solver_to_me.as_eigen();
+            const SubstationContainer & subs = _grid_model.get_substations();
+            const std::vector<std::string> & sub_names = subs.get_sub_names();
+            for(const auto & g : gens_placed){
+                const int gen_id = g.first;
+                const int bus_solver = g.second;
+                bus_q_check::BusQEntry * target = nullptr;
+                for(auto & entry : out.buses){
+                    std::vector<int> & ids = entry.gen_ids;
+                    ids.erase(std::remove(ids.begin(), ids.end(), gen_id), ids.end());
+                    if(entry.bus_solver == bus_solver) target = &entry;
+                }
+                if(target == nullptr){
+                    bus_q_check::BusQEntry entry;
+                    entry.bus_solver = bus_solver;
+                    entry.bus_grid = (bus_solver >= 0 && bus_solver < solver_to_me.size()) ? solver_to_me[bus_solver] : -1;
+                    const int sub_id = entry.bus_grid >= 0 ? subs.sub_id_of_bus(entry.bus_grid) : -1;
+                    if(sub_id >= 0 && static_cast<std::size_t>(sub_id) < sub_names.size()) entry.sub_name = sub_names[static_cast<std::size_t>(sub_id)];
+                    out.buses.push_back(entry);
+                    target = &out.buses.back();
+                }
+                target->gen_ids.push_back(gen_id);
+            }
+        }
+
         // MUST be called while the row's own state is still installed on the algorithm
         // -- its Ybus edits, its masked buses, its PV pinning -- for the same reason
         // _maybe_store_jacobian must: what is read here (the per-bus mismatch, the
@@ -2033,17 +2082,34 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(!_compute_physical_violations_) return;
             if(i >= _physical_violations_.size()) return;
             const std::vector<int> * masked = _row_masked_ids(i);
-            if(_bus_q_check_on_ && !_bus_q_plan_.empty()){
-                // get_controller_q() returns by value: asked for only where a bus' reactive
-                // power actually needs it (see BusQPlan::needs_controller_q), so an ordinary
-                // grid of local PV machines pays no per-row allocation.
-                const RealVect ctrl_q = _bus_q_plan_.needs_controller_q ? algo.get_controller_q()
-                                                                       : RealVect();
-                bus_q_check::check_bus_q_violations(
-                    _bus_q_plan_, _grid_model, algo.get_bus_mismatch(), V_solver, ctrl_q,
-                    _grid_model.get_sn_mva(), _physical_tol_mva_, masked,
-                    [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
-                    _physical_violations_[i]);
+            // the generators this row's topological action places on a bus (moved there,
+            // or reactivated): the plan, built from the base placement, lists each of
+            // them on the bus it left, or not at all -- this row's plan lists them where
+            // they stand (see _row_bus_q_plan). Empty on every other row.
+            const std::vector<std::pair<int, int> > gens_placed = _row_gens_placed(i);
+            if(_bus_q_check_on_){
+                const bus_q_check::BusQPlan * plan = &_bus_q_plan_;
+                bus_q_check::BusQPlan row_plan;
+                if(!gens_placed.empty()){
+                    _row_bus_q_plan(gens_placed, row_plan);
+                    plan = &row_plan;
+                }
+                if(!plan->empty()){
+                    // get_controller_q() returns by value: asked for only where a bus' reactive
+                    // power actually needs it (see BusQPlan::needs_controller_q), so an ordinary
+                    // grid of local PV machines pays no per-row allocation.
+                    const RealVect ctrl_q = plan->needs_controller_q ? algo.get_controller_q()
+                                                                     : RealVect();
+                    bus_q_check::check_bus_q_violations(
+                        *plan, _grid_model, algo.get_bus_mismatch(), V_solver, ctrl_q,
+                        _grid_model.get_sn_mva(), _physical_tol_mva_, masked,
+                        [this, i, &gens_placed](int gen_id){
+                            // a generator the row placed stands where this plan lists it
+                            for(const auto & g : gens_placed) if(g.first == gen_id) return false;
+                            return this->_gen_off_in_row(i, gen_id);
+                        },
+                        _physical_violations_[i]);
+                }
             }
             if(!_hvdc_p_plan_.empty()){
                 hvdc_p_check::check_hvdc_p_violations(_hvdc_p_plan_, algo.get_Va(),
@@ -2367,12 +2433,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                 "with the row: not supported yet (see the TODO in the changelog).";
                         throw std::runtime_error(exc_.str());
                     }
-                    if(_keep_jacobian_ || _compute_physical_violations_){
+                    if(_keep_jacobian_){
                         std::ostringstream exc_;
                         exc_ << algo_name() << "::set_topo_actions: the action of row " << row
                              << (was_on ? " moves" : " reactivates") << " generator " << g.el_id
-                             << ", which `keep_jacobian` and `compute_physical_violations` do not support yet "
-                                "(their plans are keyed on the base placement of the generators). Turn them off.";
+                             << ", which `keep_jacobian` does not support yet (the gen_v gradient maps "
+                                "every generator to the bus it holds in the base grid, see "
+                                "get_gen_v_target_bus). Turn it off.";
                         throw std::runtime_error(exc_.str());
                     }
                     if(was_on) gen_off_in_row(row, g.el_id);   // gone from its base bus

@@ -218,9 +218,10 @@ a row that strands one of the base grid's buses is still ``NOT_SIMULATED``.
 
     Refused by ``compute`` for now: moving or reactivating a slack participant, a generator
     on a slack bus, a generator that regulates a remote bus or whose bus a control group
-    holds, a storage unit that regulates voltage; ``keep_jacobian`` and
-    ``compute_physical_violations`` on a batch that moves a generator; and the DC algorithm.
-    See the TODO section of the changelog.
+    holds, a storage unit that regulates voltage; ``keep_jacobian`` on a batch that moves or
+    reactivates a generator; and the DC algorithm. See the TODO section of the changelog.
+    ``compute_physical_violations`` follows the row: a generator the row moves or reactivates
+    is checked on the bus the row gives it.
 
 Handling disconnected grids and limit violations
 ------------------------------------------------------

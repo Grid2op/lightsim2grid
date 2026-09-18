@@ -404,8 +404,9 @@ class TestScenarioSweepGenReactivation(TestScenarioSweepTopology):
         with self.assertRaises(RuntimeError) as cm:
             self._sweep([self._reco()], grid=grid)
         self.assertIn("slack", str(cm.exception))
-        # keep_jacobian and the physical checks are not wired for it
-        for name in ("keep_jacobian", "compute_physical_violations"):
+        # keep_jacobian is not wired for it (the physical checks are, see
+        # TestScenarioSweepTopologyPhysical)
+        for name in ("keep_jacobian",):
             with self.subTest(name=name):
                 sweep = ScenarioSweepCPP(self.grid)
                 setattr(sweep, name, True)
@@ -540,6 +541,91 @@ class TestScenarioSweepTopologyMoves(_TopoSweepBase):
         for line_id in (2, 3):
             self.assertIn((ViolationElementType.LINE, line_id, 1), got)
             self.assertAlmostEqual(got[(ViolationElementType.LINE, line_id, 1)], ref_flows[line_id], places=6)
+
+
+class TestScenarioSweepTopologyPhysical(unittest.TestCase):
+    """compute_physical_violations follows a row's generator placements: the reactive
+    power a bus asks of its machines is checked where the row puts them"""
+    def setUp(self):
+        import pandapower.networks as pn
+        from lightsim2grid.network import init_from_pandapower
+        net = pn.case14()
+        net.gen["min_q_mvar"] = -5.
+        net.gen["max_q_mvar"] = 5.
+        if "min_q_mvar" in net.ext_grid:
+            net.ext_grid["min_q_mvar"] = -5.
+            net.ext_grid["max_q_mvar"] = 5.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.grid = init_from_pandapower(net, n_sub=len(net.bus), n_busbar_per_sub=2)
+        self.n_sub = len(net.bus)
+        self.Vinit = np.full(self.grid.total_bus(), self.grid.get_init_vm_pu() + 0j)
+        self.assertGreater(self.grid.ac_pf(1.0 * self.Vinit, 30, 1e-10).shape[0], 0)
+        gens = list(self.grid.get_generators())
+        # a regulating, non-slack generator alone on its bus, and a line of that bus
+        self.gen_id = next(g_id for g_id, g in enumerate(gens)
+                           if g.voltage_regulator_on and not g.is_slack
+                           and sum(1 for o in gens if o.bus_id == g.bus_id) == 1)
+        self.gen_bus = gens[self.gen_id].bus_id
+        line_or_bus = np.asarray(self.grid.get_lines().get_bus_id_side_1(), dtype=int)
+        self.line_id = int(np.nonzero(line_or_bus == self.gen_bus)[0][0])
+
+    def _reference_bus_q(self, action):
+        grid = copy.deepcopy(self.grid)
+        action.check_validity(grid)
+        action.apply_to_gridmodel(grid)
+        V = grid.ac_pf(1.0 * self.Vinit, 30, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+        per_bus = {}
+        for gen in grid.get_generators():
+            if not gen.connected or not gen.voltage_regulator_on:
+                continue
+            per_bus[gen.bus_id] = per_bus.get(gen.bus_id, 0.) + gen.res_q_mvar
+        return per_bus
+
+    def _check_rows(self, grid, actions):
+        sweep = ScenarioSweepCPP(grid)
+        sweep.compute_physical_violations = True
+        sweep.physical_violation_tol_mva = 0.
+        sweep.modify_gen_p(np.tile([g.target_p_mw for g in grid.get_generators()], (len(actions), 1)))
+        sweep.set_topo_actions(actions)
+        sweep.compute(1.0 * self.Vinit, 30, 1e-10)
+        self.assertEqual(sweep.get_status(), 1)
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                expected = self._reference_bus_q(action)
+                viols = [v for v in sweep.get_physical_violations()[row]
+                         if v.violation_type in (LimitViolationType.LOW_Q, LimitViolationType.HIGH_Q)]
+                self.assertGreater(len(viols), 0)
+                reported = set()
+                for v in viols:
+                    self.assertIn(v.element_id, expected, f"bus {v.element_id} holds no regulating generator")
+                    self.assertAlmostEqual(v.value, expected[v.element_id], places=4)
+                    reported.add(v.element_id)
+                # every bus asking more than its machines own is reported
+                for bus, q in expected.items():
+                    if abs(q) > 5. + 1e-6:
+                        self.assertIn(bus, reported, f"bus {bus} asks {q:.2f} MVAr and is not reported")
+        return sweep
+
+    def test_generator_moved(self):
+        move = TopoAction()
+        move.add_element(ElementType.gen, self.gen_id, 2)
+        move.add_element(ElementType.line_or, self.line_id, 2)
+        sweep = self._check_rows(self.grid, [move, TopoAction()])
+        new_bus = self.gen_bus + self.n_sub
+        reported = {v.element_id for v in sweep.get_physical_violations()[0]}
+        self.assertIn(new_bus, reported)
+        self.assertNotIn(self.gen_bus, reported)
+
+    def test_generator_reactivated(self):
+        grid = copy.deepcopy(self.grid)
+        grid.deactivate_gen(self.gen_id)
+        reco = TopoAction()
+        reco.add_element(ElementType.gen, self.gen_id, 1)
+        sweep = self._check_rows(grid, [reco, TopoAction()])
+        self.assertIn(self.gen_bus, {v.element_id for v in sweep.get_physical_violations()[0]})
+        self.assertNotIn(self.gen_bus, {v.element_id for v in sweep.get_physical_violations()[1]})
 
 
 class TestScenarioSweepTopologyGrid2op(unittest.TestCase):

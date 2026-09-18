@@ -716,8 +716,9 @@ void bind_batch(py::module_& m) {
              "row is value edits (coefficients, injections, PV pinning, masking of the union "
              "buses it leaves empty). compute() refuses a row naming an element in both a "
              "mask and its action, a slack participant or a remote / group-held controller "
-             "moved or reactivated, a regulating storage unit moved, keep_jacobian / "
-             "compute_physical_violations with a generator move, and the DC algorithm.")
+             "moved or reactivated, a regulating storage unit moved, keep_jacobian with a "
+             "generator move or reactivation, and the DC algorithm. compute_physical_violations "
+             "follows the row (a generator the row places is checked on that bus).")
         .def("get_topo_actions", &ScenarioSweep::get_topo_actions<>,
              "The (checked) actions registered with set_topo_actions.")
         .def("get_row_disconnected_branches", &ScenarioSweep::get_row_disconnected_branches<>, py::arg("row"),
