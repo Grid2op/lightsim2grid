@@ -9,6 +9,7 @@
 #ifndef GENERATORCONTAINER_H
 #define GENERATORCONTAINER_H
 
+#include <limits>
 #include <vector>
 
 #include "Eigen/Core"
@@ -32,6 +33,12 @@ class LS2G_API GenInfo : public OneSideContainer_PQ::OneSidePQInfo
         real_type target_vm_pu;
         real_type min_q_mvar;
         real_type max_q_mvar;
+        // active power limits, in MW -- OPTIONAL: NaN when the grid was never given any
+        // (see LSGrid::set_gen_p_limits). Nothing enforces them; they are what says whether
+        // the active power a distributed slack ended up asking of this machine is one it
+        // could actually deliver (see batch_algorithm/GenPCheck.hpp).
+        real_type min_p_mw;
+        real_type max_p_mw;
         int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id for local control)
 
         inline GenInfo(const GeneratorContainer & r_data_gen, int my_id) noexcept;
@@ -70,7 +77,9 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
            std::vector<real_type>,  // max_q_
            std::vector<bool>,       // gen_slackbus
            std::vector<real_type>,  // gen_slack_weight_
-           std::vector<int>         // regulated_bus_id_ (appended; defaults to own bus)
+           std::vector<int>,        // regulated_bus_id_ (appended; defaults to own bus)
+           std::vector<real_type>,  // p_min_mw_ (appended, optional: empty if unset)
+           std::vector<real_type>   // p_max_mw_ (appended, optional: empty if unset)
         > ;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -82,6 +91,8 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             GEN_SLACKBUS,
             GEN_SLACK_WEIGHT,
             REGULATED_BUS_ID,
+            P_MIN_MW,
+            P_MAX_MW,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -229,6 +240,44 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
 
         real_type get_min_q(int gen_id) const {return min_q_.coeff(gen_id);}
         real_type get_max_q(int gen_id) const {return max_q_.coeff(gen_id);}
+
+        /**
+         * Active power limits (MW), OPTIONAL -- exactly like a branch's thermal rating
+         * (BranchContainer::set_limit_a1_ka): nothing in the powerflow reads them, they are
+         * what a limit check compares against, and a grid that was never given any simply
+         * has none (the two vectors stay empty, and `get_min_p` / `get_max_p` answer NaN).
+         *
+         * They matter because the distributed slack is solved INSIDE the Newton system
+         * (`MultiSlack`), with fixed participation factors and no notion of a limit: a
+         * participating machine's converged active power is `target_p + its share of the
+         * imbalance`, which can land anywhere. See batch_algorithm/GenPCheck.hpp.
+         *
+         * Pass two empty vectors to drop them again.
+         */
+        void set_p_limits(const Eigen::Ref<const RealVect> & p_min_mw,
+                          const Eigen::Ref<const RealVect> & p_max_mw){
+            if((p_min_mw.size() == 0) && (p_max_mw.size() == 0)){
+                p_min_mw_ = RealVect();
+                p_max_mw_ = RealVect();
+                return;
+            }
+            check_size(p_min_mw, nb(), "GeneratorContainer::set_p_limits (p_min_mw)");
+            check_size(p_max_mw, nb(), "GeneratorContainer::set_p_limits (p_max_mw)");
+            p_min_mw_ = p_min_mw;
+            p_max_mw_ = p_max_mw;
+        }
+        Eigen::Ref<const RealVect> get_p_min_mw() const {return p_min_mw_;}
+        Eigen::Ref<const RealVect> get_p_max_mw() const {return p_max_mw_;}
+        /// NaN where no limit was given -- for the whole grid (never set) or for that one
+        /// machine (a NaN in the vector handed to set_p_limits)
+        real_type get_min_p(int gen_id) const {
+            return p_min_mw_.size() > 0 ? p_min_mw_.coeff(gen_id)
+                                        : std::numeric_limits<real_type>::quiet_NaN();
+        }
+        real_type get_max_p(int gen_id) const {
+            return p_max_mw_.size() > 0 ? p_max_mw_.coeff(gen_id)
+                                        : std::numeric_limits<real_type>::quiet_NaN();
+        }
         // the reactive setpoint a NON voltage-regulating generator injects (a
         // regulating one's reactive output is solved for, not set -- see fillSbus,
         // which only stamps this when voltage_regulator_on_ is false)
@@ -236,6 +285,8 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         // the generator's own (un-normalised) share of the distributed slack, as
         // aggregated per bus by get_slack_weights_solver
         real_type get_gen_slack_weight(int gen_id) const {return gen_slack_weight_[gen_id];}
+        /// whether this generator takes part in the distributed slack at all
+        bool is_slack(int gen_id) const {return gen_slackbus_[gen_id];}
 
         /**
          * pseudo off generator (with p == 0) and with no contribution to the the slack bus
@@ -287,6 +338,9 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         // physical properties
         RealVect min_q_;
         RealVect max_q_;
+        // active power limits (MW), optional: empty when the grid was never given any
+        RealVect p_min_mw_;
+        RealVect p_max_mw_;
 
         // remember which generators are "slack bus"
         std::vector<bool> gen_slackbus_;  // say for each generator if it's a slack or not
@@ -307,6 +361,8 @@ voltage_regulator_on(false),
 target_vm_pu(0.),
 min_q_mvar(0.),
 max_q_mvar(0.),
+min_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
+max_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
 regulated_bus_id(-1)
 {
     if((my_id >= 0) && (my_id < r_data_gen.nb()))
@@ -318,6 +374,8 @@ regulated_bus_id(-1)
         target_vm_pu = r_data_gen.target_vm_pu_.coeff(my_id);
         min_q_mvar = r_data_gen.min_q_.coeff(my_id);
         max_q_mvar = r_data_gen.max_q_.coeff(my_id);
+        min_p_mw = r_data_gen.get_min_p(my_id);
+        max_p_mw = r_data_gen.get_max_p(my_id);
         regulated_bus_id = r_data_gen.regulated_bus_id_(my_id);
     }
 }

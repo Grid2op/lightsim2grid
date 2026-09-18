@@ -58,8 +58,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
 
     if(invertible){
         if(!_has_gen_contingency()){
+            const CplxVect & sb = _step_sbus(i, sbus_scratch);
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
-                                         Ybus, V, _step_sbus(i, sbus_scratch),
+                                         Ybus, V, sb,
                                          active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
@@ -68,7 +69,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             // solved)
             if(conv){
                 _maybe_store_jacobian(i, algo);
-                _record_row_physical(i, algo, V);
+                _record_row_physical(i, algo, V, active_layout().slack_weights, sb);
             }
         } else {
             // generator contingencies: this row's buses that keep a live local voltage
@@ -83,8 +84,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             const bool flips = _row_flips_pv(i);
             if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(i));
             const RealVect & sw = _row_slack_weights(i, sw_scratch);
+            const CplxVect & sb = _step_sbus(i, sbus_scratch);
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
-                                         Ybus, V, _step_sbus(i, sbus_scratch),
+                                         Ybus, V, sb,
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
@@ -93,7 +95,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             // the state the physical-limit checks read
             if(conv){
                 _maybe_store_jacobian(i, algo);
-                _record_row_physical(i, algo, V);
+                _record_row_physical(i, algo, V, sw, sb);
             }
             if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
         }

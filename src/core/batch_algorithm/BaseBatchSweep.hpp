@@ -14,6 +14,7 @@
 #include "SbusPolicy.hpp"
 #include "LimitViolation.hpp"
 #include "BusQCheck.hpp"
+#include "GenPCheck.hpp"
 #include "HvdcPCheck.hpp"
 #include "BusGraph.hpp"
 #include "BatchAdjoint.hpp"
@@ -385,6 +386,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _violations_n_.clear();
             _physical_violations_.clear();
             _bus_q_plan_.clear();
+            _hvdc_p_plan_.clear();
+            _gen_p_plan_.clear();
             // NOT _physical_violations_n_: it describes the BASE CASE, which is L2 (see
             // clear_batch_inputs). A compute() that reuses the base case does not re-solve
             // it -- so the report of the solve that built it is the only correct one
@@ -729,9 +732,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // Opt in to the checks whose violation says the converged row is not a state the
         // grid can reach at all -- ViolationCategory::PHYSICAL, as opposed to the
         // operational limits `compute_limit_violations` reports (a voltage band, a thermal
-        // rating: states the grid does reach and should not sit in). Two today, both
-        // conditions an OpenLoadFlow outer loop acts on, and neither enforced here -- no
-        // bus is switched PV -> PQ, no droop is clamped, no row is re-solved:
+        // rating: states the grid does reach and should not sit in). Three today, each a
+        // condition an OpenLoadFlow outer loop acts on, and none enforced here -- no bus is
+        // switched PV -> PQ, no droop is clamped, no machine leaves the slack distribution,
+        // no row is re-solved:
         //
         //   * the REACTIVE CAPABILITY of each bus whose voltage is held by machines
         //     (LOW_Q / HIGH_Q on the BUS, see BusQCheck.hpp): did it need more reactive
@@ -740,20 +744,29 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //   * the ACTIVE POWER of each angle-droop ("AC emulation") hvdc line still in the
         //     linear regime (HIGH_P on the HVDC, see HvdcPCheck.hpp): did it transmit more
         //     than `pmax_1to2_mw` / `pmax_2to1_mw` allow in that direction? OpenLoadFlow's
-        //     `HvdcAcEmulationLimits`.
+        //     `HvdcAcEmulationLimits`;
+        //   * the ACTIVE POWER of each generator carrying the DISTRIBUTED SLACK (LOW_P /
+        //     HIGH_P on the GENERATOR, see GenPCheck.hpp): the slack is solved inside the
+        //     Jacobian by participation factors that know nothing about limits, so
+        //     `target_p + share` can land beyond `min_p_mw` / `max_p_mw`. OpenLoadFlow's
+        //     `DistributedSlack`, whose whole job is to take a saturated machine out of the
+        //     distribution and re-share what is left.
         //
         // Available on all four instantiations (unlike compute_limit_violations, which is
         // contingency-only): a time series that walks a load curve is exactly as likely to
-        // ask a bus for reactive power it does not have, or a converter for power it cannot
-        // transmit, as a contingency is.
+        // ask a bus for reactive power it does not have, or a machine for active power it
+        // cannot deliver, as a contingency is.
         //
-        // WHAT EACH CHECK NEEDS. The hvdc one needs only the bus angles, which every
-        // algorithm solves -- AC and DC alike. The reactive one needs an AC algorithm that
-        // publishes its per-bus mismatch (BaseAlgo::fills_bus_mismatch -- every built-in AC
-        // family does; a plugin solver has to opt in), and compute() raises for one that
-        // does not rather than reporting nothing. In DC it is simply not applicable: a DC
-        // powerflow has no reactive power at all, so a DC batch reports the active-power
-        // half and nothing is hidden by it.
+        // WHAT EACH CHECK NEEDS. The hvdc one needs only the bus angles and the generator
+        // one only the slack the row distributed -- both of which every algorithm leaves
+        // behind, AC and DC alike. The reactive one needs an AC algorithm that publishes
+        // its per-bus mismatch (BaseAlgo::fills_bus_mismatch -- every built-in AC family
+        // does; a plugin solver has to opt in), and compute() raises for one that does not
+        // rather than reporting nothing. In DC it is simply not applicable: a DC powerflow
+        // has no reactive power at all, so a DC batch reports the two active-power checks
+        // and nothing is hidden by it. The generator check also needs the limits
+        // themselves, which are optional (LSGrid::set_gen_p_limits): a grid that has none
+        // simply reports nothing there.
         //
         // Setting this drops this batch's base case and results, but NOT its registrations
         // (the contingencies / injections), so unlike compute_limit_violations -- which
@@ -800,7 +813,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          *     (MVAr) and `limit` their summed capability;
          *   - element_type HVDC, element_id the hvdc line id, violation_type HIGH_P, `side`
          *     the direction (1 for 1 -> 2), `value` the active power leaving that side (MW,
-         *     positive) and `limit` that direction's pmax.
+         *     positive) and `limit` that direction's pmax;
+         *   - element_type GENERATOR, element_id the generator id, violation_type LOW_P /
+         *     HIGH_P, `value` its converged active power (MW, target plus its share of the
+         *     distributed slack) and `limit` its min_p_mw / max_p_mw.
          *
          * Requires compute_physical_violations = true.
          */
@@ -1730,6 +1746,37 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         bool _gen_off_in_row(size_t, int) const { return false; }
 
+        // This row's own active set-point for that generator, in MW -- the number the
+        // distributed slack's share is added ON TOP of (see GenPCheck.hpp). Exactly what
+        // SbusPolicy::Vary::fill_row stamped into this row's injection: its own gen_p row
+        // where modify_gen_p was given one, the grid's target otherwise. Where the
+        // injection does not vary at all (ContingencyAnalysis), the grid's target IS the
+        // row's.
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        real_type _gen_target_p_in_row(size_t i, int gen_id) const {
+            const auto & mat = sbus_policy_.gen_p;
+            const Eigen::Index row = static_cast<Eigen::Index>(i);
+            if(mat.rows() > 0 && row < mat.rows() && gen_id < mat.cols()) return mat(row, gen_id);
+            return _grid_target_p(gen_id);
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        real_type _gen_target_p_in_row(size_t, int gen_id) const { return _grid_target_p(gen_id); }
+
+        real_type _grid_target_p(int gen_id) const {
+            const Eigen::Ref<const RealVect> tgt = _grid_model.get_gen_target_p();
+            return (gen_id >= 0 && gen_id < tgt.size()) ? tgt(gen_id) : 0.;
+        }
+
+        // The active power imbalance a DC row leaves for the slack machines to make up
+        // (MW), the same `-sum(Pbus)` LSGrid::_fill_bus_mismatch_dc shares out -- read off
+        // the injection the row was actually solved with (empty means the DC entry point
+        // fell back to the member dc_cache_.inj, see compute_one_powerflow).
+        real_type _dc_imbalance_mw(const Eigen::Ref<const CplxVect> & sbus_solver) const {
+            const real_type sn_mva = _grid_model.get_sn_mva();
+            if(sbus_solver.size() > 0) return -sbus_solver.real().sum() * sn_mva;
+            return -dc_cache_.inj.sum() * sn_mva;
+        }
+
         // This row's masked (stranded) solver buses, or nullptr when it masks none.
         // Only the "handle disconnected grid" mode ever hands _li_masked to the
         // algorithm; without it a contingency that strands a bus makes the row skipped
@@ -1749,7 +1796,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // voltage-mode SVC's capability is a susceptance range, so what it is worth in MVAr
         // depends on it.
         void _record_row_physical(size_t i, AlgorithmSelector & algo,
-                                  const Eigen::Ref<const CplxVect> & V_solver){
+                                  const Eigen::Ref<const CplxVect> & V_solver,
+                                  const Eigen::Ref<const RealVect> & slack_weights,
+                                  const Eigen::Ref<const CplxVect> & sbus_solver){
             if(!_compute_physical_violations_) return;
             if(i >= _physical_violations_.size()) return;
             const std::vector<int> * masked = _row_masked_ids(i);
@@ -1769,6 +1818,22 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 hvdc_p_check::check_hvdc_p_violations(_hvdc_p_plan_, algo.get_Va(),
                                                       _physical_tol_mva_, masked,
                                                       _physical_violations_[i]);
+            }
+            if(!_gen_p_plan_.empty()){
+                // the weights are THIS row's (a generator contingency re-derives them),
+                // and so is the slack the solve absorbed -- both belong to the system the
+                // algorithm handed in has just solved, which is why this runs here and not
+                // after the row's state is put back
+                gen_p_check::SlackShareInputs slack(algo.get_bus_mismatch(), slack_weights,
+                                                    _grid_model.get_sn_mva(),
+                                                    algo.ac_solver_used());
+                if(slack.ac) slack.slack_absorbed = algo.get_slack_absorbed();
+                else slack.dc_imbalance_mw = _dc_imbalance_mw(sbus_solver);
+                gen_p_check::check_gen_p_violations(
+                    _gen_p_plan_, slack, _physical_tol_mva_, masked,
+                    [this, i](int gen_id){ return this->_gen_target_p_in_row(i, gen_id); },
+                    [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
+                    _physical_violations_[i]);
             }
         }
 
@@ -1826,6 +1891,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _prepare_physical_check(size_t nb_steps, bool ac_solver_used){
             _bus_q_plan_.clear();
             _hvdc_p_plan_.clear();
+            _gen_p_plan_.clear();
             _physical_violations_.clear();
             _bus_q_check_on_ = false;
             if(!_compute_physical_violations_) return;
@@ -1862,6 +1928,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             hvdc_p_check::build_hvdc_p_plan(_grid_model, active_layout().id_me_to_solver,
                                             _hvdc_p_plan_);
+            gen_p_check::build_gen_p_plan(_grid_model, active_layout().id_me_to_solver,
+                                          _gen_p_plan_);
         }
 
         // The base ("n") case's own report, read off the solve _finish_preprocessing just
@@ -1886,6 +1954,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 hvdc_p_check::check_hvdc_p_violations(_hvdc_p_plan_, _algo.get_Va(),
                                                       _physical_tol_mva_, nullptr,
                                                       _physical_violations_n_);
+            }
+            if(!_gen_p_plan_.empty()){
+                // the base case is the grid's own: its targets, its weights, no
+                // contingency -- and, in DC, the injection _solve_n_case handed the solver
+                const bool ac = _algo.ac_solver_used();
+                gen_p_check::SlackShareInputs slack(_algo.get_bus_mismatch(),
+                                                    active_layout().slack_weights,
+                                                    _grid_model.get_sn_mva(), ac);
+                if(ac) slack.slack_absorbed = _algo.get_slack_absorbed();
+                else slack.dc_imbalance_mw = -dc_cache_.inj.sum() * _grid_model.get_sn_mva();
+                gen_p_check::check_gen_p_violations(
+                    _gen_p_plan_, slack, _physical_tol_mva_, nullptr,
+                    [this](int gen_id){ return this->_grid_target_p(gen_id); },
+                    [](int){ return false; },  // the base case disconnects no generator
+                    _physical_violations_n_);
             }
         }
 
@@ -2205,7 +2288,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         V = Vinit_solver;
                         _apply_step_gen_v(cont_id, V);
                         const RealVect & sw = _masked_slack_weights(masked, _row_slack_weights(cont_id, sw_scratch), sw_scratch);
-                        conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, _step_sbus(cont_id, sbus_scratch),
+                        const CplxVect & sb = _step_sbus(cont_id, sbus_scratch);
+                        conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, sb,
                                                      active_layout().slack_bus_id_solver.as_eigen(), sw,
                                                      active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
@@ -2214,7 +2298,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         // reads the mismatch of the system this row solved)
                         if(conv){
                             _maybe_store_jacobian(cont_id, algo);
-                            _record_row_physical(cont_id, algo, V);
+                            _record_row_physical(cont_id, algo, V, sw, sb);
                         }
                         if(!masked.empty()) algo.set_masked_buses(std::vector<int>());
                         if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
@@ -2439,6 +2523,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         bool _bus_q_check_on_ = false;
         bus_q_check::BusQPlan _bus_q_plan_;
         hvdc_p_check::HvdcPPlan _hvdc_p_plan_;
+        gen_p_check::GenPPlan _gen_p_plan_;
         std::vector<std::vector<LimitViolation> > _physical_violations_;
         std::vector<LimitViolation> _physical_violations_n_;
         // per-row branch-id cache (ContingencyAnalysis only), refreshed once per

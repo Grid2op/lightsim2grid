@@ -30,6 +30,14 @@ Change Log
     stores no regulated bus for a station, so a regulating one always regulates the bus it
     stands on. A station only ever joins a control group somebody else created (see
     ``VoltageControlPlan::build_groups``).
+- ``compute_physical_violations`` checks a voltage controller's reactive capability per
+  BUS, which is right for the machines that pin it locally but says nothing per element
+  where the solver DID solve each one: a generator regulating a remote bus, and the hvdc
+  stations sharing one control group, get their own reactive output back
+  (``get_controller_q``), so each could be compared against its own ``min_q_mvar`` /
+  ``max_q_mvar`` on top of the bus-level check. Report both, without making the bus-level
+  one per machine: the split between machines the solver did NOT solve for stays a
+  convention (``_split_q_residual_per_bus``).
 - ``SubstationContainer::sub_vn_kv_`` is dead state: its only writers (``init_sub()``
   and the two-argument constructor) are called from nowhere, and nothing reads it
   back, so it is empty on every grid every loader produces and in every binary file
@@ -97,9 +105,10 @@ Change Log
   ``AbstractLfGenerator.checkIfGeneratorStartedForVoltageControl``), which
   additionally requires ``min_p > 0`` (a generator with ``min_p <= 0`` is allowed
   to legitimately sit at 0 MW and stays a normal voltage-controlling PV bus even
-  at ``p == 0``). ``GeneratorContainer`` does not currently store ``min_p`` at
-  all. There should be a convention (and a stored ``min_p`` per generator) so
-  ``is_pseudo_off`` can check ``target_p == 0 AND min_p > 0``, matching OLF. For
+  at ``p == 0``). ``GeneratorContainer`` now stores ``min_p`` (optional, see
+  ``set_p_limits`` / ``LSGrid::set_gen_p_limits``), so what is left is to decide
+  what ``is_pseudo_off`` should do when a grid has none and then have it check
+  ``target_p == 0 AND min_p > 0``, matching OLF. For
   now this OLF-specific behavior is instead reproduced Python-side, on the
   pypowsybl-loading path only, by ``lightsim2grid.network.from_pypowsybl.
   bake_outer_loops`` (see ``_bake_generator_not_started`` in ``_olf_bake.py``),
@@ -166,6 +175,16 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] ``compute_physical_violations`` also reports a generator the distributed slack
+  pushed below ``min_p_mw`` or above ``max_p_mw``. The slack is solved in the Jacobian by
+  participation factors that ignore limits, which is what OpenLoadFlow's
+  ``DistributedSlack`` outer loop re-shares. Detection only.
+- [ADDED] optional generator active power limits: ``LSGrid.set_gen_p_limits``,
+  ``GenInfo.min_p_mw`` / ``max_p_mw`` (NaN when unset), read from pandapower's
+  ``min_p_mw`` / ``max_p_mw`` and from pypowsybl's ``min_p`` / ``max_p``. Nothing in the
+  powerflow uses them.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 6 -> 7: a generator's optional active power limits
+  are part of its state. A file written by an earlier version no longer loads.
 - [ADDED] ``compute_physical_violations`` on the batch algorithms: every converged row
   reports the limits whose violation makes its solution unreachable
   (``get_physical_violations``) -- a bus needing more reactive power than the SUM of what the

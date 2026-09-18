@@ -87,7 +87,11 @@ namespace ls2g {
 //     "at least one element holds it", counted from the elements -- whose own
 //     status IS serialized. Storing it was storing a cache of something already
 //     in the file, with a way for a crafted file to make the two disagree.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 6;
+// v7: GeneratorContainer::StateRes carries the OPTIONAL active power limits
+//     (`p_min_mw_` / `p_max_mw_`, empty when the grid was never given any -- see
+//     GeneratorContainer::set_p_limits). Appended, so a v6 payload differs only by
+//     their absence, but the layout changed and the version says so.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 7;
 
 class LS2G_API BinaryArchive
 {

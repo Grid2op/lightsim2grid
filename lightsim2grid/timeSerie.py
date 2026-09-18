@@ -138,9 +138,9 @@ class TimeSerie:
         (``ViolationCategory.PHYSICAL``). Default: ``False``. See
         :func:`get_physical_violations`.
 
-        Two checks, both conditions a PowSyBl OpenLoadFlow outer loop acts on, and neither
-        enforced here (nothing is switched PV -> PQ, nothing is clamped, no step is
-        re-solved):
+        Three checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        enforced here (nothing is switched PV -> PQ, nothing is clamped, no machine leaves
+        the slack distribution, no step is re-solved):
 
         * the **reactive capability** of every bus whose voltage is held by machines
           (``LOW_Q`` / ``HIGH_Q`` on the ``BUS``): did it need more reactive power than the
@@ -155,12 +155,20 @@ class TimeSerie:
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is an *input* of the solve,
           so nothing saturates the droop on its own. OpenLoadFlow's
           ``HvdcAcEmulationLimits``.
+        * the **active power** of every generator carrying the **distributed slack**
+          (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR``): the slack is solved inside the
+          Jacobian by fixed participation factors that know nothing about limits, so
+          ``target_p + its share of the imbalance`` can land beyond ``min_p_mw`` /
+          ``max_p_mw``. Per machine, unlike the reactive check: the active split is not a
+          convention, it is the participation factors the caller chose. Needs those limits,
+          which are optional (:func:`lightsim2grid.network.LSGrid.set_gen_p_limits`); a grid
+          without them reports nothing here. OpenLoadFlow's ``DistributedSlack``.
 
-        The hvdc check needs only the bus angles, so it works in DC too; the reactive one
-        needs an AC algorithm that publishes its per-bus mismatch (every built-in AC
-        algorithm does) and ``compute`` raises for one that does not. A DC batch reports the
-        active-power half alone -- a DC powerflow has no reactive power at all, so nothing is
-        hidden by that.
+        The hvdc and generator checks need only the bus angles and the slack the step
+        distributed, so they work in DC too; the reactive one needs an AC algorithm that
+        publishes its per-bus mismatch (every built-in AC algorithm does) and ``compute``
+        raises for one that does not. A DC batch reports the two active-power checks alone --
+        a DC powerflow has no reactive power at all, so nothing is hidden by that.
 
         Changing this flag invalidates any previously-computed results, but not the
         injections already given to ``modify_*``.
