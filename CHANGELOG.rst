@@ -3,6 +3,33 @@ Change Log
 
 [TODO]
 --------
+- node breaker topology (the "detailed topology": switches, breakers, connectivity nodes and
+  busbar sections inside each substation, following pypowsybl's node-breaker view). What the
+  first version deliberately leaves out, so it is not forgotten:
+
+  * grid2op ``LightSimBackend`` switch support: build grid2op's ``DetailedTopoDescription``
+    from ``get_substations()`` / ``get_switches()`` / ``get_busbar_sections()`` and the
+    ``node_id`` of each element, implement ``can_handle_switch()`` /
+    ``get_switches_position()``, and route switch actions to ``update_switches``.
+  * the reverse direction, buses -> switches (grid2op's ``compute_switches_position``): the
+    core only projects switch states onto element buses.
+  * switch contingencies (an N-1 on a breaker) in the batch algorithms
+    (``ContingencyAnalysis`` / ``ScenarioSweep``): they edit Ybus coefficients per branch and
+    know nothing of switches.
+  * per-node results (voltage / angle of every connectivity node), beyond busbar sections.
+  * compacting the per-bus storage: substations are sized for the maximum number of buses any
+    switch configuration can produce (``min(n_busbar_sections + n_branch_terminals, n_feeders)``
+    per voltage level), so ``total_bus()`` grows a lot on large grids (~200k slots on a
+    6 500-voltage-level grid); every O(total_bus) vector and scan pays for it.
+  * detailed topology combined with ``fuse_zero_impedance_branches``, ``convert_dangling_lines``
+    or ``buses_for_sub=True`` in ``init_from_pypowsybl`` (refused for now).
+  * flipping the ``init_from_pypowsybl(detailed_topology=...)`` default from ``False`` to
+    ``"auto"`` (it changes the local bus numbering of every voltage level).
+  * a bulk internal-connections getter upstream in pypowsybl, to drop the per-voltage-level
+    ``get_node_breaker_topology`` loop of the loader.
+  * a C++ test fixture generated from pypowsybl's ``four_substations`` node-breaker network, by
+    extending ``lightsim2grid/tests/_gen_exotic_elements_case.py``'s allowlist with the new
+    ``init_detailed_topology`` / ``set_*_to_node_id`` calls.
 - ``modify_gen_v`` can only vary a GENERATOR's voltage set-point: there is no
   ``modify_svc_v`` and no ``modify_hvdc_v``. So a generator whose regulated bus is also
   regulated by a voltage-mode SVC or an hvdc converter station cannot be moved by a batch
