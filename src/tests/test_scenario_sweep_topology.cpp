@@ -114,13 +114,28 @@ CplxVect reference(const LSGrid & base, const TopoAction & action)
     return grid.ac_pf(flat_start(grid), 30, 1e-10);
 }
 
+// the reference, and the buses it solved (a busbar the row uses is one of them)
+CplxVect reference(const LSGrid & base, const TopoAction & action, std::vector<int> & solved)
+{
+    LSGrid grid(base);
+    TopoAction act = action;
+    act.check_validity(grid);
+    act.apply_to_gridmodel(grid);
+    const CplxVect res = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    solved.clear();
+    for(const auto & b : grid.id_ac_solver_to_me().to_int_vector()) solved.push_back(b);
+    return res;
+}
+
 void require_row_matches(const ScenarioSweep & sweep, int row, const LSGrid & base, const TopoAction & action)
 {
-    const CplxVect ref = reference(base, action);
+    std::vector<int> solved;
+    const CplxVect ref = reference(base, action, solved);
     REQUIRE(ref.size() > 0);
+    REQUIRE(!solved.empty());
     REQUIRE(sweep.converged_mask()[static_cast<size_t>(row)]);
     const auto & Vs = sweep.get_voltages();
-    for(int b = 0; b < N_SUB; ++b){   // busbar 1 of every substation is solved on this grid
+    for(int b : solved){
         INFO("row " << row << ", bus " << b);
         REQUIRE(std::abs(Vs(row, b) - ref(b)) == Approx(0.).margin(1e-8));
     }
@@ -200,22 +215,16 @@ TEST_CASE("what this version refuses: moves, reconnections, DC, invalid actions"
 {
     LSGrid grid = make_grid();
 
-    SECTION("moving an element to a busbar is refused at compute") {
+    SECTION("moving the slack generator is refused at compute") {
         std::vector<TopoAction> actions(2);
-        actions[1].add_element(ElementType::load, 0, 2);
+        actions[1].add_element(ElementType::gen, 0, 2);
         ScenarioSweep sweep(grid);
         sweep.set_topo_actions(actions);
         REQUIRE_THROWS_AS(sweep.compute(flat_start(grid), 30, 1e-10), std::runtime_error);
     }
-    SECTION("reconnecting a branch disconnected in the base grid is refused, a no-op reconnection is a plain row") {
-        LSGrid off = make_grid();
-        off.deactivate_powerline(3);
+    SECTION("a no-op reconnection of a connected line is a plain row") {
         std::vector<TopoAction> actions(1);
         actions[0].set_line_status(3, 1);
-        ScenarioSweep sweep(off);
-        sweep.set_topo_actions(actions);
-        REQUIRE_THROWS_AS(sweep.compute(flat_start(off), 30, 1e-10), std::runtime_error);
-
         ScenarioSweep plain(grid);
         plain.set_topo_actions(actions);   // line 3 is connected: nothing to do
         plain.compute(flat_start(grid), 30, 1e-10);
@@ -301,7 +310,7 @@ TEST_CASE("a base-off generator reactivated on its bus: PQ -> PV at constant spa
         // the injection really reached the row: bus 3 is not where it is without it
         REQUIRE(std::abs(sweep.get_voltages()(0, 3) - sweep.get_voltages()(1, 3)) > 1e-4);
     }
-    SECTION("refused: a slack participant, another busbar") {
+    SECTION("refused: a slack participant") {
         LSGrid grid = make_grid();
         grid.add_gen_slackbus(1, 0.5);
         grid.deactivate_gen(1);
@@ -310,13 +319,100 @@ TEST_CASE("a base-off generator reactivated on its bus: PQ -> PV at constant spa
         ScenarioSweep sweep(grid);
         sweep.set_topo_actions(actions);
         REQUIRE_THROWS_AS(sweep.compute(flat_start(grid), 30, 1e-10), std::runtime_error);
+    }
+}
 
-        LSGrid plain = make_grid();
-        plain.deactivate_gen(1);
-        actions[0] = TopoAction();
-        actions[0].add_element(ElementType::gen, 1, 2);
-        ScenarioSweep moved(plain);
-        moved.set_topo_actions(actions);
-        REQUIRE_THROWS_AS(moved.compute(flat_start(plain), 30, 1e-10), std::runtime_error);
+TEST_CASE("elements moved between busbars: a bus created or merged, at constant sparsity", "[batch][scenario_sweep][topo]")
+{
+    // substation 2 holds load 0, generator 1, the extremity of lines 1 and 3 (both
+    // from 1) and the origin of line 2 (to 3); busbar 2 of substation 2 is bus 6
+    LSGrid grid = make_grid();
+    const int bus_2b = 2 + N_SUB;
+
+    SECTION("splits, merges, a dangling bus, a generator moved") {
+        std::vector<TopoAction> actions(6);
+        actions[0].add_element(ElementType::load, 0, 2);          // load 0 and line 3 on busbar 2
+        actions[0].add_element(ElementType::line_ex, 3, 2);
+        // actions[1]: a plain row (merged back)
+        actions[2].add_element(ElementType::line_ex, 3, 2);       // only a line end: a bus with one branch
+        actions[3].add_element(ElementType::gen, 1, 2);           // the generator and a line: busbar 2 turns PV, 1 PQ
+        actions[3].add_element(ElementType::line_ex, 3, 2);
+        actions[4].add_element(ElementType::load, 0, 2);          // a split and a disconnection together
+        actions[4].add_element(ElementType::line_ex, 3, 2);       // (line 1 off would island 2-3: the
+        actions[4].add_element(ElementType::gen, 1, -1);          // generator goes instead)
+        actions[5].add_element(ElementType::load, 0, 2);          // a load alone: an island of one, masked
+        ScenarioSweep sweep(grid);
+        sweep.set_topo_actions(actions);
+        sweep.compute(flat_start(grid), 30, 1e-10);
+        REQUIRE(sweep.get_status() == 1);
+        for(int row = 0; row < 5; ++row) require_row_matches(sweep, row, grid, actions[static_cast<size_t>(row)]);
+        REQUIRE(sweep.get_linear_solver_stats().nb_analyze == 1);
+        const auto & Vs = sweep.get_voltages();
+        REQUIRE(std::abs(Vs(0, bus_2b)) > 0.);
+        REQUIRE(std::abs(Vs(1, bus_2b)) == 0.);
+        REQUIRE(std::abs(Vs(3, bus_2b)) == Approx(1.02).margin(1e-8));
+        REQUIRE(std::abs(Vs(3, 2)) != Approx(1.02).margin(1e-4));
+        // the island of one: masked, the row solved without the load
+        REQUIRE(sweep.converged_mask()[5]);
+        REQUIRE(std::abs(Vs(5, bus_2b)) == 0.);
+        TopoAction load_off;
+        load_off.add_element(ElementType::load, 0, -1);
+        require_row_matches(sweep, 5, grid, load_off);
+        // the flows of a moved line are read with the row's buses: the reference agrees
+        {
+            LSGrid ref(grid);
+            TopoAction act = actions[0];
+            act.check_validity(ref);
+            act.apply_to_gridmodel(ref);
+            REQUIRE(ref.ac_pf(flat_start(ref), 30, 1e-10).size() > 0);
+            const auto & amps = sweep.compute_flows();
+            const auto res = ref.get_line_res1();
+            for(int l = 0; l < 4; ++l){
+                INFO("line " << l);
+                REQUIRE(amps(0, l) == Approx(std::get<3>(res)(l)).margin(1e-8));
+            }
+        }
+    }
+    SECTION("a branch disconnected in the base grid, reconnected: where it was, or on a new busbar") {
+        LSGrid off = make_grid();
+        off.deactivate_powerline(3);
+        std::vector<TopoAction> actions(4);
+        actions[0].set_line_status(3, 1);
+        actions[1].add_element(ElementType::line_or, 3, 1);
+        actions[1].add_element(ElementType::line_ex, 3, 1);
+        // actions[2]: plain
+        actions[3].add_element(ElementType::line_ex, 3, 2);       // on busbar 2 of substation 2, with the load
+        actions[3].add_element(ElementType::load, 0, 2);
+        ScenarioSweep sweep(off);
+        sweep.set_topo_actions(actions);
+        sweep.compute(flat_start(off), 30, 1e-10);
+        REQUIRE(sweep.get_status() == 1);
+        for(int row = 0; row < 4; ++row) require_row_matches(sweep, row, off, actions[static_cast<size_t>(row)]);
+        REQUIRE(sweep.get_linear_solver_stats().nb_analyze == 1);
+        const auto & amps = sweep.compute_flows();
+        REQUIRE(amps(0, 3) != 0.);
+        REQUIRE(amps(2, 3) == 0.);
+    }
+    SECTION("four threads agree with one") {
+        std::vector<TopoAction> actions(4);
+        actions[0].add_element(ElementType::load, 0, 2);
+        actions[0].add_element(ElementType::line_ex, 3, 2);
+        actions[2].add_element(ElementType::gen, 1, 2);
+        actions[2].add_element(ElementType::line_ex, 3, 2);
+        actions[3].add_element(ElementType::gen, 1, -1);
+        ScenarioSweep one(grid);
+        one.set_topo_actions(actions);
+        one.compute(flat_start(grid), 30, 1e-10);
+        ScenarioSweep four(grid);
+        four.set_nb_thread(4);
+        four.set_topo_actions(actions);
+        four.compute(flat_start(grid), 30, 1e-10);
+        REQUIRE(one.get_status() == 1);
+        REQUIRE(four.get_status() == 1);
+        for(int row = 0; row < 4; ++row){
+            for(int b = 0; b < N_SUB * N_BUSBAR; ++b){
+                REQUIRE(std::abs(one.get_voltages()(row, b) - four.get_voltages()(row, b)) == Approx(0.).margin(1e-10));
+            }
+        }
     }
 }

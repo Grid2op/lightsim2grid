@@ -191,10 +191,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 --------------------
 - [ADDED] ``ScenarioSweep.set_topo_actions``: one topological action per row (a grid2op action
   or a ``TopoAction``: ``set_bus`` / ``set_line_status``), checked against the grid and played
-  on top of the row's injections and masks. This first version plays disconnections (a branch,
-  a generator, a load, a storage unit) through the same fixed-sparsity path as the masks, and the
-  reactivation of a generator disconnected in the base grid on the bus it was last on (its bus
-  turns PQ -> PV for the row, at constant sparsity); see the TODO section for what is refused.
+  on top of the row's injections and masks -- disconnections, reconnections and elements moved
+  between busbars (a bus created or merged), the whole sweep still running on ONE symbolic
+  analysis: the solver labelling is built for the union of the buses the rows use, the
+  admittance entries a row writes are reserved as stored zeros, and a row is value edits
+  (coefficients, injections, PV pinning, masking of the buses it leaves empty). See the TODO
+  section for what is refused.
 - [ADDED] light environment: ``LightEnv.init_actions`` registers the actions the agent can take,
   given as grid2op actions (``set_bus`` / ``set_line_status``) or ``TopoAction``; every action is
   checked against the grid (element and busbar exist, no contradiction) and an invalid one is

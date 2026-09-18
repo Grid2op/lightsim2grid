@@ -121,7 +121,13 @@ struct LS2G_API SbusPolicy
         // layout: their active power (and, for one that does not regulate voltage,
         // their reactive setpoint) is added to the row -- the gen pass skips them,
         // they are off in the base grid
-        std::vector<std::vector<std::pair<int, int> > > topo_gens_on;
+        struct GenOn { int gen_id; int bus_solver; int bus_me; };
+        std::vector<std::vector<GenOn> > topo_gens_on;
+        // per row, the loads / storage units (id, solver bus) the row places on a bus:
+        // a move (the element is also in topo_loads_off / topo_storages_off for the
+        // row) or the reconnection of one off in the base grid
+        std::vector<std::vector<std::pair<int, int> > > topo_loads_on;
+        std::vector<std::vector<std::pair<int, int> > > topo_storages_on;
 
         // whether ANY row disconnects a generator, by either axis
         bool has_gen_off() const { return gen_off.rows() > 0 || topo_gen_off.rows() > 0; }
@@ -141,6 +147,8 @@ struct LS2G_API SbusPolicy
             topo_loads_off.clear();
             topo_storages_off.clear();
             topo_gens_on.clear();
+            topo_loads_on.clear();
+            topo_storages_on.clear();
         }
 
         void clear() {
@@ -216,8 +224,9 @@ struct LS2G_API SbusPolicy
         RealVect gen_target_q_;          // a non-regulating generator's reactive setpoint
         std::vector<char> gen_vreg_;     // whether each generator regulates voltage
         CplxVect constant_pu_;
-        // each storage unit's own per-unit share of constant_pu_ (0 for an inactive
-        // one): what a row disconnecting it takes back out
+        // each storage unit's own per-unit injection (StorageContainer::_fillSbus,
+        // active or not): what a row disconnecting it takes back out of constant_pu_,
+        // what a row placing it adds
         CplxVect storage_pu_;
         real_type sn_mva_ = 1.;
         int nb_buses_solver_ = 0;

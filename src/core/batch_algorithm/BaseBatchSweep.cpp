@@ -314,7 +314,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     int max_iter, real_type tol, real_type sn_mva, double & timer_thread_init)
 {
     const real_type tol_ = tol / sn_mva;
-    const bool mask_mode = _handle_disconnected_grid;
+    const bool mask_mode = _mask_mode();
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): never on together with
     // mask_mode -- that path stays on the legacy, always-eager _voltages
     // accumulation (see _run_range_masked).
@@ -505,8 +505,19 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // Keeping it does not mean keeping the STARTING VOLTAGE: a call is free to start
     // anywhere, so V is mapped onto the kept labelling every time -- microseconds
     // against the tens of milliseconds the cache saves, see _vinit_on_grid_cache.
-    CplxVect Vinit_solver = _grid_cache_valid_ ? _vinit_on_grid_cache(Vinit)
-                                               : prepare_solver_input_base(Vinit, ac_solver_used);
+    CplxVect Vinit_solver;
+    if(_grid_cache_valid_){
+        Vinit_solver = _vinit_on_grid_cache(Vinit);
+    } else {
+        // the topological actions' buses join the labelling, their entries the pattern
+        // (a no-op without actions -- see _maybe_topo_union)
+        _maybe_topo_union();
+        Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used,
+                                                 _topo_used_buses_me_.empty() ? nullptr : &_topo_used_buses_me_);
+        _maybe_finalize_extra_buses();
+        _maybe_reserve_union_pattern(ac_solver_used);
+    }
+    _maybe_seed_extra_buses(Vinit_solver);
 
     // ---- L2: what is built for THIS batch from that grid ---------------------------
     if(!_batch_inputs_valid_){
@@ -526,7 +537,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         // (a no-op where Ybus does not vary). Only where someone reads the answer: an AC
         // row skips a contingency that splits the grid, and the masked mode strands the
         // smaller side; a plain DC row leaves the split to the solver and never asks.
-        if(ac_solver_used || _handle_disconnected_grid) _prepare_connectivity();
+        if(ac_solver_used || _mask_mode()) _prepare_connectivity();
 
         // "handle disconnected grid" mode pre-pass (ContingencyAnalysis AND
         // ScenarioSweep; no-op elsewhere -- and _handle_disconnected_grid can never be
@@ -554,7 +565,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // legacy path -- see _run_range_masked). _sbus_gen_v() is the generic,
     // SbusPolicy-agnostic copy of sbus_policy_.gen_v (BaseBatchSolverSynch's
     // magnitude-reconstruction helpers do not need to know about SbusPolicy at all).
-    const bool use_dc_lazy_v = !ac_solver_used && !_handle_disconnected_grid;
+    const bool use_dc_lazy_v = !ac_solver_used && !_mask_mode();
     if(use_dc_lazy_v) _dc_gen_v_ = _sbus_gen_v();
 
     // the "n" solve (L2 as well: it is what builds the ledger, the sparsity and the
@@ -682,7 +693,7 @@ BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::gen_v_indi
     {
         const IntVect vc_row = get_gen_v_vc_row();
         const IntVect vc_group = _gen_v_vc_group();
-        const bool has_masking = _handle_disconnected_grid && !_li_masked.empty();
+        const bool has_masking = _mask_mode() && !_li_masked.empty();
         const VoltageControlSolverData & ctrl = _grid_model.get_ac_voltage_control_plan().controllers();
         for(Eigen::Index g = 0; g < nb_gen && g < vc_row.size(); ++g){
             if(vc_row[g] < 0) continue;

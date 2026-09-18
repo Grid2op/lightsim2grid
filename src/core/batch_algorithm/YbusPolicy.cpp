@@ -115,6 +115,36 @@ std::vector<int> YbusPolicy::Contingency::branch_ids_for_row(Eigen::Index row, s
     return branch_ids;
 }
 
+void YbusPolicy::Contingency::_append_placement_coeffs(const BranchPlacement & placement,
+                                                        const LSGrid & grid_model,
+                                                        bool ac_solver_used,
+                                                        size_t n_line,
+                                                        std::vector<Coeff> & out)
+{
+    const bool is_trafo = static_cast<size_t>(placement.branch_id) >= n_line;
+    const int el_id = is_trafo ? placement.branch_id - static_cast<int>(n_line) : placement.branch_id;
+    const BranchContainer & branch = is_trafo ? static_cast<const BranchContainer &>(grid_model.get_trafos_as_data())
+                                              : static_cast<const BranchContainer &>(grid_model.get_powerlines_as_data());
+    cplx_type y_ff, y_ft, y_tf, y_tt;
+    if(ac_solver_used){
+        y_ff = branch.yac_11()[el_id];
+        y_ft = branch.yac_12()[el_id];
+        y_tf = branch.yac_21()[el_id];
+        y_tt = branch.yac_22()[el_id];
+    }else{
+        y_ff = branch.ydc_11()[el_id];
+        y_ft = branch.ydc_12()[el_id];
+        y_tf = branch.ydc_21()[el_id];
+        y_tt = branch.ydc_22()[el_id];
+    }
+    const int b1 = placement.bus1_solver;
+    const int b2 = placement.bus2_solver;
+    out.push_back({b1, b1, -y_ff});
+    out.push_back({b2, b2, -y_tt});
+    out.push_back({b1, b2, -y_ft});
+    out.push_back({b2, b1, -y_tf});
+}
+
 void YbusPolicy::Contingency::init_li_coeffs_from_masks(
     const LSGrid & grid_model,
     bool ac_solver_used,
@@ -125,7 +155,19 @@ void YbusPolicy::Contingency::init_li_coeffs_from_masks(
     li_coeffs.clear();
     li_coeffs.reserve(static_cast<size_t>(nb_steps));
     for(Eigen::Index row = 0; row < nb_steps; ++row){
-        li_coeffs.push_back(_coeffs_for_branch_ids(branch_ids_for_row(row, n_line), grid_model, ac_solver_used, id_me_to_solver, n_line));
+        std::vector<Coeff> coeffs = _coeffs_for_branch_ids(branch_ids_for_row(row, n_line), grid_model, ac_solver_used, id_me_to_solver, n_line);
+        if(static_cast<size_t>(row) < topo_branches_moved.size()){
+            for(const BranchPlacement & placement : topo_branches_moved[static_cast<size_t>(row)]){
+                // the base contribution out (where there is one), the row's own in
+                if(placement.base_on){
+                    const std::vector<Coeff> base = _coeffs_for_branch_ids(
+                        std::vector<int>(1, placement.branch_id), grid_model, ac_solver_used, id_me_to_solver, n_line);
+                    coeffs.insert(coeffs.end(), base.begin(), base.end());
+                }
+                _append_placement_coeffs(placement, grid_model, ac_solver_used, n_line, coeffs);
+            }
+        }
+        li_coeffs.push_back(coeffs);
     }
 }
 

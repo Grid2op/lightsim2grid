@@ -1224,7 +1224,8 @@ CplxVect LSGrid::_build_into_cache(
     const AlgoControl & solver_control,
     bool force_full_rebuild,
     bool init_pv_vm_targets,
-    bool supports_voltage_control)
+    bool supports_voltage_control,
+    const std::vector<int> * extra_buses_me)
 {
     bool redo_all =
             force_full_rebuild ||
@@ -1289,7 +1290,7 @@ CplxVect LSGrid::_build_into_cache(
 
     bool converter_changed = false;
     if (redo_all || solver_control.ybus_change_sparsity_pattern()){
-        init_converter_bus_id(cache.id_me_to_solver, cache.id_solver_to_me);
+        init_converter_bus_id(cache.id_me_to_solver, cache.id_solver_to_me, extra_buses_me);
         const int nb_bus_solver = static_cast<int>(cache.id_solver_to_me.size());
         init_solver_matrix(cache.mat, nb_bus_solver);
         converter_changed = true;
@@ -1574,24 +1575,27 @@ void LSGrid::_check_vm_targets_agree() const
 CplxVect LSGrid::build_solver_input(
     const Eigen::Ref<const CplxVect> & Vinit,
     AcSolverCache & out,
-    const AlgoControl & solver_control)
+    const AlgoControl & solver_control,
+    const std::vector<int> * extra_buses_me)
 {
-    return _build_foreign_cache<cplx_type>(Vinit, out, solver_control);
+    return _build_foreign_cache<cplx_type>(Vinit, out, solver_control, extra_buses_me);
 }
 
 CplxVect LSGrid::build_dc_solver_input(
     const Eigen::Ref<const CplxVect> & Vinit,
     DcSolverCache & out,
-    const AlgoControl & solver_control)
+    const AlgoControl & solver_control,
+    const std::vector<int> * extra_buses_me)
 {
-    return _build_foreign_cache<real_type>(Vinit, out, solver_control);
+    return _build_foreign_cache<real_type>(Vinit, out, solver_control, extra_buses_me);
 }
 
 template<class MatScalar>
 CplxVect LSGrid::_build_foreign_cache(
     const Eigen::Ref<const CplxVect> & Vinit,
     SolverSideCache<MatScalar> & out,
-    const AlgoControl & solver_control)
+    const AlgoControl & solver_control,
+    const std::vector<int> * extra_buses_me)
 {
     // Our own cache is not a foreign one: taking this path with it would rebuild
     // it while telling our algorithm nothing, then retire what was just built.
@@ -1615,7 +1619,8 @@ CplxVect LSGrid::_build_foreign_cache(
     CplxVect V = _build_into_cache(Vinit, out, solver_control,
                                    /*force_full_rebuild=*/true,
                                    /*init_pv_vm_targets=*/true,
-                                   /*supports_voltage_control=*/true);
+                                   /*supports_voltage_control=*/true,
+                                   extra_buses_me);
 
     // `_algo` / `_dc_algo` are deliberately untouched: they are THIS grid's, they
     // hold a factorization of THIS grid's cache, and the caller solves `out` with
@@ -1840,17 +1845,32 @@ bool LSGrid::_check_solver_output(bool ac)
 }
 
 void LSGrid::init_converter_bus_id(SolverBusIdVect& id_me_to_solver,
-                                      GlobalBusIdVect& id_solver_to_me){
+                                      GlobalBusIdVect& id_solver_to_me,
+                                      const std::vector<int> * keep_also){
 
     //TODO get disconnected bus !!! (and have some conversion for it)
     //1. init the conversion bus
     const int nb_bus_init = static_cast<int>(substations_.nb_bus());
+    std::vector<char> kept_empty;
+    if(keep_also != nullptr && !keep_also->empty()){
+        kept_empty.assign(static_cast<size_t>(nb_bus_init), 0);
+        for(int b : *keep_also){
+            if(b < 0 || b >= nb_bus_init){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::init_converter_bus_id: asked to keep bus " << b
+                     << " in the solved system, but the grid has " << nb_bus_init << " buses.";
+                throw std::out_of_range(exc_.str());
+            }
+            kept_empty[static_cast<size_t>(b)] = 1;
+        }
+    }
     id_me_to_solver = SolverBusIdVect(nb_bus_init, SolverBusId(BaseConstants::_deactivated_bus_id));  // by default, if a bus is disconnected, then it has a -1 there
     id_solver_to_me = GlobalBusIdVect();
     id_solver_to_me.reserve(nb_bus_init);
     int bus_id_solver = 0;
     for(int bus_id_me=0; bus_id_me < nb_bus_init; ++bus_id_me){
-        if(substations_.is_bus_connected(GlobalBusId(bus_id_me))){
+        if(substations_.is_bus_connected(GlobalBusId(bus_id_me)) ||
+           (!kept_empty.empty() && kept_empty[static_cast<size_t>(bus_id_me)])){
             // bus is connected
             id_solver_to_me.push_back(GlobalBusId(bus_id_me));
             id_me_to_solver[bus_id_me] = SolverBusId(bus_id_solver);

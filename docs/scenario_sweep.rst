@@ -191,7 +191,7 @@ as a ``TopoAction``, one per row:
 Every action is checked against the grid when it is registered (the element exists, the
 busbar exists, no contradiction) and an invalid one raises a ``ValueError`` naming the row.
 
-This version plays:
+A row plays:
 
 - **disconnections**: a line or a trafo (``set_line_status -1``, or ``set_bus -1`` on one of
   its ends), a generator, a load or a storage unit (``set_bus -1``). A branch or a generator is
@@ -199,20 +199,28 @@ This version plays:
   the same PV -> PQ handling -- so a row is free to combine an action with injections and
   masks, as long as it does not name one element in both a mask and its action (``compute``
   refuses that);
-- the **reactivation of a generator** disconnected in the base grid, on the bus it was last
-  on (``set_bus`` to that busbar). Its bus turns PQ -> PV for the row: the bus already owns a
-  magnitude unknown and a reactive equation, so the row only pins that equation and seeds
-  the magnitude at the generator's set-point (the row's own if ``modify_gen_v`` gives one).
-  A generator that does not regulate voltage is an injection and its bus keeps its label.
+- **reconnections and moves**: an element put on a busbar (``set_bus`` to it), a branch
+  reconnected (``set_line_status 1``, or ``set_bus`` on its ends). This is what creates a bus
+  (a busbar nothing stood on, now used) or merges two (a busbar left empty).
 
-Either way the whole sweep keeps running on one symbolic analysis.
+The whole sweep still runs on **one symbolic analysis**. The solver labelling is built once
+for the union of the buses any row uses, the admittance entries a row writes are reserved as
+stored zeros before the base case is solved, and each row is then a set of value edits: the
+coefficients of the branches it moves, the injections of the elements it moves, the PV pinning
+of the buses whose generators it moves (a bus a generator lands on is held at the set-point,
+a bus its last generator leaves is solved for), and the masking of the buses of the union
+it does not use, exactly as ``handle_disconnected_grid`` masks a stranded bus. A row that
+leaves an element alone on a busbar (an island of one bus) has that bus masked and its
+injection left out, as the disconnected-grid mode would; without ``handle_disconnected_grid``
+a row that strands one of the base grid's buses is still ``NOT_SIMULATED``.
 
 .. warning::
 
-    Moving an element to a busbar (``set_bus > 0`` elsewhere than a generator's last bus),
-    reconnecting a line or a trafo, reactivating a slack participant or a generator on a slack
-    bus, and the DC algorithm are refused by ``compute`` for now. See the TODO section of the
-    changelog.
+    Refused by ``compute`` for now: moving or reactivating a slack participant, a generator
+    on a slack bus, a generator that regulates a remote bus or whose bus a control group
+    holds, a storage unit that regulates voltage; ``keep_jacobian`` and
+    ``compute_physical_violations`` on a batch that moves a generator; and the DC algorithm.
+    See the TODO section of the changelog.
 
 Handling disconnected grids and limit violations
 ------------------------------------------------------

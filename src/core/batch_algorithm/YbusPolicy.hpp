@@ -87,6 +87,21 @@ struct LS2G_API YbusPolicy
         // branch_ids_for_row merges the two.
         std::vector<std::vector<int> > topo_branches_off;
 
+        // per row, the branches the row's action places itself: an end moved to another
+        // busbar, or a branch disconnected in the base grid reconnected (ScenarioSweep
+        // set_topo_actions). Solver numbering. `base_on`: whether the branch is
+        // connected in the base grid (its base contribution is then taken out first).
+        // The row's contribution goes in with the branch's RAW block (yac_11..22 /
+        // ydc_*: both ends closed), at the row's buses -- entries the base pattern
+        // may not hold, reserved up front by BaseBatchSweep::_maybe_reserve_union_pattern.
+        struct BranchPlacement {
+            int branch_id;
+            int bus1_solver;
+            int bus2_solver;
+            bool base_on;
+        };
+        std::vector<std::vector<BranchPlacement> > topo_branches_moved;
+
         // builds li_coeffs from li_defaults (see the pre-refactor
         // ContingencyAnalysis::init_li_coeffs). `grid_model`/`n_line` supply what used
         // to come from the owning class's _grid_model/n_line_ members.
@@ -133,6 +148,13 @@ struct LS2G_API YbusPolicy
                                   AlgorithmSelector & algo);
 
         private:
+            // the row's own contribution of a branch placed by its action, as
+            // coefficients to REMOVE (negated: remove_from_Ybus's -= adds them)
+            static void _append_placement_coeffs(const BranchPlacement & placement,
+                                                 const LSGrid & grid_model,
+                                                 bool ac_solver_used,
+                                                 size_t n_line,
+                                                 std::vector<Coeff> & out);
             // shared by init_li_coeffs and init_li_coeffs_from_masks: the Ybus
             // coefficients (up to 4 per branch) that emulate disconnecting exactly
             // `branch_ids` (gridmodel numbering, lines then trafos).

@@ -709,15 +709,15 @@ void bind_batch(py::module_& m) {
              "is checked against the grid here (element and busbar exist, no contradiction) "
              "and a ValueError naming the row is raised, nothing registered, if one is "
              "invalid.\n\n"
-             "This version plays disconnections -- a branch (set_line_status -1, or set_bus "
-             "-1 on one of its ends), a generator, a load or a storage unit (set_bus -1), "
-             "exactly as set_contingency_lines / trafos / gens do it (same Ybus edit, same "
-             "PV -> PQ handling) -- and the reactivation of a generator disconnected in the "
-             "base grid on the bus it was last on (PQ -> PV for the row, at constant "
-             "sparsity). One symbolic analysis for the whole sweep either way. compute() "
-             "refuses a row naming an element in both a mask and its action, a move to "
-             "another busbar, the reconnection of a branch, the reactivation of a slack "
-             "participant, and the DC algorithm.")
+             "A row plays disconnections (as set_contingency_lines / trafos / gens do it), "
+             "reconnections and moves between busbars: a bus created or merged. One symbolic "
+             "analysis for the whole sweep: the labelling is built for the union of the buses "
+             "the rows use, the Ybus entries a row writes are reserved as stored zeros, and a "
+             "row is value edits (coefficients, injections, PV pinning, masking of the union "
+             "buses it leaves empty). compute() refuses a row naming an element in both a "
+             "mask and its action, a slack participant or a remote / group-held controller "
+             "moved or reactivated, a regulating storage unit moved, keep_jacobian / "
+             "compute_physical_violations with a generator move, and the DC algorithm.")
         .def("get_topo_actions", &ScenarioSweep::get_topo_actions<>,
              "The (checked) actions registered with set_topo_actions.")
         .def("get_row_disconnected_branches", &ScenarioSweep::get_row_disconnected_branches<>, py::arg("row"),

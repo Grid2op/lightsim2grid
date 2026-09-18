@@ -79,11 +79,9 @@ void SbusPolicy::Vary::prepare(const LSGrid & grid_model,
         const auto & storages = grid_model.get_storages();
         const int nb_storage = storages.nb();
         storage_pu_ = CplxVect::Zero(nb_storage);
-        const auto & st_status = storages.get_status();
         const Eigen::Ref<const RealVect> st_p = storages.get_target_p();
         const Eigen::Ref<const RealVect> st_q = storages.get_target_q();
         for(int s_id = 0; s_id < nb_storage; ++s_id){
-            if(!st_status[s_id]) continue;
             cplx_type tmp = {-st_p(s_id), 0.};
             if(!storages.get_voltage_regulator_on(s_id)) tmp -= BaseConstants::my_i * st_q(s_id);
             if(abs(sn_mva - 1.0) > BaseConstants::_tol_equal_float) tmp /= static_cast<cplx_type>(sn_mva);
@@ -156,12 +154,12 @@ void SbusPolicy::Vary::fill_row(Eigen::Index i, CplxVect & row) const
     // the gen pass above skipped them (same operands as it uses, and as the gen
     // contingency block takes back)
     if(static_cast<size_t>(i) < topo_gens_on.size()){
-        for(const auto & gen_and_bus : topo_gens_on[static_cast<size_t>(i)]){
-            const Eigen::Index gen_id = static_cast<Eigen::Index>(gen_and_bus.first);
+        for(const auto & gen_on : topo_gens_on[static_cast<size_t>(i)]){
+            const Eigen::Index gen_id = static_cast<Eigen::Index>(gen_on.gen_id);
             const real_type p = own_gen_p ? gen_p(i, gen_id) : gen_target_p_(gen_id);
-            row(gen_and_bus.second) += cplx_type(p, 0.);
+            row(gen_on.bus_solver) += cplx_type(p, 0.);
             if(!gen_vreg_[static_cast<size_t>(gen_id)]){
-                row(gen_and_bus.second) += BaseConstants::my_i * cplx_type(gen_target_q_(gen_id), 0.);
+                row(gen_on.bus_solver) += BaseConstants::my_i * cplx_type(gen_target_q_(gen_id), 0.);
             }
         }
     }
@@ -175,6 +173,17 @@ void SbusPolicy::Vary::fill_row(Eigen::Index i, CplxVect & row) const
             const real_type q = own_load_q ? load_q(i, load_id) : load_target_q_(load_id);
             row(load_bus_[static_cast<size_t>(l)]) += cplx_type(p, 0.);
             row(load_bus_[static_cast<size_t>(l)]) += BaseConstants::my_i * cplx_type(q, 0.);
+        }
+    }
+    // ... and the loads it places on a bus (moved, or reconnected): drawn there, as
+    // the load passes draw the others
+    if(static_cast<size_t>(i) < topo_loads_on.size()){
+        for(const auto & load_and_bus : topo_loads_on[static_cast<size_t>(i)]){
+            const Eigen::Index load_id = static_cast<Eigen::Index>(load_and_bus.first);
+            const real_type p = own_load_p ? load_p(i, load_id) : load_target_p_(load_id);
+            const real_type q = own_load_q ? load_q(i, load_id) : load_target_q_(load_id);
+            row(load_and_bus.second) -= cplx_type(p, 0.);
+            row(load_and_bus.second) -= BaseConstants::my_i * cplx_type(q, 0.);
         }
     }
 
@@ -193,6 +202,12 @@ void SbusPolicy::Vary::fill_row(Eigen::Index i, CplxVect & row) const
         for(int s_id : topo_storages_off[static_cast<size_t>(i)]){
             if(storage_bus_[static_cast<size_t>(s_id)] < 0) continue;
             row(storage_bus_[static_cast<size_t>(s_id)]) -= storage_pu_(s_id);
+        }
+    }
+    // ... plus the ones it places on a bus
+    if(static_cast<size_t>(i) < topo_storages_on.size() && !topo_storages_on[static_cast<size_t>(i)].empty()){
+        for(const auto & st_and_bus : topo_storages_on[static_cast<size_t>(i)]){
+            row(st_and_bus.second) += storage_pu_(st_and_bus.first);
         }
     }
 }
