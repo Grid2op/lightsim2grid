@@ -163,6 +163,18 @@ void bind_gridmodel(py::module_& m) {
         .def("set_line_current_limit_side2", &LSGrid::set_line_current_limit_side2, DocLSGrid::set_line_current_limit_side2.c_str())
         .def("set_trafo_current_limit_side1", &LSGrid::set_trafo_current_limit_side1, DocLSGrid::set_trafo_current_limit_side1.c_str())
         .def("set_trafo_current_limit_side2", &LSGrid::set_trafo_current_limit_side2, DocLSGrid::set_trafo_current_limit_side2.c_str())
+        .def("set_gen_p_limits", &LSGrid::set_gen_p_limits,
+             py::arg("p_min_mw"), py::arg("p_max_mw"),
+             "Active power limits (MW) of the generators, OPTIONAL and never enforced -- the "
+             "same shape as the current limits above: one entry per generator, NaN where a "
+             "machine has none, and two empty vectors to drop them again (`GenInfo.min_p_mw` "
+             "/ `max_p_mw` then read NaN).\n\n"
+             "What they are for: the distributed slack is solved INSIDE the Newton system, by "
+             "fixed participation factors that know nothing about limits, so a participating "
+             "machine's converged active power -- its target plus its share of the imbalance "
+             "-- can land beyond what it can deliver. That is a physical violation, and these "
+             "are what the batch algorithms' `compute_physical_violations` compares against "
+             "(LOW_P / HIGH_P on the GENERATOR).")
         .def("set_gen_names", &LSGrid::set_gen_names, DocLSGrid::set_gen_names.c_str())
         .def("set_load_names", &LSGrid::set_load_names, DocLSGrid::set_load_names.c_str())
         .def("set_storage_names", &LSGrid::set_storage_names, DocLSGrid::set_storage_names.c_str())

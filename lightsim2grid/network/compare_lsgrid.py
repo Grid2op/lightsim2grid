@@ -40,7 +40,11 @@ ATTR_GENS_INPUT = [
     "target_p_mw",
     "target_q_mvar",
     "min_q_mvar",
-    "max_q_mvar"
+    "max_q_mvar",
+    # optional (NaN when the grid was never given any, see LSGrid.set_gen_p_limits): two
+    # NaN compare equal here, so a grid without them is not reported as differing
+    "min_p_mw",
+    "max_p_mw",
 ]
 
 

@@ -378,6 +378,14 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             return side == 1 ? side_1_.get_max_q(hvdc_id) - side_1_.get_min_q(hvdc_id)
                              : side_2_.get_max_q(hvdc_id) - side_2_.get_min_q(hvdc_id);
         }
+        /// the two ends of that range on their own: a station's reactive capability, in the
+        /// same currency (MVAr) as a generator's (see BusQCheck.hpp, which sums the two)
+        real_type get_station_min_q_mvar(int hvdc_id, int side) const {
+            return side == 1 ? side_1_.get_min_q(hvdc_id) : side_2_.get_min_q(hvdc_id);
+        }
+        real_type get_station_max_q_mvar(int hvdc_id, int side) const {
+            return side == 1 ? side_1_.get_max_q(hvdc_id) : side_2_.get_max_q(hvdc_id);
+        }
         void set_station_voltage_control_q(int hvdc_id, int side, real_type q_mvar) {
             if(side == 1) side_1_.set_voltage_control_q(hvdc_id, q_mvar);
             else          side_2_.set_voltage_control_q(hvdc_id, q_mvar);
