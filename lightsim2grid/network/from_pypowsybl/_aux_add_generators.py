@@ -18,7 +18,7 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
     ``df_gen`` is reused by the slack-assignment phase (`_aux_add_slack.py`),
     ``gen_sub`` by the final substation-id bookkeeping in `initLSGrid.py`."""
     gen_attrs = [
-        "connected", "max_p", "target_p", "target_v", "target_q", "p",
+        "connected", "min_p", "max_p", "target_p", "target_v", "target_q", "p",
         "voltage_regulator_on", "regulated_element_id", "voltage_level_id", "bus_id",
         "min_q", "max_q", "min_q_at_target_p", "max_q_at_target_p",
     ]
@@ -105,6 +105,18 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
         if is_disco:
             model.deactivate_gen(gen_id)
     model.set_gen_names(df_gen.index)
+
+    # active power limits: iidm always carries them, and nothing in the powerflow reads
+    # them -- they are what says whether the active power a distributed slack ended up
+    # asking of a machine is one it could actually deliver (see the batch algorithms'
+    # `compute_physical_violations`). A generator whose limit is not a finite number gets
+    # NaN, which the checks read as "no limit for that one".
+    min_p_mw = np.asarray(df_gen["min_p"].values, dtype=np.float64).copy()
+    max_p_mw = np.asarray(df_gen["max_p"].values, dtype=np.float64).copy()
+    min_p_mw[~np.isfinite(min_p_mw)] = np.nan
+    max_p_mw[~np.isfinite(max_p_mw)] = np.nan
+    if np.any(np.isfinite(min_p_mw)) or np.any(np.isfinite(max_p_mw)):
+        model.set_gen_p_limits(min_p_mw, max_p_mw)
 
     # thread the regulated bus to the C++ generator container. Local generators keep
     # their own bus (already the C++ default), so a grid without any remote control

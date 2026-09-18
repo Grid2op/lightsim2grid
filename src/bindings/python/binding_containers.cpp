@@ -49,6 +49,14 @@ void bind_containers(py::module_& m) {
         .def_readonly("target_q_mvar", &GenInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
         .def_readonly("min_q_mvar", &GenInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
         .def_readonly("max_q_mvar", &GenInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
+        .def_readonly("min_p_mw", &GenInfo::min_p_mw,
+                      "Minimum active power, in MW -- OPTIONAL: NaN if the grid was never "
+                      "given any (see `LSGrid.set_gen_p_limits`). Nothing enforces it; it is "
+                      "what says whether the active power a distributed slack ended up asking "
+                      "of this machine is one it could actually deliver (see the batch "
+                      "algorithms' `compute_physical_violations`).")
+        .def_readonly("max_p_mw", &GenInfo::max_p_mw,
+                      "Maximum active power, in MW -- OPTIONAL, see `min_p_mw`.")
         .def_readonly("regulated_bus_id", &GenInfo::regulated_bus_id, DocIterator::regulated_bus_id.c_str())
         .def_readonly("reactive_key", &GenInfo::reactive_key, DocIterator::reactive_key.c_str())
         .def_readonly("has_res", &GenInfo::has_res, DocIterator::has_res.c_str())

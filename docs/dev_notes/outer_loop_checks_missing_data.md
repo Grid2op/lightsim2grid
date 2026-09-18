@@ -20,7 +20,7 @@ Reference for the outer loops: PowSyBl OpenLoadFlow,
 | `TransformerVoltageControl` | complete | **absent** | no |
 | `PhaseControl` / `IncrementalPhaseControl` | complete | **absent** | no |
 | `ShuntVoltageControl` | complete | **absent** | no |
-| `DistributedSlack` | complete | complete | n/a — lightsim2grid distributes the slack inside the Newton (`MultiSlack`), there is no trigger to detect |
+| `DistributedSlack` | complete | complete (limits optional) | **yes — implemented** for a batch (`compute_physical_violations`): lightsim2grid solves the distribution inside the Newton (`MultiSlack`) by participation factors that ignore limits, so a machine can converge past `min_p_mw` / `max_p_mw` |
 | `HvdcAcEmulationLimits` | complete | complete | **yes — implemented** for a batch (`compute_physical_violations`): `status_droop` is an *input*, so the linear regime is exactly where the trigger lives |
 | `VoltageMonitoring` (SVC stand-by automaton) | complete | partial | `b_min` / `b_max` are now **checked** (as part of the reactive capability above) but still never enforced; the stand-by band itself is not modelled |
 | `SecondaryVoltageControl` | complete | absent | no control zones / pilot points in the model |
@@ -191,10 +191,21 @@ pypowsybl (`_aux_add_shunts.py`) reads `g` / `b` and scales them by the nominal 
 
 ## The physical ones are done
 
-`ReactiveLimits` and `HvdcAcEmulationLimits` are the two OLF loops whose trigger is a limit
-of the equipment rather than a choice of the operator, and both are now detected
-(`ViolationCategory::PHYSICAL`). Everything below is **operational**: a tap that should have
-moved and did not is a control that was not modelled, not an impossible state.
+`ReactiveLimits`, `HvdcAcEmulationLimits` and `DistributedSlack` are the three OLF loops
+whose trigger is a limit of the equipment rather than a choice of the operator, and all
+three are now detected (`ViolationCategory::PHYSICAL`). Everything below is
+**operational**: a tap that should have moved and did not is a control that was not
+modelled, not an impossible state.
+
+`DistributedSlack` is the odd one of the three, because its "control side" was not
+missing — the participation factors are input data (`add_gen_slackbus`) and the solver
+uses them. What was missing was the machines' own active power limits, which the model
+simply did not store; they are now an optional input (`LSGrid::set_gen_p_limits`,
+`GenInfo.min_p_mw` / `max_p_mw`, read from pandapower's `min_p_mw` / `max_p_mw` and
+pypowsybl's `min_p` / `max_p`), on the same terms as a branch's thermal rating: a grid
+without them is checked for the other two loops and reports nothing for this one. See
+`src/core/batch_algorithm/GenPCheck.hpp` for why this check is per machine where the
+reactive one is per bus.
 
 ## The minimum addition that would unblock 3, 4 and 5
 

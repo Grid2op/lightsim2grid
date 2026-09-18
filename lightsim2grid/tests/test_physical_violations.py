@@ -365,6 +365,154 @@ class TestHvdcPFromPython(unittest.TestCase):
         self.assertAlmostEqual(viols[0].value, p_dc, places=6)
 
 
+class TestGenPFromPython(unittest.TestCase):
+    """the distributed slack's own half: a generator whose converged active power -- its
+    target plus its share of the imbalance -- left `min_p_mw` / `max_p_mw`. The slack is
+    solved inside the Jacobian by participation factors that know nothing about limits, so
+    nothing stops it; that is what OpenLoadFlow's `DistributedSlack` outer loop re-shares.
+
+    Per machine, where the reactive check is per bus: the active split is not a convention,
+    it is the participation factors the caller chose."""
+
+    @staticmethod
+    def _slack_grid(w0=1., w1=1.):
+        """the 4-bus radial feeder 0-1-2-3 with the 80 MW / 60 MVAr load on bus 3, and the
+        slack SHARED between gen 0 (bus 0, target 0 MW) and gen 1 (bus 1, target 10 MW)."""
+        from lightsim2grid.lightsim2grid_cpp import LSGrid
+        grid = LSGrid()
+        grid.set_sn_mva(100.)
+        grid.set_init_vm_pu(1.0)
+        grid.init_bus(4, 1, np.full(4, 138.), 0, 0)
+        grid.init_powerlines(np.full(3, 0.01), np.full(3, 0.1), np.zeros(3, dtype=complex),
+                             np.array([0, 1, 2]), np.array([1, 2, 3]))
+        grid.init_loads(np.array([80.]), np.array([60.]), np.array([3]))
+        grid.init_generators(np.array([0., 10.]), np.array([1.02, 1.05]),
+                             np.full(2, -1e3), np.full(2, 1e3), np.array([0, 1]))
+        grid.add_gen_slackbus(0, w0)
+        grid.add_gen_slackbus(1, w1)
+        grid.tell_solver_need_reset()
+        return grid
+
+    @staticmethod
+    def _reference_gen_p(grid):
+        """each generator's converged active power as a single ac_pf publishes it: target
+        plus its share of the distributed slack, the very number the check re-derives"""
+        grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        return np.array([gen.res_p_mw for gen in grid.get_generators()])
+
+    def _one_row(self, grid):
+        ts = TimeSeriesCPP(grid)
+        ts.compute_physical_violations = True
+        ts.physical_violation_tol_mva = 0.
+        ts.modify_gen_p(np.array([[gen.target_p_mw for gen in grid.get_generators()]]))
+        ts.compute(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        assert ts.converged_mask()[0]
+        return ts
+
+    def test_reports_the_power_ac_pf_publishes(self):
+        p_ref = self._reference_gen_p(self._slack_grid())
+        assert p_ref[1] > 10., "gen 1 must actually be pushed above its target"
+
+        pmax = p_ref[1] - 5.
+        grid = self._slack_grid()
+        grid.set_gen_p_limits(np.array([np.nan, np.nan]), np.array([np.nan, pmax]))
+        grid.set_gen_names(["slack_unit", "shared_unit"])
+        viols = self._one_row(grid).get_physical_violations()[0]
+        assert len(viols) == 1
+        assert viols[0].element_type == ViolationElementType.GENERATOR
+        assert viols[0].element_id == 1
+        assert viols[0].side == 0
+        assert viols[0].violation_type == LimitViolationType.HIGH_P
+        assert viols[0].category == ViolationCategory.PHYSICAL
+        self.assertAlmostEqual(viols[0].value, p_ref[1], places=6)
+        self.assertAlmostEqual(viols[0].limit, pmax, places=9)
+        assert viols[0].name == "shared_unit"
+
+    def test_below_min_p_is_low_p(self):
+        p_ref = self._reference_gen_p(self._slack_grid())
+        pmin = p_ref[0] + 5.
+        grid = self._slack_grid()
+        grid.set_gen_p_limits(np.array([pmin, np.nan]), np.array([np.nan, np.nan]))
+        viols = self._one_row(grid).get_physical_violations()[0]
+        assert len(viols) == 1
+        assert viols[0].element_id == 0
+        assert viols[0].violation_type == LimitViolationType.LOW_P
+        assert viols[0].category == ViolationCategory.PHYSICAL
+        self.assertAlmostEqual(viols[0].value, p_ref[0], places=6)
+
+    def test_within_the_limits_reports_nothing(self):
+        p_ref = self._reference_gen_p(self._slack_grid())
+        grid = self._slack_grid()
+        grid.set_gen_p_limits(np.array([-1e3, -1e3]), p_ref + 5.)
+        assert len(self._one_row(grid).get_physical_violations()[0]) == 0
+
+    def test_a_grid_without_limits_reports_nothing(self):
+        grid = self._slack_grid()
+        for gen in grid.get_generators():
+            assert np.isnan(gen.min_p_mw)
+            assert np.isnan(gen.max_p_mw)
+        assert len(self._one_row(grid).get_physical_violations()[0]) == 0
+
+    def test_each_machine_at_its_own_share(self):
+        # the participation factors are what the split follows -- a 1:3 share moves both
+        # reported values, each still matching what ac_pf gives that machine
+        p_even = self._reference_gen_p(self._slack_grid(1., 1.))
+        p_ref = self._reference_gen_p(self._slack_grid(1., 3.))
+        assert abs(p_ref[1] - p_even[1]) > 1.
+
+        grid = self._slack_grid(1., 3.)
+        grid.set_gen_p_limits(np.full(2, np.nan), p_ref - 1.)
+        viols = self._one_row(grid).get_physical_violations()[0]
+        assert len(viols) == 2
+        by_id = {v.element_id: v for v in viols}
+        self.assertAlmostEqual(by_id[0].value, p_ref[0], places=6)
+        self.assertAlmostEqual(by_id[1].value, p_ref[1], places=6)
+
+    def test_a_non_participant_is_never_reported(self):
+        # it keeps its target exactly, so a violation there is an input error rather than
+        # something the solve produced
+        grid = self._slack_grid()
+        grid.remove_gen_slackbus(1)
+        grid.set_gen_p_limits(np.full(2, np.nan), np.array([np.nan, 1.]))
+        assert len(self._one_row(grid).get_physical_violations()[0]) == 0
+
+    def test_the_limits_are_optional_and_droppable(self):
+        grid = self._slack_grid()
+        grid.set_gen_p_limits(np.array([0., 0.]), np.array([1., 2.]))
+        assert grid.get_generators()[1].max_p_mw == 2.
+        grid.set_gen_p_limits(np.array([]), np.array([]))
+        assert np.isnan(grid.get_generators()[1].max_p_mw)
+
+    def test_pandapower_columns_are_threaded_through(self):
+        # `min_p_mw` / `max_p_mw` on `net.gen` reach `GenInfo`; the generators
+        # `_aux_add_slack` appends for an ext_grid have no pandapower row, hence no limit
+        net = pn.case14()
+        net.gen["min_p_mw"] = 1. + np.arange(net.gen.shape[0])
+        net.gen["max_p_mw"] = 100. + np.arange(net.gen.shape[0])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(net)
+        gens = grid.get_generators()
+        nb_pp_gen = net.gen.shape[0]
+        for gen_id in range(nb_pp_gen):
+            self.assertAlmostEqual(gens[gen_id].min_p_mw, 1. + gen_id, places=9)
+            self.assertAlmostEqual(gens[gen_id].max_p_mw, 100. + gen_id, places=9)
+        for gen_id in range(nb_pp_gen, len(gens)):
+            assert np.isnan(gens[gen_id].min_p_mw)
+            assert np.isnan(gens[gen_id].max_p_mw)
+
+    def test_no_pandapower_column_means_no_limit(self):
+        net = pn.case14()
+        net.gen["min_p_mw"] = np.nan
+        net.gen["max_p_mw"] = np.nan
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(net)
+        for gen in grid.get_generators():
+            assert np.isnan(gen.min_p_mw)
+            assert np.isnan(gen.max_p_mw)
+
+
 class TestPhysicalViolationsWrapper(unittest.TestCase):
     """the python wrappers: the properties they expose, what they invalidate, and the
     `physical_violations` field of the `run()` result"""

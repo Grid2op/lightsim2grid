@@ -44,8 +44,9 @@ class PreContingencyResult:
     limit_violations: List[LimitViolation]
     #: the PHYSICAL limits this case's solution leaves, when
     #: `ContingencyAnalysis.compute_physical_violations` is on (an empty list otherwise): a
-    #: bus needing reactive power its machines do not have (LOW_Q / HIGH_Q) or an angle-droop
-    #: hvdc line beyond what its converters can transmit (HIGH_P). Kept apart from
+    #: bus needing reactive power its machines do not have (LOW_Q / HIGH_Q), an angle-droop
+    #: hvdc line beyond what its converters can transmit (HIGH_P), or a generator the
+    #: distributed slack pushed outside its active power limits (LOW_P / HIGH_P). Kept apart from
     #: `limit_violations` because it is a different KIND of statement: every entry here has
     #: `category == ViolationCategory.PHYSICAL` -- a state the grid cannot reach -- where
     #: `limit_violations` carries OPERATIONAL limits it can leave (and the SOLVER sentinel of
@@ -319,9 +320,9 @@ class ContingencyAnalysis(object):
         does reach and should not sit in). Default: ``False``. See
         :func:`get_physical_violations` and `ContingencyResult.physical_violations`.
 
-        Two checks, both conditions a PowSyBl OpenLoadFlow outer loop acts on, and neither
-        enforced here (nothing is switched PV -> PQ, no droop is clamped, no contingency is
-        re-solved):
+        Three checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        enforced here (nothing is switched PV -> PQ, no droop is clamped, no machine leaves
+        the slack distribution, no contingency is re-solved):
 
         * the **reactive capability** of every bus whose voltage is held by machines
           (``LOW_Q`` / ``HIGH_Q`` on the ``BUS``): did it need more reactive power than the
@@ -332,12 +333,20 @@ class ContingencyAnalysis(object):
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
           linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? OpenLoadFlow's ``HvdcAcEmulationLimits``.
+        * the **active power** of every generator carrying the **distributed slack**
+          (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR``): the slack is solved inside the
+          Jacobian by fixed participation factors that know nothing about limits, so
+          ``target_p + its share of the imbalance`` can land beyond ``min_p_mw`` /
+          ``max_p_mw``. Per machine, unlike the reactive check: the active split is not a
+          convention, it is the participation factors the caller chose. Needs those limits,
+          which are optional (:func:`lightsim2grid.network.LSGrid.set_gen_p_limits`); a grid
+          without them reports nothing here. OpenLoadFlow's ``DistributedSlack``.
 
         Independent of `compute_limit_violations`: either can be on without the other (though
         `run` still requires `compute_limit_violations`, and fills `physical_violations` only
-        when this one is on too). The hvdc half works in DC; the reactive one needs an AC
-        algorithm that publishes its per-bus mismatch (every built-in AC algorithm does) and
-        `run` / `compute_V` raise for one that does not. Changing this flag invalidates any
+        when this one is on too). The two active-power checks work in DC; the reactive one
+        needs an AC algorithm that publishes its per-bus mismatch (every built-in AC algorithm
+        does) and `run` / `compute_V` raise for one that does not. Changing this flag invalidates any
         computed result but keeps the registered contingencies.
         """
         return self.computer.compute_physical_violations

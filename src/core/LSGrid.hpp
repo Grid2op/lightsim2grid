@@ -980,6 +980,25 @@ class LS2G_API LSGrid final
         }
         [[nodiscard]] const std::vector<std::string> & get_trafo_names() const {return trafos_.get_names();}
         // per-side current limit, in kA, optional: empty if never set
+        /**
+         * Active power limits (MW) of the generators, OPTIONAL and never enforced -- the
+         * same shape as the thermal ratings below: a grid that was never given any simply
+         * has none (`GenInfo::min_p_mw` / `max_p_mw` read NaN), and a NaN entry means "no
+         * limit for that machine".
+         *
+         * What they are for: the distributed slack is solved INSIDE the Newton system
+         * (`MultiSlack`), by fixed participation factors that know nothing about limits, so
+         * a participating machine's converged active power -- its target plus its share of
+         * the imbalance -- can land beyond what it can deliver. That is a physical
+         * violation, and these are what a check compares against (see
+         * `compute_physical_violations` on the batch algorithms).
+         *
+         * Pass two empty vectors to drop them.
+         */
+        void set_gen_p_limits(const Eigen::Ref<const RealVect> & p_min_mw,
+                              const Eigen::Ref<const RealVect> & p_max_mw){
+            generators_.set_p_limits(p_min_mw, p_max_mw);
+        }
         void set_line_current_limit_side1(const Eigen::Ref<const RealVect> & limit_a1_ka){
             GenericContainer::check_size(limit_a1_ka, powerlines_.nb(), "set_line_current_limit_side1");
             powerlines_.set_limit_a1_ka(limit_a1_ka);

@@ -289,6 +289,58 @@ real_type reference_bus_q(const std::vector<GenSpec> & gens, int bus, bool meshe
     return total;
 }
 
+// ----- the distributed slack's own check (GenPCheck.hpp) --------------------
+// The same 4-bus feeder, with the slack SHARED between the two generators: gen 0 (bus 0,
+// the angle reference) and gen 1 (bus GEN_BUS), with weights `w0` / `w1`. They stand on
+// DIFFERENT buses on purpose -- each bus' active residual then belongs to exactly one
+// machine, so the value this check re-derives can be pinned against `ac_pf`'s own per
+// generator `res_p_mw` with nothing in between.
+LSGrid make_slack_grid(real_type w0, real_type w1, bool meshed = false)
+{
+    std::vector<GenSpec> gens{slack_gen(), GenSpec{GEN_BUS, V_SET, 10., -WIDE_Q, WIDE_Q, -1}};
+    LSGrid grid = make_grid(gens, meshed);
+    grid.add_gen_slackbus(0, w0);
+    grid.add_gen_slackbus(1, w1);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
+// every generator's converged ACTIVE power as a single-shot ac_pf publishes it: its target
+// plus its share of the distributed slack (GeneratorContainer::set_p_slack), which is
+// exactly what GenPCheck re-derives from the row's mismatch.
+RealVect reference_gen_p(LSGrid & grid)
+{
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    grid.ac_pf(flat_start(grid), 30, 1e-11);
+    RealVect res(std::get<0>(grid.get_gen_res()));
+    return res;
+}
+
+// set both optional limit vectors at once (NaN = no limit for that machine)
+void set_gen_p_limits(LSGrid & grid, const std::vector<real_type> & p_min,
+                      const std::vector<real_type> & p_max)
+{
+    RealVect lo(static_cast<Eigen::Index>(p_min.size()));
+    RealVect hi(static_cast<Eigen::Index>(p_max.size()));
+    for (std::size_t k = 0; k < p_min.size(); ++k) lo(static_cast<Eigen::Index>(k)) = p_min[k];
+    for (std::size_t k = 0; k < p_max.size(); ++k) hi(static_cast<Eigen::Index>(k)) = p_max[k];
+    grid.set_gen_p_limits(lo, hi);
+}
+
+const real_type NO_LIMIT = std::numeric_limits<real_type>::quiet_NaN();
+
+// the violation reported on `gen_id`, or nullptr
+const LimitViolation * find_gen(const std::vector<LimitViolation> & viols, int gen_id)
+{
+    for (std::size_t k = 0; k < viols.size(); ++k) {
+        if (viols[k].element_type == ViolationElementType::GENERATOR &&
+            viols[k].element_id == gen_id) {
+            return &viols[k];
+        }
+    }
+    return nullptr;
+}
+
 // the violation reported on `bus_id`, or nullptr
 const LimitViolation * find_bus(const std::vector<LimitViolation> & viols, int bus_id)
 {
@@ -327,6 +379,8 @@ TEST_CASE("every violation type says what kind of statement it is", "[batch][phy
     CHECK(violation_category(LimitViolationType::CURRENT) == ViolationCategory::OPERATIONAL);
     CHECK(violation_category(LimitViolationType::LOW_Q) == ViolationCategory::PHYSICAL);
     CHECK(violation_category(LimitViolationType::HIGH_Q) == ViolationCategory::PHYSICAL);
+    CHECK(violation_category(LimitViolationType::LOW_P) == ViolationCategory::PHYSICAL);
+    CHECK(violation_category(LimitViolationType::HIGH_P) == ViolationCategory::PHYSICAL);
     CHECK(violation_category(LimitViolationType::NOT_SIMULATED) == ViolationCategory::SOLVER);
     CHECK(violation_category(LimitViolationType::DIVERGENCE) == ViolationCategory::SOLVER);
     // and a violation carries its own, derived from its type
@@ -1069,4 +1123,308 @@ TEST_CASE("a row that disconnects a machine checks the bus against what is left"
     CHECK(row1->violation_type == LimitViolationType::HIGH_Q);
     CHECK(row1->value == Approx(q_alone).margin(1e-6));
     CHECK(row1->limit == Approx(max_each));  // only the machine that is still on
+}
+
+// ===================== the distributed slack's own limits =====================
+// lightsim2grid solves the slack INSIDE the Newton system (MultiSlack), by fixed
+// participation factors that know nothing about what a machine can deliver -- so a
+// participating generator's converged active power can land anywhere. That is the condition
+// OpenLoadFlow's DistributedSlack outer loop acts on (it would take the saturated unit out
+// of the distribution and re-share what is left); nothing here re-solves or clamps.
+//
+// Unlike the reactive check this one is per MACHINE, and the reason is in the tests below:
+// the active split is not a convention, it is the participation factors the caller chose,
+// so `target_p + share` is that machine's own power. The limits themselves influence
+// nothing, which is what lets every test measure the converged power first and pick the
+// limits around it afterwards.
+
+TEST_CASE("a generator the distributed slack pushes past its limits is reported",
+          "[batch][physical][slack]")
+{
+    LSGrid ref = make_slack_grid(1., 1.);
+    const RealVect p_ref = reference_gen_p(ref);
+    // gen 0 targets 0 MW and gen 1 targets 10 MW; the ~80 MW load is shared between them,
+    // so both end up well above their target and the case is meaningful
+    REQUIRE(p_ref(0) > 1.);
+    REQUIRE(p_ref(1) > 10.);
+
+    SECTION("within its limits: nothing reported")
+    {
+        LSGrid grid = make_slack_grid(1., 1.);
+        set_gen_p_limits(grid, {-1000., -1000.}, {p_ref(0) + 5., p_ref(1) + 5.});
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+        CHECK(ts.get_physical_violations_n().empty());
+    }
+
+    SECTION("above max_p_mw: HIGH_P, with the power ac_pf publishes and that machine's max")
+    {
+        const real_type pmax = p_ref(1) - 5.;
+        LSGrid grid = make_slack_grid(1., 1.);
+        set_gen_p_limits(grid, {NO_LIMIT, NO_LIMIT}, {NO_LIMIT, pmax});
+        std::vector<std::string> names{"slack_unit", "shared_unit"};
+        grid.set_gen_names(names);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+
+        const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+        REQUIRE(viols.size() == 1);
+        CHECK(viols[0].element_type == ViolationElementType::GENERATOR);
+        CHECK(viols[0].element_id == 1);
+        CHECK(viols[0].side == 0);
+        CHECK(viols[0].violation_type == LimitViolationType::HIGH_P);
+        CHECK(viols[0].category() == ViolationCategory::PHYSICAL);
+        CHECK(viols[0].value == Approx(p_ref(1)).margin(1e-6));
+        CHECK(viols[0].limit == Approx(pmax));
+        CHECK(viols[0].name == "shared_unit");
+        // the base ("n") case solves the same grid, so it reports the same thing
+        REQUIRE(ts.get_physical_violations_n().size() == 1);
+        CHECK(ts.get_physical_violations_n()[0].value == Approx(p_ref(1)).margin(1e-6));
+    }
+
+    SECTION("below min_p_mw: LOW_P, the other way round")
+    {
+        const real_type pmin = p_ref(0) + 5.;  // the machine ends up BELOW this
+        LSGrid grid = make_slack_grid(1., 1.);
+        set_gen_p_limits(grid, {pmin, NO_LIMIT}, {NO_LIMIT, NO_LIMIT});
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+
+        const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+        REQUIRE(viols.size() == 1);
+        CHECK(viols[0].element_id == 0);
+        CHECK(viols[0].violation_type == LimitViolationType::LOW_P);
+        CHECK(viols[0].value == Approx(p_ref(0)).margin(1e-6));
+        CHECK(viols[0].limit == Approx(pmin));
+    }
+
+    SECTION("the tolerance keeps a machine resting on its limit quiet")
+    {
+        LSGrid grid = make_slack_grid(1., 1.);
+        set_gen_p_limits(grid, {NO_LIMIT, NO_LIMIT}, {NO_LIMIT, p_ref(1) - 5.});
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.set_physical_violation_tol_mva(6.);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        CHECK(ts.get_physical_violations()[0].empty());
+    }
+}
+
+TEST_CASE("each machine is judged at its own share of the imbalance",
+          "[batch][physical][slack]")
+{
+    // The whole reason this check is per machine and the reactive one is per bus: the
+    // active split is INPUT DATA. Give the two machines a 1:3 participation and both
+    // reported values follow, each matching what ac_pf publishes for that machine -- a
+    // check that split the bus' residual any other way would agree on neither.
+    LSGrid ref = make_slack_grid(1., 3.);
+    const RealVect p_ref = reference_gen_p(ref);
+
+    LSGrid even = make_slack_grid(1., 1.);
+    const RealVect p_even = reference_gen_p(even);
+    REQUIRE(std::abs(p_ref(1) - p_even(1)) > 1.);  // the weights really do change the split
+
+    LSGrid grid = make_slack_grid(1., 3.);
+    // both below their respective converged power, so both are reported
+    set_gen_p_limits(grid, {NO_LIMIT, NO_LIMIT}, {p_ref(0) - 1., p_ref(1) - 1.});
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+
+    const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+    REQUIRE(viols.size() == 2);
+    const LimitViolation * v0 = find_gen(viols, 0);
+    const LimitViolation * v1 = find_gen(viols, 1);
+    REQUIRE(v0 != nullptr);
+    REQUIRE(v1 != nullptr);
+    CHECK(v0->value == Approx(p_ref(0)).margin(1e-6));
+    CHECK(v1->value == Approx(p_ref(1)).margin(1e-6));
+}
+
+TEST_CASE("a generator that takes no part in the distribution is never reported",
+          "[batch][physical][slack]")
+{
+    // It keeps its target power exactly, so a violation there would be an input error (the
+    // caller asked for a power the machine does not have) rather than something the solve
+    // produced. gen 1 targets 10 MW against a 1 MW maximum and is still not reported,
+    // because it is not a slack participant; gen 0 -- which is -- is.
+    LSGrid grid = make_grid(std::vector<GenSpec>{
+        slack_gen(), GenSpec{GEN_BUS, V_SET, 10., -WIDE_Q, WIDE_Q, -1}});
+    set_gen_p_limits(grid, {NO_LIMIT, NO_LIMIT}, {1., 1.});
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+
+    const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+    CHECK(find_gen(viols, 1) == nullptr);
+    REQUIRE(find_gen(viols, 0) != nullptr);
+    CHECK(find_gen(viols, 0)->violation_type == LimitViolationType::HIGH_P);
+}
+
+TEST_CASE("a machine with no limit of its own is skipped, and so is a grid with none",
+          "[batch][physical][slack]")
+{
+    SECTION("the grid was never given any: nothing to compare against")
+    {
+        LSGrid grid = make_slack_grid(1., 1.);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        CHECK(std::isnan(grid.get_generators()[0].min_p_mw));
+        CHECK(std::isnan(grid.get_generators()[0].max_p_mw));
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+    }
+
+    SECTION("one machine has none: only the other can be reported")
+    {
+        LSGrid ref = make_slack_grid(1., 1.);
+        const RealVect p_ref = reference_gen_p(ref);
+        LSGrid grid = make_slack_grid(1., 1.);
+        // gen 0 is left without any limit at all; gen 1 gets one it exceeds
+        set_gen_p_limits(grid, {NO_LIMIT, NO_LIMIT}, {NO_LIMIT, p_ref(1) - 1.});
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        CHECK(std::isnan(grid.get_generators()[0].max_p_mw));
+        CHECK(grid.get_generators()[1].max_p_mw == Approx(p_ref(1) - 1.));
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+        REQUIRE(viols.size() == 1);
+        CHECK(viols[0].element_id == 1);
+    }
+
+    SECTION("the limits are droppable again")
+    {
+        LSGrid grid = make_slack_grid(1., 1.);
+        set_gen_p_limits(grid, {0., 0.}, {1., 1.});
+        grid.set_gen_p_limits(RealVect(), RealVect());
+        CHECK(std::isnan(grid.get_generators()[1].max_p_mw));
+    }
+}
+
+TEST_CASE("the check follows each row's own generator set-point", "[batch][physical][slack]")
+{
+    // What is compared is `this row's target + this row's share`, not the grid's target:
+    // modify_gen_p moves the first and the imbalance (hence the second) with it. Two rows
+    // that differ only by gen 1's set-point therefore get two different verdicts.
+    LSGrid ref = make_slack_grid(1., 1.);
+    const RealVect p_ref = reference_gen_p(ref);
+    const real_type pmax = p_ref(1) + 5.;
+
+    LSGrid grid = make_slack_grid(1., 1.);
+    set_gen_p_limits(grid, {NO_LIMIT, NO_LIMIT}, {NO_LIMIT, pmax});
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    ts.set_compute_physical_violations(true);
+    ts.set_physical_violation_tol_mva(0.);
+    RealMat load_p(2, 1), load_q(2, 1), gen_p(2, 2);
+    load_p << LOAD_P, LOAD_P;
+    load_q << LOAD_Q, LOAD_Q;
+    // row 0: the grid's own set-points (10 MW on gen 1) -- under the limit
+    // row 1: gen 1 asked for 40 MW more, which lands it above
+    gen_p << 0., 10.,
+             0., 50.;
+    ts.modify_load_p(load_p);
+    ts.modify_load_q(load_q);
+    ts.modify_gen_p(gen_p);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+    REQUIRE(ts.converged_mask()[1] == 1);
+
+    CHECK(ts.get_physical_violations()[0].empty());
+    REQUIRE(ts.get_physical_violations()[1].size() == 1);
+    const LimitViolation & viol = ts.get_physical_violations()[1][0];
+    CHECK(viol.element_type == ViolationElementType::GENERATOR);
+    CHECK(viol.element_id == 1);
+    CHECK(viol.violation_type == LimitViolationType::HIGH_P);
+    CHECK(viol.value > pmax);
+    // ... and the value is still `this row's target + this row's share`, pinned against a
+    // single shot of the same set-points. Roughly p_ref(1) + 20 (gen 1's target went up by
+    // 40 MW while the load did not, so the pair makes up 40 MW less between them and, at
+    // equal weights, 20 MW each) -- but only roughly, because moving 40 MW onto the far end
+    // of the feeder changes the losses the pair also has to cover.
+    LSGrid ref_row1 = make_slack_grid(1., 1.);
+    ref_row1.change_p_gen(1, 50.);
+    const RealVect p_row1 = reference_gen_p(ref_row1);
+    CHECK(viol.value == Approx(p_row1(1)).margin(1e-6));
+    CHECK(viol.value == Approx(p_ref(1) + 20.).margin(1.));
+}
+
+TEST_CASE("a contingency row checks the slack its own solution distributed",
+          "[batch][physical][slack][contingency]")
+{
+    // A line outage changes the losses, hence the imbalance, hence every participant's
+    // share -- so the row must be judged on its own solve and not on the base case's.
+    LSGrid ref_n = make_slack_grid(1., 1., /*meshed=*/true);
+    const RealVect p_n = reference_gen_p(ref_n);
+
+    LSGrid ref_cont = make_slack_grid(1., 1., /*meshed=*/true);
+    ref_cont.deactivate_powerline(2);
+    const RealVect p_cont = reference_gen_p(ref_cont);
+    REQUIRE(std::abs(p_cont(1) - p_n(1)) > 1e-6);  // the outage really does move the share
+
+    LSGrid grid = make_slack_grid(1., 1., /*meshed=*/true);
+    set_gen_p_limits(grid, {NO_LIMIT, NO_LIMIT}, {NO_LIMIT, p_n(1) - 1.});
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ContingencyAnalysis ca(grid);
+    ca.set_compute_physical_violations(true);
+    ca.set_physical_violation_tol_mva(0.);
+    ca.add_n1(2);
+    ca.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ca.converged_mask()[0] == 1);
+
+    REQUIRE(ca.get_physical_violations()[0].size() == 1);
+    CHECK(ca.get_physical_violations()[0][0].value == Approx(p_cont(1)).margin(1e-6));
+    // ... and the "n" report is the base case's own
+    REQUIRE(ca.get_physical_violations_n().size() == 1);
+    CHECK(ca.get_physical_violations_n()[0].value == Approx(p_n(1)).margin(1e-6));
+}
+
+TEST_CASE("a DC batch checks the distributed slack too", "[batch][physical][slack]")
+{
+    // The generator check needs the slack the row distributed and nothing else, so it works
+    // in DC -- where the imbalance is shared out after the solve rather than inside the
+    // Jacobian (LSGrid::_fill_bus_mismatch_dc). The reference is a DC single shot.
+    LSGrid ref = make_slack_grid(1., 1.);
+    ref.change_algorithm(AlgorithmType::DC_SparseLU);
+    ref.dc_pf(flat_start(ref), 30, 1e-11);
+    const RealVect p_dc(std::get<0>(ref.get_gen_res()));
+    REQUIRE(p_dc(1) > 10.);
+
+    LSGrid grid = make_slack_grid(1., 1.);
+    set_gen_p_limits(grid, {NO_LIMIT, NO_LIMIT}, {NO_LIMIT, p_dc(1) - 5.});
+    TimeSeries ts(grid);
+    ts.change_algorithm(AlgorithmType::DC_SparseLU);
+    ts.set_compute_physical_violations(true);
+    ts.set_physical_violation_tol_mva(0.);
+    RealMat load_p(1, 1);
+    load_p << LOAD_P;
+    ts.modify_load_p(load_p);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+
+    const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+    REQUIRE(viols.size() == 1);
+    CHECK(viols[0].element_type == ViolationElementType::GENERATOR);
+    CHECK(viols[0].element_id == 1);
+    CHECK(viols[0].violation_type == LimitViolationType::HIGH_P);
+    CHECK(viols[0].value == Approx(p_dc(1)).margin(1e-6));
 }

@@ -59,9 +59,10 @@ void bind_batch_shared(py::class_<T> & cls)
                       "operational limits compute_limit_violations reports (a voltage band, a "
                       "thermal rating: states the grid does reach and should not sit in). "
                       "Defaults to ``False``. See get_physical_violations().\n\n"
-                      "Two checks, both conditions a PowSyBl OpenLoadFlow outer loop acts on, "
-                      "and neither enforced here (no bus is switched PV -> PQ, no droop is "
-                      "clamped, no row is re-solved):\n\n"
+                      "Three checks, each a condition a PowSyBl OpenLoadFlow outer loop acts "
+                      "on, and none enforced here (no bus is switched PV -> PQ, no droop is "
+                      "clamped, no machine leaves the slack distribution, no row is "
+                      "re-solved):\n\n"
                       "* the REACTIVE CAPABILITY of every bus whose voltage is held by machines "
                       "(LOW_Q / HIGH_Q on the BUS): did it need more reactive power than the SUM "
                       "of what its voltage-regulating generators, storage units, hvdc converter "
@@ -74,13 +75,23 @@ void bind_batch_shared(py::class_<T> & cls)
                       "still in the linear regime (HIGH_P on the HVDC): did ``p0 + k.(theta1 - "
                       "theta2)`` leave ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is "
                       "an INPUT of the solve, so nothing saturates the droop on its own. "
-                      "OpenLoadFlow's ``HvdcAcEmulationLimits``.\n\n"
-                      "The hvdc check needs only the bus angles, so it works in DC too; the "
-                      "reactive one needs an AC algorithm that publishes its per-bus mismatch "
-                      "(every built-in AC algorithm does, a plugin solver has to opt in) and "
-                      "compute() raises for one that does not. A DC batch reports the "
-                      "active-power half alone -- a DC powerflow has no reactive power at all, "
-                      "so nothing is hidden by that.\n\n"
+                      "OpenLoadFlow's ``HvdcAcEmulationLimits``.\n"
+                      "* the ACTIVE POWER of every generator carrying the DISTRIBUTED SLACK "
+                      "(LOW_P / HIGH_P on the GENERATOR): the slack is solved inside the "
+                      "Jacobian by fixed participation factors that know nothing about limits, "
+                      "so ``target_p + its share of the imbalance`` can land beyond "
+                      "``min_p_mw`` / ``max_p_mw``. Per machine, unlike the reactive check: "
+                      "the active split is not a convention, it is the participation factors "
+                      "the caller chose. Needs those limits, which are optional "
+                      "(LSGrid.set_gen_p_limits): a grid without them reports nothing here. "
+                      "OpenLoadFlow's ``DistributedSlack``.\n\n"
+                      "The hvdc and generator checks need only the bus angles and the slack "
+                      "the row distributed, so they work in DC too; the reactive one needs an "
+                      "AC algorithm that publishes its per-bus mismatch (every built-in AC "
+                      "algorithm does, a plugin solver has to opt in) and compute() raises for "
+                      "one that does not. A DC batch reports the two active-power checks alone "
+                      "-- a DC powerflow has no reactive power at all, so nothing is hidden by "
+                      "that.\n\n"
                       "Setting this drops this batch's base case and results, but not the "
                       "registered contingencies / injections (unlike compute_limit_violations, "
                       "which clears everything), so it can be set at any point before "
@@ -95,12 +106,15 @@ void bind_batch_shared(py::class_<T> & cls)
                       "halves, MW and MVAr being the same scale.")
         .def("get_physical_violations", &T::get_physical_violations,
              "Per row: the list of LimitViolation of the physical limits that row's solution "
-             "leaves. Every entry has category ViolationCategory.PHYSICAL and one of two "
+             "leaves. Every entry has category ViolationCategory.PHYSICAL and one of three "
              "shapes: element_type BUS with violation_type LOW_Q / HIGH_Q (element_id the grid "
              "bus id, `value` the reactive power the machines holding it had to produce in "
-             "MVAr, `limit` their summed capability), or element_type HVDC with violation_type "
+             "MVAr, `limit` their summed capability), element_type HVDC with violation_type "
              "HIGH_P (element_id the hvdc line id, `side` the direction -- 1 for 1 -> 2 -- "
-             "`value` the active power leaving that side in MW, `limit` that direction's pmax). "
+             "`value` the active power leaving that side in MW, `limit` that direction's "
+             "pmax), or element_type GENERATOR with violation_type LOW_P / HIGH_P (element_id "
+             "the generator id, `value` its converged active power in MW -- its target plus "
+             "its share of the distributed slack -- `limit` its min_p_mw / max_p_mw). "
              "A row that did not converge has an EMPTY entry, not a sentinel -- use "
              "converged_mask() to tell that from 'converged, no violation'. Requires "
              "compute_physical_violations=True.",
@@ -428,7 +442,13 @@ void bind_batch(py::module_& m) {
                "The whole grid / contingency, not a specific element (see LimitViolationType.NOT_SIMULATED "
                "/ LimitViolationType.DIVERGENCE).")
         .value("HVDC", ViolationElementType::HVDC,
-               "An hvdc line, by its own id (see LimitViolationType.HIGH_P).");
+               "An hvdc line, by its own id (see LimitViolationType.HIGH_P).")
+        .value("GENERATOR", ViolationElementType::GENERATOR,
+               "A generator, by its own id -- its ACTIVE power only (LimitViolationType.LOW_P "
+               "/ HIGH_P). A reactive violation is reported on the BUS instead, because how a "
+               "bus' reactive power is divided between its machines is a modelling "
+               "convention, while the active one is divided by the participation factors the "
+               "caller chose.");
 
     py::enum_<LimitViolationType>(m, "LimitViolationType", DocContingencyAnalysis::LimitViolationType.c_str())
         .value("LOW_VOLTAGE", LimitViolationType::LOW_VOLTAGE)
@@ -457,6 +477,17 @@ void bind_batch(py::module_& m) {
                "pmax_1to2_mw, 2 for the other way against pmax_2to1_mw. Category PHYSICAL: an "
                "hvdc converter does not transmit more than it can, its own control saturates "
                "first (which is what status_droop models). Reported by "
+               "compute_physical_violations, never enforced.\n\n"
+               "Also reported on a GENERATOR (element_type ViolationElementType.GENERATOR, "
+               "`side` unused): the distributed slack -- solved inside the Jacobian, by "
+               "participation factors that know nothing about limits -- asked a machine for "
+               "more than its max_p_mw.")
+        .value("LOW_P", LimitViolationType::LOW_P,
+               "The distributed slack pushed a generator's active power BELOW its min_p_mw "
+               "(element_type is ViolationElementType.GENERATOR). Category PHYSICAL, see "
+               "HIGH_P: a machine does not deliver power it does not have, so the converged "
+               "solution assumes a distribution that cannot happen -- which is exactly what "
+               "OpenLoadFlow's DistributedSlack outer loop re-shares. Reported by "
                "compute_physical_violations, never enforced.")
         .value("DIVERGENCE", LimitViolationType::DIVERGENCE,
                "The solver was invoked for this contingency but did not converge (element_type is "
@@ -476,8 +507,9 @@ void bind_batch(py::module_& m) {
                "the converged solution is NOT physically realizable, whatever anyone decides: "
                "the control it assumes (a voltage set-point held by machines that would have to "
                "produce reactive power they do not have, an hvdc converter transmitting more "
-               "than it can) cannot happen. A statement about the model's assumptions, not "
-               "about how the grid is operated. LOW_Q, HIGH_Q, HIGH_P.")
+               "than it can, a distributed slack asking a machine for power it does not have) "
+               "cannot happen. A statement about the model's assumptions, not about how the "
+               "grid is operated. LOW_Q, HIGH_Q, LOW_P, HIGH_P.")
         .value("SOLVER", ViolationCategory::SOLVER,
                "Not a limit at all: what the solver did. A divergence in particular says "
                "nothing about the grid -- the state may be perfectly feasible and the algorithm "
@@ -773,15 +805,19 @@ void bind_batch(py::module_& m) {
                       "Whether every converged contingency reports the PHYSICAL limits its "
                       "solution leaves -- a state the grid cannot reach, as opposed to the "
                       "operational limits compute_limit_violations reports. Defaults to "
-                      "``False``. Two checks: the reactive capability of every bus whose "
+                      "``False``. Three checks: the reactive capability of every bus whose "
                       "voltage is held by machines (LOW_Q / HIGH_Q on the BUS, summed over its "
                       "generators, storage units, hvdc converter stations and voltage-mode "
-                      "SVCs) and the "
+                      "SVCs), the "
                       "active power of every angle-droop hvdc line in the linear regime "
-                      "(HIGH_P on the HVDC, against pmax_1to2_mw / pmax_2to1_mw) -- "
-                      "OpenLoadFlow's ``ReactiveLimits`` and ``HvdcAcEmulationLimits``. "
+                      "(HIGH_P on the HVDC, against pmax_1to2_mw / pmax_2to1_mw), and the "
+                      "active power of every generator carrying the distributed slack (LOW_P / "
+                      "HIGH_P on the GENERATOR, against the optional min_p_mw / max_p_mw) -- "
+                      "OpenLoadFlow's ``ReactiveLimits``, ``HvdcAcEmulationLimits`` and "
+                      "``DistributedSlack``. "
                       "Detection only: no bus is switched PV -> PQ, no droop is clamped, no "
-                      "contingency is re-solved. The hvdc half works in DC too; the reactive "
+                      "machine leaves the slack distribution, no contingency is re-solved. The "
+                      "two active-power checks work in DC too; the reactive "
                       "one needs an AC algorithm that publishes its per-bus mismatch and "
                       "compute() raises for one that does not.")
         .def_property("physical_violation_tol_mva",
@@ -793,8 +829,9 @@ void bind_batch(py::module_& m) {
         .def("get_physical_violations", &ContingencyAnalysis::get_physical_violations,
              "Per contingency: the list of LimitViolation of the physical limits that "
              "contingency's solution leaves (category ViolationCategory.PHYSICAL) -- "
-             "element_type BUS with LOW_Q / HIGH_Q, or element_type HVDC with HIGH_P and "
-             "`side` naming the direction. A contingency that did not converge, or that was "
+             "element_type BUS with LOW_Q / HIGH_Q, element_type HVDC with HIGH_P and "
+             "`side` naming the direction, or element_type GENERATOR with LOW_P / HIGH_P. "
+             "A contingency that did not converge, or that was "
              "never simulated, has an EMPTY entry -- use converged() to tell that from "
              "'converged, no violation'. Requires compute_physical_violations=True.",
              py::return_value_policy::reference_internal)
