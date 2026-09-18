@@ -49,6 +49,82 @@ void bind_batch_shared(py::class_<T> & cls)
              "single-threaded), then one per worker thread of the last multi-threaded "
              "compute().")
 
+        // physical-limit checks (see BaseBatchSweep::set_compute_physical_violations)
+        .def_property("compute_physical_violations",
+                      [](const T & self){ return self.get_compute_physical_violations(); },
+                      [](T & self, bool val){ self.set_compute_physical_violations(val); },
+                      "Whether every converged row reports the PHYSICAL limits its solution "
+                      "leaves -- the ones whose violation means the row is not a state the grid "
+                      "can reach at all (ViolationCategory.PHYSICAL), as opposed to the "
+                      "operational limits compute_limit_violations reports (a voltage band, a "
+                      "thermal rating: states the grid does reach and should not sit in). "
+                      "Defaults to ``False``. See get_physical_violations().\n\n"
+                      "Three checks, each a condition a PowSyBl OpenLoadFlow outer loop acts "
+                      "on, and none enforced here (no bus is switched PV -> PQ, no droop is "
+                      "clamped, no machine leaves the slack distribution, no row is "
+                      "re-solved):\n\n"
+                      "* the REACTIVE CAPABILITY of every bus whose voltage is held by machines "
+                      "(LOW_Q / HIGH_Q on the BUS): did it need more reactive power than the SUM "
+                      "of what its voltage-regulating generators, hvdc converter stations and "
+                      "voltage-mode SVCs can produce? A machine has no reactive setpoint -- its "
+                      "output is solved for and never clamped -- so a row can converge asking "
+                      "for reactive power that does not exist. Per bus, not per machine: the "
+                      "split between the machines of one bus is a sharing convention rather "
+                      "than something the solver decides. OpenLoadFlow's ``ReactiveLimits``.\n"
+                      "* the ACTIVE POWER of every angle-droop (\"AC emulation\") hvdc line "
+                      "still in the linear regime (HIGH_P on the HVDC): did ``p0 + k.(theta1 - "
+                      "theta2)`` leave ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is "
+                      "an INPUT of the solve, so nothing saturates the droop on its own. "
+                      "OpenLoadFlow's ``HvdcAcEmulationLimits``.\n"
+                      "* the ACTIVE POWER of every generator carrying the DISTRIBUTED SLACK "
+                      "(LOW_P / HIGH_P on the GENERATOR): the slack is solved inside the "
+                      "Jacobian by fixed participation factors that know nothing about limits, "
+                      "so ``target_p + its share of the imbalance`` can land beyond "
+                      "``min_p_mw`` / ``max_p_mw``. Per machine, unlike the reactive check: "
+                      "the active split is not a convention, it is the participation factors "
+                      "the caller chose. Needs those limits, which are optional "
+                      "(LSGrid.set_gen_p_limits): a grid without them reports nothing here. "
+                      "OpenLoadFlow's ``DistributedSlack``.\n\n"
+                      "The hvdc and generator checks need only the bus angles and the slack "
+                      "the row distributed, so they work in DC too; the reactive one needs an "
+                      "AC algorithm that publishes its per-bus mismatch (every built-in AC "
+                      "algorithm does, a plugin solver has to opt in) and compute() raises for "
+                      "one that does not. A DC batch reports the two active-power checks alone "
+                      "-- a DC powerflow has no reactive power at all, so nothing is hidden by "
+                      "that.\n\n"
+                      "Setting this drops this batch's base case and results, but not the "
+                      "registered contingencies / injections (unlike compute_limit_violations, "
+                      "which clears everything), so it can be set at any point before "
+                      "compute().")
+        .def_property("physical_violation_tol_mva",
+                      [](const T & self){ return self.get_physical_violation_tol_mva(); },
+                      [](T & self, real_type val){ self.set_physical_violation_tol_mva(val); },
+                      "Absolute slack on every comparison compute_physical_violations makes, so "
+                      "that an element resting exactly on its limit is not reported over solver "
+                      "noise: a violation needs ``value > limit + tol`` (or ``value < limit - "
+                      "tol`` for LOW_Q). Defaults to 1e-4. In MVA: one noise floor for both "
+                      "halves, MW and MVAr being the same scale.")
+        .def("get_physical_violations", &T::get_physical_violations,
+             "Per row: the list of LimitViolation of the physical limits that row's solution "
+             "leaves. Every entry has category ViolationCategory.PHYSICAL and one of three "
+             "shapes: element_type BUS with violation_type LOW_Q / HIGH_Q (element_id the grid "
+             "bus id, `value` the reactive power the machines holding it had to produce in "
+             "MVAr, `limit` their summed capability), element_type HVDC with violation_type "
+             "HIGH_P (element_id the hvdc line id, `side` the direction -- 1 for 1 -> 2 -- "
+             "`value` the active power leaving that side in MW, `limit` that direction's "
+             "pmax), or element_type GENERATOR with violation_type LOW_P / HIGH_P (element_id "
+             "the generator id, `value` its converged active power in MW -- its target plus "
+             "its share of the distributed slack -- `limit` its min_p_mw / max_p_mw). "
+             "A row that did not converge has an EMPTY entry, not a sentinel -- use "
+             "converged_mask() to tell that from 'converged, no violation'. Requires "
+             "compute_physical_violations=True.",
+             py::return_value_policy::reference_internal)
+        .def("get_physical_violations_n", &T::get_physical_violations_n,
+             "The same, for the base (\"n\") case every row is solved from (no injection "
+             "change, no contingency). Empty if that solve did not converge. Requires "
+             "compute_physical_violations=True.",
+             py::return_value_policy::reference_internal)
+
         // base-case reuse (see BaseBatchSweep::set_reuse_base_case)
         .def_property("reuse_base_case",
                       [](const T & self){ return self.get_reuse_base_case(); },
@@ -350,7 +426,15 @@ void bind_batch(py::module_& m) {
         .value("TRAFO", ViolationElementType::TRAFO)
         .value("GRID", ViolationElementType::GRID,
                "The whole grid / contingency, not a specific element (see LimitViolationType.NOT_SIMULATED "
-               "/ LimitViolationType.DIVERGENCE).");
+               "/ LimitViolationType.DIVERGENCE).")
+        .value("HVDC", ViolationElementType::HVDC,
+               "An hvdc line, by its own id (see LimitViolationType.HIGH_P).")
+        .value("GENERATOR", ViolationElementType::GENERATOR,
+               "A generator, by its own id -- its ACTIVE power only (LimitViolationType.LOW_P "
+               "/ HIGH_P). A reactive violation is reported on the BUS instead, because how a "
+               "bus' reactive power is divided between its machines is a modelling "
+               "convention, while the active one is divided by the participation factors the "
+               "caller chose.");
 
     py::enum_<LimitViolationType>(m, "LimitViolationType", DocContingencyAnalysis::LimitViolationType.c_str())
         .value("LOW_VOLTAGE", LimitViolationType::LOW_VOLTAGE)
@@ -359,9 +443,67 @@ void bind_batch(py::module_& m) {
         .value("NOT_SIMULATED", LimitViolationType::NOT_SIMULATED,
                "A pre-check (graph connectivity) skipped this contingency: the solver was never "
                "invoked (element_type is ViolationElementType.GRID).")
+        .value("LOW_Q", LimitViolationType::LOW_Q,
+               "The reactive power the machines holding a BUS' voltage had to produce went "
+               "BELOW the sum of what they can absorb (element_type is "
+               "ViolationElementType.BUS). "
+               "Category PHYSICAL: a machine cannot absorb reactive power it does not have, so "
+               "the converged solution is not a state the grid can reach. Reported by "
+               "compute_physical_violations, never enforced.")
+        .value("HIGH_Q", LimitViolationType::HIGH_Q,
+               "The reactive power the machines holding a BUS' voltage had to produce went "
+               "ABOVE the sum of what they can produce (element_type is "
+               "ViolationElementType.BUS). "
+               "Category PHYSICAL, see LOW_Q. Reported by compute_physical_violations, never "
+               "enforced.")
+        .value("HIGH_P", LimitViolationType::HIGH_P,
+               "The active power of an angle-droop (\"AC emulation\") hvdc line left what its "
+               "converters can transmit (element_type is ViolationElementType.HVDC). `side` "
+               "says which direction and therefore which limit: 1 for 1 -> 2 against "
+               "pmax_1to2_mw, 2 for the other way against pmax_2to1_mw. Category PHYSICAL: an "
+               "hvdc converter does not transmit more than it can, its own control saturates "
+               "first (which is what status_droop models). Reported by "
+               "compute_physical_violations, never enforced.\n\n"
+               "Also reported on a GENERATOR (element_type ViolationElementType.GENERATOR, "
+               "`side` unused): the distributed slack -- solved inside the Jacobian, by "
+               "participation factors that know nothing about limits -- asked a machine for "
+               "more than its max_p_mw.")
+        .value("LOW_P", LimitViolationType::LOW_P,
+               "The distributed slack pushed a generator's active power BELOW its min_p_mw "
+               "(element_type is ViolationElementType.GENERATOR). Category PHYSICAL, see "
+               "HIGH_P: a machine does not deliver power it does not have, so the converged "
+               "solution assumes a distribution that cannot happen -- which is exactly what "
+               "OpenLoadFlow's DistributedSlack outer loop re-shares. Reported by "
+               "compute_physical_violations, never enforced.")
         .value("DIVERGENCE", LimitViolationType::DIVERGENCE,
                "The solver was invoked for this contingency but did not converge (element_type is "
                "ViolationElementType.GRID).");
+
+    py::enum_<ViolationCategory>(m, "ViolationCategory",
+        "What KIND of statement a LimitViolation is -- a property of its violation_type, and "
+        "the first thing to read: the three kinds do not mean the same thing and must not be "
+        "acted on the same way.")
+        .value("OPERATIONAL", ViolationCategory::OPERATIONAL,
+               "A limit chosen by an operator, which the grid CAN leave: a bus outside its "
+               "voltage range, a branch above its current rating. The solution is a state the "
+               "grid can reach -- it is just a state nobody wants to sit in, and things "
+               "eventually break. LOW_VOLTAGE, HIGH_VOLTAGE, CURRENT.")
+        .value("PHYSICAL", ViolationCategory::PHYSICAL,
+               "A limit of the equipment itself, which nothing can leave. A violation here says "
+               "the converged solution is NOT physically realizable, whatever anyone decides: "
+               "the control it assumes (a voltage set-point held by machines that would have to "
+               "produce reactive power they do not have, an hvdc converter transmitting more "
+               "than it can, a distributed slack asking a machine for power it does not have) "
+               "cannot happen. A statement about the model's assumptions, not about how the "
+               "grid is operated. LOW_Q, HIGH_Q, LOW_P, HIGH_P.")
+        .value("SOLVER", ViolationCategory::SOLVER,
+               "Not a limit at all: what the solver did. A divergence in particular says "
+               "nothing about the grid -- the state may be perfectly feasible and the algorithm "
+               "simply failed to find it, or there may be no solution; this does not "
+               "distinguish the two. NOT_SIMULATED, DIVERGENCE.");
+
+    m.def("violation_category", &violation_category, py::arg("violation_type"),
+          "The ViolationCategory of a LimitViolationType. Every type has exactly one.");
 
     py::class_<LimitViolation>(m, "LimitViolation", DocContingencyAnalysis::LimitViolation.c_str())
         .def_readonly("element_type", &LimitViolation::element_type, DocContingencyAnalysis::element_type.c_str())
@@ -370,7 +512,11 @@ void bind_batch(py::module_& m) {
         .def_readonly("violation_type", &LimitViolation::violation_type, DocContingencyAnalysis::violation_type.c_str())
         .def_readonly("value", &LimitViolation::value, DocContingencyAnalysis::value.c_str())
         .def_readonly("limit", &LimitViolation::limit, DocContingencyAnalysis::limit.c_str())
-        .def_readonly("name", &LimitViolation::name, DocContingencyAnalysis::violation_name.c_str());
+        .def_readonly("name", &LimitViolation::name, DocContingencyAnalysis::violation_name.c_str())
+        .def_property_readonly("category", &LimitViolation::category,
+             "The ViolationCategory of this violation, ie what kind of statement it is: a "
+             "limit the grid may leave (OPERATIONAL), one it cannot (PHYSICAL), or the "
+             "solver's own verdict (SOLVER). Derived from violation_type.");
 
     // TimeSeriesCPP, InjectionSweepCPP and ScenarioSweepCPP are three instantiations
     // of the same C++ template (see batch_algorithm/BaseBatchSweep.hpp): same
@@ -637,6 +783,47 @@ void bind_batch(py::module_& m) {
                       [](const ContingencyAnalysis & self){ return self.get_violation_threshold(); },
                       [](ContingencyAnalysis & self, real_type val){ self.set_violation_threshold(val); },
                       DocContingencyAnalysis::violation_threshold.c_str())
+        // physical-limit checks: same names and semantics as on the three
+        // batch_sweep_common classes (this class is bound by hand, see the note above)
+        .def_property("compute_physical_violations",
+                      [](const ContingencyAnalysis & self){ return self.get_compute_physical_violations(); },
+                      [](ContingencyAnalysis & self, bool val){ self.set_compute_physical_violations(val); },
+                      "Whether every converged contingency reports the PHYSICAL limits its "
+                      "solution leaves -- a state the grid cannot reach, as opposed to the "
+                      "operational limits compute_limit_violations reports. Defaults to "
+                      "``False``. Three checks: the reactive capability of every bus whose "
+                      "voltage is held by machines (LOW_Q / HIGH_Q on the BUS, summed over its "
+                      "generators, hvdc converter stations and voltage-mode SVCs), the "
+                      "active power of every angle-droop hvdc line in the linear regime "
+                      "(HIGH_P on the HVDC, against pmax_1to2_mw / pmax_2to1_mw), and the "
+                      "active power of every generator carrying the distributed slack (LOW_P / "
+                      "HIGH_P on the GENERATOR, against the optional min_p_mw / max_p_mw) -- "
+                      "OpenLoadFlow's ``ReactiveLimits``, ``HvdcAcEmulationLimits`` and "
+                      "``DistributedSlack``. "
+                      "Detection only: no bus is switched PV -> PQ, no droop is clamped, no "
+                      "machine leaves the slack distribution, no contingency is re-solved. The "
+                      "two active-power checks work in DC too; the reactive "
+                      "one needs an AC algorithm that publishes its per-bus mismatch and "
+                      "compute() raises for one that does not.")
+        .def_property("physical_violation_tol_mva",
+                      [](const ContingencyAnalysis & self){ return self.get_physical_violation_tol_mva(); },
+                      [](ContingencyAnalysis & self, real_type val){ self.set_physical_violation_tol_mva(val); },
+                      "Absolute slack (MVA) on every comparison compute_physical_violations "
+                      "makes: a violation needs ``value > limit + tol`` (or ``value < limit - "
+                      "tol`` for LOW_Q). Defaults to 1e-4.")
+        .def("get_physical_violations", &ContingencyAnalysis::get_physical_violations,
+             "Per contingency: the list of LimitViolation of the physical limits that "
+             "contingency's solution leaves (category ViolationCategory.PHYSICAL) -- "
+             "element_type BUS with LOW_Q / HIGH_Q, element_type HVDC with HIGH_P and "
+             "`side` naming the direction, or element_type GENERATOR with LOW_P / HIGH_P. "
+             "A contingency that did not converge, or that was "
+             "never simulated, has an EMPTY entry -- use converged() to tell that from "
+             "'converged, no violation'. Requires compute_physical_violations=True.",
+             py::return_value_policy::reference_internal)
+        .def("get_physical_violations_n", &ContingencyAnalysis::get_physical_violations_n,
+             "The same, for the pre-contingency (\"n\") case. Requires "
+             "compute_physical_violations=True.",
+             py::return_value_policy::reference_internal)
         .def_property("init_from_n_powerflow",
                       [](const ContingencyAnalysis & self){ return self.get_init_from_n_powerflow(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_init_from_n_powerflow(val); },

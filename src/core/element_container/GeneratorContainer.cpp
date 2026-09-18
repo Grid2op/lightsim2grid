@@ -79,6 +79,9 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one
      std::vector<real_type> min_q(min_q_.begin(), min_q_.end());
      std::vector<real_type> max_q(max_q_.begin(), max_q_.end());
      std::vector<int> regulated_bus(regulated_bus_id_.begin(), regulated_bus_id_.end());
+     // optional, and stays empty when unset -- see set_p_limits
+     std::vector<real_type> p_min(p_min_mw_.begin(), p_min_mw_.end());
+     std::vector<real_type> p_max(p_max_mw_.begin(), p_max_mw_.end());
      GeneratorContainer::StateRes res(get_osc_pq_state(),  // osc : one side container
                                       turnedoff_gen_pv_,
                                       voltage_regulator_on_,
@@ -87,7 +90,9 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one
                                       max_q,
                                       gen_slackbus_,
                                       gen_slack_weight_,
-                                      regulated_bus);
+                                      regulated_bus,
+                                      p_min,
+                                      p_max);
      return res;
 }
 
@@ -104,6 +109,8 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     std::vector<bool> & slack_bus = std::get<StateResIdx::GEN_SLACKBUS>(my_state);
     std::vector<real_type> & slack_weight = std::get<StateResIdx::GEN_SLACK_WEIGHT>(my_state);
     std::vector<int> & regulated_bus = std::get<StateResIdx::REGULATED_BUS_ID>(my_state);
+    std::vector<real_type> & p_min = std::get<StateResIdx::P_MIN_MW>(my_state);
+    std::vector<real_type> & p_max = std::get<StateResIdx::P_MAX_MW>(my_state);
 
     // check sizes
     const auto size = nb();
@@ -114,6 +121,13 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     check_size(slack_bus, size, "slack_bus");
     check_size(slack_weight, size, "slack_weight");
     check_size(regulated_bus, size, "regulated_bus");
+    // the active power limits are OPTIONAL: a grid that was never given any carries two
+    // empty vectors, and so does a file written before they existed. Only a non-empty one
+    // has to match the number of generators.
+    if(!p_min.empty() || !p_max.empty()){
+        check_size(p_min, size, "p_min_mw");
+        check_size(p_max, size, "p_max_mw");
+    }
 
     // assign data
     voltage_regulator_on_ = voltage_regulator_on;
@@ -123,6 +137,8 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     gen_slackbus_ = slack_bus;
     gen_slack_weight_ = slack_weight;
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
+    p_min_mw_ = p_min.empty() ? RealVect() : RealVect::Map(p_min.data(), p_min.size());
+    p_max_mw_ = p_max.empty() ? RealVect() : RealVect::Map(p_max.data(), p_max.size());
     reset_results();
 }
 

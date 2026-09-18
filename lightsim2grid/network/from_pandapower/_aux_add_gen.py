@@ -33,3 +33,43 @@ def _aux_add_gen(model, pp_net, pp_to_ls):
         if not is_connected:
             # generator is deactivated
             model.deactivate_gen(gen_id)
+
+
+def _aux_add_gen_p_limits(model, pp_net):
+    """
+    Thread pandapower's optional ``min_p_mw`` / ``max_p_mw`` generator columns into the
+    lightsim2grid model.
+
+    They are not used by the powerflow: they are what says whether the active power a
+    distributed slack ended up asking of a machine is one it could actually deliver (see
+    the batch algorithms' ``compute_physical_violations``). A net that does not carry
+    them, or that carries only NaN, leaves the model without any -- exactly as if this
+    had never been called.
+
+    Called AFTER ``_aux_add_slack``, which appends one generator per ext_grid when no
+    generator stands on the slack bus: those have no pandapower row, hence no limit, and
+    are padded with NaN so the two vectors still match the container.
+    """
+    nb_gen = len(model.get_generators())
+    nb_pp_gen = pp_net.gen.shape[0]
+    if nb_gen == 0:
+        return
+
+    def _col(name):
+        if name not in pp_net.gen:
+            return None
+        vals = pp_net.gen[name].to_numpy().astype(np.float64)
+        return vals if np.any(np.isfinite(vals)) else None
+
+    min_p = _col("min_p_mw")
+    max_p = _col("max_p_mw")
+    if min_p is None and max_p is None:
+        return
+
+    def _pad(vals):
+        out = np.full(nb_gen, np.nan, dtype=np.float64)
+        if vals is not None:
+            out[:nb_pp_gen] = vals[:nb_pp_gen]
+        return out
+
+    model.set_gen_p_limits(_pad(min_p), _pad(max_p))
