@@ -239,6 +239,57 @@ class OneSideContainer : public GenericContainer
             status_[el_id] = true;
             return true;
         }
+        /**
+         * Put terminal `el_id` on grid bus `bus`, whatever its state: reactivated if
+         * it was off, moved if it was elsewhere. The one operation "connect this
+         * terminal to that bus", shared by the topology vector (update_topo) and
+         * the switch projection (set_terminal); WITHOUT counting, for the same
+         * reason as the other `*_no_bus_tracking` mutators. Returns whether anything
+         * changed. `nb_bus` bounds the bus id.
+         */
+        bool _connect_no_bus_tracking(int el_id, GridModelBusId bus, DualAlgoControl & solver_control, int nb_bus) {
+            bool changed = reactivate_no_bus_tracking(el_id, solver_control);
+            _check_new_bus_id(bus, nb_bus);
+            changed = change_bus_no_bus_tracking(el_id, bus, solver_control) || changed;
+            return changed;
+        }
+        /// is terminal `el_id` already exactly where `bus` says (on it, or off when
+        /// `bus` is the disconnected marker)? What set_terminal skips.
+        bool _terminal_already_at(int el_id, GridModelBusId bus) const {
+            if(bus.cast_int() == _deactivated_bus_id) return !status_[el_id];
+            return status_[el_id] && (bus_id_(el_id) == bus);
+        }
+
+    public:
+        /**
+         * Put terminal `el_id` where `bus` says: on that grid bus (reactivated if
+         * needed, moved if needed), or off when `bus` is the disconnected marker
+         * (deactivated; its last bus id is kept, as deactivate does). What the
+         * projection of the switches onto the elements calls, once per terminal.
+         *
+         * A terminal already there is a no-op, and not even bracketed (a bus held by
+         * this element alone would transiently hit 0 and report a crossing that
+         * never happened). Otherwise ONE counting bracket around the whole change:
+         * reactivating and moving a terminal is a single change of which bus it
+         * holds. Returns whether anything changed.
+         */
+        bool set_terminal(int el_id, GridModelBusId bus, DualAlgoControl & solver_control,
+                          SubstationContainer & substation) {
+            // both checks BEFORE the bracket: a call the grid refuses must not touch
+            // the counts (see deactivate / change_bus)
+            _check_in_range(el_id, bus_id_, "set_terminal");
+            const bool off = (bus.cast_int() == _deactivated_bus_id);
+            if(!off) _check_new_bus_id(bus, substation.nb_bus());
+            if(_terminal_already_at(el_id, bus)) return false;
+            bool changed = false;
+            _apply_and_track_buses(el_id, substation, solver_control, [&]{
+                changed = off ? deactivate_no_bus_tracking(el_id, solver_control)
+                              : _connect_no_bus_tracking(el_id, bus, solver_control, static_cast<int>(substation.nb_bus()));
+            });
+            return changed;
+        }
+
+    protected:
 
     public:
         /**
@@ -465,11 +516,10 @@ class OneSideContainer : public GenericContainer
                          << "(run check_grid()).";
                     throw std::out_of_range(exc_.str());
                 }
-                GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
-                bool change_effective = reactivate_no_bus_tracking(el_id, solver_control); // eg reactivate_load(load_id);
-                _check_new_bus_id(new_bus_backend, substations.nb_bus());
-                change_effective = change_bus_no_bus_tracking(el_id, new_bus_backend, solver_control) || change_effective; // eg change_bus_load(load_id, new_bus_backend);
-                return change_effective;
+                const GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
+                // reactivate then move (eg reactivate_load + change_bus_load), the bus id
+                // checked in between: exactly what a switch projection does too
+                return _connect_no_bus_tracking(el_id, new_bus_backend, solver_control, static_cast<int>(substations.nb_bus()));
             } else if (new_bus.cast_int() == _deactivated_bus_id){
                 // new bus is negative, we deactivate it
                 // the bus is taken out of the system in GridModel.update_topo

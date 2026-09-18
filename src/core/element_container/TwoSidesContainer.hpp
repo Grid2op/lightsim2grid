@@ -471,10 +471,65 @@ class TwoSidesContainer : public GenericContainer
         }
 
         /**
+         * Put both ends of element `el_id` where `bus1` / `bus2` say, in one go:
+         * a grid bus (that end reactivated if needed, moved if needed) or the
+         * disconnected marker (that end off). What the projection of the switches
+         * onto the elements calls, once per branch, with the label of each end's
+         * component.
+         *
+         * The global status follows the ends, by the same rule resolve_status
+         * applies to a topology-vector entry:
+         *   - `synch_status_both_side_`: an end that is off takes the whole branch
+         *     down -- both ends off, global off (what deactivate does). Otherwise
+         *     both on, global on.
+         *   - not synched: each end goes where it is told, and the branch is on iff
+         *     at least one end is (a half-open branch has its open end Kron-reduced).
+         *   - `ignore_status_global_`: the gate is always on, whatever the ends.
+         * The global flip raises no hook of its own, exactly as in resolve_status:
+         * an end changing status is what makes it flip, and the ends' hooks say it.
+         *
+         * A branch already there is a no-op, not even bracketed. Otherwise ONE
+         * counting bracket around both ends and the gate, then
+         * `_on_connectivity_changed` once. Returns whether anything changed.
+         */
+        bool set_terminals(int el_id, GridModelBusId bus1, GridModelBusId bus2,
+                           DualAlgoControl & solver_control, SubstationContainer & substation) {
+            // every check BEFORE the bracket (a refused call must not touch the counts)
+            _check_in_range(el_id, status_global_, "set_terminals");
+            const int nb_bus = static_cast<int>(substation.nb_bus());
+            bool off1 = (bus1.cast_int() == _deactivated_bus_id);
+            bool off2 = (bus2.cast_int() == _deactivated_bus_id);
+            if(!off1) _check_new_bus_id(bus1, nb_bus);
+            if(!off2) _check_new_bus_id(bus2, nb_bus);
+            // with synched ends, one end off means both ends off
+            if(synch_status_both_side_ && (off1 || off2)){ off1 = true; off2 = true; }
+            const bool new_global = ignore_status_global_ || !(off1 && off2);
+            const GridModelBusId target1 = off1 ? GridModelBusId(_deactivated_bus_id) : bus1;
+            const GridModelBusId target2 = off2 ? GridModelBusId(_deactivated_bus_id) : bus2;
+            if(side_1_._terminal_already_at(el_id, target1) &&
+               side_2_._terminal_already_at(el_id, target2) &&
+               (status_global_[el_id] == new_global)) return false;
+
+            bool changed = false;
+            _apply_and_track_buses(el_id, substation, solver_control, [&]{
+                changed = off1 ? side_1_.deactivate_no_bus_tracking(el_id, solver_control)
+                               : side_1_._connect_no_bus_tracking(el_id, bus1, solver_control, nb_bus);
+                changed = (off2 ? side_2_.deactivate_no_bus_tracking(el_id, solver_control)
+                                : side_2_._connect_no_bus_tracking(el_id, bus2, solver_control, nb_bus)) || changed;
+                if(status_global_[el_id] != new_global){
+                    status_global_[el_id] = new_global;
+                    changed = true;
+                }
+            });
+            if(changed) _on_connectivity_changed(el_id, solver_control);
+            return changed;
+        }
+
+        /**
          * Change the bus on "side 1" of the element el_id.
-         * 
+         *
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
-         */        
+         */
         void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, SubstationContainer & substation) {
             _check_in_range(el_id, status_global_, "change_bus_side_1");  // before _apply_and_track_buses reads status_global_[el_id]
             // and the BUS id, before the bracket takes this element's contribution
