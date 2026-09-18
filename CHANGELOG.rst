@@ -3,6 +3,20 @@ Change Log
 
 [TODO]
 --------
+- Control limits are detected but never **enforced**: ``compute_physical_violations`` reports a
+  distributed-slack machine past ``get_min_p`` / ``get_max_p`` (``GenPCheck``) and a bus past its
+  reactive capability (``BusQCheck``), but no algorithm reads a limit, so the solve still
+  converges to the state the check then flags. ``docs/dev_notes/nr_control_limits.md`` is a
+  design note for the enforcement side, companion to
+  ``docs/dev_notes/outer_loop_checks_missing_data.md``: it argues that reactive limits, slack
+  active limits, tap-ratio control, area interchange and secondary voltage control are one
+  mathematical object -- a bounded control resource complementary to a regulated quantity --
+  expressible as projection rows solved by a semismooth Newton, inside the existing
+  fixed-sparsity / value-level-masking contract, with only tap *discreteness* left needing
+  iteration around the solve. It also covers state-dependent slack weights (OLF's
+  ``balanceType``) and the hydro produce / absorb mode question. Nothing of it is implemented
+  and none of its cost claims is benchmarked; the smallest useful first step is
+  clamp-and-renormalise on the slack, where ``GenPCheck`` already provides the oracle.
 - ``modify_gen_v`` can only vary a GENERATOR's voltage set-point: there is no
   ``modify_svc_v`` and no ``modify_hvdc_v``. So a generator whose regulated bus is also
   regulated by a voltage-mode SVC or an hvdc converter station cannot be moved by a batch
