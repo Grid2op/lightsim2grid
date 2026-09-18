@@ -165,6 +165,15 @@ class LS2G_API SubstationTopology final
         /// the local bus of a busbar section (-1: isolated, or no feeder reaches it)
         int bbs_bus(int bbs_id) const { return node_bus(bbs_node(bbs_id)); }
 
+        // ---- results: the voltage of each busbar section after a powerflow --------
+        // Filled by LSGrid::compute_results (a section reads its bus' voltage),
+        // cleared by reset_results; derived, never serialized.
+        bool has_bbs_results() const { return has_bbs_res_; }
+        real_type bbs_res_v_kv(int bbs_id) const { return bbs_res_v_kv_(_checked_bbs_id(bbs_id, "bbs_res_v_kv")); }
+        real_type bbs_res_theta_deg(int bbs_id) const { return bbs_res_theta_deg_(_checked_bbs_id(bbs_id, "bbs_res_theta_deg")); }
+        void set_bbs_results(const RealVect & v_kv, const RealVect & theta_deg);  // one per section
+        void reset_bbs_results();
+
         // ---- terminals: which element ends stand on which node -----------------
         // Derived, rebuilt by LSGrid from the containers (see
         // LSGrid::_rebuild_terminal_lists); not part of StateRes.
@@ -228,6 +237,10 @@ class LS2G_API SubstationTopology final
         IntVect node_bus_;
         // union-find scratch, sized nb_nodes_ by label()
         std::vector<int> uf_parent_;
+        // busbar-section results (derived, never serialized): see set_bbs_results
+        bool has_bbs_res_ = false;
+        RealVect bbs_res_v_kv_;
+        RealVect bbs_res_theta_deg_;
 };
 
 }  // namespace ls2g

@@ -88,6 +88,7 @@ add_executable(lightsim2grid_unit_tests
     test_substation_topology.cpp
     test_topology_labelling.cpp
     test_terminal_mutators.cpp
+    test_switch_projection.cpp
     test_kcl_from_results.cpp
     test_solve_transpose.cpp
     test_batch_adjoint.cpp

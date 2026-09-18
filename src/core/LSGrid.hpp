@@ -1956,6 +1956,40 @@ class LS2G_API LSGrid final
          */
         void update_topo(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
                          const Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
+
+        // ---- detailed topology: the switches, projected onto the elements --------
+        /**
+         * Put every element where the switches say: for each substation, label the
+         * components of its closed-switch graph (SubstationTopology::label) and move
+         * each terminal onto its component's bus -- or off, when that component is
+         * not a bus. Goes through the same mutators as everything else
+         * (set_terminal / set_terminals), so the per-bus counts and the change flags
+         * follow, and a terminal already where it should be costs nothing.
+         *
+         * The direct mutators (deactivate_*, change_bus_*, update_topo, ...) stay
+         * usable on a grid with a detailed topology: they are the escape hatch, and
+         * the next projection of a substation is what overwrites them there. This
+         * projects ALL substations; set_switch_open / update_switches project only
+         * the ones whose switches moved.
+         */
+        void project_switches();
+        /**
+         * Open (`open == true`) or close one switch, by grid-wide id, and project
+         * its substation. Returns whether the switch actually moved. Throws on an
+         * internal connection (always closed) or a bad id, leaving the grid as it
+         * was. If the new position makes more buses than the substation's capacity
+         * holds (a hand-built grid: the loader sizes for the maximum), the
+         * projection throws with the switch already moved and the elements untouched.
+         */
+        bool set_switch_open(int switch_id, bool open);
+        /**
+         * The bulk form, in the style of update_topo: both arrays have one entry
+         * per switch (grid-wide ids); where `has_changed` is true, the switch takes
+         * the position in `new_open` (true = open). Substations with a switch that
+         * actually moved are projected, once each, afterwards.
+         */
+        void update_switches(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                             const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & new_open);
         void update_storages_p(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
                                const Eigen::Ref<const Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values);
 
@@ -2624,6 +2658,17 @@ class LS2G_API LSGrid final
         void _rebuild_terminal_lists();
         /// the substation or node id of some terminals changed: re-index them
         void _on_terminal_layout_changed(){ if(substations_.has_detailed_topology()) _rebuild_terminal_lists(); }
+        /// throw unless the grid has a detailed topology (`fun_name` names the caller)
+        void _require_detailed_topology(const char * fun_name) const;
+        /// project the switch positions of ONE substation onto its terminals
+        void _project_substation(int sub_id);
+        /// the grid bus a node of `sub_id` maps to under its current labels (labelled
+        /// first if stale), or the disconnected marker
+        GridModelBusId _node_target(int sub_id, int node);
+        /// the bus one end of a branch should be on: its own substation's labels
+        /// when it is described, its current state otherwise
+        template<class TwoSided>
+        GridModelBusId _end_target(const TwoSided & container, bool side_1, int el_id);
         /**
          * Refuse, by name, a grid whose voltage control the selected algorithm cannot
          * honour. Called by `ac_pf` when `_algo.supports_remote_voltage_control()` is

@@ -254,6 +254,26 @@ void SubstationTopology::label(int nmax_busbar_per_sub, int sub_id)
     labels_ready_ = true;
 }
 
+void SubstationTopology::set_bbs_results(const RealVect & v_kv, const RealVect & theta_deg)
+{
+    if((v_kv.size() != nb_busbar_sections()) || (theta_deg.size() != nb_busbar_sections())){
+        std::ostringstream exc_;
+        exc_ << "SubstationTopology::set_bbs_results: " << v_kv.size() << " voltages and "
+             << theta_deg.size() << " angles for " << nb_busbar_sections() << " busbar sections.";
+        throw std::runtime_error(exc_.str());
+    }
+    bbs_res_v_kv_ = v_kv;
+    bbs_res_theta_deg_ = theta_deg;
+    has_bbs_res_ = true;
+}
+
+void SubstationTopology::reset_bbs_results()
+{
+    bbs_res_v_kv_ = RealVect();
+    bbs_res_theta_deg_ = RealVect();
+    has_bbs_res_ = false;
+}
+
 int SubstationTopology::node_bus(int node) const
 {
     if((node < 0) || (node >= nb_nodes_)){

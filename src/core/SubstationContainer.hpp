@@ -571,6 +571,20 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
          * re-indexed. A no-op without detailed topology.
          */
         void label_all();
+        /// the same for one substation (range-checked)
+        void label(int sub_id);
+        /**
+         * The busbar sections read their bus' voltage: `Vm` / `Va` are the solver's
+         * per-bus results, `id_me_to_solver` the grid -> solver bus labelling and
+         * `bus_vn_kv` the per-bus nominal voltage. A section in no valid component
+         * gets NaN. Called by LSGrid::compute_results; a no-op without detailed
+         * topology (the one thing it costs a grid that has none).
+         */
+        void fill_busbar_section_results(const Eigen::Ref<const RealVect> & Va,
+                                         const Eigen::Ref<const RealVect> & Vm,
+                                         const SolverBusIdVect & id_me_to_solver,
+                                         const Eigen::Ref<const RealVect> & bus_vn_kv);
+        void reset_busbar_section_results();
         /**
          * The grid bus of every node, by grid-wide node id (see first_node): the
          * substation's local label turned into a GridModelBusId through the usual
@@ -711,6 +725,10 @@ class BusbarSectionInfo
         // (-1 otherwise)
         bool connected;
         int bus_id;
+        // its bus' voltage after the last powerflow (NaN while disconnected)
+        bool has_res;
+        real_type res_v_kv;
+        real_type res_theta_deg;
 
         inline BusbarSectionInfo(const BusbarSectionContainer & r_data, int my_id);
 };
@@ -771,7 +789,10 @@ inline BusbarSectionInfo::BusbarSectionInfo(const BusbarSectionContainer & r_dat
     local_id(-1),
     node(-1),
     connected(false),
-    bus_id(BaseConstants::_deactivated_bus_id)
+    bus_id(BaseConstants::_deactivated_bus_id),
+    has_res(false),
+    res_v_kv(0.),
+    res_theta_deg(0.)
 {
     if(my_id < 0) return;
     if(my_id >= r_data.nb()) return;
@@ -788,6 +809,11 @@ inline BusbarSectionInfo::BusbarSectionInfo(const BusbarSectionContainer & r_dat
             connected = true;
             bus_id = subs.local_to_gridmodel(sub_id, LocalBusId(local_bus)).cast_int();
         }
+    }
+    has_res = topo.has_bbs_results();
+    if(has_res){
+        res_v_kv = topo.bbs_res_v_kv(local_id);
+        res_theta_deg = topo.bbs_res_theta_deg(local_id);
     }
 }
 

@@ -1993,6 +1993,9 @@ void LSGrid::compute_results(bool ac){
     for(GenericContainer * container : _all_containers()){
         container->compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     }
+    // the busbar sections of the detailed topology read their bus' voltage (a
+    // no-op, one bool read, for a grid that has none)
+    substations_.fill_busbar_section_results(Va, Vm, id_me_to_solver, substations_.get_bus_vn_kv());
 
     // ---- active power of the slack participants (generators, storage units) ---
     RealVect reactive_mismatch;  // not used in dc mode (DO NOT ATTEMPT TO USE IT THERE)
@@ -2304,6 +2307,7 @@ void LSGrid::_write_back_controller_q(const RealVect & ctrl_q,
 
 void LSGrid::reset_results(){
     for(GenericContainer * container : _all_containers()) container->reset_results();
+    substations_.reset_busbar_section_results();
 }
 
 CplxVect LSGrid::dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
@@ -2794,6 +2798,130 @@ void LSGrid::_rebuild_terminal_lists()
 
     // the terminals are what the validity rule counts: fresh terminals, fresh labels
     substations_.label_all();
+}
+
+void LSGrid::_require_detailed_topology(const char * fun_name) const
+{
+    if(substations_.has_detailed_topology()) return;
+    std::ostringstream exc_;
+    exc_ << "LSGrid::" << fun_name << ": this grid has no detailed topology (no switches were "
+         << "declared, see init_detailed_topology / init_from_pypowsybl(detailed_topology=True)).";
+    throw std::runtime_error(exc_.str());
+}
+
+GridModelBusId LSGrid::_node_target(int sub_id, int node)
+{
+    SubstationTopology & topo = substations_.topology(sub_id);
+    if(!topo.labels_ready()) substations_.label(sub_id);
+    const int local_bus = topo.node_bus(node);
+    if(local_bus == GenericContainer::_deactivated_bus_id) return GridModelBusId(GenericContainer::_deactivated_bus_id);
+    return substations_.local_to_gridmodel(sub_id, LocalBusId(local_bus));
+}
+
+template<class TwoSided>
+GridModelBusId LSGrid::_end_target(const TwoSided & container, bool side_1, int el_id)
+{
+    const IntVect & node_id = side_1 ? container.get_node_id_side_1() : container.get_node_id_side_2();
+    const int node = (node_id.size() == 0) ? GenericContainer::_deactivated_bus_id : node_id(el_id);
+    if(node == GenericContainer::_deactivated_bus_id){
+        // an end the detailed topology does not describe keeps its current state
+        const bool on = side_1 ? container.get_connected_side_1(el_id) : container.get_connected_side_2(el_id);
+        if(!on) return GridModelBusId(GenericContainer::_deactivated_bus_id);
+        return side_1 ? container.get_bus_id_side_1()(el_id) : container.get_bus_id_side_2()(el_id);
+    }
+    const IntVect & subid = side_1 ? container.get_subid_side_1() : container.get_subid_side_2();
+    return _node_target(subid(el_id), node);
+}
+
+void LSGrid::_project_substation(int sub_id)
+{
+    SubstationTopology & topo = substations_.topology(sub_id);
+    if(!topo.labels_ready()) substations_.label(sub_id);
+    // a branch is visited from both of its ends' substations; the second visit
+    // finds it already there and does nothing
+    for(const Terminal & term : topo.terminals()){
+        const GridModelBusId bus = _node_target(sub_id, term.node);
+        switch(term.kind){
+            case TerminalKind::LOAD:
+                loads_.set_terminal(term.el_id, bus, algo_controler_, substations_);
+                break;
+            case TerminalKind::GEN:
+                generators_.set_terminal(term.el_id, bus, algo_controler_, substations_);
+                break;
+            case TerminalKind::SGEN:
+                sgens_.set_terminal(term.el_id, bus, algo_controler_, substations_);
+                break;
+            case TerminalKind::STORAGE:
+                storages_.set_terminal(term.el_id, bus, algo_controler_, substations_);
+                break;
+            case TerminalKind::SHUNT:
+                shunts_.set_terminal(term.el_id, bus, algo_controler_, substations_);
+                break;
+            case TerminalKind::SVC:
+                svcs_.set_terminal(term.el_id, bus, algo_controler_, substations_);
+                break;
+            case TerminalKind::LINE_1:
+                powerlines_.set_terminals(term.el_id, bus, _end_target(powerlines_, false, term.el_id), algo_controler_, substations_);
+                break;
+            case TerminalKind::LINE_2:
+                powerlines_.set_terminals(term.el_id, _end_target(powerlines_, true, term.el_id), bus, algo_controler_, substations_);
+                break;
+            case TerminalKind::TRAFO_1:
+                trafos_.set_terminals(term.el_id, bus, _end_target(trafos_, false, term.el_id), algo_controler_, substations_);
+                break;
+            case TerminalKind::TRAFO_2:
+                trafos_.set_terminals(term.el_id, _end_target(trafos_, true, term.el_id), bus, algo_controler_, substations_);
+                break;
+            case TerminalKind::HVDC_1:
+                hvdc_lines_.set_terminals(term.el_id, bus, _end_target(hvdc_lines_, false, term.el_id), algo_controler_, substations_);
+                break;
+            case TerminalKind::HVDC_2:
+                hvdc_lines_.set_terminals(term.el_id, _end_target(hvdc_lines_, true, term.el_id), bus, algo_controler_, substations_);
+                break;
+        }
+    }
+}
+
+void LSGrid::project_switches()
+{
+    _require_detailed_topology("project_switches");
+    const int n_sub = substations_.nb_sub();
+    for(int sub_id = 0; sub_id < n_sub; ++sub_id) _project_substation(sub_id);
+}
+
+bool LSGrid::set_switch_open(int switch_id, bool open)
+{
+    _require_detailed_topology("set_switch_open");
+    const int sub_id = substations_.switch_sub(switch_id);  // range-checked
+    const int local_id = substations_.switch_local(switch_id);
+    const bool changed = substations_.topology(sub_id).set_open(local_id, open);
+    if(changed) _project_substation(sub_id);
+    return changed;
+}
+
+void LSGrid::update_switches(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                             const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & new_open)
+{
+    _require_detailed_topology("update_switches");
+    const Eigen::Index nb_sw = substations_.nb_switches();
+    if((has_changed.rows() != nb_sw) || (new_open.rows() != nb_sw)){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::update_switches: 'has_changed' (size " << has_changed.rows()
+             << ") and 'new_open' (size " << new_open.rows() << ") must both have one entry per "
+             << "switch (" << nb_sw << "). They are indexed by grid-wide switch id, so a shorter "
+             << "array would be read out of bounds.";
+        throw std::runtime_error(exc_.str());
+    }
+    std::vector<char> dirty(static_cast<std::size_t>(substations_.nb_sub()), 0);
+    for(Eigen::Index switch_id = 0; switch_id < nb_sw; ++switch_id){
+        if(!has_changed(switch_id)) continue;
+        const int sub_id = substations_.switch_sub(static_cast<int>(switch_id));
+        const int local_id = substations_.switch_local(static_cast<int>(switch_id));
+        if(substations_.topology(sub_id).set_open(local_id, new_open(switch_id))) dirty[static_cast<std::size_t>(sub_id)] = 1;
+    }
+    for(std::size_t sub_id = 0; sub_id < dirty.size(); ++sub_id){
+        if(dirty[sub_id]) _project_substation(static_cast<int>(sub_id));
+    }
 }
 
 // for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF

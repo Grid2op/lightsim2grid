@@ -248,6 +248,45 @@ void SubstationContainer::label_all()
     }
 }
 
+void SubstationContainer::label(int sub_id)
+{
+    topologies_[static_cast<std::size_t>(_checked_sub_id(sub_id, "label"))].label(nmax_busbar_per_sub_, sub_id);
+}
+
+void SubstationContainer::fill_busbar_section_results(const Eigen::Ref<const RealVect> & Va,
+                                                      const Eigen::Ref<const RealVect> & Vm,
+                                                      const SolverBusIdVect & id_me_to_solver,
+                                                      const Eigen::Ref<const RealVect> & bus_vn_kv)
+{
+    if(topologies_.empty()) return;
+    const real_type nan = std::numeric_limits<real_type>::quiet_NaN();
+    for(std::size_t sub_id = 0; sub_id < topologies_.size(); ++sub_id){
+        SubstationTopology & topo = topologies_[sub_id];
+        const int nb_bbs = topo.nb_busbar_sections();
+        RealVect v_kv = RealVect::Constant(nb_bbs, nan);
+        RealVect theta_deg = RealVect::Constant(nb_bbs, nan);
+        if(topo.labels_ready()){
+            for(int bbs_id = 0; bbs_id < nb_bbs; ++bbs_id){
+                const int local_bus = topo.bbs_bus(bbs_id);
+                if(local_bus == BaseConstants::_deactivated_bus_id) continue;
+                const GridModelBusId bus = local_to_gridmodel(static_cast<int>(sub_id), LocalBusId(local_bus));
+                const SolverBusId bus_solver = id_me_to_solver[bus.cast_int()];
+                // a bus the labels call live but the solver did not see (the elements
+                // were not projected onto it, or all of them are off): no result
+                if(bus_solver.cast_int() == BaseConstants::_deactivated_bus_id) continue;
+                v_kv(bbs_id) = Vm(bus_solver.cast_int()) * bus_vn_kv(bus.cast_int());
+                theta_deg(bbs_id) = Va(bus_solver.cast_int()) * BaseConstants::my_180_pi_;
+            }
+        }
+        topo.set_bbs_results(v_kv, theta_deg);
+    }
+}
+
+void SubstationContainer::reset_busbar_section_results()
+{
+    for(SubstationTopology & topo : topologies_) topo.reset_bbs_results();
+}
+
 IntVect SubstationContainer::get_node_bus() const
 {
     IntVect res = IntVect::Constant(nb_nodes(), BaseConstants::_deactivated_bus_id);
