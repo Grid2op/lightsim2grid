@@ -44,8 +44,17 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);  // retrieve_pv_with_slack (not all), add_slack_to_pv (all)
     // the member, not a local: LSGrid::compute_results needs the converged value to
     // recover the raw per-bus mismatch out of mis_bus_ (see slack_absorbed_)
+    //
+    // A seed, and only a seed: generation minus load answers the active balance at a
+    // flat start of a lossless grid and nowhere else. calibrate_slack_absorbed
+    // re-solves that balance on every mismatch this solve evaluates, starting with
+    // the first one below -- which is what makes the state converge instead of
+    // staying at the guess, as it did for as long as nothing ever wrote to it.
     slack_absorbed_ = std::real(Sbus.sum());  // initial guess for slack_absorbed
     real_type & slack_absorbed = slack_absorbed_;
+    // more than one slack BUS, i.e. something to distribute; see dist_slack_ for why
+    // a single one makes the whole calibration unobservable.
+    dist_slack_ = slack_ids.size() > 1;
     const auto slack_bus_id = slack_ids(0);
     
     // initialize once and for all the "inverse" of these vectors
@@ -95,6 +104,10 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(
     // first check, if the problem is already solved, i stop there
     // compute a first time the mismatch to initialize the slack bus
     evaluate_mismatch_into(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights);
+    // ... and put the distributed slack where that mismatch says it belongs, before
+    // anything is read off it: a voltage that already meets the KCL is then converged
+    // here, with the right distribution, rather than iterated on because of the seed.
+    if(dist_slack_) calibrate_slack_absorbed(slack_absorbed, slack_weights);
     // mis / Vm out of place, so mis_bus_ keeps the raw mismatch -- see has_converged,
     // which does the same and says why.
     mis_over_vm_ = mis_bus_.array() / Vm_.array();
