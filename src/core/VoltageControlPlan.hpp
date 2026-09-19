@@ -23,6 +23,7 @@ namespace ls2g {
 class GeneratorContainer;
 class GenericContainer;
 class HvdcLineContainer;
+class StorageContainer;
 class SvcContainer;
 
 /**
@@ -187,8 +188,10 @@ class LS2G_API VoltageControlPlan
          * The free-Vm slack buses, in the labelling passed in. `build_groups` must have
          * run against the same containers first -- this reads its result rather than
          * re-deriving it. Never throws: a slack bus either is locally pinned or is not.
+         * Both a generator and a storage unit regulating their own bus pin it.
          */
         void build_free_vm_slack(const GeneratorContainer & generators,
+                                 const StorageContainer & storages,
                                  const SolverBusIdVect & id_me_to_solver,
                                  const GlobalBusIdVect & id_solver_to_me,
                                  const SolverBusIdVect & slack_bus_id_solver);
@@ -215,6 +218,7 @@ class LS2G_API VoltageControlPlan
          * `build_groups` must have run first, against the same containers.
          */
         void build_solver_side(const GeneratorContainer & generators,
+                               const StorageContainer & storages,
                                const SvcContainer & svcs,
                                const HvdcLineContainer & hvdc_lines,
                                const SolverBusIdVect & id_me_to_solver,
@@ -274,9 +278,10 @@ class LS2G_API VoltageControlPlan
             int reg_bus;      ///< regulated solver bus
             real_type v_set;  ///< pu
             real_type slope;  ///< pu (0 except for a sloped SVC)
-            real_type weight; ///< sharing key
+            real_type weight; ///< reactive range, the sharing key when `key` cannot be used
             int kind;         ///< VoltageControlSolverData::Kind
             int elem_id;
+            real_type key;    ///< explicit reactive sharing key (> 0), NaN when there is none
         };
 
         /// the three per-container passes that fill `raws`

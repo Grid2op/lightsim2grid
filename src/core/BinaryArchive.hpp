@@ -91,7 +91,13 @@ namespace ls2g {
 //     (`p_min_mw_` / `p_max_mw_`, empty when the grid was never given any -- see
 //     GeneratorContainer::set_p_limits). Appended, so a v6 payload differs only by
 //     their absence, but the layout changed and the version says so.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 7;
+// v8: StorageContainer::StateRes carries the voltage side of a storage unit
+//     (regulating flag, target magnitude, reactive range, regulated bus) -- a
+//     storage unit can now hold its bus' voltage like a generator; and
+//     GeneratorContainer::StateRes carries its reactive sharing key.
+// v9: StorageContainer::StateRes carries the distributed-slack participation of a
+//     storage unit (flag and weight), like a generator's.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 9;
 
 class LS2G_API BinaryArchive
 {

@@ -9,6 +9,7 @@
 #ifndef GENERATORCONTAINER_H
 #define GENERATORCONTAINER_H
 
+#include <cmath>
 #include <limits>
 #include <vector>
 
@@ -18,6 +19,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.hpp"
+#include "SlackParticipation.hpp"
 #include "VoltageSourceContainer.hpp"
 
 namespace ls2g {
@@ -40,6 +42,7 @@ class LS2G_API GenInfo : public OneSideContainer_PQ::OneSidePQInfo
         real_type min_p_mw;
         real_type max_p_mw;
         int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id for local control)
+        real_type reactive_key; // reactive sharing key, NaN when there is none
 
         inline GenInfo(const GeneratorContainer & r_data_gen, int my_id) noexcept;
 };
@@ -55,7 +58,8 @@ https://pandapower.readthedocs.io/en/latest/elements/gen.html#electric-model
 
 The voltage side (regulating or not, the setpoint, the regulated bus, the PV
 path, the voltage initialisation) is VoltageSourceContainer's; what is specific
-here is the active side -- the distributed slack -- and the `turnedoff_gen_pv_`
+here is the active side -- the distributed slack, whose rules are
+SlackParticipation's, shared with the storage units -- and the `turnedoff_gen_pv_`
 rule, which decides whether a generator at 0 MW still holds its voltage.
 **/
 class LS2G_API GeneratorContainer final: public VoltageSourceContainer<GeneratorContainer>, public IteratorAdder<GeneratorContainer, GenInfo>
@@ -79,7 +83,8 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
            std::vector<real_type>,  // gen_slack_weight_
            std::vector<int>,        // regulated_bus_id_ (appended; defaults to own bus)
            std::vector<real_type>,  // p_min_mw_ (appended, optional: empty if unset)
-           std::vector<real_type>   // p_max_mw_ (appended, optional: empty if unset)
+           std::vector<real_type>,  // p_max_mw_ (appended, optional: empty if unset)
+           std::vector<real_type>   // reactive_key_ (appended; NaN: no key)
         > ;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -93,6 +98,7 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             REGULATED_BUS_ID,
             P_MIN_MW,
             P_MAX_MW,
+            REACTIVE_KEY,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -131,48 +137,16 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         // slack handling
         /**
         we suppose that the data are correct (ie gen_id in the proper range, and weight > 0.)
-        This is checked in GridModel, and not at this stage
+        This is checked in GridModel, and not at this stage.
+        See SlackParticipation::add for the flags this raises, and why.
         **/
         void add_slackbus(int gen_id, real_type weight, DualAlgoControl & solver_control){
-            // TODO DEBUG MODE
-            if(weight <= 0.) throw std::runtime_error("GeneratorContainer::add_slackbus Cannot assign a negative (<=0) weight to the slack bus.");
-            // Why `tell_slack_participate_changed()` and nothing about voltage: taking
-            // the slack role is an ACTIVE-power role, but the pv/pq split reads the
-            // slack set directly -- `fillpv` skips a bus that is in
-            // `slack_bus_id_solver` ("slack bus is not PV"), and the PQ loop right
-            // after it skips it too -- so a bus joining or leaving the slack set moves
-            // the split, whatever it does to voltage. That flag is what says so, and
-            // it is measured, not assumed: see the `[pv_pq]` cases in
-            // test_cache_reuse.cpp, which reach a state where it is the only term
-            // raised and fail if it is dropped.
-            //
-            // The voltage side needs no flag of its own for the same reason. It is
-            // real but secondary -- `is_pseudo_off()` answers false for a slack
-            // generator whatever its active power, so a zero-P slack generator IS a
-            // voltage controller where an ordinary one would not be -- and the
-            // voltage-control plan is built around the split this same flag rebuilds.
-            // See AlgoControl::need_recompute_voltage_control.
-            if(!gen_slackbus_[gen_id]){ solver_control.tell_slack_participate_changed(); }
-            gen_slackbus_[gen_id] = true;
-            if(abs(gen_slack_weight_[gen_id] - weight) > _tol_equal_float){
-                solver_control.tell_slack_weight_changed();
-                gen_slack_weight_[gen_id] = weight;
-            }
+            slack_.add(gen_id, weight, solver_control, "GeneratorContainer::add_slackbus");
         }
         void remove_slackbus(int gen_id, DualAlgoControl & solver_control){
-            if(gen_slackbus_[gen_id]){ solver_control.tell_slack_participate_changed(); }
-            if(abs(gen_slack_weight_[gen_id]) > _tol_equal_float){ solver_control.tell_slack_weight_changed(); }
-            gen_slackbus_[gen_id] = false;
-            gen_slack_weight_[gen_id] = 0.;
+            slack_.remove(gen_id, solver_control);
         }
-        void remove_all_slackbus(){
-            const int nb_gen = nb();
-            DualAlgoControl unused_solver_control;
-            for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
-            {
-                remove_slackbus(gen_id, unused_solver_control);
-            }
-        }
+        void remove_all_slackbus(){ slack_.remove_all(); }
 
         // returns only the gen_id with the highest p that is connected to this bus !
         int assign_slack_bus(int slack_bus_id,
@@ -198,29 +172,28 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         }
 
         /**
-        Retrieve the normalized (=sum to 1.000) slack weights for all the buses
-        **/
-        RealVect get_slack_weights_solver(size_t nb_bus_solver, const SolverBusIdVect & id_grid_to_solver);
-        /**
-         * Same normalised per-solver-bus slack weights as get_slack_weights_solver
-         * above, but evaluated as if the generators flagged in `gen_off` (sized nb())
-         * were disconnected -- what a batch sweep needs to re-weight the distributed
-         * slack for a row whose contingency takes a participating machine out.
-         *
-         * Shares get_slack_weights_solver's rules through _raw_slack_weights_solver,
-         * so the two can never drift apart. Unlike it, this one is const and does NOT
-         * refresh the cached bus_slack_weight_ (that cache belongs to the grid's own
-         * solve, not to a hypothetical row). Returns an ALL-ZERO vector when every
-         * participating generator is off -- there is no meaningful normalisation
-         * then, and it is the caller's business to decide what to do about it.
+         * Add every participating generator's raw (un-normalised) slack weight to its
+         * solver bus in `res`. `gen_off`, when non-null, is a nb()-sized mask of
+         * generators to evaluate as if they were disconnected -- what a batch sweep
+         * needs to re-weight the distributed slack for a row whose contingency takes a
+         * participating machine out. LSGrid adds the storage units' on top and
+         * normalises (LSGrid::get_slack_weights_solver_without).
          */
-        RealVect get_slack_weights_solver_without(size_t nb_bus_solver,
-                                                  const SolverBusIdVect & id_grid_to_solver,
-                                                  const std::vector<bool> & gen_off) const;
-
-        GlobalBusIdVect get_slack_bus_id() const;
+        void accumulate_slack_weights_solver(RealVect & res,
+                                             const SolverBusIdVect & id_grid_to_solver,
+                                             const std::vector<bool> * gen_off) const {
+            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, gen_off, _element_name());
+        }
+        /// append the grid buses of the flagged generators not in `buses` yet
+        void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}
+        void slack_summary(bool & any_flagged, bool & any_connected) const {slack_.summary(status_, any_flagged, any_connected);}
         /** distribute the active mismatch of the slack buses onto the participating generators **/
-        void set_p_slack(const Eigen::Ref<const RealVect>& node_mismatch, const SolverBusIdVect & id_grid_to_solver);
+        void set_p_slack(const Eigen::Ref<const RealVect> & node_mismatch,
+                         const SolverBusIdVect & id_grid_to_solver,
+                         const Eigen::Ref<const RealVect> & bus_raw_total){
+            slack_.split(res_p_, 1., node_mismatch, bus_raw_total, status_, bus_id_, id_grid_to_solver,
+                         "GeneratorContainer::set_p_slack");
+        }
 
         // modification
         void turnedoff_no_pv(DualAlgoControl & solver_control){
@@ -278,22 +251,34 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             return p_max_mw_.size() > 0 ? p_max_mw_.coeff(gen_id)
                                         : std::numeric_limits<real_type>::quiet_NaN();
         }
+        // reactive sharing key among the generators holding one bus together (see
+        // VoltageControlPlan::build_controllers); no key -- NaN, 0 or negative -- lets
+        // the reactive range decide
+        real_type get_reactive_key(int gen_id) const {return reactive_key_.coeff(gen_id);}
+        void set_reactive_key(int gen_id, real_type key, DualAlgoControl & solver_control){
+            _check_in_range(gen_id, reactive_key_, "set_reactive_key");
+            const real_type old_key = reactive_key_(gen_id);
+            if((std::isnan(old_key) && std::isnan(key)) || old_key == key) return;
+            reactive_key_(gen_id) = key;
+            // the sharing weights of the voltage-control plan (AC only); the pattern of
+            // the sharing rows does not depend on them
+            if(voltage_regulator_on_[gen_id]) solver_control.ac_algo_controler().tell_voltage_control_changed();
+        }
         // the reactive setpoint a NON voltage-regulating generator injects (a
         // regulating one's reactive output is solved for, not set -- see fillSbus,
         // which only stamps this when voltage_regulator_on_ is false)
         real_type get_target_q_mvar(int gen_id) const {return target_q_mvar_(gen_id);}
         // the generator's own (un-normalised) share of the distributed slack, as
-        // aggregated per bus by get_slack_weights_solver
-        real_type get_gen_slack_weight(int gen_id) const {return gen_slack_weight_[gen_id];}
-        /// whether this generator takes part in the distributed slack at all
-        bool is_slack(int gen_id) const {return gen_slackbus_[gen_id];}
+        // aggregated per bus by accumulate_slack_weights_solver
+        real_type get_gen_slack_weight(int gen_id) const {return slack_.weight(gen_id);}
+        bool is_slack(int gen_id) const {return slack_.is_slack(gen_id);}
 
         /**
          * pseudo off generator (with p == 0) and with no contribution to the the slack bus
          */
         bool is_pseudo_off(int gen_id) const{
-            if (gen_slackbus_[gen_id]) return false;  // slack is not pseudo off
-            if ((abs(gen_slack_weight_[gen_id]) >= _tol_equal_float)) return false;  // slack is not pseudo off
+            if (slack_.is_slack(gen_id)) return false;  // slack is not pseudo off
+            if (slack_.has_weight(gen_id)) return false;  // slack is not pseudo off
             // pseudo-off <=> target_p == 0.
             return (abs(target_p_mw_(gen_id)) < _tol_equal_float);
         }
@@ -324,16 +309,6 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         void _on_reactivate(int gen_id, DualAlgoControl & solver_control) override final;
         void _on_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control) override final;
 
-        /**
-         * The un-normalised per-solver-bus slack weights: one place holding the rule
-         * for who participates (connected, flagged a slack bus, non-zero weight) and
-         * the disconnected-bus checks. `gen_off`, when non-null, is a nb()-sized mask
-         * of generators to leave out on top of that.
-         */
-        RealVect _raw_slack_weights_solver(size_t nb_bus_solver,
-                                           const SolverBusIdVect & id_grid_to_solver,
-                                           const std::vector<bool> * gen_off) const;
-
     private:
         // physical properties
         RealVect min_q_;
@@ -341,13 +316,10 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         // active power limits (MW), optional: empty when the grid was never given any
         RealVect p_min_mw_;
         RealVect p_max_mw_;
+        RealVect reactive_key_;  // reactive sharing key, NaN when there is none
 
-        // remember which generators are "slack bus"
-        std::vector<bool> gen_slackbus_;  // say for each generator if it's a slack or not
-        std::vector<real_type> gen_slack_weight_;
-
-        // intermediate data
-        RealVect bus_slack_weight_;  // do not sum to 1., for each node of the grid, say the raw contribution for the generator
+        // which generators take part in the distributed slack, and with what weight
+        SlackParticipation slack_;
 
         // different parameter of the behaviour of the class
         bool turnedoff_gen_pv_;  // are turned off generators (including one with p=0) pv ?
@@ -363,12 +335,13 @@ min_q_mvar(0.),
 max_q_mvar(0.),
 min_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
 max_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
-regulated_bus_id(-1)
+regulated_bus_id(-1),
+reactive_key(std::numeric_limits<real_type>::quiet_NaN())
 {
     if((my_id >= 0) && (my_id < r_data_gen.nb()))
     {
-        is_slack = r_data_gen.gen_slackbus_[my_id];
-        slack_weight = r_data_gen.gen_slack_weight_[my_id];
+        is_slack = r_data_gen.slack_.is_slack(my_id);
+        slack_weight = r_data_gen.slack_.weight(my_id);
 
         voltage_regulator_on = r_data_gen.voltage_regulator_on_[my_id];
         target_vm_pu = r_data_gen.target_vm_pu_.coeff(my_id);
@@ -377,6 +350,7 @@ regulated_bus_id(-1)
         min_p_mw = r_data_gen.get_min_p(my_id);
         max_p_mw = r_data_gen.get_max_p(my_id);
         regulated_bus_id = r_data_gen.regulated_bus_id_(my_id);
+        reactive_key = r_data_gen.reactive_key_.coeff(my_id);
     }
 }
 

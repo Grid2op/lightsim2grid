@@ -38,6 +38,7 @@
 // transitively) but not on an older Clang/libc++ pairing. Mirrors the pre-refactor
 // ContingencyAnalysis.cpp's own include of this same header for the same reason.
 #include <math.h>
+#include <cmath>
 
 namespace ls2g {
 
@@ -1048,9 +1049,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // The GRID bus whose magnitude each generator's gen_v set-point helps fix, -1
         // where it fixes none -- which is the case for a generator that is disconnected,
         // not regulating or treated as off; for one regulating a bus the solve gives a
-        // magnitude unknown to anyway (a PQ bus: gen_v only moves its starting point
-        // there); and for one whose bus is pinned by an SVC or an hvdc converter station,
-        // whose set-point no batch can move, so the generator's is not free either.
+        // magnitude unknown to (a bus a voltage-control group holds: the set-point is
+        // then that group's v_set, not a fixed |V| -- see get_gen_v_vc_row); and for one
+        // whose bus is pinned by an SVC or an hvdc converter station, whose set-point no
+        // batch can move, so the generator's is not free either.
         IntVect get_gen_v_target_bus() const {
             std::map<int, std::vector<int> > gens_of_bus;
             _grid_model.get_generators().vm_writers_by_bus(active_layout().id_me_to_solver, gens_of_bus);
@@ -1097,20 +1099,46 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // have made the answer depend on.
         RealVect get_gen_v_share() const {
             const IntVect target = get_gen_v_target_bus();
-            std::map<int, int> count;
+            const IntVect vc_group = _gen_v_vc_group();
+            std::map<int, int> count, count_vc;   // per fixed bus / per group
             for(Eigen::Index g = 0; g < target.size(); ++g){
                 if(target[g] >= 0) count[target[g]] += 1;
+                else if(g < vc_group.size() && vc_group[g] >= 0) count_vc[vc_group[g]] += 1;
             }
             RealVect res = RealVect::Zero(target.size());
             for(Eigen::Index g = 0; g < target.size(); ++g){
-                if(target[g] < 0) continue;
-                res[g] = 1. / static_cast<real_type>(count[target[g]]);
+                if(target[g] >= 0) res[g] = 1. / static_cast<real_type>(count[target[g]]);
+                else if(g < vc_group.size() && vc_group[g] >= 0)
+                    res[g] = 1. / static_cast<real_type>(count_vc[vc_group[g]]);
+            }
+            return res;
+        }
+
+        // The Jacobian row whose adjoint is each generator's gen_v gradient, -1 where
+        // it has none there. A generator regulating a bus a voltage-control group holds
+        // (a remote regulator, or a local one on a group-controlled bus) fixes no |V|:
+        // the group's bordered row  F_v = |V_reg| + sum s.Q_c - v_set  keeps |V_reg| an
+        // unknown, and the set-point is v_set. dF_v/dv_set = -1, so its gradient is
+        // lambda at that row -- no direct half, and no dS/d|V| column. -1 as well for a
+        // group holding an SVC or an hvdc station: their set-point no batch moves, so a
+        // row moving the generator's is refused (_row_gen_v_conflicts) and there is no
+        // derivative to give.
+        IntVect get_gen_v_vc_row() const {
+            const IntVect vc_group = _gen_v_vc_group();
+            const IntVect v_row = _algo.get_group_v_row();
+            IntVect res = IntVect::Constant(vc_group.size(), -1);
+            for(Eigen::Index g = 0; g < vc_group.size(); ++g){
+                const int grp = vc_group[g];
+                if(grp >= 0 && grp < v_row.size()) res[g] = v_row[grp];
             }
             return res;
         }
 
         // The indirect half of the gen_v gradient: `-lambda^T dF/dv` per row and per
-        // generator, keyed like get_gen_v_target_bus() (zero wherever that says -1, and
+        // generator -- for a generator of a voltage-control group, all of it: lambda at
+        // the group's voltage row (get_gen_v_vc_row), zero on a row where
+        // handle_disconnected_grid stranded the group -- otherwise
+        // keyed like get_gen_v_target_bus() (zero wherever that says -1, and
         // on a row that did not converge) and already carrying each generator's share of
         // its bus (see get_gen_v_share -- the caller must weight the DIRECT half by the
         // same thing). `lambda` is what solve_JT returned, so the
@@ -1600,6 +1628,82 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const Eigen::Map<const RealVect> target_vm_pu_row(sbus_policy_.gen_v.row(static_cast<Eigen::Index>(i)).data(),
                                                               sbus_policy_.gen_v.cols());
             _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver, target_vm_pu_row);
+        }
+
+        // ----- modify_gen_v on a voltage-control group ------------------------------
+        // A generator regulating a bus a group holds fixes no |V| there -- the bus keeps
+        // its magnitude unknown, pinned by the group's bordered voltage row -- so
+        // set_vm's re-seed above only moves the starting point, and the row puts the
+        // magnitude back at the grid's own v_set. The set-point that row reads is what a
+        // per-row gen_v has to change: handed to the algorithm, group by group, before
+        // each row's solve. The (generator, group) pairs depend on the grid only, found
+        // once per compute() by _prepare_gen_v_vc.
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        void _apply_step_vc_v_set(size_t, AlgorithmSelector &) const {}
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void _apply_step_vc_v_set(size_t i, AlgorithmSelector & algo) const {
+            if(_gen_v_vc_pairs_.empty()){
+                // nothing to vary: the grid's own set-points (and a worker a previous
+                // compute() left with an override gets it dropped)
+                algo.set_voltage_control_v_set(RealVect());
+                return;
+            }
+            RealVect v_set = RealVect::Constant(_gen_v_vc_n_groups_,
+                                                std::numeric_limits<real_type>::quiet_NaN());
+            const Eigen::Index row = static_cast<Eigen::Index>(i);
+            if(row < sbus_policy_.gen_v.rows()){
+                for(const auto & gen_and_group : _gen_v_vc_pairs_){
+                    const real_type val = sbus_policy_.gen_v(row, gen_and_group.first);
+                    // generators of one group agree on a solved row (_row_gen_v_conflicts)
+                    if(std::isfinite(val)) v_set(gen_and_group.second) = val;
+                }
+            }
+            algo.set_voltage_control_v_set(v_set);
+        }
+
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void _prepare_gen_v_vc() {
+            _gen_v_vc_pairs_.clear();
+            _gen_v_vc_n_groups_ = 0;
+            if(sbus_policy_.gen_v.rows() == 0) return;   // never set: the grid's own
+            const IntVect vc_group = _gen_v_vc_group(/*include_pinned=*/true);
+            for(Eigen::Index g = 0; g < vc_group.size(); ++g){
+                if(vc_group[g] >= 0) _gen_v_vc_pairs_.push_back(std::make_pair(static_cast<int>(g), vc_group[g]));
+            }
+            if(!_gen_v_vc_pairs_.empty())
+                _gen_v_vc_n_groups_ = static_cast<Eigen::Index>(_grid_model.get_ac_voltage_control_plan().controllers().n_groups());
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        void _prepare_gen_v_vc() {}
+
+        // Per generator, the voltage-control group whose v_set its gen_v is (the group
+        // holding the bus it regulates), -1 for none. `include_pinned` false also
+        // answers -1 for a group holding an SVC or an hvdc station (see
+        // get_gen_v_vc_row). Same writers as set_vm (vm_writers_by_bus), keyed on the
+        // REGULATED bus.
+        IntVect _gen_v_vc_group(bool include_pinned = false) const {
+            IntVect res = IntVect::Constant(
+                static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb()), -1);
+            if(!_algo.ac_solver_used()) return res;
+            const VoltageControlSolverData & ctrl = _grid_model.get_ac_voltage_control_plan().controllers();
+            if(ctrl.n_groups() == 0) return res;
+            std::map<int, int> group_of_bus;                 // regulated solver bus -> group
+            for(int grp = 0; grp < ctrl.n_groups(); ++grp){
+                bool pinned = false;
+                for(int j = ctrl.grp_start(grp); j < ctrl.grp_start(grp) + ctrl.grp_count(grp); ++j){
+                    if(ctrl.kind(j) != VoltageControlSolverData::GEN) pinned = true;
+                }
+                if(pinned && !include_pinned) continue;
+                group_of_bus[ctrl.reg_bus(grp)] = grp;
+            }
+            std::map<int, std::vector<int> > gens_of_bus;
+            _grid_model.get_generators().vm_writers_by_bus(active_layout().id_me_to_solver, gens_of_bus);
+            for(const auto & bus_and_gens : gens_of_bus){
+                const std::map<int, int>::const_iterator it = group_of_bus.find(bus_and_gens.first);
+                if(it == group_of_bus.end()) continue;
+                for(int gen_id : bus_and_gens.second) res[static_cast<Eigen::Index>(gen_id)] = it->second;
+            }
+            return res;
         }
 
         // ----- modify_gen_v: set-points that contradict each other ----------------
@@ -2185,7 +2289,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         // row i's distributed-slack weights: the layout's own unless the row takes a
         // participating generator out, in which case they are re-derived without it
-        // and renormalised (GeneratorContainer::get_slack_weights_solver_without).
+        // and renormalised (LSGrid::get_slack_weights_solver_without -- the storage
+        // units taking part in the slack stay in: no row disconnects one).
         // Should a row somehow leave no participant at all, the reference slack bus
         // keeps the whole share -- the angle reference is a property of the batch,
         // picked once, and must not move from row to row.
@@ -2198,7 +2303,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const auto & generators = _grid_model.get_generators();
             std::vector<bool> gen_off(generators.nb(), false);
             for(int gen_id : _row_slack_gens_off_[i]) gen_off[gen_id] = true;
-            scratch = generators.get_slack_weights_solver_without(
+            scratch = _grid_model.get_slack_weights_solver_without(
                 static_cast<size_t>(base_w.size()), active_layout().id_me_to_solver, gen_off);
             if(abs(scratch.sum()) < BaseConstants::_tol_equal_float){
                 scratch.setZero();
@@ -2287,6 +2392,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(cont_id));
                         V = Vinit_solver;
                         _apply_step_gen_v(cont_id, V);
+                        _apply_step_vc_v_set(cont_id, algo);
                         const RealVect & sw = _masked_slack_weights(masked, _row_slack_weights(cont_id, sw_scratch), sw_scratch);
                         const CplxVect & sb = _step_sbus(cont_id, sbus_scratch);
                         conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, sb,
@@ -2561,6 +2667,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             real_type fixed_vm;
         };
         std::vector<GenVConstraint> _gen_v_constraints_;
+        // (generator, voltage-control group) whose v_set its gen_v is -- see
+        // _apply_step_vc_v_set. Rebuilt by _prepare_gen_v_vc at each compute().
+        std::vector<std::pair<int, int> > _gen_v_vc_pairs_;
+        Eigen::Index _gen_v_vc_n_groups_ = 0;
 
         // reverse-mode differentiation (see the public block above and BatchAdjoint)
         bool _keep_jacobian_ = false;

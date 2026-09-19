@@ -126,6 +126,14 @@ class TestInitFromMatpowerDict(unittest.TestCase):
         # the PV generator (row 3) is not slack: its P should stay at its PG setpoint
         self.assertAlmostEqual(gen_p[3], 40., places=4)
 
+    def test_generator_active_power_limits_are_read(self):
+        """matpower's PMIN / PMAX reach `GenInfo.min_p_mw` / `max_p_mw`, which is what
+        `compute_physical_violations` compares a distributed-slack dispatch against."""
+        model = init_from_matpower(_toy_mpc())
+        gens = model.get_generators()
+        np.testing.assert_allclose([gen.min_p_mw for gen in gens], -999.)
+        np.testing.assert_allclose([gen.max_p_mw for gen in gens], 999.)
+
     def test_deactivated_generator_status(self):
         raw = _toy_mpc(gen_status_row3=0)  # 3rd row (also at slack bus) is now OFF
         model = init_from_matpower(raw)

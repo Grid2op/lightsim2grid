@@ -129,4 +129,22 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
         for gen_id, reg_bus in zip(np.nonzero(mask_remote_gen)[0], gen_reg_bus_global):
             model.set_gen_regulated_bus(int(gen_id), int(reg_bus))
 
+    # how the generators holding one bus share their reactive power: the same key OLF
+    # reads (a missing or zero q_percent is no key, the reactive range then decides)
+    q_percent = _aux_reactive_keys(net, df_gen.index)
+    for gen_id in np.flatnonzero(q_percent > 0.):
+        model.set_gen_reactive_key(int(gen_id), float(q_percent[gen_id]))
+
     return df_gen, gen_sub
+
+
+def _aux_reactive_keys(net, gen_ids):
+    """``coordinatedReactiveControl.q_percent`` of each generator in ``gen_ids``, 0
+    where the extension is absent (or unknown to this pypowsybl version)."""
+    try:
+        ext = net.get_extensions("coordinatedReactiveControl")
+    except Exception:  # noqa: BLE001 - extension not supported by this pypowsybl
+        return np.zeros(len(gen_ids))
+    if ext is None or not len(ext) or "q_percent" not in ext.columns:
+        return np.zeros(len(gen_ids))
+    return ext["q_percent"].reindex(gen_ids).fillna(0.).to_numpy(float)

@@ -276,6 +276,9 @@ class LS2G_API AlgorithmSelector final
         void set_may_mask_voltage_control(bool val) {
             get_prt_solver("set_may_mask_voltage_control", false)->set_may_mask_voltage_control(val);
         }
+        void set_voltage_control_v_set(const RealVect & v_set) {
+            get_prt_solver("set_voltage_control_v_set", false)->set_voltage_control_v_set(v_set);
+        }
         void set_refactor_fallback(bool val) {
             get_prt_solver("set_refactor_fallback", false)->set_refactor_fallback(val);
         }
@@ -385,6 +388,9 @@ class LS2G_API AlgorithmSelector final
         }
         IntVect get_controller_q_col() const {
             return get_prt_solver("get_controller_q_col", false)->get_controller_q_col();
+        }
+        IntVect get_group_v_row() const {
+            return get_prt_solver("get_group_v_row", false)->get_group_v_row();
         }
         int get_slack_col() const {
             return get_prt_solver("get_slack_col", false)->get_slack_col();

@@ -29,7 +29,12 @@ injection: it FIXES the magnitude of the bus its generator regulates, which the
 Newton-Raphson therefore does not solve for. So lambda is not its gradient, and the
 two halves are put together by hand -- the ``dS/dVm`` column the Jacobian does not
 store for such a bus (``gen_v_indirect_grad``), plus the loss's own dependence on
-``V_k = v_k . exp(j.theta_k)`` at fixed unknowns.
+``V_k = v_k . exp(j.theta_k)`` at fixed unknowns. The exception is a generator
+regulating a bus a voltage-control group holds (a remote regulator, or a local one on
+a group-controlled bus): that bus keeps its magnitude unknown, pinned by the group's
+bordered row ``|V_reg| + sum s.Q_c - v_set = 0``, and ``gen_v`` is that row's
+``v_set`` -- varied per row like any other set-point, with lambda at that row as its
+whole gradient (``get_gen_v_vc_row``, folded into ``gen_v_indirect_grad``).
 
 .. warning::
     **A bus has ONE voltage magnitude.** Where several voltage sources regulate the

@@ -67,6 +67,8 @@ ATTR_LOADS_INPUT = [
 ATTR_STORAGES_INPUT = [
     "target_p_mw",
     "target_q_mvar",
+    "is_slack",
+    "slack_weight",
 ]
 
 

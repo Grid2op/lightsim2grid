@@ -54,7 +54,7 @@ const int NB_STEPS = 4;
 // The 4-bus radial feeder of test_batch_adjoint.cpp. `nb_gen_on_pv_bus` puts that many
 // generators on bus 1, all regulating it: set_vm is last-writer-wins, so only the last
 // of them reaches the solve, and only it can carry a gradient.
-LSGrid make_grid(int nb_gen_on_pv_bus = 1)
+LSGrid make_grid(int nb_gen_on_pv_bus = 1, int remote_reg_bus = -1)
 {
     const int nb_gen = 1 + nb_gen_on_pv_bus;
     LSGrid g;
@@ -78,6 +78,10 @@ LSGrid make_grid(int nb_gen_on_pv_bus = 1)
     q.setZero(); qmin.setConstant(-1000.); qmax.setConstant(1000.);
     g.init_generators_full(p, v, q, std::vector<bool>(static_cast<size_t>(nb_gen), true), qmin, qmax, b);
     g.add_gen_slackbus(0, 1.);
+    // the generators of bus 1 regulating another bus instead: a voltage-control group
+    if(remote_reg_bus >= 0){
+        for(int k = 1; k < nb_gen; ++k) g.set_gen_regulated_bus(k, remote_reg_bus);
+    }
     return g;
 }
 
@@ -132,9 +136,9 @@ void feed(InjectionSweep & sweep, const Inputs & in)
 }
 
 // the whole sweep, from a fresh object, reduced to one number
-real_type run_loss(const Inputs & in, int nb_gen_on_pv_bus)
+real_type run_loss(const Inputs & in, int nb_gen_on_pv_bus, int remote_reg_bus = -1)
 {
-    LSGrid grid = make_grid(nb_gen_on_pv_bus);
+    LSGrid grid = make_grid(nb_gen_on_pv_bus, remote_reg_bus);
     InjectionSweep sweep(grid);
     sweep.change_algorithm(AlgorithmType::NR_SparseLU);
     feed(sweep, in);
@@ -288,6 +292,62 @@ TEST_CASE("generators sharing a bus share the one derivative that exists")
         sm.gen_v(i, 0) -= delta;
         const real_type fd0 = (run_loss(sp, NB_ON_PV) - run_loss(sm, NB_ON_PV)) / (2. * delta);
         REQUIRE(grad(i, 0) == Approx(fd0).margin(2e-5));
+    }
+}
+
+
+TEST_CASE("a remote regulator's gen_v is its voltage-control group's set-point")
+{
+    // Generator 1 stands on bus 1 but regulates bus 2: the bordered voltage control.
+    // Bus 2 keeps its magnitude unknown, held by  |V_2| - v_set = 0, so re-seeding |V_2|
+    // only moves the starting point -- the set-point that row reads has to be the
+    // row's. Each row must therefore land where a one-off solve given that target does.
+    const int NB_GEN = 2;
+    const int REG_BUS = 2;
+    LSGrid grid = make_grid(1, REG_BUS);
+    InjectionSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+    sweep.set_keep_jacobian(true);
+
+    const Inputs in(NB_GEN);
+    feed(sweep, in);
+    sweep.compute(CplxVect::Constant(NB_BUS, cplx_type(1., 0.)), 30, 1e-12);
+    REQUIRE(sweep.get_status() == 1);
+
+    const auto V = sweep.get_voltages();
+    for(int i = 0; i < NB_STEPS; ++i){
+        REQUIRE(std::abs(V(i, REG_BUS)) == Approx(in.gen_v(i, 1)).margin(1e-9));
+
+        LSGrid one_off = make_grid(1, REG_BUS);
+        one_off.change_v_gen(0, in.gen_v(i, 0));
+        one_off.change_v_gen(1, in.gen_v(i, 1));
+        one_off.change_p_gen(1, in.gen_p(i, 1));
+        one_off.change_p_load(0, in.load_p(i, 0));
+        one_off.change_q_load(0, in.load_q(i, 0));
+        one_off.change_algorithm(AlgorithmType::NR_SparseLU);
+        const CplxVect ref = one_off.ac_pf(CplxVect::Constant(NB_BUS, cplx_type(1., 0.)), 30, 1e-12);
+        REQUIRE(ref.size() == NB_BUS);
+        for(int b = 0; b < NB_BUS; ++b){
+            REQUIRE(std::abs(V(i, b) - ref(b)) < 1e-9);
+        }
+    }
+
+    // no |V| is fixed by it -- its gradient is read at the group's voltage row instead
+    REQUIRE(sweep.get_gen_v_target_bus()[1] == -1);
+    REQUIRE(sweep.get_gen_v_vc_row()[1] >= 0);
+    REQUIRE(sweep.get_gen_v_share()[1] == Approx(1.));
+
+    const RealMatRM grad = gen_v_gradient(sweep, NB_GEN);
+    const real_type delta = 1e-6;
+    for(int i = 0; i < NB_STEPS; ++i){
+        for(int g = 0; g < NB_GEN; ++g){
+            Inputs plus = in, minus = in;
+            plus.gen_v(i, g) += delta;
+            minus.gen_v(i, g) -= delta;
+            const real_type fd = (run_loss(plus, 1, REG_BUS) - run_loss(minus, 1, REG_BUS)) / (2. * delta);
+            REQUIRE(grad(i, g) == Approx(fd).margin(2e-5));
+            REQUIRE(std::abs(fd) > 1e-3);
+        }
     }
 }
 

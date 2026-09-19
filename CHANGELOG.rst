@@ -17,6 +17,29 @@ Change Log
   ``balanceType``) and the hydro produce / absorb mode question. Nothing of it is implemented
   and none of its cost claims is benchmarked; the smallest useful first step is
   clamp-and-renormalise on the slack, where ``GenPCheck`` already provides the oracle.
+- The Newton-Raphson conflates two different things under one flag. "Participates in the
+  DISTRIBUTED SLACK" is a purely active statement -- this element takes a share of the
+  power imbalance, by a participation factor -- and says nothing about voltage. "Is the
+  REFERENCE slack" is much stronger: theta known, |V| known, P and Q unknown. Today an
+  element participating in the distributed slack is necessarily PV, which does not follow:
+  a load could take a share of the imbalance without controlling any voltage. Separate the
+  two roles (``SlackParticipation`` vs the voltage-control plan) so that participation can
+  be given to an element that is not a voltage source.
+- ``lightsim2grid/network/from_pypowsybl/_olf_bake.py`` has grown past what one file should
+  hold. Split it into sub-files along what each rule bakes (taps and sections, generator
+  voltage control, reactive-limit switches, SVCs, active power and slack participation),
+  so a failing bake points at one readable module rather than at a thousand-line file.
+- The bake rewrites the grid silently: a caller cannot tell which decision produced the
+  state it is handed. Add an opt-in, off-by-default report of every change
+  ``bake_outer_loops`` made -- "gen xxx removed from the slack participants", "batt yyy
+  frozen to PQ", "tap zzz fixed at position n" -- in a machine-readable form (json), with
+  the rule that decided it.
+- Storage units can take part in the distributed slack (``StorageContainer::add_slackbus``)
+  but carry no active power limits, so ``compute_physical_violations`` cannot report a
+  battery the distribution pushed past what it can deliver, as ``GenPCheck`` does for the
+  generators. Add ``LSGrid::set_storage_p_limits`` (same optional, NaN-means-no-limit shape
+  as ``set_gen_p_limits``; needs a ``BINARY_FORMAT_VERSION`` bump), have the converters read
+  it, and extend the active-power check to the participating storage units.
 - ``modify_gen_v`` can only vary a GENERATOR's voltage set-point: there is no
   ``modify_svc_v`` and no ``modify_hvdc_v``. So a generator whose regulated bus is also
   regulated by a voltage-mode SVC or an hvdc converter station cannot be moved by a batch
@@ -195,10 +218,51 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``DistributedSlack`` outer loop re-shares. Detection only.
 - [ADDED] optional generator active power limits: ``LSGrid.set_gen_p_limits``,
   ``GenInfo.min_p_mw`` / ``max_p_mw`` (NaN when unset), read from pandapower's
-  ``min_p_mw`` / ``max_p_mw`` and from pypowsybl's ``min_p`` / ``max_p``. Nothing in the
-  powerflow uses them.
+  ``min_p_mw`` / ``max_p_mw``, from pypowsybl's ``min_p`` / ``max_p`` and from
+  PowerModels' / MATPOWER's ``pmin`` / ``pmax``. Nothing in the powerflow uses them.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 6 -> 7: a generator's optional active power limits
   are part of its state. A file written by an earlier version no longer loads.
+- [FIXED] batch ``modify_gen_v`` ignored the set-point of a generator regulating a bus a
+  voltage-control group holds (a remote regulator): it now sets that group's ``v_set`` per row,
+  and ``gen_v_indirect_grad`` returns its gradient (``get_gen_v_vc_row``).
+- [ADDED] storage units can take part in the distributed slack (``add_storage_slackbus``,
+  ``StorageInfo.is_slack``); ``init_from_pypowsybl`` distributes it on batteries as OpenLoadFlow
+  does. Binary format bumped to 9.
+- [FIXED] a slack bus held by a voltage-regulating storage unit got a free voltage magnitude.
+- [ADDED] storage units can regulate the voltage of their own bus (``init_storages_full``,
+  ``change_v_storage``, ``StorageInfo.voltage_regulator_on`` / ``target_vm_pu`` / ``min_q_mvar`` /
+  ``max_q_mvar``): a PV bus like a local generator, the reactive output solved for.
+  ``init_from_pypowsybl`` reads it off a battery's ``voltageRegulation`` extension, as
+  OpenLoadFlow does; ``bake_outer_loops`` freezes it when the reference solve did not hold the
+  target. Binary format bumped to 8. ``compute_physical_violations`` counts its reactive range
+  in its bus' capability.
+- [ADDED] a reactive sharing key per generator (``set_gen_reactive_key``, ``GenInfo.reactive_key``),
+  read from pypowsybl's ``coordinatedReactiveControl.q_percent``: generators holding one bus share
+  Q by key when all have one, by reactive range otherwise (OpenLoadFlow's rule).
+- [ADDED] ``bake_outer_loops(bake_saturated_voltage_control=True)`` freezes at its limit a generator
+  still holding its target with its Q exactly at a limit, instead of keeping it PV.
+- [FIXED] ``remove_outer_loops`` could switch ``component_mode`` from ``MAIN_SYNCHRONOUS`` to
+  ``ALL_CONNECTED`` (pypowsybl >= 1.16), depending on the process's hash seed.
+- [FIXED] ``bake_outer_loops`` froze no member of a shared voltage control that OpenLoadFlow
+  switched to PQ at its limit, the regulated bus being still held by the others.
+- [FIXED] ``bake_outer_loops`` now writes the injected reactive power into ``target_q`` of a PQ
+  generator OpenLoadFlow clamped into its reactive limits (``forceTargetQInReactiveLimits``).
+- [FIXED] ``bake_outer_loops`` freezes a unit switched at its reactive limit at the limit itself when
+  the ``q`` OpenLoadFlow reports is within 1e-3 MVAr of it (a misreported split of the bus' reactive power).
+- [FIXED] ``bake_outer_loops`` extrapolates a capability curve outside its P range, as OpenLoadFlow's
+  default ``extrapolateReactiveLimits`` does (``extrapolate_reactive_limits=True``), when locating Q limits.
+- [FIXED] hvdc angle droop: the Jacobian slope of the receiving side now carries the
+  derivative of the quadratic dc-line loss (``1 - 2 r line_in``). Same converged point, but
+  ``solve_JT`` (the batch gradients) was off by ~1e-4 relative on real grids without it.
+- [FIXED] ``bake_outer_loops``: a generator's voltage control is now kept or frozen
+  according to what the reference solve did (target held at the regulated bus, to 1e-8 pu),
+  the rules only explaining why; the target-voltage plausibility check used the terminal's
+  nominal voltage instead of the regulated bus's and froze units regulating across their
+  step-up transformer.
+- [FIXED] ``bake_outer_loops`` / ``init_from_pypowsybl`` default distributed slack: a
+  generator with ``droop = 0`` does not participate (OpenLoadFlow gives it nothing), and the
+  units OpenLoadFlow capped at a P limit while distributing the reference mismatch are
+  excluded, so the static weights match its effective distribution.
 - [ADDED] ``compute_physical_violations`` on the batch algorithms: every converged row
   reports the limits whose violation makes its solution unreachable
   (``get_physical_violations``) -- a bus needing more reactive power than the SUM of what the

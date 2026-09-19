@@ -6,6 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+#include <cmath>
+
 #include "NRSystem.hpp"
 
 // out-of-line on purpose: NRSystem.hpp only forward-declares LSGrid (it is
@@ -32,6 +34,13 @@ void VoltageControl::update_state(
     data_.clear();
     if(lsgrid_ptr != nullptr) data_ = lsgrid_ptr->get_ac_voltage_control_plan().controllers();
     my_size_ = data_.n_controllers();
+    // a caller-set per-solve set-point (a batch row's generator gen_v) wins over the
+    // grid's own, group by group -- see set_v_set_override
+    if(v_set_override_.size() == data_.n_groups()){
+        for(int g = 0; g < data_.n_groups(); ++g){
+            if(std::isfinite(v_set_override_(g))) data_.v_set(g) = v_set_override_(g);
+        }
+    }
     // per-solve init: the reactive injection state starts at 0 (gen convention)
     q_ = RealVect::Zero(my_size_);
     // data_ is now current for this compute_pf() call -- safe to derive
