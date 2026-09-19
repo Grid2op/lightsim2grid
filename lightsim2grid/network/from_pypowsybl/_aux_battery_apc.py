@@ -22,8 +22,9 @@ OpenLoadFlow distributes the slack on batteries with the same rule as on generat
   *charging* battery (``target_p < 0``) does participate;
 * its key is ``max_p / droop`` (``max_p`` itself, not ``max_target_p``).
 
-Measured against OpenLoadFlow on a real RTE snapshot, battery by battery (shares x12.4,
-x1, x0.144 and 0 for the ``droop = 0`` / ``participate = false`` ones).
+Checked battery by battery against OpenLoadFlow on real grid snapshots: the units this
+rule keeps are the ones whose active power OLF actually moved, with the same shares, and
+the ``droop = 0`` / ``participate = false`` ones take no part.
 
 pypowsybl up to 1.16.1 does not expose that extension on a battery
 (``get_extensions("activePowerControl")`` only lists generators; fixed by pypowsybl PR
@@ -32,19 +33,14 @@ it off an XIIDM export of the network.
 """
 
 import io
-import xml.etree.ElementTree as ET
+import warnings
 
 import numpy as np
 from packaging import version
 
 from ._aux_common import PYPOWSYBL_VER
-# OpenLoadFlow's `POWER_EPSILON_SI` and default `plausibleActivePowerLimit`, the ones the
-# bake uses for the generators (_olf_bake imports this module lazily, for that reason)
-from ._olf_bake import _ZERO_P_TOL, _MAX_PLAUSIBLE_ACTIVE_POWER_MW
-
-# OpenLoadFlow's hardcoded fallback droop (`AbstractLfGenerator.DEFAULT_DROOP`, "why not"),
-# for a unit whose `activePowerControl` extension does not set its own
-_OLF_DEFAULT_DROOP = 4.0
+# OpenLoadFlow's own constants, shared with the rest of the OLF-mirroring code
+from ._olf_const import _ZERO_P_TOL, _MAX_PLAUSIBLE_ACTIVE_POWER_MW, _OLF_DEFAULT_DROOP
 
 # the last pypowsybl release whose `activePowerControl` extension ignores batteries
 _PYPOWSYBL_NO_BATTERY_APC = version.parse("1.16.1")
@@ -114,7 +110,21 @@ def _apc_from_extension(net, batt_ids):
 def _apc_from_xiidm(net, batt_ids):
     """Same as :func:`_apc_from_extension`, read off an XIIDM export of ``net``: what a
     pypowsybl that does not expose the extension on batteries leaves as the only way.
-    The export is the size of the network file (~200 MB for a 7k-bus grid)."""
+    The export is a full serialization of the network, so this is the expensive path --
+    hence the ``"extension"`` / ``"default"`` sources of
+    :func:`battery_active_power_control`.
+
+    ``xml.etree.ElementTree`` is imported here rather than at module level: it is only
+    needed on this fallback path, and a Python built without the ``_elementtree`` module
+    (some minimal / embedded builds) must still be able to import this module. Without
+    it, every battery simply gets OpenLoadFlow's defaults."""
+    try:
+        import xml.etree.ElementTree as ET
+    except ImportError:
+        warnings.warn("The `activePowerControl` extension of the batteries cannot be read: this "
+                      "pypowsybl does not expose it and `xml.etree.ElementTree` is not available "
+                      "to read it off an XIIDM export. OpenLoadFlow's defaults are used instead.")
+        return {}
     wanted = set(str(el) for el in batt_ids)
     res = {}
     xml_text = net.save_to_string("XIIDM")

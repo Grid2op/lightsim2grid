@@ -11,12 +11,11 @@ from collections import deque
 import numpy as np
 
 from ._aux_handle_slack import handle_slack_iterable, handle_slack_one_el
-# OpenLoadFlow's hardcoded fallback droop (in `AbstractLfGenerator.DEFAULT_DROOP`,
-# "why not") used for every generator whose `activePowerControl` extension does not
-# set its own droop, under the ``PROPORTIONAL_TO_GENERATION_P_MAX`` balance type --
-# see `_default_distributed_slack`.
+# OpenLoadFlow's hardcoded fallback droop, used for every generator whose
+# `activePowerControl` extension does not set its own droop, under the
+# ``PROPORTIONAL_TO_GENERATION_P_MAX`` balance type -- see `_default_distributed_slack`.
+from ._olf_const import _OLF_DEFAULT_DROOP
 from ._aux_battery_apc import (
-    _OLF_DEFAULT_DROOP,
     BATTERY_APC_SOURCES,
     battery_active_power_control as _battery_active_power_control,
     olf_participation_weight,
@@ -55,11 +54,11 @@ def _default_distributed_slack(net, df_gen):
       extension's droop; a generator WITHOUT an extension row gets OLF's hardcoded
       ``DEFAULT_DROOP = 4``. A generator whose extension row carries ``droop = 0``
       (which is also what pypowsybl reports for an unset droop) does **not**
-      participate: measured on a real 7k-bus RTE snapshot, OLF's effective
-      distribution (the generators whose P moved for a load change) was exactly
-      the ``droop > 0`` set, with shares equal to ``max_p / droop`` to 1e-13,
-      while every ``droop = 0`` participant of an earlier version of this rule
-      (which gave them the default droop) got nothing.
+      participate: measured on real grid snapshots, OLF's effective distribution
+      (the generators whose P moved for a load change) is exactly the
+      ``droop > 0`` set, with shares equal to ``max_p / droop`` to solver
+      precision, while every ``droop = 0`` participant of an earlier version of
+      this rule (which gave them the default droop) got nothing.
       **Not** the extension's ``participation_factor`` -- that key is only used
       under the (different, not reproduced here) ``PROPORTIONAL_TO_GENERATION_PARTICIPATION_FACTOR``
       balance type, even though real grids often set both fields together;

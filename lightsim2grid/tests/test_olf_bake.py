@@ -496,8 +496,8 @@ class TestOlfBake(unittest.TestCase):
 
     def test_olf_switched_unit_baked_at_its_limit_not_reported_q(self):
         """A unit switched at its Q limit injects that limit, but OLF does not always
-        report it (on RTE snapshots it re-splits a bus' reactive target among the units
-        of the bus when writing results). The bake must write the limit: here the
+        report it (on real grid snapshots it re-splits a bus' reactive target among the
+        units of the bus when writing results). The bake must write the limit: here the
         reported q of one of two switched units is overwritten slightly inside its limit
         after the solve, standing for such a report."""
         n = pp.network.create_ieee14()

@@ -3,6 +3,29 @@ Change Log
 
 [TODO]
 --------
+- The Newton-Raphson conflates two different things under one flag. "Participates in the
+  DISTRIBUTED SLACK" is a purely active statement -- this element takes a share of the
+  power imbalance, by a participation factor -- and says nothing about voltage. "Is the
+  REFERENCE slack" is much stronger: theta known, |V| known, P and Q unknown. Today an
+  element participating in the distributed slack is necessarily PV, which does not follow:
+  a load could take a share of the imbalance without controlling any voltage. Separate the
+  two roles (``SlackParticipation`` vs the voltage-control plan) so that participation can
+  be given to an element that is not a voltage source.
+- ``lightsim2grid/network/from_pypowsybl/_olf_bake.py`` has grown past what one file should
+  hold. Split it into sub-files along what each rule bakes (taps and sections, generator
+  voltage control, reactive-limit switches, SVCs, active power and slack participation),
+  so a failing bake points at one readable module rather than at a thousand-line file.
+- The bake rewrites the grid silently: a caller cannot tell which decision produced the
+  state it is handed. Add an opt-in, off-by-default report of every change
+  ``bake_outer_loops`` made -- "gen xxx removed from the slack participants", "batt yyy
+  frozen to PQ", "tap zzz fixed at position n" -- in a machine-readable form (json), with
+  the rule that decided it.
+- Storage units can take part in the distributed slack (``StorageContainer::add_slackbus``)
+  but carry no active power limits, so ``compute_physical_violations`` cannot report a
+  battery the distribution pushed past what it can deliver, as ``GenPCheck`` does for the
+  generators. Add ``LSGrid::set_storage_p_limits`` (same optional, NaN-means-no-limit shape
+  as ``set_gen_p_limits``; needs a ``BINARY_FORMAT_VERSION`` bump), have the converters read
+  it, and extend the active-power check to the participating storage units.
 - ``modify_gen_v`` can only vary a GENERATOR's voltage set-point: there is no
   ``modify_svc_v`` and no ``modify_hvdc_v``. So a generator whose regulated bus is also
   regulated by a voltage-mode SVC or an hvdc converter station cannot be moved by a batch
@@ -181,8 +204,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``DistributedSlack`` outer loop re-shares. Detection only.
 - [ADDED] optional generator active power limits: ``LSGrid.set_gen_p_limits``,
   ``GenInfo.min_p_mw`` / ``max_p_mw`` (NaN when unset), read from pandapower's
-  ``min_p_mw`` / ``max_p_mw`` and from pypowsybl's ``min_p`` / ``max_p``. Nothing in the
-  powerflow uses them.
+  ``min_p_mw`` / ``max_p_mw``, from pypowsybl's ``min_p`` / ``max_p`` and from
+  PowerModels' / MATPOWER's ``pmin`` / ``pmax``. Nothing in the powerflow uses them.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 6 -> 7: a generator's optional active power limits
   are part of its state. A file written by an earlier version no longer loads.
 - [FIXED] batch ``modify_gen_v`` ignored the set-point of a generator regulating a bus a

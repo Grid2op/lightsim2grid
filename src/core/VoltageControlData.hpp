@@ -49,7 +49,11 @@ struct LS2G_API VoltageControlSolverData
     // pins that bus through the ordinary PV path, like a local generator.
     // STORAGE is never a controller of the plan (a storage unit only ever pins its
     // own bus, see StorageContainer); the tag exists for LSGrid's reactive-residual
-    // bookkeeping (QShare), which uses the same kind space.
+    // bookkeeping (QShare), which uses the same kind space. Not being a controller
+    // of the plan does NOT put it outside the reactive physical-violation check:
+    // `BusQCheck` builds its per-bus capability from the elements that hold the bus
+    // whatever path they hold it through, so a voltage-regulating storage unit's
+    // [min_q, max_q] counts towards its bus' the same way a local generator's does.
     enum Kind { GEN = 0, SVC = 1, HVDC_SIDE_1 = 2, HVDC_SIDE_2 = 3, STORAGE = 4 };
 
     // ---- per controller (flat, grouped contiguously) ------------------------

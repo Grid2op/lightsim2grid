@@ -38,6 +38,12 @@ namespace ls2g {
  *
  * It holds data and rules only: the element status, bus and result vectors stay the
  * container's, and are passed in.
+ *
+ * TODO (see the CHANGELOG's [TODO]): participating in the distributed slack is a purely
+ * ACTIVE statement -- this element takes a share of the power imbalance -- and says
+ * nothing about voltage, unlike being the REFERENCE slack (theta known, |V| known, P and
+ * Q unknown). Today only a voltage source can be given a share, which does not follow: a
+ * load could take one. Separating the two roles is what would allow it.
  */
 class SlackParticipation
 {
