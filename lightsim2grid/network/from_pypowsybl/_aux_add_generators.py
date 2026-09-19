@@ -18,7 +18,7 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
     ``df_gen`` is reused by the slack-assignment phase (`_aux_add_slack.py`),
     ``gen_sub`` by the final substation-id bookkeeping in `initLSGrid.py`."""
     gen_attrs = [
-        "connected", "max_p", "target_p", "target_v", "target_q", "p",
+        "connected", "min_p", "max_p", "target_p", "target_v", "target_q", "p",
         "voltage_regulator_on", "regulated_element_id", "voltage_level_id", "bus_id",
         "min_q", "max_q", "min_q_at_target_p", "max_q_at_target_p",
     ]
@@ -106,6 +106,18 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
             model.deactivate_gen(gen_id)
     model.set_gen_names(df_gen.index)
 
+    # active power limits: iidm always carries them, and nothing in the powerflow reads
+    # them -- they are what says whether the active power a distributed slack ended up
+    # asking of a machine is one it could actually deliver (see the batch algorithms'
+    # `compute_physical_violations`). A generator whose limit is not a finite number gets
+    # NaN, which the checks read as "no limit for that one".
+    min_p_mw = np.asarray(df_gen["min_p"].values, dtype=np.float64).copy()
+    max_p_mw = np.asarray(df_gen["max_p"].values, dtype=np.float64).copy()
+    min_p_mw[~np.isfinite(min_p_mw)] = np.nan
+    max_p_mw[~np.isfinite(max_p_mw)] = np.nan
+    if np.any(np.isfinite(min_p_mw)) or np.any(np.isfinite(max_p_mw)):
+        model.set_gen_p_limits(min_p_mw, max_p_mw)
+
     # thread the regulated bus to the C++ generator container. Local generators keep
     # their own bus (already the C++ default), so a grid without any remote control
     # stays byte-identical to before this feature.
@@ -117,4 +129,22 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
         for gen_id, reg_bus in zip(np.nonzero(mask_remote_gen)[0], gen_reg_bus_global):
             model.set_gen_regulated_bus(int(gen_id), int(reg_bus))
 
+    # how the generators holding one bus share their reactive power: the same key OLF
+    # reads (a missing or zero q_percent is no key, the reactive range then decides)
+    q_percent = _aux_reactive_keys(net, df_gen.index)
+    for gen_id in np.flatnonzero(q_percent > 0.):
+        model.set_gen_reactive_key(int(gen_id), float(q_percent[gen_id]))
+
     return df_gen, gen_sub
+
+
+def _aux_reactive_keys(net, gen_ids):
+    """``coordinatedReactiveControl.q_percent`` of each generator in ``gen_ids``, 0
+    where the extension is absent (or unknown to this pypowsybl version)."""
+    try:
+        ext = net.get_extensions("coordinatedReactiveControl")
+    except Exception:  # noqa: BLE001 - extension not supported by this pypowsybl
+        return np.zeros(len(gen_ids))
+    if ext is None or not len(ext) or "q_percent" not in ext.columns:
+        return np.zeros(len(gen_ids))
+    return ext["q_percent"].reindex(gen_ids).fillna(0.).to_numpy(float)

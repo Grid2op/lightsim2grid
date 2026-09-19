@@ -107,12 +107,15 @@ void bind_gridmodel(py::module_& m) {
         .def("init_generators_full", &LSGrid::init_generators_full, DocLSGrid::init_generators_full.c_str())
         .def("init_loads", &LSGrid::init_loads, DocLSGrid::init_loads.c_str())
         .def("init_storages", &LSGrid::init_storages, DocLSGrid::init_storages.c_str())
+        .def("init_storages_full", &LSGrid::init_storages_full, DocLSGrid::init_storages_full.c_str())
         .def("init_sgens", &LSGrid::init_sgens, DocLSGrid::init_sgens.c_str())
         .def("init_dclines", &LSGrid::init_dclines, DocLSGrid::init_dclines.c_str())
         .def("init_hvdc_lines", &LSGrid::init_hvdc_lines, DocLSGrid::init_hvdc_lines.c_str())
         .def("init_svcs", &LSGrid::init_svcs, DocLSGrid::init_svcs.c_str())
         .def("add_gen_slackbus", &LSGrid::add_gen_slackbus, DocLSGrid::add_gen_slackbus.c_str())
         .def("remove_gen_slackbus", &LSGrid::remove_gen_slackbus, DocLSGrid::remove_gen_slackbus.c_str())
+        .def("add_storage_slackbus", &LSGrid::add_storage_slackbus, DocLSGrid::add_storage_slackbus.c_str())
+        .def("remove_storage_slackbus", &LSGrid::remove_storage_slackbus, DocLSGrid::remove_storage_slackbus.c_str())
         .def("get_bus_vn_kv", &LSGrid::get_bus_vn_kv, DocLSGrid::get_bus_vn_kv.c_str(), py::return_value_policy::reference_internal)
         // NB no return_value_policy::reference: get_bus_status() now BUILDS the vector from the
         // per-bus element counts and returns it by value, so pybind must copy (the default).
@@ -163,6 +166,18 @@ void bind_gridmodel(py::module_& m) {
         .def("set_line_current_limit_side2", &LSGrid::set_line_current_limit_side2, DocLSGrid::set_line_current_limit_side2.c_str())
         .def("set_trafo_current_limit_side1", &LSGrid::set_trafo_current_limit_side1, DocLSGrid::set_trafo_current_limit_side1.c_str())
         .def("set_trafo_current_limit_side2", &LSGrid::set_trafo_current_limit_side2, DocLSGrid::set_trafo_current_limit_side2.c_str())
+        .def("set_gen_p_limits", &LSGrid::set_gen_p_limits,
+             py::arg("p_min_mw"), py::arg("p_max_mw"),
+             "Active power limits (MW) of the generators, OPTIONAL and never enforced -- the "
+             "same shape as the current limits above: one entry per generator, NaN where a "
+             "machine has none, and two empty vectors to drop them again (`GenInfo.min_p_mw` "
+             "/ `max_p_mw` then read NaN).\n\n"
+             "What they are for: the distributed slack is solved INSIDE the Newton system, by "
+             "fixed participation factors that know nothing about limits, so a participating "
+             "machine's converged active power -- its target plus its share of the imbalance "
+             "-- can land beyond what it can deliver. That is a physical violation, and these "
+             "are what the batch algorithms' `compute_physical_violations` compares against "
+             "(LOW_P / HIGH_P on the GENERATOR).")
         .def("set_gen_names", &LSGrid::set_gen_names, DocLSGrid::set_gen_names.c_str())
         .def("set_load_names", &LSGrid::set_load_names, DocLSGrid::set_load_names.c_str())
         .def("set_storage_names", &LSGrid::set_storage_names, DocLSGrid::set_storage_names.c_str())
@@ -218,6 +233,7 @@ void bind_gridmodel(py::module_& m) {
         .def("change_p_gen", &LSGrid::change_p_gen, DocLSGrid::change_p_gen.c_str())
         .def("change_v_gen", &LSGrid::change_v_gen, DocLSGrid::change_v_gen.c_str())
         .def("set_gen_regulated_bus", &LSGrid::set_gen_regulated_bus, DocLSGrid::set_gen_regulated_bus.c_str())
+        .def("set_gen_reactive_key", &LSGrid::set_gen_reactive_key, DocLSGrid::set_gen_reactive_key.c_str())
         .def("deactivate_svc", &LSGrid::deactivate_svc, DocLSGrid::deactivate_svc.c_str())
         .def("reactivate_svc", &LSGrid::reactivate_svc, DocLSGrid::reactivate_svc.c_str())
         .def("change_bus_svc", &LSGrid::change_bus_svc_python, DocLSGrid::change_bus_svc.c_str())
@@ -244,6 +260,7 @@ void bind_gridmodel(py::module_& m) {
         .def("get_bus_storage", &LSGrid::get_bus_storage, DocLSGrid::get_bus_storage.c_str(), py::return_value_policy::reference)
         .def("change_p_storage", &LSGrid::change_p_storage, DocLSGrid::change_p_storage.c_str())
         .def("change_q_storage", &LSGrid::change_q_storage, DocLSGrid::change_q_storage.c_str())
+        .def("change_v_storage", &LSGrid::change_v_storage, DocLSGrid::change_v_storage.c_str())
 
         .def("deactivate_dcline", &LSGrid::deactivate_dcline, DocLSGrid::deactivate_dcline.c_str())
         .def("deactivate_dcline_side1", &LSGrid::deactivate_dcline_side1, DocLSGrid::deactivate_dcline_side1.c_str())

@@ -566,9 +566,15 @@ class LS2G_API MultiSlack   // distributed-slack extension
  *     between two solves does NOT change the J sparsity pattern and the
  *     symbolic factorization of the linear solver is reused;
  *   - adds the theta-dependent flows to the per-bus mismatch;
- *   - writes the (piecewise constant) droop slopes: on the controller side
- *     +/- k, on the non-controller side +/- k * (1 - lf1) * (1 - lf2), the
- *     derivative of the resistive dc-line loss being neglected (OLF parity).
+ *   - writes the droop slopes, the exact derivative of the flows it adds to
+ *     the mismatch: on the controller side +/- k, on the non-controller side
+ *     +/- k * (1 - lf1) * (1 - lf2) * (1 - 2 * r * line_in) -- the resistive
+ *     dc-line loss is quadratic in the line current, so its slope is not a
+ *     constant. An earlier version dropped that last factor (OLF's own Jacobian
+ *     does); Newton-Raphson converges to the same point either way, but the
+ *     adjoint solve (``solve_JT``, the batch classes' gradients) inherits any
+ *     Jacobian error -- ~1e-4 relative on the active-power gradients of a real
+ *     7k-bus grid, measured against finite differences.
  *     Saturated lines are pure constant injections: zero slopes.
  *
  * When the grid has no droop hvdc line, every loop below is empty: the
@@ -634,10 +640,17 @@ class LS2G_API Hvdc
             for (int k = 0; k < my_size_; ++k) {
                 if (data_.status(k) != 0) continue;  // saturated: constant injection, zero slopes
                 const real_type raw = data_.p0(k) + data_.k(k) * (Va(data_.bus1(k)) - Va(data_.bus2(k)));
-                const real_type loss_mult = (1. - data_.lf1(k)) * (1. - data_.lf2(k));
-                // dp1 = dp1/dtheta1, dp2 = dp2/dtheta1; d/dtheta2 = -d/dtheta1
-                const real_type dp1 = (raw >= 0.) ? data_.k(k) : data_.k(k) * loss_mult;
-                const real_type dp2 = (raw < 0.) ? -data_.k(k) : -data_.k(k) * loss_mult;
+                const bool side1_ctrl = raw >= 0.;
+                // d recv_pu / d |raw|, with recv = (1-lf_recv)(line_in - r line_in^2)
+                // and line_in = (1-lf_ctrl) |raw|  (see HvdcDroopData::recv_pu)
+                const real_type lf_ctrl = side1_ctrl ? data_.lf1(k) : data_.lf2(k);
+                const real_type line_in = (1. - lf_ctrl) * (side1_ctrl ? raw : -raw);
+                const real_type recv_slope = (1. - data_.lf1(k)) * (1. - data_.lf2(k)) * (1. - 2. * data_.r(k) * line_in);
+                // dp1 = dp1/dtheta1, dp2 = dp2/dtheta1; d/dtheta2 = -d/dtheta1.
+                // Controller side: p = +/-raw, slope +/-k. Receiving side:
+                // p = -recv(|raw|) with d|raw|/dtheta1 = +/-k, slope -/+ k recv'.
+                const real_type dp1 = side1_ctrl ?  data_.k(k) :  data_.k(k) * recv_slope;
+                const real_type dp2 = side1_ctrl ? -data_.k(k) * recv_slope : -data_.k(k);
                 if (h11_[k] >= 0) writer.add(h11_[k], dp1);
                 if (h12_[k] >= 0) writer.add(h12_[k], -dp1);
                 if (h21_[k] >= 0) writer.add(h21_[k], dp2);
@@ -799,6 +812,23 @@ class LS2G_API VoltageControl
         // the first declare_feature_entries() it should affect -- see NRSystem::
         // set_may_mask_voltage_control / BaseAlgo::set_may_mask_voltage_control.
         void set_may_mask_voltage_control(bool val) { may_mask_ = val; }
+
+        // Per-solve override of the groups' voltage set-points, indexed by group
+        // (the grid's own plan order). A finite entry replaces that group's v_set for
+        // every following solve; NaN (or an empty vector) keeps the grid's own. A
+        // generator regulating a bus a group holds does not fix |V| anywhere: its
+        // set-point IS this v_set, so a batch that varies generator set-points per row
+        // (BaseBatchSweep::modify_gen_v) has to hand it over here -- re-seeding |V| at
+        // the regulated bus only moves the starting point, the voltage row then puts it
+        // back at the grid's own target. Caller-set, NOT reset by clear() or
+        // update_state(), like the pinning above.
+        void set_v_set_override(const RealVect& v_set) { v_set_override_ = v_set; }
+
+        // J row of each group's voltage constraint (group order), what the gradient of
+        // a loss with respect to that group's v_set is read from (dF_v/dv_set = -1).
+        IntVect group_v_row() const {
+            return Eigen::Map<const IntVect>(v_rows_.data(), static_cast<Eigen::Index>(v_rows_.size()));
+        }
 
         // claims, per group: N q-unknown columns, 1 voltage row, N-1 sharing rows;
         // caches the controller q rows and the regulated-bus vm columns (the ledger
@@ -1006,6 +1036,7 @@ class LS2G_API VoltageControl
         bool                           may_mask_ = false;
         int                            my_size_;     // number of controllers
         VoltageControlSolverData       data_;        // per-solve controller data (refreshed every update_state)
+        RealVect                       v_set_override_;  // per group, NaN = grid's own (see set_v_set_override)
         RealVect                       q_;           // running reactive injection per controller (pu, gen convention)
         std::vector<int>               q_cols_;      // J column of each controller's Q unknown
         std::vector<int>               q_rows_;      // q_row of each controller bus (-1 if none)
@@ -1151,6 +1182,13 @@ public:
     void set_may_mask_voltage_control(bool val) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_may_mask_voltage_control(val);
+    }
+
+    // Per-solve group set-points of the VoltageControl extension (NaN = the grid's
+    // own), see VoltageControl::set_v_set_override. No-op without the extension.
+    void set_voltage_control_v_set(const RealVect& v_set) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_v_set_override(v_set);
     }
 
     // Reserve a Vm unknown + a Q equation for each of these PV buses, so their
@@ -1362,6 +1400,10 @@ public:
     IntVect controller_q_col() const {
         const VoltageControl* vc = _find_extension<VoltageControl>();
         return vc ? IntVect(vc->controller_q_col()) : IntVect();
+    }
+    IntVect group_v_row() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? IntVect(vc->group_v_row()) : IntVect();
     }
 
     // ----- MultiSlack: slack_absorbed J column (-1 when the extension is absent) --

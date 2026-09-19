@@ -431,6 +431,100 @@ class TestBatchCPUPowerFlow(unittest.TestCase):
                                    msg=f"row 1 (line 3 out), gen {g}")
 
 
+    # ------------------------------------------------ a remote regulator's gen_v
+    # case14 with generator 3 (bus 7) regulating bus 9 remotely: the bordered voltage
+    # control. Its gen_v fixes no |V| -- bus 9 keeps its magnitude unknown -- it is the
+    # group's v_set, and a batch that only re-seeded |V| there used to solve every row
+    # at the grid's own target, with a zero gradient.
+    REMOTE_GEN, REMOTE_REG_BUS = 3, 9
+    TRAFO_BEHIND_REMOTE = 3     # buses 6-7: tripping it strands the controller's own bus
+
+    def _remote_grid(self, v_target=None):
+        grid = init_from_pandapower(pn.case14())
+        grid.set_gen_regulated_bus(self.REMOTE_GEN, self.REMOTE_REG_BUS)
+        if v_target is not None:
+            grid.change_v_gen(self.REMOTE_GEN, float(v_target))
+        return grid
+
+    def _remote_gen_v(self, pf, values):
+        base = np.array([g.target_vm_pu for g in pf._grid.get_generators()])
+        gen_v = np.tile(base, (len(values), 1))
+        gen_v[:, self.REMOTE_GEN] = values
+        return gen_v
+
+    def test_remote_regulator_gen_v_sets_its_group_set_point(self):
+        """each row solved at its own set-point: the one-off solve of a grid given it"""
+        pf = self._cls.init_from_grid(self._remote_grid(), tol=self.TOL)
+        values = [1.03, 1.05, 1.07]
+        V = pf(gen_v=torch.tensor(self._remote_gen_v(pf, values))).numpy()
+        self.assertTrue(pf.converged().all())
+        self.assertLess(pf._sweep.get_gen_v_target_bus()[self.REMOTE_GEN], 0)
+        self.assertGreaterEqual(pf._sweep.get_gen_v_vc_row()[self.REMOTE_GEN], 0)
+        for row, v in enumerate(values):
+            grid = self._remote_grid(v)
+            ref = grid.ac_pf(np.ones(grid.total_bus(), dtype=complex), 30, self.TOL)
+            self.assertGreater(ref.shape[0], 0)
+            self.assertAlmostEqual(abs(ref[self.REMOTE_REG_BUS]), v, places=8)
+            np.testing.assert_allclose(V[row], ref, atol=1e-8, err_msg=f"row {row}")
+
+    def _remote_fd(self, make, inputs, row, delta=1e-6):
+        out = []
+        for sign in (+1., -1.):
+            pert = {k: v.copy() for k, v in inputs.items()}
+            pert["gen_v"][row, self.REMOTE_GEN] += sign * delta
+            out.append(float(self._loss(make()(**{k: torch.tensor(v) for k, v in pert.items()}))))
+        return (out[0] - out[1]) / (2. * delta)
+
+    def test_remote_regulator_gen_v_gradient(self):
+        def make():
+            return self._cls.init_from_grid(self._remote_grid(), tol=self.TOL)
+        pf = make()
+        n_scen = 3
+        load_p = np.asarray(pf._grid.get_load_target_p())[None, :] * np.array([[1.], [1.08], [0.93]])
+        inputs = dict(load_p=load_p, gen_v=self._remote_gen_v(pf, [1.03, 1.05, 1.06]))
+        tensors = {k: torch.tensor(v, requires_grad=True) for k, v in inputs.items()}
+        self._loss(pf(**tensors)).backward()
+        self.assertTrue(pf.converged().all())
+        for row in range(n_scen):
+            fd = self._remote_fd(make, inputs, row)
+            self.assertGreater(abs(fd), 1e-2)
+            self.assertAlmostEqual(tensors["gen_v"].grad[row, self.REMOTE_GEN].item(), fd, places=5,
+                                   msg=f"row {row}")
+
+    def test_stranded_remote_regulator_has_no_gen_v_gradient(self):
+        """handle_disconnected_grid: tripping the trafo behind the controller's own bus
+        strands it, its voltage row becomes Q_c = 0 and v_set leaves the system -- the
+        set-point moves nothing on that row, and its gradient is 0 there"""
+        def make():
+            return self._cls.init_from_grid(self._remote_grid(), tol=self.TOL,
+                                            handle_disconnected_grid=True)
+        pf = make()
+        n_scen = 2
+        trafo_status = np.ones((n_scen, pf.n_trafo), dtype=bool)
+        trafo_status[1, self.TRAFO_BEHIND_REMOTE] = False
+        gen_v = self._remote_gen_v(pf, [1.04, 1.04])
+        tensors = {"gen_v": torch.tensor(gen_v, requires_grad=True),
+                   "trafo_status": torch.as_tensor(trafo_status)}
+        V = pf(**tensors)
+        self.assertTrue(pf.converged().all())
+        loss = lambda V: self._loss(torch.where(torch.isnan(V), torch.zeros_like(V), V))
+        loss(V).backward()
+
+        def fd(row, delta=1e-6):
+            out = []
+            for sign in (+1., -1.):
+                gv = gen_v.copy()
+                gv[row, self.REMOTE_GEN] += sign * delta
+                out.append(float(loss(make()(gen_v=torch.tensor(gv),
+                                             trafo_status=torch.as_tensor(trafo_status)))))
+            return (out[0] - out[1]) / (2. * delta)
+        fd0, fd1 = fd(0), fd(1)
+        self.assertGreater(abs(fd0), 1e-2)
+        self.assertAlmostEqual(tensors["gen_v"].grad[0, self.REMOTE_GEN].item(), fd0, places=5)
+        self.assertAlmostEqual(fd1, 0., places=6)
+        self.assertEqual(tensors["gen_v"].grad[1, self.REMOTE_GEN].item(), 0.)
+
+
 class TestTorchStaysOptional(unittest.TestCase):
     """torch is an optional dependency, and the only thing that may break if it is
     missing is actually building a BatchCPUPowerFlow -- not importing lightsim2grid,

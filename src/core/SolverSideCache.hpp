@@ -74,6 +74,9 @@ struct SolverBusLayout
     GlobalBusIdVect slack_bus_id_me;      ///< slack buses, grid numbering
     SolverBusIdVect slack_bus_id_solver;  ///< the same, solver numbering
     RealVect slack_weights;               ///< distributed-slack share per solver bus
+    /// the same, before normalisation: the raw weight of every participant of each solver
+    /// bus, generators and storage units alike -- what splits a bus' share back onto them
+    RealVect slack_raw_weights;
 
     // ---- the pv / pq split -------------------------------------------------
     SolverBusIdVect bus_pv;  ///< solver ids, NOT grid ids
@@ -142,6 +145,7 @@ struct SolverBusLayout
         slack_bus_id_me = GlobalBusIdVect();
         slack_bus_id_solver = SolverBusIdVect();
         slack_weights = RealVect();
+        slack_raw_weights = RealVect();
         bus_pv = SolverBusIdVect();
         bus_pq = SolverBusIdVect();
         voltage_control.clear();

@@ -245,6 +245,8 @@ class LS2G_API BaseAlgo : public BaseConstants
         // order -- NOT the bus-keyed q_to_J_col (see NRSystem::controller_q_col's
         // own doc): needed whenever two controllers share a bus.
         virtual IntVect  get_controller_q_col()   const { return IntVect(); }
+        // J row of each voltage-control group's voltage constraint (empty without them)
+        virtual IntVect  get_group_v_row()        const { return IntVect(); }
 
         // MultiSlack: J column of the slack_absorbed unknown (-1 when the
         // distributed-slack-in-Jacobian extension is not active).
@@ -491,6 +493,14 @@ class LS2G_API BaseAlgo : public BaseConstants
         // (e.g. via the solver control's tell_pv_changed()) -- see BaseBatchSweep::
         // _maybe_prepare_masks(). Default is a no-op so other algorithms are unaffected.
         virtual void set_may_mask_voltage_control(bool /*val*/) {}
+
+        // Per-solve set-points of the voltage-control groups (indexed like the grid's
+        // plan, NaN = the grid's own): what a batch hands over for a row whose
+        // generator set-points it varies, since a generator regulating a group-held
+        // bus fixes no |V| -- its set-point is the group's. See
+        // VoltageControl::set_v_set_override. Default no-op: an algorithm without a
+        // bordered block has no group to set.
+        virtual void set_voltage_control_v_set(const RealVect & /*v_set*/) {}
 
         // Refactorize-failure fallback of the linear solver (see LinearSolverPolicy::
         // set_refactor_fallback). A value-level edit that changes a bus's role at

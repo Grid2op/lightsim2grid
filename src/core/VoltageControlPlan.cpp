@@ -16,6 +16,7 @@
 #include "element_container/GenericContainer.hpp"
 #include "element_container/GeneratorContainer.hpp"
 #include "element_container/HvdcLineContainer.hpp"
+#include "element_container/StorageContainer.hpp"
 #include "element_container/SvcContainer.hpp"
 
 namespace ls2g {
@@ -173,6 +174,7 @@ VoltageControlPlan::list_unsupported(const GeneratorContainer & generators,
 // layers 3 and 4
 // ---------------------------------------------------------------------------
 void VoltageControlPlan::build_solver_side(const GeneratorContainer & generators,
+                                           const StorageContainer & storages,
                                            const SvcContainer & svcs,
                                            const HvdcLineContainer & hvdc_lines,
                                            const SolverBusIdVect & id_me_to_solver,
@@ -180,11 +182,12 @@ void VoltageControlPlan::build_solver_side(const GeneratorContainer & generators
                                            const SolverBusIdVect & slack_bus_id_solver,
                                            const SolverBusIdVect & bus_pq)
 {
-    build_free_vm_slack(generators, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
+    build_free_vm_slack(generators, storages, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
     build_controllers(generators, svcs, hvdc_lines, id_me_to_solver, id_solver_to_me, bus_pq);
 }
 
 void VoltageControlPlan::build_free_vm_slack(const GeneratorContainer & generators,
+                                             const StorageContainer & storages,
                                              const SolverBusIdVect & id_me_to_solver,
                                              const GlobalBusIdVect & id_solver_to_me,
                                              const SolverBusIdVect & slack_bus_id_solver)
@@ -215,6 +218,22 @@ void VoltageControlPlan::build_free_vm_slack(const GeneratorContainer & generato
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(!generators.is_local_voltage_controller(gen_id)) continue;
         const int ctrl_grid = gen_buses(gen_id).cast_int();
+        if(group_reg_buses_.count(ctrl_grid)) continue;
+        const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
+        if(ctrl_solver == GenericContainer::_deactivated_bus_id) continue;
+        locally_vfixed.insert(ctrl_solver);
+    }
+    // ... and so does a voltage-regulating storage unit, which pins its own bus through
+    // the same PV path (it only regulates locally, see StorageContainer::_check_valid).
+    // Same exception: build_pv_pq takes a group-regulated bus back from PV whatever
+    // pinned it. Without this loop a slack bus held by a regulating battery -- a
+    // storage participant of the distributed slack, or a PQ slack generator sharing
+    // the bus -- would get a free Vm and the battery's setpoint would be ignored.
+    const int nb_storage = static_cast<int>(storages.nb());
+    const GlobalBusIdVect & storage_buses = storages.get_bus_id();
+    for(int storage_id = 0; storage_id < nb_storage; ++storage_id){
+        if(!storages.is_local_voltage_controller(storage_id)) continue;
+        const int ctrl_grid = storage_buses(storage_id).cast_int();
         if(group_reg_buses_.count(ctrl_grid)) continue;
         const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
         if(ctrl_solver == GenericContainer::_deactivated_bus_id) continue;
@@ -330,7 +349,8 @@ void VoltageControlPlan::_collect_gen_controllers(const GeneratorContainer & gen
         }
         const real_type w = generators.get_max_q(gen_id) - generators.get_min_q(gen_id);
         raws.push_back({ctrl_solver, reg_solver, generators.get_target_vm_pu(gen_id),
-                        static_cast<real_type>(0.), w, VoltageControlSolverData::GEN, gen_id});
+                        static_cast<real_type>(0.), w, VoltageControlSolverData::GEN, gen_id,
+                        generators.get_reactive_key(gen_id)});
     }
 }
 
@@ -488,6 +508,36 @@ void VoltageControlPlan::_group_and_emit(const std::vector<Raw> & raws)
     data.v_set = RealVect(ng);
     data.grp_start = Eigen::VectorXi(ng);
     data.grp_count = Eigen::VectorXi(ng);
+    // The sharing key, OpenLoadFlow's rule, which works bus by bus. Inside one
+    // controller bus the controllers share by their keys when they all have one, by
+    // their reactive ranges otherwise; the buses of the group share by the sum of
+    // their controllers' keys when every bus has one, by the sum of their ranges
+    // otherwise. The sharing rows hold Q_i / w_i equal across the group, so
+    // w_i = (share of its bus) * (its share inside the bus), which reduces to the key
+    // when every bus is keyed and to the range when its own bus is not.
+    const auto has_key = [](real_type key) { return std::isfinite(key) && key > 0.; };
+    const auto sharing_weight = [&](const std::vector<int> & members, int idx) {
+        const Raw & r = raws[idx];
+        bool all_buses_keyed = true;
+        bool own_bus_keyed = true;
+        real_type own_bus_keys = 0.;
+        real_type own_bus_range = 0.;
+        for(int other : members){
+            const Raw & o = raws[other];
+            bool other_bus_keyed = true;
+            for(int third : members){
+                if(raws[third].bus == o.bus && !has_key(raws[third].key)) other_bus_keyed = false;
+            }
+            all_buses_keyed = all_buses_keyed && other_bus_keyed;
+            if(o.bus != r.bus) continue;
+            own_bus_range += o.weight;
+            if(has_key(o.key)) own_bus_keys += o.key; else own_bus_keyed = false;
+        }
+        if(all_buses_keyed) return r.key;
+        if(own_bus_keyed) return own_bus_range * (r.key / own_bus_keys);
+        return r.weight;
+    };
+
     int cursor = 0;
     for(int g = 0; g < ng; ++g){
         data.reg_bus(g) = grp_reg[g];
@@ -501,7 +551,8 @@ void VoltageControlPlan::_group_and_emit(const std::vector<Raw> & raws)
             data.elem_id(cursor) = r.elem_id;
             data.slope(cursor) = r.slope;
             // floor the sharing key to keep the N>1 sharing rows non-singular
-            data.weight(cursor) = (std::abs(r.weight) > BaseConstants::_tol_equal_float) ? r.weight : BaseConstants::_tol_equal_float;
+            const real_type w = sharing_weight(grp_members[g], idx);
+            data.weight(cursor) = (std::abs(w) > BaseConstants::_tol_equal_float) ? w : BaseConstants::_tol_equal_float;
             data.group(cursor) = g;
             ++cursor;
         }

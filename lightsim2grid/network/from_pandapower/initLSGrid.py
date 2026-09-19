@@ -20,7 +20,7 @@ from ._aux_add_sgen import _aux_add_sgen
 from ._aux_add_load import _aux_add_load
 from ._aux_add_trafo import _aux_add_trafo
 from ._aux_add_line import _aux_add_line
-from ._aux_add_gen import _aux_add_gen
+from ._aux_add_gen import _aux_add_gen, _aux_add_gen_p_limits
 from ._aux_add_shunt import _aux_add_shunt
 from ._aux_check_legit import _aux_check_legit
 from ._aux_add_slack import _aux_add_slack
@@ -186,6 +186,11 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
 
     # deal with slack bus
     added_gen_bus = _aux_add_slack(model, pp_net, pp_to_ls, pp_orig_file)
+
+    # optional active power limits (min_p_mw / max_p_mw), once every generator exists --
+    # `_aux_add_slack` may have appended some. Nothing in the powerflow reads them, see
+    # `_aux_add_gen_p_limits`.
+    _aux_add_gen_p_limits(model, pp_net)
 
     if init_subid:
         # tell the LSGrid which substation / voltage level each element belongs to.

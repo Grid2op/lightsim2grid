@@ -817,7 +817,10 @@ class LightSimBackend(Backend):
             self._grid.turnedoff_no_pv()
     
     def _assign_right_solver(self):
-        slack_weights = np.array([el.slack_weight for el in self._grid.get_generators()])
+        # storage units share the distributed slack with the generators: a battery
+        # taking part in it makes the slack distributed even beside a single slack generator
+        slack_weights = np.array([el.slack_weight for el in self._grid.get_generators()] +
+                                 [el.slack_weight for el in self._grid.get_storages()])
         nb_slack_nonzero = (np.abs(slack_weights) > 1e-5).sum()
         has_single_slack = nb_slack_nonzero == 1
         if has_single_slack and not self._dist_slack_non_renew:

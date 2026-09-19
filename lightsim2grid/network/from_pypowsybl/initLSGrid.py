@@ -53,6 +53,7 @@ def init(net : pypo.network.Network,
          convert_dangling_lines: bool=False,
          fuse_zero_impedance_branches: bool=False,
          zero_impedance_threshold_pu: float=1e-8,
+         battery_active_power_control: str="auto",
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -204,6 +205,16 @@ def init(net : pypo.network.Network,
                        Matches OpenLoadFlow's ``lowImpedanceThreshold`` default.
     :type zero_impedance_threshold_pu: float
 
+    :param battery_active_power_control: Where the batteries' ``activePowerControl``
+        extension is read from, when the default distributed slack (no ``gen_slack_id``
+        nor ``slack_bus_id``) also distributes on the batteries, as OpenLoadFlow does.
+        ``"auto"`` (default) reads it off pypowsybl when it lists batteries there, else
+        off an XIIDM export of ``net`` (pypowsybl <= 1.16.1 does not list them; the
+        export costs about the size of the network file); ``"extension"`` never exports
+        the network; ``"default"`` gives every battery OpenLoadFlow's defaults
+        (participating, droop 4).
+    :type battery_active_power_control: str
+
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
     """
@@ -270,7 +281,9 @@ def init(net : pypo.network.Network,
     df_batt, batt_sub = _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
 
     # slack bus(es)
-    gen_slack_ids_int = _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id)
+    gen_slack_ids_int = _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
+                                       df_batt=df_batt,
+                                       battery_active_power_control=battery_active_power_control)
 
     # TODO checks
     # no 3windings trafo and other exotic stuff
