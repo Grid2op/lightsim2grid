@@ -463,6 +463,62 @@ class LS2G_API MultiSlack   // distributed-slack extension
             slack_absorbed_ += dx(slack_col_);
         }
 
+        /**
+         * Re-derive `slack_absorbed` from the active power balance of a residual
+         * that has just been evaluated, and fold the change into that residual.
+         *
+         * `sum_p` is the sum of EVERY live P mismatch row of `res` (the caller
+         * owns the ledger, so it does the sum -- see
+         * NRSystem::calibrate_slack_absorbed, the only caller). That sum is the
+         * grid's global active power balance:
+         *
+         *     sum_b Re(mis(b)) = sum_b Re(Scomp(b) - Sbus(b) - ...) + sa . W
+         *
+         * with W the total participation weight -- an equation that is AFFINE in
+         * `sa` and in nothing else, whatever the rest of the right-hand side is
+         * made of. Solving it for `sa` therefore gives the one value that closes
+         * the balance at the current voltages, exactly, without assuming what the
+         * injections are: the shunt / charging losses of the starting point and
+         * the contribution of every element that does NOT go through Sbus (the
+         * hvdc droop flows, say) are in `sum_p` already.
+         *
+         * The residual is corrected rather than recomputed: `sa` enters `mis`
+         * only through `+ sa . slack_weights` (see adjust_mismatch), so shifting
+         * it by `delta` shifts each slack bus' P row by `-delta . weight` and
+         * leaves every other bus alone -- the weights are zero away from a slack
+         * bus, which is why the loop below walks the slack buses and not the
+         * grid. No Ybus . V product, no fresh residual.
+         *
+         * `mis` is the per-bus mismatch `res` was assembled from, shifted here
+         * with it: LSGrid::compute_results reads it back together with
+         * `slack_absorbed` (`mis.real() - slack_absorbed * slack_weights`, see
+         * _fill_bus_mismatch_ac) to publish what the generators produced, and a
+         * solve that converges on this very residual -- the whole point of the
+         * calibration -- never evaluates another one.
+         *
+         * Returns whether the state was shifted at all.
+         */
+        bool absorb_balance(real_type sum_p, Eigen::Ref<RealVect> res, Eigen::Ref<CplxVect> mis)
+        {
+            if (my_size_ == 0 || slack_weights_.size() != mis.size()) return false;
+            real_type total_w = static_cast<real_type>(0.);
+            for (int k = 0; k < my_size_; ++k) total_w += slack_weights_(slack_buses_[k]);
+            // A degenerate participation -- every weight zero, or a sweep row that
+            // masked the last participant out -- leaves the guess as it was: there
+            // is no bus to distribute to, and dividing by what is left would
+            // amplify the imbalance rather than place it.
+            if (std::abs(total_w) <= BaseConstants::_tol_equal_float) return false;
+            const real_type delta = sum_p / total_w;
+            for (int k = 0; k < my_size_; ++k) {
+                const int bus = slack_buses_[k];
+                const real_type shift = delta * slack_weights_(bus);
+                res(slack_p_rows_[k]) -= shift;
+                mis(bus) += static_cast<cplx_type>(shift);
+            }
+            slack_absorbed_ += delta;
+            return true;
+        }
+
         void clear(){
             my_size_ = 0;
             ref_slack_id_ = 0;
@@ -1180,6 +1236,34 @@ public:
     // the zero-step call -- same reconstruct-then-evaluate path, same value to
     // the last bit -- not a shortcut through V_.
     real_type  mismatch_sq_norm_at_current() const;
+
+    /**
+     * Distributed slack: re-derive the `slack_absorbed` unknown from the residual
+     * `res` that was JUST evaluated (mismatch() / mismatch_into()), and fold the
+     * change into `res` and into the per-bus mismatch buffer.
+     *
+     * Called once per solve, between the first residual evaluation and the first
+     * convergence test (see NRAlgo::compute_pf). It replaces the per-solve initial
+     * guess `Re(sum(Sbus))` -- which is only the right answer at a flat start of a
+     * lossless grid whose whole right-hand side is Sbus -- by the value that closes
+     * the grid's active power balance at the starting voltages. Two consequences:
+     *
+     *   - a voltage that already satisfies the KCL (the output of another
+     *     powerflow, the previous row of a time series) now converges in ZERO
+     *     iterations instead of at least one, because the slack was the only
+     *     thing left wrong about it;
+     *   - anything contributing to the right-hand side WITHOUT going through
+     *     Sbus (the angle-droop hvdc flows, the shunt / line charging drawn at
+     *     the starting voltages) is accounted for, where summing Sbus ignored it.
+     *
+     * The cost is one pass over the P rows of a residual the caller has already
+     * paid for: no Ybus . V product, no second residual (see
+     * MultiSlack::absorb_balance for why a correction is exact here).
+     *
+     * A no-op -- and `false` -- without the MultiSlack extension (single-slack
+     * instantiation), or when the participation weights are degenerate.
+     */
+    bool calibrate_slack_absorbed(Eigen::Ref<RealVect> res);
 
     // Direct, allocation-light update of the LAST-registered extension's
     // `count` feature entries, identified purely by count and position (the

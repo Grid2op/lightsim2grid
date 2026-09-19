@@ -212,6 +212,14 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [FIXED] the fast-decoupled algorithms kept the distributed slack at its initial guess for
+  the whole solve, so each participant was short of its share of the losses and the
+  reference bus covered them alone. It is re-solved from the active balance at every
+  iteration now, and FDPF lands on the Newton-Raphson answer.
+- [IMPROVED] the Newton-Raphson starts its distributed slack from the active balance of
+  the first residual instead of ``sum(Sbus)``, which ignored the losses and every
+  injection outside Sbus (hvdc droop). A voltage that already meets the KCL now converges
+  in 0 iterations instead of 1, for one pass over the P rows.
 - [ADDED] ``compute_physical_violations`` also reports a generator the distributed slack
   pushed below ``min_p_mw`` or above ``max_p_mw``. The slack is solved in the Jacobian by
   participation factors that ignore limits, which is what OpenLoadFlow's

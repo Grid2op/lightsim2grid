@@ -33,6 +33,7 @@
 #include <cmath>
 #include <complex>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -114,6 +115,18 @@ CplxVect flat_start(const LSGrid & grid)
     return CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), cplx_type(1., 0.));
 }
 
+// the same mesh, with the PV generator 25 buses along made a slack participant
+// too: 60 / 40 between the reference machine at bus 0 and that one. Needs
+// nx * ny > 25 so the second generator exists.
+LSGrid make_dist_slack_mesh(int nx, int ny, real_type load_scale)
+{
+    LSGrid grid = make_mesh(nx, ny, load_scale);  // gen 0 is already the slack, weight 1
+    grid.add_gen_slackbus(0, 0.6);
+    grid.add_gen_slackbus(1, 0.4);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
 }  // namespace
 
 TEST_CASE("FDPF converges to the Newton-Raphson solution", "[fdpf]")
@@ -151,6 +164,91 @@ TEST_CASE("FDPF converges to the Newton-Raphson solution", "[fdpf]")
                     CHECK(std::abs(v(i) - v_ref(i)) < 1e-8);
                 }
             }
+        }
+    }
+}
+
+TEST_CASE("FDPF distributes the slack the way Newton-Raphson does", "[fdpf][slack]")
+{
+    // The distributed slack is a property of the GRID, not of the algorithm asked
+    // to solve it: both families must put the same power on the same machines.
+    //
+    // FDPF has no `slack_absorbed` unknown in its linear systems -- B' and B'' are
+    // constant matrices, and the row that unknown would need (the derivative of the
+    // losses) is not -- and it used to keep the per-solve GUESS, generation minus
+    // load, for the whole solve. That guess is short by the losses, so every
+    // participant under-produced its share of them and the difference landed on the
+    // reference bus, the one bus the fast-decoupled split writes no P equation for.
+    // It is an outer loop now (BaseFDPFAlgo::calibrate_slack_absorbed), re-solving
+    // the exact scalar balance at every mismatch, and the two families agree.
+    const real_type loads[] = {0.2, 1.0, 3.0};
+
+    for (real_type load : loads) {
+        const std::string what = "load " + std::to_string(load);
+        LSGrid nr_grid = make_dist_slack_mesh(7, 7, load);
+        nr_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        const CplxVect v_ref = nr_grid.ac_pf(flat_start(nr_grid), 50, 1e-11);
+        INFO("newton-raphson reference: " << what);
+        REQUIRE(v_ref.size() > 0);
+        const RealVect p_ref = std::get<0>(nr_grid.get_gen_res());
+        const real_type sa_ref = nr_grid.get_slack_absorbed_solver();
+
+        for (AlgorithmType algo : {AlgorithmType::FDPF_XB_SparseLU,
+                                   AlgorithmType::FDPF_BX_SparseLU}) {
+            LSGrid grid = make_dist_slack_mesh(7, 7, load);
+            grid.init_fdpf_coeffs();
+            grid.change_algorithm(algo);
+            const CplxVect v = grid.ac_pf(flat_start(grid), 100, 1e-9);
+            INFO("fdpf: " << what);
+            REQUIRE(v.size() == v_ref.size());
+            for (Eigen::Index i = 0; i < v.size(); ++i) {
+                INFO("bus " << i);
+                CHECK(std::abs(v(i) - v_ref(i)) < 1e-7);
+            }
+            // the distribution itself, which the voltages alone would not pin down:
+            // what each machine is published as producing (MW), and the state it
+            // comes from
+            CHECK(grid.get_slack_absorbed_solver() == Approx(sa_ref).margin(1e-7));
+            const RealVect p = std::get<0>(grid.get_gen_res());
+            REQUIRE(p.size() == p_ref.size());
+            for (Eigen::Index i = 0; i < p.size(); ++i) {
+                INFO("generator " << i);
+                CHECK(p(i) == Approx(p_ref(i)).margin(1e-5));
+            }
+        }
+    }
+}
+
+TEST_CASE("a single slack leaves the FDPF untouched", "[fdpf][slack]")
+{
+    // With one slack bus there is nothing to distribute: `slack_absorbed` shifts
+    // the mismatch at the reference bus alone, which owns no equation, and the
+    // published injection is read back as `mis.real() - sa * weight` whatever `sa`
+    // is. So the calibration is skipped there (see BaseFDPFAlgo::dist_slack_), and
+    // this pins that the single-slack answer is the one it always was -- the same
+    // solution as Newton-Raphson, reached in the same number of iterations as the
+    // mesh above it.
+    for (AlgorithmType algo : {AlgorithmType::FDPF_XB_SparseLU,
+                               AlgorithmType::FDPF_BX_SparseLU}) {
+        LSGrid nr_grid = make_mesh(7, 7, 1.0);
+        nr_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        const CplxVect v_ref = nr_grid.ac_pf(flat_start(nr_grid), 50, 1e-11);
+        REQUIRE(v_ref.size() > 0);
+        const RealVect p_ref = std::get<0>(nr_grid.get_gen_res());
+
+        LSGrid grid = make_mesh(7, 7, 1.0);
+        grid.init_fdpf_coeffs();
+        grid.change_algorithm(algo);
+        const CplxVect v = grid.ac_pf(flat_start(grid), 100, 1e-9);
+        REQUIRE(v.size() == v_ref.size());
+        for (Eigen::Index i = 0; i < v.size(); ++i) {
+            INFO("bus " << i);
+            CHECK(std::abs(v(i) - v_ref(i)) < 1e-8);
+        }
+        const RealVect p = std::get<0>(grid.get_gen_res());
+        for (Eigen::Index i = 0; i < p.size(); ++i) {
+            INFO("generator " << i);
+            CHECK(p(i) == Approx(p_ref(i)).margin(1e-5));
         }
     }
 }
