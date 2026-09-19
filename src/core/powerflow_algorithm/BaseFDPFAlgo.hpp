@@ -176,9 +176,9 @@ class BaseFDPFAlgo final: public BaseAlgo
         {
             const real_type total_w = slack_weights.sum();
             // nothing to distribute to (no weight left after a re-weighting, a
-            // degenerate input): leave the state as it is. Same 1e-12 floor as the
-            // batch sweeps' own re-weighting.
-            if(std::abs(total_w) <= static_cast<real_type>(1e-12)) return;
+            // degenerate input): leave the state as it is, rather than divide by
+            // what is left and amplify the imbalance instead of placing it.
+            if(std::abs(total_w) <= _tol_equal_float) return;
             const real_type delta = -mis_bus_.real().sum() / total_w;
             slack_absorbed += delta;
             mis_bus_.array() += (delta * slack_weights.array()).template cast<cplx_type>();

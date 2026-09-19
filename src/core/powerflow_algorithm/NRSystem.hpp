@@ -485,31 +485,39 @@ class LS2G_API MultiSlack   // distributed-slack extension
          * The residual is corrected rather than recomputed: `sa` enters `mis`
          * only through `+ sa . slack_weights` (see adjust_mismatch), so shifting
          * it by `delta` shifts each slack bus' P row by `-delta . weight` and
-         * leaves every other row alone. No Ybus . V product, no fresh residual.
+         * leaves every other bus alone -- the weights are zero away from a slack
+         * bus, which is why the loop below walks the slack buses and not the
+         * grid. No Ybus . V product, no fresh residual.
          *
-         * Returns the shift applied (0 when there is nothing to do), which the
-         * caller needs to keep the per-bus mismatch buffer in step.
+         * `mis` is the per-bus mismatch `res` was assembled from, shifted here
+         * with it: LSGrid::compute_results reads it back together with
+         * `slack_absorbed` (`mis.real() - slack_absorbed * slack_weights`, see
+         * _fill_bus_mismatch_ac) to publish what the generators produced, and a
+         * solve that converges on this very residual -- the whole point of the
+         * calibration -- never evaluates another one.
+         *
+         * Returns whether the state was shifted at all.
          */
-        real_type absorb_balance(real_type sum_p, Eigen::Ref<RealVect> res)
+        bool absorb_balance(real_type sum_p, Eigen::Ref<RealVect> res, Eigen::Ref<CplxVect> mis)
         {
-            if (my_size_ == 0 || slack_weights_.size() == 0) return static_cast<real_type>(0.);
+            if (my_size_ == 0 || slack_weights_.size() != mis.size()) return false;
             real_type total_w = static_cast<real_type>(0.);
             for (int k = 0; k < my_size_; ++k) total_w += slack_weights_(slack_buses_[k]);
-            // a degenerate participation (every weight zero, or a sweep row that
-            // masked the last participant out) leaves the guess as it was: there
-            // is no bus to distribute to. Same 1e-12 floor as the batch sweeps'
-            // own re-weighting (BaseBatchSweep::_masked_slack_weights).
-            if (std::abs(total_w) <= static_cast<real_type>(1e-12)) return static_cast<real_type>(0.);
+            // A degenerate participation -- every weight zero, or a sweep row that
+            // masked the last participant out -- leaves the guess as it was: there
+            // is no bus to distribute to, and dividing by what is left would
+            // amplify the imbalance rather than place it.
+            if (std::abs(total_w) <= BaseConstants::_tol_equal_float) return false;
             const real_type delta = sum_p / total_w;
-            if (delta == static_cast<real_type>(0.)) return static_cast<real_type>(0.);
-            for (int k = 0; k < my_size_; ++k)
-                res(slack_p_rows_[k]) -= delta * slack_weights_(slack_buses_[k]);
+            for (int k = 0; k < my_size_; ++k) {
+                const int bus = slack_buses_[k];
+                const real_type shift = delta * slack_weights_(bus);
+                res(slack_p_rows_[k]) -= shift;
+                mis(bus) += static_cast<cplx_type>(shift);
+            }
             slack_absorbed_ += delta;
-            return delta;
+            return true;
         }
-
-        // participation weights, indexed by bus (0 away from a slack bus)
-        const RealVect& slack_weights() const { return slack_weights_; }
 
         void clear(){
             my_size_ = 0;

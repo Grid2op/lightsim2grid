@@ -477,18 +477,11 @@ inline bool NRSystem<Base, Rest...>::calibrate_slack_absorbed(Eigen::Ref<RealVec
     const std::vector<int>& p_rows = ledger_.p_rows();
     for (size_t k = 0; k < p_rows.size(); ++k) sum_p += res(p_rows[k]);
 
-    const real_type delta = ms->absorb_balance(sum_p, res);
-    if (delta == static_cast<real_type>(0.)) return false;
-
-    // Keep the per-bus mismatch buffer in step with the state it was computed
-    // for: LSGrid::compute_results reads it back together with slack_absorbed
-    // (`mis.real() - slack_absorbed * slack_weights`, see _fill_bus_mismatch_ac)
-    // to publish what the generators produced, and a solve that converges on
-    // this very residual -- the whole point of this calibration -- never
-    // evaluates another one.
+    // The residual AND the per-bus mismatch it was assembled from are shifted
+    // together, by the component that owns the state -- whoever holds that buffer
+    // (see mis_own_), it is the one a caller reads through get_bus_mismatch().
     CplxVect & mis = (mis_ptr_ != nullptr) ? *mis_ptr_ : mis_own_;
-    const RealVect& w = ms->slack_weights();
-    if (mis.size() == w.size()) mis.array() += (delta * w.array()).template cast<cplx_type>();
+    if (!ms->absorb_balance(sum_p, res, mis)) return false;
 
     // A masked bus that kept a participation weight (nothing in-tree produces
     // one -- the sweeps zero and renormalise those weights themselves, see
