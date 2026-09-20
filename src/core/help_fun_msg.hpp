@@ -339,6 +339,8 @@ struct LS2G_API DocIterator
     static const std::string storage_target_vm_pu;
     static const std::string storage_min_q_mvar;
     static const std::string storage_max_q_mvar;
+    static const std::string storage_min_p_mw;
+    static const std::string storage_max_p_mw;
     static const std::string storage_regulated_bus_id;
     static const std::string storage_is_slack;
     static const std::string storage_slack_weight;

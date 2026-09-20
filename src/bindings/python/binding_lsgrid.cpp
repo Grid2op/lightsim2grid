@@ -178,6 +178,18 @@ void bind_gridmodel(py::module_& m) {
              "-- can land beyond what it can deliver. That is a physical violation, and these "
              "are what the batch algorithms' `compute_physical_violations` compares against "
              "(LOW_P / HIGH_P on the GENERATOR).")
+        .def("set_storage_p_limits", &LSGrid::set_storage_p_limits,
+             py::arg("p_min_mw"), py::arg("p_max_mw"),
+             "Active power limits (MW) of the storage units, OPTIONAL and never enforced -- "
+             "same shape and same purpose as `set_gen_p_limits`, because a storage unit takes "
+             "a share of the distributed slack under the same rule (`add_storage_slackbus`). "
+             "One entry per unit, NaN where a unit has none, two empty vectors to drop them "
+             "again (`StorageInfo.min_p_mw` / `max_p_mw` then read NaN).\n\n"
+             "/!\\ The limits are in the GENERATOR convention (`min_p <= max_p`, what the unit "
+             "can INJECT), like `StorageInfo.min_q_mvar` / `max_q_mvar` and like an IIDM "
+             "battery's own `min_p` / `max_p` -- and so the opposite of `target_p_mw` / "
+             "`res_p_mw`, which are in the load convention. A violation is reported the same "
+             "way round (LOW_P / HIGH_P on the STORAGE).")
         .def("set_gen_names", &LSGrid::set_gen_names, DocLSGrid::set_gen_names.c_str())
         .def("set_load_names", &LSGrid::set_load_names, DocLSGrid::set_load_names.c_str())
         .def("set_storage_names", &LSGrid::set_storage_names, DocLSGrid::set_storage_names.c_str())

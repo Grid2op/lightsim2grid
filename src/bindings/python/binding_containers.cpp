@@ -183,6 +183,8 @@ void bind_containers(py::module_& m) {
         .def_readonly("target_vm_pu", &StorageInfo::target_vm_pu, DocIterator::storage_target_vm_pu.c_str())
         .def_readonly("min_q_mvar", &StorageInfo::min_q_mvar, DocIterator::storage_min_q_mvar.c_str())
         .def_readonly("max_q_mvar", &StorageInfo::max_q_mvar, DocIterator::storage_max_q_mvar.c_str())
+        .def_readonly("min_p_mw", &StorageInfo::min_p_mw, DocIterator::storage_min_p_mw.c_str())
+        .def_readonly("max_p_mw", &StorageInfo::max_p_mw, DocIterator::storage_max_p_mw.c_str())
         .def_readonly("regulated_bus_id", &StorageInfo::regulated_bus_id, DocIterator::storage_regulated_bus_id.c_str())
         .def_readonly("is_slack", &StorageInfo::is_slack, DocIterator::storage_is_slack.c_str())
         .def_readonly("slack_weight", &StorageInfo::slack_weight, DocIterator::storage_slack_weight.c_str())

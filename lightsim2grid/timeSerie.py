@@ -155,16 +155,20 @@ class TimeSerie:
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is an *input* of the solve,
           so nothing saturates the droop on its own. OpenLoadFlow's
           ``HvdcAcEmulationLimits``.
-        * the **active power** of every generator carrying the **distributed slack**
-          (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR``): the slack is solved inside the
+        * the **active power** of every generator and every storage unit carrying the
+          **distributed slack** (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR`` /
+          ``STORAGE``): the slack is solved inside the
           Jacobian by fixed participation factors that know nothing about limits, so
           ``target_p + its share of the imbalance`` can land beyond ``min_p_mw`` /
           ``max_p_mw``. Per machine, unlike the reactive check: the active split is not a
           convention, it is the participation factors the caller chose. Needs those limits,
-          which are optional (:func:`lightsim2grid.network.LSGrid.set_gen_p_limits`); a grid
-          without them reports nothing here. OpenLoadFlow's ``DistributedSlack``.
+          which are optional (:func:`lightsim2grid.network.LSGrid.set_gen_p_limits` /
+          :func:`lightsim2grid.network.LSGrid.set_storage_p_limits`); a grid without them
+          reports nothing here. A storage unit's are read -- and its violation reported --
+          in the *generator* convention, unlike its ``target_p_mw``. OpenLoadFlow's
+          ``DistributedSlack``.
 
-        The hvdc and generator checks need only the bus angles and the slack the step
+        The hvdc and active-power checks need only the bus angles and the slack the step
         distributed, so they work in DC too; the reactive one needs an AC algorithm that
         publishes its per-bus mismatch (every built-in AC algorithm does) and ``compute``
         raises for one that does not. A DC batch reports the two active-power checks alone --

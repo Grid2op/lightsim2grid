@@ -72,6 +72,21 @@ def _aux_battery_q_limits(df_batt):
     return min_q.astype(np.float32).astype(float), max_q.astype(np.float32).astype(float)
 
 
+def _aux_battery_p_limits(df_batt):
+    """``(min_p, max_p)`` of the batteries in MW, IIDM's own (generator) convention:
+    what the unit can inject, ``min_p <= max_p``. A limit that is not a finite number
+    becomes NaN, which the checks read as "no limit for that one"."""
+    def col(name):
+        if name not in df_batt.columns:
+            return np.full(len(df_batt), np.nan)
+        return np.asarray(df_batt[name].values, dtype=np.float64).copy()
+    min_p_mw = col("min_p")
+    max_p_mw = col("max_p")
+    min_p_mw[~np.isfinite(min_p_mw)] = np.nan
+    max_p_mw[~np.isfinite(max_p_mw)] = np.nan
+    return min_p_mw, max_p_mw
+
+
 def _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl):
     """Add every storage unit (IIDM battery) of ``net`` to ``model``. IIDM gives
     the battery setpoints in the *generator* convention (positive target_p =
@@ -106,5 +121,14 @@ def _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_p
         if disco:
            model.deactivate_storage(batt_id)
     model.set_storage_names(df_batt.index)
+
+    # active power limits: like a generator's (see `_aux_add_generators.py`), and for the
+    # same reason -- a battery takes a share of the distributed slack under OpenLoadFlow's
+    # rule (see `_aux_battery_apc.py`), so what the distribution ends up asking of it can
+    # leave what it can deliver. Kept in IIDM's own (generator) convention, unlike the
+    # setpoints above: that is the convention `set_storage_p_limits` and the check read.
+    min_p_mw, max_p_mw = _aux_battery_p_limits(df_batt)
+    if np.any(np.isfinite(min_p_mw)) or np.any(np.isfinite(max_p_mw)):
+        model.set_storage_p_limits(min_p_mw, max_p_mw)
 
     return df_batt, batt_sub

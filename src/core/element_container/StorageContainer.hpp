@@ -15,6 +15,8 @@
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
+#include <limits>
+
 #include "Utils.hpp"
 #include "SlackParticipation.hpp"
 #include "VoltageSourceContainer.hpp"
@@ -30,6 +32,10 @@ class LS2G_API StorageInfo : public OneSideContainer_PQ::OneSidePQInfo
         real_type target_vm_pu;
         real_type min_q_mvar;
         real_type max_q_mvar;
+        // active power limits (MW, GENERATOR convention, NaN when the grid was never
+        // given any) -- see StorageContainer::set_p_limits
+        real_type min_p_mw;
+        real_type max_p_mw;
         int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id: local control, the only kind supported)
         bool is_slack;
         real_type slack_weight;
@@ -89,7 +95,9 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
            std::vector<real_type>,         // max_q_
            std::vector<int>,               // regulated_bus_id_ (== own bus)
            std::vector<bool>,              // slack participation flag
-           std::vector<real_type>          // slack weight
+           std::vector<real_type>,         // slack weight
+           std::vector<real_type>,         // p_min_mw_ (appended, optional: empty if unset)
+           std::vector<real_type>          // p_max_mw_ (appended, optional: empty if unset)
            > ;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -100,6 +108,8 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
             REGULATED_BUS_ID,
             SLACKBUS,
             SLACK_WEIGHT,
+            P_MIN_MW,
+            P_MAX_MW,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -138,6 +148,48 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
 
         real_type get_min_q(int storage_id) const {return min_q_.coeff(storage_id);}
         real_type get_max_q(int storage_id) const {return max_q_.coeff(storage_id);}
+
+        /**
+         * Active power limits (MW, **generator convention**: `min_p <= max_p`, what the
+         * unit can INJECT -- the same convention as `min_q_` / `max_q_` above and as an
+         * IIDM battery's own `min_p` / `max_p`, and the opposite of the `target_p_mw`
+         * this container stores). OPTIONAL, exactly like a generator's
+         * (GeneratorContainer::set_p_limits): nothing in the powerflow reads them, and a
+         * grid that was never given any simply has none -- the two vectors stay empty
+         * and `get_min_p` / `get_max_p` answer NaN.
+         *
+         * They matter for the same reason: a storage unit can take part in the
+         * distributed slack, which is solved INSIDE the Newton system with fixed
+         * participation factors and no notion of a limit, so its converged active power
+         * is `target + its share of the imbalance` and can land anywhere. See
+         * batch_algorithm/GenPCheck.hpp.
+         *
+         * Pass two empty vectors to drop them again.
+         */
+        void set_p_limits(const Eigen::Ref<const RealVect> & p_min_mw,
+                          const Eigen::Ref<const RealVect> & p_max_mw){
+            if((p_min_mw.size() == 0) && (p_max_mw.size() == 0)){
+                p_min_mw_ = RealVect();
+                p_max_mw_ = RealVect();
+                return;
+            }
+            check_size(p_min_mw, nb(), "StorageContainer::set_p_limits (p_min_mw)");
+            check_size(p_max_mw, nb(), "StorageContainer::set_p_limits (p_max_mw)");
+            p_min_mw_ = p_min_mw;
+            p_max_mw_ = p_max_mw;
+        }
+        Eigen::Ref<const RealVect> get_p_min_mw() const {return p_min_mw_;}
+        Eigen::Ref<const RealVect> get_p_max_mw() const {return p_max_mw_;}
+        /// NaN where no limit was given -- for the whole grid (never set) or for that one
+        /// unit (a NaN in the vector handed to set_p_limits)
+        real_type get_min_p(int storage_id) const {
+            return p_min_mw_.size() > 0 ? p_min_mw_.coeff(storage_id)
+                                        : std::numeric_limits<real_type>::quiet_NaN();
+        }
+        real_type get_max_p(int storage_id) const {
+            return p_max_mw_.size() > 0 ? p_max_mw_.coeff(storage_id)
+                                        : std::numeric_limits<real_type>::quiet_NaN();
+        }
 
         /// the reactive output (MVAr, GENERATOR convention, what the split hands every
         /// machine) of a regulating unit, stored in this container's load convention.
@@ -200,6 +252,10 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         RealVect min_q_;
         RealVect max_q_;
 
+        // active range (MW, generator convention), OPTIONAL: empty when unset, see set_p_limits
+        RealVect p_min_mw_;
+        RealVect p_max_mw_;
+
         // distributed slack participation
         SlackParticipation slack_;
 };
@@ -210,6 +266,8 @@ inline StorageInfo::StorageInfo(const StorageContainer & r_data_storage, int my_
         target_vm_pu(0.),
         min_q_mvar(0.),
         max_q_mvar(0.),
+        min_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
+        max_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
         regulated_bus_id(-1),
         is_slack(false),
         slack_weight(-1.0)
@@ -220,6 +278,8 @@ inline StorageInfo::StorageInfo(const StorageContainer & r_data_storage, int my_
         target_vm_pu = r_data_storage.target_vm_pu_.coeff(my_id);
         min_q_mvar = r_data_storage.min_q_.coeff(my_id);
         max_q_mvar = r_data_storage.max_q_.coeff(my_id);
+        min_p_mw = r_data_storage.get_min_p(my_id);
+        max_p_mw = r_data_storage.get_max_p(my_id);
         regulated_bus_id = r_data_storage.regulated_bus_id_(my_id);
         is_slack = r_data_storage.slack_.is_slack(my_id);
         slack_weight = r_data_storage.slack_.weight(my_id);

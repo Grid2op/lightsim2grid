@@ -999,6 +999,23 @@ class LS2G_API LSGrid final
                               const Eigen::Ref<const RealVect> & p_max_mw){
             generators_.set_p_limits(p_min_mw, p_max_mw);
         }
+        /**
+         * Same, for the storage units -- which take part in the distributed slack under
+         * the same rule as the generators (`add_storage_slackbus`), so their converged
+         * active power can leave what they can deliver in exactly the same way.
+         *
+         * /!\ The limits are in the **generator convention** (`min_p <= max_p`, what the
+         * unit can INJECT), like `min_q_mvar` / `max_q_mvar` and like an IIDM battery's
+         * own `min_p` / `max_p` -- and so the opposite of the `target_p_mw` / `res_p_mw`
+         * this grid stores for a storage unit, which are in the load convention. A
+         * violation is reported the same way round (see `compute_physical_violations`).
+         *
+         * Pass two empty vectors to drop them.
+         */
+        void set_storage_p_limits(const Eigen::Ref<const RealVect> & p_min_mw,
+                                  const Eigen::Ref<const RealVect> & p_max_mw){
+            storages_.set_p_limits(p_min_mw, p_max_mw);
+        }
         void set_line_current_limit_side1(const Eigen::Ref<const RealVect> & limit_a1_ka){
             GenericContainer::check_size(limit_a1_ka, powerlines_.nb(), "set_line_current_limit_side1");
             powerlines_.set_limit_a1_ka(limit_a1_ka);

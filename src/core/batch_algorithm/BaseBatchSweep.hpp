@@ -746,28 +746,28 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //     linear regime (HIGH_P on the HVDC, see HvdcPCheck.hpp): did it transmit more
         //     than `pmax_1to2_mw` / `pmax_2to1_mw` allow in that direction? OpenLoadFlow's
         //     `HvdcAcEmulationLimits`;
-        //   * the ACTIVE POWER of each generator carrying the DISTRIBUTED SLACK (LOW_P /
-        //     HIGH_P on the GENERATOR, see GenPCheck.hpp): the slack is solved inside the
-        //     Jacobian by participation factors that know nothing about limits, so
-        //     `target_p + share` can land beyond `min_p_mw` / `max_p_mw`. OpenLoadFlow's
-        //     `DistributedSlack`, whose whole job is to take a saturated machine out of the
-        //     distribution and re-share what is left.
+        //   * the ACTIVE POWER of each generator and each storage unit carrying the
+        //     DISTRIBUTED SLACK (LOW_P / HIGH_P on the GENERATOR / STORAGE, see
+        //     GenPCheck.hpp): the slack is solved inside the Jacobian by participation
+        //     factors that know nothing about limits, so `target_p + share` can land beyond
+        //     `min_p_mw` / `max_p_mw`. OpenLoadFlow's `DistributedSlack`, whose whole job is
+        //     to take a saturated machine out of the distribution and re-share what is left.
         //
         // Available on all four instantiations (unlike compute_limit_violations, which is
         // contingency-only): a time series that walks a load curve is exactly as likely to
         // ask a bus for reactive power it does not have, or a machine for active power it
         // cannot deliver, as a contingency is.
         //
-        // WHAT EACH CHECK NEEDS. The hvdc one needs only the bus angles and the generator
+        // WHAT EACH CHECK NEEDS. The hvdc one needs only the bus angles and the active-power
         // one only the slack the row distributed -- both of which every algorithm leaves
         // behind, AC and DC alike. The reactive one needs an AC algorithm that publishes
         // its per-bus mismatch (BaseAlgo::fills_bus_mismatch -- every built-in AC family
         // does; a plugin solver has to opt in), and compute() raises for one that does not
         // rather than reporting nothing. In DC it is simply not applicable: a DC powerflow
         // has no reactive power at all, so a DC batch reports the two active-power checks
-        // and nothing is hidden by it. The generator check also needs the limits
-        // themselves, which are optional (LSGrid::set_gen_p_limits): a grid that has none
-        // simply reports nothing there.
+        // and nothing is hidden by it. The active-power check also needs the limits
+        // themselves, which are optional (LSGrid::set_gen_p_limits /
+        // set_storage_p_limits): a grid that has none simply reports nothing there.
         //
         // Setting this drops this batch's base case and results, but NOT its registrations
         // (the contingencies / injections), so unlike compute_limit_violations -- which

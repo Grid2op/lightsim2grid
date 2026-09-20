@@ -3178,6 +3178,27 @@ const std::string DocIterator::storage_max_q_mvar = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::storage_min_p_mw = R"mydelimiter(
+    Minimum active power (MW, generator convention) of this storage unit -- OPTIONAL: NaN if
+    the grid was never given any (see :func:`lightsim2grid.network.LSGrid.set_storage_p_limits`).
+
+    .. warning::
+        Generator convention, like :attr:`min_q_mvar`: this is what the unit can INJECT, so it
+        is the opposite way round from :attr:`target_p_mw` and :attr:`res_p_mw`, which are in
+        the load convention.
+
+    Nothing enforces it; it is what says whether the active power a distributed slack ended up
+    asking of this unit is one it could actually deliver (see the batch algorithms'
+    ``compute_physical_violations``).
+
+)mydelimiter";
+
+const std::string DocIterator::storage_max_p_mw = R"mydelimiter(
+    Maximum active power (MW, generator convention) of this storage unit -- OPTIONAL, see
+    :attr:`min_p_mw`.
+
+)mydelimiter";
+
 const std::string DocIterator::storage_regulated_bus_id = R"mydelimiter(
     Grid bus id whose voltage this storage unit regulates: always its own bus (remote voltage
     regulation is not supported for storage units).

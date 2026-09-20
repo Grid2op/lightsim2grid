@@ -513,6 +513,140 @@ class TestGenPFromPython(unittest.TestCase):
             assert np.isnan(gen.max_p_mw)
 
 
+class TestStoragePFromPython(unittest.TestCase):
+    """the same check on a STORAGE unit: batteries take a share of the distributed slack
+    under the same rule as the generators (`add_storage_slackbus`), so their converged
+    active power leaves `min_p_mw` / `max_p_mw` in exactly the same way.
+
+    The one thing that differs is the convention. A storage unit's setpoints and results
+    are in the LOAD convention here (positive = drawn from the grid), while its limits --
+    like its reactive range, and like an IIDM battery's own `min_p` / `max_p` -- are in the
+    GENERATOR one, and so is the value reported."""
+
+    @staticmethod
+    def _slack_grid(w_gen=1., w_sto=1., target_p_mw=-10.):
+        """the 4-bus radial feeder 0-1-2-3 with the 80 MW / 60 MVAr load on bus 3, and the
+        slack SHARED between gen 0 (bus 0, target 0 MW) and a battery on bus 1 discharging
+        `-target_p_mw` MW. They stand on different buses, so each bus' active residual
+        belongs to exactly one machine and the reported value can be pinned on `ac_pf`."""
+        from lightsim2grid.lightsim2grid_cpp import LSGrid
+        grid = LSGrid()
+        grid.set_sn_mva(100.)
+        grid.set_init_vm_pu(1.0)
+        grid.init_bus(4, 1, np.full(4, 138.), 0, 0)
+        grid.init_powerlines(np.full(3, 0.01), np.full(3, 0.1), np.zeros(3, dtype=complex),
+                             np.array([0, 1, 2]), np.array([1, 2, 3]))
+        grid.init_loads(np.array([80.]), np.array([60.]), np.array([3]))
+        grid.init_generators(np.array([0.]), np.array([1.02]),
+                             np.full(1, -1e3), np.full(1, 1e3), np.array([0]))
+        grid.init_storages_full(np.array([target_p_mw]), np.array([0.]), [True],
+                                np.array([1.05]), np.array([-1e3]), np.array([1e3]),
+                                np.array([1], dtype=np.int32))
+        grid.add_gen_slackbus(0, w_gen)
+        grid.add_storage_slackbus(0, w_sto)
+        grid.tell_solver_need_reset()
+        return grid
+
+    @staticmethod
+    def _reference_p(grid):
+        """`(storage, generator)` converged active power as a single ac_pf publishes it,
+        both in the GENERATOR convention -- the storage one negated, since `res_p_mw` is in
+        the load convention"""
+        grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        return (-grid.get_storages()[0].res_p_mw, grid.get_generators()[0].res_p_mw)
+
+    def _one_row(self, grid):
+        ts = TimeSeriesCPP(grid)
+        ts.compute_physical_violations = True
+        ts.physical_violation_tol_mva = 0.
+        ts.modify_gen_p(np.array([[gen.target_p_mw for gen in grid.get_generators()]]))
+        ts.compute(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        assert ts.converged_mask()[0]
+        return ts.get_physical_violations()[0]
+
+    def test_reports_the_power_ac_pf_publishes(self):
+        p_sto, _ = self._reference_p(self._slack_grid())
+        assert p_sto > 10., "the battery must actually be pushed past its target"
+
+        pmax = p_sto - 5.
+        grid = self._slack_grid()
+        grid.set_storage_p_limits(np.array([np.nan]), np.array([pmax]))
+        grid.set_storage_names(["batt"])
+        viols = self._one_row(grid)
+        assert len(viols) == 1
+        assert viols[0].element_type == ViolationElementType.STORAGE
+        assert viols[0].element_id == 0
+        assert viols[0].side == 0
+        assert viols[0].violation_type == LimitViolationType.HIGH_P
+        assert viols[0].category == ViolationCategory.PHYSICAL
+        self.assertAlmostEqual(viols[0].value, p_sto, places=6)
+        self.assertAlmostEqual(viols[0].limit, pmax, places=9)
+        assert viols[0].name == "batt"
+
+    def test_below_min_p_is_low_p(self):
+        p_sto, _ = self._reference_p(self._slack_grid())
+        pmin = p_sto + 5.
+        grid = self._slack_grid()
+        grid.set_storage_p_limits(np.array([pmin]), np.array([np.nan]))
+        viols = self._one_row(grid)
+        assert len(viols) == 1
+        assert viols[0].element_type == ViolationElementType.STORAGE
+        assert viols[0].violation_type == LimitViolationType.LOW_P
+        self.assertAlmostEqual(viols[0].value, p_sto, places=6)
+
+    def test_the_load_convention_is_not_used(self):
+        # the load-convention power is the negated one, so limits around IT would report a
+        # violation the other way round -- this is the mistake the convention invites
+        p_sto, _ = self._reference_p(self._slack_grid())
+        grid = self._slack_grid()
+        grid.set_storage_p_limits(np.array([p_sto - 5.]), np.array([p_sto + 5.]))
+        assert len(self._one_row(grid)) == 0
+
+    def test_a_grid_without_limits_reports_nothing(self):
+        grid = self._slack_grid()
+        assert np.isnan(grid.get_storages()[0].min_p_mw)
+        assert np.isnan(grid.get_storages()[0].max_p_mw)
+        assert len(self._one_row(grid)) == 0
+
+    def test_a_non_participant_is_never_reported(self):
+        grid = self._slack_grid()
+        grid.remove_storage_slackbus(0)
+        grid.set_storage_p_limits(np.array([np.nan]), np.array([1.]))
+        assert len(self._one_row(grid)) == 0
+
+    def test_the_limits_are_optional_and_droppable(self):
+        grid = self._slack_grid()
+        grid.set_storage_p_limits(np.array([0.]), np.array([2.]))
+        assert grid.get_storages()[0].max_p_mw == 2.
+        grid.set_storage_p_limits(np.array([]), np.array([]))
+        assert np.isnan(grid.get_storages()[0].max_p_mw)
+
+    def test_a_generator_sharing_with_a_battery_keeps_its_own_share(self):
+        # the share a machine gets is a fraction of the RAW participation of its bus, and
+        # the per-bus weights the solver is given sum the two families together: leaving the
+        # battery out of that total would overstate what the generator is reported at
+        p_sto, p_gen = self._reference_p(self._slack_grid())
+        grid = self._slack_grid()
+        grid.set_gen_p_limits(np.array([np.nan]), np.array([p_gen - 5.]))
+        grid.set_storage_p_limits(np.array([np.nan]), np.array([p_sto - 5.]))
+        viols = self._one_row(grid)
+        assert len(viols) == 2
+        by_type = {v.element_type: v for v in viols}
+        self.assertAlmostEqual(by_type[ViolationElementType.GENERATOR].value, p_gen, places=6)
+        self.assertAlmostEqual(by_type[ViolationElementType.STORAGE].value, p_sto, places=6)
+
+    def test_the_weights_are_what_the_split_follows(self):
+        p_even = self._reference_p(self._slack_grid(1., 1.))
+        p_ref = self._reference_p(self._slack_grid(1., 3.))
+        assert abs(p_ref[0] - p_even[0]) > 1.
+
+        grid = self._slack_grid(1., 3.)
+        grid.set_storage_p_limits(np.array([np.nan]), np.array([p_ref[0] - 1.]))
+        viols = self._one_row(grid)
+        assert len(viols) == 1
+        self.assertAlmostEqual(viols[0].value, p_ref[0], places=6)
+
+
 class TestPhysicalViolationsWrapper(unittest.TestCase):
     """the python wrappers: the properties they expose, what they invalidate, and the
     `physical_violations` field of the `run()` result"""
