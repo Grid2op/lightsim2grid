@@ -34,12 +34,6 @@ Change Log
   ``bake_outer_loops`` made -- "gen xxx removed from the slack participants", "batt yyy
   frozen to PQ", "tap zzz fixed at position n" -- in a machine-readable form (json), with
   the rule that decided it.
-- Storage units can take part in the distributed slack (``StorageContainer::add_slackbus``)
-  but carry no active power limits, so ``compute_physical_violations`` cannot report a
-  battery the distribution pushed past what it can deliver, as ``GenPCheck`` does for the
-  generators. Add ``LSGrid::set_storage_p_limits`` (same optional, NaN-means-no-limit shape
-  as ``set_gen_p_limits``; needs a ``BINARY_FORMAT_VERSION`` bump), have the converters read
-  it, and extend the active-power check to the participating storage units.
 - ``modify_gen_v`` can only vary a GENERATOR's voltage set-point: there is no
   ``modify_svc_v`` and no ``modify_hvdc_v``. So a generator whose regulated bus is also
   regulated by a voltage-mode SVC or an hvdc converter station cannot be moved by a batch
@@ -212,6 +206,15 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] optional storage active power limits: ``LSGrid.set_storage_p_limits``,
+  ``StorageInfo.min_p_mw`` / ``max_p_mw`` (NaN when unset, generator convention),
+  read from pypowsybl's ``min_p`` / ``max_p``. ``compute_physical_violations`` reports a
+  battery the distributed slack pushed past them (LOW_P / HIGH_P on the new ``STORAGE``).
+- [FIXED] the active power reported for a generator sharing the distributed slack with a
+  storage unit: the batteries were left out of the raw participation total, which
+  overstated every generator's share.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 9 -> 10: a storage unit's optional active power
+  limits are part of its state. A file written by an earlier version no longer loads.
 - [FIXED] the fast-decoupled algorithms kept the distributed slack at its initial guess for
   the whole solve, so each participant was short of its share of the losses and the
   reference bus covered them alone. It is re-solved from the active balance at every

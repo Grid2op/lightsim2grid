@@ -333,14 +333,18 @@ class ContingencyAnalysis(object):
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
           linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? OpenLoadFlow's ``HvdcAcEmulationLimits``.
-        * the **active power** of every generator carrying the **distributed slack**
-          (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR``): the slack is solved inside the
+        * the **active power** of every generator and every storage unit carrying the
+          **distributed slack** (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR`` /
+          ``STORAGE``): the slack is solved inside the
           Jacobian by fixed participation factors that know nothing about limits, so
           ``target_p + its share of the imbalance`` can land beyond ``min_p_mw`` /
           ``max_p_mw``. Per machine, unlike the reactive check: the active split is not a
           convention, it is the participation factors the caller chose. Needs those limits,
-          which are optional (:func:`lightsim2grid.network.LSGrid.set_gen_p_limits`); a grid
-          without them reports nothing here. OpenLoadFlow's ``DistributedSlack``.
+          which are optional (:func:`lightsim2grid.network.LSGrid.set_gen_p_limits` /
+          :func:`lightsim2grid.network.LSGrid.set_storage_p_limits`); a grid without them
+          reports nothing here. A storage unit's are read -- and its violation reported --
+          in the *generator* convention, unlike its ``target_p_mw``. OpenLoadFlow's
+          ``DistributedSlack``.
 
         Independent of `compute_limit_violations`: either can be on without the other (though
         `run` still requires `compute_limit_violations`, and fills `physical_violations` only

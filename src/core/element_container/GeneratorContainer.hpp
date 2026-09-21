@@ -271,6 +271,10 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         // the generator's own (un-normalised) share of the distributed slack, as
         // aggregated per bus by accumulate_slack_weights_solver
         real_type get_gen_slack_weight(int gen_id) const {return slack_.weight(gen_id);}
+        /// the same, under the name every slack-participating container answers to (the
+        /// storage units have one too), so that code checking both families can be written
+        /// once -- see batch_algorithm/GenPCheck.hpp
+        real_type get_slack_weight(int gen_id) const {return slack_.weight(gen_id);}
         bool is_slack(int gen_id) const {return slack_.is_slack(gen_id);}
 
         /**

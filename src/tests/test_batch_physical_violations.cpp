@@ -329,6 +329,66 @@ void set_gen_p_limits(LSGrid & grid, const std::vector<real_type> & p_min,
 
 const real_type NO_LIMIT = std::numeric_limits<real_type>::quiet_NaN();
 
+// ----- ... and of the storage units that carry it ---------------------------
+// The same feeder with the slack shared between the slack generator (bus 0) and a BATTERY
+// on GEN_BUS discharging `-target_p_mw` MW -- a storage unit takes a share under the same
+// rule (SlackParticipation), so it is pushed off its target in exactly the same way. The
+// two stand on different buses, so each bus' active residual belongs to one machine and
+// the reported value can be pinned on `ac_pf`.
+//
+// /!\ The container stores a storage unit's active power in the LOAD convention, while its
+// limits -- and the value reported -- are in the GENERATOR one, like its reactive range.
+LSGrid make_storage_slack_grid(real_type w_gen, real_type w_sto,
+                               real_type target_p_load_conv = -10.)
+{
+    LSGrid grid = make_grid(std::vector<GenSpec>{slack_gen()});
+    RealVect sto_p(1), sto_q(1), sto_vm(1), sto_min_q(1), sto_max_q(1);
+    Eigen::VectorXi sto_bus(1);
+    sto_p << target_p_load_conv;
+    sto_q << 0.;
+    sto_vm << V_SET;
+    sto_min_q << -WIDE_Q;
+    sto_max_q << WIDE_Q;
+    sto_bus << GEN_BUS;
+    grid.init_storages_full(sto_p, sto_q, std::vector<bool>{true}, sto_vm, sto_min_q,
+                            sto_max_q, sto_bus);
+    // make_grid already gave generator 0 the whole slack: re-weight it and share
+    grid.add_gen_slackbus(0, w_gen);
+    grid.add_storage_slackbus(0, w_sto);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
+// the battery's converged active power in the GENERATOR convention, as a single-shot ac_pf
+// publishes it (StorageContainer::set_p_slack writes it in the load convention)
+real_type reference_storage_p(LSGrid & grid)
+{
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    grid.ac_pf(flat_start(grid), 30, 1e-11);
+    const RealVect res(std::get<0>(grid.get_storages_res()));
+    return -res(0);
+}
+
+void set_storage_p_limits(LSGrid & grid, real_type p_min, real_type p_max)
+{
+    RealVect lo(1), hi(1);
+    lo << p_min;
+    hi << p_max;
+    grid.set_storage_p_limits(lo, hi);
+}
+
+// the violation reported on the storage unit `storage_id`, or nullptr
+const LimitViolation * find_storage(const std::vector<LimitViolation> & viols, int storage_id)
+{
+    for (std::size_t k = 0; k < viols.size(); ++k) {
+        if (viols[k].element_type == ViolationElementType::STORAGE &&
+            viols[k].element_id == storage_id) {
+            return &viols[k];
+        }
+    }
+    return nullptr;
+}
+
 // the violation reported on `gen_id`, or nullptr
 const LimitViolation * find_gen(const std::vector<LimitViolation> & viols, int gen_id)
 {
@@ -1427,4 +1487,182 @@ TEST_CASE("a DC batch checks the distributed slack too", "[batch][physical][slac
     CHECK(viols[0].element_id == 1);
     CHECK(viols[0].violation_type == LimitViolationType::HIGH_P);
     CHECK(viols[0].value == Approx(p_dc(1)).margin(1e-6));
+}
+
+// ----- the distributed slack on a STORAGE unit ------------------------------
+// A battery takes a share of the slack under the same rule as a generator, so the same
+// thing happens to it: its converged active power is `target + share` and nothing in the
+// solve knows what it can deliver. What is specific is the CONVENTION -- the container
+// holds its active power in the load convention, its limits and the reported value are in
+// the generator one.
+
+TEST_CASE("a storage unit the distributed slack pushes past its limits is reported",
+          "[batch][physical][slack][storage]")
+{
+    LSGrid ref = make_storage_slack_grid(1., 1.);
+    const real_type p_ref = reference_storage_p(ref);
+    // it targets 10 MW of discharge and ends up well above it, so the case is meaningful
+    REQUIRE(p_ref > 10.);
+
+    SECTION("within its limits: nothing reported")
+    {
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        set_storage_p_limits(grid, -WIDE_Q, p_ref + 5.);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+    }
+
+    SECTION("above max_p_mw: HIGH_P, with the power ac_pf publishes and that unit's max")
+    {
+        const real_type pmax = p_ref - 5.;
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        set_storage_p_limits(grid, NO_LIMIT, pmax);
+        std::vector<std::string> names{"batt"};
+        grid.set_storage_names(names);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+
+        const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+        REQUIRE(viols.size() == 1);
+        CHECK(viols[0].element_type == ViolationElementType::STORAGE);
+        CHECK(viols[0].element_id == 0);
+        CHECK(viols[0].side == 0);
+        CHECK(viols[0].violation_type == LimitViolationType::HIGH_P);
+        CHECK(viols[0].category() == ViolationCategory::PHYSICAL);
+        CHECK(viols[0].value == Approx(p_ref).margin(1e-6));
+        CHECK(viols[0].limit == Approx(pmax));
+        CHECK(viols[0].name == "batt");
+        // the base ("n") case solves the same grid, so it reports the same thing
+        REQUIRE(ts.get_physical_violations_n().size() == 1);
+        CHECK(ts.get_physical_violations_n()[0].value == Approx(p_ref).margin(1e-6));
+    }
+
+    SECTION("below min_p_mw: LOW_P, the other way round")
+    {
+        const real_type pmin = p_ref + 5.;
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        set_storage_p_limits(grid, pmin, NO_LIMIT);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+
+        const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+        REQUIRE(viols.size() == 1);
+        CHECK(viols[0].violation_type == LimitViolationType::LOW_P);
+        CHECK(viols[0].value == Approx(p_ref).margin(1e-6));
+        CHECK(viols[0].limit == Approx(pmin));
+    }
+
+    SECTION("the limits are read in the GENERATOR convention")
+    {
+        // the load-convention power is the negated one: limits bracketing IT would put the
+        // unit far outside them, and this is the mistake the two conventions invite
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        set_storage_p_limits(grid, p_ref - 5., p_ref + 5.);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+    }
+
+    SECTION("a unit that takes no share is never reported")
+    {
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        grid.remove_storage_slackbus(0);
+        set_storage_p_limits(grid, NO_LIMIT, 1.);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+    }
+
+    SECTION("a grid that was never given any reports nothing")
+    {
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        CHECK(std::isnan(grid.get_storages().get_min_p(0)));
+        CHECK(std::isnan(grid.get_storages().get_max_p(0)));
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+    }
+}
+
+TEST_CASE("a generator sharing the slack with a battery keeps its own share",
+          "[batch][physical][slack][storage]")
+{
+    // The share a machine gets is a fraction of the RAW participation of its bus, and the
+    // per-bus weights the solver is given sum the two families together -- so the total the
+    // raw weight is recovered with has to count the battery as well. Leaving it out doubles
+    // what the generator is reported at here, which is what this pins down.
+    LSGrid ref = make_storage_slack_grid(1., 1.);
+    const real_type p_sto = reference_storage_p(ref);
+    const RealVect p_gen_vec(std::get<0>(ref.get_gen_res()));
+    const real_type p_gen = p_gen_vec(0);
+    REQUIRE(p_gen > 1.);
+
+    LSGrid grid = make_storage_slack_grid(1., 1.);
+    set_gen_p_limits(grid, {p_gen - 5.}, {NO_LIMIT});  // it ends up ABOVE this min: no report
+    set_storage_p_limits(grid, NO_LIMIT, p_sto - 5.);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+
+    const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+    REQUIRE(viols.size() == 1);
+    const LimitViolation * sto = find_storage(viols, 0);
+    REQUIRE(sto != nullptr);
+    CHECK(sto->value == Approx(p_sto).margin(1e-6));
+    CHECK(find_gen(viols, 0) == nullptr);
+
+    // ... and the generator's own value, checked the same way
+    LSGrid grid2 = make_storage_slack_grid(1., 1.);
+    set_gen_p_limits(grid2, {NO_LIMIT}, {p_gen - 5.});
+    grid2.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts2(grid2);
+    setup_one_row(ts2);
+    ts2.compute(flat_start(grid2), 30, 1e-11);
+    REQUIRE(ts2.converged_mask()[0] == 1);
+    const LimitViolation * gen = find_gen(ts2.get_physical_violations()[0], 0);
+    REQUIRE(gen != nullptr);
+    CHECK(gen->value == Approx(p_gen).margin(1e-6));
+}
+
+TEST_CASE("the weights are what the split follows, battery included",
+          "[batch][physical][slack][storage]")
+{
+    LSGrid even = make_storage_slack_grid(1., 1.);
+    const real_type p_even = reference_storage_p(even);
+    LSGrid ref = make_storage_slack_grid(1., 3.);
+    const real_type p_ref = reference_storage_p(ref);
+    REQUIRE(std::abs(p_ref - p_even) > 1.);
+
+    LSGrid grid = make_storage_slack_grid(1., 3.);
+    set_storage_p_limits(grid, NO_LIMIT, p_ref - 1.);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+
+    const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+    REQUIRE(viols.size() == 1);
+    CHECK(viols[0].value == Approx(p_ref).margin(1e-6));
 }

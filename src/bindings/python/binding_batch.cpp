@@ -76,16 +76,17 @@ void bind_batch_shared(py::class_<T> & cls)
                       "theta2)`` leave ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is "
                       "an INPUT of the solve, so nothing saturates the droop on its own. "
                       "OpenLoadFlow's ``HvdcAcEmulationLimits``.\n"
-                      "* the ACTIVE POWER of every generator carrying the DISTRIBUTED SLACK "
-                      "(LOW_P / HIGH_P on the GENERATOR): the slack is solved inside the "
+                      "* the ACTIVE POWER of every generator and every storage unit carrying "
+                      "the DISTRIBUTED SLACK (LOW_P / HIGH_P on the GENERATOR / STORAGE): the "
+                      "slack is solved inside the "
                       "Jacobian by fixed participation factors that know nothing about limits, "
                       "so ``target_p + its share of the imbalance`` can land beyond "
                       "``min_p_mw`` / ``max_p_mw``. Per machine, unlike the reactive check: "
                       "the active split is not a convention, it is the participation factors "
                       "the caller chose. Needs those limits, which are optional "
-                      "(LSGrid.set_gen_p_limits): a grid without them reports nothing here. "
-                      "OpenLoadFlow's ``DistributedSlack``.\n\n"
-                      "The hvdc and generator checks need only the bus angles and the slack "
+                      "(LSGrid.set_gen_p_limits / LSGrid.set_storage_p_limits): a grid without "
+                      "them reports nothing here. OpenLoadFlow's ``DistributedSlack``.\n\n"
+                      "The hvdc and active-power checks need only the bus angles and the slack "
                       "the row distributed, so they work in DC too; the reactive one needs an "
                       "AC algorithm that publishes its per-bus mismatch (every built-in AC "
                       "algorithm does, a plugin solver has to opt in) and compute() raises for "
@@ -448,7 +449,14 @@ void bind_batch(py::module_& m) {
                "/ HIGH_P). A reactive violation is reported on the BUS instead, because how a "
                "bus' reactive power is divided between its machines is a modelling "
                "convention, while the active one is divided by the participation factors the "
-               "caller chose.");
+               "caller chose.")
+        .value("STORAGE", ViolationElementType::STORAGE,
+               "A storage unit, by its own id -- the same statement as GENERATOR, since a "
+               "storage unit takes a share of the distributed slack under the same rule.\n\n"
+               "/!\\ `value` and `limit` are in the GENERATOR convention (positive = injected "
+               "into the grid), like the unit's `min_q_mvar` / `max_q_mvar` and unlike its "
+               "`target_p_mw` / `res_p_mw`, which lightsim2grid stores in the load "
+               "convention.");
 
     py::enum_<LimitViolationType>(m, "LimitViolationType", DocContingencyAnalysis::LimitViolationType.c_str())
         .value("LOW_VOLTAGE", LimitViolationType::LOW_VOLTAGE)
@@ -478,13 +486,14 @@ void bind_batch(py::module_& m) {
                "hvdc converter does not transmit more than it can, its own control saturates "
                "first (which is what status_droop models). Reported by "
                "compute_physical_violations, never enforced.\n\n"
-               "Also reported on a GENERATOR (element_type ViolationElementType.GENERATOR, "
-               "`side` unused): the distributed slack -- solved inside the Jacobian, by "
-               "participation factors that know nothing about limits -- asked a machine for "
-               "more than its max_p_mw.")
+               "Also reported on a GENERATOR or a STORAGE unit (element_type "
+               "ViolationElementType.GENERATOR / STORAGE, `side` unused): the distributed "
+               "slack -- solved inside the Jacobian, by participation factors that know "
+               "nothing about limits -- asked a machine for more than its max_p_mw.")
         .value("LOW_P", LimitViolationType::LOW_P,
-               "The distributed slack pushed a generator's active power BELOW its min_p_mw "
-               "(element_type is ViolationElementType.GENERATOR). Category PHYSICAL, see "
+               "The distributed slack pushed a generator's or a storage unit's active power "
+               "BELOW its min_p_mw (element_type is ViolationElementType.GENERATOR / "
+               "STORAGE). Category PHYSICAL, see "
                "HIGH_P: a machine does not deliver power it does not have, so the converged "
                "solution assumes a distribution that cannot happen -- which is exactly what "
                "OpenLoadFlow's DistributedSlack outer loop re-shares. Reported by "

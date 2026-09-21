@@ -65,6 +65,10 @@ void StorageContainer::init_full(const Eigen::Ref<const RealVect> & storage_p_mw
     regulated_bus_id_ = storage_bus_id;
     // no unit takes part in the distributed slack until told so (LSGrid::add_storage_slackbus)
     slack_.reset(static_cast<std::size_t>(size));
+    // the active power limits are optional and belong to the units this call replaces:
+    // a fresh container has none (see set_p_limits)
+    p_min_mw_ = RealVect();
+    p_max_mw_ = RealVect();
     reset_results();
 }
 
@@ -74,6 +78,9 @@ StorageContainer::StateRes StorageContainer::get_state() const
     std::vector<real_type> min_q(min_q_.begin(), min_q_.end());
     std::vector<real_type> max_q(max_q_.begin(), max_q_.end());
     std::vector<int> regulated_bus(regulated_bus_id_.begin(), regulated_bus_id_.end());
+    // optional, and stays empty when unset -- see set_p_limits
+    std::vector<real_type> p_min(p_min_mw_.begin(), p_min_mw_.end());
+    std::vector<real_type> p_max(p_max_mw_.begin(), p_max_mw_.end());
     StorageContainer::StateRes res(get_osc_pq_state(),  // osc : one side container
                                    voltage_regulator_on_,
                                    vm_pu,
@@ -81,7 +88,9 @@ StorageContainer::StateRes StorageContainer::get_state() const
                                    max_q,
                                    regulated_bus,
                                    slack_.flags(),
-                                   slack_.weights());
+                                   slack_.weights(),
+                                   p_min,
+                                   p_max);
     return res;
 }
 
@@ -96,6 +105,8 @@ void StorageContainer::set_state(StorageContainer::StateRes & my_state)
     std::vector<int> & regulated_bus = std::get<StateResIdx::REGULATED_BUS_ID>(my_state);
     std::vector<bool> & slack_bus = std::get<StateResIdx::SLACKBUS>(my_state);
     std::vector<real_type> & slack_weight = std::get<StateResIdx::SLACK_WEIGHT>(my_state);
+    std::vector<real_type> & p_min = std::get<StateResIdx::P_MIN_MW>(my_state);
+    std::vector<real_type> & p_max = std::get<StateResIdx::P_MAX_MW>(my_state);
 
     const auto size = nb();
     check_size(voltage_regulator_on, size, "voltage_regulator_on");
@@ -105,6 +116,11 @@ void StorageContainer::set_state(StorageContainer::StateRes & my_state)
     check_size(regulated_bus, size, "regulated_bus");
     check_size(slack_bus, size, "slack_bus");
     check_size(slack_weight, size, "slack_weight");
+    // optional: either both empty (no limit was ever set) or both one entry per unit
+    if(!p_min.empty() || !p_max.empty()){
+        check_size(p_min, size, "p_min_mw");
+        check_size(p_max, size, "p_max_mw");
+    }
 
     voltage_regulator_on_ = voltage_regulator_on;
     target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
@@ -112,6 +128,8 @@ void StorageContainer::set_state(StorageContainer::StateRes & my_state)
     max_q_ = RealVect::Map(max_q.data(), max_q.size());
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
     slack_.set(slack_bus, slack_weight);
+    p_min_mw_ = p_min.empty() ? RealVect() : RealVect::Map(p_min.data(), p_min.size());
+    p_max_mw_ = p_max.empty() ? RealVect() : RealVect::Map(p_max.data(), p_max.size());
     reset_results();
 }
 

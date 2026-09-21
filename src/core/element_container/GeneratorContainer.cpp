@@ -72,6 +72,11 @@ void GeneratorContainer::init_full(const Eigen::Ref<const RealVect> & generators
     regulated_bus_id_ = generators_bus_id;
     // no reactive sharing key: the reactive range decides (see has_reactive_key)
     reactive_key_ = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
+    // the active power limits are optional and belong to the machines this call replaces:
+    // a fresh container has none (see set_p_limits). Without this, re-initialising a grid
+    // with a different number of generators left limits sized for the previous ones.
+    p_min_mw_ = RealVect();
+    p_max_mw_ = RealVect();
     reset_results();
 }
 

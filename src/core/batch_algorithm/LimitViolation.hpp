@@ -25,7 +25,13 @@ enum class LS2G_API ViolationElementType : int {
     // violation is reported on the BUS, because how a bus' reactive power is divided
     // between its machines is a convention, while the active one is divided by the
     // participation factors the caller chose. See BusQCheck.hpp / GenPCheck.hpp.
-    GENERATOR = 5
+    GENERATOR = 5,
+    // a storage unit, by its own id -- same statement as GENERATOR, since a storage unit
+    // takes a share of the distributed slack under the same rule (SlackParticipation).
+    // /!\ `value` and `limit` are in the GENERATOR convention (positive = injected into
+    // the grid), like the unit's min_q_mvar / max_q_mvar and unlike its target_p_mw /
+    // res_p_mw, which this library stores in the load convention.
+    STORAGE = 6
 };
 
 // the kind of limit that was violated
@@ -58,10 +64,11 @@ enum class LS2G_API LimitViolationType : int {
     // converter beyond its maximum power is a state it does not reach -- its own control
     // saturates first, which is what `status_droop = +/-1` models. Reported (see
     // compute_physical_violations), never enforced: nothing clamps the droop.
+    // On a STORAGE: the same as on a generator, in the generator convention (see above).
     HIGH_P = 7,
-    // ... and the other way: below what it can deliver. Only a generator carrying the
-    // distributed slack can be reported here (an hvdc line's two directions are two HIGH_P
-    // with a different `side`, see above).
+    // ... and the other way: below what it can deliver. Only a generator or a storage unit
+    // carrying the distributed slack can be reported here (an hvdc line's two directions
+    // are two HIGH_P with a different `side`, see above).
     LOW_P = 8
 };
 
@@ -117,25 +124,26 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
 struct LS2G_API LimitViolation {
     ViolationElementType element_type;
     // grid-model bus id for BUS ; local (0-based, own type) line / trafo / hvdc line /
-    // generator id otherwise ; unused (-1) for GRID
+    // generator / storage id otherwise ; unused (-1) for GRID
     int element_id;
     // 1 or 2 for LINE / TRAFO (the terminal) and for HVDC (the direction: 1 means the flow
-    // leaves side 1, ie 1 -> 2) ; unused (0) for BUS / GENERATOR / GRID
+    // leaves side 1, ie 1 -> 2) ; unused (0) for BUS / GENERATOR / STORAGE / GRID
     int side;
     LimitViolationType violation_type;
     // value reached: MVAr for LOW_Q / HIGH_Q (what the machines holding that bus had to
     // produce), MW for LOW_P / HIGH_P (an hvdc line's flow leaving `side`, always positive;
-    // a generator's own converged active power, signed) ; unused (NaN) for
-    // NOT_SIMULATED / DIVERGENCE
+    // a generator's or a storage unit's own converged active power, signed and in the
+    // generator convention) ; unused (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type value;
     // limit that was violated. For LOW_Q / HIGH_Q the SUMMED capability of the machines
     // holding that bus, not one machine's: min_q_mvar / max_q_mvar for a generator or an
     // hvdc converter station, b_min / b_max at the solved voltage for a voltage-mode SVC.
-    // For HIGH_P the pmax of the direction `side` names (HVDC) or the generator's
-    // max_p_mw; for LOW_P its min_p_mw. Unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    // For HIGH_P the pmax of the direction `side` names (HVDC) or the generator's / storage
+    // unit's max_p_mw; for LOW_P its min_p_mw. Unused (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type limit;
-    // element name: LINE / TRAFO / HVDC / GENERATOR (from LSGrid::set_line_names /
-    // set_trafo_names / set_dcline_names / set_gen_names) or, for BUS, the name of the *substation* the violating bus belongs
+    // element name: LINE / TRAFO / HVDC / GENERATOR / STORAGE (from LSGrid::set_line_names /
+    // set_trafo_names / set_dcline_names / set_gen_names / set_storage_names) or, for BUS,
+    // the name of the *substation* the violating bus belongs
     // to (from LSGrid::set_substation_names) -- there is no per-bus name in LSGrid, only
     // per-substation ones. Empty string if the grid never had names set for the relevant
     // kind, or for GRID.

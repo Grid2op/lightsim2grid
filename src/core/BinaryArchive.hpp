@@ -97,7 +97,10 @@ namespace ls2g {
 //     GeneratorContainer::StateRes carries its reactive sharing key.
 // v9: StorageContainer::StateRes carries the distributed-slack participation of a
 //     storage unit (flag and weight), like a generator's.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 9;
+// v10: StorageContainer::StateRes carries the OPTIONAL active power limits of a storage
+//     unit (`p_min_mw_` / `p_max_mw_`, empty when the grid was never given any -- see
+//     StorageContainer::set_p_limits), like a generator's since v7.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 10;
 
 class LS2G_API BinaryArchive
 {

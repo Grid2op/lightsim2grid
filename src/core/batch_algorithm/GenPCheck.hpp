@@ -21,8 +21,17 @@
 namespace ls2g {
 
 /**
- * Post-solve active-power check of the generators that carry the DISTRIBUTED SLACK -- one
+ * Post-solve active-power check of the machines that carry the DISTRIBUTED SLACK -- one
  * third of `compute_physical_violations` (the others are BusQCheck.hpp and HvdcPCheck.hpp).
+ *
+ * BOTH FAMILIES, IN ONE PLACE. Generators and storage units take a share of the slack
+ * under the same rule (SlackParticipation, which LSGrid drives for both), so they are
+ * checked together and CANNOT be checked separately: the share a machine takes is a
+ * fraction of the raw participation of its whole bus, families included, so leaving the
+ * storage units out of the sum would overstate every generator's share (see GenPPlan).
+ * A storage unit's setpoints are in the LOAD convention in this library; everything here
+ * works in the GENERATOR one, so its target is negated on the way in and the value
+ * reported is what the unit injects -- the convention its limits are given in.
  *
  * WHAT THIS ANSWERS. lightsim2grid does not distribute the slack between solves: it solves
  * it, inside the Newton system (`MultiSlack` -- the absorbed power is an unknown of the
@@ -48,9 +57,9 @@ namespace ls2g {
  * to compare it against. Mirrors `GeneratorContainer::set_p_slack`, which is what
  * publishes the very same number after a single solve.
  *
- * WHICH GENERATORS ARE LOOKED AT. Those that actually take part in the distribution:
+ * WHICH MACHINES ARE LOOKED AT. Those that actually take part in the distribution:
  * connected, flagged slack, with a nonzero weight, and given at least one finite limit. A
- * generator that does not participate keeps its target power exactly -- so a violation
+ * machine that does not participate keeps its target power exactly -- so a violation
  * there would be an input error (the caller asked for a power the machine does not have),
  * not something the solve produced, and it is left to the caller to notice. Non-finite
  * limits (the default, where the grid was never given any) are skipped per machine and per
@@ -58,24 +67,34 @@ namespace ls2g {
  */
 namespace gen_p_check {
 
-/// One generator taking part in the distributed slack, and everything a row needs to check
+/// One machine taking part in the distributed slack, and everything a row needs to check
 /// it. Built once per compute() by `build_gen_p_plan`.
 struct GenPEntry
 {
-    int gen_id = -1;
+    /// GENERATOR or STORAGE -- which container `el_id` indexes, and what the violation
+    /// is reported on
+    ViolationElementType el_type = ViolationElementType::GENERATOR;
+    int el_id = -1;
     int bus_solver = -1;          ///< the bus it stands on, solver numbering
     real_type slack_weight = 0.;  ///< its own participation factor
-    real_type min_p_mw = 0.;      ///< NaN where no limit was given
+    real_type min_p_mw = 0.;      ///< NaN where no limit was given, generator convention
     real_type max_p_mw = 0.;
-    std::string name;             ///< LSGrid::set_gen_names, empty if never set
+    /// STORAGE only: its active setpoint (MW, generator convention -- ie the negated
+    /// load-convention one the container stores). A generator's is the ROW's, which only
+    /// the caller knows, and comes through `target_p_of`; no batch varies a storage unit's
+    /// injection or disconnects one, so the grid's own is every row's.
+    real_type target_p_mw = 0.;
+    /// LSGrid::set_gen_names / set_storage_names, empty if never set
+    std::string name;
 };
 
-/// One generator taking part in the distribution, limits or not. Needed because the share
+/// One machine taking part in the distribution, limits or not. Needed because the share
 /// each machine gets is a fraction of the RAW participation factors (see `GenPPlan`), and
 /// a machine with no limit still takes part in that total.
 struct GenPParticipant
 {
-    int gen_id = -1;
+    ViolationElementType el_type = ViolationElementType::GENERATOR;
+    int el_id = -1;
     int bus_solver = -1;
     real_type slack_weight = 0.;
 };
@@ -95,7 +114,8 @@ struct GenPParticipant
  * `w_norm(bus) * (the row's total raw weight)` -- and that total is what `participants`
  * is for: the sum, over every machine the row leaves participating, of its own factor. A
  * machine with no limit can never be reported and is still in it, because it still takes
- * its share.
+ * its share -- and so is a machine of the OTHER family, for the same reason: both
+ * families are in `bus_slack_weight_`, so both must be in the total it is recovered with.
  */
 struct GenPPlan
 {
@@ -107,7 +127,73 @@ struct GenPPlan
 };
 
 /**
- * Work out, once, which generators can be reported at all.
+ * One family's contribution to the plan: every participating element goes into
+ * `participants`, and the ones with a limit into `gens` as well. `Container` is a
+ * GeneratorContainer or a StorageContainer -- the two answer the same questions, and the
+ * only thing that differs is `target_sign` (+1 for a container in generator convention,
+ * -1 for the load-convention storage units, whose target is negated into the generator
+ * one this whole file works in).
+ */
+template<class Container>
+inline void add_family_to_gen_p_plan(const Container & container,
+                                     ViolationElementType el_type,
+                                     real_type target_sign,
+                                     const SolverBusIdVect & id_me_to_solver,
+                                     GenPPlan & out)
+{
+    const int nb_el = container.nb();
+    if(nb_el == 0) return;
+    // nothing to compare THIS family against: the grid was never given limits for it. Its
+    // elements still take their share, so they still go into `participants`.
+    const bool has_limits = (container.get_p_min_mw().size() != 0) ||
+                            (container.get_p_max_mw().size() != 0);
+
+    const std::vector<bool> & status = container.get_status();
+    const GlobalBusIdVect & buses = container.get_bus_id();
+    const std::vector<std::string> & names = container.get_names();  // empty if never set
+    const Eigen::Ref<const RealVect> targets = container.get_target_p();
+
+    for(int el_id = 0; el_id < nb_el; ++el_id){
+        if(!status[el_id]) continue;
+        if(!container.is_slack(el_id)) continue;              // takes no part in the distribution
+        const real_type weight = container.get_slack_weight(el_id);
+        if(std::abs(weight) < 1e-12) continue;                // ... nor does a zero weight
+
+        const int bus_me = buses(el_id).cast_int();
+        if(bus_me == BaseConstants::_deactivated_bus_id) continue;
+        const int bus_solver = id_me_to_solver[bus_me].cast_int();
+        if(bus_solver == BaseConstants::_deactivated_bus_id) continue;  // not in the solved system
+
+        // every participant counts towards the row's total, limits or not, family or not
+        GenPParticipant part;
+        part.el_type = el_type;
+        part.el_id = el_id;
+        part.bus_solver = bus_solver;
+        part.slack_weight = weight;
+        out.participants.push_back(part);
+
+        if(!has_limits) continue;
+        const real_type min_p = container.get_min_p(el_id);
+        const real_type max_p = container.get_max_p(el_id);
+        if(!std::isfinite(min_p) && !std::isfinite(max_p)) continue;  // no limit on this one
+
+        GenPEntry entry;
+        entry.el_type = el_type;
+        entry.el_id = el_id;
+        entry.bus_solver = bus_solver;
+        entry.slack_weight = weight;
+        entry.min_p_mw = min_p;
+        entry.max_p_mw = max_p;
+        entry.target_p_mw = target_sign * targets.coeff(el_id);
+        if(static_cast<std::size_t>(el_id) < names.size()){
+            entry.name = names[static_cast<std::size_t>(el_id)];
+        }
+        out.gens.push_back(entry);
+    }
+}
+
+/**
+ * Work out, once, which machines can be reported at all.
  *
  * `id_me_to_solver` must describe the labelling the batch solves in (`active_layout()`) --
  * the same one the per-bus vectors handed to `check_gen_p_violations` are indexed in.
@@ -117,49 +203,14 @@ inline void build_gen_p_plan(const LSGrid & grid_model,
                              GenPPlan & out)
 {
     out.clear();
-    const GeneratorContainer & generators = grid_model.get_generators();
-    const int nb_gen = generators.nb();
-    if(nb_gen == 0) return;
-    // nothing to compare against: the grid was never given active power limits
-    if(generators.get_p_min_mw().size() == 0 && generators.get_p_max_mw().size() == 0) return;
-
-    const std::vector<bool> & status = generators.get_status();
-    const GlobalBusIdVect & gen_buses = generators.get_bus_id();
-    const std::vector<std::string> & names = generators.get_names();  // empty if never set
-
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(!status[gen_id]) continue;
-        if(!generators.is_slack(gen_id)) continue;            // takes no part in the distribution
-        const real_type weight = generators.get_gen_slack_weight(gen_id);
-        if(std::abs(weight) < 1e-12) continue;                // ... nor does a zero weight
-
-        const int bus_me = gen_buses(gen_id).cast_int();
-        if(bus_me == BaseConstants::_deactivated_bus_id) continue;
-        const int bus_solver = id_me_to_solver[bus_me].cast_int();
-        if(bus_solver == BaseConstants::_deactivated_bus_id) continue;  // not in the solved system
-
-        // every participant counts towards the row's total, limits or not
-        GenPParticipant part;
-        part.gen_id = gen_id;
-        part.bus_solver = bus_solver;
-        part.slack_weight = weight;
-        out.participants.push_back(part);
-
-        const real_type min_p = generators.get_min_p(gen_id);
-        const real_type max_p = generators.get_max_p(gen_id);
-        if(!std::isfinite(min_p) && !std::isfinite(max_p)) continue;  // no limit on this one
-
-        GenPEntry entry;
-        entry.gen_id = gen_id;
-        entry.bus_solver = bus_solver;
-        entry.slack_weight = weight;
-        entry.min_p_mw = min_p;
-        entry.max_p_mw = max_p;
-        if(static_cast<std::size_t>(gen_id) < names.size()){
-            entry.name = names[static_cast<std::size_t>(gen_id)];
-        }
-        out.gens.push_back(entry);
-    }
+    // the generators first, so that a report's order follows the container order of each
+    // family and stays stable
+    add_family_to_gen_p_plan(grid_model.get_generators(), ViolationElementType::GENERATOR,
+                             1., id_me_to_solver, out);
+    add_family_to_gen_p_plan(grid_model.get_storages(), ViolationElementType::STORAGE,
+                             -1., id_me_to_solver, out);
+    // no machine can be reported: the participants alone are of no use to anyone
+    if(out.gens.empty()) out.clear();
 }
 
 /**
@@ -209,13 +260,15 @@ struct SlackShareInputs
 };
 
 /**
- * Append to `out` one LimitViolation per participating generator whose converged active
+ * Append to `out` one LimitViolation per participating machine whose converged active
  * power left its limits, for ONE converged row.
  *
  * `slack` is what that row's solve left about the distribution (see SlackShareInputs);
- * `target_p_of(gen_id)` is this row's own active set-point for a generator, and
- * `is_gen_off(gen_id)` whether the row disconnected it. `masked_solver_ids` is this row's
- * masked (stranded) solver buses -- sorted, may be nullptr.
+ * `target_p_of(gen_id)` is this row's own active set-point for a GENERATOR, and
+ * `is_gen_off(gen_id)` whether the row disconnected it. Both are asked about generators
+ * only: no batch varies a storage unit's injection or disconnects one, so its target is
+ * the grid's own, read into the entry when the plan was built. `masked_solver_ids` is this
+ * row's masked (stranded) solver buses -- sorted, may be nullptr.
  */
 template<class TargetPOf, class IsGenOff>
 inline void check_gen_p_violations(const GenPPlan & plan,
@@ -235,13 +288,20 @@ inline void check_gen_p_violations(const GenPPlan & plan,
                                                 masked_solver_ids->end(), bus);
     };
 
+    // a row takes a GENERATOR out of the distribution; a storage unit is never varied nor
+    // disconnected by one, so it always keeps its share
+    auto is_off = [&](ViolationElementType el_type, int el_id){
+        return (el_type == ViolationElementType::GENERATOR) && is_gen_off(el_id);
+    };
+
     // the row's total raw participation, over the machines it actually leaves participating
-    // -- what turns the normalized per-bus weight back into a raw one, see GenPPlan
+    // -- what turns the normalized per-bus weight back into a raw one, see GenPPlan. BOTH
+    // families are in it: the per-bus weights the solver was given sum them together.
     real_type total_raw_w = 0.;
     for(std::size_t k = 0; k < plan.participants.size(); ++k){
         const GenPParticipant & part = plan.participants[k];
         if(is_masked(part.bus_solver)) continue;
-        if(is_gen_off(part.gen_id)) continue;
+        if(is_off(part.el_type, part.el_id)) continue;
         total_raw_w += part.slack_weight;
     }
     if(!(std::abs(total_raw_w) > 1e-12)) return;  // nothing left distributing anything
@@ -249,12 +309,15 @@ inline void check_gen_p_violations(const GenPPlan & plan,
     for(std::size_t k = 0; k < plan.gens.size(); ++k){
         const GenPEntry & entry = plan.gens[k];
         if(is_masked(entry.bus_solver)) continue;
-        if(is_gen_off(entry.gen_id)) continue;  // disconnected by this row: produces nothing
+        if(is_off(entry.el_type, entry.el_id)) continue;  // disconnected by this row: produces nothing
 
         // its target, plus its share of what its bus had to make up -- exactly as
         // GeneratorContainer::set_p_slack computes it after a single solve, the raw per-bus
-        // total written as `w_norm(bus) * total_raw_w`
-        real_type p_mw = target_p_of(entry.gen_id);
+        // total written as `w_norm(bus) * total_raw_w`. Generator convention throughout, so
+        // a storage unit's share is added to its target the same way round (see the file's
+        // header: the target was negated when the plan was built).
+        real_type p_mw = (entry.el_type == ViolationElementType::GENERATOR)
+                         ? target_p_of(entry.el_id) : entry.target_p_mw;
         if(entry.bus_solver < static_cast<int>(slack.bus_slack_weight.size())){
             const real_type bus_raw_w = slack.bus_slack_weight(entry.bus_solver) * total_raw_w;
             if(std::abs(bus_raw_w) > 1e-12){
@@ -264,11 +327,11 @@ inline void check_gen_p_violations(const GenPPlan & plan,
         if(!std::isfinite(p_mw)) continue;
 
         if(std::isfinite(entry.min_p_mw) && (p_mw < entry.min_p_mw - tol_mw)){
-            out.push_back(LimitViolation{ViolationElementType::GENERATOR, entry.gen_id, 0,
+            out.push_back(LimitViolation{entry.el_type, entry.el_id, 0,
                                          LimitViolationType::LOW_P, p_mw, entry.min_p_mw,
                                          entry.name});
         } else if(std::isfinite(entry.max_p_mw) && (p_mw > entry.max_p_mw + tol_mw)){
-            out.push_back(LimitViolation{ViolationElementType::GENERATOR, entry.gen_id, 0,
+            out.push_back(LimitViolation{entry.el_type, entry.el_id, 0,
                                          LimitViolationType::HIGH_P, p_mw, entry.max_p_mw,
                                          entry.name});
         }
