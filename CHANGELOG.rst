@@ -205,6 +205,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 9 -> 10: the detailed topology and the node of every
   terminal are part of the state.
 - [FIXED] the ``update_topo`` docstring said ``0`` disconnects a side: it is ``-1``.
+- [FIXED] the numpy views returned by ``LSGrid`` getters (``get_Sbus_solver``, ``get_pv_solver``,
+  ``get_loads_res``, ...) now keep the grid alive; they read freed memory once it was collected.
+  They are views, not copies: see ``docs/network.rst``.
 - [ADDED] the detailed topology: the switches inside each substation (pypowsybl's node-breaker
   view), read by ``init_from_pypowsybl(detailed_topology=True)`` and operated with
   ``LSGrid.set_switch_open`` / ``update_switches``, which put every element where the switches

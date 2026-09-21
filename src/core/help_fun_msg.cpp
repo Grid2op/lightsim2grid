@@ -3402,6 +3402,19 @@ const std::string DocIterator::substation_name = R"mydelimiter(
 
 )mydelimiter";
 
+// defined before every docstring that appends it: within one file, static strings are
+// initialised in the order they are defined
+const std::string DocLSGrid::returns_view = R"mydelimiter(
+    .. note::
+        The returned numpy array (each array, for a tuple) is a read-only **view** on memory
+        owned by this grid: nothing is copied, and the view keeps the grid alive. It is not a
+        snapshot: it shows the values the grid holds *now*, so a later powerflow or modification
+        of the grid changes what it reads, and one that resizes the underlying vector (a change of
+        topology, for example) leaves it pointing to released memory. Call ``.copy()`` on it if you
+        need to keep the values. See :ref:`lsgrid-returned-views`.
+
+)mydelimiter";
+
 const std::string DocLSGrid::LSGrid = R"mydelimiter(
     This class represent a lightsim2grid power network. All the elements that can be manipulated by
     lightsim2grid are represented here.
@@ -3649,13 +3662,13 @@ const std::string DocLSGrid::get_bus_vmin_kv = R"mydelimiter(
     Per-bus min operating voltage, in kV (``NaN`` if not provided for a given bus, empty array if
     never set).
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_bus_vmax_kv = R"mydelimiter(
     Per-bus max operating voltage, in kV (``NaN`` if not provided for a given bus, empty array if
     never set).
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_svcs = R"mydelimiter(
     Get the container of all the Static Var Compensators (SVC), as a
@@ -4475,7 +4488,7 @@ const std::string DocLSGrid::get_Va_solver = R"mydelimiter(
         (or :attr:`lightsim2grid.network.LSGrid.id_dc_solver_to_me`) to know at which bus
         (on the grid) they corresponds.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_Vm_solver = R"mydelimiter(
     Returns the voltage magnitude for each buses as a numpy vector of real number. 
@@ -4495,7 +4508,7 @@ const std::string DocLSGrid::get_Vm_solver = R"mydelimiter(
         You can use the :attr:`lightsim2grid.network.LSGrid.id_ac_solver_to_me` (or :attr:`lightsim2grid.network.LSGrid.id_dc_solver_to_me`) to know at which bus
         (on the grid) they corresponds.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_V_solver = R"mydelimiter(
     Returns the complex voltage for each buses as a numpy vector of complex number. 
@@ -4515,7 +4528,7 @@ const std::string DocLSGrid::get_V_solver = R"mydelimiter(
         You can use the :attr:`lightsim2grid.network.LSGrid.id_ac_solver_to_me` (or :attr:`lightsim2grid.network.LSGrid.id_dc_solver_to_me`) to know at which bus
         (on the grid) they corresponds.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 
 const std::string DocLSGrid::id_me_to_ac_solver = R"mydelimiter(
@@ -4784,7 +4797,7 @@ const std::string DocLSGrid::get_pv_solver = R"mydelimiter(
         for the AC family as soon as an AC powerflow has run on this grid, and falls back
         to the DC one otherwise; the ``get_ac_*`` / ``get_dc_*`` variants name the family
         explicitly and never guess.
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_pq_solver = R"mydelimiter(
     Returns the ids of the buses that are labelled as "PQ".
@@ -4812,7 +4825,7 @@ const std::string DocLSGrid::get_pq_solver = R"mydelimiter(
         for the AC family as soon as an AC powerflow has run on this grid, and falls back
         to the DC one otherwise; the ``get_ac_*`` / ``get_dc_*`` variants name the family
         explicitly and never guess.
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_slack_ids_solver = R"mydelimiter(
     Returns the ids of the buses that are part of the distributed slack.
@@ -4834,7 +4847,7 @@ const std::string DocLSGrid::get_slack_ids_solver = R"mydelimiter(
     .. seealso:: :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` and :func:`lightsim2grid.network.LSGrid.id_ac_solver_to_me` for
         ways to link the "grid model" bus id to the "solver" bus id.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_slack_ids_dc_solver = R"mydelimiter(
     Returns the ids of the buses that are part of the distributed slack. For DC, the active-power mismatch is spread across these buses proportionally to their `slack_weights` (see :func:`lightsim2grid.network.LSGrid.dc_pf`) -- distributed slack IS taken into account for the DC powerflow itself; it is only `get_ptdf` / `get_lodf` that still assume a single slack bus.
@@ -4857,7 +4870,7 @@ const std::string DocLSGrid::get_slack_ids_dc_solver = R"mydelimiter(
     .. seealso:: :func:`lightsim2grid.network.LSGrid.id_me_to_ac_solver` and :func:`lightsim2grid.network.LSGrid.id_ac_solver_to_me` for
         ways to link the "grid model" bus id to the "solver" bus id.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_slack_weights_solver = R"mydelimiter(
     For each bus used by the solver, it outputs its participation to the distributed slack.
@@ -4887,7 +4900,7 @@ const std::string DocLSGrid::get_slack_weights_solver = R"mydelimiter(
         for the AC family as soon as an AC powerflow has run on this grid, and falls back
         to the DC one otherwise; the ``get_ac_*`` / ``get_dc_*`` variants name the family
         explicitly and never guess.
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 // ---------------------------------------------------------------------------
 // per-family (AC / DC) variants of the solver-labelled accessors
@@ -4900,7 +4913,7 @@ const std::string DocLSGrid::get_ac_pv_solver = R"mydelimiter(
 
     .. versionadded:: 1.0.0
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_dc_pv_solver = R"mydelimiter(
     Same as :func:`lightsim2grid.network.LSGrid.get_pv_solver`, but always for the **DC**
@@ -4910,7 +4923,7 @@ const std::string DocLSGrid::get_dc_pv_solver = R"mydelimiter(
 
     .. versionadded:: 1.0.0
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_ac_pq_solver = R"mydelimiter(
     Same as :func:`lightsim2grid.network.LSGrid.get_pq_solver`, but always for the **AC**
@@ -4918,7 +4931,7 @@ const std::string DocLSGrid::get_ac_pq_solver = R"mydelimiter(
 
     .. versionadded:: 1.0.0
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_dc_pq_solver = R"mydelimiter(
     Same as :func:`lightsim2grid.network.LSGrid.get_pq_solver`, but always for the **DC**
@@ -4926,7 +4939,7 @@ const std::string DocLSGrid::get_dc_pq_solver = R"mydelimiter(
 
     .. versionadded:: 1.0.0
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_ac_slack_weights_solver = R"mydelimiter(
     Same as :func:`lightsim2grid.network.LSGrid.get_slack_weights_solver`, but always for
@@ -4934,7 +4947,7 @@ const std::string DocLSGrid::get_ac_slack_weights_solver = R"mydelimiter(
 
     .. versionadded:: 1.0.0
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_dc_slack_weights_solver = R"mydelimiter(
     Same as :func:`lightsim2grid.network.LSGrid.get_slack_weights_solver`, but always for
@@ -4942,7 +4955,7 @@ const std::string DocLSGrid::get_dc_slack_weights_solver = R"mydelimiter(
 
     .. versionadded:: 1.0.0
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 
 const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
@@ -5051,7 +5064,7 @@ const std::string DocLSGrid::get_Sbus_solver = R"mydelimiter(
     .. warning:: 
         The above only holds when the bus of id `k` is connected which is when `id_me_to_ac_solver[k] >= 0` !
 
-)mydelimiter"; 
+)mydelimiter" + DocLSGrid::returns_view;
 
 
 const std::string DocLSGrid::get_dcSbus_solver = R"mydelimiter(
@@ -5084,7 +5097,7 @@ const std::string DocLSGrid::get_dcSbus_solver = R"mydelimiter(
     .. warning:: 
         The above only holds when the bus of id `k` is connected which is when `id_me_to_ac_solver[k] >= 0` !
 
-)mydelimiter"; 
+)mydelimiter" + DocLSGrid::returns_view;
 
 
 const std::string DocLSGrid::get_Ybus = R"mydelimiter(
@@ -5576,7 +5589,7 @@ const std::string DocLSGrid::get_bus_vn_kv = R"mydelimiter(
         :attr:`~lightsim2grid.elements.SubstationInfo.vn_kv`, the same information read per
         substation through :func:`get_substations`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::deactivate_bus = R"mydelimiter(
     .. deprecated:: 1.0.1
@@ -6307,31 +6320,31 @@ const std::string DocLSGrid::get_loads_res = R"mydelimiter(
     :attr:`~lightsim2grid.elements.LoadInfo.res_q_mvar` /
     :attr:`~lightsim2grid.elements.LoadInfo.res_v_kv`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_shunts_res = R"mydelimiter(
     Get, for every shunt at once, the ``(p_mw, q_mvar, v_kv)`` result triplet, see
     :func:`get_loads_res` and :class:`~lightsim2grid.elements.ShuntInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_gen_res = R"mydelimiter(
     Get, for every generator at once, the ``(p_mw, q_mvar, v_kv)`` result triplet, see
     :func:`get_loads_res` and :class:`~lightsim2grid.elements.GenInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_storages_res = R"mydelimiter(
     Get, for every storage unit at once, the ``(p_mw, q_mvar, v_kv)`` result triplet, see
     :func:`get_loads_res` and :class:`~lightsim2grid.elements.StorageInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_sgens_res = R"mydelimiter(
     Get, for every static generator at once, the ``(p_mw, q_mvar, v_kv)`` result triplet, see
     :func:`get_loads_res` and :class:`~lightsim2grid.elements.SGenInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_loads_status = R"mydelimiter(
     Get the connection status of every load at once -- see
@@ -6384,132 +6397,132 @@ const std::string DocLSGrid::get_line_res1 = R"mydelimiter(
     :attr:`~lightsim2grid.elements.LineInfo.res_v1_kv` /
     :attr:`~lightsim2grid.elements.LineInfo.res_a1_ka`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_line_res2 = R"mydelimiter(
     Get, for every powerline at once, the side-2 result quadruplet, see :func:`get_line_res1`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_trafo_res1 = R"mydelimiter(
     Get, for every transformer at once, the side-1 (hv) result quadruplet, see
     :func:`get_line_res1` and :class:`~lightsim2grid.elements.TrafoInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_trafo_res2 = R"mydelimiter(
     Get, for every transformer at once, the side-2 (lv) result quadruplet, see
     :func:`get_line_res1` and :class:`~lightsim2grid.elements.TrafoInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_gen_theta = R"mydelimiter(
     Get the voltage angle (degree) of every generator's bus at once -- see
     :attr:`~lightsim2grid.elements.GenInfo.res_theta_deg`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_load_theta = R"mydelimiter(
     Get the voltage angle (degree) of every load's bus at once, see :func:`get_gen_theta` and
     :class:`~lightsim2grid.elements.LoadInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_shunt_theta = R"mydelimiter(
     Get the voltage angle (degree) of every shunt's bus at once, see :func:`get_gen_theta` and
     :class:`~lightsim2grid.elements.ShuntInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_storage_theta = R"mydelimiter(
     Get the voltage angle (degree) of every storage unit's bus at once, see :func:`get_gen_theta`
     and :class:`~lightsim2grid.elements.StorageInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_line_theta1 = R"mydelimiter(
     Get the voltage angle (degree) of every powerline's side-1 bus at once -- see
     :attr:`~lightsim2grid.elements.LineInfo.res_theta1_deg`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_line_theta2 = R"mydelimiter(
     Get the voltage angle (degree) of every powerline's side-2 bus at once, see
     :func:`get_line_theta1`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_trafo_theta1 = R"mydelimiter(
     Get the voltage angle (degree) of every transformer's side-1 (hv) bus at once, see
     :func:`get_line_theta1` and :class:`~lightsim2grid.elements.TrafoInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_trafo_theta2 = R"mydelimiter(
     Get the voltage angle (degree) of every transformer's side-2 (lv) bus at once, see
     :func:`get_line_theta1` and :class:`~lightsim2grid.elements.TrafoInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_all_shunt_buses = R"mydelimiter(
     Get the grid bus id of every shunt at once -- the bulk equivalent of
     :attr:`~lightsim2grid.elements.ShuntInfo.bus_id`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_loads_res_full = R"mydelimiter(
     Get, for every load at once, the ``(p_mw, q_mvar, v_kv, theta_deg)`` result quadruplet -- same
     as :func:`get_loads_res` with :attr:`~lightsim2grid.elements.LoadInfo.res_theta_deg` appended.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_shunts_res_full = R"mydelimiter(
     Get, for every shunt at once, the ``(p_mw, q_mvar, v_kv, theta_deg)`` result quadruplet, see
     :func:`get_loads_res_full` and :class:`~lightsim2grid.elements.ShuntInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_gen_res_full = R"mydelimiter(
     Get, for every generator at once, the ``(p_mw, q_mvar, v_kv, theta_deg)`` result quadruplet,
     see :func:`get_loads_res_full` and :class:`~lightsim2grid.elements.GenInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_storages_res_full = R"mydelimiter(
     Get, for every storage unit at once, the ``(p_mw, q_mvar, v_kv, theta_deg)`` result
     quadruplet, see :func:`get_loads_res_full` and :class:`~lightsim2grid.elements.StorageInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_sgens_res_full = R"mydelimiter(
     Get, for every static generator at once, the ``(p_mw, q_mvar, v_kv, theta_deg)`` result
     quadruplet, see :func:`get_loads_res_full` and :class:`~lightsim2grid.elements.SGenInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_line_res1_full = R"mydelimiter(
     Get, for every powerline at once, the side-1 ``(p1_mw, q1_mvar, v1_kv, a1_ka, theta1_deg)``
     result quintuplet -- same as :func:`get_line_res1` with
     :attr:`~lightsim2grid.elements.LineInfo.res_theta1_deg` appended.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_line_res2_full = R"mydelimiter(
     Get, for every powerline at once, the side-2 result quintuplet, see :func:`get_line_res1_full`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_trafo_res1_full = R"mydelimiter(
     Get, for every transformer at once, the side-1 (hv) result quintuplet, see
     :func:`get_line_res1_full` and :class:`~lightsim2grid.elements.TrafoInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_trafo_res2_full = R"mydelimiter(
     Get, for every transformer at once, the side-2 (lv) result quintuplet, see
     :func:`get_line_res1_full` and :class:`~lightsim2grid.elements.TrafoInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_dcline_res1_full = R"mydelimiter(
     Get, for every HVDC line at once, the converter-station-1
@@ -6519,43 +6532,43 @@ const std::string DocLSGrid::get_dcline_res1_full = R"mydelimiter(
     :attr:`~lightsim2grid.elements.HvdcLineInfo.res_v1_kv` /
     :attr:`~lightsim2grid.elements.HvdcLineInfo.res_theta1_deg`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_dcline_res2_full = R"mydelimiter(
     Get, for every HVDC line at once, the converter-station-2 result quadruplet, see
     :func:`get_dcline_res1_full`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_shunt_target_p = R"mydelimiter(
     Get the active power setpoint of every shunt at once -- see
     :attr:`~lightsim2grid.elements.ShuntInfo.target_p_mw`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_load_target_p = R"mydelimiter(
     Get the active power setpoint of every load at once, see :func:`get_shunt_target_p` and
     :class:`~lightsim2grid.elements.LoadInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_gen_target_p = R"mydelimiter(
     Get the active power setpoint of every generator at once, see :func:`get_shunt_target_p` and
     :class:`~lightsim2grid.elements.GenInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_sgen_target_p = R"mydelimiter(
     Get the active power setpoint of every static generator at once, see
     :func:`get_shunt_target_p` and :class:`~lightsim2grid.elements.SGenInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 const std::string DocLSGrid::get_storage_target_p = R"mydelimiter(
     Get the active power setpoint of every storage unit at once, see :func:`get_shunt_target_p`
     and :class:`~lightsim2grid.elements.StorageInfo`.
 
-)mydelimiter";
+)mydelimiter" + DocLSGrid::returns_view;
 
 // ---------------------------------------------------------------------------
 // bulk vectorized setters (grid2op-backend fast path)

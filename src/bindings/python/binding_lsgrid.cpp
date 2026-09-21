@@ -137,8 +137,8 @@ void bind_gridmodel(py::module_& m) {
         .def("tell_recompute_sbus", &LSGrid::tell_recompute_sbus, DocLSGrid::_internal_do_not_use.c_str())
         .def("tell_solver_need_reset", &LSGrid::tell_solver_need_reset, DocLSGrid::tell_solver_need_reset.c_str())
         .def("tell_ybus_change_sparsity_pattern", &LSGrid::tell_ybus_change_sparsity_pattern, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_ac_algo_controler", &LSGrid::get_ac_algo_controler, DocLSGrid::get_ac_algo_controler.c_str(), py::return_value_policy::reference)
-        .def("get_dc_algo_controler", &LSGrid::get_dc_algo_controler, DocLSGrid::get_dc_algo_controler.c_str(), py::return_value_policy::reference)
+        .def("get_ac_algo_controler", &LSGrid::get_ac_algo_controler, DocLSGrid::get_ac_algo_controler.c_str(), py::return_value_policy::reference_internal)
+        .def("get_dc_algo_controler", &LSGrid::get_dc_algo_controler, DocLSGrid::get_dc_algo_controler.c_str(), py::return_value_policy::reference_internal)
         // .def("get_solver_control",  &LSGrid::get_algo_controler, "DEPRECATED use 'get_algo_controler'", py::return_value_policy::reference)
         .def("compute_newton", &LSGrid::ac_pf, DocLSGrid::ac_pf.c_str())
         // get_ptdf/get_ptdf_solver/get_lodf/get_Bf/get_Bf_solver all return their

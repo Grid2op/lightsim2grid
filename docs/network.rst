@@ -527,6 +527,46 @@ starts cold and rebuilds on its first powerflow. Unlike the serialization case t
 requirement -- a copy is the same grid, in the same process, so its cache would be perfectly valid
 -- and it may change in a future version. The ``allow_*_cache_reuse`` settings *are* copied.
 
+.. _lsgrid-returned-views:
+
+Arrays returned by the getters are views
+-----------------------------------------
+
+Most ``LSGrid`` getters that return a numpy array do not copy anything: the array is a read-only
+**view** on memory the grid owns. This is the case of the results (``get_loads_res``,
+``get_line_res1``, the ``*_res_full`` and ``*_theta`` families, ...), the setpoints
+(``get_*_target_p``), the per-bus data (``get_bus_vn_kv``, ...) and everything the solvers were
+handed (``get_V_solver``, ``get_Sbus_solver``, ``get_pv_solver``, ``get_pq_solver``, the slack
+ids and weights, ...). Their docstrings say so.
+
+A view keeps its grid alive, so it stays valid after the grid itself goes out of scope. But it is
+**not a snapshot**:
+
+- it shows what the grid holds *now*: the next powerflow, or any change to the grid, changes what
+  an array you took earlier reads;
+- if that change resizes the underlying vector -- a solver vector after a change of topology, for
+  example -- an array you took earlier points to released memory.
+
+It is up to you to copy what you need to keep:
+
+.. code-block:: python
+
+    lsgrid.ac_pf(V0, 10, 1e-8)
+    p_before, *_ = lsgrid.get_loads_res()     # a view: will follow the next powerflow
+    p_before = p_before.copy()                # now a snapshot
+    sbus_before = lsgrid.get_Sbus_solver().copy()
+
+    lsgrid.deactivate_powerline(0)
+    lsgrid.ac_pf(V0, 10, 1e-8)                # p_before and sbus_before are unchanged
+
+Getters that build their result instead (``get_V``, ``get_pv``, ``get_bus_status``, the
+``Ybus`` / ``Jacobian`` matrices, ...) return an array or a matrix of their own, which later
+changes to the grid do not touch.
+
+.. versionchanged:: 1.0.1
+    Before 1.0.1 some of these views did not keep the grid alive, and read released memory once
+    the grid had been garbage collected.
+
 Detailed documentation
 --------------------------
 

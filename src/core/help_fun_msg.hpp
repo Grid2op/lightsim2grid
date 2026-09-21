@@ -403,6 +403,8 @@ struct LS2G_API DocLSGrid
 {
     static const std::string _internal_do_not_use;
     static const std::string J_description;
+    // appended to the docstring of every getter that returns a numpy view on the grid's memory
+    static const std::string returns_view;
     
     static const std::string LSGrid;
 
