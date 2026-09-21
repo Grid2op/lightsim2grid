@@ -60,7 +60,8 @@ enum class ErrorType {NoError,
                       SolverReFactor,
                       SolverSolve,
                       NotInitError,
-                      LicenseError};
+                      LicenseError,
+                      NotImplemented};
 std::ostream& operator<<(std::ostream& out, const ErrorType & error_type);
 
 // Escape (and truncate to 64 chars) a string of untrusted origin -- read from a
@@ -107,7 +108,9 @@ class AlgoControl final
             slack_weight_changed_(true),
             ybus_some_coeffs_zero_(true),
             ybus_change_sparsity_pattern_(true),
-            one_el_change_bus_(true)
+            one_el_change_bus_(true),
+            cache_maybe_poisoned_(true),
+            voltage_control_changed_(true)
             {};
 
         ~AlgoControl() noexcept = default;
@@ -125,6 +128,27 @@ class AlgoControl final
             ybus_some_coeffs_zero_ = true;
             ybus_change_sparsity_pattern_ = true;
             one_el_change_bus_ = true;
+            cache_maybe_poisoned_ = true;
+            voltage_control_changed_ = true;
+        }
+
+        /**
+         * Is there nothing outstanding -- has every change this control tracks
+         * already been consumed by a solve?
+         *
+         * The exact negation of tell_all_changed(), and the only honest way to ask
+         * "is a cache built against this grid still valid?". A cache cannot answer
+         * that by looking at itself: changing a line's impedance, a tap, or an
+         * injection leaves every vector size and every bus status exactly as it was.
+         * Only these flags know. See LSGrid::unset_changes().
+         */
+        [[nodiscard]] bool nothing_changed() const noexcept {
+            return !change_dimension_ && !pv_changed_ && !pq_changed_ &&
+                   !slack_participate_changed_ && !need_reset_solver_ &&
+                   !need_recompute_sbus_ && !need_recompute_ybus_ && !v_changed_ &&
+                   !slack_weight_changed_ && !ybus_some_coeffs_zero_ &&
+                   !ybus_change_sparsity_pattern_ && !one_el_change_bus_ &&
+                   !cache_maybe_poisoned_ && !voltage_control_changed_;
         }
 
         void tell_none_changed(){
@@ -140,6 +164,8 @@ class AlgoControl final
             ybus_some_coeffs_zero_ = false;
             ybus_change_sparsity_pattern_ = false;
             one_el_change_bus_ = false;
+            cache_maybe_poisoned_ = false;
+            voltage_control_changed_ = false;
         }
 
         // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes)
@@ -167,6 +193,58 @@ class AlgoControl final
         // might need to trigger some recomputation of some solvers (eg NR based ones)
         void tell_ybus_some_coeffs_zero(){ybus_some_coeffs_zero_ = true;}
         void tell_one_el_changed_bus(){one_el_change_bus_ = true;}
+        /**
+         * A voltage SETPOINT a control group's bordered rows carry has moved: a
+         * regulating generator's or hvdc converter station's target magnitude.
+         *
+         * Deliberately narrow, and deliberately NOT raised for everything the
+         * voltage-control plan is made of. Who is in a group, and which bus a group
+         * regulates, are the same inputs the pv/pq split reads -- and since that split
+         * IS a layer of the plan (VoltageControlPlan::build_pv_pq), a change to one is
+         * a change to the other, already carried by `pv_changed_` and friends. See
+         * `need_recompute_pv_pq()`. What those flags do NOT carry is a setpoint: moving
+         * a remote regulator's target changes no bus' pv/pq class at all -- that is the
+         * point of the bordered formulation, the regulated bus stays PQ -- so it needs
+         * a flag of its own, and this is it.
+         *
+         * If you add an input to the plan that the pv/pq split does not read, raise
+         * this from the modifier that moves it.
+         */
+        void tell_voltage_control_changed(){voltage_control_changed_ = true;}
+        /**
+         * The per-bus element counts may no longer be what the elements say.
+         *
+         * Deliberately NOT the same question as `need_reset_solver()`, which asks
+         * whether the SOLVER-SIDE data has to be rebuilt. Everything that data is
+         * made of is derived from the elements when it is rebuilt, so a reset costs
+         * time and nothing else. The counts are different: they are maintained
+         * incrementally (+1 / -1 in GenericContainer::_apply_and_track_buses), they
+         * are never recomputed on the ordinary path, and since bus connectivity IS
+         * the counts a wrong one is not a slow path but a different grid. Rebuilding
+         * them is O(all elements), so it must be asked for by the thing that can
+         * actually make them wrong -- not by every caller who merely wants a fresh
+         * solve.
+         *
+         * Raised by: construction, `tell_all_changed()` (so: reset, a copy, set_state,
+         * a powerflow that threw part way through), and LSGrid's public
+         * `tell_bus_counts_maybe_poisoned()`, which is what a caller who mutated the
+         * containers behind LSGrid's back -- or who caught an exception out of a
+         * mutator -- uses to say so. NOT raised by `prevent_cache_reuse()` /
+         * `tell_solver_need_reset()`: those say the solver data is stale, which says
+         * nothing about the counts.
+         */
+        void tell_cache_maybe_poisoned(){
+            cache_maybe_poisoned_ = true;
+            // Poisoned counts imply a solver reset, and the implication only runs this
+            // way. The counts decide which buses exist, so EVERYTHING the solver side
+            // is made of is built on them -- the bus labelling, the dimension of Ybus,
+            // the pv-pq split, the slack weights. Recounting while re-stamping the rest
+            // would repair the counts and then solve the old bus set anyway, which is
+            // the same wrong grid with a tidier bookkeeping. The converse does not
+            // hold, and that is the whole point of having two flags: a solver reset
+            // says nothing about the counts.
+            need_reset_solver_ = true;
+        }
 
         bool has_dimension_changed() const {return change_dimension_;}
         bool has_pv_changed() const {return pv_changed_;}
@@ -180,6 +258,68 @@ class AlgoControl final
         bool has_v_changed() const {return v_changed_;}
         bool has_ybus_some_coeffs_zero() const {return ybus_some_coeffs_zero_;}
         bool has_one_el_changed_bus() const {return one_el_change_bus_;}
+        // see tell_cache_maybe_poisoned()
+        bool cache_maybe_poisoned() const {return cache_maybe_poisoned_;}
+        // see tell_voltage_control_changed()
+        bool has_voltage_control_changed() const {return voltage_control_changed_;}
+
+        /**
+         * Must the pv/pq split be rebuilt?
+         *
+         * Every term is a reason the split itself changes: the system was rebuilt from
+         * scratch (`need_reset_solver_`, which `tell_cache_maybe_poisoned()` implies),
+         * the bus set changed (`change_dimension_`), the slack set moved
+         * (`slack_participate_changed_`, and the slack is not PV), or a bus changed
+         * class (`pv_changed_` / `pq_changed_`).
+         *
+         * `ybus_change_sparsity_pattern_` is deliberately NOT a term, though it looks
+         * like one: it is the flag for "the bus LABELLING may have moved". It is only
+         * ever raised by a BRANCH-side mutation (reconnecting a line or a trafo,
+         * moving one of its ends), and every one of those goes through
+         * `GenericContainer::_apply_and_track_buses`, which raises `change_dimension_`
+         * exactly when such a mutation empties or fills a bus -- which is exactly when
+         * the labelling moves. If no bus crossed, `id_me_to_solver` is unchanged, and a
+         * branch is neither a voltage controller nor a slack, so the split it produces
+         * is identical. The term was there, and dropping it was measured, not argued:
+         * see the `[pv_pq]` cases in `test_cache_reuse.cpp`, which put the grid in a
+         * state where this flag is the ONLY term raised and check the reused split
+         * against a cold one. With the term dropped they still pass; the same
+         * experiment run on `slack_participate_changed_` fails, which is why that one
+         * stays.
+         *
+         * Read by `LSGrid::_build_into_cache`, which is the only thing that rebuilds it.
+         */
+        [[nodiscard]] bool need_recompute_pv_pq() const noexcept {
+            return need_reset_solver_ || change_dimension_ ||
+                   slack_participate_changed_ || pv_changed_ || pq_changed_;
+        }
+
+        /**
+         * Must the voltage-control plan be rebuilt, or does the one the previous solve
+         * of this family left in its cache still describe the grid?
+         *
+         * The pv/pq split is a LAYER of that plan (VoltageControlPlan::build_pv_pq), so
+         * whatever rebuilds the split rebuilds the plan -- that is the first half, and
+         * it is not a grab-bag of loosely-related flags but literally the same question
+         * asked one layer down. Whoever is in a control group, and which bus it
+         * regulates, are exactly the inputs the split reads; there is no way to change
+         * one without changing the other.
+         *
+         * The second half is what the split does NOT read: a setpoint. See
+         * `tell_voltage_control_changed()`.
+         *
+         * What is deliberately in NEITHER half is the set of changes an ordinary
+         * grid2op step makes: moving a load's P and Q raises `need_recompute_sbus_` and
+         * nothing else, so the plan survives such a step untouched -- which is the
+         * whole point of caching it.
+         *
+         * All-or-nothing on purpose: the plan's layers are rebuilt together or not at
+         * all. Refreshing only the setpoints of an otherwise unchanged group layout is
+         * a finer question this does not try to answer yet.
+         */
+        [[nodiscard]] bool need_recompute_voltage_control() const noexcept {
+            return need_recompute_pv_pq() || voltage_control_changed_;
+        }
 
     private:    
         bool change_dimension_;
@@ -194,6 +334,8 @@ class AlgoControl final
         bool ybus_some_coeffs_zero_;  // tells that some coeff of ybus might have been set to 0. (and ybus compressed again, so these coeffs are really completely hidden)
         bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
         bool one_el_change_bus_;  // whether one element has change of bus (or being reconnected / disconnected)
+        bool cache_maybe_poisoned_;  // the per-bus element counts may have drifted: see tell_cache_maybe_poisoned()
+        bool voltage_control_changed_;  // an input of the voltage-control plan moved: see tell_voltage_control_changed()
 };
 
 /**
@@ -205,10 +347,11 @@ matrices of *both* the AC and the DC solver. `DualAlgoControl` simply holds one 
 and resets `ac_algo_controler()` on an AC powerflow, the DC solver consumes and resets
 `dc_algo_controler()` on a DC powerflow, without clobbering each other).
 
-It is a plain composition (no inheritance, no virtual dispatch): callers forward a change to
-both families explicitly, eg.
-    dual.ac_algo_controler().tell_v_changed();
-    dual.dc_algo_controler().tell_v_changed();
+It is a plain composition (no inheritance, no virtual dispatch). Almost every change concerns
+both families the same way, so the `tell_xxx()` forwarders below raise a flag on both at once,
+which is what the element containers use. A change that only one family reads (the DC Sbus
+term of a phase shifter, the AC-only voltage-control plan) names its family explicitly:
+    dual.dc_algo_controler().tell_recompute_sbus();
 **/
 class DualAlgoControl final
 {
@@ -220,6 +363,20 @@ class DualAlgoControl final
         AlgoControl & dc_algo_controler() noexcept {return dc_algo_controler_;}
         const AlgoControl & ac_algo_controler() const noexcept {return ac_algo_controler_;}
         const AlgoControl & dc_algo_controler() const noexcept {return dc_algo_controler_;}
+
+        // raise the same flag on both families (see the AlgoControl method of the same name)
+        void tell_dimension_changed() noexcept {ac_algo_controler_.tell_dimension_changed(); dc_algo_controler_.tell_dimension_changed();}
+        void tell_pv_changed() noexcept {ac_algo_controler_.tell_pv_changed(); dc_algo_controler_.tell_pv_changed();}
+        void tell_pq_changed() noexcept {ac_algo_controler_.tell_pq_changed(); dc_algo_controler_.tell_pq_changed();}
+        void tell_slack_participate_changed() noexcept {ac_algo_controler_.tell_slack_participate_changed(); dc_algo_controler_.tell_slack_participate_changed();}
+        void tell_recompute_ybus() noexcept {ac_algo_controler_.tell_recompute_ybus(); dc_algo_controler_.tell_recompute_ybus();}
+        void tell_recompute_sbus() noexcept {ac_algo_controler_.tell_recompute_sbus(); dc_algo_controler_.tell_recompute_sbus();}
+        void tell_solver_need_reset() noexcept {ac_algo_controler_.tell_solver_need_reset(); dc_algo_controler_.tell_solver_need_reset();}
+        void tell_ybus_change_sparsity_pattern() noexcept {ac_algo_controler_.tell_ybus_change_sparsity_pattern(); dc_algo_controler_.tell_ybus_change_sparsity_pattern();}
+        void tell_v_changed() noexcept {ac_algo_controler_.tell_v_changed(); dc_algo_controler_.tell_v_changed();}
+        void tell_slack_weight_changed() noexcept {ac_algo_controler_.tell_slack_weight_changed(); dc_algo_controler_.tell_slack_weight_changed();}
+        void tell_ybus_some_coeffs_zero() noexcept {ac_algo_controler_.tell_ybus_some_coeffs_zero(); dc_algo_controler_.tell_ybus_some_coeffs_zero();}
+        void tell_one_el_changed_bus() noexcept {ac_algo_controler_.tell_one_el_changed_bus(); dc_algo_controler_.tell_one_el_changed_bus();}
 
     private:
         AlgoControl ac_algo_controler_;  // change tracking consumed by the AC solver

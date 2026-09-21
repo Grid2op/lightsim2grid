@@ -151,10 +151,17 @@ void bind_solvers(py::module_& m) {
         .def_readonly("nb_fallback_factorize",          &LinearSolverStats::nb_fallback_factorize, DocSolver::nb_fallback_factorize.c_str())
         .def_readonly("nb_fallback_factorize_failed",   &LinearSolverStats::nb_fallback_factorize_failed, DocSolver::nb_fallback_factorize_failed.c_str())
         .def_readonly("nb_solve",                       &LinearSolverStats::nb_solve, DocSolver::nb_solve.c_str())
+        .def_readonly("nb_solve_transpose",             &LinearSolverStats::nb_solve_transpose,
+                      "Number of transposed solves (`J^T x = b`, out of the factorization of J). "
+                      "Raised by the adjoint of a differentiable batch, never by an ordinary "
+                      "powerflow.")
         .def_readonly("timer_initialize",               &LinearSolverStats::timer_initialize_, DocSolver::timer_initialize.c_str())
         .def_readonly("timer_factor",                   &LinearSolverStats::timer_factor_, DocSolver::timer_factor.c_str())
         .def_readonly("timer_refactor",                 &LinearSolverStats::timer_refactor_, DocSolver::timer_refactor.c_str())
         .def_readonly("timer_solve",                    &LinearSolverStats::timer_solve_, DocSolver::timer_solve.c_str())
+        .def_readonly("timer_solve_transpose",          &LinearSolverStats::timer_solve_transpose_,
+                      "Time spent in the transposed solves, apart from the plain ones (see "
+                      "nb_solve_transpose).")
         .def("__repr__", [](const LinearSolverStats& s) {
             return "LinearSolverStats(nb_factorize=" + std::to_string(s.nb_factorize) +
                    ", nb_refactorize=" + std::to_string(s.nb_refactorize) +

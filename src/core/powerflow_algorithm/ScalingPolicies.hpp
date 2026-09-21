@@ -104,18 +104,22 @@ class LS2G_API LineSearchScalingPolicy final : public ScalingPolicy<NRSystem>
             // runs, F has already been overwritten in place by the linear solve
             // (J*dx=F -> F becomes dx): F.squaredNorm() would be ||dx||^2, NOT the
             // current mismatch -- the wrong quantity for the Armijo condition below.
-            // mismatch_sq_norm_at(zero) evaluates the residual at the CURRENT state
-            // (zero step), which is exactly ||mismatch(x)||^2 -- bit-identical to
-            // system.mismatch().squaredNorm(), since _compute_trial_V(zero)
-            // reconstructs the current V unchanged.
-            const real_type F_norm_sq_0 =
-                system.mismatch_sq_norm_at(RealVect::Zero(F.size()));
+            // mismatch_sq_norm_at_current() evaluates the residual at the CURRENT
+            // state (zero step), which is exactly ||mismatch(x)||^2 --
+            // bit-identical to system.mismatch().squaredNorm(), since
+            // _compute_trial_V(zero) reconstructs the current V unchanged.
+            const real_type F_norm_sq_0 = system.mismatch_sq_norm_at_current();
             real_type alpha = static_cast<real_type>(1.0);
             for (int k = 0; k < ls_max_iter_; ++k) {
                 const real_type threshold =
                     (static_cast<real_type>(1.0)
                         - static_cast<real_type>(2.0) * ls_c_ * alpha) * F_norm_sq_0;
-                if (system.mismatch_sq_norm_at(alpha * F) <= threshold) break;
+                // the scaled step goes through a member buffer: passing the
+                // `alpha * F` expression made Eigen materialise a fresh vector
+                // on every backtracking trial (up to ls_max_iter_ per NR
+                // iteration), where this one is allocated once and reused.
+                dx_scaled_ = alpha * F;
+                if (system.mismatch_sq_norm_at(dx_scaled_) <= threshold) break;
                 alpha *= ls_rho_;
             }
             return alpha;
@@ -141,6 +145,7 @@ class LS2G_API LineSearchScalingPolicy final : public ScalingPolicy<NRSystem>
         int ls_max_iter_ = 20;
         real_type ls_c_ = static_cast<real_type>(1e-4);
         real_type ls_rho_ = static_cast<real_type>(0.5);
+        RealVect dx_scaled_;  // scratch for the trial step (see scale)
 
         // needs update at each iteration of NR
         // real_type F_norm_sq_0_ = 0.;
@@ -163,7 +168,7 @@ class IwamotoScalingPolicy final : public ScalingPolicy<NRSystem>
             // ||dx||^2 into the same ratio as g0 would compare a state-step quantity
             // against a mismatch quantity -- dimensionally wrong for the classic
             // Iwamoto optimal-multiplier ratio mu = g0/(g0+g1).
-            real_type g0 = system.mismatch_sq_norm_at(RealVect::Zero(F.size()));
+            real_type g0 = system.mismatch_sq_norm_at_current();
 
             real_type g1 = system.mismatch_sq_norm_at(F);
             real_type mu = (g0 + g1 > static_cast<real_type>(0.))

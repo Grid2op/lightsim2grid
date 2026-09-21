@@ -68,6 +68,11 @@ public:
     static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = true;
     bool supports_remote_voltage_control() const noexcept override { return SUPPORTS_REMOTE_VOLTAGE_CONTROL; }
 
+    // the NRSystem fills BaseAlgo::mis_bus_ directly (set_mismatch_buffers), on
+    // every residual evaluation -- the last of which is at the voltage returned
+    static constexpr bool FILLS_BUS_MISMATCH = true;
+    bool fills_bus_mismatch() const noexcept override { return FILLS_BUS_MISMATCH; }
+
     // ----- Jacobian accessor ---------------------------------------------------
 
     Eigen::Ref<const Eigen::SparseMatrix<real_type>> get_J() const override {
@@ -110,6 +115,7 @@ public:
     IntVect  get_controller_kind()    const override { return _system.controller_kind(); }
     IntVect  get_controller_elem_id() const override { return _system.controller_elem_id(); }
     IntVect  get_controller_q_col()   const override { return _system.controller_q_col(); }
+    IntVect  get_group_v_row()        const override { return _system.group_v_row(); }
     int      get_slack_col()          const override { return _system.slack_col(); }
     real_type get_slack_absorbed()    const override { return _system.slack_absorbed(); }
 
@@ -161,10 +167,91 @@ public:
 
     // ----- bus masking ---------------------------------------------------------
     bool supports_bus_masking() const override { return true; }
+    bool supports_jacobian() const override { return true; }
+
+    // see BaseAlgo::refresh_J_at_solution. _system holds the converged V (apply_step
+    // wrote it, and the final mismatch_into read it back), so re-deriving the
+    // intermediate quantities and re-filling J evaluates it exactly there. The masked
+    // / pinned identity rows are re-applied by fill_J as usual, so the refreshed J
+    // still describes the system this row actually solved.
+    void refresh_J_at_solution() override {
+        _system.fill_internal_variables();
+        _system.fill_J();
+    }
+
     void set_masked_buses(const std::vector<int> & solver_bus_ids) override {
         _system.set_masked_buses(solver_bus_ids);
     }
+    void set_may_mask_voltage_control(bool val) override {
+        _system.set_may_mask_voltage_control(val);
+    }
+    void set_voltage_control_v_set(const RealVect & v_set) override {
+        _system.set_voltage_control_v_set(v_set);
+    }
+    void set_refactor_fallback(bool val) override {
+        _linear_solver.set_refactor_fallback(val);
+    }
+
+    // ----- PV / PQ relabelling at constant sparsity -----------------------------
+    bool supports_pv_pinning() const override { return true; }
+    void set_switchable_vm_buses(const std::vector<int> & solver_bus_ids) override {
+        _system.set_switchable_vm_buses(solver_bus_ids);
+    }
+    void set_pv_pinned_buses(const std::vector<int> & solver_bus_ids) override {
+        _system.set_pv_pinned_buses(solver_bus_ids);
+    }
+    void set_start_polar_cache(bool val) override { _system.set_start_polar_cache(val); }
     
+    // ----- continuation powerflow (CPF) ----------------------------------------
+    // See BaseAlgo for the contract. Both operations are meaningful only right
+    // after a converged compute_pf: they read the converged (Va, Vm) and the
+    // factorization it left standing.
+    bool supports_cpf() const noexcept override { return true; }
+
+    bool cpf_tangent(const Eigen::Ref<const CplxVect> & dir_solver, RealVect & z) override {
+        const Eigen::Index n = _system.J().rows();
+        if(n <= 0){
+            throw std::runtime_error("NRAlgo::cpf_tangent: no Jacobian is available -- a "
+                                     "powerflow must have been solved first.");
+        }
+        if(dir_solver.size() != _system.Va().size()){
+            std::ostringstream exc_;
+            exc_ << "NRAlgo::cpf_tangent: the direction has " << dir_solver.size()
+                 << " entries while the solver has " << _system.Va().size() << " buses.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(z.size() != n) z.resize(n);
+        _system.cpf_rhs_into(z, dir_solver);
+        // solve() reuses the standing factorization: no analyze, no refactorize.
+        const ErrorType err = _linear_solver.solve(z);
+        if(err != ErrorType::NoError){
+            err_ = err;
+            return false;
+        }
+        return true;
+    }
+
+    void cpf_predict(const Eigen::Ref<const RealVect> & z,
+                     real_type coeff,
+                     CplxVect & V_pred) const override {
+        _system.cpf_predict_into(V_pred, z, coeff);
+    }
+
+    bool cpf_refactorize_at_current() override {
+        if(_system.J().rows() <= 0){
+            throw std::runtime_error("NRAlgo::cpf_refactorize_at_current: no Jacobian is "
+                                     "available -- a powerflow must have been solved first.");
+        }
+        _system.fill_internal_variables();
+        _system.fill_J();
+        const ErrorType err = _linear_solver.refactorize(_system.J());
+        if(err != ErrorType::NoError){
+            err_ = err;
+            return false;
+        }
+        return true;
+    }
+
     // ----- scaling policy ------------------------------------------------------
     ScalingPolicyType get_scaling_policy_type()  const { return scaling_policy_->type(); }
     void set_scaling_policy(ScalingPolicyType t)  { 

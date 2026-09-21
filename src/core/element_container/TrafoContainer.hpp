@@ -17,15 +17,14 @@
 
 #include "Utils.hpp"
 #include "SubstationContainer.hpp"
-#include "OneSideContainer_forBranch.hpp"
-#include "TwoSidesContainer_rxh_A.hpp"
+#include "BranchContainer.hpp"
 
 #include <algorithm>
 
 namespace ls2g {
 
 class TrafoContainer;
-class LS2G_API TrafoInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
+class LS2G_API TrafoInfo : public BranchContainer::BranchInfo
 {
     public:
         // members
@@ -47,20 +46,8 @@ https://pandapower.readthedocs.io/en/latest/elements/trafo.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/trafo.html#electric-model
 **/
-class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<TrafoContainer, TrafoInfo>
+class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdder<TrafoContainer, TrafoInfo>
 {
-    //////////////////////////////
-    // access data from base class
-    public:
-        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::get_buses_side_1;
-        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::get_buses_side_2;
-
-    protected:
-        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::side_1_;
-        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::side_2_;
-        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::status_global_;
-    //////////////////////////////
-
     friend class TrafoInfo;
 
     public:
@@ -69,7 +56,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
     public:
         // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<
-                   TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes,
+                   BranchContainer::StateRes,
                    std::vector<real_type>, // ratio_
                    std::vector<bool> , // is_tap_hv_side
                    std::vector<real_type>, // shift_
@@ -80,6 +67,21 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                    std::vector<std::vector<real_type> >,  // rx_corr_alpha_
                    std::vector<std::vector<real_type> >   // rx_corr_pct_
                >;
+        enum StateResIdx {
+            BRANCH_STATE = 0,
+            RATIO,
+            IS_TAP_SIDE1,
+            SHIFT,
+            IGNORE_TAP_SIDE_FOR_SHIFT,
+            SHIFT_DEPENDENT_RX,
+            BASE_R,
+            BASE_X,
+            RX_CORR_ALPHA,
+            RX_CORR_PCT,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "TrafoContainer::StateRes and StateResIdx do not match");
 
         TrafoContainer() noexcept = default;
         ~TrafoContainer() noexcept override = default;
@@ -140,16 +142,19 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             bool ac,
             const SolverBusIdVect & id_grid_to_solver);  // needed for dc mode
 
-        void compute_results(const Eigen::Ref<const RealVect> & Va,
-                             const Eigen::Ref<const RealVect> & Vm,
-                             const Eigen::Ref<const CplxVect> & V,
-                             const SolverBusIdVect & id_grid_to_solver,
-                             const Eigen::Ref<const RealVect> & bus_vn_kv,
-                             real_type sn_mva,
-                             bool ac)
+    protected:
+        bool _in_topo_vect() const override { return true; }
+
+        void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                              const Eigen::Ref<const RealVect> & Vm,
+                              const Eigen::Ref<const CplxVect> & V,
+                              const SolverBusIdVect & id_grid_to_solver,
+                              const Eigen::Ref<const RealVect> & bus_vn_kv,
+                              real_type sn_mva,
+                              bool ac) override
         {
             // compute base values
-            compute_results_tsc_rxha_no_amps(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
+            _compute_branch_results_no_amps(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
             // adjust for phase shifters
             if(!ac){
                 Eigen::Ref<RealVect> res_p_side_1 = get_res_p_side_1();
@@ -166,13 +171,10 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                 }
             }
             // compute amps flow
-            compute_amps_after_all_set();
-        }
-        
-        void reset_results(){
-            reset_results_tsc_rxha();
+            _compute_amps();
         }
 
+    public:
         Eigen::Ref<const RealVect> dc_x_tau_shift() const {return dc_x_tau_shift_;}
 
         void change_ratio(
@@ -185,7 +187,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                     ratio_(el_id) = new_ratio;
                     // TODO speed: only some part needs to be recomputed
                     _update_internal_coeffs(el_id); 
-                    solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                    solver_control.tell_recompute_ybus();
                 }
         }
         
@@ -206,75 +208,21 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                     shift_(el_id) = new_shift_rad;
                     // TODO speed: only some part needs to be recomputed
                     _update_internal_coeffs(el_id); 
-                    solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                    solver_control.tell_recompute_ybus();
                     solver_control.dc_algo_controler().tell_recompute_sbus();  // only in DC however
                 }
         }
         
     protected:
-        // void _update_model_coeffs();
         void _update_model_coeffs_one_el(int el_id) override;
-        void _update_other_model_coeffs() override {
-            dc_x_tau_shift_ = RealVect::Zero(nb());
-        }
 
-        bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
-            bool has_been_changed = TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>:: _deactivate(el_id, solver_control);
-            if(has_been_changed){
-                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
-                solver_control.dc_algo_controler().tell_recompute_sbus();
-            }
-            return has_been_changed;
-        }
-
-        bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
-            bool has_been_changed = TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>:: _reactivate(el_id, solver_control);
-            if(has_been_changed){
-                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
-                solver_control.dc_algo_controler().tell_recompute_sbus();
-            }
-            return has_been_changed;
-        }
-
-        void _change_bus_side_1(
-            int /*el_id*/,
-            GridModelBusId /*new_gridmodel_bus_id*/,
-            DualAlgoControl & solver_control,
-            const SubstationContainer & /*substation*/,
-            bool has_effectively_changed
-        ) override {
-            if(has_effectively_changed){
-                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
-                solver_control.dc_algo_controler().tell_recompute_sbus();
-            }
-        }
-
-        void _change_bus_side_2(
-            int /*el_id*/,
-            GridModelBusId /*new_gridmodel_bus_id*/,
-            DualAlgoControl & solver_control,
-            const SubstationContainer & /*substation*/,
-            bool has_effectively_changed
-        ) override {
-            if(has_effectively_changed){
-                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
-                solver_control.dc_algo_controler().tell_recompute_sbus();
-            }
-        }
-
-        void _update_topo(
-            DualAlgoControl & solver_control,
-            SubstationContainer & /*substations*/,
-            const std::vector<bool> & side1_changed,
-            const std::vector<bool> & side2_changed
-        ) override
-        {
-            bool onechanged_1 = std::any_of(side1_changed.begin(), side1_changed.end(), [](bool v) { return v; });
-            bool onechanged_2 = std::any_of(side2_changed.begin(), side2_changed.end(), [](bool v) { return v; });
-            if(onechanged_1 || onechanged_2){
-                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
-                solver_control.dc_algo_controler().tell_recompute_sbus();
-            }
+        // Any connectivity change moves the phase shifter's DC Sbus term
+        // (hack_Sbus_for_dc_phase_shifter only stamps a transformer connected at
+        // both ends), on top of the Kron update the branch does.
+        // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
+        void _on_connectivity_changed(int el_id, DualAlgoControl & solver_control) override {
+            BranchContainer::_on_connectivity_changed(el_id, solver_control);
+            solver_control.dc_algo_controler().tell_recompute_sbus();
         }
     private:
         /**
@@ -332,27 +280,27 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
 
     protected:
 
-        real_type fillBf_for_PTDF_coeff(int tr_id) const override {
+        real_type _ptdf_x(int tr_id) const override {
             real_type res = x_(tr_id);
             real_type tau = is_tap_side1_[tr_id] ? ratio_(tr_id) : 1. / ratio_(tr_id);
             return res * tau;
         }
 
-        int fillBf_for_PTDF_id(int tr_id, int nb_powerline) const override {
+        int _ptdf_row(int tr_id, int nb_powerline) const override {
             return tr_id + nb_powerline;
         }
 
-        FDPFCoeffs get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const override;
+        FDPFCoeffs _fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const override;
 };
 
 inline TrafoInfo::TrafoInfo(const TrafoContainer & r_data_trafo, int my_id) noexcept:
-TwoSidesContainer_rxh_AInfo(r_data_trafo, my_id),
+BranchInfo(r_data_trafo, my_id),
 ratio(-1.0),
 shift_rad(-1.0),
 is_tap_side1(true)
 {
     if(my_id < 0) return;
-    if(static_cast<size_t>(my_id) >= r_data_trafo.nb()) return;
+    if(my_id >= r_data_trafo.nb()) return;
     is_tap_side1 = r_data_trafo.is_tap_side1_[my_id];
     ratio = r_data_trafo.ratio_.coeff(my_id);
     shift_rad = r_data_trafo.shift_.coeff(my_id);

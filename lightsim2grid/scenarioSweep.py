@@ -35,17 +35,17 @@ from .contingencyAnalysis import (PreContingencyResult, ContingencyResult, Secur
 
 class ScenarioSweep:
     """
-    Batch powerflow that varies **both** the injection and a contingency (line / trafo
-    disconnection) per simulation, independently, row-aligned: row `i` of every
-    ``modify_*`` input is solved together with row `i` of ``set_contingency_lines`` /
-    ``set_contingency_trafos``.
+    Batch powerflow that varies **both** the injection and a contingency (line, trafo
+    or generator disconnection) per simulation, independently, row-aligned: row `i` of
+    every ``modify_*`` input is solved together with row `i` of
+    ``set_contingency_lines`` / ``set_contingency_trafos`` / ``set_contingency_gens``.
 
     Unlike :class:`lightsim2grid.timeSerie.TimeSerie` /
     :class:`lightsim2grid.injectionSweep.InjectionSweep` (a single bundled
     ``compute_V_from_inj`` call), this class uses a setter-based API: call as many of
     ``modify_gen_p`` / ``modify_sgen_p`` / ``modify_load_p`` / ``modify_load_q`` /
-    ``modify_gen_v`` / ``set_contingency_lines`` / ``set_contingency_trafos`` as are
-    relevant, then ``compute()``. Any axis you never set defaults to the grid's own
+    ``modify_gen_v`` / ``set_contingency_lines`` / ``set_contingency_trafos`` /
+    ``set_contingency_gens`` as are relevant, then ``compute()``. Any axis you never set defaults to the grid's own
     state for every row (its own target injection / voltage setpoint, or "nothing
     disconnected"). The first setter you call fixes the number of simulations; every
     later setter is checked against it immediately. Note ``modify_gen_v`` is different
@@ -229,6 +229,56 @@ class ScenarioSweep:
             self.__computed = False
         self.computer.violation_threshold = val
 
+    @property
+    def compute_physical_violations(self):
+        """Whether every converged row reports the PHYSICAL limits its solution leaves -- a
+        state the grid cannot reach at all (``ViolationCategory.PHYSICAL``), as opposed to
+        the operational limits :attr:`compute_limit_violations` reports (a voltage band, a
+        thermal rating: states the grid does reach and should not sit in). Default:
+        ``False``. Same meaning as
+        :attr:`lightsim2grid.timeSerie.TimeSerie.compute_physical_violations`, which
+        documents the two checks (the reactive capability of a bus, and the active power of
+        an angle-droop hvdc line) in full.
+
+        Detection only: nothing is switched PV -> PQ, no droop is clamped, no row is
+        re-solved. Unlike :attr:`compute_limit_violations`, changing this flag keeps the
+        registered injections and contingency masks -- only the results go.
+        """
+        return self.computer.compute_physical_violations
+
+    @compute_physical_violations.setter
+    def compute_physical_violations(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `compute_physical_violations` attribute must be a boolean.")
+        val = bool(val)
+        if val == self.computer.compute_physical_violations:
+            return  # no-op, matches the C++ side (which also no-ops and does not clear)
+        # the C++ setter drops this batch's base case and results only -- the registered
+        # injections and masks survive, so the python-side mask cache must NOT be dropped
+        # here (unlike in the compute_limit_violations setter above, whose C++ side clear()s
+        # the whole object)
+        self.computer.compute_physical_violations = val
+        self.__computed = False
+
+    @property
+    def physical_violation_tol_mva(self):
+        """Absolute slack (MVA) on every comparison :attr:`compute_physical_violations`
+        makes: a violation needs ``value > limit + tol`` (or ``value < limit - tol`` for
+        ``LOW_Q``). Default: ``1e-4``. Changing it invalidates any previously-computed
+        results."""
+        return self.computer.physical_violation_tol_mva
+
+    @physical_violation_tol_mva.setter
+    def physical_violation_tol_mva(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `physical_violation_tol_mva` attribute must be a real number.")
+        if val == self.computer.physical_violation_tol_mva:
+            return
+        self.computer.physical_violation_tol_mva = val  # validates, and drops base case + results
+        self.__computed = False
+
     def _check_2d(self, arr, name):
         arr = np.asarray(arr)
         if arr.ndim != 2:
@@ -307,6 +357,37 @@ class ScenarioSweep:
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_trafos(mask)
         self._trafo_mask = mask  # cached: see the note in __init__ (no C++-side getter)
+        self.__computed = False
+
+    def set_contingency_gens(self, mask):
+        """Per-step generator contingency mask, shape ``(n_simul, n_gen)``, dtype bool.
+        ``True`` means "disconnect this generator for this simulation".
+
+        Unlike :func:`set_contingency_lines` this does not edit the admittance matrix --
+        a generator carries no admittance. It removes the generator's active power
+        (and, if it does not regulate voltage, its reactive setpoint) from that step's
+        injection, re-weights the distributed slack without it, and -- when the **last**
+        generator regulating its own bus is taken out -- turns that bus from PV to PQ
+        for the step, so its voltage magnitude is solved for instead of held at the
+        setpoint. The lost MW is picked up by the slack; use :func:`modify_gen_p` to
+        express a redispatch instead.
+
+        The PV/PQ relabelling costs no extra symbolic factorization: every bus that can
+        flip is given a voltage-magnitude unknown and a reactive equation once, up
+        front, so the Jacobian's sparsity is the union over all the steps, and each step
+        merely masks the equation of the buses that are still PV. The whole sweep keeps
+        running on a single analysis, as it did before this axis existed.
+
+        Only generators regulating their **own** bus are supported for now.
+        :func:`compute` raises if the mask names a generator that regulates a remote
+        bus, or one whose bus a control group holds (a remote generator, an SVC or an
+        HVDC converter station).
+        """
+        mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
+        if mask.shape[1] != self.grid2op_env.n_gen:
+            raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "
+                               f"differs from the number of columns of the mask ({mask.shape[1]}).")
+        self.computer.set_contingency_gens(mask)
         self.__computed = False
 
     def compute(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):
@@ -391,6 +472,28 @@ class ScenarioSweep:
         :attr:`compute_limit_violations` to be ``True`` (raises otherwise)."""
         return self.computer.get_violations_n()
 
+    def get_physical_violations(self):
+        """Per row: the list of :class:`LimitViolation` of the physical limits that row's
+        solution leaves -- ``element_type`` ``BUS`` with ``violation_type`` ``LOW_Q`` /
+        ``HIGH_Q`` (the reactive capability of the machines holding that bus), or
+        ``element_type`` ``HVDC`` with ``HIGH_P`` and ``side`` naming the direction (the
+        active power of an angle-droop hvdc line). Every entry has ``category ==
+        ViolationCategory.PHYSICAL``.
+
+        A row that did not converge has an **empty** entry, not a sentinel (unlike
+        :func:`get_violations`) -- use ``self.computer.converged_mask()`` to tell that from
+        "converged, no violation". Requires :attr:`compute_physical_violations` to be
+        ``True`` (raises otherwise); :func:`run` returns the same lists in a structured
+        result.
+        """
+        return self.computer.get_physical_violations()
+
+    def get_physical_violations_n(self):
+        """Same as :func:`get_physical_violations`, for the pre-batch ("n") case. Empty if
+        that solve did not converge. Requires :attr:`compute_physical_violations` to be
+        ``True``."""
+        return self.computer.get_physical_violations_n()
+
     @staticmethod
     def _row_converged(limit_violations) -> bool:
         """No ``converged()`` / ``converged_n()`` on ScenarioSweep by design (see
@@ -412,7 +515,10 @@ class ScenarioSweep:
         Requires :attr:`compute_limit_violations` to be ``True`` (set via
         ``this_instance.compute_limit_violations = True`` -- there is no constructor
         argument for it, unlike :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis`),
-        else a ``RuntimeError`` is raised.
+        else a ``RuntimeError`` is raised. ``physical_violations`` is filled as well when
+        :attr:`compute_physical_violations` is on, and is an empty list otherwise -- it is
+        kept apart from ``limit_violations`` because those are PHYSICAL statements (the
+        solution is unreachable) rather than operational ones.
 
         Unlike :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.run`,
         rows are already in caller-set order here (no dedup / reordering concept,
@@ -439,9 +545,15 @@ class ScenarioSweep:
             self.compute(ignore_errors=True)
 
         violations_n = list(self.computer.get_violations_n())
+        # the physical-limit checks are a separate opt-in: an empty list where they are off
+        # (see PreContingencyResult.physical_violations)
+        with_phys = self.computer.compute_physical_violations
+        phys_n = list(self.computer.get_physical_violations_n()) if with_phys else []
+        phys = self.computer.get_physical_violations() if with_phys else None
         pre_contingency_result = PreContingencyResult(
             converged=self._row_converged(violations_n),
             limit_violations=violations_n,
+            physical_violations=phys_n,
         )
 
         n_line = len(self.grid2op_env.backend._grid.get_lines())
@@ -462,6 +574,7 @@ class ScenarioSweep:
                 contingency_name=None,
                 converged=self._row_converged(row_violations),
                 limit_violations=row_violations,
+                physical_violations=list(phys[row_id]) if phys is not None else [],
             ))
         return SecurityAnalysisResult(pre_contingency_result, post_contingency_results)
 

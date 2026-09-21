@@ -25,10 +25,18 @@ def _aux_add_load(model, network, pm_to_ls, isolated_ls_bus):
     isolated_ls_bus: numpy array
         lightsim2grid bus ids of isolated (`bus_type == 4`) buses
 
+    Returns
+    -------
+    load_bus: numpy array
+        The lightsim2grid bus id each load was built on. Returned (rather than read
+        back from the model afterwards) because a load the source file declares out
+        of service reports `bus_id == -1`, while the substation it belongs to is a
+        property of the grid, not of its status.
+
     """
     load = network.get("load", {})
     if not load:
-        return
+        return np.array([], dtype=int)
 
     load_keys = sorted(load, key=int)
     load_bus = pm_bus_to_ls(np.array([int(load[k]["load_bus"]) for k in load_keys]), pm_to_ls)
@@ -42,3 +50,5 @@ def _aux_add_load(model, network, pm_to_ls, isolated_ls_bus):
     for load_id, is_ok in enumerate(status):
         if not is_ok:
             model.deactivate_load(load_id)
+
+    return load_bus

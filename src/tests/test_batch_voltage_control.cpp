@@ -11,8 +11,9 @@
 // the solver: they are pulled out of the LSGrid itself, through the `lsgrid_ptr`
 // the algorithm holds, by LSGrid::get_free_vm_slack_solver_buses /
 // fill_hvdc_droop_solver_data / fill_voltage_control_solver_data. Those three read
-// the grid's *member* solver-side labelling (id_me_to_ac_solver_,
-// id_ac_solver_to_me_, slack_bus_id_ac_solver_).
+// the grid's own AC cache (ac_cache_: id_me_to_solver, id_solver_to_me,
+// slack_bus_id_solver -- and bus_pq, which fill_voltage_control_solver_data needs
+// to know which buses own a Q equation).
 //
 // LSGrid::ac_pf passes those very members to pre_process_solver, so they are always
 // current there. The batch algorithms (TimeSeries / ContingencyAnalysis /
@@ -102,6 +103,59 @@ LSGrid make_remote_gen_grid()
 
     grid.add_gen_slackbus(0, 1.);
     grid.set_gen_regulated_bus(1, 3);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
+// 3-bus grid shaped like the "regulated bus stranded" grid above turned inside
+// out: bus 0 (slack) --line-- bus 1 (D, the REGULATED bus, on the path to the
+// rest of the grid) --trafo-- bus 2 (B, a LEAF carrying the sole controller).
+// Tripping the trafo strands the CONTROLLER's own bus, not the regulated one --
+// the scenario a lone (cnt == 1) group now falls back to plain PQ for instead of
+// diverging (see VoltageControl::set_masked_buses in NRSystem.hpp).
+const int LEAF_NB_BUS = 3;
+const int LEAF_BUS_D = 1;
+const int LEAF_BUS_B = 2;
+
+LSGrid make_leaf_remote_gen_grid()
+{
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    const RealVect bus_vn_kv = RealVect::Constant(LEAF_NB_BUS, 138.);
+    grid.init_bus(static_cast<unsigned int>(LEAF_NB_BUS), 1, bus_vn_kv, 0, 0);
+
+    RealVect line_r(1), line_x(1);
+    line_r << 0.01; line_x << 0.1;
+    CplxVect line_h(1); line_h << cplx_type(0., 0.);
+    Eigen::VectorXi line_from(1), line_to(1);
+    line_from << 0; line_to << LEAF_BUS_D;
+    grid.init_powerlines(line_r, line_x, line_h, line_from, line_to);
+
+    RealVect tr_r(1), tr_x(1), tr_ratio(1), tr_shift(1);
+    tr_r << 0.005; tr_x << 0.08; tr_ratio << 1.0; tr_shift << 0.0;
+    CplxVect tr_b(1); tr_b << cplx_type(0., 0.);
+    std::vector<bool> tr_tap_hv(1, true);
+    Eigen::VectorXi tr_bus1(1), tr_bus2(1);
+    tr_bus1 << LEAF_BUS_D; tr_bus2 << LEAF_BUS_B;
+    grid.init_trafo(tr_r, tr_x, tr_b, tr_ratio, tr_shift, tr_tap_hv, tr_bus1, tr_bus2, false);
+
+    RealVect load_p(1), load_q(1);
+    load_p << LOAD_P; load_q << LOAD_Q;
+    Eigen::VectorXi load_bus(1); load_bus << LEAF_BUS_D;
+    grid.init_loads(load_p, load_q, load_bus);
+
+    RealVect gen_p(2), gen_v(2), gen_min_q(2), gen_max_q(2);
+    Eigen::VectorXi gen_bus(2);
+    gen_p << 0., 0.;
+    gen_v << 1.02, V_SET;
+    gen_min_q << -1000., -1000.;
+    gen_max_q << 1000., 1000.;
+    gen_bus << 0, LEAF_BUS_B;
+    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+
+    grid.add_gen_slackbus(0, 1.);
+    grid.set_gen_regulated_bus(1, LEAF_BUS_D);
     grid.tell_solver_need_reset();
     return grid;
 }
@@ -316,6 +370,26 @@ TEST_CASE("a batch on an already-solved grid regulates too", "[batch][vctrl]")
     check_same_voltages(one_step_timeseries(grid, 2), ref);
 }
 
+TEST_CASE("the source grid still solves correctly after a batch ran on it", "[batch][vctrl]")
+{
+    // Every batch prep calls pre_process_solver with the batch's OWN cache, and that
+    // call publishes the batch's labelling and pv-pq split into the grid it was
+    // called on -- next to a matrix it did not publish. On the batch's private copy
+    // that mixture is harmless (the copy never runs a powerflow of its own); the
+    // point here is the contract that makes it harmless anywhere, namely that such a
+    // build always retires that grid's cache. Solve the source grid on both sides of
+    // a batch and it must not move.
+    LSGrid ref_grid = make_remote_gen_grid();
+    const CplxVect ref = single_shot(ref_grid);
+
+    LSGrid grid = make_remote_gen_grid();
+    check_same_voltages(single_shot(grid), ref);
+    check_same_voltages(one_step_timeseries(grid, 2), ref);
+    check_same_voltages(single_shot(grid), ref);   // ... and again, after the batch
+    check_same_voltages(empty_contingency(grid), ref);
+    check_same_voltages(single_shot(grid), ref);
+}
+
 TEST_CASE("two generators sharing one regulated bus share it in a batch too", "[batch][vctrl]")
 {
     // Sharing is the supported multi-controller case (test_powerflow_algorithm.cpp
@@ -417,6 +491,206 @@ TEST_CASE("a contingency stranding a regulated bus is reported, not silently wro
         CHECK(ca.converged()[0] == 0);
         for (int b = 0; b < NB_BUS; ++b) CHECK(std::abs(ca.get_voltages()(0, b)) == 0.);
     }
+}
+
+// The algorithms the stranded-controller fallback is exercised under. SparseLU
+// re-pivots on every refactorize and never noticed anything; KLU keeps the pivot
+// sequence of the base factorization, and the repurposed control row ("Q_c = 0"
+// where "Vm(reg) = Vset" stood) puts a zero right where it pivoted, so
+// klu_refactor halts -- the row was reported diverged until the batch enabled the
+// numeric-factorize fallback (BaseAlgo::set_refactor_fallback) on its algorithm.
+static std::vector<AlgorithmType> stranding_algos()
+{
+    std::vector<AlgorithmType> res{AlgorithmType::NR_SparseLU};
+#ifdef KLU_SOLVER_AVAILABLE
+    res.push_back(AlgorithmType::NR_KLU);
+    res.push_back(AlgorithmType::NRSing_KLU);
+#endif
+    return res;
+}
+static bool refactorize_is_a_factorize(AlgorithmType algo)
+{
+    return algo == AlgorithmType::NR_SparseLU || algo == AlgorithmType::NRSing_SparseLU;
+}
+
+TEST_CASE("a contingency stranding a lone controller's own bus falls back to plain PQ", "[batch][vctrl][mask]")
+{
+    // Mirror image of the previous test: the trafo strands bus 2 (B, the sole
+    // controller's own bus), not bus 1 (D, the regulated one). A single-shot
+    // powerflow on the same post-contingency grid (trafo out, controller
+    // explicitly disconnected -- what a rebuilt topology does once it drops the
+    // controller from its group) is the reference: bus D should float free of
+    // V_SET, not diverge and not stay pinned to it.
+    LSGrid ref_grid = make_leaf_remote_gen_grid();
+    ref_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ref_grid.deactivate_trafo(0);
+    ref_grid.deactivate_gen(1);
+    const CplxVect ref = ref_grid.ac_pf(
+        CplxVect::Constant(static_cast<Eigen::Index>(ref_grid.total_bus()), cplx_type(1., 0.)), 30, 1e-10);
+    REQUIRE(ref.size() == LEAF_NB_BUS);
+    // guard the guard: the reference really doesn't hold D at V_SET any more
+    CHECK(std::abs(std::abs(ref(LEAF_BUS_D)) - V_SET) > 1e-4);
+
+    for (const AlgorithmType algo : stranding_algos())
+    for (bool handle_disconnected : {false, true}) {
+        INFO("algorithm = " << static_cast<int>(algo) << ", handle_disconnected_grid = " << handle_disconnected);
+        LSGrid grid = make_leaf_remote_gen_grid();
+        grid.change_algorithm(algo);
+        ContingencyAnalysis ca(grid, /*compute_limit_violations=*/true);
+        ca.set_handle_disconnected_grid(handle_disconnected);
+        ca.add_n1(1);  // trafo 0: 1 powerline (id 0) precedes it, so its id is 1
+        ca.compute(CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), cplx_type(1., 0.)), 30, 1e-10);
+        REQUIRE(ca.get_voltages().rows() == 1);
+        REQUIRE(ca.converged().size() == 1);
+        if (!handle_disconnected) {
+            // default mode: still skipped outright, unchanged behaviour
+            CHECK(ca.converged()[0] == 0);
+            for (int b = 0; b < LEAF_NB_BUS; ++b) CHECK(std::abs(ca.get_voltages()(0, b)) == 0.);
+            continue;
+        }
+        CHECK(ca.converged()[0] == 1);
+        for (int b : {0, LEAF_BUS_D}) {
+            INFO("bus " << b);
+            CHECK(std::abs(ca.get_voltages()(0, b)) == Approx(std::abs(ref(b))).epsilon(1e-8));
+            CHECK(std::arg(ca.get_voltages()(0, b)) == Approx(std::arg(ref(b))).margin(1e-9));
+        }
+        // bus B (the masked/stranded one) reports 0, same convention as every
+        // other masked bus
+        CHECK(std::abs(ca.get_voltages()(0, LEAF_BUS_B)) == 0.);
+        // and under a fixed-pivot solver, this is the row the fallback exists for
+        if (!refactorize_is_a_factorize(algo)) {
+            CHECK(ca.get_linear_solver_stats().nb_refactorize_failed >= 1);
+            CHECK(ca.get_linear_solver_stats().nb_fallback_factorize >= 1);
+            CHECK(ca.get_linear_solver_stats().nb_fallback_factorize_failed == 0);
+        }
+    }
+}
+
+TEST_CASE("the fallback also works through the multi-threaded batch path", "[batch][vctrl][mask]")
+{
+    // set_may_mask_voltage_control gets wired differently for the single-threaded
+    // _algo (re-asserted + a forced rebuild in _maybe_prepare_masks, since _algo is
+    // a long-lived member that may already have sparsity built) than for the
+    // per-thread algos spawned fresh every compute() (told directly in
+    // init_thread, no rebuild needed -- their first build_J_sparsity() already
+    // sees it). Exercise the second path specifically: >= 2 contingencies with
+    // nb_thread >= 2 actually engages it.
+    LSGrid ref_grid = make_leaf_remote_gen_grid();
+    ref_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ref_grid.deactivate_trafo(0);
+    ref_grid.deactivate_gen(1);
+    const CplxVect ref = ref_grid.ac_pf(
+        CplxVect::Constant(static_cast<Eigen::Index>(ref_grid.total_bus()), cplx_type(1., 0.)), 30, 1e-10);
+    REQUIRE(ref.size() == LEAF_NB_BUS);
+
+    for (const AlgorithmType algo : stranding_algos()) {
+        INFO("algorithm = " << static_cast<int>(algo));
+        LSGrid grid = make_leaf_remote_gen_grid();
+        grid.change_algorithm(algo);
+        ContingencyAnalysis ca(grid, /*compute_limit_violations=*/true);
+        ca.set_handle_disconnected_grid(true);
+        ca.set_nb_thread(2);
+        ca.add_n1(0);  // the line: no stranding, just here to force nb_thread == 2
+        ca.add_n1(1);  // the trafo: strands ctrl's own bus, as in the test above
+        ca.compute(CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), cplx_type(1., 0.)), 30, 1e-10);
+        REQUIRE(ca.get_voltages().rows() == 2);
+        REQUIRE(ca.converged().size() == 2);
+        CHECK(ca.converged()[1] == 1);
+        for (int b : {0, LEAF_BUS_D}) {
+            INFO("bus " << b);
+            CHECK(std::abs(ca.get_voltages()(1, b)) == Approx(std::abs(ref(b))).epsilon(1e-8));
+            CHECK(std::arg(ca.get_voltages()(1, b)) == Approx(std::arg(ref(b))).margin(1e-9));
+        }
+        CHECK(std::abs(ca.get_voltages()(1, LEAF_BUS_B)) == 0.);
+    }
+}
+
+TEST_CASE("a stranded member of a SHARED control group is unaffected by the cnt==1 fallback", "[batch][vctrl][mask]")
+{
+    // bus 0 (slack) --line-- bus 1 (D, regulated) --trafoA-- bus 2 (ctrl A)
+    //                                              --trafoB-- bus 3 (ctrl B)
+    // Generators on buses 2 AND 3 both remotely regulate bus 1: a cnt==2 group.
+    // Tripping trafo A strands ctrl A's own bus only -- bus 1 (D) and ctrl B
+    // (bus 3) both stay live. The fallback added for the lone (cnt==1) case in
+    // the previous test deliberately does NOT extend to a partially-stranded
+    // shared group (set_masked_buses / _recompute_group_stranded skip any group
+    // with grp_count() != 1) -- this pins that the cnt==2 case is bit-for-bit
+    // unaffected by that change.
+    //
+    // It happens NOT to diverge: ctrl A's own Q unknown loses its coupling to
+    // its (now masked) bus, but stays coupled to the group's sharing row, which
+    // is untouched by masking -- so the augmented system stays non-singular. The
+    // voltage row only ever depended on Vm(bus 1) (no slope declared for a GEN
+    // in a cnt>1 group, before or after this change), so bus 1 still lands on
+    // V_SET, courtesy of ctrl B alone; ctrl A's Q comes out as whatever the
+    // sharing formula slaves it to, with no bearing on anything physical since
+    // its own bus's real power-balance equation is masked away. That is exactly
+    // what LSGrid::ac_pf on the same post-contingency grid (trafo A out, gen A
+    // left fully connected but electrically isolated) also produces, so it is
+    // used as the reference below.
+    const int SH_NB_BUS = 4;
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    const RealVect bus_vn_kv = RealVect::Constant(SH_NB_BUS, 138.);
+    grid.init_bus(static_cast<unsigned int>(SH_NB_BUS), 1, bus_vn_kv, 0, 0);
+
+    RealVect line_r(1), line_x(1);
+    line_r << 0.01; line_x << 0.1;
+    CplxVect line_h(1); line_h << cplx_type(0., 0.);
+    Eigen::VectorXi line_from(1), line_to(1);
+    line_from << 0; line_to << 1;
+    grid.init_powerlines(line_r, line_x, line_h, line_from, line_to);
+
+    RealVect tr_r(2), tr_x(2), tr_ratio(2), tr_shift(2);
+    tr_r << 0.005, 0.005; tr_x << 0.08, 0.08; tr_ratio << 1.0, 1.0; tr_shift << 0.0, 0.0;
+    CplxVect tr_b(2); tr_b << cplx_type(0., 0.), cplx_type(0., 0.);
+    std::vector<bool> tr_tap_hv(2, true);
+    Eigen::VectorXi tr_bus1(2), tr_bus2(2);
+    tr_bus1 << 1, 1; tr_bus2 << 2, 3;
+    grid.init_trafo(tr_r, tr_x, tr_b, tr_ratio, tr_shift, tr_tap_hv, tr_bus1, tr_bus2, false);
+
+    RealVect load_p(1), load_q(1);
+    load_p << LOAD_P; load_q << LOAD_Q;
+    Eigen::VectorXi load_bus(1); load_bus << 1;
+    grid.init_loads(load_p, load_q, load_bus);
+
+    RealVect gen_p(3), gen_v(3), gen_min_q(3), gen_max_q(3);
+    Eigen::VectorXi gen_bus(3);
+    gen_p << 0., 0., 0.;
+    gen_v << 1.02, V_SET, V_SET;
+    gen_min_q << -1000., -1000., -1000.;
+    gen_max_q << 1000., 1000., 1000.;
+    gen_bus << 0, 2, 3;
+    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+    grid.set_gen_regulated_bus(1, 1);  // gen on bus 2 regulates bus 1
+    grid.set_gen_regulated_bus(2, 1);  // gen on bus 3 regulates bus 1 too
+    grid.tell_solver_need_reset();
+
+    LSGrid ref_grid = grid;  // (LSGrid's copy ctor resets solver-side state only, not the model)
+    ref_grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ref_grid.deactivate_trafo(0);  // trafo A
+    ref_grid.deactivate_gen(1);    // ctrl A
+    const CplxVect ref = ref_grid.ac_pf(
+        CplxVect::Constant(static_cast<Eigen::Index>(ref_grid.total_bus()), cplx_type(1., 0.)), 30, 1e-10);
+    REQUIRE(ref.size() == SH_NB_BUS);
+    CHECK(std::abs(ref(1)) == Approx(V_SET).epsilon(1e-8));  // ctrl B alone still holds bus 1
+
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ContingencyAnalysis ca(grid, /*compute_limit_violations=*/true);
+    ca.set_handle_disconnected_grid(true);
+    ca.add_n1(1);  // trafo A (1--2): 1 powerline precedes the trafos, so its id is 1
+    ca.compute(CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), cplx_type(1., 0.)), 30, 1e-10);
+    REQUIRE(ca.get_voltages().rows() == 1);
+    REQUIRE(ca.converged().size() == 1);
+    CHECK(ca.converged()[0] == 1);
+    for (int b : {0, 1, 3}) {
+        INFO("bus " << b);
+        CHECK(std::abs(ca.get_voltages()(0, b)) == Approx(std::abs(ref(b))).epsilon(1e-8));
+        CHECK(std::arg(ca.get_voltages()(0, b)) == Approx(std::arg(ref(b))).margin(1e-9));
+    }
+    CHECK(std::abs(ca.get_voltages()(0, 2)) == 0.);  // ctrl A's own (masked) bus
 }
 
 TEST_CASE("stale solver state on the source grid cannot leak into a batch", "[batch][stale]")

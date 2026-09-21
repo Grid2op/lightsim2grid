@@ -307,16 +307,19 @@ class TestSubstationAndMappingConsistency(unittest.TestCase):
         import pickle
         from lightsim2grid.lightsim2grid_cpp import LSGrid
 
-        SUBSTATION_ID = 7
+        # position of the substation block in LSGrid::get_state()'s tuple
+        SUBSTATION_BLOCK = 6
         # SubstationContainer::StateRes = (n_sub, nmax_busbar, sub_vn_kv,
-        #                                  bus_status, bus_vn_kv, sub_names,
+        #                                  bus_vn_kv, sub_names,
         #                                  bus_vmin_kv, bus_vmax_kv)
+        # There is no bus_status slot: whether a bus is in the solved system is
+        # counted from the elements, not stored, so a file cannot state it.
         def dump_with(grid, mutate):
             outer = grid.__getstate__()
             inner = list(outer[3])
-            sub = list(inner[SUBSTATION_ID])
+            sub = list(inner[SUBSTATION_BLOCK])
             mutate(sub)
-            inner[SUBSTATION_ID] = tuple(sub)
+            inner[SUBSTATION_BLOCK] = tuple(sub)
             state = (outer[0], outer[1], outer[2], tuple(inner))
 
             class _P(pickle.Pickler):
@@ -329,9 +332,6 @@ class TestSubstationAndMappingConsistency(unittest.TestCase):
             _P(buf, protocol=4).dump(grid)
             return buf.getvalue()
 
-        def set_bus_status_short(sub):
-            sub[3] = [True]
-
         def set_nsub_zero(sub):
             sub[0] = 0
 
@@ -340,10 +340,9 @@ class TestSubstationAndMappingConsistency(unittest.TestCase):
             sub[1] = 100000
 
         def set_bus_vn_kv_short(sub):
-            sub[4] = [138.0]
+            sub[3] = [138.0]
 
-        for name, mutate in [("bus_status too short", set_bus_status_short),
-                             ("n_sub == 0", set_nsub_zero),
+        for name, mutate in [("n_sub == 0", set_nsub_zero),
                              ("n_sub * nmax overflows", set_nsub_overflow),
                              ("bus_vn_kv too short", set_bus_vn_kv_short)]:
             with self.subTest(name):

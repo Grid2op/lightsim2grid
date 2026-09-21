@@ -47,7 +47,7 @@ CplxVect flat_start(const LSGrid & grid)
 }
 
 // --- accessors into the (deeply nested) StateRes tuple -----------------------
-// TRAFO_ID -> TrafoContainer::StateRes = tuple<[0] TwoSidesContainer_rxh_A::StateRes,
+// TRAFO_ID -> TrafoContainer::StateRes = tuple<[0] BranchContainer::StateRes,
 //   ratio, is_tap_side1, shift, ignore_tap_side_for_shift, [5] shift_dependent_rx,
 //   base_r, base_x, [8] rx_corr_alpha, [9] rx_corr_pct>
 bool& trafo_shift_dependent_rx(LSGrid::StateRes & st)
@@ -68,7 +68,7 @@ std::vector<int>& svc_regulated_bus(LSGrid::StateRes & st)
 {
     return std::get<6>(std::get<LSGrid::SVC_ID>(st));
 }
-// LINE_ID / TRAFO_ID -> [0] TwoSidesContainer_rxh_A::StateRes
+// LINE_ID / TRAFO_ID -> [0] BranchContainer::StateRes
 //   -> [0] TwoSidesContainer::StateRes = tuple<ignore_status_global,
 //          synch_status_both_side, names, [3] status_global, side_1, side_2>
 template<std::size_t BRANCH_ID>

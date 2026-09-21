@@ -132,6 +132,9 @@ class BaseDCAlgo final: public BaseAlgo
         void set_masked_buses(const std::vector<int> & solver_bus_ids) override{
             masked_buses_ = solver_bus_ids;
         }
+        void set_refactor_fallback(bool val) override {
+            _linear_solver.set_refactor_fallback(val);
+        }
 
         // see BaseAlgo::set_lazy_v / lazy_v
         void set_lazy_v(bool value) override { _lazy_v_ = value; }
@@ -158,8 +161,9 @@ class BaseDCAlgo final: public BaseAlgo
         void add_droop_to_dcYbus();
         void add_droop_to_dcSbus();
 
-        // remove_slack_buses: res_mat is reset (reassigned) and setFromTriplets/makeCompressed'd
-        // from scratch in this function, so it needs a real reference, not Eigen::Ref.
+        // remove_slack_buses: res_mat is resized and its compressed arrays are
+        // rewritten from scratch in this function, so it needs a real reference,
+        // not Eigen::Ref.
         template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
         void remove_slack_buses(int nb_bus_solver, const Eigen::Ref<const Eigen::SparseMatrix<ref_mat_type>> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat);
 

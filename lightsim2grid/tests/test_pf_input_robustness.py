@@ -101,6 +101,42 @@ class TestAcDcPfInputs(unittest.TestCase):
             with self.subTest(name):
                 pf(1.0 * self.v_init, 0, TOL)  # must not raise
 
+    def test_zero_max_iter_keeps_pre_iteration_state(self):
+        # a non-converged ac_pf returns an empty vector but does not reset the
+        # algorithm: with max_iter=0 the pre-iteration state -- the seeded
+        # voltages, the Jacobian's sparsity -- stays readable (resetting it
+        # returned empty vectors, and segfaulted a consumer indexing them)
+        V = self.grid.ac_pf(1.0 * self.v_init, 0, TOL)
+        assert V.shape[0] == 0
+        algo = self.grid.get_algo()
+        assert not algo.converged()
+        assert algo.get_nb_iter() == 0
+        # case14 has no disconnected bus: solver and grid labellings have the same size
+        assert self.grid.get_V_solver().shape[0] == self.n_bus
+        assert np.all(np.isfinite(self.grid.get_V_solver()))
+        assert self.grid.get_Va_solver().shape[0] == self.n_bus
+        assert np.abs(self.grid.get_Va_solver()).max() < 1e-12  # flat start: no step taken
+        assert self.grid.get_Vm_solver().shape[0] == self.n_bus
+        J = self.grid.get_J_solver()
+        assert J.shape[0] == J.shape[1] > 0
+        # the next real solve is unaffected
+        V = self.grid.ac_pf(1.0 * self.v_init, MAX_IT, TOL)
+        assert V.shape[0] == self.n_bus
+
+    def test_divergence_keeps_last_iterate(self):
+        # same for a genuine divergence: the iterate it stopped at, the error and
+        # the iteration count are readable, and the next solve still converges
+        V = self.grid.ac_pf(1.0 * self.v_init, 1, 1e-12)  # one step is not enough
+        assert V.shape[0] == 0
+        algo = self.grid.get_algo()
+        assert not algo.converged()
+        assert algo.get_nb_iter() == 1
+        assert self.grid.get_V_solver().shape[0] == self.n_bus
+        assert np.all(np.isfinite(self.grid.get_V_solver()))
+        assert np.abs(self.grid.get_Va_solver()).max() > 0.  # one step was taken
+        V = self.grid.ac_pf(1.0 * self.v_init, MAX_IT, TOL)
+        assert V.shape[0] == self.n_bus
+
     def test_bad_tol(self):
         for name, pf in self._pf_methods():
             for bad_tol in (0., -1e-8, float("nan"), float("inf"), -float("inf")):

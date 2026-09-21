@@ -37,6 +37,34 @@ An `LSGrid` can be built from several source formats, each with a dedicated ``in
 
 See the "Detailed documentation" section below for the full signature and caveats of each.
 
+Whichever loader built it, the resulting ``LSGrid`` also knows **which substation / voltage
+level each of its elements belongs to** (``sub_id`` of an ``*Info`` object, set by the loader
+through ``set_gen_to_subid`` and friends). That is a property of the source file, so the
+loader is where it is worked out -- and, unlike ``bus_id``, it stays available for an element
+the source declares out of service. It is what
+:func:`lightsim2grid.network.LSGrid.update_topo` needs to turn "busbar 2 of my substation"
+into a global bus id, so a loaded grid is ready for grid2op-style topology actions as it
+comes.
+
+None of these formats has a busbar section within a bus, so the rule is the same everywhere:
+**one substation per source bus, everything on busbar section 1**, and ``n_busbar_per_sub``
+sections allocated per substation (the extra ones start empty and deactivated). A grid built
+from pandapower is, in this respect, indistinguishable from one built from any other source.
+
+.. note::
+    ``init_from_pandapower`` takes an ``init_subid`` argument for one caller only:
+    :class:`lightsim2grid.lightSimBackend.LightSimBackend` passes ``False``, because its
+    pandapower path is built on grid2op's own pandapower backend, which has been the one
+    deciding what a substation is for as long as it has existed. That is history, not
+    design -- nothing else should need the flag.
+
+.. note::
+    If you want to use one of these formats as the powergrid of a **grid2op environment**,
+    you do not call these functions yourself:
+    :class:`lightsim2grid.lightSimBackend.LightSimBackend` does it, through its
+    ``loader_method`` argument (``"pandapower"``, ``"pypowsybl"`` or ``"matpower"``). See
+    :ref:`lightsimbackend_matpower` for the MATPOWER case.
+
 For example, you can init it from a pandapower grid like (NOT RECOMMENDED, though sometimes needed):
 
 .. code-block:: python

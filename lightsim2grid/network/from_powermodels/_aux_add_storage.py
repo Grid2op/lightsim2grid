@@ -36,10 +36,18 @@ def _aux_add_storage(model, network, pm_to_ls, isolated_ls_bus):
     isolated_ls_bus: numpy array
         lightsim2grid bus ids of isolated (`bus_type == 4`) buses
 
+    Returns
+    -------
+    storage_bus: numpy array
+        The lightsim2grid bus id each storage was built on. Returned (rather than read
+        back from the model afterwards) because a storage the source file declares out
+        of service reports `bus_id == -1`, while the substation it belongs to is a
+        property of the grid, not of its status.
+
     """
     storage = network.get("storage", {})
     if not storage:
-        return
+        return np.array([], dtype=int)
 
     storage_keys = sorted(storage, key=int)
     storage_bus = pm_bus_to_ls(np.array([int(storage[k]["storage_bus"]) for k in storage_keys]), pm_to_ls)
@@ -53,3 +61,5 @@ def _aux_add_storage(model, network, pm_to_ls, isolated_ls_bus):
     for st_id, is_ok in enumerate(status):
         if not is_ok:
             model.deactivate_storage(st_id)
+
+    return storage_bus

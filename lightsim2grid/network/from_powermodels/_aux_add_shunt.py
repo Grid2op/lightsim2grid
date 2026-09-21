@@ -36,10 +36,18 @@ def _aux_add_shunt(model, network, pm_to_ls, isolated_ls_bus):
     isolated_ls_bus: numpy array
         lightsim2grid bus ids of isolated (`bus_type == 4`) buses
 
+    Returns
+    -------
+    shunt_bus: numpy array
+        The lightsim2grid bus id each shunt was built on. Returned (rather than read
+        back from the model afterwards) because a shunt the source file declares out
+        of service reports `bus_id == -1`, while the substation it belongs to is a
+        property of the grid, not of its status.
+
     """
     shunt = network.get("shunt", {})
     if not shunt:
-        return
+        return np.array([], dtype=int)
 
     sn_mva = float(network["baseMVA"])
     shunt_keys = sorted(shunt, key=int)
@@ -54,3 +62,5 @@ def _aux_add_shunt(model, network, pm_to_ls, isolated_ls_bus):
     for sh_id, is_ok in enumerate(status):
         if not is_ok:
             model.deactivate_shunt(sh_id)
+
+    return shunt_bus

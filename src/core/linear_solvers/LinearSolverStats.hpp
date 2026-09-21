@@ -33,11 +33,13 @@ struct LinearSolverStats {
     std::size_t nb_fallback_factorize_failed = 0;  // of those, how many also failed
 
     std::size_t nb_solve = 0;
+    std::size_t nb_solve_transpose = 0;            // solve_transpose() calls (the adjoint / VJP path)
 
     double timer_initialize_ = 0.;  // time spent in analyze()
     double timer_factor_     = 0.;  // time spent in factorize() (incl. fallback factors)
     double timer_refactor_   = 0.;  // time spent in refactorize() itself (not the fallback factor)
     double timer_solve_      = 0.;  // time spent in solve()
+    double timer_solve_transpose_ = 0.;  // time spent in solve_transpose()
 };
 
 namespace detail {

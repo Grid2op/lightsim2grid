@@ -27,6 +27,7 @@
 #include <complex>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -622,6 +623,110 @@ TEST_CASE("MultiSlack borders the system with one column and one row per slack",
     CHECK(sys.slack_absorbed() == Approx(std::real(in.Sbus.sum())).epsilon(1e-12));
 }
 
+namespace {
+
+// a radial feeder with two distributed-slack generators (70 / 30 %) at its
+// first two buses -- the smallest grid that has a slack to distribute AND
+// losses to distribute it over
+LSGrid make_dist_slack_grid(int n_bus = 4)
+{
+    LSGrid grid = make_radial_skeleton(n_bus);
+    add_generators(grid, {0, 1}, {1.02, 1.02}, {2000., 2000.});
+    grid.add_gen_slackbus(0, 0.7);
+    grid.add_gen_slackbus(1, 0.3);
+    return grid;
+}
+
+}  // anonymous namespace
+
+TEST_CASE("the initial slack_absorbed is read off the residual, not off sum(Sbus)", "[NRSystem][slack]")
+{
+    // `Re(sum(Sbus))` answers the balance only at a flat start of a lossless
+    // grid: it is the generation minus the load, and says nothing about the
+    // losses that generation also has to cover. Start a system on a voltage
+    // that already IS the solution and the guess is therefore wrong by exactly
+    // those losses -- a residual that has nothing to do with the voltages.
+    LSGrid grid = make_dist_slack_grid();
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+    const real_type converged_sa = grid.get_slack_absorbed_solver();
+
+    MultiSlackNRSystem sys;
+    build_system(sys, in, &grid);  // update_state on the CONVERGED voltages
+
+    RealVect F = sys.mismatch();
+    CHECK(sys.slack_absorbed() == Approx(std::real(in.Sbus.sum())).epsilon(1e-12));
+    CHECK(F.cwiseAbs().maxCoeff() > 1e-6);
+
+    // the calibration reads the global active balance back out of that very
+    // residual: it recovers the slack the solve converged to, and leaves
+    // nothing to iterate on
+    CHECK(sys.calibrate_slack_absorbed(F));
+    CHECK(sys.slack_absorbed() == Approx(converged_sa).margin(1e-8));
+    CHECK(F.cwiseAbs().maxCoeff() < 1e-9);
+
+    // and the corrected residual is the one a fresh (full) evaluation gives:
+    // correcting in place is an optimisation, not a different answer
+    const RealVect F_again = sys.mismatch();
+    CHECK((F - F_again).cwiseAbs().maxCoeff() < 1e-12);
+}
+
+TEST_CASE("calibrating the slack is a no-op without the MultiSlack extension", "[NRSystem][slack]")
+{
+    LSGrid grid = make_radial_grid(4);
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NRSing_SparseLU);
+
+    SingleSlackNRSystem sys;
+    build_system(sys, in, &grid);
+    RealVect F = sys.mismatch();
+    const RealVect F_before = F;
+    CHECK_FALSE(sys.calibrate_slack_absorbed(F));
+    CHECK((F - F_before).cwiseAbs().maxCoeff() == 0.);
+}
+
+TEST_CASE("a distributed-slack solve started from its own solution takes no iteration", "[NRSystem][slack]")
+{
+    // The point of calibrating the slack on the residual: a seed that satisfies
+    // the KCL -- another powerflow's output, the previous row of a time series --
+    // is converged already, and used to cost one iteration for the slack alone.
+    LSGrid grid = make_dist_slack_grid();
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+
+    const CplxVect V = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    REQUIRE(V.size() == static_cast<Eigen::Index>(grid.total_bus()));
+    CHECK(grid.get_algo().get_nb_iter() >= 1);
+    const real_type sa = grid.get_slack_absorbed_solver();
+    const RealVect gen_p = std::get<0>(grid.get_gen_res());
+
+    const CplxVect V_again = grid.ac_pf(V, 30, 1e-10);
+    REQUIRE(V_again.size() == V.size());
+    CHECK(grid.get_algo().get_nb_iter() == 0);
+    CHECK((V_again - V).cwiseAbs().maxCoeff() < 1e-12);
+    // the published results are the ones of the first solve: the per-bus
+    // mismatch the calibration corrected is what compute_results reads
+    CHECK(grid.get_slack_absorbed_solver() == Approx(sa).margin(1e-8));
+    CHECK((std::get<0>(grid.get_gen_res()) - gen_p).cwiseAbs().maxCoeff() < 1e-8);
+}
+
+TEST_CASE("the calibrated slack accounts for injections that are not in Sbus", "[NRSystem][slack][hvdc]")
+{
+    // An angle-droop hvdc line is NOT stamped in Sbus (its flows depend on the
+    // angles and are added to the mismatch by the Hvdc extension), so summing
+    // Sbus cannot see it. Reading the residual does: the same seed-is-the-
+    // solution solve still takes no iteration.
+    LSGrid grid = make_dist_slack_grid(5);
+    add_droop_hvdc(grid, 2, 4, 20., 5.);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+
+    const CplxVect V = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    REQUIRE(V.size() == static_cast<Eigen::Index>(grid.total_bus()));
+    CHECK(grid.get_algo().get_nb_iter() >= 1);
+
+    const CplxVect V_again = grid.ac_pf(V, 30, 1e-10);
+    REQUIRE(V_again.size() == V.size());
+    CHECK(grid.get_algo().get_nb_iter() == 0);
+    CHECK((V_again - V).cwiseAbs().maxCoeff() < 1e-12);
+}
+
 TEST_CASE("a PQ distributed-slack participant keeps a free Vm unknown", "[NRSystem][slack]")
 {
     // A slack bus that no LOCAL generator voltage-pins needs a free Vm
@@ -919,6 +1024,66 @@ TEST_CASE("a droop end on the slack of a single-slack system drops three entries
 // ===========================================================================
 // all three extensions at once
 // ===========================================================================
+
+TEST_CASE("fill_J rewrites every Jacobian coefficient it owns", "[NRSystem]")
+{
+    // fill_J does NOT zero J first any more: the dS passes assign, and only the
+    // feature entries accumulate (on top of a zero this writes for them), which
+    // is what lets a megabyte-sized value array stay untouched between fills.
+    // The property that makes it correct is that every stored coefficient is
+    // fully rewritten by each fill -- no coefficient survives from the previous
+    // one. Filling twice without changing anything must therefore be a no-op:
+    // were a coefficient still accumulating, the second fill would double it.
+    //
+    // The droop hvdc variant is the case that matters: its four dP/dtheta
+    // entries land ON dS coefficients, so they are the ones that still have to
+    // add rather than assign, and the ones a missing zero would double.
+    for (bool with_droop : {false, true}) {
+        LSGrid grid = make_radial_grid(4);
+        if (with_droop) add_droop_hvdc(grid, 1, 2, 10., 2.);
+        const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+
+        MultiSlackNRSystem sys;
+        build_system(sys, in, &grid);
+        const SpMatReal J_once = sys.J();
+
+        sys.fill_internal_variables();
+        sys.fill_J();
+        const SpMatReal J_twice = sys.J();
+
+        INFO((with_droop ? "with a droop hvdc line" : "without hvdc"));
+        REQUIRE(pattern_of(J_twice) == pattern_of(J_once));
+        CHECK(values_of(J_twice) == values_of(J_once));
+    }
+}
+
+TEST_CASE("a refilled J holds no trace of the state it was filled with before", "[NRSystem]")
+{
+    // The same property seen from the other side: fill at one voltage state,
+    // then at another, and the result must equal a system that only ever saw
+    // the second state. A coefficient that kept anything from the first fill
+    // would show up here even when the doubling test above passes.
+    LSGrid grid = make_radial_grid(4);
+    add_droop_hvdc(grid, 1, 2, 10., 2.);
+    const SolverInputs first = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+
+    // a second, different voltage state on the same topology
+    SolverInputs second = first;
+    for (Eigen::Index i = 0; i < second.V.size(); ++i)
+        second.V(i) *= cplx_type(0.97, 0.02);
+
+    MultiSlackNRSystem reused;
+    build_system(reused, first, &grid);     // filled once at `first` ...
+    build_system(reused, second, &grid);    // ... then again at `second`
+
+    MultiSlackNRSystem fresh;
+    build_system(fresh, second, &grid);     // only ever saw `second`
+
+    const SpMatReal J_reused = reused.J();
+    const SpMatReal J_fresh = fresh.J();
+    REQUIRE(pattern_of(J_reused) == pattern_of(J_fresh));
+    CHECK(values_of(J_reused) == values_of(J_fresh));
+}
 
 TEST_CASE("a grid exercising every NR extension at once stays consistent", "[NRSystem]")
 {

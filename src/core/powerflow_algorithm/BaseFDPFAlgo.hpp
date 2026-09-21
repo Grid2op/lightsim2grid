@@ -21,12 +21,23 @@ template<class LinearSolver, FDPFMethod XB_BX>
 class BaseFDPFAlgo final: public BaseAlgo
 {
     public:
-        BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
+
+        BaseFDPFAlgo() noexcept :BaseAlgo(true), slack_absorbed_(static_cast<real_type>(0.)),
+                                 dist_slack_(false), need_factorize_(true) {}
         ~BaseFDPFAlgo() noexcept override = default;
 
 
         static constexpr bool IS_FDPF = true;
         bool is_fdpf() const noexcept override { return IS_FDPF; }
+
+        // evaluate_mismatch_into writes BaseAlgo::mis_bus_ on every convergence
+        // check, and has_converged() is called once more on the accepted voltage
+        static constexpr bool FILLS_BUS_MISMATCH = true;
+        bool fills_bus_mismatch() const noexcept override { return FILLS_BUS_MISMATCH; }
+
+        // this family carries a distributed-slack unknown of its own; hand it back so
+        // a consumer of mis_bus_ can subtract its contribution (see slack_absorbed_)
+        real_type get_slack_absorbed() const override { return slack_absorbed_; }
 
         bool compute_pf(const EigenRefConstCplxSpMat     & Ybus,
                         const Eigen::Ref<const CplxVect> & V,
@@ -49,6 +60,10 @@ class BaseFDPFAlgo final: public BaseAlgo
             grid_Bpp_ = Eigen::SparseMatrix<real_type>();  // the B double prime matrix  (size n_pq)
             p_ = RealVect();
             q_ = RealVect();
+            mis_over_vm_ = CplxVect();
+            slack_absorbed_ = static_cast<real_type>(0.);
+            dist_slack_ = false;
+            // mis_bus_ / ybus_v_ are BaseAlgo's and are cleared by BaseAlgo::reset()
             need_factorize_ = true;
 
             // reset linear solvers
@@ -99,19 +114,76 @@ class BaseFDPFAlgo final: public BaseAlgo
             detail::reset_stats_timers_impl(_linear_solver_Bpp, 0);
         }
 
+        // (V * conj(Ybus * V) - Sbus + slack_absorbed * slack_weights), written
+        // into the persistent mis_bus_ buffer rather than returned by value: this
+        // runs once or twice per FDPF iteration, and returning an nb_bus
+        // complex vector meant heap-allocating and freeing one every time.
+        // Ybus * V lands in its own buffer first (`noalias`): a sparse * dense
+        // product left inside the coefficient-wise expression is one more
+        // temporary Eigen has to allocate to evaluate it.
+        void evaluate_mismatch_into(const EigenRefConstCplxSpMat     &  Ybus,
+                                    const Eigen::Ref<const CplxVect> & V,
+                                    const Eigen::Ref<const CplxVect> & Sbus,
+                                    size_t /*slack_id*/,  // id of the ref slack bus
+                                    real_type slack_absorbed,
+                                    const Eigen::Ref<const RealVect> & slack_weights)
+        {
+            ybus_v_.noalias() = Ybus * V;
+            mis_bus_ = V.array() * ybus_v_.array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
+        }
+
+        // value-returning form, kept for out-of-tree derived algorithms
         CplxVect evaluate_mismatch(const EigenRefConstCplxSpMat     &  Ybus,
                                    const Eigen::Ref<const CplxVect> & V,
                                    const Eigen::Ref<const CplxVect> & Sbus,
-                                   size_t /*slack_id*/,  // id of the ref slack bus
+                                   size_t slack_id,  // id of the ref slack bus
                                    real_type slack_absorbed,
                                    const Eigen::Ref<const RealVect> & slack_weights)
         {
-            // CplxVect tmp = Ybus * V;  // this is a vector
-            // tmp = tmp.array().conjugate();  // i take the conjugate
-            auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
-            return mis;
+            evaluate_mismatch_into(Ybus, V, Sbus, slack_id, slack_absorbed, slack_weights);
+            return mis_bus_;
         }
         
+        /**
+         * Distributed slack: re-derive `slack_absorbed` from the global active power
+         * balance of the mismatch just written into mis_bus_, and fold the change
+         * into mis_bus_. Called after EVERY mismatch evaluation (this family has no
+         * other way to move that state -- see dist_slack_).
+         *
+         * The sum of the per-bus active mismatches is the grid's active balance,
+         *
+         *     sum_b Re(mis(b)) = sum_b Re(Scomp(b) - Sbus(b)) + sa . W
+         *
+         * with W the total participation weight: an equation AFFINE in `sa` and in
+         * nothing else. Solving it gives the one `sa` that closes the balance at the
+         * current voltages, and closing it is what makes the REFERENCE slack absorb
+         * its own share rather than the whole of the losses -- the bus the
+         * fast-decoupled split writes no equation for, and the reason this family got
+         * the distribution wrong for as long as `sa` was a constant.
+         *
+         * `sa` enters mis_bus_ only through `+ sa . slack_weights`, so shifting it by
+         * `delta` shifts each slack bus by `delta . weight` and leaves every other bus
+         * alone: the mismatch is corrected here rather than re-evaluated, no second
+         * Ybus . V. Same argument, same correction, as
+         * NRSystem::calibrate_slack_absorbed.
+         *
+         * At the fixed point every P row of pvpq is under tolerance AND the sum over
+         * all buses is zero, so the reference slack's own active mismatch -- which is
+         * minus the sum of the others -- is under tolerance too, up to their number.
+         */
+        void calibrate_slack_absorbed(real_type & slack_absorbed,
+                                      const Eigen::Ref<const RealVect> & slack_weights)
+        {
+            const real_type total_w = slack_weights.sum();
+            // nothing to distribute to (no weight left after a re-weighting, a
+            // degenerate input): leave the state as it is, rather than divide by
+            // what is left and amplify the imbalance instead of placing it.
+            if(std::abs(total_w) <= _tol_equal_float) return;
+            const real_type delta = -mis_bus_.real().sum() / total_w;
+            slack_absorbed += delta;
+            mis_bus_.array() += (delta * slack_weights.array()).template cast<cplx_type>();
+        }
+
         void fillBp_Bpp(
             Eigen::SparseMatrix<real_type> & Bp, 
             Eigen::SparseMatrix<real_type> & Bpp) const;  // defined in Solvers.cpp !
@@ -192,18 +264,37 @@ class BaseFDPFAlgo final: public BaseAlgo
 
             // V = Vm * exp(1j * Va) : 
             V_ = Vm_.array() * tmp_va.array();
-            Vm_ = V_.array().abs();
-            Va_ = V_.array().arg();
-            auto mis = evaluate_mismatch(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights);  // mis = (V * conj(Ybus * V) - Sbus) / Vm
-            mis.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm (do not forget the / Vm !)
+            // ... then repair a magnitude the Q iteration drove past zero, because
+            // the division by Vm_ two lines below would otherwise flip that bus's P
+            // and Q. Cheap on the ordinary path: the function starts by asking
+            // whether there is a negative magnitude at all, and a converging
+            // trajectory never has one. V_ is built above and is unchanged either
+            // way. The angle wrap that used to run here with it has moved to the end
+            // of compute_pf -- see wrap_va for why once is enough.
+            fix_negative_vm(Vm_, Va_);
 
-            bool tmp = mis.allFinite();
-            if(!tmp){
+            evaluate_mismatch_into(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights);  // mis_bus_ = V * conj(Ybus * V) - Sbus
+            // ... and move the distributed slack onto the balance THAT mismatch shows.
+            // This is where `slack_absorbed` -- a reference, and until now a reference
+            // to something nobody ever wrote -- actually changes.
+            if(dist_slack_) calibrate_slack_absorbed(slack_absorbed, slack_weights);
+            // mis / Vm (do not forget the / Vm !), out of place, so that mis_bus_ keeps
+            // the RAW mismatch -- the same quantity the Newton-Raphson leaves in that
+            // shared member, and the one a caller reading get_bus_mismatch() wants.
+            //
+            // Out of place, not "divide only the rows we extract": dividing at the
+            // gather (`mis_bus_(pvpq).real().array() / Vm_(pvpq).array()`) does strictly
+            // less arithmetic and measured 2.2% SLOWER on both flavours, because the
+            // gather cannot vectorise while this contiguous divide can. Same number of
+            // reads and writes as the in-place version it replaces; only the
+            // destination differs.
+            mis_over_vm_ = mis_bus_.array() / Vm_.array();
+            if(!mis_over_vm_.allFinite()){
                 err_ = ErrorType::InifiniteValue;
                 return false; // divergence due to Nans
             }
-            p_ = mis(pvpq).real();  // P = mis[pvpq].real
-            q_ = mis(pq).imag();  // Q = mis[pq].imag
+            p_ = mis_over_vm_(pvpq).real();  // P = mis[pvpq].real
+            q_ = mis_over_vm_(pq).imag();  // Q = mis[pq].imag
             return _check_for_convergence(p_, q_, tol);
         }
 
@@ -233,6 +324,36 @@ class BaseFDPFAlgo final: public BaseAlgo
         Eigen::SparseMatrix<real_type> Bpp_;  // the B double prime matrix  (size n_pq)
         RealVect p_;  // (size n_pvpq)
         RealVect q_;  // (size n_pq)
+        // the per-bus complex mismatch and the Ybus * V scratch are BaseAlgo::mis_bus_
+        // and BaseAlgo::ybus_v_: both families compute exactly them
+        CplxVect mis_over_vm_;  // mis_bus_ / Vm, what the P and Q rows are gathered from
+        /**
+         * The converged value of the distributed-slack unknown, in pu.
+         *
+         * A member rather than a local of compute_pf because LSGrid::compute_results
+         * needs it AFTER the solve: mis_bus_ is written as
+         * `raw + slack_absorbed * slack_weights`, so the raw per-bus mismatch -- what
+         * says how much a slack generator actually produced -- can only be recovered
+         * from it by subtracting this back out. See BaseAlgo::get_slack_absorbed.
+         *
+         * It is genuinely solved for, but NOT by the linear systems: B' and B'' are
+         * constant matrices and bordering them with this unknown would need a row
+         * whose derivative (that of the losses) is not. It is an outer loop instead --
+         * calibrate_slack_absorbed, re-solving the exact scalar balance at every
+         * mismatch evaluation -- which converges with the rest.
+         */
+        real_type slack_absorbed_;
+        /**
+         * Whether the grid has more than one slack BUS, i.e. whether there is anything
+         * to distribute. Set per solve, from `slack_ids`.
+         *
+         * With a single slack bus `slack_absorbed` is inert: it shifts mis_bus_ at the
+         * reference bus alone, which owns no equation (it is not in pvpq) and whose
+         * published injection is read back as `mis.real() - sa . weight` -- the raw
+         * mismatch, whatever `sa` is. So the calibration would be a per-check reduction
+         * over the buses that cannot change an answer, and is skipped.
+         */
+        bool dist_slack_;
         bool need_factorize_;
 
     private:

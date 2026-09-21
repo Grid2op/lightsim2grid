@@ -74,6 +74,7 @@ def run_case(case_name,
     ls_grid.change_algorithm("NR_KLU")
     
     pypowsybl_parameters = get_pypowsybl_parameters(slack_pypowysbl)
+    pypowsybl_parameters.provider_parameters["networkCacheEnabled"] = "true"
     beg_pypow = time.perf_counter()
     pypow_lf.run_ac(pypow_grid, parameters=pypowsybl_parameters)
     end_pypow = time.perf_counter()
@@ -258,6 +259,10 @@ def run_case(case_name,
     ls_grid.update_loads_p(all_loads, load_p_init.astype(np.float32))
     ls_grid.update_loads_q(all_loads, load_q_init.astype(np.float32))
     ca_ls = ContingencyAnalysisCPP(ls_grid)
+    ca_ls.init_from_n_powerflow = True
+    ca_ls.handle_disconnected_grid = True
+    ca_ls.compute_limit_violations = True
+    ca_ls.compute_physical_violations = True
     ca_ls.add_all_n1()
     beg_ls = time.perf_counter()
     res_ca_ls = ca_ls.compute(

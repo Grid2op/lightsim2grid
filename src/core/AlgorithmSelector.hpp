@@ -142,6 +142,15 @@ class LS2G_API AlgorithmSelector final
         bool supports_remote_voltage_control() const {
             return get_prt_solver("supports_remote_voltage_control", false)->supports_remote_voltage_control();
         }
+        // The no-argument form of is_fdpf(AlgorithmType) above. The type-keyed one
+        // cannot answer for a solver selected BY NAME -- an FDPF built-in reached
+        // through the registry, or a plugin implementing the method -- because their
+        // type is the catch-all Custom. LSGrid::change_algorithm(const std::string&)
+        // needs this one: an FDPF solve reads Bp / Bpp, which only
+        // LSGrid::init_fdpf_coeffs() fills, and without it the first solve throws.
+        bool is_fdpf() const {
+            return get_prt_solver("is_fdpf", false)->is_fdpf();
+        }
 
         // Convenience accessors for the two FDPF SparseLU variants.
         // These exist mainly for internal diagnostic use (exposed as AlgorithmSelector.get_fdpf_*).
@@ -243,6 +252,10 @@ class LS2G_API AlgorithmSelector final
         void set_lazy_v(bool value) {
             get_prt_solver("set_lazy_v", false)->set_lazy_v(value);
         }
+        // see BaseAlgo::set_start_polar_cache
+        void set_start_polar_cache(bool value) {
+            get_prt_solver("set_start_polar_cache", false)->set_start_polar_cache(value);
+        }
         bool lazy_v() const {
             return get_prt_solver("lazy_v", false)->lazy_v();
         }
@@ -251,8 +264,54 @@ class LS2G_API AlgorithmSelector final
         bool supports_bus_masking() const {
             return get_prt_solver("supports_bus_masking", false)->supports_bus_masking();
         }
+        bool supports_jacobian() const {
+            return get_prt_solver("supports_jacobian", false)->supports_jacobian();
+        }
+        void refresh_J_at_solution() {
+            get_prt_solver("refresh_J_at_solution", false)->refresh_J_at_solution();
+        }
         void set_masked_buses(const std::vector<int>& solver_bus_ids) {
             get_prt_solver("set_masked_buses", false)->set_masked_buses(solver_bus_ids);
+        }
+        void set_may_mask_voltage_control(bool val) {
+            get_prt_solver("set_may_mask_voltage_control", false)->set_may_mask_voltage_control(val);
+        }
+        void set_voltage_control_v_set(const RealVect & v_set) {
+            get_prt_solver("set_voltage_control_v_set", false)->set_voltage_control_v_set(v_set);
+        }
+        void set_refactor_fallback(bool val) {
+            get_prt_solver("set_refactor_fallback", false)->set_refactor_fallback(val);
+        }
+
+        // PV / PQ relabelling at constant sparsity (ScenarioSweep generator
+        // contingencies) -- see BaseAlgo for the two-call contract.
+        bool supports_pv_pinning() const {
+            return get_prt_solver("supports_pv_pinning", false)->supports_pv_pinning();
+        }
+        void set_switchable_vm_buses(const std::vector<int>& solver_bus_ids) {
+            get_prt_solver("set_switchable_vm_buses", false)->set_switchable_vm_buses(solver_bus_ids);
+        }
+        void set_pv_pinned_buses(const std::vector<int>& solver_bus_ids) {
+            get_prt_solver("set_pv_pinned_buses", false)->set_pv_pinned_buses(solver_bus_ids);
+        }
+
+        // continuation powerflow primitives (ContinuationSweep) -- NR-based
+        // algorithms only, guarded exactly like get_J: both read state the last
+        // powerflow left behind, so asking a solver that did not run it is a bug.
+        bool supports_cpf() const {
+            return get_prt_solver("supports_cpf", false)->supports_cpf();
+        }
+        bool cpf_tangent(const Eigen::Ref<const CplxVect>& dir_solver, RealVect& z) {
+            check_right_solver("cpf_tangent");
+            return get_prt_solver("cpf_tangent", false)->cpf_tangent(dir_solver, z);
+        }
+        void cpf_predict(const Eigen::Ref<const RealVect>& z, real_type coeff, CplxVect& V_pred) const {
+            check_right_solver("cpf_predict");
+            get_prt_solver("cpf_predict", false)->cpf_predict(z, coeff, V_pred);
+        }
+        bool cpf_refactorize_at_current() {
+            check_right_solver("cpf_refactorize_at_current");
+            return get_prt_solver("cpf_refactorize_at_current", false)->cpf_refactorize_at_current();
         }
 
         Eigen::SparseMatrix<real_type> get_J_python() const {
@@ -330,11 +389,22 @@ class LS2G_API AlgorithmSelector final
         IntVect get_controller_q_col() const {
             return get_prt_solver("get_controller_q_col", false)->get_controller_q_col();
         }
+        IntVect get_group_v_row() const {
+            return get_prt_solver("get_group_v_row", false)->get_group_v_row();
+        }
         int get_slack_col() const {
             return get_prt_solver("get_slack_col", false)->get_slack_col();
         }
         real_type get_slack_absorbed() const {
             return get_prt_solver("get_slack_absorbed", false)->get_slack_absorbed();
+        }
+
+        // see BaseAlgo::fills_bus_mismatch / BaseAlgo::mis_bus_
+        bool fills_bus_mismatch() const {
+            return get_prt_solver("fills_bus_mismatch", false)->fills_bus_mismatch();
+        }
+        Eigen::Ref<const CplxVect> get_bus_mismatch() const {
+            return get_prt_solver("get_bus_mismatch", false)->get_bus_mismatch();
         }
 
         double get_computation_time() const {
@@ -381,19 +451,25 @@ class LS2G_API AlgorithmSelector final
         }
 
     protected:
-        const BaseAlgo* get_prt_solver(const std::string& error_msg, bool check_right_solver_ = true) const {
+        const BaseAlgo* get_prt_solver(const char * error_msg, bool check_right_solver_ = true) const {
             if (check_right_solver_) check_right_solver(error_msg);
             if (!_algo) throw std::runtime_error("AlgorithmSelector: no solver is active (not initialized?)");
             return _algo.get();
         }
-        BaseAlgo* get_prt_solver(const std::string& error_msg, bool check_right_solver_ = true) {
+        BaseAlgo* get_prt_solver(const char * error_msg, bool check_right_solver_ = true) {
             if (check_right_solver_) check_right_solver(error_msg);
             if (!_algo) throw std::runtime_error("AlgorithmSelector: no solver is active (not initialized?)");
             return _algo.get();
         }
 
     private:
-        void check_right_solver(const std::string& error_msg) const {
+        // `error_msg` is a `const char*`, not a `const std::string&`: every one of the
+        // fifty-odd call sites passes a string literal, and the names are longer than
+        // libstdc++'s small-string buffer ("supports_remote_voltage_control" is 31
+        // chars), so a reference parameter meant one malloc + one free per call -- on
+        // get_V, get_Va, get_Vm, compute_pf and the capability queries, i.e. several
+        // times per powerflow, to build a string only the error path ever reads.
+        void check_right_solver(const char * error_msg) const {
             if (_algo_type != _algo_type_used_for_nr) {
                 std::ostringstream exc_;
                 exc_ << "AlgorithmSelector: Solver mismatch when calling '";

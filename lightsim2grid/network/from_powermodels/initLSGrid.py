@@ -115,25 +115,47 @@ def init(network: dict,
         isolated_ls_bus = np.array([], dtype=int)
 
     # init the powerlines and transformers
-    _aux_add_branch(model, network, pm_to_ls, isolated_ls_bus)
+    lor_bus, lex_bus, tor_bus, tex_bus = _aux_add_branch(model, network, pm_to_ls, isolated_ls_bus)
 
     # init the shunts
-    _aux_add_shunt(model, network, pm_to_ls, isolated_ls_bus)
+    shunt_bus = _aux_add_shunt(model, network, pm_to_ls, isolated_ls_bus)
 
     # init the loads
-    _aux_add_load(model, network, pm_to_ls, isolated_ls_bus)
+    load_bus = _aux_add_load(model, network, pm_to_ls, isolated_ls_bus)
 
     # init the storage units
-    _aux_add_storage(model, network, pm_to_ls, isolated_ls_bus)
+    storage_bus = _aux_add_storage(model, network, pm_to_ls, isolated_ls_bus)
 
     # init the generators
-    _aux_add_gen(model, network, pm_to_ls, isolated_ls_bus)
+    gen_bus = _aux_add_gen(model, network, pm_to_ls, isolated_ls_bus)
 
     # deal with the slack bus(es)
     _aux_add_slack(model, network, pm_to_ls, isolated_ls_bus)
 
     # init the HVDC lines, if any
     _aux_add_dc_line(model, network, pm_to_ls, isolated_ls_bus)
+
+    # tell the LSGrid which substation / voltage level each element belongs to.
+    #
+    # This is done HERE, and not by whoever uses the resulting grid (LightSimBackend
+    # used to be the only one that knew), because this loader is the only place where
+    # the answer is actually known: it is a property of the source file. There is
+    # exactly one substation per PowerModels bus, and the base-case lightsim2grid bus
+    # ids ARE the substation ids -- [0, n_sub) is busbar section 1, section k lives at
+    # [k * n_sub, (k+1) * n_sub) -- so an element's substation is simply the bus it was
+    # built on. That bus, and not `el.bus_id`, is what the `_aux_add_*` above return:
+    # an element the source file declares out of service reads back as `bus_id == -1`,
+    # while its substation is a property of the grid rather than of its status.
+    #
+    # `check_grid()` below then validates these against the substation count.
+    model.set_gen_to_subid(gen_bus)
+    model.set_load_to_subid(load_bus)
+    model.set_storage_to_subid(storage_bus)
+    model.set_shunt_to_subid(shunt_bus)
+    model.set_line_to_sub1_id(lor_bus)
+    model.set_line_to_sub2_id(lex_bus)
+    model.set_trafo_to_sub1_id(tor_bus)
+    model.set_trafo_to_sub2_id(tex_bus)
 
     # make sure the grid we just built is internally consistent (bus / substation
     # / topology-vector indices in range, no NaN/Inf in the physical inputs).

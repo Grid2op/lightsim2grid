@@ -199,6 +199,79 @@ class TestVoltageControlPypowsybl(unittest.TestCase):
         q = {g.name: g.res_q_mvar for g in model.get_generators()}
         self.assertAlmostEqual(q["G1"] / q["G2"], 100.0 / 300.0, places=4)
 
+    # ----- reactive sharing keys (coordinatedReactiveControl.q_percent) ---------
+    # The ranges of G1 / G2 are 100 / 300 (and 20 for G1b), so a range split is
+    # 25 % / 75 %: every key below is chosen to give a different split.
+    def _star_keyed(self, keys, extra_gen_on_b1=False):
+        n = _star(extra_q_g1=(-50.0, 50.0), extra_q_g2=(-100.0, 200.0), g1_reg="LD", g2_reg="LD")
+        if extra_gen_on_b1:
+            n.create_generators(id="G1b", voltage_level_id="VL1", bus_id="B1", target_p=30.0, target_q=0.0,
+                                target_v=405.0, voltage_regulator_on=True, max_p=1000.0, min_p=0.0)
+            n.create_minmax_reactive_limits(id="G1b", min_q=-10.0, max_q=10.0)
+            n.update_generators(id="G1b", regulated_element_id="LD")
+        for gid, key in keys.items():
+            n.create_extensions("coordinatedReactiveControl", generator_id=gid, q_percent=key)
+        return n
+
+    def _assert_shares(self, model, expected, name):
+        q = {g.name: g.res_q_mvar for g in model.get_generators() if g.name in expected}
+        total = sum(q.values())
+        for gen_name, share in expected.items():
+            self.assertAlmostEqual(q[gen_name] / total, share, places=6, msg=f"{name}: share of {gen_name}")
+
+    def _keyed_shares(self, keys, expected, extra_gen_on_b1=False):
+        n = self._star_keyed(keys, extra_gen_on_b1)
+        name = f"remote-gen-keys-{keys}"
+        model = self._compare(n, "VL0", "G0", name)
+        self._assert_shares(model, expected, name)
+
+    def test_remote_gen_share_by_reactive_key(self):
+        # every controller has a key: the keys decide, not the ranges
+        self._keyed_shares({"G1": 60.0, "G2": 40.0}, {"G1": 0.6, "G2": 0.4})
+
+    def test_remote_gen_share_partial_keys_fall_back_to_range(self):
+        # a controller without a key, or with a zero one: the whole group shares by range
+        self._keyed_shares({"G1": 60.0}, {"G1": 0.25, "G2": 0.75})
+        self._keyed_shares({"G1": 0.0, "G2": 40.0}, {"G1": 0.25, "G2": 0.75})
+
+    def test_remote_gen_share_keys_add_up_per_bus(self):
+        # G1 and G1b on the same bus B1: the bus weighs 30 + 10 against G2's 40
+        self._keyed_shares({"G1": 30.0, "G1b": 10.0, "G2": 40.0},
+                           {"G1": 0.375, "G1b": 0.125, "G2": 0.5}, extra_gen_on_b1=True)
+        # B1 keyed but not G2's bus: the buses share by range (120 / 300), B1 inside by keys
+        self._keyed_shares({"G1": 30.0, "G1b": 30.0},
+                           {"G1": 1. / 7., "G1b": 1. / 7., "G2": 5. / 7.}, extra_gen_on_b1=True)
+
+    def test_gen_reactive_key_setter(self):
+        n = self._star_keyed({"G1": 60.0, "G2": 40.0})
+        model, _ = self._run_ls(n, "G0")
+        gens = list(model.get_generators())
+        keys = {g.name: g.reactive_key for g in gens}
+        self.assertTrue(np.isnan(keys["G0"]))
+        self.assertEqual(keys["G1"], 60.0)
+        self.assertEqual(keys["G2"], 40.0)
+        self._assert_shares(model, {"G1": 0.6, "G2": 0.4}, "keyed")
+        # the keys survive a pickle and a binary round trip
+        import os
+        import pickle
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "keyed.lsb")
+            model.save_binary(path)
+            from_binary = type(model).load_binary(path)
+        for how, restored in (("pickle", pickle.loads(pickle.dumps(model))), ("binary", from_binary)):
+            keys_restored = {g.name: g.reactive_key for g in restored.get_generators()}
+            self.assertTrue(np.isnan(keys_restored["G0"]), how)
+            self.assertEqual(keys_restored["G1"], 60.0, how)
+            self.assertEqual(keys_restored["G2"], 40.0, how)
+        # removing a key on the same model rebuilds the plan: back to the range split
+        g1 = [i for i, g in enumerate(gens) if g.name == "G1"][0]
+        model.set_gen_reactive_key(g1, float("nan"))
+        self.assertTrue(np.isnan(list(model.get_generators())[g1].reactive_key))
+        V = model.ac_pf(np.ones(len(model.get_bus_status()), dtype=np.complex128), 30, 1e-11)
+        self.assertGreater(V.shape[0], 0)
+        self._assert_shares(model, {"G1": 0.25, "G2": 0.75}, "key removed")
+
     def test_remote_gen_on_slack(self):
         # A remote controller whose OWN bus is the slack. The active-power slack
         # role and the reactive/voltage role are decoupled: the slack bus is given

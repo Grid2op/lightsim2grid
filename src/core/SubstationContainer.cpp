@@ -26,7 +26,6 @@ SubstationContainer::StateRes SubstationContainer::get_state() const
         n_sub_,
         nmax_busbar_per_sub_,
         sub_vn_kv,
-        bus_status_,
         bus_vn_kv,
         sub_names_,
         bus_vmin_kv,
@@ -39,27 +38,26 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     // NB every field below comes straight from a pickle or a binary file, ie from
     // outside the C++ core. This container is the *root* of the grid's index space:
     // `nb_bus()` (= bus_vn_kv_.size()) is the upper bound LSGrid::check_grid()
-    // validates every element's bus id against, while `bus_status_` is what
-    // `is_bus_connected()` / `disconnect_all_buses()` actually index with those same
-    // ids, and `n_sub_` is both the substation-id bound and a modulo divisor
+    // validates every element's bus id against, it is what sizes
+    // `nb_elements_per_bus_` (which `is_bus_connected()` indexes with those same
+    // ids), and `n_sub_` is both the substation-id bound and a modulo divisor
     // (sub_id_of_bus). Nothing downstream re-derives these from each other, so if
     // they are allowed to disagree here, a *validated* bus id still reads and writes
-    // past the end of bus_status_ -- release wheels are built -O3 -DNDEBUG, so
+    // past the end of the count vector -- release wheels are built -O3 -DNDEBUG, so
     // neither Eigen nor the standard library catches it. Validate them all now,
     // before anything is assigned.
     const int n_sub = std::get<0>(my_state);
     const int nmax_busbar_per_sub = std::get<1>(my_state);
     std::vector<real_type> & sub_vn_kv = std::get<2>(my_state);
-    std::vector<bool> & bus_status = std::get<3>(my_state);
-    std::vector<real_type> & bus_vn_kv = std::get<4>(my_state);
-    const std::vector<std::string> & sub_names = std::get<5>(my_state);
-    std::vector<real_type> & bus_vmin_kv = std::get<6>(my_state);
-    std::vector<real_type> & bus_vmax_kv = std::get<7>(my_state);
+    std::vector<real_type> & bus_vn_kv = std::get<3>(my_state);
+    const std::vector<std::string> & sub_names = std::get<4>(my_state);
+    std::vector<real_type> & bus_vmin_kv = std::get<5>(my_state);
+    std::vector<real_type> & bus_vmax_kv = std::get<6>(my_state);
 
     // a default-constructed container has n_sub_ == nmax_busbar_per_sub_ == -1 and
     // no bus at all: that state must still round-trip, so it is the one case where
     // negative counts are legal.
-    const bool is_empty = bus_vn_kv.empty() && bus_status.empty();
+    const bool is_empty = bus_vn_kv.empty();
     // positivity + no int overflow on n_sub * nmax_busbar_per_sub, the same guarantee
     // init_bus() / init_sub() get from the same helper.
     const std::int64_t n_bus_max = is_empty
@@ -69,8 +67,7 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
 
     // check sizes
     // TODO dev switches
-    // bus_vn_kv_ defines nb_bus(), the bound every other index is checked against;
-    // bus_status_ is indexed with those same ids and MUST match it exactly.
+    // bus_vn_kv_ defines nb_bus(), the bound every other index is checked against.
     const auto check_len = [](std::size_t actual, std::int64_t expected, const char * name){
         if(static_cast<std::int64_t>(actual) != expected){
             std::ostringstream exc_;
@@ -82,7 +79,6 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
         }
     };
     if(!is_empty) check_len(bus_vn_kv.size(), n_bus_max, "bus_vn_kv");
-    check_len(bus_status.size(), static_cast<std::int64_t>(bus_vn_kv.size()), "bus_status");
     // Optional fields: either absent, or fully sized. sub_vn_kv_ and sub_names_ are
     // only filled by init_sub() / init_sub_names(), which the usual init_bus() path
     // does not call -- so "empty" is the normal state for most grids, NOT a defect.
@@ -97,8 +93,12 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     nmax_busbar_per_sub_ = nmax_busbar_per_sub;
     n_bus_max_ = static_cast<int>(n_bus_max);
     sub_vn_kv_ = RealVect::Map(sub_vn_kv.data(), sub_vn_kv.size());
-    bus_status_ = bus_status;
     bus_vn_kv_ = RealVect::Map(bus_vn_kv.data(), bus_vn_kv.size());
+    // which buses are in the solved system is not restored, it is recounted: the
+    // elements' own status IS in the file, and they are what holds a bus. Sized to
+    // the grid we just restored (so it must come after bus_vn_kv_) and left zeroed
+    // and disarmed; LSGrid counts from the elements before anything reads it.
+    reset_bus_element_counts();
     sub_names_ = sub_names;
     bus_vmin_kv_ = bus_vmin_kv.empty() ? RealVect() : RealVect::Map(bus_vmin_kv.data(), bus_vmin_kv.size());
     bus_vmax_kv_ = bus_vmax_kv.empty() ? RealVect() : RealVect::Map(bus_vmax_kv.data(), bus_vmax_kv.size());
@@ -108,7 +108,7 @@ void SubstationContainer::check_valid() const
 {
     // a default-constructed / never-initialized container is consistent by
     // definition: it has no bus at all, so nothing can index into it.
-    if((bus_vn_kv_.size() == 0) && bus_status_.empty()) return;
+    if(bus_vn_kv_.size() == 0) return;
 
     if(n_sub_ <= 0){
         std::ostringstream exc_;
@@ -123,12 +123,15 @@ void SubstationContainer::check_valid() const
              << " busbar(s) per substation; it must be strictly positive.";
         throw std::runtime_error(exc_.str());
     }
-    // bus_status_ is indexed with the very bus ids check_grid() validates against
-    // nb_bus() (= bus_vn_kv_.size()), and disconnect_all_buses() writes nb_bus()
-    // entries into it: the two must have exactly the same length.
-    if(bus_status_.size() != static_cast<std::size_t>(bus_vn_kv_.size())){
+    // nb_elements_per_bus_ is indexed with the very bus ids check_grid() validates
+    // against nb_bus() (= bus_vn_kv_.size()): the two must have exactly the same
+    // length. It is derived, not loaded, so this cannot be violated by a crafted
+    // file -- it is here to catch a container mutated into an inconsistent state
+    // some other way.
+    if(nb_elements_per_bus_.size() != static_cast<std::size_t>(bus_vn_kv_.size())){
         std::ostringstream exc_;
-        exc_ << "LSGrid::check_grid: the bus status vector has " << bus_status_.size()
+        exc_ << "LSGrid::check_grid: the per-bus element count vector has "
+             << nb_elements_per_bus_.size()
              << " entries while the grid has " << bus_vn_kv_.size() << " buses. Both are indexed "
              << "by bus id and must have the same length.";
         throw std::runtime_error(exc_.str());

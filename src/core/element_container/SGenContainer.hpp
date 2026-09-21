@@ -63,6 +63,16 @@ class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorA
            std::vector<real_type>, //  q_min
            std::vector<real_type> //  q_max
            >;
+        enum StateResIdx {
+            OSC_PQ_STATE = 0,
+            P_MIN,
+            P_MAX,
+            Q_MIN,
+            Q_MAX,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "SGenContainer::StateRes and StateResIdx do not match");
         
         SGenContainer() noexcept = default;
         ~SGenContainer() noexcept override = default;
@@ -86,21 +96,14 @@ class LS2G_API SGenContainer final: public OneSideContainer_PQ, public IteratorA
                   const Eigen::Ref<const Eigen::VectorXi> & sgen_bus_id
                   );
               
-        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+    protected:
+        // generator convention: the setpoint is injected into the grid
+        void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool /*ac*/) const override
+        {
+            _stamp_pq(Sbus, id_grid_to_solver, +1., "SGenContainer::fillSbus");
+        }
 
     protected:
-        void _compute_results(
-            const Eigen::Ref<const RealVect> & /*Va*/,
-            const Eigen::Ref<const RealVect> & /*Vm*/,
-            const Eigen::Ref<const CplxVect> & /*V*/,
-            const SolverBusIdVect & /*id_grid_to_solver*/,
-            const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
-            real_type /*sn_mva*/,
-            bool ac) override
-            {
-                set_osc_pq_res_p();
-                set_osc_pq_res_q(ac);
-            }
 
     private:
         // physical properties

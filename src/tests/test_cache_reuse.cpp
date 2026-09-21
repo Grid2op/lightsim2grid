@@ -35,6 +35,8 @@
 #include <complex>
 #include <cstdio>
 #include <functional>
+#include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -42,6 +44,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LSGrid.hpp"
+#include "AlgorithmRegistry.hpp"
+#include "powerflow_algorithm/BaseAlgo.hpp"
 #include "case_exotic_elements.hpp"
 
 using Catch::Approx;
@@ -128,7 +132,9 @@ std::vector<NamedMutation> all_mutations()
         {"set_reference_slack_bus",    [](LSGrid & g){ g.add_gen_slackbus(1, 1.); g.set_reference_slack_bus(6); }},
         {"consider_only_main_component",   [](LSGrid & g){ g.deactivate_powerline(4); g.consider_only_main_component(); }},
         {"set_gen_regulated_bus",      [](LSGrid & g){ g.set_gen_regulated_bus(3, 9); }},
-        {"deactivate_bus",             [](LSGrid & g){ g.deactivate_load(8); g.deactivate_bus_python(8); }},
+        // deactivate_bus is a deprecated no-op since the per-bus element counts became the
+        // only statement of bus connectivity; it stays in the sweep to check it stays inert
+        {"deactivate_bus (no-op)",     [](LSGrid & g){ g.deactivate_load(8); g.deactivate_bus_python(8); }},
         {"change_algorithm (ac)",  [](LSGrid & g){ g.change_algorithm(AlgorithmType::NRSing_SparseLU); }},
         {"set_sn_mva",             [](LSGrid & g){ g.set_sn_mva(50.); }},
         {"set_init_vm_pu",         [](LSGrid & g){ g.set_init_vm_pu(1.01); }},
@@ -301,6 +307,217 @@ TEST_CASE("a 'nothing changed' claim never makes a powerflow read data that was 
     }
 }
 
+TEST_CASE("unset_changes never records a claim the cache cannot back",
+          "[LSGrid][cache_reuse][unset_changes]")
+{
+    // `unset_changes()` marks BOTH families -- that is its historical contract and
+    // code written before 1.0.0 relies on it. It is also what used to make it
+    // dangerous: a family that had never solved got marked "in sync" next to one
+    // that had, and its next powerflow took the "nothing to rebuild" path with an
+    // empty bus labelling, indexing it with bus ids in the hundreds. Under
+    // -O3 -DNDEBUG (what the wheels ship) that is a segfault, not an error.
+    //
+    // It still marks both families. What changed is that each one is verified first,
+    // so the claim is only ever RECORDED where it is true; a family that cannot back
+    // it is retired instead and rebuilds on its next powerflow. The powerflow path
+    // no longer re-checks, which is the whole point -- so these sections are what
+    // stands between `unset_changes()` and an out-of-bounds read.
+    LSGrid ref_ac = make_grid();
+    LSGrid ref_dc = make_grid();
+    const CplxVect v_ac_ref = solve_ac(ref_ac);
+    const CplxVect v_dc_ref = solve_dc(ref_dc);
+
+    SECTION("a family that never solved is retired, not marked"){
+        LSGrid grid = make_grid();
+        grid.unset_changes();   // neither family has built anything
+
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+        CHECK((solve_ac(grid) - v_ac_ref).norm() < 1e-9);
+        CHECK((solve_dc(grid) - v_dc_ref).norm() < 1e-9);
+    }
+    SECTION("the family that did solve is marked, the other is retired"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);   // AC has a live cache, DC has nothing
+        grid.unset_changes();
+
+        CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // true claim, recorded
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());        // false claim, refused
+        CHECK((solve_dc(grid) - v_dc_ref).norm() < 1e-9);
+        CHECK((solve_ac(grid) - v_ac_ref).norm() < 1e-9);
+    }
+    SECTION("and the other way round"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_dc(grid).size() == 14);
+        grid.unset_changes();
+
+        CHECK_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK((solve_ac(grid) - v_ac_ref).norm() < 1e-9);
+    }
+    SECTION("a pending topology change is not papered over"){
+        // The dangerous direction, and the reason unset_changes() refreshes the bus
+        // status before comparing: called with a real change outstanding, "forget
+        // past changes" would drop it and solve the OLD system with the new grid.
+        // The connectivity comparison is what refuses.
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        grid.deactivate_powerline(4);
+        grid.unset_changes();
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+
+        LSGrid ref = make_grid();
+        ref.deactivate_powerline(4);
+        CHECK((solve_ac(grid) - solve_ac(ref)).norm() < 1e-9);
+    }
+    SECTION("a genuinely up-to-date cache is left alone, however often it is claimed"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        for(int i = 0; i < 3; ++i){
+            grid.unset_changes();
+            CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+            CHECK((solve_ac(grid) - v_ac_ref).norm() < 1e-9);
+        }
+    }
+    SECTION("turning one family's reuse off does not make the other unsafe"){
+        // the sequence that used to segfault: both families marked, only one built
+        LSGrid grid = make_grid();
+        grid.allow_ac_cache_reuse(false);
+        grid.unset_changes();
+        CHECK((solve_dc(grid) - v_dc_ref).norm() < 1e-9);
+
+        LSGrid grid2 = make_grid();
+        grid2.allow_dc_cache_reuse(false);
+        grid2.unset_changes();
+        CHECK((solve_ac(grid2) - v_ac_ref).norm() < 1e-9);
+
+        LSGrid grid3 = make_grid();
+        REQUIRE(solve_ac(grid3).size() == 14);
+        grid3.allow_ac_cache_reuse(false);
+        grid3.unset_changes();
+        CHECK((solve_dc(grid3) - v_dc_ref).norm() < 1e-9);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 3b. a cache is one object, and it belongs to one owner
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a build into someone else's cache never leaves this grid solving a mixture",
+          "[LSGrid][cache_reuse][batch]")
+{
+    // `pre_process_solver` serves two kinds of caller: this grid (ac_pf / dc_pf /
+    // check_solution pass ac_cache_ / dc_cache_) and a foreign builder -- the batch
+    // algorithms, which pass a cache they own.
+    //
+    // For the foreign one, the grid's own cache is still an output: the NR
+    // extensions are not built from what the solver was handed, they are pulled out
+    // of the LSGrid through `lsgrid_ptr`, and they read the labelling AND the pv-pq
+    // split (see fill_voltage_control_solver_data's use of bus_pq). So the build has
+    // to publish there. What it must never do is leave that publication looking like
+    // a cache: the labelling and the split would be the caller's while the matrix
+    // and the injections are still this grid's, which is the right size, passes
+    // every structural check, converges, and is wrong.
+    //
+    // Retiring the snapshot is what prevents it, and that is what these sections
+    // pin. Note what is NOT tested here: that the nine parts cannot be handed over
+    // separately in the first place. That is not a runtime property any more, it is
+    // the type -- SolverSideCache is one object, so there is nothing to mismatch.
+    SECTION("AC"){
+        LSGrid grid = make_grid();
+        const CplxVect v_before = solve_ac(grid);
+        REQUIRE(v_before.size() == 14);
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // cache is live
+
+        // exactly what a batch does: its own cache, its own control
+        ls2g::AcSolverCache foreign;
+        const ls2g::AlgoControl foreign_control;  // default ctor: everything changed
+        grid.build_solver_input(flat_start(grid), foreign, foreign_control);
+
+        // it built the WHOLE cache into the caller's object ...
+        CHECK(foreign.mat.rows() == 14);
+        CHECK(foreign.mat.cols() == 14);
+        CHECK(foreign.inj.size() == 14);
+        CHECK(foreign.slack_weights.size() == 14);
+        CHECK(foreign.bus_pq.size() > 0);
+        CHECK(foreign.id_solver_to_me.size() == 14);
+        // ... published the labelling and the split the NR extensions read back ...
+        CHECK(grid.get_ac_pq_solver().size() == foreign.bus_pq.size());
+        CHECK(grid.get_ac_pv_solver().size() == foreign.bus_pv.size());
+        // ... and retired this grid's own cache rather than leaving it a mixture
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+
+        // so the grid's own next powerflow is unaffected by the detour
+        CHECK((solve_ac(grid) - v_before).norm() < 1e-9);
+    }
+    SECTION("DC"){
+        LSGrid grid = make_grid();
+        const CplxVect v_before = solve_dc(grid);
+        REQUIRE(v_before.size() == 14);
+        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+
+        ls2g::DcSolverCache foreign;
+        const ls2g::AlgoControl foreign_control;
+        grid.build_dc_solver_input(flat_start(grid), foreign, foreign_control);
+
+        CHECK(foreign.mat.rows() == 14);
+        CHECK(foreign.inj.size() == 14);
+        CHECK(grid.get_dc_pq_solver().size() == foreign.bus_pq.size());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+
+        CHECK((solve_dc(grid) - v_before).norm() < 1e-9);
+    }
+    SECTION("a foreign build ignores a 'nothing changed' control"){
+        // The own / foreign distinction used to be a runtime flag inside ONE
+        // function (`own_cache = _is_own_cache(cache)`); it is now which of two
+        // functions you call, and `build_solver_input` hardcodes a full rebuild
+        // instead of consulting the reuse policy.
+        //
+        // This is the section that would catch that being undone. `solver_control`,
+        // the connectivity snapshot and the change flags all describe THIS grid and
+        // say nothing about the caller's cache -- so honouring a "nothing changed"
+        // claim about a foreign cache means re-stamping only part of it and leaving
+        // the rest from whatever was there before. Here "before" is nothing at all,
+        // so a foreign build that believed the claim would hand back an empty
+        // labelling and an empty matrix; with a non-empty one it would be worse than
+        // empty, because every size would still look right.
+        LSGrid grid = make_grid();
+        const CplxVect v_before = solve_ac(grid);
+        REQUIRE(v_before.size() == 14);
+
+        ls2g::AcSolverCache foreign;   // nothing has ever been built into it
+        ls2g::AlgoControl lying_control;
+        lying_control.tell_none_changed();   // ... and a control that says so is fine
+        grid.build_solver_input(flat_start(grid), foreign, lying_control);
+
+        // built in full regardless of what the control claimed
+        CHECK(foreign.mat.rows() == 14);
+        CHECK(foreign.mat.cols() == 14);
+        CHECK(foreign.inj.size() == 14);
+        CHECK(foreign.slack_weights.size() == 14);
+        CHECK(foreign.bus_pq.size() > 0);
+        CHECK(foreign.id_solver_to_me.size() == 14);
+        CHECK(foreign.id_me_to_solver.size() == grid.total_bus());
+
+        // and the grid's own next powerflow is still unaffected by the detour
+        CHECK((solve_ac(grid) - v_before).norm() < 1e-9);
+    }
+    SECTION("one family's foreign build leaves the other family's cache alone"){
+        LSGrid grid = make_grid();
+        const CplxVect v_ac_before = solve_ac(grid);
+        const CplxVect v_dc_before = solve_dc(grid);
+
+        ls2g::DcSolverCache foreign;
+        const ls2g::AlgoControl foreign_control;
+        grid.build_dc_solver_input(flat_start(grid), foreign, foreign_control);
+
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+        CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // AC untouched
+        CHECK((solve_ac(grid) - v_ac_before).norm() < 1e-9);
+        CHECK((solve_dc(grid) - v_dc_before).norm() < 1e-9);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 4. nothing cached ever crosses a serialization boundary
 // ---------------------------------------------------------------------------
@@ -367,23 +584,33 @@ TEST_CASE("a deserialized grid always starts with a cold cache", "[LSGrid][cache
         CHECK((solve_dc(restored) - solve_dc(ref)).norm() < 1e-9);
     }
 
-    SECTION("a hand-edited bus-connectivity snapshot cannot authorize any reuse"){
-        // BUS_STATUS_ID is the one piece of cache metadata inside StateRes. Poison
-        // it (this is what a crafted file looks like) and the restored grid must be
-        // exactly as cold, and answer exactly the same, as with a faithful one.
+    SECTION("there is no cache metadata left in StateRes to hand-edit"){
+        // This section used to poison StateRes' bus-connectivity photograph -- the
+        // one piece of cache metadata a serialized grid carried -- and check that a
+        // crafted file still could not authorize any reuse. That field is gone: a
+        // bus entering or leaving the solved system is reported by
+        // SubstationContainer's element counts as it happens, so nothing about the
+        // cache needs to survive a save any more. The attack surface was removed
+        // rather than defended, which is why there is nothing to poison here.
+        //
+        // What remains testable is the property it was protecting: a restored grid
+        // is cold and answers exactly like one that never cached. Element status
+        // (which the counts are derived from) IS still serialized, so a faithful
+        // round trip must not smuggle warmth in with it.
         LSGrid source = make_grid();
         REQUIRE(solve_ac(source).size() == 14);
+        source.deactivate_powerline(4);          // a real connectivity change
+        REQUIRE(solve_ac(source).size() == 14);
         LSGrid::StateRes state = source.get_state();
-        std::vector<bool> & bus_status = std::get<LSGrid::BUS_STATUS_ID>(state);
-        bus_status.assign(bus_status.size(), true);  // "every bus was connected"
 
         LSGrid restored = make_grid();
-        REQUIRE(solve_ac(restored).size() == 14);
+        REQUIRE(solve_ac(restored).size() == 14);   // warm, and for a DIFFERENT topology
         restored.set_state(state);
         check_cold(restored);
 
         LSGrid ref = make_grid();
         ref.allow_cache_reuse(false);
+        ref.deactivate_powerline(4);
         CHECK((solve_ac(restored) - solve_ac(ref)).norm() < 1e-9);
     }
 }
@@ -546,19 +773,26 @@ TEST_CASE("changing the algorithm invalidates that family's cache", "[LSGrid][ca
     CHECK((v - solve_ac(ref)).norm() < 1e-9);
 }
 
-TEST_CASE("a divergence keeps the cached data but resets the algorithm", "[LSGrid][cache_reuse]")
+TEST_CASE("a divergence keeps the cached data and the last iterate, and rebuilds next", "[LSGrid][cache_reuse]")
 {
     // Divergence is a numerical failure, not a data one: Ybus / Sbus and the
-    // labelling still describe the grid, and are kept. What is thrown away is the
-    // algorithm's own state (half-converged iterate, factorization of a system it
-    // gave up on), and the next solve rebuilds those from the cached matrices.
+    // labelling still describe the grid, and are kept. The algorithm is not
+    // reset either -- its last iterate, error and iteration count are what a
+    // caller wants to read after a failed solve -- and the next solve rebuilds
+    // the algorithm's internals from the cached matrices (algo_needs_rebuild)
+    // instead of reusing a factorization of a system it gave up on.
     LSGrid grid = make_grid();
     REQUIRE(solve_ac(grid).size() == 14);
+    const Eigen::Index nb_solver = grid.get_V_solver().size();
 
     // make it diverge: one iteration is not enough from a flat start
     const CplxVect diverged = grid.ac_pf(flat_start(grid), 1, 1e-12);
     CHECK(diverged.size() == 0);
     CHECK_FALSE(grid.get_algo().converged());
+    CHECK(grid.get_algo().get_error() == ls2g::ErrorType::TooManyIterations);
+    CHECK(grid.get_algo().get_nb_iter() == 1);
+    CHECK(grid.get_V_solver().size() == nb_solver);  // the iterate it stopped at
+    CHECK(grid.get_V_solver().allFinite());
 
     // the same grid, solved properly again, must reach the reference solution
     const CplxVect v = solve_ac(grid);
@@ -577,6 +811,48 @@ TEST_CASE("a divergence keeps the cached data but resets the algorithm", "[LSGri
     CHECK((v2 - solve_ac(ref2)).norm() < 1e-9);
 }
 
+TEST_CASE("max_iter = 0 leaves the pre-iteration state readable", "[LSGrid][cache_reuse]")
+{
+    // BaseAlgo::check_iter_tol documents max_iter = 0 as a legitimate call that
+    // returns the pre-iteration state: the algorithm seeds V, builds the
+    // Jacobian's sparsity and stops before its first step. It reports "not
+    // converged" -- it never had the chance to be -- and process_results used to
+    // reset the algorithm on any "not converged", destroying the very state the
+    // call exists to expose (an external batched solver seeds itself from
+    // get_V_solver / get_J_solver this way, and segfaulted on the empty vectors
+    // it found instead).
+    LSGrid grid = make_grid();
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    REQUIRE(solve_ac(grid).size() == 14);
+    const Eigen::Index nb_solver = grid.get_V_solver().size();
+    REQUIRE(nb_solver > 0);
+
+    const CplxVect res = grid.ac_pf(flat_start(grid), 0, 1e-10);
+    CHECK(res.size() == 0);  // not a converged solution, and not reported as one
+    CHECK_FALSE(grid.get_algo().converged());
+    CHECK(grid.get_algo().get_nb_iter() == 0);
+    CHECK(grid.get_algo().get_error() == ls2g::ErrorType::TooManyIterations);
+
+    // the pre-iteration state is there: the seeded voltages (flat angles, since
+    // the seed is a flat start) and a Jacobian with its sparsity built
+    REQUIRE(grid.get_V_solver().size() == nb_solver);
+    CHECK(grid.get_V_solver().allFinite());
+    CHECK(grid.get_Va_solver().size() == nb_solver);
+    CHECK(grid.get_Va_solver().cwiseAbs().maxCoeff() < 1e-12);
+    CHECK(grid.get_Vm_solver().size() == nb_solver);
+    CHECK(grid.get_J_solver().rows() > 0);
+    CHECK(grid.get_J_solver().rows() == grid.get_J_solver().cols());
+
+    // and the next real solve is unaffected
+    const CplxVect v = solve_ac(grid);
+    REQUIRE(v.size() == 14);
+    LSGrid ref = make_grid();
+    ref.allow_cache_reuse(false);
+    ref.change_algorithm(AlgorithmType::NR_SparseLU);
+    CHECK((v - solve_ac(ref)).norm() < 1e-9);
+
+}
+
 TEST_CASE("a divergence recovers under every built-in AC algorithm", "[LSGrid][cache_reuse]")
 {
     // Each algorithm keeps derived state of its own -- the Jacobian sparsity for
@@ -586,10 +862,11 @@ TEST_CASE("a divergence recovers under every built-in AC algorithm", "[LSGrid][c
     // check_solution() is thrown into the sequence on purpose: it runs the same
     // pre-processing without ever calling the algorithm, so it must not consume
     // the "rebuild your internals" the diverged solve asked for.
-    // The fast-decoupled solvers do not support the hvdc angle droop that line 1
-    // of this grid has enabled: disconnect it, on the test grid and on its
-    // reference alike.
-    const auto disable_droop = [](LSGrid & g){ g.deactivate_dcline(1); };
+    // The fast-decoupled solvers support neither the hvdc angle droop that line 1
+    // of this grid has enabled nor the voltage-mode SVC it carries (they hold no
+    // NRSystem, so no Hvdc and no VoltageControl extension); ac_pf refuses both by
+    // name. Disconnect them, on the test grid and on its reference alike.
+    const auto disable_droop = [](LSGrid & g){ g.deactivate_dcline(1); g.deactivate_svc(0); };
     for(const auto algo : {AlgorithmType::NR_SparseLU,
                            AlgorithmType::NRSing_SparseLU,
                            AlgorithmType::FDPF_XB_SparseLU,
@@ -630,4 +907,451 @@ TEST_CASE("a copy of a grid does not inherit its cache", "[LSGrid][cache_reuse]"
     ref.allow_cache_reuse(false);
     ref.change_p_load(1, 61.);
     CHECK((v - solve_ac(ref)).norm() < 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// 6. a powerflow that throws leaves the grid needing a full rebuild
+// ---------------------------------------------------------------------------
+//
+// A solve writes into its family's cache and into the algorithm as it goes:
+// the bus labelling, Ybus / Sbus, the pv-pq split, the slack weights, a
+// factorization. If it throws half way through, all of that is a mixture of the
+// old grid and the new one -- and no flag written before the throw could tell a
+// caller which half is which.
+//
+// So `ac_pf` / `dc_pf` do not try to unwind it. They run the whole solve against
+// a COPY of the change tracking and leave the grid itself saying "everything
+// changed, both families" for the duration; the copy becomes the grid's change
+// tracking only at the publication statement, after process_results, which a
+// throw never reaches. The guarantee is therefore structural rather than
+// maintained by hand: whatever a future step throws, and wherever, the grid it
+// leaves behind rebuilds from scratch.
+//
+// (It is also why there is no try/catch here. An unwind edge through this code
+// is not free: the one that used to guard the bus-counting bracket cost 4.9M
+// instructions per solve without ever running.)
+
+namespace {
+
+// An AC solver that throws from compute_pf: the powerflow dies after
+// pre_process_solver has rebuilt the cache, before any result exists.
+class ThrowingAcAlgo : public ls2g::BaseAlgo {
+public:
+    ThrowingAcAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
+    // ac_pf has two pre-flight guards: it rejects an angle-droop grid handed to a
+    // solver that cannot do droop, and a voltage-control one handed to a solver with
+    // no bordered block. The exotic test grid has three hvdc lines AND a voltage-mode
+    // SVC, so both would fire. They fire BEFORE the solve begins -- nothing has been
+    // touched yet, so nothing needs invalidating -- which is exactly the throw this
+    // test must NOT be measuring. These doubles stand in for a full-featured solver.
+    bool supports_hvdc_droop() const noexcept override { return true; }
+    bool supports_remote_voltage_control() const noexcept override { return true; }
+    bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
+                    const Eigen::Ref<const CplxVect> & /*V*/,
+                    const Eigen::Ref<const CplxVect> & /*Sbus*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*slack_ids*/,
+                    const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pv*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pq*/,
+                    int /*max_iter*/, real_type /*tol*/) override
+    {
+        throw std::runtime_error("__cache_reuse_throwing_ac__: deliberate failure");
+    }
+};
+
+// An AC solver that claims convergence but returns V/Va/Vm one entry too long:
+// the throw then comes from process_results, after the algorithm has run.
+class WrongSizeAcAlgo : public ls2g::BaseAlgo {
+public:
+    WrongSizeAcAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
+    bool supports_hvdc_droop() const noexcept override { return true; }  // see ThrowingAcAlgo
+    bool supports_remote_voltage_control() const noexcept override { return true; }  // idem
+    bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
+                    const Eigen::Ref<const CplxVect> & V,
+                    const Eigen::Ref<const CplxVect> & /*Sbus*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*slack_ids*/,
+                    const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pv*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pq*/,
+                    int /*max_iter*/, real_type /*tol*/) override
+    {
+        const int bad = static_cast<int>(V.size()) + 1;
+        V_ = CplxVect::Constant(bad, cplx_type(1., 0.));
+        Va_ = RealVect::Zero(bad);
+        Vm_ = RealVect::Constant(bad, 1.);
+        n_ = bad;
+        nr_iter_ = 1;
+        err_ = ls2g::ErrorType::NoError;  // wrongly claims success
+        return true;
+    }
+};
+
+// the same for the DC family (a different virtual entry point, a different slot)
+class ThrowingDcAlgo : public ls2g::BaseAlgo {
+public:
+    ThrowingDcAlgo() : ls2g::BaseAlgo(/*is_ac=*/false) {}
+    bool compute_pf_dc(const ls2g::EigenRefConstRealSpMat & /*Bbus*/,
+                       const Eigen::Ref<const CplxVect> & /*V*/,
+                       const Eigen::Ref<const RealVect> & /*Pbus*/,
+                       const Eigen::Ref<const ls2g::IntVect> & /*slack_ids*/,
+                       const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                       const Eigen::Ref<const ls2g::IntVect> & /*pv*/,
+                       const Eigen::Ref<const ls2g::IntVect> & /*pq*/) override
+    {
+        throw std::runtime_error("__cache_reuse_throwing_dc__: deliberate failure");
+    }
+};
+
+// A solver that works exactly once and then fails on every later call.
+//
+// This is the sharpest form of the guarantee, because the same solver object runs
+// both powerflows: the first one CONVERGES -- so the grid ends it with a live cache
+// and "nothing changed" on both families -- and only the second one throws. Nothing
+// about the state afterwards can then be blamed on setup: whatever the grid says, the
+// throw said it.
+class FailsOnSecondCallAlgo : public ls2g::BaseAlgo {
+public:
+    FailsOnSecondCallAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
+    bool supports_hvdc_droop() const noexcept override { return true; }  // see ThrowingAcAlgo
+    bool supports_remote_voltage_control() const noexcept override { return true; }  // idem
+    bool compute_pf(const ls2g::EigenRefConstCplxSpMat & /*Ybus*/,
+                    const Eigen::Ref<const CplxVect> & V,
+                    const Eigen::Ref<const CplxVect> & /*Sbus*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*slack_ids*/,
+                    const Eigen::Ref<const RealVect> & /*slack_weights*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pv*/,
+                    const Eigen::Ref<const ls2g::IntVect> & /*pq*/,
+                    int /*max_iter*/, real_type /*tol*/) override
+    {
+        ++nb_calls_;
+        if(nb_calls_ > 1){
+            throw std::runtime_error("__cache_reuse_fails_second__: deliberate failure on call "
+                                     + std::to_string(nb_calls_));
+        }
+        // A well-formed "solution": the voltages it was handed, right size and finite,
+        // so the external-solver output check accepts them and the powerflow completes
+        // normally. They are not a powerflow solution and nothing here reads them as
+        // one -- what this call has to produce is a SUCCESS, so that the cache is live
+        // and marked in sync when the next call throws.
+        V_ = V;
+        n_ = static_cast<int>(V.size());
+        Vm_ = V_.array().abs();
+        Va_ = V_.array().arg();
+        nr_iter_ = 1;
+        err_ = ls2g::ErrorType::NoError;
+        return true;
+    }
+private:
+    int nb_calls_ = 0;
+};
+
+}  // namespace
+
+TEST_CASE("a powerflow that throws leaves both families needing a full rebuild",
+          "[LSGrid][cache_reuse][exception_safety]")
+{
+    // Catch2 re-enters the test case once per SECTION, and the registry refuses a
+    // duplicate name: register on the first entry only.
+    static const bool registered = []{
+        ls2g::AlgorithmRegistry::instance().register_solver(
+            "__cache_reuse_throwing_ac__",
+            [] { return std::unique_ptr<ls2g::BaseAlgo>(new ThrowingAcAlgo()); });
+        ls2g::AlgorithmRegistry::instance().register_solver(
+            "__cache_reuse_throwing_dc__",
+            [] { return std::unique_ptr<ls2g::BaseAlgo>(new ThrowingDcAlgo()); });
+        ls2g::AlgorithmRegistry::instance().register_solver(
+            "__cache_reuse_wrong_size__",
+            [] { return std::unique_ptr<ls2g::BaseAlgo>(new WrongSizeAcAlgo()); });
+        ls2g::AlgorithmRegistry::instance().register_solver(
+            "__cache_reuse_fails_second__",
+            [] { return std::unique_ptr<ls2g::BaseAlgo>(new FailsOnSecondCallAlgo()); });
+        return true;
+    }();
+    (void) registered;
+
+    SECTION("an AC solve that throws"){
+        LSGrid grid = make_grid();
+        // solve both families first, so both caches are live and both controls
+        // say "nothing changed": without the working-copy protocol, a throw would
+        // leave exactly that claim standing over a half-rebuilt AC cache.
+        REQUIRE(solve_ac(grid).size() == 14);
+        REQUIRE(solve_dc(grid).size() == 14);
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+
+        grid.change_algorithm("__cache_reuse_throwing_ac__");
+        CHECK_THROWS_AS(grid.ac_pf(flat_start(grid), 20, 1e-8), std::runtime_error);
+
+        // nothing was published: the grid asks for everything again, both families
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+
+        // and it really does rebuild: a working solver on that grid answers what a
+        // grid that never cached anything answers.
+        grid.change_algorithm("NR_SparseLU");
+        const CplxVect v = solve_ac(grid);
+        REQUIRE(v.size() == 14);
+        LSGrid ref = make_grid();
+        ref.allow_cache_reuse(false);
+        CHECK((v - solve_ac(ref)).norm() < 1e-9);
+    }
+
+    SECTION("a DC solve that throws"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        REQUIRE(solve_dc(grid).size() == 14);
+
+        grid.change_algorithm("__cache_reuse_throwing_dc__");
+        CHECK_THROWS_AS(grid.dc_pf(flat_start(grid), 1, 1e-8), std::runtime_error);
+
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+
+        grid.change_algorithm("DC_SparseLU");
+        const CplxVect v = solve_dc(grid);
+        REQUIRE(v.size() == 14);
+        LSGrid ref = make_grid();
+        ref.allow_cache_reuse(false);
+        CHECK((v - solve_dc(ref)).norm() < 1e-9);
+    }
+
+    SECTION("a throw raised after the algorithm ran -- process_results"){
+        // The wrong-sized-V rejection lives in process_results, i.e. AFTER the
+        // solver claimed success and after `algo_needs_rebuild` was cleared. The
+        // publication statement is still below it, so this throw invalidates just
+        // as thoroughly as one from the solver itself.
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+
+        grid.change_algorithm("__cache_reuse_wrong_size__");
+        CHECK_THROWS_AS(grid.ac_pf(flat_start(grid), 20, 1e-8), std::runtime_error);
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+    }
+
+    SECTION("the same solver, twice: the second call is the only difference"){
+        // Nothing is swapped between the two powerflows -- same grid, same solver
+        // object, same call. The first one leaves the grid in "I can reuse my cache",
+        // the second one throws, and the grid is left in "I cannot reuse my cache".
+        // That is the same behaviour a throw out of a mutator has to have, arrived at
+        // without a try/catch anywhere.
+        LSGrid grid = make_grid();
+        REQUIRE(solve_dc(grid).size() == 14);   // give the DC family a live cache as well
+        grid.change_algorithm("__cache_reuse_fails_second__");
+
+        // call 1 -- succeeds
+        REQUIRE(grid.ac_pf(flat_start(grid), 20, 1e-8).size() == 14);
+        REQUIRE_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+        REQUIRE_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+        REQUIRE(grid.get_ac_algo_controler().nothing_changed());   // "I can reuse my cache"
+        REQUIRE(grid.get_dc_algo_controler().nothing_changed());
+
+        // call 2 -- throws
+        CHECK_THROWS_AS(grid.ac_pf(flat_start(grid), 20, 1e-8), std::runtime_error);
+        CHECK(grid.get_ac_algo_controler().need_reset_solver());   // "I cannot reuse my cache"
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());
+        CHECK_FALSE(grid.get_ac_algo_controler().nothing_changed());
+        CHECK_FALSE(grid.get_dc_algo_controler().nothing_changed());
+
+        // and the rebuild it asks for really is a rebuild, for either family
+        grid.change_algorithm("NR_SparseLU");
+        LSGrid ref = make_grid();
+        ref.allow_cache_reuse(false);
+        CHECK((solve_ac(grid) - solve_ac(ref)).norm() < 1e-9);
+        CHECK((solve_dc(grid) - solve_dc(ref)).norm() < 1e-9);
+    }
+
+    SECTION("a solve that does NOT throw publishes what it consumed"){
+        // the other half of the protocol: on the success path the copy is put back,
+        // so an AC solve still marks the AC family in sync and still leaves the DC
+        // family exactly as it found it.
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());
+        CHECK(grid.get_dc_algo_controler().need_reset_solver());   // never solved
+
+        REQUIRE(solve_dc(grid).size() == 14);
+        CHECK_FALSE(grid.get_ac_algo_controler().need_reset_solver());  // untouched
+        CHECK_FALSE(grid.get_dc_algo_controler().need_reset_solver());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 8. which terms does need_recompute_pv_pq() actually need?
+// ---------------------------------------------------------------------------
+//
+// `AlgoControl::need_recompute_pv_pq()` names the reasons the pv/pq split -- and so
+// the voltage-control plan built around it -- is rebuilt. Two terms were disputed in
+// review: `ybus_change_sparsity_pattern_` (raised when a branch is reconnected or one
+// of its ends is moved) and `slack_participate_changed_` (a slack that is not the
+// reference bus: what has it to do with the split?).
+//
+// An argument is not evidence, so: evidence. The only way to attribute a rebuild to
+// ONE term is to reach a state where that term is raised and the other five are not
+// -- otherwise the neighbour does the work and the term under test is redundant
+// whatever the physics says. So each case below asserts the whole vector of six
+// first, then does the comparison:
+//
+//   * solve, so the cache describes the grid;
+//   * apply the action, and check exactly which terms it raised;
+//   * solve WARM (on the cache the action left behind);
+//   * throw the cache away and solve COLD;
+//   * require the two answers to agree.
+//
+// A term still IN the predicate makes both paths rebuild, so the comparison is
+// trivially true and the case is a guard: it fails the day the term is dropped by
+// someone who did not check. A term that has been dropped makes the warm path really
+// reuse the split, and the case is a live regression test. The verdict was reached by
+// building the predicate both ways and running exactly these cases against each:
+//
+//   dropping `ybus_change_sparsity_pattern_`  -> both cases still pass  -> dropped
+//   dropping `slack_participate_changed_`     -> both cases fail        -> kept
+//
+// so the first TEST_CASE below is now live and the second is a guard.
+//
+// (`pq_changed_` is a seventh question that answers itself: nothing in the library
+// ever raises it except `tell_all_changed()`, which raises `need_reset_solver_` too.
+// It is kept because it is the honest name for "a bus changed class", and a caller
+// or a future container may raise it; it is simply never on its own today.)
+
+namespace {
+
+/// the six terms of AlgoControl::need_recompute_pv_pq(), read off one grid
+struct PvPqTerms {
+    bool reset = false;
+    bool dimension = false;
+    bool sparsity = false;
+    bool slack_participate = false;
+    bool pv = false;
+    bool pq = false;
+};
+
+PvPqTerms ac_pv_pq_terms(const LSGrid & grid)
+{
+    const ls2g::AlgoControl & control = grid.get_ac_algo_controler();
+    PvPqTerms terms;
+    terms.reset = control.need_reset_solver();
+    terms.dimension = control.has_dimension_changed();
+    terms.sparsity = control.ybus_change_sparsity_pattern();
+    terms.slack_participate = control.has_slack_participate_changed();
+    terms.pv = control.has_pv_changed();
+    terms.pq = control.has_pq_changed();
+    return terms;
+}
+
+/// solve on the cache as it stands, then throw the cache away and solve again
+CplxVect warm_then_cold(LSGrid & grid, CplxVect & cold_out)
+{
+    const CplxVect warm = solve_ac(grid);
+    grid.tell_solver_need_reset();
+    cold_out = solve_ac(grid);
+    return warm;
+}
+
+void check_warm_equals_cold(LSGrid & grid)
+{
+    CplxVect cold;
+    const CplxVect warm = warm_then_cold(grid, cold);
+    REQUIRE(warm.size() == 14);
+    REQUIRE(cold.size() == 14);
+    CHECK((warm - cold).norm() < 1e-9);
+}
+
+}  // namespace
+
+TEST_CASE("ybus_change_sparsity_pattern, on its own, does not move the split",
+          "[LSGrid][cache_reuse][pv_pq]")
+{
+    // Raised by BranchContainer::_on_reactivate and
+    // BranchEndContainer::_on_reactivate / _on_change_bus -- reconnecting a branch,
+    // or moving one of its ends. Line 3 of the exotic grid joins two buses that both
+    // carry other elements, so opening and closing it leaves the bus SET alone and
+    // `change_dimension_` stays down: that is what makes the term isolable at all.
+    //
+    // VERDICT: both cases pass with the term dropped, so it IS dropped -- and these
+    // two cases are what now holds the reuse honest. It was redundant because every
+    // raiser goes through GenericContainer::_apply_and_track_buses, which raises
+    // change_dimension_ exactly when the mutation empties or fills a bus, which is
+    // exactly when the labelling moves. When no bus crossed, id_me_to_solver is
+    // unchanged and a branch is neither a voltage controller nor a slack, so the old
+    // split still describes the grid -- which is what these two cases check for real.
+    SECTION("a line is reconnected"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+        grid.deactivate_powerline(3);
+        REQUIRE(solve_ac(grid).size() == 14);   // the cache now describes the open grid
+
+        grid.reactivate_powerline(3);
+        const PvPqTerms terms = ac_pv_pq_terms(grid);
+        CHECK(terms.sparsity);                  // the term under test ...
+        CHECK_FALSE(terms.reset);               // ... and only it
+        CHECK_FALSE(terms.dimension);
+        CHECK_FALSE(terms.slack_participate);
+        CHECK_FALSE(terms.pv);
+        CHECK_FALSE(terms.pq);
+
+        check_warm_equals_cold(grid);
+    }
+    SECTION("one end of a trafo is moved to another bus"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+
+        grid.change_bus1_trafo(0, GridModelBusId(3));
+        const PvPqTerms terms = ac_pv_pq_terms(grid);
+        CHECK(terms.sparsity);
+        CHECK_FALSE(terms.reset);
+        CHECK_FALSE(terms.dimension);
+        CHECK_FALSE(terms.slack_participate);
+        CHECK_FALSE(terms.pv);
+        CHECK_FALSE(terms.pq);
+
+        check_warm_equals_cold(grid);
+    }
+}
+
+TEST_CASE("slack_participate_changed, on its own, DOES move the split",
+          "[LSGrid][cache_reuse][pv_pq]")
+{
+    // The other disputed term, and this one earns its place. It is not about the
+    // reference bus: `GeneratorContainer::fillpv` skips a bus that is in
+    // `slack_bus_id_solver`, and the PQ loop right after it does too, so a bus that
+    // has just become slack must leave both lists and one that has just stopped being
+    // slack must join one of them. Move the slack set and the split moves with it.
+    //
+    // VERDICT: dropping this term makes both cases fail -- the warm solve keeps a
+    // split in which the old slack bus is still absent and the new one still PV -- so
+    // the term stays, and these two cases are the guard that says why.
+    SECTION("the slack moves to another generator"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+
+        ls2g::IntVect other_slack(1);
+        other_slack << 1;
+        grid.update_slack_weights_by_id(other_slack);
+        const PvPqTerms terms = ac_pv_pq_terms(grid);
+        CHECK(terms.slack_participate);         // the term under test ...
+        CHECK_FALSE(terms.reset);               // ... and only it
+        CHECK_FALSE(terms.dimension);
+        CHECK_FALSE(terms.sparsity);
+        CHECK_FALSE(terms.pv);
+        CHECK_FALSE(terms.pq);
+
+        check_warm_equals_cold(grid);
+    }
+    SECTION("a second generator joins the slack"){
+        LSGrid grid = make_grid();
+        REQUIRE(solve_ac(grid).size() == 14);
+
+        grid.add_gen_slackbus(1, 1.0);
+        const PvPqTerms terms = ac_pv_pq_terms(grid);
+        CHECK(terms.slack_participate);
+        CHECK_FALSE(terms.reset);
+        CHECK_FALSE(terms.dimension);
+        CHECK_FALSE(terms.sparsity);
+        CHECK_FALSE(terms.pv);
+        CHECK_FALSE(terms.pq);
+
+        check_warm_equals_cold(grid);
+    }
 }

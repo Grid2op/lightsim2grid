@@ -45,6 +45,12 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
     public:
         // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes = std::tuple<OneSideContainer_PQ::StateRes >;
+        enum StateResIdx {
+            OSC_PQ_STATE = 0,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "ShuntContainer::StateRes and StateResIdx do not match");
         
         ShuntContainer() noexcept = default;
         ~ShuntContainer() noexcept override = default;
@@ -71,62 +77,51 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         static ShuntContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "ShuntContainer"; }  // written into / checked against the binary file header
         
-        void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
-                              bool ac,
-                              const SolverBusIdVect & id_grid_to_solver,
-                              real_type sn_mva) const override;
-        void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                                std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const SolverBusIdVect & id_grid_to_solver,
-                                real_type sn_mva,
-                                FDPFMethod xb_or_bx) const override;
-        void fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;  // in DC i need that
+        void _fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                       bool ac,
+                       const SolverBusIdVect & id_grid_to_solver,
+                       real_type sn_mva) const override;
+        void _fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                         std::vector<Eigen::Triplet<real_type> > & Bpp,
+                         const SolverBusIdVect & id_grid_to_solver,
+                         real_type sn_mva,
+                         FDPFMethod xb_or_bx) const override;
+    protected:
+        void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;  // in DC i need that
         
     protected:
-        void _change_p(int shunt_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control) override
+        // a shunt is in Ybus (AC) AND in Sbus (DC only, its active part: _fillSbus
+        // stamps nothing in AC), so the Sbus flag is raised on the DC family alone
+        void _on_change_p(int shunt_id, real_type new_p, DualAlgoControl & solver_control) override
         {
             if(abs(target_p_mw_(shunt_id) - new_p) > _tol_equal_float){
-                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // needed for DC
+                solver_control.tell_recompute_ybus();
+                solver_control.dc_algo_controler().tell_recompute_sbus();
             }
         }
-
-        void _change_q(int shunt_id, real_type new_q, bool /*my_status*/, DualAlgoControl & solver_control) override
+        void _on_change_q(int shunt_id, real_type new_q, DualAlgoControl & solver_control) override
         {
             if(abs(target_q_mvar_(shunt_id) - new_q) > _tol_equal_float){
-                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                solver_control.tell_recompute_ybus();
             }
         }
+        void _on_change_bus(int /*el_id*/, GridModelBusId /*new_bus_id*/, DualAlgoControl & solver_control) override {
+            solver_control.tell_recompute_ybus();
+            solver_control.tell_one_el_changed_bus();
+            solver_control.dc_algo_controler().tell_recompute_sbus();
+        }
+        void _on_deactivate(int /*el_id*/, DualAlgoControl & solver_control) override {
+            solver_control.tell_recompute_ybus();
+            solver_control.tell_one_el_changed_bus();
+            solver_control.dc_algo_controler().tell_recompute_sbus();
+        }
+        void _on_reactivate(int /*el_id*/, DualAlgoControl & solver_control) override {
+            solver_control.tell_recompute_ybus();
+            solver_control.tell_one_el_changed_bus();
+            solver_control.dc_algo_controler().tell_recompute_sbus();
+        }
 
-        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) override {
-            if(bus_id_(el_id) != new_bus_id){
-                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
-                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // needed for DC
-                return true;
-            }
-            return false;
-        };
-        bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
-            if(status_[el_id]){
-                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
-                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // needed for DC
-                return true;
-            }
-            return false;
-        };
-        bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
-            if(!status_[el_id]){
-                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
-                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // needed for DC
-                return true;
-            }
-            return false;
-        };
-
-        void _compute_results(
+        void _compute_res_pq(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,

@@ -37,7 +37,11 @@ class LinearSolverPolicy
         ~LinearSolverPolicy() noexcept = default;
 
         // can this linear solver solve problem where RHS is a matrix
-        static const bool CAN_SOLVE_MAT;
+        static constexpr bool CAN_SOLVE_MAT = LinearSolver::CAN_SOLVE_MAT;
+
+        // can this linear solver solve J^T x = b using the factorization of J itself,
+        // without ever forming J^T (see solve_transpose)
+        static constexpr bool CAN_SOLVE_TRANSPOSE = LinearSolver::CAN_SOLVE_TRANSPOSE;
 
         ErrorType reset() {
             ++stats_.nb_reset;
@@ -65,14 +69,57 @@ class LinearSolverPolicy
             auto timer = CustTimer();
             ErrorType res = inner_.refactorize(J);
             stats_.timer_refactor_ += timer.duration();
+            if (res != ErrorType::NoError) {
+                ++stats_.nb_refactorize_failed;
+                if (refactor_fallback_) {
+                    // A refactorize reuses the pivot sequence of the last factorize.
+                    // KLU halts on a pivot that is now exactly zero -- which is what a
+                    // value-level edit that changes a bus's role does (a masked bus,
+                    // a PV bus released to PQ, a stranded controller's row repurposed
+                    // into "Q_c = 0"): the entry the base matrix pivoted at is a zero
+                    // in the edited one. The symbolic analysis (ordering, pattern) is
+                    // still right; only the pivots must be chosen again, and that is
+                    // exactly a numeric factorize. SparseLU never gets here: its
+                    // refactorize IS a factorize.
+                    ++stats_.nb_fallback_factorize;
+                    auto timer_f = CustTimer();
+                    res = inner_.factorize(J);
+                    stats_.timer_factor_ += timer_f.duration();
+                    ++stats_.nb_factorize;
+                    if (res != ErrorType::NoError) ++stats_.nb_fallback_factorize_failed;
+                }
+            }
             return res;
         }
+
+        // Whether a failed refactorize() falls back to a numeric factorize() before
+        // reporting the failure (see there). Off by default: a plain algorithm
+        // reports the failure, so a systematic one stays visible in the stats.
+        // RefactorRetryLinearSolver is this policy with the switch on from
+        // construction; the batch algorithms turn it on for whatever algorithm they
+        // run when they mask buses or switch PV / PQ (BaseAlgo::set_refactor_fallback).
+        void set_refactor_fallback(bool val) noexcept { refactor_fallback_ = val; }
+        bool refactor_fallback() const noexcept { return refactor_fallback_; }
 
         ErrorType solve(Eigen::Ref<RealVect> b) {
             ++stats_.nb_solve;
             auto timer = CustTimer();
             ErrorType res = inner_.solve(b);
             stats_.timer_solve_ += timer.duration();
+            return res;
+        }
+
+        // Solves J^T x = b reusing the factorization of J that factorize() /
+        // refactorize() produced -- no transposed copy of J, no second analyze, no
+        // second numeric factorization. Only meaningful where CAN_SOLVE_TRANSPOSE is
+        // true; the solvers where it is false return ErrorType::NotImplemented rather
+        // than silently solving the wrong system, so a caller that cannot check the
+        // flag at compile time can check the return value instead.
+        ErrorType solve_transpose(Eigen::Ref<RealVect> b) {
+            ++stats_.nb_solve_transpose;
+            auto timer = CustTimer();
+            ErrorType res = inner_.solve_transpose(b);
+            stats_.timer_solve_transpose_ += timer.duration();
             return res;
         }
 
@@ -87,11 +134,13 @@ class LinearSolverPolicy
             stats_.timer_factor_     = 0.;
             stats_.timer_refactor_   = 0.;
             stats_.timer_solve_      = 0.;
+            stats_.timer_solve_transpose_ = 0.;
         }
 
     protected:
         LinearSolver inner_;
         LinearSolverStats stats_;
+        bool refactor_fallback_ = false;
 
     private:
         // no copy allowed (matches the concrete solver classes' own convention)
@@ -100,9 +149,6 @@ class LinearSolverPolicy
         LinearSolverPolicy & operator=(LinearSolverPolicy&&) = delete;
         LinearSolverPolicy & operator=(const LinearSolverPolicy&) = delete;
 };
-
-template<class LinearSolver>
-const bool LinearSolverPolicy<LinearSolver>::CAN_SOLVE_MAT = LinearSolver::CAN_SOLVE_MAT;
 
 } // namespace ls2g
 

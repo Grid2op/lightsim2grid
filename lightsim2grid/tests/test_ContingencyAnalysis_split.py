@@ -48,6 +48,52 @@ def _build_radial(n_bus, with_island=True):
     return net
 
 
+class TestStrandedRemoteControllerEveryAlgo(unittest.TestCase):
+    """case14, generator 3 (on bus 7) regulating bus 9 remotely; tripping trafo 3
+    (buses 6-7) strands the controller alone on bus 7. In `handle_disconnected_grid`
+    mode the stranded controller's row is repurposed at constant sparsity, which
+    moves a pivot: KLU's refactorize halted on it and the row came back diverged under
+    NR_KLU / NRSing_KLU while SparseLU (re-pivoting) and NRRefactorRetry_KLU solved it.
+    The batch now enables the numeric-factorize fallback on its algorithm."""
+    def setUp(self):
+        import pandapower.networks as pn
+        self.max_it = 30
+        self.tol = 1e-8
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.grid = init_from_pandapower(pn.case14())
+            ref = init_from_pandapower(pn.case14())
+        self.nb = self.grid.total_bus()
+        self.nb_line = len(self.grid.get_lines())
+        self.grid.set_gen_regulated_bus(3, 9)
+        self.V0 = self.grid.ac_pf(np.ones(self.nb, dtype=complex), self.max_it, self.tol)
+        assert self.V0.shape[0] == self.nb, "base case did not converge"
+        # single-shot reference of the post-contingency grid: trafo out, and the
+        # controller it stranded out with it
+        ref.set_gen_regulated_bus(3, 9)
+        ref.deactivate_trafo(3)
+        ref.deactivate_gen(3)
+        self.Vref = ref.ac_pf(np.ones(self.nb, dtype=complex), self.max_it, self.tol)
+        assert self.Vref.shape[0] == self.nb, "reference did not converge"
+        self.live = [b for b in range(self.nb) if b != 7]
+
+    def test_every_nr_algorithm(self):
+        names = [nm for nm in ContingencyAnalysisCPP(self.grid).available_algorithm_names()
+                 if nm.startswith("NR")]
+        assert "NR_SparseLU" in names
+        for name in names:
+            with self.subTest(name):
+                SA = ContingencyAnalysisCPP(self.grid, True)
+                SA.change_algorithm(name)
+                SA.add_n1(self.nb_line + 3)
+                SA.handle_disconnected_grid = True
+                SA.compute(1.0 * self.V0, self.max_it, self.tol)
+                assert list(SA.converged()) == [True], f"{name}: row reported diverged"
+                V = SA.get_voltages()[0]
+                assert abs(V[7]) == 0., "the stranded bus reports 0"
+                np.testing.assert_allclose(V[self.live], self.Vref[self.live], rtol=0., atol=1e-6)
+
+
 class TestContingencySplitMode(unittest.TestCase):
     def setUp(self):
         self.max_it = 30

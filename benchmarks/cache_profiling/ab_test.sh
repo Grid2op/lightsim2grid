@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+#
+# A/B one candidate change to src/core: build A (the tree as it is), build B (the
+# tree with a patch applied), then run every (grid, phase) under BOTH and report
+#   * the instructions retired per solve, A vs B;
+#   * whether the two builds return the SAME answer -- every solve's iteration
+#     count and full complex voltage vector, compared with 17 significant digits.
+#
+#   ./ab_test.sh <grids_dir> <out_dir> <patch_script> [phases...]
+#   DRIVER=batch ./ab_test.sh <grids_dir> <out_dir> <patch_script> [phases...]
+#
+# <patch_script> is a python script that edits src/core in place; the tree is
+# restored with `git checkout` afterwards, and again on exit. DRIVER selects the
+# binary: `cached_pf` (default) audits a single powerflow with profile_cached_pf's
+# phases, `batch` audits TimeSeries / ContingencyAnalysis with profile_batch's
+# (see that file for the list); the numbers are then per ROW.
+
+set -euo pipefail
+
+# JOBS caps the parallelism of the two builds: the core's translation units are
+# Eigen-heavy, and nproc of them at once can take the machine down.
+
+GRIDS_DIR=$1
+OUT_DIR=$2
+PATCH=$3
+shift 3
+DRIVER=${DRIVER:-cached_pf}
+if [ "${DRIVER}" = "batch" ]; then
+    DEFAULT_PHASES="ts_ac ts_dc ca_ac ca_dc ca_ac_mask ca_dc_mask ts_flows ca_flows"
+else
+    DEFAULT_PHASES="idem inj dcac topo nocache cold"
+fi
+PHASES=${*:-${DEFAULT_PHASES}}
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+REPO=$(cd "${HERE}/../.." && pwd)
+BUILD="${OUT_DIR}/build"
+mkdir -p "${OUT_DIR}"
+
+cleanup() { git -C "${REPO}" checkout -- src/core >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+cmake -S "${HERE}" -B "${BUILD}" -DCMAKE_BUILD_TYPE=Release > /dev/null
+
+# The grids in a fixed, locale-independent order: every plain case first, then the
+# `_fancy` ones, each family by increasing size (the number in the case name). A
+# plain `*.lsb` glob sorts by locale, and a French one puts `case9241pegase_fancy`
+# before `case9241pegase` -- which, with a phase that fails on the fancy grid, is
+# how the plain one got skipped.
+grids_in_order() {
+    for f in "$1"/*.lsb; do
+        local name fancy=0
+        name=$(basename "${f}" .lsb)
+        case "${name}" in *_fancy*) fancy=1 ;; esac
+        printf '%s %s %s\n' "${fancy}" "$(echo "${name}" | sed -E 's/^[a-z]*([0-9]+).*/\1/')" "${f}"
+    done | sort -k1,1n -k2,2n | awk '{print $3}'
+}
+
+nb_for() {
+    if [ "${DRIVER}" = "batch" ]; then
+        # a row is a whole solve: the same budget as run_profile_batch.sh
+        case "$1" in
+            case9241pegase*) echo 20 ;;
+            case1354pegase*) echo 50 ;;
+            *)               echo 200 ;;
+        esac
+        return
+    fi
+    case "$1" in
+        case9241pegase) echo 5 ;;
+        case1354pegase) echo 10 ;;
+        *)              echo 20 ;;
+    esac
+}
+
+measure() {  # variant grid phase nb
+    local variant=$1 grid=$2 phase=$3 nb=$4
+    local out="${OUT_DIR}/cg.${variant}.${grid}.${phase}.out"
+    local trace="${OUT_DIR}/trace.${variant}.${grid}.${phase}.txt"
+    valgrind --tool=callgrind --instr-atstart=no --collect-atstart=no \
+             --cache-sim=no --branch-sim=no --callgrind-out-file="${out}" \
+             "${BUILD}/profile_${DRIVER}" "${GRIDS_DIR}/${grid}.lsb" "${phase}" \
+             "${nb}" KLU always "${trace}" \
+             > "${OUT_DIR}/run.${variant}.${grid}.${phase}.log" 2>&1
+    callgrind_annotate --threshold=1 "${out}" 2>/dev/null \
+        | sed -n 's/^ *\([0-9,]*\).*PROGRAM TOTALS.*/\1/p' | tr -d ,
+}
+
+for variant in A B; do
+    if [ "${variant}" = "B" ]; then
+        echo "--- applying ${PATCH} ---"
+        python3 "${PATCH}"
+    fi
+    cmake --build "${BUILD}" -j"${JOBS:-$(nproc)}" > /dev/null
+    for grid_path in $(grids_in_order "${GRIDS_DIR}"); do
+        grid=$(basename "${grid_path}" .lsb)
+        nb=$(nb_for "${grid}")
+        for phase in ${PHASES}; do
+            [ "${phase}" = "cold" ] && nb=1
+            total=$(measure "${variant}" "${grid}" "${phase}" "${nb}")
+            echo "${grid} ${phase} ${variant} $((total / nb))" \
+                | tee -a "${OUT_DIR}/totals.txt"
+            nb=$(nb_for "${grid}")
+        done
+    done
+done
+
+cleanup
+
+echo
+echo "================ A/B ================"
+printf "%-16s %-10s %14s %14s %9s   %s\n" grid phase A B delta answer
+while read -r grid phase _ a; do
+    b=$(awk -v g="${grid}" -v p="${phase}" \
+        '$1==g && $2==p && $3=="B" {print $4}' "${OUT_DIR}/totals.txt")
+    delta=$(awk -v a="${a}" -v b="${b}" 'BEGIN{printf "%+.2f%%", 100.0*(b-a)/a}')
+    if cmp -s "${OUT_DIR}/trace.A.${grid}.${phase}.txt" \
+              "${OUT_DIR}/trace.B.${grid}.${phase}.txt"; then
+        same="identical"
+    else
+        same="DIFFERS"
+    fi
+    printf "%-16s %-10s %14s %14s %9s   %s\n" "${grid}" "${phase}" "${a}" "${b}" "${delta}" "${same}"
+done < <(awk '$3=="A"' "${OUT_DIR}/totals.txt")

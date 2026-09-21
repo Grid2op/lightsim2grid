@@ -22,15 +22,20 @@ namespace ls2g {
 
 
 /**
- * This class represents a "one side container"
- * with added information about target_p and target_q.
- * 
- * It is used for loads and shunts for example.
+ * A one-sided element with an active and a reactive setpoint: loads, static
+ * generators, storage units, shunts, and (through VoltageSourceContainer) the
+ * generators, SVCs and HVDC converter stations.
+ *
+ * On top of OneSideContainer it owns `target_p_mw_` / `target_q_mvar_` and their
+ * setters, and provides what most such elements share: the default results
+ * (`_compute_res_pq` publishes the setpoints), the injection stamp
+ * (`_stamp_pq`, used by the leaves' `_fillSbus` with their own sign), and the
+ * flags a status or bus change raises for an element that lives in Sbus only.
+ * A leaf that is also in Ybus (a shunt) or that pins a bus (a generator)
+ * overrides the corresponding `_on_xxx` hook.
  */
 class OneSideContainer_PQ : public OneSideContainer
 {
-    // TODO make a single class for load and shunt and just specialize the part where the
-    // TODO powerflow equations are located (when i update the Y matrix)
 
     public:
         class OneSidePQInfo: public OneSideContainer::OneSideInfo
@@ -62,8 +67,8 @@ class OneSideContainer_PQ : public OneSideContainer
         Eigen::Ref<const RealVect> get_target_p() const {return target_p_mw_;}
         Eigen::Ref<const RealVect> get_target_q() const {return target_q_mvar_;}
 
-        // base function that can be called
-        void gen_p_per_bus(std::vector<real_type> & res) const override
+    protected:
+        void _gen_p_per_bus(std::vector<real_type> & res) const override
         {
             const int nb_gen = nb();
             for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
@@ -74,45 +79,22 @@ class OneSideContainer_PQ : public OneSideContainer
             }
         }
 
-        virtual void change_p(int el_id, real_type new_p, DualAlgoControl & solver_control) final {
-            bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
-            if(!my_status)
-            {
-                std::ostringstream exc_;
-                exc_ << "OneSideContainer::change_p: Impossible to change the active value of a disconnected element (check load id ";
-                exc_ << el_id;
-                exc_ << ")";
-                throw std::runtime_error(exc_.str());
-            }
-            change_p_nothrow(el_id, new_p, solver_control);
-        }
-        virtual void change_p_nothrow(int el_id, real_type new_p, DualAlgoControl & solver_control) final
+    public:
+        void change_p_nothrow(int el_id, real_type new_p, DualAlgoControl & solver_control)
         {
-            bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
-            this->_change_p(el_id, new_p, my_status, solver_control);
+            _check_in_range(el_id, status_, "change_p");
+            // notified BEFORE the write: the hooks compare the old and the new value
+            _on_change_p(el_id, new_p, solver_control);
             if (abs(target_p_mw_(el_id) - new_p) > _tol_equal_float) {
                 target_p_mw_(el_id) = new_p;
             }
         }
-        virtual void change_q(int el_id, real_type new_q, DualAlgoControl & solver_control) final
+        void change_q_nothrow(int el_id, real_type new_q, DualAlgoControl & solver_control)
         {
-            bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
-            if(!my_status)
-            {
-                std::ostringstream exc_;
-                exc_ << "OneSideContainer::change_q: Impossible to change the reactive value of a disconnected element (check load id ";
-                exc_ << el_id;
-                exc_ << ")";
-                throw std::runtime_error(exc_.str());
-            }
-            change_q_nothrow(el_id, new_q, solver_control);
-        }
-        virtual void change_q_nothrow(int load_id, real_type new_q, DualAlgoControl & solver_control) final
-        {
-            bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
-            this->_change_q(load_id, new_q, my_status, solver_control);
-            if (abs(target_q_mvar_(load_id) - new_q) > _tol_equal_float) {
-                target_q_mvar_(load_id) = new_q;
+            _check_in_range(el_id, status_, "change_q");
+            _on_change_q(el_id, new_q, solver_control);
+            if (abs(target_q_mvar_(el_id) - new_q) > _tol_equal_float) {
+                target_q_mvar_(el_id) = new_q;
             }
         }
 
@@ -123,6 +105,14 @@ class OneSideContainer_PQ : public OneSideContainer
             std::vector<real_type>, // p_mw
             std::vector<real_type> // q_mvar
             >;
+        enum StateResIdx {
+            OSC_STATE = 0,
+            TARGET_P_MW,
+            TARGET_Q_MVAR,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "OneSideContainer_PQ::StateRes and StateResIdx do not match");
 
     protected:
         OneSideContainer_PQ::StateRes get_osc_pq_state() const  // osc: one side element
@@ -139,11 +129,11 @@ class OneSideContainer_PQ : public OneSideContainer
         void set_osc_pq_state(OneSideContainer_PQ::StateRes & my_state)  // osc: one side element
         {
             // read data from my_state
-            set_osc_state(std::get<0>(my_state));
+            set_osc_state(std::get<StateResIdx::OSC_STATE>(my_state));
 
             // init target_p and target_q
-            std::vector<real_type> & p_mw = std::get<1>(my_state);
-            std::vector<real_type> & q_mvar = std::get<2>(my_state);
+            std::vector<real_type> & p_mw = std::get<StateResIdx::TARGET_P_MW>(my_state);
+            std::vector<real_type> & q_mvar = std::get<StateResIdx::TARGET_Q_MVAR>(my_state);
 
             // check sizes
             const auto size = nb();
@@ -182,70 +172,76 @@ class OneSideContainer_PQ : public OneSideContainer
         }
 
         void set_osc_pq_res_q(bool ac){
-            if(ac){
-                const int nb_els = nb();
-                if(ac){
-                    for(int el_id = 0; el_id < nb_els; ++el_id){
-                        if(!status_[el_id]) res_q_[el_id] = 0.;
-                        else res_q_[el_id] = target_q_mvar_(el_id);
-                    }
-                }
+            if(!ac){
+                set_osc_res_q(ac);  // no q in DC mode
+                return;
             }
-            else{
-                set_osc_res_q(ac);
+            const int nb_els = nb();
+            for(int el_id = 0; el_id < nb_els; ++el_id){
+                if(!status_[el_id]) res_q_[el_id] = 0.;
+                else res_q_[el_id] = target_q_mvar_(el_id);
+            }
+        }
+
+        /**
+         * Stamp `sign * (target_p + j.target_q)` of every active element into Sbus.
+         * `sign` is +1 for an element in the generator convention (static
+         * generators), -1 for one in the load convention (loads, storage units).
+         * A leaf with a richer personality (a generator whose reactive output is
+         * solved for, a shunt that only stamps in DC) writes its own `_fillSbus`.
+         */
+        void _stamp_pq(Eigen::Ref<CplxVect> Sbus,
+                       const SolverBusIdVect & id_grid_to_solver,
+                       real_type sign,
+                       const char * fun_name) const
+        {
+            const int nb_els = nb();
+            for(int el_id = 0; el_id < nb_els; ++el_id){
+                if(!status_[el_id]) continue;
+                const SolverBusId bus_id_solver = _solver_bus(el_id, bus_id_(el_id), id_grid_to_solver, fun_name);
+                const cplx_type tmp = {target_p_mw_(el_id), target_q_mvar_(el_id)};
+                Sbus.coeffRef(bus_id_solver.cast_int()) += sign * tmp;
             }
         }
 
     protected:
-        void _reset_results() override {
-            // nothing to do by default, as this class should be used as template for "one side" (eg loads or generators)
-            // elements
-        };
-        void _compute_results(const Eigen::Ref<const RealVect> & /*Va*/,
-                                      const Eigen::Ref<const RealVect> & /*Vm*/,
-                                      const Eigen::Ref<const CplxVect> & /*V*/,
-                                      const SolverBusIdVect & /*id_grid_to_solver*/,
-                                      const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
-                                      real_type /*sn_mva*/,
-                                      bool /*ac*/) override {
-            // nothing to do by default, as this class should be used as template for "one side" (eg loads or generators)
-            // elements
-                                      };
-
-        bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
-            if(status_[el_id]){
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
-                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
-                return true;
-            }
-            return false;
-        };
-        bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
-            if(!status_[el_id]){
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
-                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
-                return true;
-            }
-            return false;
-        };
-        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) override {
-            if(bus_id_(el_id) != new_bus_id){
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
-                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
-                return true;
-            }
-            return false;
-        };
-        void _change_p(int el_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control) override {
+        // ---- the leaf hooks --------------------------------------------------------
+        // an element that is in Sbus only: its setpoints are its results
+        void _compute_res_pq(const Eigen::Ref<const RealVect> & /*Va*/,
+                             const Eigen::Ref<const RealVect> & /*Vm*/,
+                             const Eigen::Ref<const CplxVect> & /*V*/,
+                             const SolverBusIdVect & /*id_grid_to_solver*/,
+                             const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
+                             real_type /*sn_mva*/,
+                             bool ac) override
+        {
+            set_osc_pq_res_p();
+            set_osc_pq_res_q(ac);
+        }
+        // ... and moving it, or switching it, only moves the injections
+        void _on_deactivate(int /*el_id*/, DualAlgoControl & solver_control) override {
+            solver_control.tell_recompute_sbus();
+            solver_control.tell_one_el_changed_bus();
+        }
+        void _on_reactivate(int /*el_id*/, DualAlgoControl & solver_control) override {
+            solver_control.tell_recompute_sbus();
+            solver_control.tell_one_el_changed_bus();
+        }
+        void _on_change_bus(int /*el_id*/, GridModelBusId /*new_bus_id*/, DualAlgoControl & solver_control) override {
+            solver_control.tell_recompute_sbus();
+            solver_control.tell_one_el_changed_bus();
+        }
+        // Setpoint changes, notified BEFORE the write (both values are at hand).
+        virtual void _on_change_p(int el_id, real_type new_p, DualAlgoControl & solver_control) {
             if (abs(target_p_mw_(el_id) - new_p) > _tol_equal_float) {
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
+                solver_control.tell_recompute_sbus();
             }
-        };
-        void _change_q(int el_id, real_type new_q, bool /*my_status*/,DualAlgoControl & solver_control) override {
+        }
+        virtual void _on_change_q(int el_id, real_type new_q, DualAlgoControl & solver_control) {
             if (abs(target_q_mvar_(el_id) - new_q) > _tol_equal_float) {
-                solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
+                solver_control.tell_recompute_sbus();
             }
-        };
+        }
 
     protected:
         // physical properties

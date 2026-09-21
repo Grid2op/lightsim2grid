@@ -22,17 +22,22 @@ void GaussSeidelSynchAlgo::one_iter(
     const int n_pv = static_cast<int>(pv.size());
     const int n_pq = static_cast<int>(pq.size());
 
-    // CplxVect tmp_YbusV;  // Ybus[k, :] * V
-    // CplxVect tmp_conj_Sbus_V;  //  conj(Sbus[k] / V[k])
-    CplxVect tmp_YbusV = Ybus * V_;
-    CplxVect tmp_conj_Sbus_V = tmp_Sbus.array() / V_.array();
-    tmp_conj_Sbus_V = tmp_conj_Sbus_V.array().conjugate();
+    // the two working vectors are members, not locals: one_iter runs once per
+    // Gauss-Seidel sweep -- hundreds to thousands of times per solve -- and
+    // both are exactly nb_bus long every time. noalias(): straight into the
+    // buffer, without the temporary Eigen would need for the sparse * dense
+    // product. The conjugation is fused into the division rather than done as
+    // a second full pass over a vector that was just written.
+    tmp_YbusV_.noalias() = Ybus * V_;
+    tmp_conj_Sbus_V_ = (tmp_Sbus.array() / V_.array()).conjugate();
 
     // update PQ buses
     for(int k_tmp=0; k_tmp<n_pq; ++k_tmp)
     {
         int k = pq.coeff(k_tmp);
-        tmp = (tmp_conj_Sbus_V.coeff(k) -  tmp_YbusV.coeff(k)) / Ybus.coeff(k,k);
+        // ybus_diag_ (filled by refresh_ybus_cache) instead of Ybus.coeff(k, k),
+        // which is a binary search inside column k on every single lookup
+        tmp = (tmp_conj_Sbus_V_.coeff(k) -  tmp_YbusV_.coeff(k)) / ybus_diag_.coeff(k);
         V_.coeffRef(k) += tmp;
     }
 
@@ -41,14 +46,14 @@ void GaussSeidelSynchAlgo::one_iter(
     {
         int k = pv.coeff(k_tmp);
         // update Sbus
-        tmp = tmp_YbusV.coeff(k);  // Ybus[k,:] * V
+        tmp = tmp_YbusV_.coeff(k);  // Ybus[k,:] * V
         tmp = std::conj(tmp);  // conj(Ybus[k,:] * V)
         tmp *= V_.coeff(k);  // (V[k] * conj(Ybus[k,:] * V))
         tmp = my_i * std::imag(tmp);
         tmp_Sbus.coeffRef(k) = std::real(tmp_Sbus.coeff(k)) + tmp;
 
         // update V
-        tmp = (tmp_conj_Sbus_V(k) -  tmp_YbusV(k)) / Ybus.coeff(k,k);
+        tmp = (tmp_conj_Sbus_V_(k) -  tmp_YbusV_(k)) / ybus_diag_.coeff(k);
         V_.coeffRef(k) += tmp;
     }
 

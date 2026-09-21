@@ -32,7 +32,18 @@ class TestSecurityAnalysis(unittest.TestCase):
 
     def test_can_create(self):
         sa = ContingencyAnalysis(self.env)
-    
+
+    def test_nb_thread_reaches_computer(self):
+        """nb_thread must be forwarded to the C++ computer, not stored as a plain
+        python attribute (the results do not depend on it, so nothing else would notice)"""
+        sa = ContingencyAnalysis(self.env)
+        assert sa.nb_thread == 1
+        sa.nb_thread = 3
+        assert sa.computer.nb_thread == 3
+        assert sa.nb_thread == 3
+        with self.assertRaises(ValueError):
+            sa.nb_thread = 1.5
+
     def test_clear(self):
         sa = ContingencyAnalysis(self.env)
 

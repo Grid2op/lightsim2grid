@@ -108,11 +108,14 @@ struct LS2G_API YbusPolicy
         std::vector<int> branch_ids_for_row(Eigen::Index row, size_t n_line) const;
 
         // remove / re-add one contingency's coefficients from/to Ybus (AC) or the
-        // algo's own internal Ybus (DC). Returns (remove_from_Ybus only) whether the
-        // grid stays connected after removal -- see check_invertible below. Neither
-        // reads nor writes any Contingency state, so both are static (moved verbatim
-        // from the pre-refactor ContingencyAnalysis::remove_from_Ybus/readd_to_Ybus).
-        static bool remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
+        // algo's own internal Ybus (DC). Whether the grid stays connected after the
+        // removal is NOT decided here: BaseBatchSweep settles it once per
+        // contingency, before the row loop, from one depth-first search of the base
+        // graph (see BusGraph and BaseBatchSweep::_prepare_connectivity) -- a
+        // search per row, on a matrix that is the base one but for four entries, was
+        // what these two calls used to cost. Neither reads nor writes any
+        // Contingency state, so both are static.
+        static void remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                                      const std::vector<Coeff> & coeffs,
                                      bool ac_solver_used,
                                      AlgorithmSelector & algo);
@@ -120,10 +123,6 @@ struct LS2G_API YbusPolicy
                                   const std::vector<Coeff> & coeffs,
                                   bool ac_solver_used,
                                   AlgorithmSelector & algo);
-
-        // BFS connectivity check on Ybus's sparsity pattern (see the pre-refactor
-        // ContingencyAnalysis::check_invertible). Static: uses no Contingency state.
-        static bool check_invertible(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus);
 
         private:
             // shared by init_li_coeffs and init_li_coeffs_from_masks: the Ybus

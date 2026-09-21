@@ -73,11 +73,22 @@ add_executable(lightsim2grid_unit_tests
     test_check_grid.cpp
     test_state_poisoning.cpp
     test_powerflow_algorithm.cpp
+    test_fdpf_algorithm.cpp
     test_voltage_control_reclassify.cpp
+    test_voltage_control_plan_cache.cpp
     test_batch_voltage_control.cpp
     test_timeseries_sbus.cpp
+    test_bus_graph.cpp
     test_injection_sweep.cpp
+    test_continuation_sweep.cpp
     test_scenario_sweep_violations.cpp
+    test_batch_physical_violations.cpp
+    test_gen_v_gradient.cpp
+    test_bus_element_count.cpp
+    test_kcl_from_results.cpp
+    test_solve_transpose.cpp
+    test_batch_adjoint.cpp
+    test_base_case_reuse.cpp
 )
 target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
 

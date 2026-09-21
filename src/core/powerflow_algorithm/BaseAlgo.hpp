@@ -245,6 +245,8 @@ class LS2G_API BaseAlgo : public BaseConstants
         // order -- NOT the bus-keyed q_to_J_col (see NRSystem::controller_q_col's
         // own doc): needed whenever two controllers share a bus.
         virtual IntVect  get_controller_q_col()   const { return IntVect(); }
+        // J row of each voltage-control group's voltage constraint (empty without them)
+        virtual IntVect  get_group_v_row()        const { return IntVect(); }
 
         // MultiSlack: J column of the slack_absorbed unknown (-1 when the
         // distributed-slack-in-Jacobian extension is not active).
@@ -268,6 +270,7 @@ class LS2G_API BaseAlgo : public BaseConstants
         static constexpr bool SUPPORTS_HVDC_DROOP = false;
         static constexpr bool IS_FDPF = false;
         static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = false;
+        static constexpr bool FILLS_BUS_MISMATCH = false;
 
         virtual bool is_dc() const noexcept { return IS_DC; }
         // Only the Newton-Raphson algorithms implement the hvdc angle-droop
@@ -283,6 +286,22 @@ class LS2G_API BaseAlgo : public BaseConstants
         // LSGrid::fill_voltage_control_solver_data). Gauss-Seidel /
         // Fast-Decoupled / DC do not consume that data at all.
         virtual bool supports_remote_voltage_control() const noexcept { return SUPPORTS_REMOTE_VOLTAGE_CONTROL; }
+        /**
+         * Does this algorithm leave a usable per-bus mismatch behind
+         * (`get_bus_mismatch()`, size nb_bus in SOLVER numbering, at the voltage it
+         * converged to)?
+         *
+         * LSGrid::compute_results reads it to work out what the generators and the
+         * converter stations actually produced, so an algorithm that answers true
+         * and then leaves the buffer empty (or the wrong size) would take the whole
+         * result publication down with it. Built-in algorithms are covered by this
+         * suite; an external (plugin) solver claiming the capability is CHECKED, once
+         * per solve, in LSGrid::process_results -- see _check_solver_output.
+         *
+         * Defaults to false, so a plugin written against an older header keeps the
+         * behaviour it has today: LSGrid falls back to deriving the mismatch itself.
+         */
+        virtual bool fills_bus_mismatch() const noexcept { return FILLS_BUS_MISMATCH; }
 
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;
@@ -409,6 +428,13 @@ class LS2G_API BaseAlgo : public BaseConstants
         // before this existed.
         virtual void set_lazy_v(bool) {}
         virtual bool lazy_v() const { return false; }
+        // Batch hint: the starting voltage handed to compute_pf will often be the
+        // same one, bit for bit (a sweep restarting every row from one seed). A
+        // solver that can then keep the seed's polar form from one solve to the next
+        // does so (see NRSystem::update_state); the default ignores the hint. Off,
+        // a solve costs exactly what it did -- the hint is never a promise the
+        // solver relies on, only a reason to pay for a cache.
+        virtual void set_start_polar_cache(bool) {}
         virtual void reset();
         // TODO speed: prevent copy and use Eigen::Ref here
         virtual RealMat get_ptdf(){
@@ -434,6 +460,134 @@ class LS2G_API BaseAlgo : public BaseConstants
         // default is a no-op so other algorithms are unaffected.
         virtual bool supports_bus_masking() const { return false; }
         virtual void set_masked_buses(const std::vector<int> & /*solver_bus_ids*/) {}
+
+        // Whether get_J() / refresh_J_at_solution() mean anything for this algorithm,
+        // i.e. whether it is one of the Newton-Raphson family. Lets a caller that needs
+        // the Jacobian (the adjoint of a batch) say so before running rather than
+        // discover it through get_J()'s exception halfway through a sweep.
+        virtual bool supports_jacobian() const { return false; }
+
+        // Rebuild the Jacobian at the voltage the last compute_pf converged to.
+        //
+        // A Newton-Raphson loop tests the residual BEFORE deciding it needs a new
+        // Jacobian, so the J it rests on is the one it built at the previous iterate,
+        // not at the solution. For a solve that is the right economy -- the step it
+        // computed is what mattered. For an adjoint it is not: the gradient is exact
+        // only at the converged point, and the error is of the order of the last
+        // Newton step, which is the very thing the tolerance does NOT bound tightly.
+        //
+        // Costs one Jacobian fill and no factorization, so it is only worth paying
+        // where the Jacobian is about to be read (see BaseBatchSweep's keep_jacobian);
+        // nothing else in a solve depends on it. A no-op where there is no Jacobian to
+        // speak of (every non Newton-Raphson algorithm), which is safe: those cannot
+        // serve an adjoint at all (get_J already throws).
+        virtual void refresh_J_at_solution() {}
+
+        // Tells the algorithm whether a stranded-controller Jacobian slot (see
+        // VoltageControl::declare_feature_entries in NRSystem.hpp) is worth reserving
+        // for THIS run: only ContingencyAnalysis/ScenarioSweep's handle_disconnected_grid
+        // mode ever calls set_masked_buses, so every other caller (plain ac_pf,
+        // TimeSeries, an un-masked batch) should not pay for it at all. Must be called
+        // BEFORE the first build_J_sparsity() this affects; a caller that flips it after
+        // sparsity was already built for a different value must also force a rebuild
+        // (e.g. via the solver control's tell_pv_changed()) -- see BaseBatchSweep::
+        // _maybe_prepare_masks(). Default is a no-op so other algorithms are unaffected.
+        virtual void set_may_mask_voltage_control(bool /*val*/) {}
+
+        // Per-solve set-points of the voltage-control groups (indexed like the grid's
+        // plan, NaN = the grid's own): what a batch hands over for a row whose
+        // generator set-points it varies, since a generator regulating a group-held
+        // bus fixes no |V| -- its set-point is the group's. See
+        // VoltageControl::set_v_set_override. Default no-op: an algorithm without a
+        // bordered block has no group to set.
+        virtual void set_voltage_control_v_set(const RealVect & /*v_set*/) {}
+
+        // Refactorize-failure fallback of the linear solver (see LinearSolverPolicy::
+        // set_refactor_fallback). A value-level edit that changes a bus's role at
+        // constant sparsity -- a masked bus, a PV bus released to PQ, a stranded
+        // controller's row repurposed into "Q_c = 0" -- can put a zero where the base
+        // factorization had a pivot; a refactorize keeps that pivot sequence and KLU
+        // halts on the zero pivot. With this on, the linear solver redoes a numeric
+        // factorize (same symbolic analysis, fresh pivots) before reporting the
+        // failure. The batch algorithms turn it on whenever they mask or switch
+        // (BaseBatchSweep::_maybe_prepare_masks / _push_switchable_to_algo); the
+        // NRRefactorRetry_* algorithms have it on permanently. Default is a no-op for
+        // algorithms without a factorize / refactorize distinction to speak of.
+        virtual void set_refactor_fallback(bool /*val*/) {}
+
+        // PV / PQ relabelling at constant sparsity (ScenarioSweep generator
+        // contingencies). Two calls, in this order:
+        //
+        //  - set_switchable_vm_buses: the PV buses that may lose their voltage
+        //    pinning during this run. Each is given a free Vm unknown + a Q
+        //    equation, so the Jacobian sparsity is the UNION over every scenario.
+        //    Same timing contract as set_may_mask_voltage_control above: call it
+        //    BEFORE the build_J_sparsity() it must affect, and force that rebuild
+        //    (tell_pv_changed()) if sparsity already exists.
+        //  - set_pv_pinned_buses: per solve, which of them are PV in THIS
+        //    scenario. Their Q row is identity-pinned, freezing |V| at the
+        //    generator setpoint; the others behave as ordinary PQ buses. Pure
+        //    value-level edit -- the symbolic factorization is reused.
+        //
+        // Only the Newton-Raphson family supports this (see supports_pv_pinning);
+        // the defaults are no-ops. DC needs nothing: it has no PV/PQ distinction,
+        // only the injection changes.
+        virtual bool supports_pv_pinning() const { return false; }
+        virtual void set_switchable_vm_buses(const std::vector<int> & /*solver_bus_ids*/) {}
+        virtual void set_pv_pinned_buses(const std::vector<int> & /*solver_bus_ids*/) {}
+
+        // ---- continuation powerflow (CPF) primitives ------------------------------
+        //
+        // The continuation loop itself lives in ContinuationSweep (a batch algorithm);
+        // what it needs from the algorithm is only these two operations, both of which
+        // require an augmented-Jacobian layout and a standing factorization, i.e. the
+        // Newton-Raphson family (see supports_cpf).
+        //
+        // The parametrised system is F(x, lam) = Scomp(x) - Sbus_base - lam . dir = 0,
+        // so dF/dlam = -dir and the tangent dx/dlam solves J . z = rhs(dir). Both calls
+        // are only meaningful right after a CONVERGED compute_pf: they read the
+        // algorithm's converged (Va, Vm) and reuse the factorization that solve left
+        // standing -- no analyze, no refactorize, which is the entire point of running
+        // a continuation in C++ rather than around it.
+        //
+        // Note that the standing factorization is J at the last iterate that actually
+        // (re)factorized, NOT at the converged point: compute_pf does not refactorize
+        // after its final convergence check. The tangent is therefore approximate --
+        // harmless, since the corrector fixes it, but it does mean the tangent quality
+        // degrades with a lazier RefactorPolicy (Chord in particular). Pass
+        // `exact_tangent` on the sweep to refactorize at the converged point instead.
+        virtual bool supports_cpf() const noexcept { return false; }
+
+        // Solves J . z = rhs(dir), where rhs projects the complex per-bus direction
+        // onto this algorithm's mismatch-equation ordering. `z` is resized to the
+        // number of unknowns. Returns false if the linear solve failed (`z` is then
+        // meaningless); throws if the algorithm has no J at all.
+        virtual bool cpf_tangent(const Eigen::Ref<const CplxVect> & /*dir_solver*/,
+                                 RealVect & /*z*/){
+            throw std::runtime_error("BaseAlgo::cpf_tangent: this algorithm is not "
+                                     "Newton-Raphson based and cannot support a continuation "
+                                     "powerflow (see supports_cpf).");
+        }
+
+        // Writes the predicted voltages V + coeff . (the (Va, Vm) part of z) into
+        // V_pred, reading the algorithm's own converged (Va, Vm). V_pred is resized.
+        virtual void cpf_predict(const Eigen::Ref<const RealVect> & /*z*/,
+                                 real_type /*coeff*/,
+                                 CplxVect & /*V_pred*/) const {
+            throw std::runtime_error("BaseAlgo::cpf_predict: this algorithm is not "
+                                     "Newton-Raphson based and cannot support a continuation "
+                                     "powerflow (see supports_cpf).");
+        }
+
+        // Rebuilds J at the current (converged) state and refactorizes it, so that a
+        // following cpf_tangent uses the exact Jacobian at that point rather than the
+        // one left standing by the last NR iteration. Numeric only -- the symbolic
+        // analysis (and therefore the whole batch's one-analyze premise) is untouched.
+        virtual bool cpf_refactorize_at_current(){
+            throw std::runtime_error("BaseAlgo::cpf_refactorize_at_current: this algorithm is "
+                                     "not Newton-Raphson based and cannot support a continuation "
+                                     "powerflow (see supports_cpf).");
+        }
 
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}
@@ -527,6 +681,22 @@ class LS2G_API BaseAlgo : public BaseConstants
             return false;
         }
 
+        /**
+         * The per-bus complex power mismatch left by the last solve, in solver bus
+         * numbering. Empty on an algorithm that has never run (or has been reset),
+         * and on one whose `fills_bus_mismatch()` is false. See mis_bus_ for
+         * exactly what it contains.
+         *
+         * PUBLIC on purpose: LSGrid::compute_results reads it back through
+         * AlgorithmSelector to publish what the generators and converter stations
+         * produced, which is the whole point of the capability flag above. It sits
+         * in a `protected:` block otherwise, hence the explicit `public:` here and
+         * the one that closes it.
+         */
+    public:
+        Eigen::Ref<const CplxVect> get_bus_mismatch() const {return mis_bus_;}
+    protected:
+
         // Bf / Bf_T are resized and filled from scratch by fillBf_for_PTDF: a real
         // reference is needed, Eigen::Ref<SparseMatrix> can't resize/reserve.
         void get_Bf(Eigen::SparseMatrix<real_type> & Bf) const;
@@ -535,6 +705,28 @@ class LS2G_API BaseAlgo : public BaseConstants
     protected:
         // solver initialization
         int n_;
+
+        /**
+         * The per-bus complex power mismatch of the last evaluation:
+         * V .* conj(Ybus * V) - Sbus, plus whatever the algorithm's components inject
+         * (the distributed slack's share, the hvdc droop flows, a voltage controller's
+         * reactive output). Size nb_bus, in SOLVER bus numbering.
+         *
+         * Held here, and not in each algorithm, because both families compute exactly
+         * this and both need it to persist across iterations -- and because it is the
+         * one intermediate a caller may legitimately want after the solve (see
+         * get_bus_mismatch). Filled by the concrete algorithm: BaseFDPFAlgo writes it
+         * directly, NRAlgo hands its address to the NRSystem it owns.
+         *
+         * It is the RAW mismatch in both families. The FDPF used to divide it by Vm in
+         * place -- the `mis / Vm` its P and Q rows need -- which left the same member
+         * meaning two different things depending on who last wrote it; that division
+         * now happens where the rows are extracted.
+         */
+        CplxVect mis_bus_;
+        /// Ybus * V of the last evaluation, kept out of the expression above so Eigen
+        /// does not have to allocate a temporary for the sparse * dense product.
+        CplxVect ybus_v_;
 
         // solution of the problem
         RealVect Vm_;  // voltage magnitude

@@ -13,7 +13,7 @@ SVC + storage + 3 HVDC lines + a phase-shifting transformer) via literal `LSGrid
 `add_*`/`set_*` calls captured from a real `init_from_pypowsybl` run -- no pypowsybl/
 pandapower/grid2op dependency at runtime, only numpy + lightsim2grid.
 
-Generated on 2026-07-16 using `python -m lightsim2grid.tests._gen_exotic_elements_case` (lightsim2grid 1.0.0.rc2, pypowsybl 1.15.0).
+Generated on 2026-09-05 using `python -m lightsim2grid.tests._gen_exotic_elements_case` (lightsim2grid 1.0.0, pypowsybl 1.16.1).
 """
 
 import numpy as np
@@ -117,7 +117,7 @@ def build_exotic_elements_case_grid() -> LSGrid:
         np.array([12.0, 12.0, 12.0], dtype=np.float64),
         [False, True, False],
         np.array([0.0, 1.0, 0.0], dtype=np.float64),
-        np.array([0.0, 180.0, 0.0], dtype=np.float64),
+        np.array([0.0, 1.7999999523162842, 0.0], dtype=np.float64),
         np.array([20.0, 20.0, 20.0], dtype=np.float64),
         np.array([20.0, 20.0, 20.0], dtype=np.float64)
     )

@@ -24,6 +24,12 @@ class LS2G_API GaussSeidelSynchAlgo final: public GaussSeidelAlgo
 
         ~GaussSeidelSynchAlgo() noexcept override = default;
 
+        void reset() override {
+            GaussSeidelAlgo::reset();
+            tmp_YbusV_ = CplxVect();
+            tmp_conj_Sbus_V_ = CplxVect();
+        }
+
     protected:
         void one_iter(
             Eigen::Ref<CplxVect>            tmp_Sbus,
@@ -31,6 +37,10 @@ class LS2G_API GaussSeidelSynchAlgo final: public GaussSeidelAlgo
             const Eigen::Ref<const IntVect> & pv,
             const Eigen::Ref<const IntVect> & pq
         ) override;
+
+        // per-sweep scratch, kept across sweeps (see one_iter)
+        CplxVect tmp_YbusV_;        // Ybus * V
+        CplxVect tmp_conj_Sbus_V_;  // conj(Sbus / V)
 
     private:
         // no copy allowed

@@ -7,18 +7,19 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 __all__ = ["ContingencyAnalysisCPP", "LimitViolation", "ViolationElementType",
-           "LimitViolationType", "PreContingencyResult",
+           "LimitViolationType", "ViolationCategory", "PreContingencyResult",
            "ContingencyResult", "SecurityAnalysisResult"]
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 import numpy as np
 from collections.abc import Iterable
 
 from lightsim2grid.algorithm import AlgorithmType
 from .lightsim2grid_cpp import (ContingencyAnalysisCPP, LimitViolation,
-                                 ViolationElementType, LimitViolationType)
+                                 ViolationElementType, LimitViolationType,
+                                 ViolationCategory)
 
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend
@@ -41,6 +42,16 @@ class PreContingencyResult:
     """
     converged: bool
     limit_violations: List[LimitViolation]
+    #: the PHYSICAL limits this case's solution leaves, when
+    #: `ContingencyAnalysis.compute_physical_violations` is on (an empty list otherwise): a
+    #: bus needing reactive power its machines do not have (LOW_Q / HIGH_Q), an angle-droop
+    #: hvdc line beyond what its converters can transmit (HIGH_P), or a generator the
+    #: distributed slack pushed outside its active power limits (LOW_P / HIGH_P). Kept apart from
+    #: `limit_violations` because it is a different KIND of statement: every entry here has
+    #: `category == ViolationCategory.PHYSICAL` -- a state the grid cannot reach -- where
+    #: `limit_violations` carries OPERATIONAL limits it can leave (and the SOLVER sentinel of
+    #: a non-converged case).
+    physical_violations: List[LimitViolation] = field(default_factory=list)
 
 
 @dataclass
@@ -59,6 +70,8 @@ class ContingencyResult:
     contingency_name: Optional[str]  #: user-supplied name, see `add_single_contingency`
     converged: bool
     limit_violations: List[LimitViolation]
+    #: see `PreContingencyResult.physical_violations`
+    physical_violations: List[LimitViolation] = field(default_factory=list)
 
 
 @dataclass
@@ -155,6 +168,7 @@ class ContingencyAnalysis(object):
                                "with a grid2op `Environment` or a `LightSimBackend`")
         self.computer = ContingencyAnalysisCPP(self._ls_backend._grid, bool(compute_limit_violations))
         self._contingency_order = {}  # key: contingency (as tuple), value: order in which it is entered
+        self.__name_line_to_id = None  # powerline name -> id, see _name_line_to_id
         self._all_contingencies = []
         self._contingency_names = {}  # key: contingency (as tuple), value: user-supplied name (or None)
         self.__computed = False
@@ -299,6 +313,102 @@ class ContingencyAnalysis(object):
         self.computer.violation_threshold = val
 
     @property
+    def compute_physical_violations(self):
+        """Whether every converged contingency reports the PHYSICAL limits its solution
+        leaves -- a state the grid cannot reach at all, as opposed to the operational limits
+        `compute_limit_violations` reports (a voltage band, a thermal rating: states the grid
+        does reach and should not sit in). Default: ``False``. See
+        :func:`get_physical_violations` and `ContingencyResult.physical_violations`.
+
+        Three checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        enforced here (nothing is switched PV -> PQ, no droop is clamped, no machine leaves
+        the slack distribution, no contingency is re-solved):
+
+        * the **reactive capability** of every bus whose voltage is held by machines
+          (``LOW_Q`` / ``HIGH_Q`` on the ``BUS``): did it need more reactive power than the
+          **sum** of what its voltage-regulating generators, storage units, hvdc converter
+          stations and voltage-mode SVCs can produce? Per bus, not per machine -- the split between the
+          machines of one bus is a sharing convention rather than something the solver
+          decides. OpenLoadFlow's ``ReactiveLimits``.
+        * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
+          linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
+          ``pmax_1to2_mw`` / ``pmax_2to1_mw``? OpenLoadFlow's ``HvdcAcEmulationLimits``.
+        * the **active power** of every generator and every storage unit carrying the
+          **distributed slack** (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR`` /
+          ``STORAGE``): the slack is solved inside the
+          Jacobian by fixed participation factors that know nothing about limits, so
+          ``target_p + its share of the imbalance`` can land beyond ``min_p_mw`` /
+          ``max_p_mw``. Per machine, unlike the reactive check: the active split is not a
+          convention, it is the participation factors the caller chose. Needs those limits,
+          which are optional (:func:`lightsim2grid.network.LSGrid.set_gen_p_limits` /
+          :func:`lightsim2grid.network.LSGrid.set_storage_p_limits`); a grid without them
+          reports nothing here. A storage unit's are read -- and its violation reported --
+          in the *generator* convention, unlike its ``target_p_mw``. OpenLoadFlow's
+          ``DistributedSlack``.
+
+        Independent of `compute_limit_violations`: either can be on without the other (though
+        `run` still requires `compute_limit_violations`, and fills `physical_violations` only
+        when this one is on too). The two active-power checks work in DC; the reactive one
+        needs an AC algorithm that publishes its per-bus mismatch (every built-in AC algorithm
+        does) and `run` / `compute_V` raise for one that does not. Changing this flag invalidates any
+        computed result but keeps the registered contingencies.
+        """
+        return self.computer.compute_physical_violations
+
+    @compute_physical_violations.setter
+    def compute_physical_violations(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `compute_physical_violations` attribute must be a boolean.")
+        val = bool(val)
+        if val == self.computer.compute_physical_violations:
+            return  # no-op, matches the C++ side (which also no-ops and does not clear)
+        # unlike `compute_limit_violations`, the C++ setter keeps the registered
+        # contingencies: it drops this batch's base case and results only. So the python-side
+        # contingency bookkeeping is kept too (with_contlist=False).
+        self.computer.compute_physical_violations = val
+        self.clear(with_contlist=False)
+
+    @property
+    def physical_violation_tol_mva(self):
+        """Absolute slack on every comparison :attr:`compute_physical_violations` makes, so
+        that an element resting exactly on its limit is not reported over solver noise: a
+        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q``).
+        Default: ``1e-4``. In MVA -- one noise floor for both halves, MW and MVAr being the
+        same scale.
+
+        Unlike :attr:`violation_threshold` -- a fraction, and one that only invalidates
+        results when it is *lowered* -- this is an absolute tolerance, and any change to it
+        invalidates the computed results (in either direction: a smaller one reports
+        violations the recorded results do not contain, a larger one leaves recorded ones
+        that should no longer be reported). The registered contingencies are kept.
+        """
+        return self.computer.physical_violation_tol_mva
+
+    @physical_violation_tol_mva.setter
+    def physical_violation_tol_mva(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `physical_violation_tol_mva` attribute must be a real number.")
+        if val == self.computer.physical_violation_tol_mva:
+            return
+        self.computer.physical_violation_tol_mva = val  # validates, and drops base case + results
+        self.clear(with_contlist=False)
+
+    def get_physical_violations(self):
+        """Per contingency, in the C++-side order (`my_defaults()`): the list of
+        :class:`LimitViolation` of the physical limits that contingency's solution leaves.
+        Prefer :func:`run`, which returns them per contingency in the caller's own order and
+        alongside the operational ones. Requires :attr:`compute_physical_violations` to be
+        ``True`` (raises otherwise)."""
+        return self.computer.get_physical_violations()
+
+    def get_physical_violations_n(self):
+        """Same as :func:`get_physical_violations`, for the pre-contingency ("n") case.
+        Requires :attr:`compute_physical_violations` to be ``True`` (raises otherwise)."""
+        return self.computer.get_physical_violations_n()
+
+    @property
     def nb_thread(self):
         """Number of OS threads used to solve the contingencies (default: 1).
 
@@ -315,17 +425,6 @@ class ContingencyAnalysis(object):
             raise ValueError("The `nb_thread` attribute must be an integer.")
         self.computer.nb_thread = int(val)
 
-    # TODO implement that !
-    def __update_grid(self, backend_act):
-        raise NotImplementedError("TODO !")
-        self.clear(with_contlist=False)
-        self._ls_backend.apply_action(backend_act)
-        # run the powerflow
-        self._ls_backend.runpf()
-        # update the computer
-        # self.computer = ContingencyAnalysisCPP(self._ls_backend._grid)
-        # self.computer.update_grid(...)  # not implemented
-        
     def clear(self, with_contlist=True):
         """
         Clear the list of contingencies to simulate
@@ -353,16 +452,24 @@ class ContingencyAnalysis(object):
 
         for stuff in single_cont:
             if isinstance(stuff, type(self).STR_TYPES):
-                stuff = (type(self._ls_backend).name_line == stuff).nonzero()
-                stuff = stuff[0]
-                if stuff.size == 0:
+                # a dict lookup, not a comparison against every name of the grid
+                # per element named
+                line_id = self._name_line_to_id().get(stuff)
+                if line_id is None:
                     # name is not found
                     raise RuntimeError(f"Impossible to find a powerline named \"{stuff}\" in the environment")
-                stuff = int(stuff[0])
+                stuff = int(line_id)
             else:
                 stuff = int(stuff)
             li_disc.append(stuff)
         return li_disc
+
+    def _name_line_to_id(self):
+        """powerline name -> id, built on first use (the names never change)"""
+        if self.__name_line_to_id is None:
+            self.__name_line_to_id = {str(name): i
+                                      for i, name in enumerate(type(self._ls_backend).name_line)}
+        return self.__name_line_to_id
 
     def add_single_contingency(self, *args, name=None):
         """
@@ -420,6 +527,9 @@ class ContingencyAnalysis(object):
                 self._contingency_order[li_disc_tup] = my_id
                 self._all_contingencies.append(li_disc_tup)
                 self._contingency_names[li_disc_tup] = name
+                # the c++ side dropped its results: so must this side's cache, or the
+                # next get_flows() would index the previous results with the new order
+                self.__computed = False
             except Exception as exc_:
                 raise RuntimeError(f"Impossible to add the contingency {args}. The most likely cause "
                                    f"is that you try to disconnect a powerline that is not present "
@@ -482,9 +592,24 @@ class ContingencyAnalysis(object):
         """
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
-        
-        for single_cont_id in range(type(self._ls_backend).n_line):
-            self.add_single_contingency(single_cont_id)
+
+        # one call into the c++ side for all of them (one results reset, one
+        # crossing), rather than one add per powerline; the bookkeeping is the one
+        # add_single_contingency does, per contingency
+        new_ids = [line_id for line_id in range(type(self._ls_backend).n_line)
+                   if (line_id,) not in self._contingency_order]
+        if not new_ids:
+            return
+        try:
+            self.computer.add_multiple_n1(new_ids)
+        except Exception as exc_:
+            raise RuntimeError("Impossible to add every N-1 contingency of the grid.") from exc_
+        for line_id in new_ids:
+            li_disc_tup = (line_id,)
+            self._contingency_order[li_disc_tup] = len(self._contingency_order)
+            self._all_contingencies.append(li_disc_tup)
+            self._contingency_names[li_disc_tup] = None
+        self.__computed = False   # see add_single_contingency
 
     def get_flows(self, *args):
         """
@@ -573,6 +698,17 @@ class ContingencyAnalysis(object):
                 cont.contingency_name  # optional, user-supplied via add_single_contingency(..., name=...)
                 cont.converged
                 cont.limit_violations
+                cont.physical_violations  # only if compute_physical_violations is on too
+
+        .. note::
+            `limit_violations` and `physical_violations` are kept apart because they are
+            different KINDS of statement, not two flavours of the same one (see
+            `LimitViolation.category`): an OPERATIONAL limit the grid can leave (a bus outside
+            its voltage band, a branch above its rating) versus a PHYSICAL one it cannot (a bus
+            needing reactive power its machines do not have, an hvdc converter transmitting more
+            than it can -- either makes the converged solution unreachable rather than merely
+            undesirable). `physical_violations` is an empty list unless
+            `compute_physical_violations` is also `True`.
 
         .. note::
             A `converged == False` post-contingency entry has exactly one `LimitViolation` in
@@ -600,10 +736,15 @@ class ContingencyAnalysis(object):
 
         converged = self.computer.converged()
         violations = self.computer.get_violations()
+        # the physical-limit checks are a separate opt-in: an empty list where they are off
+        # (see PreContingencyResult.physical_violations)
+        with_phys = self.computer.compute_physical_violations
+        phys = self.computer.get_physical_violations() if with_phys else None
 
         pre_contingency_result = PreContingencyResult(
             converged=self.computer.converged_n(),
             limit_violations=list(self.computer.get_violations_n()),
+            physical_violations=list(self.computer.get_physical_violations_n()) if with_phys else [],
         )
         post_contingency_results = [
             ContingencyResult(
@@ -612,6 +753,7 @@ class ContingencyAnalysis(object):
                 contingency_name=self._contingency_names.get(self._all_contingencies[id_me]),
                 converged=bool(converged[id_cpp]),
                 limit_violations=list(violations[id_cpp]),
+                physical_violations=list(phys[id_cpp]) if phys is not None else [],
             )
             for id_me, id_cpp in enumerate(orders_)
         ]

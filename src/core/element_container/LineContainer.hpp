@@ -18,13 +18,12 @@
 
 #include "Utils.hpp"
 #include "SubstationContainer.hpp"
-#include "OneSideContainer_forBranch.hpp"
-#include "TwoSidesContainer_rxh_A.hpp"
+#include "BranchContainer.hpp"
 
 namespace ls2g {
 
 class LineContainer;
-class LS2G_API LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
+class LS2G_API LineInfo : public BranchContainer::BranchInfo
 {
     public:
         inline LineInfo(const LineContainer & r_data, int my_id) noexcept;
@@ -34,7 +33,7 @@ class LS2G_API LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBra
 This class is a container for all the powerlines on the grid.
 
 **/
-class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<LineContainer, LineInfo>
+class LS2G_API LineContainer final: public BranchContainer, public IteratorAdder<LineContainer, LineInfo>
 {
     friend class LineInfo;
     public:
@@ -43,8 +42,14 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
     public:
         // /!\ if you change this layout, bump BINARY_FORMAT_VERSION (BinaryArchive.hpp)
         using StateRes =  std::tuple<
-                   TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes
+                   BranchContainer::StateRes
                    >;
+        enum StateResIdx {
+            BRANCH_STATE = 0,
+            NB_ELEM
+        };
+        static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
+                      "LineContainer::StateRes and StateResIdx do not match");
         
         LineContainer() noexcept = default;
         ~LineContainer() noexcept override = default;
@@ -67,12 +72,12 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         // pickle
         StateRes get_state() const
         {
-            StateRes res(get_tsc_rxha_state());
+            StateRes res(get_branch_state());
             return res;
         }
         void set_state(LineContainer::StateRes & my_state )
         {
-            set_tsc_rxha_state(std::get<0>(my_state));
+            set_branch_state(std::get<StateResIdx::BRANCH_STATE>(my_state));
             _update_model_coeffs();
             reset_results();
         }
@@ -81,18 +86,6 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         void save_binary(const std::string & path, bool atomic = true) const;
         static LineContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "LineContainer"; }  // written into / checked against the binary file header
-
-        void compute_results(const Eigen::Ref<const RealVect> & Va,
-                             const Eigen::Ref<const RealVect> & Vm,
-                             const Eigen::Ref<const CplxVect> & V,
-                             const SolverBusIdVect & id_grid_to_solver,
-                             const Eigen::Ref<const RealVect> & bus_vn_kv,
-                             real_type sn_mva,
-                             bool ac){
-            compute_results_tsc_rxha(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
-        }
-
-        void reset_results() {reset_results_tsc_rxha();}
 
         // for consistency with trafo, when used for example in BaseMultiplePowerflow...
         // lines never have a phase shift: the Ref must point at something with a
@@ -104,19 +97,11 @@ class LS2G_API LineContainer final: public TwoSidesContainer_rxh_A<OneSideContai
         }
 
     protected:
-        // physical properties
-
-        // specific grid2op
-
-        // input data
-
-        //output data
-
-        // model coefficients
+        bool _in_topo_vect() const override { return true; }
 };
 
 inline LineInfo::LineInfo(const LineContainer & r_data, int my_id) noexcept:
-TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo(r_data, my_id) {}
+BranchContainer::BranchInfo(r_data, my_id) {}
 
 
 } // namespace ls2g

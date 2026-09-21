@@ -29,7 +29,7 @@ struct LS2G_API SbusPolicy
 {
     /** the injection is fixed for the whole batch (ContingencyAnalysis): no state, no
         work -- the `BaseBatchSweep` per-step loop simply reuses the fixed member
-        `Sbus_`/`Pbus_` for every row. **/
+        `ac_cache_.inj`/`dc_cache_.inj` for every row. **/
     struct NOOP {
         static constexpr bool supports_vary = false;
         // no-op: lets BaseBatchSweep::clear() (a plain, always-compiled member) call
@@ -61,10 +61,14 @@ struct LS2G_API SbusPolicy
         // alias) so the two never collide and this struct stays embeddable anywhere.
         using RealMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
         using CplxMat = Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+        using BoolMat = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
-        // one row per step, one column per solver-space bus. Moved verbatim from
-        // BaseInjectionSweep::_Sbuses. Only valid after assemble() has run.
-        CplxMat sbuses;
+        // one row per step, one column per solver-space bus -- built on demand by
+        // materialize() for whoever asks for the whole matrix (get_sbuses()). The
+        // row loop never reads it: it builds each row into its own buffer as it
+        // goes (fill_row), so a year of hourly rows on a 9241-bus grid does not
+        // hold 1.3 GB of injections that are read once. Mutable: a cache.
+        mutable CplxMat sbuses;
 
         // per-step raw injection inputs, as set by the modify_gen_p/modify_sgen_p/
         // modify_load_p/modify_load_q setters (one row per step, one column per grid
@@ -89,26 +93,58 @@ struct LS2G_API SbusPolicy
         // stays reachable from wherever gen_p etc. are.
         RealMat gen_v;
 
+        // per-step generator contingency mask, one row per step, one column per
+        // generator: true means "this generator is disconnected for this step"
+        // (ScenarioSweep only, see BaseBatchSweep::set_contingency_gens). Empty
+        // (0 rows) means "never set", like every axis above.
+        //
+        // Two effects, and they live in two different places. The injection side
+        // is here: assemble() takes the generator's active power -- and, for a NON
+        // voltage-regulating one, its reactive setpoint -- back out of `sbuses`.
+        // The labelling side is not: when the last locally voltage-regulating
+        // generator of a bus is masked off, that bus turns PQ for the step, which
+        // BaseBatchSweep drives through the algorithm's set_pv_pinned_buses.
+        BoolMat gen_off;
+
         void clear() {
             gen_p = RealMat(); sgen_p = RealMat(); load_p = RealMat(); load_q = RealMat();
             gen_v = RealMat();
+            gen_off = BoolMat();
             sbuses = CplxMat();
+            gen_bus_.clear(); sgen_bus_.clear(); load_bus_.clear();
+            gen_target_p_ = RealVect(); sgen_target_p_ = RealVect();
+            load_target_p_ = RealVect(); load_target_q_ = RealVect();
+            gen_target_q_ = RealVect(); gen_vreg_.clear();
+            constant_pu_ = CplxVect();
+            nb_buses_solver_ = 0;
+            nb_steps_ = 0;
         }
 
-        // Builds `sbuses` (nb_steps x nb_buses_solver) from whatever of
-        // gen_p/sgen_p/load_p/load_q were set, defaulting any never-set axis to the
-        // grid's own per-element target value broadcast across every row, then adding
-        // the constant (storage/SVC/HVDC/...) share via constant_sbus_pu(). Replaces
-        // the per-step-matrices part of the pre-refactor
-        // BaseInjectionSweep::compute_Vs.
-        void assemble(const LSGrid & grid_model,
-                      bool ac_solver_used,
-                      int nb_buses_solver,
-                      const SolverBusIdVect & id_me_to_solver,
-                      const Eigen::Ref<const CplxVect> & complete_sbus_pu,
-                      real_type sn_mva,
-                      Eigen::Index nb_steps,
-                      const char * algo_name);
+        // Once per compute(): the routing every row needs -- the solver bus of each
+        // element that injects (-1 for an inactive one), the grid's own targets for
+        // the axes never set, the constant (storage/SVC/HVDC/...) share via
+        // constant_sbus_pu(). The validation the per-element loops used to do
+        // (an active element on a disconnected bus) is done here, once.
+        void prepare(const LSGrid & grid_model,
+                     bool ac_solver_used,
+                     int nb_buses_solver,
+                     const SolverBusIdVect & id_me_to_solver,
+                     const Eigen::Ref<const CplxVect> & complete_sbus_pu,
+                     real_type sn_mva,
+                     Eigen::Index nb_steps,
+                     const char * algo_name);
+
+        // Row `i`'s injection (solver numbering, per unit) into `row`, resized as
+        // needed: the same accumulation, in the same order and with the same
+        // operations, as the whole-matrix build used to do -- generators, static
+        // generators, loads (P then Q), the generators a row disconnects (P then
+        // Q), the division by sn_mva, the constant share -- so a row here is the
+        // row of that matrix, bit for bit.
+        void fill_row(Eigen::Index i, CplxVect & row) const;
+
+        // the whole matrix, for whoever wants it (get_sbuses()): every row through
+        // fill_row, built at most once per prepare().
+        const CplxMat & materialize() const;
 
         /**
          * Per-unit injection that the four per-step matrices (gen_p/sgen_p/load_p/
@@ -118,8 +154,8 @@ struct LS2G_API SbusPolicy
          * setpoint, the hvdc injections and (dc only) the phase-shifter term.
          *
          * Computed as `complete - accounted_for`: `complete_sbus_pu` is the complete
-         * per-unit injection the gridmodel built (the caller's own Sbus_ (ac) /
-         * Pbus_.cast<cplx_type>() (dc), read-only here), minus the same
+         * per-unit injection the gridmodel built (the caller's own ac_cache_.inj (ac) /
+         * dc_cache_.inj.cast<cplx_type>() (dc), read-only here), minus the same
          * reconstruction the per-step matrices perform, evaluated at the gridmodel's
          * own target values. Deriving it this way -- instead of listing the elements
          * -- is what keeps it from falling out of date when a new element type starts
@@ -134,6 +170,16 @@ struct LS2G_API SbusPolicy
                                   int nb_buses_solver,
                                   const SolverBusIdVect & id_me_to_solver,
                                   const char * algo_name) const;
+
+        // ---- what prepare() leaves for fill_row() ---------------------------------
+        std::vector<int> gen_bus_, sgen_bus_, load_bus_;   // solver bus per element, -1 if inactive
+        RealVect gen_target_p_, sgen_target_p_, load_target_p_, load_target_q_;  // the grid's own
+        RealVect gen_target_q_;          // a non-regulating generator's reactive setpoint
+        std::vector<char> gen_vreg_;     // whether each generator regulates voltage
+        CplxVect constant_pu_;
+        real_type sn_mva_ = 1.;
+        int nb_buses_solver_ = 0;
+        Eigen::Index nb_steps_ = 0;
 
         // Adds (add=true) or subtracts (add=false) `temporal_data` (one row per step,
         // one column per element of `structure_data`) into `Sbuses` (one row per

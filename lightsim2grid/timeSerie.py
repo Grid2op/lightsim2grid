@@ -131,6 +131,111 @@ class TimeSerie:
             raise ValueError("The `init_from_n_powerflow` attribute must be a boolean.")
         self.computer.init_from_n_powerflow = bool(val)
         
+    @property
+    def compute_physical_violations(self):
+        """Whether every converged step reports the PHYSICAL limits its solution leaves --
+        the ones whose violation means the step is not a state the grid can reach at all
+        (``ViolationCategory.PHYSICAL``). Default: ``False``. See
+        :func:`get_physical_violations`.
+
+        Three checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        enforced here (nothing is switched PV -> PQ, nothing is clamped, no machine leaves
+        the slack distribution, no step is re-solved):
+
+        * the **reactive capability** of every bus whose voltage is held by machines
+          (``LOW_Q`` / ``HIGH_Q`` on the ``BUS``): did it need more reactive power than the
+          **sum** of what its voltage-regulating generators, storage units, hvdc converter
+          stations and voltage-mode SVCs can produce? A machine has no reactive setpoint -- its output is
+          solved for and never clamped -- so a step can converge asking for reactive power
+          that does not exist. Per bus, not per machine: the split between the machines of
+          one bus is a sharing convention rather than something the solver decides.
+          OpenLoadFlow's ``ReactiveLimits``.
+        * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
+          linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
+          ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is an *input* of the solve,
+          so nothing saturates the droop on its own. OpenLoadFlow's
+          ``HvdcAcEmulationLimits``.
+        * the **active power** of every generator and every storage unit carrying the
+          **distributed slack** (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR`` /
+          ``STORAGE``): the slack is solved inside the
+          Jacobian by fixed participation factors that know nothing about limits, so
+          ``target_p + its share of the imbalance`` can land beyond ``min_p_mw`` /
+          ``max_p_mw``. Per machine, unlike the reactive check: the active split is not a
+          convention, it is the participation factors the caller chose. Needs those limits,
+          which are optional (:func:`lightsim2grid.network.LSGrid.set_gen_p_limits` /
+          :func:`lightsim2grid.network.LSGrid.set_storage_p_limits`); a grid without them
+          reports nothing here. A storage unit's are read -- and its violation reported --
+          in the *generator* convention, unlike its ``target_p_mw``. OpenLoadFlow's
+          ``DistributedSlack``.
+
+        The hvdc and active-power checks need only the bus angles and the slack the step
+        distributed, so they work in DC too; the reactive one needs an AC algorithm that
+        publishes its per-bus mismatch (every built-in AC algorithm does) and ``compute``
+        raises for one that does not. A DC batch reports the two active-power checks alone --
+        a DC powerflow has no reactive power at all, so nothing is hidden by that.
+
+        Changing this flag invalidates any previously-computed results, but not the
+        injections already given to ``modify_*``.
+        """
+        return self.computer.compute_physical_violations
+
+    @compute_physical_violations.setter
+    def compute_physical_violations(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `compute_physical_violations` attribute must be a boolean.")
+        val = bool(val)
+        if val == self.computer.compute_physical_violations:
+            return  # no-op, matches the C++ side (which also no-ops and does not clear)
+        # the C++ setter drops this batch's base case and results, and keeps the registered
+        # injections -- so only the python-side "already computed" bookkeeping follows it
+        self.computer.compute_physical_violations = val
+        self.__computed = False
+
+    @property
+    def physical_violation_tol_mva(self):
+        """Absolute slack on every comparison :attr:`compute_physical_violations` makes, so
+        that an element resting exactly on its limit is not reported over solver noise: a
+        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q``).
+        Default: ``1e-4``. In MVA -- one noise floor for both halves, MW and MVAr being the
+        same scale. Changing it invalidates any previously-computed results.
+        """
+        return self.computer.physical_violation_tol_mva
+
+    @physical_violation_tol_mva.setter
+    def physical_violation_tol_mva(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `physical_violation_tol_mva` attribute must be a real number.")
+        if val == self.computer.physical_violation_tol_mva:
+            return
+        self.computer.physical_violation_tol_mva = val  # validates, and drops base case + results
+        self.__computed = False
+
+    def get_physical_violations(self):
+        """Per step (same order as the ``modify_*`` inputs): the list of ``LimitViolation``
+        of the physical limits that step's solution leaves. Every entry has ``category ==
+        ViolationCategory.PHYSICAL`` and one of two shapes:
+
+        * ``element_type`` ``BUS``, ``violation_type`` ``LOW_Q`` / ``HIGH_Q``,
+          ``element_id`` the grid bus id, ``value`` the reactive power the machines holding
+          that bus had to produce (MVAr) and ``limit`` their **summed** capability;
+        * ``element_type`` ``HVDC``, ``violation_type`` ``HIGH_P``, ``element_id`` the hvdc
+          line id, ``side`` the direction (1 for 1 -> 2), ``value`` the active power leaving
+          that side (MW, positive) and ``limit`` that direction's ``pmax``.
+
+        A step that did not converge has an **empty** entry, not a sentinel -- use
+        ``self.computer.converged_mask()`` to tell that from "converged, no violation".
+        Requires :attr:`compute_physical_violations` to be ``True`` (raises otherwise).
+        """
+        return self.computer.get_physical_violations()
+
+    def get_physical_violations_n(self):
+        """Same as :func:`get_physical_violations`, for the base ("n") case every step is
+        solved from (the grid's own state, no injection change). Empty if that solve did not
+        converge. Requires :attr:`compute_physical_violations` to be ``True``."""
+        return self.computer.get_physical_violations_n()
+
     def get_injections(self, scenario_id=None, seed=None):
         """
         This function allows to retrieve the injection of the given scenario, for the given seed
