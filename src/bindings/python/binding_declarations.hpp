@@ -21,6 +21,13 @@ void bind_solvers(py::module_& m);
 void bind_containers(py::module_& m);
 void bind_misc(py::module_& m);
 void bind_gridmodel(py::module_& m);
+// the LSGrid bindings are spread over four translation units (see binding_lsgrid.cpp):
+// bind_gridmodel creates the class and calls these three on it
+namespace ls2g { class LSGrid; }
+void bind_lsgrid_state(py::class_<ls2g::LSGrid> & cls);
+void bind_lsgrid_elements(py::class_<ls2g::LSGrid> & cls);
+void bind_lsgrid_results(py::class_<ls2g::LSGrid> & cls);
+void bind_lsgrid_topology(py::class_<ls2g::LSGrid> & cls);
 void bind_batch(py::module_& m);
 
 #endif // BINDING_DECLARATIONS_HPP

@@ -45,6 +45,10 @@ pybind11_add_module(lightsim2grid_cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/binding_containers.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/binding_misc.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/binding_lsgrid.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/binding_lsgrid_state.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/binding_lsgrid_elements.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/binding_lsgrid_results.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/binding_lsgrid_topology.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/binding_batch.cpp"
 )
 

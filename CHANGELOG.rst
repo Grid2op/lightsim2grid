@@ -202,6 +202,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 9 -> 10: the detailed topology and the node of every
+  terminal are part of the state.
+- [FIXED] the ``update_topo`` docstring said ``0`` disconnects a side: it is ``-1``.
 - [ADDED] the detailed topology: the switches inside each substation (pypowsybl's node-breaker
   view), read by ``init_from_pypowsybl(detailed_topology=True)`` and operated with
   ``LSGrid.set_switch_open`` / ``update_switches``, which put every element where the switches
@@ -209,11 +212,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``LSGrid.get_switches``, ``get_busbar_sections``, ``get_node_bus``,
   ``get_substation_topology``, the ``node_id`` of every element, and ``set_svc_to_subid`` /
   ``set_sgen_to_subid`` / ``set_dcline_to_sub1_id`` / ``set_dcline_to_sub2_id``.
-- [BREAKING] ``BINARY_FORMAT_VERSION`` 9 -> 10: the detailed topology and the node of every
-  terminal are part of the state.
 - [IMPROVED] ``init_from_pypowsybl`` gives the SVCs their substation id (``SvcInfo.sub_id`` was
   ``-1``).
-- [FIXED] the ``update_topo`` docstring said ``0`` disconnects a side: it is ``-1``.
+- [IMPROVED] the ``LSGrid`` python bindings compile in five translation units, and its pickle
+  goes through the containers' own instead of casting the whole nested state: a fraction of
+  the compile memory, which was getting the extension build killed on CI.
 - [ADDED] ``compute_physical_violations`` also reports a generator the distributed slack
   pushed below ``min_p_mw`` or above ``max_p_mw``. The slack is solved in the Jacobian by
   participation factors that ignore limits, which is what OpenLoadFlow's
