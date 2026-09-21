@@ -15,6 +15,7 @@ Results are reported in ``docs/security_analysis.rst`` (section
 """
 
 import os
+import time
 import pandapower as pp
 import numpy as np
 from tqdm import tqdm
@@ -68,15 +69,20 @@ if __name__ == "__main__":
     for nb_threads in tqdm(NB_THREADS_RANGE):
         env_lightsim.reset()
         sa = ContingencyAnalysis(env_lightsim)
+        sa.init_from_n_powerflow = True
+        sa.handle_disconnected_grid = True
+        sa.compute_limit_violations = True
+        sa.nb_thread = nb_threads
         for i in range(env_lightsim.n_line):
             sa.add_single_contingency(i)
             if i >= MAX_CONT:
                 break
-        sa.init_from_n_powerflow = True
-        sa.nb_thread = nb_threads
+        beg_ = time.perf_counter()
         sa.get_flows()
+        end_ = time.perf_counter()
         computer_sa = sa.computer
-        total_time = computer_sa.total_time() + computer_sa.amps_computation_time()
+        # total_time = computer_sa.total_time() + computer_sa.amps_computation_time()
+        total_time = end_ - beg_
         nb_solved = computer_sa.nb_solved()
         pf_per_s = nb_solved / total_time if total_time > 0. else float("nan")
         if nb_threads == 1:
