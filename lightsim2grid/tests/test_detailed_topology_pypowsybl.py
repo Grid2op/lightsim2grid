@@ -337,17 +337,30 @@ class TestBackendPassThrough(unittest.TestCase):
             import grid2op  # noqa: F401
         except ImportError:
             self.skipTest("grid2op is not installed")
+
+        # grid2op keeps the grid's description (n_sub, sub_info, load_to_sub_pos, ...)
+        # as CLASS attributes of the backend: loading a grid on the base LightSimBackend
+        # would leak them into every environment made later in the same process
+        # (grid2op.make isolates through _add_to_name; a bare load_grid does not).
+        # A private subclass, cleared afterwards, keeps this test to itself.
+        class _LightSimBackendDetailedTopology(LightSimBackend):
+            pass
+
         dir_path = os.path.dirname(os.path.realpath(__file__))
         path = os.path.join(dir_path, "case_14_iidm")
-        backend = LightSimBackend(loader_method="pypowsybl",
-                                  loader_kwargs={"detailed_topology": True, "use_buses_for_sub": False})
-        type(backend)._clear_grid_dependant_class_attributes()
-        backend.set_env_name("case_14_iidm_detailed_topology")
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            backend.load_grid(path, "grid.xiidm")
-        assert backend._grid.has_detailed_topology()
-        assert len(backend._grid.get_switches()) > 0
+        backend = _LightSimBackendDetailedTopology(
+            loader_method="pypowsybl",
+            loader_kwargs={"detailed_topology": True, "use_buses_for_sub": False})
+        try:
+            type(backend)._clear_grid_dependant_class_attributes()
+            backend.set_env_name("case_14_iidm_detailed_topology")
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                backend.load_grid(path, "grid.xiidm")
+            assert backend._grid.has_detailed_topology()
+            assert len(backend._grid.get_switches()) > 0
+        finally:
+            type(backend)._clear_grid_dependant_class_attributes()
 
 
 if __name__ == "__main__":
