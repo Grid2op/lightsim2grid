@@ -573,6 +573,12 @@ class TestSerializedEnumValues(unittest.TestCase):
         self._check_enum(ConverterStationInfo.ConverterType,
                          {"VSC": 0, "LCC": 1})
 
+    def test_switch_kind(self):
+        from lightsim2grid.lightsim2grid_cpp import SwitchKind
+        self._check_enum(SwitchKind,
+                         {"BREAKER": 0, "DISCONNECTOR": 1,
+                          "LOAD_BREAK_SWITCH": 2, "INTERNAL_CONNECTION": 3})
+
 
 # reference file saved with binary format 10 (see BINARY_FORMAT_VERSION in
 # src/core/BinaryArchive.hpp) + a few values it is known to contain, used by

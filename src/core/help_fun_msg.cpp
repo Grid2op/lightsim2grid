@@ -7789,4 +7789,352 @@ const std::string DocMisc::real_params = R"mydelimiter(
 
 )mydelimiter";
 
+// ---------------------------------------------------------------------------
+// detailed topology (switches inside each substation)
+// ---------------------------------------------------------------------------
+
+const std::string DocIterator::node_id = R"mydelimiter(
+    The connectivity node this element stands on in the detailed topology of its substation
+    (``int``), or ``-1`` when the grid has no detailed topology or this element is not described
+    by it.
+
+    Node ids are LOCAL to the substation (:attr:`sub_id`), 0-based like pypowsybl's, so a node id
+    only means something together with the substation id.
+
+)mydelimiter";
+
+const std::string DocIterator::node1_id = R"mydelimiter(
+    The connectivity node the side 1 of this element stands on in the detailed topology of its
+    substation (``sub1_id``), or ``-1``. See :attr:`~lightsim2grid.elements.LoadInfo.node_id`.
+
+)mydelimiter";
+
+const std::string DocIterator::node2_id = R"mydelimiter(
+    The connectivity node the side 2 of this element stands on in the detailed topology of its
+    substation (``sub2_id``), or ``-1``. See :attr:`~lightsim2grid.elements.LoadInfo.node_id`.
+
+)mydelimiter";
+
+const std::string DocIterator::sub_nb_nodes = R"mydelimiter(
+    Number of connectivity nodes of this substation's detailed topology (``int``, 0 without one).
+
+)mydelimiter";
+
+const std::string DocIterator::sub_nb_switches = R"mydelimiter(
+    Number of switches of this substation's detailed topology (``int``, 0 without one).
+
+)mydelimiter";
+
+const std::string DocIterator::sub_nb_busbar_sections = R"mydelimiter(
+    Number of busbar sections of this substation's detailed topology (``int``, 0 without one).
+
+)mydelimiter";
+
+const std::string DocIterator::sub_first_node = R"mydelimiter(
+    Grid-wide id of this substation's first connectivity node (``int``, -1 without detailed
+    topology): node ``k`` of this substation is node ``first_node + k`` in
+    :func:`lightsim2grid.network.LSGrid.get_node_bus`.
+
+)mydelimiter";
+
+const std::string DocIterator::sub_first_switch = R"mydelimiter(
+    Grid-wide id of this substation's first switch (``int``, -1 without detailed topology): its
+    switches are ``first_switch, ..., first_switch + nb_switches - 1`` in
+    :func:`lightsim2grid.network.LSGrid.get_switches`.
+
+)mydelimiter";
+
+const std::string DocIterator::sub_first_busbar_section = R"mydelimiter(
+    Grid-wide id of this substation's first busbar section (``int``, -1 without detailed
+    topology), see :func:`lightsim2grid.network.LSGrid.get_busbar_sections`.
+
+)mydelimiter";
+
+const std::string DocIterator::SwitchContainer = R"mydelimiter(
+    Every switch of the grid's detailed topology, iterable by grid-wide id (see
+    :func:`lightsim2grid.network.LSGrid.get_switches`). Each element is a
+    :class:`lightsim2grid.elements.SwitchInfo`.
+
+    A view over the grid: it holds no data of its own, and cannot be pickled or saved on its
+    own -- the switches are part of the grid's substations.
+
+    .. warning::
+        Read-only. Operate a switch with :func:`lightsim2grid.network.LSGrid.set_switch_open` or
+        :func:`lightsim2grid.network.LSGrid.update_switches`.
+
+)mydelimiter";
+
+const std::string DocIterator::SwitchInfo = R"mydelimiter(
+    One switch of the detailed topology, as read from
+    :func:`lightsim2grid.network.LSGrid.get_switches`: the substation it belongs to, the two
+    connectivity nodes (local to that substation) it joins, its kind and its position.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        from lightsim2grid.network import init_from_pypowsybl
+        grid = init_from_pypowsybl(net, detailed_topology=True)
+
+        for sw in grid.get_switches():
+            print(sw.id, sw.name, sw.sub_id, sw.node1, sw.node2, sw.kind, sw.open)
+
+)mydelimiter";
+
+const std::string DocIterator::switch_sub_id = R"mydelimiter(
+    The substation (pypowsybl voltage level) this belongs to (``int``).
+
+)mydelimiter";
+
+const std::string DocIterator::switch_local_id = R"mydelimiter(
+    Its id inside its substation (``int``): the grid-wide id is
+    ``SubstationInfo.first_switch + local_id`` (resp. ``first_busbar_section``).
+
+)mydelimiter";
+
+const std::string DocIterator::switch_node1 = R"mydelimiter(
+    The first connectivity node this switch joins (``int``, local to its substation).
+
+)mydelimiter";
+
+const std::string DocIterator::switch_node2 = R"mydelimiter(
+    The second connectivity node this switch joins (``int``, local to its substation).
+
+)mydelimiter";
+
+const std::string DocIterator::switch_kind = R"mydelimiter(
+    What this switch is, a :class:`lightsim2grid.elements.SwitchKind` (breaker, disconnector,
+    load-break switch, or an internal connection -- always closed, cannot be operated).
+
+)mydelimiter";
+
+const std::string DocIterator::switch_open = R"mydelimiter(
+    ``True`` if the switch is open (no current flows through it), ``False`` if it is closed.
+
+)mydelimiter";
+
+const std::string DocIterator::switch_retained = R"mydelimiter(
+    pypowsybl's ``retained`` flag: whether the switch is kept in the bus-breaker view. Read
+    from the source grid and carried along; nothing in lightsim2grid depends on it.
+
+)mydelimiter";
+
+const std::string DocIterator::BusbarSectionContainer = R"mydelimiter(
+    Every busbar section of the grid's detailed topology, iterable by grid-wide id (see
+    :func:`lightsim2grid.network.LSGrid.get_busbar_sections`). Each element is a
+    :class:`lightsim2grid.elements.BusbarSectionInfo`. A read-only view over the grid, like
+    :class:`lightsim2grid.elements.SwitchContainer`.
+
+)mydelimiter";
+
+const std::string DocIterator::BusbarSectionInfo = R"mydelimiter(
+    One busbar section of the detailed topology: the substation it belongs to, the node it
+    stands on, and -- given the current switch positions -- the electrical bus it is part of
+    (:attr:`bus_id`, ``-1`` when its component is not a bus) and that bus' voltage after a
+    powerflow (:attr:`res_v_kv` / :attr:`res_theta_deg`, NaN while disconnected).
+
+)mydelimiter";
+
+const std::string DocIterator::bbs_node = R"mydelimiter(
+    The connectivity node this busbar section stands on (``int``, local to its substation).
+
+)mydelimiter";
+
+const std::string DocIterator::bbs_connected = R"mydelimiter(
+    ``True`` if the component of the closed-switch graph this section is in is an electrical bus
+    (see :func:`lightsim2grid.network.LSGrid.project_switches` for the rule), ``False`` otherwise
+    (an isolated section, or one no feeder reaches).
+
+)mydelimiter";
+
+const std::string DocIterator::bbs_bus_id = R"mydelimiter(
+    The grid bus (``GridModelBusId``, see :class:`lightsim2grid.network.LSGrid`) this section is
+    part of given the current switch positions, or ``-1`` when :attr:`connected` is ``False``.
+
+)mydelimiter";
+
+const std::string DocIterator::SubstationTopology = R"mydelimiter(
+    The detailed topology of ONE substation (a pypowsybl voltage level), read-only, from
+    :func:`lightsim2grid.network.LSGrid.get_substation_topology`: its connectivity nodes
+    (``nb_nodes()``, numbered ``0 .. nb_nodes() - 1`` like pypowsybl's), its busbar sections and
+    switches (by LOCAL id; ``bbs_node``, ``sw_node1``, ``sw_node2``, ``sw_kind``, ``is_open``, ...)
+    and, given the current switch positions, the electrical bus each node belongs to
+    (``node_bus()``: one entry per node, the 1-based local bus or ``-1``, and ``nb_buses()``).
+
+    Meant for debugging one voltage level; the grid-wide views are
+    :func:`lightsim2grid.network.LSGrid.get_switches`,
+    :func:`lightsim2grid.network.LSGrid.get_busbar_sections` and
+    :func:`lightsim2grid.network.LSGrid.get_node_bus`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_dcline_to_sub1_id = R"mydelimiter(
+    Set, for every hvdc line at once, the substation its side-1 converter station belongs to --
+    see :attr:`~lightsim2grid.elements.HvdcLineInfo.sub1_id`, see also :func:`set_load_to_subid`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_dcline_to_sub2_id = R"mydelimiter(
+    Set, for every hvdc line at once, the substation its side-2 converter station belongs to --
+    see :attr:`~lightsim2grid.elements.HvdcLineInfo.sub2_id`, see also :func:`set_load_to_subid`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::init_detailed_topology = R"mydelimiter(
+    Declare the detailed topology (pypowsybl's node-breaker view) of every substation at once,
+    from flat arrays. Called by the grid loaders (``init_from_pypowsybl(detailed_topology=True)``);
+    only needed by hand for a grid built from scratch.
+
+    Parameters
+    ----------
+    nb_nodes_per_sub: ``numpy.ndarray`` (int)
+        One entry per substation: how many connectivity nodes it has (0 for a substation with
+        nothing to describe). A node is numbered ``0 .. nb_nodes - 1`` LOCALLY to its substation.
+    bbs_sub, bbs_node: ``numpy.ndarray`` (int)
+        One entry per busbar section: the substation it belongs to and the (local) node it
+        stands on. ``bbs_sub`` must be sorted (non-decreasing): the position in these arrays is
+        the busbar section's grid-wide id.
+    sw_sub, sw_node1, sw_node2: ``numpy.ndarray`` (int)
+        One entry per switch: its substation and the two (local) nodes it joins. ``sw_sub`` must
+        be sorted too: the position is the switch's grid-wide id, what
+        :func:`set_switch_open` / :func:`update_switches` / :func:`get_switches` speak.
+    sw_kind: list of int
+        One :class:`lightsim2grid.elements.SwitchKind` value per switch (as ``int``).
+    sw_open, sw_retained: list of bool
+        The position of each switch (``True`` = open) and pypowsybl's ``retained`` flag.
+
+    This declares only. Which node each element stands on is given by :func:`set_load_to_node_id`
+    and friends, and which bus each element ends up on is the projection
+    (:func:`project_switches`), a separate step.
+
+    Raises a ``RuntimeError`` on an inconsistent declaration (a node out of range, a switch joining
+    a node to itself, two busbar sections on one node, an open internal connection, unsorted
+    substations, ...), leaving the grid untouched.
+
+)mydelimiter";
+
+const std::string DocLSGrid::has_detailed_topology = R"mydelimiter(
+    ``True`` if a detailed topology (switches inside each substation) was declared for this grid,
+    see :func:`init_detailed_topology`. A grid without one behaves exactly as before.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_switch_names = R"mydelimiter(
+    Set the name of every switch at once, in grid-wide switch order (one string per switch, see
+    :func:`get_switches`).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_busbar_section_names = R"mydelimiter(
+    Set the name of every busbar section at once, in grid-wide order (one string per section, see
+    :func:`get_busbar_sections`).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_to_node_id = R"mydelimiter(
+    Set, for every element of this kind at once, the connectivity node it stands on in the detailed
+    topology of its substation (``-1`` for an element the detailed topology does not describe).
+    Node ids are LOCAL to the element's substation, which must have been set first
+    (:func:`set_load_to_subid` and friends). For a two-sided element (``set_line_to_node1_id`` /
+    ``set_line_to_node2_id``, ...) each side has its own node in its own substation.
+
+    Called by the grid loaders; refuses a node the substation does not have.
+
+)mydelimiter";
+
+const std::string DocLSGrid::project_switches = R"mydelimiter(
+    Put every element where the switches say.
+
+    For each substation, the connected components of the graph made of its nodes and its CLOSED
+    switches (internal connections always) are labelled as electrical buses -- pypowsybl's rule
+    (powsybl-core ``Networks.isBusValid``): a component is a bus iff it holds at least one busbar
+    section and one feeder, or at least one branch end (line, transformer, hvdc converter station)
+    and two feeders. Every element on a component that is a bus is (re)connected to that bus;
+    every element on a component that is not (an isolated busbar section, a lone line end behind
+    an open breaker, a load and a generator with nothing else...) is disconnected. Buses are
+    numbered 1-based within the substation, the components holding a busbar section first (in
+    busbar-section order), then the rest by lowest node.
+
+    This goes through the same mutators as the topology-vector actions, so the change flags read
+    by the solvers and the per-bus element counts follow, and an element already where it should be
+    costs nothing.
+
+    The direct mutators (:func:`deactivate_load`, :func:`change_bus_gen`, :func:`update_topo`,
+    ...) stay usable on a grid with a detailed topology: they are the escape hatch, and the next
+    projection of a substation overwrites them there. :func:`set_switch_open` and
+    :func:`update_switches` project only the substations whose switches moved; this projects
+    every substation.
+
+    Raises a ``RuntimeError`` on a grid without detailed topology, and when a substation's
+    switch positions make more buses than its capacity (``nb_max_busbars``) can hold -- the
+    grid loaders size every substation for its true maximum, so this only concerns a grid built
+    by hand.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_switch_open = R"mydelimiter(
+    Open (``open=True``) or close (``open=False``) one switch, by grid-wide id (see
+    :func:`get_switches`), and project the switches of its substation onto the elements (see
+    :func:`project_switches`). Returns ``True`` if the switch actually moved, ``False`` if it
+    already was in that position (nothing is done then).
+
+    Raises a ``RuntimeError`` on an internal connection (always closed, cannot be operated) and an
+    ``IndexError`` on a bad id, leaving the grid untouched.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        from lightsim2grid.network import init_from_pypowsybl
+        grid = init_from_pypowsybl(net, detailed_topology=True)
+
+        coupler_id = [sw.id for sw in grid.get_switches() if sw.name == "S1VL2_COUPLER"][0]
+        grid.set_switch_open(coupler_id, True)   # the two sections are now two buses
+        V = grid.ac_pf(V0, 10, 1e-8)
+
+)mydelimiter";
+
+const std::string DocLSGrid::update_switches = R"mydelimiter(
+    The bulk form of :func:`set_switch_open`, in the style of :func:`update_topo`: both arrays have
+    one entry per switch, indexed by grid-wide switch id. Where ``has_changed[k]`` is ``True``,
+    switch ``k`` takes the position ``new_open[k]`` (``True`` = open). The substations with a
+    switch that actually moved are then projected onto the elements, once each (see
+    :func:`project_switches`). Both arrays must have exactly one entry per switch, or this raises.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_switches = R"mydelimiter(
+    Every switch of the detailed topology, by grid-wide id: a
+    :class:`lightsim2grid.elements.SwitchContainer`, iterable, whose elements are
+    :class:`lightsim2grid.elements.SwitchInfo`. Empty on a grid without detailed topology.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_busbar_sections = R"mydelimiter(
+    Every busbar section of the detailed topology, by grid-wide id: a
+    :class:`lightsim2grid.elements.BusbarSectionContainer`, iterable, whose elements are
+    :class:`lightsim2grid.elements.BusbarSectionInfo` (with the bus each section is part of, and
+    its voltage after a powerflow). Empty on a grid without detailed topology.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_node_bus = R"mydelimiter(
+    The grid bus (``GridModelBusId``) of every connectivity node of the detailed topology, by
+    grid-wide node id (node ``k`` of substation ``s`` is entry
+    ``get_substations()[s].first_node + k``), or ``-1`` for a node in a component that is not a bus
+    (see :func:`project_switches`). Empty on a grid without detailed topology.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_substation_topology = R"mydelimiter(
+    The detailed topology of one substation (a pypowsybl voltage level), read-only: a
+    :class:`lightsim2grid.elements.SubstationTopology`. Handy to look at one voltage level
+    (its nodes, its switches by local id, which bus each node is on). Raises on a grid without
+    detailed topology.
+
+)mydelimiter";
+
+
 } // namespace ls2g

@@ -21,6 +21,16 @@ void bind_enums(py::module_& m) {
         .value("BX", FDPFMethod::BX, "denotes the BX method")
         .export_values();
 
+    py::enum_<SwitchKind>(m, "SwitchKind",
+                          "What a switch of the detailed topology is (pypowsybl's node-breaker view). "
+                          "The integer values are serialized verbatim in binary files and pickles.")
+        .value("BREAKER", SwitchKind::BREAKER, "a breaker: can be operated under load")
+        .value("DISCONNECTOR", SwitchKind::DISCONNECTOR, "a disconnector: isolates, operated off-load")
+        .value("LOAD_BREAK_SWITCH", SwitchKind::LOAD_BREAK_SWITCH, "a load-break switch")
+        .value("INTERNAL_CONNECTION", SwitchKind::INTERNAL_CONNECTION,
+               "pypowsybl's internal connection: a zero-impedance link that is always closed and cannot be operated")
+        .export_values();
+
     py::enum_<AlgorithmType>(m, "AlgorithmType", "This enum controls the powerflow algorithm you want to use.")
         // ---- GaussSeidel (no linear solver choice) ----
         .value("GaussSeidel",      AlgorithmType::GaussSeidel,      "denotes the :class:`lightsim2grid.algorithm.GaussSeidelAlgo`")

@@ -169,6 +169,31 @@ struct LS2G_API DocIterator
     static const std::string SubstationInfo;
     static const std::string nb_max_busbars;
     static const std::string vn_kv;
+    // detailed topology (switches inside each substation)
+    static const std::string node_id;
+    static const std::string node1_id;
+    static const std::string node2_id;
+    static const std::string sub_nb_nodes;
+    static const std::string sub_nb_switches;
+    static const std::string sub_nb_busbar_sections;
+    static const std::string sub_first_node;
+    static const std::string sub_first_switch;
+    static const std::string sub_first_busbar_section;
+    static const std::string SwitchContainer;
+    static const std::string SwitchInfo;
+    static const std::string switch_sub_id;
+    static const std::string switch_local_id;
+    static const std::string switch_node1;
+    static const std::string switch_node2;
+    static const std::string switch_kind;
+    static const std::string switch_open;
+    static const std::string switch_retained;
+    static const std::string BusbarSectionContainer;
+    static const std::string BusbarSectionInfo;
+    static const std::string bbs_node;
+    static const std::string bbs_connected;
+    static const std::string bbs_bus_id;
+    static const std::string SubstationTopology;
 
     // specific to generators
     static const std::string GeneratorContainer;
@@ -735,6 +760,21 @@ struct LS2G_API DocLSGrid
     static const std::string set_line_to_sub2_id;
     static const std::string set_trafo_to_sub1_id;
     static const std::string set_trafo_to_sub2_id;
+    static const std::string set_dcline_to_sub1_id;
+    static const std::string set_dcline_to_sub2_id;
+    // detailed topology (switches inside each substation)
+    static const std::string init_detailed_topology;
+    static const std::string has_detailed_topology;
+    static const std::string set_switch_names;
+    static const std::string set_busbar_section_names;
+    static const std::string set_to_node_id;  // shared by every set_*_to_node_id
+    static const std::string project_switches;
+    static const std::string set_switch_open;
+    static const std::string update_switches;
+    static const std::string get_switches;
+    static const std::string get_busbar_sections;
+    static const std::string get_node_bus;
+    static const std::string get_substation_topology;
     static const std::string set_storage_to_subid;
 
     // bulk container constructors

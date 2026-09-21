@@ -38,6 +38,7 @@ void bind_containers(py::module_& m) {
         .def_readonly("id", &GenInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &GenInfo::name, DocIterator::name.c_str())
         .def_readonly("sub_id", &GenInfo::sub_id, DocIterator::gen_sub_id.c_str())
+        .def_readonly("node_id", &GenInfo::node_id, DocIterator::node_id.c_str())
         .def_readonly("pos_topo_vect", &GenInfo::pos_topo_vect, DocIterator::gen_pos_topo_vect.c_str())
         .def_readonly("connected", &GenInfo::connected, DocIterator::gen_connected.c_str())
         .def_readonly("bus_id", &GenInfo::bus_id, DocIterator::gen_bus_id.c_str())
@@ -85,6 +86,7 @@ void bind_containers(py::module_& m) {
         .def_readonly("id", &SvcInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &SvcInfo::name, DocIterator::name.c_str())
         .def_readonly("sub_id", &SvcInfo::sub_id, DocIterator::svc_sub_id.c_str())
+        .def_readonly("node_id", &SvcInfo::node_id, DocIterator::node_id.c_str())
         .def_readonly("pos_topo_vect", &SvcInfo::pos_topo_vect, DocIterator::svc_pos_topo_vect.c_str())
         .def_readonly("connected", &SvcInfo::connected, DocIterator::svc_connected.c_str())
         .def_readonly("bus_id", &SvcInfo::bus_id, DocIterator::svc_bus_id.c_str())
@@ -116,6 +118,7 @@ void bind_containers(py::module_& m) {
         .def_readonly("id", &SGenInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &SGenInfo::name, DocIterator::name.c_str())
         .def_readonly("sub_id", &SGenInfo::sub_id, DocIterator::sgen_sub_id.c_str())
+        .def_readonly("node_id", &SGenInfo::node_id, DocIterator::node_id.c_str())
         .def_readonly("pos_topo_vect", &SGenInfo::pos_topo_vect, DocIterator::sgen_pos_topo_vect.c_str())
         .def_readonly("connected", &SGenInfo::connected, DocIterator::sgen_connected.c_str())
         .def_readonly("bus_id", &SGenInfo::bus_id, DocIterator::sgen_bus_id.c_str())
@@ -146,6 +149,7 @@ void bind_containers(py::module_& m) {
         .def_readonly("id", &LoadInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &LoadInfo::name, DocIterator::name.c_str())
         .def_readonly("sub_id", &LoadInfo::sub_id, DocIterator::load_sub_id.c_str())
+        .def_readonly("node_id", &LoadInfo::node_id, DocIterator::node_id.c_str())
         .def_readonly("pos_topo_vect", &LoadInfo::pos_topo_vect, DocIterator::load_pos_topo_vect.c_str())
         .def_readonly("connected", &LoadInfo::connected, DocIterator::load_connected.c_str())
         .def_readonly("bus_id", &LoadInfo::bus_id, DocIterator::load_bus_id.c_str())
@@ -174,6 +178,7 @@ void bind_containers(py::module_& m) {
         .def_readonly("id", &StorageInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &StorageInfo::name, DocIterator::name.c_str())
         .def_readonly("sub_id", &StorageInfo::sub_id, DocIterator::storage_sub_id.c_str())
+        .def_readonly("node_id", &StorageInfo::node_id, DocIterator::node_id.c_str())
         .def_readonly("pos_topo_vect", &StorageInfo::pos_topo_vect, DocIterator::storage_pos_topo_vect.c_str())
         .def_readonly("connected", &StorageInfo::connected, DocIterator::storage_connected.c_str())
         .def_readonly("bus_id", &StorageInfo::bus_id, DocIterator::storage_bus_id.c_str())
@@ -207,6 +212,7 @@ void bind_containers(py::module_& m) {
         .def_readonly("id", &ShuntInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &ShuntInfo::name, DocIterator::name.c_str())
         .def_readonly("sub_id", &ShuntInfo::sub_id, DocIterator::shunt_sub_id.c_str())
+        .def_readonly("node_id", &ShuntInfo::node_id, DocIterator::node_id.c_str())
         .def_readonly("pos_topo_vect", &ShuntInfo::pos_topo_vect, DocIterator::shunt_pos_topo_vect.c_str())
         .def_readonly("connected", &ShuntInfo::connected, DocIterator::shunt_connected.c_str())
         .def_readonly("bus_id", &ShuntInfo::bus_id, DocIterator::shunt_bus_id.c_str())
@@ -244,6 +250,8 @@ void bind_containers(py::module_& m) {
         .def_readonly("name", &TrafoInfo::name, DocIterator::name.c_str())
         .def_readonly("sub1_id", &TrafoInfo::sub_1_id, DocIterator::trafo_sub1_id.c_str())
         .def_readonly("sub2_id", &TrafoInfo::sub_2_id, DocIterator::trafo_sub2_id.c_str())
+        .def_readonly("node1_id", &TrafoInfo::node_1_id, DocIterator::node1_id.c_str())
+        .def_readonly("node2_id", &TrafoInfo::node_2_id, DocIterator::node2_id.c_str())
         .def_readonly("pos1_topo_vect", &TrafoInfo::pos_1_topo_vect, DocIterator::trafo_pos1_topo_vect.c_str())
         .def_readonly("pos2_topo_vect", &TrafoInfo::pos_2_topo_vect, DocIterator::trafo_pos2_topo_vect.c_str())
         .def_readonly("connected_global", &TrafoInfo::connected_global, DocIterator::trafo_connected_global.c_str())
@@ -306,6 +314,8 @@ void bind_containers(py::module_& m) {
         .def_readonly("name", &LineInfo::name, DocIterator::name.c_str())
         .def_readonly("sub1_id", &LineInfo::sub_1_id, DocIterator::line_sub1_id.c_str())
         .def_readonly("sub2_id", &LineInfo::sub_2_id, DocIterator::line_sub2_id.c_str())
+        .def_readonly("node1_id", &LineInfo::node_1_id, DocIterator::node1_id.c_str())
+        .def_readonly("node2_id", &LineInfo::node_2_id, DocIterator::node2_id.c_str())
         .def_readonly("pos1_topo_vect", &LineInfo::pos_1_topo_vect, DocIterator::line_pos1_topo_vect.c_str())
         .def_readonly("pos2_topo_vect", &LineInfo::pos_2_topo_vect, DocIterator::line_pos2_topo_vect.c_str())
         .def_readonly("connected_global", &LineInfo::connected_global, DocIterator::line_connected_global.c_str())
@@ -355,6 +365,7 @@ void bind_containers(py::module_& m) {
         .def_readonly("id", &ConverterStationInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &ConverterStationInfo::name, DocIterator::name.c_str())
         .def_readonly("sub_id", &ConverterStationInfo::sub_id, DocIterator::sub_id.c_str())
+        .def_readonly("node_id", &ConverterStationInfo::node_id, DocIterator::node_id.c_str())
         .def_readonly("pos_topo_vect", &ConverterStationInfo::pos_topo_vect, DocIterator::pos_topo_vect.c_str())
         .def_readonly("connected", &ConverterStationInfo::connected, DocIterator::connected.c_str())
         .def_readonly("bus_id", &ConverterStationInfo::bus_id, DocIterator::bus_id.c_str())
@@ -395,6 +406,8 @@ void bind_containers(py::module_& m) {
         .def_readonly("name", &HvdcLineInfo::name, DocIterator::name.c_str())
         .def_readonly("sub1_id", &HvdcLineInfo::sub_1_id, DocIterator::hvdc_sub1_id.c_str())
         .def_readonly("sub2_id", &HvdcLineInfo::sub_2_id, DocIterator::hvdc_sub2_id.c_str())
+        .def_readonly("node1_id", &HvdcLineInfo::node_1_id, DocIterator::node1_id.c_str())
+        .def_readonly("node2_id", &HvdcLineInfo::node_2_id, DocIterator::node2_id.c_str())
         .def_readonly("pos1_topo_vect", &HvdcLineInfo::pos_1_topo_vect, DocIterator::hvdc_pos1_topo_vect.c_str())
         .def_readonly("pos2_topo_vect", &HvdcLineInfo::pos_2_topo_vect, DocIterator::hvdc_pos2_topo_vect.c_str())
         .def_readonly("connected_global", &HvdcLineInfo::connected_global, DocIterator::hvdc_connected_global.c_str())
@@ -445,5 +458,72 @@ void bind_containers(py::module_& m) {
         .def_readonly("id", &SubstationInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &SubstationInfo::name, DocIterator::substation_name.c_str())
         .def_readonly("nb_max_busbars", &SubstationInfo::nb_max_busbars, DocIterator::nb_max_busbars.c_str())
-        .def_readonly("vn_kv", &SubstationInfo::vn_kv, DocIterator::vn_kv.c_str());
+        .def_readonly("vn_kv", &SubstationInfo::vn_kv, DocIterator::vn_kv.c_str())
+        // detailed topology (0 / -1 when the grid has none)
+        .def_readonly("nb_nodes", &SubstationInfo::nb_nodes, DocIterator::sub_nb_nodes.c_str())
+        .def_readonly("nb_switches", &SubstationInfo::nb_switches, DocIterator::sub_nb_switches.c_str())
+        .def_readonly("nb_busbar_sections", &SubstationInfo::nb_busbar_sections, DocIterator::sub_nb_busbar_sections.c_str())
+        .def_readonly("first_node", &SubstationInfo::first_node, DocIterator::sub_first_node.c_str())
+        .def_readonly("first_switch", &SubstationInfo::first_switch, DocIterator::sub_first_switch.c_str())
+        .def_readonly("first_busbar_section", &SubstationInfo::first_busbar_section, DocIterator::sub_first_busbar_section.c_str());
+
+    // ---- detailed topology: the switches and busbar sections, by grid-wide id ----
+    // Both containers are views holding a pointer into the grid's substations;
+    // LSGrid::get_switches / get_busbar_sections bind them with keep_alive.
+    py::class_<SwitchContainer>(m, "SwitchContainer", DocIterator::SwitchContainer.c_str())
+        .def("__len__", [](const SwitchContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const SwitchContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const SwitchContainer & data) {
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>());
+
+    py::class_<SwitchInfo>(m, "SwitchInfo", DocIterator::SwitchInfo.c_str())
+        .def_readonly("id", &SwitchInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &SwitchInfo::name, DocIterator::name.c_str())
+        .def_readonly("sub_id", &SwitchInfo::sub_id, DocIterator::switch_sub_id.c_str())
+        .def_readonly("voltage_level_id", &SwitchInfo::sub_id, DocIterator::switch_sub_id.c_str())
+        .def_readonly("local_id", &SwitchInfo::local_id, DocIterator::switch_local_id.c_str())
+        .def_readonly("node1", &SwitchInfo::node1, DocIterator::switch_node1.c_str())
+        .def_readonly("node2", &SwitchInfo::node2, DocIterator::switch_node2.c_str())
+        .def_readonly("kind", &SwitchInfo::kind, DocIterator::switch_kind.c_str())
+        .def_readonly("open", &SwitchInfo::open, DocIterator::switch_open.c_str())
+        .def_readonly("retained", &SwitchInfo::retained, DocIterator::switch_retained.c_str());
+
+    py::class_<BusbarSectionContainer>(m, "BusbarSectionContainer", DocIterator::BusbarSectionContainer.c_str())
+        .def("__len__", [](const BusbarSectionContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const BusbarSectionContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const BusbarSectionContainer & data) {
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>());
+
+    py::class_<BusbarSectionInfo>(m, "BusbarSectionInfo", DocIterator::BusbarSectionInfo.c_str())
+        .def_readonly("id", &BusbarSectionInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &BusbarSectionInfo::name, DocIterator::name.c_str())
+        .def_readonly("sub_id", &BusbarSectionInfo::sub_id, DocIterator::switch_sub_id.c_str())
+        .def_readonly("voltage_level_id", &BusbarSectionInfo::sub_id, DocIterator::switch_sub_id.c_str())
+        .def_readonly("local_id", &BusbarSectionInfo::local_id, DocIterator::switch_local_id.c_str())
+        .def_readonly("node", &BusbarSectionInfo::node, DocIterator::bbs_node.c_str())
+        .def_readonly("connected", &BusbarSectionInfo::connected, DocIterator::bbs_connected.c_str())
+        .def_readonly("bus_id", &BusbarSectionInfo::bus_id, DocIterator::bbs_bus_id.c_str())
+        .def_readonly("has_res", &BusbarSectionInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_v_kv", &BusbarSectionInfo::res_v_kv, DocIterator::res_v_kv.c_str())
+        .def_readonly("res_theta_deg", &BusbarSectionInfo::res_theta_deg, DocIterator::res_theta_deg.c_str());
+
+    // one substation's detailed topology, read-only (LSGrid::get_substation_topology)
+    py::class_<SubstationTopology>(m, "SubstationTopology", DocIterator::SubstationTopology.c_str())
+        .def("nb_nodes", &SubstationTopology::nb_nodes)
+        .def("nb_switches", &SubstationTopology::nb_switches)
+        .def("nb_busbar_sections", &SubstationTopology::nb_busbar_sections)
+        .def("nb_buses", &SubstationTopology::nb_buses)
+        .def("labels_ready", &SubstationTopology::labels_ready)
+        .def("node_bus", [](const SubstationTopology & topo){ return IntVect(topo.node_bus()); })
+        .def("bbs_node", &SubstationTopology::bbs_node)
+        .def("bbs_bus", &SubstationTopology::bbs_bus)
+        .def("bbs_name", &SubstationTopology::bbs_name)
+        .def("sw_node1", &SubstationTopology::sw_node1)
+        .def("sw_node2", &SubstationTopology::sw_node2)
+        .def("sw_kind", &SubstationTopology::sw_kind)
+        .def("is_open", &SubstationTopology::is_open)
+        .def("is_retained", &SubstationTopology::is_retained)
+        .def("sw_name", &SubstationTopology::sw_name);
 }
