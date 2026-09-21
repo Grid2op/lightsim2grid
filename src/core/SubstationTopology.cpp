@@ -8,6 +8,7 @@
 
 #include "SubstationTopology.hpp"
 
+#include <algorithm>
 #include <sstream>
 #include <stdexcept>
 
@@ -221,8 +222,11 @@ void SubstationTopology::label(int nmax_busbar_per_sub, int sub_id)
     }
 
     // 3. number the valid components: busbar-section holders first, in busbar-
-    //    section order, then the rest by lowest node. Into scratch, so that a
-    //    component count the layout cannot hold leaves the current labels alone.
+    //    section order, then the rest by the lowest node one of their TERMINALS
+    //    stands on (every valid component has one; a bare node would not let a
+    //    loader predict the order from the element tables alone). Into scratch,
+    //    so that a component count the layout cannot hold leaves the current
+    //    labels alone.
     std::vector<int> root_bus(n, -1);
     int nb_buses = 0;
     const auto number_root = [&](int root){
@@ -234,7 +238,13 @@ void SubstationTopology::label(int nmax_busbar_per_sub, int sub_id)
         root_bus[r] = ++nb_buses;  // LocalBusId is 1-based
     };
     for(Eigen::Index i = 0; i < bbs_node_.size(); ++i) number_root(_find(bbs_node_(i)));
-    for(std::size_t node = 0; node < n; ++node) number_root(_find(static_cast<int>(node)));
+    // the remaining roots, by lowest terminal node: the terminals themselves,
+    // visited in node order, reach every such root in exactly that order
+    std::vector<int> terminal_nodes;
+    terminal_nodes.reserve(terminals_.size());
+    for(const Terminal & term : terminals_) terminal_nodes.push_back(term.node);
+    std::sort(terminal_nodes.begin(), terminal_nodes.end());
+    for(const int node : terminal_nodes) number_root(_find(node));
 
     if(nb_buses > nmax_busbar_per_sub){
         std::ostringstream exc_;

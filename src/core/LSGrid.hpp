@@ -2044,6 +2044,16 @@ class LS2G_API LSGrid final
             shunts_.set_subid(shunt_to_subid);
             _on_terminal_layout_changed();
         }
+        void set_sgen_to_subid(const Eigen::Ref<const IntVect> & sgen_to_subid)
+        {
+            sgens_.set_subid(sgen_to_subid);
+            _on_terminal_layout_changed();
+        }
+        void set_svc_to_subid(const Eigen::Ref<const IntVect> & svc_to_subid)
+        {
+            svcs_.set_subid(svc_to_subid);
+            _on_terminal_layout_changed();
+        }
         void set_line_to_sub1_id(const Eigen::Ref<const IntVect> & line_or_to_subid)
         {
             powerlines_.set_subid_side_1(line_or_to_subid);

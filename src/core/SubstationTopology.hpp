@@ -145,8 +145,10 @@ class LS2G_API SubstationTopology final
          *
          * Numbering, 1-based like LocalBusId: the components holding a busbar
          * section first, in busbar-section order (what grid2op's
-         * `from_switches_position` does too), then the remaining valid ones by
-         * lowest node. Deterministic: a function of the switch positions only.
+         * `from_switches_position` does too), then the remaining valid ones by the
+         * lowest node one of their terminals stands on. Deterministic: a function
+         * of the switch positions only, and one a loader can predict from the
+         * element tables without the switch graph.
          *
          * `nmax_busbar_per_sub` is the substation's capacity in the grid's bus
          * layout: more buses than that cannot be numbered, and this throws BEFORE

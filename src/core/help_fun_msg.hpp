@@ -760,6 +760,8 @@ struct LS2G_API DocLSGrid
     static const std::string set_line_to_sub2_id;
     static const std::string set_trafo_to_sub1_id;
     static const std::string set_trafo_to_sub2_id;
+    static const std::string set_sgen_to_subid;
+    static const std::string set_svc_to_subid;
     static const std::string set_dcline_to_sub1_id;
     static const std::string set_dcline_to_sub2_id;
     // detailed topology (switches inside each substation)

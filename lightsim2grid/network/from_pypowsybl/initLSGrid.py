@@ -35,6 +35,9 @@ from ._aux_add_svc import _aux_add_svc
 from ._aux_add_hvdc import _aux_add_hvdc
 from ._aux_add_storage import _aux_add_storage
 from ._aux_add_slack import _aux_add_slack
+from ._aux_add_detailed_topology import (_aux_detailed_topology_wanted,
+                                         _aux_scan_detailed_topology,
+                                         _aux_add_detailed_topology)
 
 
 def init(net : pypo.network.Network,
@@ -54,6 +57,7 @@ def init(net : pypo.network.Network,
          fuse_zero_impedance_branches: bool=False,
          zero_impedance_threshold_pu: float=1e-8,
          battery_active_power_control: str="auto",
+         detailed_topology: Union[bool, str]=False,
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -215,6 +219,21 @@ def init(net : pypo.network.Network,
         (participating, droop 4).
     :type battery_active_power_control: str
 
+    :param detailed_topology: Whether to read the switches of the grid (pypowsybl's
+        node-breaker view: connectivity nodes, busbar sections, breakers, disconnectors,
+        internal connections) into the model, see :func:`lightsim2grid.network.LSGrid.get_switches`
+        and :func:`lightsim2grid.network.LSGrid.set_switch_open`. ``True`` reads them (a
+        bus-breaker voltage level gets one node per bus and one breaker per terminal);
+        ``"auto"`` reads them iff the grid has a switch or a node-breaker voltage level;
+        ``False`` (the default) ignores them and the grid is exactly what it was before.
+        With the switches, the local bus ids of a voltage level follow the order in which
+        the projection of the switches numbers its buses (busbar sections first) rather than
+        the bus names, and every substation is sized for the most buses its switches can
+        make (``n_busbar_per_sub`` must be at least that, and is inferred as that by default).
+        Not compatible (yet) with ``buses_for_sub=True``, ``fuse_zero_impedance_branches``
+        or ``convert_dangling_lines``.
+    :type detailed_topology: Union[bool, str]
+
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
     """
@@ -234,11 +253,18 @@ def init(net : pypo.network.Network,
     if gen_slack_id is not None and slack_bus_id is not None:
         raise RuntimeError("Impossible to intialize a grid with both gen_slack_id and slack_bus_id")
 
+    # the switches inside each substation (pypowsybl's node-breaker view), read
+    # before the buses are numbered: the bus numbering follows them
+    use_detailed_topology = _aux_detailed_topology_wanted(net, detailed_topology, buses_for_sub,
+                                                          fuse_zero_impedance_branches, convert_dangling_lines)
+    topo_scan = _aux_scan_detailed_topology(net, sort_index) if use_detailed_topology else None
+
     # buses / substations: every other phase below depends on this phase's
     # voltage_levels / bus_df / first_bus_per_vl to resolve its own elements' buses.
     voltage_levels, bus_df, first_bus_per_vl, df_dl, net_pu, fused_line_ids, fused_trafo_ids = _aux_add_buses(
         model, net, net_pu, sort_index, buses_for_sub, n_busbar_per_sub,
         convert_dangling_lines, fuse_zero_impedance_branches, zero_impedance_threshold_pu,
+        topo_scan=topo_scan,
     )
 
     # generators
@@ -270,7 +296,7 @@ def init(net : pypo.network.Network,
     df_shunt, sh_sub = _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
 
     # SVCs
-    df_svc = _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used)
+    df_svc, svc_sub = _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used)
 
     # HVDC lines
     df_dc, hvdc_sub_from_id, hvdc_sub_to_id = _aux_add_hvdc(
@@ -287,6 +313,25 @@ def init(net : pypo.network.Network,
 
     # TODO checks
     # no 3windings trafo and other exotic stuff
+
+    # the substation of every element, before the switches (a node of the
+    # detailed topology is local to its substation) and before the main-component
+    # clean-up
+    model.set_gen_to_subid(np.asarray(gen_sub, dtype=np.int32))
+    model.set_load_to_subid(np.asarray(load_sub, dtype=np.int32))
+    model.set_storage_to_subid(np.asarray(batt_sub, dtype=np.int32))
+    model.set_shunt_to_subid(np.asarray(sh_sub, dtype=np.int32))
+    model.set_svc_to_subid(np.asarray(svc_sub, dtype=np.int32))
+    model.set_line_to_sub1_id(np.asarray(lor_sub, dtype=np.int32))
+    model.set_line_to_sub2_id(np.asarray(lex_sub, dtype=np.int32))
+    model.set_trafo_to_sub1_id(np.asarray(tor_sub, dtype=np.int32))
+    model.set_trafo_to_sub2_id(np.asarray(tex_sub, dtype=np.int32))
+
+    # the switches: declared, then projected onto the elements, which must move
+    # nothing (the bus view already put every element where the switches say)
+    if topo_scan is not None:
+        _aux_add_detailed_topology(model, topo_scan, df_gen, df_load, df_line, df_trafo, df_shunt,
+                                   df_svc, df_dc, df_batt, hvdc_sub_from_id, hvdc_sub_to_id)
 
     # and now deactivate all elements and nodes not in the main component
     if only_main_component:
@@ -308,16 +353,6 @@ def init(net : pypo.network.Network,
     sh_sub = pd.DataFrame(index=df_shunt.index, data={"sub_id": sh_sub})
     hvdc_sub_from_id = pd.DataFrame(index=df_dc.index, data={"sub_id": hvdc_sub_from_id})
     hvdc_sub_to_id = pd.DataFrame(index=df_dc.index, data={"sub_id": hvdc_sub_to_id})
-
-    # set the substation ID to which each object belong
-    model.set_gen_to_subid(gen_sub["sub_id"].values)
-    model.set_load_to_subid(load_sub["sub_id"].values)
-    model.set_storage_to_subid(batt_sub["sub_id"].values)
-    model.set_shunt_to_subid(sh_sub["sub_id"].values)
-    model.set_line_to_sub1_id(lor_sub["sub_id"].values)
-    model.set_line_to_sub2_id(lex_sub["sub_id"].values)
-    model.set_trafo_to_sub1_id(tor_sub["sub_id"].values)
-    model.set_trafo_to_sub2_id(tex_sub["sub_id"].values)
 
     # make sure the grid we just built is internally consistent (bus / substation
     # / topology-vector indices in range, no NaN/Inf in the physical inputs)

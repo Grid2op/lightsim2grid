@@ -452,6 +452,8 @@ void bind_gridmodel(py::module_& m) {
         .def("set_trafo_to_sub1_id", &LSGrid::set_trafo_to_sub1_id, DocLSGrid::set_trafo_to_sub1_id.c_str())
         .def("set_trafo_to_sub2_id", &LSGrid::set_trafo_to_sub2_id, DocLSGrid::set_trafo_to_sub2_id.c_str())
         .def("set_storage_to_subid", &LSGrid::set_storage_to_subid, DocLSGrid::set_storage_to_subid.c_str())
+        .def("set_sgen_to_subid", &LSGrid::set_sgen_to_subid, DocLSGrid::set_sgen_to_subid.c_str())
+        .def("set_svc_to_subid", &LSGrid::set_svc_to_subid, DocLSGrid::set_svc_to_subid.c_str())
         .def("set_dcline_to_sub1_id", &LSGrid::set_dcline_to_sub1_id, DocLSGrid::set_dcline_to_sub1_id.c_str())
         .def("set_dcline_to_sub2_id", &LSGrid::set_dcline_to_sub2_id, DocLSGrid::set_dcline_to_sub2_id.c_str())
 

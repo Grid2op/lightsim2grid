@@ -252,7 +252,7 @@ TEST_CASE("an open coupler splits two sections into two buses, a closed one merg
 
 // ---- the numbering ------------------------------------------------------------
 
-TEST_CASE("buses are numbered busbar sections first, in section order, then by lowest node", "[SubstationTopology][label]")
+TEST_CASE("buses are numbered busbar sections first, in section order, then by lowest terminal node", "[SubstationTopology][label]")
 {
     // sections declared in the order node 5 (section 0), node 0 (section 1); a
     // section-less line-line component on nodes 2-3; the section on node 5 holds a

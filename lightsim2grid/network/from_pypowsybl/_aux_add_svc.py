@@ -18,8 +18,8 @@ def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_v
     (local/remote, optional slope), REACTIVE_POWER (fixed Q) or OFF, all solved
     through the bordered VoltageControl NR extension. A grid with no SVC declares
     no controller and stays byte-identical to before this feature. Returns
-    ``df_svc`` (its per-substation ids are not needed downstream, unlike every
-    other element type here)."""
+    ``(df_svc, svc_sub)``, the substation of each SVC being what a node of the
+    detailed topology is local to."""
     if sort_index:
         df_svc = net.get_static_var_compensators().sort_index()
     else:
@@ -133,4 +133,4 @@ def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_v
             model.deactivate_svc(svc_id)
     model.set_svc_names(df_svc.index)
 
-    return df_svc
+    return df_svc, svc_sub

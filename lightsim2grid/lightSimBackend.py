@@ -94,7 +94,8 @@ class LightSimBackend(Backend):
         "use_grid2op_default_names",
         "reconnect_disco_gen",
         "reconnect_disco_load",
-        "n_busbar_per_sub"
+        "n_busbar_per_sub",
+        "detailed_topology",
     }
     
     KEYS_PANDAPOWER_LOADER = {
@@ -1062,6 +1063,12 @@ class LightSimBackend(Backend):
         n_busbar_per_sub = self._aux_get_substation_handling_from_loader_kwargs(loader_kwargs)
         if n_busbar_per_sub is None:
             n_busbar_per_sub = self.n_busbar_per_sub
+        # the switches inside each substation (see init_from_pypowsybl's
+        # `detailed_topology`): read into the grid when asked, nothing else in the
+        # backend uses them yet. With them the loader sizes every substation for
+        # the most buses its switches can make (which can exceed grid2op's
+        # `n_busbar`, the limit an action may use: checked right below).
+        detailed_topology = loader_kwargs.get("detailed_topology", False)
         self._grid, subs_id = init_from_pypowsybl(
             grid_tmp,
             gen_slack_id=self._gen_slack_id,
@@ -1070,10 +1077,20 @@ class LightSimBackend(Backend):
             sort_index=sort_index,
             only_main_component=self._automatically_disconnect,
             return_sub_id=True,
-            n_busbar_per_sub=n_busbar_per_sub,
+            n_busbar_per_sub=None if detailed_topology else n_busbar_per_sub,
             buses_for_sub=buses_for_sub,
             init_vm_pu=init_vm_pu,
+            detailed_topology=detailed_topology,
         )
+        if self._grid.has_detailed_topology():
+            # the buses in use must fit what grid2op allows per substation
+            bus_status = np.asarray(self._grid.get_bus_status())
+            used = np.nonzero(bus_status)[0]
+            max_local = int(used.max() // self._grid.get_n_sub()) + 1 if used.size else 1
+            if max_local > self.n_busbar_per_sub:
+                raise BackendError(f"The pypowsybl grid has a voltage level with {max_local} buses (given its "
+                                   f"switches) but grid2op allows at most n_busbar={self.n_busbar_per_sub} per "
+                                   "substation: create the environment with a larger `n_busbar`.")
         self.__nb_powerline = len(self._grid.get_lines())
         
         (gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), 

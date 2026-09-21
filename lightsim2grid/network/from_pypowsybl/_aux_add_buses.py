@@ -97,13 +97,19 @@ def dangling_line_boundary_bus(model: LSGrid) -> Dict[str, int]:
 
 
 def _aux_add_buses(model, net, net_pu, sort_index, buses_for_sub, n_busbar_per_sub,
-                   convert_dangling_lines, fuse_zero_impedance_branches, zero_impedance_threshold_pu):
+                   convert_dangling_lines, fuse_zero_impedance_branches, zero_impedance_threshold_pu,
+                   topo_scan=None):
     """Assign every pypowsybl bus a lightsim2grid (substation, local-bus) pair,
     call ``model.init_bus``/``set_substation_names``/``set_bus_voltage_limits``,
     and (optionally) fuse (near-)zero-impedance branches' terminal buses
     together. Every other element converter depends on this phase's
     ``voltage_levels``/``bus_df``/``first_bus_per_vl`` outputs to resolve its
     own elements' buses (see ``_aux_get_bus`` in `_aux_common.py`).
+
+    With a detailed topology (``topo_scan``, see `_aux_add_detailed_topology.py`)
+    the local bus ids of a voltage level follow the order in which the C++
+    projection of the switches numbers its buses, and every substation is sized
+    for the most buses any switch configuration can make there.
 
     Returns ``(voltage_levels, bus_df, first_bus_per_vl, df_dl, net_pu,
     fused_line_ids, fused_trafo_ids)``.
@@ -188,6 +194,21 @@ def _aux_add_buses(model, net, net_pu, sort_index, buses_for_sub, n_busbar_per_s
         bus_df["local_id"] = [voltage_levels.loc[el, "bus_names"].index(id_) + 1
                             for id_, el in zip(bus_df.index,
                                                 bus_df["voltage_level_id"].values)]
+        if topo_scan is not None:
+            # the local ids the projection of the switches will hand out: buses
+            # holding a busbar section first (section order), then by lowest
+            # terminal node -- so projecting the switches on the freshly built
+            # grid moves nothing (see `_aux_add_detailed_topology`)
+            key = topo_scan.bus_key.reindex(bus_df.index)
+            order = pd.DataFrame({
+                "vl": bus_df["voltage_level_id"].values,
+                "group": key["key_group"].fillna(2).astype(int).values,
+                "idx": key["key_idx"].fillna(0).astype(int).values,
+                "orig": bus_df["orig_id"].values,
+            }, index=bus_df.index)
+            ranked = order.sort_values(["vl", "group", "idx", "orig"], kind="mergesort")
+            ranked["local_id"] = ranked.groupby("vl").cumcount() + 1
+            bus_df["local_id"] = ranked["local_id"].reindex(bus_df.index).values
         n_vl = voltage_levels.shape[0]
         voltage_levels["vl_id"] = np.arange(n_vl)
         bus_df["bus_global_id"] = [(loc_id - 1) * n_vl + voltage_levels.loc[vl, "vl_id"]
@@ -196,14 +217,19 @@ def _aux_add_buses(model, net, net_pu, sort_index, buses_for_sub, n_busbar_per_s
                                        bus_df["voltage_level_id"]
                                    )]
         nb_bus_per_vl_in_grid = nb_bus_per_vl.values.max()
+        if topo_scan is not None:
+            # a substation holds as many buses as its switches can ever make,
+            # not only as many as the bus view shows today
+            nb_bus_per_vl_in_grid = max(int(nb_bus_per_vl_in_grid), int(topo_scan.bound_per_vl.max()))
         if n_busbar_per_sub is None:
             # setting automatically n_busbar_per_sub
             # to the value read from the grid
             # TODO logger here
             n_busbar_per_sub = int(nb_bus_per_vl_in_grid)
         elif n_busbar_per_sub < nb_bus_per_vl_in_grid:
+            what = ("buses its switches can make" if topo_scan is not None else "independant buses")
             raise RuntimeError(f"The input pypowsybl grid counts some voltage levels "
-                               f"with {nb_bus_per_vl_in_grid} independant buses, "
+                               f"with {nb_bus_per_vl_in_grid} {what}, "
                                f"which is not compatible with the n_busbar_per_sub={n_busbar_per_sub} "
                                "given as input.")
         all_buses_vn_kv = voltage_levels["nominal_v"].values
@@ -263,7 +289,8 @@ def _aux_add_buses(model, net, net_pu, sort_index, buses_for_sub, n_busbar_per_s
     # relevant kwargs downstream consumers (eg a pypowsybl-shaped result view) need to
     # recover conversion-time settings that are otherwise plain Python arguments lost
     # after this function returns -- see LSGrid._init_kwargs.
-    model._init_kwargs = {"sort_index": str(sort_index), "buses_for_sub": str(buses_for_sub)}
+    model._init_kwargs = {"sort_index": str(sort_index), "buses_for_sub": str(buses_for_sub),
+                          "detailed_topology": str(topo_scan is not None)}
     model.set_substation_names(sub_names)
     model.set_bus_voltage_limits(all_buses_vmin_kv.astype(float), all_buses_vmax_kv.astype(float))
 

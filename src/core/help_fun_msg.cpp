@@ -7969,6 +7969,18 @@ const std::string DocIterator::SubstationTopology = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::set_sgen_to_subid = R"mydelimiter(
+    Set, for every static generator at once, the substation it belongs to, see
+    :func:`set_load_to_subid` and :class:`~lightsim2grid.elements.SGenInfo`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_svc_to_subid = R"mydelimiter(
+    Set, for every static var compensator at once, the substation it belongs to, see
+    :func:`set_load_to_subid` and :class:`~lightsim2grid.elements.SvcInfo`.
+
+)mydelimiter";
+
 const std::string DocLSGrid::set_dcline_to_sub1_id = R"mydelimiter(
     Set, for every hvdc line at once, the substation its side-1 converter station belongs to --
     see :attr:`~lightsim2grid.elements.HvdcLineInfo.sub1_id`, see also :func:`set_load_to_subid`.
