@@ -374,8 +374,14 @@ struct ValueArchiver<Tuple, typename std::enable_if<is_tuple_like<Tuple>::value>
 // std::vector<std::tuple<...>> (a StateRes per substation, see
 // SubstationContainer::StateRes): outer count, then each tuple field by field
 // through the tuple archiver above.
+//
+// NB `is_tuple_like` alone is not enough here: libc++ gives std::complex the
+// tuple protocol (C++26, P2819), so std::vector<cplx_type> would match both this
+// and the raw-vector specialization below -- ambiguous on Apple clang, which is
+// how it surfaced. A raw element is never archived as a tuple.
 template<typename Tuple>
-struct ValueArchiver<std::vector<Tuple>, typename std::enable_if<is_tuple_like<Tuple>::value>::type> {
+struct ValueArchiver<std::vector<Tuple>,
+                     typename std::enable_if<is_tuple_like<Tuple>::value && !is_raw_vector_elem<Tuple>::value>::type> {
     static void write(BinaryArchive & ar, const std::vector<Tuple> & v) {
         std::uint64_t n = static_cast<std::uint64_t>(v.size());
         ar.write_scalar(n);
