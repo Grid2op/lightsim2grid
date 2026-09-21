@@ -408,6 +408,23 @@ class ContingencyAnalysis(object):
         Requires :attr:`compute_physical_violations` to be ``True`` (raises otherwise)."""
         return self.computer.get_physical_violations_n()
 
+    @property
+    def nb_thread(self):
+        """Number of OS threads used to solve the contingencies (default: 1).
+
+        With ``nb_thread == 1`` the behaviour is identical to the legacy
+        sequential computation. With ``nb_thread > 1`` the contingencies are
+        split across that many threads (each with its own solver and admittance
+        matrix copy); the results do not depend on the number of threads.
+        """
+        return self.computer.nb_thread
+
+    @nb_thread.setter
+    def nb_thread(self, val: int):
+        if int(val) != val:
+            raise ValueError("The `nb_thread` attribute must be an integer.")
+        self.computer.nb_thread = int(val)
+
     def clear(self, with_contlist=True):
         """
         Clear the list of contingencies to simulate
