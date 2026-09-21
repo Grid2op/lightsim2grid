@@ -46,10 +46,13 @@ the source declares out of service. It is what
 into a global bus id, so a loaded grid is ready for grid2op-style topology actions as it
 comes.
 
-None of these formats has a busbar section within a bus, so the rule is the same everywhere:
-**one substation per source bus, everything on busbar section 1**, and ``n_busbar_per_sub``
-sections allocated per substation (the extra ones start empty and deactivated). A grid built
-from pandapower is, in this respect, indistinguishable from one built from any other source.
+The pandapower, MATPOWER and PowerModels formats know nothing of what happens inside a
+substation, so the rule is the same for all three: **one substation per source bus, everything
+on busbar section 1**, and ``n_busbar_per_sub`` sections allocated per substation (the extra
+ones start empty and deactivated). ``init_from_pypowsybl`` makes a substation of each
+*voltage level* instead, with one busbar section per bus of pypowsybl's bus view -- and, with
+``detailed_topology=True``, reads the switches inside each voltage level too, see
+:ref:`detailed-topology`.
 
 .. note::
     ``init_from_pandapower`` takes an ``init_subid`` argument for one caller only:
@@ -130,6 +133,13 @@ method expects or returns.
    ``get_pv_solver``, ``get_J_solver``, …) and of the Jacobian-column mappings
    returned by the solver itself (``get_theta_to_J_col`` / ``get_vm_to_J_col`` /
    ``get_q_to_J_col``, see :ref:`use-solver`).
+
+A grid with a :ref:`detailed topology <detailed-topology>` adds a fourth kind of id, which is
+**not** a bus: the **connectivity node**, the point of the substation's switch graph an element's
+terminal stands on (``node_id`` / ``node1_id`` / ``node2_id`` of the ``*Info`` objects, local to
+the substation like pypowsybl's, ``-1`` when absent). Which bus a node ends up on is what the
+switches decide: :func:`lightsim2grid.network.LSGrid.get_node_bus` gives it in the GridModel
+convention.
 
 The mapping between conventions 2 and 3 is available (as numpy arrays) through:
 
@@ -212,6 +222,39 @@ objects.
     :autosummary:
 
 .. autoclass:: lightsim2grid.elements.SubstationInfo
+    :members:
+    :autosummary:
+
+Switches and busbar sections (detailed topology)
++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Only on a grid whose switches were read (see :ref:`detailed-topology`):
+:func:`~lightsim2grid.network.LSGrid.get_switches` and
+:func:`~lightsim2grid.network.LSGrid.get_busbar_sections` are iterable like the other
+containers, by grid-wide id. Both are read-only views: a switch is operated through
+:func:`~lightsim2grid.network.LSGrid.set_switch_open` /
+:func:`~lightsim2grid.network.LSGrid.update_switches`.
+
+.. autoclass:: lightsim2grid.elements.SwitchContainer
+    :members:
+    :autosummary:
+
+.. autoclass:: lightsim2grid.elements.SwitchInfo
+    :members:
+    :autosummary:
+
+.. autoclass:: lightsim2grid.elements.SwitchKind
+    :members:
+
+.. autoclass:: lightsim2grid.elements.BusbarSectionContainer
+    :members:
+    :autosummary:
+
+.. autoclass:: lightsim2grid.elements.BusbarSectionInfo
+    :members:
+    :autosummary:
+
+.. autoclass:: lightsim2grid.elements.SubstationTopology
     :members:
     :autosummary:
 

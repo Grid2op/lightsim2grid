@@ -2200,7 +2200,7 @@ class LS2G_API LSGrid final
                 exc_ << "LSGrid::set_max_nb_bus_per_sub: ";
                 exc_ << "your model counts ";
                 exc_ << substations_.nb_bus()  << " buses according to `substations_.nb_bus()` but ";
-                exc_ << n_sub_ * max_nb_bus_per_sub_ << " according to n_sub_ * max_nb_bus_per_sub_.";
+                exc_ << n_sub_ * max_nb_bus_per_sub << " according to n_sub_ * max_nb_bus_per_sub (the value given).";
                 exc_ << "Both should match: either reinit it with another call to `init_bus` or set properly the number of ";
                 exc_ << "substations / buses per substations with `set_n_sub` / `set_max_nb_bus_per_sub`";
                 throw std::runtime_error(exc_.str());

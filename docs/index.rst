@@ -55,6 +55,7 @@ This is a work in progress at the moment
    :caption: Technical Documentation
 
    network
+   detailed_topology
    install_from_source
    lightsimbackend
    solvers

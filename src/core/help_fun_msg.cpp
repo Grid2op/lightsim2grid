@@ -6606,7 +6606,7 @@ const std::string DocLSGrid::update_topo = R"mydelimiter(
     :attr:`~lightsim2grid.elements.LoadInfo.pos_topo_vect` /
     :attr:`~lightsim2grid.elements.GenInfo.pos_topo_vect` / etc. for that element), not by
     element id: for every position ``k`` with ``has_changed[k]``, the corresponding side is moved
-    to bus ``new_values[k]`` (in "local" -- 1-based busbar-within-substation -- convention; ``0``
+    to bus ``new_values[k]`` (in "local" -- 1-based busbar-within-substation -- convention; ``-1``
     disconnects that side). Both arrays must have exactly the size of the topology vector, or
     this raises.
 
@@ -7998,23 +7998,21 @@ const std::string DocLSGrid::init_detailed_topology = R"mydelimiter(
     from flat arrays. Called by the grid loaders (``init_from_pypowsybl(detailed_topology=True)``);
     only needed by hand for a grid built from scratch.
 
-    Parameters
-    ----------
-    nb_nodes_per_sub: ``numpy.ndarray`` (int)
-        One entry per substation: how many connectivity nodes it has (0 for a substation with
-        nothing to describe). A node is numbered ``0 .. nb_nodes - 1`` LOCALLY to its substation.
-    bbs_sub, bbs_node: ``numpy.ndarray`` (int)
-        One entry per busbar section: the substation it belongs to and the (local) node it
-        stands on. ``bbs_sub`` must be sorted (non-decreasing): the position in these arrays is
-        the busbar section's grid-wide id.
-    sw_sub, sw_node1, sw_node2: ``numpy.ndarray`` (int)
-        One entry per switch: its substation and the two (local) nodes it joins. ``sw_sub`` must
-        be sorted too: the position is the switch's grid-wide id, what
-        :func:`set_switch_open` / :func:`update_switches` / :func:`get_switches` speak.
-    sw_kind: list of int
-        One :class:`lightsim2grid.elements.SwitchKind` value per switch (as ``int``).
-    sw_open, sw_retained: list of bool
-        The position of each switch (``True`` = open) and pypowsybl's ``retained`` flag.
+    The arguments:
+
+    - ``nb_nodes_per_sub`` (``numpy.ndarray`` of int): one entry per substation, how many
+      connectivity nodes it has (0 for a substation with nothing to describe). A node is
+      numbered ``0 .. nb_nodes - 1`` LOCALLY to its substation.
+    - ``bbs_sub``, ``bbs_node`` (``numpy.ndarray`` of int): one entry per busbar section, the
+      substation it belongs to and the (local) node it stands on. ``bbs_sub`` must be sorted
+      (non-decreasing): the position in these arrays is the busbar section's grid-wide id.
+    - ``sw_sub``, ``sw_node1``, ``sw_node2`` (``numpy.ndarray`` of int): one entry per switch, its
+      substation and the two (local) nodes it joins. ``sw_sub`` must be sorted too: the position
+      is the switch's grid-wide id, what :func:`set_switch_open` / :func:`update_switches` /
+      :func:`get_switches` speak.
+    - ``sw_kind`` (list of int): one :class:`lightsim2grid.elements.SwitchKind` value per switch.
+    - ``sw_open``, ``sw_retained`` (list of bool): the position of each switch (``True`` = open)
+      and pypowsybl's ``retained`` flag.
 
     This declares only. Which node each element stands on is given by :func:`set_load_to_node_id`
     and friends, and which bus each element ends up on is the projection
