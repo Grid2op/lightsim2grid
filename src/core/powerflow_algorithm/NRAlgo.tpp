@@ -33,10 +33,22 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         _solver_control.has_slack_participate_changed() ||
         _solver_control.ybus_change_sparsity_pattern() ||
         _solver_control.has_ybus_some_coeffs_zero() ||
-        _solver_control.need_recompute_ybus() ||
+        // Ybus was recomputed (need_recompute_ybus) but NOT listed here on purpose: if it kept
+        // its sparsity pattern (only the VALUES of its coefficients changed, eg the impedance
+        // of a line) the pv/pq maps, the sparsity of J and the symbolic analysis of the linear
+        // solver are all still valid, and the first iteration below only refactorizes. A change
+        // of the pattern has to be flagged by whoever makes it (ybus_change_sparsity_pattern,
+        // has_ybus_some_coeffs_zero, ...), see the debug check right below.
         _solver_control.has_pv_changed() ||
         _solver_control.has_pq_changed()
     );
+#ifndef NDEBUG
+    // Nothing else tells this solver that Ybus changed its pattern, so check it: a Ybus
+    // recomputed with another number of coefficients whose change was not flagged would be
+    // read through the value maps of the previous one.
+    assert(!(_solver_control.need_recompute_ybus() && !need_rebuild && Ybus.nonZeros() != ybus_nnz_) &&
+           "Ybus changed its sparsity pattern without being flagged (tell_ybus_change_sparsity_pattern)");
+#endif
 
     if (need_rebuild) {
         // Reset linear solver state before re-initialization.
@@ -72,6 +84,9 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     if (need_rebuild) {
         _system.build_J_sparsity();
         n_ = static_cast<int>(_system.J().cols());
+#ifndef NDEBUG
+        ybus_nnz_ = Ybus.nonZeros();  // only used by the debug check above
+#endif
     }
     // std::cout << "need_init " << need_init << "\n";
 

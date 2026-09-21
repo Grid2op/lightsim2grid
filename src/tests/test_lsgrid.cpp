@@ -752,3 +752,60 @@ TEST_CASE("documented error paths", "[LSGrid]")
 
 // NB the cache-reuse behaviour of `unset_changes()` / `allow_*_cache_reuse` /
 // `prevent_*_cache_reuse` is covered in test_cache_reuse.cpp.
+
+
+TEST_CASE("update_powerlines_parameters / update_trafos_parameters", "[LSGrid][update_parameters]")
+{
+    // a solved grid whose lines are re-parameterised must give the same answer as a
+    // grid initialised with these parameters in the first place (r_pu is the only
+    // parameter of the skeleton that make_three_bus_grid exposes)
+    SECTION("powerlines: update after a solve == init with the new values") {
+        LSGrid grid = make_three_bus_grid(0.01);
+        REQUIRE(solve_ac(grid).size() == 3);
+        REQUIRE(grid.dc_pf(flat_start(grid), 1, 1e-8).size() == 3);  // both families have a live cache
+
+        RealVect r(2), x(2);
+        r << 0.03, 0.05;
+        x << 0.1, 0.1;
+        CplxVect h = CplxVect::Zero(2);
+        grid.update_powerlines_parameters(r, x, h, h);
+
+        LSGrid fresh = make_three_bus_grid(0.01);
+        {
+            Eigen::VectorXi from_id(2), to_id(2);
+            from_id << 0, 1;
+            to_id << 1, 2;
+            fresh.init_powerlines_full(r, x, h, h, from_id, to_id);
+        }
+        const CplxVect V_updated = solve_ac(grid);
+        const CplxVect V_fresh = solve_ac(fresh);
+        REQUIRE(V_updated.size() == 3);
+        REQUIRE(V_fresh.size() == 3);
+        CHECK((V_updated - V_fresh).norm() < 1e-9);
+        // and it really moved (a higher resistance means a lower voltage at the load)
+        LSGrid before = make_three_bus_grid(0.01);
+        CHECK(std::abs(V_updated(2)) < std::abs(solve_ac(before)(2)));
+    }
+
+    SECTION("powerlines: the topology is kept") {
+        LSGrid grid = make_three_bus_grid(0.01);
+        grid.deactivate_powerline(1);
+        RealVect r(2), x(2);
+        r << 0.02, 0.02;
+        x << 0.2, 0.2;
+        const CplxVect h = CplxVect::Zero(2);
+        grid.update_powerlines_parameters(r, x, h, h);
+        CHECK(grid.get_lines().get_status_global()[0]);
+        CHECK_FALSE(grid.get_lines().get_status_global()[1]);
+        CHECK(grid.nb_powerline() == 2);
+    }
+
+    SECTION("wrong sizes are refused") {
+        LSGrid grid = make_three_bus_grid(0.01);
+        RealVect r(1), x(1);
+        r << 0.02;
+        x << 0.2;
+        const CplxVect h = CplxVect::Zero(1);
+        CHECK_THROWS(grid.update_powerlines_parameters(r, x, h, h));
+    }
+}

@@ -4142,6 +4142,44 @@ const std::string DocLSGrid::change_ratio_trafo = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::update_powerlines_parameters = R"mydelimiter(
+    Replace the physical parameters of ALL the powerlines (in pu), without touching the topology
+    (buses, connection status, ordering).
+
+    The arguments have the same meaning as in :func:`init_powerlines_full`. The model coefficients are recomputed
+    and the next powerflow rebuilds Ybus (the cached solver state is kept, the sparsity pattern is unchanged).
+
+    Parameters
+    ----------
+    r: ``np.ndarray``, float
+        Series resistance (pu), one per powerline
+    x: ``np.ndarray``, float
+        Series reactance (pu), one per powerline
+    h_or: ``np.ndarray``, complex
+        Shunt admittance on the origin side (pu)
+    h_ex: ``np.ndarray``, complex
+        Shunt admittance on the extremity side (pu)
+
+)mydelimiter";
+
+const std::string DocLSGrid::update_trafos_parameters = R"mydelimiter(
+    Replace the physical parameters of ALL the transformers (in pu), without touching the topology
+    (buses, connection status, ordering), the tap ratio nor the phase shift.
+
+    The arguments have the same meaning as in :func:`init_trafo` (``b`` is split in two halves,
+    one per side).
+
+    Parameters
+    ----------
+    r: ``np.ndarray``, float
+        Series resistance (pu), one per transformer
+    x: ``np.ndarray``, float
+        Series reactance (pu), one per transformer
+    b: ``np.ndarray``, complex
+        Total charging admittance (pu)
+
+)mydelimiter";
+
 const std::string DocLSGrid::get_lines = R"mydelimiter(
     This function allows to retrieve the powerlines (as a 
     :class:`lightsim2grid.elements.LineContainer` object,

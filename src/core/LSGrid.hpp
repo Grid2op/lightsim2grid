@@ -422,6 +422,28 @@ class LS2G_API LSGrid final
             _elements_replaced_wholesale();
         }
 
+        /**
+         * Update the physical parameters (pu) of all the powerlines, keeping the topology.
+         * Same meaning as the arguments of init_powerlines_full.
+         */
+        void update_powerlines_parameters(const Eigen::Ref<const RealVect> & branch_r,
+                                          const Eigen::Ref<const RealVect> & branch_x,
+                                          const Eigen::Ref<const CplxVect> & branch_h1,
+                                          const Eigen::Ref<const CplxVect> & branch_h2){
+            powerlines_.update_physical_parameters(branch_r, branch_x, branch_h1, branch_h2, algo_controler_);
+        }
+        /**
+         * Update the physical parameters (pu) of all the transformers, keeping the topology,
+         * the ratio and the shift. Same meaning as the arguments of init_trafo
+         * (the charging admittance trafo_b is split in two halves).
+         */
+        void update_trafos_parameters(const Eigen::Ref<const RealVect> & trafo_r,
+                                      const Eigen::Ref<const RealVect> & trafo_x,
+                                      const Eigen::Ref<const CplxVect> & trafo_b){
+            const CplxVect half_b = 0.5 * trafo_b;
+            trafos_.update_physical_parameters(trafo_r, trafo_x, half_b, half_b, algo_controler_);
+        }
+
         void init_generators(const Eigen::Ref<const RealVect> & generators_p,
                              const Eigen::Ref<const RealVect> & generators_v,
                              const Eigen::Ref<const RealVect> & generators_min_q,
