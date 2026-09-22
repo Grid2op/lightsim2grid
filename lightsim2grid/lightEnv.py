@@ -80,7 +80,23 @@ def topo_action_from_grid2op(action: BaseAction) -> TopoAction:
 
 class LightEnv(_LightEnvCPP):
     """The light environment, see the c++ documentation. On top of it,
-    :func:`LightEnv.init_actions` also accepts grid2op actions."""
+    :func:`LightEnv.init_actions` also accepts grid2op actions.
+
+    It can be copied (``env.copy()``, ``copy.copy(env)``, ``copy.deepcopy(env)`` or
+    ``LightEnv(env)``, all the same): the copy is an independent env at the same point of the
+    same episode, with its own observation. The initial grid, the time series and the
+    registered actions, which do not change during an episode, are shared read-only.
+    """
+
+    def copy(self) -> "LightEnv":
+        """An independent copy of this env, at the same step (see the class documentation)."""
+        return type(self)(self)
+
+    def __copy__(self) -> "LightEnv":
+        return self.copy()
+
+    def __deepcopy__(self, memo) -> "LightEnv":
+        return self.copy()
 
     def init_actions(self, actions: Iterable) -> None:
         """Register the actions the agent can take: ``step(i)`` plays ``actions[i]``.

@@ -70,6 +70,125 @@ class LightEnvObservation
 };
 
 /**
+ * A `std::unique_ptr` whose copy is a deep copy (`LSGrid` has a copy constructor but no copy
+ * assignment, so the live grid of a `LightEnv` is held through a pointer).
+ */
+template<class T>
+class DeepCopyPtr
+{
+    public:
+        explicit DeepCopyPtr(T * ptr): ptr_(ptr) {}
+        DeepCopyPtr(const DeepCopyPtr & other): ptr_(other.ptr_ ? new T(*other.ptr_) : nullptr) {}
+        DeepCopyPtr & operator=(const DeepCopyPtr & other){
+            if(this != &other) ptr_.reset(other.ptr_ ? new T(*other.ptr_) : nullptr);
+            return *this;
+        }
+        DeepCopyPtr(DeepCopyPtr &&) noexcept = default;
+        DeepCopyPtr & operator=(DeepCopyPtr &&) noexcept = default;
+
+        T & operator*() const {return *ptr_;}
+        T * operator->() const {return ptr_.get();}
+        void reset(T * ptr) {ptr_.reset(ptr);}
+
+    private:
+        std::unique_ptr<T> ptr_;
+};
+
+/**
+ * Everything a `LightEnv` holds but its observation. Kept apart so that it is copied member
+ * by member, while `LightEnv` re-points its observation to itself: adding a member here
+ * cannot be forgotten by the copy.
+ *
+ * What never changes during an episode (the initial grid, the time series, the registered
+ * actions) is shared between copies, read-only: `assign_time_series` / `init_actions` on
+ * one env replace its own pointer and leave the others alone. The rest (the live grid, the
+ * protections, the cooldowns, the step...) is copied, so a copy is an independent env at the
+ * same point of the same episode.
+ */
+class LightEnvState
+{
+    protected:
+        typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> RealMat;
+
+        // one row per step, one column per element, NaN meaning "unchanged"
+        struct TimeSeries
+        {
+            RealMat load_p;
+            RealMat load_q;
+            RealMat gen_p;
+            RealMat gen_v;
+            RealMat storage_p;
+            RealMat shunt_p;
+            RealMat shunt_q;
+            RealMat sgen_p;
+            RealMat sgen_q;
+        };
+
+        explicit LightEnvState(const LSGrid & gridmodel):
+            has_been_checked_(false),
+            max_step_(0),
+            actions_(std::make_shared<const std::vector<TopoAction> >()),
+            init_grid_(std::make_shared<const LSGrid>(gridmodel)),
+            grid_(new LSGrid(gridmodel)),
+            max_iter_(10),
+            tol_(1e-8),
+            current_step_(0),
+            nb_timestep_cooldown_sub_(0),
+            nb_timestep_cooldown_line_(0),
+            nb_timestep_reconnection_(10),
+            timer_step_(0.),
+            timer_reset_(0.),
+            timer_obs_(0.),
+            timer_update_gridmodel_(0.)
+            {}
+
+        // consistency
+        bool has_been_checked_;
+
+        // time series (shared between copies), nullptr until assign_time_series
+        std::shared_ptr<const TimeSeries> time_series_;
+        int max_step_;  // size of the input data
+
+        // protections and thermal limits
+        Protections protections_;
+
+        // the actions the agent can take (shared between copies)
+        std::shared_ptr<const std::vector<TopoAction> > actions_;
+
+        // powergrid state: the initial one (restored at reset, shared between copies) and the
+        // live one
+        std::shared_ptr<const LSGrid> init_grid_;
+        DeepCopyPtr<LSGrid> grid_;
+        CplxVect V_;
+        int max_iter_;
+        real_type tol_;
+
+        // time related information
+        int current_step_;
+        int nb_timestep_cooldown_sub_;
+        int nb_timestep_cooldown_line_;
+        int nb_timestep_reconnection_;
+        Eigen::VectorXi time_step_sub_cooldown_;
+        Eigen::VectorXi time_step_line_cooldown_;
+
+        // the buffers the observation views (grid2op order, see LightEnv::extract_observation)
+        RealVect p_or_;
+        RealVect q_or_;
+        RealVect a_or_;
+        RealVect p_ex_;
+        RealVect q_ex_;
+        RealVect a_ex_;
+        IntVect topo_vect_;
+        std::unordered_map<std::string, std::string> info_;
+
+        // timers
+        double timer_step_;
+        double timer_reset_;
+        double timer_obs_;
+        double timer_update_gridmodel_;
+};
+
+/**
  * A (very) limited grid2op environment in pure c++.
  *
  * The grid given at construction is the initial state of every episode: `reset()` restores
@@ -83,32 +202,21 @@ class LightEnvObservation
  * `nb_timestep_cooldown_line`) steps, and a line disconnected by the protections cannot be
  * reconnected for `nb_timestep_reconnection` steps. An action that touches an element still
  * in cooldown is illegal: it is replaced by "do nothing" and `info["is_illegal"]` is "true".
+ *
+ * A `LightEnv` can be copied (and moved): the copy is an independent env at the same point of
+ * the same episode, see `LightEnvState` for what is shared and what is copied. Its observation
+ * views the copy, not the original.
  */
-class LightEnv
+class LightEnv : protected LightEnvState
 {
-        typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> RealMat;
-
     public:
         typedef std::unordered_map<std::string, std::string> InfoReturnedType;
         typedef std::tuple<const LightEnvObservation &, double, bool, bool, InfoReturnedType > StepReturnedType;
         typedef std::tuple<const LightEnvObservation &, InfoReturnedType > ResetReturnedType;
 
-        LightEnv(const LSGrid & gridmodel):
-            has_been_checked_(false),
-            max_step_(0),
-            init_grid_(gridmodel),
-            grid_(new LSGrid(gridmodel)),
-            max_iter_(10),
-            tol_(1e-8),
-            current_step_(0),
-            nb_timestep_cooldown_sub_(0),
-            nb_timestep_cooldown_line_(0),
-            nb_timestep_reconnection_(10),
-            observation_(*this),
-            timer_step_(0.),
-            timer_reset_(0.),
-            timer_obs_(0.),
-            timer_update_gridmodel_(0.)
+        explicit LightEnv(const LSGrid & gridmodel):
+            LightEnvState(gridmodel),
+            observation_(*this)
             {
                 // every buffer an observation views is allocated once, here, and only ever
                 // written in place: a numpy view on it stays valid as the env steps
@@ -124,11 +232,18 @@ class LightEnv
                 topo_vect_ = IntVect::Constant(aux_dim_topo(*grid_), BaseConstants::_deactivated_bus_id);
             }
 
-        // the observation points to this env: it can be neither copied nor moved
-        LightEnv(const LightEnv &) = delete;
-        LightEnv(LightEnv &&) = delete;
-        LightEnv & operator=(const LightEnv &) = delete;
-        LightEnv & operator=(LightEnv &&) = delete;
+        // the state is copied (or moved) member by member, the observation keeps viewing
+        // the env it belongs to
+        LightEnv(const LightEnv & other): LightEnvState(other), observation_(*this) {}
+        LightEnv(LightEnv && other): LightEnvState(std::move(other)), observation_(*this) {}
+        LightEnv & operator=(const LightEnv & other){
+            LightEnvState::operator=(other);
+            return *this;
+        }
+        LightEnv & operator=(LightEnv && other){
+            LightEnvState::operator=(std::move(other));
+            return *this;
+        }
 
         void assign_time_series(const RealMat & load_p,
                                 const RealMat & load_q,
@@ -140,15 +255,8 @@ class LightEnv
                                 const RealMat & sgen_p,
                                 const RealMat & sgen_q){
             has_been_checked_ = false;
-            load_p_ = load_p;
-            load_q_ = load_q;
-            gen_p_ = gen_p;
-            gen_v_ = gen_v;
-            storage_p_ = storage_p;
-            shunt_p_ = shunt_p;
-            shunt_q_ = shunt_q;
-            sgen_p_ = sgen_p;
-            sgen_q_ = sgen_q;
+            time_series_ = std::make_shared<const TimeSeries>(
+                TimeSeries{load_p, load_q, gen_p, gen_v, storage_p, shunt_p, shunt_q, sgen_p, sgen_q});
         }
 
         void assign_protections(const Protections & protections){
@@ -169,7 +277,7 @@ class LightEnv
             for(size_t i = 0; i < actions.size(); ++i){
                 TopoAction act = actions[i];
                 try{
-                    act.check_validity(init_grid_);
+                    act.check_validity(*init_grid_);
                 }catch(const std::exception & exc_){
                     std::ostringstream msg;
                     msg << "LightEnv::init_actions: action " << i << " is invalid: " << exc_.what();
@@ -177,10 +285,10 @@ class LightEnv
                 }
                 checked.push_back(act);
             }
-            actions_ = checked;
+            actions_ = std::make_shared<const std::vector<TopoAction> >(std::move(checked));
         }
-        int nb_actions() const {return static_cast<int>(actions_.size());}
-        const std::vector<TopoAction> & get_actions() const {return actions_;}
+        int nb_actions() const {return static_cast<int>(actions_->size());}
+        const std::vector<TopoAction> & get_actions() const {return *actions_;}
 
         const Protections & get_protections() const {return protections_;}
         const LSGrid & get_grid() const {return *grid_;}
@@ -216,7 +324,7 @@ class LightEnv
             reset_timers();
 
             // back to the initial topology
-            grid_.reset(new LSGrid(init_grid_));
+            grid_.reset(new LSGrid(*init_grid_));
 
             if(!has_been_checked_){
                 perform_internal_checks();
@@ -310,7 +418,8 @@ class LightEnv
 
     protected:
         const TopoAction * aux_get_action(int act_id) const {
-            if(actions_.empty()){
+            const std::vector<TopoAction> & actions = *actions_;
+            if(actions.empty()){
                 if(act_id != 0){
                     std::ostringstream exc_;
                     exc_ << "LightEnv::step: no action has been initialised (see init_actions), "
@@ -319,14 +428,14 @@ class LightEnv
                 }
                 return nullptr;
             }
-            if(act_id < 0 || act_id >= static_cast<int>(actions_.size())){
+            if(act_id < 0 || act_id >= static_cast<int>(actions.size())){
                 std::ostringstream exc_;
                 exc_ << "LightEnv::step: unknown action id " << act_id << ", "
-                     << actions_.size() << " actions have been initialised (valid ids: 0 to "
-                     << actions_.size() - 1 << ").";
+                     << actions.size() << " actions have been initialised (valid ids: 0 to "
+                     << actions.size() - 1 << ").";
                 throw std::out_of_range(exc_.str());
             }
-            return &actions_[act_id];
+            return &actions[act_id];
         }
 
         bool aux_is_illegal(const std::vector<bool> & subs_impacted,
@@ -374,15 +483,16 @@ class LightEnv
         }
 
         void apply_injections(int step_id){
-            const InjAction inj_action(load_p_.row(step_id),
-                                       load_q_.row(step_id),
-                                       gen_p_.row(step_id),
-                                       gen_v_.row(step_id),
-                                       storage_p_.row(step_id),
-                                       shunt_p_.row(step_id),
-                                       shunt_q_.row(step_id),
-                                       sgen_p_.row(step_id),
-                                       sgen_q_.row(step_id)
+            const TimeSeries & ts = *time_series_;
+            const InjAction inj_action(ts.load_p.row(step_id),
+                                       ts.load_q.row(step_id),
+                                       ts.gen_p.row(step_id),
+                                       ts.gen_v.row(step_id),
+                                       ts.storage_p.row(step_id),
+                                       ts.shunt_p.row(step_id),
+                                       ts.shunt_q.row(step_id),
+                                       ts.sgen_p.row(step_id),
+                                       ts.sgen_q.row(step_id)
                                        );
             inj_action.apply_to_gridmodel(*grid_);
         }
@@ -497,28 +607,32 @@ class LightEnv
 
         void perform_internal_checks(){
             // correct number of rows (steps)
-            const int n_ts = load_p_.rows();
-            aux_check_row(load_p_, n_ts, "perform_internal_checks (load_p)");
-            aux_check_row(load_q_, n_ts, "perform_internal_checks (load_q)");
-            aux_check_row(gen_p_, n_ts, "perform_internal_checks (gen_p)");
-            aux_check_row(gen_v_, n_ts, "perform_internal_checks (gen_v)");
-            aux_check_row(storage_p_, n_ts, "perform_internal_checks (storage_p)");
-            aux_check_row(shunt_p_, n_ts, "perform_internal_checks (shunt_p)");
-            aux_check_row(shunt_q_, n_ts, "perform_internal_checks (shunt_q)");
-            aux_check_row(sgen_p_, n_ts, "perform_internal_checks (sgen_p)");
-            aux_check_row(sgen_q_, n_ts, "perform_internal_checks (sgen_q)");
+            if(!time_series_){
+                throw std::runtime_error("LightEnv: no time series, call assign_time_series before reset.");
+            }
+            const TimeSeries & ts = *time_series_;
+            const int n_ts = static_cast<int>(ts.load_p.rows());
+            aux_check_row(ts.load_p, n_ts, "perform_internal_checks (load_p)");
+            aux_check_row(ts.load_q, n_ts, "perform_internal_checks (load_q)");
+            aux_check_row(ts.gen_p, n_ts, "perform_internal_checks (gen_p)");
+            aux_check_row(ts.gen_v, n_ts, "perform_internal_checks (gen_v)");
+            aux_check_row(ts.storage_p, n_ts, "perform_internal_checks (storage_p)");
+            aux_check_row(ts.shunt_p, n_ts, "perform_internal_checks (shunt_p)");
+            aux_check_row(ts.shunt_q, n_ts, "perform_internal_checks (shunt_q)");
+            aux_check_row(ts.sgen_p, n_ts, "perform_internal_checks (sgen_p)");
+            aux_check_row(ts.sgen_q, n_ts, "perform_internal_checks (sgen_q)");
             max_step_ = n_ts;
 
             // correct number of columns (number of elelments)
-            aux_check_col(load_p_, grid_->get_loads().nb(), "perform_internal_checks (load_p)");
-            aux_check_col(load_q_, grid_->get_loads().nb(), "perform_internal_checks (load_q)");
-            aux_check_col(gen_p_, grid_->get_generators().nb(), "perform_internal_checks (gen_p)");
-            aux_check_col(gen_v_, grid_->get_generators().nb(), "perform_internal_checks (gen_v)");
-            aux_check_col(storage_p_, grid_->get_storages().nb(), "perform_internal_checks (storage_p)");
-            aux_check_col(shunt_p_, grid_->get_shunts().nb(), "perform_internal_checks (shunt_p)");
-            aux_check_col(shunt_q_, grid_->get_shunts().nb(), "perform_internal_checks (shunt_q)");
-            aux_check_col(sgen_p_, grid_->get_static_generators().nb(), "perform_internal_checks (sgen_p)");
-            aux_check_col(sgen_q_, grid_->get_static_generators().nb(), "perform_internal_checks (sgen_q)");
+            aux_check_col(ts.load_p, grid_->get_loads().nb(), "perform_internal_checks (load_p)");
+            aux_check_col(ts.load_q, grid_->get_loads().nb(), "perform_internal_checks (load_q)");
+            aux_check_col(ts.gen_p, grid_->get_generators().nb(), "perform_internal_checks (gen_p)");
+            aux_check_col(ts.gen_v, grid_->get_generators().nb(), "perform_internal_checks (gen_v)");
+            aux_check_col(ts.storage_p, grid_->get_storages().nb(), "perform_internal_checks (storage_p)");
+            aux_check_col(ts.shunt_p, grid_->get_shunts().nb(), "perform_internal_checks (shunt_p)");
+            aux_check_col(ts.shunt_q, grid_->get_shunts().nb(), "perform_internal_checks (shunt_q)");
+            aux_check_col(ts.sgen_p, grid_->get_static_generators().nb(), "perform_internal_checks (sgen_p)");
+            aux_check_col(ts.sgen_q, grid_->get_static_generators().nb(), "perform_internal_checks (sgen_q)");
 
             // protections
             protections_.check_validity(*grid_);
@@ -559,60 +673,9 @@ class LightEnv
         }
 
     protected:
-        // consistency
-        bool has_been_checked_;
-
-        // time series
-        RealMat load_p_;
-        RealMat load_q_;
-        RealMat gen_p_;
-        RealMat gen_v_;
-        RealMat storage_p_;
-        RealMat shunt_p_;
-        RealMat shunt_q_;
-        RealMat sgen_p_;
-        RealMat sgen_q_;
-        int max_step_;  // size of the input data
-
-        // protections and thermal limits
-        Protections protections_;
-
-        // the actions the agent can take
-        std::vector<TopoAction> actions_;
-
-        // powergrid state: the initial one (restored at reset) and the live one
-        LSGrid init_grid_;
-        std::unique_ptr<LSGrid> grid_;
-        CplxVect V_;
-        int max_iter_;
-        real_type tol_;
-
-        // time related information
-        int current_step_;
-        int nb_timestep_cooldown_sub_;
-        int nb_timestep_cooldown_line_;
-        int nb_timestep_reconnection_;
-        Eigen::VectorXi time_step_sub_cooldown_;
-        Eigen::VectorXi time_step_line_cooldown_;
-
-        // the observation, and the buffers it views (grid2op order, see extract_observation)
         LightEnvObservation observation_;
-        RealVect p_or_;
-        RealVect q_or_;
-        RealVect a_or_;
-        RealVect p_ex_;
-        RealVect q_ex_;
-        RealVect a_ex_;
-        IntVect topo_vect_;
-        std::unordered_map<std::string, std::string> info_;
 
         friend class LightEnvObservation;
-
-        // timers
-        double timer_step_;
-        double timer_reset_;
-        double timer_obs_;
-        double timer_update_gridmodel_;
 };
 
 inline Eigen::Ref<const RealVect> LightEnvObservation::get_rho() const {return env_->protections_.get_rho();}

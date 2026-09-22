@@ -122,7 +122,14 @@ void bind_light_env(py::module_& m) {
 
     // env
     py::class_<LightEnv>(m, "LightEnv", "Fast implementation of a grid2op env in pure c++ with (very) limited functionality")
-        .def(py::init<const LSGrid &>())
+        .def(py::init<const LSGrid &>(), py::arg("grid"))
+        .def(py::init<const LightEnv &>(), py::arg("other"),
+             "Copy of another env: an independent env at the same point of the same episode (live grid, protections, "
+             "cooldowns, step, observation). The initial grid, the time series and the registered actions do not change "
+             "during an episode, they are shared read-only with the original.")
+        .def("__copy__", [](const LightEnv & self){return new LightEnv(self);}, py::return_value_policy::take_ownership)
+        .def("__deepcopy__", [](const LightEnv & self, py::dict){return new LightEnv(self);},
+             py::arg("memo"), py::return_value_policy::take_ownership)
         .def_property_readonly("step_time", &LightEnv::get_step_time, "Total time spent in the 'step' function, cumulated over the entire episode")
         .def_property_readonly("reset_time", &LightEnv::get_reset_time, "Total time spent in the 'reset' function, cumulated over the entire episode")
         .def_property_readonly("obs_time", &LightEnv::get_obs_time, "Total time spent to retrieve the observation, cumulated over the entire episode")

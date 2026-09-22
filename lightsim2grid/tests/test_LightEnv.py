@@ -10,6 +10,7 @@
 cooldowns. The behaviour is compared step by step with a grid2op environment running the
 same chronics on the same grid (``LightSimBackend``)."""
 
+import copy
 import unittest
 import warnings
 
@@ -441,6 +442,80 @@ class TestLightEnvActions(unittest.TestCase):
         import gc
         gc.collect()
         np.testing.assert_array_equal(p_or, expected)
+
+    # --- copy ---
+
+    def test_copy_is_independent(self):
+        act_sub = self.env.action_space({"set_bus": {"loads_id": [(0, 2)], "lines_or_id": [(2, 2)]}})
+        disco = self.env.action_space({"set_line_status": [(3, -1)]})
+        self.light_env.init_actions([self.do_nothing, act_sub, disco])
+        self.light_env.reset()
+        self.light_env.step(1)
+        obs = self.light_env.get_obs()
+
+        for cpy in (self.light_env.copy(), copy.copy(self.light_env), copy.deepcopy(self.light_env),
+                    LightEnv(self.light_env)):
+            self.assertIsInstance(cpy, LightEnv)
+            self.assertIsNot(cpy, self.light_env)
+            cobs = cpy.get_obs()
+            self.assertIsNot(cobs, obs)
+            # the same state, in its own memory
+            self.assertEqual(cobs.current_step, obs.current_step)
+            self.assertEqual(cpy.nb_actions, 3)
+            for attr in ("rho", "p_or", "a_ex", "load_p", "gen_p", "topo_vect", "time_before_cooldown_sub"):
+                np.testing.assert_array_equal(getattr(cobs, attr), getattr(obs, attr), err_msg=attr)
+                self.assertFalse(np.shares_memory(getattr(cobs, attr), getattr(obs, attr)), attr)
+
+        # the copy steps on its own: the original is untouched
+        cpy = self.light_env.copy()
+        p_or = np.array(obs.p_or)
+        topo = np.array(obs.topo_vect)
+        cooldown_line = np.array(obs.time_before_cooldown_line)
+        cpy.step(2)
+        self.assertEqual(cpy.get_obs().current_step, 2)
+        self.assertFalse(cpy.grid.get_lines_status()[3])
+        self.assertEqual(obs.current_step, 1)
+        self.assertTrue(self.light_env.grid.get_lines_status()[3])
+        np.testing.assert_array_equal(obs.p_or, p_or)
+        np.testing.assert_array_equal(obs.topo_vect, topo)
+        np.testing.assert_array_equal(obs.time_before_cooldown_line, cooldown_line)
+
+        # and playing the same step on both gives the same result
+        cpy = self.light_env.copy()
+        self.light_env.step(0)
+        cpy.step(0)
+        np.testing.assert_array_equal(cpy.get_obs().p_or, obs.p_or)
+        np.testing.assert_array_equal(cpy.get_obs().rho, obs.rho)
+
+    def test_copy_outlives_original(self):
+        self.light_env.reset()
+        cpy = self.light_env.copy()
+        expected = np.array(self.light_env.get_obs().p_or)
+        del self.light_env
+        import gc
+        gc.collect()
+        np.testing.assert_array_equal(cpy.get_obs().p_or, expected)
+        obs, reward, done, truncated, info = cpy.step(0)
+        self.assertFalse(done)
+        self.assertEqual(obs.current_step, 1)
+        cpy.reset()  # the shared initial grid and time series are still there
+
+    def test_copy_time_series_not_shared_after_assign(self):
+        self.light_env.reset()
+        cpy = self.light_env.copy()
+        nb_ts = 3
+        data = self.env.chronics_handler.real_data.data
+        cpy.assign_time_series(*[np.ascontiguousarray(arr[:nb_ts]) for arr in (
+            data.load_p.astype(float), data.load_q.astype(float), data.prod_p.astype(float),
+            (data.prod_v / self.env.backend.prod_pu_to_kv).astype(float),
+            np.full((data.load_p.shape[0], self.env.n_storage), np.nan),
+            np.full((data.load_p.shape[0], self.env.n_shunt), np.nan),
+            np.full((data.load_p.shape[0], self.env.n_shunt), np.nan),
+            np.full((data.load_p.shape[0], 0), np.nan),
+            np.full((data.load_p.shape[0], 0), np.nan))])
+        cpy.reset()
+        self.assertEqual(cpy.max_step, nb_ts)
+        self.assertEqual(self.light_env.max_step, data.load_p.shape[0])
 
     # --- reward and end of episode ---
 
