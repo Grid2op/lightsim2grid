@@ -555,10 +555,15 @@ class TestScenarioSweepTopologyPhysical(unittest.TestCase):
         if "min_q_mvar" in net.ext_grid:
             net.ext_grid["min_q_mvar"] = -5.
             net.ext_grid["max_q_mvar"] = 5.
+        # the loader expects every busbar in the network (n_sub x n_busbar buses, busbar 2
+        # of substation k being bus k + n_sub), as grid2op's own backend builds it
+        import pandapower as pp
+        self.n_sub = len(net.bus)
+        for sub_id in range(self.n_sub):
+            pp.create_bus(net, vn_kv=net.bus["vn_kv"].iloc[sub_id], index=sub_id + self.n_sub)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.grid = init_from_pandapower(net, n_sub=len(net.bus), n_busbar_per_sub=2)
-        self.n_sub = len(net.bus)
+            self.grid = init_from_pandapower(net, n_sub=self.n_sub, n_busbar_per_sub=2)
         self.Vinit = np.full(self.grid.total_bus(), self.grid.get_init_vm_pu() + 0j)
         self.assertGreater(self.grid.ac_pf(1.0 * self.Vinit, 30, 1e-10).shape[0], 0)
         gens = list(self.grid.get_generators())
@@ -570,8 +575,8 @@ class TestScenarioSweepTopologyPhysical(unittest.TestCase):
         line_or_bus = np.asarray(self.grid.get_lines().get_bus_id_side_1(), dtype=int)
         self.line_id = int(np.nonzero(line_or_bus == self.gen_bus)[0][0])
 
-    def _reference_bus_q(self, action):
-        grid = copy.deepcopy(self.grid)
+    def _reference_bus_q(self, base_grid, action):
+        grid = copy.deepcopy(base_grid)
         action.check_validity(grid)
         action.apply_to_gridmodel(grid)
         V = grid.ac_pf(1.0 * self.Vinit, 30, 1e-10)
@@ -581,7 +586,8 @@ class TestScenarioSweepTopologyPhysical(unittest.TestCase):
             if not gen.connected or not gen.voltage_regulator_on:
                 continue
             per_bus[gen.bus_id] = per_bus.get(gen.bus_id, 0.) + gen.res_q_mvar
-        return per_bus
+        slack_buses = {gen.bus_id for gen in grid.get_generators() if gen.connected and gen.is_slack}
+        return per_bus, slack_buses
 
     def _check_rows(self, grid, actions):
         sweep = ScenarioSweepCPP(grid)
@@ -593,7 +599,7 @@ class TestScenarioSweepTopologyPhysical(unittest.TestCase):
         self.assertEqual(sweep.get_status(), 1)
         for row, action in enumerate(actions):
             with self.subTest(row=row):
-                expected = self._reference_bus_q(action)
+                expected, slack_buses = self._reference_bus_q(grid, action)
                 viols = [v for v in sweep.get_physical_violations()[row]
                          if v.violation_type in (LimitViolationType.LOW_Q, LimitViolationType.HIGH_Q)]
                 self.assertGreater(len(viols), 0)
@@ -602,8 +608,11 @@ class TestScenarioSweepTopologyPhysical(unittest.TestCase):
                     self.assertIn(v.element_id, expected, f"bus {v.element_id} holds no regulating generator")
                     self.assertAlmostEqual(v.value, expected[v.element_id], places=4)
                     reported.add(v.element_id)
-                # every bus asking more than its machines own is reported
+                # every bus asking more than its machines own is reported (but the slack
+                # bus: the reactive check does not cover it, plain row or not)
                 for bus, q in expected.items():
+                    if bus in slack_buses:
+                        continue
                     if abs(q) > 5. + 1e-6:
                         self.assertIn(bus, reported, f"bus {bus} asks {q:.2f} MVAr and is not reported")
         return sweep
