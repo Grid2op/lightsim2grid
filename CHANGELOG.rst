@@ -207,6 +207,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   and ``info["is_illegal"]``; ``reset`` restores the initial topology.
 - [FIXED] light environment: the protections looped for ever once a line had been disconnected
   for overflow, and never reset the overflow counter of a line back in its limits.
+- [FIXED] light environment: the reward and ``info["survival_time"]`` are the fraction of the
+  episode survived; they were an integer division (by ``max_iter`` for the reward).
 - [ADDED] ``compute_physical_violations`` also reports a generator the distributed slack
   pushed below ``min_p_mw`` or above ``max_p_mw``. The slack is solved in the Jacobian by
   participation factors that ignore limits, which is what OpenLoadFlow's

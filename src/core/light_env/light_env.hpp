@@ -197,7 +197,7 @@ class LightEnv
             if (current_step_ >= max_step_){
                 info_["success"] = "true";
                 info_["failure"] = "false";
-                info_["survival_time"] = std::to_string(current_step_ / max_step_);
+                info_["survival_time"] = std::to_string(survival_ratio());
                 obs_ = RealVect::Zero(obs_.size());
                 has_been_checked_ = false;
                 timer_step_ += timer_step.duration();
@@ -230,7 +230,7 @@ class LightEnv
                 // divergence
                 info_["success"] = "false";
                 info_["failure"] = "true";
-                info_["survival_time"] = std::to_string(current_step_ / max_step_);
+                info_["survival_time"] = std::to_string(survival_ratio());
                 obs_ = RealVect::Zero(obs_.size());
                 has_been_checked_ = false;
                 timer_step_ += timer_step.duration();
@@ -244,7 +244,7 @@ class LightEnv
             update_cooldowns(action_applied, subs_impacted, lines_impacted);
 
             timer_step_ += timer_step.duration();
-            return StepReturnedType(obs_, current_step_ / max_iter_, false, false, info_);
+            return StepReturnedType(obs_, survival_ratio(), false, false, info_);
         }
 
     protected:
@@ -324,6 +324,13 @@ class LightEnv
                                        sgen_q_.row(step_id)
                                        );
             inj_action.apply_to_gridmodel(*grid_);
+        }
+
+        // fraction of the episode survived, in [0, 1]: the reward of a step and the
+        // "survival_time" of the info at the end of an episode
+        double survival_ratio() const {
+            if(max_step_ <= 0) return 1.;
+            return static_cast<double>(current_step_) / static_cast<double>(max_step_);
         }
 
         void extract_observation(){

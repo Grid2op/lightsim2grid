@@ -54,18 +54,19 @@ class TestLightEnvActions(unittest.TestCase):
     def tearDown(self) -> None:
         self.env.close()
 
-    def make_light_env(self, thermal_limit_ka=None, max_overflow=99) -> LightEnv:
-        """A light env on the grid of the grid2op env, replaying its chronics. By default the
-        protections never trip."""
+    def make_light_env(self, thermal_limit_ka=None, max_overflow=99, nb_ts=None) -> LightEnv:
+        """A light env on the grid of the grid2op env, replaying its chronics (the first
+        `nb_ts` steps only if given). By default the protections never trip."""
         env = self.env
         light_env = LightEnv(env.backend._grid)
         data = env.chronics_handler.real_data.data
-        nb_ts = data.load_p.shape[0]
+        if nb_ts is None:
+            nb_ts = data.load_p.shape[0]
         light_env.assign_time_series(
-            data.load_p.astype(float),
-            data.load_q.astype(float),
-            data.prod_p.astype(float),
-            (data.prod_v / env.backend.prod_pu_to_kv).astype(float),  # the light env wants pu
+            data.load_p[:nb_ts].astype(float),
+            data.load_q[:nb_ts].astype(float),
+            data.prod_p[:nb_ts].astype(float),
+            (data.prod_v[:nb_ts] / env.backend.prod_pu_to_kv).astype(float),  # the light env wants pu
             np.full((nb_ts, env.n_storage), np.nan),
             np.full((nb_ts, env.n_shunt), np.nan),
             np.full((nb_ts, env.n_shunt), np.nan),
@@ -384,6 +385,36 @@ class TestLightEnvActions(unittest.TestCase):
         self.assertEqual(self.light_env.nb_actions, 3)
         obs, info = self.step_both(act_sub, 1)
         self.assertFalse(info["is_illegal"])
+
+    # --- reward and end of episode ---
+
+    def test_reward_is_fraction_survived(self):
+        nb_ts = 4
+        light_env = self.make_light_env(nb_ts=nb_ts)
+        light_env.reset()
+        self.assertEqual(light_env.max_step, nb_ts)
+        for step in range(1, nb_ts):
+            obs, reward, done, truncated, info = light_env.step(0)
+            self.assertFalse(done)
+            self.assertAlmostEqual(reward, step / nb_ts)
+        obs, reward, done, truncated, info = light_env.step(0)
+        self.assertTrue(done)
+        self.assertFalse(truncated)
+        self.assertEqual(reward, 1.)
+        self.assertEqual(info["success"], "true")
+        self.assertAlmostEqual(float(info["survival_time"]), 1.)
+
+    def test_survival_time_on_failure(self):
+        nb_ts = 4
+        light_env = self.make_light_env(nb_ts=nb_ts)
+        # disconnecting every line leaves no grid: the powerflow of the first step fails
+        light_env.init_actions([self.env.action_space({"set_line_status": [(l_id, -1) for l_id in range(self.env.n_line)]})])
+        light_env.reset()
+        obs, reward, done, truncated, info = light_env.step(0)
+        self.assertTrue(done)
+        self.assertEqual(reward, 0.)
+        self.assertEqual(info["failure"], "true")
+        self.assertAlmostEqual(float(info["survival_time"]), 1 / nb_ts)
 
 
 if __name__ == "__main__":
