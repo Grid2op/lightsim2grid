@@ -5694,6 +5694,39 @@ const std::string DocLSGrid::get_init_vm_pu = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::set_keep_vinit_at_group_controlled_buses = R"mydelimiter(
+    Choose how the starting voltage of a powerflow is seeded at the buses a voltage-control
+    group regulates: a bus whose voltage is regulated from elsewhere (a generator behind a
+    transformer, for example), by a static var compensator, or by several controllers at
+    least one of which is remote.
+
+    With ``False`` (the default), their magnitude is set to the set-point before the solve,
+    like any regulated bus.
+
+    With ``True``, they keep the magnitude of the voltage passed to :func:`ac_pf` (or of the
+    flat start). Their magnitude is an unknown of the Newton-Raphson, brought to the set-point
+    by the voltage-control equations, so the solution does not change -- only the path to it.
+    Combined with the ``MaxVoltageChange`` step damping, this lets the move towards the
+    set-point be damped with the rest of the step. When a small controller regulates a stiff
+    bus whose neighbours start far from the set-point, setting that bus to its target up front
+    can ask for a huge first step and slow the solve down considerably.
+
+    Buses whose magnitude is fixed (ordinary PV buses) are always set to their set-point.
+    The option is copied with the grid, so the batch algorithms built from it inherit it. It
+    is not saved by :func:`get_state` or the binary format.
+
+    Parameters
+    ----------
+    keep: ``bool``
+        ``True`` to keep the starting magnitude at those buses.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_keep_vinit_at_group_controlled_buses = R"mydelimiter(
+    Get the value set by :func:`set_keep_vinit_at_group_controlled_buses` (``False`` by default).
+
+)mydelimiter";
+
 const std::string DocLSGrid::set_sn_mva = R"mydelimiter(
     Set the base power (MVA) of the grid's per-unit system: ``Sbus`` is expressed in this unit
     internally, every ``MW`` / ``MVAr`` result is the per-unit value multiplied back by it, and

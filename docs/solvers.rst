@@ -265,6 +265,17 @@ The per-policy parameters (``max_dVa``, ``max_dVm``, ``ls_c``, ``ls_rho``, ``ls_
 ``iw_mu_min``, ``iw_mu_max``, ``refactor_every_n``) are only read by their corresponding
 policy; changing them has no effect while a different policy is active.
 
+Before the first iteration, every regulated bus has its voltage magnitude set to its set-point.
+Step damping cannot soften that move. For the buses a voltage-control group regulates (a bus
+regulated from elsewhere, by an SVC, or by several controllers at least one of which is remote)
+the magnitude is itself an unknown of the Newton-Raphson, so the move is optional: with
+``LSGrid.set_keep_vinit_at_group_controlled_buses(True)`` they keep their starting magnitude and
+the voltage-control equations bring them to the set-point, damped along with the rest of the step
+under ``MaxVoltageChange``. The solution is the same. It helps when a small controller regulates a
+stiff bus: setting that bus to its target up front can make every damped step tiny. The batch
+algorithms inherit the option from the grid they are built from, and have a
+``keep_vinit_at_group_controlled_buses`` property of their own.
+
 Setting the policy on a raw solver object (see :ref:`use-solver`) is direct:
 
 .. code-block:: python

@@ -207,6 +207,24 @@ class ContingencyAnalysis(object):
         self.computer.init_from_n_powerflow = bool(val)
 
     @property
+    def keep_vinit_at_group_controlled_buses(self):
+        """Whether the buses a voltage-control group regulates (regulated from elsewhere, by
+        an SVC, or by several controllers at least one of which is remote) keep the magnitude
+        of the starting voltage instead of being set to their set-point before each solve.
+        The solution is the same; with ``MaxVoltageChange`` damping it can be reached in far
+        fewer iterations. Defaults to the grid's own setting (see
+        :func:`lightsim2grid.lightsim2grid_cpp.LSGrid.set_keep_vinit_at_group_controlled_buses`),
+        ``False`` unless set there.
+        """
+        return self.computer.keep_vinit_at_group_controlled_buses
+
+    @keep_vinit_at_group_controlled_buses.setter
+    def keep_vinit_at_group_controlled_buses(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `keep_vinit_at_group_controlled_buses` attribute must be a boolean.")
+        self.computer.keep_vinit_at_group_controlled_buses = bool(val)
+
+    @property
     def handle_disconnected_grid(self):
         """Whether a contingency that splits the grid into several connected components is
         simulated on its largest component instead of being skipped. Default: ``False``,

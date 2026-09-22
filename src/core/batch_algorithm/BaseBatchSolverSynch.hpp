@@ -75,6 +75,20 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _init_from_n_powerflow = do_it;
         }
 
+        // The batch's own copy of LSGrid::set_keep_vinit_at_group_controlled_buses,
+        // inherited from the grid it was built from: whether the buses a voltage-control
+        // group regulates keep the starting magnitude instead of being set to their
+        // set-point, in the "n" solve and in every row.
+        bool get_keep_vinit_at_group_controlled_buses() const noexcept {
+            return _grid_model.get_keep_vinit_at_group_controlled_buses();
+        }
+        void set_keep_vinit_at_group_controlled_buses(bool keep) {
+            if(keep == get_keep_vinit_at_group_controlled_buses()) return;
+            // L2: the "n" solve starts from it, and a kept base case was built from it
+            clear_batch_inputs();
+            _grid_model.set_keep_vinit_at_group_controlled_buses(keep);
+        }
+
         // Whether the elements of this batch may be solved concurrently. This is a
         // property of the algorithm, not a user setting: it is false exactly when one
         // element is initialized with the result of the element before it, because
@@ -600,6 +614,11 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 res = _grid_model.build_dc_solver_input(Vinit, dc_cache_, _algo_controler);
                 nb_buses_solver_ = static_cast<int>(dc_cache_.mat.cols());
             }
+            // the buses set_keep_vinit_at_group_controlled_buses may hold, in this
+            // labelling: the same list the build above held, whatever the option says
+            // now (it may be switched without rebuilding this)
+            _group_controlled_solver_buses_ = active_layout().voltage_control.group_controlled_solver_buses(
+                    active_layout().id_me_to_solver);
             // L1 is now built: every later compute() may map its own starting voltage
             // onto this labelling instead of reading the grid again (see
             // BaseBatchSweep::_vinit_on_grid_cache).
@@ -671,7 +690,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             // algorithm, which this solve must run with.
             _algo_controler.tell_all_changed();
             _algo.tell_solver_control(_algo_controler);
-            _grid_model.get_generators().set_vm(Vinit_solver, active_layout().id_me_to_solver);
+            seed_vm_keeping(Vinit_solver, _vm_held_buses(), [this](Eigen::Ref<CplxVect> & V){
+                _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver);
+            });
             CplxVect Vinit_solver2 = Vinit_solver;
             bool conv;
             // the "n" powerflow warm-up solve always needs the full complex V: its
@@ -790,7 +811,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             if(_dc_gen_v_.rows() == 0) return _dc_base_vm_grid_;
             CplxVect tmp = _dc_base_vm_solver_.cast<cplx_type>();
             const RealVect row = _dc_gen_v_.row(i);
-            _grid_model.get_generators().set_vm(tmp, active_layout().id_me_to_solver, row);
+            seed_vm_keeping(tmp, _vm_held_buses(), [this, &row](CplxVect & V){
+                _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver, row);
+            });
             scratch = _dc_base_vm_grid_;
             scratch(active_layout().id_solver_to_me.as_eigen()) = tmp.array().abs();
             return scratch;
@@ -822,6 +845,14 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // never reused, so there is nothing to remember about them.
         bool _grid_cache_valid_ = false;
         bool _batch_inputs_valid_ = false;
+
+        // see prepare_solver_input_base and set_keep_vinit_at_group_controlled_buses
+        std::vector<int> _group_controlled_solver_buses_;
+        /// the solver buses a seeding step must leave alone: empty unless opted in
+        const std::vector<int> & _vm_held_buses() const noexcept {
+            static const std::vector<int> none;
+            return get_keep_vinit_at_group_controlled_buses() ? _group_controlled_solver_buses_ : none;
+        }
         // the row count the kept batch inputs were built for: a batch of a different
         // size has different per-row state to prepare, so compute() drops L2 on a
         // change. _nb_steps_none (never a legal row count) means "nothing prepared".

@@ -1196,9 +1196,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         CplxVect _vinit_on_grid_cache(const Eigen::Ref<const CplxVect> & Vinit) const {
             CplxVect res = Vinit(active_layout().id_solver_to_me.as_eigen());
             const SolverBusIdVect & me_to_solver = active_layout().id_me_to_solver;
-            _grid_model.get_generators().set_vm(res, me_to_solver);
-            _grid_model.get_dclines().set_vm(res, me_to_solver);
-            _grid_model.get_svcs().set_vm(res, me_to_solver);
+            seed_vm_keeping(res, _vm_held_buses(), [this, &me_to_solver](CplxVect & V){
+                _grid_model.get_generators().set_vm(V, me_to_solver);
+                _grid_model.get_dclines().set_vm(V, me_to_solver);
+                _grid_model.get_svcs().set_vm(V, me_to_solver);
+            });
             return res;
         }
 
@@ -1627,7 +1629,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // Eigen::Ref<const RealVect> parameter without a copy (as _step_sbus)
             const Eigen::Map<const RealVect> target_vm_pu_row(sbus_policy_.gen_v.row(static_cast<Eigen::Index>(i)).data(),
                                                               sbus_policy_.gen_v.cols());
-            _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver, target_vm_pu_row);
+            seed_vm_keeping(V, _vm_held_buses(), [this, &target_vm_pu_row](CplxVect & V_seed){
+                _grid_model.get_generators().set_vm(V_seed, active_layout().id_me_to_solver, target_vm_pu_row);
+            });
         }
 
         // ----- modify_gen_v on a voltage-control group ------------------------------

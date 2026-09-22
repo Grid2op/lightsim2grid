@@ -146,6 +146,7 @@ void bind_batch_shared(py::class_<T> & cls)
                       "It is dropped, and rebuilt on the next compute(), whenever something it is "
                       "made of changes: clear(), change_algorithm(), algo_config, any contingency "
                       "registration, handle_disconnected_grid, nb_thread, init_from_n_powerflow, "
+                      "keep_vinit_at_group_controlled_buses, "
                       "or a different number of simulations. Every such modifier says so itself -- "
                       "internally each names one of three nested cache levels (the grid, this "
                       "batch's inputs, the results) and dropping one drops the levels below it. "
@@ -166,6 +167,18 @@ void bind_batch_shared(py::class_<T> & cls)
              "multi-threaded path, instead of building and analyzing one per thread. "
              "Always False for a single-threaded batch: it has no workers (the member "
              "algorithm runs the rows itself, and keeping that is base_case_was_reused).")
+
+        // starting point at the buses a voltage-control group regulates
+        .def_property("keep_vinit_at_group_controlled_buses",
+                      [](const T & self){ return self.get_keep_vinit_at_group_controlled_buses(); },
+                      [](T & self, bool val){ self.set_keep_vinit_at_group_controlled_buses(val); },
+                      "Whether the buses a voltage-control group regulates (a bus regulated from "
+                      "elsewhere, by an SVC, or by several controllers at least one of which is "
+                      "remote) keep the magnitude of the starting voltage, in the 'n' solve and in "
+                      "every row, instead of being set to their set-point first.\n\n"
+                      "Defaults to the value of the grid this object was built from (see "
+                      ":func:`LSGrid.set_keep_vinit_at_group_controlled_buses`, ``False`` unless "
+                      "set there). Changing it drops the kept base case.")
 
         // reverse-mode differentiation (see BatchAdjoint.hpp)
         .def_property("keep_jacobian",

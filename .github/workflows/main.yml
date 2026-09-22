@@ -771,18 +771,25 @@ jobs:
           python -m pip install -r requirements_compile_ci.txt
           python -m pip install -v . --no-build-isolation
 
-      - name: Build plugin via get_cmake_dir()
+      - name: Build plugins via get_cmake_dir()
         shell: bash
+        # every plugin example, so that one falling behind the core fails here
         run: |
           mkdir -p _tmp_cmake_dir
           LS2G_CMAKE=$(cd _tmp_cmake_dir && python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
-          cmake -S examples/external_algorithm -B examples/external_algorithm/build \
-                -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE" \
-                -DCMAKE_BUILD_TYPE=Release
-          cmake --build examples/external_algorithm/build --config Release
+          for ex in external_algorithm lm_algorithm dist_slack_algorithm; do
+            cmake -S examples/$ex -B examples/$ex/build \
+                  -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE" \
+                  -DCMAKE_BUILD_TYPE=Release
+            cmake --build examples/$ex/build --config Release
+          done
 
-      - name: Run plugin test
-        run: python examples/external_algorithm/test_plugin.py
+      - name: Run plugin tests
+        shell: bash
+        run: |
+          for ex in external_algorithm lm_algorithm dist_slack_algorithm; do
+            python examples/$ex/test_plugin.py
+          done
 
       - name: Run plugin registration unittests (against the installed package)
         shell: bash
