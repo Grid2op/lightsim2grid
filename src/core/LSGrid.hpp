@@ -144,6 +144,7 @@ class LS2G_API LSGrid final
           algo_controler_(),
           compute_results_(true),
           init_vm_pu_(1.04),
+          keep_vinit_group_controlled_(false),
           sn_mva_(1.0),
           max_nb_bus_per_sub_(2){
             _algo.change_algorithm(AlgorithmType::NR_SparseLU);
@@ -334,6 +335,31 @@ class LS2G_API LSGrid final
             init_vm_pu_ = init_vm_pu;
         }
         [[nodiscard]] real_type get_init_vm_pu() const {return init_vm_pu_;}
+
+        /**
+         * How the starting voltage of an AC or DC powerflow is seeded at the buses a
+         * voltage-control GROUP regulates (`VoltageControlPlan::group_controlled_buses`:
+         * a bus regulated from elsewhere, by an SVC, or by several controllers at least
+         * one of which is remote).
+         *
+         * false (the default): their magnitude is set to the group's set-point before
+         * the solve, like any regulated bus.
+         *
+         * true: they keep the magnitude of the voltage the caller passed. Their |V| is
+         * an unknown of the Newton-Raphson, brought to the set-point by the group's own
+         * voltage row, so this only moves the starting point -- but it lets the step
+         * damping (`ScalingPolicyType::MaxVoltageChange`) scale the move towards the
+         * set-point together with the rest of the step. Setting a stiff bus to a target
+         * its neighbours are far from can otherwise ask for a huge first step at the
+         * controllers and slow the solve down considerably. Buses whose magnitude is
+         * FIXED (the ordinary PV buses) are always set to their target: nothing else
+         * would ever move them.
+         *
+         * Copied with the grid, so a batch algorithm built from this grid inherits it;
+         * not part of `get_state` / the binary format.
+         */
+        void set_keep_vinit_at_group_controlled_buses(bool keep) noexcept {keep_vinit_group_controlled_ = keep;}
+        [[nodiscard]] bool get_keep_vinit_at_group_controlled_buses() const noexcept {return keep_vinit_group_controlled_;}
         void set_sn_mva(real_type sn_mva) {
             check_positive_finite(sn_mva, "sn_mva");
             if(sn_mva == sn_mva_) return;
@@ -2732,6 +2758,7 @@ class LS2G_API LSGrid final
         DualAlgoControl algo_controler_;  // independent change tracking for the AC and DC solver families
         bool compute_results_;
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
+        bool keep_vinit_group_controlled_;  // see set_keep_vinit_at_group_controlled_buses
         real_type sn_mva_;
 
         // powersystem representation

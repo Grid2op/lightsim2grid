@@ -94,6 +94,10 @@ void bind_gridmodel(py::module_& m) {
         .def("init_bus_status", &LSGrid::init_bus_status, DocLSGrid::_internal_do_not_use.c_str())
         .def("set_init_vm_pu", &LSGrid::set_init_vm_pu, DocLSGrid::set_init_vm_pu.c_str())
         .def("get_init_vm_pu", &LSGrid::get_init_vm_pu, DocLSGrid::get_init_vm_pu.c_str())
+        .def("set_keep_vinit_at_group_controlled_buses", &LSGrid::set_keep_vinit_at_group_controlled_buses,
+             py::arg("keep"), DocLSGrid::set_keep_vinit_at_group_controlled_buses.c_str())
+        .def("get_keep_vinit_at_group_controlled_buses", &LSGrid::get_keep_vinit_at_group_controlled_buses,
+             DocLSGrid::get_keep_vinit_at_group_controlled_buses.c_str())
         .def("set_sn_mva", &LSGrid::set_sn_mva, DocLSGrid::set_sn_mva.c_str())
         .def("get_sn_mva", &LSGrid::get_sn_mva, DocLSGrid::get_sn_mva.c_str())
 

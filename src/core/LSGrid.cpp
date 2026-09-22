@@ -26,6 +26,7 @@ namespace ls2g {
 LSGrid::LSGrid(const LSGrid & other)
 {
     init_vm_pu_ = other.init_vm_pu_;
+    keep_vinit_group_controlled_ = other.keep_vinit_group_controlled_;
     sn_mva_ = other.sn_mva_;
     compute_results_ = other.compute_results_;
     ac_cache_.allow_reuse = other.ac_cache_.allow_reuse;
@@ -1387,11 +1388,17 @@ CplxVect LSGrid::_build_into_cache(
         // NR-initialization heuristic only: snaps regulated buses with no droop/slope
         // to their own target voltage magnitude. Skipped by check_solution, which must
         // evaluate the caller-supplied voltage as given (see the `init_pv_vm_targets`
-        // doc on `pre_process_solver`).
-        generators_.set_vm(V, cache.id_me_to_solver);
-        hvdc_lines_.set_vm(V, cache.id_me_to_solver);
-        svcs_.set_vm(V, cache.id_me_to_solver);  // VOLTAGE-mode SVCs (init quality at the regulated bus)
-        storages_.set_vm(V, cache.id_me_to_solver);  // voltage-regulating storage units (local PV)
+        // doc on `pre_process_solver`). Opt-in: the buses a control group regulates
+        // keep the caller's magnitude (see set_keep_vinit_at_group_controlled_buses).
+        const std::vector<int> held = keep_vinit_group_controlled_
+                ? cache.voltage_control.group_controlled_solver_buses(cache.id_me_to_solver)
+                : std::vector<int>();
+        seed_vm_keeping(V, held, [this, &cache](CplxVect & V_seed){
+            generators_.set_vm(V_seed, cache.id_me_to_solver);
+            hvdc_lines_.set_vm(V_seed, cache.id_me_to_solver);
+            svcs_.set_vm(V_seed, cache.id_me_to_solver);  // VOLTAGE-mode SVCs (init quality at the regulated bus)
+            storages_.set_vm(V_seed, cache.id_me_to_solver);  // voltage-regulating storage units (local PV)
+        });
     }
 
     if(redo_all ||

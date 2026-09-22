@@ -578,6 +578,8 @@ struct LS2G_API DocLSGrid
     static const std::string reactivate_bus;
     static const std::string set_init_vm_pu;
     static const std::string get_init_vm_pu;
+    static const std::string set_keep_vinit_at_group_controlled_buses;
+    static const std::string get_keep_vinit_at_group_controlled_buses;
     static const std::string set_sn_mva;
     static const std::string get_sn_mva;
     static const std::string set_n_sub;

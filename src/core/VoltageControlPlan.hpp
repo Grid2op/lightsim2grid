@@ -255,6 +255,15 @@ class LS2G_API VoltageControlPlan
             return group_reg_buses_;
         }
         /**
+         * Layer 1 expressed in one solver labelling: the SOLVER ids of
+         * `group_controlled_buses()`, skipping the ones this labelling leaves out.
+         * Unlike a PV bus, whose magnitude is fixed, each of these keeps a Vm unknown
+         * that a group's voltage row brings to its set-point -- so writing that
+         * set-point into the starting voltage is a choice of starting point, not part
+         * of the system (see LSGrid::set_keep_vinit_at_group_controlled_buses).
+         */
+        [[nodiscard]] std::vector<int> group_controlled_solver_buses(const SolverBusIdVect & id_me_to_solver) const;
+        /**
          * Solver-bus ids of the slack buses that need a free Vm unknown and a Q
          * equation (added by the Base block of the NR system), i.e. every slack bus
          * whose magnitude is NOT pinned by a local voltage-regulating generator.
@@ -310,6 +319,25 @@ class LS2G_API VoltageControlPlan
         // cache (SolverBusLayout::bus_pv / bus_pq), where everything downstream
         // already reads it. This class owns the rule, not a second copy of the answer.
 };
+
+/**
+ * Runs `seed` -- whatever writes voltage-magnitude set-points into the starting
+ * voltage `V`, typically the containers' `set_vm` -- then gives the `held` solver
+ * buses back the value they had before it ran. With `held` empty this is exactly
+ * `seed(V)`, which is what keeps the default path free of any extra work.
+ */
+template<class Vect, class Seed>
+void seed_vm_keeping(Vect & V, const std::vector<int> & held, Seed && seed)
+{
+    if(held.empty()){
+        seed(V);
+        return;
+    }
+    CplxVect kept(static_cast<Eigen::Index>(held.size()));
+    for(std::size_t k = 0; k < held.size(); ++k) kept(static_cast<Eigen::Index>(k)) = V(held[k]);
+    seed(V);
+    for(std::size_t k = 0; k < held.size(); ++k) V(held[k]) = kept(static_cast<Eigen::Index>(k));
+}
 
 } // namespace ls2g
 

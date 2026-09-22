@@ -186,6 +186,20 @@ void VoltageControlPlan::build_solver_side(const GeneratorContainer & generators
     build_controllers(generators, svcs, hvdc_lines, id_me_to_solver, id_solver_to_me, bus_pq);
 }
 
+std::vector<int> VoltageControlPlan::group_controlled_solver_buses(const SolverBusIdVect & id_me_to_solver) const
+{
+    std::vector<int> res;
+    res.reserve(group_reg_buses_.size());
+    const int nb_bus_me = static_cast<int>(id_me_to_solver.size());
+    for(const int bus_me : group_reg_buses_){
+        if(bus_me < 0 || bus_me >= nb_bus_me) continue;
+        const int bus_solver = id_me_to_solver[bus_me].cast_int();
+        if(bus_solver < 0) continue;  // not solved in this labelling (deactivated, other component)
+        res.push_back(bus_solver);
+    }
+    return res;
+}
+
 void VoltageControlPlan::build_free_vm_slack(const GeneratorContainer & generators,
                                              const StorageContainer & storages,
                                              const SolverBusIdVect & id_me_to_solver,
