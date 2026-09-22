@@ -516,6 +516,8 @@ struct LS2G_API DocLSGrid
     static const std::string set_shunt_names;
     static const std::string set_svc_names;
     static const std::string change_ratio_trafo;
+    static const std::string update_powerlines_parameters;
+    static const std::string update_trafos_parameters;
 
     // retrieve the results
     static const std::string get_J_python;

@@ -87,11 +87,27 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()) {
         auto timer_pre = CustTimer();
+#ifndef NDEBUG
+        const Eigen::Index nnz_before = dcYbus_noslack_.nonZeros();
+#endif
         fill_dcYbus_noslack(sizeYbus_with_slack_, Bbus);
         timer_pre_proc_ += timer_pre.duration();
-        need_factorize_ = true;  // force a call to "factor" the linear solver as the lhs (Bbus) changed
-        // std::cout << "need_factorize_ 2\n"; 
-        // no need to refactor if ybus did not change
+        // The lhs (Bbus) changed. If only the VALUES of its coefficients did (eg the impedance
+        // of a line: no pattern flag, no droop change) the symbolic analysis of the linear
+        // solver is still valid and a numeric refactorization is enough (see below). Otherwise
+        // (or if the solver was not factorized at all yet) it is analyzed again. A change of
+        // the pattern has to be flagged by whoever makes it (ybus_change_sparsity_pattern,
+        // has_ybus_some_coeffs_zero, ...), see the debug check.
+        if(need_factorize_ || droop_changed){
+            need_factorize_ = true;  // force a call to "factor" the linear solver
+            // std::cout << "need_factorize_ 2\n";
+        } else {
+#ifndef NDEBUG
+            assert(dcYbus_noslack_.nonZeros() == nnz_before &&
+                   "Bbus changed its sparsity pattern without being flagged (tell_ybus_change_sparsity_pattern)");
+#endif
+            need_refactor_ = true;
+        }
     }
     
     #ifdef __COUT_TIMES

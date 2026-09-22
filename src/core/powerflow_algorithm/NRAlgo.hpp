@@ -9,6 +9,7 @@
 #ifndef NR_ALGO_H
 #define NR_ALGO_H
 
+#include <cassert>
 #include <cmath>     // std::isfinite (policy parameter validation)
 #include <sstream>
 #include <stdexcept>
@@ -471,6 +472,10 @@ private:
     NRSystem     _system;
 
     bool need_factorize_;
+    // number of non zero coefficients of the Ybus the sparsity of J was last built for. Only
+    // read by a debug (no NDEBUG) check in solve. The member itself is not conditional on NDEBUG,
+    // so the layout of the class is the same in every translation unit
+    Eigen::Index ybus_nnz_ = -1;
 
     // Runtime policy enums
     std::unique_ptr<ScalingPolicy<NRSystem> >  scaling_policy_;
