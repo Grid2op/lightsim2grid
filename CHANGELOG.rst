@@ -204,6 +204,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       contingency) and a cartesian one ("every registered contingency x every
       injection profile").
 
+
+[1.1.1] 2026-xx-yy
+--------------------
+
+
 [1.1.0] 2026-09-21
 --------------------
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 4 -> 10: bus connectivity is no longer serialized (it is
