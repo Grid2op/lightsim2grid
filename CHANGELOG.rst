@@ -207,6 +207,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [ADDED] ``LSGrid.set_keep_vinit_at_group_controlled_buses`` (and the batch algorithms'
+  ``keep_vinit_at_group_controlled_buses``), off by default: a bus regulated remotely or by an
+  SVC keeps its starting magnitude instead of its set-point, so step damping can reach it gradually.
 
 
 [1.1.0] 2026-09-21
