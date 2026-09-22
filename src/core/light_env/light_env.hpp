@@ -16,6 +16,7 @@
 #include "inj_action.hpp"
 #include "protections.hpp"
 
+#include <type_traits>
 #include <unordered_map>
 #include <memory>
 #include <sstream>
@@ -88,6 +89,7 @@ class DeepCopyPtr
 
         T & operator*() const {return *ptr_;}
         T * operator->() const {return ptr_.get();}
+        explicit operator bool() const noexcept {return static_cast<bool>(ptr_);}
         void reset(T * ptr) {ptr_.reset(ptr);}
 
     private:
@@ -188,6 +190,13 @@ class LightEnvState
         double timer_update_gridmodel_;
 };
 
+// what makes the moves of LightEnv noexcept (LSGrid itself is not nothrow-movable, it is
+// held through DeepCopyPtr): a member added to LightEnvState must keep these true
+static_assert(std::is_nothrow_move_constructible<LightEnvState>::value,
+              "LightEnvState should be nothrow move constructible");
+static_assert(std::is_nothrow_move_assignable<LightEnvState>::value,
+              "LightEnvState should be nothrow move assignable");
+
 /**
  * A (very) limited grid2op environment in pure c++.
  *
@@ -203,9 +212,14 @@ class LightEnvState
  * reconnected for `nb_timestep_reconnection` steps. An action that touches an element still
  * in cooldown is illegal: it is replaced by "do nothing" and `info["is_illegal"]` is "true".
  *
- * A `LightEnv` can be copied (and moved): the copy is an independent env at the same point of
- * the same episode, see `LightEnvState` for what is shared and what is copied. Its observation
- * views the copy, not the original.
+ * A `LightEnv` can be copied: the copy is an independent env at the same point of the same
+ * episode, see `LightEnvState` for what is shared and what is copied. Its observation views the
+ * copy, not the original.
+ *
+ * It can be moved too (noexcept, so a `std::vector<LightEnv>` moves rather than copies when it
+ * grows): nothing is copied, the observation views the env moved to. A moved-from env can only
+ * be destroyed or assigned to; anything else (reset, step, the grid, load_p / gen_p of its
+ * observation) throws `std::logic_error`.
  */
 class LightEnv : protected LightEnvState
 {
@@ -235,13 +249,18 @@ class LightEnv : protected LightEnvState
         // the state is copied (or moved) member by member, the observation keeps viewing
         // the env it belongs to
         LightEnv(const LightEnv & other): LightEnvState(other), observation_(*this) {}
-        LightEnv(LightEnv && other): LightEnvState(std::move(other)), observation_(*this) {}
+        LightEnv(LightEnv && other) noexcept: LightEnvState(std::move(other)), observation_(*this) {
+            other.has_been_checked_ = false;
+        }
         LightEnv & operator=(const LightEnv & other){
             LightEnvState::operator=(other);
             return *this;
         }
-        LightEnv & operator=(LightEnv && other){
-            LightEnvState::operator=(std::move(other));
+        LightEnv & operator=(LightEnv && other) noexcept {
+            if(this != &other){
+                LightEnvState::operator=(std::move(other));
+                other.has_been_checked_ = false;
+            }
             return *this;
         }
 
@@ -291,7 +310,7 @@ class LightEnv : protected LightEnvState
         const std::vector<TopoAction> & get_actions() const {return *actions_;}
 
         const Protections & get_protections() const {return protections_;}
-        const LSGrid & get_grid() const {return *grid_;}
+        const LSGrid & get_grid() const {aux_check_not_moved_from("get_grid"); return *grid_;}
         double get_step_time() const {return timer_step_;}
         double get_reset_time() const {return timer_reset_;}
         double get_obs_time() const {return timer_obs_;}
@@ -320,6 +339,7 @@ class LightEnv : protected LightEnvState
         int get_current_step() const {return current_step_;}
 
         ResetReturnedType reset(){
+            aux_check_not_moved_from("reset");
             auto timer_reset = CustTimer();
             reset_timers();
 
@@ -355,6 +375,7 @@ class LightEnv : protected LightEnvState
         }
 
         StepReturnedType step(int act_id){
+            aux_check_not_moved_from("step");
             auto timer_step = CustTimer();
             if(!has_been_checked_){
                 throw std::runtime_error("Environment cannot be used, you most likely need to call env.reset() ");
@@ -417,6 +438,16 @@ class LightEnv : protected LightEnvState
         }
 
     protected:
+        // the live grid is only ever null in a moved-from env
+        void aux_check_not_moved_from(const char * where) const {
+            if(!grid_){
+                std::ostringstream exc_;
+                exc_ << "LightEnv::" << where << ": this env has been moved from, it can only be destroyed or "
+                     << "assigned to.";
+                throw std::logic_error(exc_.str());
+            }
+        }
+
         const TopoAction * aux_get_action(int act_id) const {
             const std::vector<TopoAction> & actions = *actions_;
             if(actions.empty()){
@@ -685,8 +716,14 @@ inline Eigen::Ref<const RealVect> LightEnvObservation::get_a_or() const {return 
 inline Eigen::Ref<const RealVect> LightEnvObservation::get_p_ex() const {return env_->p_ex_;}
 inline Eigen::Ref<const RealVect> LightEnvObservation::get_q_ex() const {return env_->q_ex_;}
 inline Eigen::Ref<const RealVect> LightEnvObservation::get_a_ex() const {return env_->a_ex_;}
-inline Eigen::Ref<const RealVect> LightEnvObservation::get_load_p() const {return std::get<0>(env_->grid_->get_loads_res());}
-inline Eigen::Ref<const RealVect> LightEnvObservation::get_gen_p() const {return std::get<0>(env_->grid_->get_gen_res());}
+inline Eigen::Ref<const RealVect> LightEnvObservation::get_load_p() const {
+    env_->aux_check_not_moved_from("get_obs().get_load_p");
+    return std::get<0>(env_->grid_->get_loads_res());
+}
+inline Eigen::Ref<const RealVect> LightEnvObservation::get_gen_p() const {
+    env_->aux_check_not_moved_from("get_obs().get_gen_p");
+    return std::get<0>(env_->grid_->get_gen_res());
+}
 inline Eigen::Ref<const IntVect> LightEnvObservation::get_topo_vect() const {
     if(env_->topo_vect_.size() == 0){
         throw std::runtime_error("LightEnvObservation::get_topo_vect: the grid of this environment has no position "
