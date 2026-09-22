@@ -26,6 +26,49 @@
 
 namespace ls2g {
 
+class LightEnv;
+
+/**
+ * The observation of a `LightEnv`: a read-only view on the environment's current state, it
+ * holds nothing but a pointer to its environment and copies nothing. Every getter returns an
+ * `Eigen::Ref` on memory the environment (or its grid) owns, so the values follow the
+ * environment as it steps: this is not a snapshot, copy what you want to keep.
+ *
+ * A view is valid until the next `reset()` of its environment, which rebuilds the grid and the
+ * protections, or until a step that ends the episode by a divergence (the grid then drops its
+ * results). Once a step returned `done`, the values are not meaningful.
+ *
+ * Lines use grid2op numbering (powerlines then transformers), the "or" side of a transformer
+ * being its hv side. Powers are in MW / MVAr, currents in kA (the unit of the thermal limits
+ * of `Protections`), `topo_vect` holds local busbar ids (-1 for a disconnected element).
+ */
+class LightEnvObservation
+{
+    public:
+        explicit LightEnvObservation(const LightEnv & env): env_(&env) {}
+
+        Eigen::Ref<const RealVect> get_rho() const;
+
+        Eigen::Ref<const RealVect> get_p_or() const;
+        Eigen::Ref<const RealVect> get_q_or() const;
+        Eigen::Ref<const RealVect> get_a_or() const;
+        Eigen::Ref<const RealVect> get_p_ex() const;
+        Eigen::Ref<const RealVect> get_q_ex() const;
+        Eigen::Ref<const RealVect> get_a_ex() const;
+
+        Eigen::Ref<const RealVect> get_load_p() const;
+        Eigen::Ref<const RealVect> get_gen_p() const;
+
+        Eigen::Ref<const IntVect> get_topo_vect() const;
+        Eigen::Ref<const IntVect> get_time_before_cooldown_line() const;
+        Eigen::Ref<const IntVect> get_time_before_cooldown_sub() const;
+
+        int get_current_step() const;
+
+    private:
+        const LightEnv * env_;
+};
+
 /**
  * A (very) limited grid2op environment in pure c++.
  *
@@ -47,8 +90,8 @@ class LightEnv
 
     public:
         typedef std::unordered_map<std::string, std::string> InfoReturnedType;
-        typedef std::tuple<RealVect, double, bool, bool, InfoReturnedType > StepReturnedType;
-        typedef std::tuple<RealVect, InfoReturnedType > ResetReturnedType;
+        typedef std::tuple<const LightEnvObservation &, double, bool, bool, InfoReturnedType > StepReturnedType;
+        typedef std::tuple<const LightEnvObservation &, InfoReturnedType > ResetReturnedType;
 
         LightEnv(const LSGrid & gridmodel):
             has_been_checked_(false),
@@ -61,11 +104,31 @@ class LightEnv
             nb_timestep_cooldown_sub_(0),
             nb_timestep_cooldown_line_(0),
             nb_timestep_reconnection_(10),
+            observation_(*this),
             timer_step_(0.),
             timer_reset_(0.),
             timer_obs_(0.),
             timer_update_gridmodel_(0.)
-            {};
+            {
+                // every buffer an observation views is allocated once, here, and only ever
+                // written in place: a numpy view on it stays valid as the env steps
+                const int nb_line = static_cast<int>(grid_->nb_powerline() + grid_->nb_trafo());
+                p_or_ = RealVect::Zero(nb_line);
+                q_or_ = RealVect::Zero(nb_line);
+                a_or_ = RealVect::Zero(nb_line);
+                p_ex_ = RealVect::Zero(nb_line);
+                q_ex_ = RealVect::Zero(nb_line);
+                a_ex_ = RealVect::Zero(nb_line);
+                time_step_sub_cooldown_ = Eigen::VectorXi::Zero(grid_->get_n_sub());
+                time_step_line_cooldown_ = Eigen::VectorXi::Zero(nb_line);
+                topo_vect_ = IntVect::Constant(aux_dim_topo(*grid_), BaseConstants::_deactivated_bus_id);
+            }
+
+        // the observation points to this env: it can be neither copied nor moved
+        LightEnv(const LightEnv &) = delete;
+        LightEnv(LightEnv &&) = delete;
+        LightEnv & operator=(const LightEnv &) = delete;
+        LightEnv & operator=(LightEnv &&) = delete;
 
         void assign_time_series(const RealMat & load_p,
                                 const RealMat & load_q,
@@ -144,7 +207,7 @@ class LightEnv
         Eigen::Ref<const Eigen::VectorXi> get_time_before_cooldown_sub() const {return time_step_sub_cooldown_;}
         Eigen::Ref<const Eigen::VectorXi> get_time_before_cooldown_line() const {return time_step_line_cooldown_;}
 
-        Eigen::Ref<const RealVect> get_obs() const {return obs_;}
+        const LightEnvObservation & get_obs() const {return observation_;}
         int get_max_step() const {return max_step_;}
         int get_current_step() const {return current_step_;}
 
@@ -180,7 +243,7 @@ class LightEnv
             extract_observation();
 
             timer_reset_ += timer_reset.duration();
-            return ResetReturnedType(obs_, info_);
+            return ResetReturnedType(observation_, info_);
         }
 
         StepReturnedType step(int act_id){
@@ -198,10 +261,9 @@ class LightEnv
                 info_["success"] = "true";
                 info_["failure"] = "false";
                 info_["survival_time"] = std::to_string(survival_ratio());
-                obs_ = RealVect::Zero(obs_.size());
                 has_been_checked_ = false;
                 timer_step_ += timer_step.duration();
-                return StepReturnedType(obs_, 1., true, false, info_);
+                return StepReturnedType(observation_, 1., true, false, info_);
             }
 
             // apply the topology, if legal (cooldowns)
@@ -231,10 +293,9 @@ class LightEnv
                 info_["success"] = "false";
                 info_["failure"] = "true";
                 info_["survival_time"] = std::to_string(survival_ratio());
-                obs_ = RealVect::Zero(obs_.size());
                 has_been_checked_ = false;
                 timer_step_ += timer_step.duration();
-                return StepReturnedType(obs_, 0., true, true, info_);
+                return StepReturnedType(observation_, 0., true, true, info_);
             }
 
             // extract the observation
@@ -244,7 +305,7 @@ class LightEnv
             update_cooldowns(action_applied, subs_impacted, lines_impacted);
 
             timer_step_ += timer_step.duration();
-            return StepReturnedType(obs_, survival_ratio(), false, false, info_);
+            return StepReturnedType(observation_, survival_ratio(), false, false, info_);
         }
 
     protected:
@@ -333,15 +394,90 @@ class LightEnv
             return static_cast<double>(current_step_) / static_cast<double>(max_step_);
         }
 
+        // what an observation reads that is not stored in grid2op order by the grid: the flows
+        // (lines then trafos) and the topology vector, written in place in buffers allocated
+        // by the constructor. rho, load_p, gen_p and the cooldowns are read where they live.
         void extract_observation(){
             auto timer_obs = CustTimer();
-            obs_ = protections_.get_rho();
+            const LSGrid & grid = *grid_;
+            const int nb_line = static_cast<int>(grid.nb_powerline());
+            const int nb_trafo = static_cast<int>(grid.nb_trafo());
+            const tuple4d line_or = grid.get_line_res1();
+            const tuple4d line_ex = grid.get_line_res2();
+            const tuple4d trafo_or = grid.get_trafo_res1();
+            const tuple4d trafo_ex = grid.get_trafo_res2();
+            p_or_.head(nb_line) = std::get<0>(line_or);
+            q_or_.head(nb_line) = std::get<1>(line_or);
+            a_or_.head(nb_line) = std::get<3>(line_or);
+            p_ex_.head(nb_line) = std::get<0>(line_ex);
+            q_ex_.head(nb_line) = std::get<1>(line_ex);
+            a_ex_.head(nb_line) = std::get<3>(line_ex);
+            p_or_.tail(nb_trafo) = std::get<0>(trafo_or);
+            q_or_.tail(nb_trafo) = std::get<1>(trafo_or);
+            a_or_.tail(nb_trafo) = std::get<3>(trafo_or);
+            p_ex_.tail(nb_trafo) = std::get<0>(trafo_ex);
+            q_ex_.tail(nb_trafo) = std::get<1>(trafo_ex);
+            a_ex_.tail(nb_trafo) = std::get<3>(trafo_ex);
+
+            if(topo_vect_.size() > 0){
+                const SubstationContainer & subs = grid.get_substations();
+                aux_fill_topo_vect(subs, grid.get_loads().get_pos_topo_vect(),
+                                   [&grid](int el_id){return grid.get_loads().get_bus(el_id);});
+                aux_fill_topo_vect(subs, grid.get_generators().get_pos_topo_vect(),
+                                   [&grid](int el_id){return grid.get_generators().get_bus(el_id);});
+                aux_fill_topo_vect(subs, grid.get_storages().get_pos_topo_vect(),
+                                   [&grid](int el_id){return grid.get_storages().get_bus(el_id);});
+                aux_fill_topo_vect(subs, grid.get_lines().get_pos_topo_vect_side_1(),
+                                   [&grid](int el_id){return grid.get_lines().get_bus_side_1(el_id);});
+                aux_fill_topo_vect(subs, grid.get_lines().get_pos_topo_vect_side_2(),
+                                   [&grid](int el_id){return grid.get_lines().get_bus_side_2(el_id);});
+                aux_fill_topo_vect(subs, grid.get_trafos().get_pos_topo_vect_side_1(),
+                                   [&grid](int el_id){return grid.get_trafos().get_bus_side_1(el_id);});
+                aux_fill_topo_vect(subs, grid.get_trafos().get_pos_topo_vect_side_2(),
+                                   [&grid](int el_id){return grid.get_trafos().get_bus_side_2(el_id);});
+            }
             timer_obs_ += timer_obs.duration();
         }
 
+        template<class BusGetter>
+        void aux_fill_topo_vect(const SubstationContainer & subs,
+                                const IntVect & pos_topo_vect,
+                                BusGetter get_bus){
+            for(int el_id = 0; el_id < pos_topo_vect.size(); ++el_id){
+                topo_vect_(pos_topo_vect(el_id)) = subs.gridmodel_to_local(get_bus(el_id)).cast_int();
+            }
+        }
+
+        // size of the grid2op topology vector, 0 if the grid does not carry the positions
+        // (they are set by LightSimBackend, not by the grid converters)
+        static int aux_dim_topo(const LSGrid & grid){
+            const IntVect * positions[] = {
+                &grid.get_loads().get_pos_topo_vect(),
+                &grid.get_generators().get_pos_topo_vect(),
+                &grid.get_storages().get_pos_topo_vect(),
+                &grid.get_lines().get_pos_topo_vect_side_1(),
+                &grid.get_lines().get_pos_topo_vect_side_2(),
+                &grid.get_trafos().get_pos_topo_vect_side_1(),
+                &grid.get_trafos().get_pos_topo_vect_side_2()};
+            const int nb_els[] = {
+                grid.get_loads().nb(),
+                grid.get_generators().nb(),
+                grid.get_storages().nb(),
+                static_cast<int>(grid.nb_powerline()),
+                static_cast<int>(grid.nb_powerline()),
+                static_cast<int>(grid.nb_trafo()),
+                static_cast<int>(grid.nb_trafo())};
+            int dim_topo = 0;
+            for(int i = 0; i < 7; ++i){
+                if(positions[i]->size() != nb_els[i]) return 0;
+                dim_topo += nb_els[i];
+            }
+            return dim_topo;
+        }
+
         void reset_cooldowns(){
-            time_step_sub_cooldown_ = Eigen::VectorXi::Zero(grid_->get_n_sub());
-            time_step_line_cooldown_ = Eigen::VectorXi::Zero(grid_->nb_powerline() + grid_->nb_trafo());
+            time_step_sub_cooldown_.setZero();
+            time_step_line_cooldown_.setZero();
         }
 
         void reset_timers(){
@@ -459,9 +595,18 @@ class LightEnv
         Eigen::VectorXi time_step_sub_cooldown_;
         Eigen::VectorXi time_step_line_cooldown_;
 
-        // the observation
-        RealVect obs_;
+        // the observation, and the buffers it views (grid2op order, see extract_observation)
+        LightEnvObservation observation_;
+        RealVect p_or_;
+        RealVect q_or_;
+        RealVect a_or_;
+        RealVect p_ex_;
+        RealVect q_ex_;
+        RealVect a_ex_;
+        IntVect topo_vect_;
         std::unordered_map<std::string, std::string> info_;
+
+        friend class LightEnvObservation;
 
         // timers
         double timer_step_;
@@ -469,6 +614,26 @@ class LightEnv
         double timer_obs_;
         double timer_update_gridmodel_;
 };
+
+inline Eigen::Ref<const RealVect> LightEnvObservation::get_rho() const {return env_->protections_.get_rho();}
+inline Eigen::Ref<const RealVect> LightEnvObservation::get_p_or() const {return env_->p_or_;}
+inline Eigen::Ref<const RealVect> LightEnvObservation::get_q_or() const {return env_->q_or_;}
+inline Eigen::Ref<const RealVect> LightEnvObservation::get_a_or() const {return env_->a_or_;}
+inline Eigen::Ref<const RealVect> LightEnvObservation::get_p_ex() const {return env_->p_ex_;}
+inline Eigen::Ref<const RealVect> LightEnvObservation::get_q_ex() const {return env_->q_ex_;}
+inline Eigen::Ref<const RealVect> LightEnvObservation::get_a_ex() const {return env_->a_ex_;}
+inline Eigen::Ref<const RealVect> LightEnvObservation::get_load_p() const {return std::get<0>(env_->grid_->get_loads_res());}
+inline Eigen::Ref<const RealVect> LightEnvObservation::get_gen_p() const {return std::get<0>(env_->grid_->get_gen_res());}
+inline Eigen::Ref<const IntVect> LightEnvObservation::get_topo_vect() const {
+    if(env_->topo_vect_.size() == 0){
+        throw std::runtime_error("LightEnvObservation::get_topo_vect: the grid of this environment has no position "
+                                 "in the grid2op topology vector (set_*_pos_topo_vect, done by LightSimBackend).");
+    }
+    return env_->topo_vect_;
+}
+inline Eigen::Ref<const IntVect> LightEnvObservation::get_time_before_cooldown_line() const {return env_->time_step_line_cooldown_;}
+inline Eigen::Ref<const IntVect> LightEnvObservation::get_time_before_cooldown_sub() const {return env_->time_step_sub_cooldown_;}
+inline int LightEnvObservation::get_current_step() const {return env_->current_step_;}
 
 } // namespace ls2g
 

@@ -9,7 +9,7 @@
 """Python side of the light environment: a :class:`LightEnv` whose actions can be given
 as grid2op actions."""
 
-__all__ = ["LightEnv", "TopoAction", "Protections", "ElementType", "topo_action_from_grid2op"]
+__all__ = ["LightEnv", "LightEnvObservation", "TopoAction", "Protections", "ElementType", "topo_action_from_grid2op"]
 
 from typing import Iterable
 
@@ -18,6 +18,7 @@ import numpy as np
 from grid2op.Action import BaseAction
 
 from lightsim2grid.lightsim2grid_cpp import (LightEnv as _LightEnvCPP,  # pyright: ignore[reportMissingImports]
+                                             LightEnvObservation,
                                              TopoAction,
                                              Protections,
                                              ElementType)

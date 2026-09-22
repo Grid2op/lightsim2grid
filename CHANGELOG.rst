@@ -207,6 +207,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   and ``info["is_illegal"]``; ``reset`` restores the initial topology.
 - [FIXED] light environment: the protections looped for ever once a line had been disconnected
   for overflow, and never reset the overflow counter of a line back in its limits.
+- [ADDED] light environment: ``LightEnvObservation``, returned by ``reset`` / ``step`` instead of
+  a copy of ``rho``: flows (p, q, a, both sides), ``topo_vect``, cooldowns, ``load_p``, ``gen_p``
+  and ``rho``, as read-only numpy views on the env's memory (no copy).
 - [FIXED] light environment: the reward and ``info["survival_time"]`` are the fraction of the
   episode survived; they were an integer division (by ``max_iter`` for the reward).
 - [ADDED] ``compute_physical_violations`` also reports a generator the distributed slack

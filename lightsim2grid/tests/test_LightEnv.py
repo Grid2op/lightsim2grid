@@ -19,6 +19,7 @@ from grid2op.Parameters import Parameters
 
 from lightsim2grid import LightSimBackend
 from lightsim2grid.lightEnv import (LightEnv,
+                                    LightEnvObservation,
                                     TopoAction,
                                     Protections,
                                     ElementType,
@@ -116,6 +117,21 @@ class TestLightEnvActions(unittest.TestCase):
         np.testing.assert_array_equal(obs.time_before_cooldown_line,
                                       self.light_env.time_before_cooldown_line,
                                       err_msg=f"cooldown line {msg}")
+        self.assert_same_obs(obs, self.light_env.get_obs(), msg)
+
+    def assert_same_obs(self, obs, lobs, msg=""):
+        """the observation of the light env matches the grid2op one"""
+        np.testing.assert_array_equal(lobs.topo_vect, obs.topo_vect, err_msg=f"topo_vect {msg}")
+        for attr in ("p_or", "q_or", "p_ex", "q_ex", "load_p", "gen_p"):
+            np.testing.assert_allclose(getattr(lobs, attr), getattr(obs, attr), rtol=1e-4, atol=1e-2,
+                                       err_msg=f"{attr} {msg}")
+        # the light env is in kA, grid2op in A
+        np.testing.assert_allclose(1e3 * lobs.a_or, obs.a_or, rtol=1e-4, atol=1e-2, err_msg=f"a_or {msg}")
+        np.testing.assert_allclose(1e3 * lobs.a_ex, obs.a_ex, rtol=1e-4, atol=1e-2, err_msg=f"a_ex {msg}")
+        np.testing.assert_array_equal(lobs.time_before_cooldown_sub, obs.time_before_cooldown_sub,
+                                      err_msg=f"obs cooldown sub {msg}")
+        np.testing.assert_array_equal(lobs.time_before_cooldown_line, obs.time_before_cooldown_line,
+                                      err_msg=f"obs cooldown line {msg}")
 
     def step_both(self, action, act_id):
         """one step in grid2op and in the light env, they should agree on everything"""
@@ -362,6 +378,7 @@ class TestLightEnvActions(unittest.TestCase):
         disco = self.env.action_space({"set_line_status": [(3, -1)]})
         self.light_env.init_actions([self.do_nothing, act_sub, disco])
         obs_reset, info_reset = self.light_env.reset()
+        rho_reset = np.array(obs_reset.rho)  # the observation is a view, keep a snapshot
         self.light_env.step(1)
         self.light_env.step(2)
         grid = self.light_env.grid
@@ -376,15 +393,54 @@ class TestLightEnvActions(unittest.TestCase):
         self.assertEqual(self.light_env.current_step, 0)
         self.assertTrue((self.light_env.time_before_cooldown_sub == 0).all())
         self.assertTrue((self.light_env.time_before_cooldown_line == 0).all())
-        np.testing.assert_allclose(obs_reset2, obs_reset)
+        np.testing.assert_allclose(obs_reset2.rho, rho_reset)
         # the observation of a reset is the rho of its own powerflow, not a stale one
-        np.testing.assert_allclose(obs_reset2, self.light_env.protections.rho)
-        self.assertTrue((obs_reset2 > 0).any())
+        np.testing.assert_allclose(obs_reset2.rho, self.light_env.protections.rho)
+        self.assertTrue((obs_reset2.rho > 0).any())
         self.assert_same_state(self.obs, "after the second reset")
         # the actions are still there, and the episode can be replayed
         self.assertEqual(self.light_env.nb_actions, 3)
         obs, info = self.step_both(act_sub, 1)
         self.assertFalse(info["is_illegal"])
+
+    # --- observation ---
+
+    def test_observation_is_a_view(self):
+        obs, info = self.light_env.reset()
+        self.assertIsInstance(obs, LightEnvObservation)
+        self.assertIs(self.light_env.get_obs(), obs)
+        attrs = ("rho", "p_or", "q_or", "a_or", "p_ex", "q_ex", "a_ex", "load_p", "gen_p",
+                 "topo_vect", "time_before_cooldown_line", "time_before_cooldown_sub")
+        for attr in attrs:
+            arr = getattr(obs, attr)
+            self.assertFalse(arr.flags.writeable, f"{attr} should be read-only")
+            self.assertTrue(np.shares_memory(arr, getattr(obs, attr)), f"{attr} is copied")
+        self.assertEqual(obs.p_or.shape, (self.env.n_line,))
+        self.assertEqual(obs.topo_vect.shape, (self.env.dim_topo,))
+        self.assertEqual(obs.load_p.shape, (self.env.n_load,))
+        self.assertEqual(obs.gen_p.shape, (self.env.n_gen,))
+        self.assert_same_obs(self.obs, obs, "at reset")
+
+        # it follows the env: the same object, an array read before the step sees the new state
+        p_or = obs.p_or
+        load_p = obs.load_p
+        p_or_before = np.array(p_or)
+        obs2, *_ = self.light_env.step(0)
+        self.assertIs(obs2, obs)
+        self.assertEqual(obs.current_step, 1)
+        np.testing.assert_array_equal(p_or, obs.p_or)
+        np.testing.assert_array_equal(load_p, obs.load_p)
+        self.assertFalse(np.allclose(p_or, p_or_before))
+
+    def test_observation_keeps_env_alive(self):
+        light_env = self.make_light_env()
+        obs, info = light_env.reset()
+        p_or = obs.p_or
+        expected = np.array(p_or)
+        del light_env, obs
+        import gc
+        gc.collect()
+        np.testing.assert_array_equal(p_or, expected)
 
     # --- reward and end of episode ---
 

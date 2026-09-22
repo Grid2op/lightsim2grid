@@ -90,6 +90,36 @@ void bind_light_env(py::module_& m) {
              "the protections disconnect it (int32 vector)")
         ;
 
+    // observation: every array is a read-only numpy view on the env's memory (no copy), kept
+    // alive by the observation, itself kept alive by its env (def_property_readonly is
+    // reference_internal)
+    py::class_<LightEnvObservation>(m, "LightEnvObservation",
+        "Observation of a LightEnv: a read-only view on the current state of its environment, nothing is copied. "
+        "Every attribute is a read-only numpy array on the environment's memory, so it follows the environment as "
+        "it steps (it is not a snapshot: use np.array(obs.p_or) to keep one). An array is valid until the next reset "
+        "of the environment or a step ending the episode by a divergence; once done is True the values are not "
+        "meaningful. Lines use grid2op numbering (powerlines then transformers, 'or' being a transformer's hv side), "
+        "powers are in MW / MVAr, currents in kA (like the thermal limits of Protections).")
+        .def_property_readonly("rho", &LightEnvObservation::get_rho, "For each line, the max over its two sides of current / thermal limit")
+        .def_property_readonly("p_or", &LightEnvObservation::get_p_or, "Active power flow (MW) at the origin side of each line")
+        .def_property_readonly("q_or", &LightEnvObservation::get_q_or, "Reactive power flow (MVAr) at the origin side of each line")
+        .def_property_readonly("a_or", &LightEnvObservation::get_a_or, "Current flow (kA) at the origin side of each line")
+        .def_property_readonly("p_ex", &LightEnvObservation::get_p_ex, "Active power flow (MW) at the extremity side of each line")
+        .def_property_readonly("q_ex", &LightEnvObservation::get_q_ex, "Reactive power flow (MVAr) at the extremity side of each line")
+        .def_property_readonly("a_ex", &LightEnvObservation::get_a_ex, "Current flow (kA) at the extremity side of each line")
+        .def_property_readonly("load_p", &LightEnvObservation::get_load_p, "Active power (MW) consumed by each load")
+        .def_property_readonly("gen_p", &LightEnvObservation::get_gen_p, "Active power (MW) produced by each generator")
+        .def_property_readonly("topo_vect", &LightEnvObservation::get_topo_vect,
+                               "grid2op topology vector: the local busbar (1..n_busbar_per_sub, -1 if disconnected) of every "
+                               "element, at its grid2op position. Raises if the grid carries no position in the topology "
+                               "vector (they are set by LightSimBackend).")
+        .def_property_readonly("time_before_cooldown_line", &LightEnvObservation::get_time_before_cooldown_line,
+                               "For each line, number of steps before its status can be changed again")
+        .def_property_readonly("time_before_cooldown_sub", &LightEnvObservation::get_time_before_cooldown_sub,
+                               "For each substation, number of steps before it can be acted on again")
+        .def_property_readonly("current_step", &LightEnvObservation::get_current_step, "Step of the environment (0 at reset)")
+        ;
+
     // env
     py::class_<LightEnv>(m, "LightEnv", "Fast implementation of a grid2op env in pure c++ with (very) limited functionality")
         .def(py::init<const LSGrid &>())
@@ -125,13 +155,28 @@ void bind_light_env(py::module_& m) {
              "per element (MW, MVAr, gen_v in pu), NaN meaning 'unchanged'. All must have the same number of rows, "
              "which becomes max_step; the sizes are checked at the next reset. For now only load_p, load_q, gen_p "
              "and gen_v are applied to the grid, the other matrices are only checked.")
-        .def("reset", &LightEnv::reset,
+        .def("reset",
+             [](py::object self){
+                 LightEnv & env = self.cast<LightEnv &>();
+                 const auto res = env.reset();
+                 return py::make_tuple(py::cast(&std::get<0>(res), py::return_value_policy::reference_internal, self),
+                                       std::get<1>(res));
+             },
              "Start a new episode: restore the initial topology, the protections' counters and the cooldowns, apply "
-             "the injections of the first row and run a powerflow. Returns (obs, info), obs being rho. Must be "
+             "the injections of the first row and run a powerflow. Returns (obs, info), obs being the LightEnvObservation of the env. Must be "
              "called before the first step, and again after assign_time_series or a change of protections.")
-        .def("step", &LightEnv::step, py::arg("act_id"),
+        .def("step",
+             [](py::object self, int act_id){
+                 LightEnv & env = self.cast<LightEnv &>();
+                 const auto res = env.step(act_id);
+                 return py::make_tuple(py::cast(&std::get<0>(res), py::return_value_policy::reference_internal, self),
+                                       std::get<1>(res), std::get<2>(res), std::get<3>(res), std::get<4>(res));
+             }, py::arg("act_id"),
              "Play one step with the action of id act_id (see init_actions). Without any action registered, only act_id = 0 (do nothing) is valid. "
-             "Returns (obs, reward, done, truncated, info), info['is_illegal'] is 'true' if the action was refused because of a cooldown.")
-        .def("get_obs", &LightEnv::get_obs, "Last computed observation")
+             "Returns (obs, reward, done, truncated, info): obs is the LightEnvObservation of the env (the same object at every step, "
+             "a view on the current state), the reward is the fraction of the episode survived, info['is_illegal'] is 'true' if the "
+             "action was refused because of a cooldown.")
+        .def("get_obs", &LightEnv::get_obs, py::return_value_policy::reference_internal,
+             "The observation of the env (a LightEnvObservation, a view on its current state)")
         ;
 }
