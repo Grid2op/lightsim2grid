@@ -181,7 +181,6 @@ class LightEnvState
         RealVect q_ex_;
         RealVect a_ex_;
         IntVect topo_vect_;
-        std::unordered_map<std::string, std::string> info_;
 
         // timers
         double timer_step_;
@@ -191,7 +190,9 @@ class LightEnvState
 };
 
 // what makes the moves of LightEnv noexcept (LSGrid itself is not nothrow-movable, it is
-// held through DeepCopyPtr): a member added to LightEnvState must keep these true
+// held through DeepCopyPtr): a member added to LightEnvState must keep these true, on every
+// standard library -- MSVC's std::unordered_map / std::map / std::list / std::deque, for
+// instance, do not have a noexcept move constructor (their sentinel node is allocated)
 static_assert(std::is_nothrow_move_constructible<LightEnvState>::value,
               "LightEnvState should be nothrow move constructible");
 static_assert(std::is_nothrow_move_assignable<LightEnvState>::value,
@@ -354,7 +355,6 @@ class LightEnv : protected LightEnvState
             }
 
             current_step_ = 0;
-            info_ = InfoReturnedType();
 
             // reset the cooldowns
             reset_cooldowns();
@@ -371,7 +371,7 @@ class LightEnv : protected LightEnvState
             extract_observation();
 
             timer_reset_ += timer_reset.duration();
-            return ResetReturnedType(observation_, info_);
+            return ResetReturnedType(observation_, InfoReturnedType());
         }
 
         StepReturnedType step(int act_id){
@@ -384,15 +384,15 @@ class LightEnv : protected LightEnvState
             const TopoAction * action = aux_get_action(act_id);
 
             current_step_ += 1;
-            info_ = InfoReturnedType();
-            info_["is_illegal"] = "false";
+            InfoReturnedType info;
+            info["is_illegal"] = "false";
             if (current_step_ >= max_step_){
-                info_["success"] = "true";
-                info_["failure"] = "false";
-                info_["survival_time"] = std::to_string(survival_ratio());
+                info["success"] = "true";
+                info["failure"] = "false";
+                info["survival_time"] = std::to_string(survival_ratio());
                 has_been_checked_ = false;
                 timer_step_ += timer_step.duration();
-                return StepReturnedType(observation_, 1., true, false, info_);
+                return StepReturnedType(observation_, 1., true, false, info);
             }
 
             // apply the topology, if legal (cooldowns)
@@ -403,7 +403,7 @@ class LightEnv : protected LightEnvState
                 action->compute_impact(*grid_, subs_impacted, lines_impacted);
                 const bool is_illegal = aux_is_illegal(subs_impacted, lines_impacted);
                 if(is_illegal){
-                    info_["is_illegal"] = "true";
+                    info["is_illegal"] = "true";
                 }else{
                     action->apply_to_gridmodel(*grid_);
                     action_applied = true;
@@ -419,12 +419,12 @@ class LightEnv : protected LightEnvState
             V_ = protections_.next_grid_state(*grid_, max_iter_, tol_);
             if(V_.size() == 0){
                 // divergence
-                info_["success"] = "false";
-                info_["failure"] = "true";
-                info_["survival_time"] = std::to_string(survival_ratio());
+                info["success"] = "false";
+                info["failure"] = "true";
+                info["survival_time"] = std::to_string(survival_ratio());
                 has_been_checked_ = false;
                 timer_step_ += timer_step.duration();
-                return StepReturnedType(observation_, 0., true, true, info_);
+                return StepReturnedType(observation_, 0., true, true, info);
             }
 
             // extract the observation
@@ -434,7 +434,7 @@ class LightEnv : protected LightEnvState
             update_cooldowns(action_applied, subs_impacted, lines_impacted);
 
             timer_step_ += timer_step.duration();
-            return StepReturnedType(observation_, survival_ratio(), false, false, info_);
+            return StepReturnedType(observation_, survival_ratio(), false, false, info);
         }
 
     protected:
