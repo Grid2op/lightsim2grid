@@ -18,6 +18,8 @@
 #include "batch_algorithm/BusQCheck.hpp"
 #include "batch_algorithm/GenPCheck.hpp"
 #include "batch_algorithm/HvdcPCheck.hpp"
+// ... and the operational ones (LSGrid::get_violations)
+#include "batch_algorithm/OperationalCheck.hpp"
 
 #include <cmath>      // std::isfinite (check_positive_finite)
 #include <queue>
@@ -2864,6 +2866,45 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
             [](ViolationElementType, int){ return false; },
             out);
     }
+    return out;
+}
+
+std::vector<LimitViolation> LSGrid::get_violations(real_type threshold, bool ac) const{
+    const char * fun_name = "LSGrid::get_violations";
+    if(!(threshold > 0. && threshold <= 1.)){
+        std::ostringstream exc_;
+        exc_ << fun_name << ": the threshold should be a real number in the range ]0., 1.] (got "
+             << threshold << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    const SolverBusLayout & layout = ac ? static_cast<const SolverBusLayout &>(ac_cache_)
+                                        : static_cast<const SolverBusLayout &>(dc_cache_);
+    const AlgorithmSelector & algo = ac ? _algo : _dc_algo;
+    if(layout.id_solver_to_me.size() == 0){
+        std::ostringstream exc_;
+        exc_ << fun_name << ": no " << (ac ? "AC" : "DC") << " powerflow has run on this grid yet.";
+        throw std::runtime_error(exc_.str());
+    }
+    std::vector<LimitViolation> out;
+    if(algo.get_error() != ErrorType::NoError){
+        // the batch's own convention for a row that did not converge
+        out.push_back(LimitViolation{ViolationElementType::GRID, -1, 0, LimitViolationType::DIVERGENCE,
+                                     std::numeric_limits<real_type>::quiet_NaN(),
+                                     std::numeric_limits<real_type>::quiet_NaN()});
+        return out;
+    }
+    // the grid IS the row: nothing masked, nothing disconnected "by the contingency"
+    const std::vector<int> no_skip;
+    const Eigen::Ref<const CplxVect> V = algo.get_V();
+    batch_sweep_detail::check_bus_voltage_violations(
+        V, layout.id_me_to_solver, substations_.get_bus_vmin_kv(), substations_.get_bus_vmax_kv(),
+        substations_.get_bus_vn_kv(), substations_, threshold, nullptr, out);
+    batch_sweep_detail::check_current_violations(
+        powerlines_, ViolationElementType::LINE, V, layout.id_me_to_solver, substations_.get_bus_vn_kv(),
+        ac, sn_mva_, powerlines_.get_limit_a1_ka(), powerlines_.get_limit_a2_ka(), threshold, no_skip, out);
+    batch_sweep_detail::check_current_violations(
+        trafos_, ViolationElementType::TRAFO, V, layout.id_me_to_solver, substations_.get_bus_vn_kv(),
+        ac, sn_mva_, trafos_.get_limit_a1_ka(), trafos_.get_limit_a2_ka(), threshold, no_skip, out);
     return out;
 }
 

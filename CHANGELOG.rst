@@ -236,6 +236,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   the batch algorithms (``compute_physical_violations``: reactive capability of the voltage
   controllers, hvdc max power, generators / storage units pushed past their p limits by the
   slack) on the grid's own last ``ac_pf`` / ``dc_pf``.
+- [ADDED] ``LSGrid.get_violations(threshold=1., ac=True)``: the operational limit checks of the
+  batch algorithms (``compute_limit_violations``: bus voltages against ``[vmin, vmax]``, branch
+  currents on both sides against their thermal limits) on the grid's own last ``ac_pf`` /
+  ``dc_pf``. The checks moved to ``batch_algorithm/OperationalCheck.hpp`` (same code, same
+  namespace).
 - [FIXED] the DC algorithms' ``get_error()`` stayed ``NotInitError`` after a converged ``dc_pf``
   (the status was only written on failure): it now reports ``NoError``, as the AC ones do.
 - [FIXED] the DC active-power imbalance handed to the generator p-limit check

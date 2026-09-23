@@ -4108,6 +4108,27 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::get_violations = R"mydelimiter(
+    The OPERATIONAL limits the last powerflow of this grid violates: the same checks the batch
+    algorithms run with ``compute_limit_violations`` (see
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.get_violations`), on a single
+    :func:`ac_pf` (``ac=True``, the default) or :func:`dc_pf` (``ac=False``):
+
+    - every bus whose voltage magnitude is outside its ``[vmin, vmax]``
+      (:func:`set_bus_voltage_limits`; ``LOW_VOLTAGE`` / ``HIGH_VOLTAGE``, value and limit in kV);
+    - every line / transformer side whose current is at or above its thermal limit
+      (:func:`set_line_current_limit_side1` and the like; ``CURRENT``, ``side`` 1 or 2, value and
+      limit in kA, as the limits).
+
+    ``threshold``, in ``]0, 1]``, tightens both checks (``1.``: report exactly at the configured
+    limit), like the batch algorithms' ``violation_threshold``. A bus or a branch side without a
+    limit is never reported. Returns a list of ``LimitViolation``; if the last powerflow did not
+    converge, the list holds the batch algorithms' own sentinel, one ``GRID`` / ``DIVERGENCE``
+    entry. Raises if no powerflow of that kind has run. See :func:`get_physical_violations` for
+    the limits the solution cannot physically meet.
+
+)mydelimiter";
+
 const std::string DocLSGrid::redistribute_active_power = R"mydelimiter(
     Share ``mismatch_mw`` (positive: the units must inject more) on the generators and storage
     units of the distributed slack as OpenLoadFlow's ``DistributedSlack`` outer loop does
