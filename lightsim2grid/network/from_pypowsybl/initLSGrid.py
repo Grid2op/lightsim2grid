@@ -209,8 +209,8 @@ def init(net : pypo.network.Network,
         extension is read from, when the default distributed slack (no ``gen_slack_id``
         nor ``slack_bus_id``) also distributes on the batteries, as OpenLoadFlow does.
         ``"auto"`` (default) reads it off pypowsybl when it lists batteries there, else
-        off an XIIDM export of ``net`` (pypowsybl <= 1.16.1 does not list them; the
-        export costs about the size of the network file); ``"extension"`` never exports
+        off a JIIDM export of ``net`` (pypowsybl <= 1.16.1 does not list them; the
+        export serializes the whole network); ``"extension"`` never exports
         the network; ``"default"`` gives every battery OpenLoadFlow's defaults
         (participating, droop 4).
     :type battery_active_power_control: str

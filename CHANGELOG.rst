@@ -212,6 +212,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   SVC keeps its starting magnitude instead of its set-point, so step damping can reach it gradually.
 - [IMPROVED] ``bake_outer_loops`` is faster on large grids: the capability-curve extrapolation is
   vectorised and the bus frame is read once per bake instead of once per step. Same result.
+- [IMPROVED] reading the batteries' ``activePowerControl`` extension (pypowsybl <= 1.16.1) goes
+  through a JIIDM export restricted to it: ``bake_outer_loops`` and ``init_from_pypowsybl``
+  are much faster on large grids with batteries. Same result.
 
 
 [1.1.0] 2026-09-21

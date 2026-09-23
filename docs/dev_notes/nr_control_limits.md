@@ -547,6 +547,201 @@ rising levels of rigour, so this is a climb rather than a commitment.
 Step 1 alone closes the `min_p` / `max_p` gap on the distributed slack, which is the smallest
 useful deliverable and the one with detection already in place.
 
+## Fit with the GPU port (gpusim2grid)
+
+Asked after the above was written: does any of this carry over to `gpusim2grid`, the CUDA
+port that solves lightsim2grid's augmented system in batch through cuDSS? It does, and it
+fits there *better* than it fits the plain CPU solve, for a structural reason.
+
+gpusim2grid's whole design rests on one premise: a single cuDSS analysis serves the whole
+batch, so every per-slot difference must be a value written into a fixed pattern. That is
+exactly what the projection row delivers — a control pinning or releasing is a value change
+in two or three reserved positions and one residual entry, never a pattern change. The
+*classical* outer loop is what does not fit the GPU: a PV → PQ switch on one slot of a
+uniform batch would need a per-slot pattern or a host round trip.
+
+The mechanisms the formulation needs already exist there under other names:
+
+- **per-slot value overrides at fixed positions**: the `jov` stream of
+  `contingency/mask_streams.cuh`, applied by the J-overrides kernel after the feature
+  stamps and before the bus mask;
+- **a residual row repurposed by value**: the stranded-controller kernel, which turns a
+  voltage row into a `Q_c = 0` pin — the GPU twin of the `VoltageControl` stranded path
+  this note identifies as the seed of the formulation;
+- **structural supersets of the ledger** (`ledger_extend.hpp`): reserving rows/columns up
+  front so one analysis serves the batch is already an established pattern there, used
+  both for the stranded slot and for `add_switchable_vm_buses`.
+
+What is genuinely new on the device is small. Today the override streams are decided **on
+the host, once per batch**, from the contingency topology, and stay constant across NR
+iterations. A projection row makes the branch selection *state-dependent*, so a kernel has
+to evaluate the projection test per slot at every iteration — from the current `Vm`,
+controller `Q` or absorbed slack — and write the chosen branch's values into the reserved
+positions and the residual. That is one small kernel per control type, launched where the
+feature stamps are, plus an `apply_step` kernel for any shed unknowns. Warp divergence is
+not a concern: the branch is per control row, not per nonzero.
+
+Where the GPU picture differs from the CPU one:
+
+- **Globalisation.** gpusim2grid has no line search at all. It has per-slot
+  `MaxVoltageChange` step scaling in the batched driver, which is the infrastructure a
+  per-slot Armijo backtracking would extend — but a backtracking that re-evaluates the
+  trial residual for a *uniform* batch charges every slot the extra mismatch evaluations
+  even when only a few slots need them. Step 1 of the incremental path (unit step) needs
+  nothing. If cycling shows up, Kanzow's smoothed `φ_μ` is the GPU-friendly cure rather
+  than a line search: it is smooth, so there is no branch to select, and the homotopy in
+  `μ` is a batch-wide scalar schedule.
+- **A singular slot.** When every slack participant pins, the slack column vanishes and
+  that slot's system is singular. How cuDSS reports a singular system inside a uniform
+  batch — whether it poisons only that slot or the chunk — has to be checked before this
+  is relied on. The existing `DIVERGENCE` reporting is where the outcome belongs.
+- **Dependency order.** The GPU mirrors lightsim2grid's ledger as its single source of
+  truth, so the CPU formulation has to exist first, at least at the ledger and extraction
+  level. A CPU *plugin* does not propagate on its own: the skeleton and the bus maps would
+  come through `extract_ledger_data`, but the per-extension data (limits, weights, the
+  branch rule) has to be carried in new `LedgerData` fields exactly as `MultiSlack`,
+  `Hvdc` and `VoltageControl` are today.
+- **The differentiable path is compatible.** The adjoint of a semismooth system is the
+  generalized Jacobian of the active branch, and the existing zeroing of `λ` at identity
+  rows in the batched adjoint is precisely what a pinned row needs.
+
+For the reactive-limit instantiation specifically, the GPU side is *cheaper* than the slack
+one: `add_switchable_vm_buses` already reserves the Vm column + Q equation per PV bus, and
+the identity-pinned Q rows already travel as a per-slot stream with precomputed positions.
+The missing piece is the same as above — the branch decided on the device per iteration
+instead of on the host per batch — and nothing else: no new rows, no new columns, no new
+ledger fields beyond the per-bus box.
+
+## Cost of a plugin prototype
+
+Also asked: what would it cost to try this as an out-of-tree algorithm plugin, in the
+manner of `examples/lm_algorithm/` or `examples/dist_slack_algorithm/`? The
+Levenberg-Marquardt example is the precedent with the right shape — a plugin-side
+`NRSystem` extension (`DiagonalEntry`, appended to the pack through the
+`with_diagonal_entry<NRSystem<Base, Rest...>>` alias) plus a sibling algorithm, at a few
+hundred lines including CMake and test, and it needed exactly one small generic core
+addition (`NRSystem::update_trailing_feature_values`). The distributed-slack example is the
+*opposite* shape: it moves a control out of the Jacobian into an outer loop.
+
+Two prototypes were priced. They have opposite profiles.
+
+### Prototype A: `min_p` / `max_p` on the distributed slack
+
+Step 1 of the incremental path, as a `SlackLimits` extension appended to the multi-slack
+system and registered under a prefixed name (`NR_SlackLimits_KLU` or similar).
+
+What the protocol gives for free: shed columns and projection rows claimed in the ledger,
+the two or three nonzeros per row as feature entries, the branch chosen inside the fill
+hooks from the extension's own state, the shed term added in `adjust_mismatch`. The data —
+per participating machine: solver bus, weight, active limits, target — is exactly what
+`gen_p_check::build_gen_p_plan` (`batch_algorithm/GenPCheck.hpp`) already assembles from
+the grid pointer the `update_state` hook receives. Using shed variables rather than
+clamp-and-renormalise leaves `MultiSlack` untouched and keeps the bus weights constant,
+which is what the "do not normalise inside the NR" warning above asks for.
+
+What decides whether the estimate holds:
+
+- **Reaching the slack column.** Extensions cannot see each other: `update_state` hands
+  them the `Base` block only, and `_find_extension` is internal to `NRSystem`. The shed
+  rows need the slack column index and the absorbed value. Cheapest fix: a public typed
+  extension accessor on `NRSystem`, the same kind of ten-line core addition the LM example
+  needed. Alternative: a sibling algorithm with its own solve loop, as LM did — no core
+  change, but a copy of `NRAlgo::compute_pf`.
+- **Reusing `NRAlgo` pays twice.** `NRAlgo` is header-instantiable for any system type, so
+  the plugin can instantiate it directly with the longer pack and needs no algorithm class.
+  And `NRAlgo` already ships an Armijo backtracking scaling policy
+  (`ScalingPolicyType::LineSearch`), so step 2 of the path — the merit-function line
+  search — comes for free by selecting it.
+- **The oracle is weaker than claimed above.** `GenPCheck` computes a machine's share as
+  `slack_absorbed · w(bus)` and never sees a shed variable, so it keeps flagging a pinned
+  machine even when the solve honours the limit. The same holds for the per-generator
+  results `LSGrid::compute_results` publishes through `set_p_slack`: a plugin cannot change
+  that split, so a pinned machine's *reported* power stays wrong until core learns to ask
+  the algorithm for a per-machine correction. A plugin test therefore validates at the
+  **bus** level: the pinned bus's injection lands on the limit, the balance closes, and the
+  solution matches a reference solve where the pinned machine is removed from the slack set
+  with its target set to the limit. When exactly one machine pins, the two fixed points
+  coincide, which is a strong check.
+
+The sign convention flagged above (`k` negative when generation must rise) and the reporting
+gap are where the time goes.
+
+### Prototype B: PV ↔ PQ on local generators
+
+Different shape: no new rows or columns, but a sibling algorithm and the classical
+dimension cost on every solve.
+
+The batch path already does the structural half. `BaseAlgo::set_switchable_vm_buses`
+reserves a free Vm column + Q equation per PV bus at sparsity-build time;
+`set_pv_pinned_buses` rewrites that Q row to the identity by value inside `fill_J`, on the
+standing factorization. So a local generator's projection row needs nothing new in the
+ledger: the regulating branch *is* the identity-pinned Q row, the pinned-at-limit branch is
+the ordinary Q mismatch with the limit stamped into the bus injection, and both live inside
+the pattern the reservation built. The box is per **bus**, from
+`bus_q_check::build_bus_q_plan` (`batch_algorithm/BusQCheck.hpp`), which sums the limits of
+every machine holding the bus — the same rule OpenLoadFlow applies, and it sidesteps the
+per-machine split question for a first cut.
+
+Two gaps decide the plugin's shape:
+
+- **The pinned row's residual is zero, not `Vm - v_set`.** The existing pinning assumes a
+  bus that starts at its setpoint and never leaves it. A bus that was released and is
+  re-pinned is no longer there, so its row needs a residual that drives it back. The
+  algorithm owns the mismatch vector and can overwrite those entries after each evaluation;
+  `NRAlgo` reused as-is cannot. Hence a sibling algorithm.
+- **Per-iteration pin set and injection correction.** Which buses are pinned is
+  re-evaluated after every step — a call to `set_pv_pinned_buses` per iteration — and a
+  pinned bus needs its limit added to its reactive injection: one extension with a per-bus
+  correction vector added in `adjust_mismatch`, reached from the algorithm through the same
+  typed accessor as prototype A.
+
+Also: refactor fallback must be on (a pin or release moves pivots), so register over the
+retrying KLU wrapper; the Armijo policy in `ScalingPolicies.hpp` is a template a sibling
+algorithm can reuse in a few lines; and the scaling constant needs the per-bus
+normalisation by the reactive span discussed under "Costs and open questions".
+
+What is worse than prototype A:
+
+- **Dimension growth on every solve.** Every local PV bus with limits gains a Vm column and
+  a Q row, and the Q rows drag in their `dS_dVm` entries. A plugin over the plain solve pays
+  that always; the batch classes already pay it for generator contingencies, so there it is
+  free.
+- **Remote controllers are out of reach.** A lone remote controller's `(v_row, q_col)` slot
+  can be reserved by flipping `set_may_mask_voltage_control`, but the value written into it
+  comes privately from `VoltageControl`'s stranded flag, and the stranded residual pins
+  `Q_c` at zero, not at a limit. Multi-controller groups need shed rows on the sharing
+  equations. Both are core work. On real grid snapshots remote groups are a minority, so the
+  plugin covers the bulk — but those are also the buses where cycling tends to bite.
+- **Convention.** The bus injection is a sum over machines, so a bus with one regulating
+  generator and one at fixed Q needs the fixed one's target left in the box arithmetic. The
+  plan already separates the two; this is care rather than code.
+
+What is better: the oracle is real (`BusQCheck` reads Q from `V`, so it *sees* the
+enforcement), and the reported results are right without core changes, because
+`compute_results` derives a bus's Q from `V` and splits it per machine by convention.
+
+### The two side by side
+
+Rough sizes, by analogy with the LM example. Estimates, not measurements.
+
+| | A: slack limits | B: reactive limits, local generators |
+|---|---|---|
+| extension | 250–350 lines, new rows and columns | ~80 lines, one correction vector |
+| algorithm | none, `NRAlgo` reused | sibling algorithm, 200–300 lines |
+| new J rows / columns | one row + one column per participant | none beyond the switchable reservation |
+| core addition | typed extension accessor | the same accessor |
+| oracle | none — the detector cannot see the shed | real — the bus check reads Q from V |
+| reported results | per-generator P wrong for a pinned machine | correct |
+| coverage | all participants | local PV generators and regulating storage only |
+| line search | free (`LineSearch` policy) | a few lines |
+| total, with CMake (~100) and test (100–150) | 600–800 lines | 500–700 lines |
+
+Either is two to four days for a first cut. The batch classes select their algorithm
+through the same registry (`AlgorithmSelector`), so a plugin is selectable there too, which
+is where the payoff is. The reactive-limit instantiation for *remote* controllers is not a
+bigger extension, but it touches `VoltageControl`'s reservation gating, which a plugin
+cannot flip — so that one is core work whichever prototype goes first.
+
 ## References
 
 Nonsmooth analysis and semismooth Newton:
