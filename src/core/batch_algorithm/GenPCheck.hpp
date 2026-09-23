@@ -263,20 +263,24 @@ struct SlackShareInputs
  * Append to `out` one LimitViolation per participating machine whose converged active
  * power left its limits, for ONE converged row.
  *
- * `slack` is what that row's solve left about the distribution (see SlackShareInputs);
- * `target_p_of(gen_id)` is this row's own active set-point for a GENERATOR, and
- * `is_gen_off(gen_id)` whether the row disconnected it. Both are asked about generators
- * only: no batch varies a storage unit's injection or disconnects one, so its target is
- * the grid's own, read into the entry when the plan was built. `masked_solver_ids` is this
- * row's masked (stranded) solver buses -- sorted, may be nullptr.
+ * `slack` is what that row's solve left about the distribution (see SlackShareInputs).
+ * The three predicates are asked about a unit `(el_type, el_id)` (GENERATOR or STORAGE):
+ * `target_p_of` is this row's own active set-point, in GENERATOR convention (a storage
+ * unit's grid target is in load convention: the caller negates it), possibly moved by the
+ * row's slack pre-pass; `is_off` whether the row disconnected it (it produces nothing and
+ * takes no share); `takes_no_share` whether it still produces its set-point but takes no
+ * share of the distributed slack (the row's slack pre-pass saturated it, see
+ * BaseBatchSweep::_prepare_slack_redistribution). `masked_solver_ids` is this row's
+ * masked (stranded) solver buses -- sorted, may be nullptr.
  */
-template<class TargetPOf, class IsGenOff>
+template<class TargetPOf, class IsOff, class TakesNoShare>
 inline void check_gen_p_violations(const GenPPlan & plan,
                                    const SlackShareInputs & slack,
                                    real_type tol_mw,
                                    const std::vector<int> * masked_solver_ids,
                                    TargetPOf target_p_of,
-                                   IsGenOff is_gen_off,
+                                   IsOff is_off,
+                                   TakesNoShare takes_no_share,
                                    std::vector<LimitViolation> & out)
 {
     if(plan.empty()) return;
@@ -288,12 +292,6 @@ inline void check_gen_p_violations(const GenPPlan & plan,
                                                 masked_solver_ids->end(), bus);
     };
 
-    // a row takes a GENERATOR out of the distribution; a storage unit is never varied nor
-    // disconnected by one, so it always keeps its share
-    auto is_off = [&](ViolationElementType el_type, int el_id){
-        return (el_type == ViolationElementType::GENERATOR) && is_gen_off(el_id);
-    };
-
     // the row's total raw participation, over the machines it actually leaves participating
     // -- what turns the normalized per-bus weight back into a raw one, see GenPPlan. BOTH
     // families are in it: the per-bus weights the solver was given sum them together.
@@ -302,9 +300,10 @@ inline void check_gen_p_violations(const GenPPlan & plan,
         const GenPParticipant & part = plan.participants[k];
         if(is_masked(part.bus_solver)) continue;
         if(is_off(part.el_type, part.el_id)) continue;
+        if(takes_no_share(part.el_type, part.el_id)) continue;
         total_raw_w += part.slack_weight;
     }
-    if(!(std::abs(total_raw_w) > 1e-12)) return;  // nothing left distributing anything
+    const bool anything_shared = std::abs(total_raw_w) > 1e-12;
 
     for(std::size_t k = 0; k < plan.gens.size(); ++k){
         const GenPEntry & entry = plan.gens[k];
@@ -313,12 +312,12 @@ inline void check_gen_p_violations(const GenPPlan & plan,
 
         // its target, plus its share of what its bus had to make up -- exactly as
         // GeneratorContainer::set_p_slack computes it after a single solve, the raw per-bus
-        // total written as `w_norm(bus) * total_raw_w`. Generator convention throughout, so
-        // a storage unit's share is added to its target the same way round (see the file's
-        // header: the target was negated when the plan was built).
-        real_type p_mw = (entry.el_type == ViolationElementType::GENERATOR)
-                         ? target_p_of(entry.el_id) : entry.target_p_mw;
-        if(entry.bus_solver < static_cast<int>(slack.bus_slack_weight.size())){
+        // total written as `w_norm(bus) * total_raw_w`. Generator convention throughout
+        // (see the file's header). A unit the row's slack pre-pass saturated sits at its
+        // (clamped) set-point and takes no share.
+        real_type p_mw = target_p_of(entry.el_type, entry.el_id);
+        if(anything_shared && !takes_no_share(entry.el_type, entry.el_id)
+           && entry.bus_solver < static_cast<int>(slack.bus_slack_weight.size())){
             const real_type bus_raw_w = slack.bus_slack_weight(entry.bus_solver) * total_raw_w;
             if(std::abs(bus_raw_w) > 1e-12){
                 p_mw += slack.node_mismatch_mw(entry.bus_solver) * entry.slack_weight / bus_raw_w;

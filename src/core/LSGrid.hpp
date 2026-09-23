@@ -40,6 +40,7 @@
 #include "element_container/LoadContainer.hpp"
 #include "element_container/StorageContainer.hpp"
 #include "element_container/GeneratorContainer.hpp"
+#include "element_container/SlackRedistribution.hpp"
 #include "element_container/SGenContainer.hpp"
 #include "element_container/SvcContainer.hpp"
 #include "element_container/HvdcLineContainer.hpp"
@@ -247,7 +248,27 @@ class LS2G_API LSGrid final
         [[nodiscard]] Eigen::Ref<const RealVect> get_bus_vmax_kv() const {return substations_.get_bus_vmax_kv();}
 
         std::tuple<int, int> assign_slack_to_most_connected();
-        void consider_only_main_component();
+        /**
+         * Keep only the main synchronous component (see the python doc). With
+         * `redistribute_slack`, the active power the islanding takes out (setpoints of
+         * the stranded generators / static generators, minus the stranded loads /
+         * storage units / shunts) is shared on the remaining slack units OLF-style,
+         * with their [min_p, max_p] bounds: see redistribute_active_power. The report
+         * says what was lost and what was done with it.
+         */
+        slack_redistribution::Report consider_only_main_component(bool redistribute_slack = true);
+        /**
+         * Share `mismatch_mw` (> 0: the units must inject more) on the generators and
+         * storage units of the distributed slack as OpenLoadFlow's DistributedSlack
+         * outer loop does: proportionally to their slack weight, each one clamped to its
+         * [min_p, max_p] (set_gen_p_limits / set_storage_p_limits, unbounded when
+         * unset), a clamped unit leaving the pool and what it could not take being
+         * shared again on the others. Writes the new setpoints and takes the saturated
+         * units out of the distributed slack, so the next solve only shares what is
+         * left (the change in the losses) on the units that can still move. If EVERY
+         * unit saturates, all of them stay in the slack (see the report).
+         */
+        slack_redistribution::Report redistribute_active_power(real_type mismatch_mw);
         /**
          * Not relevant for dc lines, which always have the default to 
          * synch both sides !
@@ -720,7 +741,8 @@ class LS2G_API LSGrid final
          */
         [[nodiscard]] RealVect get_slack_weights_solver_without(size_t nb_bus_solver,
                                                                 const SolverBusIdVect & id_me_to_solver,
-                                                                const std::vector<bool> & gen_off) const;
+                                                                const std::vector<bool> & gen_off,
+                                                                const std::vector<bool> & storage_off = std::vector<bool>()) const;
 
         //pickle
         LSGrid::StateRes get_state() const ;
@@ -2279,10 +2301,14 @@ class LS2G_API LSGrid final
         // units' not already in
         [[nodiscard]] GlobalBusIdVect _slack_bus_id_me() const;
         // the raw (un-normalised) slack weight per solver bus, every participant of both
-        // families summed; `gen_off` (nullable) takes generators out as if disconnected
+        // families summed; `gen_off` / `storage_off` (nullable) take units out as if disconnected
         [[nodiscard]] RealVect _raw_slack_weights_solver(size_t nb_bus_solver,
                                                          const SolverBusIdVect & id_me_to_solver,
-                                                         const std::vector<bool> * gen_off) const;
+                                                         const std::vector<bool> * gen_off,
+                                                         const std::vector<bool> * storage_off = nullptr) const;
+        // the active power (MW, generator convention) the elements on the buses NOT in
+        // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
+        [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
         void init_slack_bus(const SolverBusIdVect & id_me_to_solver,
                             const GlobalBusIdVect& id_solver_to_me,
                             const GlobalBusIdVect & slack_bus_id_me,

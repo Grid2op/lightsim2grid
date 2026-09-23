@@ -188,6 +188,27 @@ class ScenarioSweep:
         self.computer.handle_disconnected_grid = bool(val)
 
     @property
+    def redistribute_slack(self):
+        """Whether the active power a row loses (the generators its generator contingency
+        disconnects, and the elements of an island cut off with
+        :attr:`handle_disconnected_grid`) is first shared on the remaining units of the
+        distributed slack as OpenLoadFlow's ``DistributedSlack`` outer loop does:
+        proportionally to their weight, each one clamped to its ``[min_p, max_p]``, a clamped
+        unit leaving the pool (and that row's distributed slack), the powerflow then only
+        sharing what is left (the change in the losses) on the units that can still move.
+        Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
+        clamp anything. Same name/semantics as
+        :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.redistribute_slack`.
+        """
+        return self.computer.redistribute_slack
+
+    @redistribute_slack.setter
+    def redistribute_slack(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `redistribute_slack` attribute must be a boolean.")
+        self.computer.redistribute_slack = bool(val)
+
+    @property
     def compute_limit_violations(self):
         """Whether limit violations are computed inline, per row, during ``compute()``
         / ``run()`` (see :func:`get_violations` / :func:`get_violations_n` /

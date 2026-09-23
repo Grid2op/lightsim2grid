@@ -771,6 +771,19 @@ void bind_batch(py::module_& m) {
                       [](const ScenarioSweep & self){ return self.get_violation_threshold(); },
                       [](ScenarioSweep & self, real_type val){ self.set_violation_threshold(val); },
                       DocContingencyAnalysis::violation_threshold.c_str())
+        .def_property("redistribute_slack",
+                      [](const ScenarioSweep & self){ return self.get_redistribute_slack(); },
+                      [](ScenarioSweep & self, bool val){ self.set_redistribute_slack(val); },
+                      "Whether the active power a row loses -- the generators its generator "
+                      "contingency disconnects, and the elements of an island cut off with "
+                      "handle_disconnected_grid -- is first shared on the remaining units of the "
+                      "distributed slack as OpenLoadFlow's DistributedSlack outer loop does "
+                      "(proportionally to their weight, each one clamped to its [min_p, max_p], a "
+                      "clamped unit leaving the pool and the slack), the solve then only sharing "
+                      "what is left (the change in the losses) on the units that can still move. "
+                      "Off by default. Needs LSGrid.set_gen_p_limits / set_storage_p_limits to "
+                      "clamp anything: without limits the converged state is unchanged. Same as "
+                      "LSGrid.redistribute_active_power, row by row.")
         .def_property("handle_disconnected_grid",
                       [](const ScenarioSweep & self){ return self.get_handle_disconnected_grid(); },
                       [](ScenarioSweep & self, bool val){ self.set_handle_disconnected_grid(val); },
@@ -869,6 +882,20 @@ void bind_batch(py::module_& m) {
                       "(*ie* a powerflow without any line disconnection) or not. "
                       "Default: false, meaning each simulation is initialized "
                       "with the given input vector")
+        .def_property("redistribute_slack",
+                      [](const ContingencyAnalysis & self){ return self.get_redistribute_slack(); },
+                      [](ContingencyAnalysis & self, bool val){ self.set_redistribute_slack(val); },
+                      "Whether the active power a contingency loses -- the elements of the island "
+                      "it cuts off, simulated with handle_disconnected_grid -- is first shared on "
+                      "the remaining units of the distributed slack as OpenLoadFlow's "
+                      "DistributedSlack outer loop does (proportionally to their weight, each one "
+                      "clamped to its [min_p, max_p], a clamped unit leaving the pool and the "
+                      "slack), the solve then only sharing what is left (the change in the losses) "
+                      "on the units that can still move. Off by default. Needs "
+                      "LSGrid.set_gen_p_limits / set_storage_p_limits to clamp anything: without "
+                      "limits the converged state is unchanged. Same as "
+                      "LSGrid.consider_only_main_component(redistribute_slack=True), contingency "
+                      "by contingency.")
         .def_property("handle_disconnected_grid",
                       [](const ContingencyAnalysis & self){ return self.get_handle_disconnected_grid(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_handle_disconnected_grid(val); },

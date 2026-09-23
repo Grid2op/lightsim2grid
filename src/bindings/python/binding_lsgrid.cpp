@@ -15,6 +15,28 @@
 using namespace ls2g;
 
 void bind_gridmodel(py::module_& m) {
+    py::class_<slack_redistribution::Report>(m, "SlackRedistributionReport",
+        "What LSGrid.redistribute_active_power / consider_only_main_component(redistribute_slack=True) did: "
+        "the imbalance shared (MW, > 0: the units inject more), how many units took part, how many reached "
+        "a bound (and left the distributed slack), how many rounds it took, what could not be placed, and "
+        "whether EVERY unit saturated (in which case none left the slack).")
+        .def_readonly("mismatch_mw", &slack_redistribution::Report::mismatch_mw)
+        .def_readonly("nb_participants", &slack_redistribution::Report::nb_participants)
+        .def_readonly("nb_saturated", &slack_redistribution::Report::nb_saturated)
+        .def_readonly("nb_rounds", &slack_redistribution::Report::nb_rounds)
+        .def_readonly("not_distributed_mw", &slack_redistribution::Report::not_distributed_mw)
+        .def_readonly("all_saturated", &slack_redistribution::Report::all_saturated)
+        .def("__repr__", [](const slack_redistribution::Report & r){
+            std::ostringstream ss;
+            ss << "SlackRedistributionReport(mismatch_mw=" << r.mismatch_mw
+               << ", nb_participants=" << r.nb_participants
+               << ", nb_saturated=" << r.nb_saturated
+               << ", nb_rounds=" << r.nb_rounds
+               << ", not_distributed_mw=" << r.not_distributed_mw
+               << ", all_saturated=" << (r.all_saturated ? "True" : "False") << ")";
+            return ss.str();
+        });
+
     auto lsgrid_cls = py::class_<LSGrid>(m, "LSGrid", DocLSGrid::LSGrid.c_str())
         .def(py::init<>())
         .def("copy", &LSGrid::copy, DocLSGrid::copy.c_str(), py::return_value_policy::take_ownership)
@@ -156,7 +178,10 @@ void bind_gridmodel(py::module_& m) {
         .def("assign_slack_to_most_connected", &LSGrid::assign_slack_to_most_connected, DocLSGrid::assign_slack_to_most_connected.c_str())
         .def("set_reference_slack_bus", &LSGrid::set_reference_slack_bus, DocLSGrid::set_reference_slack_bus.c_str())
         .def("get_reference_slack_bus", &LSGrid::get_reference_slack_bus, DocLSGrid::get_reference_slack_bus.c_str())
-        .def("consider_only_main_component", &LSGrid::consider_only_main_component, DocLSGrid::consider_only_main_component.c_str())
+        .def("consider_only_main_component", &LSGrid::consider_only_main_component,
+             py::arg("redistribute_slack") = true, DocLSGrid::consider_only_main_component.c_str())
+        .def("redistribute_active_power", &LSGrid::redistribute_active_power,
+             py::arg("mismatch_mw"), DocLSGrid::redistribute_active_power.c_str())
         .def("set_ignore_status_global", &LSGrid::set_ignore_status_global, DocLSGrid::set_ignore_status_global.c_str())
         .def("set_synch_status_both_side", &LSGrid::set_synch_status_both_side, DocLSGrid::set_synch_status_both_side.c_str())
         .def("get_ignore_status_global", &LSGrid::get_ignore_status_global, DocLSGrid::get_ignore_status_global.c_str())

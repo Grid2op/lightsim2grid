@@ -4065,8 +4065,45 @@ const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
     component is cleared. Reactivating the elements afterwards does not put them back in the
     slack: work on a copy (:func:`copy`) if the original slack is needed afterwards.
 
+    With ``redistribute_slack`` (default ``True``), the active power the islanding takes out --
+    the set-points of the stranded generators and static generators, minus the stranded loads,
+    storage units and shunts (an HVDC line keeps its in-main-component converter injecting) --
+    is then shared on the remaining units of the distributed slack as OpenLoadFlow's
+    ``DistributedSlack`` outer loop would, with their ``[min_p, max_p]`` bounds: see
+    :func:`redistribute_active_power`. Without limits (:func:`set_gen_p_limits` /
+    :func:`set_storage_p_limits` never called) nothing saturates and the converged state is the
+    same as without the redistribution, only the set-points move. Pass ``False`` to keep the
+    set-points untouched (the grid2op backend and ``init_from_pypowsybl`` do).
+
+    Returns a :class:`SlackRedistributionReport`: ``mismatch_mw`` is the power lost (even when
+    ``redistribute_slack`` is ``False``), the other fields say what was done with it.
+
     Requires at least one slack bus to already be defined (see
     :func:`assign_slack_to_most_connected`); raises otherwise.
+
+)mydelimiter";
+
+const std::string DocLSGrid::redistribute_active_power = R"mydelimiter(
+    Share ``mismatch_mw`` (positive: the units must inject more) on the generators and storage
+    units of the distributed slack as OpenLoadFlow's ``DistributedSlack`` outer loop does
+    (``GenerationActivePowerDistributionStep``): proportionally to their slack weight, each unit's
+    injection clamped to its ``[min_p, max_p]`` (:func:`set_gen_p_limits` /
+    :func:`set_storage_p_limits`, unbounded when unset), a clamped unit leaving the pool and what
+    it could not take being shared again on the others, until everything is placed.
+
+    The new set-points are written in the grid (``change_p_gen`` / ``change_p_storage``), and the
+    units that reached a bound are removed from the distributed slack
+    (:func:`remove_gen_slackbus` / :func:`remove_storage_slackbus`), so that the next powerflow
+    only shares what is left (the change in the losses) on the units that can still move. If
+    every unit reaches a bound, all of them stay in the slack (a powerflow needs one), and the
+    report says how much could not be placed.
+
+    Note that a generator or storage unit leaving the slack this way does not come back on its
+    own; and when the FIRST slack generator leaves it, the angle reference moves to the next one
+    (a constant angle shift, the magnitudes are unchanged).
+
+    Returns a :class:`SlackRedistributionReport` (``mismatch_mw``, ``nb_participants``,
+    ``nb_saturated``, ``nb_rounds``, ``not_distributed_mw``, ``all_saturated``).
 
 )mydelimiter";
 

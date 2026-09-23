@@ -59,10 +59,14 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
 
     if(invertible){
         if(!_has_gen_contingency()){
-            const CplxVect & sb = _step_sbus(i, sbus_scratch);
+            // the layout's own weights and injection on the common row; this row's own
+            // where the slack pre-pass moved set-points / saturated units
+            // (_prepare_slack_redistribution) -- both by reference, no row allocates
+            const RealVect & sw = _row_slack_weights(i, sw_scratch);
+            const CplxVect & sb = _step_sbus_row(i, sbus_scratch);
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
                                          Ybus, V, sb,
-                                         active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
+                                         active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
             // while this row's Ybus edits are still in place -- see _maybe_store_jacobian
@@ -70,7 +74,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             // solved)
             if(conv){
                 _maybe_store_jacobian(i, algo);
-                _record_row_physical(i, algo, V, active_layout().slack_weights, sb);
+                _record_row_physical(i, algo, V, sw, sb);
             }
         } else {
             // generator contingencies: this row's buses that keep a live local voltage
@@ -85,7 +89,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             const bool flips = _row_flips_pv(i);
             if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(i));
             const RealVect & sw = _row_slack_weights(i, sw_scratch);
-            const CplxVect & sb = _step_sbus(i, sbus_scratch);
+            const CplxVect & sb = _step_sbus_row(i, sbus_scratch);
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
                                          Ybus, V, sb,
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
@@ -544,6 +548,10 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     _prepare_gen_v_constraints();
     // ... and the voltage-control groups a per-row gen_v sets the v_set of
     _prepare_gen_v_vc();
+    // ... and, where asked, the OLF-style redistribution of what each row loses (it
+    // reads the per-row injections above, the masks and the generator contingencies:
+    // after all of them, before the "n" solve it leaves untouched)
+    _prepare_slack_redistribution(nb_steps);
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager

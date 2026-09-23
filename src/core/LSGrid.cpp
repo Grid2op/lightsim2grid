@@ -2534,23 +2534,32 @@ GlobalBusIdVect LSGrid::_slack_bus_id_me() const{
 
 RealVect LSGrid::_raw_slack_weights_solver(size_t nb_bus_solver,
                                            const SolverBusIdVect & id_me_to_solver,
-                                           const std::vector<bool> * gen_off) const{
+                                           const std::vector<bool> * gen_off,
+                                           const std::vector<bool> * storage_off) const{
     RealVect res = RealVect::Zero(static_cast<Eigen::Index>(nb_bus_solver));
     generators_.accumulate_slack_weights_solver(res, id_me_to_solver, gen_off);
-    storages_.accumulate_slack_weights_solver(res, id_me_to_solver);
+    storages_.accumulate_slack_weights_solver(res, id_me_to_solver, storage_off);
     return res;
 }
 
 RealVect LSGrid::get_slack_weights_solver_without(size_t nb_bus_solver,
                                                   const SolverBusIdVect & id_me_to_solver,
-                                                  const std::vector<bool> & gen_off) const{
+                                                  const std::vector<bool> & gen_off,
+                                                  const std::vector<bool> & storage_off) const{
     if(gen_off.size() != static_cast<std::size_t>(generators_.nb())){
         std::ostringstream exc_;
         exc_ << "LSGrid::get_slack_weights_solver_without: 'gen_off' has " << gen_off.size()
              << " elements but this grid has " << generators_.nb() << " generators.";
         throw std::runtime_error(exc_.str());
     }
-    RealVect res = _raw_slack_weights_solver(nb_bus_solver, id_me_to_solver, &gen_off);
+    if(!storage_off.empty() && storage_off.size() != static_cast<std::size_t>(storages_.nb())){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::get_slack_weights_solver_without: 'storage_off' has " << storage_off.size()
+             << " elements but this grid has " << storages_.nb() << " storage units.";
+        throw std::runtime_error(exc_.str());
+    }
+    RealVect res = _raw_slack_weights_solver(nb_bus_solver, id_me_to_solver, &gen_off,
+                                             storage_off.empty() ? nullptr : &storage_off);
     const real_type sum_res = res.sum();
     // no participant left: leave the vector at zero rather than dividing by it, and let
     // the caller decide (see BaseBatchSweep::_row_slack_weights)
@@ -2730,8 +2739,69 @@ std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
     return res;
 }
 
+real_type LSGrid::_lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const{
+    // what leaves the solved grid with the islanded buses, in generator convention and
+    // from the SETPOINTS (the last results may be stale, or never computed): what a
+    // one-sided element injects is exactly what `disconnect_if_not_in_main_component`
+    // takes out below (an HVDC line keeps its in-main converter injecting, an SVC has
+    // no active power: neither counts)
+    const auto bus_lost = [&bus_in_main_cc](int bus_me){ return !bus_in_main_cc[bus_me]; };
+    real_type lost = 0.;
+    lost += slack_redistribution::sum_setpoints_if(
+        generators_, 1., bus_lost, [this](int el_id){ return generators_.get_target_p()(el_id); });
+    lost += slack_redistribution::sum_setpoints_if(
+        sgens_, 1., bus_lost, [this](int el_id){ return sgens_.get_target_p()(el_id); });
+    lost += slack_redistribution::sum_setpoints_if(
+        loads_, -1., bus_lost, [this](int el_id){ return loads_.get_target_p()(el_id); });
+    lost += slack_redistribution::sum_setpoints_if(
+        storages_, -1., bus_lost, [this](int el_id){ return storages_.get_target_p()(el_id); });
+    lost += slack_redistribution::sum_setpoints_if(
+        shunts_, -1., bus_lost, [this](int el_id){ return shunts_.get_target_p()(el_id); });
+    return lost;
+}
+
+slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatch_mw){
+    using slack_redistribution::Participant;
+    using slack_redistribution::UnitKind;
+    const auto keep_all = [](int){ return true; };
+    const auto none_off = [](int){ return false; };
+    std::vector<Participant> units;
+    slack_redistribution::append_participants(
+        generators_, UnitKind::GENERATOR, 1., keep_all, none_off,
+        [this](int gen_id){ return generators_.get_target_p()(gen_id); }, units);
+    slack_redistribution::append_participants(
+        storages_, UnitKind::STORAGE, -1., keep_all, none_off,
+        [this](int storage_id){ return storages_.get_target_p()(storage_id); }, units);
+
+    std::vector<real_type> new_inj;
+    std::vector<char> saturated;
+    const slack_redistribution::Report report = slack_redistribution::distribute(
+        units, mismatch_mw, slack_redistribution::default_eps_mw, new_inj, saturated);
+
+    // the setpoints first, the slack second: a generator still flagged slack does not
+    // re-evaluate its PV status on a change of P (GeneratorContainer::_on_change_p), and
+    // leaving the slack triggers the re-evaluation the solver needs anyway
+    for(std::size_t k = 0; k < units.size(); ++k){
+        if(std::abs(new_inj[k] - units[k].injection_mw) <= BaseConstants::_tol_equal_float) continue;
+        if(units[k].kind == UnitKind::GENERATOR){
+            generators_.change_p_nothrow(units[k].el_id, new_inj[k], algo_controler_);
+        }else{
+            storages_.change_p_nothrow(units[k].el_id, -new_inj[k], algo_controler_);
+        }
+    }
+    for(std::size_t k = 0; k < units.size(); ++k){
+        if(!saturated[k]) continue;
+        if(units[k].kind == UnitKind::GENERATOR){
+            generators_.remove_slackbus(units[k].el_id, algo_controler_);
+        }else{
+            storages_.remove_slackbus(units[k].el_id, algo_controler_);
+        }
+    }
+    return report;
+}
+
 // TODO DC LINE: one side might be in the connected comp and not the other !
-void LSGrid::consider_only_main_component(){
+slack_redistribution::Report LSGrid::consider_only_main_component(bool redistribute_slack){
     const GlobalBusIdVect slack_buses_id = _slack_bus_id_me();
 
     // TODO DEBUG MODE
@@ -2811,6 +2881,11 @@ void LSGrid::consider_only_main_component(){
     for(size_t bus_id = 0; bus_id < nb_busbars; ++bus_id){
         if(conn_comp[bus_id] == main_cc_id) bus_in_main_cc[bus_id] = true;
     }
+    // what the islanding takes out, measured BEFORE anything is disconnected (see
+    // _lost_setpoints_mw): shared on the remaining slack units at the end, OLF-style,
+    // and reported either way (a few passes over the elements: nothing next to the BFS)
+    const real_type lost_mw = _lost_setpoints_mw(bus_in_main_cc);
+
     // the generators / storage units of the distributed slack stranded outside the main
     // component leave the slack FIRST (as OLF, which only distributes on the main
     // component): once deactivated below they would still be listed by
@@ -2831,6 +2906,15 @@ void LSGrid::consider_only_main_component(){
     }
     // and finally deal with the buses
     init_bus_status();
+
+    // the lost power is shared on the slack units that remain (the stranded ones are
+    // out of the slack and off by now), with their bounds
+    slack_redistribution::Report report;
+    if(redistribute_slack && std::abs(lost_mw) > slack_redistribution::default_eps_mw){
+        report = redistribute_active_power(lost_mw);
+    }
+    report.mismatch_mw = lost_mw;
+    return report;
 }
 
 } // namespace ls2g

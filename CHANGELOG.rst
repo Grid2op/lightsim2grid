@@ -215,6 +215,27 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [IMPROVED] reading the batteries' ``activePowerControl`` extension (pypowsybl <= 1.16.1) goes
   through a JIIDM export restricted to it: ``bake_outer_loops`` and ``init_from_pypowsybl``
   are much faster on large grids with batteries. Same result.
+- [FIXED] ``LSGrid.consider_only_main_component`` left the generators / storage units stranded
+  outside the main component in the distributed slack: the next powerflow raised
+  "One of the slack bus is disconnected". They now leave the slack (and a forced reference
+  slack bus outside the main component is cleared), as OpenLoadFlow only distributes the slack
+  on the main component.
+- [ADDED] ``LSGrid.redistribute_active_power(mismatch_mw)``: shares a known active-power
+  imbalance on the generators and storage units of the distributed slack as OpenLoadFlow's
+  ``DistributedSlack`` outer loop does, with their ``[min_p, max_p]`` bounds (a saturated unit
+  leaves the pool, and the distributed slack).
+- [ADDED] ``LSGrid.consider_only_main_component(redistribute_slack=True)``: the power the
+  islanding takes out (set-points) is redistributed that way on the remaining slack units. It
+  returns a ``SlackRedistributionReport``. Without p limits the converged state is unchanged
+  (only the set-points move); the grid2op backend and ``init_from_pypowsybl`` pass ``False``.
+- [ADDED] ``redistribute_slack`` (off by default) on ``ContingencyAnalysis`` and
+  ``ScenarioSweep``: the same OLF-style bounded redistribution of the power a row loses (a
+  generator contingency, or an island cut off with ``handle_disconnected_grid``) before its
+  powerflow, the saturated units leaving that row's distributed slack.
+- [FIXED] the DC active-power imbalance handed to the generator p-limit check
+  (``compute_physical_violations``) was summed over every bus, the ones masked by
+  ``handle_disconnected_grid`` included; it is now summed over the solved buses only, as the
+  DC solver does.
 
 
 [1.1.0] 2026-09-21

@@ -504,6 +504,7 @@ struct LS2G_API DocLSGrid
     static const std::string update_slack_weights_by_id;
     static const std::string assign_slack_to_most_connected;
     static const std::string consider_only_main_component;
+    static const std::string redistribute_active_power;
     static const std::string get_ignore_status_global;
     static const std::string get_synch_status_both_side;
     static const std::string set_line_names;

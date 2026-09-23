@@ -290,7 +290,9 @@ def init(net : pypo.network.Network,
 
     # and now deactivate all elements and nodes not in the main component
     if only_main_component:
-        model.consider_only_main_component()
+        # the set-points stay the file's: no redistribution of what is outside the main
+        # component (it was never solved by the file's own powerflow either)
+        model.consider_only_main_component(False)
     else:
         # automatically disconnect non connected buses
         # (this is automatically done by consider_only_main_component)

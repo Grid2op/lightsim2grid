@@ -18,6 +18,7 @@
 #include "HvdcPCheck.hpp"
 #include "BusGraph.hpp"
 #include "BatchAdjoint.hpp"
+#include "element_container/SlackRedistribution.hpp"
 
 #include <set>
 #include <map>
@@ -370,6 +371,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _row_slack_gens_off_.clear();
                 _li_defaults_vect_cache_.clear();
                 _physical_violations_n_.clear();
+                _clear_slack_redistribution();
             }
             BaseBatchSolverSynch::clear_batch_inputs();
         }
@@ -652,6 +654,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             clear_batch_inputs();
             _handle_disconnected_grid = val;
         }
+
+        // OLF-style bounded redistribution of the active power a row loses (a generator
+        // contingency, an island cut off in "handle disconnected grid" mode) BEFORE its
+        // solve, the saturated units leaving that row's distributed slack -- see
+        // _prepare_slack_redistribution and SlackRedistribution.hpp. Off by default.
+        // Not L2: the pre-pass is rebuilt at every compute() (it depends on the
+        // per-row injections, which a second compute() comes to change).
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        bool get_redistribute_slack() const {return _redistribute_slack_;}
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void set_redistribute_slack(bool val) {_redistribute_slack_ = val;}
 
         // limit violations (ContingencyAnalysis AND ScenarioSweep -- see
         // get_violations()/get_violations_n() below; deliberately NO
@@ -1879,10 +1892,26 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // (MW), the same `-sum(Pbus)` LSGrid::_fill_bus_mismatch_dc shares out -- read off
         // the injection the row was actually solved with (empty means the DC entry point
         // fell back to the member dc_cache_.inj, see compute_one_powerflow).
-        real_type _dc_imbalance_mw(const Eigen::Ref<const CplxVect> & sbus_solver) const {
+        // Summed over the SOLVED buses only: a bus `masked` (stranded by this row's
+        // contingency, sorted solver ids, may be nullptr) is out of the DC balance
+        // (BaseDCAlgo builds its right-hand side over the live buses only).
+        real_type _dc_imbalance_mw(const Eigen::Ref<const CplxVect> & sbus_solver,
+                                   const std::vector<int> * masked) const {
             const real_type sn_mva = _grid_model.get_sn_mva();
-            if(sbus_solver.size() > 0) return -sbus_solver.real().sum() * sn_mva;
-            return -dc_cache_.inj.sum() * sn_mva;
+            const bool has_masked = (masked != nullptr) && !masked->empty();
+            real_type sum = 0.;
+            if(sbus_solver.size() > 0){
+                for(Eigen::Index b = 0; b < sbus_solver.size(); ++b){
+                    if(has_masked && std::binary_search(masked->begin(), masked->end(), static_cast<int>(b))) continue;
+                    sum += std::real(sbus_solver(b));
+                }
+            } else {
+                for(Eigen::Index b = 0; b < dc_cache_.inj.size(); ++b){
+                    if(has_masked && std::binary_search(masked->begin(), masked->end(), static_cast<int>(b))) continue;
+                    sum += dc_cache_.inj(b);
+                }
+            }
+            return -sum * sn_mva;
         }
 
         // This row's masked (stranded) solver buses, or nullptr when it masks none.
@@ -1936,11 +1965,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                                     _grid_model.get_sn_mva(),
                                                     algo.ac_solver_used());
                 if(slack.ac) slack.slack_absorbed = algo.get_slack_absorbed();
-                else slack.dc_imbalance_mw = _dc_imbalance_mw(sbus_solver);
+                else slack.dc_imbalance_mw = _dc_imbalance_mw(sbus_solver, masked);
+                // the targets are this row's own -- the redistributed ones where the
+                // slack pre-pass moved them -- and a unit that pre-pass saturated took
+                // no share of what the solve had left to distribute
                 gen_p_check::check_gen_p_violations(
                     _gen_p_plan_, slack, _physical_tol_mva_, masked,
-                    [this, i](int gen_id){ return this->_gen_target_p_in_row(i, gen_id); },
-                    [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
+                    [this, i](ViolationElementType el_type, int el_id){ return this->_row_target_p(i, el_type, el_id); },
+                    [this, i](ViolationElementType el_type, int el_id){
+                        return (el_type == ViolationElementType::GENERATOR) && this->_gen_off_in_row(i, el_id); },
+                    [this, i](ViolationElementType el_type, int el_id){ return this->_row_takes_no_share(i, el_type, el_id); },
                     _physical_violations_[i]);
             }
         }
@@ -2074,8 +2108,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 else slack.dc_imbalance_mw = -dc_cache_.inj.sum() * _grid_model.get_sn_mva();
                 gen_p_check::check_gen_p_violations(
                     _gen_p_plan_, slack, _physical_tol_mva_, nullptr,
-                    [this](int gen_id){ return this->_grid_target_p(gen_id); },
-                    [](int){ return false; },  // the base case disconnects no generator
+                    [this](ViolationElementType el_type, int el_id){ return this->_grid_target_p_of(el_type, el_id); },
+                    [](ViolationElementType, int){ return false; },  // the base case disconnects no generator
+                    [](ViolationElementType, int){ return false; },  // ... and redistributes nothing
                     _physical_violations_n_);
             }
         }
@@ -2303,12 +2338,23 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // no row allocates and no two threads share it).
         const RealVect & _row_slack_weights(size_t i, RealVect & scratch) const {
             const RealVect & base_w = active_layout().slack_weights;
-            if(i >= _row_slack_gens_off_.size() || _row_slack_gens_off_[i].empty()) return base_w;
+            const bool has_gens_off = (i < _row_slack_gens_off_.size()) && !_row_slack_gens_off_[i].empty();
+            // ... and the units the slack pre-pass saturated take no share either
+            // (see _prepare_slack_redistribution)
+            const bool has_sat_gens = (i < _row_sat_gens_.size()) && !_row_sat_gens_[i].empty();
+            const bool has_sat_storages = (i < _row_sat_storages_.size()) && !_row_sat_storages_[i].empty();
+            if(!has_gens_off && !has_sat_gens && !has_sat_storages) return base_w;
             const auto & generators = _grid_model.get_generators();
             std::vector<bool> gen_off(generators.nb(), false);
-            for(int gen_id : _row_slack_gens_off_[i]) gen_off[gen_id] = true;
+            if(has_gens_off) for(int gen_id : _row_slack_gens_off_[i]) gen_off[gen_id] = true;
+            if(has_sat_gens) for(int gen_id : _row_sat_gens_[i]) gen_off[gen_id] = true;
+            std::vector<bool> storage_off;
+            if(has_sat_storages){
+                storage_off.assign(_grid_model.get_storages().nb(), false);
+                for(int storage_id : _row_sat_storages_[i]) storage_off[storage_id] = true;
+            }
             scratch = _grid_model.get_slack_weights_solver_without(
-                static_cast<size_t>(base_w.size()), active_layout().id_me_to_solver, gen_off);
+                static_cast<size_t>(base_w.size()), active_layout().id_me_to_solver, gen_off, storage_off);
             if(abs(scratch.sum()) < BaseConstants::_tol_equal_float){
                 scratch.setZero();
                 if(active_layout().slack_bus_id_solver.size() > 0){
@@ -2317,6 +2363,240 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
             }
             return scratch;
+        }
+
+        // ---- OLF-style bounded slack redistribution (option `redistribute_slack`) ----
+        //
+        // The distributed slack of the solve shares whatever imbalance the row leaves
+        // by fixed per-bus weights, with no limit: a row that loses a big generator (a
+        // generator contingency, or an island cut off in "handle disconnected grid"
+        // mode) pushes the remaining machines past their max_p, where OpenLoadFlow's
+        // DistributedSlack outer loop stops each one at its bound and re-shares the
+        // excess. The part of that imbalance known BEFORE the solve -- the set-points of
+        // what the row takes out -- is shared here the way OLF does it
+        // (slack_redistribution::distribute), once per compute() for every row:
+        //   _row_slack_dp_pu_  : per row, the correction to add to the row's injection
+        //                        (solver bus, dP in pu), one entry per participant bus
+        //   _row_gen_new_p_ /
+        //   _row_sto_new_p_    : per row, the units whose set-point moved (id, new
+        //                        injection in MW, generator convention), sorted by id --
+        //                        what the p-limit check reads as the row's target
+        //   _row_sat_gens_ /
+        //   _row_sat_storages_ : per row, the units that reached a bound (sorted): out
+        //                        of that row's distributed slack (_row_slack_weights),
+        //                        so the solve only shares what is left (the change in
+        //                        the losses) on the units that can still move
+        // Nothing the size of nb_rows x nb_bus exists; a row that loses nothing has
+        // every entry empty and solves exactly as before.
+        void _clear_slack_redistribution(){
+            _row_slack_dp_pu_.clear();
+            _row_gen_new_p_.clear();
+            _row_sto_new_p_.clear();
+            _row_sat_gens_.clear();
+            _row_sat_storages_.clear();
+        }
+
+        // this row's own active set-point of a static generator / a load (MW): its
+        // own row where modify_sgen_p / modify_load_p was given one, the grid's target
+        // otherwise (see _gen_target_p_in_row)
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        real_type _sgen_target_p_in_row(size_t i, int sgen_id) const {
+            const auto & mat = sbus_policy_.sgen_p;
+            const Eigen::Index row = static_cast<Eigen::Index>(i);
+            if(mat.rows() > 0 && row < mat.rows() && sgen_id < mat.cols()) return mat(row, sgen_id);
+            return _grid_model.get_sgen_target_p()(sgen_id);
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        real_type _sgen_target_p_in_row(size_t, int sgen_id) const { return _grid_model.get_sgen_target_p()(sgen_id); }
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        real_type _load_target_p_in_row(size_t i, int load_id) const {
+            const auto & mat = sbus_policy_.load_p;
+            const Eigen::Index row = static_cast<Eigen::Index>(i);
+            if(mat.rows() > 0 && row < mat.rows() && load_id < mat.cols()) return mat(row, load_id);
+            return _grid_model.get_load_target_p()(load_id);
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        real_type _load_target_p_in_row(size_t, int load_id) const { return _grid_model.get_load_target_p()(load_id); }
+
+        // the grid's own target of a slack unit, generator convention (a storage unit's
+        // target is in load convention)
+        real_type _grid_target_p_of(ViolationElementType el_type, int el_id) const {
+            if(el_type == ViolationElementType::GENERATOR) return _grid_target_p(el_id);
+            const Eigen::Ref<const RealVect> tgt = _grid_model.get_storage_target_p();
+            return (el_id >= 0 && el_id < tgt.size()) ? -tgt(el_id) : 0.;
+        }
+
+        static const real_type * _find_row_new_p(const std::vector<std::vector<std::pair<int, real_type> > > & rows,
+                                                 size_t i, int el_id){
+            if(i >= rows.size()) return nullptr;
+            const std::vector<std::pair<int, real_type> > & row = rows[i];
+            auto it = std::lower_bound(row.begin(), row.end(), std::make_pair(el_id, real_type(0.)),
+                                       [](const std::pair<int, real_type> & a, const std::pair<int, real_type> & b){
+                                           return a.first < b.first; });
+            if(it == row.end() || it->first != el_id) return nullptr;
+            return &it->second;
+        }
+
+        // this row's active set-point of a slack unit (MW, generator convention): the
+        // one the slack pre-pass wrote where it moved it, the row's own otherwise
+        real_type _row_target_p(size_t i, ViolationElementType el_type, int el_id) const {
+            if(el_type == ViolationElementType::GENERATOR){
+                const real_type * moved = _find_row_new_p(_row_gen_new_p_, i, el_id);
+                return moved != nullptr ? *moved : _gen_target_p_in_row(i, el_id);
+            }
+            const real_type * moved = _find_row_new_p(_row_sto_new_p_, i, el_id);
+            return moved != nullptr ? *moved : _grid_target_p_of(el_type, el_id);
+        }
+
+        // whether the slack pre-pass took that unit out of this row's distributed slack
+        bool _row_takes_no_share(size_t i, ViolationElementType el_type, int el_id) const {
+            const std::vector<std::vector<int> > & rows =
+                (el_type == ViolationElementType::GENERATOR) ? _row_sat_gens_ : _row_sat_storages_;
+            if(i >= rows.size()) return false;
+            return std::binary_search(rows[i].begin(), rows[i].end(), el_id);
+        }
+
+        // Row i's injection WITH the slack pre-pass correction: `_step_sbus` (the
+        // row's own, or the fixed base vector by reference) plus this row's dP on the
+        // participants' buses, written into `scratch`. In DC on a fixed-injection sweep
+        // the base vector is the (real) dc_cache_.inj, which compute_one_powerflow
+        // would otherwise fall back to on an empty Sbus.
+        const CplxVect & _step_sbus_row(size_t i, CplxVect & scratch) const {
+            const CplxVect & base = _step_sbus(i, scratch);
+            if(i >= _row_slack_dp_pu_.size() || _row_slack_dp_pu_[i].empty()) return base;
+            if(&base != &scratch){
+                if(base.size() > 0) scratch = base;
+                else scratch = dc_cache_.inj.template cast<cplx_type>();
+            }
+            for(const std::pair<int, real_type> & bus_dp : _row_slack_dp_pu_[i]){
+                if(bus_dp.first < 0 || bus_dp.first >= scratch.size()) continue;
+                scratch(bus_dp.first) += cplx_type(bus_dp.second, 0.);
+            }
+            return scratch;
+        }
+
+        // The pre-pass itself, once per compute() and after the per-row injections are
+        // known (_prepare_sbus_varying) and the masks / generator contingencies settled.
+        // For each row: what it loses, in MW and generator convention, is
+        //   (a) the generators it disconnects (a ScenarioSweep generator contingency,
+        //       slack or not): their ROW set-point (SbusPolicy::Vary::fill_row already
+        //       takes them out of the row's injection, so their power IS what the
+        //       remaining machines have to make up), plus
+        //   (b) the elements stranded on the buses it masks, element by element
+        //       (generators not already counted in (a), static generators, minus loads,
+        //       storage units and shunts) -- their rows are masked in the solve, so the
+        //       balance loses their net injection. Element-wise rather than the real
+        //       part of the row's injection over the masked buses: that would count an
+        //       islanded HVDC converter (the in-main one keeps injecting, see
+        //       HvdcLineContainer) and, in DC, the phase-shifter term.
+        // The participants are the slack units left in the main component and not
+        // disconnected by the row; slack_redistribution::distribute does the rest.
+        void _prepare_slack_redistribution(size_t nb_steps){
+            _clear_slack_redistribution();
+            if(!_redistribute_slack_) return;
+            using slack_redistribution::Participant;
+            using slack_redistribution::UnitKind;
+
+            _row_slack_dp_pu_.assign(nb_steps, std::vector<std::pair<int, real_type> >());
+            _row_gen_new_p_.assign(nb_steps, std::vector<std::pair<int, real_type> >());
+            _row_sto_new_p_.assign(nb_steps, std::vector<std::pair<int, real_type> >());
+            _row_sat_gens_.assign(nb_steps, std::vector<int>());
+            _row_sat_storages_.assign(nb_steps, std::vector<int>());
+
+            const auto & generators = _grid_model.get_generators();
+            const auto & sgens = _grid_model.get_static_generators();
+            const auto & loads = _grid_model.get_loads();
+            const auto & storages = _grid_model.get_storages();
+            const auto & shunts = _grid_model.get_shunts();
+            const SolverBusIdVect & id2s = active_layout().id_me_to_solver;
+            const real_type sn_mva = _grid_model.get_sn_mva();
+            const real_type eps_mw = slack_redistribution::default_eps_mw;
+            const int nb_gen = generators.nb();
+            const std::vector<bool> & gen_status = generators.get_status();
+            const GlobalBusIdVect & gen_bus = generators.get_bus_id();
+
+            std::vector<Participant> units;
+            std::vector<real_type> new_inj;
+            std::vector<char> saturated;
+            for(size_t i = 0; i < nb_steps; ++i){
+                if(i < _skip_mask.size() && _skip_mask[i]) continue;
+                const std::vector<int> * masked = _row_masked_ids(i);
+                const auto in_island = [&](int bus_me){
+                    if(masked == nullptr) return false;
+                    const int bus_solver = id2s[bus_me].cast_int();
+                    if(bus_solver < 0) return false;
+                    return std::binary_search(masked->begin(), masked->end(), bus_solver);
+                };
+                const auto gen_off = [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); };
+                const auto gen_p_row = [this, i](int gen_id){ return this->_gen_target_p_in_row(i, gen_id); };
+
+                // (a) the generators this row disconnects
+                real_type lost_mw = 0.;
+                for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+                    if(!gen_status[gen_id]) continue;
+                    if(gen_bus(gen_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
+                    if(!gen_off(gen_id)) continue;
+                    lost_mw += gen_p_row(gen_id);
+                }
+                // (b) the elements stranded on the masked buses
+                if(masked != nullptr){
+                    lost_mw += slack_redistribution::sum_setpoints_if(
+                        generators, 1., in_island,
+                        [&](int gen_id){ return gen_off(gen_id) ? 0. : gen_p_row(gen_id); });
+                    lost_mw += slack_redistribution::sum_setpoints_if(
+                        sgens, 1., in_island, [this, i](int sgen_id){ return this->_sgen_target_p_in_row(i, sgen_id); });
+                    lost_mw += slack_redistribution::sum_setpoints_if(
+                        loads, -1., in_island, [this, i](int load_id){ return this->_load_target_p_in_row(i, load_id); });
+                    lost_mw += slack_redistribution::sum_setpoints_if(
+                        storages, -1., in_island, [&storages](int storage_id){ return storages.get_target_p()(storage_id); });
+                    lost_mw += slack_redistribution::sum_setpoints_if(
+                        shunts, -1., in_island, [&shunts](int shunt_id){ return shunts.get_target_p()(shunt_id); });
+                }
+                if(std::abs(lost_mw) <= eps_mw) continue;
+
+                units.clear();
+                const auto keep_bus = [&in_island](int bus_me){ return !in_island(bus_me); };
+                slack_redistribution::append_participants(
+                    generators, UnitKind::GENERATOR, 1., keep_bus, gen_off, gen_p_row, units);
+                slack_redistribution::append_participants(
+                    storages, UnitKind::STORAGE, -1., keep_bus, [](int){ return false; },
+                    [&storages](int storage_id){ return storages.get_target_p()(storage_id); }, units);
+                if(units.empty()) continue;  // the row's own fallback stays (see _row_slack_weights)
+
+                const slack_redistribution::Report report = slack_redistribution::distribute(
+                    units, lost_mw, eps_mw, new_inj, saturated);
+
+                std::vector<std::pair<int, real_type> > & dp_row = _row_slack_dp_pu_[i];
+                for(size_t k = 0; k < units.size(); ++k){
+                    const real_type dp_mw = new_inj[k] - units[k].injection_mw;
+                    if(std::abs(dp_mw) > BaseConstants::_tol_equal_float){
+                        // the participants are listed by id (generators, then storage
+                        // units), so each per-family list comes out sorted
+                        if(units[k].kind == UnitKind::GENERATOR) _row_gen_new_p_[i].push_back(std::make_pair(units[k].el_id, new_inj[k]));
+                        else _row_sto_new_p_[i].push_back(std::make_pair(units[k].el_id, new_inj[k]));
+                        const int bus_solver = id2s[units[k].bus].cast_int();
+                        if(bus_solver >= 0) dp_row.push_back(std::make_pair(bus_solver, dp_mw / sn_mva));
+                    }
+                    if(saturated[k]){
+                        if(units[k].kind == UnitKind::GENERATOR) _row_sat_gens_[i].push_back(units[k].el_id);
+                        else _row_sat_storages_[i].push_back(units[k].el_id);
+                    }
+                }
+                (void) report;  // every unit saturated: `saturated` is all zero, they all stay in the slack
+                // one entry per bus: merge the units sharing one
+                if(dp_row.size() > 1){
+                    std::sort(dp_row.begin(), dp_row.end(),
+                              [](const std::pair<int, real_type> & a, const std::pair<int, real_type> & b){
+                                  return a.first < b.first; });
+                    std::vector<std::pair<int, real_type> > merged;
+                    merged.reserve(dp_row.size());
+                    for(const std::pair<int, real_type> & bus_dp : dp_row){
+                        if(!merged.empty() && merged.back().first == bus_dp.first) merged.back().second += bus_dp.second;
+                        else merged.push_back(bus_dp);
+                    }
+                    dp_row.swap(merged);
+                }
+            }
         }
 
         // whether row i turns some switchable bus PQ -- only then is the algorithm's
@@ -2398,7 +2678,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         _apply_step_gen_v(cont_id, V);
                         _apply_step_vc_v_set(cont_id, algo);
                         const RealVect & sw = _masked_slack_weights(masked, _row_slack_weights(cont_id, sw_scratch), sw_scratch);
-                        const CplxVect & sb = _step_sbus(cont_id, sbus_scratch);
+                        const CplxVect & sb = _step_sbus_row(cont_id, sbus_scratch);
                         conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, sb,
                                                      active_layout().slack_bus_id_solver.as_eigen(), sw,
                                                      active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
@@ -2604,6 +2884,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<int> _switchable_buses_;
         std::vector<std::vector<int> > _row_pv_to_pq_;
         std::vector<std::vector<int> > _row_slack_gens_off_;
+        // OLF-style bounded slack redistribution (see _prepare_slack_redistribution):
+        // the option, and the per-row data it builds at each compute()
+        bool _redistribute_slack_ = false;
+        std::vector<std::vector<std::pair<int, real_type> > > _row_slack_dp_pu_;
+        std::vector<std::vector<std::pair<int, real_type> > > _row_gen_new_p_;
+        std::vector<std::vector<std::pair<int, real_type> > > _row_sto_new_p_;
+        std::vector<std::vector<int> > _row_sat_gens_;
+        std::vector<std::vector<int> > _row_sat_storages_;
         // per contingency, the solver buses it strands (sorted, empty if none) and
         // whether the grid stays connected -- both settled by _prepare_connectivity
         // from bus_graph_, the DFS tree of the base graph built there.
