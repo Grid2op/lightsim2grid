@@ -179,7 +179,7 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
          * participating machine out. LSGrid adds the storage units' on top and
          * normalises (LSGrid::get_slack_weights_solver_without).
          */
-        void accumulate_slack_weights_solver(RealVect & res,
+        void accumulate_slack_weights_solver(Eigen::Ref<RealVect> res,
                                              const SolverBusIdVect & id_grid_to_solver,
                                              const std::vector<bool> * gen_off) const {
             slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, gen_off, _element_name());
