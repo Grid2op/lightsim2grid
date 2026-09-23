@@ -265,15 +265,15 @@ class LightEnv : protected LightEnvState
             return *this;
         }
 
-        void assign_time_series(const RealMat & load_p,
-                                const RealMat & load_q,
-                                const RealMat & gen_p,
-                                const RealMat & gen_v,
-                                const RealMat & storage_p,
-                                const RealMat & shunt_p,
-                                const RealMat & shunt_q,
-                                const RealMat & sgen_p,
-                                const RealMat & sgen_q){
+        void assign_time_series(const Eigen::Ref<const RealMat> & load_p,
+                                const Eigen::Ref<const RealMat> & load_q,
+                                const Eigen::Ref<const RealMat> & gen_p,
+                                const Eigen::Ref<const RealMat> & gen_v,
+                                const Eigen::Ref<const RealMat> & storage_p,
+                                const Eigen::Ref<const RealMat> & shunt_p,
+                                const Eigen::Ref<const RealMat> & shunt_q,
+                                const Eigen::Ref<const RealMat> & sgen_p,
+                                const Eigen::Ref<const RealMat> & sgen_q){
             has_been_checked_ = false;
             time_series_ = std::make_shared<const TimeSeries>(
                 TimeSeries{load_p, load_q, gen_p, gen_v, storage_p, shunt_p, shunt_q, sgen_p, sgen_q});
@@ -582,7 +582,7 @@ class LightEnv : protected LightEnvState
 
         template<class BusGetter>
         void aux_fill_topo_vect(const SubstationContainer & subs,
-                                const IntVect & pos_topo_vect,
+                                const Eigen::Ref<const IntVect> & pos_topo_vect,
                                 BusGetter get_bus){
             for(int el_id = 0; el_id < pos_topo_vect.size(); ++el_id){
                 topo_vect_(pos_topo_vect(el_id)) = subs.gridmodel_to_local(get_bus(el_id)).cast_int();

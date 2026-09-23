@@ -2571,7 +2571,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // an extra bus starts from a finite, nonzero voltage even where it is masked:
         // the Newton-Raphson divides by |V| at every bus, and the caller's starting
         // voltage is often exactly 0 on a busbar the grid does not use
-        void _maybe_seed_extra_buses(CplxVect & V) const {
+        void _maybe_seed_extra_buses(Eigen::Ref<CplxVect> V) const {
             if(_extra_buses_me_.empty()) return;
             const auto & id_me_to_solver = active_layout().id_me_to_solver;
             const SubstationContainer & subs = _grid_model.get_substations();
@@ -2894,7 +2894,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // |V| of the buses row i turns PV with a reactivated generator, seeded at that
         // generator's set-point before the solve (a pinned bus keeps its starting
         // magnitude). A no-op on every other row.
-        void _apply_step_topo_seed(size_t i, CplxVect & V) const {
+        void _apply_step_topo_seed(size_t i, Eigen::Ref<CplxVect> V) const {
             if(i >= _row_vm_seed_.size()) return;
             for(const auto & seed : _row_vm_seed_[i]){
                 const int b = seed.first;

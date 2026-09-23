@@ -62,6 +62,7 @@ This is a work in progress at the moment
    time_series
    security_analysis
    scenario_sweep
+   light_env
    continuation_powerflow
    differentiable
    cpp_library

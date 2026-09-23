@@ -548,5 +548,22 @@ class TestLightEnvActions(unittest.TestCase):
         self.assertAlmostEqual(float(info["survival_time"]), 1 / nb_ts)
 
 
+class TestProtectionsSetters(unittest.TestCase):
+    def test_accepts_any_dtype_and_read_only(self):
+        """the setters only read their input: a float32 / int64 or a read-only array is converted
+        (grid2op's thermal limits are float32)"""
+        th_lim = np.arange(1., 5., dtype=np.float32)
+        th_lim.flags.writeable = False
+        max_ov = np.full(4, 2, dtype=np.int64)
+        max_ov.flags.writeable = False
+        protections = Protections()
+        protections.set_thermal_limit_or(th_lim)
+        protections.set_thermal_limit_ex(2. * th_lim)
+        protections.set_max_line_time_step_overflow(max_ov)
+        np.testing.assert_array_equal(protections.get_thermal_limit_or(), th_lim)
+        np.testing.assert_array_equal(protections.get_thermal_limit_ex(), 2. * th_lim)
+        np.testing.assert_array_equal(protections.get_max_line_time_step_overflow(), max_ov)
+
+
 if __name__ == "__main__":
     unittest.main()

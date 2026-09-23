@@ -774,7 +774,7 @@ class LS2G_API VoltageControl
         // the regulated bus only moves the starting point, the voltage row then puts it
         // back at the grid's own target. Caller-set, NOT reset by clear() or
         // update_state(), like the pinning above.
-        void set_v_set_override(const RealVect& v_set) { v_set_override_ = v_set; }
+        void set_v_set_override(const Eigen::Ref<const RealVect> & v_set) { v_set_override_ = v_set; }
 
         // J row of each group's voltage constraint (group order), what the gradient of
         // a loss with respect to that group's v_set is read from (dF_v/dv_set = -1).
@@ -1138,7 +1138,7 @@ public:
 
     // Per-solve group set-points of the VoltageControl extension (NaN = the grid's
     // own), see VoltageControl::set_v_set_override. No-op without the extension.
-    void set_voltage_control_v_set(const RealVect& v_set) {
+    void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_v_set_override(v_set);
     }
