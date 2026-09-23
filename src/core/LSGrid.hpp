@@ -42,6 +42,7 @@
 #include "element_container/GeneratorContainer.hpp"
 #include "element_container/SlackRedistribution.hpp"
 #include "element_container/SGenContainer.hpp"
+#include "batch_algorithm/LimitViolation.hpp"
 #include "element_container/SvcContainer.hpp"
 #include "element_container/HvdcLineContainer.hpp"
 #include "HvdcDroopData.hpp"
@@ -338,6 +339,19 @@ class LS2G_API LSGrid final
         [[nodiscard]] AlgorithmType get_dc_algo_type() const {return _dc_algo.get_type(); }
         [[nodiscard]] const AlgorithmSelector & get_algo() const {return _algo;}
         [[nodiscard]] const AlgorithmSelector & get_dc_algo() const {return _dc_algo;}
+
+        /**
+         * The limits the LAST converged powerflow (ac_pf when `ac`, dc_pf otherwise)
+         * cannot physically meet -- the same checks the batch algorithms run with
+         * `compute_physical_violations`, on this grid's own solve: a voltage
+         * controller's reactive capability (AC only), an hvdc line's max power, and a
+         * generator or storage unit pushed past its [min_p, max_p] by the distributed
+         * slack. `tol_mva` is the absolute slack on every comparison. Throws if no such
+         * powerflow ran, if it did not converge, or (AC) if the algorithm does not
+         * publish its per-bus mismatch.
+         */
+        [[nodiscard]] std::vector<LimitViolation> get_physical_violations(bool ac = true,
+                                                                          real_type tol_mva = 1e-4) const;
 
         // do i compute the results (in terms of P,Q,V or loads, generators and flows on lines
         void deactivate_result_computation(){compute_results_=false;}

@@ -110,6 +110,8 @@ void bind_gridmodel(py::module_& m) {
         .def("get_dc_solver_type", &LSGrid::get_dc_algo_type, "DEPRECATED: use 'get_dc_algo_type' instead")
         .def("get_solver", &LSGrid::get_algo, py::return_value_policy::reference_internal, "DEPRECATED: use 'get_algo' instead")
         .def("get_dc_solver", &LSGrid::get_dc_algo, py::return_value_policy::reference_internal, "DEPRECATED: use 'get_dc_algo' instead")
+        .def("get_physical_violations", &LSGrid::get_physical_violations,
+             py::arg("ac") = true, py::arg("tol_mva") = 1e-4, DocLSGrid::get_physical_violations.c_str())
 
         // init the grid
         .def("init_bus", &LSGrid::init_bus, DocLSGrid::_internal_do_not_use.c_str())

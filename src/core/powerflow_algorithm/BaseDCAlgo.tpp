@@ -330,6 +330,11 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(
         }
     }
     nr_iter_ = 1;
+    // a converged solve says so, as the AC algorithms do: the status used to be
+    // written on failure only, so it stayed at NotInitError after a first, converged
+    // solve (the first solve re-initialises the algorithm on its way, which resets
+    // the status: hence written HERE, at the end, and not at the top)
+    err_ = ErrorType::NoError;
     need_refactor_ = false;  // no need to redo it in general cases
     timer_mismatch_ = timer_mismatch.duration();
     // std::cout << "need_refactor " <<  need_refactor_ <<"\n"; 

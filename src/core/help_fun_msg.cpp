@@ -4083,6 +4083,31 @@ const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
+    The limits the last converged powerflow of this grid cannot physically meet: the same checks the
+    batch algorithms run with ``compute_physical_violations`` (see
+    :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.compute_physical_violations`), on a
+    single :func:`ac_pf` (``ac=True``, the default) or :func:`dc_pf` (``ac=False``):
+
+    - a voltage controller (generator, static var compensator, hvdc converter...) whose reactive
+      output, what it took to hold its bus at its set-point, is beyond its capability
+      (``LOW_Q`` / ``HIGH_Q``; AC only, a DC powerflow has no reactive power);
+    - an hvdc line in angle-droop mode pushed past its maximum power (``LOW_P`` / ``HIGH_P``);
+    - a generator or storage unit of the distributed slack whose share of the imbalance lands it
+      past its ``[min_p, max_p]`` (:func:`set_gen_p_limits` / :func:`set_storage_p_limits`;
+      ``LOW_P`` / ``HIGH_P``).
+
+    Nothing is enforced: the solution is what it is, this only reports it. ``tol_mva`` is the
+    absolute slack (MW / MVAr) on every comparison. Returns a list of ``LimitViolation``
+    (``element_type``, ``element_id``, ``violation_type``, ``value``, ``limit``, ``name``), empty
+    when every limit holds.
+
+    Raises if no powerflow of that kind has run, if the last one did not converge, or (AC) if the
+    active algorithm does not publish its per-bus mismatch (a plugin solver that has not opted in:
+    every built-in AC algorithm does).
+
+)mydelimiter";
+
 const std::string DocLSGrid::redistribute_active_power = R"mydelimiter(
     Share ``mismatch_mw`` (positive: the units must inject more) on the generators and storage
     units of the distributed slack as OpenLoadFlow's ``DistributedSlack`` outer loop does

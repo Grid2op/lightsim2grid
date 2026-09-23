@@ -14,6 +14,10 @@
 
 #include "AlgorithmSelector.hpp"  // to avoid circular references
 #include "BinaryArchive.hpp"
+// the physical-limit checks of the batch algorithms, run here on a single solve
+#include "batch_algorithm/BusQCheck.hpp"
+#include "batch_algorithm/GenPCheck.hpp"
+#include "batch_algorithm/HvdcPCheck.hpp"
 
 #include <cmath>      // std::isfinite (check_positive_finite)
 #include <queue>
@@ -2798,6 +2802,69 @@ slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatc
         }
     }
     return report;
+}
+
+std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type tol_mva) const{
+    const char * fun_name = "LSGrid::get_physical_violations";
+    const SolverBusLayout & layout = ac ? static_cast<const SolverBusLayout &>(ac_cache_)
+                                        : static_cast<const SolverBusLayout &>(dc_cache_);
+    const AlgorithmSelector & algo = ac ? _algo : _dc_algo;
+    if(layout.id_solver_to_me.size() == 0){
+        std::ostringstream exc_;
+        exc_ << fun_name << ": no " << (ac ? "AC" : "DC") << " powerflow has run on this grid yet.";
+        throw std::runtime_error(exc_.str());
+    }
+    if(algo.get_error() != ErrorType::NoError){
+        std::ostringstream exc_;
+        exc_ << fun_name << ": the last " << (ac ? "AC" : "DC")
+             << " powerflow did not converge, there is no solution to check.";
+        throw std::runtime_error(exc_.str());
+    }
+    if(ac && !algo.fills_bus_mismatch()){
+        std::ostringstream exc_;
+        exc_ << fun_name << ": needs an algorithm that publishes its per-bus mismatch (that "
+                "mismatch IS the reactive power the machines pinning each bus had to produce). "
+                "Every built-in AC algorithm does; the active one (" << algo.get_name()
+             << ") does not, so it is a plugin solver that has not opted in (see "
+                "BaseAlgo::fills_bus_mismatch). Pick a built-in AC algorithm (change_algorithm).";
+        throw std::runtime_error(exc_.str());
+    }
+    std::vector<LimitViolation> out;
+    // nothing is masked and nothing is disconnected "for this row": the grid IS the row
+    const std::vector<int> * no_mask = nullptr;
+    if(ac){
+        bus_q_check::BusQPlan plan;
+        bus_q_check::build_bus_q_plan(*this, layout.id_me_to_solver,
+                                      ac_cache_.voltage_control.controllers(), plan);
+        if(!plan.empty()){
+            const RealVect ctrl_q = plan.needs_controller_q ? algo.get_controller_q() : RealVect();
+            bus_q_check::check_bus_q_violations(
+                plan, *this, algo.get_bus_mismatch(), algo.get_V(), ctrl_q, sn_mva_, tol_mva,
+                no_mask, [](int){ return false; }, out);
+        }
+    }
+    hvdc_p_check::HvdcPPlan hvdc_plan;
+    hvdc_p_check::build_hvdc_p_plan(*this, layout.id_me_to_solver, hvdc_plan);
+    if(!hvdc_plan.empty()){
+        hvdc_p_check::check_hvdc_p_violations(hvdc_plan, algo.get_Va(), tol_mva, no_mask, out);
+    }
+    gen_p_check::GenPPlan gen_plan;
+    gen_p_check::build_gen_p_plan(*this, layout.id_me_to_solver, gen_plan);
+    if(!gen_plan.empty()){
+        gen_p_check::SlackShareInputs slack(algo.get_bus_mismatch(), layout.slack_weights, sn_mva_, ac);
+        if(ac) slack.slack_absorbed = algo.get_slack_absorbed();
+        else slack.dc_imbalance_mw = -dc_cache_.inj.sum() * sn_mva_;
+        // the grid's own targets, generator convention (a storage unit's is in load convention)
+        gen_p_check::check_gen_p_violations(
+            gen_plan, slack, tol_mva, no_mask,
+            [this](ViolationElementType el_type, int el_id){
+                return (el_type == ViolationElementType::GENERATOR)
+                       ? generators_.get_target_p()(el_id) : -storages_.get_target_p()(el_id); },
+            [](ViolationElementType, int){ return false; },
+            [](ViolationElementType, int){ return false; },
+            out);
+    }
+    return out;
 }
 
 // TODO DC LINE: one side might be in the connected comp and not the other !

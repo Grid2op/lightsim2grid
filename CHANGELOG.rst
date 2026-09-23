@@ -232,6 +232,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``ScenarioSweep``: the same OLF-style bounded redistribution of the power a row loses (a
   generator contingency, or an island cut off with ``handle_disconnected_grid``) before its
   powerflow, the saturated units leaving that row's distributed slack.
+- [ADDED] ``LSGrid.get_physical_violations(ac=True, tol_mva=1e-4)``: the physical-limit checks of
+  the batch algorithms (``compute_physical_violations``: reactive capability of the voltage
+  controllers, hvdc max power, generators / storage units pushed past their p limits by the
+  slack) on the grid's own last ``ac_pf`` / ``dc_pf``.
+- [FIXED] the DC algorithms' ``get_error()`` stayed ``NotInitError`` after a converged ``dc_pf``
+  (the status was only written on failure): it now reports ``NoError``, as the AC ones do.
 - [FIXED] the DC active-power imbalance handed to the generator p-limit check
   (``compute_physical_violations``) was summed over every bus, the ones masked by
   ``handle_disconnected_grid`` included; it is now summed over the solved buses only, as the
