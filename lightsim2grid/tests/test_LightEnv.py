@@ -10,6 +10,7 @@
 cooldowns. The behaviour is compared step by step with a grid2op environment running the
 same chronics on the same grid (``LightSimBackend``)."""
 
+import copy
 import unittest
 import warnings
 
@@ -19,6 +20,7 @@ from grid2op.Parameters import Parameters
 
 from lightsim2grid import LightSimBackend
 from lightsim2grid.lightEnv import (LightEnv,
+                                    LightEnvObservation,
                                     TopoAction,
                                     Protections,
                                     ElementType,
@@ -54,18 +56,19 @@ class TestLightEnvActions(unittest.TestCase):
     def tearDown(self) -> None:
         self.env.close()
 
-    def make_light_env(self, thermal_limit_ka=None, max_overflow=99) -> LightEnv:
-        """A light env on the grid of the grid2op env, replaying its chronics. By default the
-        protections never trip."""
+    def make_light_env(self, thermal_limit_ka=None, max_overflow=99, nb_ts=None) -> LightEnv:
+        """A light env on the grid of the grid2op env, replaying its chronics (the first
+        `nb_ts` steps only if given). By default the protections never trip."""
         env = self.env
         light_env = LightEnv(env.backend._grid)
         data = env.chronics_handler.real_data.data
-        nb_ts = data.load_p.shape[0]
+        if nb_ts is None:
+            nb_ts = data.load_p.shape[0]
         light_env.assign_time_series(
-            data.load_p.astype(float),
-            data.load_q.astype(float),
-            data.prod_p.astype(float),
-            (data.prod_v / env.backend.prod_pu_to_kv).astype(float),  # the light env wants pu
+            data.load_p[:nb_ts].astype(float),
+            data.load_q[:nb_ts].astype(float),
+            data.prod_p[:nb_ts].astype(float),
+            (data.prod_v[:nb_ts] / env.backend.prod_pu_to_kv).astype(float),  # the light env wants pu
             np.full((nb_ts, env.n_storage), np.nan),
             np.full((nb_ts, env.n_shunt), np.nan),
             np.full((nb_ts, env.n_shunt), np.nan),
@@ -115,6 +118,21 @@ class TestLightEnvActions(unittest.TestCase):
         np.testing.assert_array_equal(obs.time_before_cooldown_line,
                                       self.light_env.time_before_cooldown_line,
                                       err_msg=f"cooldown line {msg}")
+        self.assert_same_obs(obs, self.light_env.get_obs(), msg)
+
+    def assert_same_obs(self, obs, lobs, msg=""):
+        """the observation of the light env matches the grid2op one"""
+        np.testing.assert_array_equal(lobs.topo_vect, obs.topo_vect, err_msg=f"topo_vect {msg}")
+        for attr in ("p_or", "q_or", "p_ex", "q_ex", "load_p", "gen_p"):
+            np.testing.assert_allclose(getattr(lobs, attr), getattr(obs, attr), rtol=1e-4, atol=1e-2,
+                                       err_msg=f"{attr} {msg}")
+        # the light env is in kA, grid2op in A
+        np.testing.assert_allclose(1e3 * lobs.a_or, obs.a_or, rtol=1e-4, atol=1e-2, err_msg=f"a_or {msg}")
+        np.testing.assert_allclose(1e3 * lobs.a_ex, obs.a_ex, rtol=1e-4, atol=1e-2, err_msg=f"a_ex {msg}")
+        np.testing.assert_array_equal(lobs.time_before_cooldown_sub, obs.time_before_cooldown_sub,
+                                      err_msg=f"obs cooldown sub {msg}")
+        np.testing.assert_array_equal(lobs.time_before_cooldown_line, obs.time_before_cooldown_line,
+                                      err_msg=f"obs cooldown line {msg}")
 
     def step_both(self, action, act_id):
         """one step in grid2op and in the light env, they should agree on everything"""
@@ -361,6 +379,7 @@ class TestLightEnvActions(unittest.TestCase):
         disco = self.env.action_space({"set_line_status": [(3, -1)]})
         self.light_env.init_actions([self.do_nothing, act_sub, disco])
         obs_reset, info_reset = self.light_env.reset()
+        rho_reset = np.array(obs_reset.rho)  # the observation is a view, keep a snapshot
         self.light_env.step(1)
         self.light_env.step(2)
         grid = self.light_env.grid
@@ -375,15 +394,158 @@ class TestLightEnvActions(unittest.TestCase):
         self.assertEqual(self.light_env.current_step, 0)
         self.assertTrue((self.light_env.time_before_cooldown_sub == 0).all())
         self.assertTrue((self.light_env.time_before_cooldown_line == 0).all())
-        np.testing.assert_allclose(obs_reset2, obs_reset)
+        np.testing.assert_allclose(obs_reset2.rho, rho_reset)
         # the observation of a reset is the rho of its own powerflow, not a stale one
-        np.testing.assert_allclose(obs_reset2, self.light_env.protections.rho)
-        self.assertTrue((obs_reset2 > 0).any())
+        np.testing.assert_allclose(obs_reset2.rho, self.light_env.protections.rho)
+        self.assertTrue((obs_reset2.rho > 0).any())
         self.assert_same_state(self.obs, "after the second reset")
         # the actions are still there, and the episode can be replayed
         self.assertEqual(self.light_env.nb_actions, 3)
         obs, info = self.step_both(act_sub, 1)
         self.assertFalse(info["is_illegal"])
+
+    # --- observation ---
+
+    def test_observation_is_a_view(self):
+        obs, info = self.light_env.reset()
+        self.assertIsInstance(obs, LightEnvObservation)
+        self.assertIs(self.light_env.get_obs(), obs)
+        attrs = ("rho", "p_or", "q_or", "a_or", "p_ex", "q_ex", "a_ex", "load_p", "gen_p",
+                 "topo_vect", "time_before_cooldown_line", "time_before_cooldown_sub")
+        for attr in attrs:
+            arr = getattr(obs, attr)
+            self.assertFalse(arr.flags.writeable, f"{attr} should be read-only")
+            self.assertTrue(np.shares_memory(arr, getattr(obs, attr)), f"{attr} is copied")
+        self.assertEqual(obs.p_or.shape, (self.env.n_line,))
+        self.assertEqual(obs.topo_vect.shape, (self.env.dim_topo,))
+        self.assertEqual(obs.load_p.shape, (self.env.n_load,))
+        self.assertEqual(obs.gen_p.shape, (self.env.n_gen,))
+        self.assert_same_obs(self.obs, obs, "at reset")
+
+        # it follows the env: the same object, an array read before the step sees the new state
+        p_or = obs.p_or
+        load_p = obs.load_p
+        p_or_before = np.array(p_or)
+        obs2, *_ = self.light_env.step(0)
+        self.assertIs(obs2, obs)
+        self.assertEqual(obs.current_step, 1)
+        np.testing.assert_array_equal(p_or, obs.p_or)
+        np.testing.assert_array_equal(load_p, obs.load_p)
+        self.assertFalse(np.allclose(p_or, p_or_before))
+
+    def test_observation_keeps_env_alive(self):
+        light_env = self.make_light_env()
+        obs, info = light_env.reset()
+        p_or = obs.p_or
+        expected = np.array(p_or)
+        del light_env, obs
+        import gc
+        gc.collect()
+        np.testing.assert_array_equal(p_or, expected)
+
+    # --- copy ---
+
+    def test_copy_is_independent(self):
+        act_sub = self.env.action_space({"set_bus": {"loads_id": [(0, 2)], "lines_or_id": [(2, 2)]}})
+        disco = self.env.action_space({"set_line_status": [(3, -1)]})
+        self.light_env.init_actions([self.do_nothing, act_sub, disco])
+        self.light_env.reset()
+        self.light_env.step(1)
+        obs = self.light_env.get_obs()
+
+        for cpy in (self.light_env.copy(), copy.copy(self.light_env), copy.deepcopy(self.light_env),
+                    LightEnv(self.light_env)):
+            self.assertIsInstance(cpy, LightEnv)
+            self.assertIsNot(cpy, self.light_env)
+            cobs = cpy.get_obs()
+            self.assertIsNot(cobs, obs)
+            # the same state, in its own memory
+            self.assertEqual(cobs.current_step, obs.current_step)
+            self.assertEqual(cpy.nb_actions, 3)
+            for attr in ("rho", "p_or", "a_ex", "load_p", "gen_p", "topo_vect", "time_before_cooldown_sub"):
+                np.testing.assert_array_equal(getattr(cobs, attr), getattr(obs, attr), err_msg=attr)
+                self.assertFalse(np.shares_memory(getattr(cobs, attr), getattr(obs, attr)), attr)
+
+        # the copy steps on its own: the original is untouched
+        cpy = self.light_env.copy()
+        p_or = np.array(obs.p_or)
+        topo = np.array(obs.topo_vect)
+        cooldown_line = np.array(obs.time_before_cooldown_line)
+        cpy.step(2)
+        self.assertEqual(cpy.get_obs().current_step, 2)
+        self.assertFalse(cpy.grid.get_lines_status()[3])
+        self.assertEqual(obs.current_step, 1)
+        self.assertTrue(self.light_env.grid.get_lines_status()[3])
+        np.testing.assert_array_equal(obs.p_or, p_or)
+        np.testing.assert_array_equal(obs.topo_vect, topo)
+        np.testing.assert_array_equal(obs.time_before_cooldown_line, cooldown_line)
+
+        # and playing the same step on both gives the same result
+        cpy = self.light_env.copy()
+        self.light_env.step(0)
+        cpy.step(0)
+        np.testing.assert_array_equal(cpy.get_obs().p_or, obs.p_or)
+        np.testing.assert_array_equal(cpy.get_obs().rho, obs.rho)
+
+    def test_copy_outlives_original(self):
+        self.light_env.reset()
+        cpy = self.light_env.copy()
+        expected = np.array(self.light_env.get_obs().p_or)
+        del self.light_env
+        import gc
+        gc.collect()
+        np.testing.assert_array_equal(cpy.get_obs().p_or, expected)
+        obs, reward, done, truncated, info = cpy.step(0)
+        self.assertFalse(done)
+        self.assertEqual(obs.current_step, 1)
+        cpy.reset()  # the shared initial grid and time series are still there
+
+    def test_copy_time_series_not_shared_after_assign(self):
+        self.light_env.reset()
+        cpy = self.light_env.copy()
+        nb_ts = 3
+        data = self.env.chronics_handler.real_data.data
+        cpy.assign_time_series(*[np.ascontiguousarray(arr[:nb_ts]) for arr in (
+            data.load_p.astype(float), data.load_q.astype(float), data.prod_p.astype(float),
+            (data.prod_v / self.env.backend.prod_pu_to_kv).astype(float),
+            np.full((data.load_p.shape[0], self.env.n_storage), np.nan),
+            np.full((data.load_p.shape[0], self.env.n_shunt), np.nan),
+            np.full((data.load_p.shape[0], self.env.n_shunt), np.nan),
+            np.full((data.load_p.shape[0], 0), np.nan),
+            np.full((data.load_p.shape[0], 0), np.nan))])
+        cpy.reset()
+        self.assertEqual(cpy.max_step, nb_ts)
+        self.assertEqual(self.light_env.max_step, data.load_p.shape[0])
+
+    # --- reward and end of episode ---
+
+    def test_reward_is_fraction_survived(self):
+        nb_ts = 4
+        light_env = self.make_light_env(nb_ts=nb_ts)
+        light_env.reset()
+        self.assertEqual(light_env.max_step, nb_ts)
+        for step in range(1, nb_ts):
+            obs, reward, done, truncated, info = light_env.step(0)
+            self.assertFalse(done)
+            self.assertAlmostEqual(reward, step / nb_ts)
+        obs, reward, done, truncated, info = light_env.step(0)
+        self.assertTrue(done)
+        self.assertFalse(truncated)
+        self.assertEqual(reward, 1.)
+        self.assertEqual(info["success"], "true")
+        self.assertAlmostEqual(float(info["survival_time"]), 1.)
+
+    def test_survival_time_on_failure(self):
+        nb_ts = 4
+        light_env = self.make_light_env(nb_ts=nb_ts)
+        # disconnecting every line leaves no grid: the powerflow of the first step fails
+        light_env.init_actions([self.env.action_space({"set_line_status": [(l_id, -1) for l_id in range(self.env.n_line)]})])
+        light_env.reset()
+        obs, reward, done, truncated, info = light_env.step(0)
+        self.assertTrue(done)
+        self.assertEqual(reward, 0.)
+        self.assertEqual(info["failure"], "true")
+        self.assertAlmostEqual(float(info["survival_time"]), 1 / nb_ts)
 
 
 if __name__ == "__main__":

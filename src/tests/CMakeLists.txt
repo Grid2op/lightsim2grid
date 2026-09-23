@@ -83,6 +83,7 @@ add_executable(lightsim2grid_unit_tests
     test_continuation_sweep.cpp
     test_scenario_sweep_violations.cpp
     test_scenario_sweep_topology.cpp
+    test_light_env_copy_move.cpp
     test_batch_physical_violations.cpp
     test_gen_v_gradient.cpp
     test_bus_element_count.cpp

@@ -134,6 +134,9 @@ class OneSideContainer : public GenericContainer
         const std::vector<bool>& get_status() const {return status_;}
         // substation of each element, as given by set_subid(); empty if set_subid() was never called
         const IntVect & get_subid() const {return subid_;}
+        // position of each element in the grid2op topology vector, as given by
+        // set_pos_topo_vect(); empty if set_pos_topo_vect() was never called
+        const IntVect & get_pos_topo_vect() const {return pos_topo_vect_;}
         bool get_status(int el_id) const {return status_.at(el_id);}
         const GlobalBusIdVect & get_bus_id() const {return bus_id_;}
         Eigen::Ref<const IntVect> get_bus_id_numpy() const {

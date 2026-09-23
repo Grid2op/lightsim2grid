@@ -207,6 +207,14 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   and ``info["is_illegal"]``; ``reset`` restores the initial topology.
 - [FIXED] light environment: the protections looped for ever once a line had been disconnected
   for overflow, and never reset the overflow counter of a line back in its limits.
+- [ADDED] light environment: ``LightEnvObservation``, returned by ``reset`` / ``step`` instead of
+  a copy of ``rho``: flows (p, q, a, both sides), ``topo_vect``, cooldowns, ``load_p``, ``gen_p``
+  and ``rho``, as read-only numpy views on the env's memory (no copy).
+- [ADDED] light environment: ``LightEnv`` can be copied (``env.copy()``, ``copy.copy``,
+  ``copy.deepcopy``): an independent env at the same step. The initial grid, the time series and
+  the actions are shared read-only, so a copy stays cheap. In C++ it is also (noexcept) movable.
+- [FIXED] light environment: the reward and ``info["survival_time"]`` are the fraction of the
+  episode survived; they were an integer division (by ``max_iter`` for the reward).
 - [ADDED] ``compute_physical_violations`` also reports a generator the distributed slack
   pushed below ``min_p_mw`` or above ``max_p_mw``. The slack is solved in the Jacobian by
   participation factors that ignore limits, which is what OpenLoadFlow's

@@ -213,6 +213,9 @@ class TwoSidesContainer : public GenericContainer
         // substation of each side, as given by set_subid_side_X(); empty if never called
         const IntVect & get_subid_side_1() const {return side_1_.get_subid();}
         const IntVect & get_subid_side_2() const {return side_2_.get_subid();}
+        // position of each side in the grid2op topology vector; empty if never set
+        const IntVect & get_pos_topo_vect_side_1() const {return side_1_.get_pos_topo_vect();}
+        const IntVect & get_pos_topo_vect_side_2() const {return side_2_.get_pos_topo_vect();}
         const std::vector<bool>& get_status_side_1() const {return side_1_.get_status();}
         const std::vector<bool>& get_status_side_2() const {return side_2_.get_status();}
 
