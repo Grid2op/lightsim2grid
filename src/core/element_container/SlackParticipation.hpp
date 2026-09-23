@@ -106,6 +106,18 @@ class SlackParticipation
             slackbus_[el_id] = false;
             weight_[el_id] = 0.;
         }
+        /// remove every participant whose bus is not flagged in `bus_kept` (see
+        /// LSGrid::consider_only_main_component). An element without a bus is left as is.
+        void remove_if_bus_not_in(const std::vector<bool> & bus_kept, const GlobalBusIdVect & bus_id,
+                                  DualAlgoControl & solver_control){
+            const int nb_el = static_cast<int>(slackbus_.size());
+            for(int el_id = 0; el_id < nb_el; ++el_id){
+                if(!slackbus_[el_id]) continue;
+                const int bus_me = bus_id(el_id).cast_int();
+                if(bus_me < 0) continue;
+                if(!bus_kept[bus_me]) remove(el_id, solver_control);
+            }
+        }
         void remove_all(){
             DualAlgoControl unused_solver_control;
             const int nb_el = static_cast<int>(slackbus_.size());

@@ -4058,6 +4058,13 @@ const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
     power), and only the out-of-component one is opened -- see
     :class:`lightsim2grid.elements.HvdcLineContainer`.
 
+    The generators and storage units of the (distributed) slack whose bus is outside the main
+    component are first removed from the slack (as with :func:`remove_gen_slackbus` /
+    :func:`remove_storage_slackbus`), so that the slack is only distributed on the main component.
+    A reference slack bus forced with :func:`set_reference_slack_bus` that is outside the main
+    component is cleared. Reactivating the elements afterwards does not put them back in the
+    slack: work on a copy (:func:`copy`) if the original slack is needed afterwards.
+
     Requires at least one slack bus to already be defined (see
     :func:`assign_slack_to_most_connected`); raises otherwise.
 
@@ -5710,6 +5717,10 @@ const std::string DocLSGrid::set_keep_vinit_at_group_controlled_buses = R"mydeli
     set-point be damped with the rest of the step. When a small controller regulates a stiff
     bus whose neighbours start far from the set-point, setting that bus to its target up front
     can ask for a huge first step and slow the solve down considerably.
+
+    :func:`dc_pf` honours the option too: with ``True`` the voltage it returns keeps the
+    starting magnitude at those buses, so it can seed :func:`ac_pf` as is. The option must be
+    set before :func:`dc_pf` is called, not only before :func:`ac_pf`.
 
     Buses whose magnitude is fixed (ordinary PV buses) are always set to their set-point.
     The option is copied with the grid, so the batch algorithms built from it inherit it. It

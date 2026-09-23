@@ -147,6 +147,11 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             slack_.remove(gen_id, solver_control);
         }
         void remove_all_slackbus(){ slack_.remove_all(); }
+        /// the participants outside the main component leave the slack (LSGrid::consider_only_main_component)
+        void remove_slackbus_not_in_main_component(const std::vector<bool> & busbar_in_main_component,
+                                                   DualAlgoControl & solver_control){
+            slack_.remove_if_bus_not_in(busbar_in_main_component, bus_id_, solver_control);
+        }
 
         // returns only the gen_id with the highest p that is connected to this bus !
         int assign_slack_bus(int slack_bus_id,

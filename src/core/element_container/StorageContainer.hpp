@@ -204,6 +204,11 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
             slack_.remove(storage_id, solver_control);
         }
         void remove_all_slackbus(){ slack_.remove_all(); }
+        /// the participants outside the main component leave the slack (LSGrid::consider_only_main_component)
+        void remove_slackbus_not_in_main_component(const std::vector<bool> & busbar_in_main_component,
+                                                   DualAlgoControl & solver_control){
+            slack_.remove_if_bus_not_in(busbar_in_main_component, bus_id_, solver_control);
+        }
         bool is_slack(int storage_id) const {return slack_.is_slack(storage_id);}
         /// the unit's own (un-normalised) share of the distributed slack
         real_type get_slack_weight(int storage_id) const {return slack_.weight(storage_id);}

@@ -272,7 +272,9 @@ the magnitude is itself an unknown of the Newton-Raphson, so the move is optiona
 ``LSGrid.set_keep_vinit_at_group_controlled_buses(True)`` they keep their starting magnitude and
 the voltage-control equations bring them to the set-point, damped along with the rest of the step
 under ``MaxVoltageChange``. The solution is the same. It helps when a small controller regulates a
-stiff bus: setting that bus to its target up front can make every damped step tiny. The batch
+stiff bus: setting that bus to its target up front can make every damped step tiny. ``dc_pf``
+honours the option as well, so a DC seed computed with it on can be handed to ``ac_pf`` as is; set
+it before calling ``dc_pf``, not only before ``ac_pf``. The batch
 algorithms inherit the option from the grid they are built from, and have a
 ``keep_vinit_at_group_controlled_buses`` property of their own.
 

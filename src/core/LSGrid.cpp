@@ -2811,6 +2811,18 @@ void LSGrid::consider_only_main_component(){
     for(size_t bus_id = 0; bus_id < nb_busbars; ++bus_id){
         if(conn_comp[bus_id] == main_cc_id) bus_in_main_cc[bus_id] = true;
     }
+    // the generators / storage units of the distributed slack stranded outside the main
+    // component leave the slack FIRST (as OLF, which only distributes on the main
+    // component): once deactivated below they would still be listed by
+    // _slack_bus_id_me(), on a disconnected bus, and the next solve would throw.
+    // The main component always keeps at least one slack (it is grown from one).
+    generators_.remove_slackbus_not_in_main_component(bus_in_main_cc, algo_controler_);
+    storages_.remove_slackbus_not_in_main_component(bus_in_main_cc, algo_controler_);
+    if((_forced_ref_slack_bus_id >= 0) && !bus_in_main_cc[_forced_ref_slack_bus_id]){
+        // the forced angle reference is now in an island: back to the natural order
+        set_reference_slack_bus(-1);
+    }
+
     // disconnected elements not in main component
     // (svcs_ is in the list now; it used to be left out, which kept a bus whose only
     // element is an SVC in the solved system after its island was cut off)
