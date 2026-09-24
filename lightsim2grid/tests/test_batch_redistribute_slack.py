@@ -175,6 +175,68 @@ class TestContingencyAnalysisRedistributeSlack(_Base):
         np.testing.assert_array_equal(res[0], res[1])
 
 
+class TestContingencyAnalysisHvdcIsland(unittest.TestCase):
+    """the island cut off holds an HVDC converter station: its setpoint is part of what
+    the row loses (the one-off path counts it too, the two must agree)"""
+    _PSP = 30.
+
+    def setUp(self):
+        import os
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from _aux_make_hvdc import make_case14_hvdc
+        # side 2 (the leaf bus) rectifies: it draws _PSP from the grid it is cut off from
+        self.net, self.grid = make_case14_hvdc(3, _LEAF_BUS, converters_mode=1, p_setpoint=self._PSP)
+        gens = self.grid.get_generators()
+        self.n_gen = len(gens)
+        n_line = len(self.grid.get_lines())
+        branch = [l.id for l in self.grid.get_lines() if _LEAF_BUS in (l.bus1_id, l.bus2_id)]
+        branch += [n_line + t.id for t in self.grid.get_trafos() if _LEAF_BUS in (t.bus1_id, t.bus2_id)]
+        assert len(branch) == 1
+        self.leaf_branch = branch[0]
+        self.n_line = n_line
+        for g in gens:
+            self.grid.add_gen_slackbus(g.id, 1.)
+        # a bound that the share of the lost consumption reaches on one unit
+        targets = np.array([g.target_p_mw for g in gens])
+        min_p = np.full(self.n_gen, -np.inf)
+        producing = [g.id for g in gens if g.target_p_mw > 0. and g.bus_id != _LEAF_BUS]
+        min_p[producing[0]] = targets[producing[0]] - 2.
+        self.grid.set_gen_p_limits(min_p, np.full(self.n_gen, np.inf))
+        self.V0 = np.ones(self.grid.get_bus_vn_kv().shape[0], dtype=complex)
+        self.solved = np.array([b for b in range(self.V0.shape[0]) if b != _LEAF_BUS])
+
+    def test_matches_one_off(self):
+        ref = self.grid.copy()
+        if self.leaf_branch < self.n_line:
+            ref.deactivate_powerline(self.leaf_branch)
+        else:
+            ref.deactivate_trafo(self.leaf_branch - self.n_line)
+        report = ref.consider_only_main_component(True)
+        self.assertAlmostEqual(report.mismatch_mw, -self._PSP, places=9)
+        # the clamped unit, plus the synchronous condensers (0 MW, they cannot go below)
+        at_zero = sum(1 for g in self.grid.get_generators() if g.target_p_mw == 0. and g.bus_id != _LEAF_BUS)
+        self.assertEqual(report.nb_saturated, 1 + at_zero)
+        V_ref = ref.ac_pf(1. * self.V0, _MAX_IT, _TOL)
+        self.assertGreater(V_ref.shape[0], 0, "the one-off reference diverged")
+
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.add_n1(self.leaf_branch)
+        ca.handle_disconnected_grid = True
+        ca.redistribute_slack = True
+        ca.compute(1. * self.V0, _MAX_IT, _TOL)
+        self.assertTrue(ca.converged_mask()[0], "the contingency did not converge")
+        V_batch = ca.get_voltages()[0]
+        np.testing.assert_allclose(np.abs(V_batch[self.solved]), np.abs(V_ref[self.solved]), rtol=0., atol=1e-6)
+        np.testing.assert_allclose(_angles_rel(V_batch)[self.solved], _angles_rel(V_ref)[self.solved], rtol=0., atol=1e-6)
+        # ... and it is not what the unbounded slack gives
+        ca_off = ContingencyAnalysisCPP(self.grid)
+        ca_off.add_n1(self.leaf_branch)
+        ca_off.handle_disconnected_grid = True
+        ca_off.compute(1. * self.V0, _MAX_IT, _TOL)
+        self.assertGreater(np.max(np.abs(ca_off.get_voltages()[0] - V_batch)), 1e-6)
+
+
 class TestScenarioSweepRedistributeSlack(_Base):
     def setUp(self):
         super().setUp()

@@ -35,6 +35,12 @@ namespace ls2g {
  * solve only shares what is left (the change in the losses) on the units that can
  * still move.
  *
+ * As OLF ("we don't want to change the generation sign"), a unit never crosses 0 MW: one
+ * that injects stops at 0 when the mismatch pushes it down, one that draws (a charging
+ * storage unit, a pumping machine, any unit with `min_p < 0` running below 0) stops at 0
+ * when pushed up, whatever its `[min_p, max_p]` says. A storage unit whose whole range
+ * straddles 0 is the common case: it is only ever moved on the side of 0 it started on.
+ *
  * Shared by `LSGrid::consider_only_main_component` / `LSGrid::redistribute_active_power`
  * and the batch sweeps (`BaseBatchSweep`, option `redistribute_slack`).
  *
@@ -99,6 +105,10 @@ inline Report distribute(const std::vector<Participant> & units,
     for(std::size_t k = 0; k < nb; ++k){
         lo[k] = std::isfinite(units[k].min_p_mw) ? units[k].min_p_mw : -inf;
         hi[k] = std::isfinite(units[k].max_p_mw) ? units[k].max_p_mw : inf;
+        // the sign of the injection is kept (OLF's GenerationActivePowerDistributionStep):
+        // 0 MW is a bound on the side the unit is not on
+        if(units[k].injection_mw < 0.) hi[k] = std::min(hi[k], 0.);
+        else lo[k] = std::max(lo[k], 0.);
     }
 
     real_type remaining = mismatch_mw;
@@ -205,6 +215,40 @@ inline real_type sum_setpoints_if(const Container & container,
         res += value_of(el_id);
     }
     return sign * res;
+}
+
+/**
+ * Σ of the active setpoints (generator convention) of the converter stations of the
+ * active HVDC lines of `hvdc_lines` whose bus `bus_lost(bus_me)` flags: what the solved
+ * grid loses when those converters leave it. A line keeps the converter that stays in
+ * the main component injecting its scheduled power (see
+ * `HvdcLineContainer::_disconnect_if_not_in_main_component`), so only the stranded
+ * station(s) count -- a rectifier draws from the grid it leaves (a negative setpoint,
+ * the balance loses a consumption), an inverter feeds it (a positive one). A station
+ * already open (the far end of a cross-border link, outside the solved grid since the
+ * start: its side keeps its bus id) was never in the balance and does not count.
+ */
+template<class HvdcContainer, class BusLost>
+inline real_type sum_hvdc_station_setpoints_if(const HvdcContainer & hvdc_lines,
+                                               BusLost bus_lost)
+{
+    const int nb_el = hvdc_lines.nb();
+    const std::vector<bool> & status = hvdc_lines.get_status_global();
+    const GlobalBusIdVect & bus_1 = hvdc_lines.get_bus_id_side_1();
+    const GlobalBusIdVect & bus_2 = hvdc_lines.get_bus_id_side_2();
+    const auto & side_1 = hvdc_lines.get_stations_side_1();
+    const auto & side_2 = hvdc_lines.get_stations_side_2();
+    const std::vector<bool> & status_1 = side_1.get_status();
+    const std::vector<bool> & status_2 = side_2.get_status();
+    real_type res = 0.;
+    for(int el_id = 0; el_id < nb_el; ++el_id){
+        if(!status[el_id]) continue;
+        const int b1 = bus_1(el_id).cast_int();
+        const int b2 = bus_2(el_id).cast_int();
+        if(status_1[el_id] && b1 != BaseConstants::_deactivated_bus_id && bus_lost(b1)) res += side_1.get_target_p(el_id);
+        if(status_2[el_id] && b2 != BaseConstants::_deactivated_bus_id && bus_lost(b2)) res += side_2.get_target_p(el_id);
+    }
+    return res;
 }
 
 }  // namespace slack_redistribution

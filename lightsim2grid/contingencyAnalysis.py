@@ -248,8 +248,9 @@ class ContingencyAnalysis(object):
         """Whether the active power a contingency loses (the elements of the island it cuts
         off, simulated with :attr:`handle_disconnected_grid`) is first shared on the remaining
         units of the distributed slack as OpenLoadFlow's ``DistributedSlack`` outer loop does:
-        proportionally to their weight, each one clamped to its ``[min_p, max_p]``, a clamped
-        unit leaving the pool (and that contingency's distributed slack), the powerflow then
+        proportionally to their weight, each one clamped to its ``[min_p, max_p]`` and never
+        crossing 0 MW, a clamped unit leaving the pool (and that contingency's distributed
+        slack), the powerflow then
         only sharing what is left (the change in the losses) on the units that can still move.
         Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
         clamp anything. Same as ``LSGrid.consider_only_main_component(redistribute_slack=True)``,

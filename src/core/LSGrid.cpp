@@ -2749,10 +2749,12 @@ real_type LSGrid::_lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) c
     // what leaves the solved grid with the islanded buses, in generator convention and
     // from the SETPOINTS (the last results may be stale, or never computed): what a
     // one-sided element injects is exactly what `disconnect_if_not_in_main_component`
-    // takes out below (an HVDC line keeps its in-main converter injecting, an SVC has
-    // no active power: neither counts)
+    // takes out below. An HVDC line keeps its in-main converter injecting, so only its
+    // stranded converter(s) count (a rectifier stranded with its island takes a
+    // consumption out of the balance, like a load); an SVC has no active power.
     const auto bus_lost = [&bus_in_main_cc](int bus_me){ return !bus_in_main_cc[bus_me]; };
     real_type lost = 0.;
+    lost += slack_redistribution::sum_hvdc_station_setpoints_if(hvdc_lines_, bus_lost);
     lost += slack_redistribution::sum_setpoints_if(
         generators_, 1., bus_lost, [this](int el_id){ return generators_.get_target_p()(el_id); });
     lost += slack_redistribution::sum_setpoints_if(

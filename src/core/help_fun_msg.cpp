@@ -4067,10 +4067,11 @@ const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
 
     With ``redistribute_slack`` (default ``True``), the active power the islanding takes out --
     the set-points of the stranded generators and static generators, minus the stranded loads,
-    storage units and shunts (an HVDC line keeps its in-main-component converter injecting) --
-    is then shared on the remaining units of the distributed slack as OpenLoadFlow's
-    ``DistributedSlack`` outer loop would, with their ``[min_p, max_p]`` bounds: see
-    :func:`redistribute_active_power`. Without limits (:func:`set_gen_p_limits` /
+    storage units and shunts, plus the stranded HVDC converter stations (a rectifier leaving with
+    its island takes its consumption out of the balance; the line keeps its in-main-component
+    converter injecting) -- is then shared on the remaining units of the distributed slack as
+    OpenLoadFlow's ``DistributedSlack`` outer loop would, with their ``[min_p, max_p]`` bounds
+    and without crossing 0 MW: see :func:`redistribute_active_power`. Without limits (:func:`set_gen_p_limits` /
     :func:`set_storage_p_limits` never called) nothing saturates and the converged state is the
     same as without the redistribution, only the set-points move. Pass ``False`` to keep the
     set-points untouched (the grid2op backend and ``init_from_pypowsybl`` do).
@@ -4136,6 +4137,12 @@ const std::string DocLSGrid::redistribute_active_power = R"mydelimiter(
     injection clamped to its ``[min_p, max_p]`` (:func:`set_gen_p_limits` /
     :func:`set_storage_p_limits`, unbounded when unset), a clamped unit leaving the pool and what
     it could not take being shared again on the others, until everything is placed.
+
+    As OpenLoadFlow, a unit never changes the sign of its injection: whatever its limits, a unit
+    injecting (``target_p > 0`` in generator convention, a discharging storage unit included)
+    stops at 0 MW when the mismatch is negative, a unit drawing (a charging storage unit, a
+    pumping machine) stops at 0 MW when it is positive. A unit exactly at 0 MW takes no share of
+    a negative mismatch.
 
     The new set-points are written in the grid (``change_p_gen`` / ``change_p_storage``), and the
     units that reached a bound are removed from the distributed slack

@@ -247,6 +247,19 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   (``compute_physical_violations``) was summed over every bus, the ones masked by
   ``handle_disconnected_grid`` included; it is now summed over the solved buses only, as the
   DC solver does.
+- [FIXED] the OLF-style slack redistribution (``LSGrid.redistribute_active_power``,
+  ``consider_only_main_component(redistribute_slack=True)``, the batch algorithms'
+  ``redistribute_slack``) could push a unit across 0 MW: a discharging storage unit, or a
+  generator with ``min_p < 0``, was driven to a negative injection by a negative mismatch
+  (and a charging one to a positive injection by a positive mismatch). OpenLoadFlow never
+  changes the sign of a unit's injection: 0 MW is now a bound on the side the unit is not on.
+- [FIXED] the power an islanding takes out (``consider_only_main_component``, and the batch
+  algorithms with ``handle_disconnected_grid``) did not count the HVDC converter stations
+  stranded outside the main component: a contingency islanding the converter of a large
+  export left its whole consumption to the unbounded distributed slack of the powerflow, past
+  every ``[min_p, max_p]`` and 0 MW bound. The stranded stations' setpoints are now part of
+  ``mismatch_mw`` and redistributed like a stranded load / generator (the line's converter
+  that stays in the main component keeps injecting, as before).
 
 
 [1.1.0] 2026-09-21

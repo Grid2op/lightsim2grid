@@ -16,8 +16,9 @@ distributes the slack on the main component.
 
 With ``redistribute_slack=True`` (the default) it also shares the power the islanding took
 out on the remaining slack units as OpenLoadFlow's ``DistributedSlack`` outer loop does,
-with their ``[min_p, max_p]`` bounds (``redistribute_active_power``): the tests below check
-it against a plain Python re-implementation of that loop.
+with their ``[min_p, max_p]`` bounds and without crossing 0 MW
+(``redistribute_active_power``): the tests below check it against a plain Python
+re-implementation of that loop.
 """
 
 import unittest
@@ -43,6 +44,9 @@ def olf_distribute(injection, weight, min_p, max_p, mismatch, eps=1e-6):
     sat = np.zeros(new.shape[0], dtype=bool)
     lo = np.where(np.isfinite(min_p), min_p, -np.inf)
     hi = np.where(np.isfinite(max_p), max_p, np.inf)
+    # "we don't want to change the generation sign": 0 is a bound on the other side
+    lo = np.where(new < 0., lo, np.maximum(lo, 0.))
+    hi = np.where(new < 0., np.minimum(hi, 0.), hi)
     remaining = float(mismatch)
     while active.any() and abs(remaining) > eps:
         factor_sum = weight[active].sum()
@@ -274,6 +278,62 @@ class TestMainComponentSlack(unittest.TestCase):
         self.assertAlmostEqual(report2.not_distributed_mw, remaining2, places=9)
         V = self._ac_pf()
         self.assertGreater(V.shape[0], 0)
+
+    def test_zero_crossing_generator(self):
+        # a generator with min_p < 0 < max_p (a pumped-storage machine, say) injecting a little:
+        # a negative mismatch stops it at 0 MW, not at its min_p
+        targets = self._targets()
+        small = int(np.argmin(np.where(targets > 0., targets, np.inf)))  # the smallest producer
+        self.assertGreater(targets[small], 0.)
+        min_p = np.full(self.n_gen, -np.inf)
+        max_p = np.full(self.n_gen, np.inf)
+        min_p[small] = -100.
+        max_p[small] = 100.
+        self.model.set_gen_p_limits(min_p, max_p)
+        mismatch = -(targets[small] * self.n_gen + 10.)  # its equal share would take it below 0
+        report = self.model.redistribute_active_power(mismatch)
+        new = self._targets()
+        self.assertAlmostEqual(new[small], 0., places=9)
+        self.assertFalse(self._slack_flags()[small], "stopped at 0 MW, the unit leaves the slack")
+        exp, sat, remaining = olf_distribute(targets, np.ones(self.n_gen), min_p, max_p, mismatch)
+        self.assertTrue(sat[small])
+        # (the synchronous condensers, at 0 MW already, take no share of a negative mismatch)
+        self.assertEqual(report.nb_saturated, int(sat.sum()))
+        np.testing.assert_allclose(new, exp, atol=1e-9)
+        self.assertAlmostEqual(new.sum(), targets.sum() + mismatch, places=9)
+
+    def test_zero_crossing_storage(self):
+        # a storage unit whose range straddles 0: discharging, a negative mismatch stops it at
+        # 0 MW; charging, a positive one does. Its [min_p, max_p] alone would let it through.
+        for p_mw, mismatch in [(-5., -40.), (5., 40.)]:  # pandapower: p_mw > 0 is charging
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore")
+                net = pn.case14()
+                pp.create_storage(net, bus=3, p_mw=p_mw, max_e_mwh=100., min_p_mw=-20., max_p_mw=20.)
+                model = init_from_pandapower(net)
+            if len(model.get_storages()) == 0:
+                self.skipTest("this pandapower converter has no storage unit")
+            for gen in model.get_generators():
+                model.add_gen_slackbus(gen.id, 1.)
+            model.add_storage_slackbus(0, 1.)
+            n_gen = len(model.get_generators())
+            model.set_gen_p_limits(np.full(n_gen, -1e4), np.full(n_gen, 1e4))
+            model.set_storage_p_limits(np.array([-20.]), np.array([20.]))
+            gen_targets = np.array([g.target_p_mw for g in model.get_generators()])
+            inj_sto = -model.get_storages()[0].target_p_mw  # generator convention
+            report = model.redistribute_active_power(mismatch)
+            sto = model.get_storages()[0]
+            self.assertAlmostEqual(sto.target_p_mw, 0., places=9, msg=f"storage at {p_mw} MW, mismatch {mismatch}")
+            self.assertFalse(sto.is_slack)
+            exp, sat, remaining = olf_distribute(np.concatenate((gen_targets, [inj_sto])), np.ones(n_gen + 1),
+                                                 np.concatenate((np.full(n_gen, -1e4), [-20.])),
+                                                 np.concatenate((np.full(n_gen, 1e4), [20.])), mismatch)
+            self.assertTrue(sat[-1])
+            self.assertEqual(report.nb_saturated, int(sat.sum()))
+            np.testing.assert_allclose(np.array([g.target_p_mw for g in model.get_generators()]),
+                                       exp[:n_gen], atol=1e-9)
+            V = model.ac_pf(np.ones(net.bus.shape[0], dtype=np.complex128), 30, 1e-10)
+            self.assertGreater(V.shape[0], 0)
 
     def test_redistribute_active_power_with_storage(self):
         # a battery takes part in the slack like a generator, in generator convention:

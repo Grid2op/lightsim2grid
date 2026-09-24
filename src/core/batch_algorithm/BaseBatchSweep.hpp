@@ -2285,11 +2285,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //       remaining machines have to make up), plus
         //   (b) the elements stranded on the buses it masks, element by element
         //       (generators not already counted in (a), static generators, minus loads,
-        //       storage units and shunts) -- their rows are masked in the solve, so the
-        //       balance loses their net injection. Element-wise rather than the real
-        //       part of the row's injection over the masked buses: that would count an
-        //       islanded HVDC converter (the in-main one keeps injecting, see
-        //       HvdcLineContainer) and, in DC, the phase-shifter term.
+        //       storage units and shunts, plus the HVDC converters stranded there: the
+        //       in-main converter of their line keeps injecting, see HvdcLineContainer,
+        //       so what the balance loses is the stranded station's own setpoint) --
+        //       their rows are masked in the solve, so the balance loses their net
+        //       injection. Element-wise rather than the real part of the row's
+        //       injection over the masked buses, which in DC would count the
+        //       phase-shifter term.
         // The participants are the slack units left in the main component and not
         // disconnected by the row; slack_redistribution::distribute does the rest.
         void _prepare_slack_redistribution(size_t nb_steps){
@@ -2352,6 +2354,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         storages, -1., in_island, [&storages](int storage_id){ return storages.get_target_p()(storage_id); });
                     lost_mw += slack_redistribution::sum_setpoints_if(
                         shunts, -1., in_island, [&shunts](int shunt_id){ return shunts.get_target_p()(shunt_id); });
+                    lost_mw += slack_redistribution::sum_hvdc_station_setpoints_if(
+                        _grid_model.get_dclines(), in_island);
                 }
                 if(std::abs(lost_mw) <= eps_mw) continue;
 

@@ -119,6 +119,68 @@ TEST_CASE("distribute: every unit saturated keeps them all in the slack", "[slac
     CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(7., 1e-12));
 }
 
+TEST_CASE("distribute: a unit injecting never crosses 0 MW on the way down", "[slack_redistribution]"){
+    // unit 1 has min_p < 0 < max_p: its share (-10) would take it to -8, OLF stops it at 0
+    // and the rest goes to unit 0
+    std::vector<Participant> units = {unit(0, 30., 1., NaN, NaN), unit(1, 2., 1., -50., 50.)};
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    const Report rep = distribute(units, -20., default_eps_mw, new_inj, sat);
+    REQUIRE(rep.nb_rounds == 2);
+    REQUIRE(rep.nb_saturated == 1);
+    REQUIRE_FALSE(rep.all_saturated);
+    CHECK(sat[1] == 1);
+    CHECK(sat[0] == 0);
+    CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(0., 1e-12));
+    CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(12., 1e-12));
+    CHECK_THAT(total(new_inj), Catch::Matchers::WithinAbs(12., 1e-12));
+    CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-12));
+}
+
+TEST_CASE("distribute: a unit drawing power never crosses 0 MW on the way up", "[slack_redistribution]"){
+    // a charging storage unit (injection -5, range [-50, 50]): a positive mismatch stops it at 0
+    std::vector<Participant> units = {unit(0, 30., 1., NaN, NaN), unit(1, -5., 1., -50., 50.)};
+    units[1].kind = UnitKind::STORAGE;
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    const Report rep = distribute(units, 20., default_eps_mw, new_inj, sat);
+    REQUIRE(rep.nb_rounds == 2);
+    REQUIRE(rep.nb_saturated == 1);
+    CHECK(sat[1] == 1);
+    CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(0., 1e-12));
+    CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(45., 1e-12));
+    CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-12));
+}
+
+TEST_CASE("distribute: a unit moves freely on its own side of 0 MW", "[slack_redistribution]"){
+    // drawing 5 MW, pushed down: only its own min_p bounds it
+    std::vector<Participant> units = {unit(0, -5., 1., -50., 50.)};
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    Report rep = distribute(units, -20., default_eps_mw, new_inj, sat);
+    REQUIRE(rep.nb_saturated == 0);
+    CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(-25., 1e-12));
+    // ... and its min_p still holds
+    rep = distribute(units, -60., default_eps_mw, new_inj, sat);
+    REQUIRE(rep.all_saturated);
+    CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(-50., 1e-12));
+    CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(-15., 1e-12));
+}
+
+TEST_CASE("distribute: a unit at exactly 0 MW only moves up", "[slack_redistribution]"){
+    std::vector<Participant> units = {unit(0, 30., 1., NaN, NaN), unit(1, 0., 1., -50., 50.)};
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    Report rep = distribute(units, -10., default_eps_mw, new_inj, sat);
+    CHECK(sat[1] == 1);
+    CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(0., 1e-12));
+    CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(20., 1e-12));
+    rep = distribute(units, 10., default_eps_mw, new_inj, sat);
+    REQUIRE(rep.nb_saturated == 0);
+    CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(5., 1e-12));
+    CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(35., 1e-12));
+}
+
 TEST_CASE("distribute: nothing to share is a no-op", "[slack_redistribution]"){
     std::vector<Participant> units = {unit(0, 5., 1., NaN, NaN)};
     std::vector<real_type> new_inj;
