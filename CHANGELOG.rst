@@ -253,6 +253,13 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   the binary format.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 10 -> 11: ``GeneratorContainer`` serializes the
   ``can_be_pv`` flag. A file saved with format 10 must be re-exported.
+- [ADDED] the PQ -> PV direction of OpenLoadFlow's ``ReactiveLimits`` loop as a physical
+  check: a PQ generator flagged ``can_be_pv``, sitting at its ``min_q`` (resp. ``max_q``),
+  whose regulated bus is below (resp. above) its target voltage would regulate again. Reported
+  as ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on the ``GENERATOR`` (``value`` and
+  ``limit`` in kV) by ``LSGrid.get_physical_violations`` (new ``tol_vm_pu`` argument) and by
+  the batch algorithms' ``compute_physical_violations`` (new ``physical_violation_tol_vm_pu``
+  property); AC only, never enforced.
 - [FIXED] the OLF-style slack redistribution (``LSGrid.redistribute_active_power``,
   ``consider_only_main_component(redistribute_slack=True)``, the batch algorithms'
   ``redistribute_slack``) could push a unit across 0 MW: a discharging storage unit, or a

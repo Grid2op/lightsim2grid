@@ -647,6 +647,117 @@ class TestStoragePFromPython(unittest.TestCase):
         self.assertAlmostEqual(viols[0].value, p_ref[0], places=6)
 
 
+class TestGenPvReleaseFromPython(unittest.TestCase):
+    """The PQ -> PV release of a machine flagged as pinned at a reactive limit
+    (``LSGrid.set_gen_can_be_pv``): reported as ``LOW_VOLTAGE_AT_MIN_Q`` /
+    ``HIGH_VOLTAGE_AT_MAX_Q`` on the GENERATOR, in kV, by a single solve and by every
+    batch alike."""
+
+    VN_KV = 138.
+
+    @staticmethod
+    def _pinned_grid(target_vm=1.10, at_min=True, flagged=True):
+        """the 4-bus radial feeder 0-1-2-3 (80 MW / 60 MVAr load on bus 3), gen 0 the PV
+        slack on bus 0, gen 1 a PQ machine on bus 1 pinned at its min_q (or max_q)"""
+        from lightsim2grid.lightsim2grid_cpp import LSGrid
+        min_q, max_q = -5., 20.
+        grid = LSGrid()
+        grid.set_sn_mva(100.)
+        grid.set_init_vm_pu(1.0)
+        grid.init_bus(4, 1, np.full(4, 138.), 0, 0)
+        grid.init_powerlines(np.full(3, 0.01), np.full(3, 0.1), np.zeros(3, dtype=complex),
+                             np.array([0, 1, 2]), np.array([1, 2, 3]))
+        grid.init_loads(np.array([80.]), np.array([60.]), np.array([3]))
+        grid.init_generators_full(np.array([0., 10.]), np.array([1.02, target_vm]),
+                                  np.array([0., min_q if at_min else max_q]), [True, False],
+                                  np.array([-1e3, min_q]), np.array([1e3, max_q]), np.array([0, 1]))
+        grid.set_gen_names(["slack", "pinned"])
+        if flagged:
+            grid.set_gen_can_be_pv(np.array([False, True]))
+        grid.add_gen_slackbus(0, 1.)
+        grid.tell_solver_need_reset()
+        return grid
+
+    @staticmethod
+    def _solve(grid):
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        assert V.shape[0] > 0
+        return V
+
+    @staticmethod
+    def _release(viols, gen_id=1):
+        return [v for v in viols if v.element_type == ViolationElementType.GENERATOR
+                and v.element_id == gen_id
+                and v.violation_type in (LimitViolationType.LOW_VOLTAGE_AT_MIN_Q,
+                                         LimitViolationType.HIGH_VOLTAGE_AT_MAX_Q)]
+
+    def test_single_solve_reports_it_in_kv(self):
+        grid = self._pinned_grid(1.10, at_min=True)
+        V = self._solve(grid)
+        self.assertLess(abs(V[1]), 1.10)
+        viols = self._release(grid.get_physical_violations(True, 0., 0.))
+        self.assertEqual(len(viols), 1)
+        v = viols[0]
+        self.assertEqual(v.violation_type, LimitViolationType.LOW_VOLTAGE_AT_MIN_Q)
+        self.assertEqual(v.category, ViolationCategory.PHYSICAL)
+        self.assertEqual(v.name, "pinned")
+        self.assertAlmostEqual(v.value, abs(V[1]) * self.VN_KV, places=6)
+        self.assertAlmostEqual(v.limit, 1.10 * self.VN_KV, places=9)
+        self.assertIn("LOW", str(v.violation_type))
+
+    def test_at_max_q_above_target(self):
+        grid = self._pinned_grid(0.80, at_min=False)
+        V = self._solve(grid)
+        self.assertGreater(abs(V[1]), 0.80)
+        viols = self._release(grid.get_physical_violations(True, 0., 0.))
+        self.assertEqual(len(viols), 1)
+        self.assertEqual(viols[0].violation_type, LimitViolationType.HIGH_VOLTAGE_AT_MAX_Q)
+        self.assertIn("HIGH", str(viols[0].violation_type))
+
+    def test_not_flagged_or_wrong_side_or_within_tolerance(self):
+        grid = self._pinned_grid(1.10, at_min=True, flagged=False)
+        self._solve(grid)
+        self.assertEqual(self._release(grid.get_physical_violations(True, 0., 0.)), [])
+        grid = self._pinned_grid(0.80, at_min=True)  # voltage above the target: not a release
+        self._solve(grid)
+        self.assertEqual(self._release(grid.get_physical_violations(True, 0., 0.)), [])
+        grid = self._pinned_grid(1.10, at_min=True)
+        self._solve(grid)
+        self.assertEqual(self._release(grid.get_physical_violations(True, 0., 1.)), [])
+        # a wrong-size flag vector is refused
+        with self.assertRaises(RuntimeError):
+            grid.set_gen_can_be_pv(np.array([True, True, True]))
+
+    def test_batches_match_the_single_solve(self):
+        grid = self._pinned_grid(1.10, at_min=True)
+        V = self._solve(grid)
+        ref = self._release(grid.get_physical_violations(True, 0., 0.))
+        self.assertEqual(len(ref), 1)
+
+        ts = TimeSeriesCPP(grid)
+        ts.compute_physical_violations = True
+        ts.physical_violation_tol_mva = 0.
+        ts.physical_violation_tol_vm_pu = 0.
+        ts.modify_gen_p(np.array([[g.target_p_mw for g in grid.get_generators()]]))
+        ts.compute(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        assert ts.converged_mask()[0]
+        row = self._release(ts.get_physical_violations()[0])
+        self.assertEqual(len(row), 1)
+        self.assertAlmostEqual(row[0].value, ref[0].value, places=6)
+        self.assertAlmostEqual(row[0].limit, ref[0].limit, places=9)
+
+        # a contingency analysis' base case (the contingency itself islands the load)
+        ca = ContingencyAnalysisCPP(grid)
+        ca.compute_physical_violations = True
+        ca.physical_violation_tol_mva = 0.
+        ca.physical_violation_tol_vm_pu = 0.
+        ca.add_n1(2)
+        ca.compute(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        n_case = self._release(ca.get_physical_violations_n())
+        self.assertEqual(len(n_case), 1)
+        self.assertAlmostEqual(n_case[0].value, ref[0].value, places=6)
+
+
 class TestPhysicalViolationsWrapper(unittest.TestCase):
     """the python wrappers: the properties they expose, what they invalidate, and the
     `physical_violations` field of the `run()` result"""
@@ -667,6 +778,7 @@ class TestPhysicalViolationsWrapper(unittest.TestCase):
         ts = TimeSerie(self.env)
         assert ts.compute_physical_violations is False
         assert ts.physical_violation_tol_mva == 1e-4
+        assert ts.physical_violation_tol_vm_pu == 1e-4
         with self.assertRaises(RuntimeError):
             ts.get_physical_violations()
         with self.assertRaises(ValueError):
@@ -675,6 +787,12 @@ class TestPhysicalViolationsWrapper(unittest.TestCase):
             ts.physical_violation_tol_mva = "tight"
         with self.assertRaises(RuntimeError):
             ts.physical_violation_tol_mva = -1.  # rejected C++-side
+        with self.assertRaises(ValueError):
+            ts.physical_violation_tol_vm_pu = "tight"
+        with self.assertRaises(RuntimeError):
+            ts.physical_violation_tol_vm_pu = -1.
+        ts.physical_violation_tol_vm_pu = 1e-3
+        assert ts.physical_violation_tol_vm_pu == 1e-3
 
         ts.compute_physical_violations = True
         ts.compute_V(scenario_id=0)

@@ -344,14 +344,18 @@ class LS2G_API LSGrid final
          * The limits the LAST converged powerflow (ac_pf when `ac`, dc_pf otherwise)
          * cannot physically meet -- the same checks the batch algorithms run with
          * `compute_physical_violations`, on this grid's own solve: a voltage
-         * controller's reactive capability (AC only), an hvdc line's max power, and a
+         * controller's reactive capability (AC only), a flagged PQ generator pinned at a
+         * reactive limit whose regulated voltage would make an outer loop switch it back
+         * to PV (AC only, see `set_gen_can_be_pv`), an hvdc line's max power, and a
          * generator or storage unit pushed past its [min_p, max_p] by the distributed
-         * slack. `tol_mva` is the absolute slack on every comparison. Throws if no such
+         * slack. `tol_mva` is the absolute slack on every power comparison, `tol_vm_pu`
+         * the one (pu) on the voltage comparison of the PQ -> PV check. Throws if no such
          * powerflow ran, if it did not converge, or (AC) if the algorithm does not
          * publish its per-bus mismatch.
          */
         [[nodiscard]] std::vector<LimitViolation> get_physical_violations(bool ac = true,
-                                                                          real_type tol_mva = 1e-4) const;
+                                                                             real_type tol_mva = 1e-4,
+                                                                             real_type tol_vm_pu = 1e-4) const;
         /**
          * The OPERATIONAL limits the last powerflow (ac_pf when `ac`, dc_pf otherwise)
          * violates -- the same checks the batch algorithms run with

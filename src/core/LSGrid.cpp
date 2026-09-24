@@ -17,6 +17,7 @@
 // the physical-limit checks of the batch algorithms, run here on a single solve
 #include "batch_algorithm/BusQCheck.hpp"
 #include "batch_algorithm/GenPCheck.hpp"
+#include "batch_algorithm/GenPvReleaseCheck.hpp"
 #include "batch_algorithm/HvdcPCheck.hpp"
 // ... and the operational ones (LSGrid::get_violations)
 #include "batch_algorithm/OperationalCheck.hpp"
@@ -2808,7 +2809,7 @@ slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatc
     return report;
 }
 
-std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type tol_mva) const{
+std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type tol_mva, real_type tol_vm_pu) const{
     const char * fun_name = "LSGrid::get_physical_violations";
     const SolverBusLayout & layout = ac ? static_cast<const SolverBusLayout &>(ac_cache_)
                                         : static_cast<const SolverBusLayout &>(dc_cache_);
@@ -2845,6 +2846,16 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
             bus_q_check::check_bus_q_violations(
                 plan, *this, algo.get_bus_mismatch(), algo.get_V(), ctrl_q, sn_mva_, tol_mva,
                 no_mask, [](int){ return false; }, out);
+        }
+        // the PQ -> PV direction, on the machines the caller flagged (same order as the
+        // batch: bus Q, then this, then hvdc, then gen P)
+        gen_pv_release_check::GenPvReleasePlan release_plan;
+        gen_pv_release_check::build_gen_pv_release_plan(*this, layout.id_me_to_solver, tol_mva, release_plan);
+        if(!release_plan.empty()){
+            gen_pv_release_check::check_gen_pv_release_violations(
+                release_plan, algo.get_V(), tol_vm_pu, no_mask,
+                [this](int gen_id){ return generators_.get_target_vm_pu(gen_id); },
+                [](int){ return false; }, out);
         }
     }
     hvdc_p_check::HvdcPPlan hvdc_plan;

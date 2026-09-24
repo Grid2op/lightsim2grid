@@ -16,6 +16,7 @@
 #include "OperationalCheck.hpp"
 #include "BusQCheck.hpp"
 #include "GenPCheck.hpp"
+#include "GenPvReleaseCheck.hpp"
 #include "HvdcPCheck.hpp"
 #include "BusGraph.hpp"
 #include "BatchAdjoint.hpp"
@@ -547,15 +548,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // Opt in to the checks whose violation says the converged row is not a state the
         // grid can reach at all -- ViolationCategory::PHYSICAL, as opposed to the
         // operational limits `compute_limit_violations` reports (a voltage band, a thermal
-        // rating: states the grid does reach and should not sit in). Three today, each a
+        // rating: states the grid does reach and should not sit in). Four today, each a
         // condition an OpenLoadFlow outer loop acts on, and none enforced here -- no bus is
-        // switched PV -> PQ, no droop is clamped, no machine leaves the slack distribution,
-        // no row is re-solved:
+        // switched PV -> PQ or back, no droop is clamped, no machine leaves the slack
+        // distribution, no row is re-solved:
         //
         //   * the REACTIVE CAPABILITY of each bus whose voltage is held by machines
         //     (LOW_Q / HIGH_Q on the BUS, see BusQCheck.hpp): did it need more reactive
         //     power than the sum of what its voltage-regulating generators, hvdc converter
         //     stations and voltage-mode SVCs can produce? OpenLoadFlow's `ReactiveLimits`;
+        //   * the RELEASE of each PQ generator the caller flagged as pinned at a reactive
+        //     limit (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q on the GENERATOR, see
+        //     GenPvReleaseCheck.hpp and LSGrid::set_gen_can_be_pv): does the bus it would
+        //     regulate sit below its target while the machine absorbs all it can (or above
+        //     while it produces all it can)? The other direction of the same
+        //     `ReactiveLimits` loop, PQ -> PV;
         //   * the ACTIVE POWER of each angle-droop ("AC emulation") hvdc line still in the
         //     linear regime (HIGH_P on the HVDC, see HvdcPCheck.hpp): did it transmit more
         //     than `pmax_1to2_mw` / `pmax_2to1_mw` allow in that direction? OpenLoadFlow's
@@ -579,7 +586,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // does; a plugin solver has to opt in), and compute() raises for one that does not
         // rather than reporting nothing. In DC it is simply not applicable: a DC powerflow
         // has no reactive power at all, so a DC batch reports the two active-power checks
-        // and nothing is hidden by it. The active-power check also needs the limits
+        // and nothing is hidden by it. The release check needs a voltage magnitude, so it
+        // is AC only too, and the flags themselves (LSGrid::set_gen_can_be_pv): a grid with
+        // none reports nothing there. The active-power check also needs the limits
         // themselves, which are optional (LSGrid::set_gen_p_limits /
         // set_storage_p_limits): a grid that has none simply reports nothing there.
         //
@@ -617,15 +626,33 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(val != _physical_tol_mva_) clear_batch_inputs();
             _physical_tol_mva_ = val;
         }
+        // The same, for the one comparison made on a voltage: the PQ -> PV release check
+        // (GenPvReleaseCheck.hpp) reports a flagged machine whose regulated voltage is
+        // below (at min_q) or above (at max_q) its target by more than this, in pu. A
+        // separate knob because a voltage and a power are not the same scale.
+        real_type get_physical_violation_tol_vm_pu() const noexcept {return _physical_tol_vm_pu_;}
+        void set_physical_violation_tol_vm_pu(real_type val){
+            if(!(val >= 0.) || !isfinite(val)){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::set_physical_violation_tol_vm_pu: the tolerance should "
+                        "be a finite, non-negative number of pu (got " << val << ").";
+                throw std::runtime_error(exc_.str());
+            }
+            if(val != _physical_tol_vm_pu_) clear_batch_inputs();
+            _physical_tol_vm_pu_ = val;
+        }
         /**
          * Per row: the physical limits this row's solution leaves. A row that did not
          * converge (or that was never simulated) has an EMPTY entry rather than a sentinel
          * -- ask converged_mask() to tell that apart from "converged, no violation". Every
-         * entry has category PHYSICAL, and one of two shapes:
+         * entry has category PHYSICAL, and one of four shapes:
          *
          *   - element_type BUS, element_id the grid bus id, violation_type LOW_Q / HIGH_Q,
          *     `value` the reactive power the machines holding that bus had to produce
          *     (MVAr) and `limit` their summed capability;
+         *   - element_type GENERATOR, element_id the generator id, violation_type
+         *     LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q, `value` the voltage of the bus
+         *     that flagged PQ machine would regulate and `limit` its target, both in kV;
          *   - element_type HVDC, element_id the hvdc line id, violation_type HIGH_P, `side`
          *     the direction (1 for 1 -> 2), `value` the active power leaving that side (MW,
          *     positive) and `limit` that direction's pmax;
@@ -1684,6 +1711,24 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         real_type _gen_target_p_in_row(size_t, int gen_id) const { return _grid_target_p(gen_id); }
 
+        // This row's own voltage target for that generator, in pu: its own gen_v row where
+        // modify_gen_v was given one, the grid's target_vm_pu otherwise. For a PQ machine
+        // the solve never reads it (modify_gen_v re-seeds the PV buses only); the PQ -> PV
+        // release check does, as "the target it would hold if released" (see
+        // GenPvReleaseCheck.hpp) -- so a sweep that moves a pinned machine's target moves
+        // what it is checked against.
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        real_type _gen_target_vm_in_row(size_t i, int gen_id) const {
+            const auto & mat = sbus_policy_.gen_v;
+            const Eigen::Index row = static_cast<Eigen::Index>(i);
+            if(mat.rows() > 0 && row < mat.rows() && gen_id < mat.cols()) return mat(row, gen_id);
+            return _grid_model.get_generators().get_target_vm_pu(gen_id);
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        real_type _gen_target_vm_in_row(size_t, int gen_id) const {
+            return _grid_model.get_generators().get_target_vm_pu(gen_id);
+        }
+
         real_type _grid_target_p(int gen_id) const {
             const Eigen::Ref<const RealVect> tgt = _grid_model.get_gen_target_p();
             return (gen_id >= 0 && gen_id < tgt.size()) ? tgt(gen_id) : 0.;
@@ -1749,6 +1794,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 bus_q_check::check_bus_q_violations(
                     _bus_q_plan_, _grid_model, algo.get_bus_mismatch(), V_solver, ctrl_q,
                     _grid_model.get_sn_mva(), _physical_tol_mva_, masked,
+                    [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
+                    _physical_violations_[i]);
+            }
+            if(_gen_pv_release_check_on_ && !_gen_pv_release_plan_.empty()){
+                // the row's converged voltage, against the target this row gives the machine
+                gen_pv_release_check::check_gen_pv_release_violations(
+                    _gen_pv_release_plan_, V_solver, _physical_tol_vm_pu_, masked,
+                    [this, i](int gen_id){ return this->_gen_target_vm_in_row(i, gen_id); },
                     [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
                     _physical_violations_[i]);
             }
@@ -1833,10 +1886,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // than with an empty list.
         void _prepare_physical_check(size_t nb_steps, bool ac_solver_used){
             _bus_q_plan_.clear();
+            _gen_pv_release_plan_.clear();
             _hvdc_p_plan_.clear();
             _gen_p_plan_.clear();
             _physical_violations_.clear();
             _bus_q_check_on_ = false;
+            _gen_pv_release_check_on_ = false;
             if(!_compute_physical_violations_) return;
             // the reactive half needs a per-bus mismatch; the hvdc half needs only the bus
             // angles, which every algorithm solves (see the flag's own doc)
@@ -1854,6 +1909,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     throw std::runtime_error(exc_.str());
                 }
                 _bus_q_check_on_ = true;
+                // the release check compares voltage magnitudes: AC only, like the reactive one
+                _gen_pv_release_check_on_ = true;
             }
             _physical_violations_.assign(nb_steps, std::vector<LimitViolation>());
         }
@@ -1868,6 +1925,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 bus_q_check::build_bus_q_plan(_grid_model, active_layout().id_me_to_solver,
                                               active_layout().voltage_control.controllers(),
                                               _bus_q_plan_);
+            }
+            if(_gen_pv_release_check_on_){
+                // which limit a flagged machine sits at is decided here, once: no batch axis
+                // varies a reactive setpoint, and the tolerance is fixed for a compute()
+                gen_pv_release_check::build_gen_pv_release_plan(
+                    _grid_model, active_layout().id_me_to_solver, _physical_tol_mva_,
+                    _gen_pv_release_plan_);
             }
             hvdc_p_check::build_hvdc_p_plan(_grid_model, active_layout().id_me_to_solver,
                                             _hvdc_p_plan_);
@@ -1891,6 +1955,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     _bus_q_plan_, _grid_model, _algo.get_bus_mismatch(), _algo.get_V(), ctrl_q,
                     _grid_model.get_sn_mva(), _physical_tol_mva_, nullptr,
                     [](int){ return false; },  // the base case disconnects no generator
+                    _physical_violations_n_);
+            }
+            if(_gen_pv_release_check_on_ && !_gen_pv_release_plan_.empty()){
+                // the base case is the grid's own: its targets, no contingency
+                gen_pv_release_check::check_gen_pv_release_violations(
+                    _gen_pv_release_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,
+                    [this](int gen_id){ return this->_grid_model.get_generators().get_target_vm_pu(gen_id); },
+                    [](int){ return false; },
                     _physical_violations_n_);
             }
             if(!_hvdc_p_plan_.empty()){
@@ -2723,8 +2795,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // _prepare_physical_check): false in DC, where there is no reactive power to check.
         bool _compute_physical_violations_ = false;
         real_type _physical_tol_mva_ = 1e-4;
+        real_type _physical_tol_vm_pu_ = 1e-4;
         bool _bus_q_check_on_ = false;
+        // `_gen_pv_release_check_on_`: same idea for the PQ -> PV release check, which
+        // compares voltage magnitudes (AC only)
+        bool _gen_pv_release_check_on_ = false;
         bus_q_check::BusQPlan _bus_q_plan_;
+        gen_pv_release_check::GenPvReleasePlan _gen_pv_release_plan_;
         hvdc_p_check::HvdcPPlan _hvdc_p_plan_;
         gen_p_check::GenPPlan _gen_p_plan_;
         std::vector<std::vector<LimitViolation> > _physical_violations_;

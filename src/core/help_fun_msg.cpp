@@ -4106,13 +4106,21 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
     - a voltage controller (generator, static var compensator, hvdc converter...) whose reactive
       output, what it took to hold its bus at its set-point, is beyond its capability
       (``LOW_Q`` / ``HIGH_Q``; AC only, a DC powerflow has no reactive power);
-    - an hvdc line in angle-droop mode pushed past its maximum power (``LOW_P`` / ``HIGH_P``);
+    - a PQ generator flagged with :func:`set_gen_can_be_pv` (one an outer loop pinned at a
+      reactive limit), sitting at its ``min_q`` (resp. ``max_q``) within ``tol_mva``, whose
+      regulated bus is below (resp. above) its target voltage by more than ``tol_vm_pu``: it
+      absorbs (resp. produces) too much for that target and OpenLoadFlow's ``ReactiveLimits``
+      loop would switch it back to PV (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on
+      the ``GENERATOR``, ``value`` the regulated voltage and ``limit`` the target, in kV; AC
+      only). Only a generator with a reactive range of at least 1 MVAr is a candidate;
+    - an hvdc line in angle-droop mode pushed past its maximum power (``HIGH_P``);
     - a generator or storage unit of the distributed slack whose share of the imbalance lands it
       past its ``[min_p, max_p]`` (:func:`set_gen_p_limits` / :func:`set_storage_p_limits`;
       ``LOW_P`` / ``HIGH_P``).
 
     Nothing is enforced: the solution is what it is, this only reports it. ``tol_mva`` is the
-    absolute slack (MW / MVAr) on every comparison. Returns a list of ``LimitViolation``
+    absolute slack (MW / MVAr) on every power comparison, ``tol_vm_pu`` the one (pu) on the
+    voltage comparison of the PQ -> PV check. Returns a list of ``LimitViolation``
     (``element_type``, ``element_id``, ``violation_type``, ``value``, ``limit``, ``name``), empty
     when every limit holds.
 
@@ -7690,7 +7698,9 @@ const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
     The kind of limit that was violated: ``LOW_VOLTAGE`` / ``HIGH_VOLTAGE`` (a bus voltage
     magnitude limit) or ``CURRENT`` (a line / transformer thermal limit) for an ordinary,
     element-level violation; ``NOT_SIMULATED`` or ``DIVERGENCE`` for a contingency-level one (see
-    :class:`ViolationElementType`'s ``GRID``):
+    :class:`ViolationElementType`'s ``GRID``); ``LOW_Q`` / ``HIGH_Q``, ``LOW_P`` / ``HIGH_P`` and
+    ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` for the physical checks of
+    ``compute_physical_violations`` (see each value's own documentation):
 
     - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
       solver was never invoked for it.
@@ -7733,12 +7743,16 @@ const std::string DocContingencyAnalysis::violation_type = R"mydelimiter(
 
 const std::string DocContingencyAnalysis::value = R"mydelimiter(
     The value actually reached (the voltage magnitude or the current, matching
-    :attr:`violation_type`); unused (``NaN``) for ``NOT_SIMULATED`` / ``DIVERGENCE``.
+    :attr:`violation_type`; for ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` the voltage,
+    in kV, of the bus the pinned generator would regulate); unused (``NaN``) for
+    ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";
 
 const std::string DocContingencyAnalysis::limit = R"mydelimiter(
-    The limit that was violated; unused (``NaN``) for ``NOT_SIMULATED`` / ``DIVERGENCE``.
+    The limit that was violated (for ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` the
+    generator's target voltage, in kV of the regulated bus); unused (``NaN``) for
+    ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";
 

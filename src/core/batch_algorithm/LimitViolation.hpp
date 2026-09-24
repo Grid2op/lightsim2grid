@@ -21,10 +21,13 @@ enum class LS2G_API ViolationElementType : int {
     TRAFO = 2,
     GRID = 3,  // the whole grid / contingency, not a specific element (see LimitViolationType::DIVERGENCE)
     HVDC = 4,  // an hvdc line, by its own id (see LimitViolationType::HIGH_P)
-    // a generator, by its own id. Its ACTIVE power only (LOW_P / HIGH_P): a reactive
-    // violation is reported on the BUS, because how a bus' reactive power is divided
-    // between its machines is a convention, while the active one is divided by the
-    // participation factors the caller chose. See BusQCheck.hpp / GenPCheck.hpp.
+    // a generator, by its own id. Its ACTIVE power (LOW_P / HIGH_P) and, for a PQ machine
+    // pinned at a reactive limit, the voltage of the bus it would regulate
+    // (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q). A REGULATING machine's reactive
+    // violation is reported on the BUS instead, because how a bus' reactive power is
+    // divided between its machines is a convention, while the active one is divided by the
+    // participation factors the caller chose. See BusQCheck.hpp / GenPCheck.hpp /
+    // GenPvReleaseCheck.hpp.
     GENERATOR = 5,
     // a storage unit, by its own id -- same statement as GENERATOR, since a storage unit
     // takes a share of the distributed slack under the same rule (SlackParticipation).
@@ -69,7 +72,19 @@ enum class LS2G_API LimitViolationType : int {
     // ... and the other way: below what it can deliver. Only a generator or a storage unit
     // carrying the distributed slack can be reported here (an hvdc line's two directions
     // are two HIGH_P with a different `side`, see above).
-    LOW_P = 8
+    LOW_P = 8,
+    // A PQ GENERATOR an outer loop pinned at its MINIMUM reactive power (flagged as such by
+    // the caller, see LSGrid::set_gen_can_be_pv) whose regulated bus sits BELOW the target
+    // it would hold: it absorbs too much for that target, and OpenLoadFlow's ReactiveLimits
+    // loop would switch it back to PV (its PQ -> PV direction, the mirror of LOW_Q /
+    // HIGH_Q). Physical for the same reason: the converged solution assumes a control the
+    // loop would not leave in place. `value` the regulated bus' voltage and `limit` the
+    // target, both in kV; the "LOW" in the name says which side the excess is on (value
+    // below limit), and downstream code relies on it. See GenPvReleaseCheck.hpp.
+    LOW_VOLTAGE_AT_MIN_Q = 9,
+    // ... and the mirror: pinned at its MAXIMUM, regulated bus ABOVE the target (value
+    // above limit).
+    HIGH_VOLTAGE_AT_MAX_Q = 10
 };
 
 /**
@@ -92,7 +107,7 @@ enum class LS2G_API ViolationCategory : int {
     /// reactive power they do not have, an hvdc converter transmitting more than it can, a
     /// distributed slack asking a machine for power it does not have) cannot happen. It is a
     /// statement about the model's assumptions, not about how the grid is being operated.
-    /// LOW_Q, HIGH_Q, LOW_P, HIGH_P.
+    /// LOW_Q, HIGH_Q, LOW_P, HIGH_P, LOW_VOLTAGE_AT_MIN_Q, HIGH_VOLTAGE_AT_MAX_Q.
     PHYSICAL = 1,
     /// Not a limit at all: what the solver did. A divergence in particular says nothing
     /// about the grid -- the state may be perfectly feasible and the algorithm simply
@@ -113,6 +128,8 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
         case LimitViolationType::HIGH_Q:
         case LimitViolationType::HIGH_P:
         case LimitViolationType::LOW_P:
+        case LimitViolationType::LOW_VOLTAGE_AT_MIN_Q:
+        case LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q:
             return ViolationCategory::PHYSICAL;
         default:  // NOT_SIMULATED, DIVERGENCE
             return ViolationCategory::SOLVER;
@@ -133,13 +150,17 @@ struct LS2G_API LimitViolation {
     // value reached: MVAr for LOW_Q / HIGH_Q (what the machines holding that bus had to
     // produce), MW for LOW_P / HIGH_P (an hvdc line's flow leaving `side`, always positive;
     // a generator's or a storage unit's own converged active power, signed and in the
-    // generator convention) ; unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    // generator convention), kV for LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q (the voltage
+    // of the bus the pinned generator would regulate) ; unused (NaN) for NOT_SIMULATED /
+    // DIVERGENCE
     real_type value;
     // limit that was violated. For LOW_Q / HIGH_Q the SUMMED capability of the machines
     // holding that bus, not one machine's: min_q_mvar / max_q_mvar for a generator or an
     // hvdc converter station, b_min / b_max at the solved voltage for a voltage-mode SVC.
     // For HIGH_P the pmax of the direction `side` names (HVDC) or the generator's / storage
-    // unit's max_p_mw; for LOW_P its min_p_mw. Unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    // unit's max_p_mw; for LOW_P its min_p_mw. For LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q
+    // the generator's target voltage, in kV of the regulated bus. Unused (NaN) for
+    // NOT_SIMULATED / DIVERGENCE
     real_type limit;
     // element name: LINE / TRAFO / HVDC / GENERATOR / STORAGE (from LSGrid::set_line_names /
     // set_trafo_names / set_dcline_names / set_gen_names / set_storage_names) or, for BUS,

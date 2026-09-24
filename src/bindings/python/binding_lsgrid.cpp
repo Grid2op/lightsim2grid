@@ -111,7 +111,8 @@ void bind_gridmodel(py::module_& m) {
         .def("get_solver", &LSGrid::get_algo, py::return_value_policy::reference_internal, "DEPRECATED: use 'get_algo' instead")
         .def("get_dc_solver", &LSGrid::get_dc_algo, py::return_value_policy::reference_internal, "DEPRECATED: use 'get_dc_algo' instead")
         .def("get_physical_violations", &LSGrid::get_physical_violations,
-             py::arg("ac") = true, py::arg("tol_mva") = 1e-4, DocLSGrid::get_physical_violations.c_str())
+             py::arg("ac") = true, py::arg("tol_mva") = 1e-4, py::arg("tol_vm_pu") = 1e-4,
+             DocLSGrid::get_physical_violations.c_str())
         .def("get_violations", &LSGrid::get_violations,
              py::arg("threshold") = 1., py::arg("ac") = true, DocLSGrid::get_violations.c_str())
 

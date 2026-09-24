@@ -277,10 +277,11 @@ class ScenarioSweep:
         thermal rating: states the grid does reach and should not sit in). Default:
         ``False``. Same meaning as
         :attr:`lightsim2grid.timeSerie.TimeSerie.compute_physical_violations`, which
-        documents the two checks (the reactive capability of a bus, and the active power of
-        an angle-droop hvdc line) in full.
+        documents the four checks (the reactive capability of a bus, the release of a PQ
+        generator flagged as pinned at a reactive limit, the active power of an angle-droop
+        hvdc line, and the active power of a machine carrying the distributed slack) in full.
 
-        Detection only: nothing is switched PV -> PQ, no droop is clamped, no row is
+        Detection only: nothing is switched PV -> PQ or back, no droop is clamped, no row is
         re-solved. Unlike :attr:`compute_limit_violations`, changing this flag keeps the
         registered injections and contingency masks -- only the results go.
         """
@@ -317,6 +318,28 @@ class ScenarioSweep:
         if val == self.computer.physical_violation_tol_mva:
             return
         self.computer.physical_violation_tol_mva = val  # validates, and drops base case + results
+        self.__computed = False
+
+    @property
+    def physical_violation_tol_vm_pu(self):
+        """The same as :attr:`physical_violation_tol_mva`, in pu, for the one comparison
+        :attr:`compute_physical_violations` makes on a voltage: the PQ -> PV release check
+        reports a flagged PQ generator (``LSGrid.set_gen_can_be_pv``) whose regulated bus
+        is below (at ``min_q``) or above (at ``max_q``) its target by more than this
+        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``). Default: ``1e-4``. Changing
+        it invalidates any previously-computed results.
+        """
+        return self.computer.physical_violation_tol_vm_pu
+
+    @physical_violation_tol_vm_pu.setter
+    def physical_violation_tol_vm_pu(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `physical_violation_tol_vm_pu` attribute must be a real number.")
+        if val == self.computer.physical_violation_tol_vm_pu:
+            return
+        self.computer.physical_violation_tol_vm_pu = val  # validates, and drops base case + results
         self.__computed = False
 
     def _check_2d(self, arr, name):
@@ -515,10 +538,13 @@ class ScenarioSweep:
     def get_physical_violations(self):
         """Per row: the list of :class:`LimitViolation` of the physical limits that row's
         solution leaves -- ``element_type`` ``BUS`` with ``violation_type`` ``LOW_Q`` /
-        ``HIGH_Q`` (the reactive capability of the machines holding that bus), or
+        ``HIGH_Q`` (the reactive capability of the machines holding that bus),
+        ``element_type`` ``GENERATOR`` with ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``
+        (a flagged PQ generator that would regulate again, ``value`` / ``limit`` in kV),
         ``element_type`` ``HVDC`` with ``HIGH_P`` and ``side`` naming the direction (the
-        active power of an angle-droop hvdc line). Every entry has ``category ==
-        ViolationCategory.PHYSICAL``.
+        active power of an angle-droop hvdc line), or ``element_type`` ``GENERATOR`` /
+        ``STORAGE`` with ``LOW_P`` / ``HIGH_P`` (the distributed slack). Every entry has
+        ``category == ViolationCategory.PHYSICAL``.
 
         A row that did not converge has an **empty** entry, not a sentinel (unlike
         :func:`get_violations`) -- use ``self.computer.converged_mask()`` to tell that from
