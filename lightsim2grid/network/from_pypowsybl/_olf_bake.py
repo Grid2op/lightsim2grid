@@ -324,6 +324,19 @@ def bake_outer_loops(
         kept regulating, it reports a reactive-limit violation for almost every
         contingency. ``False`` (default) keeps it regulating, as OLF did.
 
+    Returns
+    -------
+    pandas.Index
+        The ids of the generators this bake froze as PQ *at a reactive limit* (the
+        reactive-limit step, the exactly saturated ones included when
+        ``bake_saturated_voltage_control`` is set): what OLF's ``ReactiveLimits`` loop
+        pinned, and what it would release again on a grid asking them for less. Hand it
+        to ``init_from_pypowsybl(can_be_pv=...)`` so that lightsim2grid's physical checks
+        report such a release (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``). The
+        generators switched off for another reason (not started, a reactive range too
+        small, an implausible target, a target not held) are not in it. Empty when
+        ``bake_reactive_limits`` is off, or on an already-baked network.
+
     Notes
     -----
     Operates in place and is idempotent on an already-baked network. The
@@ -331,10 +344,11 @@ def bake_outer_loops(
     it in IIDM, so PV->PQ is detected from the realized Q sitting at a limit.
     """
     df_bus = _get_buses(network)
+    pinned = pd.Index([], dtype=object)
     if bake_taps:
         _bake_taps_and_sections(network, keep_only_main_comp, df_bus)
     if bake_reactive_limits:
-        _bake_reactive_limit_switches(
+        pinned = _bake_reactive_limit_switches(
             network, keep_only_main_comp, bake_generator_voltage_control_discards,
             extrapolate_reactive_limits, bake_saturated_voltage_control, df_bus
         )
@@ -349,6 +363,7 @@ def bake_outer_loops(
         )
     if bake_remote_voltage_control:
         _bake_remote_voltage_control(network, keep_only_main_comp, df_bus)
+    return pinned
 
 
 def _bake_taps_and_sections(network, keep_only_main_comp=True, df_bus=None):
@@ -911,8 +926,9 @@ def _bake_reactive_limit_switches(
     # bake_saturated_voltage_control freezes the exactly saturated ones too.
     if not bake_saturated_voltage_control:
         mask &= ~held.reindex(gen.index).fillna(False).astype(bool) | _switched_group_members(network, gen, q_gen, reg_bus)
+    pinned = gen.index[mask]
     if mask.any():
-        upd = pd.DataFrame(index=gen.index[mask])
+        upd = pd.DataFrame(index=pinned)
         # the limit it was switched at rather than a misreported q (see _baked_q_at_limit)
         upd["target_q"] = _baked_q_at_limit(gen, q_gen)[mask]
         upd["voltage_regulator_on"] = False
@@ -943,6 +959,9 @@ def _bake_reactive_limit_switches(
 
     _bake_svc_standby(network, keep_only_main_comp, df_bus)
     _bake_svc_saturation(network, keep_only_main_comp, df_bus)
+    # the generators this step froze AT A REACTIVE LIMIT (not the ones the other rules
+    # switched off): the ones an outer loop would release again, see `bake_outer_loops`
+    return pinned
 
 
 def _bake_svc_standby(network, keep_only_main_comp=True, df_bus=None):

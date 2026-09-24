@@ -260,6 +260,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``limit`` in kV) by ``LSGrid.get_physical_violations`` (new ``tol_vm_pu`` argument) and by
   the batch algorithms' ``compute_physical_violations`` (new ``physical_violation_tol_vm_pu``
   property); AC only, never enforced.
+- [ADDED] ``bake_outer_loops`` returns the ids of the generators it froze at a reactive
+  limit, and ``init_from_pypowsybl(can_be_pv=...)`` flags them (``LightsimResultNetwork.
+  get_generators`` shows the flag in a ``can_be_pv`` column), so that a lightsim2grid solve
+  of the baked grid reports the ones an outer loop would release again.
 - [FIXED] the OLF-style slack redistribution (``LSGrid.redistribute_active_power``,
   ``consider_only_main_component(redistribute_slack=True)``, the batch algorithms'
   ``redistribute_slack``) could push a unit across 0 MW: a discharging storage unit, or a
