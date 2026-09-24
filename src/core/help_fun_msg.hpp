@@ -159,6 +159,7 @@ struct LS2G_API DocIterator
     static const std::string voltage_regulator_on;
     static const std::string regulated_bus_id;
     static const std::string reactive_key;
+    static const std::string can_be_pv;
     static const std::string line_model;
     static const std::string r_pu;
     static const std::string x_pu;

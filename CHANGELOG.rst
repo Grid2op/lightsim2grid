@@ -247,6 +247,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   (``compute_physical_violations``) was summed over every bus, the ones masked by
   ``handle_disconnected_grid`` included; it is now summed over the solved buses only, as the
   DC solver does.
+- [ADDED] ``LSGrid.set_gen_can_be_pv`` / ``GenInfo.can_be_pv``: a per-generator flag (False by
+  default, never read by a powerflow) saying that a PQ machine is one an outer loop pinned at
+  a reactive limit, so that its PQ -> PV release can be checked. Kept by ``copy``, pickle and
+  the binary format.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 10 -> 11: ``GeneratorContainer`` serializes the
+  ``can_be_pv`` flag. A file saved with format 10 must be re-exported.
 - [FIXED] the OLF-style slack redistribution (``LSGrid.redistribute_active_power``,
   ``consider_only_main_component(redistribute_slack=True)``, the batch algorithms'
   ``redistribute_slack``) could push a unit across 0 MW: a discharging storage unit, or a

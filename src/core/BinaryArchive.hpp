@@ -100,7 +100,10 @@ namespace ls2g {
 // v10: StorageContainer::StateRes carries the OPTIONAL active power limits of a storage
 //     unit (`p_min_mw_` / `p_max_mw_`, empty when the grid was never given any -- see
 //     StorageContainer::set_p_limits), like a generator's since v7.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 10;
+// v11: GeneratorContainer::StateRes carries the per-generator `can_be_pv_` flag (the PQ
+//     machines a caller knows an outer loop pinned at a reactive limit -- see
+//     LSGrid::set_gen_can_be_pv; all false unless set). Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 11;
 
 class LS2G_API BinaryArchive
 {

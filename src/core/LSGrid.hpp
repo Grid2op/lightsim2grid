@@ -1097,6 +1097,18 @@ class LS2G_API LSGrid final
             generators_.set_p_limits(p_min_mw, p_max_mw);
         }
         /**
+         * Flag the generators a caller knows an outer loop pinned at a reactive limit as
+         * PQ (one bool per generator, false by default). lightsim2grid never pins a machine
+         * itself, so it cannot tell such a machine from one that was PQ to begin with: the
+         * caller says so (init_from_pypowsybl passes what bake_outer_loops froze). Nothing
+         * enforces or reads it in a powerflow; it only opens that machine to the physical
+         * check of its PQ -> PV release (see `get_physical_violations` and the batch
+         * algorithms' `compute_physical_violations`).
+         */
+        void set_gen_can_be_pv(const std::vector<bool> & can_be_pv){
+            generators_.set_can_be_pv(can_be_pv);
+        }
+        /**
          * Same, for the storage units -- which take part in the distributed slack under
          * the same rule as the generators (`add_storage_slackbus`), so their converged
          * active power can leave what they can deliver in exactly the same way.

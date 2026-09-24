@@ -1283,6 +1283,19 @@ const std::string DocIterator::regulated_bus_id = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::can_be_pv = R"mydelimiter(
+    Whether this generator, when it does not regulate a voltage (``voltage_regulator_on`` is
+    ``False``), is one an outer loop pinned at a reactive limit -- so that it would regulate
+    again if the grid let it. ``False`` by default; set for the whole grid with
+    :func:`lightsim2grid.network.LSGrid.set_gen_can_be_pv`, and by
+    ``init_from_pypowsybl(can_be_pv=...)`` from what ``bake_outer_loops`` froze.
+
+    Nothing enforces or reads it in a powerflow. It only opens the machine to the physical
+    check of its PQ -> PV release (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``, see
+    :func:`lightsim2grid.network.LSGrid.get_physical_violations`).
+
+)mydelimiter";
+
 const std::string DocIterator::reactive_key = R"mydelimiter(
     The reactive sharing key of this generator, ``NaN`` when it has none. Read from the
     ``coordinatedReactiveControl`` extension (``q_percent``) when the grid comes from pypowsybl.

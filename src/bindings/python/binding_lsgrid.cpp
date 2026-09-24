@@ -213,6 +213,17 @@ void bind_gridmodel(py::module_& m) {
              "-- can land beyond what it can deliver. That is a physical violation, and these "
              "are what the batch algorithms' `compute_physical_violations` compares against "
              "(LOW_P / HIGH_P on the GENERATOR).")
+        .def("set_gen_can_be_pv", &LSGrid::set_gen_can_be_pv,
+             py::arg("can_be_pv"),
+             "Flag the generators an outer loop pinned at a reactive limit as PQ: one bool per "
+             "generator (`GenInfo.can_be_pv`, False by default), never enforced and never read "
+             "by a powerflow.\n\n"
+             "lightsim2grid never pins a machine itself, so it cannot tell such a machine from "
+             "one that was PQ to begin with: the caller says so (`init_from_pypowsybl(can_be_pv=...)` "
+             "passes the generators `bake_outer_loops` froze at a limit). What it is for: the "
+             "physical checks (`get_physical_violations`, the batch algorithms' "
+             "`compute_physical_violations`) only consider a flagged PQ machine when looking for "
+             "one whose regulated voltage would make an outer loop switch it back to PV.")
         .def("set_storage_p_limits", &LSGrid::set_storage_p_limits,
              py::arg("p_min_mw"), py::arg("p_max_mw"),
              "Active power limits (MW) of the storage units, OPTIONAL and never enforced -- "

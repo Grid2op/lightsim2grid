@@ -77,6 +77,8 @@ void GeneratorContainer::init_full(const Eigen::Ref<const RealVect> & generators
     // with a different number of generators left limits sized for the previous ones.
     p_min_mw_ = RealVect();
     p_max_mw_ = RealVect();
+    // same for the "can be PV" hint: it describes the machines this call replaces
+    can_be_pv_ = std::vector<bool>(size, false);
     reset_results();
 }
 
@@ -101,7 +103,8 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one
                                       regulated_bus,
                                       p_min,
                                       p_max,
-                                      reactive_key);
+                                      reactive_key,
+                                      can_be_pv_);
      return res;
 }
 
@@ -121,6 +124,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     std::vector<real_type> & p_min = std::get<StateResIdx::P_MIN_MW>(my_state);
     std::vector<real_type> & p_max = std::get<StateResIdx::P_MAX_MW>(my_state);
     std::vector<real_type> & reactive_key = std::get<StateResIdx::REACTIVE_KEY>(my_state);
+    std::vector<bool> & can_be_pv = std::get<StateResIdx::CAN_BE_PV>(my_state);
 
     // check sizes
     const auto size = nb();
@@ -139,6 +143,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
         check_size(p_max, size, "p_max_mw");
     }
     check_size(reactive_key, size, "reactive_key");
+    check_size(can_be_pv, size, "can_be_pv");
 
     // assign data
     voltage_regulator_on_ = voltage_regulator_on;
@@ -150,6 +155,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     p_min_mw_ = p_min.empty() ? RealVect() : RealVect::Map(p_min.data(), p_min.size());
     p_max_mw_ = p_max.empty() ? RealVect() : RealVect::Map(p_max.data(), p_max.size());
     reactive_key_ = RealVect::Map(reactive_key.data(), reactive_key.size());
+    can_be_pv_ = can_be_pv;
     reset_results();
 }
 

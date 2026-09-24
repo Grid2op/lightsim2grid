@@ -41,6 +41,10 @@ class LS2G_API GenInfo : public OneSideContainer_PQ::OneSidePQInfo
         // could actually deliver (see batch_algorithm/GenPCheck.hpp).
         real_type min_p_mw;
         real_type max_p_mw;
+        // a hint from the caller that this PQ machine is one an outer loop pinned at a
+        // reactive limit, so that its PQ -> PV release is worth checking (see
+        // LSGrid::set_gen_can_be_pv); false by default, never read by a powerflow
+        bool can_be_pv;
         int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id for local control)
         real_type reactive_key; // reactive sharing key, NaN when there is none
 
@@ -84,7 +88,8 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
            std::vector<int>,        // regulated_bus_id_ (appended; defaults to own bus)
            std::vector<real_type>,  // p_min_mw_ (appended, optional: empty if unset)
            std::vector<real_type>,  // p_max_mw_ (appended, optional: empty if unset)
-           std::vector<real_type>   // reactive_key_ (appended; NaN: no key)
+           std::vector<real_type>,  // reactive_key_ (appended; NaN: no key)
+           std::vector<bool>        // can_be_pv_ (appended; all false by default)
         > ;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -99,6 +104,7 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             P_MIN_MW,
             P_MAX_MW,
             REACTIVE_KEY,
+            CAN_BE_PV,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -256,6 +262,18 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             return p_max_mw_.size() > 0 ? p_max_mw_.coeff(gen_id)
                                         : std::numeric_limits<real_type>::quiet_NaN();
         }
+        /**
+         * Flag, per generator, the machines an outer loop pinned at a reactive limit as
+         * PQ (see LSGrid::set_gen_can_be_pv). Nothing in a powerflow reads it -- no
+         * solver flag to raise -- it only says which PQ machines the physical checks may
+         * report as "would regulate again". One entry per generator.
+         */
+        void set_can_be_pv(const std::vector<bool> & can_be_pv){
+            check_size(can_be_pv, nb(), "GeneratorContainer::set_can_be_pv");
+            can_be_pv_ = can_be_pv;
+        }
+        bool get_can_be_pv(int gen_id) const {return can_be_pv_[gen_id];}
+        const std::vector<bool> & get_can_be_pv() const {return can_be_pv_;}
         // reactive sharing key among the generators holding one bus together (see
         // VoltageControlPlan::build_controllers); no key -- NaN, 0 or negative -- lets
         // the reactive range decide
@@ -326,6 +344,9 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         RealVect p_min_mw_;
         RealVect p_max_mw_;
         RealVect reactive_key_;  // reactive sharing key, NaN when there is none
+        // the PQ machines a caller knows an outer loop pinned at a reactive limit (see
+        // set_can_be_pv); all false unless told otherwise, never read by a powerflow
+        std::vector<bool> can_be_pv_;
 
         // which generators take part in the distributed slack, and with what weight
         SlackParticipation slack_;
@@ -344,6 +365,7 @@ min_q_mvar(0.),
 max_q_mvar(0.),
 min_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
 max_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
+can_be_pv(false),
 regulated_bus_id(-1),
 reactive_key(std::numeric_limits<real_type>::quiet_NaN())
 {
@@ -358,6 +380,7 @@ reactive_key(std::numeric_limits<real_type>::quiet_NaN())
         max_q_mvar = r_data_gen.max_q_.coeff(my_id);
         min_p_mw = r_data_gen.get_min_p(my_id);
         max_p_mw = r_data_gen.get_max_p(my_id);
+        can_be_pv = r_data_gen.can_be_pv_[my_id];
         regulated_bus_id = r_data_gen.regulated_bus_id_(my_id);
         reactive_key = r_data_gen.reactive_key_.coeff(my_id);
     }

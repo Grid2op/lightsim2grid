@@ -57,6 +57,7 @@ void bind_containers(py::module_& m) {
                       "algorithms' `compute_physical_violations`).")
         .def_readonly("max_p_mw", &GenInfo::max_p_mw,
                       "Maximum active power, in MW -- OPTIONAL, see `min_p_mw`.")
+        .def_readonly("can_be_pv", &GenInfo::can_be_pv, DocIterator::can_be_pv.c_str())
         .def_readonly("regulated_bus_id", &GenInfo::regulated_bus_id, DocIterator::regulated_bus_id.c_str())
         .def_readonly("reactive_key", &GenInfo::reactive_key, DocIterator::reactive_key.c_str())
         .def_readonly("has_res", &GenInfo::has_res, DocIterator::has_res.c_str())
