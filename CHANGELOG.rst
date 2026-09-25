@@ -207,6 +207,17 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``handle_disconnected_grid`` (``ContingencyAnalysis`` / ``ScenarioSweep``) chose its
+  reference slack bus mixing the grid and the solver bus numberings, and the choice never
+  reached the solver. On a grid where they differ (disconnected or fused buses), a contingency
+  islanding a slack-participating generator could be skipped (``NOT_SIMULATED``) for no reason,
+  and one stranding the solver's real reference was not. The reference is now chosen in solver
+  numbering and is the one the solver uses; ``pick_reference_slack`` returns a slack bus
+  (gridmodel id) and has no effect on the next ``compute``.
+- [FIXED] a reference slack bus forced with ``LSGrid.set_reference_slack_bus`` was lost by
+  ``LSGrid.copy()``, so by the batch algorithms, which work on a copy of the grid. The batch
+  now always keeps it as its reference (the contingencies that strand it are skipped);
+  ``pick_reference_slack`` still suggests the automatic choice.
 - [ADDED] ``LSGrid.set_keep_vinit_at_group_controlled_buses`` (and the batch algorithms'
   ``keep_vinit_at_group_controlled_buses``), off by default: a bus regulated remotely or by an
   SVC keeps its starting magnitude instead of its set-point, so step damping can reach it gradually.

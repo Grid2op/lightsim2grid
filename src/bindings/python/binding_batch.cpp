@@ -1013,7 +1013,11 @@ void bind_batch(py::module_& m) {
         .def("pick_reference_slack", &ContingencyAnalysis::pick_reference_slack<>,
              "Over the registered contingencies, return the slack bus (gridmodel id) "
              "stranded by the fewest of them — feed it to LSGrid.set_reference_slack_bus "
-             "before ac_pf so handle_disconnected_grid skips as few contingencies as possible.")
+             "(before building this object: it works on a copy of the grid) so "
+             "handle_disconnected_grid skips as few contingencies as possible. A suggestion "
+             "only: it ignores a reference already forced on the grid, and does not change "
+             "the reference the next compute() uses (a forced one, always kept, or else "
+             "this same automatic choice).")
 
         // perform computation
         .def("compute", &ContingencyAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocContingencyAnalysis::compute.c_str())

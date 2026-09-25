@@ -3713,6 +3713,11 @@ const std::string DocLSGrid::set_reference_slack_bus = R"mydelimiter(
     Force a (gridmodel) bus to be the angle reference among the slack buses (reordered to
     ``slack_ids[0]``) without changing the slack set / weights; ``-1`` clears it.
 
+    It is kept by :func:`copy`, hence by the batch algorithms built from this grid, which use
+    it as the reference of the whole batch: with ``handle_disconnected_grid``, the
+    contingencies that strand it are skipped. Set it before building the batch object (it
+    works on a copy of the grid); ``ContingencyAnalysis.pick_reference_slack`` suggests one.
+
 )mydelimiter";
 
 const std::string DocLSGrid::get_reference_slack_bus = R"mydelimiter(

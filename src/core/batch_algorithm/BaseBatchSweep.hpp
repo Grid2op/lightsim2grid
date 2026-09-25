@@ -709,9 +709,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 ybus_policy_.init_li_coeffs(_grid_model, ac_solver_used, active_layout().id_me_to_solver, n_line_);
             }
             _prepare_connectivity();
-            _select_ref_slack_and_masks();
-            if(active_layout().slack_bus_id_me.size() == 0) return -1;
-            return active_layout().slack_bus_id_me[static_cast<int>(0)].cast_int();
+            // a suggestion only: the automatic choice, whatever reference the grid
+            // forces, and the slack order the next compute() starts from is left as
+            // it was (compute() makes its own choice, see _maybe_prepare_masks)
+            SolverBusLayout & layout = active_layout();
+            const GlobalBusIdVect slack_me = layout.slack_bus_id_me;
+            const SolverBusIdVect slack_solver = layout.slack_bus_id_solver;
+            _select_ref_slack_and_masks(false);
+            const int res = (layout.slack_bus_id_me.size() == 0) ? -1 : layout.slack_bus_id_me[0].cast_int();
+            layout.slack_bus_id_me = slack_me;
+            layout.slack_bus_id_solver = slack_solver;
+            return res;
         }
 
         // ================= legacy bundled compute_Vs / get_sbuses ================
@@ -1290,58 +1298,83 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         // pre-pass run before the (n-)powerflow in "handle disconnected grid" mode:
         // from _li_masked (see _prepare_connectivity, which must have run), chooses
-        // the reference slack that minimises the number of skipped contingencies
-        // (reordering active_layout().slack_bus_id_me so it is index 0) and fills
-        // _skip_mask. Called from _maybe_prepare_masks() (compute()-only, both
-        // instantiations) and pick_reference_slack() (public, ContingencyAnalysis-only,
-        // hence this too must be fully inline).
+        // the reference slack, moves it to index 0 of BOTH slack_bus_id_solver (the
+        // one the solver reads) and slack_bus_id_me (kept aligned with it), and fills
+        // _skip_mask with the contingencies that strand it.
+        // The reference is, with `respect_forced`, the one forced on the grid
+        // (LSGrid::set_reference_slack_bus): it is chosen for the whole batch, so it
+        // is kept even if some contingencies strand it (those are skipped). Otherwise,
+        // or if the forced bus is not a slack bus with a positive weight, it is the
+        // slack bus stranded by the fewest contingencies.
+        // Everything is compared in SOLVER numbering (_li_masked and slack_weights
+        // are solver-indexed), the slack list being walked by position.
+        // Called from _maybe_prepare_masks() (compute()-only, both instantiations,
+        // respect_forced) and pick_reference_slack() (public, ContingencyAnalysis-only,
+        // a suggestion: not respect_forced; hence this too must be fully inline).
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
-        void _select_ref_slack_and_masks(){
+        void _select_ref_slack_and_masks(bool respect_forced){
             const size_t nb_cont = ybus_policy_.li_coeffs.size();
             _skip_mask.assign(nb_cont, 0);
 
-            const Eigen::Index nb_slack = active_layout().slack_bus_id_me.size();
+            SolverBusLayout & layout = active_layout();
+            const int nb_slack = static_cast<int>(layout.slack_bus_id_solver.size());
+            if(nb_slack == 0 || static_cast<int>(layout.slack_bus_id_me.size()) != nb_slack) return;
+            const RealVect & weights = layout.slack_weights;
+            const auto weight_of = [&weights](int bus_solver){
+                return (bus_solver >= 0 && bus_solver < weights.size()) ? weights(bus_solver) : real_type(0.);
+            };
+
+            // positions (in the slack list) of the candidates
             std::vector<int> candidates;
-            for(Eigen::Index i = 0; i < nb_slack; ++i){
-                const int b = active_layout().slack_bus_id_me[static_cast<int>(i)].cast_int();
-                if(b >= 0 && b < active_layout().slack_weights.size() && active_layout().slack_weights(b) > 0.) candidates.push_back(b);
+            for(int k = 0; k < nb_slack; ++k){
+                if(weight_of(layout.slack_bus_id_solver[k].cast_int()) > 0.) candidates.push_back(k);
             }
             if(candidates.empty()){
-                for(Eigen::Index i = 0; i < nb_slack; ++i) candidates.push_back(active_layout().slack_bus_id_me[static_cast<int>(i)].cast_int());
+                for(int k = 0; k < nb_slack; ++k) candidates.push_back(k);
             }
-            if(candidates.empty()) return;
 
             // every _li_masked entry is sorted (see _prepare_connectivity)
             auto is_masked = [](const std::vector<int> & masked, int bus){
                 return std::binary_search(masked.begin(), masked.end(), bus);
             };
-            int best_bus = candidates[0];
-            int best_strand = -1;
-            real_type best_weight = -1.;
-            for(int bus : candidates){
-                int strand = 0;
-                for(const auto & masked : _li_masked) if(is_masked(masked, bus)) ++strand;
-                const real_type weight = (bus < active_layout().slack_weights.size()) ? active_layout().slack_weights(bus) : 0.;
-                const bool better = (best_strand < 0) ||
-                                    (strand < best_strand) ||
-                                    (strand == best_strand && weight > best_weight) ||
-                                    (strand == best_strand && weight == best_weight && bus < best_bus);
-                if(better){ best_strand = strand; best_weight = weight; best_bus = bus; }
-            }
 
-            {
-                std::vector<int> reordered;
-                reordered.reserve(static_cast<size_t>(nb_slack));
-                reordered.push_back(best_bus);
-                for(Eigen::Index i = 0; i < nb_slack; ++i){
-                    const int b = active_layout().slack_bus_id_me[static_cast<int>(i)].cast_int();
-                    if(b != best_bus) reordered.push_back(b);
+            int best_k = -1;
+            const int forced = respect_forced ? _grid_model.get_reference_slack_bus() : -1;
+            if(forced >= 0){
+                for(int k : candidates){
+                    if(layout.slack_bus_id_me[k].cast_int() == forced){ best_k = k; break; }
                 }
-                active_layout().slack_bus_id_me = GlobalBusIdVect(reordered);
+            }
+            if(best_k < 0){
+                int best_strand = -1;
+                real_type best_weight = -1.;
+                int best_bus = -1;
+                for(int k : candidates){
+                    const int bus = layout.slack_bus_id_solver[k].cast_int();
+                    int strand = 0;
+                    for(const auto & masked : _li_masked) if(is_masked(masked, bus)) ++strand;
+                    const real_type weight = weight_of(bus);
+                    const bool better = (best_strand < 0) ||
+                                        (strand < best_strand) ||
+                                        (strand == best_strand && weight > best_weight) ||
+                                        (strand == best_strand && weight == best_weight && bus < best_bus);
+                    if(better){ best_strand = strand; best_weight = weight; best_bus = bus; best_k = k; }
+                }
             }
 
+            if(best_k > 0){
+                // same permutation on both lists: best_k to the front, the others in order
+                std::vector<int> me = layout.slack_bus_id_me.to_int_vector();
+                std::vector<int> solver = layout.slack_bus_id_solver.to_int_vector();
+                std::rotate(me.begin(), me.begin() + best_k, me.begin() + best_k + 1);
+                std::rotate(solver.begin(), solver.begin() + best_k, solver.begin() + best_k + 1);
+                layout.slack_bus_id_me = GlobalBusIdVect(me);
+                layout.slack_bus_id_solver = SolverBusIdVect(solver);
+            }
+
+            const int ref_solver = layout.slack_bus_id_solver[0].cast_int();
             for(size_t cont_id = 0; cont_id < nb_cont; ++cont_id){
-                if(is_masked(_li_masked[cont_id], best_bus)) _skip_mask[cont_id] = 1;
+                if(is_masked(_li_masked[cont_id], ref_solver)) _skip_mask[cont_id] = 1;
             }
         }
 
@@ -2020,7 +2053,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         "solver (e.g. NR_KLU / NR_SLU) or the DC solver.";
                 throw std::runtime_error(exc_.str());
             }
-            _select_ref_slack_and_masks();
+            _select_ref_slack_and_masks(true);
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_masks(){}

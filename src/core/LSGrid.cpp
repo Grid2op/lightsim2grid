@@ -40,6 +40,9 @@ LSGrid::LSGrid(const LSGrid & other)
     dc_cache_.allow_reuse = other.dc_cache_.allow_reuse;
     init_kwargs_ = other.init_kwargs_;
     _bus_fusion_rep = other._bus_fusion_rep;
+    // a batch (ContingencyAnalysis...) works on its own copy of the grid and has to
+    // see the reference chosen for it, see set_reference_slack_bus
+    _forced_ref_slack_bus_id = other._forced_ref_slack_bus_id;
 
     // copy the powersystem representation
     // 1. bus
