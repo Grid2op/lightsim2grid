@@ -2025,8 +2025,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _maybe_prepare_masks(){
             if(!_handle_disconnected_grid) return;
             // Masking is a value-level edit at constant sparsity, and one that can
-            // move a pivot: the row of a stranded lone controller goes from "Vm(reg)
-            // = Vset" to "Q_c = 0", so the entry KLU pivoted at in the base
+            // move a pivot: the voltage row of a stranded group goes from "Vm(reg)
+            // = Vset" to "Q_first = 0", so the entry KLU pivoted at in the base
             // factorization is a zero in that row's matrix, and klu_refactor halts
             // on it (SparseLU re-pivots and never noticed). Let the linear solver
             // fall back to a numeric factorize on such a row -- and on the next

@@ -94,6 +94,105 @@ class TestStrandedRemoteControllerEveryAlgo(unittest.TestCase):
                 np.testing.assert_allclose(V[self.live], self.Vref[self.live], rtol=0., atol=1e-6)
 
 
+class TestStrandedRemoteGroup(unittest.TestCase):
+    """case14 with a second generator on bus 7, both generators of bus 7 regulating bus 9
+    remotely: ONE voltage-control group of two controllers. Tripping trafo 3 (buses 6-7)
+    strands the whole group on bus 7 while bus 9 stays in the main component: nobody
+    holds bus 9 any more, it is a plain PQ bus. Only a group of one controller used to be
+    handled; with two, the voltage row still asked Vm(9) = v_set and the controllers'
+    reactive unknowns were left without equations (singular Jacobian, DIVERGENCE)."""
+    MAX_IT = 30
+    TOL = 1e-8
+    LEAF_BUS = 7
+    REG_BUS = 9
+    TRAFO = 3       # 6-7: strands bus 7
+    MESH_LINE = 0   # 0-1: the grid stays in one piece
+
+    def _grid(self):
+        import pandapower.networks as pn
+        net = pn.case14()
+        pp.create_gen(net, self.LEAF_BUS, p_mw=0., vm_pu=1.09, min_q_mvar=-10., max_q_mvar=30.)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(net)
+        gen_ids = [gen.id for gen in grid.get_generators() if gen.bus_id == self.LEAF_BUS]
+        assert len(gen_ids) == 2, f"expected 2 generators on bus {self.LEAF_BUS}, got {gen_ids}"
+        for gen_id in gen_ids:
+            grid.set_gen_regulated_bus(gen_id, self.REG_BUS)
+        return grid, gen_ids
+
+    def setUp(self):
+        self.grid, self.gen_ids = self._grid()
+        self.nb = self.grid.total_bus()
+        self.nb_line = len(self.grid.get_lines())
+        self.V0 = self.grid.ac_pf(np.ones(self.nb, dtype=complex), self.MAX_IT, self.TOL)
+        assert self.V0.shape[0] == self.nb, "base case did not converge"
+        gens = self.grid.get_generators()
+        for gen_id in self.gen_ids:
+            assert gens[gen_id].voltage_regulator_on, "both controllers must be PV"
+        # the group does hold bus 9 in the base case
+        assert abs(abs(self.V0[self.REG_BUS]) - 1.09) <= 1e-6
+        self.live = [b for b in range(self.nb) if b != self.LEAF_BUS]
+
+    def _reference(self, trafo=None, line=None):
+        """one contingency at a time: the branch out, and the controllers it stranded
+        out with it"""
+        ref, gen_ids = self._grid()
+        if trafo is not None:
+            ref.deactivate_trafo(trafo)
+            for gen_id in gen_ids:
+                ref.deactivate_gen(gen_id)
+        if line is not None:
+            ref.deactivate_powerline(line)
+        V = ref.ac_pf(1.0 * self.V0, self.MAX_IT, self.TOL)
+        assert V.shape[0] == self.nb, "reference did not converge"
+        return V
+
+    def test_every_nr_algorithm(self):
+        Vref = self._reference(trafo=self.TRAFO)
+        assert abs(abs(Vref[self.REG_BUS]) - 1.09) > 1e-3, "sanity: bus 9 is no longer held at 1.09"
+        names = [nm for nm in ContingencyAnalysisCPP(self.grid).available_algorithm_names()
+                 if nm.startswith("NR")]
+        assert "NR_SparseLU" in names
+        for name in names:
+            with self.subTest(name):
+                SA = ContingencyAnalysisCPP(self.grid, True)
+                SA.change_algorithm(name)
+                SA.add_n1(self.nb_line + self.TRAFO)
+                SA.handle_disconnected_grid = True
+                SA.compute(1.0 * self.V0, self.MAX_IT, self.TOL)
+                assert list(SA.converged()) == [True], f"{name}: row reported diverged"
+                V = SA.get_voltages()[0]
+                assert abs(V[self.LEAF_BUS]) == 0., "the stranded bus reports 0"
+                np.testing.assert_allclose(V[self.live], Vref[self.live], rtol=0., atol=1e-6)
+
+    def test_stranded_group_reports_no_reactive_violation(self):
+        SA = ContingencyAnalysisCPP(self.grid, True)
+        SA.compute_physical_violations = True
+        SA.add_n1(self.nb_line + self.TRAFO)
+        SA.handle_disconnected_grid = True
+        SA.compute(1.0 * self.V0, self.MAX_IT, self.TOL)
+        assert list(SA.converged()) == [True]
+        on_leaf = [v for v in SA.get_physical_violations()[0]
+                   if (str(v.element_type).endswith("BUS") and v.element_id == self.LEAF_BUS) or
+                      (str(v.element_type).endswith("GENERATOR") and v.element_id in self.gen_ids)]
+        assert on_leaf == [], f"the stranded controllers should report nothing, got {on_leaf}"
+
+    def test_other_rows_unchanged(self):
+        # the first controller of every group gets an extra Jacobian slot in this mode:
+        # a row that strands nothing must still give the one-at-a-time answer, and the
+        # group must still hold bus 9 there
+        SA = ContingencyAnalysisCPP(self.grid, True)
+        SA.add_multiple_n1([self.MESH_LINE, self.nb_line + self.TRAFO])
+        SA.handle_disconnected_grid = True
+        SA.compute(1.0 * self.V0, self.MAX_IT, self.TOL)
+        assert list(SA.converged()) == [True, True]
+        row = [i for i, cont in enumerate(SA.my_defaults()) if list(cont) == [self.MESH_LINE]][0]
+        V = SA.get_voltages()[row]
+        np.testing.assert_allclose(V, self._reference(line=self.MESH_LINE), rtol=0., atol=1e-6)
+        assert abs(abs(V[self.REG_BUS]) - 1.09) <= 1e-6
+
+
 class TestContingencySplitMode(unittest.TestCase):
     def setUp(self):
         self.max_it = 30

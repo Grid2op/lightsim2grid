@@ -207,6 +207,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``handle_disconnected_grid`` diverged on a contingency stranding every controller of a
+  voltage-control group of several controllers (*eg* two generators of a plant behind its
+  step-up transformer, both regulating its high voltage bus remotely): only a group of one
+  controller was handled. Such a group now leaves the solve (its controllers produce no
+  reactive power) and its regulated bus, still in the main component, becomes a plain PQ bus,
+  as when the controllers are disconnected. Same Jacobian structure for every row.
 - [FIXED] ``handle_disconnected_grid`` (``ContingencyAnalysis`` / ``ScenarioSweep``) chose its
   reference slack bus mixing the grid and the solver bus numberings, and the choice never
   reached the solver. On a grid where they differ (disconnected or fused buses), a contingency

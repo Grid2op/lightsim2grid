@@ -681,24 +681,30 @@ BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::gen_v_indi
 
     // generators of a voltage-control group: their gen_v is the group's v_set, and
     // dF_v/dv_set = -1, so -lambda^T dF/dv is lambda at the group's voltage row --
-    // except on a row where handle_disconnected_grid stranded that (lone) controller:
-    // its row is then "Q_c = 0" and no longer contains v_set
+    // except on a row where handle_disconnected_grid stranded every controller of that
+    // group: its row is then "Q_first = 0" and no longer contains v_set
     {
         const IntVect vc_row = get_gen_v_vc_row();
         const IntVect vc_group = _gen_v_vc_group();
         const bool has_masking = _handle_disconnected_grid && !_li_masked.empty();
         const VoltageControlSolverData & ctrl = _grid_model.get_ac_voltage_control_plan().controllers();
+        const auto group_stranded = [&ctrl](int grp, const std::vector<int> & masked){
+            const int first = ctrl.grp_start(grp);
+            const int cnt = ctrl.grp_count(grp);
+            if(cnt <= 0) return false;
+            for(int off = 0; off < cnt; ++off){
+                if(std::find(masked.begin(), masked.end(), ctrl.bus(first + off)) == masked.end()) return false;
+            }
+            return true;
+        };
         for(Eigen::Index g = 0; g < nb_gen && g < vc_row.size(); ++g){
             if(vc_row[g] < 0) continue;
             const int grp = vc_group[g];
-            const int lone_bus = (grp >= 0 && grp < ctrl.n_groups() && ctrl.grp_count(grp) == 1)
-                                 ? ctrl.bus(ctrl.grp_start(grp)) : -1;
+            const bool grp_ok = grp >= 0 && grp < ctrl.n_groups();
             for(Eigen::Index i = 0; i < nb_rows; ++i){
                 if(static_cast<size_t>(i) < _converged_mask_.size() && !_converged_mask_[static_cast<size_t>(i)]) continue;
-                if(has_masking && lone_bus >= 0 && static_cast<size_t>(i) < _li_masked.size()){
-                    const std::vector<int> & masked = _li_masked[static_cast<size_t>(i)];
-                    if(std::find(masked.begin(), masked.end(), lone_bus) != masked.end()) continue;
-                }
+                if(has_masking && grp_ok && static_cast<size_t>(i) < _li_masked.size() &&
+                   group_stranded(grp, _li_masked[static_cast<size_t>(i)])) continue;
                 res(i, g) = lambda(i, vc_row[g]) * share[g];
             }
         }
