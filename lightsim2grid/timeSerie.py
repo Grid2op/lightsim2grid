@@ -156,9 +156,9 @@ class TimeSerie:
         (``ViolationCategory.PHYSICAL``). Default: ``False``. See
         :func:`get_physical_violations`.
 
-        Three checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
-        enforced here (nothing is switched PV -> PQ, nothing is clamped, no machine leaves
-        the slack distribution, no step is re-solved):
+        Four checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        enforced here (nothing is switched PV -> PQ or back, nothing is clamped, no machine
+        leaves the slack distribution, no step is re-solved):
 
         * the **reactive capability** of every bus whose voltage is held by machines
           (``LOW_Q`` / ``HIGH_Q`` on the ``BUS``): did it need more reactive power than the
@@ -168,6 +168,15 @@ class TimeSerie:
           that does not exist. Per bus, not per machine: the split between the machines of
           one bus is a sharing convention rather than something the solver decides.
           OpenLoadFlow's ``ReactiveLimits``.
+        * the **release** of every PQ generator flagged as pinned at a reactive limit
+          (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on the ``GENERATOR``, see
+          :func:`lightsim2grid.network.LSGrid.set_gen_can_be_pv`): does the bus it would
+          regulate sit below its target while the machine absorbs all it can (or above it
+          while it produces all it can)? The other direction, PQ -> PV, of the same
+          ``ReactiveLimits`` loop. ``value`` and ``limit`` in kV, compared with
+          :attr:`physical_violation_tol_vm_pu`; a step that varies that generator's target
+          (``modify_gen_v``) is checked against its own target. A grid with no flagged
+          generator reports nothing here.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
           linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is an *input* of the solve,
@@ -187,10 +196,11 @@ class TimeSerie:
           ``DistributedSlack``.
 
         The hvdc and active-power checks need only the bus angles and the slack the step
-        distributed, so they work in DC too; the reactive one needs an AC algorithm that
-        publishes its per-bus mismatch (every built-in AC algorithm does) and ``compute``
-        raises for one that does not. A DC batch reports the two active-power checks alone --
-        a DC powerflow has no reactive power at all, so nothing is hidden by that.
+        distributed, so they work in DC too; the reactive one and the release one need an AC
+        algorithm that publishes its per-bus mismatch (every built-in AC algorithm does) and
+        ``compute`` raises for one that does not. A DC batch reports the two active-power
+        checks alone -- a DC powerflow has no reactive power at all, and no voltage magnitude
+        for the release check, so nothing is hidden by that.
 
         Changing this flag invalidates any previously-computed results, but not the
         injections already given to ``modify_*``.
@@ -230,17 +240,45 @@ class TimeSerie:
         self.computer.physical_violation_tol_mva = val  # validates, and drops base case + results
         self.__computed = False
 
+    @property
+    def physical_violation_tol_vm_pu(self):
+        """The same as :attr:`physical_violation_tol_mva`, in pu, for the one comparison
+        :attr:`compute_physical_violations` makes on a voltage: the PQ -> PV release check
+        reports a flagged PQ generator (``LSGrid.set_gen_can_be_pv``) whose regulated bus
+        is below (at ``min_q``) or above (at ``max_q``) its target by more than this
+        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``). Default: ``1e-4``. Changing
+        it invalidates any previously-computed results.
+        """
+        return self.computer.physical_violation_tol_vm_pu
+
+    @physical_violation_tol_vm_pu.setter
+    def physical_violation_tol_vm_pu(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `physical_violation_tol_vm_pu` attribute must be a real number.")
+        if val == self.computer.physical_violation_tol_vm_pu:
+            return
+        self.computer.physical_violation_tol_vm_pu = val  # validates, and drops base case + results
+        self.__computed = False
+
     def get_physical_violations(self):
         """Per step (same order as the ``modify_*`` inputs): the list of ``LimitViolation``
         of the physical limits that step's solution leaves. Every entry has ``category ==
-        ViolationCategory.PHYSICAL`` and one of two shapes:
+        ViolationCategory.PHYSICAL`` and one of four shapes:
 
         * ``element_type`` ``BUS``, ``violation_type`` ``LOW_Q`` / ``HIGH_Q``,
           ``element_id`` the grid bus id, ``value`` the reactive power the machines holding
           that bus had to produce (MVAr) and ``limit`` their **summed** capability;
+        * ``element_type`` ``GENERATOR``, ``violation_type`` ``LOW_VOLTAGE_AT_MIN_Q`` /
+          ``HIGH_VOLTAGE_AT_MAX_Q``, ``element_id`` the generator id, ``value`` the voltage
+          of the bus that flagged PQ machine would regulate and ``limit`` its target, in kV;
         * ``element_type`` ``HVDC``, ``violation_type`` ``HIGH_P``, ``element_id`` the hvdc
           line id, ``side`` the direction (1 for 1 -> 2), ``value`` the active power leaving
-          that side (MW, positive) and ``limit`` that direction's ``pmax``.
+          that side (MW, positive) and ``limit`` that direction's ``pmax``;
+        * ``element_type`` ``GENERATOR`` / ``STORAGE``, ``violation_type`` ``LOW_P`` /
+          ``HIGH_P``, ``value`` the machine's converged active power (MW, generator
+          convention) and ``limit`` its ``min_p_mw`` / ``max_p_mw``.
 
         A step that did not converge has an **empty** entry, not a sentinel -- use
         ``self.computer.converged_mask()`` to tell that from "converged, no violation".

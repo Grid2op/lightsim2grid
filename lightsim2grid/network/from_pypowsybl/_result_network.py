@@ -461,9 +461,12 @@ class LightsimResultNetwork:
     def get_generators(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
         """See the one-sided column list above ``get_generators``. ``p``/``q``
         use the generation sign convention, negated from lightsim2grid's
-        internal convention (see the module docstring)."""
+        internal convention (see the module docstring). One more column,
+        generator-only: ``can_be_pv`` (see ``LSGrid.set_gen_can_be_pv``)."""
         if "generators" not in self._cache:
-            self._cache["generators"] = self._build_one_sided(self._grid.get_generators(), flip_sign=True)
+            self._cache["generators"] = self._build_one_sided(
+                self._grid.get_generators(), flip_sign=True,
+                extra={"can_be_pv": lambda el: bool(el.can_be_pv)})
         return self._maybe_select(self._cache["generators"], attributes)
 
     def get_loads(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:
@@ -501,17 +504,22 @@ class LightsimResultNetwork:
 
     _ONE_SIDED_COLUMNS = ["id", "p", "q", "bus_id", "connected", "voltage_level_id"]
 
-    def _build_one_sided(self, container, flip_sign: bool) -> pd.DataFrame:
+    def _build_one_sided(self, container, flip_sign: bool, extra=None) -> pd.DataFrame:
+        # `extra`: {column: fn(element)} for the columns one family has and the others do not
         sign = -1. if flip_sign else 1.
+        extra = extra or {}
         records = []
         for el in container:
-            records.append({
+            rec = {
                 "id": el.name,
                 "p": sign * el.res_p_mw, "q": sign * el.res_q_mvar,
                 "bus_id": self._ls_bus_to_pypo(el.bus_id), "connected": el.connected,
                 "voltage_level_id": self._ls_sub_to_vl(el.voltage_level_id),
-            })
-        return self._records_to_frame(records, self._ONE_SIDED_COLUMNS)
+            }
+            for col, fn in extra.items():
+                rec[col] = fn(el)
+            records.append(rec)
+        return self._records_to_frame(records, self._ONE_SIDED_COLUMNS + list(extra))
 
     # ------------------------------------------------------------------ #
     # hvdc lines / converter stations

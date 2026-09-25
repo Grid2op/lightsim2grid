@@ -45,6 +45,9 @@ ATTR_GENS_INPUT = [
     # NaN compare equal here, so a grid without them is not reported as differing
     "min_p_mw",
     "max_p_mw",
+    # the PQ machines a caller flagged as pinned at a reactive limit (see
+    # LSGrid.set_gen_can_be_pv): False unless set
+    "can_be_pv",
 ]
 
 

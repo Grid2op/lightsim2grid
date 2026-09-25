@@ -23,6 +23,7 @@ Two groups of tests:
 import unittest
 
 import numpy as np
+import pandas as pd
 
 try:
     import pypowsybl as pp
@@ -371,6 +372,88 @@ class TestOlfBake(unittest.TestCase):
         self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
         q_redo = n.get_generators(attributes=["q"])["q"]
         self.assertLess((q_redo - q_ref).abs().max(), 1e-2)
+
+    def test_bake_returns_the_pinned_generators_and_init_flags_them(self):
+        """`bake_outer_loops` returns the generators it froze AT A REACTIVE LIMIT (and
+        nothing on a second, idempotent bake); `init_from_pypowsybl(can_be_pv=...)` flags
+        exactly those, and the result network shows the flag."""
+        from lightsim2grid.network.from_pypowsybl import LightsimResultNetwork
+        n = ieee14_forced_pv_pq()
+        lf.run_ac(n, _with_loops_params())
+        pinned = bake_outer_loops(n)
+        self.assertEqual(set(pinned), {"B3-G", "B6-G"})
+        self.assertEqual(len(bake_outer_loops(n)), 0)  # already baked: nothing left at a limit
+
+        grid = init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                   can_be_pv=pinned)
+        flags = {g.name: g.can_be_pv for g in grid.get_generators()}
+        self.assertEqual(flags, {"B1-G": False, "B2-G": False, "B3-G": True, "B6-G": True,
+                                 "B8-G": False})
+        grid.ac_pf(np.full(grid.total_bus(), 1.06 + 0j), 20, 1e-10)
+        res = LightsimResultNetwork(grid, n).get_generators()
+        self.assertEqual(res.loc[["B3-G", "B6-G"], "can_be_pv"].tolist(), [True, True])
+        self.assertFalse(res.loc[["B1-G", "B2-G", "B8-G"], "can_be_pv"].any())
+        # the other ways of saying it
+        grid_b = init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                     can_be_pv=pd.Series(True, index=["B6-G"]))
+        self.assertEqual([g.can_be_pv for g in grid_b.get_generators()],
+                         [g.name == "B6-G" for g in grid_b.get_generators()])
+        # nothing flagged by default, and an unknown id is refused
+        grid_c = init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False)
+        self.assertFalse(any(g.can_be_pv for g in grid_c.get_generators()))
+        with self.assertRaises(ValueError):
+            init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                can_be_pv=["B3-G", "NOT-A-GEN"])
+
+    def test_pinned_generator_released_is_reported(self):
+        """The baked grid pins B3-G as PQ at its max_q. Drop the load on its bus: the
+        voltage rises above the target it would hold, which OLF's loop (on the raw grid)
+        answers by keeping the unit PV inside its range -- and which lightsim2grid, unable
+        to release it, reports as HIGH_VOLTAGE_AT_MAX_Q on that generator. B6-G, pinned at
+        its min_q with a voltage ABOVE its target, is released by neither."""
+        from lightsim2grid.lightsim2grid_cpp import LimitViolationType, ViolationElementType
+        n = ieee14_forced_pv_pq()
+        lf.run_ac(n, _with_loops_params())
+        pinned = bake_outer_loops(n)
+
+        # untouched: the baked grid is the reference solve, nothing to release
+        grid = init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                   can_be_pv=pinned)
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.06 + 0j), 20, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+        release = [v for v in grid.get_physical_violations()
+                   if v.violation_type in (LimitViolationType.LOW_VOLTAGE_AT_MIN_Q,
+                                           LimitViolationType.HIGH_VOLTAGE_AT_MAX_Q)]
+        self.assertEqual(release, [])
+
+        # the load on bus 3 gone
+        n.update_loads(id="B3-L", p0=0., q0=0.)
+        grid = init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                   can_be_pv=pinned)
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.06 + 0j), 20, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+        release = [v for v in grid.get_physical_violations()
+                   if v.violation_type in (LimitViolationType.LOW_VOLTAGE_AT_MIN_Q,
+                                           LimitViolationType.HIGH_VOLTAGE_AT_MAX_Q)]
+        self.assertEqual([v.name for v in release], ["B3-G"])
+        viol = release[0]
+        self.assertEqual(viol.element_type, ViolationElementType.GENERATOR)
+        self.assertEqual(viol.violation_type, LimitViolationType.HIGH_VOLTAGE_AT_MAX_Q)
+        target_v = n.get_generators(attributes=["target_v"]).loc["B3-G", "target_v"]
+        self.assertAlmostEqual(viol.limit, target_v, places=6)
+        self.assertGreater(viol.value, viol.limit + 1.)  # kV, well above the target
+
+        # the reference, outer loops on, on the raw perturbed grid: B3-G regulates again,
+        # strictly inside its range, and its bus sits on target; B6-G stays at its limit
+        n_ref = ieee14_forced_pv_pq()
+        n_ref.update_loads(id="B3-L", p0=0., q0=0.)
+        lf.run_ac(n_ref, _with_loops_params())
+        g = n_ref.get_generators(attributes=["bus_id", "q", "target_v"])
+        v = n_ref.get_buses(attributes=["v_mag"])["v_mag"]
+        q_gen_b3 = -g.loc["B3-G", "q"]  # generator convention
+        self.assertLess(q_gen_b3, 20.08 - 0.5)
+        self.assertAlmostEqual(v[g.loc["B3-G", "bus_id"]], g.loc["B3-G", "target_v"], places=3)
+        self.assertAlmostEqual(-g.loc["B6-G", "q"], 18.0, places=3)
 
     def test_olf_ieee14_baked_inert(self):
         """WITH outer loops: they trigger nothing on the baked grid (robust

@@ -59,10 +59,14 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
 
     if(invertible){
         if(!_has_gen_contingency()){
-            const CplxVect & sb = _step_sbus(i, sbus_scratch);
+            // the layout's own weights and injection on the common row; this row's own
+            // where the slack pre-pass moved set-points / saturated units
+            // (_prepare_slack_redistribution) -- both by reference, no row allocates
+            const RealVect & sw = _row_slack_weights(i, sw_scratch);
+            const CplxVect & sb = _step_sbus_row(i, sbus_scratch);
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
                                          Ybus, V, sb,
-                                         active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
+                                         active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
             // while this row's Ybus edits are still in place -- see _maybe_store_jacobian
@@ -70,7 +74,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             // solved)
             if(conv){
                 _maybe_store_jacobian(i, algo);
-                _record_row_physical(i, algo, V, active_layout().slack_weights, sb);
+                _record_row_physical(i, algo, V, sw, sb);
             }
         } else {
             // generator contingencies: this row's buses that keep a live local voltage
@@ -85,7 +89,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             const bool flips = _row_flips_pv(i);
             if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(i));
             const RealVect & sw = _row_slack_weights(i, sw_scratch);
-            const CplxVect & sb = _step_sbus(i, sbus_scratch);
+            const CplxVect & sb = _step_sbus_row(i, sbus_scratch);
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
                                          Ybus, V, sb,
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
@@ -544,6 +548,10 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     _prepare_gen_v_constraints();
     // ... and the voltage-control groups a per-row gen_v sets the v_set of
     _prepare_gen_v_vc();
+    // ... and, where asked, the OLF-style redistribution of what each row loses (it
+    // reads the per-row injections above, the masks and the generator contingencies:
+    // after all of them, before the "n" solve it leaves untouched)
+    _prepare_slack_redistribution(nb_steps);
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager
@@ -673,24 +681,30 @@ BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::gen_v_indi
 
     // generators of a voltage-control group: their gen_v is the group's v_set, and
     // dF_v/dv_set = -1, so -lambda^T dF/dv is lambda at the group's voltage row --
-    // except on a row where handle_disconnected_grid stranded that (lone) controller:
-    // its row is then "Q_c = 0" and no longer contains v_set
+    // except on a row where handle_disconnected_grid stranded every controller of that
+    // group: its row is then "Q_first = 0" and no longer contains v_set
     {
         const IntVect vc_row = get_gen_v_vc_row();
         const IntVect vc_group = _gen_v_vc_group();
         const bool has_masking = _handle_disconnected_grid && !_li_masked.empty();
         const VoltageControlSolverData & ctrl = _grid_model.get_ac_voltage_control_plan().controllers();
+        const auto group_stranded = [&ctrl](int grp, const std::vector<int> & masked){
+            const int first = ctrl.grp_start(grp);
+            const int cnt = ctrl.grp_count(grp);
+            if(cnt <= 0) return false;
+            for(int off = 0; off < cnt; ++off){
+                if(std::find(masked.begin(), masked.end(), ctrl.bus(first + off)) == masked.end()) return false;
+            }
+            return true;
+        };
         for(Eigen::Index g = 0; g < nb_gen && g < vc_row.size(); ++g){
             if(vc_row[g] < 0) continue;
             const int grp = vc_group[g];
-            const int lone_bus = (grp >= 0 && grp < ctrl.n_groups() && ctrl.grp_count(grp) == 1)
-                                 ? ctrl.bus(ctrl.grp_start(grp)) : -1;
+            const bool grp_ok = grp >= 0 && grp < ctrl.n_groups();
             for(Eigen::Index i = 0; i < nb_rows; ++i){
                 if(static_cast<size_t>(i) < _converged_mask_.size() && !_converged_mask_[static_cast<size_t>(i)]) continue;
-                if(has_masking && lone_bus >= 0 && static_cast<size_t>(i) < _li_masked.size()){
-                    const std::vector<int> & masked = _li_masked[static_cast<size_t>(i)];
-                    if(std::find(masked.begin(), masked.end(), lone_bus) != masked.end()) continue;
-                }
+                if(has_masking && grp_ok && static_cast<size_t>(i) < _li_masked.size() &&
+                   group_stranded(grp, _li_masked[static_cast<size_t>(i)])) continue;
                 res(i, g) = lambda(i, vc_row[g]) * share[g];
             }
         }

@@ -1283,6 +1283,19 @@ const std::string DocIterator::regulated_bus_id = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::can_be_pv = R"mydelimiter(
+    Whether this generator, when it does not regulate a voltage (``voltage_regulator_on`` is
+    ``False``), is one an outer loop pinned at a reactive limit -- so that it would regulate
+    again if the grid let it. ``False`` by default; set for the whole grid with
+    :func:`lightsim2grid.network.LSGrid.set_gen_can_be_pv`, and by
+    ``init_from_pypowsybl(can_be_pv=...)`` from what ``bake_outer_loops`` froze.
+
+    Nothing enforces or reads it in a powerflow. It only opens the machine to the physical
+    check of its PQ -> PV release (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``, see
+    :func:`lightsim2grid.network.LSGrid.get_physical_violations`).
+
+)mydelimiter";
+
 const std::string DocIterator::reactive_key = R"mydelimiter(
     The reactive sharing key of this generator, ``NaN`` when it has none. Read from the
     ``coordinatedReactiveControl`` extension (``q_percent``) when the grid comes from pypowsybl.
@@ -3700,6 +3713,11 @@ const std::string DocLSGrid::set_reference_slack_bus = R"mydelimiter(
     Force a (gridmodel) bus to be the angle reference among the slack buses (reordered to
     ``slack_ids[0]``) without changing the slack set / weights; ``-1`` clears it.
 
+    It is kept by :func:`copy`, hence by the batch algorithms built from this grid, which use
+    it as the reference of the whole batch: with ``handle_disconnected_grid``, the
+    contingencies that strand it are skipped. Set it before building the batch object (it
+    works on a copy of the grid); ``ContingencyAnalysis.pick_reference_slack`` suggests one.
+
 )mydelimiter";
 
 const std::string DocLSGrid::get_reference_slack_bus = R"mydelimiter(
@@ -4058,8 +4076,113 @@ const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
     power), and only the out-of-component one is opened -- see
     :class:`lightsim2grid.elements.HvdcLineContainer`.
 
+    The generators and storage units of the (distributed) slack whose bus is outside the main
+    component are first removed from the slack (as with :func:`remove_gen_slackbus` /
+    :func:`remove_storage_slackbus`), so that the slack is only distributed on the main component.
+    A reference slack bus forced with :func:`set_reference_slack_bus` that is outside the main
+    component is cleared. Reactivating the elements afterwards does not put them back in the
+    slack: work on a copy (:func:`copy`) if the original slack is needed afterwards.
+
+    With ``redistribute_slack`` (default ``True``), the active power the islanding takes out --
+    the set-points of the stranded generators and static generators, minus the stranded loads,
+    storage units and shunts, plus the stranded HVDC converter stations (a rectifier leaving with
+    its island takes its consumption out of the balance; the line keeps its in-main-component
+    converter injecting) -- is then shared on the remaining units of the distributed slack as
+    OpenLoadFlow's ``DistributedSlack`` outer loop would, with their ``[min_p, max_p]`` bounds
+    and without crossing 0 MW: see :func:`redistribute_active_power`. Without limits (:func:`set_gen_p_limits` /
+    :func:`set_storage_p_limits` never called) nothing saturates and the converged state is the
+    same as without the redistribution, only the set-points move. Pass ``False`` to keep the
+    set-points untouched (the grid2op backend and ``init_from_pypowsybl`` do).
+
+    Returns a :class:`SlackRedistributionReport`: ``mismatch_mw`` is the power lost (even when
+    ``redistribute_slack`` is ``False``), the other fields say what was done with it.
+
     Requires at least one slack bus to already be defined (see
     :func:`assign_slack_to_most_connected`); raises otherwise.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
+    The limits the last converged powerflow of this grid cannot physically meet: the same checks the
+    batch algorithms run with ``compute_physical_violations`` (see
+    :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.compute_physical_violations`), on a
+    single :func:`ac_pf` (``ac=True``, the default) or :func:`dc_pf` (``ac=False``):
+
+    - a voltage controller (generator, static var compensator, hvdc converter...) whose reactive
+      output, what it took to hold its bus at its set-point, is beyond its capability
+      (``LOW_Q`` / ``HIGH_Q``; AC only, a DC powerflow has no reactive power);
+    - a PQ generator flagged with :func:`set_gen_can_be_pv` (one an outer loop pinned at a
+      reactive limit), sitting at its ``min_q`` (resp. ``max_q``) within ``tol_mva``, whose
+      regulated bus is below (resp. above) its target voltage by more than ``tol_vm_pu``: it
+      absorbs (resp. produces) too much for that target and OpenLoadFlow's ``ReactiveLimits``
+      loop would switch it back to PV (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on
+      the ``GENERATOR``, ``value`` the regulated voltage and ``limit`` the target, in kV; AC
+      only). Only a generator with a reactive range of at least 1 MVAr is a candidate;
+    - an hvdc line in angle-droop mode pushed past its maximum power (``HIGH_P``);
+    - a generator or storage unit of the distributed slack whose share of the imbalance lands it
+      past its ``[min_p, max_p]`` (:func:`set_gen_p_limits` / :func:`set_storage_p_limits`;
+      ``LOW_P`` / ``HIGH_P``).
+
+    Nothing is enforced: the solution is what it is, this only reports it. ``tol_mva`` is the
+    absolute slack (MW / MVAr) on every power comparison, ``tol_vm_pu`` the one (pu) on the
+    voltage comparison of the PQ -> PV check. Returns a list of ``LimitViolation``
+    (``element_type``, ``element_id``, ``violation_type``, ``value``, ``limit``, ``name``), empty
+    when every limit holds.
+
+    Raises if no powerflow of that kind has run, if the last one did not converge, or (AC) if the
+    active algorithm does not publish its per-bus mismatch (a plugin solver that has not opted in:
+    every built-in AC algorithm does).
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_violations = R"mydelimiter(
+    The OPERATIONAL limits the last powerflow of this grid violates: the same checks the batch
+    algorithms run with ``compute_limit_violations`` (see
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.get_violations`), on a single
+    :func:`ac_pf` (``ac=True``, the default) or :func:`dc_pf` (``ac=False``):
+
+    - every bus whose voltage magnitude is outside its ``[vmin, vmax]``
+      (:func:`set_bus_voltage_limits`; ``LOW_VOLTAGE`` / ``HIGH_VOLTAGE``, value and limit in kV);
+    - every line / transformer side whose current is at or above its thermal limit
+      (:func:`set_line_current_limit_side1` and the like; ``CURRENT``, ``side`` 1 or 2, value and
+      limit in kA, as the limits).
+
+    ``threshold``, in ``]0, 1]``, tightens both checks (``1.``: report exactly at the configured
+    limit), like the batch algorithms' ``violation_threshold``. A bus or a branch side without a
+    limit is never reported. Returns a list of ``LimitViolation``; if the last powerflow did not
+    converge, the list holds the batch algorithms' own sentinel, one ``GRID`` / ``DIVERGENCE``
+    entry. Raises if no powerflow of that kind has run. See :func:`get_physical_violations` for
+    the limits the solution cannot physically meet.
+
+)mydelimiter";
+
+const std::string DocLSGrid::redistribute_active_power = R"mydelimiter(
+    Share ``mismatch_mw`` (positive: the units must inject more) on the generators and storage
+    units of the distributed slack as OpenLoadFlow's ``DistributedSlack`` outer loop does
+    (``GenerationActivePowerDistributionStep``): proportionally to their slack weight, each unit's
+    injection clamped to its ``[min_p, max_p]`` (:func:`set_gen_p_limits` /
+    :func:`set_storage_p_limits`, unbounded when unset), a clamped unit leaving the pool and what
+    it could not take being shared again on the others, until everything is placed.
+
+    As OpenLoadFlow, a unit never changes the sign of its injection: whatever its limits, a unit
+    injecting (``target_p > 0`` in generator convention, a discharging storage unit included)
+    stops at 0 MW when the mismatch is negative, a unit drawing (a charging storage unit, a
+    pumping machine) stops at 0 MW when it is positive. A unit exactly at 0 MW takes no share of
+    a negative mismatch.
+
+    The new set-points are written in the grid (``change_p_gen`` / ``change_p_storage``), and the
+    units that reached a bound are removed from the distributed slack
+    (:func:`remove_gen_slackbus` / :func:`remove_storage_slackbus`), so that the next powerflow
+    only shares what is left (the change in the losses) on the units that can still move. If
+    every unit reaches a bound, all of them stay in the slack (a powerflow needs one), and the
+    report says how much could not be placed.
+
+    Note that a generator or storage unit leaving the slack this way does not come back on its
+    own; and when the FIRST slack generator leaves it, the angle reference moves to the next one
+    (a constant angle shift, the magnitudes are unchanged).
+
+    Returns a :class:`SlackRedistributionReport` (``mismatch_mw``, ``nb_participants``,
+    ``nb_saturated``, ``nb_rounds``, ``not_distributed_mw``, ``all_saturated``).
 
 )mydelimiter";
 
@@ -5710,6 +5833,10 @@ const std::string DocLSGrid::set_keep_vinit_at_group_controlled_buses = R"mydeli
     set-point be damped with the rest of the step. When a small controller regulates a stiff
     bus whose neighbours start far from the set-point, setting that bus to its target up front
     can ask for a huge first step and slow the solve down considerably.
+
+    :func:`dc_pf` honours the option too: with ``True`` the voltage it returns keeps the
+    starting magnitude at those buses, so it can seed :func:`ac_pf` as is. The option must be
+    set before :func:`dc_pf` is called, not only before :func:`ac_pf`.
 
     Buses whose magnitude is fixed (ordinary PV buses) are always set to their set-point.
     The option is copied with the grid, so the batch algorithms built from it inherit it. It
@@ -7576,7 +7703,9 @@ const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
     The kind of limit that was violated: ``LOW_VOLTAGE`` / ``HIGH_VOLTAGE`` (a bus voltage
     magnitude limit) or ``CURRENT`` (a line / transformer thermal limit) for an ordinary,
     element-level violation; ``NOT_SIMULATED`` or ``DIVERGENCE`` for a contingency-level one (see
-    :class:`ViolationElementType`'s ``GRID``):
+    :class:`ViolationElementType`'s ``GRID``); ``LOW_Q`` / ``HIGH_Q``, ``LOW_P`` / ``HIGH_P`` and
+    ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` for the physical checks of
+    ``compute_physical_violations`` (see each value's own documentation):
 
     - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
       solver was never invoked for it.
@@ -7619,12 +7748,16 @@ const std::string DocContingencyAnalysis::violation_type = R"mydelimiter(
 
 const std::string DocContingencyAnalysis::value = R"mydelimiter(
     The value actually reached (the voltage magnitude or the current, matching
-    :attr:`violation_type`); unused (``NaN``) for ``NOT_SIMULATED`` / ``DIVERGENCE``.
+    :attr:`violation_type`; for ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` the voltage,
+    in kV, of the bus the pinned generator would regulate); unused (``NaN``) for
+    ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";
 
 const std::string DocContingencyAnalysis::limit = R"mydelimiter(
-    The limit that was violated; unused (``NaN``) for ``NOT_SIMULATED`` / ``DIVERGENCE``.
+    The limit that was violated (for ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` the
+    generator's target voltage, in kV of the regulated bus); unused (``NaN``) for
+    ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";
 

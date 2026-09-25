@@ -44,7 +44,9 @@ class PreContingencyResult:
     limit_violations: List[LimitViolation]
     #: the PHYSICAL limits this case's solution leaves, when
     #: `ContingencyAnalysis.compute_physical_violations` is on (an empty list otherwise): a
-    #: bus needing reactive power its machines do not have (LOW_Q / HIGH_Q), an angle-droop
+    #: bus needing reactive power its machines do not have (LOW_Q / HIGH_Q), a PQ generator
+    #: flagged as pinned at a reactive limit that would regulate again (LOW_VOLTAGE_AT_MIN_Q /
+    #: HIGH_VOLTAGE_AT_MAX_Q), an angle-droop
     #: hvdc line beyond what its converters can transmit (HIGH_P), or a generator the
     #: distributed slack pushed outside its active power limits (LOW_P / HIGH_P). Kept apart from
     #: `limit_violations` because it is a different KIND of statement: every entry here has
@@ -244,6 +246,27 @@ class ContingencyAnalysis(object):
         self.computer.handle_disconnected_grid = bool(val)
 
     @property
+    def redistribute_slack(self):
+        """Whether the active power a contingency loses (the elements of the island it cuts
+        off, simulated with :attr:`handle_disconnected_grid`) is first shared on the remaining
+        units of the distributed slack as OpenLoadFlow's ``DistributedSlack`` outer loop does:
+        proportionally to their weight, each one clamped to its ``[min_p, max_p]`` and never
+        crossing 0 MW, a clamped unit leaving the pool (and that contingency's distributed
+        slack), the powerflow then
+        only sharing what is left (the change in the losses) on the units that can still move.
+        Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
+        clamp anything. Same as ``LSGrid.consider_only_main_component(redistribute_slack=True)``,
+        contingency by contingency.
+        """
+        return self.computer.redistribute_slack
+
+    @redistribute_slack.setter
+    def redistribute_slack(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `redistribute_slack` attribute must be a boolean.")
+        self.computer.redistribute_slack = bool(val)
+
+    @property
     def compute_limit_violations(self):
         """Whether limit violations are computed inline, per contingency, during `run` /
         `run_ac` / `run_dc` (see also `get_violations` on the underlying `computer`). Default:
@@ -338,9 +361,9 @@ class ContingencyAnalysis(object):
         does reach and should not sit in). Default: ``False``. See
         :func:`get_physical_violations` and `ContingencyResult.physical_violations`.
 
-        Three checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
-        enforced here (nothing is switched PV -> PQ, no droop is clamped, no machine leaves
-        the slack distribution, no contingency is re-solved):
+        Four checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        enforced here (nothing is switched PV -> PQ or back, no droop is clamped, no machine
+        leaves the slack distribution, no contingency is re-solved):
 
         * the **reactive capability** of every bus whose voltage is held by machines
           (``LOW_Q`` / ``HIGH_Q`` on the ``BUS``): did it need more reactive power than the
@@ -348,6 +371,14 @@ class ContingencyAnalysis(object):
           stations and voltage-mode SVCs can produce? Per bus, not per machine -- the split between the
           machines of one bus is a sharing convention rather than something the solver
           decides. OpenLoadFlow's ``ReactiveLimits``.
+        * the **release** of every PQ generator flagged as pinned at a reactive limit
+          (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on the ``GENERATOR``, see
+          :func:`lightsim2grid.network.LSGrid.set_gen_can_be_pv`): does the bus it would
+          regulate sit below its target while the machine absorbs all it can (or above it
+          while it produces all it can)? The other direction, PQ -> PV, of the same
+          ``ReactiveLimits`` loop. ``value`` and ``limit`` in kV, compared with
+          :attr:`physical_violation_tol_vm_pu`. A grid with no flagged generator reports
+          nothing here.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
           linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? OpenLoadFlow's ``HvdcAcEmulationLimits``.
@@ -367,9 +398,10 @@ class ContingencyAnalysis(object):
         Independent of `compute_limit_violations`: either can be on without the other (though
         `run` still requires `compute_limit_violations`, and fills `physical_violations` only
         when this one is on too). The two active-power checks work in DC; the reactive one
-        needs an AC algorithm that publishes its per-bus mismatch (every built-in AC algorithm
-        does) and `run` / `compute_V` raise for one that does not. Changing this flag invalidates any
-        computed result but keeps the registered contingencies.
+        and the release one need an AC algorithm that publishes its per-bus mismatch (every
+        built-in AC algorithm does) and `run` / `compute_V` raise for one that does not.
+        Changing this flag invalidates any computed result but keeps the registered
+        contingencies.
         """
         return self.computer.compute_physical_violations
 
@@ -411,6 +443,28 @@ class ContingencyAnalysis(object):
         if val == self.computer.physical_violation_tol_mva:
             return
         self.computer.physical_violation_tol_mva = val  # validates, and drops base case + results
+        self.clear(with_contlist=False)
+
+    @property
+    def physical_violation_tol_vm_pu(self):
+        """The same as :attr:`physical_violation_tol_mva`, in pu, for the one comparison
+        :attr:`compute_physical_violations` makes on a voltage: the PQ -> PV release check
+        reports a flagged PQ generator (``LSGrid.set_gen_can_be_pv``) whose regulated bus
+        is below (at ``min_q``) or above (at ``max_q``) its target by more than this
+        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``). Default: ``1e-4``. Changing
+        it invalidates any previously-computed results.
+        """
+        return self.computer.physical_violation_tol_vm_pu
+
+    @physical_violation_tol_vm_pu.setter
+    def physical_violation_tol_vm_pu(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `physical_violation_tol_vm_pu` attribute must be a real number.")
+        if val == self.computer.physical_violation_tol_vm_pu:
+            return
+        self.computer.physical_violation_tol_vm_pu = val  # validates, and drops base case + results
         self.clear(with_contlist=False)
 
     def get_physical_violations(self):

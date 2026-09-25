@@ -40,7 +40,9 @@
 #include "element_container/LoadContainer.hpp"
 #include "element_container/StorageContainer.hpp"
 #include "element_container/GeneratorContainer.hpp"
+#include "element_container/SlackRedistribution.hpp"
 #include "element_container/SGenContainer.hpp"
+#include "batch_algorithm/LimitViolation.hpp"
 #include "element_container/SvcContainer.hpp"
 #include "element_container/HvdcLineContainer.hpp"
 #include "HvdcDroopData.hpp"
@@ -247,7 +249,27 @@ class LS2G_API LSGrid final
         [[nodiscard]] Eigen::Ref<const RealVect> get_bus_vmax_kv() const {return substations_.get_bus_vmax_kv();}
 
         std::tuple<int, int> assign_slack_to_most_connected();
-        void consider_only_main_component();
+        /**
+         * Keep only the main synchronous component (see the python doc). With
+         * `redistribute_slack`, the active power the islanding takes out (setpoints of
+         * the stranded generators / static generators, minus the stranded loads /
+         * storage units / shunts) is shared on the remaining slack units OLF-style,
+         * with their [min_p, max_p] bounds: see redistribute_active_power. The report
+         * says what was lost and what was done with it.
+         */
+        slack_redistribution::Report consider_only_main_component(bool redistribute_slack = true);
+        /**
+         * Share `mismatch_mw` (> 0: the units must inject more) on the generators and
+         * storage units of the distributed slack as OpenLoadFlow's DistributedSlack
+         * outer loop does: proportionally to their slack weight, each one clamped to its
+         * [min_p, max_p] (set_gen_p_limits / set_storage_p_limits, unbounded when
+         * unset), a clamped unit leaving the pool and what it could not take being
+         * shared again on the others. Writes the new setpoints and takes the saturated
+         * units out of the distributed slack, so the next solve only shares what is
+         * left (the change in the losses) on the units that can still move. If EVERY
+         * unit saturates, all of them stay in the slack (see the report).
+         */
+        slack_redistribution::Report redistribute_active_power(real_type mismatch_mw);
         /**
          * Not relevant for dc lines, which always have the default to 
          * synch both sides !
@@ -317,6 +339,36 @@ class LS2G_API LSGrid final
         [[nodiscard]] AlgorithmType get_dc_algo_type() const {return _dc_algo.get_type(); }
         [[nodiscard]] const AlgorithmSelector & get_algo() const {return _algo;}
         [[nodiscard]] const AlgorithmSelector & get_dc_algo() const {return _dc_algo;}
+
+        /**
+         * The limits the LAST converged powerflow (ac_pf when `ac`, dc_pf otherwise)
+         * cannot physically meet -- the same checks the batch algorithms run with
+         * `compute_physical_violations`, on this grid's own solve: a voltage
+         * controller's reactive capability (AC only), a flagged PQ generator pinned at a
+         * reactive limit whose regulated voltage would make an outer loop switch it back
+         * to PV (AC only, see `set_gen_can_be_pv`), an hvdc line's max power, and a
+         * generator or storage unit pushed past its [min_p, max_p] by the distributed
+         * slack. `tol_mva` is the absolute slack on every power comparison, `tol_vm_pu`
+         * the one (pu) on the voltage comparison of the PQ -> PV check. Throws if no such
+         * powerflow ran, if it did not converge, or (AC) if the algorithm does not
+         * publish its per-bus mismatch.
+         */
+        [[nodiscard]] std::vector<LimitViolation> get_physical_violations(bool ac = true,
+                                                                             real_type tol_mva = 1e-4,
+                                                                             real_type tol_vm_pu = 1e-4) const;
+        /**
+         * The OPERATIONAL limits the last powerflow (ac_pf when `ac`, dc_pf otherwise)
+         * violates -- the same checks the batch algorithms run with
+         * `compute_limit_violations`, on this grid's own solve: every bus outside its
+         * [vmin, vmax] (set_bus_voltage_limits; LOW_VOLTAGE / HIGH_VOLTAGE) and every
+         * branch side at or above its thermal limit (set_line_current_limit_side1 /
+         * ..., CURRENT). `threshold` in ]0, 1] tightens both (1: report exactly at the
+         * limit, as the batch's `violation_threshold`). A powerflow that did not
+         * converge yields the batch's own sentinel: one GRID / DIVERGENCE entry.
+         * Throws if no such powerflow ran.
+         */
+        [[nodiscard]] std::vector<LimitViolation> get_violations(real_type threshold = 1.,
+                                                                 bool ac = true) const;
 
         // do i compute the results (in terms of P,Q,V or loads, generators and flows on lines
         void deactivate_result_computation(){compute_results_=false;}
@@ -720,7 +772,8 @@ class LS2G_API LSGrid final
          */
         [[nodiscard]] RealVect get_slack_weights_solver_without(size_t nb_bus_solver,
                                                                 const SolverBusIdVect & id_me_to_solver,
-                                                                const std::vector<bool> & gen_off) const;
+                                                                const std::vector<bool> & gen_off,
+                                                                const std::vector<bool> & storage_off = std::vector<bool>()) const;
 
         //pickle
         LSGrid::StateRes get_state() const ;
@@ -1046,6 +1099,18 @@ class LS2G_API LSGrid final
         void set_gen_p_limits(const Eigen::Ref<const RealVect> & p_min_mw,
                               const Eigen::Ref<const RealVect> & p_max_mw){
             generators_.set_p_limits(p_min_mw, p_max_mw);
+        }
+        /**
+         * Flag the generators a caller knows an outer loop pinned at a reactive limit as
+         * PQ (one bool per generator, false by default). lightsim2grid never pins a machine
+         * itself, so it cannot tell such a machine from one that was PQ to begin with: the
+         * caller says so (init_from_pypowsybl passes what bake_outer_loops froze). Nothing
+         * enforces or reads it in a powerflow; it only opens that machine to the physical
+         * check of its PQ -> PV release (see `get_physical_violations` and the batch
+         * algorithms' `compute_physical_violations`).
+         */
+        void set_gen_can_be_pv(const std::vector<bool> & can_be_pv){
+            generators_.set_can_be_pv(can_be_pv);
         }
         /**
          * Same, for the storage units -- which take part in the distributed slack under
@@ -2279,10 +2344,14 @@ class LS2G_API LSGrid final
         // units' not already in
         [[nodiscard]] GlobalBusIdVect _slack_bus_id_me() const;
         // the raw (un-normalised) slack weight per solver bus, every participant of both
-        // families summed; `gen_off` (nullable) takes generators out as if disconnected
+        // families summed; `gen_off` / `storage_off` (nullable) take units out as if disconnected
         [[nodiscard]] RealVect _raw_slack_weights_solver(size_t nb_bus_solver,
                                                          const SolverBusIdVect & id_me_to_solver,
-                                                         const std::vector<bool> * gen_off) const;
+                                                         const std::vector<bool> * gen_off,
+                                                         const std::vector<bool> * storage_off = nullptr) const;
+        // the active power (MW, generator convention) the elements on the buses NOT in
+        // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
+        [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
         void init_slack_bus(const SolverBusIdVect & id_me_to_solver,
                             const GlobalBusIdVect& id_solver_to_me,
                             const GlobalBusIdVect & slack_bus_id_me,

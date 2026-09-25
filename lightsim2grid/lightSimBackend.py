@@ -1934,7 +1934,9 @@ class LightSimBackend(Backend):
                 raise self._next_pf_fails            
             beg_preproc = time.perf_counter()
             if self._need_islanding_detection:
-                self._grid.consider_only_main_component()
+                # no OLF-style redistribution of the islanded power here: the set-points
+                # stay the environment's, the distributed slack absorbs the difference
+                self._grid.consider_only_main_component(False)
             if is_dc:
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
                 # one everywhere...

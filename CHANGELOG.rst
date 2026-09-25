@@ -207,11 +207,103 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``handle_disconnected_grid``: the PQ -> PV release check (``LOW_VOLTAGE_AT_MIN_Q`` /
+  ``HIGH_VOLTAGE_AT_MAX_Q``) reported a ``can_be_pv`` generator stranded outside the main
+  component when the bus it regulates stayed in it. A stranded machine is now skipped, as when
+  the contingency disconnects it (one contingency at a time).
+- [FIXED] ``handle_disconnected_grid``: a contingency stranding the bus a voltage-control group
+  regulates while some of its controllers stay in the main component ran every Newton iteration
+  before being reported as ``DIVERGENCE`` (the frozen magnitude of the stranded bus cannot reach
+  the set-point). It is now skipped before the solve (``NOT_SIMULATED``), as the one contingency
+  at a time path refuses it ("regulates a disconnected bus"). A group with only some of its
+  controllers stranded is still solved: the live ones hold the bus and share among themselves.
+- [FIXED] ``handle_disconnected_grid`` diverged on a contingency stranding every controller of a
+  voltage-control group of several controllers (*eg* two generators of a plant behind its
+  step-up transformer, both regulating its high voltage bus remotely): only a group of one
+  controller was handled. Such a group now leaves the solve (its controllers produce no
+  reactive power) and its regulated bus, still in the main component, becomes a plain PQ bus,
+  as when the controllers are disconnected. Same Jacobian structure for every row.
+- [FIXED] ``handle_disconnected_grid`` (``ContingencyAnalysis`` / ``ScenarioSweep``) chose its
+  reference slack bus mixing the grid and the solver bus numberings, and the choice never
+  reached the solver. On a grid where they differ (disconnected or fused buses), a contingency
+  islanding a slack-participating generator could be skipped (``NOT_SIMULATED``) for no reason,
+  and one stranding the solver's real reference was not. The reference is now chosen in solver
+  numbering and is the one the solver uses; ``pick_reference_slack`` returns a slack bus
+  (gridmodel id) and has no effect on the next ``compute``.
+- [FIXED] a reference slack bus forced with ``LSGrid.set_reference_slack_bus`` was lost by
+  ``LSGrid.copy()``, so by the batch algorithms, which work on a copy of the grid. The batch
+  now always keeps it as its reference (the contingencies that strand it are skipped);
+  ``pick_reference_slack`` still suggests the automatic choice.
 - [ADDED] ``LSGrid.set_keep_vinit_at_group_controlled_buses`` (and the batch algorithms'
   ``keep_vinit_at_group_controlled_buses``), off by default: a bus regulated remotely or by an
   SVC keeps its starting magnitude instead of its set-point, so step damping can reach it gradually.
 - [IMPROVED] ``bake_outer_loops`` is faster on large grids: the capability-curve extrapolation is
   vectorised and the bus frame is read once per bake instead of once per step. Same result.
+- [IMPROVED] reading the batteries' ``activePowerControl`` extension (pypowsybl <= 1.16.1) goes
+  through a JIIDM export restricted to it: ``bake_outer_loops`` and ``init_from_pypowsybl``
+  are much faster on large grids with batteries. Same result.
+- [FIXED] ``LSGrid.consider_only_main_component`` left the generators / storage units stranded
+  outside the main component in the distributed slack: the next powerflow raised
+  "One of the slack bus is disconnected". They now leave the slack (and a forced reference
+  slack bus outside the main component is cleared), as OpenLoadFlow only distributes the slack
+  on the main component.
+- [ADDED] ``LSGrid.redistribute_active_power(mismatch_mw)``: shares a known active-power
+  imbalance on the generators and storage units of the distributed slack as OpenLoadFlow's
+  ``DistributedSlack`` outer loop does, with their ``[min_p, max_p]`` bounds (a saturated unit
+  leaves the pool, and the distributed slack).
+- [ADDED] ``LSGrid.consider_only_main_component(redistribute_slack=True)``: the power the
+  islanding takes out (set-points) is redistributed that way on the remaining slack units. It
+  returns a ``SlackRedistributionReport``. Without p limits the converged state is unchanged
+  (only the set-points move); the grid2op backend and ``init_from_pypowsybl`` pass ``False``.
+- [ADDED] ``redistribute_slack`` (off by default) on ``ContingencyAnalysis`` and
+  ``ScenarioSweep``: the same OLF-style bounded redistribution of the power a row loses (a
+  generator contingency, or an island cut off with ``handle_disconnected_grid``) before its
+  powerflow, the saturated units leaving that row's distributed slack.
+- [ADDED] ``LSGrid.get_physical_violations(ac=True, tol_mva=1e-4)``: the physical-limit checks of
+  the batch algorithms (``compute_physical_violations``: reactive capability of the voltage
+  controllers, hvdc max power, generators / storage units pushed past their p limits by the
+  slack) on the grid's own last ``ac_pf`` / ``dc_pf``.
+- [ADDED] ``LSGrid.get_violations(threshold=1., ac=True)``: the operational limit checks of the
+  batch algorithms (``compute_limit_violations``: bus voltages against ``[vmin, vmax]``, branch
+  currents on both sides against their thermal limits) on the grid's own last ``ac_pf`` /
+  ``dc_pf``. The checks moved to ``batch_algorithm/OperationalCheck.hpp`` (same code, same
+  namespace).
+- [FIXED] the DC algorithms' ``get_error()`` stayed ``NotInitError`` after a converged ``dc_pf``
+  (the status was only written on failure): it now reports ``NoError``, as the AC ones do.
+- [FIXED] the DC active-power imbalance handed to the generator p-limit check
+  (``compute_physical_violations``) was summed over every bus, the ones masked by
+  ``handle_disconnected_grid`` included; it is now summed over the solved buses only, as the
+  DC solver does.
+- [ADDED] ``LSGrid.set_gen_can_be_pv`` / ``GenInfo.can_be_pv``: a per-generator flag (False by
+  default, never read by a powerflow) saying that a PQ machine is one an outer loop pinned at
+  a reactive limit, so that its PQ -> PV release can be checked. Kept by ``copy``, pickle and
+  the binary format.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 10 -> 11: ``GeneratorContainer`` serializes the
+  ``can_be_pv`` flag. A file saved with format 10 must be re-exported.
+- [ADDED] the PQ -> PV direction of OpenLoadFlow's ``ReactiveLimits`` loop as a physical
+  check: a PQ generator flagged ``can_be_pv``, sitting at its ``min_q`` (resp. ``max_q``),
+  whose regulated bus is below (resp. above) its target voltage would regulate again. Reported
+  as ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on the ``GENERATOR`` (``value`` and
+  ``limit`` in kV) by ``LSGrid.get_physical_violations`` (new ``tol_vm_pu`` argument) and by
+  the batch algorithms' ``compute_physical_violations`` (new ``physical_violation_tol_vm_pu``
+  property); AC only, never enforced.
+- [ADDED] ``bake_outer_loops`` returns the ids of the generators it froze at a reactive
+  limit, and ``init_from_pypowsybl(can_be_pv=...)`` flags them (``LightsimResultNetwork.
+  get_generators`` shows the flag in a ``can_be_pv`` column), so that a lightsim2grid solve
+  of the baked grid reports the ones an outer loop would release again.
+- [FIXED] the OLF-style slack redistribution (``LSGrid.redistribute_active_power``,
+  ``consider_only_main_component(redistribute_slack=True)``, the batch algorithms'
+  ``redistribute_slack``) could push a unit across 0 MW: a discharging storage unit, or a
+  generator with ``min_p < 0``, was driven to a negative injection by a negative mismatch
+  (and a charging one to a positive injection by a positive mismatch). OpenLoadFlow never
+  changes the sign of a unit's injection: 0 MW is now a bound on the side the unit is not on.
+- [FIXED] the power an islanding takes out (``consider_only_main_component``, and the batch
+  algorithms with ``handle_disconnected_grid``) did not count the HVDC converter stations
+  stranded outside the main component: a contingency islanding the converter of a large
+  export left its whole consumption to the unbounded distributed slack of the powerflow, past
+  every ``[min_p, max_p]`` and 0 MW bound. The stranded stations' setpoints are now part of
+  ``mismatch_mw`` and redistributed like a stranded load / generator (the line's converter
+  that stays in the main component keeps injecting, as before).
 
 
 [1.1.0] 2026-09-21
