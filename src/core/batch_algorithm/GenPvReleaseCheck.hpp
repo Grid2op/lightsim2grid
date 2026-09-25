@@ -63,6 +63,7 @@ struct GenPvReleaseEntry
     int gen_id = -1;
     int reg_bus_grid = -1;        ///< the bus it regulates, grid numbering
     int reg_bus_solver = -1;      ///< ... solver numbering (what a row's V is indexed in)
+    int gen_bus_solver = -1;      ///< the machine's own bus, solver numbering
     bool at_min = true;           ///< pinned at min_q (else at max_q)
     real_type target_vm_pu = 0.;  ///< the GRID's target; a row may hand its own (see check)
     real_type vn_kv = 0.;         ///< nominal voltage of the regulated bus: value / limit in kV
@@ -119,11 +120,16 @@ inline void build_gen_pv_release_plan(const LSGrid & grid_model,
         if(reg_bus_grid < 0 || reg_bus_grid >= vn_kv.size()) continue;
         const int reg_bus_solver = id_me_to_solver[reg_bus_grid].cast_int();
         if(reg_bus_solver == BaseConstants::_deactivated_bus_id) continue;  // not in the solved system
+        const int gen_bus_grid = generators.get_bus_id()(gen_id).cast_int();
+        if(gen_bus_grid < 0 || gen_bus_grid >= vn_kv.size()) continue;
+        const int gen_bus_solver = id_me_to_solver[gen_bus_grid].cast_int();
+        if(gen_bus_solver == BaseConstants::_deactivated_bus_id) continue;  // not in the solved system
 
         GenPvReleaseEntry entry;
         entry.gen_id = gen_id;
         entry.reg_bus_grid = reg_bus_grid;
         entry.reg_bus_solver = reg_bus_solver;
+        entry.gen_bus_solver = gen_bus_solver;
         entry.at_min = at_min;
         entry.target_vm_pu = target_vm_pu;
         entry.vn_kv = vn_kv(reg_bus_grid);
@@ -143,7 +149,7 @@ inline void build_gen_pv_release_plan(const LSGrid & grid_model,
  * BaseBatchSweep::modify_gen_v; the grid's own otherwise) and `is_gen_off(gen_id)` whether
  * the row disconnected it (a generator contingency: nothing to release). `masked_solver_ids`
  * is this row's masked (stranded) solver buses -- sorted, may be nullptr -- whose voltage
- * means nothing.
+ * means nothing: a machine is skipped when its regulated bus OR its own bus is masked.
  */
 template<class TargetVmOf, class IsGenOff>
 inline void check_gen_pv_release_violations(const GenPvReleasePlan & plan,
@@ -166,6 +172,10 @@ inline void check_gen_pv_release_violations(const GenPvReleasePlan & plan,
         const GenPvReleaseEntry & entry = plan.gens[k];
         if(entry.reg_bus_solver < 0 || entry.reg_bus_solver >= V.size()) continue;
         if(is_masked(entry.reg_bus_solver)) continue;
+        // a machine stranded outside the main component (its own bus masked) is out of
+        // the solve, as when the contingency disconnects it: it releases nothing, even
+        // when the bus it regulates stays in the main component
+        if(is_masked(entry.gen_bus_solver)) continue;
         if(is_gen_off(entry.gen_id)) continue;
         const real_type target = target_vm_of(entry.gen_id);
         if(!std::isfinite(target) || target <= 0.) continue;

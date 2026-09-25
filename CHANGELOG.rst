@@ -207,6 +207,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``handle_disconnected_grid``: the PQ -> PV release check (``LOW_VOLTAGE_AT_MIN_Q`` /
+  ``HIGH_VOLTAGE_AT_MAX_Q``) reported a ``can_be_pv`` generator stranded outside the main
+  component when the bus it regulates stayed in it. A stranded machine is now skipped, as when
+  the contingency disconnects it (one contingency at a time).
 - [FIXED] ``handle_disconnected_grid``: a contingency stranding the bus a voltage-control group
   regulates while some of its controllers stay in the main component ran every Newton iteration
   before being reported as ``DIVERGENCE`` (the frozen magnitude of the stranded bus cannot reach

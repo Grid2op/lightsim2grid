@@ -757,6 +757,58 @@ class TestGenPvReleaseFromPython(unittest.TestCase):
         self.assertEqual(len(n_case), 1)
         self.assertAlmostEqual(n_case[0].value, ref[0].value, places=6)
 
+    @staticmethod
+    def _remote_pinned_grid():
+        """the same feeder plus a leaf bus 4 hanging off bus 1 (line 3): the pinned machine
+        sits on bus 4 and regulates bus 1 remotely. Taking line 3 out strands the machine,
+        while the bus it regulates stays in the main component."""
+        from lightsim2grid.lightsim2grid_cpp import LSGrid
+        min_q, max_q = -5., 20.
+        grid = LSGrid()
+        grid.set_sn_mva(100.)
+        grid.set_init_vm_pu(1.0)
+        grid.init_bus(5, 1, np.full(5, 138.), 0, 0)
+        grid.init_powerlines(np.full(4, 0.01), np.full(4, 0.1), np.zeros(4, dtype=complex),
+                             np.array([0, 1, 2, 1]), np.array([1, 2, 3, 4]))
+        grid.init_loads(np.array([80.]), np.array([60.]), np.array([3]))
+        grid.init_generators_full(np.array([0., 10.]), np.array([1.02, 1.10]),
+                                  np.array([0., min_q]), [True, False],
+                                  np.array([-1e3, min_q]), np.array([1e3, max_q]), np.array([0, 4]))
+        grid.set_gen_names(["slack", "pinned"])
+        grid.set_gen_regulated_bus(1, 1)
+        grid.set_gen_can_be_pv(np.array([False, True]))
+        grid.add_gen_slackbus(0, 1.)
+        grid.tell_solver_need_reset()
+        return grid
+
+    def test_stranded_machine_releases_nothing(self):
+        # handle_disconnected_grid: a contingency stranding the machine (its own bus masked)
+        # while the bus it regulates stays live used to report its release all the same --
+        # the check only skipped a masked REGULATED bus. One contingency at a time
+        # disconnects the machine, so nothing is reported: the batch must agree.
+        grid = self._remote_pinned_grid()
+        self._solve(grid)
+        ref_n = self._release(grid.get_physical_violations(True, 0., 0.))
+        self.assertEqual(len(ref_n), 1, "sanity: the N state reports the release")
+
+        one = grid.copy()
+        one.deactivate_powerline(3)
+        one.consider_only_main_component(True)
+        self._solve(one)
+        self.assertEqual(self._release(one.get_physical_violations(True, 0., 0.)), [])
+
+        ca = ContingencyAnalysisCPP(grid, True)
+        ca.compute_physical_violations = True
+        ca.physical_violation_tol_mva = 0.
+        ca.physical_violation_tol_vm_pu = 0.
+        ca.handle_disconnected_grid = True
+        ca.add_n1(3)
+        ca.compute(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        assert list(ca.converged()) == [True]
+        self.assertEqual(len(self._release(ca.get_physical_violations_n())), 1)
+        self.assertEqual(self._release(ca.get_physical_violations()[0]), [],
+                         "a stranded machine should not be reported as releasable")
+
 
 class TestPhysicalViolationsWrapper(unittest.TestCase):
     """the python wrappers: the properties they expose, what they invalidate, and the
