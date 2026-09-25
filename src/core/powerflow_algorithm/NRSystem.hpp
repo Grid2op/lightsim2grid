@@ -800,8 +800,13 @@ class LS2G_API VoltageControl
         // with Q_first = 0 they give Q_c = 0 for every other controller. That
         // reproduces what a rebuilt (single-shot) topology does once the
         // disconnected controllers drop out of the group. A group with only SOME of
-        // its controllers stranded is NOT covered: the row/column structure stays
-        // singular for it.
+        // its controllers stranded needs nothing: its voltage row is held by the live
+        // ones (their bus Q rows), the sharing rows still give every Q_c a value, and
+        // the stranded ones' land on masked rows, so the live controllers share among
+        // themselves as if the others were gone. A regulated bus stranded while some
+        // controllers stay live cannot be solved (its masked magnitude cannot reach
+        // v_set): the batch skips such a row before the solve (see
+        // BaseBatchSweep::_skip_rows_stranding_regulated_bus).
         //
         // Only STORES the list here: `data_` may still hold the previous contingency's
         // (or, on a freshly spawned per-thread algo, no) content at this point -- the

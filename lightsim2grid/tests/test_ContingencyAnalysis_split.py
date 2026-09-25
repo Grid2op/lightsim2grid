@@ -193,6 +193,100 @@ class TestStrandedRemoteGroup(unittest.TestCase):
         assert abs(abs(V[self.REG_BUS]) - 1.09) <= 1e-6
 
 
+class TestPartlyStrandedGroup(unittest.TestCase):
+    """case14, trafo 3 (buses 6-7) strands bus 7, where a generator regulates a bus
+    remotely, together with generator 2 (bus 5) which stays in the main component.
+
+    - the group of bus 9 {generator of bus 7, generator 2}: only one of its controllers
+      is stranded. It needs nothing: the live one holds bus 9 alone, exactly as when
+      the stranded one is disconnected (one contingency at a time).
+    - generator 2 regulating bus 7 itself: the regulated bus is stranded and its
+      controller is live. That cannot be solved (one at a time refuses it too): the row
+      is skipped (NOT_SIMULATED) instead of running every iteration to a DIVERGENCE.
+    """
+    MAX_IT = 30
+    TOL = 1e-8
+    LEAF_BUS = 7
+    TRAFO = 3
+    MESH_LINE = 0
+    LIVE_GEN = 2  # bus 5
+
+    def _grid(self, setup):
+        import pandapower.networks as pn
+        net = pn.case14()
+        net.gen.loc[3, "vm_pu"] = 1.07  # same set-point as generator 2
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(net)
+        leaf_gen = [gen.id for gen in grid.get_generators() if gen.bus_id == self.LEAF_BUS]
+        assert len(leaf_gen) == 1
+        setup(grid, leaf_gen[0])
+        return grid, leaf_gen[0]
+
+    def _batch(self, grid, conts):
+        V0 = grid.ac_pf(np.ones(grid.total_bus(), dtype=complex), self.MAX_IT, self.TOL)
+        assert V0.shape[0] == grid.total_bus(), "base case did not converge"
+        SA = ContingencyAnalysisCPP(grid, True)
+        SA.add_multiple_n1(list(conts))
+        SA.handle_disconnected_grid = True
+        SA.compute(1.0 * V0, self.MAX_IT, self.TOL)
+        rows = {int(cont[0]): i for i, cont in enumerate(SA.my_defaults())}
+        return SA, V0, rows
+
+    def _check_partial(self, setup):
+        grid, leaf_gen = self._grid(setup)
+        nb_line = len(grid.get_lines())
+        SA, V0, rows = self._batch(grid, [nb_line + self.TRAFO])
+        row = rows[nb_line + self.TRAFO]
+        assert SA.converged()[row]
+        V = SA.get_voltages()[row]
+        # one at a time: the trafo out and the stranded controller with it
+        one = grid.copy()
+        one.deactivate_trafo(self.TRAFO)
+        one.consider_only_main_component(True)
+        Vref = one.ac_pf(1.0 * V0, self.MAX_IT, self.TOL)
+        assert Vref.shape[0] == grid.total_bus()
+        live = [b for b in range(grid.total_bus()) if b != self.LEAF_BUS]
+        np.testing.assert_allclose(V[live], Vref[live], rtol=0., atol=1e-8)
+        assert abs(abs(V[9]) - 1.07) <= 1e-8, "the live controller still holds bus 9"
+        assert V[self.LEAF_BUS] == 0.
+
+    def test_partly_stranded_group_is_solved(self):
+        def setup(grid, leaf_gen):
+            grid.set_gen_regulated_bus(leaf_gen, 9)
+            grid.set_gen_regulated_bus(self.LIVE_GEN, 9)
+        self._check_partial(setup)
+
+    def test_partly_stranded_group_is_solved_other_order(self):
+        # the stranded controller is the group's first one or not, depending on the
+        # registration order: both must give the same answer
+        def setup(grid, leaf_gen):
+            grid.set_gen_regulated_bus(self.LIVE_GEN, 9)
+            grid.set_gen_regulated_bus(leaf_gen, 9)
+        self._check_partial(setup)
+
+    def test_stranded_regulated_bus_is_skipped(self):
+        def setup(grid, leaf_gen):
+            grid.deactivate_gen(leaf_gen)
+            grid.set_gen_regulated_bus(self.LIVE_GEN, self.LEAF_BUS)
+        grid, _ = self._grid(setup)
+        nb_line = len(grid.get_lines())
+        SA, V0, rows = self._batch(grid, [self.MESH_LINE, nb_line + self.TRAFO])
+        row = rows[nb_line + self.TRAFO]
+        assert not SA.converged()[row]
+        types = [v.violation_type for v in SA.get_violations()[row]]
+        assert types == [LimitViolationType.NOT_SIMULATED], f"expected NOT_SIMULATED, got {types}"
+        assert SA.nb_solved() == 1, "the skipped row should not reach the solver (only the mesh row)"
+        # the other row is solved as usual
+        assert SA.converged()[rows[self.MESH_LINE]]
+        # and one contingency at a time refuses it as well
+        one = grid.copy()
+        one.deactivate_trafo(self.TRAFO)
+        one.consider_only_main_component(True)
+        with self.assertRaises(Exception):
+            one.ac_pf(1.0 * V0, self.MAX_IT, self.TOL)
+
+
 class TestContingencySplitMode(unittest.TestCase):
     def setUp(self):
         self.max_it = 30

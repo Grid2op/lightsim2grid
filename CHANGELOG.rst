@@ -207,6 +207,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``handle_disconnected_grid``: a contingency stranding the bus a voltage-control group
+  regulates while some of its controllers stay in the main component ran every Newton iteration
+  before being reported as ``DIVERGENCE`` (the frozen magnitude of the stranded bus cannot reach
+  the set-point). It is now skipped before the solve (``NOT_SIMULATED``), as the one contingency
+  at a time path refuses it ("regulates a disconnected bus"). A group with only some of its
+  controllers stranded is still solved: the live ones hold the bus and share among themselves.
 - [FIXED] ``handle_disconnected_grid`` diverged on a contingency stranding every controller of a
   voltage-control group of several controllers (*eg* two generators of a plant behind its
   step-up transformer, both regulating its high voltage bus remotely): only a group of one

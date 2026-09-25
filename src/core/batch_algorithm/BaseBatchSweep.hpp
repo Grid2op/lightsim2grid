@@ -2054,9 +2054,47 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
             _select_ref_slack_and_masks(true);
+            _skip_rows_stranding_regulated_bus();
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_masks(){}
+
+        // "handle disconnected grid" mode, AC: a row that strands the regulated bus of a
+        // voltage-control group while some of its controllers stay in the main component
+        // cannot be solved -- the group's voltage row asks a masked (frozen) magnitude to
+        // be v_set, which none of the live controllers' reactive unknowns can reach -- so
+        // it is skipped (NOT_SIMULATED) rather than left to diverge. The one contingency
+        // at a time path refuses it as well ("regulates a disconnected bus"). The other
+        // cases need nothing: a group whose controllers are all stranded is pinned to
+        // Q = 0 by the VoltageControl extension (see VoltageControl::set_masked_buses),
+        // and in a group with only some of them stranded the live ones hold the bus and
+        // share among themselves, the stranded ones' reactive power landing on masked
+        // rows. Called after _select_ref_slack_and_masks, which (re)fills _skip_mask.
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void _skip_rows_stranding_regulated_bus(){
+            if(!_algo.ac_solver_used()) return;  // no voltage control in DC
+            const VoltageControlSolverData & ctrl = active_layout().voltage_control.controllers();
+            const int ng = ctrl.n_groups();
+            if(ng == 0) return;
+            // every _li_masked entry is sorted (see _prepare_connectivity)
+            auto is_masked = [](const std::vector<int> & masked, int bus){
+                return std::binary_search(masked.begin(), masked.end(), bus);
+            };
+            const size_t nb_rows = std::min(_skip_mask.size(), _li_masked.size());
+            for(size_t row = 0; row < nb_rows; ++row){
+                const std::vector<int> & masked = _li_masked[row];
+                if(_skip_mask[row] || masked.empty()) continue;
+                for(int g = 0; g < ng; ++g){
+                    if(!is_masked(masked, ctrl.reg_bus(g))) continue;
+                    const int first = ctrl.grp_start(g);
+                    bool some_live = false;
+                    for(int off = 0; off < ctrl.grp_count(g) && !some_live; ++off){
+                        some_live = !is_masked(masked, ctrl.bus(first + off));
+                    }
+                    if(some_live){ _skip_mask[row] = 1; break; }
+                }
+            }
+        }
 
         // ================= generator contingencies (ScenarioSweep only) ==========
         // Turns sbus_policy_.gen_off into the two things the per-row loop needs, once
