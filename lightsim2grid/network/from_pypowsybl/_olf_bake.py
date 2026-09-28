@@ -95,7 +95,10 @@ What gets baked
   into ``target_q`` (see :func:`_bake_generator_target_q_forced_in_limits`).
 * Active-power redistribution from distributed slack / area interchange: the
   realized P is written back into the target P of generators and batteries
-  (and optionally loads, if the slack was distributed on load).
+  (and optionally loads, if the slack was distributed on load). A unit whose
+  realized P comes back a round-off outside its active target range (a unit
+  dispatched at ``max_p``) is put back on that bound, so that OLF does not drop it
+  from the slack of the baked network (see :func:`_snap_realized_into_target_range`).
 * Generators OLF's own ``checkActivePowerControl`` would exclude from
   slack-distribution participation (dispatched at ~0 MW, an implausible
   ``max_p``, ``target_p`` outside ``[min_p, max_p]``, or a degenerate P range):
@@ -1110,7 +1113,49 @@ def _bake_remote_voltage_control(network, keep_only_main_comp=True, df_bus=None)
     network.update_generators(upd)
 
 
-def _bake_active_power_control_participation(network, gen, bat=None):
+def _gen_target_p_range(network, gen):
+    """``(min_target_p, max_target_p)`` of each generator of ``gen`` (aligned on it), as
+    OLF's ``ActivePowerControlHelper`` reads them: the ``activePowerControl`` extension's
+    bounds where it sets them, ``min_p`` / ``max_p`` otherwise."""
+    apc = network.get_extensions("activePowerControl")
+    min_target_p = gen["min_p"].to_numpy(dtype=float, copy=True)
+    max_target_p = gen["max_p"].to_numpy(dtype=float, copy=True)
+    if len(apc):
+        common = gen.index.intersection(apc.index)
+        if len(common):
+            pos = gen.index.get_indexer(common)
+            if "min_target_p" in apc.columns:
+                v = apc.loc[common, "min_target_p"].to_numpy()
+                ok = ~np.isnan(v)
+                min_target_p[pos[ok]] = v[ok]
+            if "max_target_p" in apc.columns:
+                v = apc.loc[common, "max_target_p"].to_numpy()
+                ok = ~np.isnan(v)
+                max_target_p[pos[ok]] = v[ok]
+    return min_target_p, max_target_p
+
+
+def _snap_realized_into_target_range(realized, target_p, min_target_p, max_target_p):
+    """The realized dispatch ``realized`` (generator convention) to write as the baked
+    ``target_p``. OLF writes a unit's ``p`` back with a round-off, so a unit dispatched at
+    one of its limits can come back a hair outside ``[min_target_p, max_target_p]``, even
+    without any slack share.
+    ``checkActivePowerControl`` then reads that ``target_p`` as outside the limits, and
+    every later OLF solve of the baked network leaves the unit out of the slack although
+    the reference solve had it in. A unit whose pre-bake ``target_p`` was inside the range
+    and whose realized dispatch is outside it by at most ``_ZERO_P_TOL`` is thus put back
+    on the bound it crossed; anything further off is written as is."""
+    realized = np.asarray(realized, dtype=float).copy()
+    target_p = np.asarray(target_p, dtype=float)
+    inside = (target_p >= min_target_p) & (target_p <= max_target_p)
+    snap_max = inside & (realized > max_target_p) & (realized <= max_target_p + _ZERO_P_TOL)
+    snap_min = inside & (realized < min_target_p) & (realized >= min_target_p - _ZERO_P_TOL)
+    realized[snap_max] = max_target_p[snap_max]
+    realized[snap_min] = min_target_p[snap_min]
+    return realized
+
+
+def _bake_active_power_control_participation(network, gen, bat=None, gen_range=None, bat_apc=None):
     """Zero out active-power (slack-distribution) participation for generators (and
     batteries, see below) that PowSyBl OLF's own
     ``AbstractLfGenerator.checkActivePowerControl`` would exclude:
@@ -1160,6 +1205,10 @@ def _bake_active_power_control_participation(network, gen, bat=None):
     0 by a positive mismatch (and a discharging one by a negative mismatch). The sign of
     the reference mismatch is taken over the generators and the batteries together.
 
+    ``gen_range`` (the generators' :func:`_gen_target_p_range`) and ``bat_apc`` (the
+    batteries' :func:`~._aux_battery_apc.battery_active_power_control`) are read off the
+    network when not given.
+
     Returns the batteries OLF capped that this pypowsybl cannot mark in their extension
     (<= 1.16.1 rejects a battery id there): the caller pins their active range on their
     realized dispatch (``min_p = max_p``), a degenerate range both OLF and lightsim2grid
@@ -1173,20 +1222,9 @@ def _bake_active_power_control_participation(network, gen, bat=None):
         olf_target_p_range,
     )
     apc = network.get_extensions("activePowerControl")
-    min_target_p = gen["min_p"].to_numpy(copy=True)
-    max_target_p = gen["max_p"].to_numpy(copy=True)
-    if len(apc):
-        common = gen.index.intersection(apc.index)
-        if len(common):
-            pos = gen.index.get_indexer(common)
-            if "min_target_p" in apc.columns:
-                v = apc.loc[common, "min_target_p"].to_numpy()
-                ok = ~np.isnan(v)
-                min_target_p[pos[ok]] = v[ok]
-            if "max_target_p" in apc.columns:
-                v = apc.loc[common, "max_target_p"].to_numpy()
-                ok = ~np.isnan(v)
-                max_target_p[pos[ok]] = v[ok]
+    if gen_range is None:
+        gen_range = _gen_target_p_range(network, gen)
+    min_target_p, max_target_p = gen_range
 
     target_p = gen["target_p"].to_numpy()
     max_p = gen["max_p"].to_numpy()
@@ -1211,7 +1249,9 @@ def _bake_active_power_control_participation(network, gen, bat=None):
     # the side opposite their dispatch (OLF keeps the sign of a unit when it caps it)
     has_bat = bat is not None and len(bat) > 0
     if has_bat:
-        b_participate, b_droop, b_min_tp, b_max_tp = battery_active_power_control(network, bat)
+        if bat_apc is None:
+            bat_apc = battery_active_power_control(network, bat)
+        b_participate, b_droop, b_min_tp, b_max_tp = bat_apc
         b_target_p = bat["target_p"].to_numpy(float)
         b_min_p = bat["min_p"].to_numpy(float)
         b_max_p = bat["max_p"].to_numpy(float)
@@ -1276,25 +1316,42 @@ def _bake_active_power(
     bat = network.get_batteries(attributes=["p", "target_p", "min_p", "max_p", "connected", "bus_id"])
     if keep_only_main_comp:
         bat = _keep_only_main_comp(bat, df_bus)
+    # the active target ranges OLF checks, read before the participation bake writes
+    # into the activePowerControl extension (it only writes `participate` there)
+    gen_range = _gen_target_p_range(network, gen) if len(gen) else None
+    bat_apc = None
+    if len(bat):
+        # not at the top: _aux_battery_apc reads its OLF constants from this module
+        from ._aux_battery_apc import battery_active_power_control, olf_target_p_range
+        bat_apc = battery_active_power_control(network, bat)
     pinned_batteries = bat.index[:0]
     if bake_active_power_control_participation and (len(gen) or len(bat)):
-        pinned_batteries = _bake_active_power_control_participation(network, gen, bat)
+        pinned_batteries = _bake_active_power_control_participation(network, gen, bat,
+                                                                    gen_range, bat_apc)
 
     if len(gen):
         # result p is load convention; target_p is generator convention
+        gen_target_p = _snap_realized_into_target_range(-gen["p"].to_numpy(), gen["target_p"].to_numpy(),
+                                                        *gen_range)
         network.update_generators(
-            pd.DataFrame({"target_p": -gen["p"]}, index=gen.index)
+            pd.DataFrame({"target_p": gen_target_p}, index=gen.index)
         )
 
     if len(bat):
+        _, _, b_min_tp, b_max_tp = bat_apc
+        b_min_tp, b_max_tp = olf_target_p_range(bat["min_p"], bat["max_p"], b_min_tp, b_max_tp)
+        bat_target_p = pd.Series(
+            _snap_realized_into_target_range(-bat["p"].to_numpy(), bat["target_p"].to_numpy(),
+                                             b_min_tp, b_max_tp),
+            index=bat.index)
         network.update_batteries(
-            pd.DataFrame({"target_p": -bat["p"]}, index=bat.index)
+            pd.DataFrame({"target_p": bat_target_p}, index=bat.index)
         )
         if len(pinned_batteries):
             # a battery OLF capped, on a pypowsybl that cannot mark its extension: a
             # degenerate active range at its realized dispatch takes it out of the slack,
             # in OLF (checkActivePowerControl) and in lightsim2grid alike
-            realized = -bat.loc[pinned_batteries, "p"]
+            realized = bat_target_p.loc[pinned_batteries]
             network.update_batteries(
                 pd.DataFrame({"min_p": realized, "max_p": realized}, index=pinned_batteries)
             )

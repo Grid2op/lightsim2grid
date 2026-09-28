@@ -800,6 +800,29 @@ class TestOlfBake(unittest.TestCase):
             self.assertFalse(bool(apc.loc[gid, "participate"]), f"{gid} should not participate")
         self.assertNotIn("B2-G", apc.index)
 
+    def test_olf_active_power_round_off_snapped_on_bound(self):
+        """OLF writes a unit's p back with a round-off, so a unit dispatched at its max_p
+        can come back a hair above it (seen on real grid snapshots): written as is into
+        target_p, OLF's checkActivePowerControl then takes the unit out of the slack of
+        every solve of the baked network. The bake puts it back on the bound; a realized
+        p further off than the round-off tolerance is written as is."""
+        for p_over, expected in [(1e-11, 40.), (1., 41.)]:
+            n = pp.network.create_ieee14()
+            n.update_generators(id="B2-G", max_p=40.)  # dispatched at its max_p
+            lf.run_ac(n, _with_loops_params())
+            n.update_generators(id="B2-G", p=-(40. + p_over))
+            bake_outer_loops(n)
+            self.assertEqual(n.get_generators().loc["B2-G", "target_p"], expected)
+
+    def test_snap_realized_into_target_range(self):
+        from lightsim2grid.network.from_pypowsybl._olf_bake import _snap_realized_into_target_range
+        min_tp = np.array([10., 10., 10., 10., 10., 10.])
+        max_tp = np.array([40., 40., 40., 40., 40., 40.])
+        target_p = np.array([40., 10., 45., 25., 40., 40.])  # 3rd: outside before the bake
+        realized = np.array([40. + 1e-13, 10. - 1e-13, 45. + 1e-13, 25., 41., np.nan])
+        res = _snap_realized_into_target_range(realized, target_p, min_tp, max_tp)
+        np.testing.assert_array_equal(res, [40., 10., 45. + 1e-13, 25., 41., np.nan])
+
     def test_olf_active_power_control_participation_flag_off(self):
         """``bake_active_power_control_participation=False`` creates no
         activePowerControl extension at all."""

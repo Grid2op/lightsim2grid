@@ -214,6 +214,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``amps > limit * (1 + tol)``. They were ``>=`` / ``<=``, so a value on its limit (*eg* a
   bus a regulator holds at its ``vmax``) flipped between reported and not with the last bit
   of rounding, and the one-off solve, the batch and gpusim2grid disagreed.
+- [FIXED] ``bake_outer_loops``: a unit dispatched at ``max_p`` / ``min_p`` got a ``target_p`` a
+  round-off outside it, so OpenLoadFlow left it out of the slack of the baked grid.
 - [FIXED] ``handle_disconnected_grid``: the PQ -> PV release check (``LOW_VOLTAGE_AT_MIN_Q`` /
   ``HIGH_VOLTAGE_AT_MAX_Q``) reported a ``can_be_pv`` generator stranded outside the main
   component when the bus it regulates stayed in it. A stranded machine is now skipped, as when
