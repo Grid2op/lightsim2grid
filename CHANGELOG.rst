@@ -227,6 +227,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   left out of the slack only because it sat at an active limit takes part in the redistribution
   pre-pass, away from that limit, as OpenLoadFlow lets it. ``bake_outer_loops(...,
   return_details=True)`` returns the units OLF capped, for ``init_from_pypowsybl(can_participate_slack=...)``.
+- [FIXED] The PQ -> PV release check skipped a ``can_be_pv`` generator frozen a hair inside its
+  reactive limit (the bake keeps the output it had): it required its setpoint within ``tol_mva``
+  of the limit. A flagged generator is now pinned at the nearer of its limits.
 - [FIXED] ``bake_outer_loops`` took a standby SVC OpenLoadFlow switched on for an idle one (its bus
   sits at the setpoint, inside the thresholds). It is read off the SVC's output now, and marked as
   no longer standby.

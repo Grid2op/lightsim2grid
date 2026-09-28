@@ -4172,7 +4172,8 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
       output, what it took to hold its bus at its set-point, is beyond its capability
       (``LOW_Q`` / ``HIGH_Q``; AC only, a DC powerflow has no reactive power);
     - a PQ generator flagged with :func:`set_gen_can_be_pv` (one an outer loop pinned at a
-      reactive limit), sitting at its ``min_q`` (resp. ``max_q``) within ``tol_mva``, whose
+      reactive limit), pinned at its ``min_q`` (resp. ``max_q``) -- the nearer of the two: a
+      bake may freeze it a hair inside the limit --, whose
       regulated bus is below (resp. above) its target voltage by more than ``tol_vm_pu``: it
       absorbs (resp. produces) too much for that target and OpenLoadFlow's ``ReactiveLimits``
       loop would switch it back to PV (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on

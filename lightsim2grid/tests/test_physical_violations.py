@@ -656,7 +656,7 @@ class TestGenPvReleaseFromPython(unittest.TestCase):
     VN_KV = 138.
 
     @staticmethod
-    def _pinned_grid(target_vm=1.10, at_min=True, flagged=True):
+    def _pinned_grid(target_vm=1.10, at_min=True, flagged=True, inside_mvar=0.):
         """the 4-bus radial feeder 0-1-2-3 (80 MW / 60 MVAr load on bus 3), gen 0 the PV
         slack on bus 0, gen 1 a PQ machine on bus 1 pinned at its min_q (or max_q)"""
         from lightsim2grid.lightsim2grid_cpp import LSGrid
@@ -668,8 +668,10 @@ class TestGenPvReleaseFromPython(unittest.TestCase):
         grid.init_powerlines(np.full(3, 0.01), np.full(3, 0.1), np.zeros(3, dtype=complex),
                              np.array([0, 1, 2]), np.array([1, 2, 3]))
         grid.init_loads(np.array([80.]), np.array([60.]), np.array([3]))
+        # `inside_mvar`: frozen that much inside its limit (a bake keeps the output it had)
+        q_set = (min_q + inside_mvar) if at_min else (max_q - inside_mvar)
         grid.init_generators_full(np.array([0., 10.]), np.array([1.02, target_vm]),
-                                  np.array([0., min_q if at_min else max_q]), [True, False],
+                                  np.array([0., q_set]), [True, False],
                                   np.array([-1e3, min_q]), np.array([1e3, max_q]), np.array([0, 1]))
         grid.set_gen_names(["slack", "pinned"])
         if flagged:
@@ -704,6 +706,15 @@ class TestGenPvReleaseFromPython(unittest.TestCase):
         self.assertAlmostEqual(v.value, abs(V[1]) * self.VN_KV, places=6)
         self.assertAlmostEqual(v.limit, 1.10 * self.VN_KV, places=9)
         self.assertIn("LOW", str(v.violation_type))
+
+    def test_frozen_a_hair_inside_its_limit_is_still_pinned(self):
+        # the flag says an outer loop froze it at a limit: the nearer one, whatever the
+        # tolerance on powers (a bake keeps the output it had, a hair inside that limit)
+        grid = self._pinned_grid(1.10, at_min=True, inside_mvar=0.01)
+        self._solve(grid)
+        viols = self._release(grid.get_physical_violations(True, 1e-4, 0.))
+        self.assertEqual(len(viols), 1)
+        self.assertEqual(viols[0].violation_type, LimitViolationType.LOW_VOLTAGE_AT_MIN_Q)
 
     def test_at_max_q_above_target(self):
         grid = self._pinned_grid(0.80, at_min=False)

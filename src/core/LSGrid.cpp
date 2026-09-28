@@ -2855,7 +2855,7 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
         // the PQ -> PV direction, on the machines the caller flagged (same order as the
         // batch: bus Q, then this, then hvdc, then gen P)
         gen_pv_release_check::GenPvReleasePlan release_plan;
-        gen_pv_release_check::build_gen_pv_release_plan(*this, layout.id_me_to_solver, tol_mva, release_plan);
+        gen_pv_release_check::build_gen_pv_release_plan(*this, layout.id_me_to_solver, release_plan);
         if(!release_plan.empty()){
             gen_pv_release_check::check_gen_pv_release_violations(
                 release_plan, algo.get_V(), tol_vm_pu, no_mask,

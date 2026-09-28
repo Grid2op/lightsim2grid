@@ -1843,12 +1843,27 @@ TEST_CASE("only a flagged machine, on the release side of its target, is a candi
         REQUIRE(ts.converged_mask()[0] == 1);
         CHECK(find_release(ts.get_physical_violations()[0], 1) == nullptr);
     }
-    SECTION("a setpoint inside the range is not pinned at all") {
+    SECTION("frozen a hair inside its limit (a bake keeps the output it had): still pinned there") {
         GenSpec inside = pinned_gen(true, 1.10);
-        inside.target_q = 2.;
+        inside.target_q += 0.01;   // 0.01 MVAr inside min_q
         std::vector<GenSpec> gens{slack_gen(), inside};
         LSGrid grid = make_grid(gens);
         grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row_release(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        const LimitViolation * viol = find_release(ts.get_physical_violations()[0], 1);
+        REQUIRE(viol != nullptr);
+        CHECK(viol->violation_type == LimitViolationType::LOW_VOLTAGE_AT_MIN_Q);
+    }
+    SECTION("the nearer limit decides the side: near max_q, a voltage below the target is no release") {
+        GenSpec near_max = pinned_gen(false, 1.10);
+        near_max.target_q -= 0.01;   // 0.01 MVAr inside max_q
+        std::vector<GenSpec> gens{slack_gen(), near_max};
+        LSGrid grid = make_grid(gens);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        REQUIRE(reference_vm(grid, GEN_BUS) < 1.10);
         TimeSeries ts(grid);
         setup_one_row_release(ts);
         ts.compute(flat_start(grid), 30, 1e-11);

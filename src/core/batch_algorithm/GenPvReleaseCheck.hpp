@@ -51,8 +51,10 @@ namespace ls2g {
  * while holding its target, a hair inside the limit at most). No batch axis varies an SVC's
  * target, and no contingency disconnects one: a row checks it against the grid's target.
  *
- * WHAT IS CHECKED. A flagged PQ generator whose reactive setpoint sits at one of its limits
- * (within `tol_mva`, the side being decided once per plan), with a reactive range of at
+ * WHAT IS CHECKED. A flagged PQ generator, pinned at the NEARER of its two reactive limits
+ * (decided once per plan): the flag already says an outer loop froze it at a limit, and a
+ * bake freezes it at the output it had, which may sit a hair inside that limit -- so no
+ * tolerance on the setpoint gates it. With a reactive range of at
  * least MIN_REACTIVE_RANGE_MVAR (OpenLoadFlow's own plausibility floor: a narrower range
  * never regulates) and a meaningful target voltage. Per row, the magnitude of its regulated
  * bus is compared with that target: below it at the minimum, above it at the maximum, by
@@ -94,12 +96,11 @@ struct GenPvReleasePlan
  * Work out, once, which machines can be reported at all, and at which limit each sits.
  *
  * `id_me_to_solver` must describe the labelling the batch solves in (`active_layout()`) --
- * the one a row's `V` is indexed in. `tol_mva` decides "sits at a limit": the reactive
- * setpoint is within it of `min_q` (checked first) or of `max_q`.
+ * the one a row's `V` is indexed in. A flagged machine sits at the nearer of its limits
+ * (`min_q` on a tie): the flag says it was frozen at one.
  */
 inline void build_gen_pv_release_plan(const LSGrid & grid_model,
                                       const SolverBusIdVect & id_me_to_solver,
-                                      real_type tol_mva,
                                       GenPvReleasePlan & out)
 {
     out.clear();
@@ -120,10 +121,9 @@ inline void build_gen_pv_release_plan(const LSGrid & grid_model,
         if(!std::isfinite(min_q) || !std::isfinite(max_q)) continue;
         if(max_q - min_q < MIN_REACTIVE_RANGE_MVAR) continue;  // never a voltage controller
         const real_type target_q = generators.get_target_q_mvar(gen_id);
-        bool at_min;
-        if(std::abs(target_q - min_q) <= tol_mva) at_min = true;
-        else if(std::abs(target_q - max_q) <= tol_mva) at_min = false;
-        else continue;  // inside its range: not pinned, nothing to release
+        // the nearer limit: the flag says an outer loop froze it at one, and a bake keeps the
+        // output it had there, which may sit a hair inside it
+        const bool at_min = std::abs(target_q - min_q) <= std::abs(target_q - max_q);
 
         const real_type target_vm_pu = generators.get_target_vm_pu(gen_id);
         if(!std::isfinite(target_vm_pu) || target_vm_pu <= 0.) continue;  // no target to hold

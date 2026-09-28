@@ -1994,10 +1994,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             if(_gen_pv_release_check_on_){
                 // which limit a flagged machine sits at is decided here, once: no batch axis
-                // varies a reactive setpoint, and the tolerance is fixed for a compute()
+                // varies a reactive setpoint
                 gen_pv_release_check::build_gen_pv_release_plan(
-                    _grid_model, active_layout().id_me_to_solver, _physical_tol_mva_,
-                    _gen_pv_release_plan_);
+                    _grid_model, active_layout().id_me_to_solver, _gen_pv_release_plan_);
                 svc_standby_check::build_svc_standby_plan(
                     _grid_model, active_layout().id_me_to_solver, _svc_standby_plan_);
             }
