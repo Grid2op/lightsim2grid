@@ -1146,6 +1146,14 @@ class LS2G_API LSGrid final
             svcs_.set_can_be_pv(can_be_pv);
         }
         /**
+         * The same, for the VSC converter stations of the hvdc lines (one bool per line and
+         * side): the stations an outer loop froze at a reactive limit, opened to the
+         * PQ -> PV release check, reported on the HVDC line with `side` the station's.
+         */
+        void set_hvdc_can_be_pv(const std::vector<bool> & side_1, const std::vector<bool> & side_2){
+            hvdc_lines_.set_stations_can_be_pv(side_1, side_2);
+        }
+        /**
          * Flag the generators a caller knows an outer loop left out of the distributed
          * slack ONLY because they sat at an active limit in the reference solve
          * (OpenLoadFlow caps a unit at max_p when the mismatch it distributes is

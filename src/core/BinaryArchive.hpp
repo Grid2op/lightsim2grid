@@ -112,7 +112,10 @@ namespace ls2g {
 // v14: GeneratorContainer::StateRes and StorageContainer::StateRes carry each unit's
 //     "can participate in the slack" weight (the redistribution pre-pass only -- see
 //     LSGrid::set_gen_can_participate_slack; 0 unless set). Appended.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 14;
+// v15: ConverterStationContainer::StateRes carries the per-station `can_be_pv_` flag (a VSC
+//     station an outer loop froze at a reactive limit -- see LSGrid::set_hvdc_can_be_pv;
+//     all false unless set). Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 15;
 
 class LS2G_API BinaryArchive
 {

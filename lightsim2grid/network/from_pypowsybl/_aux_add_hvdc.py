@@ -14,11 +14,15 @@ import pandas as pd
 from ._aux_common import _aux_get_bus
 
 
-def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl):
+def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, can_be_pv=None):
     """Add every HVDC line of ``net`` (VSC / LCC converter stations, possibly
     carrying the angle-droop ("AC emulation") extension) to ``model``. Returns
     ``(df_dc, hvdc_sub_from_id, hvdc_sub_to_id)``, used by the final
-    substation-id bookkeeping and ``return_sub_id`` in `initLSGrid.py`."""
+    substation-id bookkeeping and ``return_sub_id`` in `initLSGrid.py`.
+
+    The converter station ids ``can_be_pv`` holds (what `bake_outer_loops` returns for
+    the VSC stations it froze at a reactive limit, or a boolean Series indexed by id)
+    are flagged with ``LSGrid.set_hvdc_can_be_pv``, per line and side."""
     if sort_index:
         df_dc = net.get_hvdc_lines().sort_index()
     else:
@@ -127,5 +131,17 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         elif ex_disc:
             model.deactivate_dcline_side2(hvdc_id)
     model.set_dcline_names(df_dc.index)
+
+    # the VSC stations an outer loop froze at a reactive limit: nothing in the powerflow
+    # reads the flag, it only opens them to the physical check of their PQ -> PV release
+    if can_be_pv is not None and nb_dc and not (isinstance(can_be_pv, np.ndarray) and can_be_pv.dtype == bool):
+        if isinstance(can_be_pv, pd.Series):
+            ids = pd.Index(can_be_pv.index[can_be_pv.astype(bool).to_numpy()].astype(str))
+        else:
+            ids = pd.Index([str(el) for el in can_be_pv])
+        side_1 = df_dc["converter_station1_id"].isin(ids).to_numpy(bool)
+        side_2 = df_dc["converter_station2_id"].isin(ids).to_numpy(bool)
+        if side_1.any() or side_2.any():
+            model.set_hvdc_can_be_pv(side_1, side_2)
 
     return df_dc, hvdc_sub_from_id, hvdc_sub_to_id

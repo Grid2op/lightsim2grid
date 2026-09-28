@@ -18,6 +18,10 @@
 #include <string>
 #include <vector>
 
+// feature test for code built against this header (eg gpusim2grid): release entries carry a
+// `side` (the VSC converter station's end of an HVDC entry)
+#define LS2G_HAS_RELEASE_ENTRY_SIDE 1
+
 namespace ls2g {
 
 /**
@@ -51,6 +55,11 @@ namespace ls2g {
  * while holding its target, a hair inside the limit at most). No batch axis varies an SVC's
  * target, and no contingency disconnects one: a row checks it against the grid's target.
  *
+ * AND VSC CONVERTER STATIONS. A VSC station of an hvdc line an outer loop froze at a reactive
+ * limit (LSGrid::set_hvdc_can_be_pv) too: reported on the HVDC line, `side` the station's end
+ * (1 or 2), with the same two types. A station regulates its own bus; its limits and its
+ * setpoint are in the generator convention, like a generator's.
+ *
  * WHAT IS CHECKED. A flagged PQ generator, pinned at the NEARER of its two reactive limits
  * (decided once per plan): the flag already says an outer loop froze it at a limit, and a
  * bake freezes it at the output it had, which may sit a hair inside that limit -- so no
@@ -72,9 +81,12 @@ constexpr real_type MIN_REACTIVE_RANGE_MVAR = 1.;
 /// it. Built once per compute() by `build_gen_pv_release_plan`.
 struct GenPvReleaseEntry
 {
-    /// GENERATOR, or SVC for a flagged frozen SVC (then `gen_id` is the svc id)
+    /// GENERATOR, SVC for a flagged frozen SVC (then `gen_id` is the svc id), or HVDC for a
+    /// flagged frozen VSC converter station (then `gen_id` is the hvdc line id and `side` 1
+    /// or 2 the station's end)
     ViolationElementType el_type = ViolationElementType::GENERATOR;
     int gen_id = -1;
+    int side = 0;
     int reg_bus_grid = -1;        ///< the bus it regulates, grid numbering
     int reg_bus_solver = -1;      ///< ... solver numbering (what a row's V is indexed in)
     int gen_bus_solver = -1;      ///< the machine's own bus, solver numbering
@@ -198,6 +210,51 @@ inline void build_gen_pv_release_plan(const LSGrid & grid_model,
         }
         out.gens.push_back(entry);
     }
+
+    // the flagged VSC converter stations an outer loop froze at a limit (LSGrid::set_hvdc_can_be_pv)
+    const HvdcLineContainer & hvdc_lines = grid_model.get_dclines();
+    const std::vector<std::string> & hvdc_names = hvdc_lines.get_names();
+    const std::vector<bool> & hvdc_status = hvdc_lines.get_status_global();
+    for(int hvdc_id = 0; hvdc_id < hvdc_lines.nb(); ++hvdc_id){
+        if(!hvdc_status[hvdc_id]) continue;
+        for(int side = 1; side <= 2; ++side){
+            const ConverterStationContainer & stations = (side == 1) ? hvdc_lines.get_stations_side_1()
+                                                                     : hvdc_lines.get_stations_side_2();
+            const std::vector<bool> & st_can_be_pv = stations.get_can_be_pv();
+            if(static_cast<std::size_t>(hvdc_id) >= st_can_be_pv.size() || !st_can_be_pv[hvdc_id]) continue;
+            if(!stations.get_status()[hvdc_id]) continue;
+            if(stations.is_lcc(hvdc_id)) continue;  // an LCC station never regulates
+            if(stations.get_voltage_regulator_on(hvdc_id)) continue;  // regulating: BusQCheck's
+            const real_type min_q = stations.get_min_q(hvdc_id);
+            const real_type max_q = stations.get_max_q(hvdc_id);
+            if(!std::isfinite(min_q) || !std::isfinite(max_q)) continue;
+            if(max_q - min_q < MIN_REACTIVE_RANGE_MVAR) continue;  // never a voltage controller
+            const real_type target_q = stations.get_target_q()(hvdc_id);  // generator convention
+            // the nearer limit: the flag says an outer loop froze it at one
+            const bool at_min = std::abs(target_q - min_q) <= std::abs(target_q - max_q);
+            const real_type target_vm_pu = stations.get_target_vm_pu(hvdc_id);
+            if(!std::isfinite(target_vm_pu) || target_vm_pu <= 0.) continue;
+            const int bus_grid = stations.get_bus_id()(hvdc_id).cast_int();  // its own bus, the one it regulates
+            if(bus_grid < 0 || bus_grid >= vn_kv.size()) continue;
+            const int bus_solver = id_me_to_solver[bus_grid].cast_int();
+            if(bus_solver == BaseConstants::_deactivated_bus_id) continue;
+
+            GenPvReleaseEntry entry;
+            entry.el_type = ViolationElementType::HVDC;
+            entry.gen_id = hvdc_id;
+            entry.side = side;
+            entry.reg_bus_grid = bus_grid;
+            entry.reg_bus_solver = bus_solver;
+            entry.gen_bus_solver = bus_solver;
+            entry.at_min = at_min;
+            entry.target_vm_pu = target_vm_pu;
+            entry.vn_kv = vn_kv(bus_grid);
+            if(static_cast<std::size_t>(hvdc_id) < hvdc_names.size()){
+                entry.name = hvdc_names[static_cast<std::size_t>(hvdc_id)];
+            }
+            out.gens.push_back(entry);
+        }
+    }
 }
 
 /**
@@ -248,11 +305,11 @@ inline void check_gen_pv_release_violations(const GenPvReleasePlan & plan,
         if(entry.at_min && (vm < target - tol_vm_pu)){
             // absorbing as much as it can, and the voltage is still below the target: it
             // absorbs too much for that target, the loop would let it regulate again
-            out.push_back(LimitViolation{entry.el_type, entry.gen_id, 0,
+            out.push_back(LimitViolation{entry.el_type, entry.gen_id, entry.side,
                                          LimitViolationType::LOW_VOLTAGE_AT_MIN_Q,
                                          vm * entry.vn_kv, target * entry.vn_kv, entry.name});
         } else if(!entry.at_min && (vm > target + tol_vm_pu)){
-            out.push_back(LimitViolation{entry.el_type, entry.gen_id, 0,
+            out.push_back(LimitViolation{entry.el_type, entry.gen_id, entry.side,
                                          LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q,
                                          vm * entry.vn_kv, target * entry.vn_kv, entry.name});
         }

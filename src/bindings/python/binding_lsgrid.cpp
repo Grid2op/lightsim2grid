@@ -242,6 +242,14 @@ void bind_gridmodel(py::module_& m) {
         .def("set_storage_can_participate_slack", &LSGrid::set_storage_can_participate_slack,
              py::arg("flags"), py::arg("weights"),
              "The same as `set_gen_can_participate_slack`, for the storage units.")
+        .def("set_hvdc_can_be_pv", &LSGrid::set_hvdc_can_be_pv,
+             py::arg("side_1"), py::arg("side_2"),
+             "The generators' set_gen_can_be_pv, for the VSC converter stations of the hvdc lines: one "
+             "bool per line for its side 1 station, one for its side 2 (`ConverterStationInfo.can_be_pv`, "
+             "False by default), never enforced and never read by a powerflow. The physical checks "
+             "report a flagged fixed-Q station whose bus would make an outer loop switch it back to "
+             "voltage control (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q on the HVDC line, `side` the "
+             "station's end). `init_from_pypowsybl(can_be_pv=...)` fills it from what `bake_outer_loops` froze.")
         .def("set_svc_can_be_pv", &LSGrid::set_svc_can_be_pv,
              py::arg("can_be_pv"),
              "The generators' set_gen_can_be_pv, for the SVCs: flag the SVCs an outer loop froze "

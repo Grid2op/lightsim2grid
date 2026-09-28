@@ -33,6 +33,9 @@ class LS2G_API ConverterStationInfo final : public OneSideContainer_PQ::OneSideP
         real_type min_q_mvar;
         real_type max_q_mvar;
         real_type power_factor;  // LCC only
+        // a VSC station an outer loop froze at a reactive limit (see
+        // ConverterStationContainer::set_can_be_pv); false by default, never read by a powerflow
+        bool can_be_pv;
 
         inline ConverterStationInfo(const ConverterStationContainer & r_data_station, int my_id) noexcept;
 };
@@ -88,7 +91,8 @@ class LS2G_API ConverterStationContainer final : public VoltageSourceContainer<C
            std::vector<real_type>,  // target_vm_pu_
            std::vector<real_type>,  // min_q_
            std::vector<real_type>,  // max_q_
-           std::vector<real_type>   // power_factor_
+           std::vector<real_type>,  // power_factor_
+           std::vector<bool>        // can_be_pv_ (appended; all false by default)
         >;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -99,6 +103,7 @@ class LS2G_API ConverterStationContainer final : public VoltageSourceContainer<C
             MIN_Q,
             MAX_Q,
             POWER_FACTOR,
+            CAN_BE_PV,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -127,6 +132,19 @@ class LS2G_API ConverterStationContainer final : public VoltageSourceContainer<C
         real_type get_min_q(int station_id) const {return min_q_.coeff(station_id);}
         real_type get_max_q(int station_id) const {return max_q_.coeff(station_id);}
         real_type get_target_p(int station_id) const {return target_p_mw_(station_id);}
+
+        /**
+         * The generators' `can_be_pv`, for the VSC stations: the ones a caller knows an
+         * outer loop froze at a reactive limit (one bool per station, false by default).
+         * Never enforced nor read by a powerflow: it only opens that station to the
+         * PQ -> PV release check (GenPvReleaseCheck.hpp).
+         */
+        void set_can_be_pv(const std::vector<bool> & can_be_pv){
+            check_size(can_be_pv, nb(), "ConverterStationContainer::set_can_be_pv");
+            can_be_pv_ = can_be_pv;
+        }
+        bool get_can_be_pv(int station_id) const {return can_be_pv_[station_id];}
+        const std::vector<bool> & get_can_be_pv() const {return can_be_pv_;}
 
         /**
          * Set the (derived) station active power, generator convention.
@@ -165,6 +183,8 @@ class LS2G_API ConverterStationContainer final : public VoltageSourceContainer<C
         RealVect min_q_;                         // when regulating
         RealVect max_q_;                         // when regulating
         RealVect power_factor_;                  // LCC only
+        // frozen at a reactive limit by an outer loop (see set_can_be_pv): never read by a powerflow
+        std::vector<bool> can_be_pv_;
 };
 
 inline ConverterStationInfo::ConverterStationInfo(const ConverterStationContainer & r_data_station, int my_id) noexcept:
@@ -175,7 +195,8 @@ voltage_regulator_on(false),
 target_vm_pu(0.),
 min_q_mvar(0.),
 max_q_mvar(0.),
-power_factor(1.)
+power_factor(1.),
+can_be_pv(false)
 {
     if((my_id >= 0) && (my_id < r_data_station.nb()))
     {
@@ -186,6 +207,7 @@ power_factor(1.)
         min_q_mvar = r_data_station.min_q_.coeff(my_id);
         max_q_mvar = r_data_station.max_q_.coeff(my_id);
         power_factor = r_data_station.power_factor_.coeff(my_id);
+        can_be_pv = r_data_station.can_be_pv_[my_id];
     }
 }
 

@@ -20,7 +20,10 @@ enum class LS2G_API ViolationElementType : int {
     LINE = 1,
     TRAFO = 2,
     GRID = 3,  // the whole grid / contingency, not a specific element (see LimitViolationType::DIVERGENCE)
-    HVDC = 4,  // an hvdc line, by its own id (see LimitViolationType::HIGH_P)
+    // an hvdc line, by its own id (see LimitViolationType::HIGH_P); also the release of one of
+    // its VSC stations frozen at a reactive limit (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q,
+    // `side` the station's end, see LSGrid::set_hvdc_can_be_pv)
+    HVDC = 4,
     // a generator, by its own id. Its ACTIVE power (LOW_P / HIGH_P) and, for a PQ machine
     // pinned at a reactive limit, the voltage of the bus it would regulate
     // (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q). A REGULATING machine's reactive

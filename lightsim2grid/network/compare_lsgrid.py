@@ -181,6 +181,8 @@ ATTR_STATION_INPUT = [
     "min_q_mvar",
     "max_q_mvar",
     "power_factor",
+    # a VSC station a caller flagged as frozen at a reactive limit (LSGrid.set_hvdc_can_be_pv)
+    "can_be_pv",
 ]
 
 

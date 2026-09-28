@@ -484,7 +484,10 @@ void bind_batch(py::module_& m) {
                "The whole grid / contingency, not a specific element (see LimitViolationType.NOT_SIMULATED "
                "/ LimitViolationType.DIVERGENCE).")
         .value("HVDC", ViolationElementType::HVDC,
-               "An hvdc line, by its own id (see LimitViolationType.HIGH_P).")
+               "An hvdc line, by its own id (see LimitViolationType.HIGH_P) -- also the release of "
+               "one of its VSC stations frozen at a reactive limit (LimitViolationType."
+               "LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q, `side` the station's end, see "
+               "LSGrid.set_hvdc_can_be_pv).")
         .value("GENERATOR", ViolationElementType::GENERATOR,
                "A generator, by its own id -- its ACTIVE power (LimitViolationType.LOW_P / "
                "HIGH_P) and, for a PQ machine flagged as pinned at a reactive limit, the "

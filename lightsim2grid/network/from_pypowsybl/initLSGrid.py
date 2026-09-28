@@ -226,9 +226,11 @@ def init(net : pypo.network.Network,
         / ``GenInfo.can_be_pv``); a static var compensator whose ``standbyAutomaton`` says
         ``standby`` as a standby SVC left idle, its thresholds handed to
         ``LSGrid.set_svc_standby``; any other static var compensator as frozen at a reactive
-        limit (``LSGrid.set_svc_can_be_pv`` / ``SvcInfo.can_be_pv``). Nothing in a powerflow
-        reads it: it only opens those elements to the physical check of that switch
-        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on a generator or a frozen SVC,
+        limit (``LSGrid.set_svc_can_be_pv`` / ``SvcInfo.can_be_pv``); a VSC converter station as
+        frozen at a reactive limit (``LSGrid.set_hvdc_can_be_pv`` / ``ConverterStationInfo.can_be_pv``,
+        per hvdc line and side). Nothing in a powerflow reads it: it only opens those elements to
+        the physical check of that switch (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on
+        a generator, a frozen SVC or the hvdc line of a frozen station,
         ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on an idle standby SVC, see
         ``LSGrid.get_physical_violations``). An unknown id raises.
     :type can_be_pv: None, Iterable[str], pandas.Series or numpy.ndarray
@@ -273,7 +275,11 @@ def init(net : pypo.network.Network,
     )
 
     # generators (`can_be_pv` may also hold static var compensator ids, see _aux_add_svc)
-    svc_ids = net.get_static_var_compensators(attributes=["connected"]).index if can_be_pv is not None else None
+    # (and VSC converter station ids, see _aux_add_hvdc)
+    svc_ids = None
+    if can_be_pv is not None:
+        svc_ids = net.get_static_var_compensators(attributes=["connected"]).index.append(
+            net.get_vsc_converter_stations(attributes=["connected"]).index)
     df_gen, gen_sub = _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
                                           can_be_pv=can_be_pv, can_be_pv_other_ids=svc_ids)
 
@@ -309,6 +315,7 @@ def init(net : pypo.network.Network,
     # HVDC lines
     df_dc, hvdc_sub_from_id, hvdc_sub_to_id = _aux_add_hvdc(
         model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
+        can_be_pv=can_be_pv,
     )
 
     # storage units

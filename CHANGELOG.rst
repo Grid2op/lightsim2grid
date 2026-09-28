@@ -207,9 +207,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
-- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 14: ``SvcContainer`` serializes the standby automaton
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 15: ``SvcContainer`` serializes the standby automaton
   and the ``can_be_pv`` flag of each SVC, the generators and storage units their "can participate
-  in the slack" weight. Files of format 11 no longer load.
+  in the slack" weight, the converter stations their ``can_be_pv`` flag. Files of format 11 no
+  longer load.
 - [ADDED] Physical check of the idle SVCs under a standby automaton (``LSGrid.set_svc_standby``):
   a regulated bus outside the automaton's thresholds, which OpenLoadFlow's
   ``MonitoringVoltageOuterLoop`` answers by switching the SVC on, is reported as
@@ -227,6 +228,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   left out of the slack only because it sat at an active limit takes part in the redistribution
   pre-pass, away from that limit, as OpenLoadFlow lets it. ``bake_outer_loops(...,
   return_details=True)`` returns the units OLF capped, for ``init_from_pypowsybl(can_participate_slack=...)``.
+- [ADDED] The PQ -> PV release check for the VSC converter stations: ``LSGrid.set_hvdc_can_be_pv``
+  (``ConverterStationInfo.can_be_pv``), reported on the HVDC line, ``side`` the station's end.
+  ``bake_outer_loops`` returns the stations it froze at a reactive limit, in ``can_be_pv``.
 - [FIXED] The PQ -> PV release check skipped a ``can_be_pv`` generator frozen a hair inside its
   reactive limit (the bake keeps the output it had): it required its setpoint within ``tol_mva``
   of the limit. A flagged generator is now pinned at the nearer of its limits.

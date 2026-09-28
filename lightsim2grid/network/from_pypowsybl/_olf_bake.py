@@ -354,6 +354,8 @@ def bake_outer_loops(
           the exactly saturated ones included when ``bake_saturated_voltage_control`` is
           set): what OLF's ``ReactiveLimits`` loop pinned, and what it would release again
           on a grid asking them for less;
+        * the VSC converter stations it froze as PQ at a reactive limit, by the generators'
+          rule (reported on their hvdc line, ``side`` the station's end);
         * the voltage-mode static var compensators it froze to fixed-Q at the edge of their
           susceptance range, by the same rule (see :func:`_bake_svc_saturation`);
         * the static var compensators whose standby automaton it left idle (frozen to
@@ -996,6 +998,7 @@ def _bake_reactive_limit_switches(
         vsc = _keep_only_main_comp(vsc, df_bus)
     if extrapolate_reactive_limits:
         vsc = _extrapolate_curve_limits(network, vsc)
+    frozen_vsc = pd.Index([], dtype=object)
     if len(vsc):
         mask, q_gen = _bound_at_qlimit(vsc, vsc["voltage_regulator_on"])
         if mask.any():
@@ -1003,6 +1006,8 @@ def _bake_reactive_limit_switches(
             upd["target_q"] = _baked_q_at_limit(vsc, q_gen)[mask]
             upd["voltage_regulator_on"] = False
             network.update_vsc_converter_stations(upd)
+            # like a generator frozen at a limit: what the loop would release again
+            frozen_vsc = pd.Index(vsc.index[mask], dtype=object)
 
     idle_svc = _bake_svc_standby(network, keep_only_main_comp, df_bus)
     saturated_svc = _bake_svc_saturation(network, keep_only_main_comp, df_bus,
@@ -1010,7 +1015,7 @@ def _bake_reactive_limit_switches(
     # the generators and the SVCs this step froze AT A REACTIVE LIMIT (not the ones the
     # other rules switched off), and the standby SVCs it left idle: the ones an outer loop
     # would switch (back) to voltage control, see `bake_outer_loops`
-    return pinned.append(saturated_svc).append(idle_svc)
+    return pinned.append(frozen_vsc).append(saturated_svc).append(idle_svc)
 
 
 def _bake_svc_standby(network, keep_only_main_comp=True, df_bus=None):
