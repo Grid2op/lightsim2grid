@@ -190,13 +190,16 @@ class ScenarioSweep:
     @property
     def redistribute_slack(self):
         """Whether the active power a row loses (the generators its generator contingency
-        disconnects, and the elements of an island cut off with
-        :attr:`handle_disconnected_grid`) is first shared on the remaining units of the
+        disconnects, the elements of an island cut off with
+        :attr:`handle_disconnected_grid`, and the imbalance its own :func:`modify_gen_p` /
+        :func:`modify_sgen_p` / :func:`modify_load_p` create against the grid's targets) is
+        first shared on the remaining units of the
         distributed slack as OpenLoadFlow's ``DistributedSlack`` outer loop does:
         proportionally to their weight, each one clamped to its ``[min_p, max_p]`` and never
         crossing 0 MW, a clamped unit leaving the pool (and that row's distributed slack), the
         powerflow then only sharing what is left (the change in the losses) on the units that
-        can still move.
+        can still move. A line / trafo contingency that leaves the grid connected loses no
+        injection: the change in the losses it causes is left to the powerflow.
         Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
         clamp anything. Same name/semantics as
         :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.redistribute_slack`.

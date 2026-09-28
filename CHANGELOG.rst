@@ -294,6 +294,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``ScenarioSweep``: the same OLF-style bounded redistribution of the power a row loses (a
   generator contingency, or an island cut off with ``handle_disconnected_grid``) before its
   powerflow, the saturated units leaving that row's distributed slack.
+- [IMPROVED] ``ScenarioSweep.redistribute_slack`` also shares, before each row's powerflow, the
+  active imbalance its ``modify_gen_p`` / ``modify_sgen_p`` / ``modify_load_p`` create against
+  the grid's own targets.
 - [ADDED] ``LSGrid.get_physical_violations(ac=True, tol_mva=1e-4)``: the physical-limit checks of
   the batch algorithms (``compute_physical_violations``: reactive capability of the voltage
   controllers, hvdc max power, generators / storage units pushed past their p limits by the

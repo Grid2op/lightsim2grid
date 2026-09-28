@@ -127,6 +127,19 @@ things instead:
 The lost MW is picked up by the slack. If you want a redispatch instead, express it
 with `modify_gen_p` -- that is what it is for.
 
+With `redistribute_slack = True`, the active power a row takes out of the balance of the
+grid's own targets is first shared on the units of the distributed slack, OpenLoadFlow
+style (proportionally to their weight, each one clamped to its `[min_p, max_p]`, a
+clamped unit leaving that row's distributed slack), before the powerflow. It counts:
+
+- the set-points of the generators the row disconnects;
+- the net injection of the islands cut off with `handle_disconnected_grid`;
+- the imbalance of the row's own injections: `sum(gen_p - target)` over the generators
+  and static generators minus `sum(load_p - target)` over the loads.
+
+A line or transformer contingency that leaves the grid connected loses no injection:
+the change in the losses it causes is left to the powerflow's distributed slack.
+
 .. code-block:: python
 
     import numpy as np

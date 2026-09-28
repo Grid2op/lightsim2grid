@@ -851,8 +851,10 @@ void bind_batch(py::module_& m) {
                       [](const ScenarioSweep & self){ return self.get_redistribute_slack(); },
                       [](ScenarioSweep & self, bool val){ self.set_redistribute_slack(val); },
                       "Whether the active power a row loses -- the generators its generator "
-                      "contingency disconnects, and the elements of an island cut off with "
-                      "handle_disconnected_grid -- is first shared on the remaining units of the "
+                      "contingency disconnects, the elements of an island cut off with "
+                      "handle_disconnected_grid, and the imbalance its own modify_gen_p / "
+                      "modify_sgen_p / modify_load_p create against the grid's targets -- is "
+                      "first shared on the remaining units of the "
                       "distributed slack as OpenLoadFlow's DistributedSlack outer loop does "
                       "(proportionally to their weight, each one clamped to its [min_p, max_p], a "
                       "clamped unit leaving the pool and the slack), the solve then only sharing "

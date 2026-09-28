@@ -147,6 +147,33 @@ void SbusPolicy::Vary::fill_row(Eigen::Index i, CplxVect & row) const
     row += constant_pu_;
 }
 
+real_type SbusPolicy::Vary::row_p_change_mw(Eigen::Index i) const
+{
+    real_type res = 0.;
+    if(gen_p.rows() > 0 && i < gen_p.rows()){
+        for(size_t g = 0; g < gen_bus_.size(); ++g){
+            if(gen_bus_[g] < 0) continue;
+            const Eigen::Index gen_id = static_cast<Eigen::Index>(g);
+            res += gen_p(i, gen_id) - gen_target_p_(gen_id);
+        }
+    }
+    if(sgen_p.rows() > 0 && i < sgen_p.rows()){
+        for(size_t g = 0; g < sgen_bus_.size(); ++g){
+            if(sgen_bus_[g] < 0) continue;
+            const Eigen::Index sgen_id = static_cast<Eigen::Index>(g);
+            res += sgen_p(i, sgen_id) - sgen_target_p_(sgen_id);
+        }
+    }
+    if(load_p.rows() > 0 && i < load_p.rows()){
+        for(size_t l = 0; l < load_bus_.size(); ++l){
+            if(load_bus_[l] < 0) continue;
+            const Eigen::Index load_id = static_cast<Eigen::Index>(l);
+            res -= load_p(i, load_id) - load_target_p_(load_id);
+        }
+    }
+    return res;
+}
+
 const SbusPolicy::Vary::CplxMat & SbusPolicy::Vary::materialize() const
 {
     if(sbuses.rows() == nb_steps_ && sbuses.cols() == nb_buses_solver_ && nb_steps_ > 0) return sbuses;

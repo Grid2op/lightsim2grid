@@ -2401,6 +2401,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         real_type _load_target_p_in_row(size_t, int load_id) const { return _grid_model.get_load_target_p()(load_id); }
 
+        // what row i's own injections (modify_gen_p / modify_sgen_p / modify_load_p)
+        // take out of the active balance of the grid's targets, in MW and generator
+        // convention: minus SbusPolicy::Vary::row_p_change_mw. 0 where the injection
+        // does not vary (ContingencyAnalysis).
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        real_type _row_injection_change_lost_mw(size_t i) const {
+            return -sbus_policy_.row_p_change_mw(static_cast<Eigen::Index>(i));
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        real_type _row_injection_change_lost_mw(size_t) const { return 0.; }
+
         // the grid's own target of a slack unit, generator convention (a storage unit's
         // target is in load convention)
         real_type _grid_target_p_of(ViolationElementType el_type, int el_id) const {
@@ -2473,7 +2484,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //       their rows are masked in the solve, so the balance loses their net
         //       injection. Element-wise rather than the real part of the row's
         //       injection over the masked buses, which in DC would count the
-        //       phase-shifter term.
+        //       phase-shifter term, plus
+        //   (c) what the row's own injections take out of the balance of the grid's
+        //       targets (a ScenarioSweep's modify_gen_p / modify_sgen_p /
+        //       modify_load_p): sum(target - row) over the generators and static
+        //       generators minus the same over the loads, every element of the solved
+        //       system counted -- those (a) and (b) then take out included, at their
+        //       row value, so nothing is counted twice.
+        // A line or transformer that leaves the grid connected loses no injection:
+        // the change in the losses it causes stays with the solve's distributed slack.
         // The participants are the slack units left in the main component and not
         // disconnected by the row, and the units flagged "can participate in the slack"
         // (see SlackParticipation::set_can_participate); slack_redistribution::distribute
@@ -2541,6 +2560,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     lost_mw += slack_redistribution::sum_hvdc_station_setpoints_if(
                         _grid_model.get_dclines(), in_island);
                 }
+                // (c) the row's own injection change
+                lost_mw += _row_injection_change_lost_mw(i);
                 if(std::abs(lost_mw) <= eps_mw) continue;
 
                 units.clear();

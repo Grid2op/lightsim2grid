@@ -251,10 +251,13 @@ class TestScenarioSweepRedistributeSlack(_Base):
 
     def _reference(self, gen_off, row_p=None):
         ref = self.grid.copy()
+        lost = 0.
         if row_p is not None:
             for g in range(self.n_gen):
                 ref.change_p_gen(g, float(row_p[g]))
-        lost = float(row_p[gen_off]) if row_p is not None else float(self.targets[gen_off])
+            # what the row's own set-points take out of the balance of the grid's targets
+            lost += float(np.sum(self.targets - row_p))
+        lost += float(row_p[gen_off]) if row_p is not None else float(self.targets[gen_off])
         ref.deactivate_gen(gen_off)
         report = ref.redistribute_active_power(lost)
         V = ref.ac_pf(1. * self.V0, _MAX_IT, _TOL)
@@ -300,7 +303,8 @@ class TestScenarioSweepRedistributeSlack(_Base):
                                    rtol=0., atol=1e-6)
 
     def test_row_setpoints_are_the_rows_own(self):
-        # modify_gen_p: the lost power (and the units' starting points) are the ROW's
+        # modify_gen_p: the lost power (and the units' starting points) are the ROW's, and
+        # the row's own imbalance against the grid's targets is shared too
         others = [g for g in range(self.n_gen) if g not in (self.slack_gen, self.non_slack)]
         max_p = np.full(self.n_gen, np.inf)
         max_p[others[0]] = self.targets[others[0]] + 2.
@@ -324,6 +328,153 @@ class TestScenarioSweepRedistributeSlack(_Base):
         sweep_plain.set_contingency_gens(gen_mask)
         sweep_plain.compute(1. * self.V0, _MAX_IT, _TOL)
         np.testing.assert_array_equal(sweep_off.get_voltages(), sweep_plain.get_voltages())
+
+
+class TestScenarioSweepInjectionChange(_Base):
+    """``redistribute_slack`` on a ScenarioSweep also shares what the row's own injections
+    (``modify_gen_p`` / ``modify_load_p``) take out of the balance of the grid's targets:
+    sum(target - row) on the generators, minus the same on the loads."""
+
+    def setUp(self):
+        super().setUp()
+        self.non_slack = [g.id for g in self.grid.get_generators() if g.bus_id == 2][0]
+        self.grid.remove_gen_slackbus(self.non_slack)
+        self.grid.change_p_gen(self.non_slack, 20.)
+        self.targets = np.array([g.target_p_mw for g in self.grid.get_generators()])
+        self.load_targets = np.array([l.target_p_mw for l in self.grid.get_loads()])
+        self.n_load = self.load_targets.shape[0]
+        self.n_trafo = len(self.grid.get_trafos())
+        self.all_buses = np.asarray(self.grid.id_ac_solver_to_me(), dtype=int)
+        # a unit, neither the reference slack (generator 0) nor the leaf one, that the
+        # shares below push past a bound
+        self.clamped = [g for g in range(1, self.n_gen) if g not in (self.leaf_gen, self.non_slack)][0]
+
+    def _limit(self, lo=-np.inf, hi=np.inf):
+        min_p = np.full(self.n_gen, -np.inf)
+        max_p = np.full(self.n_gen, np.inf)
+        min_p[self.clamped] = self.targets[self.clamped] + lo
+        max_p[self.clamped] = self.targets[self.clamped] + hi
+        self.grid.set_gen_p_limits(min_p, max_p)
+
+    def _sweep(self, gen_p=None, load_p=None, gen_off=None, island=False, dc=False, redistribute=True):
+        sweep = ScenarioSweepCPP(self.grid)
+        if dc:
+            sweep.change_algorithm(AlgorithmType.DC_SparseLU)
+        if gen_p is not None:
+            sweep.modify_gen_p(gen_p)
+        if load_p is not None:
+            sweep.modify_load_p(load_p)
+        n_rows = (gen_p if gen_p is not None else load_p).shape[0]
+        if gen_off is not None:
+            mask = np.zeros((n_rows, self.n_gen), dtype=bool)
+            mask[:, gen_off] = True
+            sweep.set_contingency_gens(mask)
+        if island:
+            if self.leaf_branch < self.n_line:
+                mask = np.zeros((n_rows, self.n_line), dtype=bool)
+                mask[:, self.leaf_branch] = True
+                sweep.set_contingency_lines(mask)
+            else:
+                mask = np.zeros((n_rows, self.n_trafo), dtype=bool)
+                mask[:, self.leaf_branch - self.n_line] = True
+                sweep.set_contingency_trafos(mask)
+            sweep.handle_disconnected_grid = True
+        sweep.redistribute_slack = redistribute
+        sweep.compute(1. * self.V0, _MAX_IT, _TOL)
+        return sweep
+
+    def _reference(self, gen_p, load_p, gen_off=None, island=False, dc=False):
+        """the one-off path: the row's set-points on a copy of the grid, the elements
+        really removed, the total lost power redistributed, then the powerflow"""
+        ref = self.grid.copy()
+        for g in range(self.n_gen):
+            ref.change_p_gen(g, float(gen_p[g]))
+        for l in range(self.n_load):
+            ref.change_p_load(l, float(load_p[l]))
+        lost = float(np.sum(self.targets - gen_p)) - float(np.sum(self.load_targets - load_p))
+        if gen_off is not None:
+            lost += float(gen_p[gen_off])
+            ref.deactivate_gen(gen_off)
+        if island:
+            if self.leaf_branch < self.n_line:
+                ref.deactivate_powerline(self.leaf_branch)
+            else:
+                ref.deactivate_trafo(self.leaf_branch - self.n_line)
+            ref.consider_only_main_component(False)
+            # the leaf bus only holds the leaf generator
+            if gen_off != self.leaf_gen:
+                lost += float(gen_p[self.leaf_gen])
+        report = ref.redistribute_active_power(lost)
+        self.assertAlmostEqual(report.mismatch_mw, lost, places=9)
+        V = ref.dc_pf(1. * self.V0, _MAX_IT, _TOL) if dc else ref.ac_pf(1. * self.V0, _MAX_IT, _TOL)
+        self.assertGreater(V.shape[0], 0, "the one-off reference diverged")
+        return V, report
+
+    def _check_rows(self, sweep, gen_p, load_p, buses, **kwargs):
+        for row in range(gen_p.shape[0]):
+            with self.subTest(row=row):
+                self.assertTrue(sweep.converged_mask()[row])
+                V_ref, _ = self._reference(gen_p[row], load_p[row], **kwargs)
+                self._assert_same_state(sweep.get_voltages()[row], V_ref, buses, dc=kwargs.get("dc", False))
+
+    def _load_rows(self):
+        loads = np.vstack([self.load_targets] * 3)
+        loads[1, 1] += 15.
+        loads[2, 3] -= 10.
+        return loads
+
+    def test_load_change_is_shared(self):
+        # +15 MW of load: the clamped unit can only take 2 of its share
+        self._limit(lo=-2., hi=2.)
+        load_p = self._load_rows()
+        gen_p = np.vstack([self.targets] * load_p.shape[0])
+        sweep = self._sweep(load_p=load_p)
+        self._check_rows(sweep, gen_p, load_p, self.all_buses)
+        # ... and it is not what the unbounded slack gives
+        sweep_off = self._sweep(load_p=load_p, redistribute=False)
+        self.assertGreater(np.max(np.abs(sweep_off.get_voltages()[1] - sweep.get_voltages()[1])), 1e-6)
+        # a row that changes nothing is left as it was
+        np.testing.assert_array_equal(sweep_off.get_voltages()[0], sweep.get_voltages()[0])
+
+    def test_load_change_is_shared_dc(self):
+        self._limit(lo=-2., hi=2.)
+        load_p = self._load_rows()
+        gen_p = np.vstack([self.targets] * load_p.shape[0])
+        sweep = self._sweep(load_p=load_p, dc=True)
+        self._check_rows(sweep, gen_p, load_p, self.all_buses, dc=True)
+
+    def test_gen_change_is_shared(self):
+        # the non-slack machine produces 30 MW more: the slack units take it back, the
+        # clamped one only down to 2 MW below its target
+        self._limit(lo=-2.)
+        gen_p = np.vstack([self.targets] * 2)
+        gen_p[1, self.non_slack] += 30.
+        load_p = np.vstack([self.load_targets] * 2)
+        sweep = self._sweep(gen_p=gen_p)
+        self._check_rows(sweep, gen_p, load_p, self.all_buses)
+
+    def test_balanced_row_is_unchanged(self):
+        self._limit(lo=-2., hi=2.)
+        gen_p = self.targets.reshape(1, -1).copy()
+        gen_p[0, self.non_slack] += 10.
+        load_p = self.load_targets.reshape(1, -1).copy()
+        load_p[0, 2] += 10.
+        res = []
+        for redistribute in (False, True):
+            sweep = self._sweep(gen_p=gen_p, load_p=load_p, redistribute=redistribute)
+            self.assertTrue(sweep.converged_mask()[0])
+            res.append(sweep.get_voltages())
+        np.testing.assert_array_equal(res[0], res[1])
+
+    def test_injection_change_with_island_and_gen_off(self):
+        # one row: the leaf generator islanded, the non-slack one disconnected, a load
+        # raised and the generators' set-points moved
+        self._limit(lo=-3., hi=3.)
+        gen_p = 1.05 * self.targets.reshape(1, -1)
+        load_p = self.load_targets.reshape(1, -1).copy()
+        load_p[0, 1] += 12.
+        sweep = self._sweep(gen_p=gen_p, load_p=load_p, gen_off=self.non_slack, island=True)
+        self._check_rows(sweep, gen_p, load_p, self.solved, gen_off=self.non_slack, island=True)
 
 
 if __name__ == "__main__":
