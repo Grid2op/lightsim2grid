@@ -53,21 +53,21 @@ class Protections
         double get_update_rho_time() const {return timer_update_rho_;}
 
         // setters
-        void set_thermal_limit_or(Eigen::Ref<RealVect> thermal_limit_or){
+        void set_thermal_limit_or(const Eigen::Ref<const RealVect> & thermal_limit_or){
             if(has_been_checked_){
                 // I need to maintain consistency with the grid size
                 aux_check_size(thermal_limit_or, "set_thermal_limit_or");
             }
             thermal_limit_or_ = thermal_limit_or;
         } 
-        void set_thermal_limit_ex(Eigen::Ref<RealVect> thermal_limit_ex){
+        void set_thermal_limit_ex(const Eigen::Ref<const RealVect> & thermal_limit_ex){
             if(has_been_checked_){
                 // I need to maintain consistency with the grid size
                 aux_check_size(thermal_limit_ex, "set_thermal_limit_ex");
             }
             thermal_limit_ex_ = thermal_limit_ex;
         } 
-        void set_max_line_time_step_overflow(Eigen::Ref<Eigen::VectorXi> max_line_time_step_overflow){
+        void set_max_line_time_step_overflow(const Eigen::Ref<const Eigen::VectorXi> & max_line_time_step_overflow){
             if(has_been_checked_){
                 // I need to maintain consistency with the grid size
                 aux_check_size(max_line_time_step_overflow, "set_max_line_time_step_overflow");

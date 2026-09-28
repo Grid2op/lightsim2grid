@@ -117,7 +117,7 @@ class SlackParticipation
          * elements to leave out on top of the participation rule -- what a batch sweep
          * uses for a row whose contingency disconnects a participant.
          */
-        void accumulate_raw(RealVect & res,
+        void accumulate_raw(Eigen::Ref<RealVect> res,
                             const std::vector<bool> & status,
                             const GlobalBusIdVect & bus_id,
                             const SolverBusIdVect & id_grid_to_solver,
@@ -162,7 +162,7 @@ class SlackParticipation
          * families included. `sign` is +1 for a container in generator convention, -1
          * for one in load convention.
          */
-        void split(RealVect & res_p,
+        void split(Eigen::Ref<RealVect> res_p,
                    real_type sign,
                    const Eigen::Ref<const RealVect> & node_mismatch,
                    const Eigen::Ref<const RealVect> & bus_raw_total,

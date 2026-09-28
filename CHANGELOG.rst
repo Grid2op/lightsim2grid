@@ -190,6 +190,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.0.1] 2026-xx-yy
 --------------------
+- [ADDED] documentation page for the light environment (``docs/light_env.rst``) and a
+  benchmark against grid2op on ``l2rpn_case14_sandbox`` (``benchmarks/light_env.py``).
+- [FIXED] light environment: the ``Protections`` setters refused float32 (grid2op's thermal
+  limits) and read-only arrays; they now take any numeric array.
 - [ADDED] ``ScenarioSweep.set_topo_actions``: one topological action per row (a grid2op action
   or a ``TopoAction``: ``set_bus`` / ``set_line_status``), checked against the grid and played
   on top of the row's injections and masks -- disconnections, reconnections and elements moved

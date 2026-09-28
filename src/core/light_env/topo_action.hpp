@@ -305,7 +305,7 @@ class TopoAction
             }
         }
 
-        static void aux_check_subid(const IntVect & subids, int nb_el, const std::string & name){
+        static void aux_check_subid(const Eigen::Ref<const IntVect> & subids, int nb_el, const std::string & name){
             if(subids.size() != nb_el){
                 std::ostringstream exc_;
                 exc_ << "TopoAction::check_validity: the grid does not know the substation of its " << name
@@ -328,7 +328,7 @@ class TopoAction
         }
 
         void aux_resolve_one_side(const ElBusMapping & tab, Kind kind, const std::string & name,
-                                  int nb_el, const IntVect & subids, int n_busbar, const LSGrid & grid){
+                                  int nb_el, const Eigen::Ref<const IntVect> & subids, int n_busbar, const LSGrid & grid){
             for(const auto & el : tab){
                 const int el_id = el.first;
                 const int local_bus = el.second;

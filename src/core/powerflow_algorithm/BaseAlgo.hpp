@@ -500,7 +500,7 @@ class LS2G_API BaseAlgo : public BaseConstants
         // bus fixes no |V| -- its set-point is the group's. See
         // VoltageControl::set_v_set_override. Default no-op: an algorithm without a
         // bordered block has no group to set.
-        virtual void set_voltage_control_v_set(const RealVect & /*v_set*/) {}
+        virtual void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & /*v_set*/) {}
 
         // Refactorize-failure fallback of the linear solver (see LinearSolverPolicy::
         // set_refactor_fallback). A value-level edit that changes a bus's role at

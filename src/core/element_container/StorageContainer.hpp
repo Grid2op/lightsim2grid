@@ -156,7 +156,7 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         /// the unit's own (un-normalised) share of the distributed slack
         real_type get_slack_weight(int storage_id) const {return slack_.weight(storage_id);}
         /// add every participating unit's raw weight to its solver bus
-        void accumulate_slack_weights_solver(RealVect & res, const SolverBusIdVect & id_grid_to_solver) const {
+        void accumulate_slack_weights_solver(Eigen::Ref<RealVect> res, const SolverBusIdVect & id_grid_to_solver) const {
             slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, nullptr, _element_name());
         }
         void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}

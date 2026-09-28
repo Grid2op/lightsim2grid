@@ -185,7 +185,7 @@ public:
     void set_may_mask_voltage_control(bool val) override {
         _system.set_may_mask_voltage_control(val);
     }
-    void set_voltage_control_v_set(const RealVect & v_set) override {
+    void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) override {
         _system.set_voltage_control_v_set(v_set);
     }
     void set_refactor_fallback(bool val) override {

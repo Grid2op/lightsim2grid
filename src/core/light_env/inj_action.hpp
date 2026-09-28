@@ -22,15 +22,15 @@ class InjAction
 
     public:
         // TODO
-        InjAction(const RealVect & load_p,
-                  const RealVect & load_q,
-                  const RealVect & gen_p,
-                  const RealVect & gen_v,
-                  const RealVect & storage_p,
-                  const RealVect & shunt_p,
-                  const RealVect & shunt_q,
-                  const RealVect & sgen_p,
-                  const RealVect & sgen_q
+        InjAction(const Eigen::Ref<const RealVect> & load_p,
+                  const Eigen::Ref<const RealVect> & load_q,
+                  const Eigen::Ref<const RealVect> & gen_p,
+                  const Eigen::Ref<const RealVect> & gen_v,
+                  const Eigen::Ref<const RealVect> & storage_p,
+                  const Eigen::Ref<const RealVect> & shunt_p,
+                  const Eigen::Ref<const RealVect> & shunt_q,
+                  const Eigen::Ref<const RealVect> & sgen_p,
+                  const Eigen::Ref<const RealVect> & sgen_q
                   ){
             load_p_ = load_p;
             load_q_ = load_q;
