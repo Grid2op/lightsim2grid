@@ -9,7 +9,9 @@
 #include "SvcContainer.hpp"
 #include "BinaryArchive.hpp"
 
+#include <cmath>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 
@@ -44,8 +46,42 @@ void SvcContainer::init(const std::vector<int> & regulation_mode,
     b_min_ = b_min;
     b_max_ = b_max;
     regulated_bus_id_ = regulated_bus_id;
+    // the standby automaton describes the SVCs this call replaces: none by default
+    standby_ = std::vector<bool>(size, false);
+    standby_low_vm_pu_ = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
+    standby_high_vm_pu_ = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
     _derive_voltage_regulator_on();
     reset_results();
+}
+
+void SvcContainer::set_standby(const std::vector<bool> & standby,
+                               const Eigen::Ref<const RealVect> & low_vm_pu,
+                               const Eigen::Ref<const RealVect> & high_vm_pu)
+{
+    const int size = nb();
+    check_size(standby, size, "SvcContainer::set_standby (standby)");
+    check_size(low_vm_pu, size, "SvcContainer::set_standby (low_vm_pu)");
+    check_size(high_vm_pu, size, "SvcContainer::set_standby (high_vm_pu)");
+    RealVect low = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
+    RealVect high = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
+    for(int svc_id = 0; svc_id < size; ++svc_id){
+        if(!standby[svc_id]) continue;
+        const real_type lo = low_vm_pu(svc_id);
+        const real_type hi = high_vm_pu(svc_id);
+        if(!std::isfinite(lo) || !std::isfinite(hi) || !(lo < hi)){
+            std::ostringstream exc_;
+            exc_ << "SvcContainer::set_standby: the svc with id " << svc_id
+                 << " is flagged standby but its thresholds are not finite with low < high (got low="
+                 << lo << " pu, high=" << hi << " pu).";
+            throw std::runtime_error(exc_.str());
+        }
+        low(svc_id) = lo;
+        high(svc_id) = hi;
+    }
+    // nothing a powerflow reads: no AlgoControl flag to raise
+    standby_ = standby;
+    standby_low_vm_pu_ = low;
+    standby_high_vm_pu_ = high;
 }
 
 SvcContainer::StateRes SvcContainer::get_state() const
@@ -56,7 +92,10 @@ SvcContainer::StateRes SvcContainer::get_state() const
     std::vector<real_type> bmin(b_min_.begin(), b_min_.end());
     std::vector<real_type> bmax(b_max_.begin(), b_max_.end());
     std::vector<int> regulated_bus(regulated_bus_id_.begin(), regulated_bus_id_.end());
-    SvcContainer::StateRes res(get_osc_pq_state(), mode, vm_pu, slope, bmin, bmax, regulated_bus);
+    std::vector<real_type> standby_low(standby_low_vm_pu_.begin(), standby_low_vm_pu_.end());
+    std::vector<real_type> standby_high(standby_high_vm_pu_.begin(), standby_high_vm_pu_.end());
+    SvcContainer::StateRes res(get_osc_pq_state(), mode, vm_pu, slope, bmin, bmax, regulated_bus,
+                               standby_, standby_low, standby_high);
     return res;
 }
 
@@ -69,6 +108,9 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     std::vector<real_type> & bmin = std::get<StateResIdx::B_MIN>(my_state);
     std::vector<real_type> & bmax = std::get<StateResIdx::B_MAX>(my_state);
     std::vector<int> & regulated_bus = std::get<StateResIdx::REGULATED_BUS_ID>(my_state);
+    std::vector<bool> & standby = std::get<StateResIdx::STANDBY>(my_state);
+    std::vector<real_type> & standby_low = std::get<StateResIdx::STANDBY_LOW_VM_PU>(my_state);
+    std::vector<real_type> & standby_high = std::get<StateResIdx::STANDBY_HIGH_VM_PU>(my_state);
 
     const auto size = nb();
     check_size(mode, size, "regulation_mode");
@@ -77,6 +119,9 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     check_size(bmin, size, "b_min");
     check_size(bmax, size, "b_max");
     check_size(regulated_bus, size, "regulated_bus");
+    check_size(standby, size, "standby");
+    check_size(standby_low, size, "standby_low_vm_pu");
+    check_size(standby_high, size, "standby_high_vm_pu");
 
     regulation_mode_ = IntVect::Map(mode.data(), mode.size());
     target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
@@ -84,6 +129,9 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     b_min_ = RealVect::Map(bmin.data(), bmin.size());
     b_max_ = RealVect::Map(bmax.data(), bmax.size());
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
+    standby_ = standby;
+    standby_low_vm_pu_ = RealVect::Map(standby_low.data(), standby_low.size());
+    standby_high_vm_pu_ = RealVect::Map(standby_high.data(), standby_high.size());
     _derive_voltage_regulator_on();
     reset_results();
 }

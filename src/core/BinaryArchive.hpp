@@ -103,7 +103,10 @@ namespace ls2g {
 // v11: GeneratorContainer::StateRes carries the per-generator `can_be_pv_` flag (the PQ
 //     machines a caller knows an outer loop pinned at a reactive limit -- see
 //     LSGrid::set_gen_can_be_pv; all false unless set). Appended.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 11;
+// v12: SvcContainer::StateRes carries the per-SVC standby automaton (`standby_` and its
+//     low / high voltage thresholds -- see LSGrid::set_svc_standby; none unless set).
+//     Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 12;
 
 class LS2G_API BinaryArchive
 {

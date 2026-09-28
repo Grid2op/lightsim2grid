@@ -207,13 +207,19 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
-- [BREAKING] The operational limit checks (``compute_limit_violations`` of the batch
-  algorithms, ``LSGrid.get_violations``) report a value only beyond its limit by more than a
-  relative tolerance, the new ``violation_rel_tol`` (default ``1e-9``; ``rel_tol`` of
-  ``LSGrid.get_violations``): ``v > vmax * (1 + tol)``, ``v < vmin * (1 - tol)``,
-  ``amps > limit * (1 + tol)``. They were ``>=`` / ``<=``, so a value on its limit (*eg* a
-  bus a regulator holds at its ``vmax``) flipped between reported and not with the last bit
-  of rounding, and the one-off solve, the batch and gpusim2grid disagreed.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 12: ``SvcContainer`` serializes the standby automaton
+  of each SVC (see ``LSGrid.set_svc_standby``). Files of format 11 no longer load.
+- [ADDED] Physical check of the idle SVCs under a standby automaton (``LSGrid.set_svc_standby``):
+  a regulated bus outside the automaton's thresholds, which OpenLoadFlow's
+  ``MonitoringVoltageOuterLoop`` answers by switching the SVC on, is reported as
+  ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on the new ``ViolationElementType.SVC``.
+- [ADDED] ``bake_outer_loops`` also returns the standby SVCs it left idle, and
+  ``init_from_pypowsybl(can_be_pv=...)`` flags them with their thresholds.
+- [FIXED] ``bake_outer_loops`` applied the standby automaton to non-regulating SVCs and checked the
+  SVC's own bus: OpenLoadFlow arms it on voltage-mode SVCs only and monitors their regulated bus.
+- [BREAKING] Operational limit checks ignore a value on its limit up to ``violation_rel_tol``
+  (new, default ``1e-9``; ``rel_tol`` of ``LSGrid.get_violations``). They used ``>=`` /
+  ``<=``, so the last bit of rounding decided.
 - [FIXED] ``bake_outer_loops``: a unit dispatched at ``max_p`` / ``min_p`` got a ``target_p`` a
   round-off outside it, so OpenLoadFlow left it out of the slack of the baked grid.
 - [FIXED] ``handle_disconnected_grid``: the PQ -> PV release check (``LOW_VOLTAGE_AT_MIN_Q`` /

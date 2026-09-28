@@ -1930,6 +1930,32 @@ const std::string DocIterator::b_max = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::svc_standby = R"mydelimiter(
+    Whether this SVC, when it does not regulate a voltage (:attr:`regulation_mode` is not
+    ``VOLTAGE``), is one an outer loop left idle under its standby automaton -- so that the
+    automaton would switch it to voltage control should the voltage of the bus it regulates leave
+    :attr:`standby_low_vm_pu` / :attr:`standby_high_vm_pu`. ``False`` by default; set for the
+    whole grid with :func:`lightsim2grid.network.LSGrid.set_svc_standby`, and by
+    ``init_from_pypowsybl(can_be_pv=...)`` from what ``bake_outer_loops`` left idle.
+
+    Nothing enforces or reads it in a powerflow. It only opens the SVC to the physical check of
+    that switch (``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY``, see
+    :func:`lightsim2grid.network.LSGrid.get_physical_violations`).
+
+)mydelimiter";
+
+const std::string DocIterator::svc_standby_low_vm_pu = R"mydelimiter(
+    The low voltage threshold of this SVC's standby automaton, in pu of the nominal voltage of
+    the bus it regulates (see :attr:`standby`); ``NaN`` when it has none.
+
+)mydelimiter";
+
+const std::string DocIterator::svc_standby_high_vm_pu = R"mydelimiter(
+    The high voltage threshold of this SVC's standby automaton, in pu of the nominal voltage of
+    the bus it regulates (see :attr:`standby`); ``NaN`` when it has none.
+
+)mydelimiter";
+
 const std::string DocIterator::svc_regulated_bus_id = R"mydelimiter(
     The grid bus id whose voltage this SVC regulates, when :attr:`regulation_mode` is
     ``VOLTAGE``.
@@ -4118,6 +4144,12 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
       loop would switch it back to PV (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on
       the ``GENERATOR``, ``value`` the regulated voltage and ``limit`` the target, in kV; AC
       only). Only a generator with a reactive range of at least 1 MVAr is a candidate;
+    - a non-regulating SVC flagged with :func:`set_svc_standby` (one an outer loop left idle
+      under its standby automaton) whose regulated bus is below its automaton's low threshold
+      (resp. above its high one) by more than ``tol_vm_pu``: OpenLoadFlow's
+      ``MonitoringVoltageOuterLoop`` would switch it to voltage control
+      (``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on the ``SVC``, ``value`` the
+      regulated voltage and ``limit`` the threshold, in kV; AC only);
     - an hvdc line in angle-droop mode pushed past its maximum power (``HIGH_P``);
     - a generator or storage unit of the distributed slack whose share of the imbalance lands it
       past its ``[min_p, max_p]`` (:func:`set_gen_p_limits` / :func:`set_storage_p_limits`;
@@ -4125,7 +4157,7 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
 
     Nothing is enforced: the solution is what it is, this only reports it. ``tol_mva`` is the
     absolute slack (MW / MVAr) on every power comparison, ``tol_vm_pu`` the one (pu) on the
-    voltage comparison of the PQ -> PV check. Returns a list of ``LimitViolation``
+    voltage comparisons of the PQ -> PV and the standby SVC checks. Returns a list of ``LimitViolation``
     (``element_type``, ``element_id``, ``violation_type``, ``value``, ``limit``, ``name``), empty
     when every limit holds.
 
@@ -7732,8 +7764,9 @@ const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
     magnitude limit) or ``CURRENT`` (a line / transformer thermal limit) for an ordinary,
     element-level violation; ``NOT_SIMULATED`` or ``DIVERGENCE`` for a contingency-level one (see
     :class:`ViolationElementType`'s ``GRID``); ``LOW_Q`` / ``HIGH_Q``, ``LOW_P`` / ``HIGH_P`` and
-    ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` for the physical checks of
-    ``compute_physical_violations`` (see each value's own documentation):
+    ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` and ``LOW_VOLTAGE_SVC_STANDBY`` /
+    ``HIGH_VOLTAGE_SVC_STANDBY`` for the physical checks of ``compute_physical_violations`` (see
+    each value's own documentation):
 
     - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
       solver was never invoked for it.
@@ -7777,14 +7810,17 @@ const std::string DocContingencyAnalysis::violation_type = R"mydelimiter(
 const std::string DocContingencyAnalysis::value = R"mydelimiter(
     The value actually reached (the voltage magnitude or the current, matching
     :attr:`violation_type`; for ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` the voltage,
-    in kV, of the bus the pinned generator would regulate); unused (``NaN``) for
+    in kV, of the bus the pinned generator would regulate; for ``LOW_VOLTAGE_SVC_STANDBY`` /
+    ``HIGH_VOLTAGE_SVC_STANDBY`` the voltage, in kV, of the bus the standby SVC regulates);
+    unused (``NaN``) for
     ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";
 
 const std::string DocContingencyAnalysis::limit = R"mydelimiter(
     The limit that was violated (for ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` the
-    generator's target voltage, in kV of the regulated bus); unused (``NaN``) for
+    generator's target voltage, for ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY``
+    the standby automaton's threshold, both in kV of the regulated bus); unused (``NaN``) for
     ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";

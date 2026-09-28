@@ -59,7 +59,7 @@ void bind_batch_shared(py::class_<T> & cls)
                       "operational limits compute_limit_violations reports (a voltage band, a "
                       "thermal rating: states the grid does reach and should not sit in). "
                       "Defaults to ``False``. See get_physical_violations().\n\n"
-                      "Four checks, each a condition a PowSyBl OpenLoadFlow outer loop acts "
+                      "Five checks, each a condition a PowSyBl OpenLoadFlow outer loop acts "
                       "on, and none enforced here (no bus is switched PV -> PQ or back, no droop "
                       "is clamped, no machine leaves the slack distribution, no row is "
                       "re-solved):\n\n"
@@ -78,6 +78,12 @@ void bind_batch_shared(py::class_<T> & cls)
                       "it can)? The other direction, PQ -> PV, of the same ``ReactiveLimits`` "
                       "loop. `value` and `limit` in kV, compared with "
                       "physical_violation_tol_vm_pu.\n"
+                      "* the SWITCH ON of every idle SVC flagged as carrying a standby "
+                      "automaton (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY on the SVC, "
+                      "see LSGrid.set_svc_standby): is the bus it regulates outside the "
+                      "automaton's voltage thresholds? OpenLoadFlow's "
+                      "``MonitoringVoltageOuterLoop``. `value` and `limit` in kV, compared "
+                      "with physical_violation_tol_vm_pu.\n"
                       "* the ACTIVE POWER of every angle-droop (\"AC emulation\") hvdc line "
                       "still in the linear regime (HIGH_P on the HVDC): did ``p0 + k.(theta1 - "
                       "theta2)`` leave ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is "
@@ -99,7 +105,7 @@ void bind_batch_shared(py::class_<T> & cls)
                       "algorithm does, a plugin solver has to opt in) and compute() raises for "
                       "one that does not. A DC batch reports the two active-power checks alone "
                       "-- a DC powerflow has no reactive power at all, and no voltage magnitude "
-                      "for the release check, so nothing is hidden by that.\n\n"
+                      "for the release and standby SVC checks, so nothing is hidden by that.\n\n"
                       "Setting this drops this batch's base case and results, but not the "
                       "registered contingencies / injections (unlike compute_limit_violations, "
                       "which clears everything), so it can be set at any point before "
@@ -115,19 +121,24 @@ void bind_batch_shared(py::class_<T> & cls)
         .def_property("physical_violation_tol_vm_pu",
                       [](const T & self){ return self.get_physical_violation_tol_vm_pu(); },
                       [](T & self, real_type val){ self.set_physical_violation_tol_vm_pu(val); },
-                      "The same, for the one comparison compute_physical_violations makes on a "
+                      "The same, for the comparisons compute_physical_violations makes on a "
                       "voltage: the PQ -> PV release check reports a flagged machine whose "
                       "regulated voltage is below (at min_q) or above (at max_q) its target by "
-                      "more than this, in pu. Defaults to 1e-4.")
+                      "more than this, in pu, and the standby SVC check a flagged SVC whose "
+                      "regulated voltage is outside its automaton's thresholds by more than "
+                      "this. Defaults to 1e-4.")
         .def("get_physical_violations", &T::get_physical_violations,
              "Per row: the list of LimitViolation of the physical limits that row's solution "
-             "leaves. Every entry has category ViolationCategory.PHYSICAL and one of four "
+             "leaves. Every entry has category ViolationCategory.PHYSICAL and one of five "
              "shapes: element_type BUS with violation_type LOW_Q / HIGH_Q (element_id the grid "
              "bus id, `value` the reactive power the machines holding it had to produce in "
              "MVAr, `limit` their summed capability), element_type GENERATOR with "
              "violation_type LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q (element_id the "
              "generator id, `value` the voltage of the bus that flagged PQ machine would "
-             "regulate and `limit` its target, in kV), element_type HVDC with violation_type "
+             "regulate and `limit` its target, in kV), element_type SVC with violation_type "
+             "LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY (element_id the svc id, "
+             "`value` the voltage of the bus that flagged idle standby SVC regulates and "
+             "`limit` the automaton's threshold, in kV), element_type HVDC with violation_type "
              "HIGH_P (element_id the hvdc line id, `side` the direction -- 1 for 1 -> 2 -- "
              "`value` the active power leaving that side in MW, `limit` that direction's "
              "pmax), or element_type GENERATOR with violation_type LOW_P / HIGH_P (element_id "
@@ -488,7 +499,11 @@ void bind_batch(py::module_& m) {
                "/!\\ `value` and `limit` are in the GENERATOR convention (positive = injected "
                "into the grid), like the unit's `min_q_mvar` / `max_q_mvar` and unlike its "
                "`target_p_mw` / `res_p_mw`, which lightsim2grid stores in the load "
-               "convention.");
+               "convention.")
+        .value("SVC", ViolationElementType::SVC,
+               "A static var compensator, by its own id: an idle SVC flagged as carrying a "
+               "standby automaton, which the voltage of the bus it regulates would switch on "
+               "(LimitViolationType.LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY).");
 
     py::enum_<LimitViolationType>(m, "LimitViolationType", DocContingencyAnalysis::LimitViolationType.c_str())
         .value("LOW_VOLTAGE", LimitViolationType::LOW_VOLTAGE)
@@ -548,7 +563,21 @@ void bind_batch(py::module_& m) {
                "MAXIMUM reactive power whose regulated bus sits ABOVE the target it would hold "
                "(element_type is ViolationElementType.GENERATOR, `value` above `limit`, both "
                "in kV). Category PHYSICAL. Reported by compute_physical_violations, never "
-               "enforced.");
+               "enforced.")
+        .value("LOW_VOLTAGE_SVC_STANDBY", LimitViolationType::LOW_VOLTAGE_SVC_STANDBY,
+               "A non-regulating SVC flagged as left idle under its standby automaton (see "
+               "LSGrid.set_svc_standby) whose regulated bus sits BELOW the automaton's low "
+               "voltage threshold (element_type is ViolationElementType.SVC): OpenLoadFlow's "
+               "MonitoringVoltageOuterLoop would switch it to voltage control. Category "
+               "PHYSICAL, like LOW_VOLTAGE_AT_MIN_Q: the converged solution assumes a control the "
+               "loop would not leave in place. `value` the regulated voltage and `limit` the "
+               "threshold, both in kV (value below limit). Reported by "
+               "compute_physical_violations, never enforced.")
+        .value("HIGH_VOLTAGE_SVC_STANDBY", LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY,
+               "The mirror of LOW_VOLTAGE_SVC_STANDBY: the regulated bus sits ABOVE the "
+               "automaton's high voltage threshold (element_type is ViolationElementType.SVC, "
+               "`value` above `limit`, both in kV). Category PHYSICAL. Reported by "
+               "compute_physical_violations, never enforced.");
 
     py::enum_<ViolationCategory>(m, "ViolationCategory",
         "What KIND of statement a LimitViolation is -- a property of its violation_type, and "
@@ -567,7 +596,7 @@ void bind_batch(py::module_& m) {
                "than it can, a distributed slack asking a machine for power it does not have) "
                "cannot happen. A statement about the model's assumptions, not about how the "
                "grid is operated. LOW_Q, HIGH_Q, LOW_P, HIGH_P, LOW_VOLTAGE_AT_MIN_Q, "
-               "HIGH_VOLTAGE_AT_MAX_Q.")
+               "HIGH_VOLTAGE_AT_MAX_Q, LOW_VOLTAGE_SVC_STANDBY, HIGH_VOLTAGE_SVC_STANDBY.")
         .value("SOLVER", ViolationCategory::SOLVER,
                "Not a limit at all: what the solver did. A divergence in particular says "
                "nothing about the grid -- the state may be perfectly feasible and the algorithm "
@@ -884,23 +913,27 @@ void bind_batch(py::module_& m) {
                       "Whether every converged contingency reports the PHYSICAL limits its "
                       "solution leaves -- a state the grid cannot reach, as opposed to the "
                       "operational limits compute_limit_violations reports. Defaults to "
-                      "``False``. Four checks: the reactive capability of every bus whose "
+                      "``False``. Five checks: the reactive capability of every bus whose "
                       "voltage is held by machines (LOW_Q / HIGH_Q on the BUS, summed over its "
                       "generators, storage units, hvdc converter stations and voltage-mode "
                       "SVCs), the release of every PQ generator flagged as pinned at a reactive "
                       "limit whose regulated bus sits on the wrong side of its target "
                       "(LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q on the GENERATOR, see "
-                      "LSGrid.set_gen_can_be_pv), the "
+                      "LSGrid.set_gen_can_be_pv), the switch on of every idle SVC flagged as "
+                      "carrying a standby automaton whose regulated bus sits outside its "
+                      "thresholds (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY on the "
+                      "SVC, see LSGrid.set_svc_standby), the "
                       "active power of every angle-droop hvdc line in the linear regime "
                       "(HIGH_P on the HVDC, against pmax_1to2_mw / pmax_2to1_mw), and the "
                       "active power of every generator carrying the distributed slack (LOW_P / "
                       "HIGH_P on the GENERATOR, against the optional min_p_mw / max_p_mw) -- "
                       "OpenLoadFlow's ``ReactiveLimits`` (both directions), "
-                      "``HvdcAcEmulationLimits`` and ``DistributedSlack``. "
+                      "``MonitoringVoltageOuterLoop``, ``HvdcAcEmulationLimits`` and "
+                      "``DistributedSlack``. "
                       "Detection only: no bus is switched PV -> PQ or back, no droop is clamped, "
                       "no machine leaves the slack distribution, no contingency is re-solved. "
-                      "The two active-power checks work in DC too; the reactive one and the "
-                      "release one need an AC algorithm that publishes its per-bus mismatch and "
+                      "The two active-power checks work in DC too; the reactive one, the "
+                      "release one and the standby SVC one need an AC algorithm that publishes its per-bus mismatch and "
                       "compute() raises for one that does not.")
         .def_property("physical_violation_tol_mva",
                       [](const ContingencyAnalysis & self){ return self.get_physical_violation_tol_mva(); },
@@ -911,14 +944,16 @@ void bind_batch(py::module_& m) {
         .def_property("physical_violation_tol_vm_pu",
                       [](const ContingencyAnalysis & self){ return self.get_physical_violation_tol_vm_pu(); },
                       [](ContingencyAnalysis & self, real_type val){ self.set_physical_violation_tol_vm_pu(val); },
-                      "The same, in pu, for the voltage comparison of the PQ -> PV release check "
-                      "(LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q). Defaults to 1e-4.")
+                      "The same, in pu, for the voltage comparisons of the PQ -> PV release check "
+                      "(LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q) and of the standby SVC check "
+                      "(LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY). Defaults to 1e-4.")
         .def("get_physical_violations", &ContingencyAnalysis::get_physical_violations,
              "Per contingency: the list of LimitViolation of the physical limits that "
              "contingency's solution leaves (category ViolationCategory.PHYSICAL) -- "
              "element_type BUS with LOW_Q / HIGH_Q, element_type GENERATOR with "
              "LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q (value and limit in kV), "
-             "element_type HVDC with HIGH_P and `side` naming the direction, or "
+             "element_type SVC with LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY (value "
+             "and limit in kV), element_type HVDC with HIGH_P and `side` naming the direction, or "
              "element_type GENERATOR with LOW_P / HIGH_P. "
              "A contingency that did not converge, or that was "
              "never simulated, has an EMPTY entry -- use converged() to tell that from "

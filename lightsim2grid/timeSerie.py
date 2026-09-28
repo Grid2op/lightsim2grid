@@ -156,7 +156,7 @@ class TimeSerie:
         (``ViolationCategory.PHYSICAL``). Default: ``False``. See
         :func:`get_physical_violations`.
 
-        Four checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        Five checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
         enforced here (nothing is switched PV -> PQ or back, nothing is clamped, no machine
         leaves the slack distribution, no step is re-solved):
 
@@ -177,6 +177,13 @@ class TimeSerie:
           :attr:`physical_violation_tol_vm_pu`; a step that varies that generator's target
           (``modify_gen_v``) is checked against its own target. A grid with no flagged
           generator reports nothing here.
+        * the **switch on** of every idle SVC flagged as carrying a standby automaton
+          (``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on the ``SVC``, see
+          :func:`lightsim2grid.network.LSGrid.set_svc_standby`): does the bus it regulates
+          sit outside the automaton's voltage thresholds? OpenLoadFlow's
+          ``MonitoringVoltageOuterLoop``. ``value`` and ``limit`` in kV, compared with
+          :attr:`physical_violation_tol_vm_pu`. A grid with no flagged SVC reports nothing
+          here.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
           linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is an *input* of the solve,
@@ -242,12 +249,15 @@ class TimeSerie:
 
     @property
     def physical_violation_tol_vm_pu(self):
-        """The same as :attr:`physical_violation_tol_mva`, in pu, for the one comparison
+        """The same as :attr:`physical_violation_tol_mva`, in pu, for the comparisons
         :attr:`compute_physical_violations` makes on a voltage: the PQ -> PV release check
         reports a flagged PQ generator (``LSGrid.set_gen_can_be_pv``) whose regulated bus
         is below (at ``min_q``) or above (at ``max_q``) its target by more than this
-        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``). Default: ``1e-4``. Changing
-        it invalidates any previously-computed results.
+        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``), and the standby SVC check a
+        flagged idle SVC (``LSGrid.set_svc_standby``) whose regulated bus is outside its
+        automaton's thresholds by more than this (``LOW_VOLTAGE_SVC_STANDBY`` /
+        ``HIGH_VOLTAGE_SVC_STANDBY``). Default: ``1e-4``. Changing it invalidates any
+        previously-computed results.
         """
         return self.computer.physical_violation_tol_vm_pu
 
@@ -265,7 +275,7 @@ class TimeSerie:
     def get_physical_violations(self):
         """Per step (same order as the ``modify_*`` inputs): the list of ``LimitViolation``
         of the physical limits that step's solution leaves. Every entry has ``category ==
-        ViolationCategory.PHYSICAL`` and one of four shapes:
+        ViolationCategory.PHYSICAL`` and one of five shapes:
 
         * ``element_type`` ``BUS``, ``violation_type`` ``LOW_Q`` / ``HIGH_Q``,
           ``element_id`` the grid bus id, ``value`` the reactive power the machines holding
@@ -273,6 +283,10 @@ class TimeSerie:
         * ``element_type`` ``GENERATOR``, ``violation_type`` ``LOW_VOLTAGE_AT_MIN_Q`` /
           ``HIGH_VOLTAGE_AT_MAX_Q``, ``element_id`` the generator id, ``value`` the voltage
           of the bus that flagged PQ machine would regulate and ``limit`` its target, in kV;
+        * ``element_type`` ``SVC``, ``violation_type`` ``LOW_VOLTAGE_SVC_STANDBY`` /
+          ``HIGH_VOLTAGE_SVC_STANDBY``, ``element_id`` the svc id, ``value`` the voltage of
+          the bus that flagged idle standby SVC regulates and ``limit`` the automaton's
+          threshold, in kV;
         * ``element_type`` ``HVDC``, ``violation_type`` ``HIGH_P``, ``element_id`` the hvdc
           line id, ``side`` the direction (1 for 1 -> 2), ``value`` the active power leaving
           that side (MW, positive) and ``limit`` that direction's ``pmax``;

@@ -1991,3 +1991,150 @@ TEST_CASE("a DC batch has no voltage magnitude to release anything", "[batch][ph
     CHECK(find_release(ts.get_physical_violations()[0], 1) == nullptr);
     CHECK(find_release(ts.get_physical_violations_n(), 1) == nullptr);
 }
+
+namespace {
+
+// the feeder with one non-regulating SVC on the load bus (fixed Q = 0, or `mode`), flagged
+// (or not) as an idle standby SVC with thresholds [low_pu, high_pu] (see SvcStandbyCheck.hpp)
+LSGrid make_standby_svc_grid(real_type low_pu, real_type high_pu, bool flagged = true,
+                             int mode = SvcContainer::RegulationMode::REACTIVE_POWER)
+{
+    LSGrid grid = make_grid(std::vector<GenSpec>{slack_gen()});
+    std::vector<int> modes{mode};
+    RealVect target_vm(1), q_set(1), slope(1), b_min(1), b_max(1);
+    target_vm << V_SET;
+    q_set << 0.;
+    slope << 0.;
+    b_min << -1.;
+    b_max << 1.;
+    Eigen::VectorXi reg_bus(1), svc_bus(1);
+    reg_bus << SVC_BUS;
+    svc_bus << SVC_BUS;
+    grid.init_svcs(modes, target_vm, q_set, slope, b_min, b_max, reg_bus, svc_bus);
+    grid.set_svc_names({"standby"});
+    if (flagged) {
+        RealVect low(1), high(1);
+        low << low_pu;
+        high << high_pu;
+        grid.set_svc_standby(std::vector<bool>{true}, low, high);
+    }
+    grid.add_gen_slackbus(0, 1.);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
+// the standby violation reported on `svc_id`, or nullptr
+const LimitViolation * find_standby(const std::vector<LimitViolation> & viols, int svc_id)
+{
+    for (std::size_t k = 0; k < viols.size(); ++k) {
+        if (viols[k].element_type == ViolationElementType::SVC &&
+            viols[k].element_id == svc_id &&
+            (viols[k].violation_type == LimitViolationType::LOW_VOLTAGE_SVC_STANDBY ||
+             viols[k].violation_type == LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY)) {
+            return &viols[k];
+        }
+    }
+    return nullptr;
+}
+
+// the voltage of the load bus with the idle SVC (Q = 0: the thresholds change nothing)
+real_type idle_svc_vm()
+{
+    return reference_vm(make_standby_svc_grid(0.5, 1.5, /*flagged=*/false), SVC_BUS);
+}
+
+}  // namespace
+
+TEST_CASE("an idle standby SVC whose regulated bus leaves its thresholds is reported", "[batch][physical][svcstandby]")
+{
+    const real_type vm = idle_svc_vm();
+    SECTION("above the high threshold") {
+        LSGrid grid = make_standby_svc_grid(vm - 0.05, vm - 0.01);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row_release(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        const LimitViolation * viol = find_standby(ts.get_physical_violations()[0], 0);
+        REQUIRE(viol != nullptr);
+        CHECK(viol->violation_type == LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY);
+        CHECK(viol->category() == ViolationCategory::PHYSICAL);
+        CHECK(viol->side == 0);
+        CHECK(viol->value == Approx(vm * VN_KV).margin(1e-6));
+        CHECK(viol->limit == Approx((vm - 0.01) * VN_KV));
+        CHECK(viol->name == "standby");
+        CHECK(find_standby(ts.get_physical_violations_n(), 0) != nullptr);
+
+        // the single solve says the same
+        LSGrid one = grid.copy();
+        REQUIRE(one.ac_pf(flat_start(one), 30, 1e-11).size() > 0);
+        const std::vector<LimitViolation> single = one.get_physical_violations(true, 0., 0.);
+        const LimitViolation * viol_one = find_standby(single, 0);
+        REQUIRE(viol_one != nullptr);
+        CHECK(viol_one->value == Approx(viol->value).margin(1e-6));
+        CHECK(viol_one->limit == Approx(viol->limit));
+    }
+    SECTION("below the low threshold") {
+        LSGrid grid = make_standby_svc_grid(vm + 0.01, vm + 0.05);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row_release(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        const LimitViolation * viol = find_standby(ts.get_physical_violations()[0], 0);
+        REQUIRE(viol != nullptr);
+        CHECK(viol->violation_type == LimitViolationType::LOW_VOLTAGE_SVC_STANDBY);
+        CHECK(viol->value == Approx(vm * VN_KV).margin(1e-6));
+        CHECK(viol->limit == Approx((vm + 0.01) * VN_KV));
+    }
+}
+
+TEST_CASE("only a flagged, idle SVC outside its thresholds is a candidate", "[batch][physical][svcstandby]")
+{
+    const real_type vm = idle_svc_vm();
+    auto one_row = [](LSGrid & grid, real_type tol_vm_pu){
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row_release(ts);
+        ts.set_physical_violation_tol_vm_pu(tol_vm_pu);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        return find_standby(ts.get_physical_violations()[0], 0) != nullptr;
+    };
+    SECTION("inside the thresholds") {
+        LSGrid grid = make_standby_svc_grid(vm - 0.01, vm + 0.01);
+        CHECK_FALSE(one_row(grid, 0.));
+    }
+    SECTION("not flagged") {
+        LSGrid grid = make_standby_svc_grid(vm - 0.05, vm - 0.01, /*flagged=*/false);
+        CHECK_FALSE(one_row(grid, 0.));
+    }
+    SECTION("within the tolerance") {
+        LSGrid grid = make_standby_svc_grid(vm - 0.05, vm - 0.01);
+        CHECK_FALSE(one_row(grid, 0.02));
+    }
+    SECTION("regulating voltage: already switched on") {
+        LSGrid grid = make_standby_svc_grid(vm + 0.5, vm + 0.6, true, SvcContainer::RegulationMode::VOLTAGE);
+        CHECK_FALSE(one_row(grid, 0.));
+    }
+    SECTION("thresholds refused unless finite with low < high") {
+        LSGrid grid = make_standby_svc_grid(vm - 0.05, vm - 0.01, /*flagged=*/false);
+        RealVect low(1), high(1);
+        low << 1.1;
+        high << 1.0;
+        CHECK_THROWS_AS(grid.set_svc_standby(std::vector<bool>{true}, low, high), std::runtime_error);
+        CHECK_FALSE(grid.get_svcs().get_standby(0));
+    }
+}
+
+TEST_CASE("a DC batch has no voltage magnitude to switch a standby SVC on", "[batch][physical][svcstandby]")
+{
+    const real_type vm = idle_svc_vm();
+    LSGrid grid = make_standby_svc_grid(vm - 0.05, vm - 0.01);
+    TimeSeries ts(grid);
+    ts.change_algorithm(AlgorithmType::DC_SparseLU);
+    setup_one_row_release(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+    CHECK(find_standby(ts.get_physical_violations()[0], 0) == nullptr);
+}

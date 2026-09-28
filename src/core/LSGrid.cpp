@@ -18,6 +18,7 @@
 #include "batch_algorithm/BusQCheck.hpp"
 #include "batch_algorithm/GenPCheck.hpp"
 #include "batch_algorithm/GenPvReleaseCheck.hpp"
+#include "batch_algorithm/SvcStandbyCheck.hpp"
 #include "batch_algorithm/HvdcPCheck.hpp"
 // ... and the operational ones (LSGrid::get_violations)
 #include "batch_algorithm/OperationalCheck.hpp"
@@ -2859,6 +2860,13 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
                 release_plan, algo.get_V(), tol_vm_pu, no_mask,
                 [this](int gen_id){ return generators_.get_target_vm_pu(gen_id); },
                 [](int){ return false; }, out);
+        }
+        // the idle standby SVCs the caller flagged, whose automaton would switch them on
+        svc_standby_check::SvcStandbyPlan standby_plan;
+        svc_standby_check::build_svc_standby_plan(*this, layout.id_me_to_solver, standby_plan);
+        if(!standby_plan.empty()){
+            svc_standby_check::check_svc_standby_violations(standby_plan, algo.get_V(), tol_vm_pu,
+                                                            no_mask, out);
         }
     }
     hvdc_p_check::HvdcPPlan hvdc_plan;

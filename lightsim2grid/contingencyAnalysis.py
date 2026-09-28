@@ -46,7 +46,8 @@ class PreContingencyResult:
     #: `ContingencyAnalysis.compute_physical_violations` is on (an empty list otherwise): a
     #: bus needing reactive power its machines do not have (LOW_Q / HIGH_Q), a PQ generator
     #: flagged as pinned at a reactive limit that would regulate again (LOW_VOLTAGE_AT_MIN_Q /
-    #: HIGH_VOLTAGE_AT_MAX_Q), an angle-droop
+    #: HIGH_VOLTAGE_AT_MAX_Q), an idle SVC flagged as carrying a standby automaton that would
+    #: switch it on (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY), an angle-droop
     #: hvdc line beyond what its converters can transmit (HIGH_P), or a generator the
     #: distributed slack pushed outside its active power limits (LOW_P / HIGH_P). Kept apart from
     #: `limit_violations` because it is a different KIND of statement: every entry here has
@@ -404,7 +405,7 @@ class ContingencyAnalysis(object):
         does reach and should not sit in). Default: ``False``. See
         :func:`get_physical_violations` and `ContingencyResult.physical_violations`.
 
-        Four checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        Five checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
         enforced here (nothing is switched PV -> PQ or back, no droop is clamped, no machine
         leaves the slack distribution, no contingency is re-solved):
 
@@ -422,6 +423,13 @@ class ContingencyAnalysis(object):
           ``ReactiveLimits`` loop. ``value`` and ``limit`` in kV, compared with
           :attr:`physical_violation_tol_vm_pu`. A grid with no flagged generator reports
           nothing here.
+        * the **switch on** of every idle SVC flagged as carrying a standby automaton
+          (``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on the ``SVC``, see
+          :func:`lightsim2grid.network.LSGrid.set_svc_standby`): does the bus it regulates
+          sit outside the automaton's voltage thresholds? OpenLoadFlow's
+          ``MonitoringVoltageOuterLoop``. ``value`` and ``limit`` in kV, compared with
+          :attr:`physical_violation_tol_vm_pu`. A grid with no flagged SVC reports nothing
+          here.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
           linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? OpenLoadFlow's ``HvdcAcEmulationLimits``.
@@ -490,12 +498,15 @@ class ContingencyAnalysis(object):
 
     @property
     def physical_violation_tol_vm_pu(self):
-        """The same as :attr:`physical_violation_tol_mva`, in pu, for the one comparison
+        """The same as :attr:`physical_violation_tol_mva`, in pu, for the comparisons
         :attr:`compute_physical_violations` makes on a voltage: the PQ -> PV release check
         reports a flagged PQ generator (``LSGrid.set_gen_can_be_pv``) whose regulated bus
         is below (at ``min_q``) or above (at ``max_q``) its target by more than this
-        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``). Default: ``1e-4``. Changing
-        it invalidates any previously-computed results.
+        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``), and the standby SVC check a
+        flagged idle SVC (``LSGrid.set_svc_standby``) whose regulated bus is outside its
+        automaton's thresholds by more than this (``LOW_VOLTAGE_SVC_STANDBY`` /
+        ``HIGH_VOLTAGE_SVC_STANDBY``). Default: ``1e-4``. Changing it invalidates any
+        previously-computed results.
         """
         return self.computer.physical_violation_tol_vm_pu
 

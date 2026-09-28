@@ -17,6 +17,7 @@
 #include "BusQCheck.hpp"
 #include "GenPCheck.hpp"
 #include "GenPvReleaseCheck.hpp"
+#include "SvcStandbyCheck.hpp"
 #include "HvdcPCheck.hpp"
 #include "BusGraph.hpp"
 #include "BatchAdjoint.hpp"
@@ -575,6 +576,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //     regulate sit below its target while the machine absorbs all it can (or above
         //     while it produces all it can)? The other direction of the same
         //     `ReactiveLimits` loop, PQ -> PV;
+        //   * the SWITCH ON of each idle SVC the caller flagged as carrying a standby
+        //     automaton (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY on the SVC, see
+        //     SvcStandbyCheck.hpp and LSGrid::set_svc_standby): does the bus it regulates
+        //     sit outside the automaton's voltage thresholds? OpenLoadFlow's
+        //     `MonitoringVoltageOuterLoop`;
         //   * the ACTIVE POWER of each angle-droop ("AC emulation") hvdc line still in the
         //     linear regime (HIGH_P on the HVDC, see HvdcPCheck.hpp): did it transmit more
         //     than `pmax_1to2_mw` / `pmax_2to1_mw` allow in that direction? OpenLoadFlow's
@@ -600,7 +606,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // has no reactive power at all, so a DC batch reports the two active-power checks
         // and nothing is hidden by it. The release check needs a voltage magnitude, so it
         // is AC only too, and the flags themselves (LSGrid::set_gen_can_be_pv): a grid with
-        // none reports nothing there. The active-power check also needs the limits
+        // none reports nothing there. Same for the standby SVC check (voltage magnitudes,
+        // LSGrid::set_svc_standby). The active-power check also needs the limits
         // themselves, which are optional (LSGrid::set_gen_p_limits /
         // set_storage_p_limits): a grid that has none simply reports nothing there.
         //
@@ -638,10 +645,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(val != _physical_tol_mva_) clear_batch_inputs();
             _physical_tol_mva_ = val;
         }
-        // The same, for the one comparison made on a voltage: the PQ -> PV release check
+        // The same, for the comparisons made on a voltage: the PQ -> PV release check
         // (GenPvReleaseCheck.hpp) reports a flagged machine whose regulated voltage is
-        // below (at min_q) or above (at max_q) its target by more than this, in pu. A
-        // separate knob because a voltage and a power are not the same scale.
+        // below (at min_q) or above (at max_q) its target by more than this, in pu, and the
+        // standby SVC check (SvcStandbyCheck.hpp) a flagged SVC whose regulated voltage is
+        // outside its automaton's thresholds by more than this. A separate knob because a
+        // voltage and a power are not the same scale.
         real_type get_physical_violation_tol_vm_pu() const noexcept {return _physical_tol_vm_pu_;}
         void set_physical_violation_tol_vm_pu(real_type val){
             if(!(val >= 0.) || !isfinite(val)){
@@ -657,7 +666,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          * Per row: the physical limits this row's solution leaves. A row that did not
          * converge (or that was never simulated) has an EMPTY entry rather than a sentinel
          * -- ask converged_mask() to tell that apart from "converged, no violation". Every
-         * entry has category PHYSICAL, and one of four shapes:
+         * entry has category PHYSICAL, and one of five shapes:
          *
          *   - element_type BUS, element_id the grid bus id, violation_type LOW_Q / HIGH_Q,
          *     `value` the reactive power the machines holding that bus had to produce
@@ -665,6 +674,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          *   - element_type GENERATOR, element_id the generator id, violation_type
          *     LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q, `value` the voltage of the bus
          *     that flagged PQ machine would regulate and `limit` its target, both in kV;
+         *   - element_type SVC, element_id the svc id, violation_type
+         *     LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY, `value` the voltage of the
+         *     bus that flagged idle standby SVC regulates and `limit` the automaton's
+         *     threshold, both in kV;
          *   - element_type HVDC, element_id the hvdc line id, violation_type HIGH_P, `side`
          *     the direction (1 for 1 -> 2), `value` the active power leaving that side (MW,
          *     positive) and `limit` that direction's pmax;
@@ -1850,6 +1863,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
                     _physical_violations_[i]);
             }
+            if(_gen_pv_release_check_on_ && !_svc_standby_plan_.empty()){
+                // no batch disconnects an SVC per row: only a stranded bus skips one
+                svc_standby_check::check_svc_standby_violations(
+                    _svc_standby_plan_, V_solver, _physical_tol_vm_pu_, masked,
+                    _physical_violations_[i]);
+            }
             if(!_hvdc_p_plan_.empty()){
                 hvdc_p_check::check_hvdc_p_violations(_hvdc_p_plan_, algo.get_Va(),
                                                       _physical_tol_mva_, masked,
@@ -1932,6 +1951,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _prepare_physical_check(size_t nb_steps, bool ac_solver_used){
             _bus_q_plan_.clear();
             _gen_pv_release_plan_.clear();
+            _svc_standby_plan_.clear();
             _hvdc_p_plan_.clear();
             _gen_p_plan_.clear();
             _physical_violations_.clear();
@@ -1955,6 +1975,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
                 _bus_q_check_on_ = true;
                 // the release check compares voltage magnitudes: AC only, like the reactive one
+                // (and so does the standby SVC one, which shares this switch)
                 _gen_pv_release_check_on_ = true;
             }
             _physical_violations_.assign(nb_steps, std::vector<LimitViolation>());
@@ -1977,6 +1998,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 gen_pv_release_check::build_gen_pv_release_plan(
                     _grid_model, active_layout().id_me_to_solver, _physical_tol_mva_,
                     _gen_pv_release_plan_);
+                svc_standby_check::build_svc_standby_plan(
+                    _grid_model, active_layout().id_me_to_solver, _svc_standby_plan_);
             }
             hvdc_p_check::build_hvdc_p_plan(_grid_model, active_layout().id_me_to_solver,
                                             _hvdc_p_plan_);
@@ -2008,6 +2031,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     _gen_pv_release_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,
                     [this](int gen_id){ return this->_grid_model.get_generators().get_target_vm_pu(gen_id); },
                     [](int){ return false; },
+                    _physical_violations_n_);
+            }
+            if(_gen_pv_release_check_on_ && !_svc_standby_plan_.empty()){
+                svc_standby_check::check_svc_standby_violations(
+                    _svc_standby_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,
                     _physical_violations_n_);
             }
             if(!_hvdc_p_plan_.empty()){
@@ -2881,11 +2909,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         real_type _physical_tol_mva_ = 1e-4;
         real_type _physical_tol_vm_pu_ = 1e-4;
         bool _bus_q_check_on_ = false;
-        // `_gen_pv_release_check_on_`: same idea for the PQ -> PV release check, which
-        // compares voltage magnitudes (AC only)
+        // `_gen_pv_release_check_on_`: same idea for the PQ -> PV release check and the
+        // standby SVC check, which compare voltage magnitudes (AC only)
         bool _gen_pv_release_check_on_ = false;
         bus_q_check::BusQPlan _bus_q_plan_;
         gen_pv_release_check::GenPvReleasePlan _gen_pv_release_plan_;
+        svc_standby_check::SvcStandbyPlan _svc_standby_plan_;
         hvdc_p_check::HvdcPPlan _hvdc_p_plan_;
         gen_p_check::GenPPlan _gen_p_plan_;
         std::vector<std::vector<LimitViolation> > _physical_violations_;

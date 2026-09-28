@@ -156,6 +156,11 @@ ATTR_SVC_INPUT = [
     "b_min",
     "b_max",
     "regulated_bus_id",
+    # the idle standby SVCs a caller flagged (see LSGrid.set_svc_standby): False / NaN
+    # unless set, and two NaN compare equal here
+    "standby",
+    "standby_low_vm_pu",
+    "standby_high_vm_pu",
 ]
 
 

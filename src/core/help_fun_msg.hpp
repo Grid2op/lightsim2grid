@@ -192,6 +192,9 @@ struct LS2G_API DocIterator
     static const std::string b_min;
     static const std::string b_max;
     static const std::string svc_regulated_bus_id;
+    static const std::string svc_standby;
+    static const std::string svc_standby_low_vm_pu;
+    static const std::string svc_standby_high_vm_pu;
 
     // specific to loads (and storage units)
     static const std::string LoadContainer;

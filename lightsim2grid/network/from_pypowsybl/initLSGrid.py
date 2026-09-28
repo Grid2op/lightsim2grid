@@ -216,15 +216,19 @@ def init(net : pypo.network.Network,
         (participating, droop 4).
     :type battery_active_power_control: str
 
-    :param can_be_pv: The generators to flag as "pinned at a reactive limit by an outer
-        loop" (``LSGrid.set_gen_can_be_pv`` / ``GenInfo.can_be_pv``): the ids
-        ``bake_outer_loops`` returns, or any iterable of generator ids, or a boolean
-        ``pandas.Series`` indexed by generator id, or a boolean array in the order of
-        ``net.get_generators()`` (sorted when ``sort_index``). ``None`` (default) flags
-        nothing. Nothing in a powerflow reads it: it only opens those PQ generators to the
-        physical check of their PQ -> PV release (``LOW_VOLTAGE_AT_MIN_Q`` /
-        ``HIGH_VOLTAGE_AT_MAX_Q``, see ``LSGrid.get_physical_violations``). An unknown id
-        raises.
+    :param can_be_pv: The elements an outer loop froze out of voltage control and would
+        switch (back) to it: the ids ``bake_outer_loops`` returns, or any iterable of
+        generator / static var compensator ids, or a boolean ``pandas.Series`` indexed by
+        id, or a boolean array in the order of ``net.get_generators()`` (sorted when
+        ``sort_index``; it flags generators only). ``None`` (default) flags nothing. A
+        generator is flagged as "pinned at a reactive limit" (``LSGrid.set_gen_can_be_pv``
+        / ``GenInfo.can_be_pv``); a static var compensator as a standby SVC left idle, its
+        ``standbyAutomaton`` thresholds handed to ``LSGrid.set_svc_standby`` (it must carry
+        that extension). Nothing in a powerflow reads it: it only opens those elements to
+        the physical check of that switch (``LOW_VOLTAGE_AT_MIN_Q`` /
+        ``HIGH_VOLTAGE_AT_MAX_Q`` on a generator, ``LOW_VOLTAGE_SVC_STANDBY`` /
+        ``HIGH_VOLTAGE_SVC_STANDBY`` on an SVC, see ``LSGrid.get_physical_violations``). An
+        unknown id raises.
     :type can_be_pv: None, Iterable[str], pandas.Series or numpy.ndarray
 
     :return: The properly initialized network.
@@ -253,9 +257,10 @@ def init(net : pypo.network.Network,
         convert_dangling_lines, fuse_zero_impedance_branches, zero_impedance_threshold_pu,
     )
 
-    # generators
+    # generators (`can_be_pv` may also hold static var compensator ids, see _aux_add_svc)
+    svc_ids = net.get_static_var_compensators(attributes=["connected"]).index if can_be_pv is not None else None
     df_gen, gen_sub = _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
-                                          can_be_pv=can_be_pv)
+                                          can_be_pv=can_be_pv, can_be_pv_other_ids=svc_ids)
 
     # loads
     df_load, load_sub = _aux_add_loads(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, df_dl)
@@ -283,7 +288,8 @@ def init(net : pypo.network.Network,
     df_shunt, sh_sub = _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
 
     # SVCs
-    df_svc = _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used)
+    df_svc = _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used,
+                          can_be_pv=can_be_pv)
 
     # HVDC lines
     df_dc, hvdc_sub_from_id, hvdc_sub_to_id = _aux_add_hvdc(

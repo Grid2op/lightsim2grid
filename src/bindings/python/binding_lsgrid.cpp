@@ -226,6 +226,21 @@ void bind_gridmodel(py::module_& m) {
              "physical checks (`get_physical_violations`, the batch algorithms' "
              "`compute_physical_violations`) only consider a flagged PQ machine when looking for "
              "one whose regulated voltage would make an outer loop switch it back to PV.")
+.def("set_svc_standby", &LSGrid::set_svc_standby,
+             py::arg("standby"), py::arg("low_vm_pu"), py::arg("high_vm_pu"),
+             "Flag the SVCs an outer loop left idle under their standby automaton: one bool per "
+             "SVC (`SvcInfo.standby`, False by default), with that automaton's low / high voltage "
+             "thresholds in pu of the nominal voltage of the bus each SVC regulates (ignored "
+             "where not flagged; a flagged SVC needs finite thresholds with low < high). Never "
+             "enforced and never read by a powerflow.\n\n"
+             "lightsim2grid does not model the automaton, and cannot tell such an SVC -- a fixed-Q "
+             "one after `bake_outer_loops` -- from one that never regulates: the caller says so "
+             "(`init_from_pypowsybl(can_be_pv=...)` passes the SVCs `bake_outer_loops` left idle). "
+             "What it is for: the physical checks (`get_physical_violations`, the batch "
+             "algorithms' `compute_physical_violations`) report a flagged non-regulating SVC whose "
+             "regulated voltage is outside those thresholds, which OpenLoadFlow's "
+             "MonitoringVoltageOuterLoop would switch to voltage control "
+             "(LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY).")
         .def("set_storage_p_limits", &LSGrid::set_storage_p_limits,
              py::arg("p_min_mw"), py::arg("p_max_mw"),
              "Active power limits (MW) of the storage units, OPTIONAL and never enforced -- "

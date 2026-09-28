@@ -14,11 +14,13 @@ import pandas as pd
 from ._aux_common import _aux_get_bus, _aux_regulated_bus_view_ids
 
 
-def _aux_can_be_pv_flags(can_be_pv, gen_index):
+def _aux_can_be_pv_flags(can_be_pv, gen_index, other_ids=None):
     """The ``can_be_pv`` argument of `init` as a boolean array aligned on ``gen_index``
     (the generators in lightsim2grid order), or ``None`` when nothing is flagged. Accepts
     an iterable of generator ids (what `bake_outer_loops` returns), a boolean Series
-    indexed by generator id, or a boolean array already in that order."""
+    indexed by generator id, or a boolean array already in that order. ``other_ids`` are
+    the ids of the other elements `init` accepts in it (the static var compensators, see
+    `_aux_svc_standby_flags`): skipped here, where any other unknown id raises."""
     if can_be_pv is None:
         return None
     if isinstance(can_be_pv, pd.Series):
@@ -31,19 +33,23 @@ def _aux_can_be_pv_flags(can_be_pv, gen_index):
     else:
         ids = pd.Index([str(el) for el in can_be_pv])
         unknown = ids.difference(gen_index)
+        if other_ids is not None:
+            unknown = unknown.difference(other_ids)
         if len(unknown):
-            raise ValueError(f"`can_be_pv`: unknown generator id(s) {list(unknown)[:10]}.")
+            raise ValueError(f"`can_be_pv`: unknown generator / static var compensator id(s) "
+                             f"{list(unknown)[:10]}.")
         flags = gen_index.isin(ids)
     return np.asarray(flags, dtype=bool)
 
 
 def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
-                        can_be_pv=None):
+                        can_be_pv=None, can_be_pv_other_ids=None):
     """Add every generator of ``net`` to ``model``. Returns ``(df_gen, gen_sub)``:
     ``df_gen`` is reused by the slack-assignment phase (`_aux_add_slack.py`),
     ``gen_sub`` by the final substation-id bookkeeping in `initLSGrid.py`.
     ``can_be_pv`` flags the generators an outer loop pinned at a reactive limit (see
-    `_aux_can_be_pv_flags` for what it accepts)."""
+    `_aux_can_be_pv_flags` for what it accepts, ``can_be_pv_other_ids`` being its
+    ``other_ids``)."""
     gen_attrs = [
         "connected", "min_p", "max_p", "target_p", "target_v", "target_q", "p",
         "voltage_regulator_on", "regulated_element_id", "voltage_level_id", "bus_id",
@@ -148,7 +154,7 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
     # the PQ generators an outer loop pinned at a reactive limit (what `bake_outer_loops`
     # returns): nothing in the powerflow reads the flag, it only opens them to the physical
     # check of their PQ -> PV release
-    flags = _aux_can_be_pv_flags(can_be_pv, df_gen.index)
+    flags = _aux_can_be_pv_flags(can_be_pv, df_gen.index, can_be_pv_other_ids)
     if flags is not None and flags.any():
         model.set_gen_can_be_pv(flags)
 

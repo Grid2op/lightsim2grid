@@ -346,10 +346,13 @@ class LS2G_API LSGrid final
          * `compute_physical_violations`, on this grid's own solve: a voltage
          * controller's reactive capability (AC only), a flagged PQ generator pinned at a
          * reactive limit whose regulated voltage would make an outer loop switch it back
-         * to PV (AC only, see `set_gen_can_be_pv`), an hvdc line's max power, and a
+         * to PV (AC only, see `set_gen_can_be_pv`), a flagged idle standby SVC whose
+         * regulated voltage would make its automaton switch it on (AC only, see
+         * `set_svc_standby`), an hvdc line's max power, and a
          * generator or storage unit pushed past its [min_p, max_p] by the distributed
          * slack. `tol_mva` is the absolute slack on every power comparison, `tol_vm_pu`
-         * the one (pu) on the voltage comparison of the PQ -> PV check. Throws if no such
+         * the one (pu) on the voltage comparisons of the PQ -> PV and the standby SVC
+         * checks. Throws if no such
          * powerflow ran, if it did not converge, or (AC) if the algorithm does not
          * publish its per-bus mismatch.
          */
@@ -1114,6 +1117,22 @@ class LS2G_API LSGrid final
          */
         void set_gen_can_be_pv(const std::vector<bool> & can_be_pv){
             generators_.set_can_be_pv(can_be_pv);
+        }
+        /**
+         * Flag the SVCs a caller knows an outer loop left idle under their standby
+         * automaton (one bool per SVC, false by default), with that automaton's low / high
+         * voltage thresholds in pu of the nominal voltage of the bus each SVC regulates
+         * (ignored where not flagged). lightsim2grid does not model the automaton, and
+         * cannot tell such an SVC -- a fixed-Q one after `bake_outer_loops` -- from one
+         * that never regulates: the caller says so (init_from_pypowsybl passes what
+         * bake_outer_loops left idle). Nothing enforces or reads it in a powerflow; it
+         * only opens that SVC to the physical check of its switch to voltage control (see
+         * `get_physical_violations` and SvcStandbyCheck.hpp).
+         */
+        void set_svc_standby(const std::vector<bool> & standby,
+                             const Eigen::Ref<const RealVect> & low_vm_pu,
+                             const Eigen::Ref<const RealVect> & high_vm_pu){
+            svcs_.set_standby(standby, low_vm_pu, high_vm_pu);
         }
         /**
          * Same, for the storage units -- which take part in the distributed slack under
