@@ -226,7 +226,23 @@ void bind_gridmodel(py::module_& m) {
              "physical checks (`get_physical_violations`, the batch algorithms' "
              "`compute_physical_violations`) only consider a flagged PQ machine when looking for "
              "one whose regulated voltage would make an outer loop switch it back to PV.")
-.def("set_svc_can_be_pv", &LSGrid::set_svc_can_be_pv,
+.def("set_gen_can_participate_slack", &LSGrid::set_gen_can_participate_slack,
+             py::arg("flags"), py::arg("weights"),
+             "Flag the generators an outer loop left out of the distributed slack ONLY because "
+             "they sat at an active limit in the reference solve (OpenLoadFlow caps a unit at "
+             "max_p when the mismatch it distributes is positive, at min_p when negative), with "
+             "the weight each would have as a participant, on the same scale as the slack "
+             "weights (ignored where not flagged; `GenInfo.can_participate_slack` / "
+             "`can_participate_slack_weight`). Never read by the Newton solve, whose distributed "
+             "slack has no bounds: only the bounded redistribution pre-pass "
+             "(`consider_only_main_component(True)`, the batch algorithms' `redistribute_slack`) "
+             "counts them, within their [min_p, max_p], so they only move away from the limit "
+             "they sit at. `init_from_pypowsybl(can_participate_slack=...)` fills it from what "
+             "`bake_outer_loops(..., return_details=True)` capped.")
+        .def("set_storage_can_participate_slack", &LSGrid::set_storage_can_participate_slack,
+             py::arg("flags"), py::arg("weights"),
+             "The same as `set_gen_can_participate_slack`, for the storage units.")
+        .def("set_svc_can_be_pv", &LSGrid::set_svc_can_be_pv,
              py::arg("can_be_pv"),
              "The generators' set_gen_can_be_pv, for the SVCs: flag the SVCs an outer loop froze "
              "at a reactive limit, one bool per SVC (`SvcInfo.can_be_pv`, False by default), never "

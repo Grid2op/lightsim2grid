@@ -39,6 +39,10 @@ class LS2G_API StorageInfo : public OneSideContainer_PQ::OneSidePQInfo
         int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id: local control, the only kind supported)
         bool is_slack;
         real_type slack_weight;
+        // left out of the slack only because it sat at an active limit: takes part in the
+        // redistribution pre-pass with this weight (see LSGrid::set_storage_can_participate_slack)
+        bool can_participate_slack;
+        real_type can_participate_slack_weight;
 
         inline StorageInfo(const StorageContainer & r_data_storage, int my_id) noexcept;
 };
@@ -97,7 +101,8 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
            std::vector<bool>,              // slack participation flag
            std::vector<real_type>,         // slack weight
            std::vector<real_type>,         // p_min_mw_ (appended, optional: empty if unset)
-           std::vector<real_type>          // p_max_mw_ (appended, optional: empty if unset)
+           std::vector<real_type>,         // p_max_mw_ (appended, optional: empty if unset)
+           std::vector<real_type>          // can_participate_slack weight (appended; 0: not flagged)
            > ;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -110,6 +115,7 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
             SLACK_WEIGHT,
             P_MIN_MW,
             P_MAX_MW,
+            CAN_PARTICIPATE_SLACK,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -212,6 +218,12 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         bool is_slack(int storage_id) const {return slack_.is_slack(storage_id);}
         /// the unit's own (un-normalised) share of the distributed slack
         real_type get_slack_weight(int storage_id) const {return slack_.weight(storage_id);}
+        /// see SlackParticipation::set_can_participate (LSGrid::set_storage_can_participate_slack)
+        void set_can_participate_slack(const std::vector<bool> & flags, const Eigen::Ref<const RealVect> & weights){
+            slack_.set_can_participate(flags, weights, "StorageContainer::set_can_participate_slack");
+        }
+        bool get_can_participate_slack(int storage_id) const {return slack_.can_participate(storage_id);}
+        real_type get_can_participate_slack_weight(int storage_id) const {return slack_.can_participate_weight(storage_id);}
         /// add every participating unit's raw weight to its solver bus (`storage_off`,
         /// when non-null, is a nb()-sized mask of units to leave out on top: a batch row
         /// whose slack pre-pass saturated them, see LSGrid::get_slack_weights_solver_without)
@@ -278,7 +290,9 @@ inline StorageInfo::StorageInfo(const StorageContainer & r_data_storage, int my_
         max_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
         regulated_bus_id(-1),
         is_slack(false),
-        slack_weight(-1.0)
+        slack_weight(-1.0),
+        can_participate_slack(false),
+        can_participate_slack_weight(0.)
 {
     if((my_id >= 0) && (my_id < r_data_storage.nb()))
     {
@@ -290,6 +304,8 @@ inline StorageInfo::StorageInfo(const StorageContainer & r_data_storage, int my_
         max_p_mw = r_data_storage.get_max_p(my_id);
         regulated_bus_id = r_data_storage.regulated_bus_id_(my_id);
         is_slack = r_data_storage.slack_.is_slack(my_id);
+        can_participate_slack = r_data_storage.slack_.can_participate(my_id);
+        can_participate_slack_weight = r_data_storage.slack_.can_participate_weight(my_id);
         slack_weight = r_data_storage.slack_.weight(my_id);
     }
 }

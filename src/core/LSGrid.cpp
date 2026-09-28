@@ -2803,7 +2803,8 @@ slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatc
         }
     }
     for(std::size_t k = 0; k < units.size(); ++k){
-        if(!saturated[k]) continue;
+        // a unit only flagged "can participate in the slack" was never in it
+        if(!saturated[k] || !units[k].in_slack) continue;
         if(units[k].kind == UnitKind::GENERATOR){
             generators_.remove_slackbus(units[k].el_id, algo_controler_);
         }else{

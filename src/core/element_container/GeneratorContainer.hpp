@@ -45,6 +45,10 @@ class LS2G_API GenInfo : public OneSideContainer_PQ::OneSidePQInfo
         // reactive limit, so that its PQ -> PV release is worth checking (see
         // LSGrid::set_gen_can_be_pv); false by default, never read by a powerflow
         bool can_be_pv;
+        // left out of the slack only because it sat at an active limit: takes part in the
+        // redistribution pre-pass with this weight (see LSGrid::set_gen_can_participate_slack)
+        bool can_participate_slack;
+        real_type can_participate_slack_weight;
         int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id for local control)
         real_type reactive_key; // reactive sharing key, NaN when there is none
 
@@ -89,7 +93,8 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
            std::vector<real_type>,  // p_min_mw_ (appended, optional: empty if unset)
            std::vector<real_type>,  // p_max_mw_ (appended, optional: empty if unset)
            std::vector<real_type>,  // reactive_key_ (appended; NaN: no key)
-           std::vector<bool>        // can_be_pv_ (appended; all false by default)
+           std::vector<bool>,       // can_be_pv_ (appended; all false by default)
+           std::vector<real_type>   // can_participate_slack weight (appended; 0: not flagged)
         > ;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -105,6 +110,7 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             P_MAX_MW,
             REACTIVE_KEY,
             CAN_BE_PV,
+            CAN_PARTICIPATE_SLACK,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -298,6 +304,12 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         /// storage units have one too), so that code checking both families can be written
         /// once -- see batch_algorithm/GenPCheck.hpp
         real_type get_slack_weight(int gen_id) const {return slack_.weight(gen_id);}
+        /// see SlackParticipation::set_can_participate (LSGrid::set_gen_can_participate_slack)
+        void set_can_participate_slack(const std::vector<bool> & flags, const Eigen::Ref<const RealVect> & weights){
+            slack_.set_can_participate(flags, weights, "GeneratorContainer::set_can_participate_slack");
+        }
+        bool get_can_participate_slack(int gen_id) const {return slack_.can_participate(gen_id);}
+        real_type get_can_participate_slack_weight(int gen_id) const {return slack_.can_participate_weight(gen_id);}
         bool is_slack(int gen_id) const {return slack_.is_slack(gen_id);}
 
         /**
@@ -366,12 +378,16 @@ max_q_mvar(0.),
 min_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
 max_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
 can_be_pv(false),
+can_participate_slack(false),
+can_participate_slack_weight(0.),
 regulated_bus_id(-1),
 reactive_key(std::numeric_limits<real_type>::quiet_NaN())
 {
     if((my_id >= 0) && (my_id < r_data_gen.nb()))
     {
         is_slack = r_data_gen.slack_.is_slack(my_id);
+        can_participate_slack = r_data_gen.slack_.can_participate(my_id);
+        can_participate_slack_weight = r_data_gen.slack_.can_participate_weight(my_id);
         slack_weight = r_data_gen.slack_.weight(my_id);
 
         voltage_regulator_on = r_data_gen.voltage_regulator_on_[my_id];

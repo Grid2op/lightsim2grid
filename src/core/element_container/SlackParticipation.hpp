@@ -21,6 +21,10 @@
 #include "TaggedIdVec.hpp"
 #include "Utils.hpp"
 
+// feature test for code built against this header (eg gpusim2grid): the per-element
+// "can participate in the slack" weight (SlackParticipation::set_can_participate)
+#define LS2G_HAS_CAN_PARTICIPATE_SLACK 1
+
 namespace ls2g {
 
 /**
@@ -51,6 +55,57 @@ class SlackParticipation
         void reset(std::size_t nb_el){
             slackbus_.assign(nb_el, false);
             weight_.assign(nb_el, 0.);
+            can_participate_weight_.assign(nb_el, 0.);
+        }
+
+        /**
+         * "Can participate in the slack": the elements a caller knows an outer loop only
+         * left out of the distributed slack because they sat at an active limit in the
+         * reference solve (OpenLoadFlow caps a unit at max_p when the mismatch it
+         * distributes is positive, at min_p when it is negative -- so that unit takes no
+         * share of a mismatch of that sign, and a full one of the other). One weight per
+         * element, on the same scale as the slack weights, 0 for an element not flagged.
+         *
+         * Never read by the Newton solve (its distributed slack has no bounds, so it
+         * would push such a unit past its limit); only the bounded redistribution
+         * pre-pass (SlackRedistribution.hpp) counts a flagged element as a participant,
+         * within its [min_p, max_p] -- which lets it move away from the limit it sits at,
+         * never across it. A flagged element that is also a slack participant takes part
+         * with its slack weight.
+         */
+        void set_can_participate(const std::vector<bool> & flags,
+                                 const Eigen::Ref<const RealVect> & weights,
+                                 const char * fun_name){
+            const std::size_t nb_el = slackbus_.size();
+            if(flags.size() != nb_el || static_cast<std::size_t>(weights.size()) != nb_el){
+                std::ostringstream exc_;
+                exc_ << fun_name << ": expected " << nb_el << " flags and weights, got "
+                     << flags.size() << " and " << weights.size() << ".";
+                throw std::runtime_error(exc_.str());
+            }
+            std::vector<real_type> res(nb_el, 0.);
+            for(std::size_t el_id = 0; el_id < nb_el; ++el_id){
+                if(!flags[el_id]) continue;
+                const real_type w = weights(static_cast<Eigen::Index>(el_id));
+                if(!std::isfinite(w) || w <= 0.){
+                    std::ostringstream exc_;
+                    exc_ << fun_name << ": the element with id " << el_id
+                         << " is flagged but its weight is not a finite, positive number (got " << w << ").";
+                    throw std::runtime_error(exc_.str());
+                }
+                res[el_id] = w;
+            }
+            // nothing a powerflow reads: no AlgoControl flag to raise
+            can_participate_weight_ = res;
+        }
+        [[nodiscard]] bool can_participate(int el_id) const {
+            return can_participate_weight_[el_id] > 0.;
+        }
+        [[nodiscard]] real_type can_participate_weight(int el_id) const {return can_participate_weight_[el_id];}
+        [[nodiscard]] const std::vector<real_type> & can_participate_weights() const {return can_participate_weight_;}
+        /// restore a serialized state (sizes are checked by the caller)
+        void set_can_participate_weights(const std::vector<real_type> & weights){
+            can_participate_weight_ = weights;
         }
 
         [[nodiscard]] bool is_slack(int el_id) const {return slackbus_[el_id];}
@@ -234,6 +289,8 @@ class SlackParticipation
     private:
         std::vector<bool> slackbus_;     // is this element flagged a slack participant
         std::vector<real_type> weight_;  // its raw weight (does not sum to 1)
+        // its weight in the redistribution pre-pass only, 0 if not flagged (see set_can_participate)
+        std::vector<real_type> can_participate_weight_;
 };
 
 } // namespace ls2g

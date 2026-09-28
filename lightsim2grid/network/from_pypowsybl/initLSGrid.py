@@ -55,6 +55,7 @@ def init(net : pypo.network.Network,
          zero_impedance_threshold_pu: float=1e-8,
          battery_active_power_control: str="auto",
          can_be_pv=None,
+         can_participate_slack=None,
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -232,6 +233,19 @@ def init(net : pypo.network.Network,
         ``LSGrid.get_physical_violations``). An unknown id raises.
     :type can_be_pv: None, Iterable[str], pandas.Series or numpy.ndarray
 
+    :param can_participate_slack: The generators and batteries an outer loop left out of the
+        distributed slack ONLY because they sat at an active limit in the reference solve --
+        the ids ``bake_outer_loops(..., return_details=True).can_participate_slack`` returns.
+        They get the weight OpenLoadFlow's rule gives a participant, normalised with the
+        slack weights, and take part in the bounded redistribution pre-pass only
+        (``LSGrid.set_gen_can_participate_slack``, ``consider_only_main_component(True)``,
+        the batch algorithms' ``redistribute_slack``): within their ``[min_p, max_p]``, so
+        they only move away from the limit they sit at, as OpenLoadFlow lets them. Never
+        read by the Newton solve. Needs OpenLoadFlow's default distributed slack
+        (``gen_slack_id`` and ``slack_bus_id`` left to ``None``). ``None`` (default) flags
+        nothing. An unknown id raises.
+    :type can_participate_slack: None or Iterable[str]
+
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
     """
@@ -303,7 +317,8 @@ def init(net : pypo.network.Network,
     # slack bus(es)
     gen_slack_ids_int = _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
                                        df_batt=df_batt,
-                                       battery_active_power_control=battery_active_power_control)
+                                       battery_active_power_control=battery_active_power_control,
+                                       can_participate_slack=can_participate_slack)
 
     # TODO checks
     # no 3windings trafo and other exotic stuff

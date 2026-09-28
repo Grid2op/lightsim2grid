@@ -194,6 +194,8 @@ struct LS2G_API DocIterator
     static const std::string svc_regulated_bus_id;
     static const std::string svc_standby;
     static const std::string svc_can_be_pv;
+    static const std::string can_participate_slack;
+    static const std::string can_participate_slack_weight;
     static const std::string svc_standby_low_vm_pu;
     static const std::string svc_standby_high_vm_pu;
 

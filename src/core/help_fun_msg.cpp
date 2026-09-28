@@ -1944,6 +1944,26 @@ const std::string DocIterator::svc_standby = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::can_participate_slack = R"mydelimiter(
+    Whether this unit (a generator or a storage unit) is one an outer loop left out of the
+    distributed slack ONLY because it sat at an active limit in the reference solve (see
+    :func:`lightsim2grid.network.LSGrid.set_gen_can_participate_slack` /
+    :func:`lightsim2grid.network.LSGrid.set_storage_can_participate_slack`, filled by
+    ``init_from_pypowsybl(can_participate_slack=...)`` from what ``bake_outer_loops`` capped).
+    ``False`` by default.
+
+    Never read by the Newton solve: only the bounded redistribution pre-pass counts it as a
+    participant, with :attr:`can_participate_slack_weight`, within its ``[min_p, max_p]`` --
+    so it only moves away from the limit it sits at.
+
+)mydelimiter";
+
+const std::string DocIterator::can_participate_slack_weight = R"mydelimiter(
+    The weight with which this unit takes part in the redistribution pre-pass when
+    :attr:`can_participate_slack` (same scale as the slack weights), ``0`` otherwise.
+
+)mydelimiter";
+
 const std::string DocIterator::svc_can_be_pv = R"mydelimiter(
     Whether this SVC, when it does not regulate a voltage (:attr:`regulation_mode` is
     ``REACTIVE_POWER``), is one an outer loop froze at the edge of its susceptance range -- so

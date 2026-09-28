@@ -18,6 +18,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "element_container/SlackRedistribution.hpp"
+#include "LSGrid.hpp"
 
 using ls2g::real_type;
 using ls2g::slack_redistribution::Participant;
@@ -193,4 +194,78 @@ TEST_CASE("distribute: nothing to share is a no-op", "[slack_redistribution]"){
     const Report rep2 = distribute(nobody, 100., default_eps_mw, new_inj, sat);
     CHECK(rep2.nb_rounds == 0);
     CHECK(new_inj.empty());
+}
+
+namespace {
+
+// buses 0-1-2-3 in a row plus a leaf bus 4 off bus 1 (line 3); 60 MW of load on bus 3 and
+// 20 MW on bus 4. Gen 0 (bus 0) is the slack; gen 1 (bus 2) sits at its max_p, out of the
+// slack, flagged (or not) "can participate in the slack" with the same weight as gen 0.
+ls2g::LSGrid make_capped_grid(bool flagged)
+{
+    ls2g::LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(5u, 1, ls2g::RealVect::Constant(5, 138.), 0, 0);
+    Eigen::VectorXi fr(4), to(4);
+    fr << 0, 1, 2, 1;
+    to << 1, 2, 3, 4;
+    grid.init_powerlines(ls2g::RealVect::Constant(4, 0.01), ls2g::RealVect::Constant(4, 0.1),
+                         ls2g::CplxVect::Zero(4), fr, to);
+    ls2g::RealVect load_p(2), load_q(2);
+    load_p << 60., 20.;
+    load_q << 10., 5.;
+    Eigen::VectorXi load_bus(2);
+    load_bus << 3, 4;
+    grid.init_loads(load_p, load_q, load_bus);
+    ls2g::RealVect gen_p(2), gen_v(2), gen_q(2), min_q(2), max_q(2), min_p(2), max_p(2);
+    gen_p << 30., 40.;
+    gen_v << 1.02, 1.02;
+    gen_q << 0., 0.;
+    min_q << -1e3, -1e3;
+    max_q << 1e3, 1e3;
+    min_p << 0., 0.;
+    max_p << 500., 40.;
+    Eigen::VectorXi gen_bus(2);
+    gen_bus << 0, 2;
+    grid.init_generators_full(gen_p, gen_v, gen_q, std::vector<bool>{true, true}, min_q, max_q, gen_bus);
+    grid.set_gen_p_limits(min_p, max_p);
+    grid.add_gen_slackbus(0, 0.5);
+    if(flagged){
+        ls2g::RealVect w(2);
+        w << 0., 0.5;
+        grid.set_gen_can_participate_slack(std::vector<bool>{false, true}, w);
+    }
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
+}  // namespace
+
+TEST_CASE("a unit flagged can_participate_slack takes a pre-pass share away from its limit", "[slack_redistribution]"){
+    SECTION("flagged: it takes half of what the island takes out, and stays out of the slack"){
+        ls2g::LSGrid grid = make_capped_grid(true);
+        grid.deactivate_powerline(3);
+        const Report rep = grid.consider_only_main_component(true);
+        CHECK(rep.nb_participants == 2);
+        CHECK_THAT(rep.mismatch_mw, Catch::Matchers::WithinAbs(-20., 1e-9));
+        CHECK_THAT(grid.get_gen_target_p()(0), Catch::Matchers::WithinAbs(20., 1e-9));
+        CHECK_THAT(grid.get_gen_target_p()(1), Catch::Matchers::WithinAbs(30., 1e-9));
+        CHECK(grid.get_generators().is_slack(0));
+        CHECK_FALSE(grid.get_generators().is_slack(1));
+    }
+    SECTION("not flagged: the slack unit takes it all"){
+        ls2g::LSGrid grid = make_capped_grid(false);
+        grid.deactivate_powerline(3);
+        const Report rep = grid.consider_only_main_component(true);
+        CHECK(rep.nb_participants == 1);
+        CHECK_THAT(grid.get_gen_target_p()(0), Catch::Matchers::WithinAbs(10., 1e-9));
+        CHECK_THAT(grid.get_gen_target_p()(1), Catch::Matchers::WithinAbs(40., 1e-9));
+    }
+    SECTION("the flag is kept by a copy"){
+        ls2g::LSGrid grid = make_capped_grid(true);
+        const ls2g::LSGrid other = grid.copy();
+        CHECK(other.get_generators().get_can_participate_slack(1));
+        CHECK_THAT(other.get_generators().get_can_participate_slack_weight(1), Catch::Matchers::WithinAbs(0.5, 1e-15));
+    }
 }

@@ -2476,7 +2476,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //       injection over the masked buses, which in DC would count the
         //       phase-shifter term.
         // The participants are the slack units left in the main component and not
-        // disconnected by the row; slack_redistribution::distribute does the rest.
+        // disconnected by the row, and the units flagged "can participate in the slack"
+        // (see SlackParticipation::set_can_participate); slack_redistribution::distribute
+        // does the rest.
         void _prepare_slack_redistribution(size_t nb_steps){
             _clear_slack_redistribution();
             if(!_redistribute_slack_) return;
@@ -2565,7 +2567,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         const int bus_solver = id2s[units[k].bus].cast_int();
                         if(bus_solver >= 0) dp_row.push_back(std::make_pair(bus_solver, dp_mw / sn_mva));
                     }
-                    if(saturated[k]){
+                    // a unit only flagged "can participate in the slack" was never in it
+                    if(saturated[k] && units[k].in_slack){
                         if(units[k].kind == UnitKind::GENERATOR) _row_sat_gens_[i].push_back(units[k].el_id);
                         else _row_sat_storages_[i].push_back(units[k].el_id);
                     }

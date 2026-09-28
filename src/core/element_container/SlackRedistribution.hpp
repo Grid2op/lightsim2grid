@@ -59,6 +59,10 @@ struct Participant {
     real_type weight;        // raw (un-normalised) slack weight, > 0
     real_type min_p_mw;      // NaN: unbounded below
     real_type max_p_mw;      // NaN: unbounded above
+    /// a participant of the Newton solve's distributed slack (the caller takes it out of
+    /// it when it saturates), or only of this pre-pass (a unit flagged "can participate
+    /// in the slack", see SlackParticipation::set_can_participate)
+    bool in_slack = true;
 };
 
 /// What the redistribution did (exposed to python as `SlackRedistributionReport`).
@@ -153,10 +157,13 @@ inline Report distribute(const std::vector<Participant> & units,
 
 /**
  * Append the participating units of one family (a GeneratorContainer or a
- * StorageContainer) to `out`: connected, flagged slack, with a positive weight, whose
- * bus `keep_bus(bus_me)` accepts and that `is_off(el_id)` does not exclude. Their
- * injection is `target_sign * injection_of(el_id)` (`target_sign` is -1 for the
- * load-convention storage units), their limits the container's (NaN when unset).
+ * StorageContainer) to `out`: connected, flagged slack with a positive weight -- or
+ * flagged "can participate in the slack" (an outer loop only left it out because it sat
+ * at an active limit, see SlackParticipation::set_can_participate), with that weight
+ * and `in_slack` false -- whose bus `keep_bus(bus_me)` accepts and that `is_off(el_id)`
+ * does not exclude. Their injection is `target_sign * injection_of(el_id)`
+ * (`target_sign` is -1 for the load-convention storage units), their limits the
+ * container's (NaN when unset): a unit sitting at a limit only ever moves away from it.
  */
 template<class Container, class KeepBus, class IsOff, class InjectionOf>
 inline void append_participants(const Container & container,
@@ -172,8 +179,10 @@ inline void append_participants(const Container & container,
     const GlobalBusIdVect & buses = container.get_bus_id();
     for(int el_id = 0; el_id < nb_el; ++el_id){
         if(!status[el_id]) continue;
-        if(!container.is_slack(el_id)) continue;
-        const real_type weight = container.get_slack_weight(el_id);
+        const bool in_slack = container.is_slack(el_id)
+                              && container.get_slack_weight(el_id) > BaseConstants::_tol_equal_float;
+        const real_type weight = in_slack ? container.get_slack_weight(el_id)
+                                          : container.get_can_participate_slack_weight(el_id);
         if(weight <= BaseConstants::_tol_equal_float) continue;
         const int bus_me = buses(el_id).cast_int();
         if(bus_me == BaseConstants::_deactivated_bus_id) continue;
@@ -187,6 +196,7 @@ inline void append_participants(const Container & container,
         part.weight = weight;
         part.min_p_mw = container.get_min_p(el_id);
         part.max_p_mw = container.get_max_p(el_id);
+        part.in_slack = in_slack;
         out.push_back(part);
     }
 }

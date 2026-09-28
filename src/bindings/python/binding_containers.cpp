@@ -58,6 +58,8 @@ void bind_containers(py::module_& m) {
         .def_readonly("max_p_mw", &GenInfo::max_p_mw,
                       "Maximum active power, in MW -- OPTIONAL, see `min_p_mw`.")
         .def_readonly("can_be_pv", &GenInfo::can_be_pv, DocIterator::can_be_pv.c_str())
+        .def_readonly("can_participate_slack", &GenInfo::can_participate_slack, DocIterator::can_participate_slack.c_str())
+        .def_readonly("can_participate_slack_weight", &GenInfo::can_participate_slack_weight, DocIterator::can_participate_slack_weight.c_str())
         .def_readonly("regulated_bus_id", &GenInfo::regulated_bus_id, DocIterator::regulated_bus_id.c_str())
         .def_readonly("reactive_key", &GenInfo::reactive_key, DocIterator::reactive_key.c_str())
         .def_readonly("has_res", &GenInfo::has_res, DocIterator::has_res.c_str())
@@ -193,6 +195,8 @@ void bind_containers(py::module_& m) {
         .def_readonly("regulated_bus_id", &StorageInfo::regulated_bus_id, DocIterator::storage_regulated_bus_id.c_str())
         .def_readonly("is_slack", &StorageInfo::is_slack, DocIterator::storage_is_slack.c_str())
         .def_readonly("slack_weight", &StorageInfo::slack_weight, DocIterator::storage_slack_weight.c_str())
+        .def_readonly("can_participate_slack", &StorageInfo::can_participate_slack, DocIterator::can_participate_slack.c_str())
+        .def_readonly("can_participate_slack_weight", &StorageInfo::can_participate_slack_weight, DocIterator::can_participate_slack_weight.c_str())
         .def_readonly("has_res", &StorageInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_mw", &StorageInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &StorageInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())

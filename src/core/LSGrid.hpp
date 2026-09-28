@@ -1146,6 +1146,27 @@ class LS2G_API LSGrid final
             svcs_.set_can_be_pv(can_be_pv);
         }
         /**
+         * Flag the generators a caller knows an outer loop left out of the distributed
+         * slack ONLY because they sat at an active limit in the reference solve
+         * (OpenLoadFlow caps a unit at max_p when the mismatch it distributes is
+         * positive, at min_p when it is negative), with the weight each would have as a
+         * participant (same scale as the slack weights; ignored where not flagged). Never
+         * read by the Newton solve, whose distributed slack has no bounds: only the
+         * bounded redistribution pre-pass (`consider_only_main_component(true)`, the
+         * batch algorithms' `redistribute_slack`) counts them, within their
+         * [min_p, max_p] -- so they only move away from the limit they sit at, as
+         * OpenLoadFlow would let them. See SlackParticipation::set_can_participate.
+         */
+        void set_gen_can_participate_slack(const std::vector<bool> & flags,
+                                           const Eigen::Ref<const RealVect> & weights){
+            generators_.set_can_participate_slack(flags, weights);
+        }
+        /// the same, for the storage units
+        void set_storage_can_participate_slack(const std::vector<bool> & flags,
+                                               const Eigen::Ref<const RealVect> & weights){
+            storages_.set_can_participate_slack(flags, weights);
+        }
+        /**
          * Same, for the storage units -- which take part in the distributed slack under
          * the same rule as the generators (`add_storage_slackbus`), so their converged
          * active power can leave what they can deliver in exactly the same way.

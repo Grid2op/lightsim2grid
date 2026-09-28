@@ -207,8 +207,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
-- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 13: ``SvcContainer`` serializes the standby automaton
-  and the ``can_be_pv`` flag of each SVC. Files of format 11 no longer load.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 14: ``SvcContainer`` serializes the standby automaton
+  and the ``can_be_pv`` flag of each SVC, the generators and storage units their "can participate
+  in the slack" weight. Files of format 11 no longer load.
 - [ADDED] Physical check of the idle SVCs under a standby automaton (``LSGrid.set_svc_standby``):
   a regulated bus outside the automaton's thresholds, which OpenLoadFlow's
   ``MonitoringVoltageOuterLoop`` answers by switching the SVC on, is reported as
@@ -222,6 +223,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``HIGH_VOLTAGE_AT_MAX_Q`` on the SVC. ``bake_outer_loops`` returns the SVCs it froze at a limit.
 - [FIXED] ``bake_outer_loops`` froze a voltage-mode SVC within the saturation tolerance of its limit
   even when OpenLoadFlow held its target: SVCs now follow the generators' rule.
+- [ADDED] ``LSGrid.set_gen_can_participate_slack`` / ``set_storage_can_participate_slack``: a unit
+  left out of the slack only because it sat at an active limit takes part in the redistribution
+  pre-pass, away from that limit, as OpenLoadFlow lets it. ``bake_outer_loops(...,
+  return_details=True)`` returns the units OLF capped, for ``init_from_pypowsybl(can_participate_slack=...)``.
 - [FIXED] ``bake_outer_loops`` took a standby SVC OpenLoadFlow switched on for an idle one (its bus
   sits at the setpoint, inside the thresholds). It is read off the SVC's output now, and marked as
   no longer standby.

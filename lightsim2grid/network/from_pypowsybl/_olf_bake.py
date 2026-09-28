@@ -140,6 +140,8 @@ four-substations node-breaker network, which carries VSC and LCC HVDC, an SVC
 regulating voltage, a shunt, and ratio + phase tap changers.
 """
 
+from typing import NamedTuple
+
 import numpy as np
 import pandas as pd
 
@@ -270,6 +272,7 @@ def bake_outer_loops(
     keep_only_main_comp: bool=True,
     extrapolate_reactive_limits: bool = True,
     bake_saturated_voltage_control: bool = False,
+    return_details: bool = False,
 ):
     """Rewrite ``network`` input setpoints to the converged outer-loop state.
 
@@ -331,6 +334,15 @@ def bake_outer_loops(
         asking it for more reactive power would make OLF switch it to PQ anyway;
         kept regulating, it reports a reactive-limit violation for almost every
         contingency. ``False`` (default) keeps it regulating, as OLF did.
+    return_details
+        Return a :class:`BakeResult` rather than the :class:`pandas.Index` described
+        below: ``can_be_pv`` is that same index, and ``can_participate_slack`` holds the
+        generators (and batteries) left out of the slack ONLY because OLF capped them at
+        an active limit (``max_p`` for a positive reference mismatch, ``min_p`` for a
+        negative one) -- the ones OLF lets take a share again of a mismatch of the other
+        sign. Hand it to ``init_from_pypowsybl(can_participate_slack=...)`` so that
+        lightsim2grid's redistribution pre-pass counts them, away from their limit. A unit
+        excluded for one of OLF's own ``checkActivePowerControl`` reasons is not in it.
 
     Returns
     -------
@@ -374,8 +386,9 @@ def bake_outer_loops(
             network, keep_only_main_comp, bake_generator_voltage_control_discards,
             extrapolate_reactive_limits, bake_saturated_voltage_control, df_bus
         )
+    capped = pd.Index([], dtype=object)
     if bake_active_power:
-        _bake_active_power(
+        capped = _bake_active_power(
             network,
             balance_on_loads=balance_on_loads,
             load_power_factor_constant=load_power_factor_constant,
@@ -385,7 +398,19 @@ def bake_outer_loops(
         )
     if bake_remote_voltage_control:
         _bake_remote_voltage_control(network, keep_only_main_comp, df_bus)
+    if return_details:
+        return BakeResult(can_be_pv=pinned, can_participate_slack=capped)
     return pinned
+
+
+class BakeResult(NamedTuple):
+    """What :func:`bake_outer_loops` returns with ``return_details=True``."""
+    #: the elements frozen out of voltage control that an outer loop would switch
+    #: (back) to it -- what ``bake_outer_loops`` returns by default
+    can_be_pv: pd.Index
+    #: the generators and batteries left out of the slack only because OLF capped them
+    #: at an active limit -- for ``init_from_pypowsybl(can_participate_slack=...)``
+    can_participate_slack: pd.Index
 
 
 def _bake_taps_and_sections(network, keep_only_main_comp=True, df_bus=None):
@@ -1304,10 +1329,15 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
     batteries' :func:`~._aux_battery_apc.battery_active_power_control`) are read off the
     network when not given.
 
-    Returns the batteries OLF capped that this pypowsybl cannot mark in their extension
-    (<= 1.16.1 rejects a battery id there): the caller pins their active range on their
-    realized dispatch (``min_p = max_p``), a degenerate range both OLF and lightsim2grid
-    exclude from the slack.
+    Returns ``(pinned_batteries, capped)``: the batteries OLF capped that this pypowsybl
+    cannot mark in their extension (<= 1.16.1 rejects a battery id there) -- the caller
+    pins their active range on their realized dispatch (``min_p = max_p``), a degenerate
+    range both OLF and lightsim2grid exclude from the slack -- and the ids of the units
+    (generators, and batteries marked in their extension) excluded ONLY because OLF capped
+    them: the ones it would let take a share again of a mismatch of the other sign (see
+    ``bake_outer_loops(..., return_details=True)``). A unit excluded for one of OLF's own
+    ``checkActivePowerControl`` reasons is not in it, nor is a pinned battery (its range
+    is gone).
     """
     # not at the top: _aux_battery_apc reads its OLF constants from this module
     from ._aux_battery_apc import (
@@ -1363,20 +1393,24 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
     mismatch = float(np.sum((realized - target_p)[cand]))
     if has_bat:
         mismatch += float(np.sum((b_realized - b_target_p)[b_cand]))
+    capped = np.zeros(len(gen), dtype=bool)
     if mismatch > _ZERO_P_TOL:
-        excluded |= cand & (realized >= max_target_p - _ZERO_P_TOL)
+        capped = cand & (realized >= max_target_p - _ZERO_P_TOL)
         if has_bat:
             b_capped = b_cand & (b_realized >= b_max_tp - _ZERO_P_TOL)
     elif mismatch < -_ZERO_P_TOL:
-        excluded |= cand & (realized <= min_target_p + _ZERO_P_TOL)
+        capped = cand & (realized <= min_target_p + _ZERO_P_TOL)
         if has_bat:
             b_capped = b_cand & (b_realized <= b_min_tp + _ZERO_P_TOL)
+    excluded |= capped
 
     excluded_ids = gen.index[excluded]
+    capped_ids = gen.index[capped]
     pinned_batteries = bat.index[b_capped] if has_bat else gen.index[:0]
     if has_bat and _pypowsybl_exposes_battery_apc():
         # this pypowsybl writes the extension on a battery as on a generator
         excluded_ids = excluded_ids.append(pinned_batteries)
+        capped_ids = capped_ids.append(pinned_batteries)
         pinned_batteries = pinned_batteries[:0]
 
     if len(excluded_ids):
@@ -1390,7 +1424,7 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
             network.create_extensions(
                 "activePowerControl", pd.DataFrame({"participate": False}, index=new_apc)
             )
-    return pinned_batteries
+    return pinned_batteries, pd.Index(capped_ids, dtype=object)
 
 
 def _bake_active_power(
@@ -1420,9 +1454,10 @@ def _bake_active_power(
         from ._aux_battery_apc import battery_active_power_control, olf_target_p_range
         bat_apc = battery_active_power_control(network, bat)
     pinned_batteries = bat.index[:0]
+    capped = pd.Index([], dtype=object)
     if bake_active_power_control_participation and (len(gen) or len(bat)):
-        pinned_batteries = _bake_active_power_control_participation(network, gen, bat,
-                                                                    gen_range, bat_apc)
+        pinned_batteries, capped = _bake_active_power_control_participation(network, gen, bat,
+                                                                            gen_range, bat_apc)
 
     if len(gen):
         # result p is load convention; target_p is generator convention
@@ -1461,3 +1496,5 @@ def _bake_active_power(
             if load_power_factor_constant:
                 upd["q0"] = load["q"]
             network.update_loads(upd)
+    # the units excluded from the slack only because OLF capped them (see the caller)
+    return capped
