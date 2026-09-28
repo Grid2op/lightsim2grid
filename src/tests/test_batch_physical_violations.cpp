@@ -2138,3 +2138,83 @@ TEST_CASE("a DC batch has no voltage magnitude to switch a standby SVC on", "[ba
     REQUIRE(ts.converged_mask()[0] == 1);
     CHECK(find_standby(ts.get_physical_violations()[0], 0) == nullptr);
 }
+
+namespace {
+
+// the feeder with one fixed-Q SVC on the load bus frozen at the absorbing end of its range
+// [b_min, b_max] at `target_vm` (the output it had while holding that target), flagged (or
+// not) as frozen at a limit (LSGrid::set_svc_can_be_pv, see GenPvReleaseCheck.hpp)
+LSGrid make_frozen_svc_grid(real_type target_vm, bool flagged = true)
+{
+    const real_type b_min = -0.01, b_max = 0.5;  // a weak absorption: the load bus is close to collapse
+    LSGrid grid = make_grid(std::vector<GenSpec>{slack_gen()});
+    std::vector<int> modes{SvcContainer::RegulationMode::REACTIVE_POWER};
+    RealVect vm(1), q_set(1), slope(1), bmin(1), bmax(1);
+    vm << target_vm;
+    q_set << b_min * target_vm * target_vm * 100.;
+    slope << 0.;
+    bmin << b_min;
+    bmax << b_max;
+    Eigen::VectorXi reg_bus(1), svc_bus(1);
+    reg_bus << SVC_BUS;
+    svc_bus << SVC_BUS;
+    grid.init_svcs(modes, vm, q_set, slope, bmin, bmax, reg_bus, svc_bus);
+    grid.set_svc_names({"frozen"});
+    if (flagged) grid.set_svc_can_be_pv(std::vector<bool>{true});
+    grid.add_gen_slackbus(0, 1.);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
+const LimitViolation * find_svc_release(const std::vector<LimitViolation> & viols)
+{
+    for (std::size_t k = 0; k < viols.size(); ++k) {
+        if (viols[k].element_type == ViolationElementType::SVC &&
+            (viols[k].violation_type == LimitViolationType::LOW_VOLTAGE_AT_MIN_Q ||
+             viols[k].violation_type == LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q)) {
+            return &viols[k];
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+TEST_CASE("a flagged SVC frozen at its absorbing limit below its target is released", "[batch][physical][pvrelease][svc]")
+{
+    LSGrid grid = make_frozen_svc_grid(V_SET);
+    const real_type vm = reference_vm(grid, SVC_BUS);
+    REQUIRE(vm < V_SET);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row_release(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+    const LimitViolation * viol = find_svc_release(ts.get_physical_violations()[0]);
+    REQUIRE(viol != nullptr);
+    CHECK(viol->element_id == 0);
+    CHECK(viol->violation_type == LimitViolationType::LOW_VOLTAGE_AT_MIN_Q);
+    CHECK(viol->value == Approx(vm * VN_KV).margin(1e-6));
+    CHECK(viol->limit == Approx(V_SET * VN_KV));
+    CHECK(viol->name == "frozen");
+    CHECK(find_svc_release(ts.get_physical_violations_n()) != nullptr);
+
+    SECTION("not flagged: an ordinary fixed-Q SVC") {
+        LSGrid other = make_frozen_svc_grid(V_SET, /*flagged=*/false);
+        other.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts2(other);
+        setup_one_row_release(ts2);
+        ts2.compute(flat_start(other), 30, 1e-11);
+        REQUIRE(ts2.converged_mask()[0] == 1);
+        CHECK(find_svc_release(ts2.get_physical_violations()[0]) == nullptr);
+    }
+    SECTION("voltage above the target: absorbing all it can is right") {
+        LSGrid other = make_frozen_svc_grid(0.5);
+        other.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts2(other);
+        setup_one_row_release(ts2);
+        ts2.compute(flat_start(other), 30, 1e-11);
+        REQUIRE(ts2.converged_mask()[0] == 1);
+        CHECK(find_svc_release(ts2.get_physical_violations()[0]) == nullptr);
+    }
+}

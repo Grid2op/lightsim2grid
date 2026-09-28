@@ -1944,6 +1944,20 @@ const std::string DocIterator::svc_standby = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::svc_can_be_pv = R"mydelimiter(
+    Whether this SVC, when it does not regulate a voltage (:attr:`regulation_mode` is
+    ``REACTIVE_POWER``), is one an outer loop froze at the edge of its susceptance range -- so
+    that it would regulate again if the grid let it (the generators' ``can_be_pv``). ``False``
+    by default; set for the whole grid with
+    :func:`lightsim2grid.network.LSGrid.set_svc_can_be_pv`, and by
+    ``init_from_pypowsybl(can_be_pv=...)`` from what ``bake_outer_loops`` froze.
+
+    Nothing enforces or reads it in a powerflow. It only opens the SVC to the physical check
+    of its PQ -> PV release (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on the SVC,
+    see :func:`lightsim2grid.network.LSGrid.get_physical_violations`).
+
+)mydelimiter";
+
 const std::string DocIterator::svc_standby_low_vm_pu = R"mydelimiter(
     The low voltage threshold of this SVC's standby automaton, in pu of the nominal voltage of
     the bus it regulates (see :attr:`standby`); ``NaN`` when it has none.
@@ -4143,7 +4157,10 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
       absorbs (resp. produces) too much for that target and OpenLoadFlow's ``ReactiveLimits``
       loop would switch it back to PV (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on
       the ``GENERATOR``, ``value`` the regulated voltage and ``limit`` the target, in kV; AC
-      only). Only a generator with a reactive range of at least 1 MVAr is a candidate;
+      only). Only a generator with a reactive range of at least 1 MVAr is a candidate. The same
+      for a fixed-Q SVC flagged with :func:`set_svc_can_be_pv` (one an outer loop froze at the
+      edge of its susceptance range, the side being the nearer end of that range at its target
+      voltage), reported on the ``SVC``;
     - a non-regulating SVC flagged with :func:`set_svc_standby` (one an outer loop left idle
       under its standby automaton) whose regulated bus is below its automaton's low threshold
       (resp. above its high one) by more than ``tol_vm_pu``: OpenLoadFlow's

@@ -112,8 +112,11 @@ What gets baked
 * Static var compensators whose realized reactive output sits at (or beyond)
   their voltage-dependent susceptance envelope (``Q(V) = b * V^2``, ``b`` in
   ``b_min``..``b_max``, recomputed in MVAr at the SVC's own solved terminal
-  voltage) are frozen to fixed-Q (``REACTIVE_POWER`` mode), mirroring the
-  generator/VSC reactive-limit switch above. An SVC still comfortably inside
+  voltage) are frozen to fixed-Q (``REACTIVE_POWER`` mode), with the generator
+  rule: the tolerance only proposes a candidate, and an SVC whose regulated bus
+  the reference solve held at its target was regulating and is left so, unless
+  it sits exactly at its limit while another controller of that bus is still
+  inside its range, or ``bake_saturated_voltage_control`` is set. An SVC inside
   its envelope is left regulating (its target reproduces the OLF result
   exactly, since it isn't saturated).
 * Voltage-regulating static var compensators carrying a "standby automaton"
@@ -322,9 +325,9 @@ def bake_outer_loops(
         reads as a visible distance from its limit (see
         :func:`_extrapolate_curve_limits`).
     bake_saturated_voltage_control
-        Also freeze, at its limit, a generator whose reactive output sits at a Q
-        limit although the reference solve held its target voltage (a PV unit
-        exactly saturated). The base case is unchanged, but any change of the grid
+        Also freeze, at its limit, a generator (or a voltage-mode SVC) whose reactive
+        output sits at a Q limit although the reference solve held its target voltage
+        (a PV unit exactly saturated). The base case is unchanged, but any change of the grid
         asking it for more reactive power would make OLF switch it to PQ anyway;
         kept regulating, it reports a reactive-limit violation for almost every
         contingency. ``False`` (default) keeps it regulating, as OLF did.
@@ -339,6 +342,8 @@ def bake_outer_loops(
           the exactly saturated ones included when ``bake_saturated_voltage_control`` is
           set): what OLF's ``ReactiveLimits`` loop pinned, and what it would release again
           on a grid asking them for less;
+        * the voltage-mode static var compensators it froze to fixed-Q at the edge of their
+          susceptance range, by the same rule (see :func:`_bake_svc_saturation`);
         * the static var compensators whose standby automaton it left idle (frozen to
           fixed-Q, see :func:`_bake_svc_standby`): what OLF's
           ``MonitoringVoltageOuterLoop`` would switch to voltage control, should the
@@ -346,8 +351,10 @@ def bake_outer_loops(
 
         Hand it to ``init_from_pypowsybl(can_be_pv=...)`` so that lightsim2grid's physical
         checks report such a switch (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``
-        on a generator, ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on an
-        SVC). IIDM ids are unique across element types, so the two never clash. The
+        on a generator or a frozen SVC, ``LOW_VOLTAGE_SVC_STANDBY`` /
+        ``HIGH_VOLTAGE_SVC_STANDBY`` on an idle standby SVC -- the one whose
+        ``standbyAutomaton`` still says ``standby``: the bake marks a standby SVC it
+        switched on as no longer standby, as OLF's automaton never goes back). IIDM ids are unique across element types, so the two never clash. The
         generators switched off for another reason (not started, a reactive range too
         small, an implausible target, a target not held) are not in it. Empty when
         ``bake_reactive_limits`` is off, or on an already-baked network.
@@ -973,11 +980,12 @@ def _bake_reactive_limit_switches(
             network.update_vsc_converter_stations(upd)
 
     idle_svc = _bake_svc_standby(network, keep_only_main_comp, df_bus)
-    _bake_svc_saturation(network, keep_only_main_comp, df_bus)
-    # the generators this step froze AT A REACTIVE LIMIT (not the ones the other rules
-    # switched off), and the standby SVCs it left idle: the ones an outer loop would
-    # switch (back) to voltage control, see `bake_outer_loops`
-    return pinned.append(idle_svc)
+    saturated_svc = _bake_svc_saturation(network, keep_only_main_comp, df_bus,
+                                         bake_saturated_voltage_control)
+    # the generators and the SVCs this step froze AT A REACTIVE LIMIT (not the ones the
+    # other rules switched off), and the standby SVCs it left idle: the ones an outer loop
+    # would switch (back) to voltage control, see `bake_outer_loops`
+    return pinned.append(saturated_svc).append(idle_svc)
 
 
 def _bake_svc_standby(network, keep_only_main_comp=True, df_bus=None):
@@ -992,9 +1000,11 @@ def _bake_svc_standby(network, keep_only_main_comp=True, df_bus=None):
     ``low_voltage_setpoint`` / ``high_voltage_setpoint`` -- once the voltage of the bus
     it CONTROLS (its regulated bus, like OLF) crosses ``low_voltage_threshold`` /
     ``high_voltage_threshold``. Inside the deadband it stays a plain ``b0`` shunt: the
-    realized ``q`` there already equals ``b0 * v_mag_kv ** 2`` (0 when, as commonly
+    realized ``q`` there equals ``b0 * v_mag_kv ** 2`` to the digit (0 when, as commonly
     configured, ``b0 == 0``), so freezing it to that realized value -- like a saturated
-    SVC -- reproduces the deadband state exactly.
+    SVC -- reproduces the deadband state exactly. That is also how a switched-on one is
+    told apart: its output is whatever holds its setpoint, while the voltage it holds
+    usually sits inside the thresholds and says nothing.
 
     Runs before ``_bake_svc_saturation``: an SVC resolved to VOLTAGE mode here (crossed a
     threshold) is still eligible for the ordinary saturation freeze; an SVC resolved to
@@ -1030,23 +1040,32 @@ def _bake_svc_standby(network, keep_only_main_comp=True, df_bus=None):
         else pd.Series("", index=svc.index)
     reg_bus = _resolve_regulated_bus(network, svc["bus_id"], rel)
     v_kv = df_bus["v_mag"].reindex(reg_bus.to_numpy()).to_numpy(float)
-    # strict comparisons, as OLF's
-    above_high = v_kv > automaton["high_voltage_threshold"].to_numpy()
-    below_low = v_kv < automaton["low_voltage_threshold"].to_numpy()
-    # a regulated bus without a solved voltage never crosses a threshold: frozen idle,
-    # but not returned (there is no voltage to check a later switch against)
+    # whether OLF switched it on is read off its output, not off the voltage: once on,
+    # it holds its bus at a SETPOINT, which usually sits inside the thresholds. Idle, it
+    # is a plain b0 shunt at its own bus and produces exactly that (receptor convention:
+    # q = -b0 * V^2), to the digit; switched on, whatever holds the setpoint.
+    v_own = df_bus["v_mag"].reindex(svc["bus_id"].to_numpy()).to_numpy(float)
+    q_idle = -automaton["b0"].to_numpy(float) * v_own ** 2
+    q = svc["q"].to_numpy(float)
+    active = np.isfinite(q) & (np.abs(q - q_idle) > _TARGET_Q_TOL_MVAR)
+    # a regulated bus without a solved voltage: nothing to check a later switch against,
+    # so an idle one is frozen but not returned
     solved = np.isfinite(v_kv)
 
-    active = above_high | below_low
     if active.any():
         upd = pd.DataFrame(index=automaton.index[active])
-        upd["target_v"] = np.where(
-            above_high[active],
-            automaton["high_voltage_setpoint"].to_numpy()[active],
-            automaton["low_voltage_setpoint"].to_numpy()[active],
-        )
+        # the setpoint it holds: the nearer one (the low and the high one are often equal)
+        low_sp = automaton["low_voltage_setpoint"].to_numpy(float)[active]
+        high_sp = automaton["high_voltage_setpoint"].to_numpy(float)[active]
+        v_act = v_kv[active]
+        upd["target_v"] = np.where(np.abs(v_act - high_sp) < np.abs(v_act - low_sp), high_sp, low_sp)
         upd["regulation_mode"] = "VOLTAGE"
         network.update_static_var_compensators(upd)
+        # the automaton never goes back to standby: once switched on it is a plain voltage
+        # controller, and marking it so leaves "standby" meaning "idle" on the baked network
+        # (which is how `init_from_pypowsybl(can_be_pv=...)` tells the two kinds of SVC apart)
+        network.update_extensions("standbyAutomaton", pd.DataFrame(
+            {"standby": False}, index=pd.Index(automaton.index[active], name="id")))
 
     idle_ids = automaton.index[~active]
     if len(idle_ids):
@@ -1059,26 +1078,39 @@ def _bake_svc_standby(network, keep_only_main_comp=True, df_bus=None):
     return pd.Index(automaton.index[~active & solved], dtype=object)
 
 
-def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None):
+def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
+                         bake_saturated_voltage_control=False):
     """Freeze a VOLTAGE-mode SVC whose realized reactive output sits at (or beyond)
     its voltage-dependent susceptance envelope to fixed-Q (REACTIVE_POWER mode),
-    mirroring ``_bake_reactive_limit_switches`` for generators/VSC stations above.
+    with the same rule as ``_bake_reactive_limit_switches`` for generators.
 
     Unlike a generator's fixed Q box, an SVC's reactive range is
     ``Q(V) = b * V^2`` (``b`` in ``b_min``..``b_max``, in Siemens): recompute
     ``qmin``/``qmax`` in MVAr at the SVC's own solved terminal voltage before
-    comparing against the realized ``q``.
+    comparing against the realized ``q``, within ``_q_limit_tol``.
+
+    As for a generator, that tolerance only proposes a candidate: an SVC whose
+    regulated bus the reference solve held at its ``target_v`` (``_target_v_held``)
+    was voltage-controlled, sitting a hair inside its limit, and is left regulating
+    -- unless it sits exactly at its limit while another controller of the same
+    bus (a regulating generator or SVC) is still inside its range, the signature of
+    a unit OLF switched out of a shared group, or ``bake_saturated_voltage_control``
+    is set (freeze a held unit at its limit too).
+
+    Returns the ids of the SVCs frozen: like the generators frozen at a limit, the ones
+    OLF would switch back to voltage control on a grid asking them for less.
     """
     df_bus = _get_buses(network) if df_bus is None else df_bus
     svc = network.get_static_var_compensators(
-        attributes=["regulating", "regulation_mode", "q", "b_min", "b_max", "connected", "bus_id"]
+        attributes=["regulating", "regulation_mode", "q", "b_min", "b_max", "target_v",
+                    "regulated_element_id", "connected", "bus_id"]
     )
     if keep_only_main_comp:
         svc = _keep_only_main_comp(svc, df_bus)
     is_voltage = svc["regulating"] & (svc["regulation_mode"] == "VOLTAGE")
     svc = svc[is_voltage]
     if not len(svc):
-        return
+        return pd.Index([], dtype=object)
     v_kv = df_bus.loc[svc["bus_id"].values, "v_mag"].to_numpy()
     # SVC "q" (like generators') is the terminal/receptor-convention result: flip to
     # generator/injection convention to compare against the susceptance envelope.
@@ -1087,6 +1119,12 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None):
     qmin = svc["b_min"].to_numpy() * v_kv ** 2
     tol = _q_limit_tol(qmin, qmax)
     mask = (q_gen >= qmax - tol) | (q_gen <= qmin + tol)
+    if not bake_saturated_voltage_control and mask.any():
+        reg_bus = _resolve_regulated_bus(network, svc["bus_id"], svc["regulated_element_id"])
+        held = _target_v_held(network, reg_bus, svc["target_v"], df_bus).to_numpy(bool)
+        exact = (q_gen >= qmax - _Q_LIMIT_TOL_ABS) | (q_gen <= qmin + _Q_LIMIT_TOL_ABS)
+        switched = exact & (_n_free_controllers(network, reg_bus, exact, df_bus, keep_only_main_comp) > 0)
+        mask &= ~held | switched
     if mask.any():
         upd = pd.DataFrame(index=svc.index[mask])
         # unlike Generator.target_q (already generator convention), StaticVarCompensator
@@ -1095,6 +1133,31 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None):
         upd["target_q"] = svc["q"].to_numpy()[mask]
         upd["regulation_mode"] = "REACTIVE_POWER"
         network.update_static_var_compensators(upd)
+    return pd.Index(svc.index[mask], dtype=object)
+
+
+def _n_free_controllers(network, svc_reg_bus, svc_exact, df_bus, keep_only_main_comp=True):
+    """For each voltage-mode SVC (``svc_reg_bus``: the bus each regulates, ``svc_exact``:
+    whether it sits exactly at a limit), how many OTHER controllers of that same bus
+    are still inside their range: the regulating generators not exactly at a Q limit
+    (after the generator freezes of the bake), and the other SVCs not exactly at a
+    limit. See :func:`_switched_group_members`, the same test among generators."""
+    svc_free = pd.Series(~np.asarray(svc_exact, dtype=bool), index=svc_reg_bus.index).astype(int)
+    n_free = svc_free.groupby(svc_reg_bus.to_numpy()).transform("sum").to_numpy() - svc_free.to_numpy()
+    gen = network.get_generators(
+        attributes=["voltage_regulator_on", "q", "min_q", "max_q", "min_q_at_p", "max_q_at_p",
+                    "regulated_element_id", "connected", "bus_id"])
+    if keep_only_main_comp:
+        gen = _keep_only_main_comp(gen, df_bus)
+    gen = gen[gen["voltage_regulator_on"].astype(bool)]
+    if len(gen):
+        gq = -gen["q"]
+        qmin, qmax = _reactive_limits(gen)
+        gen_free = ~((gq >= qmax - _Q_LIMIT_TOL_ABS) | (gq <= qmin + _Q_LIMIT_TOL_ABS))
+        gen_reg = _generator_regulated_bus(network, gen)
+        free_per_bus = gen_free.astype(int).groupby(gen_reg.reindex(gen.index).to_numpy()).sum()
+        n_free = n_free + free_per_bus.reindex(svc_reg_bus.to_numpy()).fillna(0).to_numpy(int)
+    return n_free
 
 
 def _bake_remote_voltage_control(network, keep_only_main_comp=True, df_bus=None):

@@ -20,7 +20,7 @@ def _aux_can_be_pv_flags(can_be_pv, gen_index, other_ids=None):
     an iterable of generator ids (what `bake_outer_loops` returns), a boolean Series
     indexed by generator id, or a boolean array already in that order. ``other_ids`` are
     the ids of the other elements `init` accepts in it (the static var compensators, see
-    `_aux_svc_standby_flags`): skipped here, where any other unknown id raises."""
+    `_aux_svc_can_be_pv_flags`): skipped here, where any other unknown id raises."""
     if can_be_pv is None:
         return None
     if isinstance(can_be_pv, pd.Series):

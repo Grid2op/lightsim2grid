@@ -50,6 +50,7 @@ void SvcContainer::init(const std::vector<int> & regulation_mode,
     standby_ = std::vector<bool>(size, false);
     standby_low_vm_pu_ = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
     standby_high_vm_pu_ = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
+    can_be_pv_ = std::vector<bool>(size, false);
     _derive_voltage_regulator_on();
     reset_results();
 }
@@ -95,7 +96,7 @@ SvcContainer::StateRes SvcContainer::get_state() const
     std::vector<real_type> standby_low(standby_low_vm_pu_.begin(), standby_low_vm_pu_.end());
     std::vector<real_type> standby_high(standby_high_vm_pu_.begin(), standby_high_vm_pu_.end());
     SvcContainer::StateRes res(get_osc_pq_state(), mode, vm_pu, slope, bmin, bmax, regulated_bus,
-                               standby_, standby_low, standby_high);
+                               standby_, standby_low, standby_high, can_be_pv_);
     return res;
 }
 
@@ -111,6 +112,7 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     std::vector<bool> & standby = std::get<StateResIdx::STANDBY>(my_state);
     std::vector<real_type> & standby_low = std::get<StateResIdx::STANDBY_LOW_VM_PU>(my_state);
     std::vector<real_type> & standby_high = std::get<StateResIdx::STANDBY_HIGH_VM_PU>(my_state);
+    std::vector<bool> & can_be_pv = std::get<StateResIdx::CAN_BE_PV>(my_state);
 
     const auto size = nb();
     check_size(mode, size, "regulation_mode");
@@ -122,6 +124,7 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     check_size(standby, size, "standby");
     check_size(standby_low, size, "standby_low_vm_pu");
     check_size(standby_high, size, "standby_high_vm_pu");
+    check_size(can_be_pv, size, "can_be_pv");
 
     regulation_mode_ = IntVect::Map(mode.data(), mode.size());
     target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
@@ -132,6 +135,7 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     standby_ = standby;
     standby_low_vm_pu_ = RealVect::Map(standby_low.data(), standby_low.size());
     standby_high_vm_pu_ = RealVect::Map(standby_high.data(), standby_high.size());
+    can_be_pv_ = can_be_pv;
     _derive_voltage_regulator_on();
     reset_results();
 }

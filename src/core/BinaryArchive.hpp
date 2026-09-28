@@ -106,7 +106,10 @@ namespace ls2g {
 // v12: SvcContainer::StateRes carries the per-SVC standby automaton (`standby_` and its
 //     low / high voltage thresholds -- see LSGrid::set_svc_standby; none unless set).
 //     Appended.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 12;
+// v13: SvcContainer::StateRes carries the per-SVC `can_be_pv_` flag (an SVC an outer loop
+//     froze at a reactive limit -- see LSGrid::set_svc_can_be_pv; all false unless set).
+//     Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 13;
 
 class LS2G_API BinaryArchive
 {

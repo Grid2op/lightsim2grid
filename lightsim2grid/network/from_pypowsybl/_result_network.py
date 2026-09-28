@@ -492,9 +492,11 @@ class LightsimResultNetwork:
         converged real grid). Does not expose the regulation mode / slope /
         b_min / b_max columns."""
         if "svcs" not in self._cache:
-            # SVC-only: ``standby`` (see ``LSGrid.set_svc_standby``)
+            # SVC-only: ``standby`` and ``can_be_pv`` (see ``LSGrid.set_svc_standby`` /
+            # ``LSGrid.set_svc_can_be_pv``)
             self._cache["svcs"] = self._build_one_sided(self._grid.get_svcs(), flip_sign=True,
-                                                        extra={"standby": lambda el: bool(el.standby)})
+                                                        extra={"standby": lambda el: bool(el.standby),
+                                                               "can_be_pv": lambda el: bool(el.can_be_pv)})
         return self._maybe_select(self._cache["svcs"], attributes)
 
     def get_batteries(self, attributes: Optional[List[str]] = None) -> pd.DataFrame:

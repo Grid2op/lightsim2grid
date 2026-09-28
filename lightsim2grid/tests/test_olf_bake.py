@@ -908,5 +908,24 @@ class TestOlfBake(unittest.TestCase):
             self.assertEqual(remove_outer_loops(params).component_mode, mode)
 
 
+    def test_svc_near_its_limit_follows_the_generator_rule(self):
+        """An SVC within the saturation tolerance of its limit, whose regulated bus the
+        reference solve held at its target, was regulating: left in VOLTAGE mode (frozen
+        only with ``bake_saturated_voltage_control``). One that could not hold its target
+        is frozen, as a generator."""
+        def _baked_mode(b_max_mvar, **kwargs):
+            n = four_substations()
+            # the SVC holds its bus at 400 kV producing a bit more than 12.5 MVAr
+            n.update_static_var_compensators(id="SVC", b_max=b_max_mvar / 400. ** 2)
+            lf.run_ac(n, _with_loops_params())
+            bake_outer_loops(n, **kwargs)
+            return n.get_static_var_compensators().loc["SVC", "regulation_mode"]
+
+        # a hair inside its limit, far within the relative tolerance, target held
+        self.assertEqual(_baked_mode(12.9), "VOLTAGE")
+        self.assertEqual(_baked_mode(12.9, bake_saturated_voltage_control=True), "REACTIVE_POWER")
+        # saturated for real: the target is not held
+        self.assertEqual(_baked_mode(10.), "REACTIVE_POWER")
+
 if __name__ == "__main__":
     unittest.main()

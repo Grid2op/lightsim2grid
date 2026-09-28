@@ -37,7 +37,9 @@ enum class LS2G_API ViolationElementType : int {
     STORAGE = 6,
     // a static var compensator, by its own id: an idle SVC carrying a standby automaton
     // that the voltage of the bus it regulates would switch on
-    // (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY, see SvcStandbyCheck.hpp)
+    // (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY, see SvcStandbyCheck.hpp), or a
+    // fixed-Q SVC an outer loop froze at a reactive limit that would regulate again
+    // (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q, see GenPvReleaseCheck.hpp)
     SVC = 7
 };
 
@@ -84,7 +86,8 @@ enum class LS2G_API LimitViolationType : int {
     // HIGH_Q). Physical for the same reason: the converged solution assumes a control the
     // loop would not leave in place. `value` the regulated bus' voltage and `limit` the
     // target, both in kV; the "LOW" in the name says which side the excess is on (value
-    // below limit), and downstream code relies on it. See GenPvReleaseCheck.hpp.
+    // below limit), and downstream code relies on it. See GenPvReleaseCheck.hpp. Also on an
+    // SVC flagged as frozen at a reactive limit (LSGrid::set_svc_can_be_pv).
     LOW_VOLTAGE_AT_MIN_Q = 9,
     // ... and the mirror: pinned at its MAXIMUM, regulated bus ABOVE the target (value
     // above limit).

@@ -161,6 +161,8 @@ ATTR_SVC_INPUT = [
     "standby",
     "standby_low_vm_pu",
     "standby_high_vm_pu",
+    # the SVCs a caller flagged as frozen at a reactive limit (see LSGrid.set_svc_can_be_pv)
+    "can_be_pv",
 ]
 
 

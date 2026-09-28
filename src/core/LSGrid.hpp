@@ -1135,6 +1135,17 @@ class LS2G_API LSGrid final
             svcs_.set_standby(standby, low_vm_pu, high_vm_pu);
         }
         /**
+         * The generators' `set_gen_can_be_pv`, for the SVCs: flag the SVCs a caller knows
+         * an outer loop froze at a reactive limit (one bool per SVC, false by default) --
+         * a voltage-mode SVC turned fixed-Q at the edge of its susceptance range, which
+         * the loop would switch back to voltage control. Never enforced nor read by a
+         * powerflow: it only opens that SVC to the PQ -> PV release check (see
+         * `get_physical_violations` and GenPvReleaseCheck.hpp).
+         */
+        void set_svc_can_be_pv(const std::vector<bool> & can_be_pv){
+            svcs_.set_can_be_pv(can_be_pv);
+        }
+        /**
          * Same, for the storage units -- which take part in the distributed slack under
          * the same rule as the generators (`add_storage_slackbus`), so their converged
          * active power can leave what they can deliver in exactly the same way.

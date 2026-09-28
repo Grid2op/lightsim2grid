@@ -226,7 +226,18 @@ void bind_gridmodel(py::module_& m) {
              "physical checks (`get_physical_violations`, the batch algorithms' "
              "`compute_physical_violations`) only consider a flagged PQ machine when looking for "
              "one whose regulated voltage would make an outer loop switch it back to PV.")
-.def("set_svc_standby", &LSGrid::set_svc_standby,
+.def("set_svc_can_be_pv", &LSGrid::set_svc_can_be_pv,
+             py::arg("can_be_pv"),
+             "The generators' set_gen_can_be_pv, for the SVCs: flag the SVCs an outer loop froze "
+             "at a reactive limit, one bool per SVC (`SvcInfo.can_be_pv`, False by default), never "
+             "enforced and never read by a powerflow.\n\n"
+             "lightsim2grid cannot tell such an SVC -- a fixed-Q one after `bake_outer_loops` -- "
+             "from one that was fixed-Q to begin with: the caller says so "
+             "(`init_from_pypowsybl(can_be_pv=...)` passes the SVCs `bake_outer_loops` froze at "
+             "a limit). What it is for: the physical checks report a flagged fixed-Q SVC whose "
+             "regulated voltage would make an outer loop switch it back to voltage control "
+             "(LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q on the SVC).")
+        .def("set_svc_standby", &LSGrid::set_svc_standby,
              py::arg("standby"), py::arg("low_vm_pu"), py::arg("high_vm_pu"),
              "Flag the SVCs an outer loop left idle under their standby automaton: one bool per "
              "SVC (`SvcInfo.standby`, False by default), with that automaton's low / high voltage "

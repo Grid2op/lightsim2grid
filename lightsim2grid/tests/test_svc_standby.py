@@ -317,10 +317,13 @@ class TestSvcStandbyFromPypowsybl(unittest.TestCase):
             init_from_pypowsybl(n, sort_index=False, buses_for_sub=False,
                                 can_be_pv=list(pinned) + ["NOT-AN-ELEMENT"])
 
-    def test_svc_without_automaton_cannot_be_flagged(self):
+    def test_svc_without_automaton_is_flagged_as_frozen(self):
+        # an SVC id of `can_be_pv` with no standby automaton is one frozen at a limit
         n = pp.network.create_four_substations_node_breaker_network()
-        with self.assertRaises(ValueError):
-            init_from_pypowsybl(n, sort_index=False, buses_for_sub=False, can_be_pv=["SVC"])
+        svc = init_from_pypowsybl(n, sort_index=False, buses_for_sub=False,
+                                  can_be_pv=["SVC"]).get_svcs()[0]
+        self.assertFalse(svc.standby)
+        self.assertTrue(svc.can_be_pv)
 
     def test_non_regulating_svc_ignores_its_automaton(self):
         # OLF only arms the automaton of an SVC regulating voltage

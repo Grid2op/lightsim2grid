@@ -41,6 +41,16 @@ namespace ls2g {
  * flag is `GeneratorContainer::can_be_pv` (LSGrid::set_gen_can_be_pv), which the pypowsybl
  * converter fills from what `bake_outer_loops` froze; everything else is skipped.
  *
+ * SVCS TOO. An SVC an outer loop froze at a reactive limit (a voltage-mode SVC turned fixed-Q
+ * at the edge of its susceptance range -- flagged with LSGrid::set_svc_can_be_pv, which the
+ * converter fills from what `bake_outer_loops` froze) is the same statement: absorbing all it
+ * can while the bus it regulates is still below its target (or producing all it can while
+ * that bus is above it), OpenLoadFlow would let it regulate again. Reported on the SVC with
+ * the same two types. Its range is a susceptance, worth `b * V^2` MVAr: which limit it sits at
+ * is the nearer end of that range at its target voltage (a frozen SVC keeps the output it had
+ * while holding its target, a hair inside the limit at most). No batch axis varies an SVC's
+ * target, and no contingency disconnects one: a row checks it against the grid's target.
+ *
  * WHAT IS CHECKED. A flagged PQ generator whose reactive setpoint sits at one of its limits
  * (within `tol_mva`, the side being decided once per plan), with a reactive range of at
  * least MIN_REACTIVE_RANGE_MVAR (OpenLoadFlow's own plausibility floor: a narrower range
@@ -60,6 +70,8 @@ constexpr real_type MIN_REACTIVE_RANGE_MVAR = 1.;
 /// it. Built once per compute() by `build_gen_pv_release_plan`.
 struct GenPvReleaseEntry
 {
+    /// GENERATOR, or SVC for a flagged frozen SVC (then `gen_id` is the svc id)
+    ViolationElementType el_type = ViolationElementType::GENERATOR;
     int gen_id = -1;
     int reg_bus_grid = -1;        ///< the bus it regulates, grid numbering
     int reg_bus_solver = -1;      ///< ... solver numbering (what a row's V is indexed in)
@@ -138,6 +150,54 @@ inline void build_gen_pv_release_plan(const LSGrid & grid_model,
         }
         out.gens.push_back(entry);
     }
+
+    // the flagged SVCs an outer loop froze at a limit (LSGrid::set_svc_can_be_pv)
+    const SvcContainer & svcs = grid_model.get_svcs();
+    const int nb_svc = svcs.nb();
+    const std::vector<bool> & svc_status = svcs.get_status();
+    const std::vector<bool> & svc_can_be_pv = svcs.get_can_be_pv();
+    const std::vector<std::string> & svc_names = svcs.get_names();
+    const real_type sn_mva = grid_model.get_sn_mva();
+    for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
+        if(!svc_status[svc_id]) continue;
+        if(static_cast<std::size_t>(svc_id) >= svc_can_be_pv.size() || !svc_can_be_pv[svc_id]) continue;
+        // regulating (already a controller) or OFF: nothing to release
+        if(svcs.get_regulation_mode(svc_id) != SvcContainer::RegulationMode::REACTIVE_POWER) continue;
+
+        const real_type target_vm_pu = svcs.get_target_vm_pu(svc_id);
+        if(!std::isfinite(target_vm_pu) || target_vm_pu <= 0.) continue;  // no target to hold
+        // its reactive range at its target voltage, MVAr (b in pu of sn_mva)
+        const real_type v2 = target_vm_pu * target_vm_pu * sn_mva;
+        const real_type min_q = svcs.get_b_min(svc_id) * v2;
+        const real_type max_q = svcs.get_b_max(svc_id) * v2;
+        if(!std::isfinite(min_q) || !std::isfinite(max_q)) continue;
+        if(max_q - min_q < MIN_REACTIVE_RANGE_MVAR) continue;  // never a voltage controller
+        const real_type target_q = svcs.get_target_q()(svc_id);  // generator convention, MVAr
+        const bool at_min = std::abs(target_q - min_q) <= std::abs(target_q - max_q);
+
+        const int reg_bus_grid = svcs.get_regulated_bus_id(svc_id);
+        if(reg_bus_grid < 0 || reg_bus_grid >= vn_kv.size()) continue;
+        const int reg_bus_solver = id_me_to_solver[reg_bus_grid].cast_int();
+        if(reg_bus_solver == BaseConstants::_deactivated_bus_id) continue;
+        const int svc_bus_grid = svcs.get_bus_id()(svc_id).cast_int();
+        if(svc_bus_grid < 0 || svc_bus_grid >= vn_kv.size()) continue;
+        const int svc_bus_solver = id_me_to_solver[svc_bus_grid].cast_int();
+        if(svc_bus_solver == BaseConstants::_deactivated_bus_id) continue;
+
+        GenPvReleaseEntry entry;
+        entry.el_type = ViolationElementType::SVC;
+        entry.gen_id = svc_id;
+        entry.reg_bus_grid = reg_bus_grid;
+        entry.reg_bus_solver = reg_bus_solver;
+        entry.gen_bus_solver = svc_bus_solver;
+        entry.at_min = at_min;
+        entry.target_vm_pu = target_vm_pu;
+        entry.vn_kv = vn_kv(reg_bus_grid);
+        if(static_cast<std::size_t>(svc_id) < svc_names.size()){
+            entry.name = svc_names[static_cast<std::size_t>(svc_id)];
+        }
+        out.gens.push_back(entry);
+    }
 }
 
 /**
@@ -147,7 +207,9 @@ inline void build_gen_pv_release_plan(const LSGrid & grid_model,
  * `V` is the row's converged complex voltage (solver numbering, pu). `target_vm_of(gen_id)`
  * is the target that machine would hold in THIS row (a sweep may vary it, see
  * BaseBatchSweep::modify_gen_v; the grid's own otherwise) and `is_gen_off(gen_id)` whether
- * the row disconnected it (a generator contingency: nothing to release). `masked_solver_ids`
+ * the row disconnected it (a generator contingency: nothing to release). Both are asked
+ * about the GENERATOR entries only: an SVC entry keeps the grid's target and is never
+ * disconnected by a row. `masked_solver_ids`
  * is this row's masked (stranded) solver buses -- sorted, may be nullptr -- whose voltage
  * means nothing: a machine is skipped when its regulated bus OR its own bus is masked.
  */
@@ -176,8 +238,9 @@ inline void check_gen_pv_release_violations(const GenPvReleasePlan & plan,
         // the solve, as when the contingency disconnects it: it releases nothing, even
         // when the bus it regulates stays in the main component
         if(is_masked(entry.gen_bus_solver)) continue;
-        if(is_gen_off(entry.gen_id)) continue;
-        const real_type target = target_vm_of(entry.gen_id);
+        const bool is_gen = (entry.el_type == ViolationElementType::GENERATOR);
+        if(is_gen && is_gen_off(entry.gen_id)) continue;
+        const real_type target = is_gen ? target_vm_of(entry.gen_id) : entry.target_vm_pu;
         if(!std::isfinite(target) || target <= 0.) continue;
         const real_type vm = std::abs(V(entry.reg_bus_solver));
         if(!std::isfinite(vm)) continue;
@@ -185,11 +248,11 @@ inline void check_gen_pv_release_violations(const GenPvReleasePlan & plan,
         if(entry.at_min && (vm < target - tol_vm_pu)){
             // absorbing as much as it can, and the voltage is still below the target: it
             // absorbs too much for that target, the loop would let it regulate again
-            out.push_back(LimitViolation{ViolationElementType::GENERATOR, entry.gen_id, 0,
+            out.push_back(LimitViolation{entry.el_type, entry.gen_id, 0,
                                          LimitViolationType::LOW_VOLTAGE_AT_MIN_Q,
                                          vm * entry.vn_kv, target * entry.vn_kv, entry.name});
         } else if(!entry.at_min && (vm > target + tol_vm_pu)){
-            out.push_back(LimitViolation{ViolationElementType::GENERATOR, entry.gen_id, 0,
+            out.push_back(LimitViolation{entry.el_type, entry.gen_id, 0,
                                          LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q,
                                          vm * entry.vn_kv, target * entry.vn_kv, entry.name});
         }

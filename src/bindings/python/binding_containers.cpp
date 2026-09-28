@@ -97,6 +97,7 @@ void bind_containers(py::module_& m) {
         .def_readonly("b_max", &SvcInfo::b_max, DocIterator::b_max.c_str())
         .def_readonly("regulated_bus_id", &SvcInfo::regulated_bus_id, DocIterator::svc_regulated_bus_id.c_str())
         .def_readonly("standby", &SvcInfo::standby, DocIterator::svc_standby.c_str())
+        .def_readonly("can_be_pv", &SvcInfo::can_be_pv, DocIterator::svc_can_be_pv.c_str())
         .def_readonly("standby_low_vm_pu", &SvcInfo::standby_low_vm_pu, DocIterator::svc_standby_low_vm_pu.c_str())
         .def_readonly("standby_high_vm_pu", &SvcInfo::standby_high_vm_pu, DocIterator::svc_standby_high_vm_pu.c_str())
         .def_readonly("has_res", &SvcInfo::has_res, DocIterator::has_res.c_str())

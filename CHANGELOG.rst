@@ -207,8 +207,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
-- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 12: ``SvcContainer`` serializes the standby automaton
-  of each SVC (see ``LSGrid.set_svc_standby``). Files of format 11 no longer load.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 13: ``SvcContainer`` serializes the standby automaton
+  and the ``can_be_pv`` flag of each SVC. Files of format 11 no longer load.
 - [ADDED] Physical check of the idle SVCs under a standby automaton (``LSGrid.set_svc_standby``):
   a regulated bus outside the automaton's thresholds, which OpenLoadFlow's
   ``MonitoringVoltageOuterLoop`` answers by switching the SVC on, is reported as
@@ -217,6 +217,14 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``init_from_pypowsybl(can_be_pv=...)`` flags them with their thresholds.
 - [FIXED] ``bake_outer_loops`` applied the standby automaton to non-regulating SVCs and checked the
   SVC's own bus: OpenLoadFlow arms it on voltage-mode SVCs only and monitors their regulated bus.
+- [ADDED] The PQ -> PV release check for the SVCs: ``LSGrid.set_svc_can_be_pv`` flags a fixed-Q SVC
+  an outer loop froze at a reactive limit, reported as ``LOW_VOLTAGE_AT_MIN_Q`` /
+  ``HIGH_VOLTAGE_AT_MAX_Q`` on the SVC. ``bake_outer_loops`` returns the SVCs it froze at a limit.
+- [FIXED] ``bake_outer_loops`` froze a voltage-mode SVC within the saturation tolerance of its limit
+  even when OpenLoadFlow held its target: SVCs now follow the generators' rule.
+- [FIXED] ``bake_outer_loops`` took a standby SVC OpenLoadFlow switched on for an idle one (its bus
+  sits at the setpoint, inside the thresholds). It is read off the SVC's output now, and marked as
+  no longer standby.
 - [BREAKING] Operational limit checks ignore a value on its limit up to ``violation_rel_tol``
   (new, default ``1e-9``; ``rel_tol`` of ``LSGrid.get_violations``). They used ``>=`` /
   ``<=``, so the last bit of rounding decided.

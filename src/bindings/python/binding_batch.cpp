@@ -503,7 +503,9 @@ void bind_batch(py::module_& m) {
         .value("SVC", ViolationElementType::SVC,
                "A static var compensator, by its own id: an idle SVC flagged as carrying a "
                "standby automaton, which the voltage of the bus it regulates would switch on "
-               "(LimitViolationType.LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY).");
+               "(LimitViolationType.LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY), or a "
+               "fixed-Q SVC flagged as frozen at a reactive limit (LSGrid.set_svc_can_be_pv) "
+               "that would regulate again (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q).");
 
     py::enum_<LimitViolationType>(m, "LimitViolationType", DocContingencyAnalysis::LimitViolationType.c_str())
         .value("LOW_VOLTAGE", LimitViolationType::LOW_VOLTAGE)
@@ -557,7 +559,9 @@ void bind_batch(py::module_& m) {
                "the converged solution assumes a control the loop would not leave in place. "
                "`value` the regulated voltage and `limit` the target, both in kV; the 'LOW' in "
                "the name says the value is below the limit. Reported by "
-               "compute_physical_violations, never enforced.")
+               "compute_physical_violations, never enforced. Also reported on an SVC "
+               "(element_type ViolationElementType.SVC) flagged with LSGrid.set_svc_can_be_pv, "
+               "frozen at the absorbing end of its susceptance range.")
         .value("HIGH_VOLTAGE_AT_MAX_Q", LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q,
                "The mirror of LOW_VOLTAGE_AT_MIN_Q: a PQ generator flagged as pinned at its "
                "MAXIMUM reactive power whose regulated bus sits ABOVE the target it would hold "

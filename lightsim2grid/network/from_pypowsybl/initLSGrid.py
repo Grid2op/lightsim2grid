@@ -222,13 +222,14 @@ def init(net : pypo.network.Network,
         id, or a boolean array in the order of ``net.get_generators()`` (sorted when
         ``sort_index``; it flags generators only). ``None`` (default) flags nothing. A
         generator is flagged as "pinned at a reactive limit" (``LSGrid.set_gen_can_be_pv``
-        / ``GenInfo.can_be_pv``); a static var compensator as a standby SVC left idle, its
-        ``standbyAutomaton`` thresholds handed to ``LSGrid.set_svc_standby`` (it must carry
-        that extension). Nothing in a powerflow reads it: it only opens those elements to
-        the physical check of that switch (``LOW_VOLTAGE_AT_MIN_Q`` /
-        ``HIGH_VOLTAGE_AT_MAX_Q`` on a generator, ``LOW_VOLTAGE_SVC_STANDBY`` /
-        ``HIGH_VOLTAGE_SVC_STANDBY`` on an SVC, see ``LSGrid.get_physical_violations``). An
-        unknown id raises.
+        / ``GenInfo.can_be_pv``); a static var compensator whose ``standbyAutomaton`` says
+        ``standby`` as a standby SVC left idle, its thresholds handed to
+        ``LSGrid.set_svc_standby``; any other static var compensator as frozen at a reactive
+        limit (``LSGrid.set_svc_can_be_pv`` / ``SvcInfo.can_be_pv``). Nothing in a powerflow
+        reads it: it only opens those elements to the physical check of that switch
+        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on a generator or a frozen SVC,
+        ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on an idle standby SVC, see
+        ``LSGrid.get_physical_violations``). An unknown id raises.
     :type can_be_pv: None, Iterable[str], pandas.Series or numpy.ndarray
 
     :return: The properly initialized network.
