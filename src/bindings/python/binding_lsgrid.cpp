@@ -114,7 +114,8 @@ void bind_gridmodel(py::module_& m) {
              py::arg("ac") = true, py::arg("tol_mva") = 1e-4, py::arg("tol_vm_pu") = 1e-4,
              DocLSGrid::get_physical_violations.c_str())
         .def("get_violations", &LSGrid::get_violations,
-             py::arg("threshold") = 1., py::arg("ac") = true, DocLSGrid::get_violations.c_str())
+             py::arg("threshold") = 1., py::arg("ac") = true,
+             py::arg("rel_tol") = DEFAULT_VIOLATION_REL_TOL, DocLSGrid::get_violations.c_str())
 
         // init the grid
         .def("init_bus", &LSGrid::init_bus, DocLSGrid::_internal_do_not_use.c_str())

@@ -207,6 +207,13 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [BREAKING] The operational limit checks (``compute_limit_violations`` of the batch
+  algorithms, ``LSGrid.get_violations``) report a value only beyond its limit by more than a
+  relative tolerance, the new ``violation_rel_tol`` (default ``1e-9``; ``rel_tol`` of
+  ``LSGrid.get_violations``): ``v > vmax * (1 + tol)``, ``v < vmin * (1 - tol)``,
+  ``amps > limit * (1 + tol)``. They were ``>=`` / ``<=``, so a value on its limit (*eg* a
+  bus a regulator holds at its ``vmax``) flipped between reported and not with the last bit
+  of rounding, and the one-off solve, the batch and gpusim2grid disagreed.
 - [FIXED] ``handle_disconnected_grid``: the PQ -> PV release check (``LOW_VOLTAGE_AT_MIN_Q`` /
   ``HIGH_VOLTAGE_AT_MAX_Q``) reported a ``can_be_pv`` generator stranded outside the main
   component when the bus it regulates stayed in it. A stranded machine is now skipped, as when

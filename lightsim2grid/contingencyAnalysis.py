@@ -303,9 +303,9 @@ class ContingencyAnalysis(object):
         ==============  ========  =========  ===============================================
         check           anchor    limit      violates when
         ==============  ========  =========  ===============================================
-        CURRENT         0         limit_a    ``value >= threshold * limit_a``
-        LOW_VOLTAGE     vn_kv     vmin_kv    ``v <= threshold * vmin + (1 - threshold) * vn``
-        HIGH_VOLTAGE    vn_kv     vmax_kv    ``v >= threshold * vmax + (1 - threshold) * vn``
+        CURRENT         0         limit_a    ``value > threshold * limit_a``
+        LOW_VOLTAGE     vn_kv     vmin_kv    ``v < threshold * vmin + (1 - threshold) * vn``
+        HIGH_VOLTAGE    vn_kv     vmax_kv    ``v > threshold * vmax + (1 - threshold) * vn``
         ==============  ========  =========  ===============================================
 
         A line's usable range really is ``[0, limit_a]``, so its anchor is ``0`` and the rule
@@ -325,6 +325,10 @@ class ContingencyAnalysis(object):
         rather than being reported as an arbitrary one of the two types. The
         reported ``value`` / ``limit`` are never rescaled by the threshold; only the test
         deciding whether to report is shifted.
+
+        On top of the effective limit, a value must clear the relative margin
+        `violation_rel_tol` (default ``1e-9``) to be reported, so a value on its limit up to
+        rounding is not a violation.
 
         The default ``1.0`` reproduces the previous, threshold-less behaviour. Like
         `nb_thread` / `handle_disconnected_grid`, this is a plain runtime knob: it only
@@ -352,6 +356,45 @@ class ContingencyAnalysis(object):
             # empty result arrays. Keep the registered contingencies (with_contlist=False).
             self.clear(with_contlist=False)
         self.computer.violation_threshold = val
+
+    @property
+    def violation_rel_tol(self):
+        """Relative tolerance (a ``float`` in ``[0., 1.[``, default ``1e-9``) of every
+        limit-violation check performed when `compute_limit_violations` is `True`: a value
+        is reported only when it is beyond its effective limit (see `violation_threshold`)
+        by more than this fraction of that limit::
+
+            CURRENT        value > threshold * limit_a * (1 + violation_rel_tol)
+            LOW_VOLTAGE    v     < low_eff  * (1 - violation_rel_tol)
+            HIGH_VOLTAGE   v     > high_eff * (1 + violation_rel_tol)
+
+        It is there for the values that sit ON their limit by construction, typically a bus
+        a generator regulates exactly at its ``vmax``: a solve leaves such a value a few ulps
+        on either side of the limit, and with a bare ``>`` the last bit of rounding decided
+        whether it was reported (the one-contingency-at-a-time solve, the batch and
+        gpusim2grid disagreed). ``1e-9`` is about 0.4 mV on a 400 kV bus. ``0.`` gives the
+        bare strict comparisons. The reported ``value`` / ``limit`` are unaffected.
+
+        Like `violation_threshold`, it only affects the next `run` / `run_ac` / `run_dc`;
+        changing it (either way) invalidates any already-computed results, the registered
+        contingencies being kept.
+        """
+        return self.computer.violation_rel_tol
+
+    @violation_rel_tol.setter
+    def violation_rel_tol(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `violation_rel_tol` attribute must be a real number.")
+        if not (0. <= val < 1.):
+            raise ValueError("The `violation_rel_tol` attribute must be in the range "
+                             f"[0., 1.[ (got {val}).")
+        if val != self.computer.violation_rel_tol:
+            # the c++ side clears its results on any change (a larger tolerance drops
+            # recorded violations as surely as a smaller one adds some)
+            self.clear(with_contlist=False)
+        self.computer.violation_rel_tol = val
 
     @property
     def compute_physical_violations(self):

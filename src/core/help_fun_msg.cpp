@@ -4143,12 +4143,16 @@ const std::string DocLSGrid::get_violations = R"mydelimiter(
 
     - every bus whose voltage magnitude is outside its ``[vmin, vmax]``
       (:func:`set_bus_voltage_limits`; ``LOW_VOLTAGE`` / ``HIGH_VOLTAGE``, value and limit in kV);
-    - every line / transformer side whose current is at or above its thermal limit
+    - every line / transformer side whose current is above its thermal limit
       (:func:`set_line_current_limit_side1` and the like; ``CURRENT``, ``side`` 1 or 2, value and
       limit in kA, as the limits).
 
-    ``threshold``, in ``]0, 1]``, tightens both checks (``1.``: report exactly at the configured
-    limit), like the batch algorithms' ``violation_threshold``. A bus or a branch side without a
+    ``threshold``, in ``]0, 1]``, tightens both checks (``1.``: report beyond the configured
+    limit), like the batch algorithms' ``violation_threshold``. ``rel_tol`` (default ``1e-9``),
+    like their ``violation_rel_tol``, is the relative margin a value must clear on top of it
+    (``v > vmax * (1 + rel_tol)``, ``v < vmin * (1 - rel_tol)``, ``amps > limit * (1 +
+    rel_tol)``), so a value on its limit up to rounding -- a bus held at its ``vmax`` -- is not
+    a violation (``0.``: strictly beyond). A bus or a branch side without a
     limit is never reported. Returns a list of ``LimitViolation``; if the last powerflow did not
     converge, the list holds the batch algorithms' own sentinel, one ``GRID`` / ``DIVERGENCE``
     entry. Raises if no powerflow of that kind has run. See :func:`get_physical_violations` for
@@ -7380,6 +7384,30 @@ const std::string DocContingencyAnalysis::ContingencyAnalysis = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocContingencyAnalysis::violation_rel_tol = R"mydelimiter(
+    Relative tolerance (a ``float`` in ``[0., 1.[``, default ``1e-9``) of every limit check
+    performed when `compute_limit_violations` is ``True``: a value is reported only when it
+    is beyond its effective limit (see `violation_threshold`) by more than this fraction of
+    that limit::
+
+        CURRENT        value > threshold * limit_a * (1 + violation_rel_tol)
+        LOW_VOLTAGE    v     < low_eff  * (1 - violation_rel_tol)
+        HIGH_VOLTAGE   v     > high_eff * (1 + violation_rel_tol)
+
+    It exists for the values that sit ON their limit by construction -- typically a bus a
+    generator regulates exactly at its ``vmax``. A solve leaves such a value a few ulps on
+    either side of the limit, and with a bare ``>`` the last bit of rounding decided whether it
+    was reported: the one-contingency-at-a-time solve, the batch and gpusim2grid did not agree.
+    ``1e-9`` is about 0.4 mV on a 400 kV bus, far below anything physically meaningful and far
+    above rounding. ``0.`` gives the bare strict comparisons.
+
+    The reported `value` and `limit` are unaffected. Like `violation_threshold` it only affects
+    the next :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute`; changing
+    it (in either direction) invalidates any already-computed results, the registered
+    contingencies being kept.
+
+)mydelimiter";
+
 const std::string DocContingencyAnalysis::violation_threshold = R"mydelimiter(
     Threshold (a ``float`` in ``]0., 1.]``, default ``1.0``) applied to every limit check
     performed when `compute_limit_violations` is ``True``. It is the fraction of the usable
@@ -7395,9 +7423,9 @@ const std::string DocContingencyAnalysis::violation_threshold = R"mydelimiter(
     ==============  ========  =========  ===============================================
     check           anchor    limit      violates when
     ==============  ========  =========  ===============================================
-    CURRENT         0         limit_a    ``value >= threshold * limit_a``
-    LOW_VOLTAGE     vn_kv     vmin_kv    ``v <= threshold * vmin + (1 - threshold) * vn``
-    HIGH_VOLTAGE    vn_kv     vmax_kv    ``v >= threshold * vmax + (1 - threshold) * vn``
+    CURRENT         0         limit_a    ``value > threshold * limit_a``
+    LOW_VOLTAGE     vn_kv     vmin_kv    ``v < threshold * vmin + (1 - threshold) * vn``
+    HIGH_VOLTAGE    vn_kv     vmax_kv    ``v > threshold * vmax + (1 - threshold) * vn``
     ==============  ========  =========  ===============================================
 
     A line's usable range really is ``[0, limit_a]``, so its anchor is ``0`` and the rule
@@ -7428,9 +7456,9 @@ const std::string DocContingencyAnalysis::violation_threshold = R"mydelimiter(
     remain the value actually reached and the limit exactly as configured. Only the test
     deciding whether to report at all is shifted.
 
-    The default ``1.0`` reproduces the previous, threshold-less behaviour exactly (modulo
-    the strict ``>`` / ``<`` comparisons becoming ``>=`` / ``<=``, which only differ when a
-    value lands exactly on its limit -- negligible in floating point).
+    The default ``1.0`` reproduces the previous, threshold-less behaviour. On top of the
+    effective limit, a value must clear the relative margin `violation_rel_tol` (default
+    ``1e-9``) to be reported, so a value on its limit up to rounding is not a violation.
 
     Like `nb_thread` / `handle_disconnected_grid`, this is a plain runtime knob: it only
     affects the next

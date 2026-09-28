@@ -270,6 +270,33 @@ class ScenarioSweep:
         self.computer.violation_threshold = val
 
     @property
+    def violation_rel_tol(self):
+        """Relative tolerance (a ``float`` in ``[0., 1.[``, default ``1e-9``) of every
+        limit-violation check performed when :attr:`compute_limit_violations` is ``True``:
+        a value is reported only when it is beyond its effective limit by more than this
+        fraction of it, so a value on its limit up to rounding (a bus a generator holds at
+        its ``vmax``) is not a violation. Same meaning as
+        :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.violation_rel_tol`
+        -- see that docstring for the formulas. ``0.`` gives the bare strict comparisons.
+        Changing it invalidates any already-computed results.
+        """
+        return self.computer.violation_rel_tol
+
+    @violation_rel_tol.setter
+    def violation_rel_tol(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `violation_rel_tol` attribute must be a real number.")
+        if not (0. <= val < 1.):
+            raise ValueError("The `violation_rel_tol` attribute must be in the range "
+                             f"[0., 1.[ (got {val}).")
+        if val != self.computer.violation_rel_tol:
+            # mirrors the C++ side, which clears its results on any change
+            self.__computed = False
+        self.computer.violation_rel_tol = val
+
+    @property
     def compute_physical_violations(self):
         """Whether every converged row reports the PHYSICAL limits its solution leaves -- a
         state the grid cannot reach at all (``ViolationCategory.PHYSICAL``), as opposed to

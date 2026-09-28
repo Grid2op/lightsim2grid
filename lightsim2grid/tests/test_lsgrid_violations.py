@@ -60,16 +60,18 @@ class TestLSGridViolations(unittest.TestCase):
         self.grid.set_trafo_current_limit_side1(self.trafo_lim1)
         self.grid.set_trafo_current_limit_side2(self.trafo_lim2)
 
-    def _batch_n_case(self, threshold=1., dc=False):
+    def _batch_n_case(self, threshold=1., dc=False, rel_tol=None):
         ca = ContingencyAnalysisCPP(self.grid, True)  # compute_limit_violations first
         if dc:
             ca.change_algorithm(AlgorithmType.DC_SparseLU)
         ca.add_n1(0)
         ca.violation_threshold = threshold
+        if rel_tol is not None:
+            ca.violation_rel_tol = rel_tol
         ca.compute(1. * self.V0, _MAX_IT, _TOL)
         return ca.get_violations_n()
 
-    def _hand_check(self, threshold=1.):
+    def _hand_check(self, threshold=1., rel_tol=1e-9):
         """what the results say, compared to the limits by hand"""
         expected = set()
         vm = np.abs(self.grid.get_V()) * self.vn  # get_V is in solver order == grid order here (all buses solved)
@@ -78,14 +80,14 @@ class TestLSGridViolations(unittest.TestCase):
             anchor = min(max(self.vn[b], vmin[b]), vmax[b])
             low = vmin[b] + (1. - threshold) * (anchor - vmin[b])
             high = vmax[b] - (1. - threshold) * (vmax[b] - anchor)
-            if vm[b] <= low:
+            if vm[b] < low * (1. - rel_tol):
                 expected.add(("ViolationElementType.BUS", b, 0, "LimitViolationType.LOW_VOLTAGE"))
-            elif vm[b] >= high:
+            elif vm[b] > high * (1. + rel_tol):
                 expected.add(("ViolationElementType.BUS", b, 0, "LimitViolationType.HIGH_VOLTAGE"))
         for l in self.grid.get_lines():
-            if l.res_a1_ka >= threshold * self.line_lim1[l.id]:
+            if l.res_a1_ka > threshold * self.line_lim1[l.id] * (1. + rel_tol):
                 expected.add(("ViolationElementType.LINE", l.id, 1, "LimitViolationType.CURRENT"))
-            if l.res_a2_ka >= threshold * self.line_lim2[l.id]:
+            if l.res_a2_ka > threshold * self.line_lim2[l.id] * (1. + rel_tol):
                 expected.add(("ViolationElementType.LINE", l.id, 2, "LimitViolationType.CURRENT"))
         return expected
 
@@ -128,6 +130,32 @@ class TestLSGridViolations(unittest.TestCase):
         for a, b in zip(sorted(viol, key=_key), sorted(batch, key=_key)):
             self.assertAlmostEqual(a.value, b.value, places=9)
             self.assertAlmostEqual(a.limit, b.limit, places=9)
+
+    def test_bad_rel_tol(self):
+        self.grid.ac_pf(1. * self.V0, _MAX_IT, _TOL)
+        for tol in (-1e-9, 1., 2., np.nan):
+            with self.assertRaises(RuntimeError):
+                self.grid.get_violations(rel_tol=tol)
+
+    def test_rel_tol(self):
+        """a current on its limit up to a fraction of rel_tol is not reported with the
+        default tolerance, and is with rel_tol=0 (bare strict comparison); the batch agrees"""
+        self._set_limits()
+        self.grid.ac_pf(1. * self.V0, _MAX_IT, _TOL)
+        a1 = np.array([l.res_a1_ka for l in self.grid.get_lines()])
+        lim1 = np.full(a1.shape, np.nan)
+        lim1[0] = a1[0] * (1. - 5e-10)   # the current is 5e-10 (relative) above its limit
+        self.grid.set_line_current_limit_side1(lim1)
+        self.grid.set_line_current_limit_side2(np.full(a1.shape, np.nan))
+
+        def line0(viol):
+            return [v for v in viol if "LINE" in str(v.element_type) and v.element_id == 0]
+
+        self.assertEqual(line0(self.grid.get_violations()), [], "within the default 1e-9")
+        self.assertEqual(len(line0(self.grid.get_violations(rel_tol=0.))), 1, "strictly above")
+        self.assertEqual(len(line0(self.grid.get_violations(rel_tol=1e-10))), 1, "5e-10 > 1e-10")
+        self.assertEqual(line0(self._batch_n_case()), [])
+        self.assertEqual(len(line0(self._batch_n_case(rel_tol=0.))), 1)
 
     def test_threshold(self):
         self._set_limits(i_ratio=1.05)  # every current just BELOW its limit

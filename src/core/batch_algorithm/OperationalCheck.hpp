@@ -36,12 +36,27 @@ namespace ls2g {
 
 namespace batch_sweep_detail {
 
+// `violation_rel_tol` must be a finite number in [0, 1[ (1 would make low_eff * (1 -
+// rel_tol) zero: no LOW_VOLTAGE could ever be reported)
+inline void check_violation_rel_tol(real_type rel_tol, const char * fun_name){
+    if(!(rel_tol >= 0. && rel_tol < 1.)){
+        std::ostringstream exc_;
+        exc_ << fun_name << ": the relative tolerance should be a real number in the range "
+                "[0., 1.[ (got " << rel_tol << ").";
+        throw std::runtime_error(exc_.str());
+    }
+}
+
 // appends BUS limit violations for a single, already-solved voltage vector `V` (solver
 // numbering). `masked_solver_ids` is nullptr for the base ("n") case; in "handle
 // disconnected grid" mode it is this contingency's masked solver-bus-id list -- those
 // buses are forced to V=0 post-solve and must never be checked. `subs` resolves the
 // violating bus's substation name. `threshold` (in ]0., 1.]) tightens both checks; 1.
-// is the "report exactly at the configured limit" default. Moved verbatim (as a free
+// is the "report beyond the configured limit" default. `rel_tol` (>= 0, see
+// DEFAULT_VIOLATION_REL_TOL) is the margin a value must clear on top of that, relative to
+// the effective limit: LOW when v < low_eff * (1 - rel_tol), HIGH when v > high_eff *
+// (1 + rel_tol), so a bus held exactly on its limit is never reported whatever the last
+// bit of the solve (0: strictly beyond). Moved verbatim (as a free
 // function, `inline` so it can live in this header without an ODR violation) from the
 // pre-refactor ContingencyAnalysis.cpp's anonymous namespace.
 inline void check_bus_voltage_violations(
@@ -52,6 +67,7 @@ inline void check_bus_voltage_violations(
     const Eigen::Ref<const RealVect> & bus_vn_kv,
     const SubstationContainer & subs,
     real_type threshold,
+    real_type rel_tol,
     const std::vector<int> * masked_solver_ids,
     std::vector<LimitViolation> & out)
 {
@@ -101,12 +117,12 @@ inline void check_bus_voltage_violations(
             throw std::runtime_error(exc_.str());
         }
 
-        if(has_min && vm_kv <= low_eff){
+        if(has_min && vm_kv < low_eff * (1. - rel_tol)){
             const int sub_id = subs.sub_id_of_bus(static_cast<int>(grid_id));
             const std::string sub_name = static_cast<size_t>(sub_id) < sub_names.size() ? sub_names[sub_id] : std::string();
             out.push_back(LimitViolation{ViolationElementType::BUS, static_cast<int>(grid_id), 0,
                                           LimitViolationType::LOW_VOLTAGE, vm_kv, vmin, sub_name});
-        } else if(has_max && vm_kv >= high_eff){
+        } else if(has_max && vm_kv > high_eff * (1. + rel_tol)){
             const int sub_id = subs.sub_id_of_bus(static_cast<int>(grid_id));
             const std::string sub_name = static_cast<size_t>(sub_id) < sub_names.size() ? sub_names[sub_id] : std::string();
             out.push_back(LimitViolation{ViolationElementType::BUS, static_cast<int>(grid_id), 0,
@@ -118,7 +134,8 @@ inline void check_bus_voltage_violations(
 // appends CURRENT limit violations (both sides) for a single, already-solved voltage
 // vector `V` (solver numbering), for every element of `structure_data` (LineContainer
 // or TrafoContainer). `skip_ids` are the LOCAL (own-type) element ids disconnected BY
-// THIS CONTINGENCY. Moved verbatim from the pre-refactor
+// THIS CONTINGENCY. A side is reported when amps > threshold * limit * (1 + rel_tol), see
+// check_bus_voltage_violations. Moved verbatim from the pre-refactor
 // ContingencyAnalysis.cpp's anonymous namespace.
 template<class T>
 inline void check_current_violations(
@@ -132,6 +149,7 @@ inline void check_current_violations(
     const Eigen::Ref<const RealVect> & limit1,
     const Eigen::Ref<const RealVect> & limit2,
     real_type threshold,
+    real_type rel_tol,
     const std::vector<int> & skip_ids,
     std::vector<LimitViolation> & out)
 {
@@ -221,12 +239,12 @@ inline void check_current_violations(
 
         // the name is copied only into a violation: one std::string per element
         // examined was a malloc per branch per row on a grid with long names
-        if(has_lim1 && amps1 >= threshold * limit1(el_idx)){
+        if(has_lim1 && amps1 > threshold * limit1(el_idx) * (1. + rel_tol)){
             out.push_back(LimitViolation{el_type, static_cast<int>(el_id), 1,
                                           LimitViolationType::CURRENT, amps1, limit1(el_idx),
                                           el_id < el_names.size() ? el_names[el_id] : std::string()});
         }
-        if(has_lim2 && amps2 >= threshold * limit2(el_idx)){
+        if(has_lim2 && amps2 > threshold * limit2(el_idx) * (1. + rel_tol)){
             out.push_back(LimitViolation{el_type, static_cast<int>(el_id), 2,
                                           LimitViolationType::CURRENT, amps2, limit2(el_idx),
                                           el_id < el_names.size() ? el_names[el_id] : std::string()});

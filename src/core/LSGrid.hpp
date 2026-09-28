@@ -361,14 +361,17 @@ class LS2G_API LSGrid final
          * violates -- the same checks the batch algorithms run with
          * `compute_limit_violations`, on this grid's own solve: every bus outside its
          * [vmin, vmax] (set_bus_voltage_limits; LOW_VOLTAGE / HIGH_VOLTAGE) and every
-         * branch side at or above its thermal limit (set_line_current_limit_side1 /
-         * ..., CURRENT). `threshold` in ]0, 1] tightens both (1: report exactly at the
-         * limit, as the batch's `violation_threshold`). A powerflow that did not
+         * branch side above its thermal limit (set_line_current_limit_side1 /
+         * ..., CURRENT). `threshold` in ]0, 1] tightens both (1: report beyond the
+         * limit, as the batch's `violation_threshold`); `rel_tol` (>= 0) is the relative
+         * margin a value must clear on top of it, as the batch's `violation_rel_tol` (0:
+         * strictly beyond; the default ignores a value on its limit up to rounding). A powerflow that did not
          * converge yields the batch's own sentinel: one GRID / DIVERGENCE entry.
          * Throws if no such powerflow ran.
          */
         [[nodiscard]] std::vector<LimitViolation> get_violations(real_type threshold = 1.,
-                                                                 bool ac = true) const;
+                                                                 bool ac = true,
+                                                                 real_type rel_tol = DEFAULT_VIOLATION_REL_TOL) const;
 
         // do i compute the results (in terms of P,Q,V or loads, generators and flows on lines
         void deactivate_result_computation(){compute_results_=false;}

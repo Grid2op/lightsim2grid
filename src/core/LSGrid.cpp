@@ -2885,7 +2885,7 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
     return out;
 }
 
-std::vector<LimitViolation> LSGrid::get_violations(real_type threshold, bool ac) const{
+std::vector<LimitViolation> LSGrid::get_violations(real_type threshold, bool ac, real_type rel_tol) const{
     const char * fun_name = "LSGrid::get_violations";
     if(!(threshold > 0. && threshold <= 1.)){
         std::ostringstream exc_;
@@ -2893,6 +2893,7 @@ std::vector<LimitViolation> LSGrid::get_violations(real_type threshold, bool ac)
              << threshold << ").";
         throw std::runtime_error(exc_.str());
     }
+    batch_sweep_detail::check_violation_rel_tol(rel_tol, fun_name);
     const SolverBusLayout & layout = ac ? static_cast<const SolverBusLayout &>(ac_cache_)
                                         : static_cast<const SolverBusLayout &>(dc_cache_);
     const AlgorithmSelector & algo = ac ? _algo : _dc_algo;
@@ -2914,13 +2915,13 @@ std::vector<LimitViolation> LSGrid::get_violations(real_type threshold, bool ac)
     const Eigen::Ref<const CplxVect> V = algo.get_V();
     batch_sweep_detail::check_bus_voltage_violations(
         V, layout.id_me_to_solver, substations_.get_bus_vmin_kv(), substations_.get_bus_vmax_kv(),
-        substations_.get_bus_vn_kv(), substations_, threshold, nullptr, out);
+        substations_.get_bus_vn_kv(), substations_, threshold, rel_tol, nullptr, out);
     batch_sweep_detail::check_current_violations(
         powerlines_, ViolationElementType::LINE, V, layout.id_me_to_solver, substations_.get_bus_vn_kv(),
-        ac, sn_mva_, powerlines_.get_limit_a1_ka(), powerlines_.get_limit_a2_ka(), threshold, no_skip, out);
+        ac, sn_mva_, powerlines_.get_limit_a1_ka(), powerlines_.get_limit_a2_ka(), threshold, rel_tol, no_skip, out);
     batch_sweep_detail::check_current_violations(
         trafos_, ViolationElementType::TRAFO, V, layout.id_me_to_solver, substations_.get_bus_vn_kv(),
-        ac, sn_mva_, trafos_.get_limit_a1_ka(), trafos_.get_limit_a2_ka(), threshold, no_skip, out);
+        ac, sn_mva_, trafos_.get_limit_a1_ka(), trafos_.get_limit_a2_ka(), threshold, rel_tol, no_skip, out);
     return out;
 }
 

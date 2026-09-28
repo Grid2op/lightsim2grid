@@ -136,6 +136,15 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
     }
 }
 
+// Default relative tolerance of the OPERATIONAL checks (`violation_rel_tol`): a value
+// is reported only when it is beyond its (threshold-tightened) limit by more than this
+// fraction of that limit -- v < low_eff * (1 - rel_tol), v > high_eff * (1 + rel_tol),
+// amps > threshold * limit * (1 + rel_tol). A bus a regulator holds exactly at its vmax
+// comes out of a solve at vmax +/- a few ulps, and the last bit then decided whether it
+// was reported (it differed between the one-off solve, the batch and gpusim2grid).
+// 1e-9 is ~0.4 mV on a 400 kV bus: far below anything physical, far above rounding.
+constexpr real_type DEFAULT_VIOLATION_REL_TOL = 1e-9;
+
 // a single limit violation, as detected by ContingencyAnalysis (see compute_limit_violations)
 // and by the physical-limit checks (see compute_physical_violations)
 struct LS2G_API LimitViolation {

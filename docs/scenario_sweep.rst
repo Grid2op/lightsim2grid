@@ -165,7 +165,7 @@ Handling disconnected grids and limit violations
 ------------------------------------------------------
 
 `ScenarioSweep` has the same `handle_disconnected_grid` mode and inline limit-violation
-checking (`compute_limit_violations` / `violation_threshold` / `get_violations` /
+checking (`compute_limit_violations` / `violation_threshold` / `violation_rel_tol` / `get_violations` /
 `get_violations_n`) as `ContingencyAnalysis` -- see :doc:`security_analysis` for the full
 description of what each does. Same names, same semantics, and both classes'
 `get_violations` / `get_violations_n` return the same `LimitViolation` objects.

@@ -509,6 +509,18 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(val < _violation_threshold_) clear_batch_outputs();
             _violation_threshold_ = val;
         }
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        real_type get_violation_rel_tol() const noexcept {return _violation_rel_tol_;}
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void set_violation_rel_tol(real_type val){
+            const std::string fun_name = std::string(algo_name()) + "::set_violation_rel_tol";
+            batch_sweep_detail::check_violation_rel_tol(val, fun_name.c_str());
+            if(val == _violation_rel_tol_) return;
+            // L3, like set_violation_threshold -- but either direction: a larger tolerance
+            // drops recorded violations as surely as a smaller one adds some
+            clear_batch_outputs();
+            _violation_rel_tol_ = val;
+        }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         const std::vector<char> & converged() const {
@@ -1695,17 +1707,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
             batch_sweep_detail::check_bus_voltage_violations(V, active_layout().id_me_to_solver, _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
                                          _grid_model.get_bus_vn_kv(), _grid_model.get_substations(),
-                                         _violation_threshold_, masked_ids_use, _violations[i]);
+                                         _violation_threshold_, _violation_rel_tol_, masked_ids_use, _violations[i]);
             batch_sweep_detail::check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
                                      V, active_layout().id_me_to_solver, _grid_model.get_bus_vn_kv(), ac_solver_used, sn_mva,
                                      _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
                                      _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
-                                     _violation_threshold_, skip_lines, _violations[i]);
+                                     _violation_threshold_, _violation_rel_tol_, skip_lines, _violations[i]);
             batch_sweep_detail::check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
                                      V, active_layout().id_me_to_solver, _grid_model.get_bus_vn_kv(), ac_solver_used, sn_mva,
                                      _grid_model.get_trafos_as_data().get_limit_a1_ka(),
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
-                                     _violation_threshold_, skip_trafos, _violations[i]);
+                                     _violation_threshold_, _violation_rel_tol_, skip_trafos, _violations[i]);
         }
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _record_row_violations_dispatch(size_t i, const CplxVect & V, const std::vector<int> * masked_ids) {
@@ -1897,17 +1909,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const std::vector<int> no_skip;
             batch_sweep_detail::check_bus_voltage_violations(V_n, active_layout().id_me_to_solver, _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
                                          _grid_model.get_bus_vn_kv(), _grid_model.get_substations(),
-                                         _violation_threshold_, nullptr, _violations_n_);
+                                         _violation_threshold_, _violation_rel_tol_, nullptr, _violations_n_);
             batch_sweep_detail::check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
                                      V_n, active_layout().id_me_to_solver, _grid_model.get_bus_vn_kv(), _algo.ac_solver_used(), _grid_model.get_sn_mva(),
                                      _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
                                      _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
-                                     _violation_threshold_, no_skip, _violations_n_);
+                                     _violation_threshold_, _violation_rel_tol_, no_skip, _violations_n_);
             batch_sweep_detail::check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
                                      V_n, active_layout().id_me_to_solver, _grid_model.get_bus_vn_kv(), _algo.ac_solver_used(), _grid_model.get_sn_mva(),
                                      _grid_model.get_trafos_as_data().get_limit_a1_ka(),
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
-                                     _violation_threshold_, no_skip, _violations_n_);
+                                     _violation_threshold_, _violation_rel_tol_, no_skip, _violations_n_);
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _record_n_case_violations(const CplxVect &){}
@@ -2849,6 +2861,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<char> _skip_mask;
         bool _compute_limit_violations_ = false;
         real_type _violation_threshold_ = 1.0;
+        real_type _violation_rel_tol_ = DEFAULT_VIOLATION_REL_TOL;
         std::vector<char> _converged;
         // twin of _converged above, but unconditional (every instantiation, not just
         // ContingencyAnalysis; not gated behind compute_limit_violations) -- see

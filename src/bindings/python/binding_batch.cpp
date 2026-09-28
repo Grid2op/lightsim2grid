@@ -807,6 +807,10 @@ void bind_batch(py::module_& m) {
                       [](const ScenarioSweep & self){ return self.get_violation_threshold(); },
                       [](ScenarioSweep & self, real_type val){ self.set_violation_threshold(val); },
                       DocContingencyAnalysis::violation_threshold.c_str())
+        .def_property("violation_rel_tol",
+                      [](const ScenarioSweep & self){ return self.get_violation_rel_tol(); },
+                      [](ScenarioSweep & self, real_type val){ self.set_violation_rel_tol(val); },
+                      DocContingencyAnalysis::violation_rel_tol.c_str())
         .def_property("redistribute_slack",
                       [](const ScenarioSweep & self){ return self.get_redistribute_slack(); },
                       [](ScenarioSweep & self, bool val){ self.set_redistribute_slack(val); },
@@ -868,6 +872,10 @@ void bind_batch(py::module_& m) {
                       [](const ContingencyAnalysis & self){ return self.get_violation_threshold(); },
                       [](ContingencyAnalysis & self, real_type val){ self.set_violation_threshold(val); },
                       DocContingencyAnalysis::violation_threshold.c_str())
+        .def_property("violation_rel_tol",
+                      [](const ContingencyAnalysis & self){ return self.get_violation_rel_tol(); },
+                      [](ContingencyAnalysis & self, real_type val){ self.set_violation_rel_tol(val); },
+                      DocContingencyAnalysis::violation_rel_tol.c_str())
         // physical-limit checks: same names and semantics as on the three
         // batch_sweep_common classes (this class is bound by hand, see the note above)
         .def_property("compute_physical_violations",
