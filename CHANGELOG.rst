@@ -286,10 +286,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   imbalance on the generators and storage units of the distributed slack as OpenLoadFlow's
   ``DistributedSlack`` outer loop does, with their ``[min_p, max_p]`` bounds (a saturated unit
   leaves the pool, and the distributed slack).
-- [ADDED] ``LSGrid.consider_only_main_component(redistribute_slack=True)``: the power the
-  islanding takes out (set-points) is redistributed that way on the remaining slack units. It
-  returns a ``SlackRedistributionReport``. Without p limits the converged state is unchanged
-  (only the set-points move); the grid2op backend and ``init_from_pypowsybl`` pass ``False``.
+- [BREAKING] ``LSGrid.consider_only_main_component()`` now redistributes by default the
+  set-points the islanding takes out on the remaining slack units (``redistribute_slack=True``)
+  and returns a ``SlackRedistributionReport``. Pass ``False`` for the previous behaviour, as the
+  grid2op backend and ``init_from_pypowsybl`` do.
 - [ADDED] ``redistribute_slack`` (off by default) on ``ContingencyAnalysis`` and
   ``ScenarioSweep``: the same OLF-style bounded redistribution of the power a row loses (a
   generator contingency, or an island cut off with ``handle_disconnected_grid``) before its
