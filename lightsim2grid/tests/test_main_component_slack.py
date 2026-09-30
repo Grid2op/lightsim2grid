@@ -125,6 +125,18 @@ class TestMainComponentSlack(unittest.TestCase):
         V = self._ac_pf()
         self.assertGreater(V.shape[0], 0)
 
+    def test_reference_out_of_range_is_refused(self):
+        # consider_only_main_component indexes its per-bus flags with the reference: an id
+        # past the last bus must be refused when it is set, not read out of bounds there
+        nb_bus = self.model.total_bus()
+        for bad in (nb_bus, nb_bus + 10_000, -2):
+            with self.assertRaises(RuntimeError):
+                self.model.set_reference_slack_bus(bad)
+            self.assertEqual(self.model.get_reference_slack_bus(), -1)
+        self.model.set_reference_slack_bus(nb_bus - 1)
+        self.model.set_reference_slack_bus(-1)
+        self.assertEqual(self.model.get_reference_slack_bus(), -1)
+
     def test_nothing_stranded_unchanged(self):
         self.model.set_reference_slack_bus(_LEAF_BUS)
         nb_slack = sum(gen.is_slack for gen in self.model.get_generators())

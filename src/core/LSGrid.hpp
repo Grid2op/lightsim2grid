@@ -226,8 +226,15 @@ class LS2G_API LSGrid final
         // reference). Pass -1 to clear (default: natural generator order). Used to
         // align the base ac_pf with ContingencyAnalysis::pick_reference_slack() so
         // the GPU companion inherits a reference stranded by the fewest
-        // contingencies. Triggers a slack re-evaluation on the next solve.
+        // contingencies. Triggers a slack re-evaluation on the next solve. The id is
+        // checked here: consider_only_main_component uses it as an index.
         void set_reference_slack_bus(int bus_id){
+            if(bus_id < -1 || bus_id >= static_cast<int>(substations_.nb_bus())){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::set_reference_slack_bus: " << bus_id << " is not a bus of this grid "
+                     << "(expected -1 or an id in [0, " << substations_.nb_bus() << ")).";
+                throw std::runtime_error(exc_.str());
+            }
             _forced_ref_slack_bus_id = bus_id;
             algo_controler_.ac_algo_controler().tell_slack_participate_changed();
             algo_controler_.dc_algo_controler().tell_slack_participate_changed();
