@@ -342,6 +342,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   every ``[min_p, max_p]`` and 0 MW bound. The stranded stations' setpoints are now part of
   ``mismatch_mw`` and redistributed like a stranded load / generator (the line's converter
   that stays in the main component keeps injecting, as before).
+- [FIXED] ``ContingencyAnalysis``: changing ``handle_disconnected_grid`` or
+  ``redistribute_slack`` after a computation returned the previous results.
 
 
 [1.1.0] 2026-09-21

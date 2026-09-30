@@ -244,7 +244,11 @@ class ContingencyAnalysis(object):
     def handle_disconnected_grid(self, val: bool):
         if bool(val) != val:
             raise ValueError("The `handle_disconnected_grid` attribute must be a boolean.")
-        self.computer.handle_disconnected_grid = bool(val)
+        val = bool(val)
+        if val != self.computer.handle_disconnected_grid:
+            # the results kept by get_flows / run were computed with the other value
+            self.clear(with_contlist=False)
+        self.computer.handle_disconnected_grid = val
 
     @property
     def redistribute_slack(self):
@@ -265,7 +269,11 @@ class ContingencyAnalysis(object):
     def redistribute_slack(self, val: bool):
         if bool(val) != val:
             raise ValueError("The `redistribute_slack` attribute must be a boolean.")
-        self.computer.redistribute_slack = bool(val)
+        val = bool(val)
+        if val != self.computer.redistribute_slack:
+            # the results kept by get_flows / run were computed with the other value
+            self.clear(with_contlist=False)
+        self.computer.redistribute_slack = val
 
     @property
     def compute_limit_violations(self):
