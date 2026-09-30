@@ -2593,7 +2593,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         else _row_sat_storages_[i].push_back(units[k].el_id);
                     }
                 }
-                (void) report;  // every unit saturated: `saturated` is all zero, they all stay in the slack
+                // every unit of the slack saturated: `saturated` is all zero, they all stay in
+                // this row's slack (see slack_redistribution::distribute)
+                (void) report;
                 // one entry per bus: merge the units sharing one
                 if(dp_row.size() > 1){
                     std::sort(dp_row.begin(), dp_row.end(),

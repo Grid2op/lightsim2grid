@@ -19,7 +19,7 @@ void bind_gridmodel(py::module_& m) {
         "What LSGrid.redistribute_active_power / consider_only_main_component(redistribute_slack=True) did: "
         "the imbalance shared (MW, > 0: the units inject more), how many units took part, how many reached "
         "a bound (and left the distributed slack), how many rounds it took, what could not be placed, and "
-        "whether EVERY unit saturated (in which case none left the slack).")
+        "whether every unit of the distributed slack saturated (in which case none left it).")
         .def_readonly("mismatch_mw", &slack_redistribution::Report::mismatch_mw)
         .def_readonly("nb_participants", &slack_redistribution::Report::nb_participants)
         .def_readonly("nb_saturated", &slack_redistribution::Report::nb_saturated)

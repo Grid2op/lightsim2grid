@@ -4248,8 +4248,11 @@ const std::string DocLSGrid::redistribute_active_power = R"mydelimiter(
     units that reached a bound are removed from the distributed slack
     (:func:`remove_gen_slackbus` / :func:`remove_storage_slackbus`), so that the next powerflow
     only shares what is left (the change in the losses) on the units that can still move. If
-    every unit reaches a bound, all of them stay in the slack (a powerflow needs one), and the
-    report says how much could not be placed.
+    every unit of the distributed slack reaches a bound, all of them stay in the slack (a
+    powerflow needs one), even when a unit only flagged with
+    :func:`set_gen_can_participate_slack` / :func:`set_storage_can_participate_slack` still
+    has room (it takes the rest of the mismatch, but the powerflow does not distribute on it),
+    and the report says how much could not be placed.
 
     Note that a generator or storage unit leaving the slack this way does not come back on its
     own; and when the FIRST slack generator leaves it, the angle reference moves to the next one

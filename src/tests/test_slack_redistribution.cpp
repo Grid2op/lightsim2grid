@@ -120,6 +120,29 @@ TEST_CASE("distribute: every unit saturated keeps them all in the slack", "[slac
     CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(7., 1e-12));
 }
 
+TEST_CASE("distribute: every slack unit saturated keeps them in the slack, a flagged unit still moving", "[slack_redistribution]"){
+    // unit 0 is the only slack unit and can take 2 MW; unit 1 is only flagged "can
+    // participate": it takes the rest, but the solve cannot distribute on it
+    std::vector<Participant> units = {unit(0, 30., 1., 0., 32.), unit(1, 40., 1., 0., 100.)};
+    units[1].in_slack = false;
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    const Report rep = distribute(units, 10., default_eps_mw, new_inj, sat);
+    REQUIRE(rep.all_saturated);
+    CHECK(sat[0] == 0);  // cleared: the slack is not left empty
+    CHECK(sat[1] == 0);
+    CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(32., 1e-12));
+    CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(48., 1e-12));
+    CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-12));
+    SECTION("a second slack unit with room: the saturated one leaves the slack as usual"){
+        units.push_back(unit(2, 20., 1., 0., 100.));
+        const Report rep2 = distribute(units, 10., default_eps_mw, new_inj, sat);
+        REQUIRE_FALSE(rep2.all_saturated);
+        CHECK(sat[0] == 1);
+        CHECK(sat[2] == 0);
+    }
+}
+
 TEST_CASE("distribute: a unit injecting never crosses 0 MW on the way down", "[slack_redistribution]"){
     // unit 1 has min_p < 0 < max_p: its share (-10) would take it to -8, OLF stops it at 0
     // and the rest goes to unit 0
