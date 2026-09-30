@@ -226,9 +226,10 @@ class TestFromPypowsybl(unittest.TestCase):
         # max_p / droop, normalised with the slack weights: GTH1 100 MW, GTH2 400 MW
         self.assertAlmostEqual(gens["GTH1"].can_participate_slack_weight / gens["GTH2"].slack_weight,
                                100. / 400., places=12)
-        # nothing flagged by default, an unknown id is refused, and an explicit slack too
+        # nothing flagged out of the slack by default (a slack unit carries the flag on its
+        # own), an unknown id is refused, and an explicit slack too
         grid = init_from_pypowsybl(n, sort_index=False, buses_for_sub=False)
-        self.assertFalse(any(g.can_participate_slack for g in grid.get_generators()))
+        self.assertFalse(any(g.can_participate_slack and not g.is_slack for g in grid.get_generators()))
         with self.assertRaises(ValueError):
             init_from_pypowsybl(n, sort_index=False, buses_for_sub=False,
                                 can_participate_slack=["NOT-A-UNIT"])

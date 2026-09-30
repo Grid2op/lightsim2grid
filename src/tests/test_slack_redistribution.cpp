@@ -292,3 +292,33 @@ TEST_CASE("a unit flagged can_participate_slack takes a pre-pass share away from
         CHECK_THAT(other.get_generators().get_can_participate_slack_weight(1), Catch::Matchers::WithinAbs(0.5, 1e-15));
     }
 }
+
+TEST_CASE("a unit that can participate rejoins the slack when moved off its limit", "[slack_redistribution]"){
+    ls2g::LSGrid grid = make_capped_grid(true);
+    CHECK(grid.get_generators().get_can_participate_slack(0));   // a slack unit carries the flag
+    grid.change_p_gen(1, 40.);                                   // still at its max_p
+    CHECK_FALSE(grid.get_generators().is_slack(1));
+    grid.change_p_gen(1, 35.);
+    REQUIRE(grid.get_generators().is_slack(1));
+    CHECK_THAT(grid.get_generators().get_slack_weight(1), Catch::Matchers::WithinAbs(0.5, 1e-15));
+    SECTION("stranded: it stays in the slack, and takes no share until reconnected"){
+        grid.deactivate_powerline(1);   // bus 2 (gen 1) and bus 3 cut off
+        grid.consider_only_main_component(false);
+        CHECK_FALSE(grid.get_generators().get_status()[1]);
+        CHECK(grid.get_generators().is_slack(1));
+        const ls2g::CplxVect V = grid.ac_pf(ls2g::CplxVect::Constant(5, ls2g::cplx_type(1., 0.)), 20, 1e-8);
+        REQUIRE(V.size() > 0);
+        CHECK(std::get<0>(grid.get_gen_res())(1) == 0.);
+        grid.reactivate_powerline(1);
+        grid.reactivate_gen(1);
+        const ls2g::CplxVect V2 = grid.ac_pf(ls2g::CplxVect::Constant(5, ls2g::cplx_type(1., 0.)), 20, 1e-8);
+        REQUIRE(V2.size() > 0);
+        CHECK(std::abs(std::get<0>(grid.get_gen_res())(1) - 35.) > 1e-3);   // its share again
+    }
+    SECTION("removed by hand: it stays out"){
+        grid.remove_gen_slackbus(1);
+        CHECK_FALSE(grid.get_generators().get_can_participate_slack(1));
+        grid.change_p_gen(1, 30.);
+        CHECK_FALSE(grid.get_generators().is_slack(1));
+    }
+}

@@ -233,11 +233,14 @@ void bind_gridmodel(py::module_& m) {
              "max_p when the mismatch it distributes is positive, at min_p when negative), with "
              "the weight each would have as a participant, on the same scale as the slack "
              "weights (ignored where not flagged; `GenInfo.can_participate_slack` / "
-             "`can_participate_slack_weight`). Never read by the Newton solve, whose distributed "
-             "slack has no bounds: only the bounded redistribution pre-pass "
-             "(`consider_only_main_component(True)`, the batch algorithms' `redistribute_slack`) "
-             "counts them, within their [min_p, max_p], so they only move away from the limit "
-             "they sit at. `init_from_pypowsybl(can_participate_slack=...)` fills it from what "
+             "`can_participate_slack_weight`). The slack participants carry the flag on their own "
+             "and keep it whatever `flags` says. While out of the slack, a flagged unit is not "
+             "read by the Newton solve, whose distributed slack has no bounds: only the bounded "
+             "redistribution pre-pass (`consider_only_main_component(True)`, the batch algorithms' "
+             "`redistribute_slack`) counts it, within its [min_p, max_p], so it only moves away "
+             "from the limit it sits at. It goes back into the slack, with this weight, when it "
+             "is reconnected or its set-point is moved off its limits (`change_p_gen`). "
+             "`init_from_pypowsybl(can_participate_slack=...)` fills it from what "
              "`bake_outer_loops(..., return_details=True)` capped.")
         .def("set_storage_can_participate_slack", &LSGrid::set_storage_can_participate_slack,
              py::arg("flags"), py::arg("weights"),

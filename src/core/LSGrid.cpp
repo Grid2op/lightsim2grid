@@ -2539,7 +2539,7 @@ GlobalBusIdVect LSGrid::_slack_bus_id_me() const{
     std::vector<int> buses;
     generators_.append_slack_bus_id(buses);
     storages_.append_slack_bus_id(buses);
-    if(buses.empty()) throw std::runtime_error("LSGrid: no generator nor storage unit is tagged slack bus for this grid.");
+    if(buses.empty()) throw std::runtime_error("LSGrid: no connected generator nor storage unit is tagged slack bus for this grid.");
     return GlobalBusIdVect(buses);
 }
 
@@ -2650,6 +2650,9 @@ void LSGrid::update_topo(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynami
     // A is walked first (1 -> 0 -> 1) and not if B is (1 -> 2 -> 1). Both are
     // correct; keep the order stable so the flags a given action raises are too.
     // A new topology-participating container goes at the end of this list.
+    // the units this action reconnects may go back into the slack (see _rejoin_slack_if_reconnected)
+    const std::vector<bool> gen_status_before = generators_.get_status();
+    const std::vector<bool> storage_status_before = storages_.get_status();
     loads_.update_topo(has_changed, new_values, algo_controler_, substations_);
     generators_.update_topo(has_changed, new_values, algo_controler_, substations_);
     storages_.update_topo(has_changed, new_values, algo_controler_, substations_);
@@ -2657,6 +2660,19 @@ void LSGrid::update_topo(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynami
     // and same for trafo, obviously
     powerlines_.update_topo(has_changed, new_values, algo_controler_, substations_);
     trafos_.update_topo(has_changed, new_values, algo_controler_, substations_);
+    _rejoin_slack_if_reconnected(gen_status_before, storage_status_before);
+}
+
+void LSGrid::_rejoin_slack_if_reconnected(const std::vector<bool> & gen_status_before,
+                                          const std::vector<bool> & storage_status_before){
+    const std::vector<bool> & gen_status = generators_.get_status();
+    for(int gen_id = 0; gen_id < generators_.nb(); ++gen_id){
+        if(gen_status[gen_id] && !gen_status_before[gen_id]) generators_.rejoin_slackbus_if_able(gen_id, algo_controler_);
+    }
+    const std::vector<bool> & storage_status = storages_.get_status();
+    for(int storage_id = 0; storage_id < storages_.nb(); ++storage_id){
+        if(storage_status[storage_id] && !storage_status_before[storage_id]) storages_.rejoin_slackbus_if_able(storage_id, algo_controler_);
+    }
 }
 
 // for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF
@@ -2803,12 +2819,16 @@ slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatc
         }
     }
     for(std::size_t k = 0; k < units.size(); ++k){
-        // a unit only flagged "can participate in the slack" was never in it
+        // a unit only flagged "can participate in the slack" was never in it. A saturated
+        // one leaves it until it is moved off its limit (SlackParticipation::leave): the
+        // set-points written above go straight to the containers, so they do not count
+        // as that move -- the batch algorithms, which cannot change a row's slack set,
+        // land on the same slack as this.
         if(!saturated[k] || !units[k].in_slack) continue;
         if(units[k].kind == UnitKind::GENERATOR){
-            generators_.remove_slackbus(units[k].el_id, algo_controler_);
+            generators_.leave_slackbus(units[k].el_id, algo_controler_);
         }else{
-            storages_.remove_slackbus(units[k].el_id, algo_controler_);
+            storages_.leave_slackbus(units[k].el_id, algo_controler_);
         }
     }
     return report;
@@ -3021,12 +3041,11 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
     const real_type lost_mw = _lost_setpoints_mw(bus_in_main_cc);
 
     // the generators / storage units of the distributed slack stranded outside the main
-    // component leave the slack FIRST (as OLF, which only distributes on the main
-    // component): once deactivated below they would still be listed by
-    // _slack_bus_id_me(), on a disconnected bus, and the next solve would throw.
-    // The main component always keeps at least one slack (it is grown from one).
-    generators_.remove_slackbus_not_in_main_component(bus_in_main_cc, algo_controler_);
-    storages_.remove_slackbus_not_in_main_component(bus_in_main_cc, algo_controler_);
+    // component are deactivated below with the rest of their island, and a disconnected
+    // participant takes no share (as OLF, which only distributes on the main component).
+    // They stay in the slack, so that reconnecting one puts it back where it was (see
+    // SlackParticipation::append_slack_buses). The main component always keeps at least
+    // one connected slack unit (it is grown from one).
     if((_forced_ref_slack_bus_id >= 0) && !bus_in_main_cc[_forced_ref_slack_bus_id]){
         // the forced angle reference is now in an island: back to the natural order
         set_reference_slack_bus(-1);

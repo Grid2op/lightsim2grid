@@ -1376,7 +1376,14 @@ class LS2G_API LSGrid final
 
         //generator
         void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, algo_controler_, substations_); }
-        void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, algo_controler_, substations_); }
+        // a unit that can be in the slack and is out of it because it sat at an active limit
+        // goes back into it when its set-point moves off that limit, reconnected or not
+        // (SlackParticipation::rejoin_if_able; update_topo does the same). A disconnected
+        // slack unit never left the slack: it takes its share again on its own.
+        void reactivate_gen(int gen_id) {
+            generators_.reactivate(gen_id, algo_controler_, substations_);
+            generators_.rejoin_slackbus_if_able(gen_id, algo_controler_);
+        }
 
         /**
          * Change the bus on the generator generator_id.
@@ -1389,7 +1396,10 @@ class LS2G_API LSGrid final
         void change_bus_gen_python(int gen_id, int new_gridmodel_bus_id) {
             change_bus_gen(gen_id, GridModelBusId(new_gridmodel_bus_id));
         }
-        void change_p_gen(int gen_id, real_type new_p) {generators_.change_p_nothrow(gen_id, new_p, algo_controler_); }
+        void change_p_gen(int gen_id, real_type new_p) {
+            generators_.change_p_nothrow(gen_id, new_p, algo_controler_);
+            generators_.rejoin_slackbus_if_able(gen_id, algo_controler_);
+        }
         void change_q_gen(int gen_id, real_type new_q) {generators_.change_q_nothrow(gen_id, new_q, algo_controler_); }
         void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, algo_controler_); }
         [[nodiscard]] int get_bus_gen(int gen_id) const {return generators_.get_bus(gen_id).cast_int();}
@@ -1447,7 +1457,10 @@ class LS2G_API LSGrid final
 
         //storage units
         void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, algo_controler_, substations_); }
-        void reactivate_storage(int storage_id) {storages_.reactivate(storage_id, algo_controler_, substations_); }
+        void reactivate_storage(int storage_id) {
+            storages_.reactivate(storage_id, algo_controler_, substations_);
+            storages_.rejoin_slackbus_if_able(storage_id, algo_controler_);
+        }
         /**
          * Change the bus on the storage storage_id.
          * 
@@ -1460,8 +1473,9 @@ class LS2G_API LSGrid final
             change_bus_storage(sgen_id, GridModelBusId(new_gridmodel_bus_id));
         }
         void change_p_storage(int storage_id, real_type new_p) {
-               storages_.change_p_nothrow(storage_id, new_p, algo_controler_);
-            }
+            storages_.change_p_nothrow(storage_id, new_p, algo_controler_);
+            storages_.rejoin_slackbus_if_able(storage_id, algo_controler_);
+        }
         void change_q_storage(int storage_id, real_type new_q) {storages_.change_q_nothrow(storage_id, new_q, algo_controler_); }
         /// the voltage setpoint (pu) of a storage unit that regulates its bus (see init_storages_full)
         void change_v_storage(int storage_id, real_type new_v_pu) {storages_.change_v_nothrow(storage_id, new_v_pu, algo_controler_); }
@@ -2421,6 +2435,10 @@ class LS2G_API LSGrid final
         // the active power (MW, generator convention) the elements on the buses NOT in
         // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
         [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
+        // the generators / storage units whose status went from off (in the `*_before`
+        // snapshots) to on try to rejoin the slack (see SlackParticipation::rejoin_if_able)
+        void _rejoin_slack_if_reconnected(const std::vector<bool> & gen_status_before,
+                                          const std::vector<bool> & storage_status_before);
         void init_slack_bus(const SolverBusIdVect & id_me_to_solver,
                             const GlobalBusIdVect& id_solver_to_me,
                             const GlobalBusIdVect & slack_bus_id_me,

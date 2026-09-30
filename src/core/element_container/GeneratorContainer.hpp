@@ -158,12 +158,17 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         void remove_slackbus(int gen_id, DualAlgoControl & solver_control){
             slack_.remove(gen_id, solver_control);
         }
-        void remove_all_slackbus(){ slack_.remove_all(); }
-        /// the participants outside the main component leave the slack (LSGrid::consider_only_main_component)
-        void remove_slackbus_not_in_main_component(const std::vector<bool> & busbar_in_main_component,
-                                                   DualAlgoControl & solver_control){
-            slack_.remove_if_bus_not_in(busbar_in_main_component, bus_id_, solver_control);
+        /// out of the slack while it sits at the limit it saturated at, still able to come back (see SlackParticipation::leave)
+        void leave_slackbus(int gen_id, DualAlgoControl & solver_control){
+            slack_.leave(gen_id, solver_control);
         }
+        /// back into the slack if it can participate and is connected off its limits (see SlackParticipation::rejoin_if_able)
+        bool rejoin_slackbus_if_able(int gen_id, DualAlgoControl & solver_control){
+            const bool connected = status_[gen_id] && bus_id_(gen_id).cast_int() != _deactivated_bus_id;
+            return slack_.rejoin_if_able(gen_id, connected, target_p_mw_(gen_id), get_min_p(gen_id), get_max_p(gen_id),
+                                         solver_control, "GeneratorContainer::rejoin_slackbus_if_able");
+        }
+        void remove_all_slackbus(){ slack_.remove_all(); }
 
         // returns only the gen_id with the highest p that is connected to this bus !
         int assign_slack_bus(int slack_bus_id,
@@ -202,7 +207,7 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, gen_off, _element_name());
         }
         /// append the grid buses of the flagged generators not in `buses` yet
-        void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}
+        void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, status_, bus_id_);}
         void slack_summary(bool & any_flagged, bool & any_connected) const {slack_.summary(status_, any_flagged, any_connected);}
         /** distribute the active mismatch of the slack buses onto the participating generators **/
         void set_p_slack(const Eigen::Ref<const RealVect> & node_mismatch,

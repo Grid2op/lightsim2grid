@@ -228,6 +228,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   left out of the slack only because it sat at an active limit takes part in the redistribution
   pre-pass, away from that limit, as OpenLoadFlow lets it. ``bake_outer_loops(...,
   return_details=True)`` returns the units OLF capped, for ``init_from_pypowsybl(can_participate_slack=...)``.
+- [ADDED] a unit flagged ``can_participate_slack`` (every slack unit is) and out of the slack
+  because it sat at an active limit goes back into it once its set-point moves off that limit.
 - [ADDED] The PQ -> PV release check for the VSC converter stations: ``LSGrid.set_hvdc_can_be_pv``
   (``ConverterStationInfo.can_be_pv``), reported on the HVDC line, ``side`` the station's end.
   ``bake_outer_loops`` returns the stations it froze at a reactive limit, in ``can_be_pv``.
@@ -279,9 +281,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   are much faster on large grids with batteries. Same result.
 - [FIXED] ``LSGrid.consider_only_main_component`` left the generators / storage units stranded
   outside the main component in the distributed slack: the next powerflow raised
-  "One of the slack bus is disconnected". They now leave the slack (and a forced reference
-  slack bus outside the main component is cleared), as OpenLoadFlow only distributes the slack
-  on the main component.
+  "One of the slack bus is disconnected". A disconnected slack unit now takes no share until it is
+  reconnected (and a forced reference slack bus outside the main component is cleared), as
+  OpenLoadFlow only distributes the slack on the main component.
 - [ADDED] ``LSGrid.redistribute_active_power(mismatch_mw)``: shares a known active-power
   imbalance on the generators and storage units of the distributed slack as OpenLoadFlow's
   ``DistributedSlack`` outer loop does, with their ``[min_p, max_p]`` bounds (a saturated unit
