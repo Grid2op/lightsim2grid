@@ -3,6 +3,9 @@ Change Log
 
 [TODO]
 --------
+- OpenLoadFlow-style outer loops (reactive limits, slack limits, hvdc saturation) as a
+  non-default ``NROuter_*`` algorithm, keeping one ``analyze`` per solve or batch: assessed in
+  ``docs/dev_notes/outer_loops_fixed_sparsity.md``, nothing implemented.
 - Control limits are detected but never **enforced**: ``compute_physical_violations`` reports a
   distributed-slack machine past ``get_min_p`` / ``get_max_p`` (``GenPCheck``) and a bus past its
   reactive capability (``BusQCheck``), but no algorithm reads a limit, so the solve still
