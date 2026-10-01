@@ -322,3 +322,77 @@ TEST_CASE("a unit that can participate rejoins the slack when moved off its limi
         CHECK_FALSE(grid.get_generators().is_slack(1));
     }
 }
+
+namespace {
+
+// the AC then the DC solve of `cached` (which has solved before, and reuses what it
+// built) must be those of `fresh` (which never solved): a slack change the cache missed
+// would have `cached` solve with its former slack
+void check_same_as_fresh(ls2g::LSGrid & cached, ls2g::LSGrid & fresh){
+    const ls2g::CplxVect V0 = ls2g::CplxVect::Constant(5, ls2g::cplx_type(1., 0.));
+    const ls2g::CplxVect Vc = cached.ac_pf(V0, 20, 1e-10);
+    const ls2g::CplxVect Vf = fresh.ac_pf(V0, 20, 1e-10);
+    REQUIRE(Vc.size() > 0);
+    REQUIRE(Vc.size() == Vf.size());
+    CHECK((Vc - Vf).cwiseAbs().maxCoeff() < 1e-12);
+    const ls2g::CplxVect Vc_dc = cached.dc_pf(V0, 20, 1e-10);
+    const ls2g::CplxVect Vf_dc = fresh.dc_pf(V0, 20, 1e-10);
+    REQUIRE(Vc_dc.size() > 0);
+    REQUIRE(Vc_dc.size() == Vf_dc.size());
+    CHECK((Vc_dc - Vf_dc).cwiseAbs().maxCoeff() < 1e-12);
+}
+
+}  // namespace
+
+TEST_CASE("a unit coming back to the slack invalidates the cached slack", "[slack_redistribution][cache_reuse]"){
+    const ls2g::CplxVect V0 = ls2g::CplxVect::Constant(5, ls2g::cplx_type(1., 0.));
+    ls2g::LSGrid grid = make_capped_grid(true);
+    REQUIRE(grid.ac_pf(V0, 20, 1e-10).size() > 0);   // builds and marks the AC cache
+    REQUIRE(grid.dc_pf(V0, 20, 1e-10).size() > 0);   // ... and the DC one
+    REQUIRE_FALSE(grid.get_ac_algo_controler().has_slack_participate_changed());
+    REQUIRE_FALSE(grid.get_dc_algo_controler().has_slack_participate_changed());
+
+    grid.change_p_gen(1, 40.);   // still at its max_p: it stays out, the slack is unchanged
+    CHECK_FALSE(grid.get_generators().is_slack(1));
+    CHECK_FALSE(grid.get_ac_algo_controler().has_slack_participate_changed());
+    CHECK_FALSE(grid.get_dc_algo_controler().has_slack_participate_changed());
+
+    grid.change_p_gen(1, 35.);   // off it: back into the slack
+    REQUIRE(grid.get_generators().is_slack(1));
+    CHECK(grid.get_ac_algo_controler().has_slack_participate_changed());
+    CHECK(grid.get_dc_algo_controler().has_slack_participate_changed());
+    CHECK(grid.get_ac_algo_controler().has_slack_weight_changed());
+    CHECK(grid.get_dc_algo_controler().has_slack_weight_changed());
+    {
+        ls2g::LSGrid fresh = make_capped_grid(true);
+        fresh.change_p_gen(1, 35.);
+        check_same_as_fresh(grid, fresh);
+        grid.ac_pf(V0, 20, 1e-10);
+        CHECK(std::abs(std::get<0>(grid.get_gen_res())(1) - 35.) > 1e-3);   // it takes a share
+    }
+
+    SECTION("stranded, then reconnected"){
+        grid.deactivate_powerline(1);   // bus 2 (gen 1) and bus 3 cut off
+        grid.consider_only_main_component(false);
+        CHECK(grid.get_generators().is_slack(1));
+        CHECK(grid.get_ac_algo_controler().has_slack_participate_changed());
+        CHECK(grid.get_dc_algo_controler().has_slack_participate_changed());
+        ls2g::LSGrid fresh = make_capped_grid(true);
+        fresh.change_p_gen(1, 35.);
+        fresh.deactivate_powerline(1);
+        fresh.consider_only_main_component(false);
+        check_same_as_fresh(grid, fresh);
+
+        grid.reactivate_powerline(1);
+        grid.reactivate_gen(1);
+        CHECK(grid.get_ac_algo_controler().has_slack_participate_changed());
+        CHECK(grid.get_dc_algo_controler().has_slack_participate_changed());
+        ls2g::LSGrid fresh2 = make_capped_grid(true);
+        fresh2.change_p_gen(1, 35.);
+        fresh2.deactivate_powerline(1);
+        fresh2.consider_only_main_component(false);
+        fresh2.reactivate_powerline(1);
+        fresh2.reactivate_gen(1);
+        check_same_as_fresh(grid, fresh2);
+    }
+}
