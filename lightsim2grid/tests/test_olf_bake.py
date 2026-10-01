@@ -38,6 +38,7 @@ try:
 except ImportError:
     HAS_PYPOWSYBL = False
 
+from lightsim2grid.network.from_pypowsybl._olf_const import _Q_SATURATED_HELD_TOL_MVAR
 from global_var_tests import (
     CURRENT_PYPOW_VERSION,
     VERSION_PHASESHIFT_OK_PYPOW,
@@ -568,6 +569,22 @@ class TestOlfBake(unittest.TestCase):
             self.assertLess((cmp["v_mag_r"] - cmp["v_mag_b"]).abs().max(), TOL_VM_KV)
             self.assertLess((cmp["v_angle_r"] - cmp["v_angle_b"]).abs().max(), 1e-2)
 
+    def test_olf_held_unit_with_headroom_not_frozen(self):
+        """bake_saturated_voltage_control only freezes a held unit at its limit to
+        _Q_SATURATED_HELD_TOL_MVAR: one still inside the relative tolerance of its limit but
+        with more headroom than that keeps regulating, as OLF does."""
+        for headroom_mvar, frozen in [(0.5 * _Q_SATURATED_HELD_TOL_MVAR, True),
+                                      (5. * _Q_SATURATED_HELD_TOL_MVAR, False)]:
+            n = pp.network.create_ieee14()
+            n.update_generators(id=list(n.get_generators().index), min_q=[-9999] * 5, max_q=[9999] * 5)
+            lf.run_ac(n, _with_loops_params())
+            q_b3 = -n.get_generators(attributes=["q"]).at["B3-G", "q"]
+            # a Q range wide enough for the relative tolerance to cover the headroom
+            n.update_generators(id="B3-G", min_q=q_b3 - 1000., max_q=q_b3 + headroom_mvar)
+            bake_outer_loops(n, bake_saturated_voltage_control=True)
+            reg = n.get_generators(attributes=["voltage_regulator_on"]).at["B3-G", "voltage_regulator_on"]
+            self.assertEqual(reg, not frozen, f"headroom {headroom_mvar} MVAr")
+
     def test_hit_qlimit_picks_the_nearer_limit(self):
         from lightsim2grid.network.from_pypowsybl._olf_bake import _hit_qlimit
         import pandas as pd
@@ -923,9 +940,27 @@ class TestOlfBake(unittest.TestCase):
 
         # a hair inside its limit, far within the relative tolerance, target held
         self.assertEqual(_baked_mode(12.9), "VOLTAGE")
-        self.assertEqual(_baked_mode(12.9, bake_saturated_voltage_control=True), "REACTIVE_POWER")
+        # ... but with more headroom than _Q_SATURATED_HELD_TOL_MVAR: still regulating
+        self.assertEqual(_baked_mode(12.9, bake_saturated_voltage_control=True), "VOLTAGE")
         # saturated for real: the target is not held
         self.assertEqual(_baked_mode(10.), "REACTIVE_POWER")
+
+    def test_saturated_held_svc_frozen_on_request(self):
+        """With ``bake_saturated_voltage_control``, a held SVC is frozen only when its Q sits
+        at its limit to ``_Q_SATURATED_HELD_TOL_MVAR``."""
+        n = four_substations()
+        lf.run_ac(n, _with_loops_params())
+        q_svc = -n.get_static_var_compensators().loc["SVC", "q"]  # generator convention
+        self.assertGreater(q_svc, 1.)
+        for headroom_mvar, mode in [(0.5 * _Q_SATURATED_HELD_TOL_MVAR, "REACTIVE_POWER"),
+                                    (5. * _Q_SATURATED_HELD_TOL_MVAR, "VOLTAGE")]:
+            n = four_substations()
+            lf.run_ac(n, _with_loops_params())
+            v_kv = n.get_buses().loc[n.get_static_var_compensators().loc["SVC", "bus_id"], "v_mag"]
+            n.update_static_var_compensators(id="SVC", b_max=(q_svc + headroom_mvar) / v_kv ** 2)
+            bake_outer_loops(n, bake_saturated_voltage_control=True)
+            self.assertEqual(n.get_static_var_compensators().loc["SVC", "regulation_mode"], mode,
+                             f"headroom {headroom_mvar} MVAr")
 
     def test_olf_hvdc_saturated_at_its_limit_baked(self):
         """An angle-droop hvdc line OLF saturated at its operator range is baked as a fixed

@@ -75,7 +75,8 @@ What gets baked
   instead of the regulated bus's) and freezes the ones they left regulating
   although OLF did not. One opt-in exception:
   ``bake_saturated_voltage_control=True`` also freezes a held unit whose Q sits
-  at a limit, at that limit.
+  at a limit (to ``_Q_SATURATED_HELD_TOL_MVAR``, not to the relative tolerance: a
+  held unit with headroom left is still regulating), at that limit.
 * Generators OLF's own voltage-control consistency checks would discard for a
   reason other than "not started": too small a reactive range (default
   ``reactiveRangeCheckMode``, widest ``max_q - min_q`` below 1 MVar) or an
@@ -116,7 +117,8 @@ What gets baked
   rule: the tolerance only proposes a candidate, and an SVC whose regulated bus
   the reference solve held at its target was regulating and is left so, unless
   it sits exactly at its limit while another controller of that bus is still
-  inside its range, or ``bake_saturated_voltage_control`` is set. An SVC inside
+  inside its range, or ``bake_saturated_voltage_control`` is set and it sits at
+  its limit to ``_Q_SATURATED_HELD_TOL_MVAR``. An SVC inside
   its envelope is left regulating (its target reproduces the OLF result
   exactly, since it isn't saturated).
 * Angle-droop ("AC emulation") hvdc lines OLF's ``AcHvdcAcEmulationLimits`` outer
@@ -164,6 +166,7 @@ from ._olf_const import (
     _TARGET_V_HELD_TOL_PU,
     _ZERO_P_TOL,
     _HVDC_P_LIMIT_TOL_MW,
+    _Q_SATURATED_HELD_TOL_MVAR,
 )
 from ._aux_add_hvdc import _hvdc_pmax_per_direction
 
@@ -339,10 +342,12 @@ def bake_outer_loops(
     bake_saturated_voltage_control
         Also freeze, at its limit, a generator (or a voltage-mode SVC) whose reactive
         output sits at a Q limit although the reference solve held its target voltage
-        (a PV unit exactly saturated). The base case is unchanged, but any change of the grid
-        asking it for more reactive power would make OLF switch it to PQ anyway;
-        kept regulating, it reports a reactive-limit violation for almost every
-        contingency. ``False`` (default) keeps it regulating, as OLF did.
+        (a PV unit exactly saturated, to ``_Q_SATURATED_HELD_TOL_MVAR``). The base case is
+        unchanged, but any change of the grid asking it for more reactive power would make
+        OLF switch it to PQ anyway; kept regulating, it reports a reactive-limit violation
+        for almost every contingency. A held unit with more headroom than that is still
+        regulating and stays so. ``False`` (default) keeps every held unit regulating, as
+        OLF did.
     bake_hvdc_ac_emulation_limits
         Turn an angle-droop hvdc line OLF saturated at its active power limit into a
         fixed setpoint at that limit (see :func:`_bake_hvdc_ac_emulation_limits`).
@@ -1047,9 +1052,17 @@ def _bake_reactive_limit_switches(
     # member is still inside its range was switched (OLF drops it from the group
     # and the others keep the target), and the split it leaves behind decides the
     # voltages behind each unit's step-up transformer.
-    # bake_saturated_voltage_control freezes the exactly saturated ones too.
-    if not bake_saturated_voltage_control:
-        mask &= ~held.reindex(gen.index).fillna(False).astype(bool) | _switched_group_members(network, gen, q_gen, reg_bus)
+    # bake_saturated_voltage_control freezes the saturated ones too: at their limit to
+    # _Q_SATURATED_HELD_TOL_MVAR, not to the relative tolerance (a held unit with some
+    # headroom left is still regulating).
+    not_held = ~held.reindex(gen.index).fillna(False).astype(bool)
+    switched = _switched_group_members(network, gen, q_gen, reg_bus)
+    if bake_saturated_voltage_control:
+        qmin, qmax = _reactive_limits(gen)
+        saturated = (q_gen >= qmax - _Q_SATURATED_HELD_TOL_MVAR) | (q_gen <= qmin + _Q_SATURATED_HELD_TOL_MVAR)
+        mask &= not_held | saturated | switched
+    else:
+        mask &= not_held | switched
     pinned = gen.index[mask]
     if mask.any():
         upd = pd.DataFrame(index=pinned)
@@ -1200,7 +1213,8 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
     -- unless it sits exactly at its limit while another controller of the same
     bus (a regulating generator or SVC) is still inside its range, the signature of
     a unit OLF switched out of a shared group, or ``bake_saturated_voltage_control``
-    is set (freeze a held unit at its limit too).
+    is set and it sits at its limit to ``_Q_SATURATED_HELD_TOL_MVAR`` (freeze a held
+    unit at its limit too).
 
     Returns the ids of the SVCs frozen: like the generators frozen at a limit, the ones
     OLF would switch back to voltage control on a grid asking them for less.
@@ -1224,12 +1238,18 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
     qmin = svc["b_min"].to_numpy() * v_kv ** 2
     tol = _q_limit_tol(qmin, qmax)
     mask = (q_gen >= qmax - tol) | (q_gen <= qmin + tol)
-    if not bake_saturated_voltage_control and mask.any():
+    if mask.any():
         reg_bus = _resolve_regulated_bus(network, svc["bus_id"], svc["regulated_element_id"])
         held = _target_v_held(network, reg_bus, svc["target_v"], df_bus).to_numpy(bool)
         exact = (q_gen >= qmax - _Q_LIMIT_TOL_ABS) | (q_gen <= qmin + _Q_LIMIT_TOL_ABS)
         switched = exact & (_n_free_controllers(network, reg_bus, exact, df_bus, keep_only_main_comp) > 0)
-        mask &= ~held | switched
+        if bake_saturated_voltage_control:
+            # as for a generator: a held SVC is frozen only when saturated, not with headroom left
+            saturated = ((q_gen >= qmax - _Q_SATURATED_HELD_TOL_MVAR)
+                         | (q_gen <= qmin + _Q_SATURATED_HELD_TOL_MVAR))
+            mask &= ~held | saturated | switched
+        else:
+            mask &= ~held | switched
     if mask.any():
         upd = pd.DataFrame(index=svc.index[mask])
         # unlike Generator.target_q (already generator convention), StaticVarCompensator
