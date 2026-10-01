@@ -499,6 +499,15 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
             return GridModelBusId(sub_id + (local_bus_id.cast_int() - 1) * n_sub_);
         }
 
+        // reverse of local_to_gridmodel: a gridmodel bus id `sub_id + (local_bus_id - 1) * n_sub_`
+        // is on local busbar `bus / n_sub_ + 1`; a deactivated bus stays deactivated (-1).
+        LocalBusId gridmodel_to_local(const GridModelBusId & gridmodel_bus_id) const {
+            if(gridmodel_bus_id.cast_int() == BaseConstants::_deactivated_bus_id){
+                return LocalBusId(BaseConstants::_deactivated_bus_id);
+            }
+            return LocalBusId(gridmodel_bus_id.cast_int() / n_sub_ + 1);
+        }
+
         // reverse of local_to_gridmodel's substation part: a gridmodel bus id is laid out as
         // `sub_id + (local_bus_id - 1) * n_sub_`, so `% n_sub_` recovers the substation id
         // regardless of which local busbar the bus is.

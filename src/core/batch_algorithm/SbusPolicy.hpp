@@ -106,12 +106,59 @@ struct LS2G_API SbusPolicy
         // BaseBatchSweep drives through the algorithm's set_pv_pinned_buses.
         BoolMat gen_off;
 
+        // ---- what a row's topological action disconnects (ScenarioSweep
+        // set_topo_actions; filled once per compute() by
+        // BaseBatchSweep::_maybe_resolve_topology, empty otherwise) ----------------
+        // generators, same shape and meaning as gen_off (a row disconnecting a
+        // generator through both is refused upstream, so the two never overlap)
+        BoolMat topo_gen_off;
+        // per row, the loads / storage units (ids, sorted) the row disconnects: their
+        // injection is taken back out of the row (a load's p and q; a storage unit's
+        // constant share, see storage_pu_)
+        std::vector<std::vector<int> > topo_loads_off;
+        std::vector<std::vector<int> > topo_storages_off;
+        // per row, the generators (id, solver bus) the row reactivates on a bus of the
+        // layout: their active power (and, for one that does not regulate voltage,
+        // their reactive setpoint) is added to the row -- the gen pass skips them,
+        // they are off in the base grid
+        struct GenOn { int gen_id; int bus_solver; int bus_me; };
+        std::vector<std::vector<GenOn> > topo_gens_on;
+        // per row, the loads / storage units (id, solver bus) the row places on a bus:
+        // a move (the element is also in topo_loads_off / topo_storages_off for the
+        // row) or the reconnection of one off in the base grid
+        std::vector<std::vector<std::pair<int, int> > > topo_loads_on;
+        std::vector<std::vector<std::pair<int, int> > > topo_storages_on;
+
+        // whether ANY row disconnects a generator, by either axis
+        bool has_gen_off() const { return gen_off.rows() > 0 || topo_gen_off.rows() > 0; }
+        // whether ANY row reactivates a generator
+        bool has_gens_on() const {
+            for(const auto & row : topo_gens_on) if(!row.empty()) return true;
+            return false;
+        }
+        // whether row i disconnects generator g, by either axis
+        bool gen_off_in(Eigen::Index i, Eigen::Index g) const {
+            if(gen_off.rows() > 0 && i < gen_off.rows() && g < gen_off.cols() && gen_off(i, g)) return true;
+            if(topo_gen_off.rows() > 0 && i < topo_gen_off.rows() && g < topo_gen_off.cols() && topo_gen_off(i, g)) return true;
+            return false;
+        }
+        void clear_topo() {
+            topo_gen_off = BoolMat();
+            topo_loads_off.clear();
+            topo_storages_off.clear();
+            topo_gens_on.clear();
+            topo_loads_on.clear();
+            topo_storages_on.clear();
+        }
+
         void clear() {
             gen_p = RealMat(); sgen_p = RealMat(); load_p = RealMat(); load_q = RealMat();
             gen_v = RealMat();
             gen_off = BoolMat();
+            clear_topo();
+            storage_pu_ = CplxVect();
             sbuses = CplxMat();
-            gen_bus_.clear(); sgen_bus_.clear(); load_bus_.clear();
+            gen_bus_.clear(); sgen_bus_.clear(); load_bus_.clear(); storage_bus_.clear();
             gen_target_p_ = RealVect(); sgen_target_p_ = RealVect();
             load_target_p_ = RealVect(); load_target_q_ = RealVect();
             gen_target_q_ = RealVect(); gen_vreg_.clear();
@@ -172,11 +219,15 @@ struct LS2G_API SbusPolicy
                                   const char * algo_name) const;
 
         // ---- what prepare() leaves for fill_row() ---------------------------------
-        std::vector<int> gen_bus_, sgen_bus_, load_bus_;   // solver bus per element, -1 if inactive
+        std::vector<int> gen_bus_, sgen_bus_, load_bus_, storage_bus_;   // solver bus per element, -1 if inactive
         RealVect gen_target_p_, sgen_target_p_, load_target_p_, load_target_q_;  // the grid's own
         RealVect gen_target_q_;          // a non-regulating generator's reactive setpoint
         std::vector<char> gen_vreg_;     // whether each generator regulates voltage
         CplxVect constant_pu_;
+        // each storage unit's own per-unit injection (StorageContainer::_fillSbus,
+        // active or not): what a row disconnecting it takes back out of constant_pu_,
+        // what a row placing it adds
+        CplxVect storage_pu_;
         real_type sn_mva_ = 1.;
         int nb_buses_solver_ = 0;
         Eigen::Index nb_steps_ = 0;

@@ -276,7 +276,7 @@ class LS2G_API AlgorithmSelector final
         void set_may_mask_voltage_control(bool val) {
             get_prt_solver("set_may_mask_voltage_control", false)->set_may_mask_voltage_control(val);
         }
-        void set_voltage_control_v_set(const RealVect & v_set) {
+        void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) {
             get_prt_solver("set_voltage_control_v_set", false)->set_voltage_control_v_set(v_set);
         }
         void set_refactor_fallback(bool val) {

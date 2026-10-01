@@ -108,6 +108,7 @@ class ScenarioSweep:
         # validated mask it sent down. Reset by clear() below.
         self._line_mask = None
         self._trafo_mask = None
+        self._has_topo_actions = False
 
         self.available_default_algorithms = self.computer.available_default_algorithms()
         if AlgorithmType.NR_KLU in self.available_default_algorithms:
@@ -408,6 +409,57 @@ class ScenarioSweep:
         self.computer.set_contingency_gens(mask)
         self.__computed = False
 
+    def set_topo_actions(self, actions):
+        """One topological action per row, played by that row on top of its injections
+        and contingency masks.
+
+        ``actions`` is a list (one entry per simulation) of grid2op actions -- ``set_bus``
+        and ``set_line_status`` only, see
+        :func:`lightsim2grid.lightEnv.topo_action_from_grid2op` -- or of
+        :class:`lightsim2grid.lightEnv.TopoAction`; mixing both is fine, and an action
+        that changes nothing is a plain row. Every action is checked against the grid:
+        an element that does not exist, a busbar that does not exist (eg ``-2``), an
+        unsupported modification (``change_bus``, ``redispatch``, ...) or a contradiction
+        raises a ``ValueError`` naming the action, and nothing is registered.
+
+        A row plays disconnections (a line or trafo by ``set_line_status`` ``-1`` or
+        ``set_bus`` ``-1`` on one of its ends, a generator, a load or a storage unit by
+        ``set_bus`` ``-1``), reconnections and moves between busbars (``set_bus`` to a
+        busbar, ``set_line_status`` ``1``): a bus created or merged. A disconnection is
+        played exactly as :func:`set_contingency_lines` / :func:`set_contingency_trafos`
+        / :func:`set_contingency_gens` do it, and :func:`compute` raises if a row names
+        an element in both a mask and its action.
+
+        The whole sweep keeps running on one symbolic analysis: the solver labelling is
+        built for the union of the buses the rows use, the admittance entries a row
+        writes are reserved up front, and a row is value edits only -- its coefficients,
+        its injections, the PV pinning of the buses whose generators it moves, and the
+        masking of the union buses it leaves empty (an element alone on a busbar is an
+        island of one: that bus is masked and its injection left out). Refused by
+        :func:`compute` for now: moving or reactivating a slack participant, a generator
+        on a slack bus or one that regulates a remote bus, a storage unit that regulates
+        voltage, ``keep_jacobian`` with a generator move or reactivation, and the DC
+        algorithm. :attr:`compute_physical_violations` follows the row: a generator the
+        row moves or reactivates is checked on the bus the row gives it.
+        """
+        from lightsim2grid.lightEnv import TopoAction, topo_action_from_grid2op
+        from grid2op.Action import BaseAction
+        converted = []
+        for i, act in enumerate(actions):
+            if isinstance(act, TopoAction):
+                converted.append(act)
+            elif isinstance(act, BaseAction):
+                try:
+                    converted.append(topo_action_from_grid2op(act))
+                except (ValueError, TypeError) as exc_:
+                    raise ValueError(f"ScenarioSweep.set_topo_actions: action {i} is invalid: {exc_}") from exc_
+            else:
+                raise ValueError(f"ScenarioSweep.set_topo_actions: action {i} is invalid: expected a grid2op "
+                                 f"action or a TopoAction, got a {type(act)}")
+        self.computer.set_topo_actions(converted)
+        self._has_topo_actions = len(converted) > 0
+        self.__computed = False
+
     def compute(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):
         """
         Run the batch: one powerflow per simulation, using whatever was set by the
@@ -574,18 +626,15 @@ class ScenarioSweep:
             physical_violations=phys_n,
         )
 
-        n_line = len(self.grid2op_env.backend._grid.get_lines())
         violations = self.computer.get_violations()
         nb_steps = len(violations)
-        line_mask = self._line_mask if self._line_mask is not None else np.zeros((nb_steps, n_line), dtype=bool)
-        trafo_mask = self._trafo_mask if self._trafo_mask is not None else np.zeros(
-            (nb_steps, len(self.grid2op_env.backend._grid.get_trafos())), dtype=bool)
 
         post_contingency_results = []
         for row_id in range(nb_steps):
             row_violations = list(violations[row_id])
-            element_ids = [int(el_id) for el_id in np.nonzero(line_mask[row_id])[0]]
-            element_ids += [n_line + int(el_id) for el_id in np.nonzero(trafo_mask[row_id])[0]]
+            # the masks and the row's topological action together (the C++ side merges
+            # them; it needs the compute() that just ran)
+            element_ids = [int(el_id) for el_id in self.computer.get_row_disconnected_branches(row_id)]
             post_contingency_results.append(ContingencyResult(
                 element_ids=element_ids,
                 element_names=[str(self.grid2op_env.name_line[el_id]) for el_id in element_ids],
@@ -602,6 +651,7 @@ class ScenarioSweep:
         self.__computed = False
         self._line_mask = None
         self._trafo_mask = None
+        self._has_topo_actions = False
 
     def close(self):
         """permanently close the object"""

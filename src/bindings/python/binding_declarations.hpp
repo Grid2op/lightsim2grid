@@ -22,5 +22,6 @@ void bind_containers(py::module_& m);
 void bind_misc(py::module_& m);
 void bind_gridmodel(py::module_& m);
 void bind_batch(py::module_& m);
+void bind_light_env(py::module_& m);
 
 #endif // BINDING_DECLARATIONS_HPP
