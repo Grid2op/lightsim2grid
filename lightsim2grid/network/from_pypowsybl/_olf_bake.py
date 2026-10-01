@@ -76,7 +76,8 @@ What gets baked
   although OLF did not. One opt-in exception:
   ``bake_saturated_voltage_control=True`` also freezes a held unit whose Q sits
   at a limit (to ``_Q_SATURATED_HELD_TOL_MVAR``, not to the relative tolerance: a
-  held unit with headroom left is still regulating), at that limit.
+  held unit with headroom left is still regulating, as is one whose bus still has a
+  regulating unit with headroom: OLF switches buses, not units), at that limit.
 * Generators OLF's own voltage-control consistency checks would discard for a
   reason other than "not started": too small a reactive range (default
   ``reactiveRangeCheckMode``, widest ``max_q - min_q`` below 1 MVar) or an
@@ -954,16 +955,28 @@ def _bake_battery_voltage_control(network, keep_only_main_comp=True, df_bus=None
     network.update_batteries(pd.DataFrame({"target_q": -bat.loc[frozen, "q"].to_numpy()}, index=frozen))
 
 
+def _bus_still_regulating(gen, at_limit):
+    """Boolean ``pandas.Series`` (indexed like ``gen``): another voltage-regulating
+    generator of the same bus is not ``at_limit``. OLF switches a whole bus, not one of
+    its units: such a unit at its limit was only clamped when OLF split the bus' reactive
+    power among its units, the bus (and the unit) still regulating."""
+    regulating = gen["voltage_regulator_on"].astype(bool)
+    n_free = (regulating & ~at_limit).astype(int).groupby(gen["bus_id"]).transform("sum")
+    return n_free > 0
+
+
 def _switched_group_members(network, gen, q_gen, reg_bus=None):
     """Boolean ``pandas.Series`` (indexed like ``gen``): a voltage-regulating
     generator whose realized reactive output sits *exactly* at a limit (absolute
     tolerance only, a PQ unit injects its limit to the digit) while at least one
     other generator regulating the same bus is still inside its range -- the
     signature of a unit OLF switched out of a shared control group, whose regulated
-    bus nevertheless reads as held."""
+    bus nevertheless reads as held. Not one whose own bus still regulates (see
+    `_bus_still_regulating`)."""
     regulating = gen["voltage_regulator_on"].astype(bool)
     qmin, qmax = _reactive_limits(gen)
     exact = regulating & ((q_gen >= qmax - _Q_LIMIT_TOL_ABS) | (q_gen <= qmin + _Q_LIMIT_TOL_ABS))
+    exact &= ~_bus_still_regulating(gen, exact)
     if not exact.any():
         return exact
     if reg_bus is None:
@@ -1088,6 +1101,7 @@ def _bake_reactive_limit_switches(
     if bake_saturated_voltage_control:
         qmin, qmax = _reactive_limits(gen)
         saturated = (q_gen >= qmax - _Q_SATURATED_HELD_TOL_MVAR) | (q_gen <= qmin + _Q_SATURATED_HELD_TOL_MVAR)
+        saturated &= ~_bus_still_regulating(gen, saturated)
         mask &= not_held | saturated | switched
     else:
         mask &= not_held | switched

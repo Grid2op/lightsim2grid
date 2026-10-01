@@ -9,6 +9,7 @@
 #ifndef VOLTAGE_CONTROL_PLAN_H
 #define VOLTAGE_CONTROL_PLAN_H
 
+#include <map>
 #include <set>
 #include <utility>
 #include <vector>
@@ -331,8 +332,19 @@ class LS2G_API VoltageControlPlan
                                            const std::vector<bool> & is_pq,
                                            const std::vector<bool> & has_free_q,
                                            std::vector<Raw> & raws) const;
+        /// what the connected generators of a controller bus that control nothing add to
+        /// that bus' share of its group (OpenLoadFlow counts every generator of the bus)
+        struct PassiveBus {
+            real_type keys = 0.;   ///< sum of their reactive keys
+            real_type range = 0.;  ///< sum of their reactive ranges
+            bool keyed = true;     ///< all of them have a key
+        };
+        /// the PassiveBus of each controller solver bus in `raws` that has any
+        std::map<int, PassiveBus> _collect_passive_gens(const GeneratorContainer & generators,
+                                                        const SolverBusIdVect & id_me_to_solver,
+                                                        const std::vector<Raw> & raws) const;
         /// group by regulated bus, check the setpoints agree, emit `controllers_`
-        void _group_and_emit(const std::vector<Raw> & raws);
+        void _group_and_emit(const std::vector<Raw> & raws, const std::map<int, PassiveBus> & passive);
 
         std::set<int> group_reg_buses_;      ///< layer 1, GRID bus ids
         std::set<int> free_vm_slack_buses_;  ///< layer 3, SOLVER bus ids
