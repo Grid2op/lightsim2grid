@@ -4008,6 +4008,13 @@ const std::string DocLSGrid::get_controller_elem_id_solver = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::get_controller_held_solver = R"mydelimiter(
+    1 for each ``VoltageControl`` controller held at its frozen reactive output (see
+    :func:`set_hold_frozen_regulators`), 0 for the others, same order as
+    :func:`get_controller_q_solver`.
+
+)mydelimiter";
+
 const std::string DocLSGrid::get_controller_q_col_solver = R"mydelimiter(
     Jacobian column of each ``VoltageControl`` controller's own Q unknown, same order as
     :func:`get_controller_q_solver`.
@@ -5925,6 +5932,42 @@ const std::string DocLSGrid::set_keep_vinit_at_group_controlled_buses = R"mydeli
 
 const std::string DocLSGrid::get_keep_vinit_at_group_controlled_buses = R"mydelimiter(
     Get the value set by :func:`set_keep_vinit_at_group_controlled_buses` (``False`` by default).
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_hold_frozen_regulators = R"mydelimiter(
+    Keep, in the voltage-control group it would join, every generator an outer loop froze at a
+    reactive limit and that would regulate a REMOTE bus if released -- flagged with
+    :func:`set_gen_can_be_pv`, its voltage regulation off, its regulated bus not its own --
+    HELD at the reactive output it was frozen at (its ``target_q_mvar``). AC Newton-Raphson
+    only.
+
+    The system solved is the one without the option: same voltages, same reactive outputs.
+    What changes is the Jacobian: the held machine has a reactive unknown and a row of its own
+    in the group's bordered block, which reads "Q = frozen output" instead of the reactive
+    sharing (or voltage) equation. A tool reusing that Jacobian can then release the machine on
+    some solves only by rewriting values, without touching the sparsity pattern -- the
+    reactive-limit outer loop of a batch, for instance.
+
+    A held machine the formulation cannot express (its own bus with no reactive equation, its
+    regulated bus with no voltage unknown, a set-point other than its group's, a group holding
+    a static var compensator) is left out, PQ as before: the option never makes a grid fail to
+    solve. The bus it would regulate does become a group-controlled bus, as the target of an
+    active remote regulator would. The held machines do not take part in the reactive-capability
+    check of :func:`get_physical_violations` (they hold no bus); their release is still reported.
+
+    Off by default. The option is copied with the grid, so the batch algorithms built from it
+    inherit it. It is not saved by :func:`get_state` or the binary format.
+
+    Parameters
+    ----------
+    hold: ``bool``
+        ``True`` to keep the frozen remote regulators held in their group.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_hold_frozen_regulators = R"mydelimiter(
+    Get the value set by :func:`set_hold_frozen_regulators` (``False`` by default).
 
 )mydelimiter";
 

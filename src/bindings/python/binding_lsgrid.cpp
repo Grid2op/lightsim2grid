@@ -126,6 +126,10 @@ void bind_gridmodel(py::module_& m) {
              py::arg("keep"), DocLSGrid::set_keep_vinit_at_group_controlled_buses.c_str())
         .def("get_keep_vinit_at_group_controlled_buses", &LSGrid::get_keep_vinit_at_group_controlled_buses,
              DocLSGrid::get_keep_vinit_at_group_controlled_buses.c_str())
+        .def("set_hold_frozen_regulators", &LSGrid::set_hold_frozen_regulators,
+             py::arg("hold"), DocLSGrid::set_hold_frozen_regulators.c_str())
+        .def("get_hold_frozen_regulators", &LSGrid::get_hold_frozen_regulators,
+             DocLSGrid::get_hold_frozen_regulators.c_str())
         .def("set_sn_mva", &LSGrid::set_sn_mva, DocLSGrid::set_sn_mva.c_str())
         .def("get_sn_mva", &LSGrid::get_sn_mva, DocLSGrid::get_sn_mva.c_str())
 
@@ -425,6 +429,7 @@ void bind_gridmodel(py::module_& m) {
         .def("get_controller_q_solver", &LSGrid::get_controller_q_solver, py::return_value_policy::reference, DocLSGrid::get_controller_q_solver.c_str())
         .def("get_controller_kind_solver", &LSGrid::get_controller_kind_solver, py::return_value_policy::reference, DocLSGrid::get_controller_kind_solver.c_str())
         .def("get_controller_elem_id_solver", &LSGrid::get_controller_elem_id_solver, py::return_value_policy::reference, DocLSGrid::get_controller_elem_id_solver.c_str())
+        .def("get_controller_held_solver", &LSGrid::get_controller_held_solver, DocLSGrid::get_controller_held_solver.c_str())
         .def("get_controller_q_col_solver", &LSGrid::get_controller_q_col_solver, py::return_value_policy::reference, DocLSGrid::get_controller_q_col_solver.c_str())
 
         .def("get_p_buses_solver", &LSGrid::get_p_buses_solver, py::return_value_policy::reference, DocLSGrid::get_p_buses_solver.c_str())

@@ -492,6 +492,7 @@ struct LS2G_API DocLSGrid
     static const std::string get_controller_kind_solver;
     static const std::string get_controller_elem_id_solver;
     static const std::string get_controller_q_col_solver;
+    static const std::string get_controller_held_solver;
     static const std::string get_p_buses_solver;
     static const std::string get_p_rows_solver;
     static const std::string get_q_buses_solver;
@@ -592,6 +593,8 @@ struct LS2G_API DocLSGrid
     static const std::string get_init_vm_pu;
     static const std::string set_keep_vinit_at_group_controlled_buses;
     static const std::string get_keep_vinit_at_group_controlled_buses;
+    static const std::string set_hold_frozen_regulators;
+    static const std::string get_hold_frozen_regulators;
     static const std::string set_sn_mva;
     static const std::string get_sn_mva;
     static const std::string set_n_sub;

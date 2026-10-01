@@ -688,14 +688,18 @@ BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::gen_v_indi
         const IntVect vc_group = _gen_v_vc_group();
         const bool has_masking = _handle_disconnected_grid && !_li_masked.empty();
         const VoltageControlSolverData & ctrl = _grid_model.get_ac_voltage_control_plan().controllers();
+        // the rule of VoltageControl::_recompute_group_stranded: only the active
+        // controllers count, a group of held ones only is never stranded
         const auto group_stranded = [&ctrl](int grp, const std::vector<int> & masked){
             const int first = ctrl.grp_start(grp);
             const int cnt = ctrl.grp_count(grp);
-            if(cnt <= 0) return false;
+            bool any_active = false;
             for(int off = 0; off < cnt; ++off){
+                if(ctrl.is_held(first + off)) continue;
+                any_active = true;
                 if(std::find(masked.begin(), masked.end(), ctrl.bus(first + off)) == masked.end()) return false;
             }
-            return true;
+            return any_active;
         };
         for(Eigen::Index g = 0; g < nb_gen && g < vc_row.size(); ++g){
             if(vc_row[g] < 0) continue;
