@@ -207,6 +207,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``bake_outer_loops`` no longer freezes a unit at its reactive limit whose bus still has a
+  regulating unit with headroom (OpenLoadFlow switches buses, not units).
 - [FIXED] The controllers holding a remote bus share it with the other generators of their bus counted
   in that bus' key, as OpenLoadFlow does.
 - [ADDED] ``LSGrid.set_hvdc_ac_emulation_frozen``: an hvdc line frozen at its AC-emulation limit is
