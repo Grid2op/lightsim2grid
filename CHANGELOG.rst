@@ -207,6 +207,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] The controllers holding a remote bus share it with the other generators of their bus counted
+  in that bus' key, as OpenLoadFlow does.
 - [ADDED] ``LSGrid.set_hvdc_ac_emulation_frozen``: an hvdc line frozen at its AC-emulation limit is
   reported (``HVDC_AC_EMULATION_RELEASE``) when its droop asks for less (from the bake).
 - [FIXED] A unit OpenLoadFlow capped well beyond its active limit stays there in the slack pre-pass
