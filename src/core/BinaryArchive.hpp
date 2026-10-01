@@ -115,7 +115,10 @@ namespace ls2g {
 // v15: ConverterStationContainer::StateRes carries the per-station `can_be_pv_` flag (a VSC
 //     station an outer loop froze at a reactive limit -- see LSGrid::set_hvdc_can_be_pv;
 //     all false unless set). Appended.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 15;
+// v16: GeneratorContainer::StateRes and StorageContainer::StateRes carry each unit's
+//     "can participate in the slack" overshoot (how far beyond its limit the reference solve
+//     had it -- see LSGrid::set_gen_can_participate_slack_overshoot; 0 unless set). Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 16;
 
 class LS2G_API BinaryArchive
 {

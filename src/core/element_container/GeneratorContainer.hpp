@@ -49,6 +49,9 @@ class LS2G_API GenInfo : public OneSideContainer_PQ::OneSidePQInfo
         // redistribution pre-pass with this weight (see LSGrid::set_gen_can_participate_slack)
         bool can_participate_slack;
         real_type can_participate_slack_weight;
+        // ... and how far beyond that limit it was in the reference solve, MW (see
+        // LSGrid::set_gen_can_participate_slack_overshoot)
+        real_type can_participate_slack_overshoot_mw;
         int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id for local control)
         real_type reactive_key; // reactive sharing key, NaN when there is none
 
@@ -94,7 +97,8 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
            std::vector<real_type>,  // p_max_mw_ (appended, optional: empty if unset)
            std::vector<real_type>,  // reactive_key_ (appended; NaN: no key)
            std::vector<bool>,       // can_be_pv_ (appended; all false by default)
-           std::vector<real_type>   // can_participate_slack weight (appended; 0: not flagged)
+           std::vector<real_type>,  // can_participate_slack weight (appended; 0: not flagged)
+           std::vector<real_type>   // can_participate_slack overshoot, MW (appended; 0 by default)
         > ;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -111,6 +115,7 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             REACTIVE_KEY,
             CAN_BE_PV,
             CAN_PARTICIPATE_SLACK,
+            CAN_PARTICIPATE_SLACK_OVERSHOOT,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -322,6 +327,11 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         }
         bool get_can_participate_slack(int gen_id) const {return slack_.can_participate(gen_id);}
         real_type get_can_participate_slack_weight(int gen_id) const {return slack_.can_participate_weight(gen_id);}
+        /// see SlackParticipation::set_can_participate_overshoot (LSGrid::set_gen_can_participate_slack_overshoot)
+        void set_can_participate_slack_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw){
+            slack_.set_can_participate_overshoot(overshoot_mw, "GeneratorContainer::set_can_participate_slack_overshoot");
+        }
+        real_type get_can_participate_slack_overshoot(int gen_id) const {return slack_.can_participate_overshoot(gen_id);}
         bool is_slack(int gen_id) const {return slack_.is_slack(gen_id);}
 
         /**
@@ -392,6 +402,7 @@ max_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
 can_be_pv(false),
 can_participate_slack(false),
 can_participate_slack_weight(0.),
+can_participate_slack_overshoot_mw(0.),
 regulated_bus_id(-1),
 reactive_key(std::numeric_limits<real_type>::quiet_NaN())
 {
@@ -400,6 +411,7 @@ reactive_key(std::numeric_limits<real_type>::quiet_NaN())
         is_slack = r_data_gen.slack_.is_slack(my_id);
         can_participate_slack = r_data_gen.slack_.can_participate(my_id);
         can_participate_slack_weight = r_data_gen.slack_.can_participate_weight(my_id);
+        can_participate_slack_overshoot_mw = r_data_gen.slack_.can_participate_overshoot(my_id);
         slack_weight = r_data_gen.slack_.weight(my_id);
 
         voltage_regulator_on = r_data_gen.voltage_regulator_on_[my_id];

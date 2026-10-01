@@ -252,6 +252,19 @@ void bind_gridmodel(py::module_& m) {
         .def("set_storage_can_participate_slack", &LSGrid::set_storage_can_participate_slack,
              py::arg("flags"), py::arg("weights"),
              "The same as `set_gen_can_participate_slack`, for the storage units.")
+        .def("set_gen_can_participate_slack_overshoot", &LSGrid::set_gen_can_participate_slack_overshoot,
+             py::arg("overshoot_mw"),
+             "For the generators flagged with `set_gen_can_participate_slack`: how far BEYOND the "
+             "limit it sits at each one was in the reference solve, in MW (>= 0, one value per "
+             "generator, 0 by default; `GenInfo.can_participate_slack_overshoot_mw`). OpenLoadFlow "
+             "shares the slack from the raw set-points, so a unit it capped at max_p had "
+             "raw + lambda * weight above max_p by that much, and an imbalance of the other sign "
+             "only moves it once the common shift of the distribution has used that up. Only the "
+             "bounded redistribution pre-pass reads it. `init_from_pypowsybl(can_participate_slack=...)` "
+             "fills it when given what `bake_outer_loops(..., return_details=True)` computed.")
+        .def("set_storage_can_participate_slack_overshoot", &LSGrid::set_storage_can_participate_slack_overshoot,
+             py::arg("overshoot_mw"),
+             "The same as `set_gen_can_participate_slack_overshoot`, for the storage units.")
         .def("set_hvdc_can_be_pv", &LSGrid::set_hvdc_can_be_pv,
              py::arg("side_1"), py::arg("side_2"),
              "The generators' set_gen_can_be_pv, for the VSC converter stations of the hvdc lines: one "

@@ -411,8 +411,9 @@ def bake_outer_loops(
             extrapolate_reactive_limits, bake_saturated_voltage_control, df_bus
         )
     capped = pd.Index([], dtype=object)
+    overshoot = pd.Series(dtype=float)
     if bake_active_power:
-        capped = _bake_active_power(
+        capped, overshoot = _bake_active_power(
             network,
             balance_on_loads=balance_on_loads,
             load_power_factor_constant=load_power_factor_constant,
@@ -423,7 +424,8 @@ def bake_outer_loops(
     if bake_remote_voltage_control:
         _bake_remote_voltage_control(network, keep_only_main_comp, df_bus)
     if return_details:
-        return BakeResult(can_be_pv=pinned, can_participate_slack=capped)
+        return BakeResult(can_be_pv=pinned, can_participate_slack=capped,
+                          can_participate_slack_overshoot=overshoot)
     return pinned
 
 
@@ -435,6 +437,10 @@ class BakeResult(NamedTuple):
     #: the generators and batteries left out of the slack only because OLF capped them
     #: at an active limit -- for ``init_from_pypowsybl(can_participate_slack=...)``
     can_participate_slack: pd.Index
+    #: how far beyond that limit each of them was in the reference distribution, MW (indexed
+    #: like ``can_participate_slack``) -- for
+    #: ``init_from_pypowsybl(can_participate_slack_overshoot=...)``
+    can_participate_slack_overshoot: pd.Series = None
 
 
 def _bake_taps_and_sections(network, keep_only_main_comp=True, df_bus=None):
@@ -1444,7 +1450,7 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
     batteries' :func:`~._aux_battery_apc.battery_active_power_control`) are read off the
     network when not given.
 
-    Returns ``(pinned_batteries, capped)``: the batteries OLF capped that this pypowsybl
+    Returns ``(pinned_batteries, capped, overshoot)``: the batteries OLF capped that this pypowsybl
     cannot mark in their extension (<= 1.16.1 rejects a battery id there) -- the caller
     pins their active range on their realized dispatch (``min_p = max_p``), a degenerate
     range both OLF and lightsim2grid exclude from the slack -- and the ids of the units
@@ -1452,7 +1458,10 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
     them: the ones it would let take a share again of a mismatch of the other sign (see
     ``bake_outer_loops(..., return_details=True)``). A unit excluded for one of OLF's own
     ``checkActivePowerControl`` reasons is not in it, nor is a pinned battery (its range
-    is gone).
+    is gone). ``overshoot`` (MW, indexed like ``capped``) is how far beyond its limit each
+    capped unit was: ``target_p + lambda * weight`` minus that limit, lambda the common factor
+    of OLF's distribution read off the units it neither excluded nor capped (0 when there is
+    none).
     """
     # not at the top: _aux_battery_apc reads its OLF constants from this module
     from ._aux_battery_apc import (
@@ -1517,15 +1526,50 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
         capped = cand & (realized <= min_target_p + _ZERO_P_TOL)
         if has_bat:
             b_capped = b_cand & (b_realized <= b_min_tp + _ZERO_P_TOL)
+
+    # How far beyond its limit each capped unit was. OLF shares the slack from the raw
+    # set-points, p = clamp(target_p + lambda * weight): lambda is read off the units it
+    # neither excluded nor capped (strictly inside their range), and a capped unit sat at
+    # target_p + lambda * weight beyond its limit -- the room a later mismatch of the other
+    # sign has to use up before OLF lets it move (see set_gen_can_participate_slack_overshoot).
+    gen_w = np.zeros(len(gen))
+    if len(apc) and "droop" in apc.columns:
+        droop = apc["droop"].reindex(gen.index).to_numpy(float)
+    else:
+        droop = np.full(len(gen), np.nan)
+    if len(gen):
+        gen_w = olf_participation_weight(target_p, gen["min_p"].to_numpy(float), max_p, participate,
+                                         droop, min_target_p, max_target_p)
+    free = (cand & ~capped & (gen_w > 0.) & (realized > min_target_p + _ZERO_P_TOL)
+            & (realized < max_target_p - _ZERO_P_TOL))
+    lam_samples = [(realized - target_p)[free] / gen_w[free]]
+    if has_bat:
+        b_free = (b_cand & ~b_capped & (b_realized > b_min_tp + _ZERO_P_TOL)
+                  & (b_realized < b_max_tp - _ZERO_P_TOL))
+        lam_samples.append((b_realized - b_target_p)[b_free] / b_weight[b_free])
+    lam_samples = np.concatenate(lam_samples)
+    lam = float(np.median(lam_samples)) if lam_samples.size else np.nan
+
+    def _overshoot(raw, weight, low, high):
+        if not np.isfinite(lam):
+            return np.zeros(len(raw))
+        unclamped = raw + lam * weight
+        beyond = unclamped - high if mismatch > 0. else low - unclamped
+        return np.maximum(np.where(np.isfinite(beyond), beyond, 0.), 0.)
+
     excluded |= capped
 
     excluded_ids = gen.index[excluded]
     capped_ids = gen.index[capped]
+    overshoot = pd.Series(_overshoot(target_p, gen_w, min_target_p, max_target_p)[capped],
+                          index=capped_ids, dtype=float)
     pinned_batteries = bat.index[b_capped] if has_bat else gen.index[:0]
     if has_bat and _pypowsybl_exposes_battery_apc():
         # this pypowsybl writes the extension on a battery as on a generator
         excluded_ids = excluded_ids.append(pinned_batteries)
         capped_ids = capped_ids.append(pinned_batteries)
+        overshoot = pd.concat([overshoot, pd.Series(
+            _overshoot(b_target_p, b_weight, b_min_tp, b_max_tp)[b_capped], index=pinned_batteries, dtype=float)])
         pinned_batteries = pinned_batteries[:0]
 
     if len(excluded_ids):
@@ -1539,7 +1583,7 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
             network.create_extensions(
                 "activePowerControl", pd.DataFrame({"participate": False}, index=new_apc)
             )
-    return pinned_batteries, pd.Index(capped_ids, dtype=object)
+    return pinned_batteries, pd.Index(capped_ids, dtype=object), overshoot
 
 
 def _bake_active_power(
@@ -1570,9 +1614,10 @@ def _bake_active_power(
         bat_apc = battery_active_power_control(network, bat)
     pinned_batteries = bat.index[:0]
     capped = pd.Index([], dtype=object)
+    overshoot = pd.Series(dtype=float)
     if bake_active_power_control_participation and (len(gen) or len(bat)):
-        pinned_batteries, capped = _bake_active_power_control_participation(network, gen, bat,
-                                                                            gen_range, bat_apc)
+        pinned_batteries, capped, overshoot = _bake_active_power_control_participation(
+            network, gen, bat, gen_range, bat_apc)
 
     if len(gen):
         # result p is load convention; target_p is generator convention
@@ -1611,5 +1656,6 @@ def _bake_active_power(
             if load_power_factor_constant:
                 upd["q0"] = load["q"]
             network.update_loads(upd)
-    # the units excluded from the slack only because OLF capped them (see the caller)
-    return capped
+    # the units excluded from the slack only because OLF capped them, and how far beyond
+    # their limit each was (see the caller)
+    return capped, overshoot

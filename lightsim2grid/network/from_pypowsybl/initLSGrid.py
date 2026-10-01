@@ -61,6 +61,7 @@ def init(net : pypo.network.Network,
          battery_active_power_control: str="auto",
          can_be_pv=None,
          can_participate_slack=None,
+         can_participate_slack_overshoot=None,
          remote_voltage_control_vm_range="olf",
          ) -> LSGrid:
     """
@@ -254,6 +255,15 @@ def init(net : pypo.network.Network,
         nothing. An unknown id raises.
     :type can_participate_slack: None or Iterable[str]
 
+    :param can_participate_slack_overshoot: For the units of ``can_participate_slack``: how
+        far beyond the limit it sits at each one was in the reference distribution, in MW --
+        what ``bake_outer_loops(..., return_details=True).can_participate_slack_overshoot``
+        returns. OpenLoadFlow shares the slack from the raw set-points, so a unit it capped
+        well beyond its limit stays capped until the shift of a later imbalance has used that
+        up (``LSGrid.set_gen_can_participate_slack_overshoot``). ``None`` (default): 0 for
+        every unit, which lets it leave its limit at once.
+    :type can_participate_slack_overshoot: None or pandas.Series
+
     :param remote_voltage_control_vm_range: The range of voltage (pu of its own bus' nominal
         voltage) a generator regulating a REMOTE bus may sit at, for the physical checks
         (``LSGrid.set_remote_voltage_control_vm_range``): a remote controller outside it is
@@ -349,7 +359,8 @@ def init(net : pypo.network.Network,
     gen_slack_ids_int = _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
                                        df_batt=df_batt,
                                        battery_active_power_control=battery_active_power_control,
-                                       can_participate_slack=can_participate_slack)
+                                       can_participate_slack=can_participate_slack,
+                                       can_participate_slack_overshoot=can_participate_slack_overshoot)
 
     # TODO checks
     # no 3windings trafo and other exotic stuff

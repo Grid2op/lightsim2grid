@@ -37,7 +37,7 @@ CAPPED = 1          # gen 1: at its max_p, out of the slack
 LEAF_LINE = 3       # line 1-4: taking it out islands bus 4
 
 
-def _grid(flagged=True, leaf_gen_mw=0.):
+def _grid(flagged=True, leaf_gen_mw=0., overshoot_mw=0.):
     """buses 0-1-2-3 in a row plus a leaf bus 4 off bus 1 (line 3); 60 MW of load on bus 3 and
     20 MW on bus 4 (and a `leaf_gen_mw` generator there). Gen 0, on bus 0, is the slack; gen 1,
     on bus 2, is dispatched at its max_p and out of the slack -- flagged (or not) "can
@@ -59,6 +59,8 @@ def _grid(flagged=True, leaf_gen_mw=0.):
     if flagged:
         grid.set_gen_can_participate_slack(np.array([False, True] + [False] * (n - 2)),
                                            np.array([0., 0.5] + [0.] * (n - 2)))
+        if overshoot_mw:
+            grid.set_gen_can_participate_slack_overshoot(np.array([0., overshoot_mw] + [0.] * (n - 2)))
     grid.tell_solver_need_reset()
     return grid
 
@@ -85,13 +87,23 @@ class TestFlag(unittest.TestCase):
             grid.set_gen_can_participate_slack(np.array([False, True]), np.array([0., 0.]))
 
     def test_kept_by_copy_pickle_and_binary(self):
-        grid = _grid()
+        grid = _grid(overshoot_mw=15.)
         for other in (grid.copy(), copy.deepcopy(grid), pickle.loads(pickle.dumps(grid))):
             self.assertEqual(other.get_generators()[CAPPED].can_participate_slack_weight, 0.5)
+            self.assertEqual(other.get_generators()[CAPPED].can_participate_slack_overshoot_mw, 15.)
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "grid.lsb")
             grid.save_binary(path)
-            self.assertEqual(LSGrid.load_binary(path).get_generators()[CAPPED].can_participate_slack_weight, 0.5)
+            gen = LSGrid.load_binary(path).get_generators()[CAPPED]
+            self.assertEqual(gen.can_participate_slack_weight, 0.5)
+            self.assertEqual(gen.can_participate_slack_overshoot_mw, 15.)
+
+    def test_overshoot_default_and_refused(self):
+        grid = _grid()
+        self.assertEqual(grid.get_generators()[CAPPED].can_participate_slack_overshoot_mw, 0.)
+        for bad in ([0., -1.], [0., np.nan], [0.]):
+            with self.assertRaises(RuntimeError):
+                grid.set_gen_can_participate_slack_overshoot(np.array(bad))
 
 
 class TestPrepass(unittest.TestCase):
@@ -109,6 +121,40 @@ class TestPrepass(unittest.TestCase):
         gens = grid.get_generators()
         self.assertTrue(gens[0].is_slack)
         self.assertFalse(gens[CAPPED].is_slack)   # still out of the Newton solve's slack
+
+    def test_overshoot_used_up_first(self):
+        # OLF's p = clamp(v + shift * w / W): the capped unit sits at 40 + 15 MW unbounded, so
+        # it only leaves its max_p once the common shift took those 15 MW; 20 MW to take with
+        # equal weights: shift -35 MW, the slack unit gives 17.5, the capped one 2.5
+        grid = _grid(flagged=True, overshoot_mw=15.)
+        grid.deactivate_powerline(LEAF_LINE)
+        report = grid.consider_only_main_component(True)
+        self.assertAlmostEqual(report.mismatch_mw, -20., places=9)
+        self.assertAlmostEqual(report.not_distributed_mw, 0., places=6)
+        np.testing.assert_allclose(_target_p(grid), [12.5, 37.5], atol=1e-6)
+
+    def test_overshoot_larger_than_the_shift_keeps_it_capped(self):
+        # 25 MW beyond its max_p: the 20 MW the units must give all come from the slack one
+        grid = _grid(flagged=True, overshoot_mw=25.)
+        grid.deactivate_powerline(LEAF_LINE)
+        grid.consider_only_main_component(True)
+        np.testing.assert_allclose(_target_p(grid), [10., 40.], atol=1e-6)
+
+    def test_overshoot_batch_matches_the_single_solve(self):
+        ref = _grid(flagged=True, overshoot_mw=15.)
+        ref.deactivate_powerline(LEAF_LINE)
+        ref.consider_only_main_component(True)
+        V_ref = ref.ac_pf(np.full(ref.total_bus(), 1.0 + 0j), 30, 1e-11)
+        self.assertGreater(V_ref.shape[0], 0)
+        grid = _grid(flagged=True, overshoot_mw=15.)
+        ca = ContingencyAnalysisCPP(grid, True)
+        ca.handle_disconnected_grid = True
+        ca.redistribute_slack = True
+        ca.add_n1(LEAF_LINE)
+        ca.compute(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        assert list(ca.converged()) == [True]
+        V_batch = np.asarray(ca.get_voltages())[0]
+        np.testing.assert_allclose(V_batch[:4], V_ref[:4], atol=1e-8)
 
     def test_not_flagged_takes_nothing(self):
         grid = _grid(flagged=False)
@@ -166,6 +212,17 @@ class TestFromPypowsybl(unittest.TestCase):
         n2 = pp.network.create_four_substations_node_breaker_network()
         lf.run_ac(n2)
         self.assertEqual(list(bake_outer_loops(n2)), list(res.can_be_pv))
+
+    def test_bake_returns_the_overshoot_and_init_sets_it(self):
+        n, res = self._baked()
+        over = res.can_participate_slack_overshoot
+        self.assertEqual(list(over.index), list(res.can_participate_slack))
+        self.assertTrue(np.all(np.isfinite(over.to_numpy())) and np.all(over.to_numpy() >= 0.))
+        grid = init_from_pypowsybl(n, sort_index=False, buses_for_sub=False,
+                                   can_participate_slack=res.can_participate_slack,
+                                   can_participate_slack_overshoot=over)
+        gens = {g.name: g for g in grid.get_generators()}
+        self.assertAlmostEqual(gens["GTH1"].can_participate_slack_overshoot_mw, over["GTH1"], places=9)
 
     def test_init_flags_it_with_olf_weight(self):
         n, res = self._baked()

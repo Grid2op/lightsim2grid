@@ -1964,6 +1964,15 @@ const std::string DocIterator::can_participate_slack_weight = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::can_participate_slack_overshoot_mw = R"mydelimiter(
+    When :attr:`can_participate_slack`: how far beyond the limit it sits at this unit was in the
+    reference solve, in MW (``0`` by default). The redistribution pre-pass only moves it away
+    from that limit once the common shift of the distribution has used it up, as OpenLoadFlow,
+    which shares the slack from the raw set-points, does (see
+    :func:`lightsim2grid.network.LSGrid.set_gen_can_participate_slack_overshoot`).
+
+)mydelimiter";
+
 const std::string DocIterator::svc_can_be_pv = R"mydelimiter(
     Whether this SVC, when it does not regulate a voltage (:attr:`regulation_mode` is
     ``REACTIVE_POWER``), is one an outer loop froze at the edge of its susceptance range -- so

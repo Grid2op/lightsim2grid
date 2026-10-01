@@ -105,7 +105,8 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one
                                       p_max,
                                       reactive_key,
                                       can_be_pv_,
-                                      slack_.can_participate_weights());
+                                      slack_.can_participate_weights(),
+                                      slack_.can_participate_overshoots());
      return res;
 }
 
@@ -127,6 +128,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     std::vector<real_type> & reactive_key = std::get<StateResIdx::REACTIVE_KEY>(my_state);
     std::vector<bool> & can_be_pv = std::get<StateResIdx::CAN_BE_PV>(my_state);
     std::vector<real_type> & can_participate = std::get<StateResIdx::CAN_PARTICIPATE_SLACK>(my_state);
+    std::vector<real_type> & can_participate_overshoot = std::get<StateResIdx::CAN_PARTICIPATE_SLACK_OVERSHOOT>(my_state);
 
     // check sizes
     const auto size = nb();
@@ -147,6 +149,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     check_size(reactive_key, size, "reactive_key");
     check_size(can_be_pv, size, "can_be_pv");
     check_size(can_participate, size, "can_participate_slack");
+    check_size(can_participate_overshoot, size, "can_participate_slack_overshoot");
 
     // assign data
     voltage_regulator_on_ = voltage_regulator_on;
@@ -155,6 +158,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     max_q_ = RealVect::Map(max_q.data(), max_q.size());
     slack_.set(slack_bus, slack_weight);
     slack_.set_can_participate_weights(can_participate);
+    slack_.set_can_participate_overshoots(can_participate_overshoot);
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
     p_min_mw_ = p_min.empty() ? RealVect() : RealVect::Map(p_min.data(), p_min.size());
     p_max_mw_ = p_max.empty() ? RealVect() : RealVect::Map(p_max.data(), p_max.size());

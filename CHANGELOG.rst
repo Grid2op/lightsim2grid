@@ -207,6 +207,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] A unit OpenLoadFlow capped well beyond its active limit stays there in the slack pre-pass
+  until the shift has used that up (``set_gen_can_participate_slack_overshoot``, from the bake).
 - [FIXED] An SVC carrying a standby automaton has its susceptance range shifted by the automaton's
   ``b0`` (``init_from_pypowsybl`` and ``bake_outer_loops``), as OpenLoadFlow holds that ``b0`` apart.
 - [FIXED] ``bake_outer_loops`` freezes a generator with too small a reactive range sharing its
@@ -226,9 +228,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``LSGrid.set_hold_frozen_regulators``: a frozen (``can_be_pv``) remote regulator keeps
   its seat in its voltage-control group, held at its frozen output -- same solution, releasable by
   value.
-- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 15: ``SvcContainer`` serializes the standby automaton
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 16: ``SvcContainer`` serializes the standby automaton
   and the ``can_be_pv`` flag of each SVC, the generators and storage units their "can participate
-  in the slack" weight, the converter stations their ``can_be_pv`` flag. Files of format 11 no
+  in the slack" weight and overshoot, the converter stations their ``can_be_pv`` flag. Files of format 11 no
   longer load.
 - [ADDED] Physical check of the idle SVCs under a standby automaton (``LSGrid.set_svc_standby``):
   a regulated bus outside the automaton's thresholds, which OpenLoadFlow's

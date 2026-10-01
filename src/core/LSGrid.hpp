@@ -1235,6 +1235,22 @@ class LS2G_API LSGrid final
             storages_.set_can_participate_slack(flags, weights);
         }
         /**
+         * For the generators flagged "can participate in the slack": how far BEYOND the
+         * limit it sits at each one was in the reference solve, in MW (>= 0, one value per
+         * generator, 0 by default). OpenLoadFlow shares the slack from the raw set-points,
+         * so a unit it capped at max_p had raw + lambda * weight above max_p by that much,
+         * and an imbalance of the other sign only moves it once the shift of the
+         * distribution has used that up. Only the bounded redistribution pre-pass reads it.
+         * See SlackParticipation::set_can_participate_overshoot.
+         */
+        void set_gen_can_participate_slack_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw){
+            generators_.set_can_participate_slack_overshoot(overshoot_mw);
+        }
+        /// the same, for the storage units
+        void set_storage_can_participate_slack_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw){
+            storages_.set_can_participate_slack_overshoot(overshoot_mw);
+        }
+        /**
          * Same, for the storage units -- which take part in the distributed slack under
          * the same rule as the generators (`add_storage_slackbus`), so their converged
          * active power can leave what they can deliver in exactly the same way.

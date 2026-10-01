@@ -51,6 +51,8 @@ ATTR_GENS_INPUT = [
     # left out of the slack only because it sat at an active limit (see
     # LSGrid.set_gen_can_participate_slack): 0 unless set
     "can_participate_slack_weight",
+    # ... and how far beyond its limit (LSGrid.set_gen_can_participate_slack_overshoot): 0 unless set
+    "can_participate_slack_overshoot_mw",
 ]
 
 
@@ -82,6 +84,8 @@ ATTR_STORAGES_INPUT = [
     "max_p_mw",
     # see LSGrid.set_storage_can_participate_slack: 0 unless set
     "can_participate_slack_weight",
+    # see LSGrid.set_storage_can_participate_slack_overshoot: 0 unless set
+    "can_participate_slack_overshoot_mw",
 ]
 
 
