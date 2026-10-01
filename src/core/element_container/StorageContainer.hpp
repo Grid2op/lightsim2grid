@@ -209,12 +209,19 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         void remove_slackbus(int storage_id, DualAlgoControl & solver_control){
             slack_.remove(storage_id, solver_control);
         }
-        void remove_all_slackbus(){ slack_.remove_all(); }
-        /// the participants outside the main component leave the slack (LSGrid::consider_only_main_component)
-        void remove_slackbus_not_in_main_component(const std::vector<bool> & busbar_in_main_component,
-                                                   DualAlgoControl & solver_control){
-            slack_.remove_if_bus_not_in(busbar_in_main_component, bus_id_, solver_control);
+        /// out of the slack while it sits at the limit it saturated at, still able to come back (see SlackParticipation::leave)
+        void leave_slackbus(int storage_id, DualAlgoControl & solver_control){
+            slack_.leave(storage_id, solver_control);
         }
+        /// back into the slack if it can participate and is connected off its limits (see
+        /// SlackParticipation::rejoin_if_able); the limits are in generator convention, the target is not
+        bool rejoin_slackbus_if_able(int storage_id, DualAlgoControl & solver_control){
+            const bool connected = status_[storage_id] && bus_id_(storage_id).cast_int() != _deactivated_bus_id;
+            return slack_.rejoin_if_able(storage_id, connected, -target_p_mw_(storage_id),
+                                         get_min_p(storage_id), get_max_p(storage_id),
+                                         solver_control, "StorageContainer::rejoin_slackbus_if_able");
+        }
+        void remove_all_slackbus(){ slack_.remove_all(); }
         bool is_slack(int storage_id) const {return slack_.is_slack(storage_id);}
         /// the unit's own (un-normalised) share of the distributed slack
         real_type get_slack_weight(int storage_id) const {return slack_.weight(storage_id);}

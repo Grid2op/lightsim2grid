@@ -477,5 +477,68 @@ class TestScenarioSweepInjectionChange(_Base):
         self._check_rows(sweep, gen_p, load_p, self.solved, gen_off=self.non_slack, island=True)
 
 
+class TestContingencyAnalysisPythonToggle(unittest.TestCase):
+    """The python ``ContingencyAnalysis`` keeps the results of its last computation: an
+    option changed after it must not hand them back unchanged. l2rpn_case14_sandbox: the
+    generator of the leaf substation produces 40 MW, which its only line strands; four
+    generators share the slack, one of them with 2 MW of room."""
+    def setUp(self):
+        import grid2op
+        from lightsim2grid import LightSimBackend
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
+        self.env.reset(seed=0, options={"time serie id": 0})
+        env = self.env
+        degree = np.bincount(np.concatenate([env.line_or_to_subid, env.line_ex_to_subid]), minlength=env.n_sub)
+        leaf_sub = int(np.nonzero(degree == 1)[0][0])
+        self.leaf_line = int(np.nonzero((env.line_or_to_subid == leaf_sub) | (env.line_ex_to_subid == leaf_sub))[0][0])
+        leaf_gen = int(np.nonzero(env.gen_to_subid == leaf_sub)[0][0])
+
+        self.backend = env.backend
+        grid = self.backend._grid
+        grid.change_p_gen(leaf_gen, 40.)
+        gens = grid.get_generators()
+        targets = np.array([g.target_p_mw for g in gens])
+        slack = [g.id for g in gens if g.id != leaf_gen and targets[g.id] > 0.]
+        for gen_id in slack:
+            if not gens[gen_id].is_slack:
+                grid.add_gen_slackbus(gen_id, 1.)
+        max_p = np.full(len(gens), 1e4)
+        max_p[slack[0]] = targets[slack[0]] + 2.
+        grid.set_gen_p_limits(np.zeros(len(gens)), max_p)
+
+    def tearDown(self):
+        self.env.close()
+
+    def _ca(self, handle_disconnected_grid=True, redistribute_slack=False):
+        from lightsim2grid import ContingencyAnalysis
+        ca = ContingencyAnalysis(self.backend)
+        ca.handle_disconnected_grid = handle_disconnected_grid
+        ca.redistribute_slack = redistribute_slack
+        ca.add_single_contingency(self.leaf_line)
+        return ca
+
+    def test_redistribute_slack_changed_after_a_run(self):
+        _, _, v_off = self._ca(redistribute_slack=False).get_flows()
+        _, _, v_on = self._ca(redistribute_slack=True).get_flows()
+        self.assertGreater(np.abs(v_on - v_off).max(), 1e-6, "the option changes this contingency")
+        ca = self._ca(redistribute_slack=False)
+        ca.get_flows()
+        ca.redistribute_slack = True
+        _, _, v_toggled = ca.get_flows()
+        np.testing.assert_allclose(v_toggled, v_on, rtol=0., atol=1e-10)
+
+    def test_handle_disconnected_grid_changed_after_a_run(self):
+        _, _, v_skipped = self._ca(handle_disconnected_grid=False).get_flows()
+        _, _, v_solved = self._ca(handle_disconnected_grid=True).get_flows()
+        self.assertGreater(np.abs(v_solved - v_skipped).max(), 1e-6, "the option changes this contingency")
+        ca = self._ca(handle_disconnected_grid=False)
+        ca.get_flows()
+        ca.handle_disconnected_grid = True
+        _, _, v_toggled = ca.get_flows()
+        np.testing.assert_allclose(v_toggled, v_solved, rtol=0., atol=1e-10)
+
+
 if __name__ == "__main__":
     unittest.main()
