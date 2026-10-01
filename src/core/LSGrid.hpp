@@ -147,6 +147,7 @@ class LS2G_API LSGrid final
           compute_results_(true),
           init_vm_pu_(1.04),
           keep_vinit_group_controlled_(false),
+          hold_frozen_regulators_(false),
           sn_mva_(1.0),
           max_nb_bus_per_sub_(2){
             _algo.change_algorithm(AlgorithmType::NR_SparseLU);
@@ -425,6 +426,39 @@ class LS2G_API LSGrid final
          */
         void set_keep_vinit_at_group_controlled_buses(bool keep) noexcept {keep_vinit_group_controlled_ = keep;}
         [[nodiscard]] bool get_keep_vinit_at_group_controlled_buses() const noexcept {return keep_vinit_group_controlled_;}
+
+        /**
+         * Keep, in the voltage-control group it would join, every generator an outer
+         * loop froze at a reactive limit and that would regulate a REMOTE bus if
+         * released (`set_gen_can_be_pv`, voltage regulation off, regulated bus not its
+         * own -- GeneratorContainer::is_frozen_remote_regulator), HELD at the reactive
+         * output it was frozen at (its target_q). AC Newton-Raphson only.
+         *
+         * The system it poses is the one without it -- same voltages, same reactive
+         * outputs -- but the machine has a reactive unknown and a row of its own in the
+         * group's bordered block (VoltageControlSolverData::held): its sharing row, or
+         * the group's voltage row when every controller of the group is held, reads
+         * "Q = frozen output" instead of the sharing / voltage equation, so a caller that
+         * reuses this Jacobian (a batch releasing that machine on some rows only) can
+         * release it by value, without touching the sparsity pattern. Its frozen output
+         * stays in Sbus, the bordered block only accounts for what moves away from it.
+         *
+         * A held machine the bordered formulation cannot express -- its own bus with no
+         * Q equation, its regulated bus with no Vm unknown, a set-point other than the
+         * group's, a group holding an SVC -- is left out (PQ as before), never an error.
+         * Its regulated bus, though, becomes a group-controlled bus like the target of an
+         * active remote regulator would. Off by default; copied with the grid, so a
+         * batch algorithm built from this grid inherits it; not part of `get_state` / the
+         * binary format.
+         */
+        void set_hold_frozen_regulators(bool hold) {
+            if(hold == hold_frozen_regulators_) return;
+            hold_frozen_regulators_ = hold;
+            // who is in a group is the pv/pq split (layer 1 -> 2) and the controller list
+            algo_controler_.tell_pv_changed();
+            algo_controler_.ac_algo_controler().tell_voltage_control_changed();
+        }
+        [[nodiscard]] bool get_hold_frozen_regulators() const noexcept {return hold_frozen_regulators_;}
         void set_sn_mva(real_type sn_mva) {
             check_positive_finite(sn_mva, "sn_mva");
             if(sn_mva == sn_mva_) return;
@@ -1118,12 +1152,18 @@ class LS2G_API LSGrid final
          * PQ (one bool per generator, false by default). lightsim2grid never pins a machine
          * itself, so it cannot tell such a machine from one that was PQ to begin with: the
          * caller says so (init_from_pypowsybl passes what bake_outer_loops froze). Nothing
-         * enforces or reads it in a powerflow; it only opens that machine to the physical
-         * check of its PQ -> PV release (see `get_physical_violations` and the batch
-         * algorithms' `compute_physical_violations`).
+         * enforces it in a powerflow; it opens that machine to the physical check of its
+         * PQ -> PV release (see `get_physical_violations` and the batch algorithms'
+         * `compute_physical_violations`) and, with `set_hold_frozen_regulators`, keeps a
+         * remote regulator held in its voltage-control group.
          */
         void set_gen_can_be_pv(const std::vector<bool> & can_be_pv){
             generators_.set_can_be_pv(can_be_pv);
+            // read by a powerflow only to decide who is held (set_hold_frozen_regulators)
+            if(hold_frozen_regulators_){
+                algo_controler_.tell_pv_changed();
+                algo_controler_.ac_algo_controler().tell_voltage_control_changed();
+            }
         }
         /**
          * Flag the SVCs a caller knows an outer loop left idle under their standby
@@ -2145,6 +2185,13 @@ class LS2G_API LSGrid final
         // share a bus, exactly like p_buses()/p_rows() etc. must be used instead
         // of the bus-keyed maps for the base P/Q block.
         [[nodiscard]] IntVect  get_controller_q_col_solver()   const { return _algo.get_controller_q_col(); }
+        // 1 for a held controller (set_hold_frozen_regulators), 0 otherwise, in the order
+        // of the AC voltage-control plan (that of the get_controller_*_solver above)
+        [[nodiscard]] IntVect  get_controller_held_solver() const {
+            const VoltageControlSolverData & ctrl = ac_cache_.voltage_control.controllers();
+            if(ctrl.held.size() == ctrl.n_controllers()) return ctrl.held;
+            return IntVect::Zero(ctrl.n_controllers());
+        }
 
         [[nodiscard]] real_type get_computation_time() const{ return _algo.get_computation_time();}
         [[nodiscard]] real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}
@@ -2937,6 +2984,7 @@ class LS2G_API LSGrid final
         bool compute_results_;
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
         bool keep_vinit_group_controlled_;  // see set_keep_vinit_at_group_controlled_buses
+        bool hold_frozen_regulators_;  // see set_hold_frozen_regulators
         real_type sn_mva_;
 
         // powersystem representation

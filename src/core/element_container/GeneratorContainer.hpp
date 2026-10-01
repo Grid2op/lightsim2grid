@@ -284,6 +284,18 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             can_be_pv_ = can_be_pv;
         }
         bool get_can_be_pv(int gen_id) const {return can_be_pv_[gen_id];}
+        /**
+         * A generator an outer loop froze at a reactive limit (flagged can_be_pv, voltage
+         * regulation off, connected) whose regulated bus is NOT its own: released, it
+         * would regulate that bus through a voltage-control group. What
+         * LSGrid::set_hold_frozen_regulators keeps in that group, held at its frozen
+         * reactive injection.
+         */
+        bool is_frozen_remote_regulator(int gen_id) const {
+            if(static_cast<std::size_t>(gen_id) >= can_be_pv_.size() || !can_be_pv_[gen_id]) return false;
+            if(!status_[gen_id] || voltage_regulator_on_[gen_id]) return false;
+            return regulated_bus_id_(gen_id) >= 0 && regulates_remote(gen_id);
+        }
         const std::vector<bool> & get_can_be_pv() const {return can_be_pv_;}
         // reactive sharing key among the generators holding one bus together (see
         // VoltageControlPlan::build_controllers); no key -- NaN, 0 or negative -- lets

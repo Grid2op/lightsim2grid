@@ -278,6 +278,19 @@ it before calling ``dc_pf``, not only before ``ac_pf``. The batch
 algorithms inherit the option from the grid they are built from, and have a
 ``keep_vinit_at_group_controlled_buses`` property of their own.
 
+A generator an outer loop froze at a reactive limit (``LSGrid.set_gen_can_be_pv``, its voltage
+regulation off) is an ordinary PQ machine for the Newton-Raphson. When it would regulate a REMOTE
+bus if released, ``LSGrid.set_hold_frozen_regulators(True)`` keeps it in the voltage-control group
+of that bus instead, held at the reactive output it was frozen at: it has a reactive unknown of its
+own, and the row that would share the group's reactive power with it (or the group's voltage row,
+when every controller of the group is held) reads "Q = frozen output". The solution is the same as
+without the option. The point is the Jacobian: a tool reusing it -- a batch that releases the
+machine on some rows only, as an outer loop would -- can do so by rewriting values, without
+touching its sparsity pattern. ``LSGrid.get_controller_held_solver`` says which controllers are
+held. A held machine the formulation cannot express (its own bus with no reactive equation, a
+set-point other than its group's, a group holding an SVC) is left out, never an error. The option
+is AC only, inherited by the batch algorithms like the one above, and off by default.
+
 Setting the policy on a raw solver object (see :ref:`use-solver`) is direct:
 
 .. code-block:: python

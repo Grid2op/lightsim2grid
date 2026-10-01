@@ -35,6 +35,7 @@ LSGrid::LSGrid(const LSGrid & other)
 {
     init_vm_pu_ = other.init_vm_pu_;
     keep_vinit_group_controlled_ = other.keep_vinit_group_controlled_;
+    hold_frozen_regulators_ = other.hold_frozen_regulators_;
     sn_mva_ = other.sn_mva_;
     compute_results_ = other.compute_results_;
     ac_cache_.allow_reuse = other.ac_cache_.allow_reuse;
@@ -930,10 +931,11 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     data.clear();
     if(!ac) return;  // DC: no voltage control (no-op, SVC contributes nothing)
     VoltageControlPlan plan;
-    plan.build_groups(generators_, svcs_);
+    plan.build_groups(generators_, svcs_, true, hold_frozen_regulators_);
     plan.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                            ac_cache_.id_me_to_solver, ac_cache_.id_solver_to_me,
-                           ac_cache_.slack_bus_id_solver, ac_cache_.bus_pq);
+                           ac_cache_.slack_bus_id_solver, ac_cache_.bus_pq,
+                           hold_frozen_regulators_);
     data = plan.controllers();
 }
 
@@ -987,7 +989,7 @@ void LSGrid::_throw_if_voltage_control_needed() const
 std::set<int> LSGrid::get_group_controlled_buses() const
 {
     VoltageControlPlan plan;
-    plan.build_groups(generators_, svcs_);
+    plan.build_groups(generators_, svcs_, true, hold_frozen_regulators_);
     return plan.group_controlled_buses();
 }
 
@@ -997,7 +999,7 @@ std::set<int> LSGrid::get_free_vm_slack_solver_buses() const
     // here would make a query that cannot fail start throwing on a configuration
     // the bordered formulation cannot express.
     VoltageControlPlan plan;
-    plan.build_groups(generators_, svcs_);
+    plan.build_groups(generators_, svcs_, true, hold_frozen_regulators_);
     plan.build_free_vm_slack(generators_, storages_, ac_cache_.id_me_to_solver,
                              ac_cache_.id_solver_to_me, ac_cache_.slack_bus_id_solver);
     return plan.free_vm_slack_buses();
@@ -1347,9 +1349,13 @@ CplxVect LSGrid::_build_into_cache(
     // this one's. Gating it on the AC algorithm's capability, which is what
     // `supports_voltage_control` carries, would have done exactly that by accident.
     const bool is_ac_family = SolverSideCache<MatScalar>::is_ac;
+    // Holding the frozen remote regulators (set_hold_frozen_regulators) is a matter of
+    // the AC bordered block only: the DC family never sees it.
+    const bool hold_frozen = is_ac_family && supports_voltage_control && hold_frozen_regulators_;
     if (rebuild_voltage_control){
         cache.voltage_control.build_groups(generators_, svcs_,
-                                           !is_ac_family || supports_voltage_control);
+                                           !is_ac_family || supports_voltage_control,
+                                           hold_frozen);
     }
     if (rebuild_split) {
         init_slack_bus(cache.id_me_to_solver, cache.id_solver_to_me, cache.slack_bus_id_me, cache.slack_bus_id_solver);
@@ -1363,7 +1369,8 @@ CplxVect LSGrid::_build_into_cache(
     if (rebuild_voltage_control && supports_voltage_control && is_ac_family){
         cache.voltage_control.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                                                 cache.id_me_to_solver, cache.id_solver_to_me,
-                                                cache.slack_bus_id_solver, cache.bus_pq);
+                                                cache.slack_bus_id_solver, cache.bus_pq,
+                                                hold_frozen);
     }
 
     // type-specific injection assembly (complex Sbus for AC, real Pbus for DC)

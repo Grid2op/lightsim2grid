@@ -897,7 +897,10 @@ class LS2G_API VoltageControl
                     // pattern. Gating this on may_mask_ keeps every other caller -- plain ac_pf,
                     // TimeSeries, an un-masked batch -- exactly as cheap as before this feature
                     // existed.
-                    if ((data_.kind(j) == VoltageControlSolverData::SVC || (off == 0 && may_mask_)) &&
+                    // ... and for a group whose first controller is HELD (so all of them are,
+                    // see VoltageControlSolverData::held): its voltage row is "Q_first = q"
+                    if ((data_.kind(j) == VoltageControlSolverData::SVC ||
+                         (off == 0 && (may_mask_ || data_.is_held(j)))) &&
                         v_row >= 0 && q_cols_[j] >= 0)
                         h_slope_[j] = sink.add(v_row, q_cols_[j]);
                 }
@@ -922,26 +925,32 @@ class LS2G_API VoltageControl
                 const int first = data_.grp_start(g);
                 const int cnt   = data_.grp_count(g);
                 const bool stranded = have_stranded && group_stranded_[g];
+                // every controller held (the first one is held only then): the voltage row
+                // is "Q_first = q_held", the same rewrite as a stranded group's
+                const bool pinned_vrow = stranded || data_.is_held(first);
                 for (int off = 0; off < cnt; ++off) {
                     const int j = first + off;
                     if (h_qrow_[j]  >= 0) writer.add(h_qrow_[j],  static_cast<real_type>(-1.));
                     if (h_slope_[j] >= 0){
                         // stranded: the voltage row is "Q_first = 0", the other controllers
                         // (an SVC's slope slot) leave it
-                        const real_type coeff = !stranded ? data_.slope(j)
-                                                          : (off == 0 ? static_cast<real_type>(1.)
-                                                                      : static_cast<real_type>(0.));
+                        const real_type coeff = !pinned_vrow ? data_.slope(j)
+                                                             : (off == 0 ? static_cast<real_type>(1.)
+                                                                         : static_cast<real_type>(0.));
                         writer.add(h_slope_[j], coeff);
                     }
                 }
                 // stranded (every controller masked): drop the Vm(reg) coupling -- the row
                 // is now "Q_first = 0" (see fill_custom_rows), not the voltage constraint.
                 // The sharing rows below are unchanged: they pin the other Q_c to 0 too.
-                if (h_vm_[g] >= 0) writer.add(h_vm_[g], stranded ? static_cast<real_type>(0.) : static_cast<real_type>(1.));
+                if (h_vm_[g] >= 0) writer.add(h_vm_[g], pinned_vrow ? static_cast<real_type>(0.) : static_cast<real_type>(1.));
                 const real_type w_first = data_.weight(first);
                 for (int k = 0; k < cnt - 1; ++k) {
-                    if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], w_first);
-                    if (h_shareB_[g][k] >= 0) writer.add(h_shareB_[g][k], -data_.weight(first + (k + 1)));
+                    // a held controller's sharing row is "Q_c = q_held" instead
+                    const bool held = data_.is_held(first + (k + 1));
+                    if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], held ? static_cast<real_type>(1.) : w_first);
+                    if (h_shareB_[g][k] >= 0) writer.add(h_shareB_[g][k], held ? static_cast<real_type>(0.)
+                                                                              : -data_.weight(first + (k + 1)));
                 }
             }
         }
@@ -950,8 +959,10 @@ class LS2G_API VoltageControl
         void adjust_mismatch(const Eigen::Ref<const CplxVect>& /*V_t*/, const Eigen::Ref<const RealVect>& dx, Eigen::Ref<CplxVect> mis) const
         {
             const int nc = data_.n_controllers();
+            // a held controller's frozen output is already in Sbus (it is a PQ generator
+            // there): only what it moves away from it enters here
             for (int j = 0; j < nc; ++j)
-                mis(data_.bus(j)) -= cplx_type(static_cast<real_type>(0.), q_(j) + dx(q_cols_[j]));
+                mis(data_.bus(j)) -= cplx_type(static_cast<real_type>(0.), q_(j) + dx(q_cols_[j]) - q_held_(j));
         }
 
         // the bordered voltage and sharing rows
@@ -971,6 +982,10 @@ class LS2G_API VoltageControl
                     // of the voltage constraint (see set_masked_buses); the sharing rows
                     // below then pin the others to 0
                     res(v_rows_[g]) -= Qt_first;
+                } else if (data_.is_held(first)) {
+                    // every controller held: nobody regulates, the first one holds its
+                    // frozen output (and the sharing rows below the others theirs)
+                    res(v_rows_[g]) -= Qt_first - q_held_(first);
                 } else {
                     // voltage constraint  Vm(reg) + sum s_c.Q_c - v_set
                     real_type vm_trial = Vm(data_.reg_bus(g));
@@ -987,7 +1002,8 @@ class LS2G_API VoltageControl
                 for (int k = 0; k < cnt - 1; ++k) {
                     const int j = first + (k + 1);
                     const real_type Qt_j = q_(j) + dx(q_cols_[j]);
-                    res(share_rows_[g][k]) -= w_first * Qt_j - data_.weight(j) * Qt_first;
+                    if (data_.is_held(j)) res(share_rows_[g][k]) -= Qt_j - q_held_(j);
+                    else res(share_rows_[g][k]) -= w_first * Qt_j - data_.weight(j) * Qt_first;
                 }
             }
         }
@@ -1002,6 +1018,7 @@ class LS2G_API VoltageControl
             my_size_ = 0;
             data_.clear();
             q_ = RealVect();
+            q_held_ = RealVect();
             q_cols_.clear();
             q_rows_.clear();
             v_rows_.clear();
@@ -1046,12 +1063,17 @@ class LS2G_API VoltageControl
                 const int first = data_.grp_start(g);
                 const int cnt   = data_.grp_count(g);
                 if (cnt <= 0) continue;
+                // only the ACTIVE controllers hold the bus: a held one is pinned whatever
+                // its bus, and a group of held ones only is never stranded
                 bool all_masked = true;
+                bool any_active = false;
                 for (int off = 0; off < cnt && all_masked; ++off) {
+                    if (data_.is_held(first + off)) continue;
+                    any_active = true;
                     const int ctrl_bus = data_.bus(first + off);
                     all_masked = std::find(masked_buses_.begin(), masked_buses_.end(), ctrl_bus) != masked_buses_.end();
                 }
-                if (all_masked) group_stranded_[g] = 1;
+                if (all_masked && any_active) group_stranded_[g] = 1;
             }
         }
 
@@ -1065,6 +1087,7 @@ class LS2G_API VoltageControl
         VoltageControlSolverData       data_;        // per-solve controller data (refreshed every update_state)
         RealVect                       v_set_override_;  // per group, NaN = grid's own (see set_v_set_override)
         RealVect                       q_;           // running reactive injection per controller (pu, gen convention)
+        RealVect                       q_held_;      // per controller, the frozen output a held one holds (pu), 0 otherwise
         std::vector<int>               q_cols_;      // J column of each controller's Q unknown
         std::vector<int>               q_rows_;      // q_row of each controller bus (-1 if none)
         std::vector<int>               v_rows_;      // voltage row of each group

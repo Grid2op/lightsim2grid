@@ -2126,8 +2126,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 for(int g = 0; g < ng; ++g){
                     if(!is_masked(masked, ctrl.reg_bus(g))) continue;
                     const int first = ctrl.grp_start(g);
+                    // a held controller (LSGrid::set_hold_frozen_regulators) holds no bus
                     bool some_live = false;
                     for(int off = 0; off < ctrl.grp_count(g) && !some_live; ++off){
+                        if(ctrl.is_held(first + off)) continue;
                         some_live = !is_masked(masked, ctrl.bus(first + off));
                     }
                     if(some_live){ _skip_mask[row] = 1; break; }
