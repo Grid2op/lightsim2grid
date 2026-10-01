@@ -207,6 +207,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [ADDED] ``LSGrid.cap_slack_at_active_limits``: OpenLoadFlow's slack rule on a solved grid -- a unit
+  the solve pushes past an active limit leaves the slack there, and the grid is re-solved.
 - [ADDED] ``LSGrid.set_hold_frozen_regulators``: a frozen (``can_be_pv``) remote regulator keeps
   its seat in its voltage-control group, held at its frozen output -- same solution, releasable by
   value.

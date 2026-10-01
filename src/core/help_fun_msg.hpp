@@ -514,6 +514,7 @@ struct LS2G_API DocLSGrid
     static const std::string consider_only_main_component;
     static const std::string redistribute_active_power;
     static const std::string get_physical_violations;
+    static const std::string cap_slack_at_active_limits;
     static const std::string get_violations;
     static const std::string get_ignore_status_global;
     static const std::string get_synch_status_both_side;

@@ -4174,6 +4174,37 @@ const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::cap_slack_at_active_limits = R"mydelimiter(
+    OpenLoadFlow's distributed-slack rule applied to the solved state of this grid: a unit of the
+    distributed slack (generator or storage unit) that the last :func:`ac_pf` pushed past its
+    ``[min_p, max_p]`` by more than ``tol_mw`` -- a ``LOW_P`` / ``HIGH_P`` record of
+    :func:`get_physical_violations` -- leaves the slack at that limit, and the grid is solved again
+    (``max_iter``, ``tol``, starting from its current voltages), until no unit is pushed out
+    (``max_rounds``).
+
+    The Newton solve's distributed slack has no bounds: it shares its whole mismatch between the
+    participants by their weights, so a unit sitting at its ``max_p`` gets a share of a positive
+    mismatch, which OpenLoadFlow never gives it. A grid whose set-points come from an OpenLoadFlow
+    solve (see ``bake_outer_loops``) typically has such units, and a small mismatch of its own
+    (its losses are not exactly OpenLoadFlow's): its base case then reports them, and so does
+    nearly every contingency of a batch run on it.
+
+    A capped unit gets its set-point at the limit (generator convention) and is flagged as
+    :func:`set_gen_can_participate_slack` (resp. :func:`set_storage_can_participate_slack`) does,
+    with its slack weight: out of the Newton solve's slack, still counted by the bounded
+    redistribution pre-pass (the batch algorithms' ``redistribute_slack``) within its range, so a
+    contingency that needs less generation moves it away from its limit, as OpenLoadFlow would.
+    When no unit would be left in the slack, nothing is capped (OpenLoadFlow then keeps them all).
+    A capped unit may hold the angle reference: the reference then moves to another participant,
+    whose angle stays where the current voltages put it.
+
+    Modifies the grid (work on a :func:`copy` to keep the original). Returns the records acted on
+    (``value`` the active power the solve gave, ``limit`` where the unit now sits), empty when
+    nothing had to be capped. Raises if no AC powerflow converged on this grid before, or if it no
+    longer converges once capped.
+
+)mydelimiter";
+
 const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
     The limits the last converged powerflow of this grid cannot physically meet: the same checks the
     batch algorithms run with ``compute_physical_violations`` (see

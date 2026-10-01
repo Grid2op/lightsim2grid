@@ -113,6 +113,9 @@ void bind_gridmodel(py::module_& m) {
         .def("get_physical_violations", &LSGrid::get_physical_violations,
              py::arg("ac") = true, py::arg("tol_mva") = 1e-4, py::arg("tol_vm_pu") = 1e-4,
              DocLSGrid::get_physical_violations.c_str())
+        .def("cap_slack_at_active_limits", &LSGrid::cap_slack_at_active_limits,
+             py::arg("max_iter") = 10, py::arg("tol") = 1e-8, py::arg("tol_mw") = 1e-6,
+             py::arg("max_rounds") = 10, DocLSGrid::cap_slack_at_active_limits.c_str())
         .def("get_violations", &LSGrid::get_violations,
              py::arg("threshold") = 1., py::arg("ac") = true,
              py::arg("rel_tol") = DEFAULT_VIOLATION_REL_TOL, DocLSGrid::get_violations.c_str())

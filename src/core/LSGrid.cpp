@@ -2935,6 +2935,82 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
     return out;
 }
 
+std::vector<LimitViolation> LSGrid::cap_slack_at_active_limits(int max_iter, real_type tol,
+                                                               real_type tol_mw, int max_rounds){
+    const char * fun_name = "LSGrid::cap_slack_at_active_limits";
+    std::vector<LimitViolation> capped;
+    for(int round = 0; round < max_rounds; ++round){
+        // the slack units the last solve pushed past a limit
+        std::vector<LimitViolation> over;
+        for(const LimitViolation & v : get_physical_violations(true, tol_mw, 0.)){
+            const bool unit = v.element_type == ViolationElementType::GENERATOR
+                              || v.element_type == ViolationElementType::STORAGE;
+            const bool active = v.violation_type == LimitViolationType::HIGH_P
+                                || v.violation_type == LimitViolationType::LOW_P;
+            if(unit && active) over.push_back(v);
+        }
+        if(over.empty()) break;
+
+        const int nb_gen = generators_.nb();
+        const int nb_sto = storages_.nb();
+        std::vector<bool> gen_out(nb_gen, false), sto_out(nb_sto, false);
+        for(const LimitViolation & v : over){
+            if(v.element_type == ViolationElementType::GENERATOR) gen_out[v.element_id] = true;
+            else sto_out[v.element_id] = true;
+        }
+        // OpenLoadFlow keeps every unit in the slack when all of them saturate
+        int nb_left = 0;
+        const std::vector<bool> & gen_status = generators_.get_status();
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+            if(!gen_out[gen_id] && gen_status[gen_id] && generators_.is_slack(gen_id)
+               && std::abs(generators_.get_slack_weight(gen_id)) >= BaseConstants::_tol_equal_float) ++nb_left;
+        const std::vector<bool> & sto_status = storages_.get_status();
+        for(int sto_id = 0; sto_id < nb_sto; ++sto_id)
+            if(!sto_out[sto_id] && sto_status[sto_id] && storages_.is_slack(sto_id)
+               && std::abs(storages_.get_slack_weight(sto_id)) >= BaseConstants::_tol_equal_float) ++nb_left;
+        if(nb_left == 0) break;
+
+        const CplxVect Vinit = get_V();
+        std::vector<bool> gen_flag(nb_gen), sto_flag(nb_sto);
+        RealVect gen_w(nb_gen), sto_w(nb_sto);
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+            gen_flag[gen_id] = generators_.get_can_participate_slack(gen_id);
+            gen_w(gen_id) = generators_.get_can_participate_slack_weight(gen_id);
+        }
+        for(int sto_id = 0; sto_id < nb_sto; ++sto_id){
+            sto_flag[sto_id] = storages_.get_can_participate_slack(sto_id);
+            sto_w(sto_id) = storages_.get_can_participate_slack_weight(sto_id);
+        }
+        for(const LimitViolation & v : over){
+            const int el_id = v.element_id;
+            if(v.element_type == ViolationElementType::GENERATOR){
+                gen_flag[el_id] = true;
+                gen_w(el_id) = generators_.get_slack_weight(el_id);
+                remove_gen_slackbus(el_id);
+                change_p_gen(el_id, v.limit);
+            }else{
+                // the record is in the generator convention, the container in the load one
+                sto_flag[el_id] = true;
+                sto_w(el_id) = storages_.get_slack_weight(el_id);
+                remove_storage_slackbus(el_id);
+                change_p_storage(el_id, -v.limit);
+            }
+            capped.push_back(v);
+        }
+        if(nb_gen > 0) generators_.set_can_participate_slack(gen_flag, gen_w);
+        if(nb_sto > 0) storages_.set_can_participate_slack(sto_flag, sto_w);
+
+        const CplxVect V = ac_pf(Vinit, max_iter, tol);
+        if(V.size() == 0){
+            std::ostringstream exc_;
+            exc_ << fun_name << ": the grid does not converge once " << capped.size()
+                 << " unit(s) of the distributed slack are capped at their active limit.";
+            throw std::runtime_error(exc_.str());
+        }
+    }
+    return capped;
+}
+
 std::vector<LimitViolation> LSGrid::get_violations(real_type threshold, bool ac, real_type rel_tol) const{
     const char * fun_name = "LSGrid::get_violations";
     if(!(threshold > 0. && threshold <= 1.)){

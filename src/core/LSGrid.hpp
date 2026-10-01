@@ -368,6 +368,25 @@ class LS2G_API LSGrid final
                                                                              real_type tol_mva = 1e-4,
                                                                              real_type tol_vm_pu = 1e-4) const;
         /**
+         * OpenLoadFlow's distributed-slack rule on the solved state of this grid: a unit of
+         * the distributed slack the last ac_pf pushed past an active limit (the LOW_P /
+         * HIGH_P records of get_physical_violations, past `tol_mw`) leaves the slack at that
+         * limit -- its set-point moved there, flagged "can participate" with its weight (see
+         * set_gen_can_participate_slack), so that the bounded redistribution pre-pass still
+         * moves it away from the limit -- and the grid is solved again (`max_iter`, `tol`,
+         * from its current voltages), until no unit is pushed out (`max_rounds`).
+         * OpenLoadFlow never gives a unit at its max_p a share of a positive mismatch; the
+         * Newton solve's distributed slack has no bounds and shares its whole mismatch by
+         * the weights. Nothing is capped when no unit would be left in the slack (OpenLoadFlow
+         * then keeps them all). Modifies the grid; returns the records acted on (the value
+         * the solve gave, the limit the unit now sits at). Throws if no AC powerflow
+         * converged before, or if the grid does not converge once capped.
+         */
+        std::vector<LimitViolation> cap_slack_at_active_limits(int max_iter = 10,
+                                                               real_type tol = 1e-8,
+                                                               real_type tol_mw = 1e-6,
+                                                               int max_rounds = 10);
+        /**
          * The OPERATIONAL limits the last powerflow (ac_pf when `ac`, dc_pf otherwise)
          * violates -- the same checks the batch algorithms run with
          * `compute_limit_violations`, on this grid's own solve: every bus outside its
