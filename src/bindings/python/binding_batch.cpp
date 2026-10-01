@@ -597,6 +597,14 @@ void bind_batch(py::module_& m) {
                "The mirror of LOW_VOLTAGE_REMOTE_CONTROL: the generator's own bus sits ABOVE the "
                "realistic range (element_type is ViolationElementType.GENERATOR, `value` above "
                "`limit`, both in kV). Category PHYSICAL. Reported by "
+               "compute_physical_violations, never enforced.")
+        .value("HVDC_AC_EMULATION_RELEASE", LimitViolationType::HVDC_AC_EMULATION_RELEASE,
+               "An angle-droop (AC emulation) hvdc line an outer loop froze at its active power "
+               "limit (LSGrid.set_hvdc_ac_emulation_frozen) whose droop would now ask for LESS "
+               "than that limit (element_type is ViolationElementType.HVDC, `side` the direction "
+               "it is frozen in): OpenLoadFlow's AcHvdcAcEmulationLimits loop would leave it in "
+               "AC emulation. Category PHYSICAL. `value` the flow its droop asks for in that "
+               "direction and `limit` the limit, both in MW (value below limit). Reported by "
                "compute_physical_violations, never enforced.");
 
     py::enum_<ViolationCategory>(m, "ViolationCategory",
@@ -617,7 +625,7 @@ void bind_batch(py::module_& m) {
                "cannot happen. A statement about the model's assumptions, not about how the "
                "grid is operated. LOW_Q, HIGH_Q, LOW_P, HIGH_P, LOW_VOLTAGE_AT_MIN_Q, "
                "HIGH_VOLTAGE_AT_MAX_Q, LOW_VOLTAGE_SVC_STANDBY, HIGH_VOLTAGE_SVC_STANDBY, "
-               "LOW_VOLTAGE_REMOTE_CONTROL, HIGH_VOLTAGE_REMOTE_CONTROL.")
+               "LOW_VOLTAGE_REMOTE_CONTROL, HIGH_VOLTAGE_REMOTE_CONTROL, HVDC_AC_EMULATION_RELEASE.")
         .value("SOLVER", ViolationCategory::SOLVER,
                "Not a limit at all: what the solver did. A divergence in particular says "
                "nothing about the grid -- the state may be perfectly feasible and the algorithm "

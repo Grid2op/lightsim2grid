@@ -363,6 +363,10 @@ def bake_outer_loops(
         sign. Hand it to ``init_from_pypowsybl(can_participate_slack=...)`` so that
         lightsim2grid's redistribution pre-pass counts them, away from their limit. A unit
         excluded for one of OLF's own ``checkActivePowerControl`` reasons is not in it.
+        ``can_participate_slack_overshoot`` says how far beyond its limit each of them was
+        (``init_from_pypowsybl(can_participate_slack_overshoot=...)``), and
+        ``hvdc_ac_emulation_frozen`` holds the angle-droop hvdc lines frozen at their limit
+        (``init_from_pypowsybl(hvdc_ac_emulation_frozen=...)``, for the check of their release).
 
     Returns
     -------
@@ -403,8 +407,9 @@ def bake_outer_loops(
     pinned = pd.Index([], dtype=object)
     if bake_taps:
         _bake_taps_and_sections(network, keep_only_main_comp, df_bus)
+    hvdc_frozen = pd.Index([], dtype=object)
     if bake_hvdc_ac_emulation_limits:
-        _bake_hvdc_ac_emulation_limits(network, keep_only_main_comp, df_bus)
+        hvdc_frozen = _bake_hvdc_ac_emulation_limits(network, keep_only_main_comp, df_bus)
     if bake_reactive_limits:
         pinned = _bake_reactive_limit_switches(
             network, keep_only_main_comp, bake_generator_voltage_control_discards,
@@ -425,7 +430,8 @@ def bake_outer_loops(
         _bake_remote_voltage_control(network, keep_only_main_comp, df_bus)
     if return_details:
         return BakeResult(can_be_pv=pinned, can_participate_slack=capped,
-                          can_participate_slack_overshoot=overshoot)
+                          can_participate_slack_overshoot=overshoot,
+                          hvdc_ac_emulation_frozen=hvdc_frozen)
     return pinned
 
 
@@ -441,6 +447,11 @@ class BakeResult(NamedTuple):
     #: like ``can_participate_slack``) -- for
     #: ``init_from_pypowsybl(can_participate_slack_overshoot=...)``
     can_participate_slack_overshoot: pd.Series = None
+    #: the angle-droop hvdc lines this bake froze at their active power limit (see
+    #: ``_bake_hvdc_ac_emulation_limits``) -- for
+    #: ``init_from_pypowsybl(hvdc_ac_emulation_frozen=...)``, which opens them to the check
+    #: of their release
+    hvdc_ac_emulation_frozen: pd.Index = None
 
 
 def _bake_taps_and_sections(network, keep_only_main_comp=True, df_bus=None):

@@ -433,6 +433,10 @@ void bind_containers(py::module_& m) {
         .def_readonly("pmax_1to2_mw", &HvdcLineInfo::pmax_1to2_mw, DocIterator::pmax_1to2_mw.c_str())
         .def_readonly("pmax_2to1_mw", &HvdcLineInfo::pmax_2to1_mw, DocIterator::pmax_2to1_mw.c_str())
         .def_readonly("status_droop", &HvdcLineInfo::status_droop, DocIterator::status_droop.c_str())
+        .def_readonly("ac_emulation_frozen", &HvdcLineInfo::ac_emulation_frozen,
+                      "Whether an outer loop froze this angle-droop line at its active power limit "
+                      "(LSGrid.set_hvdc_ac_emulation_frozen): never read by a powerflow, it opens the "
+                      "line to the physical check of its release. False by default.")
         .def_readonly("station1", &HvdcLineInfo::station_side_1, DocIterator::station_side_1.c_str())
         .def_readonly("station2", &HvdcLineInfo::station_side_2, DocIterator::station_side_2.c_str())
         .def_readonly("has_res", &HvdcLineInfo::has_res, DocIterator::has_res.c_str())

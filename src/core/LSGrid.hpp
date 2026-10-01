@@ -1214,6 +1214,17 @@ class LS2G_API LSGrid final
             hvdc_lines_.set_stations_can_be_pv(side_1, side_2);
         }
         /**
+         * Flag the angle-droop ("AC emulation") hvdc lines a caller knows an outer loop froze at
+         * their active power limit (OpenLoadFlow's AcHvdcAcEmulationLimits; `bake_outer_loops`
+         * turns them into a fixed set-point at that limit and keeps their droop parameters).
+         * Never read by a powerflow: the physical checks report such a line whose droop would
+         * ask for less than that limit (the loop would leave it in AC emulation). See
+         * HvdcLineContainer::set_ac_emulation_frozen and HvdcPCheck.hpp.
+         */
+        void set_hvdc_ac_emulation_frozen(const std::vector<bool> & frozen){
+            hvdc_lines_.set_ac_emulation_frozen(frozen);
+        }
+        /**
          * Flag the generators a caller knows an outer loop left out of the distributed
          * slack ONLY because they sat at an active limit in the reference solve
          * (OpenLoadFlow caps a unit at max_p when the mismatch it distributes is

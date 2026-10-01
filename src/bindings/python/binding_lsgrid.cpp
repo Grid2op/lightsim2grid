@@ -265,6 +265,16 @@ void bind_gridmodel(py::module_& m) {
         .def("set_storage_can_participate_slack_overshoot", &LSGrid::set_storage_can_participate_slack_overshoot,
              py::arg("overshoot_mw"),
              "The same as `set_gen_can_participate_slack_overshoot`, for the storage units.")
+        .def("set_hvdc_ac_emulation_frozen", &LSGrid::set_hvdc_ac_emulation_frozen,
+             py::arg("frozen"),
+             "Flag the angle-droop (AC emulation) hvdc lines an outer loop froze at their active "
+             "power limit (OpenLoadFlow's AcHvdcAcEmulationLimits; `bake_outer_loops` turns them into "
+             "a fixed set-point at that limit and keeps their droop parameters; "
+             "`HvdcLineInfo.ac_emulation_frozen`). Never read by a powerflow: the physical checks "
+             "(`get_physical_violations`, the batch algorithms' `compute_physical_violations`) "
+             "report such a line whose droop would ask for less than that limit "
+             "(HVDC_AC_EMULATION_RELEASE). `init_from_pypowsybl(hvdc_ac_emulation_frozen=...)` "
+             "fills it from what `bake_outer_loops(..., return_details=True)` froze.")
         .def("set_hvdc_can_be_pv", &LSGrid::set_hvdc_can_be_pv,
              py::arg("side_1"), py::arg("side_2"),
              "The generators' set_gen_can_be_pv, for the VSC converter stations of the hvdc lines: one "

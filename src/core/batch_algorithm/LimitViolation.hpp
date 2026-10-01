@@ -117,7 +117,16 @@ enum class LS2G_API LimitViolationType : int {
     // (value below limit). See RemoteVoltageControlCheck.hpp.
     LOW_VOLTAGE_REMOTE_CONTROL = 13,
     // ... and the mirror: own bus ABOVE the highest realistic voltage (value above limit).
-    HIGH_VOLTAGE_REMOTE_CONTROL = 14
+    HIGH_VOLTAGE_REMOTE_CONTROL = 14,
+    // An angle-droop ("AC emulation") HVDC line an outer loop froze at its active power
+    // limit (flagged by the caller, see LSGrid::set_hvdc_ac_emulation_frozen) whose droop
+    // would now ask for LESS than that limit: OpenLoadFlow's AcHvdcAcEmulationLimits loop
+    // would not saturate it, the line would follow its droop. Physical for the same reason
+    // as LOW_VOLTAGE_AT_MIN_Q: the converged solution assumes a control the loop would not
+    // leave in place. `side` the direction it is frozen in (1: 1 -> 2), `value` the flow its
+    // droop asks for in that direction and `limit` the limit, both in MW (value below limit).
+    // See HvdcPCheck.hpp.
+    HVDC_AC_EMULATION_RELEASE = 15
 };
 
 /**
@@ -142,7 +151,7 @@ enum class LS2G_API ViolationCategory : int {
     /// statement about the model's assumptions, not about how the grid is being operated.
     /// LOW_Q, HIGH_Q, LOW_P, HIGH_P, LOW_VOLTAGE_AT_MIN_Q, HIGH_VOLTAGE_AT_MAX_Q,
     /// LOW_VOLTAGE_SVC_STANDBY, HIGH_VOLTAGE_SVC_STANDBY, LOW_VOLTAGE_REMOTE_CONTROL,
-    /// HIGH_VOLTAGE_REMOTE_CONTROL.
+    /// HIGH_VOLTAGE_REMOTE_CONTROL, HVDC_AC_EMULATION_RELEASE.
     PHYSICAL = 1,
     /// Not a limit at all: what the solver did. A divergence in particular says nothing
     /// about the grid -- the state may be perfectly feasible and the algorithm simply
@@ -169,6 +178,7 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
         case LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY:
         case LimitViolationType::LOW_VOLTAGE_REMOTE_CONTROL:
         case LimitViolationType::HIGH_VOLTAGE_REMOTE_CONTROL:
+        case LimitViolationType::HVDC_AC_EMULATION_RELEASE:
             return ViolationCategory::PHYSICAL;
         default:  // NOT_SIMULATED, DIVERGENCE
             return ViolationCategory::SOLVER;

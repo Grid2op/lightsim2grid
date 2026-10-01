@@ -118,7 +118,10 @@ namespace ls2g {
 // v16: GeneratorContainer::StateRes and StorageContainer::StateRes carry each unit's
 //     "can participate in the slack" overshoot (how far beyond its limit the reference solve
 //     had it -- see LSGrid::set_gen_can_participate_slack_overshoot; 0 unless set). Appended.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 16;
+// v17: HvdcLineContainer::StateRes carries the per-line `ac_emulation_frozen_` flag (an
+//     angle-droop line an outer loop froze at its active power limit -- see
+//     LSGrid::set_hvdc_ac_emulation_frozen; all false unless set). Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 17;
 
 class LS2G_API BinaryArchive
 {

@@ -62,6 +62,7 @@ def init(net : pypo.network.Network,
          can_be_pv=None,
          can_participate_slack=None,
          can_participate_slack_overshoot=None,
+         hvdc_ac_emulation_frozen=None,
          remote_voltage_control_vm_range="olf",
          ) -> LSGrid:
     """
@@ -264,6 +265,15 @@ def init(net : pypo.network.Network,
         every unit, which lets it leave its limit at once.
     :type can_participate_slack_overshoot: None or pandas.Series
 
+    :param hvdc_ac_emulation_frozen: The angle-droop ("AC emulation") hvdc lines an outer loop
+        froze at their active power limit -- the ids
+        ``bake_outer_loops(..., return_details=True).hvdc_ac_emulation_frozen`` returns. Flagged
+        with ``LSGrid.set_hvdc_ac_emulation_frozen`` (their droop parameters kept although it is
+        disabled), so that the physical checks report one whose droop would ask for less than
+        that limit (``HVDC_AC_EMULATION_RELEASE``). Never read by a powerflow. ``None``
+        (default) flags nothing. An unknown id raises.
+    :type hvdc_ac_emulation_frozen: None or Iterable[str]
+
     :param remote_voltage_control_vm_range: The range of voltage (pu of its own bus' nominal
         voltage) a generator regulating a REMOTE bus may sit at, for the physical checks
         (``LSGrid.set_remote_voltage_control_vm_range``): a remote controller outside it is
@@ -350,6 +360,7 @@ def init(net : pypo.network.Network,
     df_dc, hvdc_sub_from_id, hvdc_sub_to_id = _aux_add_hvdc(
         model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
         can_be_pv=can_be_pv,
+        ac_emulation_frozen=hvdc_ac_emulation_frozen,
     )
 
     # storage units
