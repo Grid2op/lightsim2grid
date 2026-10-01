@@ -9,17 +9,64 @@
 import copy
 
 import numpy as np
+import pandas as pd
 
 from ._aux_common import _aux_get_bus, _aux_regulated_bus_view_ids
 
 
-def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used):
+def _aux_svc_can_be_pv_flags(can_be_pv, svc_index):
+    """The static var compensators the ``can_be_pv`` argument of `init` flags, as a
+    boolean array aligned on ``svc_index`` (the SVCs in lightsim2grid order): the ids it
+    holds (what `bake_outer_loops` returns for the SVCs it froze), or the
+    True entries of a boolean Series indexed by id. A boolean array is in the generators'
+    order, so it flags no SVC. ``None`` when nothing is flagged."""
+    if can_be_pv is None or len(svc_index) == 0:
+        return None
+    if isinstance(can_be_pv, pd.Series):
+        flags = can_be_pv.reindex(svc_index).fillna(False).astype(bool).to_numpy()
+    elif isinstance(can_be_pv, np.ndarray) and can_be_pv.dtype == bool:
+        return None
+    else:
+        flags = svc_index.isin(pd.Index([str(el) for el in can_be_pv]))
+    flags = np.asarray(flags, dtype=bool)
+    return flags if flags.any() else None
+
+
+def _svc_standby_b0(net, svc_index):
+    """The ``b0`` (S) of the ``standbyAutomaton`` extension of each SVC of ``svc_index``, 0
+    for an SVC without it, as a ``numpy`` array.
+
+    OpenLoadFlow models an SVC carrying that extension as its ``b0``, a fixed susceptance,
+    PLUS the SVC itself -- in standby or not -- and holds the SVC's own susceptance in
+    ``[b_min, b_max]``: its ``ReactiveLimits`` loop compares what the SVC part produces with
+    those limits. The SVC's total output, the one pypowsybl reports and the one
+    lightsim2grid models, can therefore only range over ``[b_min + b0, b_max + b0]``."""
+    b0 = np.zeros(len(svc_index))
+    try:
+        automaton = net.get_extensions("standbyAutomaton")
+    except Exception:  # noqa: BLE001 - extension unsupported / absent on old pypowsybl
+        return b0
+    if automaton is None or not automaton.shape[0] or "b0" not in automaton.columns:
+        return b0
+    val = automaton["b0"].reindex(pd.Index(svc_index)).to_numpy(float)
+    return np.where(np.isfinite(val), val, 0.)
+
+
+def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used,
+                 can_be_pv=None):
     """Add every Static Var Compensator (SVC) of ``net`` to ``model``: VOLTAGE
     (local/remote, optional slope), REACTIVE_POWER (fixed Q) or OFF, all solved
     through the bordered VoltageControl NR extension. A grid with no SVC declares
     no controller and stays byte-identical to before this feature. Returns
     ``df_svc`` (its per-substation ids are not needed downstream, unlike every
-    other element type here)."""
+    other element type here).
+
+    The SVCs ``can_be_pv`` flags (see `_aux_svc_can_be_pv_flags`) are the ones an
+    outer loop froze out of voltage control (what `bake_outer_loops` returns). One
+    whose ``standbyAutomaton`` extension says ``standby`` is a standby SVC left
+    idle: its thresholds go to ``LSGrid.set_svc_standby`` (the check of its switch
+    on). Any other is an SVC frozen at a reactive limit: ``LSGrid.set_svc_can_be_pv``
+    (the check of its release, as for a generator)."""
     if sort_index:
         df_svc = net.get_static_var_compensators().sort_index()
     else:
@@ -113,8 +160,12 @@ def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_v
         # in SIEMENS even under `per_unit=True` -- it only per-units `target_v`
         # (and, generically, elements it fully models) -- so relying on it here
         # would silently reintroduce this exact bug.
-        b_min = df_svc["b_min"].values.astype(float) * (svc_reg_vn ** 2) / sn_mva_used
-        b_max = df_svc["b_max"].values.astype(float) * (svc_reg_vn ** 2) / sn_mva_used
+        # An SVC carrying a standby automaton: OpenLoadFlow holds the SVC part apart from
+        # the automaton's fixed b0, so the total output lightsim2grid models ranges over the
+        # shifted interval (see `_svc_standby_b0`).
+        b0 = _svc_standby_b0(net, df_svc.index)
+        b_min = (df_svc["b_min"].values.astype(float) + b0) * (svc_reg_vn ** 2) / sn_mva_used
+        b_max = (df_svc["b_max"].values.astype(float) + b0) * (svc_reg_vn ** 2) / sn_mva_used
     else:
         target_vm_pu = np.zeros(0)
         b_min = np.zeros(0)
@@ -132,5 +183,32 @@ def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_v
         if disco:
             model.deactivate_svc(svc_id)
     model.set_svc_names(df_svc.index)
+
+    # the SVCs an outer loop froze out of voltage control (what `bake_outer_loops` returns):
+    # nothing in the powerflow reads the flags, they only open them to a physical check
+    flagged = _aux_svc_can_be_pv_flags(can_be_pv, df_svc.index)
+    if flagged is not None:
+        try:
+            automaton = net.get_extensions("standbyAutomaton")
+        except Exception:  # noqa: BLE001 - extension unsupported / absent on old pypowsybl
+            automaton = None
+        if automaton is not None and automaton.shape[0]:
+            in_standby = automaton.index[automaton["standby"].astype(bool)]
+        else:
+            in_standby = pd.Index([], dtype=object)
+        # an idle standby SVC: the switch on of its automaton. The thresholds are compared
+        # with the voltage of the bus it regulates, as OLF does: in pu of its nominal voltage.
+        standby = flagged & df_svc.index.isin(in_standby)
+        if standby.any():
+            ids = df_svc.index[standby]
+            low_vm_pu = np.full(nb_svc, np.nan)
+            high_vm_pu = np.full(nb_svc, np.nan)
+            low_vm_pu[standby] = automaton.loc[ids, "low_voltage_threshold"].to_numpy(float) / svc_reg_vn[standby]
+            high_vm_pu[standby] = automaton.loc[ids, "high_voltage_threshold"].to_numpy(float) / svc_reg_vn[standby]
+            model.set_svc_standby(standby, low_vm_pu, high_vm_pu)
+        # any other: frozen at a reactive limit, the release of the generators' can_be_pv
+        release = flagged & ~standby
+        if release.any():
+            model.set_svc_can_be_pv(release)
 
     return df_svc

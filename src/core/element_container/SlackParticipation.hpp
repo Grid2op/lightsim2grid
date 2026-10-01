@@ -21,6 +21,12 @@
 #include "TaggedIdVec.hpp"
 #include "Utils.hpp"
 
+// feature test for code built against this header (eg gpusim2grid): the per-element
+// "can participate in the slack" weight (SlackParticipation::set_can_participate)
+#define LS2G_HAS_CAN_PARTICIPATE_SLACK 1
+// ... and how far beyond its limit each such element was (SlackParticipation::set_can_participate_overshoot)
+#define LS2G_HAS_CAN_PARTICIPATE_SLACK_OVERSHOOT 1
+
 namespace ls2g {
 
 /**
@@ -51,6 +57,100 @@ class SlackParticipation
         void reset(std::size_t nb_el){
             slackbus_.assign(nb_el, false);
             weight_.assign(nb_el, 0.);
+            can_participate_weight_.assign(nb_el, 0.);
+            can_participate_overshoot_mw_.assign(nb_el, 0.);
+        }
+
+        /**
+         * "Can participate in the slack": the elements a caller knows an outer loop only
+         * left out of the distributed slack because they sat at an active limit in the
+         * reference solve (OpenLoadFlow caps a unit at max_p when the mismatch it
+         * distributes is positive, at min_p when it is negative -- so that unit takes no
+         * share of a mismatch of that sign, and a full one of the other). One weight per
+         * element, on the same scale as the slack weights, 0 for an element not flagged.
+         *
+         * Never read by the Newton solve (its distributed slack has no bounds, so it
+         * would push such a unit past its limit); only the bounded redistribution
+         * pre-pass (SlackRedistribution.hpp) counts a flagged element as a participant,
+         * within its [min_p, max_p] -- which lets it move away from the limit it sits at,
+         * never across it. A flagged element that is also a slack participant takes part
+         * with its slack weight.
+         */
+        void set_can_participate(const std::vector<bool> & flags,
+                                 const Eigen::Ref<const RealVect> & weights,
+                                 const char * fun_name){
+            const std::size_t nb_el = slackbus_.size();
+            if(flags.size() != nb_el || static_cast<std::size_t>(weights.size()) != nb_el){
+                std::ostringstream exc_;
+                exc_ << fun_name << ": expected " << nb_el << " flags and weights, got "
+                     << flags.size() << " and " << weights.size() << ".";
+                throw std::runtime_error(exc_.str());
+            }
+            std::vector<real_type> res(nb_el, 0.);
+            for(std::size_t el_id = 0; el_id < nb_el; ++el_id){
+                if(!flags[el_id]) continue;
+                const real_type w = weights(static_cast<Eigen::Index>(el_id));
+                if(!std::isfinite(w) || w <= 0.){
+                    std::ostringstream exc_;
+                    exc_ << fun_name << ": the element with id " << el_id
+                         << " is flagged but its weight is not a finite, positive number (got " << w << ").";
+                    throw std::runtime_error(exc_.str());
+                }
+                res[el_id] = w;
+            }
+            // nothing a powerflow reads: no AlgoControl flag to raise
+            can_participate_weight_ = res;
+        }
+        [[nodiscard]] bool can_participate(int el_id) const {
+            return can_participate_weight_[el_id] > 0.;
+        }
+        [[nodiscard]] real_type can_participate_weight(int el_id) const {return can_participate_weight_[el_id];}
+        [[nodiscard]] const std::vector<real_type> & can_participate_weights() const {return can_participate_weight_;}
+        /// restore a serialized state (sizes are checked by the caller)
+        void set_can_participate_weights(const std::vector<real_type> & weights){
+            can_participate_weight_ = weights;
+        }
+
+        /**
+         * How far BEYOND the limit it sits at an element flagged "can participate in the
+         * slack" was in the reference solve, in MW (>= 0, 0 by default): OpenLoadFlow shares
+         * the slack from the raw set-points, `p = clamp(raw + lambda * weight)`, so a unit it
+         * capped at max_p had `raw + lambda * weight` above max_p by that much (below min_p
+         * for a unit capped at min_p). A later imbalance of the other sign only moves it once
+         * the common shift of the distribution has used that up -- before, OpenLoadFlow
+         * still caps it. 0 means it leaves its limit at once (an element whose reference
+         * solve sat exactly at it).
+         *
+         * Only the bounded redistribution pre-pass (SlackRedistribution.hpp) reads it, and
+         * only for an element flagged "can participate" (see set_can_participate).
+         */
+        void set_can_participate_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw,
+                                           const char * fun_name){
+            const std::size_t nb_el = slackbus_.size();
+            if(static_cast<std::size_t>(overshoot_mw.size()) != nb_el){
+                std::ostringstream exc_;
+                exc_ << fun_name << ": expected " << nb_el << " values, got " << overshoot_mw.size() << ".";
+                throw std::runtime_error(exc_.str());
+            }
+            std::vector<real_type> res(nb_el, 0.);
+            for(std::size_t el_id = 0; el_id < nb_el; ++el_id){
+                const real_type o = overshoot_mw(static_cast<Eigen::Index>(el_id));
+                if(!std::isfinite(o) || o < 0.){
+                    std::ostringstream exc_;
+                    exc_ << fun_name << ": the element with id " << el_id
+                         << " has an overshoot that is not a finite, non negative number (got " << o << ").";
+                    throw std::runtime_error(exc_.str());
+                }
+                res[el_id] = o;
+            }
+            // nothing a powerflow reads: no AlgoControl flag to raise
+            can_participate_overshoot_mw_ = res;
+        }
+        [[nodiscard]] real_type can_participate_overshoot(int el_id) const {return can_participate_overshoot_mw_[el_id];}
+        [[nodiscard]] const std::vector<real_type> & can_participate_overshoots() const {return can_participate_overshoot_mw_;}
+        /// restore a serialized state (sizes are checked by the caller)
+        void set_can_participate_overshoots(const std::vector<real_type> & overshoot_mw){
+            can_participate_overshoot_mw_ = overshoot_mw;
         }
 
         [[nodiscard]] bool is_slack(int el_id) const {return slackbus_[el_id];}
@@ -105,6 +205,18 @@ class SlackParticipation
             if(std::abs(weight_[el_id]) > BaseConstants::_tol_equal_float){ solver_control.tell_slack_weight_changed(); }
             slackbus_[el_id] = false;
             weight_[el_id] = 0.;
+        }
+        /// remove every participant whose bus is not flagged in `bus_kept` (see
+        /// LSGrid::consider_only_main_component). An element without a bus is left as is.
+        void remove_if_bus_not_in(const std::vector<bool> & bus_kept, const GlobalBusIdVect & bus_id,
+                                  DualAlgoControl & solver_control){
+            const int nb_el = static_cast<int>(slackbus_.size());
+            for(int el_id = 0; el_id < nb_el; ++el_id){
+                if(!slackbus_[el_id]) continue;
+                const int bus_me = bus_id(el_id).cast_int();
+                if(bus_me < 0) continue;
+                if(!bus_kept[bus_me]) remove(el_id, solver_control);
+            }
         }
         void remove_all(){
             DualAlgoControl unused_solver_control;
@@ -222,6 +334,10 @@ class SlackParticipation
     private:
         std::vector<bool> slackbus_;     // is this element flagged a slack participant
         std::vector<real_type> weight_;  // its raw weight (does not sum to 1)
+        // its weight in the redistribution pre-pass only, 0 if not flagged (see set_can_participate)
+        std::vector<real_type> can_participate_weight_;
+        // how far beyond its limit it was in the reference solve, MW (see set_can_participate_overshoot)
+        std::vector<real_type> can_participate_overshoot_mw_;
 };
 
 } // namespace ls2g

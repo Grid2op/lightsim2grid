@@ -159,6 +159,7 @@ struct LS2G_API DocIterator
     static const std::string voltage_regulator_on;
     static const std::string regulated_bus_id;
     static const std::string reactive_key;
+    static const std::string can_be_pv;
     static const std::string line_model;
     static const std::string r_pu;
     static const std::string x_pu;
@@ -191,6 +192,13 @@ struct LS2G_API DocIterator
     static const std::string b_min;
     static const std::string b_max;
     static const std::string svc_regulated_bus_id;
+    static const std::string svc_standby;
+    static const std::string svc_can_be_pv;
+    static const std::string can_participate_slack;
+    static const std::string can_participate_slack_weight;
+    static const std::string can_participate_slack_overshoot_mw;
+    static const std::string svc_standby_low_vm_pu;
+    static const std::string svc_standby_high_vm_pu;
 
     // specific to loads (and storage units)
     static const std::string LoadContainer;
@@ -485,6 +493,7 @@ struct LS2G_API DocLSGrid
     static const std::string get_controller_kind_solver;
     static const std::string get_controller_elem_id_solver;
     static const std::string get_controller_q_col_solver;
+    static const std::string get_controller_held_solver;
     static const std::string get_p_buses_solver;
     static const std::string get_p_rows_solver;
     static const std::string get_q_buses_solver;
@@ -504,6 +513,9 @@ struct LS2G_API DocLSGrid
     static const std::string update_slack_weights_by_id;
     static const std::string assign_slack_to_most_connected;
     static const std::string consider_only_main_component;
+    static const std::string redistribute_active_power;
+    static const std::string get_physical_violations;
+    static const std::string get_violations;
     static const std::string get_ignore_status_global;
     static const std::string get_synch_status_both_side;
     static const std::string set_line_names;
@@ -581,7 +593,11 @@ struct LS2G_API DocLSGrid
     static const std::string set_init_vm_pu;
     static const std::string get_init_vm_pu;
     static const std::string set_keep_vinit_at_group_controlled_buses;
+    static const std::string set_remote_voltage_control_vm_range;
+    static const std::string get_remote_voltage_control_vm_range;
     static const std::string get_keep_vinit_at_group_controlled_buses;
+    static const std::string set_hold_frozen_regulators;
+    static const std::string get_hold_frozen_regulators;
     static const std::string set_sn_mva;
     static const std::string get_sn_mva;
     static const std::string set_n_sub;
@@ -802,6 +818,7 @@ struct LS2G_API DocContingencyAnalysis
     static const std::string ContingencyAnalysis;
 
     static const std::string violation_threshold;
+    static const std::string violation_rel_tol;
 
     static const std::string preprocessing_time;
     static const std::string modif_Ybus_time;

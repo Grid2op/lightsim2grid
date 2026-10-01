@@ -165,6 +165,9 @@ inline void build_bus_q_plan(const LSGrid & grid_model,
     std::vector<char> st1_is_ctrl(static_cast<std::size_t>(nb_hvdc > 0 ? nb_hvdc : 0), 0);
     std::vector<char> st2_is_ctrl(static_cast<std::size_t>(nb_hvdc > 0 ? nb_hvdc : 0), 0);
     for(int c = 0; c < nb_ctrl; ++c){
+        // a held controller (LSGrid::set_hold_frozen_regulators) holds no bus: its
+        // frozen output is its bus' Sbus, exactly as without the option
+        if(ctrl.is_held(c)) continue;
         const int el_id = ctrl.elem_id(c);
         switch(ctrl.kind(c)){
             case VoltageControlSolverData::GEN:
@@ -248,7 +251,7 @@ inline void build_bus_q_plan(const LSGrid & grid_model,
         entry.station_ids = stations_of_bus[b];
         entry.svc_ids = svcs_of_bus[b];
         for(int c = 0; c < nb_ctrl; ++c){
-            if(ctrl.bus(c) != bus_solver) continue;
+            if(ctrl.bus(c) != bus_solver || ctrl.is_held(c)) continue;
             entry.ctrl_pos.push_back(c);
         }
         if(!entry.ctrl_pos.empty()) out.needs_controller_q = true;

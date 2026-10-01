@@ -318,7 +318,9 @@ the voltage checks.
 Adjusting the violation threshold
 ++++++++++++++++++++++++++++++++++
 
-By default a violation is reported exactly at the configured limit. The
+By default a violation is reported beyond the configured limit, by more than a relative
+tolerance ``violation_rel_tol`` (see :ref:`sa_violation_rel_tol`): a value on its limit up to
+rounding, e.g. a bus a regulator holds at its ``vmax``, is not a violation. The
 ``violation_threshold`` attribute (available both on ``ContingencyAnalysis`` and on the
 lower-level ``ContingencyAnalysisCPP``) lets you tighten that margin, so that situations
 approaching a limit are reported before they actually breach it. It is a ``float`` in
@@ -346,9 +348,9 @@ linear interpolation, identical for all three:
 =================  =========  ===========  ================================================
 check              anchor     limit        violates when
 =================  =========  ===========  ================================================
-``CURRENT``        ``0``      ``limit_a``  ``value >= threshold * limit_a``
-``LOW_VOLTAGE``    ``vn_kv``  ``vmin_kv``  ``v <= threshold * vmin + (1 - threshold) * vn``
-``HIGH_VOLTAGE``   ``vn_kv``  ``vmax_kv``  ``v >= threshold * vmax + (1 - threshold) * vn``
+``CURRENT``        ``0``      ``limit_a``  ``value > threshold * limit_a``
+``LOW_VOLTAGE``    ``vn_kv``  ``vmin_kv``  ``v < threshold * vmin + (1 - threshold) * vn``
+``HIGH_VOLTAGE``   ``vn_kv``  ``vmax_kv``  ``v > threshold * vmax + (1 - threshold) * vn``
 =================  =========  ===========  ================================================
 
 A line's usable range really *is* ``[0, limit_a]``, so its anchor is ``0`` and the rule
@@ -414,6 +416,30 @@ test deciding whether a violation is reported at all is shifted.
         res = security_analysis.run()
         security_analysis.violation_threshold = 0.9  # drops the results above ...
         res = security_analysis.run()                # ... no need to re-add anything
+
+.. _sa_violation_rel_tol:
+
+Values sitting on their limit: ``violation_rel_tol``
++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Some values sit *on* their limit by construction -- typically a bus a generator regulates
+exactly at its ``vmax``. A solve leaves such a value a few ulps on either side of the limit,
+so with a bare ``>`` the last bit of rounding would decide whether it is reported, and two
+solvers (the one-contingency-at-a-time solve, the batch, gpusim2grid) would disagree. Every
+check therefore asks the value to clear its effective limit by a relative margin,
+``violation_rel_tol`` (a ``float`` in ``[0., 1.[``, default ``1e-9`` -- about 0.4 mV on a
+400 kV bus), on both ``ContingencyAnalysis`` / ``ScenarioSweep`` and their ``*CPP`` classes:
+
+.. code-block:: text
+
+    CURRENT        value > threshold * limit_a * (1 + violation_rel_tol)
+    LOW_VOLTAGE    v     < low_eff  * (1 - violation_rel_tol)
+    HIGH_VOLTAGE   v     > high_eff * (1 + violation_rel_tol)
+
+``0.`` gives the bare strict comparisons. The reported ``value`` / ``limit`` are unaffected.
+Changing it, in either direction, discards the already-computed results (the registered
+contingencies are kept). ``LSGrid.get_violations(threshold, ac, rel_tol)`` takes the same
+tolerance.
 
 .. _sa_benchmarks:
 

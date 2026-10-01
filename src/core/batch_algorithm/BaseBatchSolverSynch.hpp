@@ -10,6 +10,7 @@
 #define BASEMULTIPLEPOWERFLOW_H
 
 #include "LSGrid.hpp"
+#include "OperationalCheck.hpp"  // BranchBusOverride
 
 #include <memory>
 
@@ -24,14 +25,6 @@ It allows to perform "batch" powerflow one a time in a synchronous manner.
 The "solver" of the gridmodel is never really used to perform powerflows.
 
 **/
-// see BaseBatchSolverSynch::_row_branch_overrides_
-struct BranchBusOverride {
-    int branch_id;   // gridmodel numbering, lines then trafos
-    int from_me;     // the row's bus of side 1 (gridmodel id), when connected
-    int to_me;       // ... of side 2
-    bool connected;
-};
-
 class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 {
     public:

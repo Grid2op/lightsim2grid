@@ -82,3 +82,27 @@ _TARGET_V_HELD_TOL_PU = 1e-8
 # deemed to be its target_q: a PQ injection is reproduced to the digit, whatever the
 # Newton-Raphson tolerance, well below the smallest clamp seen on real grid snapshots.
 _TARGET_Q_TOL_MVAR = 1e-6
+
+# Tolerance (MW) for deciding an angle-droop hvdc line sits "at" its active power limit:
+# OLF's ``AcHvdcAcEmulationLimits`` outer loop does not solve the saturated line to a
+# tolerance, it imposes the limit as the sending converter's setpoint, so the realized
+# flow reproduces the limit to float rounding, while a line still in the linear regime
+# lands anywhere along its droop.
+_HVDC_P_LIMIT_TOL_MW = 1e-4
+
+# Tolerance (MVAr) under which a generator (or voltage-mode SVC) whose target the reference
+# solve held is deemed saturated, for ``bake_saturated_voltage_control``: the relative
+# tolerance above is made to catch a unit OLF switched and that settled inside its limit,
+# whose voltage is free; on a held unit it would also freeze one OLF still regulates with
+# some headroom left, which a contingency may then ask for (or relieve) while the frozen
+# unit cannot follow -- on a stiff bus, by a voltage deviation too small to be reported.
+_Q_SATURATED_HELD_TOL_MVAR = 0.1
+
+# OLF's own minRealisticVoltage / maxRealisticVoltage defaults (pu) and the margin its
+# ReactiveLimits loop applies to them (ReactiveLimitsOuterLoop.REALISTIC_VOLTAGE_MARGIN): in
+# its default "robust" remote voltage control mode (voltageRemoteControlRobustMode), a
+# controller bus holding a remote target is switched to PQ at its target reactive power as
+# soon as its own voltage leaves [min * margin, max / margin].
+_OLF_MIN_REALISTIC_VOLTAGE_PU = 0.8
+_OLF_MAX_REALISTIC_VOLTAGE_PU = 1.2
+_OLF_REALISTIC_VOLTAGE_MARGIN = 1.02

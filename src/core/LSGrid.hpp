@@ -20,6 +20,7 @@
 #include <cstdint> // for int32
 #include <chrono>
 #include <cmath>  // for PI
+#include <limits>  // std::numeric_limits (NaN defaults)
 
 #include "Utils.hpp"
 #include "SolverSideCache.hpp"
@@ -40,7 +41,9 @@
 #include "element_container/LoadContainer.hpp"
 #include "element_container/StorageContainer.hpp"
 #include "element_container/GeneratorContainer.hpp"
+#include "element_container/SlackRedistribution.hpp"
 #include "element_container/SGenContainer.hpp"
+#include "batch_algorithm/LimitViolation.hpp"
 #include "element_container/SvcContainer.hpp"
 #include "element_container/HvdcLineContainer.hpp"
 #include "HvdcDroopData.hpp"
@@ -145,6 +148,9 @@ class LS2G_API LSGrid final
           compute_results_(true),
           init_vm_pu_(1.04),
           keep_vinit_group_controlled_(false),
+          hold_frozen_regulators_(false),
+          remote_vc_min_vm_pu_(std::numeric_limits<real_type>::quiet_NaN()),
+          remote_vc_max_vm_pu_(std::numeric_limits<real_type>::quiet_NaN()),
           sn_mva_(1.0),
           max_nb_bus_per_sub_(2){
             _algo.change_algorithm(AlgorithmType::NR_SparseLU);
@@ -247,7 +253,27 @@ class LS2G_API LSGrid final
         [[nodiscard]] Eigen::Ref<const RealVect> get_bus_vmax_kv() const {return substations_.get_bus_vmax_kv();}
 
         std::tuple<int, int> assign_slack_to_most_connected();
-        void consider_only_main_component();
+        /**
+         * Keep only the main synchronous component (see the python doc). With
+         * `redistribute_slack`, the active power the islanding takes out (setpoints of
+         * the stranded generators / static generators, minus the stranded loads /
+         * storage units / shunts) is shared on the remaining slack units OLF-style,
+         * with their [min_p, max_p] bounds: see redistribute_active_power. The report
+         * says what was lost and what was done with it.
+         */
+        slack_redistribution::Report consider_only_main_component(bool redistribute_slack = true);
+        /**
+         * Share `mismatch_mw` (> 0: the units must inject more) on the generators and
+         * storage units of the distributed slack as OpenLoadFlow's DistributedSlack
+         * outer loop does: proportionally to their slack weight, each one clamped to its
+         * [min_p, max_p] (set_gen_p_limits / set_storage_p_limits, unbounded when
+         * unset), a clamped unit leaving the pool and what it could not take being
+         * shared again on the others. Writes the new setpoints and takes the saturated
+         * units out of the distributed slack, so the next solve only shares what is
+         * left (the change in the losses) on the units that can still move. If EVERY
+         * unit saturates, all of them stay in the slack (see the report).
+         */
+        slack_redistribution::Report redistribute_active_power(real_type mismatch_mw);
         /**
          * Not relevant for dc lines, which always have the default to 
          * synch both sides !
@@ -318,6 +344,42 @@ class LS2G_API LSGrid final
         [[nodiscard]] const AlgorithmSelector & get_algo() const {return _algo;}
         [[nodiscard]] const AlgorithmSelector & get_dc_algo() const {return _dc_algo;}
 
+        /**
+         * The limits the LAST converged powerflow (ac_pf when `ac`, dc_pf otherwise)
+         * cannot physically meet -- the same checks the batch algorithms run with
+         * `compute_physical_violations`, on this grid's own solve: a voltage
+         * controller's reactive capability (AC only), a flagged PQ generator pinned at a
+         * reactive limit whose regulated voltage would make an outer loop switch it back
+         * to PV (AC only, see `set_gen_can_be_pv`), a flagged idle standby SVC whose
+         * regulated voltage would make its automaton switch it on (AC only, see
+         * `set_svc_standby`), an hvdc line's max power, and a
+         * generator or storage unit pushed past its [min_p, max_p] by the distributed
+         * slack. `tol_mva` is the absolute slack on every power comparison, `tol_vm_pu`
+         * the one (pu) on the voltage comparisons of the PQ -> PV and the standby SVC
+         * checks. Throws if no such
+         * powerflow ran, if it did not converge, or (AC) if the algorithm does not
+         * publish its per-bus mismatch.
+         */
+        [[nodiscard]] std::vector<LimitViolation> get_physical_violations(bool ac = true,
+                                                                             real_type tol_mva = 1e-4,
+                                                                             real_type tol_vm_pu = 1e-4) const;
+        /**
+         * The OPERATIONAL limits the last powerflow (ac_pf when `ac`, dc_pf otherwise)
+         * violates -- the same checks the batch algorithms run with
+         * `compute_limit_violations`, on this grid's own solve: every bus outside its
+         * [vmin, vmax] (set_bus_voltage_limits; LOW_VOLTAGE / HIGH_VOLTAGE) and every
+         * branch side above its thermal limit (set_line_current_limit_side1 /
+         * ..., CURRENT). `threshold` in ]0, 1] tightens both (1: report beyond the
+         * limit, as the batch's `violation_threshold`); `rel_tol` (>= 0) is the relative
+         * margin a value must clear on top of it, as the batch's `violation_rel_tol` (0:
+         * strictly beyond; the default ignores a value on its limit up to rounding). A powerflow that did not
+         * converge yields the batch's own sentinel: one GRID / DIVERGENCE entry.
+         * Throws if no such powerflow ran.
+         */
+        [[nodiscard]] std::vector<LimitViolation> get_violations(real_type threshold = 1.,
+                                                                 bool ac = true,
+                                                                 real_type rel_tol = DEFAULT_VIOLATION_REL_TOL) const;
+
         // do i compute the results (in terms of P,Q,V or loads, generators and flows on lines
         void deactivate_result_computation(){compute_results_=false;}
         void reactivate_result_computation(){compute_results_=true;}
@@ -360,6 +422,56 @@ class LS2G_API LSGrid final
          */
         void set_keep_vinit_at_group_controlled_buses(bool keep) noexcept {keep_vinit_group_controlled_ = keep;}
         [[nodiscard]] bool get_keep_vinit_at_group_controlled_buses() const noexcept {return keep_vinit_group_controlled_;}
+
+        /**
+         * The range of voltage (pu of its own bus' nominal voltage) a generator regulating a
+         * REMOTE bus may sit at, for the physical checks (see RemoteVoltageControlCheck.hpp):
+         * a remote controller whose own bus ends up below `min_vm_pu` or above `max_vm_pu` is
+         * reported as LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL by
+         * get_physical_violations and every batch's compute_physical_violations. This mirrors
+         * OpenLoadFlow's "robust" remote voltage control, which switches such a controller to
+         * PQ: there the range is [minRealisticVoltage * 1.02, maxRealisticVoltage / 1.02].
+         *
+         * Never read by a powerflow. NaN (the default) on both sides: no check. A NaN on one
+         * side only checks the other. Copied with the grid, so a batch algorithm built from
+         * this grid inherits it; not part of `get_state` / the binary format.
+         */
+        void set_remote_voltage_control_vm_range(real_type min_vm_pu, real_type max_vm_pu);
+        [[nodiscard]] real_type get_remote_voltage_control_min_vm_pu() const noexcept {return remote_vc_min_vm_pu_;}
+        [[nodiscard]] real_type get_remote_voltage_control_max_vm_pu() const noexcept {return remote_vc_max_vm_pu_;}
+
+        /**
+         * Keep, in the voltage-control group it would join, every generator an outer
+         * loop froze at a reactive limit and that would regulate a REMOTE bus if
+         * released (`set_gen_can_be_pv`, voltage regulation off, regulated bus not its
+         * own -- GeneratorContainer::is_frozen_remote_regulator), HELD at the reactive
+         * output it was frozen at (its target_q). AC Newton-Raphson only.
+         *
+         * The system it poses is the one without it -- same voltages, same reactive
+         * outputs -- but the machine has a reactive unknown and a row of its own in the
+         * group's bordered block (VoltageControlSolverData::held): its sharing row, or
+         * the group's voltage row when every controller of the group is held, reads
+         * "Q = frozen output" instead of the sharing / voltage equation, so a caller that
+         * reuses this Jacobian (a batch releasing that machine on some rows only) can
+         * release it by value, without touching the sparsity pattern. Its frozen output
+         * stays in Sbus, the bordered block only accounts for what moves away from it.
+         *
+         * A held machine the bordered formulation cannot express -- its own bus with no
+         * Q equation, its regulated bus with no Vm unknown, a set-point other than the
+         * group's, a group holding an SVC -- is left out (PQ as before), never an error.
+         * Its regulated bus, though, becomes a group-controlled bus like the target of an
+         * active remote regulator would. Off by default; copied with the grid, so a
+         * batch algorithm built from this grid inherits it; not part of `get_state` / the
+         * binary format.
+         */
+        void set_hold_frozen_regulators(bool hold) {
+            if(hold == hold_frozen_regulators_) return;
+            hold_frozen_regulators_ = hold;
+            // who is in a group is the pv/pq split (layer 1 -> 2) and the controller list
+            algo_controler_.tell_pv_changed();
+            algo_controler_.ac_algo_controler().tell_voltage_control_changed();
+        }
+        [[nodiscard]] bool get_hold_frozen_regulators() const noexcept {return hold_frozen_regulators_;}
         void set_sn_mva(real_type sn_mva) {
             check_positive_finite(sn_mva, "sn_mva");
             if(sn_mva == sn_mva_) return;
@@ -720,7 +832,8 @@ class LS2G_API LSGrid final
          */
         [[nodiscard]] RealVect get_slack_weights_solver_without(size_t nb_bus_solver,
                                                                 const SolverBusIdVect & id_me_to_solver,
-                                                                const std::vector<bool> & gen_off) const;
+                                                                const std::vector<bool> & gen_off,
+                                                                const std::vector<bool> & storage_off = std::vector<bool>()) const;
 
         //pickle
         LSGrid::StateRes get_state() const ;
@@ -1046,6 +1159,107 @@ class LS2G_API LSGrid final
         void set_gen_p_limits(const Eigen::Ref<const RealVect> & p_min_mw,
                               const Eigen::Ref<const RealVect> & p_max_mw){
             generators_.set_p_limits(p_min_mw, p_max_mw);
+        }
+        /**
+         * Flag the generators a caller knows an outer loop pinned at a reactive limit as
+         * PQ (one bool per generator, false by default). lightsim2grid never pins a machine
+         * itself, so it cannot tell such a machine from one that was PQ to begin with: the
+         * caller says so (init_from_pypowsybl passes what bake_outer_loops froze). Nothing
+         * enforces it in a powerflow; it opens that machine to the physical check of its
+         * PQ -> PV release (see `get_physical_violations` and the batch algorithms'
+         * `compute_physical_violations`) and, with `set_hold_frozen_regulators`, keeps a
+         * remote regulator held in its voltage-control group.
+         */
+        void set_gen_can_be_pv(const std::vector<bool> & can_be_pv){
+            generators_.set_can_be_pv(can_be_pv);
+            // read by a powerflow only to decide who is held (set_hold_frozen_regulators)
+            if(hold_frozen_regulators_){
+                algo_controler_.tell_pv_changed();
+                algo_controler_.ac_algo_controler().tell_voltage_control_changed();
+            }
+        }
+        /**
+         * Flag the SVCs a caller knows an outer loop left idle under their standby
+         * automaton (one bool per SVC, false by default), with that automaton's low / high
+         * voltage thresholds in pu of the nominal voltage of the bus each SVC regulates
+         * (ignored where not flagged). lightsim2grid does not model the automaton, and
+         * cannot tell such an SVC -- a fixed-Q one after `bake_outer_loops` -- from one
+         * that never regulates: the caller says so (init_from_pypowsybl passes what
+         * bake_outer_loops left idle). Nothing enforces or reads it in a powerflow; it
+         * only opens that SVC to the physical check of its switch to voltage control (see
+         * `get_physical_violations` and SvcStandbyCheck.hpp).
+         */
+        void set_svc_standby(const std::vector<bool> & standby,
+                             const Eigen::Ref<const RealVect> & low_vm_pu,
+                             const Eigen::Ref<const RealVect> & high_vm_pu){
+            svcs_.set_standby(standby, low_vm_pu, high_vm_pu);
+        }
+        /**
+         * The generators' `set_gen_can_be_pv`, for the SVCs: flag the SVCs a caller knows
+         * an outer loop froze at a reactive limit (one bool per SVC, false by default) --
+         * a voltage-mode SVC turned fixed-Q at the edge of its susceptance range, which
+         * the loop would switch back to voltage control. Never enforced nor read by a
+         * powerflow: it only opens that SVC to the PQ -> PV release check (see
+         * `get_physical_violations` and GenPvReleaseCheck.hpp).
+         */
+        void set_svc_can_be_pv(const std::vector<bool> & can_be_pv){
+            svcs_.set_can_be_pv(can_be_pv);
+        }
+        /**
+         * The same, for the VSC converter stations of the hvdc lines (one bool per line and
+         * side): the stations an outer loop froze at a reactive limit, opened to the
+         * PQ -> PV release check, reported on the HVDC line with `side` the station's.
+         */
+        void set_hvdc_can_be_pv(const std::vector<bool> & side_1, const std::vector<bool> & side_2){
+            hvdc_lines_.set_stations_can_be_pv(side_1, side_2);
+        }
+        /**
+         * Flag the angle-droop ("AC emulation") hvdc lines a caller knows an outer loop froze at
+         * their active power limit (OpenLoadFlow's AcHvdcAcEmulationLimits; `bake_outer_loops`
+         * turns them into a fixed set-point at that limit and keeps their droop parameters).
+         * Never read by a powerflow: the physical checks report such a line whose droop would
+         * ask for less than that limit (the loop would leave it in AC emulation). See
+         * HvdcLineContainer::set_ac_emulation_frozen and HvdcPCheck.hpp.
+         */
+        void set_hvdc_ac_emulation_frozen(const std::vector<bool> & frozen){
+            hvdc_lines_.set_ac_emulation_frozen(frozen);
+        }
+        /**
+         * Flag the generators a caller knows an outer loop left out of the distributed
+         * slack ONLY because they sat at an active limit in the reference solve
+         * (OpenLoadFlow caps a unit at max_p when the mismatch it distributes is
+         * positive, at min_p when it is negative), with the weight each would have as a
+         * participant (same scale as the slack weights; ignored where not flagged). Never
+         * read by the Newton solve, whose distributed slack has no bounds: only the
+         * bounded redistribution pre-pass (`consider_only_main_component(true)`, the
+         * batch algorithms' `redistribute_slack`) counts them, within their
+         * [min_p, max_p] -- so they only move away from the limit they sit at, as
+         * OpenLoadFlow would let them. See SlackParticipation::set_can_participate.
+         */
+        void set_gen_can_participate_slack(const std::vector<bool> & flags,
+                                           const Eigen::Ref<const RealVect> & weights){
+            generators_.set_can_participate_slack(flags, weights);
+        }
+        /// the same, for the storage units
+        void set_storage_can_participate_slack(const std::vector<bool> & flags,
+                                               const Eigen::Ref<const RealVect> & weights){
+            storages_.set_can_participate_slack(flags, weights);
+        }
+        /**
+         * For the generators flagged "can participate in the slack": how far BEYOND the
+         * limit it sits at each one was in the reference solve, in MW (>= 0, one value per
+         * generator, 0 by default). OpenLoadFlow shares the slack from the raw set-points,
+         * so a unit it capped at max_p had raw + lambda * weight above max_p by that much,
+         * and an imbalance of the other sign only moves it once the shift of the
+         * distribution has used that up. Only the bounded redistribution pre-pass reads it.
+         * See SlackParticipation::set_can_participate_overshoot.
+         */
+        void set_gen_can_participate_slack_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw){
+            generators_.set_can_participate_slack_overshoot(overshoot_mw);
+        }
+        /// the same, for the storage units
+        void set_storage_can_participate_slack_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw){
+            storages_.set_can_participate_slack_overshoot(overshoot_mw);
         }
         /**
          * Same, for the storage units -- which take part in the distributed slack under
@@ -1997,6 +2211,13 @@ class LS2G_API LSGrid final
         // share a bus, exactly like p_buses()/p_rows() etc. must be used instead
         // of the bus-keyed maps for the base P/Q block.
         [[nodiscard]] IntVect  get_controller_q_col_solver()   const { return _algo.get_controller_q_col(); }
+        // 1 for a held controller (set_hold_frozen_regulators), 0 otherwise, in the order
+        // of the AC voltage-control plan (that of the get_controller_*_solver above)
+        [[nodiscard]] IntVect  get_controller_held_solver() const {
+            const VoltageControlSolverData & ctrl = ac_cache_.voltage_control.controllers();
+            if(ctrl.held.size() == ctrl.n_controllers()) return ctrl.held;
+            return IntVect::Zero(ctrl.n_controllers());
+        }
 
         [[nodiscard]] real_type get_computation_time() const{ return _algo.get_computation_time();}
         [[nodiscard]] real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}
@@ -2287,10 +2508,14 @@ class LS2G_API LSGrid final
         // units' not already in
         [[nodiscard]] GlobalBusIdVect _slack_bus_id_me() const;
         // the raw (un-normalised) slack weight per solver bus, every participant of both
-        // families summed; `gen_off` (nullable) takes generators out as if disconnected
+        // families summed; `gen_off` / `storage_off` (nullable) take units out as if disconnected
         [[nodiscard]] RealVect _raw_slack_weights_solver(size_t nb_bus_solver,
                                                          const SolverBusIdVect & id_me_to_solver,
-                                                         const std::vector<bool> * gen_off) const;
+                                                         const std::vector<bool> * gen_off,
+                                                         const std::vector<bool> * storage_off = nullptr) const;
+        // the active power (MW, generator convention) the elements on the buses NOT in
+        // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
+        [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
         void init_slack_bus(const SolverBusIdVect & id_me_to_solver,
                             const GlobalBusIdVect& id_solver_to_me,
                             const GlobalBusIdVect & slack_bus_id_me,
@@ -2791,6 +3016,9 @@ class LS2G_API LSGrid final
         bool compute_results_;
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
         bool keep_vinit_group_controlled_;  // see set_keep_vinit_at_group_controlled_buses
+        bool hold_frozen_regulators_;  // see set_hold_frozen_regulators
+        real_type remote_vc_min_vm_pu_;  // see set_remote_voltage_control_vm_range
+        real_type remote_vc_max_vm_pu_;  // see set_remote_voltage_control_vm_range
         real_type sn_mva_;
 
         // powersystem representation

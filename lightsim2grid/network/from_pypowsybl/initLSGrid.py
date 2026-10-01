@@ -35,6 +35,11 @@ from ._aux_add_svc import _aux_add_svc
 from ._aux_add_hvdc import _aux_add_hvdc
 from ._aux_add_storage import _aux_add_storage
 from ._aux_add_slack import _aux_add_slack
+from ._olf_const import (
+    _OLF_MIN_REALISTIC_VOLTAGE_PU,
+    _OLF_MAX_REALISTIC_VOLTAGE_PU,
+    _OLF_REALISTIC_VOLTAGE_MARGIN,
+)
 
 
 def init(net : pypo.network.Network,
@@ -54,6 +59,11 @@ def init(net : pypo.network.Network,
          fuse_zero_impedance_branches: bool=False,
          zero_impedance_threshold_pu: float=1e-8,
          battery_active_power_control: str="auto",
+         can_be_pv=None,
+         can_participate_slack=None,
+         can_participate_slack_overshoot=None,
+         hvdc_ac_emulation_frozen=None,
+         remote_voltage_control_vm_range="olf",
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -209,11 +219,70 @@ def init(net : pypo.network.Network,
         extension is read from, when the default distributed slack (no ``gen_slack_id``
         nor ``slack_bus_id``) also distributes on the batteries, as OpenLoadFlow does.
         ``"auto"`` (default) reads it off pypowsybl when it lists batteries there, else
-        off an XIIDM export of ``net`` (pypowsybl <= 1.16.1 does not list them; the
-        export costs about the size of the network file); ``"extension"`` never exports
+        off a JIIDM export of ``net`` (pypowsybl <= 1.16.1 does not list them; the
+        export serializes the whole network); ``"extension"`` never exports
         the network; ``"default"`` gives every battery OpenLoadFlow's defaults
         (participating, droop 4).
     :type battery_active_power_control: str
+
+    :param can_be_pv: The elements an outer loop froze out of voltage control and would
+        switch (back) to it: the ids ``bake_outer_loops`` returns, or any iterable of
+        generator / static var compensator ids, or a boolean ``pandas.Series`` indexed by
+        id, or a boolean array in the order of ``net.get_generators()`` (sorted when
+        ``sort_index``; it flags generators only). ``None`` (default) flags nothing. A
+        generator is flagged as "pinned at a reactive limit" (``LSGrid.set_gen_can_be_pv``
+        / ``GenInfo.can_be_pv``); a static var compensator whose ``standbyAutomaton`` says
+        ``standby`` as a standby SVC left idle, its thresholds handed to
+        ``LSGrid.set_svc_standby``; any other static var compensator as frozen at a reactive
+        limit (``LSGrid.set_svc_can_be_pv`` / ``SvcInfo.can_be_pv``); a VSC converter station as
+        frozen at a reactive limit (``LSGrid.set_hvdc_can_be_pv`` / ``ConverterStationInfo.can_be_pv``,
+        per hvdc line and side). Nothing in a powerflow reads it: it only opens those elements to
+        the physical check of that switch (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on
+        a generator, a frozen SVC or the hvdc line of a frozen station,
+        ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on an idle standby SVC, see
+        ``LSGrid.get_physical_violations``). An unknown id raises.
+    :type can_be_pv: None, Iterable[str], pandas.Series or numpy.ndarray
+
+    :param can_participate_slack: The generators and batteries an outer loop left out of the
+        distributed slack ONLY because they sat at an active limit in the reference solve --
+        the ids ``bake_outer_loops(..., return_details=True).can_participate_slack`` returns.
+        They get the weight OpenLoadFlow's rule gives a participant, normalised with the
+        slack weights, and take part in the bounded redistribution pre-pass only
+        (``LSGrid.set_gen_can_participate_slack``, ``consider_only_main_component(True)``,
+        the batch algorithms' ``redistribute_slack``): within their ``[min_p, max_p]``, so
+        they only move away from the limit they sit at, as OpenLoadFlow lets them. Never
+        read by the Newton solve. Needs OpenLoadFlow's default distributed slack
+        (``gen_slack_id`` and ``slack_bus_id`` left to ``None``). ``None`` (default) flags
+        nothing. An unknown id raises.
+    :type can_participate_slack: None or Iterable[str]
+
+    :param can_participate_slack_overshoot: For the units of ``can_participate_slack``: how
+        far beyond the limit it sits at each one was in the reference distribution, in MW --
+        what ``bake_outer_loops(..., return_details=True).can_participate_slack_overshoot``
+        returns. OpenLoadFlow shares the slack from the raw set-points, so a unit it capped
+        well beyond its limit stays capped until the shift of a later imbalance has used that
+        up (``LSGrid.set_gen_can_participate_slack_overshoot``). ``None`` (default): 0 for
+        every unit, which lets it leave its limit at once.
+    :type can_participate_slack_overshoot: None or pandas.Series
+
+    :param hvdc_ac_emulation_frozen: The angle-droop ("AC emulation") hvdc lines an outer loop
+        froze at their active power limit -- the ids
+        ``bake_outer_loops(..., return_details=True).hvdc_ac_emulation_frozen`` returns. Flagged
+        with ``LSGrid.set_hvdc_ac_emulation_frozen`` (their droop parameters kept although it is
+        disabled), so that the physical checks report one whose droop would ask for less than
+        that limit (``HVDC_AC_EMULATION_RELEASE``). Never read by a powerflow. ``None``
+        (default) flags nothing. An unknown id raises.
+    :type hvdc_ac_emulation_frozen: None or Iterable[str]
+
+    :param remote_voltage_control_vm_range: The range of voltage (pu of its own bus' nominal
+        voltage) a generator regulating a REMOTE bus may sit at, for the physical checks
+        (``LSGrid.set_remote_voltage_control_vm_range``): a remote controller outside it is
+        reported as ``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``, as
+        OpenLoadFlow's robust remote voltage control would switch it to PQ. ``"olf"``
+        (default) uses OpenLoadFlow's default ``minRealisticVoltage`` / ``maxRealisticVoltage``
+        with its margin, a ``(min_vm_pu, max_vm_pu)`` pair is used as is (``NaN`` switching a
+        side off), ``None`` checks nothing. Never read by a powerflow.
+    :type remote_voltage_control_vm_range: str, None or tuple(float, float)
 
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
@@ -225,6 +294,14 @@ def init(net : pypo.network.Network,
         sn_mva_used = float(sn_mva)
     model.set_sn_mva(sn_mva_used)
     model.set_init_vm_pu(float(init_vm_pu))
+    if isinstance(remote_voltage_control_vm_range, str):
+        if remote_voltage_control_vm_range != "olf":
+            raise ValueError(f"remote_voltage_control_vm_range: unknown value "
+                             f"{remote_voltage_control_vm_range!r}, expected \"olf\", None or a pair")
+        remote_voltage_control_vm_range = (_OLF_MIN_REALISTIC_VOLTAGE_PU * _OLF_REALISTIC_VOLTAGE_MARGIN,
+                                           _OLF_MAX_REALISTIC_VOLTAGE_PU / _OLF_REALISTIC_VOLTAGE_MARGIN)
+    if remote_voltage_control_vm_range is not None:
+        model.set_remote_voltage_control_vm_range(*(float(el) for el in remote_voltage_control_vm_range))
     if keep_half_open_lines:
         # allow branches connected on a single terminal (the open end is Kron-reduced
         # in the C++ model); a one-sided disconnection is no longer mirrored to the
@@ -241,8 +318,14 @@ def init(net : pypo.network.Network,
         convert_dangling_lines, fuse_zero_impedance_branches, zero_impedance_threshold_pu,
     )
 
-    # generators
-    df_gen, gen_sub = _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
+    # generators (`can_be_pv` may also hold static var compensator ids, see _aux_add_svc)
+    # (and VSC converter station ids, see _aux_add_hvdc)
+    svc_ids = None
+    if can_be_pv is not None:
+        svc_ids = net.get_static_var_compensators(attributes=["connected"]).index.append(
+            net.get_vsc_converter_stations(attributes=["connected"]).index)
+    df_gen, gen_sub = _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
+                                          can_be_pv=can_be_pv, can_be_pv_other_ids=svc_ids)
 
     # loads
     df_load, load_sub = _aux_add_loads(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, df_dl)
@@ -270,11 +353,14 @@ def init(net : pypo.network.Network,
     df_shunt, sh_sub = _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
 
     # SVCs
-    df_svc = _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used)
+    df_svc = _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used,
+                          can_be_pv=can_be_pv)
 
     # HVDC lines
     df_dc, hvdc_sub_from_id, hvdc_sub_to_id = _aux_add_hvdc(
         model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
+        can_be_pv=can_be_pv,
+        ac_emulation_frozen=hvdc_ac_emulation_frozen,
     )
 
     # storage units
@@ -283,14 +369,18 @@ def init(net : pypo.network.Network,
     # slack bus(es)
     gen_slack_ids_int = _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
                                        df_batt=df_batt,
-                                       battery_active_power_control=battery_active_power_control)
+                                       battery_active_power_control=battery_active_power_control,
+                                       can_participate_slack=can_participate_slack,
+                                       can_participate_slack_overshoot=can_participate_slack_overshoot)
 
     # TODO checks
     # no 3windings trafo and other exotic stuff
 
     # and now deactivate all elements and nodes not in the main component
     if only_main_component:
-        model.consider_only_main_component()
+        # the set-points stay the file's: no redistribution of what is outside the main
+        # component (it was never solved by the file's own powerflow either)
+        model.consider_only_main_component(False)
     else:
         # automatically disconnect non connected buses
         # (this is automatically done by consider_only_main_component)

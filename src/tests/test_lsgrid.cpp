@@ -167,6 +167,24 @@ TEST_CASE("DC powerflow reproduces the analytic angles of a lossless feeder", "[
     CHECK(std::get<0>(line1)(1) == Approx(50.).epsilon(1e-8));
 }
 
+TEST_CASE("a converged DC powerflow reports NoError, from the first solve on", "[LSGrid]")
+{
+    // the DC algorithms used to write their status only on failure, so a converged
+    // dc_pf left get_error() at NotInitError (nothing could tell a converged solve
+    // from a solver that never ran: LSGrid::get_physical_violations needs to)
+    LSGrid grid = make_three_bus_grid(0.);
+    CHECK(grid.get_dc_algo().get_error() == ls2g::ErrorType::NotInitError);
+    const CplxVect V = grid.dc_pf(flat_start(grid), 1, 1e-8);
+    REQUIRE(V.size() == 3);
+    CHECK(grid.get_dc_algo().converged());
+    CHECK(grid.get_dc_algo().get_error() == ls2g::ErrorType::NoError);
+    CHECK(grid.get_dc_algo().get_nb_iter() == 1);
+    // and again on a second, factorization-reusing solve
+    const CplxVect V2 = grid.dc_pf(flat_start(grid), 1, 1e-8);
+    REQUIRE(V2.size() == 3);
+    CHECK(grid.get_dc_algo().get_error() == ls2g::ErrorType::NoError);
+}
+
 TEST_CASE("voltage getters follow the powerflow", "[LSGrid]")
 {
     LSGrid grid = make_three_bus_grid();

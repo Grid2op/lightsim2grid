@@ -174,7 +174,7 @@ loop active and remove every other one with
 instead -- same idea, but it sets ``balance_type=PROPORTIONAL_TO_GENERATION_P_MAX``,
 what lightsim2grid's default distributed slack reproduces. Like OLF, that default
 slack is distributed on the batteries too, with the generators' rule (their
-``activePowerControl`` extension, read off an XIIDM export while pypowsybl does not
+``activePowerControl`` extension, read off an IIDM export while pypowsybl does not
 list it for batteries; see the ``battery_active_power_control`` argument of
 :func:`~lightsim2grid.network.init_from_pypowsybl`).
 

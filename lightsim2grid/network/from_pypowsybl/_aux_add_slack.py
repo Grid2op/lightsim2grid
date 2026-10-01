@@ -9,6 +9,7 @@
 from collections import deque
 
 import numpy as np
+import pandas as pd
 
 from ._aux_handle_slack import handle_slack_iterable, handle_slack_one_el
 # OpenLoadFlow's hardcoded fallback droop, used for every generator whose
@@ -233,8 +234,64 @@ def _default_battery_slack(net, df_batt, source="auto"):
     return {int(i): float(weight[i]) for i in np.flatnonzero(mask)}
 
 
+def _can_participate_slack_weights(net, df_gen, df_batt, can_participate_slack, source="auto"):
+    """The raw weights (``max_p / droop``, the unit of :func:`_default_distributed_slack`)
+    of the units ``can_participate_slack`` flags -- what ``bake_outer_loops`` left out of
+    the slack only because OLF capped them at an active limit: the weight OLF's rule
+    gives them as participants, their ``participate`` flag set aside. As a slack
+    participant, a flagged unit must be connected, in the main synchronous component and
+    carry a positive weight; the others are dropped (they could not take a share anyway).
+
+    Returns ``(gen_weight, batt_weight)``, arrays aligned on ``df_gen`` / ``df_batt``, 0
+    where not flagged. An id that is neither a generator nor a battery raises."""
+    ids = pd.Index([str(el) for el in can_participate_slack])
+    batt_index = df_batt.index if df_batt is not None else pd.Index([])
+    unknown = ids.difference(df_gen.index).difference(batt_index)
+    if len(unknown):
+        raise ValueError(f"`can_participate_slack`: unknown generator / battery id(s) {list(unknown)[:10]}.")
+    df_bus = net.get_buses(attributes=["synchronous_component"])
+    main_sync = df_bus["synchronous_component"].value_counts().idxmax()
+
+    gen_weight = np.zeros(len(df_gen))
+    flagged = df_gen.index.isin(ids)
+    if flagged.any():
+        try:
+            apc = net.get_extensions("activePowerControl")
+        except Exception:  # noqa: BLE001 - extension unsupported
+            apc = None
+        if apc is not None and len(apc) and "droop" in apc.columns:
+            droop = apc["droop"].reindex(df_gen.index).to_numpy(float)
+        else:
+            droop = np.full(len(df_gen), np.nan)
+        # the key of _default_distributed_slack: OLF's default droop without an extension
+        # row, no participation with a droop of 0
+        droop_used = np.where(np.isfinite(droop), droop, _OLF_DEFAULT_DROOP)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            weight = np.where(droop_used > 0., df_gen["max_p"].to_numpy(float) / droop_used, 0.)
+        gen_sync = df_gen["bus_id"].map(df_bus["synchronous_component"]).to_numpy()
+        ok = (flagged & df_gen["connected"].to_numpy(bool) & (gen_sync == main_sync)
+              & np.isfinite(weight) & (weight > 0.))
+        gen_weight = np.where(ok, weight, 0.)
+
+    batt_weight = np.zeros(len(batt_index))
+    b_flagged = batt_index.isin(ids)
+    if b_flagged.any():
+        _, droop, min_target_p, max_target_p = _battery_active_power_control(net, df_batt, source)
+        # OLF's key with the participation the bake removed put back
+        weight = olf_participation_weight(df_batt["target_p"].to_numpy(float),
+                                          df_batt["min_p"].to_numpy(float),
+                                          df_batt["max_p"].to_numpy(float),
+                                          np.ones(len(df_batt), dtype=bool), droop,
+                                          min_target_p, max_target_p)
+        batt_sync = df_batt["bus_id"].map(df_bus["synchronous_component"]).to_numpy()
+        ok = b_flagged & df_batt["connected"].to_numpy(bool) & (batt_sync == main_sync) & (weight > 0.)
+        batt_weight = np.where(ok, weight, 0.)
+    return gen_weight, batt_weight
+
+
 def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
-                   df_batt=None, battery_active_power_control="auto"):
+                   df_batt=None, battery_active_power_control="auto", can_participate_slack=None,
+                   can_participate_slack_overshoot=None):
     """Resolve and assign the slack bus(es) of ``model``: an explicit
     ``gen_slack_id`` / ``slack_bus_id``, else OpenLoadFlow's default distributed
     slack (see :func:`_default_distributed_slack`), else a single slack on the
@@ -247,12 +304,23 @@ def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
     units were added to ``model``): an explicit ``gen_slack_id`` / ``slack_bus_id`` is
     taken as the whole slack. Generator and battery weights are normalised together --
     they are in the same unit, and normalising each family on its own would change
-    their ratio."""
+    their ratio.
+
+    ``can_participate_slack`` (ids of generators / batteries, see
+    :func:`_can_participate_slack_weights`) flags the units the bake left out of the slack
+    only because they sat at an active limit: they get their OLF weight, normalised with
+    the participants', for the redistribution pre-pass only
+    (``LSGrid.set_gen_can_participate_slack``). Only with OpenLoadFlow's default
+    distributed slack: an explicit slack has no such scale to share."""
     if battery_active_power_control not in BATTERY_APC_SOURCES:
         raise RuntimeError(f"Unknown `battery_active_power_control` {battery_active_power_control!r}, "
                            f"use one of {BATTERY_APC_SOURCES}.")
     battery_weights = {}
-    if gen_slack_id is None and slack_bus_id is None:
+    default_slack = gen_slack_id is None and slack_bus_id is None
+    if can_participate_slack is not None and len(can_participate_slack) and not default_slack:
+        raise ValueError("`can_participate_slack` needs OpenLoadFlow's default distributed slack "
+                         "(gen_slack_id=None and slack_bus_id=None): its weights are on that scale.")
+    if default_slack:
         # Default: reproduce OpenLoadFlow's distributed slack, sharing the
         # active-power mismatch over the participating generators (see
         # _default_distributed_slack) and batteries. Returns None -- handled by the
@@ -293,6 +361,22 @@ def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
         if total_weight is not None:
             for storage_id, weight in battery_weights.items():
                 model.add_storage_slackbus(storage_id, weight / total_weight)
+            if default_slack and can_participate_slack is not None and len(can_participate_slack):
+                gen_w, batt_w = _can_participate_slack_weights(net, df_gen, df_batt, can_participate_slack,
+                                                               battery_active_power_control)
+                if (gen_w > 0.).any():
+                    model.set_gen_can_participate_slack(gen_w > 0., gen_w / total_weight)
+                if (batt_w > 0.).any():
+                    model.set_storage_can_participate_slack(batt_w > 0., batt_w / total_weight)
+                if can_participate_slack_overshoot is not None and len(can_participate_slack_overshoot):
+                    # how far beyond its limit each flagged unit was (MW), where it is flagged
+                    over = pd.Series(can_participate_slack_overshoot, dtype=float)
+                    over.index = over.index.astype(str)
+                    gen_o = np.where(gen_w > 0., over.reindex(df_gen.index).fillna(0.).to_numpy(), 0.)
+                    model.set_gen_can_participate_slack_overshoot(np.maximum(gen_o, 0.))
+                    if df_batt is not None and len(df_batt):
+                        batt_o = np.where(batt_w > 0., over.reindex(df_batt.index).fillna(0.).to_numpy(), 0.)
+                        model.set_storage_can_participate_slack_overshoot(np.maximum(batt_o, 0.))
     elif slack_bus_id is not None:
         gen_bus = np.array([el.bus_id for el in model.get_generators()])
         gen_is_conn_slack = gen_bus == model._orig_to_ls[slack_bus_id]
