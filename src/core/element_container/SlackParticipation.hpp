@@ -248,15 +248,14 @@ class SlackParticipation
             }
         }
 
-        /// append the grid buses of the flagged CONNECTED elements that are not in `buses`
-        /// yet. A disconnected participant stays flagged -- stranded by
-        /// LSGrid::consider_only_main_component, or switched off -- and takes no share
-        /// until it is reconnected (see `participates`): its bus is not a slack bus meanwhile.
-        void append_slack_buses(std::vector<int> & buses, const std::vector<bool> & status,
-                                const GlobalBusIdVect & bus_id) const {
+        /// append the grid buses of the flagged elements (connected or not) that are not in
+        /// `buses` yet. A disconnected participant stays flagged and takes no share until it
+        /// is reconnected (see `participates`); its bus stays a slack bus as long as it is in
+        /// the grid (LSGrid::_slack_bus_id_me drops the ones that are not).
+        void append_slack_buses(std::vector<int> & buses, const GlobalBusIdVect & bus_id) const {
             const int nb_el = static_cast<int>(slackbus_.size());
             for(int el_id = 0; el_id < nb_el; ++el_id){
-                if(!slackbus_[el_id] || !status[el_id]) continue;
+                if(!slackbus_[el_id]) continue;
                 const int bus_me = bus_id(el_id).cast_int();
                 if(bus_me == BaseConstants::_deactivated_bus_id) continue;
                 bool already_there = false;

@@ -238,7 +238,7 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
                                              const std::vector<bool> * storage_off = nullptr) const {
             slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, storage_off, _element_name());
         }
-        void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, status_, bus_id_);}
+        void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}
         void slack_summary(bool & any_flagged, bool & any_connected) const {slack_.summary(status_, any_flagged, any_connected);}
         /// write the share of the slack each participating unit absorbed (load convention)
         void set_p_slack(const Eigen::Ref<const RealVect> & node_mismatch,

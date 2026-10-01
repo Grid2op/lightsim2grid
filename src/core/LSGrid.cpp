@@ -1243,27 +1243,6 @@ CplxVect LSGrid::_build_into_cache(
             solver_control.need_reset_solver() ||
             solver_control.has_dimension_changed();
 
-    if (redo_all || solver_control.has_slack_participate_changed()){
-        cache.slack_bus_id_me = _slack_bus_id_me();
-        // this is the slack bus ids with the gridmodel ordering, not the solver ordering.
-        // conversion to solver ordering is done in init_slack_bus
-
-        // Optional forced angle reference: move the requested (gridmodel) bus to
-        // the front so the NR uses it as slack_ids[0] (the reference) without
-        // changing the slack set or weights. See LSGrid::set_reference_slack_bus.
-        if (_forced_ref_slack_bus_id >= 0){
-            std::vector<int> sids = cache.slack_bus_id_me.to_int_vector();
-            for (std::size_t i = 1; i < sids.size(); ++i){
-                if (sids[i] == _forced_ref_slack_bus_id){
-                    const int ref = sids[i];
-                    sids.erase(sids.begin() + static_cast<std::ptrdiff_t>(i));
-                    sids.insert(sids.begin(), ref);
-                    cache.slack_bus_id_me = GlobalBusIdVect(sids);
-                    break;
-                }
-            }
-        }
-    }
     // ---- the per-bus element counts ---------------------------------------------
     // Everything else this function builds is derived, here and now, from the
     // elements; the counts are the exception. They are maintained INCREMENTALLY --
@@ -1297,6 +1276,30 @@ CplxVect LSGrid::_build_into_cache(
         recompute_bus_element_counts();
     } else if (redo_all || solver_control.has_one_el_changed_bus()){
         init_bus_status();
+    }
+    // (before the slack bus list below: a slack bus that left the grid is dropped
+    // from it, which reads these counts -- see _slack_bus_id_me)
+
+    if (redo_all || solver_control.has_slack_participate_changed()){
+        cache.slack_bus_id_me = _slack_bus_id_me();
+        // this is the slack bus ids with the gridmodel ordering, not the solver ordering.
+        // conversion to solver ordering is done in init_slack_bus
+
+        // Optional forced angle reference: move the requested (gridmodel) bus to
+        // the front so the NR uses it as slack_ids[0] (the reference) without
+        // changing the slack set or weights. See LSGrid::set_reference_slack_bus.
+        if (_forced_ref_slack_bus_id >= 0){
+            std::vector<int> sids = cache.slack_bus_id_me.to_int_vector();
+            for (std::size_t i = 1; i < sids.size(); ++i){
+                if (sids[i] == _forced_ref_slack_bus_id){
+                    const int ref = sids[i];
+                    sids.erase(sids.begin() + static_cast<std::ptrdiff_t>(i));
+                    sids.insert(sids.begin(), ref);
+                    cache.slack_bus_id_me = GlobalBusIdVect(sids);
+                    break;
+                }
+            }
+        }
     }
 
     bool converter_changed = false;
@@ -2539,8 +2542,19 @@ GlobalBusIdVect LSGrid::_slack_bus_id_me() const{
     std::vector<int> buses;
     generators_.append_slack_bus_id(buses);
     storages_.append_slack_bus_id(buses);
-    if(buses.empty()) throw std::runtime_error("LSGrid: no connected generator nor storage unit is tagged slack bus for this grid.");
-    return GlobalBusIdVect(buses);
+    if(buses.empty()) throw std::runtime_error("LSGrid: no generator nor storage unit is tagged slack bus for this grid.");
+    // a slack bus no longer in the grid -- the island consider_only_main_component cut a
+    // slack unit off with -- is dropped: its units stay in the slack and come back with it.
+    // A slack bus still in the grid stays one even when its units are disconnected (it
+    // then holds the angle reference and the imbalance on its own, as before).
+    _ensure_bus_counts();
+    std::vector<int> kept;
+    kept.reserve(buses.size());
+    for(int bus : buses){
+        if(substations_.is_bus_connected(GridModelBusId(bus))) kept.push_back(bus);
+    }
+    if(kept.empty()) throw std::runtime_error("LSGrid: every bus with a generator or storage unit tagged slack bus is out of the grid.");
+    return GlobalBusIdVect(kept);
 }
 
 RealVect LSGrid::_raw_slack_weights_solver(size_t nb_bus_solver,
@@ -3043,9 +3057,9 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
     // the generators / storage units of the distributed slack stranded outside the main
     // component are deactivated below with the rest of their island, and a disconnected
     // participant takes no share (as OLF, which only distributes on the main component).
-    // They stay in the slack, so that reconnecting one puts it back where it was (see
-    // SlackParticipation::append_slack_buses). The main component always keeps at least
-    // one connected slack unit (it is grown from one).
+    // They stay in the slack, so that reconnecting one puts it back where it was; their
+    // buses, out of the grid, are no slack buses meanwhile (see _slack_bus_id_me). The
+    // main component always keeps at least one slack bus (it is grown from one).
     if((_forced_ref_slack_bus_id >= 0) && !bus_in_main_cc[_forced_ref_slack_bus_id]){
         // the forced angle reference is now in an island: back to the natural order
         set_reference_slack_bus(-1);

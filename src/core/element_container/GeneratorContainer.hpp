@@ -207,7 +207,7 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, gen_off, _element_name());
         }
         /// append the grid buses of the flagged generators not in `buses` yet
-        void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, status_, bus_id_);}
+        void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}
         void slack_summary(bool & any_flagged, bool & any_connected) const {slack_.summary(status_, any_flagged, any_connected);}
         /** distribute the active mismatch of the slack buses onto the participating generators **/
         void set_p_slack(const Eigen::Ref<const RealVect> & node_mismatch,
