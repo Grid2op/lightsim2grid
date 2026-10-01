@@ -717,6 +717,38 @@ class TestOlfBake(unittest.TestCase):
         self.assertLess((cmp["v_mag_r"] - cmp["v_mag_b"]).abs().max(), TOL_VM_KV)
         self.assertLess((cmp["v_angle_r"] - cmp["v_angle_b"]).abs().max(), 1e-2)
 
+    def test_olf_reactive_range_too_small_sharing_a_held_bus_frozen(self):
+        """A unit with too small a reactive range on the bus of a controller OLF keeps:
+        the bus is held (by that other unit), but OLF discarded the small one all the
+        same. Bake must freeze it at its realized q -- left regulating, it would add its
+        range to the bus' capability -- and leave the other one regulating; the baked
+        loop-free re-solve reproduces the reference."""
+        def make():
+            n = pp.network.create_ieee14()
+            n.create_generators(id="B2-SMALL", voltage_level_id="VL2", bus_id="B2",
+                                target_p=5.0, target_q=0.1, target_v=141.075,
+                                voltage_regulator_on=True, min_p=0.0, max_p=20.0)
+            n.update_generators(id="B2-SMALL", min_q=-0.3, max_q=0.3)
+            return n
+        n_ref = make()
+        lf.run_ac(n_ref, _with_loops_params())
+        q_ref = n_ref.get_generators(attributes=["q"])["q"]
+        # OLF did not regulate it: its raw target_q, not a share of the bus' reactive power
+        self.assertAlmostEqual(-q_ref["B2-SMALL"], 0.1, places=6)
+
+        n = make()
+        lf.run_ac(n, _with_loops_params())
+        bake_outer_loops(n)
+        g = n.get_generators(attributes=["voltage_regulator_on", "target_q"])
+        self.assertFalse(g.loc["B2-SMALL", "voltage_regulator_on"])
+        self.assertAlmostEqual(g.loc["B2-SMALL", "target_q"], 0.1, places=6)
+        self.assertTrue(g.loc["B2-G", "voltage_regulator_on"])
+
+        res = lf.run_ac(n, remove_outer_loops(_with_loops_params()))
+        self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+        q_redo = n.get_generators(attributes=["q"])["q"]
+        self.assertLess((q_redo - q_ref).abs().max(), 1e-2)
+
     def test_olf_reactive_range_too_small_frozen(self):
         """A CURVE-kind generator with a sub-1-MVar reactive range is not
         actually voltage-controlled by OLF: its realized Q sits far outside

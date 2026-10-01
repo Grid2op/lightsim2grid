@@ -762,7 +762,16 @@ def _bake_generator_voltage_control_discards(network, keep_only_main_comp=True, 
 
     mask = too_small_range | implausible_v
     if held is not None:
-        mask &= ~held.reindex(reg.index).fillna(False).to_numpy(bool)
+        held_reg = held.reindex(reg.index).fillna(False).to_numpy(bool)
+        # "held" is a property of the regulated bus: a unit with too small a range
+        # sharing it with a controller OLF keeps (a large enough range) reads as held
+        # although that other unit is the one holding it -- OLF discarded this one
+        # all the same (and with it the reactive capability it would add to the bus)
+        reg_bus_of = (_generator_regulated_bus(network, reg) if reg_bus is None
+                      else reg_bus.reindex(reg.index)).to_numpy()
+        kept_buses = set(reg_bus_of[~too_small_range & ~implausible_v])
+        shares_with_kept = np.array([b in kept_buses for b in reg_bus_of], dtype=bool)
+        mask &= ~held_reg | (too_small_range & shares_with_kept)
     if not mask.any():
         return
     upd = pd.DataFrame(index=reg.index[mask])

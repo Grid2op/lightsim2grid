@@ -207,6 +207,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``bake_outer_loops`` freezes a generator with too small a reactive range sharing its
+  regulated bus with a controller OpenLoadFlow keeps; it was left regulating.
 - [ADDED] ``LSGrid.set_remote_voltage_control_vm_range``: a generator holding a remote bus from an
   unrealistic own-bus voltage is reported (``LOW_VOLTAGE_REMOTE_CONTROL`` /
   ``HIGH_VOLTAGE_REMOTE_CONTROL``), as OpenLoadFlow's robust remote voltage control switches it to
