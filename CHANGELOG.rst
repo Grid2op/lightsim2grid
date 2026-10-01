@@ -207,6 +207,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [ADDED] ``LSGrid.set_remote_voltage_control_vm_range``: a generator holding a remote bus from an
+  unrealistic own-bus voltage is reported (``LOW_VOLTAGE_REMOTE_CONTROL`` /
+  ``HIGH_VOLTAGE_REMOTE_CONTROL``), as OpenLoadFlow's robust remote voltage control switches it to
+  PQ; ``init_from_pypowsybl`` sets OpenLoadFlow's range.
 - [FIXED] ``init_from_pypowsybl`` reads an hvdc line's ``hvdcOperatorActivePowerRange`` as its
   active power limit per direction, like OpenLoadFlow, instead of ``max_p``.
 - [ADDED] ``bake_outer_loops(bake_hvdc_ac_emulation_limits=True)`` freezes an AC-emulation hvdc line

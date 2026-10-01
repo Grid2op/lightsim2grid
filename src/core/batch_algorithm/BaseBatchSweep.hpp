@@ -18,6 +18,7 @@
 #include "GenPCheck.hpp"
 #include "GenPvReleaseCheck.hpp"
 #include "SvcStandbyCheck.hpp"
+#include "RemoteVoltageControlCheck.hpp"
 #include "HvdcPCheck.hpp"
 #include "BusGraph.hpp"
 #include "BatchAdjoint.hpp"
@@ -581,6 +582,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //     SvcStandbyCheck.hpp and LSGrid::set_svc_standby): does the bus it regulates
         //     sit outside the automaton's voltage thresholds? OpenLoadFlow's
         //     `MonitoringVoltageOuterLoop`;
+        //   * the OWN BUS of each generator regulating a remote bus, when the caller set a
+        //     realistic range (LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on the
+        //     GENERATOR, see RemoteVoltageControlCheck.hpp and
+        //     LSGrid::set_remote_voltage_control_vm_range): does holding the remote target take
+        //     it outside that range? OpenLoadFlow's `ReactiveLimits`, in its robust remote
+        //     voltage control mode;
         //   * the ACTIVE POWER of each angle-droop ("AC emulation") hvdc line still in the
         //     linear regime (HIGH_P on the HVDC, see HvdcPCheck.hpp): did it transmit more
         //     than `pmax_1to2_mw` / `pmax_2to1_mw` allow in that direction? OpenLoadFlow's
@@ -1869,6 +1876,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     _svc_standby_plan_, V_solver, _physical_tol_vm_pu_, masked,
                     _physical_violations_[i]);
             }
+            if(_gen_pv_release_check_on_ && !_remote_vc_plan_.empty()){
+                remote_voltage_control_check::check_remote_voltage_control_violations(
+                    _remote_vc_plan_, V_solver, _physical_tol_vm_pu_, masked,
+                    [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
+                    _physical_violations_[i]);
+            }
             if(!_hvdc_p_plan_.empty()){
                 hvdc_p_check::check_hvdc_p_violations(_hvdc_p_plan_, algo.get_Va(),
                                                       _physical_tol_mva_, masked,
@@ -1952,6 +1965,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _bus_q_plan_.clear();
             _gen_pv_release_plan_.clear();
             _svc_standby_plan_.clear();
+            _remote_vc_plan_.clear();
             _hvdc_p_plan_.clear();
             _gen_p_plan_.clear();
             _physical_violations_.clear();
@@ -1999,6 +2013,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     _grid_model, active_layout().id_me_to_solver, _gen_pv_release_plan_);
                 svc_standby_check::build_svc_standby_plan(
                     _grid_model, active_layout().id_me_to_solver, _svc_standby_plan_);
+                remote_voltage_control_check::build_remote_voltage_control_plan(
+                    _grid_model, active_layout().id_me_to_solver,
+                    active_layout().voltage_control.controllers(), _remote_vc_plan_);
             }
             hvdc_p_check::build_hvdc_p_plan(_grid_model, active_layout().id_me_to_solver,
                                             _hvdc_p_plan_);
@@ -2035,6 +2052,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(_gen_pv_release_check_on_ && !_svc_standby_plan_.empty()){
                 svc_standby_check::check_svc_standby_violations(
                     _svc_standby_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,
+                    _physical_violations_n_);
+            }
+            if(_gen_pv_release_check_on_ && !_remote_vc_plan_.empty()){
+                remote_voltage_control_check::check_remote_voltage_control_violations(
+                    _remote_vc_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,
+                    [](int){ return false; },  // the base case disconnects no generator
                     _physical_violations_n_);
             }
             if(!_hvdc_p_plan_.empty()){
@@ -2934,12 +2957,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         real_type _physical_tol_mva_ = 1e-4;
         real_type _physical_tol_vm_pu_ = 1e-4;
         bool _bus_q_check_on_ = false;
-        // `_gen_pv_release_check_on_`: same idea for the PQ -> PV release check and the
-        // standby SVC check, which compare voltage magnitudes (AC only)
+        // `_gen_pv_release_check_on_`: same idea for the PQ -> PV release check, the
+        // standby SVC check and the remote voltage control one, which compare voltage
+        // magnitudes (AC only)
         bool _gen_pv_release_check_on_ = false;
         bus_q_check::BusQPlan _bus_q_plan_;
         gen_pv_release_check::GenPvReleasePlan _gen_pv_release_plan_;
         svc_standby_check::SvcStandbyPlan _svc_standby_plan_;
+        remote_voltage_control_check::RemoteVoltageControlPlan _remote_vc_plan_;
         hvdc_p_check::HvdcPPlan _hvdc_p_plan_;
         gen_p_check::GenPPlan _gen_p_plan_;
         std::vector<std::vector<LimitViolation> > _physical_violations_;

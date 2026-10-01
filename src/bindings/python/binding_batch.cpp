@@ -584,6 +584,19 @@ void bind_batch(py::module_& m) {
                "The mirror of LOW_VOLTAGE_SVC_STANDBY: the regulated bus sits ABOVE the "
                "automaton's high voltage threshold (element_type is ViolationElementType.SVC, "
                "`value` above `limit`, both in kV). Category PHYSICAL. Reported by "
+               "compute_physical_violations, never enforced.")
+        .value("LOW_VOLTAGE_REMOTE_CONTROL", LimitViolationType::LOW_VOLTAGE_REMOTE_CONTROL,
+               "A generator regulating a REMOTE bus whose own bus sits BELOW the realistic range "
+               "set with LSGrid.set_remote_voltage_control_vm_range (element_type is "
+               "ViolationElementType.GENERATOR): OpenLoadFlow's ReactiveLimits loop, in its "
+               "robust remote voltage control mode, would switch it to PQ at its target "
+               "reactive power. Category PHYSICAL, like LOW_VOLTAGE_AT_MIN_Q. `value` the "
+               "generator's own bus voltage and `limit` the bound, both in kV (value below "
+               "limit). Reported by compute_physical_violations, never enforced.")
+        .value("HIGH_VOLTAGE_REMOTE_CONTROL", LimitViolationType::HIGH_VOLTAGE_REMOTE_CONTROL,
+               "The mirror of LOW_VOLTAGE_REMOTE_CONTROL: the generator's own bus sits ABOVE the "
+               "realistic range (element_type is ViolationElementType.GENERATOR, `value` above "
+               "`limit`, both in kV). Category PHYSICAL. Reported by "
                "compute_physical_violations, never enforced.");
 
     py::enum_<ViolationCategory>(m, "ViolationCategory",
@@ -603,7 +616,8 @@ void bind_batch(py::module_& m) {
                "than it can, a distributed slack asking a machine for power it does not have) "
                "cannot happen. A statement about the model's assumptions, not about how the "
                "grid is operated. LOW_Q, HIGH_Q, LOW_P, HIGH_P, LOW_VOLTAGE_AT_MIN_Q, "
-               "HIGH_VOLTAGE_AT_MAX_Q, LOW_VOLTAGE_SVC_STANDBY, HIGH_VOLTAGE_SVC_STANDBY.")
+               "HIGH_VOLTAGE_AT_MAX_Q, LOW_VOLTAGE_SVC_STANDBY, HIGH_VOLTAGE_SVC_STANDBY, "
+               "LOW_VOLTAGE_REMOTE_CONTROL, HIGH_VOLTAGE_REMOTE_CONTROL.")
         .value("SOLVER", ViolationCategory::SOLVER,
                "Not a limit at all: what the solver did. A divergence in particular says "
                "nothing about the grid -- the state may be perfectly feasible and the algorithm "

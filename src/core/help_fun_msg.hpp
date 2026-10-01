@@ -592,6 +592,8 @@ struct LS2G_API DocLSGrid
     static const std::string set_init_vm_pu;
     static const std::string get_init_vm_pu;
     static const std::string set_keep_vinit_at_group_controlled_buses;
+    static const std::string set_remote_voltage_control_vm_range;
+    static const std::string get_remote_voltage_control_vm_range;
     static const std::string get_keep_vinit_at_group_controlled_buses;
     static const std::string set_hold_frozen_regulators;
     static const std::string get_hold_frozen_regulators;

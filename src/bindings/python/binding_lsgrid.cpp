@@ -126,6 +126,12 @@ void bind_gridmodel(py::module_& m) {
              py::arg("keep"), DocLSGrid::set_keep_vinit_at_group_controlled_buses.c_str())
         .def("get_keep_vinit_at_group_controlled_buses", &LSGrid::get_keep_vinit_at_group_controlled_buses,
              DocLSGrid::get_keep_vinit_at_group_controlled_buses.c_str())
+        .def("set_remote_voltage_control_vm_range", &LSGrid::set_remote_voltage_control_vm_range,
+             py::arg("min_vm_pu"), py::arg("max_vm_pu"), DocLSGrid::set_remote_voltage_control_vm_range.c_str())
+        .def("get_remote_voltage_control_min_vm_pu", &LSGrid::get_remote_voltage_control_min_vm_pu,
+             DocLSGrid::get_remote_voltage_control_vm_range.c_str())
+        .def("get_remote_voltage_control_max_vm_pu", &LSGrid::get_remote_voltage_control_max_vm_pu,
+             DocLSGrid::get_remote_voltage_control_vm_range.c_str())
         .def("set_hold_frozen_regulators", &LSGrid::set_hold_frozen_regulators,
              py::arg("hold"), DocLSGrid::set_hold_frozen_regulators.c_str())
         .def("get_hold_frozen_regulators", &LSGrid::get_hold_frozen_regulators,

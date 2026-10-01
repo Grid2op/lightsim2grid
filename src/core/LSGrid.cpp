@@ -19,6 +19,7 @@
 #include "batch_algorithm/GenPCheck.hpp"
 #include "batch_algorithm/GenPvReleaseCheck.hpp"
 #include "batch_algorithm/SvcStandbyCheck.hpp"
+#include "batch_algorithm/RemoteVoltageControlCheck.hpp"
 #include "batch_algorithm/HvdcPCheck.hpp"
 // ... and the operational ones (LSGrid::get_violations)
 #include "batch_algorithm/OperationalCheck.hpp"
@@ -36,6 +37,8 @@ LSGrid::LSGrid(const LSGrid & other)
     init_vm_pu_ = other.init_vm_pu_;
     keep_vinit_group_controlled_ = other.keep_vinit_group_controlled_;
     hold_frozen_regulators_ = other.hold_frozen_regulators_;
+    remote_vc_min_vm_pu_ = other.remote_vc_min_vm_pu_;
+    remote_vc_max_vm_pu_ = other.remote_vc_max_vm_pu_;
     sn_mva_ = other.sn_mva_;
     compute_results_ = other.compute_results_;
     ac_cache_.allow_reuse = other.ac_cache_.allow_reuse;
@@ -2821,6 +2824,20 @@ slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatc
     return report;
 }
 
+void LSGrid::set_remote_voltage_control_vm_range(real_type min_vm_pu, real_type max_vm_pu){
+    // NaN switches a side off; a finite bound must be positive, and the range not empty
+    if((std::isfinite(min_vm_pu) && min_vm_pu <= 0.) || (std::isfinite(max_vm_pu) && max_vm_pu <= 0.) ||
+       std::isinf(min_vm_pu) || std::isinf(max_vm_pu) ||
+       (std::isfinite(min_vm_pu) && std::isfinite(max_vm_pu) && min_vm_pu >= max_vm_pu)){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::set_remote_voltage_control_vm_range: expected 0 < min_vm_pu < max_vm_pu "
+                "(or NaN to switch a side off), got [" << min_vm_pu << ", " << max_vm_pu << "].";
+        throw std::runtime_error(exc_.str());
+    }
+    remote_vc_min_vm_pu_ = min_vm_pu;
+    remote_vc_max_vm_pu_ = max_vm_pu;
+}
+
 std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type tol_mva, real_type tol_vm_pu) const{
     const char * fun_name = "LSGrid::get_physical_violations";
     const SolverBusLayout & layout = ac ? static_cast<const SolverBusLayout &>(ac_cache_)
@@ -2875,6 +2892,14 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
         if(!standby_plan.empty()){
             svc_standby_check::check_svc_standby_violations(standby_plan, algo.get_V(), tol_vm_pu,
                                                             no_mask, out);
+        }
+        // the generators holding a remote bus from an unrealistic voltage of their own
+        remote_voltage_control_check::RemoteVoltageControlPlan remote_plan;
+        remote_voltage_control_check::build_remote_voltage_control_plan(
+            *this, layout.id_me_to_solver, ac_cache_.voltage_control.controllers(), remote_plan);
+        if(!remote_plan.empty()){
+            remote_voltage_control_check::check_remote_voltage_control_violations(
+                remote_plan, algo.get_V(), tol_vm_pu, no_mask, [](int){ return false; }, out);
         }
     }
     hvdc_p_check::HvdcPPlan hvdc_plan;

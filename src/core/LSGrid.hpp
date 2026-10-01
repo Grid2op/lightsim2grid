@@ -20,6 +20,7 @@
 #include <cstdint> // for int32
 #include <chrono>
 #include <cmath>  // for PI
+#include <limits>  // std::numeric_limits (NaN defaults)
 
 #include "Utils.hpp"
 #include "SolverSideCache.hpp"
@@ -148,6 +149,8 @@ class LS2G_API LSGrid final
           init_vm_pu_(1.04),
           keep_vinit_group_controlled_(false),
           hold_frozen_regulators_(false),
+          remote_vc_min_vm_pu_(std::numeric_limits<real_type>::quiet_NaN()),
+          remote_vc_max_vm_pu_(std::numeric_limits<real_type>::quiet_NaN()),
           sn_mva_(1.0),
           max_nb_bus_per_sub_(2){
             _algo.change_algorithm(AlgorithmType::NR_SparseLU);
@@ -419,6 +422,23 @@ class LS2G_API LSGrid final
          */
         void set_keep_vinit_at_group_controlled_buses(bool keep) noexcept {keep_vinit_group_controlled_ = keep;}
         [[nodiscard]] bool get_keep_vinit_at_group_controlled_buses() const noexcept {return keep_vinit_group_controlled_;}
+
+        /**
+         * The range of voltage (pu of its own bus' nominal voltage) a generator regulating a
+         * REMOTE bus may sit at, for the physical checks (see RemoteVoltageControlCheck.hpp):
+         * a remote controller whose own bus ends up below `min_vm_pu` or above `max_vm_pu` is
+         * reported as LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL by
+         * get_physical_violations and every batch's compute_physical_violations. This mirrors
+         * OpenLoadFlow's "robust" remote voltage control, which switches such a controller to
+         * PQ: there the range is [minRealisticVoltage * 1.02, maxRealisticVoltage / 1.02].
+         *
+         * Never read by a powerflow. NaN (the default) on both sides: no check. A NaN on one
+         * side only checks the other. Copied with the grid, so a batch algorithm built from
+         * this grid inherits it; not part of `get_state` / the binary format.
+         */
+        void set_remote_voltage_control_vm_range(real_type min_vm_pu, real_type max_vm_pu);
+        [[nodiscard]] real_type get_remote_voltage_control_min_vm_pu() const noexcept {return remote_vc_min_vm_pu_;}
+        [[nodiscard]] real_type get_remote_voltage_control_max_vm_pu() const noexcept {return remote_vc_max_vm_pu_;}
 
         /**
          * Keep, in the voltage-control group it would join, every generator an outer
@@ -2960,6 +2980,8 @@ class LS2G_API LSGrid final
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
         bool keep_vinit_group_controlled_;  // see set_keep_vinit_at_group_controlled_buses
         bool hold_frozen_regulators_;  // see set_hold_frozen_regulators
+        real_type remote_vc_min_vm_pu_;  // see set_remote_voltage_control_vm_range
+        real_type remote_vc_max_vm_pu_;  // see set_remote_voltage_control_vm_range
         real_type sn_mva_;
 
         // powersystem representation
