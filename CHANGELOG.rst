@@ -207,6 +207,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] An SVC carrying a standby automaton has its susceptance range shifted by the automaton's
+  ``b0`` (``init_from_pypowsybl`` and ``bake_outer_loops``), as OpenLoadFlow holds that ``b0`` apart.
 - [FIXED] ``bake_outer_loops`` freezes a generator with too small a reactive range sharing its
   regulated bus with a controller OpenLoadFlow keeps; it was left regulating.
 - [ADDED] ``LSGrid.set_remote_voltage_control_vm_range``: a generator holding a remote bus from an

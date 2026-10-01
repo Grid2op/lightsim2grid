@@ -33,6 +33,7 @@ from lightsim2grid.timeSerie import TimeSeriesCPP
 try:
     import pypowsybl as pp
     import pypowsybl.loadflow as lf
+    import pypowsybl.report as rp
     from lightsim2grid.network import bake_outer_loops, init_from_pypowsybl
     HAS_PYPOWSYBL = True
 except ImportError:
@@ -358,6 +359,57 @@ class TestSvcStandbyFromPypowsybl(unittest.TestCase):
                 self.assertEqual(viols[0].name, "SVC")
                 limit = self.HIGH_KV if expected == LimitViolationType.HIGH_VOLTAGE_SVC_STANDBY else self.LOW_KV
                 self.assertAlmostEqual(viols[0].limit, limit, places=6)
+
+
+@unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
+class TestSvcStandbyB0Range(unittest.TestCase):
+    """An SVC carrying a standby automaton, in standby or not: OpenLoadFlow models its b0 as
+    a fixed susceptance apart from the SVC, whose own susceptance stays in [b_min, b_max] --
+    so the total output (what pypowsybl reports and lightsim2grid models) ranges over
+    [b_min + b0, b_max + b0]."""
+    V_KV = 400.
+
+    def _net(self, b0_mvar):
+        # the four substations SVC holds its bus producing a bit more than 12.5 MVAr
+        n = pp.network.create_four_substations_node_breaker_network()
+        n.update_static_var_compensators(id="SVC", b_max=15. / self.V_KV ** 2, b_min=-15. / self.V_KV ** 2)
+        n.create_extensions("standbyAutomaton", id="SVC", b0=b0_mvar / self.V_KV ** 2, standby=False,
+                            low_voltage_threshold=380., low_voltage_setpoint=390.,
+                            high_voltage_threshold=420., high_voltage_setpoint=410.)
+        return n
+
+    def _olf_switches(self, n):
+        report = rp.ReportNode()
+        lf.run_ac(n, lf.Parameters(), report_node=report)
+        return any("Switch bus" in line for line in str(report).splitlines())
+
+    def _ls_high_q(self, n):
+        grid = init_from_pypowsybl(n, sort_index=True)
+        assert grid.ac_pf(np.ones(grid.total_bus(), dtype=complex), 30, 1e-10).shape[0] > 0
+        return [el for el in grid.get_physical_violations(True, 0., 0.)
+                if el.violation_type == LimitViolationType.HIGH_Q]
+
+    def test_reported_where_olf_switches(self):
+        # an inductive b0 asks the SVC part for more than its b_max: OLF switches it; a
+        # capacitive one leaves it room
+        for b0_mvar, switched in [(0., False), (-5., True), (5., False)]:
+            self.assertEqual(self._olf_switches(self._net(b0_mvar)), switched, f"b0 {b0_mvar}")
+            viols = self._ls_high_q(self._net(b0_mvar))
+            self.assertEqual(len(viols) == 1, switched, f"b0 {b0_mvar}")
+            if switched:
+                self.assertAlmostEqual(viols[0].limit, 15. + b0_mvar, places=3)
+
+    def test_bake_freezes_the_svc_at_its_shifted_limit(self):
+        # OLF switched it at the shifted limit: the bake must see it there and freeze it
+        n = self._net(-5.)
+        lf.run_ac(n, lf.Parameters())
+        v_ref = n.get_buses()["v_mag"].copy()
+        bake_outer_loops(n)
+        self.assertEqual(n.get_static_var_compensators().loc["SVC", "regulation_mode"], "REACTIVE_POWER")
+        from lightsim2grid.network import remove_outer_loops
+        res = lf.run_ac(n, remove_outer_loops(lf.Parameters()))
+        self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+        self.assertLess((n.get_buses()["v_mag"] - v_ref).abs().max(), 1e-2)
 
 
 if __name__ == "__main__":

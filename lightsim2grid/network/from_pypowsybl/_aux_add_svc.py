@@ -32,6 +32,26 @@ def _aux_svc_can_be_pv_flags(can_be_pv, svc_index):
     return flags if flags.any() else None
 
 
+def _svc_standby_b0(net, svc_index):
+    """The ``b0`` (S) of the ``standbyAutomaton`` extension of each SVC of ``svc_index``, 0
+    for an SVC without it, as a ``numpy`` array.
+
+    OpenLoadFlow models an SVC carrying that extension as its ``b0``, a fixed susceptance,
+    PLUS the SVC itself -- in standby or not -- and holds the SVC's own susceptance in
+    ``[b_min, b_max]``: its ``ReactiveLimits`` loop compares what the SVC part produces with
+    those limits. The SVC's total output, the one pypowsybl reports and the one
+    lightsim2grid models, can therefore only range over ``[b_min + b0, b_max + b0]``."""
+    b0 = np.zeros(len(svc_index))
+    try:
+        automaton = net.get_extensions("standbyAutomaton")
+    except Exception:  # noqa: BLE001 - extension unsupported / absent on old pypowsybl
+        return b0
+    if automaton is None or not automaton.shape[0] or "b0" not in automaton.columns:
+        return b0
+    val = automaton["b0"].reindex(pd.Index(svc_index)).to_numpy(float)
+    return np.where(np.isfinite(val), val, 0.)
+
+
 def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used,
                  can_be_pv=None):
     """Add every Static Var Compensator (SVC) of ``net`` to ``model``: VOLTAGE
@@ -140,8 +160,12 @@ def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_v
         # in SIEMENS even under `per_unit=True` -- it only per-units `target_v`
         # (and, generically, elements it fully models) -- so relying on it here
         # would silently reintroduce this exact bug.
-        b_min = df_svc["b_min"].values.astype(float) * (svc_reg_vn ** 2) / sn_mva_used
-        b_max = df_svc["b_max"].values.astype(float) * (svc_reg_vn ** 2) / sn_mva_used
+        # An SVC carrying a standby automaton: OpenLoadFlow holds the SVC part apart from
+        # the automaton's fixed b0, so the total output lightsim2grid models ranges over the
+        # shifted interval (see `_svc_standby_b0`).
+        b0 = _svc_standby_b0(net, df_svc.index)
+        b_min = (df_svc["b_min"].values.astype(float) + b0) * (svc_reg_vn ** 2) / sn_mva_used
+        b_max = (df_svc["b_max"].values.astype(float) + b0) * (svc_reg_vn ** 2) / sn_mva_used
     else:
         target_vm_pu = np.zeros(0)
         b_min = np.zeros(0)

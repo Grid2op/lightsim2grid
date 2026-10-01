@@ -112,7 +112,8 @@ What gets baked
   a static distribution that gives them one is wrong by exactly that share.
 * Static var compensators whose realized reactive output sits at (or beyond)
   their voltage-dependent susceptance envelope (``Q(V) = b * V^2``, ``b`` in
-  ``b_min``..``b_max``, recomputed in MVAr at the SVC's own solved terminal
+  ``b_min``..``b_max``, shifted by the ``b0`` of its standby automaton when it carries
+  one, recomputed in MVAr at the SVC's own solved terminal
   voltage) are frozen to fixed-Q (``REACTIVE_POWER`` mode), with the generator
   rule: the tolerance only proposes a candidate, and an SVC whose regulated bus
   the reference solve held at its target was regulating and is left so, unless
@@ -169,6 +170,7 @@ from ._olf_const import (
     _Q_SATURATED_HELD_TOL_MVAR,
 )
 from ._aux_add_hvdc import _hvdc_pmax_per_direction
+from ._aux_add_svc import _svc_standby_b0
 
 
 def _q_limit_tol(qmin, qmax):
@@ -1212,7 +1214,8 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
     with the same rule as ``_bake_reactive_limit_switches`` for generators.
 
     Unlike a generator's fixed Q box, an SVC's reactive range is
-    ``Q(V) = b * V^2`` (``b`` in ``b_min``..``b_max``, in Siemens): recompute
+    ``Q(V) = b * V^2`` (``b`` in ``b_min``..``b_max``, in Siemens, shifted by the ``b0`` of
+    its standby automaton when it carries one, see ``_svc_standby_b0``): recompute
     ``qmin``/``qmax`` in MVAr at the SVC's own solved terminal voltage before
     comparing against the realized ``q``, within ``_q_limit_tol``.
 
@@ -1243,8 +1246,11 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
     # SVC "q" (like generators') is the terminal/receptor-convention result: flip to
     # generator/injection convention to compare against the susceptance envelope.
     q_gen = -svc["q"].to_numpy()
-    qmax = svc["b_max"].to_numpy() * v_kv ** 2  # Q[MVAr] = B[S] * V[kV]^2
-    qmin = svc["b_min"].to_numpy() * v_kv ** 2
+    # an SVC carrying a standby automaton: OLF holds the SVC part, apart from the fixed b0,
+    # in [b_min, b_max], so its total output ranges over the shifted interval
+    b0 = _svc_standby_b0(network, svc.index)
+    qmax = (svc["b_max"].to_numpy() + b0) * v_kv ** 2  # Q[MVAr] = B[S] * V[kV]^2
+    qmin = (svc["b_min"].to_numpy() + b0) * v_kv ** 2
     tol = _q_limit_tol(qmin, qmax)
     mask = (q_gen >= qmax - tol) | (q_gen <= qmin + tol)
     if mask.any():
