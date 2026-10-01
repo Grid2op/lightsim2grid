@@ -211,6 +211,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   active power limit per direction, like OpenLoadFlow, instead of ``max_p``.
 - [ADDED] ``bake_outer_loops(bake_hvdc_ac_emulation_limits=True)`` freezes an AC-emulation hvdc line
   OpenLoadFlow saturated to a fixed setpoint at its limit.
+- [FIXED] ``init_from_pypowsybl`` reads the reactive limits of a VSC converter station with a
+  capability curve at its target P; it was left unlimited.
 - [FIXED] ``bake_saturated_voltage_control`` no longer freezes a unit OpenLoadFlow still regulates
   with some reactive headroom left, only one at its limit.
 - [ADDED] ``LSGrid.set_hold_frozen_regulators``: a frozen (``can_be_pv``) remote regulator keeps

@@ -50,7 +50,9 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         df_dc = net.get_hvdc_lines().sort_index()
     else:
         df_dc = net.get_hvdc_lines()
-    df_vsc = net.get_vsc_converter_stations()
+    # all_attributes: the capability curve at the target P (min_q_at_target_p...) is not a
+    # default column
+    df_vsc = net.get_vsc_converter_stations(all_attributes=True)
     df_lcc = net.get_lcc_converter_stations()
     # the vsc / lcc frames have different columns (target_v / power_factor...):
     # the concatenation puts NaN where an attribute does not exist for a type
@@ -76,9 +78,16 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         vset_pu = np.where(np.isfinite(vset_pu), vset_pu, 1.0)
         qset = df_side["target_q"].values
         qset = np.where(np.isfinite(qset), qset, 0.)
-        min_q = df_side["min_q"].values
+        # as for the generators (see `_aux_add_generators.py`): "min_q" / "max_q" are NaN
+        # for a station whose reactive_limits_kind is CURVE, its limits are the curve at
+        # its target P -- read alone, such a station was unlimited
+        no_curve = pd.Series(np.nan, index=df_side.index)
+        min_q = df_side.get("min_q_at_target_p", no_curve).fillna(df_side["min_q"]).to_numpy(float)
+        max_q = df_side.get("max_q_at_target_p", no_curve).fillna(df_side["max_q"]).to_numpy(float)
+        # malformed curve data can give min_q > max_q at the target P (as for the generators)
+        swapped = np.isfinite(min_q) & np.isfinite(max_q) & (min_q > max_q)
+        min_q[swapped], max_q[swapped] = max_q[swapped], min_q[swapped].copy()
         min_q = np.where(np.isfinite(min_q), min_q, -_max_hvdc_mva)
-        max_q = df_side["max_q"].values
         max_q = np.where(np.isfinite(max_q), max_q, _max_hvdc_mva)
         power_factor = df_side["power_factor"].values
         power_factor = np.where(np.isfinite(power_factor), power_factor, 1.0)

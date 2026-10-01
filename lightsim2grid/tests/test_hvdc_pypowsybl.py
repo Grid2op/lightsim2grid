@@ -146,6 +146,18 @@ class TestHvdcPypowsybl(unittest.TestCase):
         self.assertEqual(h.pmax_1to2_mw, 12.0)
         self.assertEqual(h.pmax_2to1_mw, 8.0)
 
+    def test_vsc_curve_reactive_limits(self):
+        # a station whose reactive limits are a capability curve has NaN min_q / max_q:
+        # its limits are the curve at its target P (as for a generator), not "unlimited"
+        n = _build_net(droop_enabled=False)
+        n.create_curve_reactive_limits(id=["VSC2", "VSC2"], p=[0.0, 200.0],
+                                       min_q=[-40.0, -40.0], max_q=[30.0, 30.0])
+        self.assertEqual(n.get_vsc_converter_stations().loc["VSC2", "reactive_limits_kind"], "CURVE")
+        model, _ = self._run_ls(n)
+        st = model.get_dclines()[0].station2
+        self.assertEqual(st.min_q_mvar, -40.0)
+        self.assertEqual(st.max_q_mvar, 30.0)
+
     def test_beyond_operator_range_is_reported(self):
         # in its linear regime the line transmits more than its operator range (but less
         # than max_p): a physical violation against the operator range
