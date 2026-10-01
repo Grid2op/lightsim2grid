@@ -209,6 +209,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 --------------------
 - [FIXED] ``init_from_pypowsybl`` reads an hvdc line's ``hvdcOperatorActivePowerRange`` as its
   active power limit per direction, like OpenLoadFlow, instead of ``max_p``.
+- [ADDED] ``bake_outer_loops(bake_hvdc_ac_emulation_limits=True)`` freezes an AC-emulation hvdc line
+  OpenLoadFlow saturated to a fixed setpoint at its limit.
 - [ADDED] ``LSGrid.set_hold_frozen_regulators``: a frozen (``can_be_pv``) remote regulator keeps
   its seat in its voltage-control group, held at its frozen output -- same solution, releasable by
   value.

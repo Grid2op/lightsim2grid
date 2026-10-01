@@ -927,5 +927,41 @@ class TestOlfBake(unittest.TestCase):
         # saturated for real: the target is not held
         self.assertEqual(_baked_mode(10.), "REACTIVE_POWER")
 
+    def test_olf_hvdc_saturated_at_its_limit_baked(self):
+        """An angle-droop hvdc line OLF saturated at its operator range is baked as a fixed
+        setpoint at that limit, in the direction it flowed: the loop-free re-solve then
+        reproduces the reference. A line in its linear regime keeps its droop."""
+        from test_hvdc_pypowsybl import _build_net, add_operator_range
+        loop_free = remove_outer_loops(_with_loops_params())
+        # p0 sets the direction of the flow; (12, 8) MW is well below what the droop asks
+        for p0, opr, mode, limit in [(20.0, (12.0, 8.0), "SIDE_1_RECTIFIER_SIDE_2_INVERTER", 12.0),
+                                     (-200.0, (12.0, 8.0), "SIDE_1_INVERTER_SIDE_2_RECTIFIER", 8.0),
+                                     (20.0, (500.0, 500.0), None, None)]:
+            def make():
+                n = add_operator_range(_build_net(max_p=300.0), *opr)
+                n.update_extensions("hvdcAngleDroopActivePowerControl", id="HVDC", p0=p0)
+                return n
+            n_ref = make()
+            lf.run_ac(n_ref, _with_loops_params())
+            p_ref = n_ref.get_vsc_converter_stations()["p"]
+
+            n = make()
+            lf.run_ac(n, _with_loops_params())
+            bake_outer_loops(n)
+            droop_on = bool(n.get_extensions("hvdcAngleDroopActivePowerControl").loc["HVDC", "enabled"])
+            hvdc = n.get_hvdc_lines().loc["HVDC"]
+            if limit is None:
+                self.assertTrue(droop_on, "a line in its linear regime must keep its droop")
+                continue
+            self.assertFalse(droop_on)
+            self.assertEqual(hvdc["converters_mode"], mode)
+            self.assertAlmostEqual(hvdc["target_p"], limit, places=6)
+            self.assertAlmostEqual(p_ref.max(), limit, places=6)  # what the rectifier took
+            res = lf.run_ac(n, loop_free)
+            self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+            p_baked = n.get_vsc_converter_stations()["p"]
+            self.assertLess((p_baked - p_ref).abs().max(), 1e-4)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -82,3 +82,10 @@ _TARGET_V_HELD_TOL_PU = 1e-8
 # deemed to be its target_q: a PQ injection is reproduced to the digit, whatever the
 # Newton-Raphson tolerance, well below the smallest clamp seen on real grid snapshots.
 _TARGET_Q_TOL_MVAR = 1e-6
+
+# Tolerance (MW) for deciding an angle-droop hvdc line sits "at" its active power limit:
+# OLF's ``AcHvdcAcEmulationLimits`` outer loop does not solve the saturated line to a
+# tolerance, it imposes the limit as the sending converter's setpoint, so the realized
+# flow reproduces the limit to float rounding, while a line still in the linear regime
+# lands anywhere along its droop.
+_HVDC_P_LIMIT_TOL_MW = 1e-4

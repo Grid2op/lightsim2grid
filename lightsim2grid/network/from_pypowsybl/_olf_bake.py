@@ -119,6 +119,12 @@ What gets baked
   inside its range, or ``bake_saturated_voltage_control`` is set. An SVC inside
   its envelope is left regulating (its target reproduces the OLF result
   exactly, since it isn't saturated).
+* Angle-droop ("AC emulation") hvdc lines OLF's ``AcHvdcAcEmulationLimits`` outer
+  loop saturated: the sending converter's realized active power sits at the line's
+  limit in that direction (``hvdcOperatorActivePowerRange`` when present, ``max_p``
+  otherwise). The droop is switched off and the line becomes a fixed setpoint at
+  that limit, in that direction (see :func:`_bake_hvdc_ac_emulation_limits`). A
+  line still in its linear regime keeps its droop.
 * Voltage-regulating static var compensators carrying a "standby automaton"
   (``standby=True``; OLF ignores the extension on any other SVC): OLF's own
   outer loop starts these as a fixed ``b0`` shunt (no voltage control) and only
@@ -157,7 +163,9 @@ from ._olf_const import (
     _TARGET_Q_TOL_MVAR,
     _TARGET_V_HELD_TOL_PU,
     _ZERO_P_TOL,
+    _HVDC_P_LIMIT_TOL_MW,
 )
+from ._aux_add_hvdc import _hvdc_pmax_per_direction
 
 
 def _q_limit_tol(qmin, qmax):
@@ -272,6 +280,7 @@ def bake_outer_loops(
     keep_only_main_comp: bool=True,
     extrapolate_reactive_limits: bool = True,
     bake_saturated_voltage_control: bool = False,
+    bake_hvdc_ac_emulation_limits: bool = True,
     return_details: bool = False,
 ):
     """Rewrite ``network`` input setpoints to the converged outer-loop state.
@@ -334,6 +343,10 @@ def bake_outer_loops(
         asking it for more reactive power would make OLF switch it to PQ anyway;
         kept regulating, it reports a reactive-limit violation for almost every
         contingency. ``False`` (default) keeps it regulating, as OLF did.
+    bake_hvdc_ac_emulation_limits
+        Turn an angle-droop hvdc line OLF saturated at its active power limit into a
+        fixed setpoint at that limit (see :func:`_bake_hvdc_ac_emulation_limits`).
+        Left in AC emulation, a loop-free solve lets it transmit beyond its limit.
     return_details
         Return a :class:`BakeResult` rather than the :class:`pandas.Index` described
         below: ``can_be_pv`` is that same index, and ``can_participate_slack`` holds the
@@ -383,6 +396,8 @@ def bake_outer_loops(
     pinned = pd.Index([], dtype=object)
     if bake_taps:
         _bake_taps_and_sections(network, keep_only_main_comp, df_bus)
+    if bake_hvdc_ac_emulation_limits:
+        _bake_hvdc_ac_emulation_limits(network, keep_only_main_comp, df_bus)
     if bake_reactive_limits:
         pinned = _bake_reactive_limit_switches(
             network, keep_only_main_comp, bake_generator_voltage_control_discards,
@@ -464,6 +479,66 @@ def _bake_taps_and_sections(network, keep_only_main_comp=True, df_bus=None):
             upd["section_count"] = sh["solved_section_count"][keep].astype(int)
             upd["voltage_regulation_on"] = False
             network.update_shunt_compensators(upd)
+
+
+def _bake_hvdc_ac_emulation_limits(network, keep_only_main_comp=True, df_bus=None):
+    """Turn every angle-droop ("AC emulation") hvdc line OLF saturated into a fixed
+    setpoint at its limit.
+
+    OLF's ``AcHvdcAcEmulationLimits`` outer loop caps the active power the sending
+    converter takes from the AC grid at the line's limit in that direction: the
+    ``hvdcOperatorActivePowerRange`` extension when the line carries it, ``max_p``
+    otherwise (see ``_hvdc_pmax_per_direction``). The loop-free parameters drop that
+    loop, so the line goes back to ``p0 + k . (theta_1 - theta_2)`` and transmits
+    beyond its limit; lightsim2grid does the same.
+
+    A line is saturated when its sending converter (the station taking power from the
+    grid, ``p > 0`` in the receptor convention) realized its limit within
+    ``_HVDC_P_LIMIT_TOL_MW``. It is then baked as OLF solved it: droop switched off,
+    ``target_p`` at the limit, ``converters_mode`` with the sending side as rectifier
+    (a fixed-setpoint line's ``target_p`` is what its rectifier takes from the grid).
+
+    Returns the ids of the hvdc lines baked.
+    """
+    df_bus = _get_buses(network) if df_bus is None else df_bus
+    try:
+        droop = network.get_extensions("hvdcAngleDroopActivePowerControl")
+    except Exception:
+        # extension tables may be unavailable on (very) old pypowsybl versions
+        return pd.Index([], dtype=object)
+    if not len(droop):
+        return pd.Index([], dtype=object)
+    hvdc = network.get_hvdc_lines(attributes=["converter_station1_id", "converter_station2_id", "max_p"])
+    hvdc = hvdc[hvdc.index.isin(droop.index[droop["enabled"].astype(bool)])]
+    if not len(hvdc):
+        return pd.Index([], dtype=object)
+    stations = pd.concat([
+        network.get_vsc_converter_stations(attributes=["p", "connected", "bus_id"]),
+        network.get_lcc_converter_stations(attributes=["p", "connected", "bus_id"]),
+    ])
+    st1 = stations.loc[hvdc["converter_station1_id"].to_numpy()]
+    st2 = stations.loc[hvdc["converter_station2_id"].to_numpy()]
+    in_service = st1["connected"].to_numpy(bool) & st2["connected"].to_numpy(bool)
+    if keep_only_main_comp:
+        comp = df_bus["synchronous_component"]
+        in_service &= (st1["bus_id"].map(comp).to_numpy() == 0) & (st2["bus_id"].map(comp).to_numpy() == 0)
+    max_p = hvdc["max_p"].to_numpy(float)
+    pmax_1to2, pmax_2to1 = _hvdc_pmax_per_direction(network, hvdc.index, np.where(np.isfinite(max_p), max_p, np.inf))
+    p1 = st1["p"].to_numpy(float)
+    p2 = st2["p"].to_numpy(float)
+    from_1 = p1 > 0.  # side 1 takes the power from the grid: the flow goes 1 -> 2
+    sent = np.where(from_1, p1, p2)
+    limit = np.where(from_1, pmax_1to2, pmax_2to1)
+    mask = in_service & np.isfinite(sent) & np.isfinite(limit) & (sent >= limit - _HVDC_P_LIMIT_TOL_MW)
+    if mask.any():
+        ids = hvdc.index[mask]
+        upd = pd.DataFrame(index=ids)
+        upd["target_p"] = limit[mask]
+        upd["converters_mode"] = np.where(from_1[mask], "SIDE_1_RECTIFIER_SIDE_2_INVERTER",
+                                          "SIDE_1_INVERTER_SIDE_2_RECTIFIER")
+        network.update_hvdc_lines(upd)
+        network.update_extensions("hvdcAngleDroopActivePowerControl", id=list(ids), enabled=[False] * len(ids))
+    return pd.Index(hvdc.index[mask], dtype=object)
 
 
 def _resolve_regulated_bus(network, own_bus, regulated_element_id):
