@@ -15,6 +15,8 @@ Covers the four regimes: angle-droop linear, fixed setpoint (VSC), fixed setpoin
 import unittest
 import numpy as np
 
+from lightsim2grid.lightsim2grid_cpp import LimitViolationType, ViolationElementType
+
 try:
     import pypowsybl as pp
     from lightsim2grid.network import init_from_pypowsybl
@@ -51,6 +53,12 @@ def _build_net(max_p=300.0, droop_enabled=True, lcc=False, target_p=50.0):
     if droop_enabled:
         n.create_extensions("hvdcAngleDroopActivePowerControl", id="HVDC",
                             p0=20.0, droop=180.0, enabled=True)
+    return n
+
+
+def add_operator_range(n, opr_from_cs1_to_cs2, opr_from_cs2_to_cs1):
+    n.create_extensions("hvdcOperatorActivePowerRange", id="HVDC",
+                        opr_from_cs1_to_cs2=opr_from_cs1_to_cs2, opr_from_cs2_to_cs1=opr_from_cs2_to_cs1)
     return n
 
 
@@ -125,6 +133,32 @@ class TestHvdcPypowsybl(unittest.TestCase):
             # agreement is ~1e-13, but other environments (CI) drift to ~1e-6. Allow that band
             # for the angle so the test tracks parity rather than a single build's rounding.
             self.assertLess(abs(np.angle(V[i]) - np.deg2rad(row["v_angle"])), 5e-6, f"saturated ang {bus_id}")
+
+    def test_operator_range_is_the_limit(self):
+        # OLF saturates an angle-droop line at its hvdcOperatorActivePowerRange, one value
+        # per direction, and only falls back on max_p without the extension
+        model, _ = self._run_ls(_build_net(max_p=300.0))
+        h = model.get_dclines()[0]
+        self.assertEqual(h.pmax_1to2_mw, 300.0)
+        self.assertEqual(h.pmax_2to1_mw, 300.0)
+        model, _ = self._run_ls(add_operator_range(_build_net(max_p=300.0), 12.0, 8.0))
+        h = model.get_dclines()[0]
+        self.assertEqual(h.pmax_1to2_mw, 12.0)
+        self.assertEqual(h.pmax_2to1_mw, 8.0)
+
+    def test_beyond_operator_range_is_reported(self):
+        # in its linear regime the line transmits more than its operator range (but less
+        # than max_p): a physical violation against the operator range
+        model, _ = self._run_ls(add_operator_range(_build_net(max_p=300.0), 12.0, 8.0))
+        h = model.get_dclines()[0]
+        self.assertGreater(-h.res_p1_mw, 12.0)
+        self.assertLess(-h.res_p1_mw, 300.0)
+        viols = [el for el in model.get_physical_violations(True, 0., 0.)
+                 if el.element_type == ViolationElementType.HVDC]
+        self.assertEqual(len(viols), 1)
+        self.assertEqual(viols[0].violation_type, LimitViolationType.HIGH_P)
+        self.assertEqual(viols[0].side, 1)
+        self.assertAlmostEqual(viols[0].limit, 12.0, places=9)
 
 
 if __name__ == "__main__":

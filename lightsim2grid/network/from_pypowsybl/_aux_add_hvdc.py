@@ -14,6 +14,29 @@ import pandas as pd
 from ._aux_common import _aux_get_bus
 
 
+def _hvdc_pmax_per_direction(net, hvdc_ids, max_p_mw):
+    """Maximum active power of each hvdc line, from side 1 to side 2 and the other way
+    (MW), as OpenLoadFlow sees them: the ``hvdcOperatorActivePowerRange`` extension when
+    the line carries it (``opr_from_cs1_to_cs2`` / ``opr_from_cs2_to_cs1``), the line's
+    own ``max_p`` in both directions otherwise. It is the limit OLF's
+    ``AcHvdcAcEmulationLimits`` outer loop saturates an angle-droop line at."""
+    pmax_1to2 = np.array(max_p_mw, dtype=float)
+    pmax_2to1 = np.array(max_p_mw, dtype=float)
+    try:
+        df_opr = net.get_extensions("hvdcOperatorActivePowerRange")
+    except Exception:
+        # extension tables may be unavailable on (very) old pypowsybl versions
+        df_opr = None
+    if df_opr is None or not df_opr.shape[0]:
+        return pmax_1to2, pmax_2to1
+    df_opr = df_opr.reindex(pd.Index(hvdc_ids))
+    for pmax, col in ((pmax_1to2, "opr_from_cs1_to_cs2"), (pmax_2to1, "opr_from_cs2_to_cs1")):
+        opr = df_opr[col].to_numpy(dtype=float)
+        has_opr = np.isfinite(opr)
+        pmax[has_opr] = opr[has_opr]
+    return pmax_1to2, pmax_2to1
+
+
 def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, can_be_pv=None):
     """Add every HVDC line of ``net`` (VSC / LCC converter stations, possibly
     carrying the angle-droop ("AC emulation") extension) to ``model``. Returns
@@ -74,6 +97,7 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
     nominal_v_kv = df_dc["nominal_v"].values.astype(float)
     max_p_mw = df_dc["max_p"].values.astype(float)
     max_p_mw = np.where(np.isfinite(max_p_mw), max_p_mw, _max_hvdc_mva)
+    pmax_1to2_mw, pmax_2to1_mw = _hvdc_pmax_per_direction(net, df_dc.index, max_p_mw)
 
     # the angle-droop active power control ("AC emulation"), an IIDM extension
     droop_enabled = np.zeros(nb_dc, dtype=bool)
@@ -112,8 +136,8 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
                           [bool(el) for el in droop_enabled],
                           droop_p0_mw,
                           droop_mw_per_deg,
-                          max_p_mw,  # pmax 1 -> 2: IIDM has a single max_p (open-loadflow convention)
-                          max_p_mw,  # pmax 2 -> 1
+                          pmax_1to2_mw,
+                          pmax_2to1_mw,
                           )
     for hvdc_id, (is_or_disc, is_ex_disc, line_conn1, line_conn2) in enumerate(
             zip(hvdc_from_disco, hvdc_to_disco, df_dc["connected1"].values, df_dc["connected2"].values)):
