@@ -335,6 +335,20 @@ void bind_gridmodel(py::module_& m) {
              "thresholds (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY), and an idle one "
              "with both set-points is switched on by the `VoltageMonitoring` outer loop of the "
              "NROuter_* algorithms.")
+        .def("set_reactive_dispatch_olf", &LSGrid::set_reactive_dispatch_olf, py::arg("val"),
+             "Split the reactive power of a bus held by several units as OpenLoadFlow does "
+             "(Q_EQUAL_PROPORTION): by their reactive keys when every one has one, else by their "
+             "widest reactive range (`set_gen_reactive_range_max`) when every one is plausible, "
+             "else equally; a unit pushed past a limit stays there and the excess is shared again, "
+             "and nothing is shared below 1e-5 pu. Results only, off by default "
+             "(`init_from_pypowsybl(olf_rules=...)` turns it on); copied with the grid, not "
+             "serialized.")
+        .def("get_reactive_dispatch_olf", &LSGrid::get_reactive_dispatch_olf)
+        .def("set_gen_reactive_range_max", &LSGrid::set_gen_reactive_range_max, py::arg("range_mvar"),
+             "The widest reactive range of each generator, MVar (over its whole capability curve), "
+             "what `set_reactive_dispatch_olf` shares by; NaN for its range at its target P. Copied "
+             "with the grid, not serialized.")
+        .def("get_gen_reactive_range_max", &LSGrid::get_gen_reactive_range_max)
         .def("set_svc_b0", &LSGrid::set_svc_b0, py::arg("b0_pu"),
              "The standby automaton's fixed susceptance of each SVC, pu (sn_mva base, at the "
              "nominal voltage of the SVC's own bus; 0 for none): a shunt at the SVC's bus, in "

@@ -74,6 +74,12 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
     # regardless of its real reactive range.
     min_q_src = df_gen["min_q_at_target_p"].where(df_gen["min_q_at_target_p"].notna(), df_gen["min_q"])
     max_q_src = df_gen["max_q_at_target_p"].where(df_gen["max_q_at_target_p"].notna(), df_gen["max_q"])
+    if olf_rules is not None:
+        # OpenLoadFlow's: the capability curve at the target P extrapolated past its ends
+        # (pypowsybl clamps it to the end points) -- the limits its ReactiveLimits loop reads
+        lo, hi = _olf_rules.generator_limits_at_target_p(
+            net, _olf_rules.generators(net).reindex(df_gen.index), olf_rules)
+        min_q_src, max_q_src = lo, hi
     min_q_aux = 1. * min_q_src.values
     max_q_aux = 1. * max_q_src.values
     # malformed source curve data (eg a reactive capability curve point entered with
@@ -88,11 +94,12 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
         min_q_aux[swapped], max_q_aux[swapped] = max_q_aux[swapped], min_q_aux[swapped].copy()
     too_small = min_q_aux < min_float_value
     min_q_aux[too_small] = min_float_value
-    min_q = min_q_aux.astype(np.float32)
+    # (with olf_rules the limits are compared to a fraction of a kvar: no float32 rounding)
+    min_q = min_q_aux if olf_rules is not None else min_q_aux.astype(np.float32)
 
     too_big = np.abs(max_q_aux) > max_float_value
     max_q_aux[too_big] = np.sign(max_q_aux[too_big]) * max_float_value
-    max_q = max_q_aux.astype(np.float32)
+    max_q = max_q_aux if olf_rules is not None else max_q_aux.astype(np.float32)
     min_q[~np.isfinite(min_q)] = min_float_value
     max_q[~np.isfinite(max_q)] = max_float_value
     gen_bus, gen_disco, gen_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "gen", df_gen)
@@ -180,6 +187,11 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
 
     # how the generators holding one bus share their reactive power: the same key OLF
     # reads (a missing or zero q_percent is no key, the reactive range then decides)
+    if olf_rules is not None:
+        # the reactive power of a bus is split between its units as OpenLoadFlow does
+        model.set_reactive_dispatch_olf(True)
+        model.set_gen_reactive_range_max(
+            _olf_rules.generator_max_reactive_range(net, df_gen.index).to_numpy(float))
     q_percent = _aux_reactive_keys(net, df_gen.index)
     for gen_id in np.flatnonzero(q_percent > 0.):
         model.set_gen_reactive_key(int(gen_id), float(q_percent[gen_id]))

@@ -842,6 +842,24 @@ class LS2G_API VoltageControl
         // set_may_mask_voltage_control / BaseAlgo::set_may_mask_voltage_control.
         void set_may_mask_voltage_control(bool val) { may_mask_ = val; }
 
+        // Gates what holding any controller by value needs (set_held_controllers): the
+        // (v_row, q_col) slot of every group's first controller, and in each sharing row an
+        // entry towards every other controller of the group, so that the reference of the
+        // sharing can be any active one. Caller-set, before the sparsity build it should
+        // affect (an outer loop's declaration, see NROuterAlgo); off, nothing changes.
+        void set_may_hold_controllers(bool val) { may_hold_ = val; }
+
+        // Hold some controllers at a reactive output by value, for the next Newton solves:
+        // an entry of `q_pu_per_controller` (in the plan's controller order) that is finite
+        // holds that controller there (its sharing row, or the group's voltage row when
+        // the whole group is held, pins it); NaN (or an empty vector) leaves it as the plan
+        // has it. Unlike a held controller of the plan, whose frozen output is already in
+        // Sbus (a frozen generator), the value is the controller's whole output, nothing of
+        // it in Sbus. Needs set_may_hold_controllers; reset by update_state().
+        void set_held_controllers(const std::vector<real_type>& q_pu_per_controller) {
+            hold_q_ = q_pu_per_controller;
+        }
+
         // Per-solve override of the groups' voltage set-points, indexed by group
         // (the grid's own plan order). A finite entry replaces that group's v_set for
         // every following solve; NaN (or an empty vector) keeps the grid's own. A
@@ -918,6 +936,7 @@ class LS2G_API VoltageControl
             h_vm_.assign(ng, -1);
             h_shareA_.assign(ng, std::vector<int>());
             h_shareB_.assign(ng, std::vector<int>());
+            h_shareRef_.assign(ng, std::vector<std::vector<int> >());
             for (int g = 0; g < ng; ++g) {
                 const int first = data_.grp_start(g);
                 const int cnt   = data_.grp_count(g);
@@ -937,7 +956,7 @@ class LS2G_API VoltageControl
                     // ... and for a group whose first controller is HELD (so all of them are,
                     // see VoltageControlSolverData::held): its voltage row is "Q_first = q"
                     if ((data_.kind(j) == VoltageControlSolverData::SVC ||
-                         (off == 0 && (may_mask_ || data_.is_held(j)))) &&
+                         (off == 0 && (may_mask_ || may_hold_ || data_.is_held(j)))) &&
                         v_row >= 0 && q_cols_[j] >= 0)
                         h_slope_[j] = sink.add(v_row, q_cols_[j]);
                 }
@@ -951,11 +970,114 @@ class LS2G_API VoltageControl
                     if (row >= 0 && col_kp1   >= 0) h_shareA_[g][k] = sink.add(row, col_kp1);
                     if (row >= 0 && col_first >= 0) h_shareB_[g][k] = sink.add(row, col_first);
                 }
+                // holding by value: each sharing row towards every other controller but the
+                // first (its own and the first one's are the two above)
+                if (may_hold_) {
+                    h_shareRef_[g].assign(cnt > 1 ? cnt - 1 : 0, std::vector<int>(cnt, -1));
+                    for (int k = 0; k < cnt - 1; ++k) {
+                        const int row = share_rows_[g][k];
+                        for (int m = 1; m < cnt; ++m) {
+                            if (m == k + 1) continue;
+                            const int col = q_cols_[first + m];
+                            if (row >= 0 && col >= 0) h_shareRef_[g][k][static_cast<std::size_t>(m)] = sink.add(row, col);
+                        }
+                    }
+                }
+            }
+        }
+
+        // held by value (set_held_controllers)
+        bool _held_by_value(int j) const {
+            return static_cast<std::size_t>(j) < hold_q_.size() && std::isfinite(hold_q_[static_cast<std::size_t>(j)]);
+        }
+        bool _held(int j) const { return data_.is_held(j) || _held_by_value(j); }
+        // the output a held controller holds, and what of it Sbus already carries
+        real_type _held_q(int j) const { return _held_by_value(j) ? hold_q_[static_cast<std::size_t>(j)] : q_held_(j); }
+        real_type _q_in_sbus(int j) const { return data_.is_held(j) ? q_held_(j) : static_cast<real_type>(0.); }
+
+        // The rows of a group when any controller may be held by value (may_hold_): with
+        // nobody active, every controller pinned at its held output (the voltage row pins
+        // the first one); otherwise the voltage row, and the sharing taken against the first
+        // ACTIVE controller `ref` -- the row of `ref` itself, which it does not need, pins
+        // the first controller when that one is held.
+        int _ref_active(int g) const {
+            const int first = data_.grp_start(g);
+            const int cnt = data_.grp_count(g);
+            const bool stranded = !group_stranded_.empty() && group_stranded_[g];
+            if (stranded) return -1;
+            for (int off = 0; off < cnt; ++off) if (!_held(first + off)) return off;
+            return -1;
+        }
+        void _fill_feature_values_holding(FeatureWriter& writer) const
+        {
+            const int ng = data_.n_groups();
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                const int ref = _ref_active(g);
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    if (h_qrow_[j] >= 0) writer.add(h_qrow_[j], static_cast<real_type>(-1.));
+                    if (h_slope_[j] >= 0) {
+                        const real_type coeff = ref >= 0 ? data_.slope(j)
+                                                         : (off == 0 ? static_cast<real_type>(1.) : static_cast<real_type>(0.));
+                        writer.add(h_slope_[j], coeff);
+                    }
+                }
+                if (h_vm_[g] >= 0) writer.add(h_vm_[g], ref >= 0 ? static_cast<real_type>(1.) : static_cast<real_type>(0.));
+                for (int k = 0; k < cnt - 1; ++k) {
+                    const int m = k + 1;  // the controller this row is the sharing row of
+                    if (ref < 0 || _held(first + m)) {
+                        if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], static_cast<real_type>(1.));
+                    } else if (m == ref) {
+                        // the first controller is held: this row pins it
+                        if (h_shareB_[g][k] >= 0) writer.add(h_shareB_[g][k], static_cast<real_type>(1.));
+                    } else {
+                        // w_ref.Q_m - w_m.Q_ref
+                        if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], data_.weight(first + ref));
+                        const int h_ref = ref == 0 ? h_shareB_[g][k] : h_shareRef_[g][k][static_cast<std::size_t>(ref)];
+                        if (h_ref >= 0) writer.add(h_ref, -data_.weight(first + m));
+                    }
+                }
+            }
+        }
+        void _fill_custom_rows_holding(Eigen::Ref<RealVect> res,
+                                       const Eigen::Ref<const RealVect>& Vm,
+                                       const Eigen::Ref<const RealVect>& dx) const
+        {
+            const int ng = data_.n_groups();
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                const int ref = _ref_active(g);
+                auto Qt = [&](int off) { return q_(first + off) + dx(q_cols_[first + off]); };
+                const bool stranded = !group_stranded_.empty() && group_stranded_[g];
+                auto held_q = [&](int off) { return stranded ? static_cast<real_type>(0.) : _held_q(first + off); };
+                if (ref < 0) {
+                    res(v_rows_[g]) -= Qt(0) - held_q(0);
+                } else {
+                    real_type vm_trial = Vm(data_.reg_bus(g));
+                    if (vm_cols_[g] >= 0) vm_trial += dx(vm_cols_[g]);
+                    real_type slope_term = static_cast<real_type>(0.);
+                    for (int off = 0; off < cnt; ++off) slope_term += data_.slope(first + off) * Qt(off);
+                    res(v_rows_[g]) -= vm_trial + slope_term - data_.v_set(g);
+                }
+                for (int k = 0; k < cnt - 1; ++k) {
+                    const int m = k + 1;
+                    if (ref < 0 || _held(first + m)) {
+                        res(share_rows_[g][k]) -= Qt(m) - held_q(m);
+                    } else if (m == ref) {
+                        res(share_rows_[g][k]) -= Qt(0) - held_q(0);
+                    } else {
+                        res(share_rows_[g][k]) -= data_.weight(first + ref) * Qt(m) - data_.weight(first + m) * Qt(ref);
+                    }
+                }
             }
         }
 
         void fill_feature_values(FeatureWriter& writer, const Eigen::Ref<const RealVect>& /*Va*/) const
         {
+            if (may_hold_) { _fill_feature_values_holding(writer); return; }
             const int ng = data_.n_groups();
             const bool have_stranded = !group_stranded_.empty();
             for (int g = 0; g < ng; ++g) {
@@ -999,7 +1121,7 @@ class LS2G_API VoltageControl
             // a held controller's frozen output is already in Sbus (it is a PQ generator
             // there): only what it moves away from it enters here
             for (int j = 0; j < nc; ++j)
-                mis(data_.bus(j)) -= cplx_type(static_cast<real_type>(0.), q_(j) + dx(q_cols_[j]) - q_held_(j));
+                mis(data_.bus(j)) -= cplx_type(static_cast<real_type>(0.), q_(j) + dx(q_cols_[j]) - _q_in_sbus(j));
         }
 
         // the bordered voltage and sharing rows
@@ -1008,6 +1130,7 @@ class LS2G_API VoltageControl
                               const Eigen::Ref<const RealVect>& Vm,
                               const Eigen::Ref<const RealVect>& dx) const
         {
+            if (may_hold_) { _fill_custom_rows_holding(res, Vm, dx); return; }
             const int ng = data_.n_groups();
             const bool have_stranded = !group_stranded_.empty();
             for (int g = 0; g < ng; ++g) {
@@ -1120,6 +1243,11 @@ class LS2G_API VoltageControl
         // (BaseBatchSweep::_maybe_prepare_masks) re-asserts it before every
         // compute(), so it never actually goes stale across a clear_jacobian().
         bool                           may_mask_ = false;
+        bool                           may_hold_ = false;    // see set_may_hold_controllers
+        std::vector<real_type>         hold_q_;              // see set_held_controllers, pu, NaN: not held
+        // handle (share_row k, q_col m) per group, sharing row, controller (-1 where none):
+        // the entries towards every other controller of the group (may_hold_)
+        std::vector<std::vector<std::vector<int> > > h_shareRef_;
         int                            my_size_;     // number of controllers
         VoltageControlSolverData       data_;        // per-solve controller data (refreshed every update_state)
         RealVect                       v_set_override_;  // per group, NaN = grid's own (see set_v_set_override)
@@ -1278,6 +1406,17 @@ public:
     void set_hvdc_status_override(const std::vector<int>& status_per_line, int keep) {
         Hvdc* hvdc = _find_extension<Hvdc>();
         if (hvdc != nullptr) hvdc->set_status_override(status_per_line, keep);
+    }
+
+    // Holding voltage controllers by value, see VoltageControl::set_may_hold_controllers /
+    // set_held_controllers. No-op without the extension.
+    void set_may_hold_voltage_controllers(bool val) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_may_hold_controllers(val);
+    }
+    void set_held_voltage_controllers(const std::vector<real_type> & q_pu_per_controller) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_held_controllers(q_pu_per_controller);
     }
 
     // Held SVCs switched on, see VoltageControl::release_held_svcs. No-op without the

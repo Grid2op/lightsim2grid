@@ -11,6 +11,8 @@ time on pypowsybl's IEEE 14-bus network, then end to end: a grid built with
 ``init_from_pypowsybl(olf_rules=True)`` solves to OpenLoadFlow's answer where the raw grid
 does not."""
 
+import os
+import sys
 import unittest
 import warnings
 
@@ -70,6 +72,45 @@ class TestOlfRules(unittest.TestCase):
         self.assertTrue(res.loc["B6-G", "discarded"])
         # and the rule can be switched off
         self.assertFalse(_discards(net, OlfLoadingParameters(zero_mw_target_not_started=False)).loc["B3-G", "discarded"])
+
+    def test_curve_extrapolated_limits_crossing(self):
+        # below the curve's first point, the extrapolated limits cross: both are their mean,
+        # as powsybl-core (hence OpenLoadFlow) gives them
+        net = _net()
+        net.create_curve_reactive_limits(id=["B8-G", "B8-G"], p=[5., 50.], min_q=[-1., 4.], max_q=[-1., 5.])
+        net.update_generators(id="B8-G", target_p=0.)
+        lo, hi = _olf_rules.generator_limits_at_target_p(net, _olf_rules.generators(net).loc[["B8-G"]])
+        # at 0 MW: min -1 - 5/45 * 5, max -1 - 6/45 * 5, crossed
+        mean = ((-1. - 5. / 45. * 5.) + (-1. - 6. / 45. * 5.)) / 2.
+        self.assertAlmostEqual(lo["B8-G"], mean)
+        self.assertAlmostEqual(hi["B8-G"], mean)
+
+    def test_vsc_station_target_p(self):
+        # what OpenLoadFlow makes each station inject: its published P (load convention)
+        net = pp.network.create_four_substations_node_breaker_network()
+        target = _olf_rules.vsc_station_target_p(net)
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from _olf_reference import reference_parameters
+        lf.run_ac(net, reference_parameters(provider={"newtonRaphsonConvEpsPerEq": "1e-10"},
+                                            distributed_slack=False, use_reactive_limits=False))
+        published = net.get_vsc_converter_stations()["p"].dropna()  # not every station has one
+        self.assertIn("VSC2", published.index)  # the inverter: the losses of both ends and the line
+        for station in published.index:
+            self.assertAlmostEqual(target[station], -published[station], places=6)
+
+    def test_curve_limits_at_p(self):
+        net = _net()
+        net.create_curve_reactive_limits(id=["B8-G"] * 3, p=[0., 50., 100.], min_q=[-10., -20., -10.],
+                                         max_q=[10., 30., 10.])
+        lo, hi = _olf_rules.curve_limits_at_p(net, ["B8-G"], [25.], [np.nan], [np.nan])
+        self.assertAlmostEqual(lo[0], -15.)  # interpolated inside the curve
+        self.assertAlmostEqual(hi[0], 20.)
+        lo, hi = _olf_rules.curve_limits_at_p(net, ["B8-G"], [120.], [np.nan], [np.nan])
+        self.assertAlmostEqual(lo[0], -6.)   # extrapolated past its end
+        self.assertAlmostEqual(hi[0], 2.)
+        lo, hi = _olf_rules.curve_limits_at_p(net, ["B8-G"], [150.], [np.nan], [np.nan])
+        self.assertAlmostEqual(lo[0], -5.)   # crossed (0 and -10): both their mean
+        self.assertAlmostEqual(hi[0], -5.)
 
     def test_reactive_range(self):
         net = _net()
@@ -189,8 +230,8 @@ class TestOlfRulesAgainstOLF(unittest.TestCase):
 
     @staticmethod
     def _olf_params(slack_bus):
-        params = lf.Parameters(distributed_slack=False, use_reactive_limits=False,
-                               read_slack_bus=False, twt_split_shunt_admittance=True)
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from _olf_reference import reference_parameters
         wanted = {"slackBusSelectionMode": "NAME", "slackBusesIds": slack_bus,
                   "outerLoopNames": "", "newtonRaphsonConvEpsPerEq": "1e-10",
                   "generatorsWithZeroMwTargetAreNotStarted": "true",
@@ -199,8 +240,8 @@ class TestOlfRulesAgainstOLF(unittest.TestCase):
         missing = {k for k in wanted if k not in known}
         if missing:
             raise unittest.SkipTest(f"this pypowsybl's OpenLoadFlow lacks {sorted(missing)}")
-        params.provider_parameters = wanted
-        return params
+        return reference_parameters(provider=wanted, distributed_slack=False, use_reactive_limits=False,
+                                    read_slack_bus=False)
 
     def _solve_ls(self, olf_rules):
         net = self._modified_net()

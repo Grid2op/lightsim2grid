@@ -390,6 +390,7 @@ def init(net : pypo.network.Network,
         can_be_pv=can_be_pv,
         ac_emulation_frozen=hvdc_ac_emulation_frozen,
         olf_vc=olf_vc,
+        olf_rules=olf_rules,
     )
 
     # storage units

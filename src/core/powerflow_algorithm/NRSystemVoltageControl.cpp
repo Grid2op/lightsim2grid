@@ -58,8 +58,9 @@ void VoltageControl::update_state(
         }
     }
     // per-solve init: the reactive injection state starts at 0 (gen convention), a held
-    // controller at the output it holds
+    // controller at the output it holds; nobody held by value yet (set_held_controllers)
     q_ = q_held_;
+    hold_q_.clear();
     // data_ is now current for this compute_pf() call -- safe to derive
     // group_stranded_ from it (see set_masked_buses / _recompute_group_stranded).
     _recompute_group_stranded();

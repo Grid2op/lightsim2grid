@@ -46,6 +46,7 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
     state_.svc_target_vm.clear();
     state_.pq_buses.clear();
     state_.vm_set.clear();
+    state_.controller_hold_q.clear();
     OuterState & state = state_;
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
@@ -155,6 +156,8 @@ bool NROuterAlgo<LinearSolver>::_solve(int max_iter, real_type tol, bool & need_
     if (!state_.svc_target_vm.empty()) {
         this->_system.release_held_svcs(state_.svc_target_vm);
     }
+    // the voltage controllers a loop holds (none: the plan's own state)
+    this->_system.set_held_voltage_controllers(state_.controller_hold_q);
     // the switchable buses: PV (pinned) unless a loop made them PQ, a caller's on top
     pinned_ = caller_pinned_;
     for (int bus : declared_switchable_) {
@@ -216,6 +219,7 @@ void NROuterAlgo<LinearSolver>::_before_init_topology()
                                declared_switchable_.end());
     switchable.insert(switchable.end(), declared_switchable_.begin(), declared_switchable_.end());
     this->_system.set_switchable_vm_buses(switchable);  // a set there: duplicates are fine
+    this->_system.set_may_hold_voltage_controllers(decl.holds_voltage_controllers());
 }
 
 template<class LinearSolver>

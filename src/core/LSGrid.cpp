@@ -8,6 +8,7 @@
 
 #include <cassert>
 #include <algorithm>  // for std::sort
+#include <map>
 #include <cstdint>    // for std::uint64_t
 
 #include "LSGrid.hpp"
@@ -99,6 +100,8 @@ LSGrid::LSGrid(const LSGrid & other)
     _dc_algo.set_config(other.get_dc_algo().get_config());
 
     dc_slack_on_can_participate_ = other.dc_slack_on_can_participate_;
+    reactive_dispatch_olf_ = other.reactive_dispatch_olf_;
+    gen_reactive_range_max_ = other.gen_reactive_range_max_;
 
     // the copy gets its own loops: a parameter changed on one grid's must not reach the other
     outer_loops_default_ = other.outer_loops_default_;
@@ -2289,20 +2292,31 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
     const GlobalBusIdVect & gen_buses = generators_.get_bus_id();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(!generators_.takes_q_residual_share(gen_id, gen_solved)) continue;
-        shares.push_back({gen_buses(gen_id).cast_int(),
-                          generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
-                          VoltageControlSolverData::GEN, gen_id});
+        QShare sh{gen_buses(gen_id).cast_int(),
+                  generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
+                  VoltageControlSolverData::GEN, gen_id};
+        sh.min_q = generators_.get_min_q(gen_id);
+        sh.max_q = generators_.get_max_q(gen_id);
+        const real_type key = generators_.get_reactive_key(gen_id);
+        if(std::isfinite(key) && key > 0.) sh.key = key;
+        sh.range_max = (gen_reactive_range_max_.size() > gen_id && std::isfinite(gen_reactive_range_max_(gen_id)))
+                       ? gen_reactive_range_max_(gen_id) : sh.span;
+        shares.push_back(sh);
     }
     const int nb_hvdc = static_cast<int>(hvdc_lines_.nb());
     for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
         for(int side = 1; side <= 2; ++side){
             const std::vector<bool> & mask = (side == 1) ? hvdc1_solved : hvdc2_solved;
             if(!hvdc_lines_.station_takes_q_residual_share(hvdc_id, side, mask)) continue;
-            shares.push_back({hvdc_lines_.get_station_bus(hvdc_id, side).cast_int(),
-                              hvdc_lines_.get_station_q_range_mvar(hvdc_id, side),
-                              side == 1 ? VoltageControlSolverData::HVDC_SIDE_1
-                                        : VoltageControlSolverData::HVDC_SIDE_2,
-                              hvdc_id});
+            QShare sh{hvdc_lines_.get_station_bus(hvdc_id, side).cast_int(),
+                      hvdc_lines_.get_station_q_range_mvar(hvdc_id, side),
+                      side == 1 ? VoltageControlSolverData::HVDC_SIDE_1
+                                : VoltageControlSolverData::HVDC_SIDE_2,
+                      hvdc_id};
+            sh.min_q = hvdc_lines_.get_station_min_q_mvar(hvdc_id, side);
+            sh.max_q = hvdc_lines_.get_station_max_q_mvar(hvdc_id, side);
+            sh.range_max = sh.span;
+            shares.push_back(sh);
         }
     }
     // a voltage-regulating storage unit pins its own bus (never a controller of the
@@ -2313,12 +2327,79 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
         const GlobalBusIdVect & storage_buses = storages_.get_bus_id();
         for(int storage_id = 0; storage_id < nb_storage; ++storage_id){
             if(!storages_.takes_q_residual_share(storage_id, storage_solved)) continue;
-            shares.push_back({storage_buses(storage_id).cast_int(),
-                              storages_.get_max_q(storage_id) - storages_.get_min_q(storage_id),
-                              VoltageControlSolverData::STORAGE, storage_id});
+            QShare sh{storage_buses(storage_id).cast_int(),
+                      storages_.get_max_q(storage_id) - storages_.get_min_q(storage_id),
+                      VoltageControlSolverData::STORAGE, storage_id};
+            sh.min_q = storages_.get_min_q(storage_id);
+            sh.max_q = storages_.get_max_q(storage_id);
+            sh.range_max = sh.span;
+            shares.push_back(sh);
         }
     }
     return shares;
+}
+
+void LSGrid::_dispatch_q_olf(const std::vector<const QShare *> & units, real_type q_mvar,
+                             real_type sn_mva, std::vector<real_type> & q_out)
+{
+    // AbstractLfBus.updateGeneratorsState / dispatchQ (OpenLoadFlow 2.3.0), in MVar
+    const real_type eps = 1e-5 * sn_mva;               // Q_DISPATCH_EPSILON, pu of its base
+    const real_type plausible = 1000.;                 // PLAUSIBLE_REACTIVE_LIMITS, MVar
+    const real_type min_range = 1., max_range = 1e4;   // PlausibleValues, MVar
+    const std::size_t n = units.size();
+    q_out.assign(n, 0.);
+    // the shares of `q` among the units `idx`: their keys, else their widest ranges, else equal
+    auto split = [&](const std::vector<std::size_t> & idx, real_type q, std::vector<real_type> & share) {
+        share.assign(idx.size(), 0.);
+        real_type sum_keys = 0.;
+        bool keyed = true;
+        for (std::size_t i : idx) { if (!std::isfinite(units[i]->key)) { keyed = false; break; } sum_keys += units[i]->key; }
+        if (keyed && sum_keys != 0.) {
+            for (std::size_t a = 0; a < idx.size(); ++a) share[a] = units[idx[a]]->key / sum_keys * q;
+            return;
+        }
+        real_type sum_ranges = 0.;
+        bool all_plausible = true;
+        for (std::size_t i : idx) {
+            const QShare & u = *units[i];
+            const real_type range = u.max_q - u.min_q;
+            if (!(std::abs(u.min_q) < plausible && std::abs(u.max_q) < plausible && range > min_range && range < max_range)) {
+                all_plausible = false;
+                break;
+            }
+            sum_ranges += u.range_max;
+        }
+        if (all_plausible && sum_ranges != 0.) {
+            for (std::size_t a = 0; a < idx.size(); ++a) share[a] = units[idx[a]]->range_max / sum_ranges * q;
+            return;
+        }
+        for (std::size_t a = 0; a < idx.size(); ++a) share[a] = q / static_cast<real_type>(idx.size());
+    };
+    std::vector<std::size_t> active(n);
+    for (std::size_t i = 0; i < n; ++i) active[i] = i;
+    real_type to_dispatch = q_mvar;
+    std::vector<real_type> share;
+    while (!active.empty() && std::abs(to_dispatch) > eps) {
+        split(active, to_dispatch, share);
+        real_type residue = 0.;
+        std::vector<std::size_t> still;
+        for (std::size_t a = 0; a < active.size(); ++a) {
+            const std::size_t i = active[a];
+            const real_type q = q_out[i] + share[a];
+            if (q < units[i]->min_q) { residue += q - units[i]->min_q; q_out[i] = units[i]->min_q; }
+            else if (q > units[i]->max_q) { residue += q - units[i]->max_q; q_out[i] = units[i]->max_q; }
+            else { q_out[i] = q; still.push_back(i); }
+        }
+        active.swap(still);
+        to_dispatch = residue;
+    }
+    // more than every unit can take (a bus kept PV to help the convergence): past the limits
+    if (n > 0 && std::abs(to_dispatch) > eps) {
+        std::vector<std::size_t> all(n);
+        for (std::size_t i = 0; i < n; ++i) all[i] = i;
+        split(all, to_dispatch, share);
+        for (std::size_t i = 0; i < n; ++i) q_out[i] += share[i];
+    }
 }
 
 void LSGrid::_split_q_residual_per_bus(const std::vector<QShare> & shares,
@@ -2370,10 +2451,17 @@ void LSGrid::_split_q_residual_per_bus(const std::vector<QShare> & shares,
         }
         const real_type eps_q = 1e-8;
         const real_type nb_here_r = static_cast<real_type>(nb_here);
+        std::vector<real_type> q_olf;
+        if(reactive_dispatch_olf_){
+            std::vector<const QShare *> units;
+            for(std::size_t k = first; k < last; ++k) units.push_back(&shares[by_bus[k] & 0xffffffffu]);
+            _dispatch_q_olf(units, q_to_absorb, sn_mva_, q_olf);
+        }
         for(std::size_t k = first; k < last; ++k){
             const QShare & sh = shares[by_bus[k] & 0xffffffffu];
             real_type q;
-            if(nb_here == 1) q = q_to_absorb;
+            if(reactive_dispatch_olf_) q = q_olf[k - first];
+            else if(nb_here == 1) q = q_to_absorb;
             else if(!all_finite) q = q_to_absorb / nb_here_r;
             else q = q_to_absorb * (sh.span + eps_q) / (total_span + nb_here_r * eps_q);
             switch(sh.kind){
@@ -2403,8 +2491,54 @@ void LSGrid::_write_back_controller_q(const RealVect & ctrl_q,
     // output of the voltage-mode controllers is solved inside the NR system (not by
     // the per-bus redistribution, which skips them -- see the masks). Pull it from the
     // AC algorithm and store it (pu -> MVAr). Empty for DC / non-NR algorithms.
+    //
+    // With set_reactive_dispatch_olf, what the controllers of one bus produce together is
+    // split between them as OpenLoadFlow splits a bus' (a controller bus is one controller
+    // there): their total is the solve's, its split OpenLoadFlow's.
+    RealVect q_mvar_out = ctrl_q * sn_mva_;
+    if(reactive_dispatch_olf_ && ctrl_q.size() > 1){
+        const GlobalBusIdVect & gen_buses = generators_.get_bus_id();
+        std::map<int, std::vector<int> > by_bus;  // grid bus -> controllers (gens / stations)
+        std::vector<QShare> units(static_cast<std::size_t>(ctrl_q.size()));
+        for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
+            const int el = ctrl_elem(i);
+            QShare & u = units[static_cast<std::size_t>(i)];
+            u.elem_id = el;
+            u.kind = ctrl_kind(i);
+            if(ctrl_kind(i) == VoltageControlSolverData::GEN){
+                u.bus_id = gen_buses(el).cast_int();
+                u.min_q = generators_.get_min_q(el);
+                u.max_q = generators_.get_max_q(el);
+                const real_type key = generators_.get_reactive_key(el);
+                if(std::isfinite(key) && key > 0.) u.key = key;
+                u.span = u.max_q - u.min_q;
+                u.range_max = (gen_reactive_range_max_.size() > el && std::isfinite(gen_reactive_range_max_(el)))
+                              ? gen_reactive_range_max_(el) : u.span;
+            } else if(ctrl_kind(i) == VoltageControlSolverData::HVDC_SIDE_1 ||
+                      ctrl_kind(i) == VoltageControlSolverData::HVDC_SIDE_2){
+                const int side = ctrl_kind(i) == VoltageControlSolverData::HVDC_SIDE_1 ? 1 : 2;
+                u.bus_id = hvdc_lines_.get_station_bus(el, side).cast_int();
+                u.min_q = hvdc_lines_.get_station_min_q_mvar(el, side);
+                u.max_q = hvdc_lines_.get_station_max_q_mvar(el, side);
+                u.span = u.max_q - u.min_q;
+                u.range_max = u.span;
+            } else {
+                continue;  // an SVC is alone in its group
+            }
+            by_bus[u.bus_id].push_back(i);
+        }
+        std::vector<real_type> q_split;
+        for(const auto & bus_ctrl : by_bus){
+            if(bus_ctrl.second.size() < 2) continue;
+            real_type total = 0.;
+            std::vector<const QShare *> here;
+            for(int i : bus_ctrl.second){ total += q_mvar_out(i); here.push_back(&units[static_cast<std::size_t>(i)]); }
+            _dispatch_q_olf(here, total, sn_mva_, q_split);
+            for(std::size_t a = 0; a < bus_ctrl.second.size(); ++a) q_mvar_out(bus_ctrl.second[a]) = q_split[a];
+        }
+    }
     for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
-        const real_type q_mvar = ctrl_q(i) * sn_mva_;
+        const real_type q_mvar = q_mvar_out(i);
         switch(ctrl_kind(i)){
             case VoltageControlSolverData::GEN:
                 generators_.set_voltage_control_q(ctrl_elem(i), q_mvar);

@@ -99,7 +99,8 @@ def generators(network):
 def curve_limits_at(network, ids, power_mw, min_q, max_q):
     """Reactive limits (generator convention, MVar) of the units ``ids`` at the active
     powers ``power_mw`` (generator convention), the capability curve being extrapolated
-    past its ends by its end segment, as OpenLoadFlow does with ``extrapolateReactiveLimits``.
+    past its ends by its end segment, as OpenLoadFlow does with ``extrapolateReactiveLimits``
+    (limits extrapolated across each other are both their mean).
 
     ``min_q`` / ``max_q`` are the limits pypowsybl reports at those powers -- clamped to the
     end points of the curve -- and are returned as is for a unit inside the P range of its
@@ -147,9 +148,85 @@ def curve_limits_at(network, ids, power_mw, min_q, max_q):
     if not keep.any():
         return qmin, qmax
     i1, i2, p1, p2, p_el, rows = i1[keep], i2[keep], p1[keep], p2[keep], p_el[keep], rows[keep]
-    qmin[rows] = qmin_pt[i1] + (qmin_pt[i2] - qmin_pt[i1]) * (p_el - p1) / (p2 - p1)
-    qmax[rows] = qmax_pt[i1] + (qmax_pt[i2] - qmax_pt[i1]) * (p_el - p1) / (p2 - p1)
+    lo = qmin_pt[i1] + (qmin_pt[i2] - qmin_pt[i1]) * (p_el - p1) / (p2 - p1)
+    hi = qmax_pt[i1] + (qmax_pt[i2] - qmax_pt[i1]) * (p_el - p1) / (p2 - p1)
+    # extrapolated limits that cross are both their mean (powsybl-core's
+    # ReactiveCapabilityCurveUtil, which OpenLoadFlow reads them through)
+    crossed = lo > hi
+    mean = (lo + hi) / 2.
+    lo = np.where(crossed, mean, lo)
+    hi = np.where(crossed, mean, hi)
+    qmin[rows] = lo
+    qmax[rows] = hi
     return qmin, qmax
+
+
+def curve_limits_at_p(network, ids, power_mw, min_q, max_q):
+    """Reactive limits (MVar) of the units ``ids`` at the active powers ``power_mw``, read on
+    their capability curve -- interpolated inside it, extrapolated past its ends by its end
+    segment, crossed extrapolated limits being their mean (powsybl-core's
+    ReactiveCapabilityCurveUtil, as OpenLoadFlow reads them). ``min_q`` / ``max_q`` are kept
+    for a unit without a curve of at least two points. Two numpy arrays aligned on ``ids``."""
+    ids = pd.Index(ids)
+    qmin = np.asarray(min_q, dtype=float).copy()
+    qmax = np.asarray(max_q, dtype=float).copy()
+    power = np.asarray(power_mw, dtype=float)
+    if not len(ids):
+        return qmin, qmax
+    try:
+        pts = network.get_reactive_capability_curve_points()
+    except Exception:  # noqa: BLE001 - no curve support in this pypowsybl
+        return qmin, qmax
+    pts = pts.loc[pts.index.get_level_values(0).isin(ids)]
+    for el_id, curve in pts.groupby(level=0):
+        curve = curve.sort_values("p")
+        if len(curve) < 2:
+            continue
+        k = ids.get_loc(el_id)
+        p = power[k]
+        if not np.isfinite(p):
+            continue
+        p_pt = curve["p"].to_numpy(float)
+        # the segment p lies on, or the end one it extrapolates
+        i = int(np.clip(np.searchsorted(p_pt, p) - 1, 0, len(p_pt) - 2))
+        p1, p2 = p_pt[i], p_pt[i + 1]
+        if p2 == p1:
+            continue
+        t = (p - p1) / (p2 - p1)
+        lo_pt = curve["min_q"].to_numpy(float)
+        hi_pt = curve["max_q"].to_numpy(float)
+        lo = lo_pt[i] + (lo_pt[i + 1] - lo_pt[i]) * t
+        hi = hi_pt[i] + (hi_pt[i + 1] - hi_pt[i]) * t
+        if lo > hi:
+            lo = hi = (lo + hi) / 2.
+        qmin[k], qmax[k] = lo, hi
+    return qmin, qmax
+
+
+def vsc_station_target_p(network):
+    """The active power (MW, generator convention) each VSC station injects, as OpenLoadFlow
+    loads it (powsybl-core's HvdcUtils.getConverterStationTargetP): the rectifier draws the
+    hvdc line's set-point, the inverter gives it back after the losses of both converters and
+    of the line (R . pDc^2 / V^2). 0 when the other station is disconnected. A
+    ``pandas.Series`` indexed by station id."""
+    vsc = network.get_vsc_converter_stations(attributes=["loss_factor", "connected"])
+    res = pd.Series(0., index=vsc.index)
+    hvdc = network.get_hvdc_lines(attributes=["converter_station1_id", "converter_station2_id",
+                                              "converters_mode", "target_p", "r", "nominal_v"])
+    for _, line in hvdc.iterrows():
+        s1, s2 = line["converter_station1_id"], line["converter_station2_id"]
+        if s1 not in vsc.index or s2 not in vsc.index:
+            continue
+        if not (bool(vsc.loc[s1, "connected"]) and bool(vsc.loc[s2, "connected"])):
+            continue
+        rect, inv = (s1, s2) if str(line["converters_mode"]) == "SIDE_1_RECTIFIER_SIDE_2_INVERTER" else (s2, s1)
+        setpoint = abs(float(line["target_p"]))
+        p_dc1 = setpoint * (1. - float(vsc.loc[rect, "loss_factor"]) / 100.)
+        v = float(line["nominal_v"])
+        p_dc2 = p_dc1 - (float(line["r"]) * p_dc1 * p_dc1 / (v * v) if v > 0. else 0.)
+        res[rect] = -setpoint
+        res[inv] = p_dc2 * (1. - float(vsc.loc[inv, "loss_factor"]) / 100.)
+    return res
 
 
 def generator_limits_at_target_p(network, gen, params=OlfLoadingParameters()):

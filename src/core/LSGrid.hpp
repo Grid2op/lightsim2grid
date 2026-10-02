@@ -488,6 +488,33 @@ class LS2G_API LSGrid final
          * batch algorithm built from this grid inherits it; not part of `get_state` / the
          * binary format.
          */
+        /**
+         * Split the reactive power of a bus held by several units as OpenLoadFlow does
+         * (AbstractLfBus.updateGeneratorsState, Q_EQUAL_PROPORTION), rather than in
+         * proportion to their reactive ranges: by their reactive keys when every one has
+         * one, else by their widest reactive range (`set_gen_reactive_range_max`) when every
+         * one is plausible, else equally; a unit pushed past a limit stays there and the
+         * excess is shared again among the others, and nothing is shared below
+         * OpenLoadFlow's Q_DISPATCH_EPSILON. Results only (nothing a powerflow solves
+         * changes), off by default; copied with the grid, not part of `get_state` / the
+         * binary format.
+         */
+        void set_reactive_dispatch_olf(bool val) { reactive_dispatch_olf_ = val; }
+        [[nodiscard]] bool get_reactive_dispatch_olf() const noexcept { return reactive_dispatch_olf_; }
+        /**
+         * The widest reactive range of each generator (MVar, over its whole capability
+         * curve, OpenLoadFlow's reactiveRangeCheckMode MAX), what set_reactive_dispatch_olf
+         * shares by; NaN (or an empty vector) for its range at its target P. Copied with the
+         * grid, not part of `get_state` / the binary format.
+         */
+        void set_gen_reactive_range_max(const Eigen::Ref<const RealVect> & range_mvar) {
+            if(range_mvar.size() != 0 && range_mvar.size() != static_cast<Eigen::Index>(generators_.nb())){
+                throw std::runtime_error("LSGrid::set_gen_reactive_range_max: one value per generator, or none.");
+            }
+            gen_reactive_range_max_ = range_mvar;
+        }
+        [[nodiscard]] Eigen::Ref<const RealVect> get_gen_reactive_range_max() const {return gen_reactive_range_max_;}
+
         void set_hold_frozen_regulators(bool hold) {
             if(hold == hold_frozen_regulators_) return;
             hold_frozen_regulators_ = hold;
@@ -2909,7 +2936,17 @@ class LS2G_API LSGrid final
             real_type span;  ///< reactive range max_q - min_q, possibly +inf
             int kind;        ///< VoltageControlSolverData::GEN / HVDC_SIDE_1 / HVDC_SIDE_2 / STORAGE
             int elem_id;
+            // what OpenLoadFlow's dispatch reads (set_reactive_dispatch_olf)
+            real_type min_q = 0.;  ///< MVar
+            real_type max_q = 0.;
+            real_type key = std::numeric_limits<real_type>::quiet_NaN();        ///< its reactive key, NaN if none
+            real_type range_max = std::numeric_limits<real_type>::quiet_NaN();  ///< its widest range, MVar
         };
+        /// OpenLoadFlow's split of one bus' reactive power between its units (see
+        /// set_reactive_dispatch_olf): `q_mvar` shared out, written into `q_out` (aligned
+        /// with `units`)
+        static void _dispatch_q_olf(const std::vector<const QShare *> & units, real_type q_mvar,
+                                    real_type sn_mva, std::vector<real_type> & q_out);
 
         /// what the elements at each bus produced, from the algorithm's own mismatch
         /// when it leaves one behind and re-derived here when it does not (AC)
@@ -3181,6 +3218,8 @@ class LS2G_API LSGrid final
             algo_controler_.tell_pv_changed();
             algo_controler_.ac_algo_controler().tell_voltage_control_changed();
         }
+        bool reactive_dispatch_olf_ = false;  // see set_reactive_dispatch_olf
+        RealVect gen_reactive_range_max_;     // see set_gen_reactive_range_max
         // see clear_outer_loops / add_outer_loop; empty and `default` until edited
         std::vector<std::shared_ptr<BaseOuterLoop> > outer_loops_;
         bool outer_loops_default_ = true;

@@ -19,6 +19,8 @@ import warnings
 import numpy as np
 import pandapower.networks as pn
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from lightsim2grid.network import init_from_pandapower
 from lightsim2grid.algorithm import ErrorType, OuterLoopStatus
 
@@ -288,13 +290,13 @@ class TestVoltageMonitoring(unittest.TestCase):
     def _olf(net):
         import pypowsybl.loadflow as lf
         from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages
-        params = lf.Parameters(distributed_slack=False, use_reactive_limits=False,
-                               read_slack_bus=False, twt_split_shunt_admittance=True)
-        params.provider_parameters = {
-            "slackBusSelectionMode": "NAME",
-            "slackBusesIds": net.get_generators().loc["B1-G", "bus_id"],
-            "outerLoopNames": "VoltageMonitoring", "svcVoltageMonitoring": "true",
-            "newtonRaphsonConvEpsPerEq": "1e-12", "maxNewtonRaphsonIterations": "50"}
+        from _olf_reference import reference_parameters
+        params = reference_parameters(
+            provider={"slackBusSelectionMode": "NAME",
+                      "slackBusesIds": net.get_generators().loc["B1-G", "bus_id"],
+                      "outerLoopNames": "VoltageMonitoring", "svcVoltageMonitoring": "true",
+                      "newtonRaphsonConvEpsPerEq": "1e-12", "maxNewtonRaphsonIterations": "50"},
+            distributed_slack=False, use_reactive_limits=False, read_slack_bus=False)
         res = lf.run_ac(net, params)[0]
         return res, iidm_bus_voltages(net)["vm_pu"], net.get_static_var_compensators().loc["SVC9", "q"]
 
@@ -380,11 +382,12 @@ class TestReactiveLimits(unittest.TestCase):
         gen = net.get_generators()
         # the unit the comparison harness (utils/olf_outer_compare.py) takes as the slack
         slack_gen = next(iter(_default_distributed_slack(net, gen)))
-        params = lf.Parameters(distributed_slack=False, use_reactive_limits=True, read_slack_bus=False)
-        params.provider_parameters = {
-            "slackBusSelectionMode": "NAME", "slackBusesIds": gen.loc[slack_gen, "bus_id"],
-            "outerLoopNames": "ReactiveLimits",
-            "newtonRaphsonConvEpsPerEq": "1e-9", "maxNewtonRaphsonIterations": "50"}
+        from _olf_reference import reference_parameters
+        params = reference_parameters(
+            provider={"slackBusSelectionMode": "NAME", "slackBusesIds": gen.loc[slack_gen, "bus_id"],
+                      "outerLoopNames": "ReactiveLimits",
+                      "newtonRaphsonConvEpsPerEq": "1e-9", "maxNewtonRaphsonIterations": "50"},
+            distributed_slack=False, use_reactive_limits=True, read_slack_bus=False)
         res = lf.run_ac(net, params)[0]
         self.assertEqual(res.status.name, "CONVERGED")
         olf_vm = iidm_bus_voltages(net)["vm_pu"]
@@ -431,6 +434,62 @@ class TestReactiveLimits(unittest.TestCase):
         self.assertAlmostEqual(loop.max_reactive_power_mismatch, 1e-6)
         with self.assertRaises(RuntimeError):
             ReactiveLimits(max_pq_pv_switch=-1)
+
+
+class TestReactiveDispatch(unittest.TestCase):
+    """LSGrid.set_reactive_dispatch_olf: the reactive power of a bus held by several units is
+    split between them as OpenLoadFlow does, against OpenLoadFlow itself (no outer loop)."""
+
+    def _net(self):
+        try:
+            import pypowsybl as pp
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        net = pp.network.create_ieee14()
+        gen = net.get_generators()
+        bus = net.get_bus_breaker_view_buses().query("voltage_level_id == 'VL2'").index[0]
+        # a high set-point: the bus needs a lot of reactive power
+        target_v = 1.06 * net.get_voltage_levels().loc["VL2", "nominal_v"]
+        net.update_generators(id="B2-G", target_v=target_v)
+        # three units on bus 2, one with a narrow range it has to stop at
+        for gen_id in ("B2-G2", "B2-G3"):
+            net.create_generators(id=gen_id, voltage_level_id="VL2", bus_id=bus, target_p=10., min_p=0.,
+                                  max_p=100., target_v=target_v, voltage_regulator_on=True)
+        # the narrow unit's range is lopsided: its share of the bus exceeds what it can produce
+        net.create_minmax_reactive_limits(id=["B2-G", "B2-G2", "B2-G3"], min_q=[-40., -10., -30.],
+                                          max_q=[50., 2., 60.])
+        return net
+
+    def test_same_split_as_olf(self):
+        import pypowsybl.loadflow as lf
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
+        net = self._net()
+        from _olf_reference import reference_parameters
+        params = reference_parameters(
+            provider={"slackBusSelectionMode": "NAME", "slackBusesIds": net.get_generators().loc["B1-G", "bus_id"],
+                      "outerLoopNames": "", "newtonRaphsonConvEpsPerEq": "1e-10"},
+            distributed_slack=False, use_reactive_limits=True, read_slack_bus=False)
+        res = lf.run_ac(net, params)[0]
+        self.assertEqual(res.status.name, "CONVERGED")
+        olf_q = net.get_generators()["q"]
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(self._net(), gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+        self.assertTrue(grid.get_reactive_dispatch_olf())
+        grid.change_algorithm(SING)
+        self.assertGreater(grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-10).shape[0], 0)
+        ls_q = {g.name: g.res_q_mvar for g in grid.get_generators()}
+        for gen_id in ("B2-G", "B2-G2", "B2-G3"):
+            self.assertAlmostEqual(ls_q[gen_id], -olf_q[gen_id], places=5)
+        # the narrow unit stopped at its limit
+        self.assertAlmostEqual(abs(ls_q["B2-G2"]), 2., places=6)
+
+        # off: the former split, by reactive range at the target P, no limit
+        grid.set_reactive_dispatch_olf(False)
+        self.assertGreater(grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-10).shape[0], 0)
+        self.assertGreater(abs({g.name: g.res_q_mvar for g in grid.get_generators()}["B2-G2"]), 2.)
 
 
 if __name__ == "__main__":

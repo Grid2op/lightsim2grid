@@ -409,7 +409,7 @@ solves, on real grid snapshots.
 | 2 | `DistributedSlack`, participation rules unified -- **done** |
 | 3 | `HvdcAcEmulationLimits` -- **done**; the snapshots rarely reach their limits, the harness's `--hvdc-limit-factor` lowers them on both engines |
 | 4 | `VoltageMonitoring` -- **done**, with OpenLoadFlow's voltage-control loading rules for SVCs, VSC stations and batteries; the harness's `--svc-thresholds-pu` moves the automata's thresholds on both engines |
-| 5 | `ReactiveLimits`, capability curves, unrealistic-voltage check -- the buses holding their own voltage (the slack bus included) **done**: switchable Vm / Q slots, pinned while PV, the frozen generation in the algorithm's injection; groups (remote controllers, SVCs), robust mode, moving limits to come |
+| 5 | `ReactiveLimits` -- **done** with limits fixed at the initial target P: local buses through switchable Vm / Q slots, group controllers held by value (`VoltageControl` holding, the sharing taken against any active controller), the robust mode; OpenLoadFlow's per-unit reactive split (`set_reactive_dispatch_olf`). Still to come: capability curves at a moving target P (with `DistributedSlack`) |
 | 6 | tap and section data model, converter, binary format |
 | 7 | `PhaseControl` |
 | 8 | `TransformerVoltageControl` |

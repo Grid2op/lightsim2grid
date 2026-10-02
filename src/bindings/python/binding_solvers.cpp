@@ -184,15 +184,24 @@ void bind_solvers(py::module_& m) {
 
     py::class_<ReactiveLimitsLoop, BaseOuterLoop, std::shared_ptr<ReactiveLimitsLoop> >(
             m, "ReactiveLimits", DocSolver::ReactiveLimitsLoop.c_str())
-        .def(py::init([](int max_pq_pv_switch, real_type max_reactive_power_mismatch) {
+        .def(py::init([](int max_pq_pv_switch, real_type max_reactive_power_mismatch, bool robust_mode,
+                         real_type min_realistic_voltage, real_type max_realistic_voltage) {
                  auto res = std::make_shared<ReactiveLimitsLoop>();
                  AlgoConfig params;
-                 params.int_params = {max_pq_pv_switch};
-                 params.real_params = {max_reactive_power_mismatch};
+                 params.int_params = {max_pq_pv_switch, robust_mode ? 1 : 0};
+                 params.real_params = {max_reactive_power_mismatch, min_realistic_voltage, max_realistic_voltage};
                  res->set_params(params);  // checks them
                  return res;
              }),
-             py::arg("max_pq_pv_switch") = 3, py::arg("max_reactive_power_mismatch") = 1e-4)
+             py::arg("max_pq_pv_switch") = 3, py::arg("max_reactive_power_mismatch") = 1e-4,
+             py::arg("robust_mode") = true, py::arg("min_realistic_voltage") = 0.8,
+             py::arg("max_realistic_voltage") = 1.2)
+        .def_readwrite("robust_mode", &ReactiveLimitsLoop::robust_mode,
+                       "OpenLoadFlow's voltageRemoteControlRobustMode")
+        .def_readwrite("min_realistic_voltage", &ReactiveLimitsLoop::min_realistic_voltage,
+                       "OpenLoadFlow's minRealisticVoltage, pu")
+        .def_readwrite("max_realistic_voltage", &ReactiveLimitsLoop::max_realistic_voltage,
+                       "OpenLoadFlow's maxRealisticVoltage, pu")
         .def_readwrite("max_pq_pv_switch", &ReactiveLimitsLoop::max_pq_pv_switch,
                        "OpenLoadFlow's reactiveLimitsMaxPqPvSwitch: how many times a bus may go back PV")
         .def_readwrite("max_reactive_power_mismatch", &ReactiveLimitsLoop::max_reactive_power_mismatch,

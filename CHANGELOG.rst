@@ -4,8 +4,8 @@ Change Log
 [TODO]
 --------
 - OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: ``DistributedSlack``,
-  ``HvdcAcEmulationLimits`` and ``VoltageMonitoring`` are there, ``ReactiveLimits`` only for the
-  buses holding their own voltage, the others are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
+  ``HvdcAcEmulationLimits``, ``VoltageMonitoring`` and ``ReactiveLimits`` are there (the latter
+  with limits fixed at the initial target P), the others are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
 - Control limits are detected but never **enforced**: ``compute_physical_violations`` reports a
   distributed-slack machine past ``get_min_p`` / ``get_max_p`` (``GenPCheck``) and a bus past its
   reactive capability (``BusQCheck``), but no algorithm reads a limit, so the solve still
@@ -239,7 +239,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``VoltageMonitoring`` outer loop: OpenLoadFlow's, switching an idle standby SVC on at its
   automaton's set-point when the voltage it monitors leaves the thresholds.
 - [ADDED] ``ReactiveLimits`` outer loop: OpenLoadFlow's, freezing a bus PQ at its units' reactive
-  limit and releasing it, so far for the buses holding their own voltage (slack bus included).
+  limit and releasing it, remote voltage control and the robust mode included.
+- [ADDED] ``LSGrid.set_reactive_dispatch_olf``: a bus' reactive power split between its units as
+  OpenLoadFlow does (results only; on with ``init_from_pypowsybl(olf_rules=...)``).
+- [FIXED] With ``olf_rules``, reactive limits are OpenLoadFlow's: a generator's capability curve
+  extrapolated at its target P (crossed limits are their mean, no float32 rounding), a VSC station's
+  read at the power it injects once the hvdc losses are counted.
 - [ADDED] ``LSGrid.set_svc_standby`` takes the automaton's set-points, ``LSGrid.set_svc_b0`` its fixed
   susceptance, a shunt carried by the SVC as in OpenLoadFlow.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 17 -> 18: ``SvcContainer`` serializes those set-points and ``b0``.

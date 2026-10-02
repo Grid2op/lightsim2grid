@@ -48,12 +48,17 @@ class LS2G_API OuterDeclaration final
         /// a bus that is PV in the labelling but may become PQ (or back) during the solve:
         /// it gets a Vm unknown and a Q equation, see Base::set_switchable_vm_buses
         void add_switchable_vm_bus(int solver_bus_id) { switchable_vm_buses_.push_back(solver_bus_id); }
+        /// any voltage controller may be held at a reactive output by value
+        /// (OuterState::controller_hold_q): see VoltageControl::set_may_hold_controllers
+        void hold_voltage_controllers() { hold_voltage_controllers_ = true; }
+        bool holds_voltage_controllers() const { return hold_voltage_controllers_; }
 
         const std::vector<int> & switchable_vm_buses() const { return switchable_vm_buses_; }
         void clear() { switchable_vm_buses_.clear(); }
 
     private:
         std::vector<int> switchable_vm_buses_;
+        bool hold_voltage_controllers_ = false;
 };
 
 /**
@@ -83,6 +88,9 @@ struct OuterState
     std::set<int> pq_buses;
     /// magnitudes (solver bus id, pu) to set before the next Newton solve, then forgotten
     std::vector<std::pair<int, real_type> > vm_set;
+    /// the reactive output (pu) a loop holds each voltage controller at, in the plan's
+    /// controller order, NaN where it regulates; empty until a loop sizes it
+    std::vector<real_type> controller_hold_q;
     static constexpr int HVDC_KEEP = 2;
 };
 

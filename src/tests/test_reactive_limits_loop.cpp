@@ -11,6 +11,7 @@
 // on one symbolic analysis. C++14 only.
 
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <tuple>
 #include <vector>
@@ -156,4 +157,80 @@ TEST_CASE("the strongest bus stays PV when every one would switch", "[outer][rea
     REQUIRE(V.size() == 4);
     CHECK(gen_q(grid, 0) == Approx(-1.).margin(1e-6));  // the slack unit has to absorb
     CHECK(std::abs(V(2)) == Approx(1.05).margin(1e-9));
+}
+
+namespace {
+
+// buses 0-1-2-3-4 in a line, a load at bus 4; the slack generator at bus 0 (1.02 pu), and
+// generators at buses 1 and 3 regulating bus 2 remotely at 1.04 pu (when `regulating`),
+// with the given reactive ranges, or injecting `q` when not
+LSGrid make_group_grid(real_type max_q1, real_type max_q3, bool regulating1 = true, real_type q1 = 0.,
+                       bool with_gen3 = true, real_type min_q1 = std::numeric_limits<real_type>::quiet_NaN())
+{
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(5, 1, RealVect::Constant(5, 138.), 0, 0);
+    Eigen::VectorXi from_id(4), to_id(4);
+    from_id << 0, 1, 2, 3;
+    to_id << 1, 2, 3, 4;
+    grid.init_powerlines(RealVect::Constant(4, 0.01), RealVect::Constant(4, 0.08),
+                         CplxVect::Zero(4), from_id, to_id);
+    RealVect load_p(1), load_q(1);
+    load_p << 60.;
+    load_q << 50.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 4;
+    grid.init_loads(load_p, load_q, load_bus);
+    RealVect gen_p(3), gen_v(3), q(3), gen_min_q(3), gen_max_q(3);
+    gen_p << 0., 10., 10.;
+    gen_v << 1.02, 1.04, 1.04;
+    q << 0., q1, 0.;
+    gen_min_q << -500., std::isnan(min_q1) ? -max_q1 : min_q1, -max_q3;
+    gen_max_q << 500., max_q1, max_q3;
+    Eigen::VectorXi gen_bus(3);
+    gen_bus << 0, 1, 3;
+    grid.init_generators_full(gen_p, gen_v, q, {true, regulating1, with_gen3}, gen_min_q, gen_max_q, gen_bus);
+    grid.set_gen_regulated_bus(1, 2);
+    grid.set_gen_regulated_bus(2, 2);
+    grid.add_gen_slackbus(0, 1.);
+    return grid;
+}
+
+}  // namespace
+
+TEST_CASE("a remote controller beyond its max is held there", "[outer][reactive_limits]")
+{
+    LSGrid grid = make_group_grid(/*max_q1=*/5., /*max_q3=*/500., true, 0., /*with_gen3=*/false);
+    const CplxVect V = solve_outer(grid);
+    REQUIRE(V.size() == 5);
+    CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    CHECK(grid.get_algo().get_linear_solver_stats().nb_analyze == 1);
+    CHECK(gen_q(grid, 1) == Approx(5.).margin(1e-6));
+    CHECK(std::abs(V(2)) < 1.04);
+
+    LSGrid ref = make_group_grid(5., 500., /*regulating1=*/false, /*q1=*/5., false);
+    const CplxVect V_ref = solve_plain(ref);
+    REQUIRE(V_ref.size() == 5);
+    CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-9);
+}
+
+TEST_CASE("the first controller of a group is held, the other one regulates on", "[outer][reactive_limits]")
+{
+    // the group shares by reactive range: gen 1 (its first controller) has a wide one, so it
+    // is asked a large share, but it can produce 5 MVar only
+    LSGrid grid = make_group_grid(/*max_q1=*/5., /*max_q3=*/500., true, 0., true, /*min_q1=*/-500.);
+    const CplxVect V = solve_outer(grid);
+    REQUIRE(V.size() == 5);
+    CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    CHECK(grid.get_algo().get_linear_solver_stats().nb_analyze == 1);
+    CHECK(gen_q(grid, 1) == Approx(5.).margin(1e-6));
+    CHECK(std::abs(V(2)) == Approx(1.04).margin(1e-9));  // gen 3 still holds it
+
+    // the same as gen 1 injecting 5 MVar, gen 3 regulating alone
+    LSGrid ref = make_group_grid(5., 500., /*regulating1=*/false, /*q1=*/5., true, -500.);
+    const CplxVect V_ref = solve_plain(ref);
+    REQUIRE(V_ref.size() == 5);
+    CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-9);
+    CHECK(gen_q(grid, 2) == Approx(gen_q(ref, 2)).margin(1e-6));
 }

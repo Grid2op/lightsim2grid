@@ -11,6 +11,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from . import _olf_rules
 from ._aux_common import _aux_get_bus
 
 
@@ -38,7 +39,7 @@ def _hvdc_pmax_per_direction(net, hvdc_ids, max_p_mw):
 
 
 def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, can_be_pv=None,
-                  ac_emulation_frozen=None, olf_vc=None):
+                  ac_emulation_frozen=None, olf_vc=None, olf_rules=None):
     """Add every HVDC line of ``net`` (VSC / LCC converter stations, possibly
     carrying the angle-droop ("AC emulation") extension) to ``model``. Returns
     ``(df_dc, hvdc_sub_from_id, hvdc_sub_to_id)``, used by the final
@@ -53,7 +54,10 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
     parameters read off the extension although it is disabled.
 
     ``olf_vc`` (:func:`._olf_rules.voltage_controllers`, with ``olf_rules``) says which
-    voltage-regulating stations OpenLoadFlow lets regulate: the others inject their target Q."""
+    voltage-regulating stations OpenLoadFlow lets regulate: the others inject their target Q.
+    With ``olf_rules``, a station's reactive limits are its capability curve at the active
+    power OpenLoadFlow gives it (losses included, :func:`._olf_rules.vsc_station_target_p`),
+    not at the line's set-point."""
     if sort_index:
         df_dc = net.get_hvdc_lines().sort_index()
     else:
@@ -94,6 +98,9 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         no_curve = pd.Series(np.nan, index=df_side.index)
         min_q = df_side.get("min_q_at_target_p", no_curve).fillna(df_side["min_q"]).to_numpy(float)
         max_q = df_side.get("max_q_at_target_p", no_curve).fillna(df_side["max_q"]).to_numpy(float)
+        if olf_rules is not None and nb_dc:
+            p_station = _olf_rules.vsc_station_target_p(net).reindex(df_side.index).fillna(0.).to_numpy(float)
+            min_q, max_q = _olf_rules.curve_limits_at_p(net, df_side.index, p_station, min_q, max_q)
         # malformed curve data can give min_q > max_q at the target P (as for the generators)
         swapped = np.isfinite(min_q) & np.isfinite(max_q) & (min_q > max_q)
         min_q[swapped], max_q[swapped] = max_q[swapped], min_q[swapped].copy()
