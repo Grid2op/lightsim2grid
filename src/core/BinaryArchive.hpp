@@ -126,7 +126,8 @@ namespace ls2g {
 //     LSGrid::set_svc_b0; 0 unless set). Appended.
 // v19: TrafoContainer::StateRes carries its ratio and phase tap changers (step tables,
 //     positions, regulation) and the neutral ratio and h they apply to; ShuntContainer::StateRes
-//     its sections (cumulative p / q per count, the count on) and their voltage regulation.
+//     its sections (cumulative p / q per count, the count on, the fewest a control may leave)
+//     and their voltage regulation.
 //     Appended (see LSGrid::set_trafo_ratio_tap_changer, LSGrid::set_shunt_sections).
 constexpr std::uint32_t BINARY_FORMAT_VERSION = 19;
 

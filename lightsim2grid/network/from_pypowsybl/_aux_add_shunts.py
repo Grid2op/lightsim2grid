@@ -12,9 +12,11 @@ import pandas as pd
 from ._aux_common import _aux_get_bus
 
 
-def _aux_shunt_sections(model, net, df_shunt, shunt_kv, bus_df, voltage_levels):
+def _aux_shunt_sections(model, net, df_shunt, shunt_kv, bus_df, voltage_levels, olf_rules=None):
     """The sections of every shunt of ``df_shunt`` (cumulative p / q per section count, the
-    same convention as ``init_shunt``) and the voltage they regulate."""
+    same convention as ``init_shunt``) and the voltage they regulate. With ``olf_rules``, a
+    shunt with an implausible target voltage does not regulate (OpenLoadFlow's
+    AbstractLfBus.checkVoltageControl)."""
     try:
         linear = net.get_linear_shunt_compensator_sections()
         non_linear = net.get_non_linear_shunt_compensator_sections()
@@ -38,7 +40,12 @@ def _aux_shunt_sections(model, net, df_shunt, shunt_kv, bus_df, voltage_levels):
         bus, vn = _aux_bus_pu(df_shunt["regulating_bus_id"].fillna("").to_numpy(object), bus_df, voltage_levels)
         target = df_shunt["target_v"].to_numpy(float) / vn
         deadband = df_shunt["target_deadband"].to_numpy(float) / vn
-        for k, on in enumerate(df_shunt["voltage_regulation_on"].to_numpy(bool)):
+        regulating = df_shunt["voltage_regulation_on"].to_numpy(bool)
+        if olf_rules is not None:
+            implausible = ((vn > olf_rules.min_nominal_voltage_target_voltage_check) &
+                           ((target < olf_rules.min_plausible_target_v) | (target > olf_rules.max_plausible_target_v)))
+            regulating = regulating & ~implausible
+        for k, on in enumerate(regulating):
             if not (on or np.isfinite(target[k])):
                 continue
             model.set_shunt_section_regulation(
@@ -46,7 +53,7 @@ def _aux_shunt_sections(model, net, df_shunt, shunt_kv, bus_df, voltage_levels):
                 float(deadband[k]) if np.isfinite(deadband[k]) else 0., int(bus[k]))
 
 
-def _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl):
+def _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, olf_rules=None):
     """Add every shunt compensator of ``net`` to ``model``. Returns
     ``(df_shunt, sh_sub)``, used by the final substation-id bookkeeping and
     ``return_sub_id`` in `initLSGrid.py`."""
@@ -68,6 +75,6 @@ def _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_pe
            model.deactivate_shunt(shunt_id)
     model.set_shunt_names(df_shunt.index)
     if "section_count" in df_shunt:
-        _aux_shunt_sections(model, net, df_shunt, shunt_kv, bus_df, voltage_levels)
+        _aux_shunt_sections(model, net, df_shunt, shunt_kv, bus_df, voltage_levels, olf_rules=olf_rules)
 
     return df_shunt, sh_sub

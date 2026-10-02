@@ -118,9 +118,17 @@ void TransformerVoltageControlLoop::_declare(const OuterContext & ctx, OuterDecl
 {
     const std::vector<Group> gs = groups(*ctx.grid);
     if (gs.empty()) return;
-    for (const Group & g : gs) decl.add_ratio_group(g.bus_solver, g.target, g.trafos, !g.hidden);
-    // the generators the INITIAL step may freeze: every one (the limit depends on the solve's
-    // parameters only, but declaring the lot costs a few pinned rows)
+    // a hidden group never acts (OpenLoadFlow's getControllerElements keeps the visible
+    // controls only): nothing to reserve for it
+    bool any = false;
+    for (const Group & g : gs) {
+        if (g.hidden) continue;
+        decl.add_ratio_group(g.bus_solver, g.target, g.trafos, true);
+        any = true;
+    }
+    if (!any) return;
+    // the generators the INITIAL step may freeze: every one (declaring the lot costs a few
+    // pinned rows)
     bus_q_check::BusQPlan plan;
     bus_q_check::build_bus_q_plan(*ctx.grid, solver_map(ctx), ctx.grid->get_ac_voltage_control_plan().controllers(), plan);
     for (const auto & entry : plan.buses) {
@@ -131,7 +139,10 @@ void TransformerVoltageControlLoop::_declare(const OuterContext & ctx, OuterDecl
 
 bool TransformerVoltageControlLoop::_is_needed(const OuterContext & ctx) const
 {
-    return !groups(*ctx.grid).empty();
+    for (const Group & g : groups(*ctx.grid)) {
+        if (!g.hidden) return true;
+    }
+    return false;
 }
 
 void TransformerVoltageControlLoop::_initialize(OuterContext & ctx)
@@ -360,6 +371,7 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
     if (step_ == Step::INITIAL) {
         bool need_run = false;
         for (const Group & g : groups_) {
+            if (g.hidden) continue;
             const real_type v = std::abs((*ctx.V)(g.bus_solver));
             if (std::abs(g.target - v) <= g.half_deadband) continue;
             for (int t : g.trafos) {
@@ -439,6 +451,7 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
     if (!out_of_range) {
         // updateContinuousRatio, then every transformer rounded and switched off
         for (const Group & g : groups_) {
+            if (g.hidden) continue;
             for (int t : g.trafos) {
                 if (!branch.handles_ratio(t)) continue;
                 real_type value = branch.ratio(t);

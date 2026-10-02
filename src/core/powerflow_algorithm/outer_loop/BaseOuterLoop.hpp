@@ -76,8 +76,25 @@ class LS2G_API OuterDeclaration final
             bool solved;
         };
         const std::vector<RatioGroup> & ratio_groups() const { return ratio_groups_; }
+        /// shunts regulating the voltage of `bus_solver` at `target_vm` pu, from the controller
+        /// buses `controller_buses` (solver ids), each with its regulating shunts (grid ids):
+        /// with `solved`, the Newton solves for their susceptances (ShuntControl), otherwise
+        /// only their sections may move
+        void add_shunt_group(int bus_solver, real_type target_vm, const std::vector<int> & controller_buses,
+                             const std::vector<std::vector<int> > & shunts, bool solved) {
+            shunt_groups_.push_back(ShuntGroup{bus_solver, target_vm, controller_buses, shunts, solved});
+        }
+        struct ShuntGroup {
+            int bus_solver;
+            real_type target_vm;
+            std::vector<int> controller_buses;
+            std::vector<std::vector<int> > shunts;
+            bool solved;
+        };
+        const std::vector<ShuntGroup> & shunt_groups() const { return shunt_groups_; }
         void clear() {
             switchable_vm_buses_.clear(); phase_shifters_.clear(); phase_shifter_column_.clear(); ratio_groups_.clear();
+            shunt_groups_.clear();
         }
 
     private:
@@ -86,6 +103,7 @@ class LS2G_API OuterDeclaration final
         std::vector<int> phase_shifters_;
         std::vector<char> phase_shifter_column_;
         std::vector<RatioGroup> ratio_groups_;
+        std::vector<ShuntGroup> shunt_groups_;
 };
 
 /**
@@ -134,11 +152,17 @@ struct OuterState
     /// controller buses (solver ids) whose generators' voltage control a loop suspended for a
     /// while (TransformerVoltageControl): the other loops leave them alone meanwhile
     std::set<int> suspended_buses;
+    /// the shunt controllers (by controller bus, solver id): their voltage control (1 on, 0 off,
+    /// -1 kept; empty until a loop sizes it), and the section counts a loop switched their shunts
+    /// to (applied by the next solve, then forgotten)
+    std::vector<int> shunt_control;
+    std::vector<std::pair<int, std::vector<int> > > shunt_sections;
     static constexpr int HVDC_KEEP = 2;
     static constexpr int TAP_KEEP = std::numeric_limits<int>::min();
 };
 
 class BranchControl;
+class ShuntControl;
 
 /**
  * Everything a loop sees, after a Newton solve. Built by the outer-loop algorithm between
@@ -179,6 +203,8 @@ struct OuterContext
     /// the transformers whose phase the solve handles (their shift, tap, current), null
     /// when there are none or in detection
     const BranchControl * branch_control = nullptr;
+    /// the shunts whose susceptance the solve handles, null when there are none or in detection
+    const ShuntControl * shunt_control = nullptr;
 
     bool is_detection() const { return state == nullptr; }
 };

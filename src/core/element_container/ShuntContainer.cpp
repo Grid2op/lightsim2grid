@@ -17,7 +17,8 @@ namespace ls2g {
 ShuntContainer::StateRes ShuntContainer::get_state() const
 {
      ShuntContainer::StateRes res(get_osc_pq_state(), section_p_mw_, section_q_mvar_, section_count_,
-                                  regulating_, target_vm_pu_, target_deadband_pu_, regulated_bus_);
+                                  regulating_, target_vm_pu_, target_deadband_pu_, regulated_bus_,
+                                  min_section_count_);
      return res;
 }
 
@@ -35,6 +36,7 @@ void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
     GenericContainer::check_size(std::get<StateResIdx::TARGET_VM>(my_state), size, "target_vm_pu");
     GenericContainer::check_size(std::get<StateResIdx::TARGET_DEADBAND>(my_state), size, "target_deadband_pu");
     GenericContainer::check_size(std::get<StateResIdx::REGULATED_BUS>(my_state), size, "regulated_bus");
+    GenericContainer::check_size(std::get<StateResIdx::MIN_SECTION_COUNT>(my_state), size, "min_section_count");
     // the tables are read by count: each must be complete and the count in it
     for(std::size_t el = 0; el < p.size(); ++el){
         if(p[el].size() != q[el].size() || count[el] < 0 || count[el] > static_cast<int>(q[el].size())){
@@ -51,6 +53,7 @@ void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
     target_vm_pu_ = std::get<StateResIdx::TARGET_VM>(my_state);
     target_deadband_pu_ = std::get<StateResIdx::TARGET_DEADBAND>(my_state);
     regulated_bus_ = std::get<StateResIdx::REGULATED_BUS>(my_state);
+    min_section_count_ = std::get<StateResIdx::MIN_SECTION_COUNT>(my_state);
     reset_results();
 }
 
@@ -68,7 +71,8 @@ void ShuntContainer::_check_section_count(int el, int section_count, const char 
 void ShuntContainer::set_sections(int el, int section_count,
                                   const std::vector<real_type> & p_mw,
                                   const std::vector<real_type> & q_mvar,
-                                  DualAlgoControl & solver_control)
+                                  DualAlgoControl & solver_control,
+                                  int min_section_count)
 {
     _check_in_range(el, section_count_, "ShuntContainer::set_sections");
     if(p_mw.size() != q_mvar.size()){
@@ -79,6 +83,7 @@ void ShuntContainer::set_sections(int el, int section_count,
     section_q_mvar_[k] = q_mvar;
     _check_section_count(el, section_count, "ShuntContainer::set_sections");
     section_count_[k] = section_count;
+    min_section_count_[k] = std::max(0, std::min(min_section_count, get_max_section_count(el)));
     change_p_nothrow(el, _section_p(el, section_count), solver_control);
     change_q_nothrow(el, _section_q(el, section_count), solver_control);
 }
@@ -224,7 +229,21 @@ void ShuntContainer::_compute_res_pq(const Eigen::Ref<const RealVect> & /*Va*/,
                                       bool ac)
 {
     const int nb_shunt = nb();
+    // an outer loop's section counts (set_results_section_override): published at those
+    const bool override_on = static_cast<int>(results_section_override_.size()) == nb_shunt &&
+                             static_cast<int>(section_count_.size()) == nb_shunt;
+    res_section_count_ = section_count_;
     for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id){
+        real_type p_mw = target_p_mw_(shunt_id);
+        real_type q_mvar = target_q_mvar_(shunt_id);
+        if(override_on && has_sections(shunt_id)){
+            const int count = results_section_override_[static_cast<std::size_t>(shunt_id)];
+            if(count >= 0 && count <= get_max_section_count(shunt_id) && count != section_count_[static_cast<std::size_t>(shunt_id)]){
+                p_mw = _section_p(shunt_id, count);
+                q_mvar = _section_q(shunt_id, count);
+                res_section_count_[static_cast<std::size_t>(shunt_id)] = count;
+            }
+        }
         if(!status_[shunt_id]) {
             res_p_(shunt_id) = my_zero_;
             res_q_(shunt_id) = my_zero_;
@@ -254,8 +273,8 @@ void ShuntContainer::_compute_res_pq(const Eigen::Ref<const RealVect> & /*Va*/,
         // (-1 * x) / s and -(x / s) agree exactly in IEEE 754.
         const cplx_type E = V(bus_solver_id.cast_int());
         const real_type e_re = std::real(E), e_im = std::imag(E);
-        const real_type y_re = -target_p_mw_(shunt_id) / sn_mva;
-        const real_type y_im = -target_q_mvar_(shunt_id) / sn_mva;
+        const real_type y_re = -p_mw / sn_mva;
+        const real_type y_im = -q_mvar / sn_mva;
         const real_type i_re =   y_re * e_re - y_im * e_im;    // I = conj(y . E)
         const real_type i_im = -(y_re * e_im + y_im * e_re);
         const real_type s_re = e_re * i_re - e_im * i_im;      // s = E . I

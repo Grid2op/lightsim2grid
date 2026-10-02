@@ -901,6 +901,106 @@ class LS2G_API BranchControl
 };
 
 /**
+ * Shunts whose susceptance the Newton solves for, or whose sections an outer loop switches
+ * between two solves: OpenLoadFlow's ShuntVoltageControl ("continuous, then rounded"). Nothing
+ * is declared unless an outer-loop algorithm asks (set_groups): every loop below is then empty
+ * and the system is bit-identical to one without this extension.
+ *
+ * As OpenLoadFlow, the regulating shunts of one bus are ONE controller with a susceptance B
+ * (pu, sn_mva base, positive producing: the bus' Ybus diagonal holds j B), their conductance
+ * kept. B lives in Ybus, PATCHED BY VALUE (a mutable Ybus handed in by the algorithm): the
+ * difference to what is stamped there. A group is the controllers regulating one bus; a SOLVED
+ * one owns a column per controller and one row per controller, slot i holding by value:
+ *     F = B_i - B_target_i                    (its control off: SHUNT_TARGET_B)
+ *     F = Vm(bus) - v_target                  (the first one on: BUS_TARGET_V)
+ *     F = sum_j B_j / n - B_i                 (any other one on: DISTR_SHUNT_B)
+ * The controllers of a group that is not solved (hidden by another control) own nothing: only
+ * their sections move. The Q row of a controller bus gets dQ/dB = -|V|^2.
+ *
+ * Sign conventions as VoltageControl (mis = V conj(Ybus V) - Sbus, res = -F, J = dF/dx).
+ */
+class LS2G_API ShuntControl
+{
+    public:
+        /// the controllers regulating one bus, see the class comment
+        struct GroupDecl {
+            int bus_solver = -1;                       ///< the regulated bus
+            real_type target_vm = 1.;                  ///< pu
+            std::vector<int> controller_buses;         ///< solver ids, OpenLoadFlow's order
+            std::vector<std::vector<int> > shunts;     ///< per controller bus, its shunts (grid ids)
+            bool solved = true;                        ///< false: hidden, the sections only move
+        };
+
+        ShuntControl() = default;
+
+        void set_groups(const std::vector<GroupDecl> & groups) { declared_ = groups; }
+        void set_mutable_ybus(Eigen::SparseMatrix<cplx_type> * ybus) { ybus_ = ybus; }
+
+        void update_state(const Base * nr_system_base_ptr, const LSGrid * lsgrid_ptr,
+                          const EigenRefConstCplxSpMat & Ybus, const Eigen::Ref<const CplxVect> & Sbus,
+                          const Eigen::Ref<const RealVect> & slack_weights);
+        void init_topology(const Eigen::Ref<const IntVect> & slack_ids, const Eigen::Ref<const RealVect> & slack_weights,
+                           const Eigen::Ref<const IntVect> & pv, const Eigen::Ref<const IntVect> & pq);
+        void register_in(NRLedger & ledger);
+        void declare_feature_entries(FeatureSink & sink);
+        void fill_feature_values(FeatureWriter & writer, const Eigen::Ref<const RealVect> & Va) const;
+        void adjust_mismatch(const Eigen::Ref<const CplxVect> & V_t, const Eigen::Ref<const RealVect> & dx,
+                             Eigen::Ref<CplxVect> mis) const;
+        void fill_custom_rows(Eigen::Ref<RealVect> res, const Eigen::Ref<const RealVect> & Va,
+                              const Eigen::Ref<const RealVect> & Vm, const Eigen::Ref<const RealVect> & dx) const;
+        void apply_step(const Eigen::Ref<const RealVect> & dx);
+        void clear();
+        /// the system's voltages, read when J is filled
+        void bind_voltages(const CplxVect * V) { V_ = V; }
+
+        // ----- what an outer loop acts on (by controller bus, solver id; a no-op for one not handled)
+        bool handles(int bus) const { return _index(bus) >= 0; }
+        void set_control_on(int bus, bool on);
+        /// switch the sections of its shunts (aligned with the declared list): its B follows
+        void set_sections(int bus, const std::vector<int> & counts);
+        real_type b(int bus) const;
+        /// the section count of every shunt handled, INT_MIN for the others (by grid id)
+        void section_counts(std::vector<int> & out) const;
+
+    private:
+        struct Entry {
+            int bus = -1;
+            int k = -1;                    // Ybus position of (bus, bus)
+            std::vector<int> shunts;
+            std::vector<int> counts;
+            bool column = false;
+            bool on = false;
+            real_type b = 0., b_applied = 0., b_target = 0.;
+            int col = -1, q_row = -1;
+            int h_q = -1;
+        };
+        struct Group {
+            int bus = -1;
+            real_type target = 1.;
+            std::vector<int> members;
+            int vm_col = -1;
+            std::vector<int> rows;
+            std::vector<std::vector<int> > h_cols;
+            std::vector<int> h_vm;
+        };
+        int _index(int bus) const {
+            if (bus < 0 || static_cast<std::size_t>(bus) >= index_of_bus_.size()) return -1;
+            return index_of_bus_[static_cast<std::size_t>(bus)];
+        }
+        void _patch(Entry & e);
+        void _reset(Entry & e);
+
+        std::vector<GroupDecl> declared_;
+        Eigen::SparseMatrix<cplx_type> * ybus_ = nullptr;
+        const CplxVect * V_ = nullptr;
+        const LSGrid * lsgrid_ = nullptr;
+        std::vector<Entry> entries_;
+        std::vector<Group> groups_;
+        std::vector<int> index_of_bus_;
+        int nb_shunts_ = 0;
+};
+
+/**
  * Remote voltage control (generators) + Static Var Compensators (SVC).
  *
  * BORDERED formulation. Per control group g = { controllers c1..cN (remote
@@ -1597,6 +1697,12 @@ public:
         BranchControl* ps = _find_extension<BranchControl>();
         if (ps != nullptr) ps->set_controllers(trafo_ids, with_column);
     }
+    void set_shunt_groups(const std::vector<ShuntControl::GroupDecl> & groups) {
+        ShuntControl* sc = _find_extension<ShuntControl>();
+        if (sc != nullptr) sc->set_groups(groups);
+    }
+    ShuntControl * shunt_control() { return _find_extension<ShuntControl>(); }
+    const ShuntControl * shunt_control() const { return _find_extension<ShuntControl>(); }
     void set_ratio_groups(const std::vector<BranchControl::RatioGroupDecl> & groups) {
         BranchControl* bc = _find_extension<BranchControl>();
         if (bc != nullptr) bc->set_ratio_groups(groups);
@@ -1604,6 +1710,8 @@ public:
     void set_branch_mutable_ybus(Eigen::SparseMatrix<cplx_type> * ybus) {
         BranchControl* ps = _find_extension<BranchControl>();
         if (ps != nullptr) ps->set_mutable_ybus(ybus);
+        ShuntControl* sc = _find_extension<ShuntControl>();
+        if (sc != nullptr) sc->set_mutable_ybus(ybus);
     }
     BranchControl * branch_control() { return _find_extension<BranchControl>(); }
     const BranchControl * branch_control() const { return _find_extension<BranchControl>(); }
@@ -2211,7 +2319,7 @@ private:
 // from the ledger) and before Hvdc; Hvdc must stay the LAST extension (it reads
 // the ledger populated by all the others).
 
-using SingleSlackNRSystem = NRSystem<Base, VoltageControl, BranchControl, Hvdc>;
+using SingleSlackNRSystem = NRSystem<Base, VoltageControl, BranchControl, ShuntControl, Hvdc>;
 using MultiSlackNRSystem  = NRSystem<Base, MultiSlack, VoltageControl, Hvdc>;
 
 } // namespace ls2g

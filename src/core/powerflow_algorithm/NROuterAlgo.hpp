@@ -89,6 +89,11 @@ public:
         if (phase == nullptr) return;
         phase->positions(positions);  // TAP_KEEP for the transformers it does not handle
     }
+    void get_outer_shunt_sections(std::vector<int> & counts) const override {
+        counts.clear();
+        const ShuntControl * shunt = this->_system.shunt_control();
+        if (shunt != nullptr) shunt->section_counts(counts);
+    }
     void get_outer_ratio_tap(std::vector<int> & positions) const override {
         positions.clear();
         const BranchControl * branch = this->_system.branch_control();
@@ -234,6 +239,7 @@ OuterContext NROuterAlgo<LinearSolver>::_context(OuterState * state)
     ctx.slack_absorbed = this->_system.slack_absorbed();
     ctx.state = state;
     ctx.branch_control = this->_system.branch_control();
+    ctx.shunt_control = this->_system.shunt_control();
     return ctx;
 }
 

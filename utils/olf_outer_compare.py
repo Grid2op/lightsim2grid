@@ -274,6 +274,7 @@ LIGHTSIM_LOOPS = {
     "ReactiveLimits": lambda: _algorithm.ReactiveLimits(),
     "PhaseControl": lambda: _algorithm.PhaseControl(),
     "TransformerVoltageControl": lambda: _algorithm.TransformerVoltageControl(),
+    "ShuntVoltageControl": lambda: _algorithm.ShuntVoltageControl(),
 }
 
 

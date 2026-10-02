@@ -32,6 +32,8 @@ class LS2G_API ShuntInfo : public OneSideContainer_PQ::OneSidePQInfo
         real_type target_vm_pu;
         real_type target_deadband_pu;
         int regulated_bus;
+        // the section count in the last results (the input one unless an outer loop moved it)
+        int res_section_count;
 
         inline ShuntInfo(const ShuntContainer & r_data_shunt, int my_id) noexcept;
 };
@@ -61,7 +63,8 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
                    std::vector<bool>,  // regulating_
                    std::vector<real_type>,  // target_vm_pu_
                    std::vector<real_type>,  // target_deadband_pu_
-                   std::vector<int>   // regulated_bus_
+                   std::vector<int>,  // regulated_bus_
+                   std::vector<int>   // min_section_count_
                >;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -72,6 +75,7 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
             TARGET_VM,
             TARGET_DEADBAND,
             REGULATED_BUS,
+            MIN_SECTION_COUNT,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -98,6 +102,7 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
             target_vm_pu_.assign(n, 0.);
             target_deadband_pu_.assign(n, 0.);
             regulated_bus_.assign(n, -1);
+            min_section_count_.assign(n, 0);
             reset_results();
         }
 
@@ -106,12 +111,15 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
          * power (MW, MVar at 1 pu, the same convention as init) of the shunt with k sections
          * on -- cumulative, IIDM's non-linear model (a linear one is k times its
          * per-section value) -- and the count on now, from 0 (nothing) to max_section_count.
-         * The shunt's p and q become those of that count.
+         * The shunt's p and q become those of that count. `min_section_count` the fewest a
+         * control may leave on (1 for IIDM's non-linear model, which OpenLoadFlow never
+         * switches entirely off).
          */
         void set_sections(int el, int section_count,
                           const std::vector<real_type> & p_mw,
                           const std::vector<real_type> & q_mvar,
-                          DualAlgoControl & solver_control);
+                          DualAlgoControl & solver_control,
+                          int min_section_count = 0);
         /// the voltage the sections regulate (data only): `target_vm_pu` and the deadband in
         /// pu of `regulated_bus`' nominal voltage, `regulated_bus` a grid bus id
         void set_section_regulation(int el, bool regulating, real_type target_vm_pu,
@@ -121,6 +129,23 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         bool has_sections(int el) const { return !section_q_mvar_[static_cast<std::size_t>(el)].empty(); }
         int get_section_count(int el) const { return section_count_[static_cast<std::size_t>(el)]; }
         int get_max_section_count(int el) const { return static_cast<int>(section_q_mvar_[static_cast<std::size_t>(el)].size()); }
+        int get_min_section_count(int el) const { return min_section_count_[static_cast<std::size_t>(el)]; }
+        bool get_section_regulating(int el) const { return regulating_[static_cast<std::size_t>(el)]; }
+        real_type get_section_target_vm_pu(int el) const { return target_vm_pu_[static_cast<std::size_t>(el)]; }
+        real_type get_section_deadband_pu(int el) const { return target_deadband_pu_[static_cast<std::size_t>(el)]; }
+        int get_section_regulated_bus(int el) const { return regulated_bus_[static_cast<std::size_t>(el)]; }
+        /// p / q (MW, MVar at 1 pu) of shunt `el` with `count` sections on
+        real_type section_p(int el, int count) const { return _section_p(el, count); }
+        real_type section_q(int el, int count) const { return _section_q(el, count); }
+
+        /**
+         * Section counts to compute the next results at (one per shunt; a count outside its
+         * range keeps the input one): the shunts' p and q are published at those, the inputs
+         * are not modified. An outer loop's (see LSGrid::compute_results); empty clears it.
+         */
+        void set_results_section_override(const std::vector<int> & counts) { results_section_override_ = counts; }
+        /// the counts of the last results, see ShuntInfo::res_section_count
+        const std::vector<int> & get_res_section_count() const { return res_section_count_; }
     
         // pickle (python)
         ShuntContainer::StateRes get_state() const;
@@ -203,6 +228,10 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         std::vector<real_type> target_vm_pu_;
         std::vector<real_type> target_deadband_pu_;
         std::vector<int> regulated_bus_;
+        std::vector<int> min_section_count_;
+        // see set_results_section_override (not serialized: results)
+        std::vector<int> results_section_override_;
+        std::vector<int> res_section_count_;
 };
 
 inline ShuntInfo::ShuntInfo(const ShuntContainer & r_data_shunt, int my_id) noexcept:
@@ -213,7 +242,8 @@ max_section_count(0),
 regulating(false),
 target_vm_pu(0.),
 target_deadband_pu(0.),
-regulated_bus(-1)
+regulated_bus(-1),
+res_section_count(0)
 {
     if(my_id < 0) return;
     if(my_id >= static_cast<int>(r_data_shunt.section_count_.size())) return;
@@ -225,6 +255,7 @@ regulated_bus(-1)
     target_vm_pu = r_data_shunt.target_vm_pu_[k];
     target_deadband_pu = r_data_shunt.target_deadband_pu_[k];
     regulated_bus = r_data_shunt.regulated_bus_[k];
+    res_section_count = k < r_data_shunt.res_section_count_.size() ? r_data_shunt.res_section_count_[k] : section_count;
 }
 
 

@@ -58,6 +58,8 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
     state_.ratio_tap.clear();
     state_.ratio_control.clear();
     state_.suspended_buses.clear();
+    state_.shunt_control.clear();
+    state_.shunt_sections.clear();
     OuterState & state = state_;
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
@@ -188,6 +190,15 @@ bool NROuterAlgo<LinearSolver>::_solve(int max_iter, real_type tol, bool & need_
             if (state_.ratio_control[t] >= 0) phase->set_ratio_control_on(static_cast<int>(t), state_.ratio_control[t] == 1);
         }
     }
+    // the shunt sections (a switch once), then the voltage controls
+    ShuntControl * shunt = this->_system.shunt_control();
+    if (shunt != nullptr) {
+        for (const auto & bs : state_.shunt_sections) shunt->set_sections(bs.first, bs.second);
+        state_.shunt_sections.clear();
+        for (std::size_t b = 0; b < state_.shunt_control.size(); ++b) {
+            if (state_.shunt_control[b] >= 0) shunt->set_control_on(static_cast<int>(b), state_.shunt_control[b] == 1);
+        }
+    }
     // the switchable buses: PV (pinned) unless a loop made them PQ, a caller's on top
     pinned_ = caller_pinned_;
     for (int bus : declared_switchable_) {
@@ -262,6 +273,17 @@ void NROuterAlgo<LinearSolver>::_before_init_topology()
         groups.push_back(d);
     }
     this->_system.set_ratio_groups(groups);
+    std::vector<ShuntControl::GroupDecl> shunt_groups;
+    for (const auto & g : decl.shunt_groups()) {
+        ShuntControl::GroupDecl d;
+        d.bus_solver = g.bus_solver;
+        d.target_vm = g.target_vm;
+        d.controller_buses = g.controller_buses;
+        d.shunts = g.shunts;
+        d.solved = g.solved;
+        shunt_groups.push_back(d);
+    }
+    this->_system.set_shunt_groups(shunt_groups);
 }
 
 template<class LinearSolver>

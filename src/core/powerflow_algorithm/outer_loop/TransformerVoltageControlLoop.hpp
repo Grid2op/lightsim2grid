@@ -28,8 +28,9 @@ class LSGrid;
  * set_trafo_ratio_tap_regulation), connected at both ends, on two different buses. They are
  * grouped by the bus they regulate, in transformer order: the first one's target holds, the
  * smallest deadband (none: 0.1 kV). A group whose bus a generator, an SVC or a VSC station
- * already regulates is hidden (OpenLoadFlow's control priorities): its ratios never move in a
- * Newton, only its taps may be rounded.
+ * already regulates is hidden (OpenLoadFlow's control priorities) and never acts: neither
+ * switched on nor rounded (OpenLoadFlow's getControllerElements keeps the visible controls).
+ * Its transformers still keep a generator of their buses frozen (hasStepUpTransformers).
  *
  * Its three steps:
  *  - INITIAL (first check): every group off its target by more than half its deadband switches

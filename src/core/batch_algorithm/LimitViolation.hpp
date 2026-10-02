@@ -149,7 +149,13 @@ enum class LS2G_API LimitViolationType : int {
     // half their deadband: OpenLoadFlow's TransformerVoltageControl loop would move the taps
     // (see outer_loop/TransformerVoltageControlLoop.hpp). `value` the voltage and `limit` the
     // target, kV. ViolationCategory::CONTROL.
-    TRANSFORMER_VOLTAGE_DEADBAND = 19
+    TRANSFORMER_VOLTAGE_DEADBAND = 19,
+    // A BUS whose voltage shunts regulate (their sections, LSGrid::set_shunt_section_regulation)
+    // and no generator nor transformer does, off its target by more than half the deadband (by
+    // more than the detection tolerance without one): OpenLoadFlow's ShuntVoltageControl loop
+    // would switch sections (see outer_loop/ShuntVoltageControlLoop.hpp). `value` the voltage
+    // and `limit` the target, kV. ViolationCategory::CONTROL.
+    SHUNT_VOLTAGE_CONTROL = 20
 };
 
 /**
@@ -187,7 +193,7 @@ enum class LS2G_API ViolationCategory : int {
     /// controls would settle in.
     /// LOW_VOLTAGE_AT_MIN_Q, HIGH_VOLTAGE_AT_MAX_Q, LOW_VOLTAGE_SVC_STANDBY,
     /// HIGH_VOLTAGE_SVC_STANDBY, HVDC_AC_EMULATION_RELEASE, SLACK_MISMATCH, PHASE_CONTROL_P,
-    /// PHASE_LIMITER_CURRENT, TRANSFORMER_VOLTAGE_DEADBAND.
+    /// PHASE_LIMITER_CURRENT, TRANSFORMER_VOLTAGE_DEADBAND, SHUNT_VOLTAGE_CONTROL.
     CONTROL = 3
 };
 
@@ -215,6 +221,7 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
         case LimitViolationType::PHASE_CONTROL_P:
         case LimitViolationType::PHASE_LIMITER_CURRENT:
         case LimitViolationType::TRANSFORMER_VOLTAGE_DEADBAND:
+        case LimitViolationType::SHUNT_VOLTAGE_CONTROL:
             return ViolationCategory::CONTROL;
         default:  // NOT_SIMULATED, DIVERGENCE
             return ViolationCategory::SOLVER;

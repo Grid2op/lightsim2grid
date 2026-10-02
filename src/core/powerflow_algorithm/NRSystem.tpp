@@ -101,6 +101,8 @@ inline void NRSystem<Base, Rest...>::update_state(
     // the one extension that reads the complex voltages when J is filled
     BranchControl* ps = _find_extension<BranchControl>();
     if (ps != nullptr) ps->bind_voltages(&V_);
+    ShuntControl* sc = _find_extension<ShuntControl>();
+    if (sc != nullptr) sc->bind_voltages(&V_);
 }
 
 // ---- Phase 2: build J sparsity + value maps -----------------------------------

@@ -5,6 +5,7 @@ list(APPEND SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemBase.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemHvdc.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemBranchControl.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemShuntControl.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemVoltageControl.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemMultiSlack.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/OuterLoopDriver.cpp"
@@ -14,6 +15,7 @@ list(APPEND SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/VoltageMonitoringLoop.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/PhaseControlLoop.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/TransformerVoltageControlLoop.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/ShuntVoltageControlLoop.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/ReactiveLimitsLoop.cpp"
 )
 set(SOURCES ${SOURCES} PARENT_SCOPE)

@@ -238,6 +238,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   The units' new P is in the results only, their targets are not modified.
 - [ADDED] ``HvdcAcEmulationLimits`` outer loop: OpenLoadFlow's, saturating an AC-emulation hvdc
   line at the limit its droop flow exceeds and releasing it. In the results only.
+- [ADDED] ``ShuntVoltageControl`` outer loop (OpenLoadFlow's WITH_GENERATOR_VOLTAGE_CONTROL; not in the
+  default list): a bus' regulating shunts solved for their susceptance, then rounded to sections.
+- [ADDED] ``LimitViolationType.SHUNT_VOLTAGE_CONTROL``, ``ShuntInfo.res_section_count``.
 - [ADDED] ``TransformerVoltageControl`` outer loop (OpenLoadFlow's AFTER_GENERATOR_VOLTAGE_CONTROL; not in
   the default list): ratios solved, then rounded to a tap, low voltage generators frozen meanwhile.
 - [ADDED] ``LimitViolationType.TRANSFORMER_VOLTAGE_DEADBAND``, ``TrafoInfo.res_ratio_tap_position``.

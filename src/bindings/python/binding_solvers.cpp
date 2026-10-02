@@ -15,6 +15,7 @@
 #include "powerflow_algorithm/outer_loop/VoltageMonitoringLoop.hpp"
 #include "powerflow_algorithm/outer_loop/PhaseControlLoop.hpp"
 #include "powerflow_algorithm/outer_loop/TransformerVoltageControlLoop.hpp"
+#include "powerflow_algorithm/outer_loop/ShuntVoltageControlLoop.hpp"
 #include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
 #include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
@@ -237,6 +238,16 @@ void bind_solvers(py::module_& m) {
                        "OpenLoadFlow's transformerVoltageControlUseInitialTapPosition")
         .def_readwrite("max_controlled_nominal_voltage", &TransformerVoltageControlLoop::max_controlled_nominal_voltage,
                        "OpenLoadFlow's generatorVoltageControlMinNominalVoltage, kV (< 0: automatic)");
+
+    py::class_<ShuntVoltageControlLoop, BaseOuterLoop, std::shared_ptr<ShuntVoltageControlLoop> >(
+            m, "ShuntVoltageControl",
+            "OpenLoadFlow's ShuntVoltageControl outer loop (WITH_GENERATOR_VOLTAGE_CONTROL, what its "
+            "shuntCompensatorVoltageControlOn creates with that mode; not in the default list). The regulating "
+            "shunts of a bus (LSGrid.set_shunt_section_regulation) are solved for their susceptance, then "
+            "rounded to sections. Put it after TransformerVoltageControl, as OpenLoadFlow does: a transformer "
+            "regulating the same bus takes precedence. The counts it leaves are in the results "
+            "(ShuntInfo.res_section_count), the inputs are not modified.")
+        .def(py::init([]() { return std::make_shared<ShuntVoltageControlLoop>(); }));
 
     // ---- TimerJac ----
     py::class_<TimerJac>(m, "TimerJac", DocSolver::TimerJac.c_str())

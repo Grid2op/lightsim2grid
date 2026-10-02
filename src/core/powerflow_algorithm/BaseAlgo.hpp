@@ -621,6 +621,9 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual void get_outer_phase_tap(std::vector<int> & positions) const { positions.clear(); }
         /// the same for the ratio tap changers
         virtual void get_outer_ratio_tap(std::vector<int> & positions) const { positions.clear(); }
+        /// the section count the outer loops left each shunt at (grid id, INT_MIN where they kept
+        /// the grid's; empty: none)
+        virtual void get_outer_shunt_sections(std::vector<int> & counts) const { counts.clear(); }
 
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}

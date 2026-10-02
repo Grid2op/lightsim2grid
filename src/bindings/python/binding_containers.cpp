@@ -255,7 +255,10 @@ void bind_containers(py::module_& m) {
         .def_readonly("target_vm_pu", &ShuntInfo::target_vm_pu,
              "The voltage they regulate, in pu of the regulated bus' nominal voltage.")
         .def_readonly("target_deadband_pu", &ShuntInfo::target_deadband_pu, "Its deadband, in the same pu.")
-        .def_readonly("regulated_bus", &ShuntInfo::regulated_bus, "The grid bus id they regulate, -1 for none.");
+        .def_readonly("regulated_bus", &ShuntInfo::regulated_bus, "The grid bus id they regulate, -1 for none.")
+        .def_readonly("res_section_count", &ShuntInfo::res_section_count,
+             "Its section count in the last results: the input one unless an outer loop (ShuntVoltageControl) "
+             "switched it, the flows being those at that count.");
 
     auto trafo_cls = py::class_<TrafoContainer>(m, "TrafoContainer", DocIterator::TrafoContainer.c_str())
         .def("__len__", [](const TrafoContainer & data) { return data.nb(); })

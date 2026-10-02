@@ -379,7 +379,8 @@ def init(net : pypo.network.Network,
     olf_vc = _olf_rules.voltage_controllers(net, olf_rules) if olf_rules is not None else None
 
     # shunts
-    df_shunt, sh_sub = _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
+    df_shunt, sh_sub = _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
+                                       olf_rules=olf_rules)
 
     # SVCs
     df_svc = _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used,
