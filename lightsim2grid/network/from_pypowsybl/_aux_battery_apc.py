@@ -40,8 +40,7 @@ import numpy as np
 from packaging import version
 
 from ._aux_common import PYPOWSYBL_VER
-# OpenLoadFlow's own constants, shared with the rest of the OLF-mirroring code
-from ._olf_const import _ZERO_P_TOL, _MAX_PLAUSIBLE_ACTIVE_POWER_MW, _OLF_DEFAULT_DROOP
+from . import _olf_rules
 
 # the last pypowsybl release whose `activePowerControl` extension ignores batteries
 _PYPOWSYBL_NO_BATTERY_APC = version.parse("1.16.1")
@@ -54,39 +53,9 @@ _APC_ONLY_EXPORT_PARAMS = {"iidm.export.xml.included.extensions": "activePowerCo
                            "iidm.export.xml.indent": "false"}
 
 
-def olf_participation_weight(target_p, min_p, max_p, participate, droop, min_target_p, max_target_p):
-    """OpenLoadFlow's distributed-slack key of each unit (``PROPORTIONAL_TO_GENERATION_P_MAX``),
-    0 for a unit ``checkActivePowerControl`` excludes. Every input is an array aligned on the
-    units, in MW and in the generator convention; a NaN ``droop`` means the default one and
-    a NaN ``min_target_p`` / ``max_target_p`` means ``min_p`` / ``max_p``. The
-    connectivity and main-component filters are the caller's."""
-    target_p = np.asarray(target_p, dtype=float)
-    min_p = np.asarray(min_p, dtype=float)
-    max_p = np.asarray(max_p, dtype=float)
-    droop = np.asarray(droop, dtype=float)
-    min_tp, max_tp = olf_target_p_range(min_p, max_p, min_target_p, max_target_p)
-    droop_used = np.where(np.isfinite(droop), droop, _OLF_DEFAULT_DROOP)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        weight = np.where(droop_used != 0., max_p / droop_used, 0.)
-        ok = (np.asarray(participate, dtype=bool)
-              & (np.abs(target_p) >= _ZERO_P_TOL)
-              & (max_p <= _MAX_PLAUSIBLE_ACTIVE_POWER_MW)
-              & (target_p <= max_tp) & (target_p >= min_tp)
-              & ((max_tp - min_tp) >= _ZERO_P_TOL)
-              & (droop_used != 0.)
-              & np.isfinite(weight) & (weight > 0.))
-    return np.where(ok, weight, 0.)
-
-
-def olf_target_p_range(min_p, max_p, min_target_p, max_target_p):
-    """``(min_target_p, max_target_p)`` with OpenLoadFlow's defaults (``min_p`` / ``max_p``)
-    where the extension does not set them (NaN)."""
-    min_p = np.asarray(min_p, dtype=float)
-    max_p = np.asarray(max_p, dtype=float)
-    min_target_p = np.asarray(min_target_p, dtype=float)
-    max_target_p = np.asarray(max_target_p, dtype=float)
-    return (np.where(np.isfinite(min_target_p), min_target_p, min_p),
-            np.where(np.isfinite(max_target_p), max_target_p, max_p))
+# the rule is OpenLoadFlow's, shared with the generators: see _olf_rules
+olf_participation_weight = _olf_rules.participation_weight
+olf_target_p_range = _olf_rules.target_p_range
 
 
 def _pypowsybl_exposes_battery_apc():

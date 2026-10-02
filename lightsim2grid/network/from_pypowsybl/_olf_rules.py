@@ -30,12 +30,15 @@ import numpy as np
 import pandas as pd
 
 from ._olf_const import (
+    _MAX_PLAUSIBLE_ACTIVE_POWER_MW,
     _MAX_PLAUSIBLE_TARGET_V_PU,
     _MIN_NOMINAL_V_FOR_TARGET_V_CHECK_KV,
     _MIN_PLAUSIBLE_TARGET_V_PU,
     _MIN_REACTIVE_RANGE_MVAR,
     _NOT_STARTED_P_TOL_MW,
+    _OLF_DEFAULT_DROOP,
     _TARGET_V_EPSILON_PU,
+    _ZERO_P_TOL,
 )
 
 
@@ -63,6 +66,10 @@ class OlfLoadingParameters:
     max_plausible_target_v: float = _MAX_PLAUSIBLE_TARGET_V_PU
     #: ``minNominalVoltageTargetVoltageCheck``, kV: no plausibility check below it
     min_nominal_voltage_target_voltage_check: float = _MIN_NOMINAL_V_FOR_TARGET_V_CHECK_KV
+    #: ``useActiveLimits``: a unit outside its active range does not take part in the slack
+    use_active_limits: bool = True
+    #: ``plausibleActivePowerLimit``, MW: a unit with a larger max P never takes part in it
+    plausible_active_power_limit: float = _MAX_PLAUSIBLE_ACTIVE_POWER_MW
 
 
 GEN_ATTRIBUTES = ["target_p", "min_p", "target_q", "target_v", "voltage_regulator_on",
@@ -286,3 +293,86 @@ def generator_target_q(network, gen=None, params=OlfLoadingParameters()):
     qmin, qmax = generator_limits_at_target_p(network, gen, params)
     # a NaN limit clamps nothing
     return target_q.clip(lower=qmin.fillna(-np.inf), upper=qmax.fillna(np.inf))
+
+
+# ---------------------------------------------------------------------------------------
+# participation in the distributed slack (PROPORTIONAL_TO_GENERATION_P_MAX)
+# ---------------------------------------------------------------------------------------
+
+def target_p_range(min_p, max_p, min_target_p, max_target_p):
+    """``(min_target_p, max_target_p)`` with OpenLoadFlow's defaults (``min_p`` / ``max_p``)
+    where the ``activePowerControl`` extension does not set them (NaN)."""
+    min_p = np.asarray(min_p, dtype=float)
+    max_p = np.asarray(max_p, dtype=float)
+    min_target_p = np.asarray(min_target_p, dtype=float)
+    max_target_p = np.asarray(max_target_p, dtype=float)
+    return (np.where(np.isfinite(min_target_p), min_target_p, min_p),
+            np.where(np.isfinite(max_target_p), max_target_p, max_p))
+
+
+def participation_weight(target_p, min_p, max_p, participate, droop, min_target_p, max_target_p,
+                         params=OlfLoadingParameters()):
+    """OpenLoadFlow's distributed-slack key of each unit (``PROPORTIONAL_TO_GENERATION_P_MAX``),
+    0 for a unit that does not take part, generators and batteries alike
+    (``ActivePowerControlHelper``, ``AbstractLfGenerator.checkActivePowerControl`` and
+    ``GenerationActivePowerDistributionStep.isParticipating``):
+
+    * the ``activePowerControl`` extension's ``participate`` (True without the extension);
+    * a target of zero (below ``_ZERO_P_TOL``, in MW here) does not take part;
+    * nor a max P above ``plausible_active_power_limit``;
+    * with ``use_active_limits``, nor a target outside ``[min_target_p, max_target_p]`` or a
+      range narrower than ``_ZERO_P_TOL``;
+    * the key is ``max_p / droop``, the droop being the extension's or 4 when it sets none
+      (NaN); a droop or a key of 0 does not take part.
+
+    Every input is an array aligned on the units, in MW and in the generator convention; a
+    NaN ``min_target_p`` / ``max_target_p`` means ``min_p`` / ``max_p``. The connectivity
+    and the synchronous component are the caller's to check."""
+    target_p = np.asarray(target_p, dtype=float)
+    min_p = np.asarray(min_p, dtype=float)
+    max_p = np.asarray(max_p, dtype=float)
+    droop = np.asarray(droop, dtype=float)
+    min_tp, max_tp = target_p_range(min_p, max_p, min_target_p, max_target_p)
+    droop_used = np.where(np.isfinite(droop), droop, _OLF_DEFAULT_DROOP)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        weight = np.where(droop_used != 0., max_p / droop_used, 0.)
+        ok = np.asarray(participate, dtype=bool) & (max_p <= params.plausible_active_power_limit)
+        if params.zero_mw_target_not_started:
+            ok &= np.abs(target_p) >= _ZERO_P_TOL
+        if params.use_active_limits:
+            ok &= (target_p <= max_tp) & (target_p >= min_tp) & ((max_tp - min_tp) >= _ZERO_P_TOL)
+        ok &= (droop_used != 0.) & np.isfinite(weight) & (weight != 0.)
+    return np.where(ok, weight, 0.)
+
+
+def generator_active_power_control(network, gen_index):
+    """The ``activePowerControl`` extension of the generators ``gen_index``: a
+    ``pandas.DataFrame`` with ``participate`` (True for a unit without the extension),
+    ``droop``, ``min_target_p`` and ``max_target_p`` (NaN where unset)."""
+    res = pd.DataFrame({"participate": True, "droop": np.nan, "min_target_p": np.nan,
+                        "max_target_p": np.nan}, index=gen_index)
+    try:
+        apc = network.get_extensions("activePowerControl")
+    except Exception:  # noqa: BLE001 - extension unknown to this pypowsybl
+        return res
+    if apc is None or not len(apc):
+        return res
+    apc = apc.reindex(gen_index)
+    listed = apc.index.isin(apc.dropna(how="all").index)
+    if "participate" in apc.columns:
+        res.loc[listed, "participate"] = apc.loc[listed, "participate"].fillna(True).astype(bool)
+    for col in ("droop", "min_target_p", "max_target_p"):
+        if col in apc.columns:
+            res[col] = apc[col].astype(float)
+    return res
+
+
+def generator_participation_weight(network, gen, params=OlfLoadingParameters()):
+    """:func:`participation_weight` of each generator of ``gen`` (which carries
+    ``target_p``, ``min_p`` and ``max_p``), as a ``pandas.Series`` indexed like ``gen``."""
+    apc = generator_active_power_control(network, gen.index)
+    weight = participation_weight(gen["target_p"].to_numpy(float), gen["min_p"].to_numpy(float),
+                                  gen["max_p"].to_numpy(float), apc["participate"].to_numpy(bool),
+                                  apc["droop"].to_numpy(float), apc["min_target_p"].to_numpy(float),
+                                  apc["max_target_p"].to_numpy(float), params)
+    return pd.Series(weight, index=gen.index)

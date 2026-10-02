@@ -120,6 +120,38 @@ class TestOlfRules(unittest.TestCase):
         tq = _olf_rules.generator_target_q(net, params=OlfLoadingParameters(force_target_q_in_reactive_limits=False))
         self.assertAlmostEqual(tq.loc["B8-G"], 80.)
 
+    def test_participation(self):
+        net = _net()
+        gen = net.get_generators()
+        w = _olf_rules.generator_participation_weight(net, gen)
+        # without the extension: every unit, with the default droop
+        self.assertTrue(np.allclose(w.to_numpy(), gen["max_p"].to_numpy() / 4.))
+        p = OlfLoadingParameters()
+        # one condition of checkActivePowerControl at a time
+        cases = {
+            "zero target": dict(target_p=[0.], min_p=[-10.], max_p=[100.]),
+            "implausible max_p": dict(target_p=[50.], min_p=[0.], max_p=[20000.]),
+            "above its range": dict(target_p=[120.], min_p=[0.], max_p=[100.]),
+            "below its range": dict(target_p=[5.], min_p=[10.], max_p=[100.]),
+            "degenerate range": dict(target_p=[50.], min_p=[50.], max_p=[50.]),
+        }
+        for label, c in cases.items():
+            w = _olf_rules.participation_weight(c["target_p"], c["min_p"], c["max_p"], [True], [np.nan],
+                                                [np.nan], [np.nan], p)
+            self.assertEqual(w[0], 0., label)
+        # a negative target takes part (a pump), with the same key
+        w = _olf_rules.participation_weight([-30.], [-100.], [100.], [True], [np.nan], [np.nan], [np.nan], p)
+        self.assertAlmostEqual(w[0], 25.)
+        # the extension: its flag, its droop (0 excludes), its target range
+        w = _olf_rules.participation_weight([50.] * 4, [0.] * 4, [100.] * 4, [False, True, True, True],
+                                            [np.nan, 0., 2., np.nan], [np.nan, np.nan, np.nan, 60.],
+                                            [np.nan] * 4, p)
+        self.assertTrue(np.allclose(w, [0., 0., 50., 0.]))
+        # without active limits, the range is not looked at
+        w = _olf_rules.participation_weight([120.], [0.], [100.], [True], [np.nan], [np.nan], [np.nan],
+                                            OlfLoadingParameters(use_active_limits=False))
+        self.assertAlmostEqual(w[0], 25.)
+
     def test_init_applies_the_rules(self):
         net = _net()
         net.update_generators(id="B3-G", target_p=0.)

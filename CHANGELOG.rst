@@ -232,6 +232,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``bake_outer_loops``.
 - [FIXED] ``bake_outer_loops``: a generator is "not started" below 0.01 MW, not 1e-4 MW
   (OpenLoadFlow compares per-unit values), and a condenser or fictitious one never is.
+- [FIXED] the default distributed slack of ``init_from_pypowsybl`` follows OpenLoadFlow's
+  participation rule for generators as for batteries: a negative target takes part, a
+  target outside the unit's range or an implausible ``max_p`` does not.
 - [FIXED] ``bake_outer_loops`` no longer freezes a unit at its reactive limit whose bus still has a
   regulating unit with headroom (OpenLoadFlow switches buses, not units).
 - [FIXED] The controllers holding a remote bus share it with the other generators of their bus counted
