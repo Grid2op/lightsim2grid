@@ -311,6 +311,9 @@ class LS2G_API AlgorithmSelector final
         void get_outer_hvdc_status(std::vector<int> & status) const {
             get_prt_solver("get_outer_hvdc_status", false)->get_outer_hvdc_status(status);
         }
+        void get_outer_phase_tap(std::vector<int> & positions) const {
+            get_prt_solver("get_outer_phase_tap", false)->get_outer_phase_tap(positions);
+        }
 
         // continuation powerflow primitives (ContinuationSweep) -- NR-based
         // algorithms only, guarded exactly like get_J: both read state the last

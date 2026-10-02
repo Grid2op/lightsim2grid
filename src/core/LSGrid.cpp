@@ -2108,10 +2108,15 @@ void LSGrid::compute_results(bool ac){
     std::vector<int> hvdc_status;
     if(ac) _algo.get_outer_hvdc_status(hvdc_status);
     hvdc_lines_.set_results_status_override(hvdc_status);
+    // ... and at the phase taps they moved
+    std::vector<int> phase_tap;
+    if(ac) _algo.get_outer_phase_tap(phase_tap);
+    trafos_.set_results_phase_tap_override(phase_tap);
     for(GenericContainer * container : _all_containers()){
         container->compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     }
     hvdc_lines_.set_results_status_override(std::vector<int>());
+    trafos_.set_results_phase_tap_override(std::vector<int>());
 
     // the targets the outer loops moved (NROuter_*): what each unit injects before its share
     // of the slack, in place of the grid's own target

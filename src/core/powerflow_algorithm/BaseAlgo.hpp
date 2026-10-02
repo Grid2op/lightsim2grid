@@ -616,6 +616,9 @@ class LS2G_API BaseAlgo : public BaseConstants
         // the droop regime the last solve's outer loops set per hvdc line (OuterState::
         // hvdc_status), empty when none did
         virtual void get_outer_hvdc_status(std::vector<int> & status) const { status.clear(); }
+        /// the phase tap position the outer loops left each transformer at (grid id,
+        /// INT_MIN where they kept the grid's; empty: none)
+        virtual void get_outer_phase_tap(std::vector<int> & positions) const { positions.clear(); }
 
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}

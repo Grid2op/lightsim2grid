@@ -13,6 +13,7 @@
 #include "powerflow_algorithm/outer_loop/DistributedSlackLoop.hpp"
 #include "powerflow_algorithm/outer_loop/HvdcAcEmulationLimitsLoop.hpp"
 #include "powerflow_algorithm/outer_loop/VoltageMonitoringLoop.hpp"
+#include "powerflow_algorithm/outer_loop/PhaseControlLoop.hpp"
 #include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
 #include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
@@ -206,6 +207,16 @@ void bind_solvers(py::module_& m) {
                        "OpenLoadFlow's reactiveLimitsMaxPqPvSwitch: how many times a bus may go back PV")
         .def_readwrite("max_reactive_power_mismatch", &ReactiveLimitsLoop::max_reactive_power_mismatch,
                        "OpenLoadFlow's maxReactivePowerMismatch (its newtonRaphsonConvEpsPerEq), pu of a 100 MVA base");
+
+    py::class_<PhaseControlLoop, BaseOuterLoop, std::shared_ptr<PhaseControlLoop> >(
+            m, "PhaseControl",
+            "OpenLoadFlow's PhaseControl outer loop (CONTINUOUS_WITH_DISCRETISATION, what its "
+            "phaseShifterRegulationOn creates; not in the default list). The phase shifters whose "
+            "tap changer regulates (LSGrid.set_trafo_phase_tap_regulation): an active power one is "
+            "first solved for its shift, which is then rounded to the closest tap; a current limiter "
+            "above its limit moves one tap at a time. The positions it leaves are in the results "
+            "(TrafoInfo.res_phase_tap_position), the inputs are not modified.")
+        .def(py::init([]() { return std::make_shared<PhaseControlLoop>(); }));
 
     // ---- TimerJac ----
     py::class_<TimerJac>(m, "TimerJac", DocSolver::TimerJac.c_str())

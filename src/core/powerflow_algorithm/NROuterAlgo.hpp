@@ -83,6 +83,12 @@ public:
     void get_outer_hvdc_status(std::vector<int> & status) const override {
         status = state_.hvdc_status;
     }
+    void get_outer_phase_tap(std::vector<int> & positions) const override {
+        positions.clear();
+        const PhaseShift * phase = this->_system.phase_shift();
+        if (phase == nullptr) return;
+        phase->positions(positions);  // TAP_KEEP for the transformers it does not handle
+    }
 
     const OuterLoopDriverParams & get_driver_params() const { return params_; }
     void set_driver_params(const OuterLoopDriverParams & params) {
@@ -203,6 +209,7 @@ private:
     CplxVect Sbus_;
     CplxVect Sbus_init_;
     CplxVect Sbus_target_;  // see OuterState::Sbus_target
+    Eigen::SparseMatrix<cplx_type> Ybus_;  // the grid's, its values patched by the phase shifters
     RealVect controller_q_;  // the context's copy, refreshed with it
     int slack_bus_ = -1;     // solver id of the slack bus of the current solve
     OuterState state_;       // what the loops edit; kept after the solve for its results
@@ -221,6 +228,7 @@ OuterContext NROuterAlgo<LinearSolver>::_context(OuterState * state)
     ctx.slack_bus = slack_bus_;
     ctx.slack_absorbed = this->_system.slack_absorbed();
     ctx.state = state;
+    ctx.phase_shift = this->_system.phase_shift();
     return ctx;
 }
 

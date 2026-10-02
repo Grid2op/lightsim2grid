@@ -9,6 +9,7 @@
 #ifndef BASE_OUTER_LOOP_H
 #define BASE_OUTER_LOOP_H
 
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -52,13 +53,23 @@ class LS2G_API OuterDeclaration final
         /// (OuterState::controller_hold_q): see VoltageControl::set_may_hold_controllers
         void hold_voltage_controllers() { hold_voltage_controllers_ = true; }
         bool holds_voltage_controllers() const { return hold_voltage_controllers_; }
+        /// a transformer (grid id) whose phase tap may move during the solve and, with
+        /// `solves_shift`, whose shift the Newton solves for: see PhaseShift
+        void add_phase_shifter(int trafo_id, bool solves_shift) {
+            phase_shifters_.push_back(trafo_id);
+            phase_shifter_column_.push_back(solves_shift ? 1 : 0);
+        }
 
         const std::vector<int> & switchable_vm_buses() const { return switchable_vm_buses_; }
-        void clear() { switchable_vm_buses_.clear(); }
+        const std::vector<int> & phase_shifters() const { return phase_shifters_; }
+        const std::vector<char> & phase_shifter_column() const { return phase_shifter_column_; }
+        void clear() { switchable_vm_buses_.clear(); phase_shifters_.clear(); phase_shifter_column_.clear(); }
 
     private:
         std::vector<int> switchable_vm_buses_;
         bool hold_voltage_controllers_ = false;
+        std::vector<int> phase_shifters_;
+        std::vector<char> phase_shifter_column_;
 };
 
 /**
@@ -94,8 +105,17 @@ struct OuterState
     /// the reactive output (pu) a loop holds each voltage controller at, in the plan's
     /// controller order, NaN where it regulates; empty until a loop sizes it
     std::vector<real_type> controller_hold_q;
+    /// the position a loop moved each transformer's phase tap to (grid id), TAP_KEEP where it
+    /// kept the solve's; empty until a loop sizes it
+    std::vector<int> phase_tap;
+    /// whether the Newton solves each declared transformer's shift for its active power
+    /// (grid id): 1 on, 0 off, -1 kept as it is; empty until a loop sizes it
+    std::vector<int> phase_control;
     static constexpr int HVDC_KEEP = 2;
+    static constexpr int TAP_KEEP = std::numeric_limits<int>::min();
 };
+
+class PhaseShift;
 
 /**
  * Everything a loop sees, after a Newton solve. Built by the outer-loop algorithm between
@@ -133,6 +153,9 @@ struct OuterContext
     /// `context.getIteration()`: 0 means it has not changed anything yet)
     int iteration = 0;
     OuterState * state = nullptr;
+    /// the transformers whose phase the solve handles (their shift, tap, current), null
+    /// when there are none or in detection
+    const PhaseShift * phase_shift = nullptr;
 
     bool is_detection() const { return state == nullptr; }
 };

@@ -100,7 +100,34 @@ def find_snapshots(paths):
     return sorted(set(found))
 
 
-def load(path, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None):
+def _regulating_phase_shifters(path, pst, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu):
+    """(ids, mode, targets) making every phase shifter of the snapshot regulate, its target set
+    from its flow without regulation (a solve with this pypowsybl's default parameters):
+    ``pst`` = ("active_power", delta MW) for an active power ``delta`` above that flow on its
+    regulated side, ("current_limiter", factor) for a current limit at ``factor`` times it."""
+    net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu)
+    ptc = net.get_phase_tap_changers(all_attributes=True)
+    ptc = ptc[ptc["regulated_side"].isin(["ONE", "TWO"]) &
+              ptc.index.isin(net.get_2_windings_transformers().index)]
+    if not len(ptc):
+        return [], None, []
+    lf.run_ac(net, lf.Parameters())
+    flows = net.get_2_windings_transformers().loc[ptc.index]
+    side = ptc["regulated_side"].map({"ONE": "1", "TWO": "2"})
+    kind, value = pst[0], pst[1]
+    max_count = pst[2] if len(pst) > 2 else None
+    if max_count is not None:
+        ptc = ptc.sort_index().iloc[:max_count]
+    col = "p" if kind == "active_power" else "i"
+    flow = np.array([flows.loc[t, col + side[t]] for t in ptc.index], dtype=float)
+    keep = np.isfinite(flow)
+    ids = list(ptc.index[keep])
+    if kind == "active_power":
+        return ids, "ACTIVE_POWER_CONTROL", list(flow[keep] + value)
+    return ids, "CURRENT_LIMITER", list(value * flow[keep])
+
+
+def load(path, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None, pst=None):
     """The snapshot, with ``extra_load_mw`` added to its largest load of the main synchronous
     component (a mismatch for the slack loops to share; the same on both engines), and, with
     ``hvdc_limit_factor``, every line in AC emulation limited in both directions to that
@@ -108,7 +135,11 @@ def load(path, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None)
     has to saturate, where the snapshot's own limits are rarely reached. With
     ``svc_thresholds_pu`` (low, high), every standby SVC's automaton thresholds are set there,
     in pu of the SVC's nominal voltage: monitors the VoltageMonitoring loop has to switch on,
-    where the snapshot's own thresholds are rarely crossed."""
+    where the snapshot's own thresholds are rarely crossed. With ``pst``, every phase shifter
+    regulating, see _regulating_phase_shifters (its ratio changer then does not: OpenLoadFlow
+    refuses both on one transformer)."""
+    pst_edit = _regulating_phase_shifters(path, pst, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu) \
+        if pst is not None else None
     net = pp.network.load(path, LOAD_PARAMETERS)
     if svc_thresholds_pu is not None:
         sa = net.get_extensions("standbyAutomaton")
@@ -146,6 +177,15 @@ def load(path, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None)
         in_main = loads["bus_id"].map(sync) == main
         big = loads.loc[in_main, "p0"].idxmax()
         net.update_loads(id=big, p0=float(loads.loc[big, "p0"]) + float(extra_load_mw))
+    if pst_edit is not None and pst_edit[0]:
+        ids, mode, targets = pst_edit
+        rtc = net.get_ratio_tap_changers()
+        both = [t for t in ids if t in rtc.index and bool(rtc.loc[t, "regulating"])]
+        if both:
+            net.update_ratio_tap_changers(id=both, regulating=[False] * len(both))
+        net.update_phase_tap_changers(id=ids, regulation_mode=[mode] * len(ids), regulation_value=targets,
+                                      target_deadband=[0.] * len(ids))
+        net.update_phase_tap_changers(id=ids, regulating=[True] * len(ids))
     return net
 
 
@@ -189,7 +229,7 @@ def olf_parameters(loops, slack_bus_id=None, conv_eps=1e-9, max_nr_iter=50):
     return params
 
 
-def olf_dc_angles(path, params, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None):
+def olf_dc_angles(path, params, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None, pst=None):
     """The angles (deg, per IIDM bus) OpenLoadFlow's DC_VALUES start gives the Newton:
     DcValueVoltageInitializer runs a DC load flow on the AC run's own network, with the
     run's transformer-ratio and DC-approximation settings and its distributed slack (left on
@@ -200,15 +240,15 @@ def olf_dc_angles(path, params, extra_load_mw=0., hvdc_limit_factor=None, svc_th
     provider.pop("outerLoopNames", None)  # AC loop names, a DC run rejects them
     provider["slackDistributionFailureBehavior"] = "LEAVE_ON_SLACK_BUS"
     dc_params.provider_parameters = provider
-    net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu)
+    net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu, pst)
     res = lf.run_dc(net, dc_params)[0]
     if res.status != lf.ComponentStatus.CONVERGED:
         return None
     return net.get_buses()["v_angle"]
 
 
-def solve_olf(path, params, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None):
-    net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu)
+def solve_olf(path, params, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None, pst=None):
+    net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu, pst)
     res = lf.run_ac(net, params)
     return net, res[0]
 
@@ -232,17 +272,18 @@ LIGHTSIM_LOOPS = {
     "AcHvdcAcEmulationLimits": lambda: _algorithm.HvdcAcEmulationLimits(),
     "VoltageMonitoring": lambda: _algorithm.VoltageMonitoring(),
     "ReactiveLimits": lambda: _algorithm.ReactiveLimits(),
+    "PhaseControl": lambda: _algorithm.PhaseControl(),
 }
 
 
 def solve_lightsim(path, gen_slack_id, algo=None, max_iter=50, tol=1e-8, olf_rules=None, loops=(),
                    extra_load_mw=0., hvdc_limit_factor=None, start_angles_deg=None, svc_thresholds_pu=None,
-                   olf_eps=None):
+                   olf_eps=None, pst=None):
     """Build the grid from the unbaked snapshot and solve it from a DC start: lightsim2grid's
     own (dc_start), or ``start_angles_deg`` (per IIDM bus, see olf_dc_angles) at 1 pu.
     ``olf_rules`` (an ``OlfLoadingParameters``, or None for none) are OpenLoadFlow's loading
     rules: OLF always applies them, so a comparison needs them on this side too."""
-    net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu)
+    net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu, pst)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
         model = init_from_pypowsybl(net, gen_slack_id=gen_slack_id, sort_index=False,
@@ -342,6 +383,16 @@ def compare(net_olf, olf_result, net_ls, model, V, ref_bus, slack_gen_id):
     out["olf_slack_mw"] = float(olf_slack)
     out["d_slack_mw"] = float(abs(olf_slack - ls_slack))
 
+    # the phase taps the loops left: OpenLoadFlow's solved positions against the results'
+    olf_ptc = net_olf.get_phase_tap_changers(all_attributes=True)
+    olf_ptc = olf_ptc[olf_ptc["regulating"].astype(bool)] if len(olf_ptc) else olf_ptc
+    if len(olf_ptc):
+        ls_tap = {tr.name: tr.res_phase_tap_position for tr in model.get_trafos()}
+        olf_tap = olf_ptc["solved_tap_position"].where(olf_ptc["solved_tap_position"].notna(), olf_ptc["tap"])
+        diff = [t for t in olf_ptc.index if t in ls_tap and int(olf_tap[t]) != int(ls_tap[t])]
+        out["n_pst_regulating"] = len(olf_ptc)
+        out["n_pst_tap_diff"] = len(diff)
+        out["n_pst_moved"] = int((olf_tap != olf_ptc["tap"]).sum())
     for what, olf_df, ls_df in (("gen", net_olf.get_generators(), ls_gen),
                                 ("vsc", net_olf.get_vsc_converter_stations(), ls_net.get_vsc_converter_stations()),
                                 ("svc", net_olf.get_static_var_compensators(), ls_net.get_static_var_compensators())):
@@ -375,7 +426,8 @@ def run_one(path, args):
     t0 = time.perf_counter()
     params = olf_parameters(args.loops, slack_bus_id if args.slack_mode == "name" else None,
                             conv_eps=args.olf_eps, max_nr_iter=args.max_iter)
-    net_olf, res = solve_olf(path, params, args.extra_load_mw, args.hvdc_limit_factor, args.svc_thresholds_pu)
+    net_olf, res = solve_olf(path, params, args.extra_load_mw, args.hvdc_limit_factor, args.svc_thresholds_pu,
+                             args.pst)
     row["olf_status"] = res.status.name
     row["olf_status_text"] = res.status_text
     row["olf_s"] = time.perf_counter() - t0
@@ -386,11 +438,12 @@ def run_one(path, args):
                                  svc_voltage_monitoring="VoltageMonitoring" in args.loops) if args.olf_rules else None
     start = None
     if args.start == "olf":
-        start = olf_dc_angles(path, params, args.extra_load_mw, args.hvdc_limit_factor, args.svc_thresholds_pu)
+        start = olf_dc_angles(path, params, args.extra_load_mw, args.hvdc_limit_factor, args.svc_thresholds_pu,
+                              args.pst)
         row["olf_dc_start"] = start is not None
     net_ls, model, V = solve_lightsim(path, gen_slack_id, args.algo, args.max_iter, args.tol, rules, args.loops,
                                       args.extra_load_mw, args.hvdc_limit_factor, start, args.svc_thresholds_pu,
-                                      args.olf_eps)
+                                      args.olf_eps, args.pst)
     row["ls_converged"] = V.shape[0] > 0
     row["ls_s"] = time.perf_counter() - t0
     stats = model.get_algo().get_linear_solver_stats() if hasattr(model.get_algo(), "get_linear_solver_stats") else None
@@ -429,12 +482,24 @@ def main(argv=None):
                         type=lambda s: tuple(float(x) for x in s.split(",")),
                         help="LOW,HIGH: every standby SVC's automaton thresholds, in pu of its nominal "
                              "voltage (so that some monitors switch on)")
+    pst = parser.add_mutually_exclusive_group()
+    pst.add_argument("--pst-active-power-mw", type=float, default=None,
+                     help="every phase shifter regulates the active power on its regulated side at "
+                          "this many MW above its flow without regulation (for PhaseControl)")
+    pst.add_argument("--pst-current-factor", type=float, default=None,
+                     help="every phase shifter limits the current on its regulated side to this "
+                          "fraction of its current without regulation (for PhaseControl)")
+    parser.add_argument("--pst-max", type=int, default=None,
+                        help="only the first N phase shifters (by id) regulate")
     parser.add_argument("--start", choices=("lightsim", "olf"), default="lightsim",
                         help="the Newton's start: lightsim2grid's own DC (default), or OpenLoadFlow's "
                              "DC_VALUES angles, to tell a difference of start from one of solve")
     parser.add_argument("--csv", default=None, help="write one row per snapshot there")
     parser.add_argument("--limit", type=int, default=None, help="only the first N snapshots")
     args = parser.parse_args(argv)
+    args.pst = (("active_power", args.pst_active_power_mw, args.pst_max) if args.pst_active_power_mw is not None else
+                ("current_limiter", args.pst_current_factor, args.pst_max) if args.pst_current_factor is not None
+                else None)
 
     paths = args.paths or ([os.environ["LS2G_SNAPSHOTS"]] if "LS2G_SNAPSHOTS" in os.environ else [])
     snapshots = find_snapshots(paths)[:args.limit]
@@ -459,6 +524,9 @@ def main(argv=None):
                   f"(d={row['d_slack_mw']:.1e}), dP gen={row['max_dp_gen']:.1e} MW, "
                   f"dQ bus={_q(row['max_dq_bus'])} / gen={_q(row['max_dq_gen'])} MVar, "
                   f"dP vsc={row['max_dp_vsc']:.1e} MW, dQ svc={_q(row.get('max_dq_svc', 0.))} MVar, "
+                  f"dQ vsc={_q(row.get('max_dq_vsc', 0.))} MVar, "
+                  + (f"pst taps {row['n_pst_tap_diff']} off of {row['n_pst_regulating']} "
+                     f"({row['n_pst_moved']} moved), " if 'n_pst_regulating' in row else "") +
                   f"loops [{row.get('ls_loop_iterations', '')}], "
                   f"OLF {row['olf_s']:.1f}s / ls {row['ls_s']:.1f}s", flush=True)
 

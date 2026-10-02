@@ -323,6 +323,9 @@ void bind_containers(py::module_& m) {
         .def_readonly("phase_deadband", &TrafoInfo::phase_deadband, "Its deadband, in the same unit.")
         .def_readonly("phase_regulated", &TrafoInfo::phase_regulated,
              "The side of the transformer (1 or 2) whose flow it regulates.")
+        .def_readonly("res_phase_tap_position", &TrafoInfo::res_phase_tap_position,
+             "Its phase tap changer's position in the last results: the input one unless an outer "
+             "loop (PhaseControl) moved it, the flows being those at that position.")
         .def_readonly("has_res", &TrafoInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p1_mw", &TrafoInfo::res_p1_mw, DocIterator::res_p_hv_mw.c_str())
         .def_readonly("res_q1_mvar", &TrafoInfo::res_q1_mvar, DocIterator::res_q_hv_mvar.c_str())

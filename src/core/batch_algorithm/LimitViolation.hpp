@@ -134,7 +134,16 @@ enum class LS2G_API LimitViolationType : int {
     // part in the slack (see outer_loop/DistributedSlackLoop.hpp). element_type GRID,
     // `value` the mismatch (MW, > 0: the units must inject more) and `limit` the threshold.
     // ViolationCategory::CONTROL: the units can take it, the solve just did not share it.
-    SLACK_MISMATCH = 16
+    SLACK_MISMATCH = 16,
+    // A TRANSFORMER whose phase tap changer regulates the active power through one of its
+    // sides (`side`) off its target by more than its deadband: OpenLoadFlow's PhaseControl
+    // loop would move the shift (see outer_loop/PhaseControlLoop.hpp). `value` that active
+    // power and `limit` the target, MW. ViolationCategory::CONTROL.
+    PHASE_CONTROL_P = 17,
+    // A TRANSFORMER whose phase tap changer limits the current through one of its sides
+    // (`side`) above that limit: the loop would move the tap. `value` the current and `limit`
+    // the limit, A. ViolationCategory::CONTROL.
+    PHASE_LIMITER_CURRENT = 18
 };
 
 /**
@@ -171,7 +180,8 @@ enum class LS2G_API ViolationCategory : int {
     /// could take -- and an outer loop would. The state is reachable; it is not the one the
     /// controls would settle in.
     /// LOW_VOLTAGE_AT_MIN_Q, HIGH_VOLTAGE_AT_MAX_Q, LOW_VOLTAGE_SVC_STANDBY,
-    /// HIGH_VOLTAGE_SVC_STANDBY, HVDC_AC_EMULATION_RELEASE, SLACK_MISMATCH.
+    /// HIGH_VOLTAGE_SVC_STANDBY, HVDC_AC_EMULATION_RELEASE, SLACK_MISMATCH, PHASE_CONTROL_P,
+    /// PHASE_LIMITER_CURRENT.
     CONTROL = 3
 };
 
@@ -196,6 +206,8 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
         case LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY:
         case LimitViolationType::HVDC_AC_EMULATION_RELEASE:
         case LimitViolationType::SLACK_MISMATCH:
+        case LimitViolationType::PHASE_CONTROL_P:
+        case LimitViolationType::PHASE_LIMITER_CURRENT:
             return ViolationCategory::CONTROL;
         default:  // NOT_SIMULATED, DIVERGENCE
             return ViolationCategory::SOLVER;

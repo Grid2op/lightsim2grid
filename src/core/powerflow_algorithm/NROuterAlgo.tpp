@@ -32,8 +32,12 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
     Sbus_target_ = Sbus;
     Sbus_ = Sbus;
 
+    // ... and Ybus, whose values the phase shifters patch (see PhaseShift)
+    Ybus_ = Ybus;
+    this->_system.set_phase_mutable_ybus(&Ybus_);
+
     bool need_init = false;
-    if (!this->_setup(Ybus, V, Sbus_, slack_ids, slack_weights, pv, pq, need_init)) {
+    if (!this->_setup(Ybus_, V, Sbus_, slack_ids, slack_weights, pv, pq, need_init)) {
         this->timer_total_nr_ += timer.duration();
         return false;
     }
@@ -49,6 +53,8 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
     state_.pq_buses.clear();
     state_.vm_set.clear();
     state_.controller_hold_q.clear();
+    state_.phase_tap.clear();
+    state_.phase_control.clear();
     OuterState & state = state_;
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
@@ -160,6 +166,16 @@ bool NROuterAlgo<LinearSolver>::_solve(int max_iter, real_type tol, bool & need_
     }
     // the voltage controllers a loop holds (none: the plan's own state)
     this->_system.set_held_voltage_controllers(state_.controller_hold_q);
+    // the phase taps a loop moved, then the shifts it lets the Newton solve for
+    PhaseShift * phase = this->_system.phase_shift();
+    if (phase != nullptr) {
+        for (std::size_t t = 0; t < state_.phase_tap.size(); ++t) {
+            if (state_.phase_tap[t] != OuterState::TAP_KEEP) phase->set_tap(static_cast<int>(t), state_.phase_tap[t]);
+        }
+        for (std::size_t t = 0; t < state_.phase_control.size(); ++t) {
+            if (state_.phase_control[t] >= 0) phase->set_control_on(static_cast<int>(t), state_.phase_control[t] == 1);
+        }
+    }
     // the switchable buses: PV (pinned) unless a loop made them PQ, a caller's on top
     pinned_ = caller_pinned_;
     for (int bus : declared_switchable_) {
@@ -223,6 +239,7 @@ void NROuterAlgo<LinearSolver>::_before_init_topology()
     switchable.insert(switchable.end(), declared_switchable_.begin(), declared_switchable_.end());
     this->_system.set_switchable_vm_buses(switchable);  // a set there: duplicates are fine
     this->_system.set_may_hold_voltage_controllers(decl.holds_voltage_controllers());
+    this->_system.set_phase_controllers(decl.phase_shifters(), decl.phase_shifter_column());
 }
 
 template<class LinearSolver>

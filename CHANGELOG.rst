@@ -233,6 +233,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   The units' new P is in the results only, their targets are not modified.
 - [ADDED] ``HvdcAcEmulationLimits`` outer loop: OpenLoadFlow's, saturating an AC-emulation hvdc
   line at the limit its droop flow exceeds and releasing it. In the results only.
+- [ADDED] ``PhaseControl`` outer loop (OpenLoadFlow's, continuous then rounded; not in the default list):
+  active power phase shifters solved for their shift, current limiters moved tap by tap.
+- [ADDED] ``LimitViolationType.PHASE_CONTROL_P`` / ``PHASE_LIMITER_CURRENT`` (``ViolationCategory.CONTROL``),
+  ``TrafoInfo.res_phase_tap_position``.
 - [ADDED] Tap changers on transformers (``LSGrid.set_trafo_ratio_tap_changer`` / ``..._phase_...``,
   ``change_trafo_ratio_tap``): the pi model at the taps, as OpenLoadFlow's, read by ``init_from_pypowsybl``.
 - [ADDED] Shunt sections (``LSGrid.set_shunt_sections``, ``change_shunt_section_count``) and their voltage

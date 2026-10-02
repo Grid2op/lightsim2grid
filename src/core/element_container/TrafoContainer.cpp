@@ -267,32 +267,20 @@ void TrafoContainer::_update_model_coeffs_one_el(int el_id)
     }
 
     // for AC
-    // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
-    const cplx_type ys = 1. / cplx_type(r_(el_id), x_(el_id));
+    const std::array<cplx_type, 4> block = _pi_coeffs(r_(el_id), x_(el_id), h_side_1_(el_id), h_side_2_(el_id),
+                                                      ratio_(el_id), shift_(el_id), is_tap_side1_[el_id],
+                                                      ignore_tap_side_for_shift_);
+    yac_11_(el_id) = block[0];
+    yac_12_(el_id) = block[1];
+    yac_21_(el_id) = block[2];
+    yac_22_(el_id) = block[3];
     real_type tau = ratio_(el_id);
     real_type theta_shift = shift_(el_id);
     if(!is_tap_side1_[el_id]){
         tau = my_one_ / tau;
-
-        // pnadapower uses tap_side only for ratio, not for
-        // phase shift apparently
         if (!ignore_tap_side_for_shift_) theta_shift = -theta_shift;
     }
-    cplx_type eitheta_shift  = {my_one_, my_zero_};  // exp(j  * alpha)
-    cplx_type emitheta_shift = {my_one_, my_zero_};  // exp(-j * alpha)
-    if(std::abs(theta_shift) > _tol_equal_float)
-    {
-        real_type cos_theta = std::cos(theta_shift);
-        real_type sin_theta = std::sin(theta_shift);
-        eitheta_shift = {cos_theta, sin_theta};
-        emitheta_shift = {cos_theta, -sin_theta};
-    }
-    real_type _1_tau = my_one_ / tau; // 1 / tau
-    yac_11_(el_id) = (ys + h_side_1_(el_id)) * _1_tau * _1_tau;  // (ys + h1) / tau**2
-    yac_12_(el_id) = -ys * _1_tau * eitheta_shift;  // -ys / (tau * exp(-j.theta_shift))
-    
-    yac_21_(el_id) = -ys * _1_tau * emitheta_shift;  // -ys / (tau * exp(j.theta_shift))
-    yac_22_(el_id) = (ys + h_side_2_(el_id));  // ys + h2
+    const real_type _1_tau = my_one_ / tau;
 
     // for DC
     // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
@@ -304,6 +292,90 @@ void TrafoContainer::_update_model_coeffs_one_el(int el_id)
     ydc_12_(el_id) = -tmp;
 
     dc_x_tau_shift_(el_id) = -tmp * theta_shift;
+}
+
+std::array<cplx_type, 4> TrafoContainer::_pi_coeffs(real_type r, real_type x, cplx_type h1, cplx_type h2,
+                                                    real_type ratio, real_type shift, bool tap_side1,
+                                                    bool ignore_tap_side_for_shift)
+{
+    // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
+    const cplx_type ys = 1. / cplx_type(r, x);
+    real_type tau = ratio;
+    real_type theta_shift = shift;
+    if(!tap_side1){
+        tau = my_one_ / tau;
+
+        // pnadapower uses tap_side only for ratio, not for
+        // phase shift apparently
+        if (!ignore_tap_side_for_shift) theta_shift = -theta_shift;
+    }
+    cplx_type eitheta_shift  = {my_one_, my_zero_};  // exp(j  * alpha)
+    cplx_type emitheta_shift = {my_one_, my_zero_};  // exp(-j * alpha)
+    if(std::abs(theta_shift) > _tol_equal_float)
+    {
+        real_type cos_theta = std::cos(theta_shift);
+        real_type sin_theta = std::sin(theta_shift);
+        eitheta_shift = {cos_theta, sin_theta};
+        emitheta_shift = {cos_theta, -sin_theta};
+    }
+    real_type _1_tau = my_one_ / tau; // 1 / tau
+    return {(ys + h1) * _1_tau * _1_tau,     // (ys + h1) / tau**2
+            -ys * _1_tau * eitheta_shift,    // -ys / (tau * exp(-j.theta_shift))
+            -ys * _1_tau * emitheta_shift,   // -ys / (tau * exp(j.theta_shift))
+            ys + h2};                        // ys + h2
+}
+
+std::array<cplx_type, 4> TrafoContainer::pi_block_at(int el, int phase_position, real_type shift_rad) const
+{
+    _check_in_range(el, ratio_, "TrafoContainer::pi_block_at");
+    const bool tapped = ratio_taps_.has(el) || phase_taps_.has(el);
+    if(!tapped) return _pi_coeffs(r_(el), x_(el), h_side_1_(el), h_side_2_(el), ratio_(el), shift_rad,
+                                  is_tap_side1_[el], ignore_tap_side_for_shift_);
+    const int ppos = phase_taps_.has(el) ? phase_position : 0;
+    const real_type r = base_r_(el) * ratio_taps_.r_factor(el) * phase_taps_.r_factor_at(el, ppos);
+    const real_type x = base_x_(el) * ratio_taps_.x_factor(el) * phase_taps_.x_factor_at(el, ppos);
+    const real_type g_factor = ratio_taps_.g_factor(el) * phase_taps_.g_factor_at(el, ppos);
+    const real_type b_factor = ratio_taps_.b_factor(el) * phase_taps_.b_factor_at(el, ppos);
+    const cplx_type h1 = {std::real(base_h1_(el)) * g_factor, std::imag(base_h1_(el)) * b_factor};
+    const cplx_type h2 = {std::real(base_h2_(el)) * g_factor, std::imag(base_h2_(el)) * b_factor};
+    const real_type ratio = base_ratio_(el) * ratio_taps_.rho(el) * phase_taps_.rho_at(el, ppos);
+    return _pi_coeffs(r, x, h1, h2, ratio, shift_rad, is_tap_side1_[el], ignore_tap_side_for_shift_);
+}
+
+std::vector<int> TrafoContainer::_apply_results_phase_tap_override()
+{
+    const int n = nb();
+    res_phase_tap_position_.assign(static_cast<std::size_t>(n), 0);
+    for(int el = 0; el < n; ++el){
+        if(phase_taps_.nb() > el && phase_taps_.has(el)) res_phase_tap_position_[static_cast<std::size_t>(el)] = phase_taps_.position(el);
+    }
+    std::vector<int> moved;
+    results_saved_.clear();
+    if(static_cast<int>(results_phase_tap_override_.size()) != n) return moved;
+    for(int el = 0; el < n; ++el){
+        if(!phase_taps_.has(el)) continue;
+        const int pos = results_phase_tap_override_[static_cast<std::size_t>(el)];
+        if(pos < phase_taps_.low_tap(el) || pos > phase_taps_.high_tap(el) || pos == phase_taps_.position(el)) continue;
+        moved.push_back(phase_taps_.position(el));
+        results_saved_.push_back({el, {ratio_(el), shift_(el)}});
+        phase_taps_.set_position(el, pos, "TrafoContainer::compute_results");
+        _apply_tap_position(el);
+        _update_internal_coeffs(el);
+        res_phase_tap_position_[static_cast<std::size_t>(el)] = pos;
+    }
+    return moved;
+}
+
+void TrafoContainer::_restore_results_phase_tap_override(const std::vector<int> & moved)
+{
+    for(std::size_t k = 0; k < moved.size(); ++k){
+        const int el = results_saved_[k].first;
+        phase_taps_.set_position(el, moved[k], "TrafoContainer::compute_results");
+        ratio_(el) = results_saved_[k].second[0];
+        shift_(el) = results_saved_[k].second[1];
+        _update_internal_coeffs(el);
+    }
+    results_saved_.clear();
 }
 
 void TrafoContainer::set_tap_changer(bool phase, int el, int low_tap, int position,

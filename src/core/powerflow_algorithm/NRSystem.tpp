@@ -98,6 +98,9 @@ inline void NRSystem<Base, Rest...>::update_state(
     // now inform the components
     base_.update_state(lsgrid_ptr, Ybus, Sbus, slack_weights);
     _update_state_extensions(lsgrid_ptr, Ybus, Sbus, slack_weights, std::make_index_sequence<sizeof...(Rest)>{});
+    // the one extension that reads the complex voltages when J is filled
+    PhaseShift* ps = _find_extension<PhaseShift>();
+    if (ps != nullptr) ps->bind_voltages(&V_);
 }
 
 // ---- Phase 2: build J sparsity + value maps -----------------------------------

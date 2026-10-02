@@ -21,6 +21,8 @@
 #include "TapChangers.hpp"
 
 #include <algorithm>
+#include <array>
+#include <utility>
 
 namespace ls2g {
 
@@ -52,6 +54,9 @@ class LS2G_API TrafoInfo : public BranchContainer::BranchInfo
         real_type phase_target;  // MW (ACTIVE_POWER) or A (CURRENT_LIMITER)
         real_type phase_deadband;
         int phase_regulated;  // the side of the transformer it regulates (1 or 2)
+        // the position of its phase tap changer in the last results (the input one unless an
+        // outer loop moved it, see TrafoContainer::set_results_phase_tap_override)
+        int res_phase_tap_position;
 
         inline TrafoInfo(const TrafoContainer & r_data_trafo, int my_id) noexcept;
 };
@@ -205,6 +210,29 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
         int closest_tap_position(bool phase, int el, real_type value) const;
         const TapChangers & get_tap_changers(bool phase) const { return phase ? phase_taps_ : ratio_taps_; }
 
+        /**
+         * The pi model coefficients (y11, y12, y21, y22, pu, the raw block of a transformer
+         * connected at both ends) of transformer `el` with its phase tap changer at
+         * `phase_position` and the shift `shift_rad` (that position's alpha, or a continuous
+         * one: OpenLoadFlow's PiModelArray overrides alpha only, r, x, g, b stay the tap's);
+         * its ratio changer where it is. At the current position and shift, exactly the block
+         * the container stamps (the shift-dependent impedance of set_shift_dependent_rx
+         * aside, which is not OpenLoadFlow's).
+         */
+        std::array<cplx_type, 4> pi_block_at(int el, int phase_position, real_type shift_rad) const;
+        /// the sign the shift enters the block with: d y12 / d shift = j s y12, d y21 / d shift = -j s y21
+        real_type shift_sign(int el) const { return (!is_tap_side1_[el] && !ignore_tap_side_for_shift_) ? -1. : 1.; }
+
+        /**
+         * Positions of the phase tap changers to compute the next results at (one per
+         * transformer, TapChangers' range; anything else keeps the input position): the
+         * flows are published at those taps, the inputs are not modified. An outer loop's
+         * (see LSGrid::compute_results); empty clears it.
+         */
+        void set_results_phase_tap_override(const std::vector<int> & positions) { results_phase_tap_override_ = positions; }
+        /// the positions of the last results, see TrafoInfo::res_phase_tap_position
+        const std::vector<int> & get_res_phase_tap_position() const { return res_phase_tap_position_; }
+
         void hack_Sbus_for_dc_phase_shifter(
             Eigen::Ref<CplxVect> Sbus,
             bool ac,
@@ -221,6 +249,8 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
                               real_type sn_mva,
                               bool ac) override
         {
+            // an outer loop's taps: the flows at those, the inputs untouched
+            const std::vector<int> moved = _apply_results_phase_tap_override();
             // compute base values
             _compute_branch_results_no_amps(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
             // adjust for phase shifters
@@ -240,7 +270,13 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
             }
             // compute amps flow
             _compute_amps();
+            _restore_results_phase_tap_override(moved);
         }
+
+        // see set_results_phase_tap_override: moves the overridden taps (returns the
+        // transformers moved, with their input positions), and records the positions
+        std::vector<int> _apply_results_phase_tap_override();
+        void _restore_results_phase_tap_override(const std::vector<int> & moved);
 
     public:
         Eigen::Ref<const RealVect> dc_x_tau_shift() const {return dc_x_tau_shift_;}
@@ -346,6 +382,15 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
         // the tap changers, see set_tap_changer (none: neutral)
         TapChangers ratio_taps_;
         TapChangers phase_taps_;
+        // see set_results_phase_tap_override, get_res_phase_tap_position (not serialized: results)
+        std::vector<int> results_phase_tap_override_;
+        std::vector<int> res_phase_tap_position_;
+        std::vector<std::pair<int, std::array<real_type, 2> > > results_saved_;  // ratio, shift before the override
+
+        // the AC pi block (y11, y12, y21, y22) of the given parameters
+        static std::array<cplx_type, 4> _pi_coeffs(real_type r, real_type x, cplx_type h1, cplx_type h2,
+                                                   real_type ratio, real_type shift, bool tap_side1,
+                                                   bool ignore_tap_side_for_shift);
         std::vector<std::vector<real_type> > rx_corr_alpha_;  // per trafo: alpha (rad), ascending
         std::vector<std::vector<real_type> > rx_corr_pct_;    // per trafo: r/x correction (%) at each alpha (r% == x%)
 
@@ -408,7 +453,8 @@ phase_regulation_mode(RegulationMode::FIXED),
 phase_regulating(false),
 phase_target(0.),
 phase_deadband(0.),
-phase_regulated(-1)
+phase_regulated(-1),
+res_phase_tap_position(0)
 {
     if(my_id < 0) return;
     if(my_id >= r_data_trafo.nb()) return;
@@ -443,6 +489,9 @@ phase_regulated(-1)
         phase_deadband = ptc.deadband(my_id);
         phase_regulated = ptc.regulated(my_id);
     }
+    const std::vector<int> & res_pos = r_data_trafo.get_res_phase_tap_position();
+    res_phase_tap_position = static_cast<std::size_t>(my_id) < res_pos.size() ? res_pos[static_cast<std::size_t>(my_id)]
+                                                                              : phase_tap_position;
 }
 
 

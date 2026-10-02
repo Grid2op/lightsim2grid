@@ -19,6 +19,7 @@
 #include "Eigen/SparseCore"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -728,6 +729,121 @@ class LS2G_API Hvdc
 };
 
 /**
+ * Transformers whose phase shift the Newton solves for, or whose phase tap an outer loop
+ * moves between two solves (OpenLoadFlow's PhaseControl, CONTINUOUS_WITH_DISCRETISATION).
+ * Nothing is declared unless an outer-loop algorithm asks (set_controllers): every loop below
+ * is then empty and the system is bit-identical to one without this extension.
+ *
+ * Per declared transformer t (connected at both ends, on two different solver buses):
+ *   - its pi block lives in Ybus, PATCHED BY VALUE whenever its shift a_t or its tap moves
+ *     (a mutable Ybus handed in by the algorithm, see set_mutable_ybus): the difference to
+ *     the block stamped there, so whatever else sits on those coefficients keeps its part;
+ *   - a CONTROLLER (an active power one) owns a column, a_t (rad, the transformer's
+ *     `shift_`), and a row, the union of OpenLoadFlow's two equations, chosen by value:
+ *         F = a_t - a_target                (control off: BRANCH_TARGET_ALPHA1)
+ *         F = P_side(V, a_t) - p_target     (control on:  BRANCH_TARGET_P)
+ *     P_side the active power entering the transformer on its regulated side. The P and Q
+ *     rows of its two buses get dS/da_t;
+ *   - any other declared transformer (a current limiter) owns nothing: only its tap moves.
+ * A shift a moves the block as OpenLoadFlow's PiModelArray does: y12 and y21 only, by
+ * exp(+/- j s (a - a_tap)), s = TrafoContainer::shift_sign; r, x, g, b stay the tap's.
+ *
+ * Sign conventions as VoltageControl (mis = V conj(Ybus V) - Sbus, res = -F, J = dF/dx).
+ */
+class LS2G_API PhaseShift
+{
+    public:
+        PhaseShift() = default;
+
+        /// the transformers to handle (grid ids) and, for each, whether it is a controller
+        /// owning a column; read at the next init_topology
+        void set_controllers(const std::vector<int> & trafo_ids, const std::vector<char> & with_column) {
+            declared_ = trafo_ids;
+            declared_column_ = with_column;
+        }
+        /// the matrix Ybus refers to, writable (null: nothing is patched and nothing declared
+        /// may act)
+        void set_mutable_ybus(Eigen::SparseMatrix<cplx_type> * ybus) { ybus_ = ybus; }
+        /// the system's voltages, read when J is filled
+        void bind_voltages(const CplxVect * V) { V_ = V; }
+
+        void update_state(const Base * nr_system_base_ptr, const LSGrid * lsgrid_ptr,
+                          const EigenRefConstCplxSpMat & Ybus, const Eigen::Ref<const CplxVect> & Sbus,
+                          const Eigen::Ref<const RealVect> & slack_weights);
+        void init_topology(const Eigen::Ref<const IntVect> & slack_ids, const Eigen::Ref<const RealVect> & slack_weights,
+                           const Eigen::Ref<const IntVect> & pv, const Eigen::Ref<const IntVect> & pq);
+        void register_in(NRLedger & ledger);
+        void declare_feature_entries(FeatureSink & sink);
+        void fill_feature_values(FeatureWriter & writer, const Eigen::Ref<const RealVect> & Va) const;
+        void adjust_mismatch(const Eigen::Ref<const CplxVect> & V_t, const Eigen::Ref<const RealVect> & dx,
+                             Eigen::Ref<CplxVect> mis) const;
+        void fill_custom_rows(Eigen::Ref<RealVect> res, const Eigen::Ref<const RealVect> & Va,
+                              const Eigen::Ref<const RealVect> & Vm, const Eigen::Ref<const RealVect> & dx) const;
+        void apply_step(const Eigen::Ref<const RealVect> & dx);
+        void clear();
+
+        // ----- what an outer loop acts on (by transformer grid id; a no-op for one not handled)
+        bool handles(int trafo_id) const { return _index(trafo_id) >= 0; }
+        /// switch the active power control of a controller on or off (off: its shift stays
+        /// where it is)
+        void set_control_on(int trafo_id, bool on);
+        /// move its phase tap to `position`: its block follows, its shift is that tap's
+        void set_tap(int trafo_id, int position);
+        real_type shift(int trafo_id) const;
+        int position(int trafo_id) const;
+        /// the tap position of every transformer handled, INT_MIN for the others (by grid id)
+        void positions(std::vector<int> & out) const;
+        /// the current through its `side` (1 or 2), pu of that side's base, and its derivative
+        /// with respect to the shift
+        void current(int trafo_id, int side, real_type & i_pu, real_type & di_da) const;
+
+    private:
+        struct Entry {
+            int trafo = -1;
+            bool column = false;
+            int b1 = -1, b2 = -1;              // solver buses
+            int k11 = -1, k12 = -1, k21 = -1, k22 = -1;  // Ybus value positions
+            real_type sign = 1.;               // TrafoContainer::shift_sign
+            int side = 1;                      // the regulated side
+            real_type p_target = 0.;           // pu
+            bool control_on = false;
+            int pos = 0;                       // tap position
+            real_type a_tap = 0.;              // the tap's shift
+            real_type a = 0.;                  // the shift now
+            real_type a_target = 0.;           // the alpha row's target
+            std::array<cplx_type, 4> applied;  // the block stamped in Ybus now
+            std::array<cplx_type, 4> tap;      // the block at the tap's shift
+            // ledger
+            int col = -1, row = -1;
+            int p1 = -1, q1 = -1, p2 = -1, q2 = -1;      // rows of the two buses
+            int th1 = -1, th2 = -1, vm1 = -1, vm2 = -1;  // columns of the two buses
+            // feature handles
+            int h_p1 = -1, h_q1 = -1, h_p2 = -1, h_q2 = -1;
+            int h_a = -1, h_th1 = -1, h_th2 = -1, h_vm1 = -1, h_vm2 = -1;
+        };
+        int _index(int trafo_id) const {
+            if (trafo_id < 0 || static_cast<std::size_t>(trafo_id) >= index_of_trafo_.size()) return -1;
+            return index_of_trafo_[static_cast<std::size_t>(trafo_id)];
+        }
+        // the block at shift a (the tap's r, x, g, b): y12, y21 rotated from the tap's
+        static std::array<cplx_type, 4> _block_at(const Entry & e, real_type a) {
+            const real_type d = e.sign * (a - e.a_tap);
+            const cplx_type rot(std::cos(d), std::sin(d));
+            return {e.tap[0], e.tap[1] * rot, e.tap[2] * std::conj(rot), e.tap[3]};
+        }
+        void _patch(Entry & e);
+        void _reset(Entry & e);
+
+        std::vector<int> declared_;
+        std::vector<char> declared_column_;
+        Eigen::SparseMatrix<cplx_type> * ybus_ = nullptr;
+        const CplxVect * V_ = nullptr;
+        const LSGrid * lsgrid_ = nullptr;
+        std::vector<Entry> entries_;
+        std::vector<int> index_of_trafo_;
+};
+
+/**
  * Remote voltage control (generators) + Static Var Compensators (SVC).
  *
  * BORDERED formulation. Per control group g = { controllers c1..cN (remote
@@ -1419,6 +1535,18 @@ public:
         if (vc != nullptr) vc->set_held_controllers(q_pu_per_controller);
     }
 
+    // The PhaseShift extension, see PhaseShift. No-ops (and null / empty answers) without it.
+    void set_phase_controllers(const std::vector<int> & trafo_ids, const std::vector<char> & with_column) {
+        PhaseShift* ps = _find_extension<PhaseShift>();
+        if (ps != nullptr) ps->set_controllers(trafo_ids, with_column);
+    }
+    void set_phase_mutable_ybus(Eigen::SparseMatrix<cplx_type> * ybus) {
+        PhaseShift* ps = _find_extension<PhaseShift>();
+        if (ps != nullptr) ps->set_mutable_ybus(ybus);
+    }
+    PhaseShift * phase_shift() { return _find_extension<PhaseShift>(); }
+    const PhaseShift * phase_shift() const { return _find_extension<PhaseShift>(); }
+
     // Held SVCs switched on, see VoltageControl::release_held_svcs. No-op without the
     // extension.
     void release_held_svcs(const std::vector<real_type> & target_vm_per_svc) {
@@ -2022,7 +2150,7 @@ private:
 // from the ledger) and before Hvdc; Hvdc must stay the LAST extension (it reads
 // the ledger populated by all the others).
 
-using SingleSlackNRSystem = NRSystem<Base, VoltageControl, Hvdc>;
+using SingleSlackNRSystem = NRSystem<Base, VoltageControl, PhaseShift, Hvdc>;
 using MultiSlackNRSystem  = NRSystem<Base, MultiSlack, VoltageControl, Hvdc>;
 
 } // namespace ls2g

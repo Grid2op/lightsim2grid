@@ -4,6 +4,7 @@ list(APPEND SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/BaseAlgo.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemBase.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemHvdc.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemPhaseShift.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemVoltageControl.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemMultiSlack.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/OuterLoopDriver.cpp"
@@ -11,6 +12,7 @@ list(APPEND SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/DistributedSlackLoop.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/HvdcAcEmulationLimitsLoop.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/VoltageMonitoringLoop.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/PhaseControlLoop.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/ReactiveLimitsLoop.cpp"
 )
 set(SOURCES ${SOURCES} PARENT_SCOPE)
