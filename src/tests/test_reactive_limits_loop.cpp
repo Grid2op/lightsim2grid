@@ -234,3 +234,80 @@ TEST_CASE("the first controller of a group is held, the other one regulates on",
     CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-9);
     CHECK(gen_q(grid, 2) == Approx(gen_q(ref, 2)).margin(1e-6));
 }
+
+namespace {
+
+// buses 0-1-2-3 in a line, a load at bus 3, the slack generator at bus 0; two hvdc lines from
+// bus 1 to bus 3, their side-2 stations holding bus 3, with the reactive ranges
+// [-range_a, range_a] and [-range_b, range_b]
+LSGrid make_two_station_grid(real_type range_a, real_type range_b)
+{
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(4, 1, RealVect::Constant(4, 138.), 0, 0);
+    Eigen::VectorXi from_id(3), to_id(3);
+    from_id << 0, 1, 2;
+    to_id << 1, 2, 3;
+    grid.init_powerlines(RealVect::Constant(3, 0.01), RealVect::Constant(3, 0.08),
+                         CplxVect::Zero(3), from_id, to_id);
+    RealVect load_p(1), load_q(1);
+    load_p << 60.;
+    load_q << 40.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 3;
+    grid.init_loads(load_p, load_q, load_bus);
+    RealVect gen_p(1), gen_v(1), gen_min_q(1), gen_max_q(1);
+    gen_p << 0.;
+    gen_v << 1.02;
+    gen_min_q << -500.;
+    gen_max_q << 500.;
+    Eigen::VectorXi gen_bus(1);
+    gen_bus << 0;
+    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+
+    Eigen::VectorXi bus1(2), bus2(2);
+    bus1 << 1, 1;
+    bus2 << 3, 3;
+    const std::vector<int> type{0, 0}, mode{0, 0};
+    const std::vector<bool> vreg1{false, false}, vreg2{true, true}, droop_on{false, false};
+    const RealVect zero = RealVect::Zero(2);
+    RealVect vm(2), min_q(2), max_q(2), pf(2), p(2), r(2), vn(2);
+    vm << 1.01, 1.01;
+    min_q << -range_a, -range_b;
+    max_q << range_a, range_b;
+    pf << 1., 1.;
+    p << 10., 10.;
+    r << 0., 0.;
+    vn << 320., 320.;
+    grid.init_hvdc_lines(bus1, bus2, type, type, zero, zero, vreg1, vreg2, vm, vm, zero, zero,
+                         min_q, max_q, min_q, max_q, pf, pf, mode, p, r, vn, droop_on,
+                         zero, zero, zero, zero);
+    grid.set_reactive_dispatch_olf(true);
+    return grid;
+}
+
+}  // namespace
+
+TEST_CASE("stations holding one bus share it by their widest reactive range", "[reactive_dispatch]")
+{
+    // at their active power the ranges are 1:3; over their whole curves they are equal
+    LSGrid grid = make_two_station_grid(50., 150.);
+    REQUIRE(solve_plain(grid).size() == 4);
+    const RealVect q_at_p = std::get<1>(grid.get_dcline_res2());
+    const real_type total = q_at_p(0) + q_at_p(1);
+    CHECK(std::abs(total) > 1.);
+    CHECK(q_at_p(1) == Approx(3. * q_at_p(0)).epsilon(1e-9));
+
+    RealVect widest(2);
+    widest << 300., 300.;
+    grid.set_station_reactive_range_max(RealVect::Constant(2, std::numeric_limits<real_type>::quiet_NaN()), widest);
+    REQUIRE(solve_plain(grid).size() == 4);
+    const RealVect q_widest = std::get<1>(grid.get_dcline_res2());
+    CHECK(q_widest(0) == Approx(q_widest(1)).epsilon(1e-9));
+    CHECK(q_widest(0) + q_widest(1) == Approx(total).epsilon(1e-9));
+    // copied with the grid
+    LSGrid copy(grid);
+    CHECK(copy.get_station_reactive_range_max(2)(0) == 300.);
+}

@@ -171,6 +171,52 @@ class TestDistributedSlack(unittest.TestCase):
         p_ref = np.array([gen.res_p_mw for gen in ref.get_generators()])
         self.assertLess(np.abs(p - p_ref).max(), 2e-3)
 
+    def test_target_q_follows_the_moved_p(self):
+        # a unit that does not regulate asks more than it can absorb: OpenLoadFlow clamps its
+        # target Q into its limits at its CURRENT target P (forceTargetQInReactiveLimits),
+        # which the slack moves
+        import pypowsybl.loadflow as lf
+        from lightsim2grid.algorithm import DistributedSlack
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
+        from _olf_reference import reference_parameters
+
+        def net_():
+            net = self._net()
+            net.update_generators(id="B3-G", voltage_regulator_on=False, target_q=-80.)
+            net.create_curve_reactive_limits(id=["B3-G", "B3-G"], p=[0., 300.], min_q=[-10., -70.],
+                                             max_q=[40., 40.])
+            net.update_loads(id="B3-L", p0=net.get_loads().loc["B3-L", "p0"] + 150.)
+            return net
+
+        net = net_()
+        params = reference_parameters(
+            provider={"slackBusSelectionMode": "NAME", "slackBusesIds": net.get_generators().loc["B1-G", "bus_id"],
+                      "outerLoopNames": "DistributedSlack", "newtonRaphsonConvEpsPerEq": "1e-10",
+                      "slackBusPMaxMismatch": "1e-4"},
+            distributed_slack=True, use_reactive_limits=True, read_slack_bus=False,
+            balance_type=lf.BalanceType.PROPORTIONAL_TO_GENERATION_P_MAX)
+        self.assertEqual(lf.run_ac(net, params)[0].status.name, "CONVERGED")
+        olf = net.get_generators().loc["B3-G"]
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net_(), gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+        grid.change_algorithm(OUTER)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(DistributedSlack(slack_bus_p_max_mismatch_mw=1e-4))
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+        gen = {g.name: g for g in grid.get_generators()}["B3-G"]
+        self.assertAlmostEqual(gen.res_p_mw, -olf["p"], places=3)
+        self.assertAlmostEqual(gen.res_q_mvar, -olf["q"], places=3)
+        # at its min Q at the new P, not the initial one
+        self.assertAlmostEqual(gen.res_q_mvar, grid.gen_limits_at(gen.id, gen.res_p_mw)[0], places=6)
+        self.assertNotAlmostEqual(gen.res_q_mvar, gen.target_q_mvar, places=1)
+        vm_olf = (net.get_buses()["v_mag"] / net.get_voltage_levels()["nominal_v"].reindex(
+            net.get_buses()["voltage_level_id"]).to_numpy()).to_numpy()
+        self.assertLess(np.abs(np.abs(V) - vm_olf).max(), 1e-6)
+
     def test_detection(self):
         from lightsim2grid.lightsim2grid_cpp import LimitViolationType
         grid = self._grid(gen_slack_id="B1-G")
@@ -426,6 +472,56 @@ class TestReactiveLimits(unittest.TestCase):
                 self.assertAlmostEqual(g.res_q_mvar, -olf_q[g.name], places=4)
                 compared += 1
         self.assertGreater(compared, 50)
+
+    def test_detection_is_olf_first_round(self):
+        # a plain solve reports exactly the buses OpenLoadFlow switches PV -> PQ first
+        import re
+        import pypowsybl.loadflow as lf
+        import pypowsybl.report as rp
+        from lightsim2grid.lightsim2grid_cpp import LimitViolationType
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
+        from lightsim2grid.network.from_pypowsybl._aux_add_slack import _default_distributed_slack
+        from lightsim2grid.network.from_pypowsybl._olf_compare import lightsim_bus_to_iidm
+        from _olf_reference import reference_parameters
+        net = self._net()
+        slack_gen = next(iter(_default_distributed_slack(net, net.get_generators())))
+        params = reference_parameters(
+            provider={"slackBusSelectionMode": "NAME", "slackBusesIds": net.get_generators().loc[slack_gen, "bus_id"],
+                      "outerLoopNames": "ReactiveLimits", "newtonRaphsonConvEpsPerEq": "1e-9"},
+            distributed_slack=False, use_reactive_limits=True, read_slack_bus=False)
+        report = rp.ReportNode()
+        lf.run_ac(net, params, report_node=report)
+        first = re.split(r"\n\s*\+ (?=\d+ buses switched PV -> PQ)", str(report))
+        self.assertGreater(len(first), 1)
+        olf = set(re.findall(r"Switch bus '([^']+)' PV -> PQ", first[1]))
+
+        net = self._net()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, gen_slack_id=slack_gen, sort_index=False, buses_for_sub=False,
+                                       keep_half_open_lines=True, fuse_zero_impedance_branches=True,
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+        grid.change_algorithm(SING)
+        flat = np.full(grid.total_bus(), 1.0 + 0j)
+        V0 = np.exp(1j * np.angle(grid.dc_pf(flat, 30, 1e-12)))
+        self.assertGreater(grid.ac_pf(V0, 30, 1e-9).shape[0], 0)
+        to_iidm = lightsim_bus_to_iidm(grid, net)
+        # OpenLoadFlow's maxReactivePowerMismatch (1e-9 pu of 100 MVA)
+        ours = {to_iidm[v.element_id] for v in grid.get_physical_violations(True, 1e-7, 0.)
+                if v.violation_type in (LimitViolationType.LOW_Q, LimitViolationType.HIGH_Q)}
+        self.assertGreater(len(olf), 0)
+        self.assertEqual(ours, olf)
+
+    def test_curve_limits(self):
+        # a generator's limits read on its capability curve, as OpenLoadFlow reads them
+        grid = _grid(SING)
+        grid.set_gen_capability_curves(np.array([0, 0, 0], dtype=np.int32), np.array([0., 50., 100.]),
+                                       np.array([-10., -20., -10.]), np.array([10., 30., 10.]))
+        self.assertEqual(grid.gen_limits_at(0, 25.), (-15., 20.))     # interpolated
+        self.assertEqual(grid.gen_limits_at(0, 120.), (-6., 2.))      # extrapolated
+        self.assertEqual(grid.gen_limits_at(0, 150.), (-5., -5.))     # crossed: their mean
+        self.assertEqual(grid.gen_limits_at(1, 25.), (None, None))    # no curve
+        self.assertEqual(grid.copy().gen_limits_at(0, 25.), (-15., 20.))
 
     def test_parameters(self):
         from lightsim2grid.algorithm import ReactiveLimits

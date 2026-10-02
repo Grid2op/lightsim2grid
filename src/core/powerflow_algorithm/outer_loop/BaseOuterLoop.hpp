@@ -66,12 +66,15 @@ class LS2G_API OuterDeclaration final
  * private to the algorithm (the grid is never modified). Absent in detection mode.
  *
  * `Sbus` is the injection the next Newton solve reads (solver numbering, pu, generation
- * positive); `Sbus_init` the one the grid handed in, untouched by any loop.
+ * positive); `Sbus_init` the one the grid handed in, untouched by any loop; `Sbus_target`
+ * that one with the units' targets a loop moved (DistributedSlack's target P, and the target
+ * Q that follows it, see LSGrid::set_gen_raw_target_q): a unit's own output, not a residual.
  */
 struct OuterState
 {
     CplxVect * Sbus = nullptr;
     const CplxVect * Sbus_init = nullptr;
+    CplxVect * Sbus_target = nullptr;
     /// the active power target (MW) a loop set for each generator / storage unit, NaN where
     /// it kept the grid's; empty until a loop sizes it. Storage units in the load convention,
     /// as the grid stores them. Published by LSGrid::compute_results.

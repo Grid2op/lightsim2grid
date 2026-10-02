@@ -21,6 +21,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LSGrid.hpp"
+#include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
 #include "powerflow_algorithm/outer_loop/VoltageMonitoringLoop.hpp"
 
 using Catch::Approx;
@@ -40,7 +41,7 @@ const real_type NAN_ = std::numeric_limits<real_type>::quiet_NaN();
 // buses 0-1-2-3 in a line, a heavy load at bus 3 pulling the voltages down, the slack
 // generator at bus 0 (1.0 pu), an SVC at bus 2 regulating `reg_bus`, of mode `mode`
 // (0 off, 1 voltage) at `target_vm` pu
-LSGrid make_grid(int mode = 0, real_type target_vm = 1., int reg_bus = 2)
+LSGrid make_grid(int mode = 0, real_type target_vm = 1., int reg_bus = 2, real_type b_range = 5.)
 {
     LSGrid grid;
     grid.set_sn_mva(100.);
@@ -71,8 +72,8 @@ LSGrid make_grid(int mode = 0, real_type target_vm = 1., int reg_bus = 2)
     target << target_vm;
     q << 0.;
     slope << 0.;
-    b_min << -5.;
-    b_max << 5.;
+    b_min << -b_range;
+    b_max << b_range;
     Eigen::VectorXi reg(1), bus(1);
     reg << reg_bus;
     bus << 2;
@@ -209,4 +210,22 @@ TEST_CASE("b0 is a shunt carried by the SVC", "[svc]")
     CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-10);
     // its output is the SVC's, b0.V^2 produced
     CHECK(svc_q(grid) == Approx(20. * std::norm(V(2))).margin(1e-8));
+}
+
+TEST_CASE("a monitor switched on is held at its limit by ReactiveLimits", "[outer][svc][reactive_limits]")
+{
+    // switched on at 0.97 pu, but a 0.05 pu susceptance cannot hold it there
+    LSGrid grid = make_grid(0, 1., 2, /*b_range=*/0.05);
+    set_monitor(grid, 0.99, 1.10);
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<VoltageMonitoringLoop>());
+    grid.add_outer_loop(std::make_shared<ls2g::ReactiveLimitsLoop>());
+    const CplxVect V = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    REQUIRE(V.size() == 4);
+    CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    CHECK(grid.get_algo().get_linear_solver_stats().nb_analyze == 1);
+    CHECK(std::abs(V(2)) < 0.97);
+    // held at b_max V², V that of the solve which switched it (the value is frozen)
+    CHECK(svc_q(grid) == Approx(0.05 * std::norm(V(2)) * 100.).margin(1e-3));
 }

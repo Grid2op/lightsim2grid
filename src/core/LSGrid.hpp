@@ -514,6 +514,59 @@ class LS2G_API LSGrid final
             gen_reactive_range_max_ = range_mvar;
         }
         [[nodiscard]] Eigen::Ref<const RealVect> get_gen_reactive_range_max() const {return gen_reactive_range_max_;}
+        /**
+         * The same for the converter stations of the hvdc lines, one value per line and side
+         * (a VSC station shares its bus' reactive power as a generator does).
+         */
+        void set_station_reactive_range_max(const Eigen::Ref<const RealVect> & range1_mvar,
+                                            const Eigen::Ref<const RealVect> & range2_mvar) {
+            const Eigen::Index nb = static_cast<Eigen::Index>(hvdc_lines_.nb());
+            if(range1_mvar.size() != range2_mvar.size() || (range1_mvar.size() != 0 && range1_mvar.size() != nb)){
+                throw std::runtime_error("LSGrid::set_station_reactive_range_max: one value per hvdc line and side, or none.");
+            }
+            station_reactive_range_max1_ = range1_mvar;
+            station_reactive_range_max2_ = range2_mvar;
+        }
+        [[nodiscard]] Eigen::Ref<const RealVect> get_station_reactive_range_max(int side) const {
+            return side == 1 ? station_reactive_range_max1_ : station_reactive_range_max2_;
+        }
+        /**
+         * The reactive capability curve of some generators: its points, one per entry of
+         * the four vectors (the generator id, its active power in MW, its min and max
+         * reactive power in MVar), any order. Read where a generator's limits must follow a
+         * target P an outer loop moved (the ReactiveLimits loop, the results), as
+         * OpenLoadFlow reads them: interpolated inside the curve, extrapolated past its
+         * ends, crossed extrapolated limits being their mean. A generator without one keeps
+         * its fixed limits. Empty vectors: none. Copied with the grid, not part of
+         * `get_state` / the binary format.
+         */
+        void set_gen_capability_curves(const Eigen::Ref<const Eigen::VectorXi> & gen_id,
+                                       const Eigen::Ref<const RealVect> & p_mw,
+                                       const Eigen::Ref<const RealVect> & min_q_mvar,
+                                       const Eigen::Ref<const RealVect> & max_q_mvar);
+        /// a generator's reactive limits at `p_mw` (MVar) from its curve; false without one
+        bool gen_limits_at(int gen_id, real_type p_mw, real_type & min_q, real_type & max_q) const;
+        /**
+         * OpenLoadFlow's forceTargetQInReactiveLimits on a moved target: each generator's target
+         * Q (MVar) before it was clamped into its limits at its target P, NaN where none was
+         * (an empty vector: none). A generator that does not regulate and whose target P an
+         * outer loop moved (DistributedSlack) injects it clamped into its limits at the new P,
+         * as LfGeneratorImpl.getTargetQ does. Copied with the grid, not serialized.
+         */
+        void set_gen_raw_target_q(const Eigen::Ref<const RealVect> & q_mvar) {
+            if(q_mvar.size() != 0 && q_mvar.size() != static_cast<Eigen::Index>(generators_.nb())){
+                throw std::runtime_error("LSGrid::set_gen_raw_target_q: one value per generator, or none.");
+            }
+            gen_raw_target_q_ = q_mvar;
+        }
+        [[nodiscard]] Eigen::Ref<const RealVect> get_gen_raw_target_q() const {return gen_raw_target_q_;}
+        /// a non-regulating generator's target Q (MVar) at the target P the outer loops gave it
+        /// (set_gen_raw_target_q), its own target Q otherwise
+        [[nodiscard]] real_type gen_target_q_at_outer_target(int gen_id, const std::vector<real_type> & outer_target_p) const;
+        /// a generator's reactive limits at the target P the last solve's outer loops gave it
+        /// (its curve), its fixed ones otherwise
+        void gen_limits_at_outer_target(int gen_id, const std::vector<real_type> & outer_target_p,
+                                        real_type & min_q, real_type & max_q) const;
 
         void set_hold_frozen_regulators(bool hold) {
             if(hold == hold_frozen_regulators_) return;
@@ -2945,6 +2998,8 @@ class LS2G_API LSGrid final
         /// OpenLoadFlow's split of one bus' reactive power between its units (see
         /// set_reactive_dispatch_olf): `q_mvar` shared out, written into `q_out` (aligned
         /// with `units`)
+        /// a station's widest reactive range (set_station_reactive_range_max), `span` without one
+        real_type _station_range_max(int hvdc_id, int side, real_type span) const;
         static void _dispatch_q_olf(const std::vector<const QShare *> & units, real_type q_mvar,
                                     real_type sn_mva, std::vector<real_type> & q_out);
 
@@ -3220,6 +3275,14 @@ class LS2G_API LSGrid final
         }
         bool reactive_dispatch_olf_ = false;  // see set_reactive_dispatch_olf
         RealVect gen_reactive_range_max_;     // see set_gen_reactive_range_max
+        RealVect station_reactive_range_max1_;  // see set_station_reactive_range_max
+        RealVect gen_raw_target_q_;  // see set_gen_raw_target_q
+        RealVect station_reactive_range_max2_;
+        // the generators' target P the last solve's outer loops set (NaN: unchanged), while
+        // compute_results publishes it: their limits follow it (gen_limits_at_outer_target)
+        std::vector<real_type> results_gen_target_p_;
+        // see set_gen_capability_curves: per generator, its points sorted by p (empty: none)
+        std::vector<std::vector<std::array<real_type, 3> > > gen_curves_;
         // see clear_outer_loops / add_outer_loop; empty and `default` until edited
         std::vector<std::shared_ptr<BaseOuterLoop> > outer_loops_;
         bool outer_loops_default_ = true;

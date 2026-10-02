@@ -151,14 +151,22 @@ OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
     for(std::size_t k = 0; k < units_.size(); ++k){
         const real_type delta = new_mw[k] - current_mw_[k];
         moved += std::abs(delta);
-        if(delta != 0.){
-            (*state.Sbus)(unit_solver_bus_[k]) += cplx_type(delta / sn_mva, 0.);
-        }
+        cplx_type ds = {delta / sn_mva, 0.};
         current_mw_[k] = new_mw[k];
         if(units_[k].kind == slack_redistribution::UnitKind::GENERATOR){
-            state.gen_target_p[units_[k].el_id] = new_mw[k];
+            const int gen_id = units_[k].el_id;
+            // a unit that does not regulate: its target Q follows its limits at the new P
+            // (forceTargetQInReactiveLimits, LfGeneratorImpl.getTargetQ)
+            const bool pq = !grid.get_generators().get_voltage_regulator_on(gen_id);
+            const real_type q_before = pq ? grid.gen_target_q_at_outer_target(gen_id, state.gen_target_p) : 0.;
+            state.gen_target_p[static_cast<std::size_t>(gen_id)] = new_mw[k];
+            if(pq) ds += cplx_type(0., (grid.gen_target_q_at_outer_target(gen_id, state.gen_target_p) - q_before) / sn_mva);
         } else {
             state.storage_target_p[units_[k].el_id] = -new_mw[k];
+        }
+        if(ds != cplx_type(0., 0.)){
+            (*state.Sbus)(unit_solver_bus_[k]) += ds;
+            if(state.Sbus_target != nullptr) (*state.Sbus_target)(unit_solver_bus_[k]) += ds;
         }
     }
     // OpenLoadFlow's PreviousStateInfo.moved, its 0.9 against rounding

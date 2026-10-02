@@ -349,6 +349,31 @@ void bind_gridmodel(py::module_& m) {
              "what `set_reactive_dispatch_olf` shares by; NaN for its range at its target P. Copied "
              "with the grid, not serialized.")
         .def("get_gen_reactive_range_max", &LSGrid::get_gen_reactive_range_max)
+        .def("set_station_reactive_range_max", &LSGrid::set_station_reactive_range_max,
+             py::arg("range1_mvar"), py::arg("range2_mvar"),
+             "The same as `set_gen_reactive_range_max` for the converter stations, one value per hvdc "
+             "line on each side (NaN for the range at its active power). Copied with the grid, not serialized.")
+        .def("get_station_reactive_range_max", &LSGrid::get_station_reactive_range_max, py::arg("side"))
+        .def("set_gen_raw_target_q", &LSGrid::set_gen_raw_target_q, py::arg("q_mvar"),
+             "OpenLoadFlow's forceTargetQInReactiveLimits on a moved target: each generator's target Q "
+             "(MVar) before it was clamped into its limits at its target P (NaN: none). A non-regulating "
+             "generator whose target P an outer loop moved injects it clamped into its limits at the new "
+             "P. Copied with the grid, not serialized.")
+        .def("get_gen_raw_target_q", &LSGrid::get_gen_raw_target_q)
+        .def("set_gen_capability_curves", &LSGrid::set_gen_capability_curves,
+             py::arg("gen_id"), py::arg("p_mw"), py::arg("min_q_mvar"), py::arg("max_q_mvar"),
+             "The reactive capability curve of some generators, one point per entry (generator id, "
+             "P in MW, min and max Q in MVar), read where a generator's limits must follow a target "
+             "P an outer loop moved (the ReactiveLimits loop, the results), as OpenLoadFlow reads "
+             "them: interpolated, extrapolated past the ends, crossed limits being their mean. "
+             "Copied with the grid, not serialized.")
+        .def("gen_limits_at", [](const LSGrid & self, int gen_id, real_type p_mw) -> py::tuple {
+                 real_type lo, hi;
+                 if(!self.gen_limits_at(gen_id, p_mw, lo, hi)) return py::make_tuple(py::none(), py::none());
+                 return py::make_tuple(lo, hi);
+             }, py::arg("gen_id"), py::arg("p_mw"),
+             "A generator's reactive limits (MVar) at `p_mw` from its capability curve, "
+             "(None, None) without one.")
         .def("set_svc_b0", &LSGrid::set_svc_b0, py::arg("b0_pu"),
              "The standby automaton's fixed susceptance of each SVC, pu (sn_mva base, at the "
              "nominal voltage of the SVC's own bus; 0 for none): a shunt at the SVC's bus, in "

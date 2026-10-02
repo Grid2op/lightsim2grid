@@ -4,8 +4,8 @@ Change Log
 [TODO]
 --------
 - OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: ``DistributedSlack``,
-  ``HvdcAcEmulationLimits``, ``VoltageMonitoring`` and ``ReactiveLimits`` are there (the latter
-  with limits fixed at the initial target P), the others are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
+  ``HvdcAcEmulationLimits``, ``VoltageMonitoring`` and ``ReactiveLimits`` are there, the others
+  are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
 - Control limits are detected but never **enforced**: ``compute_physical_violations`` reports a
   distributed-slack machine past ``get_min_p`` / ``get_max_p`` (``GenPCheck``) and a bus past its
   reactive capability (``BusQCheck``), but no algorithm reads a limit, so the solve still
@@ -239,7 +239,13 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``VoltageMonitoring`` outer loop: OpenLoadFlow's, switching an idle standby SVC on at its
   automaton's set-point when the voltage it monitors leaves the thresholds.
 - [ADDED] ``ReactiveLimits`` outer loop: OpenLoadFlow's, freezing a bus PQ at its units' reactive
-  limit and releasing it, remote voltage control and the robust mode included.
+  limit and releasing it, remote voltage control, the robust mode and switched-on monitors included.
+- [ADDED] ``LSGrid.set_gen_capability_curves`` / ``gen_limits_at``: reactive limits that follow the
+  target P ``DistributedSlack`` moved, in ``ReactiveLimits`` and the results.
+- [ADDED] ``LSGrid.set_gen_raw_target_q``: a non-regulating unit's target Q follows its limits at the
+  target P ``DistributedSlack`` moved (OpenLoadFlow's ``forceTargetQInReactiveLimits``).
+- [FIXED] With ``set_reactive_dispatch_olf``, VSC stations share a bus by their widest reactive range
+  over their curve, as generators (``set_station_reactive_range_max``).
 - [ADDED] ``LSGrid.set_reactive_dispatch_olf``: a bus' reactive power split between its units as
   OpenLoadFlow does (results only; on with ``init_from_pypowsybl(olf_rules=...)``).
 - [FIXED] With ``olf_rules``, reactive limits are OpenLoadFlow's: a generator's capability curve

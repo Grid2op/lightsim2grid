@@ -657,6 +657,13 @@ class OneSideContainer : public GenericContainer
                 if(!std::isnan(res_p_mw[el_id])) res_p_(static_cast<Eigen::Index>(el_id)) = res_p_mw[el_id];
             }
         }
+        /// the same for the reactive power (MVar): the target Q that followed such a target
+        void override_res_q(const std::vector<real_type> & res_q_mvar){
+            if(static_cast<Eigen::Index>(res_q_mvar.size()) != res_q_.size()) return;
+            for(std::size_t el_id = 0; el_id < res_q_mvar.size(); ++el_id){
+                if(!std::isnan(res_q_mvar[el_id])) res_q_(static_cast<Eigen::Index>(el_id)) = res_q_mvar[el_id];
+            }
+        }
 
     protected:
         // same as get_bus, for an el_id one of our own loops produced (see _get_bus_internal)

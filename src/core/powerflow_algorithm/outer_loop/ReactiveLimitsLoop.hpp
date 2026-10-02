@@ -47,8 +47,9 @@ class LSGrid;
  * An SVC's limits are its susceptance range at the bus' voltage, so they move with the
  * solve. With `robust_mode`, a remote controller bus whose own voltage is unrealistic is
  * frozen at its units' target Q (MIN_REALISTIC_V / MAX_REALISTIC_V in OpenLoadFlow) and
- * restarted from 1 pu, as is one frozen at a limit with such a voltage. Not yet:
- * capability curves at a moving target P.
+ * restarted from 1 pu, as is one frozen at a limit with such a voltage. A generator's limits
+ * follow the target P an outer loop gave it (LSGrid::gen_limits_at_outer_target, its
+ * capability curve), so a frozen bus whose units moved is frozen again at the new limit.
  */
 class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
 {
@@ -89,7 +90,7 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             int entry = -1;          ///< its entry in plan_
             int bus_solver = -1;
             bool local = true;       ///< held through the PV path (else: by a group)
-            real_type min_q = 0.;    ///< the sum of its units' fixed limits, MVar (an SVC's are not)
+            real_type min_q = 0.;    ///< the sum of its storage units' and stations' limits, MVar
             real_type max_q = 0.;
             int reg_bus_solver = -1; ///< the bus it regulates
             real_type target_vm = 1.;    ///< its set-point, pu
@@ -100,10 +101,15 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             real_type target_q = 0.; ///< MVar, its units' target Q (the robust mode's)
             real_type frozen_q = 0.;     ///< MVar, while frozen
             int nb_pv_pq = 0;        ///< how many times it was switched PV -> PQ
+            /// an idle standby SVC's bus (a voltage monitor, held by the plan): checked only
+            /// once the VoltageMonitoring loop switched it on (OuterState::svc_target_vm)
+            int monitor_svc = -1;
         };
 
         /// the plan of every controller bus of `ctx` (bus_q_check)
         static bus_q_check::BusQPlan _plan(const OuterContext & ctx);
+        /// whether `ctx` has a voltage monitor (a held SVC controller of the plan)
+        static bool _has_monitor(const OuterContext & ctx);
         /// the generation of a PV controller bus in this solve, MVar
         real_type _bus_q(const OuterContext & ctx, const ControllerBus & bus) const;
         /// its limits in this solve (an SVC's at the bus' voltage), MVar

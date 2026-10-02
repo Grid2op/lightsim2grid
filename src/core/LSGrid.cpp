@@ -102,6 +102,10 @@ LSGrid::LSGrid(const LSGrid & other)
     dc_slack_on_can_participate_ = other.dc_slack_on_can_participate_;
     reactive_dispatch_olf_ = other.reactive_dispatch_olf_;
     gen_reactive_range_max_ = other.gen_reactive_range_max_;
+    station_reactive_range_max1_ = other.station_reactive_range_max1_;
+    gen_raw_target_q_ = other.gen_raw_target_q_;
+    station_reactive_range_max2_ = other.station_reactive_range_max2_;
+    gen_curves_ = other.gen_curves_;
 
     // the copy gets its own loops: a parameter changed on one grid's must not reach the other
     outer_loops_default_ = other.outer_loops_default_;
@@ -2115,6 +2119,7 @@ void LSGrid::compute_results(bool ac){
         std::vector<real_type> gen_target_p, storage_target_p;
         _algo.get_outer_target_p(gen_target_p, storage_target_p);
         if(!gen_target_p.empty()) generators_.override_res_p(gen_target_p);
+        results_gen_target_p_ = gen_target_p;
         if(!storage_target_p.empty()) storages_.override_res_p(storage_target_p);
     }
 
@@ -2144,6 +2149,16 @@ void LSGrid::compute_results(bool ac){
 
     // first the elements whose reactive output needs no powerflow to be known
     generators_.set_q(ac);
+    if(ac && !results_gen_target_p_.empty() && gen_raw_target_q_.size() > 0){
+        // a non-regulating unit whose target P the outer loops moved: its target Q followed
+        std::vector<real_type> res_q(generators_.nb(), std::numeric_limits<real_type>::quiet_NaN());
+        for(int gen_id = 0; gen_id < static_cast<int>(generators_.nb()); ++gen_id){
+            if(generators_.get_status(gen_id) && !generators_.get_voltage_regulator_on(gen_id)){
+                res_q[static_cast<std::size_t>(gen_id)] = gen_target_q_at_outer_target(gen_id, results_gen_target_p_);
+            }
+        }
+        generators_.override_res_q(res_q);
+    }
     hvdc_lines_.set_q(ac);
     storages_.set_q(ac);
 
@@ -2159,6 +2174,7 @@ void LSGrid::compute_results(bool ac){
         }
         _write_back_controller_q(ctrl_q, ctrl_kind, ctrl_elem);
     }
+    results_gen_target_p_.clear();
 }
 
 void LSGrid::_throw_unknown_controller_kind(const std::string & fun_name, int kind)
@@ -2295,8 +2311,7 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
         QShare sh{gen_buses(gen_id).cast_int(),
                   generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
                   VoltageControlSolverData::GEN, gen_id};
-        sh.min_q = generators_.get_min_q(gen_id);
-        sh.max_q = generators_.get_max_q(gen_id);
+        gen_limits_at_outer_target(gen_id, results_gen_target_p_, sh.min_q, sh.max_q);
         const real_type key = generators_.get_reactive_key(gen_id);
         if(std::isfinite(key) && key > 0.) sh.key = key;
         sh.range_max = (gen_reactive_range_max_.size() > gen_id && std::isfinite(gen_reactive_range_max_(gen_id)))
@@ -2315,7 +2330,7 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
                       hvdc_id};
             sh.min_q = hvdc_lines_.get_station_min_q_mvar(hvdc_id, side);
             sh.max_q = hvdc_lines_.get_station_max_q_mvar(hvdc_id, side);
-            sh.range_max = sh.span;
+            sh.range_max = _station_range_max(hvdc_id, side, sh.span);
             shares.push_back(sh);
         }
     }
@@ -2337,6 +2352,84 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
         }
     }
     return shares;
+}
+
+void LSGrid::set_gen_capability_curves(const Eigen::Ref<const Eigen::VectorXi> & gen_id,
+                                       const Eigen::Ref<const RealVect> & p_mw,
+                                       const Eigen::Ref<const RealVect> & min_q_mvar,
+                                       const Eigen::Ref<const RealVect> & max_q_mvar)
+{
+    const Eigen::Index n = gen_id.size();
+    if(p_mw.size() != n || min_q_mvar.size() != n || max_q_mvar.size() != n){
+        throw std::runtime_error("LSGrid::set_gen_capability_curves: the four vectors must have the same size.");
+    }
+    std::vector<std::vector<std::array<real_type, 3> > > curves(static_cast<std::size_t>(generators_.nb()));
+    for(Eigen::Index k = 0; k < n; ++k){
+        const int g = gen_id(k);
+        if(g < 0 || g >= generators_.nb()){
+            throw std::runtime_error("LSGrid::set_gen_capability_curves: unknown generator id.");
+        }
+        if(!std::isfinite(p_mw(k)) || !std::isfinite(min_q_mvar(k)) || !std::isfinite(max_q_mvar(k))){
+            throw std::runtime_error("LSGrid::set_gen_capability_curves: every point must be finite.");
+        }
+        curves[static_cast<std::size_t>(g)].push_back({p_mw(k), min_q_mvar(k), max_q_mvar(k)});
+    }
+    for(auto & curve : curves){
+        std::stable_sort(curve.begin(), curve.end(),
+                         [](const std::array<real_type, 3> & a, const std::array<real_type, 3> & b){ return a[0] < b[0]; });
+    }
+    gen_curves_ = std::move(curves);
+}
+
+bool LSGrid::gen_limits_at(int gen_id, real_type p_mw, real_type & min_q, real_type & max_q) const
+{
+    // ReactiveCapabilityCurveUtil (powsybl-core), with extrapolation as OpenLoadFlow asks
+    if(gen_id < 0 || static_cast<std::size_t>(gen_id) >= gen_curves_.size()) return false;
+    const auto & curve = gen_curves_[static_cast<std::size_t>(gen_id)];
+    if(curve.size() < 2 || !std::isfinite(p_mw)) return false;
+    // the segment p lies on, or the end one it extrapolates
+    std::size_t i = 0;
+    while(i + 2 < curve.size() && p_mw > curve[i + 1][0]) ++i;
+    const auto & a = curve[i];
+    const auto & b = curve[i + 1];
+    if(b[0] == a[0]) return false;
+    const real_type t = (p_mw - a[0]) / (b[0] - a[0]);
+    min_q = a[1] + (b[1] - a[1]) * t;
+    max_q = a[2] + (b[2] - a[2]) * t;
+    if(min_q > max_q) min_q = max_q = (min_q + max_q) / 2.;
+    return true;
+}
+
+void LSGrid::gen_limits_at_outer_target(int gen_id, const std::vector<real_type> & outer_target_p,
+                                        real_type & min_q, real_type & max_q) const
+{
+    min_q = generators_.get_min_q(gen_id);
+    max_q = generators_.get_max_q(gen_id);
+    if(static_cast<std::size_t>(gen_id) >= outer_target_p.size()) return;
+    const real_type p = outer_target_p[static_cast<std::size_t>(gen_id)];
+    if(!std::isfinite(p)) return;
+    real_type lo, hi;
+    if(gen_limits_at(gen_id, p, lo, hi)){ min_q = lo; max_q = hi; }
+}
+
+real_type LSGrid::gen_target_q_at_outer_target(int gen_id, const std::vector<real_type> & outer_target_p) const
+{
+    const real_type target_q = generators_.get_target_q()(gen_id);
+    const std::size_t k = static_cast<std::size_t>(gen_id);
+    if(gen_raw_target_q_.size() <= gen_id || !std::isfinite(gen_raw_target_q_(gen_id)) ||
+       k >= outer_target_p.size() || !std::isfinite(outer_target_p[k])) return target_q;
+    real_type lo, hi;
+    gen_limits_at_outer_target(gen_id, outer_target_p, lo, hi);
+    real_type q = gen_raw_target_q_(gen_id);
+    if(q < lo) q = lo;  // a NaN limit clamps nothing
+    else if(q > hi) q = hi;
+    return q;
+}
+
+real_type LSGrid::_station_range_max(int hvdc_id, int side, real_type span) const
+{
+    const RealVect & range = side == 1 ? station_reactive_range_max1_ : station_reactive_range_max2_;
+    return (range.size() > hvdc_id && std::isfinite(range(hvdc_id))) ? range(hvdc_id) : span;
 }
 
 void LSGrid::_dispatch_q_olf(const std::vector<const QShare *> & units, real_type q_mvar,
@@ -2507,8 +2600,7 @@ void LSGrid::_write_back_controller_q(const RealVect & ctrl_q,
             u.kind = ctrl_kind(i);
             if(ctrl_kind(i) == VoltageControlSolverData::GEN){
                 u.bus_id = gen_buses(el).cast_int();
-                u.min_q = generators_.get_min_q(el);
-                u.max_q = generators_.get_max_q(el);
+                gen_limits_at_outer_target(el, results_gen_target_p_, u.min_q, u.max_q);
                 const real_type key = generators_.get_reactive_key(el);
                 if(std::isfinite(key) && key > 0.) u.key = key;
                 u.span = u.max_q - u.min_q;
@@ -2521,7 +2613,7 @@ void LSGrid::_write_back_controller_q(const RealVect & ctrl_q,
                 u.min_q = hvdc_lines_.get_station_min_q_mvar(el, side);
                 u.max_q = hvdc_lines_.get_station_max_q_mvar(el, side);
                 u.span = u.max_q - u.min_q;
-                u.range_max = u.span;
+                u.range_max = _station_range_max(el, side, u.span);
             } else {
                 continue;  // an SVC is alone in its group
             }

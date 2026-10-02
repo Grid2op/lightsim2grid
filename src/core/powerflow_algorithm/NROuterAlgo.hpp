@@ -202,6 +202,7 @@ private:
     // not move during a solve (it is only reassigned before _setup)
     CplxVect Sbus_;
     CplxVect Sbus_init_;
+    CplxVect Sbus_target_;  // see OuterState::Sbus_target
     RealVect controller_q_;  // the context's copy, refreshed with it
     int slack_bus_ = -1;     // solver id of the slack bus of the current solve
     OuterState state_;       // what the loops edit; kept after the solve for its results

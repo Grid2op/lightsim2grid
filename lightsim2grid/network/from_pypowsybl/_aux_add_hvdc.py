@@ -190,6 +190,14 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         elif ex_disc:
             model.deactivate_dcline_side2(hvdc_id)
     model.set_dcline_names(df_dc.index)
+    if olf_rules is not None and nb_dc and len(df_vsc):
+        # a VSC station shares its bus' reactive power by its widest range over its curve,
+        # as a generator (OpenLoadFlow's reactiveRangeCheckMode MAX)
+        box = df_vsc[["reactive_limits_kind", "min_q", "max_q"]]
+        rng = _olf_rules.generator_max_reactive_range(net, df_vsc.index, box=box)
+        model.set_station_reactive_range_max(
+            rng.reindex(df_dc["converter_station1_id"].values).to_numpy(float),
+            rng.reindex(df_dc["converter_station2_id"].values).to_numpy(float))
     if frozen.any():
         model.set_hvdc_ac_emulation_frozen([bool(el) for el in frozen])
 

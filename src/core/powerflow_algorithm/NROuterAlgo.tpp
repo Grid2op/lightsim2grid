@@ -29,6 +29,7 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
 
     // the loops edit these, never the grid's
     Sbus_init_ = Sbus;
+    Sbus_target_ = Sbus;
     Sbus_ = Sbus;
 
     bool need_init = false;
@@ -40,6 +41,7 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
     slack_bus_ = slack_ids.size() > 0 ? slack_ids(0) : -1;
     state_.Sbus = &Sbus_;
     state_.Sbus_init = &Sbus_init_;
+    state_.Sbus_target = &Sbus_target_;
     state_.gen_target_p.clear();
     state_.storage_target_p.clear();
     state_.hvdc_status.clear();
@@ -177,14 +179,14 @@ bool NROuterAlgo<LinearSolver>::_solve(int max_iter, real_type tol, bool & need_
     // solve that converged in zero iterations factorized nothing, so it does not count.
     if (this->nr_iter_ > 0) need_init = false;
     this->_finalize();
-    // the residual is published against the grid's own injection: the reactive power a loop
-    // froze into the algorithm's (a bus held at a limit) is its units' output, which the
-    // results and the physical checks read off this residual. Overwritten by the next
+    // the residual is published against the units' targets: the reactive power a loop froze
+    // into the algorithm's (a bus held at a limit) is its units' output, which the results
+    // and the physical checks read off this residual. Overwritten by the next
     // Newton's first mismatch. The active part is not touched: the targets a loop moved are
     // published as such (get_outer_target_p).
-    if (this->mis_bus_.size() == Sbus_.size() && Sbus_init_.size() == Sbus_.size()) {
+    if (this->mis_bus_.size() == Sbus_.size() && Sbus_target_.size() == Sbus_.size()) {
         for (Eigen::Index b = 0; b < Sbus_.size(); ++b) {
-            const real_type dq = std::imag(Sbus_(b)) - std::imag(Sbus_init_(b));
+            const real_type dq = std::imag(Sbus_(b)) - std::imag(Sbus_target_(b));
             if (dq != 0.) this->mis_bus_(b) += cplx_type(0., dq);
         }
     }
@@ -207,6 +209,7 @@ void NROuterAlgo<LinearSolver>::_before_init_topology()
 {
     state_.Sbus = &Sbus_;
     state_.Sbus_init = &Sbus_init_;
+    state_.Sbus_target = &Sbus_target_;
     OuterContext ctx = _context(&state_);
     ctx.V = nullptr;
     ctx.Va = nullptr;

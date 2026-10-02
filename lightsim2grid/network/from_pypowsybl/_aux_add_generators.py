@@ -192,6 +192,21 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
         model.set_reactive_dispatch_olf(True)
         model.set_gen_reactive_range_max(
             _olf_rules.generator_max_reactive_range(net, df_gen.index).to_numpy(float))
+        # their capability curves: the limits follow a target P an outer loop moves
+        try:
+            pts = net.get_reactive_capability_curve_points()
+        except Exception:  # noqa: BLE001 - no curve support in this pypowsybl
+            pts = None
+        if pts is not None and len(pts):
+            pos = pd.Series(np.arange(len(df_gen)), index=df_gen.index)
+            pts = pts.loc[pts.index.get_level_values(0).isin(df_gen.index)]
+            if len(pts):
+                model.set_gen_capability_curves(
+                    pos.loc[pts.index.get_level_values(0)].to_numpy(np.int32), pts["p"].to_numpy(float),
+                    pts["min_q"].to_numpy(float), pts["max_q"].to_numpy(float))
+        if olf_rules.reactive_limits and olf_rules.force_target_q_in_reactive_limits:
+            # the clamp of target_q follows a target P an outer loop moves
+            model.set_gen_raw_target_q(df_gen["target_q"].fillna(0.).to_numpy(float))
     q_percent = _aux_reactive_keys(net, df_gen.index)
     for gen_id in np.flatnonzero(q_percent > 0.):
         model.set_gen_reactive_key(int(gen_id), float(q_percent[gen_id]))
