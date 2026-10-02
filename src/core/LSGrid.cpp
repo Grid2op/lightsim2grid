@@ -98,6 +98,8 @@ LSGrid::LSGrid(const LSGrid & other)
     _dc_algo.change_algorithm(other._dc_algo.get_name());
     _dc_algo.set_config(other.get_dc_algo().get_config());
 
+    dc_slack_on_can_participate_ = other.dc_slack_on_can_participate_;
+
     // the copy gets its own loops: a parameter changed on one grid's must not reach the other
     outer_loops_default_ = other.outer_loops_default_;
     outer_loops_.clear();
@@ -1466,7 +1468,21 @@ CplxVect LSGrid::_build_into_cache(
        solver_control.has_slack_weight_changed()){
         // generators and storage units share the distributed slack: the raw weights are
         // kept, per family, to split each bus' share back onto its participants
-        cache.slack_raw_weights = _raw_slack_weights_solver(static_cast<size_t>(cache.mat.rows()), cache.id_me_to_solver, nullptr);
+        const size_t nb_bus_solver = static_cast<size_t>(cache.mat.rows());
+        cache.slack_raw_weights = _raw_slack_weights_solver(nb_bus_solver, cache.id_me_to_solver, nullptr);
+        // the grid's own DC, with set_dc_distribute_slack_on_can_participate: the units flagged
+        // "can participate" share it instead (unless none is)
+        if(static_cast<const void *>(&cache) == static_cast<const void *>(&dc_cache_)){
+            dc_cache_on_can_participate_ = false;
+            if(dc_slack_on_can_participate_){
+                RealVect can = _raw_slack_weights_solver(nb_bus_solver, cache.id_me_to_solver,
+                                                         nullptr, nullptr, true);
+                if(can.sum() > 0.){
+                    cache.slack_raw_weights = can;
+                    dc_cache_on_can_participate_ = true;
+                }
+            }
+        }
         cache.slack_weights = cache.slack_raw_weights / cache.slack_raw_weights.sum();
     }
 
@@ -2074,6 +2090,15 @@ void LSGrid::compute_results(bool ac){
         container->compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     }
 
+    // the targets the outer loops moved (NROuter_*): what each unit injects before its share
+    // of the slack, in place of the grid's own target
+    if(ac){
+        std::vector<real_type> gen_target_p, storage_target_p;
+        _algo.get_outer_target_p(gen_target_p, storage_target_p);
+        if(!gen_target_p.empty()) generators_.override_res_p(gen_target_p);
+        if(!storage_target_p.empty()) storages_.override_res_p(storage_target_p);
+    }
+
     // ---- active power of the slack participants (generators, storage units) ---
     RealVect reactive_mismatch;  // not used in dc mode (DO NOT ATTEMPT TO USE IT THERE)
     RealVect active_mismatch;
@@ -2082,8 +2107,10 @@ void LSGrid::compute_results(bool ac){
     // each bus' share is split by raw weight over EVERY participant of that bus, so
     // both families read the same per-bus total
     const RealVect & slack_raw_weights = ac ? ac_cache_.slack_raw_weights : dc_cache_.slack_raw_weights;
-    generators_.set_p_slack(active_mismatch, id_me_to_solver, slack_raw_weights);
-    storages_.set_p_slack(active_mismatch, id_me_to_solver, slack_raw_weights);
+    // a DC distributing on the "can participate" units shares it back onto them
+    const bool on_can_participate = !ac && dc_cache_on_can_participate_;
+    generators_.set_p_slack(active_mismatch, id_me_to_solver, slack_raw_weights, on_can_participate);
+    storages_.set_p_slack(active_mismatch, id_me_to_solver, slack_raw_weights, on_can_participate);
 
     // ---- reactive output of every element ------------------------------------
     // Two mechanisms publish one, and every element is served by exactly one: either
@@ -2613,10 +2640,11 @@ GlobalBusIdVect LSGrid::_slack_bus_id_me() const{
 RealVect LSGrid::_raw_slack_weights_solver(size_t nb_bus_solver,
                                            const SolverBusIdVect & id_me_to_solver,
                                            const std::vector<bool> * gen_off,
-                                           const std::vector<bool> * storage_off) const{
+                                           const std::vector<bool> * storage_off,
+                                           bool can_participate) const{
     RealVect res = RealVect::Zero(static_cast<Eigen::Index>(nb_bus_solver));
-    generators_.accumulate_slack_weights_solver(res, id_me_to_solver, gen_off);
-    storages_.accumulate_slack_weights_solver(res, id_me_to_solver, storage_off);
+    generators_.accumulate_slack_weights_solver(res, id_me_to_solver, gen_off, can_participate);
+    storages_.accumulate_slack_weights_solver(res, id_me_to_solver, storage_off, can_participate);
     return res;
 }
 
@@ -2949,6 +2977,22 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
         if(!standby_plan.empty()){
             svc_standby_check::check_svc_standby_violations(standby_plan, algo.get_V(), tol_vm_pu,
                                                             no_mask, out);
+        }
+        // the outer loops' own triggers (detection mode): what the grid's outer loops would
+        // still do after this solve. Only after a solve with ONE slack bus: with several,
+        // the Newton shared the imbalance already and gen_p_check below reads what that left
+        if(layout.slack_bus_id_solver.size() == 1){
+            const CplxVect V = algo.get_V();
+            const CplxVect mismatch = algo.get_bus_mismatch();
+            const RealVect ctrl_q = algo.get_controller_q();
+            OuterContext ctx;
+            ctx.grid = this;
+            ctx.V = &V;
+            ctx.bus_mismatch = &mismatch;
+            ctx.controller_q = &ctrl_q;
+            ctx.slack_bus = layout.slack_bus_id_solver[0].cast_int();
+            ctx.slack_absorbed = algo.get_slack_absorbed();
+            for(const auto & loop : get_outer_loops()) loop->detect(ctx, out);
         }
         // the generators holding a remote bus from an unrealistic voltage of their own
         remote_voltage_control_check::RemoteVoltageControlPlan remote_plan;

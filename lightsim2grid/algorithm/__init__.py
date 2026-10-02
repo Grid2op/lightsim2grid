@@ -26,7 +26,8 @@ __all__ = ["AlgorithmType",
            "NROuter_SparseLU",
            "BaseOuterLoop",
            "OuterLoopStatus",
-           "OuterLoopStats"]
+           "OuterLoopStats",
+           "DistributedSlack"]
 
 from ..lightsim2grid_cpp import AlgorithmType  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import ErrorType  # pyright: ignore[reportMissingImports]
@@ -50,6 +51,7 @@ from ..lightsim2grid_cpp import NROuter_SparseLU  # not in AlgorithmType (string
 from ..lightsim2grid_cpp import BaseOuterLoop  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import OuterLoopStatus  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import OuterLoopStats  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import DistributedSlack  # pyright: ignore[reportMissingImports]
 
 try:
     from ..lightsim2grid_cpp import NR_KLU  # AlgorithmType.NR_KLU  # pyright: ignore[reportMissingImports]  # noqa: F401

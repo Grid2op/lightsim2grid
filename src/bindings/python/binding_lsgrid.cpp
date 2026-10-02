@@ -101,6 +101,16 @@ void bind_gridmodel(py::module_& m) {
         .def("get_dc_algo_type", &LSGrid::get_dc_algo_type, DocLSGrid::get_dc_algo_type.c_str())
         .def("get_algo", &LSGrid::get_algo, py::return_value_policy::reference_internal, DocLSGrid::get_algo.c_str())
         .def("get_dc_algo", &LSGrid::get_dc_algo, py::return_value_policy::reference_internal, DocLSGrid::get_dc_algo.c_str())
+        .def("set_dc_distribute_slack_on_can_participate", &LSGrid::set_dc_distribute_slack_on_can_participate,
+             py::arg("value"),
+             "Opt-in (off by default): dc_pf distributes the active power imbalance on the units flagged "
+             "'can participate in the slack' (set_gen_can_participate_slack / set_storage_can_participate_slack), "
+             "with those weights, instead of on the grid's own slack participants. The reference bus stays the "
+             "grid's slack bus, and each unit's share is published in its active power. Without any flagged "
+             "unit the DC keeps the grid's own slack. OpenLoadFlow's DC_VALUES start with its distributed "
+             "slack on, for a single-slack Newton (NROuter_*).")
+        .def("get_dc_distribute_slack_on_can_participate", &LSGrid::get_dc_distribute_slack_on_can_participate,
+             "See set_dc_distribute_slack_on_can_participate.")
         .def("clear_outer_loops", &LSGrid::clear_outer_loops,
              "Empty the list of outer loops an NROuter_* algorithm runs (then add_outer_loop the ones wanted, in order)")
         .def("add_outer_loop", &LSGrid::add_outer_loop, py::arg("loop"),

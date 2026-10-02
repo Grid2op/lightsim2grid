@@ -1,0 +1,186 @@
+// Copyright (c) 2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#include "DistributedSlackLoop.hpp"
+
+#include <cmath>
+#include <limits>
+#include <stdexcept>
+
+#include "LSGrid.hpp"
+
+namespace ls2g {
+
+namespace {
+
+// the units of one container taking part in the slack: connected, in the solved grid, with a
+// "can participate" weight; `sign` turns the container's target into the generator convention
+template<class Container>
+void collect_units(const Container & container,
+                   slack_redistribution::UnitKind kind,
+                   real_type sign,
+                   const SolverBusIdVect & id_me_to_solver,
+                   std::vector<slack_redistribution::Participant> & units,
+                   std::vector<int> & solver_bus)
+{
+    const std::vector<bool> & status = container.get_status();
+    const GlobalBusIdVect & bus_id = container.get_bus_id();
+    Eigen::Ref<const RealVect> target_p = container.get_target_p();
+    for(int el_id = 0; el_id < container.nb(); ++el_id){
+        if(!status[el_id]) continue;
+        const real_type weight = container.get_can_participate_slack_weight(el_id);
+        if(!(weight > 0.)) continue;
+        const int bus_me = bus_id(el_id).cast_int();
+        if(bus_me == BaseConstants::_deactivated_bus_id) continue;
+        const int bus_solver = id_me_to_solver[bus_me].cast_int();
+        if(bus_solver == BaseConstants::_deactivated_bus_id) continue;
+        slack_redistribution::Participant unit;
+        unit.kind = kind;
+        unit.el_id = el_id;
+        unit.bus = bus_me;
+        unit.injection_mw = sign * target_p(el_id);
+        unit.weight = weight;
+        unit.min_p_mw = container.get_min_p(el_id);
+        unit.max_p_mw = container.get_max_p(el_id);
+        unit.in_slack = false;
+        units.push_back(unit);
+        solver_bus.push_back(bus_solver);
+    }
+}
+
+}  // namespace
+
+bool DistributedSlackLoop::_is_needed(const OuterContext & ctx) const
+{
+    return _has_participant(*ctx.grid);
+}
+
+void DistributedSlackLoop::_initialize(OuterContext & ctx)
+{
+    units_.clear();
+    unit_solver_bus_.clear();
+    const LSGrid & grid = *ctx.grid;
+    const SolverBusIdVect & id_me_to_solver = grid.id_me_to_ac_solver();
+    collect_units(grid.get_generators(), slack_redistribution::UnitKind::GENERATOR, 1.,
+                  id_me_to_solver, units_, unit_solver_bus_);
+    // a storage unit's target is in the load convention, its P limits in the generator one
+    collect_units(grid.get_storages(), slack_redistribution::UnitKind::STORAGE, -1.,
+                  id_me_to_solver, units_, unit_solver_bus_);
+    current_mw_.resize(units_.size());
+    for(std::size_t k = 0; k < units_.size(); ++k) current_mw_[k] = units_[k].injection_mw;
+}
+
+real_type DistributedSlackLoop::_mismatch_mw(const OuterContext & ctx) const
+{
+    if(ctx.bus_mismatch == nullptr || ctx.slack_bus < 0 || ctx.slack_bus >= ctx.bus_mismatch->size()){
+        return std::numeric_limits<real_type>::quiet_NaN();
+    }
+    // what the slack bus injects beyond its target: what the units must inject more. The
+    // same quantity LSGrid::compute_results books on the slack generator: the bus' residual,
+    // less what an in-Newton distributed slack carried in its own unknown (one slack bus,
+    // so all of it)
+    return (std::real((*ctx.bus_mismatch)(ctx.slack_bus)) - ctx.slack_absorbed) * ctx.grid->get_sn_mva();
+}
+
+bool DistributedSlackLoop::_triggered(const OuterContext & ctx, real_type & mismatch_mw) const
+{
+    mismatch_mw = _mismatch_mw(ctx);
+    return std::abs(mismatch_mw) > slack_bus_p_max_mismatch_mw && std::abs(mismatch_mw) > P_RESIDUE_EPS_MW;
+}
+
+void DistributedSlackLoop::_detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const
+{
+    real_type mismatch = 0.;
+    if(!_triggered(ctx, mismatch)) return;
+    // only on a grid that says who would share the slack (see is_needed); the outer-loop
+    // mode never gets here otherwise
+    if(ctx.is_detection() && !_has_participant(*ctx.grid)) return;
+    out.push_back(LimitViolation{ViolationElementType::GRID, -1, 0, LimitViolationType::SLACK_MISMATCH,
+                                 mismatch, slack_bus_p_max_mismatch_mw, std::string()});
+}
+
+bool DistributedSlackLoop::_has_participant(const LSGrid & grid)
+{
+    std::vector<slack_redistribution::Participant> units;
+    std::vector<int> solver_bus;
+    collect_units(grid.get_generators(), slack_redistribution::UnitKind::GENERATOR, 1.,
+                  grid.id_me_to_ac_solver(), units, solver_bus);
+    if(!units.empty()) return true;
+    collect_units(grid.get_storages(), slack_redistribution::UnitKind::STORAGE, -1.,
+                  grid.id_me_to_ac_solver(), units, solver_bus);
+    return !units.empty();
+}
+
+OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
+{
+    real_type mismatch = 0.;
+    if(!_triggered(ctx, mismatch)) return OuterLoopStatus::STABLE;
+
+    // OpenLoadFlow shares the cumulative mismatch from the initial targets every time: what
+    // the units already took is given back first
+    real_type remaining = mismatch;
+    for(std::size_t k = 0; k < units_.size(); ++k) remaining += current_mw_[k] - units_[k].injection_mw;
+
+    std::vector<real_type> new_mw;
+    std::vector<char> saturated;
+    const slack_redistribution::Report report = slack_redistribution::distribute(
+        units_, remaining, P_RESIDUE_EPS_MW, new_mw, saturated);
+    // with no unit at all, nothing was shared and everything is left
+    const real_type residue = units_.empty() ? remaining : report.not_distributed_mw;
+    if(fail_on_residue && std::abs(residue) > P_RESIDUE_EPS_MW) {
+        return OuterLoopStatus::FAILED;
+    }
+
+    OuterState & state = *ctx.state;
+    const LSGrid & grid = *ctx.grid;
+    const real_type sn_mva = grid.get_sn_mva();
+    if(state.gen_target_p.empty() && grid.get_generators().nb() > 0){
+        state.gen_target_p.assign(grid.get_generators().nb(), std::numeric_limits<real_type>::quiet_NaN());
+    }
+    if(state.storage_target_p.empty() && grid.get_storages().nb() > 0){
+        state.storage_target_p.assign(grid.get_storages().nb(), std::numeric_limits<real_type>::quiet_NaN());
+    }
+    real_type moved = 0.;
+    for(std::size_t k = 0; k < units_.size(); ++k){
+        const real_type delta = new_mw[k] - current_mw_[k];
+        moved += std::abs(delta);
+        if(delta != 0.){
+            (*state.Sbus)(unit_solver_bus_[k]) += cplx_type(delta / sn_mva, 0.);
+        }
+        current_mw_[k] = new_mw[k];
+        if(units_[k].kind == slack_redistribution::UnitKind::GENERATOR){
+            state.gen_target_p[units_[k].el_id] = new_mw[k];
+        } else {
+            state.storage_target_p[units_[k].el_id] = -new_mw[k];
+        }
+    }
+    // OpenLoadFlow's PreviousStateInfo.moved, its 0.9 against rounding
+    return moved > 0.9 * P_RESIDUE_EPS_MW ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE;
+}
+
+AlgoConfig DistributedSlackLoop::_get_params() const
+{
+    AlgoConfig cfg;
+    cfg.int_params = {fail_on_residue ? 1 : 0};
+    cfg.real_params = {static_cast<double>(slack_bus_p_max_mismatch_mw)};
+    return cfg;
+}
+
+void DistributedSlackLoop::_set_params(const AlgoConfig & params)
+{
+    if(params.int_params.size() != 1 || params.real_params.size() != 1){
+        throw std::runtime_error("DistributedSlackLoop::set_params: expected 1 int and 1 real parameter.");
+    }
+    if(!(params.real_params[0] >= 0.)){
+        throw std::runtime_error("DistributedSlackLoop::set_params: slack_bus_p_max_mismatch_mw must be >= 0.");
+    }
+    fail_on_residue = params.int_params[0] != 0;
+    slack_bus_p_max_mismatch_mw = static_cast<real_type>(params.real_params[0]);
+}
+
+}  // namespace ls2g

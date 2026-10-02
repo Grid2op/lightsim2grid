@@ -715,6 +715,24 @@ const std::string DocSolver::OuterLoopStatus = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::DistributedSlackLoop = R"mydelimiter(
+    OpenLoadFlow's DistributedSlack outer loop (balance type PROPORTIONAL_TO_GENERATION_P_MAX),
+    around the single-slack Newton of the NROuter_* algorithms.
+
+    After a solve, the active power the slack bus absorbed beyond its target is shared on the
+    units taking part in the slack: every generator and storage unit with a "can participate
+    in the slack" weight (``LSGrid.set_gen_can_participate_slack``, which
+    ``init_from_pypowsybl(olf_rules=True)`` fills with OpenLoadFlow's key), each bounded by
+    its active power limits and never pushed across 0 MW. As OpenLoadFlow, every pass shares
+    the cumulative mismatch again from the units' initial targets. The units' new targets are
+    published as their active power.
+
+    Nothing happens while the mismatch stays below ``slack_bus_p_max_mismatch_mw``. When the
+    units cannot take all of it, the solve fails (``fail_on_residue``) or the slack bus keeps
+    the rest.
+
+)mydelimiter";
+
 const std::string DocSolver::DC_KLU = R"mydelimiter(
     Alternative implementation of the DC solver, it uses the faster KLU solver available in the SuiteSparse library to solve for the DC voltage given the DC admitance matrix and
     the power injected at each nodes (can be unavailable if you build lightsim2grid from source).

@@ -126,7 +126,12 @@ enum class LS2G_API LimitViolationType : int {
     // leave in place. `side` the direction it is frozen in (1: 1 -> 2), `value` the flow its
     // droop asks for in that direction and `limit` the limit, both in MW (value below limit).
     // See HvdcPCheck.hpp.
-    HVDC_AC_EMULATION_RELEASE = 15
+    HVDC_AC_EMULATION_RELEASE = 15,
+    // The active power the single slack bus absorbed is above OpenLoadFlow's
+    // slackBusPMaxMismatch: its DistributedSlack loop would share it on the units that take
+    // part in the slack (see outer_loop/DistributedSlackLoop.hpp). element_type GRID,
+    // `value` the mismatch (MW, > 0: the units must inject more) and `limit` the threshold.
+    SLACK_MISMATCH = 16
 };
 
 /**
@@ -151,7 +156,7 @@ enum class LS2G_API ViolationCategory : int {
     /// statement about the model's assumptions, not about how the grid is being operated.
     /// LOW_Q, HIGH_Q, LOW_P, HIGH_P, LOW_VOLTAGE_AT_MIN_Q, HIGH_VOLTAGE_AT_MAX_Q,
     /// LOW_VOLTAGE_SVC_STANDBY, HIGH_VOLTAGE_SVC_STANDBY, LOW_VOLTAGE_REMOTE_CONTROL,
-    /// HIGH_VOLTAGE_REMOTE_CONTROL, HVDC_AC_EMULATION_RELEASE.
+    /// HIGH_VOLTAGE_REMOTE_CONTROL, HVDC_AC_EMULATION_RELEASE, SLACK_MISMATCH.
     PHYSICAL = 1,
     /// Not a limit at all: what the solver did. A divergence in particular says nothing
     /// about the grid -- the state may be perfectly feasible and the algorithm simply
@@ -179,6 +184,7 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
         case LimitViolationType::LOW_VOLTAGE_REMOTE_CONTROL:
         case LimitViolationType::HIGH_VOLTAGE_REMOTE_CONTROL:
         case LimitViolationType::HVDC_AC_EMULATION_RELEASE:
+        case LimitViolationType::SLACK_MISMATCH:
             return ViolationCategory::PHYSICAL;
         default:  // NOT_SIMULATED, DIVERGENCE
             return ViolationCategory::SOLVER;

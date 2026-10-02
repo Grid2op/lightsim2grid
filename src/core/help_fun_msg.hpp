@@ -108,6 +108,7 @@ struct LS2G_API DocSolver
     static const std::string OuterLoopStats;
     static const std::string BaseOuterLoop;
     static const std::string OuterLoopStatus;
+    static const std::string DistributedSlackLoop;
 
     static const std::string NR_NICSLU;
     static const std::string NRSing_NICSLU;

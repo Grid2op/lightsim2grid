@@ -3,8 +3,8 @@ Change Log
 
 [TODO]
 --------
-- OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: the driver is there, the loops
-  themselves are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
+- OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: ``DistributedSlack`` is there,
+  the others are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
 - Control limits are detected but never **enforced**: ``compute_physical_violations`` reports a
   distributed-slack machine past ``get_min_p`` / ``get_max_p`` (``GenPCheck``) and a bus past its
   reactive capability (``BusQCheck``), but no algorithm reads a limit, so the solve still
@@ -227,9 +227,17 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``NROuter_*`` algorithms: a single-slack Newton-Raphson run inside OpenLoadFlow's
   outer-loop driver (``LSGrid.add_outer_loop``), one symbolic analysis per solve.
 - [ADDED] ``ErrorType.OuterLoopFailed`` and ``ErrorType.UnrealisticState``.
+- [ADDED] ``DistributedSlack`` outer loop (``lightsim2grid.algorithm``): OpenLoadFlow's,
+  sharing the slack bus' mismatch on the units flagged "can participate", within their limits.
+  The units' new P is in the results only, their targets are not modified.
+- [ADDED] ``LimitViolationType.SLACK_MISMATCH``: a single slack absorbing more than the
+  ``DistributedSlack`` loop's threshold, on a grid with units flagged to share it.
+- [ADDED] ``LSGrid.set_dc_distribute_slack_on_can_participate`` (off by default): ``dc_pf``
+  shares the imbalance on the units flagged "can participate" (in their results), as
+  OpenLoadFlow's DC start does.
 - [ADDED] ``init_from_pypowsybl(olf_rules=True)``: OpenLoadFlow's loading rules (which
-  generators may regulate a voltage, target Q clamped into the limits), shared with
-  ``bake_outer_loops``.
+  generators may regulate a voltage, target Q clamped into the limits, who shares the slack
+  and within what range), shared with ``bake_outer_loops``.
 - [FIXED] ``bake_outer_loops``: a generator is "not started" below 0.01 MW, not 1e-4 MW
   (OpenLoadFlow compares per-unit values), and a condenser or fictitious one never is.
 - [FIXED] the default distributed slack of ``init_from_pypowsybl`` follows OpenLoadFlow's

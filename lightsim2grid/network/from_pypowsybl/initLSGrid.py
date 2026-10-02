@@ -28,6 +28,7 @@ from ._aux_common import _aux_ensure_net_pu, _aux_get_operational_limits_current
 from ._aux_add_buses import _aux_add_buses
 from ._aux_add_generators import _aux_add_generators
 from ._olf_rules import OlfLoadingParameters
+from ._aux_add_slack import _aux_olf_slack_participation
 from ._aux_add_loads import _aux_add_loads
 from ._aux_add_lines import _aux_add_lines
 from ._aux_add_trafos import _aux_add_trafos
@@ -290,8 +291,11 @@ def init(net : pypo.network.Network,
         generator OpenLoadFlow would not let regulate a voltage (not started, too small a
         reactive range, an unreachable regulated bus, an implausible target, inconsistent
         controls on its bus) is added without voltage control, and a non-regulating
-        generator injects its target Q clamped into its reactive limits at its target P.
-        ``True`` uses the default parameters (``OlfLoadingParameters()``), an
+        generator injects its target Q clamped into its reactive limits at its target P. Every
+        generator and battery OpenLoadFlow's distributed slack would share on is flagged "can
+        participate in the slack" with OpenLoadFlow's key, and its active power limits are its
+        ``activePowerControl`` target range: what the ``DistributedSlack`` outer loop of the
+        ``NROuter_*`` algorithms reads. ``True`` uses the default parameters (``OlfLoadingParameters()``), an
         ``OlfLoadingParameters`` is used as is. ``False`` (default) reads the network as it
         is written.
     :type olf_rules: bool or OlfLoadingParameters
@@ -392,6 +396,9 @@ def init(net : pypo.network.Network,
                                        battery_active_power_control=battery_active_power_control,
                                        can_participate_slack=can_participate_slack,
                                        can_participate_slack_overshoot=can_participate_slack_overshoot)
+    if olf_rules is not None:
+        # who OpenLoadFlow's DistributedSlack outer loop shares the slack on, and within what
+        _aux_olf_slack_participation(model, net, df_gen, df_batt, olf_rules, battery_active_power_control)
 
     # TODO checks
     # no 3windings trafo and other exotic stuff

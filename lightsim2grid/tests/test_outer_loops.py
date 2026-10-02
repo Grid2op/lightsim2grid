@@ -113,5 +113,77 @@ class TestNROuter(unittest.TestCase):
         self.assertEqual(algo.get_outer_loop_stats().nb_outer_iterations, 0)
 
 
+class TestDistributedSlack(unittest.TestCase):
+    """OpenLoadFlow's DistributedSlack loop, from python, on pypowsybl's IEEE 14-bus grid built
+    with OpenLoadFlow's loading rules (which flag the units taking part in the slack)."""
+
+    @staticmethod
+    def _net():
+        import pypowsybl as pp
+        net = pp.network.create_ieee14()
+        gen = net.get_generators()
+        net.update_generators(id=list(gen.index), min_p=[0.] * len(gen), max_p=[300.] * len(gen),
+                              target_p=list(gen["target_p"].where(gen["target_p"] > 0., 10.)))
+        return net
+
+    def _grid(self, **kwargs):
+        try:
+            from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            return init_from_pypowsybl(self._net(), olf_rules=True, **kwargs)
+
+    def test_in_the_default_list(self):
+        from lightsim2grid.algorithm import DistributedSlack
+        grid = self._grid(gen_slack_id="B1-G")
+        self.assertEqual([loop.name() for loop in grid.get_outer_loops()], ["DistributedSlack"])
+        loop = DistributedSlack(slack_bus_p_max_mismatch_mw=2., fail_on_residue=False)
+        self.assertEqual(loop.slack_bus_p_max_mismatch_mw, 2.)
+        self.assertFalse(loop.fail_on_residue)
+
+    def test_same_as_the_newton_distributed_slack(self):
+        from lightsim2grid.algorithm import DistributedSlack
+        gen_ids = list(self._net().get_generators().index)
+        # every unit has the same key here (max_p / default droop), as the in-Newton slack's
+        ref = self._grid(gen_slack_id={gen_id: 1. for gen_id in gen_ids})
+        ref.change_algorithm(SING.replace("NRSing", "NR"))
+        V_ref = _solve(ref)
+        grid = self._grid(gen_slack_id="B1-G")
+        grid.change_algorithm(OUTER)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(DistributedSlack(slack_bus_p_max_mismatch_mw=1e-6))
+        V = _solve(grid)
+        self.assertEqual(V.shape, V_ref.shape)
+        stats = grid.get_algo().get_outer_loop_stats()
+        self.assertEqual(stats.status, OuterLoopStatus.STABLE)
+        self.assertGreater(stats.nb_outer_iterations, 0)
+        self.assertEqual(grid.get_algo().get_linear_solver_stats().nb_analyze, 1)
+        # the loop stops at OpenLoadFlow's residue (1e-3 MW)
+        self.assertLess(np.abs(V - V_ref).max(), 1e-5)
+        p = np.array([gen.res_p_mw for gen in grid.get_generators()])
+        p_ref = np.array([gen.res_p_mw for gen in ref.get_generators()])
+        self.assertLess(np.abs(p - p_ref).max(), 2e-3)
+
+    def test_detection(self):
+        from lightsim2grid.lightsim2grid_cpp import LimitViolationType
+        grid = self._grid(gen_slack_id="B1-G")
+        grid.change_algorithm(SING)
+        self.assertGreater(_solve(grid).shape[0], 0)
+        found = [v for v in grid.get_physical_violations()
+                 if v.violation_type == LimitViolationType.SLACK_MISMATCH]
+        self.assertEqual(len(found), 1)
+        slack_gen = grid.get_generators()[0]
+        self.assertAlmostEqual(found[0].value, slack_gen.res_p_mw - slack_gen.target_p_mw, places=6)
+        # a single slack set up on purpose, with no unit flagged to share it, is not reported
+        grid.set_gen_can_participate_slack([False] * len(list(grid.get_generators())),
+                                           np.zeros(len(list(grid.get_generators()))))
+        grid.set_storage_can_participate_slack([], np.zeros(0))
+        self.assertGreater(_solve(grid).shape[0], 0)
+        self.assertFalse([v for v in grid.get_physical_violations()
+                          if v.violation_type == LimitViolationType.SLACK_MISMATCH])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -8,5 +8,6 @@ list(APPEND SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemMultiSlack.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/OuterLoopDriver.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/DefaultOuterLoops.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/DistributedSlackLoop.cpp"
 )
 set(SOURCES ${SOURCES} PARENT_SCOPE)

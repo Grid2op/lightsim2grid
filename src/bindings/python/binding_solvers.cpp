@@ -10,6 +10,7 @@
 
 #include "binding_declarations.hpp"
 #include "Solvers.hpp"
+#include "powerflow_algorithm/outer_loop/DistributedSlackLoop.hpp"
 #include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
 #include "powerflow_algorithm/ScalingPolicies.hpp"
@@ -155,6 +156,20 @@ void bind_solvers(py::module_& m) {
     py::class_<BaseOuterLoop, std::shared_ptr<BaseOuterLoop> >(m, "BaseOuterLoop", DocSolver::BaseOuterLoop.c_str())
         .def("name", &BaseOuterLoop::name)
         .def("__repr__", [](const BaseOuterLoop & self){ return self.name() + "()"; });
+
+    py::class_<DistributedSlackLoop, BaseOuterLoop, std::shared_ptr<DistributedSlackLoop> >(
+            m, "DistributedSlack", DocSolver::DistributedSlackLoop.c_str())
+        .def(py::init([](real_type slack_bus_p_max_mismatch_mw, bool fail_on_residue){
+                 auto res = std::make_shared<DistributedSlackLoop>();
+                 res->set_params(AlgoConfig{{fail_on_residue ? 1 : 0}, {static_cast<double>(slack_bus_p_max_mismatch_mw)}});
+                 return res;
+             }),
+             py::arg("slack_bus_p_max_mismatch_mw") = 1., py::arg("fail_on_residue") = true)
+        .def_readwrite("slack_bus_p_max_mismatch_mw", &DistributedSlackLoop::slack_bus_p_max_mismatch_mw,
+                       "OpenLoadFlow's slackBusPMaxMismatch, MW: below it the slack bus keeps what it absorbed")
+        .def_readwrite("fail_on_residue", &DistributedSlackLoop::fail_on_residue,
+                       "OpenLoadFlow's slackDistributionFailureBehavior: FAIL (True) or LEAVE_ON_SLACK_BUS (False) "
+                       "when every unit reached a bound before the mismatch was shared");
 
     // ---- TimerJac ----
     py::class_<TimerJac>(m, "TimerJac", DocSolver::TimerJac.c_str())

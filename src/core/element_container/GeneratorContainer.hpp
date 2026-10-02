@@ -203,8 +203,10 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
          */
         void accumulate_slack_weights_solver(Eigen::Ref<RealVect> res,
                                              const SolverBusIdVect & id_grid_to_solver,
-                                             const std::vector<bool> * gen_off) const {
-            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, gen_off, _element_name());
+                                             const std::vector<bool> * gen_off,
+                                             bool can_participate = false) const {
+            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, gen_off, _element_name(),
+                                  can_participate);
         }
         /// append the grid buses of the flagged generators not in `buses` yet
         void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}
@@ -212,9 +214,10 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         /** distribute the active mismatch of the slack buses onto the participating generators **/
         void set_p_slack(const Eigen::Ref<const RealVect> & node_mismatch,
                          const SolverBusIdVect & id_grid_to_solver,
-                         const Eigen::Ref<const RealVect> & bus_raw_total){
+                         const Eigen::Ref<const RealVect> & bus_raw_total,
+                         bool can_participate = false){
             slack_.split(res_p_, 1., node_mismatch, bus_raw_total, status_, bus_id_, id_grid_to_solver,
-                         "GeneratorContainer::set_p_slack");
+                         "GeneratorContainer::set_p_slack", can_participate);
         }
 
         // modification

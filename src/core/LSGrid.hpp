@@ -1261,11 +1261,36 @@ class LS2G_API LSGrid final
         void set_gen_can_participate_slack(const std::vector<bool> & flags,
                                            const Eigen::Ref<const RealVect> & weights){
             generators_.set_can_participate_slack(flags, weights);
+            _tell_dc_can_participate_changed();
         }
         /// the same, for the storage units
         void set_storage_can_participate_slack(const std::vector<bool> & flags,
                                                const Eigen::Ref<const RealVect> & weights){
             storages_.set_can_participate_slack(flags, weights);
+            _tell_dc_can_participate_changed();
+        }
+
+        /**
+         * Opt-in, off by default: a DC powerflow (dc_pf) distributes the active power
+         * imbalance on the units flagged "can participate in the slack"
+         * (set_gen_can_participate_slack / set_storage_can_participate_slack), with those
+         * weights, instead of on the grid's own slack participants. The reference bus (the
+         * angle datum) stays the grid's slack bus; each unit's share is published as part of
+         * its active power. Without any flagged unit, the DC keeps the grid's own slack.
+         *
+         * What OpenLoadFlow's DC_VALUES start does with its distributed slack on, around a
+         * single-slack Newton (NROuter_*): a single-slack DC would put the whole imbalance on
+         * one generator, a start far enough from OpenLoadFlow's to reach another root of a
+         * weak part of a grid. Only the DC solver's slack inputs are invalidated by a change.
+         */
+        void set_dc_distribute_slack_on_can_participate(bool value){
+            if(value == dc_slack_on_can_participate_) return;
+            dc_slack_on_can_participate_ = value;
+            algo_controler_.dc_algo_controler().tell_slack_participate_changed();
+            algo_controler_.dc_algo_controler().tell_slack_weight_changed();
+        }
+        [[nodiscard]] bool get_dc_distribute_slack_on_can_participate() const {
+            return dc_slack_on_can_participate_;
         }
         /**
          * For the generators flagged "can participate in the slack": how far BEYOND the
@@ -2534,7 +2559,8 @@ class LS2G_API LSGrid final
         [[nodiscard]] RealVect _raw_slack_weights_solver(size_t nb_bus_solver,
                                                          const SolverBusIdVect & id_me_to_solver,
                                                          const std::vector<bool> * gen_off,
-                                                         const std::vector<bool> * storage_off = nullptr) const;
+                                                         const std::vector<bool> * storage_off = nullptr,
+                                                         bool can_participate = false) const;
         // the active power (MW, generator convention) the elements on the buses NOT in
         // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
         [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
@@ -3114,6 +3140,14 @@ class LS2G_API LSGrid final
         // to solve the newton raphson
         AlgorithmSelector _algo;
         AlgorithmSelector _dc_algo;
+        // see set_dc_distribute_slack_on_can_participate; whether the DC cache's weights are
+        // the "can participate" ones (the option is on and some unit is flagged)
+        bool dc_slack_on_can_participate_ = false;
+        bool dc_cache_on_can_participate_ = false;
+        void _tell_dc_can_participate_changed(){
+            if(!dc_slack_on_can_participate_) return;
+            algo_controler_.dc_algo_controler().tell_slack_weight_changed();
+        }
         // see clear_outer_loops / add_outer_loop; empty and `default` until edited
         std::vector<std::shared_ptr<BaseOuterLoop> > outer_loops_;
         bool outer_loops_default_ = true;

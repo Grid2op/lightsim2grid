@@ -68,6 +68,7 @@ from lightsim2grid.network.from_pypowsybl import LightsimResultNetwork, OlfLoadi
 from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages
 from lightsim2grid.network.from_pypowsybl._aux_add_slack import _default_distributed_slack
 from lightsim2grid.lightsim2grid_cpp import ScalingPolicyType
+from lightsim2grid import algorithm as _algorithm
 
 LOAD_PARAMETERS = {"iidm.die.with-extensions": "all"}
 
@@ -99,8 +100,18 @@ def find_snapshots(paths):
     return sorted(set(found))
 
 
-def load(path):
-    return pp.network.load(path, LOAD_PARAMETERS)
+def load(path, extra_load_mw=0.):
+    """The snapshot, with ``extra_load_mw`` added to its largest load of the main synchronous
+    component (a mismatch for the slack loops to share; the same on both engines)."""
+    net = pp.network.load(path, LOAD_PARAMETERS)
+    if extra_load_mw:
+        loads = net.get_loads(attributes=["p0", "bus_id"])
+        sync = net.get_buses(attributes=["synchronous_component"])["synchronous_component"]
+        main = sync.value_counts().idxmax()
+        in_main = loads["bus_id"].map(sync) == main
+        big = loads.loc[in_main, "p0"].idxmax()
+        net.update_loads(id=big, p0=float(loads.loc[big, "p0"]) + float(extra_load_mw))
+    return net
 
 
 def pick_slack(net):
@@ -143,8 +154,8 @@ def olf_parameters(loops, slack_bus_id=None, conv_eps=1e-9, max_nr_iter=50):
     return params
 
 
-def solve_olf(path, params):
-    net = load(path)
+def solve_olf(path, params, extra_load_mw=0.):
+    net = load(path, extra_load_mw)
     res = lf.run_ac(net, params)
     return net, res[0]
 
@@ -162,25 +173,53 @@ def _enable_max_voltage_change(model, max_dva=1.0, max_dvm=0.4):
     model.set_ac_algo_config(cfg)
 
 
-def solve_lightsim(path, gen_slack_id, algo=None, max_iter=50, tol=1e-8, olf_rules=None):
+#: the lightsim2grid class of each OpenLoadFlow loop implemented so far
+LIGHTSIM_LOOPS = {
+    "DistributedSlack": lambda: _algorithm.DistributedSlack(),
+}
+
+
+def solve_lightsim(path, gen_slack_id, algo=None, max_iter=50, tol=1e-8, olf_rules=None, loops=(),
+                   extra_load_mw=0.):
     """Build the grid from the unbaked snapshot and solve it from a DC start. ``olf_rules``
     (an ``OlfLoadingParameters``, or None for none) are OpenLoadFlow's loading rules: OLF
     always applies them, so a comparison needs them on this side too."""
-    net = load(path)
+    net = load(path, extra_load_mw)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
         model = init_from_pypowsybl(net, gen_slack_id=gen_slack_id, sort_index=False,
                                     buses_for_sub=False, keep_half_open_lines=True,
-                                    fuse_zero_impedance_branches=True,
+                                    fuse_zero_impedance_branches=True, init_vm_pu=1.,
                                     olf_rules=olf_rules if olf_rules is not None else False)
-    if algo is not None:
+    if loops:
+        missing = [name for name in loops if name not in LIGHTSIM_LOOPS]
+        if missing:
+            raise ValueError(f"no lightsim2grid outer loop for {missing} yet")
+        model.change_algorithm(algo if algo is not None else "NROuter_KLU")
+        model.clear_outer_loops()
+        for name in OLF_ORDER:
+            if name in loops:
+                model.add_outer_loop(LIGHTSIM_LOOPS[name]())
+    elif algo is not None:
         model.change_algorithm(algo)
     model.set_keep_vinit_at_group_controlled_buses(True)  # before any dc_pf
     _enable_max_voltage_change(model)
-    flat = np.full(model.get_bus_vn_kv().shape[0], 1.0, dtype=complex)
-    v_dc = model.dc_pf(flat, max_iter, tol)
-    V = model.ac_pf(v_dc if v_dc.shape[0] > 0 else flat, max_iter, tol)
+    v_start = dc_start(model, distributed="DistributedSlack" in loops, max_iter=max_iter, tol=tol)
+    V = model.ac_pf(v_start, max_iter, tol)
     return net, model, V
+
+
+def dc_start(model, distributed, max_iter=50, tol=1e-8):
+    """OpenLoadFlow's DC_VALUES start: the angles of a DC load flow, from a flat 1 pu (a
+    bus regulated remotely keeps it, see set_keep_vinit_at_group_controlled_buses). With
+    the distributed slack on, OpenLoadFlow's DC load flow already shares the imbalance on
+    the participating units: the same here (set_dc_distribute_slack_on_can_participate),
+    where a single-slack DC would leave it all on the slack generator -- a start far enough
+    from OpenLoadFlow's to reach another root of a weak area."""
+    flat = np.full(model.get_bus_vn_kv().shape[0], 1.0, dtype=complex)
+    model.set_dc_distribute_slack_on_can_participate(distributed)
+    v_dc = model.dc_pf(flat, max_iter, tol)
+    return v_dc if v_dc.shape[0] > 0 else flat
 
 
 def _rotated(angles_deg, ref):
@@ -219,7 +258,9 @@ def compare(net_olf, olf_result, net_ls, model, V, ref_bus, slack_gen_id):
 
     ls_gen = ls_net.get_generators()
     olf_slack = sum(r.active_power_mismatch for r in olf_result.slack_bus_results)
-    ls_slack = -ls_gen.loc[slack_gen_id, "p"] - net_ls.get_generators().loc[slack_gen_id, "target_p"]
+    # OLF publishes every unit at its (final) target and reports the leftover apart;
+    # lightsim2grid books the leftover on its slack generator: compared on that generator
+    ls_slack = -ls_gen.loc[slack_gen_id, "p"] + net_olf.get_generators().loc[slack_gen_id, "p"]
     out["olf_slack_mw"] = float(olf_slack)
     out["d_slack_mw"] = float(abs(olf_slack - ls_slack))
 
@@ -255,7 +296,7 @@ def run_one(path, args):
     t0 = time.perf_counter()
     params = olf_parameters(args.loops, slack_bus_id if args.slack_mode == "name" else None,
                             conv_eps=args.olf_eps, max_nr_iter=args.max_iter)
-    net_olf, res = solve_olf(path, params)
+    net_olf, res = solve_olf(path, params, args.extra_load_mw)
     row["olf_status"] = res.status.name
     row["olf_status_text"] = res.status_text
     row["olf_s"] = time.perf_counter() - t0
@@ -263,13 +304,18 @@ def run_one(path, args):
     t0 = time.perf_counter()
     # the loading rules depend on use_reactive_limits, set as on the OLF side
     rules = OlfLoadingParameters(reactive_limits=params.use_reactive_limits) if args.olf_rules else None
-    net_ls, model, V = solve_lightsim(path, gen_slack_id, args.algo, args.max_iter, args.tol, rules)
+    net_ls, model, V = solve_lightsim(path, gen_slack_id, args.algo, args.max_iter, args.tol, rules, args.loops,
+                                      args.extra_load_mw)
     row["ls_converged"] = V.shape[0] > 0
     row["ls_s"] = time.perf_counter() - t0
     stats = model.get_algo().get_linear_solver_stats() if hasattr(model.get_algo(), "get_linear_solver_stats") else None
     if stats is not None:
         row["ls_nb_analyze"] = stats.nb_analyze
         row["ls_nb_factorize"] = stats.nb_factorize
+    if model.get_algo().supports_outer_loops():
+        outer = model.get_algo().get_outer_loop_stats()
+        row["ls_outer_status"] = outer.status.name
+        row["ls_outer_iterations"] = outer.nb_outer_iterations
     if row["ls_converged"] and res.status == lf.ComponentStatus.CONVERGED:
         row.update(compare(net_olf, res, net_ls, model, V, slack_bus_id, gen_slack_id))
     return row
@@ -288,6 +334,8 @@ def main(argv=None):
     parser.add_argument("--tol", type=float, default=1e-8, help="lightsim2grid ac_pf tolerance")
     parser.add_argument("--no-olf-rules", dest="olf_rules", action="store_false",
                         help="build the lightsim2grid grid without OpenLoadFlow's loading rules")
+    parser.add_argument("--extra-load-mw", type=float, default=0.,
+                        help="added to the largest load of the main component, on both engines")
     parser.add_argument("--csv", default=None, help="write one row per snapshot there")
     parser.add_argument("--limit", type=int, default=None, help="only the first N snapshots")
     args = parser.parse_args(argv)

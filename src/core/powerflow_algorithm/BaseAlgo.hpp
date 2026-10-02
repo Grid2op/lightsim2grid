@@ -606,6 +606,13 @@ class LS2G_API BaseAlgo : public BaseConstants
         }
         // what the last solve's outer loops did; empty for an algorithm without them
         virtual OuterLoopStats get_outer_loop_stats() const { return OuterLoopStats{}; }
+        // the active power targets (MW) the last solve's outer loops set, per generator and
+        // per storage unit (load convention), NaN where unchanged; empty when none did
+        virtual void get_outer_target_p(std::vector<real_type> & gen_p_mw,
+                                        std::vector<real_type> & storage_p_mw) const {
+            gen_p_mw.clear();
+            storage_p_mw.clear();
+        }
 
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}

@@ -238,17 +238,20 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         /// when non-null, is a nb()-sized mask of units to leave out on top: a batch row
         /// whose slack pre-pass saturated them, see LSGrid::get_slack_weights_solver_without)
         void accumulate_slack_weights_solver(Eigen::Ref<RealVect> res, const SolverBusIdVect & id_grid_to_solver,
-                                             const std::vector<bool> * storage_off = nullptr) const {
-            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, storage_off, _element_name());
+                                             const std::vector<bool> * storage_off = nullptr,
+                                             bool can_participate = false) const {
+            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, storage_off, _element_name(),
+                                  can_participate);
         }
         void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}
         void slack_summary(bool & any_flagged, bool & any_connected) const {slack_.summary(status_, any_flagged, any_connected);}
         /// write the share of the slack each participating unit absorbed (load convention)
         void set_p_slack(const Eigen::Ref<const RealVect> & node_mismatch,
                          const SolverBusIdVect & id_grid_to_solver,
-                         const Eigen::Ref<const RealVect> & bus_raw_total){
+                         const Eigen::Ref<const RealVect> & bus_raw_total,
+                         bool can_participate = false){
             slack_.split(res_p_, -1., node_mismatch, bus_raw_total, status_, bus_id_, id_grid_to_solver,
-                         "StorageContainer::set_p_slack");
+                         "StorageContainer::set_p_slack", can_participate);
         }
 
     protected:

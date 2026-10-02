@@ -606,7 +606,13 @@ void bind_batch(py::module_& m) {
                "it is frozen in): OpenLoadFlow's AcHvdcAcEmulationLimits loop would leave it in "
                "AC emulation. Category PHYSICAL. `value` the flow its droop asks for in that "
                "direction and `limit` the limit, both in MW (value below limit). Reported by "
-               "compute_physical_violations, never enforced.");
+               "compute_physical_violations, never enforced.")
+        .value("SLACK_MISMATCH", LimitViolationType::SLACK_MISMATCH,
+               "The active power the single slack bus absorbed is above OpenLoadFlow's "
+               "slackBusPMaxMismatch (element_type is ViolationElementType.GRID): its "
+               "DistributedSlack loop would share it on the units taking part in the slack. "
+               "Category PHYSICAL. `value` the mismatch (MW, positive when the units must "
+               "inject more) and `limit` the threshold.");
 
     py::enum_<ViolationCategory>(m, "ViolationCategory",
         "What KIND of statement a LimitViolation is -- a property of its violation_type, and "
@@ -626,7 +632,8 @@ void bind_batch(py::module_& m) {
                "cannot happen. A statement about the model's assumptions, not about how the "
                "grid is operated. LOW_Q, HIGH_Q, LOW_P, HIGH_P, LOW_VOLTAGE_AT_MIN_Q, "
                "HIGH_VOLTAGE_AT_MAX_Q, LOW_VOLTAGE_SVC_STANDBY, HIGH_VOLTAGE_SVC_STANDBY, "
-               "LOW_VOLTAGE_REMOTE_CONTROL, HIGH_VOLTAGE_REMOTE_CONTROL, HVDC_AC_EMULATION_RELEASE.")
+               "LOW_VOLTAGE_REMOTE_CONTROL, HIGH_VOLTAGE_REMOTE_CONTROL, HVDC_AC_EMULATION_RELEASE, "
+               "SLACK_MISMATCH.")
         .value("SOLVER", ViolationCategory::SOLVER,
                "Not a limit at all: what the solver did. A divergence in particular says "
                "nothing about the grid -- the state may be perfectly feasible and the algorithm "

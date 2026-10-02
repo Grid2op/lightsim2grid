@@ -37,9 +37,12 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
         return false;
     }
 
-    OuterState state;
-    state.Sbus = &Sbus_;
-    state.Sbus_init = &Sbus_init_;
+    slack_bus_ = slack_ids.size() > 0 ? slack_ids(0) : -1;
+    state_.Sbus = &Sbus_;
+    state_.Sbus_init = &Sbus_init_;
+    state_.gen_target_p.clear();
+    state_.storage_target_p.clear();
+    OuterState & state = state_;
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
     std::vector<BaseOuterLoop *> active;
@@ -161,10 +164,9 @@ bool NROuterAlgo<LinearSolver>::_solve(int max_iter, real_type tol, bool & need_
 template<class LinearSolver>
 void NROuterAlgo<LinearSolver>::_before_init_topology()
 {
-    OuterState state;
-    state.Sbus = &Sbus_;
-    state.Sbus_init = &Sbus_init_;
-    OuterContext ctx = _context(&state);
+    state_.Sbus = &Sbus_;
+    state_.Sbus_init = &Sbus_init_;
+    OuterContext ctx = _context(&state_);
     ctx.V = nullptr;
     OuterDeclaration decl;
     for (const auto & loop : loops_) loop->declare(ctx, decl);

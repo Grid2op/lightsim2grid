@@ -371,3 +371,30 @@ def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
         gen_slack_ids_int = [gen_id]
 
     return gen_slack_ids_int
+
+
+def _aux_olf_slack_participation(model, net, df_gen, df_batt, params, battery_source="auto"):
+    """Flag every generator and battery OpenLoadFlow's distributed slack shares on as "can
+    participate in the slack", with its key (:func:`._olf_rules.participation_weight`), and
+    give each unit its ``activePowerControl`` target range as active power limits: what the
+    ``DistributedSlack`` outer loop reads. Independent of the slack the Newton itself uses
+    (a single one, for the ``NROuter_*`` algorithms). ``df_gen`` / ``df_batt`` are in the
+    order the units were added to ``model``."""
+    if len(df_gen):
+        weight = _olf_rules.generator_participation_weight(net, df_gen, params).to_numpy(float)
+        flags = df_gen["connected"].to_numpy(bool) & (weight > 0.)
+        model.set_gen_can_participate_slack(list(flags), np.where(flags, weight, 0.))
+        apc = _olf_rules.generator_active_power_control(net, df_gen.index)
+        min_tp, max_tp = _olf_rules.target_p_range(df_gen["min_p"], df_gen["max_p"],
+                                                   apc["min_target_p"], apc["max_target_p"])
+        model.set_gen_p_limits(min_tp, max_tp)
+    if df_batt is not None and len(df_batt):
+        participate, droop, min_target_p, max_target_p = _battery_active_power_control(
+            net, df_batt, battery_source)
+        # IIDM's own (generator) convention, as the participation rule and the limits read it
+        weight = _olf_rules.participation_weight(df_batt["target_p"], df_batt["min_p"], df_batt["max_p"],
+                                                 participate, droop, min_target_p, max_target_p, params)
+        flags = df_batt["connected"].to_numpy(bool) & (weight > 0.)
+        model.set_storage_can_participate_slack(list(flags), np.where(flags, weight, 0.))
+        min_tp, max_tp = _olf_rules.target_p_range(df_batt["min_p"], df_batt["max_p"], min_target_p, max_target_p)
+        model.set_storage_p_limits(min_tp, max_tp)

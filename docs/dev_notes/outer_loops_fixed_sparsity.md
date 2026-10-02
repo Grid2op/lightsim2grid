@@ -213,6 +213,39 @@ values, the solver bus maps, and the grid (const).
 solve. `LSGrid::get_physical_violations` iterates the default loop list; the batch classes do
 the same per row.
 
+### The DistributedSlack loop
+
+`outer_loop/DistributedSlackLoop.{hpp,cpp}`. The units it shares on are the ones flagged
+"can participate in the slack" (`set_gen_can_participate_slack` /
+`set_storage_can_participate_slack`), with that weight as their key, and bounded by their
+P limits: `init_from_pypowsybl(olf_rules=True)` fills both with OpenLoadFlow's participation
+rule and `activePowerControl` target range, independently of the slack the Newton uses. The
+arithmetic is `slack_redistribution::distribute`, called on the units' INITIAL targets with
+the cumulative mismatch at every pass, as `ActivePowerDistribution.run` does; the residue is
+OpenLoadFlow's `P_RESIDUE_EPS`. The slack bus' mismatch is the quantity
+`LSGrid::compute_results` books on the slack generator (its residual, less what an in-Newton
+slack carried), so the trigger reads the same after an `NRSing_*` or an `NR_*` solve.
+
+The loop runs (`is_needed`), and `SLACK_MISMATCH` is reported in detection mode, only on a
+grid with some unit flagged to share the slack. A grid where no unit is flagged has no
+distributed slack set up at all: OpenLoadFlow with `distributedSlack` off, where the loop
+does not exist, and its single slack is kept on purpose.
+
+Checked against OpenLoadFlow run with that loop only, on real grid snapshots with a load
+increase so that there is something to share: same voltages, same per-unit P, one symbolic
+analysis per solve.
+
+**The starting point matters.** OpenLoadFlow's `DC_VALUES` start takes the angles of a DC
+load flow, and with the distributed slack on, that DC load flow already shares the
+imbalance on the participating units. A single-slack DC instead (the slack generator taking
+the whole imbalance) gives initial angles far enough from OpenLoadFlow's for the first
+Newton to reach another root of a weak, radial part of a grid: both converge, to visibly
+different voltages there, and the loop then keeps sharing from that other root. Started
+like OpenLoadFlow, the two agree. `LSGrid.set_dc_distribute_slack_on_can_participate(True)`
+makes `dc_pf` share the imbalance on the units flagged "can participate" with their
+weights; the magnitudes need nothing new (a flat 1 pu start, with
+`set_keep_vinit_at_group_controlled_buses` for the buses regulated remotely).
+
 ### Publishing the results
 
 `LSGrid::compute_results` splits a generator's P with the grid's own slack weights and its Q
@@ -333,8 +366,8 @@ solves, on real grid snapshots.
 | phase | content |
 |---|---|
 | 0 | this note; the comparison harness (`utils/olf_outer_compare.py`), baseline with no loop on either side |
-| 1 | `NRAlgo` split, `NROuterAlgo`, `BaseOuterLoop`, declaration, resume, driver, statistics, result hook, Python registration and persistence. With no loop it must match `NRSing_*`, with one analysis |
-| 2 | `DistributedSlack`, participation rules unified |
+| 1 | `NRAlgo` split, `NROuterAlgo`, `BaseOuterLoop`, declaration, resume, driver, statistics, result hook, Python registration and persistence. With no loop it must match `NRSing_*`, with one analysis -- **done**, but for the persistence of a custom loop list in a pickle or a binary file (with the format bump of phase 6) |
+| 2 | `DistributedSlack`, participation rules unified -- **done** |
 | 3 | `HvdcAcEmulationLimits` |
 | 4 | `VoltageMonitoring` |
 | 5 | `ReactiveLimits`, capability curves, unrealistic-voltage check |

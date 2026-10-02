@@ -75,6 +75,12 @@ public:
 
     OuterLoopStats get_outer_loop_stats() const override { return stats_; }
 
+    void get_outer_target_p(std::vector<real_type> & gen_p_mw,
+                            std::vector<real_type> & storage_p_mw) const override {
+        gen_p_mw = state_.gen_target_p;
+        storage_p_mw = state_.storage_target_p;
+    }
+
     const OuterLoopDriverParams & get_driver_params() const { return params_; }
     void set_driver_params(const OuterLoopDriverParams & params) {
         _check_driver_params(params);
@@ -184,6 +190,8 @@ private:
     CplxVect Sbus_;
     CplxVect Sbus_init_;
     RealVect controller_q_;  // the context's copy, refreshed with it
+    int slack_bus_ = -1;     // solver id of the slack bus of the current solve
+    OuterState state_;       // what the loops edit; kept after the solve for its results
 };
 
 template<class LinearSolver>
@@ -195,6 +203,8 @@ OuterContext NROuterAlgo<LinearSolver>::_context(OuterState * state)
     ctx.bus_mismatch = &this->mis_bus_;
     controller_q_ = this->_system.controller_q();
     ctx.controller_q = &controller_q_;
+    ctx.slack_bus = slack_bus_;
+    ctx.slack_absorbed = this->_system.slack_absorbed();
     ctx.state = state;
     return ctx;
 }

@@ -9,6 +9,7 @@
 #include "DefaultOuterLoops.hpp"
 
 #include "LSGrid.hpp"
+#include "DistributedSlackLoop.hpp"
 
 namespace ls2g {
 
@@ -19,6 +20,7 @@ std::vector<std::shared_ptr<BaseOuterLoop> > make_default_outer_loops(const LSGr
     // PhaseControl, TransformerVoltageControl, (TransformerReactivePowerControl),
     // ShuntVoltageControl, (AutomationSystem). Each loop joins this list as it is implemented.
     std::vector<std::shared_ptr<BaseOuterLoop> > res;
+    res.push_back(std::make_shared<DistributedSlackLoop>());
     return res;
 }
 

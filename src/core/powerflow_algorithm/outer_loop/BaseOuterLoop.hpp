@@ -64,6 +64,11 @@ struct OuterState
 {
     CplxVect * Sbus = nullptr;
     const CplxVect * Sbus_init = nullptr;
+    /// the active power target (MW) a loop set for each generator / storage unit, NaN where
+    /// it kept the grid's; empty until a loop sizes it. Storage units in the load convention,
+    /// as the grid stores them. Published by LSGrid::compute_results.
+    std::vector<real_type> gen_target_p;
+    std::vector<real_type> storage_target_p;
 };
 
 /**
@@ -80,6 +85,10 @@ struct OuterContext
     const CplxVect * V = nullptr;              ///< complex voltages, pu
     const CplxVect * bus_mismatch = nullptr;   ///< see BaseAlgo::get_bus_mismatch
     const RealVect * controller_q = nullptr;   ///< see BaseAlgo::get_controller_q
+    int slack_bus = -1;                        ///< solver id of the (single) slack bus
+    /// the distributed slack's unknown, pu (see BaseAlgo::get_slack_absorbed): 0 for a
+    /// single-slack Newton, where the slack bus' mismatch carries the whole imbalance
+    real_type slack_absorbed = 0.;
     /// how many times THIS loop was unstable so far in the solve (OpenLoadFlow's
     /// `context.getIteration()`: 0 means it has not changed anything yet)
     int iteration = 0;
