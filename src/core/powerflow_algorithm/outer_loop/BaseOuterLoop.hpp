@@ -12,6 +12,8 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <set>
+#include <utility>
 #include <vector>
 
 #include "Utils.hpp"
@@ -76,6 +78,11 @@ struct OuterState
     /// the set-point (pu) a loop switched each idle standby SVC on at (grid id), NaN where it
     /// is still held at Q = 0; empty until a loop sizes it
     std::vector<real_type> svc_target_vm;
+    /// the buses a loop declared switchable (OuterDeclaration::add_switchable_vm_bus) it
+    /// made PQ, solver ids: every other declared one stays PV (its Q row pinned)
+    std::set<int> pq_buses;
+    /// magnitudes (solver bus id, pu) to set before the next Newton solve, then forgotten
+    std::vector<std::pair<int, real_type> > vm_set;
     static constexpr int HVDC_KEEP = 2;
 };
 

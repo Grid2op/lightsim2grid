@@ -203,6 +203,7 @@ TEST_CASE("without any unit flagged, the loop has nothing to do", "[outer_loop][
     REQUIRE(solve(grid).size() == 4);
     const ls2g::OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
     CHECK(stats.status == OuterLoopStatus::STABLE);
-    CHECK(stats.loop_iterations.empty());  // left out by is_needed
+    // left out by is_needed (the other loops of the default list may run)
+    for (const auto & it : stats.loop_iterations) CHECK(it.first != "DistributedSlack");
     CHECK(gen_p(grid)(1) == Approx(40.));
 }

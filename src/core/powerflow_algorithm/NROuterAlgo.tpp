@@ -44,6 +44,8 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
     state_.storage_target_p.clear();
     state_.hvdc_status.clear();
     state_.svc_target_vm.clear();
+    state_.pq_buses.clear();
+    state_.vm_set.clear();
     OuterState & state = state_;
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
@@ -153,11 +155,36 @@ bool NROuterAlgo<LinearSolver>::_solve(int max_iter, real_type tol, bool & need_
     if (!state_.svc_target_vm.empty()) {
         this->_system.release_held_svcs(state_.svc_target_vm);
     }
+    // the switchable buses: PV (pinned) unless a loop made them PQ, a caller's on top
+    pinned_ = caller_pinned_;
+    for (int bus : declared_switchable_) {
+        if (!state_.pq_buses.count(bus)) pinned_.push_back(bus);
+    }
+    this->_system.set_pv_pinned_buses(pinned_);
+    // the magnitudes a loop reset (a bus back to PV at its set-point, robust mode)
+    if (!state_.vm_set.empty()) {
+        std::vector<int> buses;
+        std::vector<real_type> vm;
+        for (const auto & bv : state_.vm_set) { buses.push_back(bv.first); vm.push_back(bv.second); }
+        this->_system.set_vm_at(buses, vm);
+        state_.vm_set.clear();
+    }
     bool converged = this->_newton(max_iter, tol, need_init);
     // the first iteration analyzed (or tried to): every later solve only refactorizes. A
     // solve that converged in zero iterations factorized nothing, so it does not count.
     if (this->nr_iter_ > 0) need_init = false;
     this->_finalize();
+    // the residual is published against the grid's own injection: the reactive power a loop
+    // froze into the algorithm's (a bus held at a limit) is its units' output, which the
+    // results and the physical checks read off this residual. Overwritten by the next
+    // Newton's first mismatch. The active part is not touched: the targets a loop moved are
+    // published as such (get_outer_target_p).
+    if (this->mis_bus_.size() == Sbus_.size() && Sbus_init_.size() == Sbus_.size()) {
+        for (Eigen::Index b = 0; b < Sbus_.size(); ++b) {
+            const real_type dq = std::imag(Sbus_(b)) - std::imag(Sbus_init_(b));
+            if (dq != 0.) this->mis_bus_(b) += cplx_type(0., dq);
+        }
+    }
     stats_.nr_iterations.push_back(this->nr_iter_);
     // OpenLoadFlow's Newton tests convergence only after a step, so a solve is at least one
     // iteration there, and "a pass added Newton iterations" (whether another pass runs)
@@ -183,7 +210,11 @@ void NROuterAlgo<LinearSolver>::_before_init_topology()
     OuterDeclaration decl;
     for (const auto & loop : loops_) loop->declare(ctx, decl);
     std::vector<int> switchable = caller_switchable_;
-    switchable.insert(switchable.end(), decl.switchable_vm_buses().begin(), decl.switchable_vm_buses().end());
+    declared_switchable_ = decl.switchable_vm_buses();
+    std::sort(declared_switchable_.begin(), declared_switchable_.end());
+    declared_switchable_.erase(std::unique(declared_switchable_.begin(), declared_switchable_.end()),
+                               declared_switchable_.end());
+    switchable.insert(switchable.end(), declared_switchable_.begin(), declared_switchable_.end());
     this->_system.set_switchable_vm_buses(switchable);  // a set there: duplicates are fine
 }
 
@@ -193,5 +224,9 @@ std::vector<bool> NROuterAlgo<LinearSolver>::_vm_unknown() const
     const std::vector<int> & vm_col = this->_system.vm_to_J_col();
     std::vector<bool> res(vm_col.size(), false);
     for (std::size_t bus = 0; bus < vm_col.size(); ++bus) res[bus] = vm_col[bus] >= 0;
+    // a pinned Q row makes the bus PV: its magnitude is not an unknown
+    for (int bus : pinned_) {
+        if (bus >= 0 && static_cast<std::size_t>(bus) < res.size()) res[static_cast<std::size_t>(bus)] = false;
+    }
     return res;
 }

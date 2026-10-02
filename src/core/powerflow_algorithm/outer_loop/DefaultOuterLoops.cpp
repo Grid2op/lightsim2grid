@@ -11,6 +11,7 @@
 #include "LSGrid.hpp"
 #include "DistributedSlackLoop.hpp"
 #include "HvdcAcEmulationLimitsLoop.hpp"
+#include "ReactiveLimitsLoop.hpp"
 #include "VoltageMonitoringLoop.hpp"
 
 namespace ls2g {
@@ -25,6 +26,7 @@ std::vector<std::shared_ptr<BaseOuterLoop> > make_default_outer_loops(const LSGr
     res.push_back(std::make_shared<DistributedSlackLoop>());
     res.push_back(std::make_shared<HvdcAcEmulationLimitsLoop>());
     res.push_back(std::make_shared<VoltageMonitoringLoop>());
+    res.push_back(std::make_shared<ReactiveLimitsLoop>());
     return res;
 }
 

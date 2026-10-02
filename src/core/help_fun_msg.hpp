@@ -111,6 +111,7 @@ struct LS2G_API DocSolver
     static const std::string DistributedSlackLoop;
     static const std::string HvdcAcEmulationLimitsLoop;
     static const std::string VoltageMonitoringLoop;
+    static const std::string ReactiveLimitsLoop;
 
     static const std::string NR_NICSLU;
     static const std::string NRSing_NICSLU;

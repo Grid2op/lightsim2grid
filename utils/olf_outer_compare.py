@@ -231,11 +231,13 @@ LIGHTSIM_LOOPS = {
     "DistributedSlack": lambda: _algorithm.DistributedSlack(),
     "AcHvdcAcEmulationLimits": lambda: _algorithm.HvdcAcEmulationLimits(),
     "VoltageMonitoring": lambda: _algorithm.VoltageMonitoring(),
+    "ReactiveLimits": lambda: _algorithm.ReactiveLimits(),
 }
 
 
 def solve_lightsim(path, gen_slack_id, algo=None, max_iter=50, tol=1e-8, olf_rules=None, loops=(),
-                   extra_load_mw=0., hvdc_limit_factor=None, start_angles_deg=None, svc_thresholds_pu=None):
+                   extra_load_mw=0., hvdc_limit_factor=None, start_angles_deg=None, svc_thresholds_pu=None,
+                   olf_eps=None):
     """Build the grid from the unbaked snapshot and solve it from a DC start: lightsim2grid's
     own (dc_start), or ``start_angles_deg`` (per IIDM bus, see olf_dc_angles) at 1 pu.
     ``olf_rules`` (an ``OlfLoadingParameters``, or None for none) are OpenLoadFlow's loading
@@ -255,7 +257,11 @@ def solve_lightsim(path, gen_slack_id, algo=None, max_iter=50, tol=1e-8, olf_rul
         model.clear_outer_loops()
         for name in OLF_ORDER:
             if name in loops:
-                model.add_outer_loop(LIGHTSIM_LOOPS[name]())
+                loop = LIGHTSIM_LOOPS[name]()
+                if name == "ReactiveLimits" and olf_eps is not None:
+                    # OpenLoadFlow's maxReactivePowerMismatch is its Newton epsilon
+                    loop.max_reactive_power_mismatch = olf_eps
+                model.add_outer_loop(loop)
     elif algo is not None:
         model.change_algorithm(algo)
     model.set_keep_vinit_at_group_controlled_buses(True)  # before any dc_pf
@@ -383,7 +389,8 @@ def run_one(path, args):
         start = olf_dc_angles(path, params, args.extra_load_mw, args.hvdc_limit_factor, args.svc_thresholds_pu)
         row["olf_dc_start"] = start is not None
     net_ls, model, V = solve_lightsim(path, gen_slack_id, args.algo, args.max_iter, args.tol, rules, args.loops,
-                                      args.extra_load_mw, args.hvdc_limit_factor, start, args.svc_thresholds_pu)
+                                      args.extra_load_mw, args.hvdc_limit_factor, start, args.svc_thresholds_pu,
+                                      args.olf_eps)
     row["ls_converged"] = V.shape[0] > 0
     row["ls_s"] = time.perf_counter() - t0
     stats = model.get_algo().get_linear_solver_stats() if hasattr(model.get_algo(), "get_linear_solver_stats") else None

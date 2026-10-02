@@ -1453,6 +1453,19 @@ public:
     Eigen::Ref<const RealVect> Va() const { return Va_; }
     Eigen::Ref<const RealVect> Vm() const { return Vm_; }
 
+    // Set the magnitude of some buses (solver ids, pu) between two Newton solves, their
+    // angle kept: an outer loop putting a bus back to PV at its set-point (a pinned Q row
+    // keeps the magnitude the bus has, see set_pv_pinned_buses), or OpenLoadFlow's robust
+    // mode restarting a bus from 1 pu. Values only.
+    void set_vm_at(const std::vector<int>& buses, const std::vector<real_type>& vm) {
+        for (std::size_t k = 0; k < buses.size() && k < vm.size(); ++k) {
+            const int b = buses[k];
+            if (b < 0 || b >= Vm_.size()) continue;
+            Vm_(b) = vm[k];
+            V_(b) = std::polar(vm[k], Va_(b));
+        }
+    }
+
     // bus_id -> Jacobian column of that bus' theta / vm / q unknown (-1 if none).
     // Each vector has size n_bus and spans the full augmented J (base + extensions).
     const std::vector<int>& theta_to_J_col() const { return ledger_.theta_col_of_bus(); }

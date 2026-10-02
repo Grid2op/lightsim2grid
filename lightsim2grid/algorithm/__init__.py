@@ -29,7 +29,8 @@ __all__ = ["AlgorithmType",
            "OuterLoopStats",
            "DistributedSlack",
            "HvdcAcEmulationLimits",
-           "VoltageMonitoring"]
+           "VoltageMonitoring",
+           "ReactiveLimits"]
 
 from ..lightsim2grid_cpp import AlgorithmType  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import ErrorType  # pyright: ignore[reportMissingImports]
@@ -56,6 +57,7 @@ from ..lightsim2grid_cpp import OuterLoopStats  # pyright: ignore[reportMissingI
 from ..lightsim2grid_cpp import DistributedSlack  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import HvdcAcEmulationLimits  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import VoltageMonitoring  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import ReactiveLimits  # pyright: ignore[reportMissingImports]
 
 try:
     from ..lightsim2grid_cpp import NR_KLU  # AlgorithmType.NR_KLU  # pyright: ignore[reportMissingImports]  # noqa: F401

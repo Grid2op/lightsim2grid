@@ -141,7 +141,7 @@ class TestDistributedSlack(unittest.TestCase):
         from lightsim2grid.algorithm import DistributedSlack
         grid = self._grid(gen_slack_id="B1-G")
         self.assertEqual([loop.name() for loop in grid.get_outer_loops()],
-                         ["DistributedSlack", "AcHvdcAcEmulationLimits", "VoltageMonitoring"])
+                         ["DistributedSlack", "AcHvdcAcEmulationLimits", "VoltageMonitoring", "ReactiveLimits"])
         loop = DistributedSlack(slack_bus_p_max_mismatch_mw=2., fail_on_residue=False)
         self.assertEqual(loop.slack_bus_p_max_mismatch_mw, 2.)
         self.assertFalse(loop.fail_on_residue)
@@ -356,7 +356,81 @@ class TestVoltageMonitoring(unittest.TestCase):
         grid, _, _ = self._ls(self._net(0.90, 1.20))
         grid.reset_outer_loops()
         self.assertEqual([loop.name() for loop in grid.get_outer_loops()],
-                         ["DistributedSlack", "AcHvdcAcEmulationLimits", "VoltageMonitoring"])
+                         ["DistributedSlack", "AcHvdcAcEmulationLimits", "VoltageMonitoring", "ReactiveLimits"])
+
+
+class TestReactiveLimits(unittest.TestCase):
+    """OpenLoadFlow's ReactiveLimits loop, from python, against OpenLoadFlow itself on
+    pypowsybl's IEEE 300-bus grid (every unit regulates its own bus)."""
+
+    def _net(self):
+        try:
+            import pypowsybl as pp
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        return pp.network.create_ieee300()
+
+    def test_same_as_olf(self):
+        import pypowsybl.loadflow as lf
+        from lightsim2grid.algorithm import ReactiveLimits
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
+        from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages
+        from lightsim2grid.network.from_pypowsybl._aux_add_slack import _default_distributed_slack
+        net = self._net()
+        gen = net.get_generators()
+        # the unit the comparison harness (utils/olf_outer_compare.py) takes as the slack
+        slack_gen = next(iter(_default_distributed_slack(net, gen)))
+        params = lf.Parameters(distributed_slack=False, use_reactive_limits=True, read_slack_bus=False)
+        params.provider_parameters = {
+            "slackBusSelectionMode": "NAME", "slackBusesIds": gen.loc[slack_gen, "bus_id"],
+            "outerLoopNames": "ReactiveLimits",
+            "newtonRaphsonConvEpsPerEq": "1e-9", "maxNewtonRaphsonIterations": "50"}
+        res = lf.run_ac(net, params)[0]
+        self.assertEqual(res.status.name, "CONVERGED")
+        olf_vm = iidm_bus_voltages(net)["vm_pu"]
+        olf_q = net.get_generators()["q"]
+
+        net = self._net()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, gen_slack_id=slack_gen, sort_index=False, buses_for_sub=False,
+                                       keep_half_open_lines=True, fuse_zero_impedance_branches=True,
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+        grid.change_algorithm(OUTER)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits(max_reactive_power_mismatch=1e-9))
+        # OpenLoadFlow's DC_VALUES start: the angles of a DC load flow, 1 pu
+        flat = np.full(grid.total_bus(), 1.0 + 0j)
+        V0 = np.exp(1j * np.angle(grid.dc_pf(flat, 30, 1e-12)))
+        V = grid.ac_pf(V0, 30, 1e-9)
+        self.assertGreater(V.shape[0], 0)
+        stats = grid.get_algo().get_outer_loop_stats()
+        self.assertGreater(stats.nb_outer_iterations, 0)
+        self.assertEqual(grid.get_algo().get_linear_solver_stats().nb_analyze, 1)
+        # through the result view: a bus merged by fuse_zero_impedance_branches reads the
+        # voltage of the bus it was merged into
+        from lightsim2grid.network.from_pypowsybl import LightsimResultNetwork
+        ls_bus = LightsimResultNetwork(grid, net).get_buses()
+        nominal = net.get_voltage_levels()["nominal_v"]
+        ls_vm = (ls_bus["v_mag"] / ls_bus["voltage_level_id"].map(nominal)).dropna()
+        common = ls_vm.index.intersection(olf_vm.index)
+        self.assertGreater(len(common), 290)
+        self.assertLess((ls_vm[common] - olf_vm[common]).abs().max(), 1e-8)
+        # the units frozen at a limit publish it
+        compared = 0
+        for g in grid.get_generators():
+            if g.name in olf_q.index and g.connected and np.isfinite(olf_q[g.name]):
+                self.assertAlmostEqual(g.res_q_mvar, -olf_q[g.name], places=4)
+                compared += 1
+        self.assertGreater(compared, 50)
+
+    def test_parameters(self):
+        from lightsim2grid.algorithm import ReactiveLimits
+        loop = ReactiveLimits(max_pq_pv_switch=5, max_reactive_power_mismatch=1e-6)
+        self.assertEqual(loop.max_pq_pv_switch, 5)
+        self.assertAlmostEqual(loop.max_reactive_power_mismatch, 1e-6)
+        with self.assertRaises(RuntimeError):
+            ReactiveLimits(max_pq_pv_switch=-1)
 
 
 if __name__ == "__main__":

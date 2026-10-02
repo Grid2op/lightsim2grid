@@ -4,7 +4,8 @@ Change Log
 [TODO]
 --------
 - OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: ``DistributedSlack``,
-  ``HvdcAcEmulationLimits`` and ``VoltageMonitoring`` are there, the others are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
+  ``HvdcAcEmulationLimits`` and ``VoltageMonitoring`` are there, ``ReactiveLimits`` only for the
+  buses holding their own voltage, the others are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
 - Control limits are detected but never **enforced**: ``compute_physical_violations`` reports a
   distributed-slack machine past ``get_min_p`` / ``get_max_p`` (``GenPCheck``) and a bus past its
   reactive capability (``BusQCheck``), but no algorithm reads a limit, so the solve still
@@ -237,6 +238,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   beyond its other limit is ``HIGH_P`` on that side, as in OpenLoadFlow.
 - [ADDED] ``VoltageMonitoring`` outer loop: OpenLoadFlow's, switching an idle standby SVC on at its
   automaton's set-point when the voltage it monitors leaves the thresholds.
+- [ADDED] ``ReactiveLimits`` outer loop: OpenLoadFlow's, freezing a bus PQ at its units' reactive
+  limit and releasing it, so far for the buses holding their own voltage (slack bus included).
 - [ADDED] ``LSGrid.set_svc_standby`` takes the automaton's set-points, ``LSGrid.set_svc_b0`` its fixed
   susceptance, a shunt carried by the SVC as in OpenLoadFlow.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 17 -> 18: ``SvcContainer`` serializes those set-points and ``b0``.

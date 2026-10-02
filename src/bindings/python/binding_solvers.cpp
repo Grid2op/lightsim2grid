@@ -13,6 +13,7 @@
 #include "powerflow_algorithm/outer_loop/DistributedSlackLoop.hpp"
 #include "powerflow_algorithm/outer_loop/HvdcAcEmulationLimitsLoop.hpp"
 #include "powerflow_algorithm/outer_loop/VoltageMonitoringLoop.hpp"
+#include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
 #include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
 #include "powerflow_algorithm/ScalingPolicies.hpp"
@@ -180,6 +181,22 @@ void bind_solvers(py::module_& m) {
     py::class_<VoltageMonitoringLoop, BaseOuterLoop, std::shared_ptr<VoltageMonitoringLoop> >(
             m, "VoltageMonitoring", DocSolver::VoltageMonitoringLoop.c_str())
         .def(py::init<>());
+
+    py::class_<ReactiveLimitsLoop, BaseOuterLoop, std::shared_ptr<ReactiveLimitsLoop> >(
+            m, "ReactiveLimits", DocSolver::ReactiveLimitsLoop.c_str())
+        .def(py::init([](int max_pq_pv_switch, real_type max_reactive_power_mismatch) {
+                 auto res = std::make_shared<ReactiveLimitsLoop>();
+                 AlgoConfig params;
+                 params.int_params = {max_pq_pv_switch};
+                 params.real_params = {max_reactive_power_mismatch};
+                 res->set_params(params);  // checks them
+                 return res;
+             }),
+             py::arg("max_pq_pv_switch") = 3, py::arg("max_reactive_power_mismatch") = 1e-4)
+        .def_readwrite("max_pq_pv_switch", &ReactiveLimitsLoop::max_pq_pv_switch,
+                       "OpenLoadFlow's reactiveLimitsMaxPqPvSwitch: how many times a bus may go back PV")
+        .def_readwrite("max_reactive_power_mismatch", &ReactiveLimitsLoop::max_reactive_power_mismatch,
+                       "OpenLoadFlow's maxReactivePowerMismatch (its newtonRaphsonConvEpsPerEq), pu of a 100 MVA base");
 
     // ---- TimerJac ----
     py::class_<TimerJac>(m, "TimerJac", DocSolver::TimerJac.c_str())

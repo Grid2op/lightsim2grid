@@ -759,6 +759,19 @@ const std::string DocSolver::VoltageMonitoringLoop = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::ReactiveLimitsLoop = R"mydelimiter(
+    OpenLoadFlow's ReactiveLimits outer loop, around the Newton of the NROuter_* algorithms
+    (``name()`` is ``"ReactiveLimits"``).
+
+    A bus whose units hold its voltage needs some reactive power from them. When that leaves
+    the sum of their reactive limits by more than ``max_reactive_power_mismatch`` (pu of a
+    100 MVA base, OpenLoadFlow's ``newtonRaphsonConvEpsPerEq``), the bus is switched PQ with
+    its units at that limit; a frozen bus whose voltage came back on the side of its
+    set-point the limit was stopping it from reaching is switched PV again, at most
+    ``max_pq_pv_switch`` times. If every PV bus would switch, the strongest one stays PV.
+
+)mydelimiter";
+
 const std::string DocSolver::DC_KLU = R"mydelimiter(
     Alternative implementation of the DC solver, it uses the faster KLU solver available in the SuiteSparse library to solve for the DC voltage given the DC admitance matrix and
     the power injected at each nodes (can be unavailable if you build lightsim2grid from source).

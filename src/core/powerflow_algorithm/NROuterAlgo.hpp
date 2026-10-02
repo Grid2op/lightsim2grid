@@ -97,6 +97,11 @@ public:
         caller_switchable_ = solver_bus_ids;
         this->_system.set_switchable_vm_buses(solver_bus_ids);
     }
+    // a caller's pinned buses (a batch's PV buses among its switchable ones) are pinned on
+    // top of the loops' own, see _solve
+    void set_pv_pinned_buses(const std::vector<int> & solver_bus_ids) override {
+        caller_pinned_ = solver_bus_ids;
+    }
 
     // ----- AlgoConfig: the Newton's parameters, then the driver's ------------------
     // int_params:  [the Newton's 4], max_outer_iterations, robust_mode
@@ -182,6 +187,11 @@ private:
 
     std::vector<std::unique_ptr<BaseOuterLoop> > loops_;
     std::vector<int> caller_switchable_;  // see set_switchable_vm_buses
+    std::vector<int> caller_pinned_;      // see set_pv_pinned_buses
+    // the buses the loops declared switchable (they are PV unless a loop made them PQ,
+    // OuterState::pq_buses), and the ones pinned in the last solve
+    std::vector<int> declared_switchable_;
+    std::vector<int> pinned_;
     std::vector<std::string> signature_;
     OuterLoopDriverParams params_;
     OuterLoopStats stats_;
