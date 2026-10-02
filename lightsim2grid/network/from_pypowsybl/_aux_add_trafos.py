@@ -59,6 +59,79 @@ def _aux_phase_shift_rx_tables(trafo_index, net):
     return alpha, corr
 
 
+_PHASE_REGULATION_MODES = {"CURRENT_LIMITER": "CURRENT_LIMITER", "ACTIVE_POWER_CONTROL": "ACTIVE_POWER"}
+_SIDES = {"ONE": 1, "TWO": 2}
+
+
+def _aux_bus_pu(bus_ids, bus_df, voltage_levels):
+    """The grid bus id (-1 if unknown) and the nominal voltage (kV, NaN) of each bus-view id."""
+    known = pd.Index(bus_ids).isin(bus_df.index)
+    bus = np.full(len(bus_ids), -1, dtype=int)
+    vn = np.full(len(bus_ids), np.nan)
+    if known.any():
+        rows = bus_df.loc[np.asarray(bus_ids)[known]]
+        bus[known] = rows["bus_global_id"].to_numpy(int)
+        vn[known] = voltage_levels.loc[rows["voltage_level_id"].values, "nominal_v"].to_numpy(float)
+    return bus, vn
+
+
+def _aux_tap_changers(model, net, trafo_index, bus_df, voltage_levels):
+    """The ratio and phase tap changers of the 2-winding transformers ``trafo_index``: their
+    step tables and positions (the pi model is then taken at the taps, as OpenLoadFlow takes
+    it), and what they regulate. Legs of 3-winding transformers are not in ``trafo_index``."""
+    pos = pd.Series(np.arange(len(trafo_index)), index=trafo_index)
+    for phase in (False, True):
+        try:
+            if phase:
+                changers = net.get_phase_tap_changers(all_attributes=True)
+                steps = net.get_phase_tap_changer_steps(all_attributes=True)
+            else:
+                changers = net.get_ratio_tap_changers(all_attributes=True)
+                steps = net.get_ratio_tap_changer_steps(all_attributes=True)
+        except Exception:  # noqa: BLE001 - not available on legacy pypowsybl
+            continue
+        changers = changers.loc[changers.index.isin(trafo_index)]
+        if not len(changers):
+            continue
+        steps = steps.loc[steps.index.get_level_values(0).isin(changers.index)]
+        for tid, st in steps.groupby(level=0, sort=False):
+            row = changers.loc[tid]
+            st = st.sort_index(level=1)
+            args = [int(pos[tid]), int(row["low_tap"]), int(row["tap"]), st["rho"].to_numpy(float)]
+            if phase:
+                args.append(st["alpha"].to_numpy(float))
+            args += [st[col].to_numpy(float) for col in ("r", "x", "g", "b")]
+            if phase:
+                model.set_trafo_phase_tap_changer(*args)
+            else:
+                model.set_trafo_ratio_tap_changer(*args)
+        # what they regulate
+        if phase:
+            from lightsim2grid.lightsim2grid_cpp import RegulationMode
+            for tid, row in changers.iterrows():
+                side = _SIDES.get(row.get("regulated_side", ""), 0)
+                if not side:
+                    continue  # regulating something else than the transformer itself
+                mode = getattr(RegulationMode, _PHASE_REGULATION_MODES.get(row["regulation_mode"], "FIXED"))
+                value = float(row["regulation_value"]) if np.isfinite(row["regulation_value"]) else 0.
+                deadband = float(row["target_deadband"]) if np.isfinite(row["target_deadband"]) else 0.
+                model.set_trafo_phase_tap_regulation(int(pos[tid]), mode, bool(row["regulating"]), value, deadband,
+                                                     side)
+        else:
+            bus, vn = _aux_bus_pu(changers["regulating_bus_id"].fillna("").to_numpy(object), bus_df, voltage_levels)
+            regulating = changers["regulating"].to_numpy(bool)
+            if "oltc" in changers:
+                # OpenLoadFlow only regulates with a changer able to move on load
+                regulating &= changers["oltc"].to_numpy(bool)
+            target = changers["target_v"].to_numpy(float) / vn
+            deadband = changers["target_deadband"].to_numpy(float) / vn
+            for k, tid in enumerate(changers.index):
+                model.set_trafo_ratio_tap_regulation(
+                    int(pos[tid]), bool(regulating[k] and bus[k] >= 0),
+                    float(target[k]) if np.isfinite(target[k]) else 0.,
+                    float(deadband[k]) if np.isfinite(deadband[k]) else 0., int(bus[k]))
+
+
 def _aux_add_trafos(model, net, net_pu, sort_index, voltage_levels, bus_df, first_bus_per_vl,
                     ol_current, keep_half_open_lines, fuse_zero_impedance_branches, fused_trafo_ids):
     """Add every 2-winding transformer of ``net`` to ``model``. ``ol_current``
@@ -128,10 +201,12 @@ def _aux_add_trafos(model, net, net_pu, sort_index, voltage_levels, bus_df, firs
     model.set_trafo_current_limit_side1(trafo_limit_a1_ka)
     model.set_trafo_current_limit_side2(trafo_limit_a2_ka)
     # phase-shifting transformers: declare the (alpha -> r/x correction) dependency so
-    # lightsim2grid keeps the series impedance right when the shift changes, without any
-    # "tap" concept (the per-step r/x deltas pypowsybl carries only in its tap steps).
+    # lightsim2grid keeps the series impedance right when the shift changes through
+    # change_shift_trafo (between two taps: at a tap, the tap changer below decides).
     ps_alpha, ps_rx_corr = _aux_phase_shift_rx_tables(df_trafo.index, net)
     if any(len(a) for a in ps_alpha):
         model.set_trafo_shift_dependent_rx(True, ps_alpha, ps_rx_corr)
+    # the tap changers: the pi model at the taps (r, x, g, b corrected by each step)
+    _aux_tap_changers(model, net, df_trafo.index, bus_df, voltage_levels)
 
     return df_trafo, tor_sub, tex_sub

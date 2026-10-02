@@ -431,6 +431,40 @@ void bind_gridmodel(py::module_& m) {
         .def("set_trafo_shift_dependent_rx", &LSGrid::set_trafo_shift_dependent_rx,
             py::arg("enable"), py::arg("alpha_rad"), py::arg("rx_corr_pct"),
             DocLSGrid::set_trafo_shift_dependent_rx.c_str())
+        .def("set_trafo_ratio_tap_changer", &LSGrid::set_trafo_ratio_tap_changer,
+             py::arg("trafo_id"), py::arg("low_tap"), py::arg("position"), py::arg("rho"),
+             py::arg("r_pct"), py::arg("x_pct"), py::arg("g_pct"), py::arg("b_pct"),
+             "The ratio tap changer of a transformer: one step per position from `low_tap` (its rho and "
+             "the corrections, in %, of the transformer's r, x, g, b) and its current position. The pi "
+             "model is then taken at the taps, as OpenLoadFlow takes it: the neutral r, x, g, b times "
+             "(1 + step % / 100) of each changer, the neutral ratio times their rho, the shift the phase "
+             "changer's alpha. The neutral values are the r, x, h given to init_trafo and the ratio the "
+             "transformer has when this is called divided by its changers' rho: that ratio is taken to "
+             "be at the taps already, this changer's included when it is its first of that kind (as "
+             "pypowsybl's rho).")
+        .def("set_trafo_phase_tap_changer", &LSGrid::set_trafo_phase_tap_changer,
+             py::arg("trafo_id"), py::arg("low_tap"), py::arg("position"), py::arg("rho"), py::arg("alpha_deg"),
+             py::arg("r_pct"), py::arg("x_pct"), py::arg("g_pct"), py::arg("b_pct"),
+             "The same for its phase tap changer, `alpha_deg` the shift of each step in degree.")
+        .def("set_trafo_ratio_tap_regulation", &LSGrid::set_trafo_ratio_tap_regulation,
+             py::arg("trafo_id"), py::arg("regulating"), py::arg("target_vm_pu"), py::arg("deadband_pu"),
+             py::arg("regulated_bus"),
+             "What the ratio tap changer regulates: the voltage of `regulated_bus` (grid bus id, -1 for "
+             "none), target and deadband in pu of its nominal voltage. Data only for now.")
+        .def("set_trafo_phase_tap_regulation", &LSGrid::set_trafo_phase_tap_regulation,
+             py::arg("trafo_id"), py::arg("mode"), py::arg("regulating"), py::arg("target"), py::arg("deadband"),
+             py::arg("regulated_side"),
+             "What the phase tap changer regulates: RegulationMode FIXED, ACTIVE_POWER (MW) or "
+             "CURRENT_LIMITER (A), through `regulated_side` (1 or 2) of the transformer. Data only for now.")
+        .def("change_trafo_ratio_tap", &LSGrid::change_trafo_ratio_tap, py::arg("trafo_id"), py::arg("position"),
+             "Move the ratio tap changer of a transformer: its pi model, ratio included, follows.")
+        .def("change_trafo_phase_tap", &LSGrid::change_trafo_phase_tap, py::arg("trafo_id"), py::arg("position"),
+             "Move its phase tap changer: its pi model, shift included, follows.")
+        .def("closest_trafo_ratio_tap", &LSGrid::closest_trafo_ratio_tap, py::arg("trafo_id"), py::arg("ratio"),
+             "The position of its ratio tap changer whose ratio is the closest to `ratio` (OpenLoadFlow's "
+             "rounding: the current position unless another is strictly closer).")
+        .def("closest_trafo_phase_tap", &LSGrid::closest_trafo_phase_tap, py::arg("trafo_id"), py::arg("shift_rad"),
+             "The same for its phase tap changer and a shift in rad.")
         .def("deactivate_load", &LSGrid::deactivate_load, DocLSGrid::deactivate_load.c_str())
         .def("reactivate_load", &LSGrid::reactivate_load, DocLSGrid::reactivate_load.c_str())
         .def("change_bus_load", &LSGrid::change_bus_load_python, DocLSGrid::change_bus_load.c_str())
@@ -458,6 +492,19 @@ void bind_gridmodel(py::module_& m) {
         .def("get_bus_shunt", &LSGrid::get_bus_shunt, DocLSGrid::get_bus_shunt.c_str(), py::return_value_policy::reference)
         .def("change_p_shunt", &LSGrid::change_p_shunt, DocLSGrid::change_p_shunt.c_str())
         .def("change_q_shunt", &LSGrid::change_q_shunt, DocLSGrid::change_q_shunt.c_str())
+        .def("set_shunt_sections", &LSGrid::set_shunt_sections,
+             py::arg("shunt_id"), py::arg("section_count"), py::arg("p_mw"), py::arg("q_mvar"),
+             "The sections of a shunt: for k = 1 .. max, the p (MW) and q (MVar) at 1 pu with k sections on "
+             "(cumulative, as IIDM's non-linear model; the same convention as init_shunt), and the number on "
+             "now. Its p and q become those of that count.")
+        .def("set_shunt_section_regulation", &LSGrid::set_shunt_section_regulation,
+             py::arg("shunt_id"), py::arg("regulating"), py::arg("target_vm_pu"), py::arg("deadband_pu"),
+             py::arg("regulated_bus"),
+             "The voltage its sections regulate: `regulated_bus` (grid bus id, -1 for none), target and "
+             "deadband in pu of its nominal voltage. Data only for now.")
+        .def("change_shunt_section_count", &LSGrid::change_shunt_section_count,
+             py::arg("shunt_id"), py::arg("section_count"),
+             "Switch that many sections of a shunt on: its p and q follow.")
 
         .def("deactivate_sgen", &LSGrid::deactivate_sgen, DocLSGrid::deactivate_sgen.c_str())
         .def("reactivate_sgen", &LSGrid::reactivate_sgen, DocLSGrid::reactivate_sgen.c_str())

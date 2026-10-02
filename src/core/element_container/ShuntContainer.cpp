@@ -10,19 +10,96 @@
 #include "BinaryArchive.hpp"
 
 #include <iostream>
+#include <sstream>
 
 namespace ls2g {
 
 ShuntContainer::StateRes ShuntContainer::get_state() const
 {
-     ShuntContainer::StateRes res(get_osc_pq_state());
+     ShuntContainer::StateRes res(get_osc_pq_state(), section_p_mw_, section_q_mvar_, section_count_,
+                                  regulating_, target_vm_pu_, target_deadband_pu_, regulated_bus_);
      return res;
 }
 
 void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
 {
     set_osc_pq_state(std::get<StateResIdx::OSC_PQ_STATE>(my_state));
+    const int size = nb();
+    const auto & p = std::get<StateResIdx::SECTION_P>(my_state);
+    const auto & q = std::get<StateResIdx::SECTION_Q>(my_state);
+    const auto & count = std::get<StateResIdx::SECTION_COUNT>(my_state);
+    GenericContainer::check_size(p, size, "section_p_mw");
+    GenericContainer::check_size(q, size, "section_q_mvar");
+    GenericContainer::check_size(count, size, "section_count");
+    GenericContainer::check_size(std::get<StateResIdx::REGULATING>(my_state), size, "regulating");
+    GenericContainer::check_size(std::get<StateResIdx::TARGET_VM>(my_state), size, "target_vm_pu");
+    GenericContainer::check_size(std::get<StateResIdx::TARGET_DEADBAND>(my_state), size, "target_deadband_pu");
+    GenericContainer::check_size(std::get<StateResIdx::REGULATED_BUS>(my_state), size, "regulated_bus");
+    // the tables are read by count: each must be complete and the count in it
+    for(std::size_t el = 0; el < p.size(); ++el){
+        if(p[el].size() != q[el].size() || count[el] < 0 || count[el] > static_cast<int>(q[el].size())){
+            std::ostringstream exc_;
+            exc_ << "ShuntContainer::set_state: the sections of shunt " << el << " are inconsistent (tables of "
+                 << "different lengths, or a section count outside them).";
+            throw std::runtime_error(exc_.str());
+        }
+    }
+    section_p_mw_ = p;
+    section_q_mvar_ = q;
+    section_count_ = count;
+    regulating_ = std::get<StateResIdx::REGULATING>(my_state);
+    target_vm_pu_ = std::get<StateResIdx::TARGET_VM>(my_state);
+    target_deadband_pu_ = std::get<StateResIdx::TARGET_DEADBAND>(my_state);
+    regulated_bus_ = std::get<StateResIdx::REGULATED_BUS>(my_state);
     reset_results();
+}
+
+void ShuntContainer::_check_section_count(int el, int section_count, const char * where) const
+{
+    _check_in_range(el, section_count_, where);
+    if(section_count < 0 || section_count > get_max_section_count(el)){
+        std::ostringstream exc_;
+        exc_ << where << ": shunt " << el << " has " << get_max_section_count(el) << " section(s), "
+             << section_count << " cannot be on.";
+        throw std::runtime_error(exc_.str());
+    }
+}
+
+void ShuntContainer::set_sections(int el, int section_count,
+                                  const std::vector<real_type> & p_mw,
+                                  const std::vector<real_type> & q_mvar,
+                                  DualAlgoControl & solver_control)
+{
+    _check_in_range(el, section_count_, "ShuntContainer::set_sections");
+    if(p_mw.size() != q_mvar.size()){
+        throw std::runtime_error("ShuntContainer::set_sections: one active and one reactive power per section count.");
+    }
+    const std::size_t k = static_cast<std::size_t>(el);
+    section_p_mw_[k] = p_mw;
+    section_q_mvar_[k] = q_mvar;
+    _check_section_count(el, section_count, "ShuntContainer::set_sections");
+    section_count_[k] = section_count;
+    change_p_nothrow(el, _section_p(el, section_count), solver_control);
+    change_q_nothrow(el, _section_q(el, section_count), solver_control);
+}
+
+void ShuntContainer::set_section_regulation(int el, bool regulating, real_type target_vm_pu,
+                                            real_type target_deadband_pu, int regulated_bus)
+{
+    _check_in_range(el, section_count_, "ShuntContainer::set_section_regulation");
+    const std::size_t k = static_cast<std::size_t>(el);
+    regulating_[k] = regulating;
+    target_vm_pu_[k] = target_vm_pu;
+    target_deadband_pu_[k] = target_deadband_pu;
+    regulated_bus_[k] = regulated_bus;
+}
+
+void ShuntContainer::change_section_count(int el, int section_count, DualAlgoControl & solver_control)
+{
+    _check_section_count(el, section_count, "ShuntContainer::change_section_count");
+    section_count_[static_cast<std::size_t>(el)] = section_count;
+    change_p_nothrow(el, _section_p(el, section_count), solver_control);
+    change_q_nothrow(el, _section_q(el, section_count), solver_control);
 }
 
 void ShuntContainer::_fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,

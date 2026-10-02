@@ -1586,6 +1586,80 @@ class LS2G_API LSGrid final
                                           const std::vector<std::vector<real_type> > & rx_corr_pct){
             trafos_.set_shift_dependent_rx(enable, alpha_rad, rx_corr_pct, algo_controler_);
         }
+        /**
+         * The ratio tap changer of transformer `trafo_id`: one step per position from
+         * `low_tap` (its `rho` and the corrections, in %, of the transformer's r, x, g, b), and
+         * its current position. The transformer's pi model is then taken at its taps, as
+         * OpenLoadFlow takes it -- see TrafoContainer::set_tap_changer, in particular for the
+         * neutral values the steps apply to.
+         */
+        void set_trafo_ratio_tap_changer(int trafo_id, int low_tap, int position,
+                                         const std::vector<real_type> & rho,
+                                         const std::vector<real_type> & r_pct,
+                                         const std::vector<real_type> & x_pct,
+                                         const std::vector<real_type> & g_pct,
+                                         const std::vector<real_type> & b_pct){
+            trafos_.set_tap_changer(false, trafo_id, low_tap, position, rho, std::vector<real_type>(),
+                                    r_pct, x_pct, g_pct, b_pct, algo_controler_);
+        }
+        /// the same for its phase tap changer, `alpha_deg` the shift of each step (degree)
+        void set_trafo_phase_tap_changer(int trafo_id, int low_tap, int position,
+                                         const std::vector<real_type> & rho,
+                                         const std::vector<real_type> & alpha_deg,
+                                         const std::vector<real_type> & r_pct,
+                                         const std::vector<real_type> & x_pct,
+                                         const std::vector<real_type> & g_pct,
+                                         const std::vector<real_type> & b_pct){
+            trafos_.set_tap_changer(true, trafo_id, low_tap, position, rho, alpha_deg,
+                                    r_pct, x_pct, g_pct, b_pct, algo_controler_);
+        }
+        /**
+         * What the ratio tap changer of transformer `trafo_id` regulates: the voltage of
+         * `regulated_bus` (a grid bus id, -1 for none) at `target_vm_pu` within
+         * `deadband_pu`, both in pu of that bus' nominal voltage. Data only for now.
+         */
+        void set_trafo_ratio_tap_regulation(int trafo_id, bool regulating, real_type target_vm_pu,
+                                            real_type deadband_pu, int regulated_bus){
+            if(regulated_bus < -1 || regulated_bus >= static_cast<int>(total_bus())){
+                throw std::out_of_range("LSGrid::set_trafo_ratio_tap_regulation: no bus with that id.");
+            }
+            trafos_.set_tap_regulation(false, trafo_id, RegulationMode::VOLTAGE, regulating, target_vm_pu,
+                                       deadband_pu, regulated_bus);
+        }
+        /**
+         * What the phase tap changer of transformer `trafo_id` regulates: `mode` FIXED,
+         * ACTIVE_POWER (`target` and `deadband` in MW) or CURRENT_LIMITER (in A), through
+         * `regulated_side` (1 or 2) of the transformer. Data only for now.
+         */
+        void set_trafo_phase_tap_regulation(int trafo_id, RegulationMode mode, bool regulating,
+                                            real_type target, real_type deadband, int regulated_side){
+            if(mode != RegulationMode::FIXED && mode != RegulationMode::ACTIVE_POWER &&
+               mode != RegulationMode::CURRENT_LIMITER){
+                throw std::runtime_error("LSGrid::set_trafo_phase_tap_regulation: a phase tap changer is FIXED, "
+                                         "ACTIVE_POWER or CURRENT_LIMITER.");
+            }
+            if(regulated_side != 1 && regulated_side != 2){
+                throw std::runtime_error("LSGrid::set_trafo_phase_tap_regulation: the regulated side is 1 or 2.");
+            }
+            trafos_.set_tap_regulation(true, trafo_id, mode, regulating, target, deadband, regulated_side);
+        }
+        /// move the ratio tap changer of transformer `trafo_id` to `position`
+        void change_trafo_ratio_tap(int trafo_id, int position){
+            trafos_.change_tap_position(false, trafo_id, position, algo_controler_);
+        }
+        /// move its phase tap changer
+        void change_trafo_phase_tap(int trafo_id, int position){
+            trafos_.change_tap_position(true, trafo_id, position, algo_controler_);
+        }
+        /// the position of its ratio tap changer whose ratio is the closest to `ratio`, see
+        /// TrafoContainer::closest_tap_position
+        int closest_trafo_ratio_tap(int trafo_id, real_type ratio) const {
+            return trafos_.closest_tap_position(false, trafo_id, ratio);
+        }
+        /// the same for its phase tap changer and a shift in rad
+        int closest_trafo_phase_tap(int trafo_id, real_type shift_rad) const {
+            return trafos_.closest_tap_position(true, trafo_id, shift_rad);
+        }
 
         //load
         void deactivate_load(int load_id) {loads_.deactivate(load_id, algo_controler_, substations_); }
@@ -1657,6 +1731,24 @@ class LS2G_API LSGrid final
         }
         void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p_nothrow(shunt_id, new_p, algo_controler_); }
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q_nothrow(shunt_id, new_q, algo_controler_); }
+        /// the sections of shunt `shunt_id`, see ShuntContainer::set_sections
+        void set_shunt_sections(int shunt_id, int section_count,
+                                const std::vector<real_type> & p_mw,
+                                const std::vector<real_type> & q_mvar){
+            shunts_.set_sections(shunt_id, section_count, p_mw, q_mvar, algo_controler_);
+        }
+        /// the voltage they regulate, see ShuntContainer::set_section_regulation. Data only for now.
+        void set_shunt_section_regulation(int shunt_id, bool regulating, real_type target_vm_pu,
+                                          real_type deadband_pu, int regulated_bus){
+            if(regulated_bus < -1 || regulated_bus >= static_cast<int>(total_bus())){
+                throw std::out_of_range("LSGrid::set_shunt_section_regulation: no bus with that id.");
+            }
+            shunts_.set_section_regulation(shunt_id, regulating, target_vm_pu, deadband_pu, regulated_bus);
+        }
+        /// switch `section_count` sections of shunt `shunt_id` on
+        void change_shunt_section_count(int shunt_id, int section_count){
+            shunts_.change_section_count(shunt_id, section_count, algo_controler_);
+        }
         [[nodiscard]] int get_bus_shunt(int shunt_id) const {return shunts_.get_bus(shunt_id).cast_int();}
 
         //static gen

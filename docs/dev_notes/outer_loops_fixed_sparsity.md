@@ -344,23 +344,25 @@ New trigger kinds: `SLACK_MISMATCH`, `UNREALISTIC_VOLTAGE`, `REACTIVE_LIMIT_MOVE
 
 ## What the model lacks
 
-- **Tap changers.** `TrafoContainer` holds a ratio and a shift, plus an alpha -> r / x
+- **Tap changers** -- done in phase 6 (`TapChangers.hpp`; the alpha -> r / x table of
+  `set_shift_dependent_rx` still applies between two taps, relative to the current one).
+  `TrafoContainer` holds a ratio and a shift, plus an alpha -> r / x
   correction table (`set_shift_dependent_rx`). It needs, per transformer, an optional ratio and
   phase tap changer: step table (rho, alpha, r %, x %, g %, b %), position and range, side,
   regulating flag, target voltage, deadband and regulated bus (ratio), regulation mode and value
   (phase). The pi-model follows OLF's `PiModelArray`: the current tap gives every parameter; a
   continuous ratio or shift overrides rho or alpha only, without interpolating r / x / g / b;
   rounding goes to the closest tap, a strictly better one only.
-- **Shunt sections.** `ShuntContainer` holds a fixed admittance. It needs linear and
+- **Shunt sections** -- done in phase 6. `ShuntContainer` holds a fixed admittance. It needs linear and
   non-linear sections, the current and maximum count, and the regulation (on, target, deadband,
   regulated bus).
-- **Capability curves.** A generator's reactive limits are read once at its initial target P.
+- **Capability curves** -- done in phase 5 (`LSGrid::set_gen_capability_curves`). A generator's reactive limits are read once at its initial target P.
   The slack loop moves that target, and OLF re-evaluates the limits at the current one
   (extrapolating past the curve ends with `extrapolateReactiveLimits`), so the curve points
   have to be in `GeneratorContainer`.
 - **`can_be_pv`** currently flags a PQ unit an outer loop froze. It becomes "this unit may be PV
   in some outer iteration": every PV generator, plus the frozen ones.
-- **The converter** reads transformers at the neutral tap and drops tap changers, shunt
+- **The converter** -- done in phase 6 for the tap changers and the sections. It read transformers at the neutral tap and dropped tap changers, shunt
   sections and regulation; it has to read them (`get_ratio_tap_changers` and steps,
   `get_phase_tap_changers` and steps, `get_shunt_compensators` and the section frames,
   `get_reactive_capability_curve_points`), with r / x / g / b at the current tap.
@@ -410,7 +412,7 @@ solves, on real grid snapshots.
 | 3 | `HvdcAcEmulationLimits` -- **done**; the snapshots rarely reach their limits, the harness's `--hvdc-limit-factor` lowers them on both engines |
 | 4 | `VoltageMonitoring` -- **done**, with OpenLoadFlow's voltage-control loading rules for SVCs, VSC stations and batteries; the harness's `--svc-thresholds-pu` moves the automata's thresholds on both engines |
 | 5 | `ReactiveLimits` -- **done**: local buses through switchable Vm / Q slots, group controllers held by value (`VoltageControl` holding, the sharing taken against any active controller), the robust mode; OpenLoadFlow's per-unit reactive split (`set_reactive_dispatch_olf`); capability curves on the grid (`set_gen_capability_curves`), read at the target P `DistributedSlack` gave; a monitor `VoltageMonitoring` switched on is checked like any SVC; a non-regulating unit's target Q clamped into its limits at the target P `DistributedSlack` moved (`set_gen_raw_target_q`, kept apart from the bus residual through `OuterState::Sbus_target`); VSC stations sharing a bus by their widest range, as generators. A plain solve's LOW_Q / HIGH_Q buses are the ones OpenLoadFlow switches PV -> PQ in its first round |
-| 6 | tap and section data model, converter, binary format |
+| 6 | tap and section data model, converter, binary format -- **done**: the pi model at the taps (OpenLoadFlow's, step corrections of r, x, g, b included), moving a tap or a section count keeps the Jacobian's pattern, closest-tap rounding; checked against OpenLoadFlow with taps and sections moved on both sides. A check that a control would act is `ViolationCategory::CONTROL` |
 | 7 | `PhaseControl` |
 | 8 | `TransformerVoltageControl` |
 | 9 | `ShuntVoltageControl` |

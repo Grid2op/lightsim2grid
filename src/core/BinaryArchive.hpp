@@ -124,7 +124,11 @@ namespace ls2g {
 // v18: SvcContainer::StateRes carries the standby automaton's set-points (see
 //     LSGrid::set_svc_standby; NaN unless set) and its fixed susceptance b0 (see
 //     LSGrid::set_svc_b0; 0 unless set). Appended.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 18;
+// v19: TrafoContainer::StateRes carries its ratio and phase tap changers (step tables,
+//     positions, regulation) and the neutral ratio and h they apply to; ShuntContainer::StateRes
+//     its sections (cumulative p / q per count, the count on) and their voltage regulation.
+//     Appended (see LSGrid::set_trafo_ratio_tap_changer, LSGrid::set_shunt_sections).
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 19;
 
 class LS2G_API BinaryArchive
 {

@@ -233,6 +233,13 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   The units' new P is in the results only, their targets are not modified.
 - [ADDED] ``HvdcAcEmulationLimits`` outer loop: OpenLoadFlow's, saturating an AC-emulation hvdc
   line at the limit its droop flow exceeds and releasing it. In the results only.
+- [ADDED] Tap changers on transformers (``LSGrid.set_trafo_ratio_tap_changer`` / ``..._phase_...``,
+  ``change_trafo_ratio_tap``): the pi model at the taps, as OpenLoadFlow's, read by ``init_from_pypowsybl``.
+- [ADDED] Shunt sections (``LSGrid.set_shunt_sections``, ``change_shunt_section_count``) and their voltage
+  regulation, read by ``init_from_pypowsybl``.
+- [FIXED] ``init_from_pypowsybl``: a ratio tap step's r, x, g and b corrections, and a phase step's g and b,
+  were ignored.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 18 -> 19: transformers serialize their tap changers, shunts their sections.
 - [BREAKING] New ``ViolationCategory.CONTROL``: a control the solution does not apply rather than a
   physical limit. The PQ -> PV release, standby SVC, hvdc droop release and slack mismatch move there.
 - [BREAKING] The hvdc droop limits and the standby SVCs of ``get_physical_violations`` /

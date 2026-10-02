@@ -219,6 +219,18 @@ void bind_containers(py::module_& m) {
     add_pickle(shunt_cls, "ShuntContainer");
     add_binary_serialization(shunt_cls);
 
+    py::enum_<RegulationMode>(m, "RegulationMode",
+        "What a discrete control (a transformer's tap changer, a shunt's sections) regulates; the "
+        "unit of its target and deadband follows.")
+        .value("FIXED", RegulationMode::FIXED, "Nothing: the position only moves when someone moves it.")
+        .value("VOLTAGE", RegulationMode::VOLTAGE,
+               "The voltage of a bus, target and deadband in pu of its nominal voltage.")
+        .value("REACTIVE_POWER", RegulationMode::REACTIVE_POWER,
+               "The reactive power through one side of the branch, MVar.")
+        .value("CURRENT_LIMITER", RegulationMode::CURRENT_LIMITER,
+               "The current through one side of the branch kept below the target, A.")
+        .value("ACTIVE_POWER", RegulationMode::ACTIVE_POWER, "The active power through one side of the branch, MW.");
+
     py::class_<ShuntInfo>(m, "ShuntInfo", DocIterator::ShuntInfo.c_str())
         .def_readonly("id", &ShuntInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &ShuntInfo::name, DocIterator::name.c_str())
@@ -233,7 +245,17 @@ void bind_containers(py::module_& m) {
         .def_readonly("res_q_mvar", &ShuntInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
         .def_readonly("res_theta_deg", &ShuntInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
         .def_readonly("res_v_kv", &ShuntInfo::res_v_kv, DocIterator::res_v_kv.c_str())
-        .def_readonly("voltage_level_id", &ShuntInfo::sub_id, DocIterator::shunt_sub_id.c_str());
+        .def_readonly("voltage_level_id", &ShuntInfo::sub_id, DocIterator::shunt_sub_id.c_str())
+        .def_readonly("has_sections", &ShuntInfo::has_sections,
+             "Whether it has sections (LSGrid.set_shunt_sections); the next fields are meaningless otherwise.")
+        .def_readonly("section_count", &ShuntInfo::section_count, "The number of sections on.")
+        .def_readonly("max_section_count", &ShuntInfo::max_section_count, "Its number of sections.")
+        .def_readonly("regulating", &ShuntInfo::regulating,
+             "Whether its sections regulate a voltage (LSGrid.set_shunt_section_regulation).")
+        .def_readonly("target_vm_pu", &ShuntInfo::target_vm_pu,
+             "The voltage they regulate, in pu of the regulated bus' nominal voltage.")
+        .def_readonly("target_deadband_pu", &ShuntInfo::target_deadband_pu, "Its deadband, in the same pu.")
+        .def_readonly("regulated_bus", &ShuntInfo::regulated_bus, "The grid bus id they regulate, -1 for none.");
 
     auto trafo_cls = py::class_<TrafoContainer>(m, "TrafoContainer", DocIterator::TrafoContainer.c_str())
         .def("__len__", [](const TrafoContainer & data) { return data.nb(); })
@@ -274,6 +296,33 @@ void bind_containers(py::module_& m) {
         .def_readonly("is_tap_side_1", &TrafoInfo::is_tap_side1, DocIterator::is_tap_hv_side.c_str())
         .def_readonly("ratio", &TrafoInfo::ratio, DocIterator::ratio.c_str())
         .def_readonly("shift_rad", &TrafoInfo::shift_rad, DocIterator::shift_rad.c_str())
+        .def_readonly("has_ratio_tap_changer", &TrafoInfo::has_ratio_tap_changer,
+             "Whether it has a ratio tap changer (LSGrid.set_trafo_ratio_tap_changer); its tap fields are "
+             "meaningless otherwise.")
+        .def_readonly("ratio_tap_position", &TrafoInfo::ratio_tap_position, "Its ratio tap changer's position.")
+        .def_readonly("ratio_low_tap", &TrafoInfo::ratio_low_tap, "Its lowest position.")
+        .def_readonly("ratio_high_tap", &TrafoInfo::ratio_high_tap, "Its highest position.")
+        .def_readonly("ratio_regulation_mode", &TrafoInfo::ratio_regulation_mode,
+             "What it regulates (RegulationMode.VOLTAGE once LSGrid.set_trafo_ratio_tap_regulation was called).")
+        .def_readonly("ratio_regulating", &TrafoInfo::ratio_regulating, "Whether it regulates.")
+        .def_readonly("ratio_target", &TrafoInfo::ratio_target,
+             "The voltage it regulates, in pu of the regulated bus' nominal voltage.")
+        .def_readonly("ratio_deadband", &TrafoInfo::ratio_deadband, "Its deadband, in the same pu.")
+        .def_readonly("ratio_regulated", &TrafoInfo::ratio_regulated, "The grid bus id it regulates, -1 for none.")
+        .def_readonly("has_phase_tap_changer", &TrafoInfo::has_phase_tap_changer,
+             "Whether it has a phase tap changer (LSGrid.set_trafo_phase_tap_changer); its tap fields are "
+             "meaningless otherwise.")
+        .def_readonly("phase_tap_position", &TrafoInfo::phase_tap_position, "Its phase tap changer's position.")
+        .def_readonly("phase_low_tap", &TrafoInfo::phase_low_tap, "Its lowest position.")
+        .def_readonly("phase_high_tap", &TrafoInfo::phase_high_tap, "Its highest position.")
+        .def_readonly("phase_regulation_mode", &TrafoInfo::phase_regulation_mode,
+             "What it regulates: RegulationMode.FIXED, ACTIVE_POWER or CURRENT_LIMITER.")
+        .def_readonly("phase_regulating", &TrafoInfo::phase_regulating, "Whether it regulates.")
+        .def_readonly("phase_target", &TrafoInfo::phase_target,
+             "Its target: MW for ACTIVE_POWER, A for CURRENT_LIMITER.")
+        .def_readonly("phase_deadband", &TrafoInfo::phase_deadband, "Its deadband, in the same unit.")
+        .def_readonly("phase_regulated", &TrafoInfo::phase_regulated,
+             "The side of the transformer (1 or 2) whose flow it regulates.")
         .def_readonly("has_res", &TrafoInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p1_mw", &TrafoInfo::res_p1_mw, DocIterator::res_p_hv_mw.c_str())
         .def_readonly("res_q1_mvar", &TrafoInfo::res_q1_mvar, DocIterator::res_q_hv_mvar.c_str())
