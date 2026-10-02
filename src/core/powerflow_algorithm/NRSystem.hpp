@@ -853,6 +853,28 @@ class LS2G_API VoltageControl
         // update_state(), like the pinning above.
         void set_v_set_override(const Eigen::Ref<const RealVect> & v_set) { v_set_override_ = v_set; }
 
+        // Switch held SVCs on, by value (an outer loop's, see VoltageMonitoringLoop): an
+        // entry of `target_vm_per_svc` (indexed by SVC id) that is finite releases the held
+        // SVC controller of that id and makes it regulate its group's bus at that
+        // set-point; NaN (or an empty vector) leaves it as the plan has it. Every held SVC
+        // is alone in its group (VoltageControlPlan::_group_and_emit), so releasing it
+        // turns the group's "Q = 0" row back into its voltage row -- entries declared
+        // either way. Applied to the state update_state() read, so call it after that,
+        // before each Newton; the next update_state() starts from the plan again.
+        void release_held_svcs(const std::vector<real_type> & target_vm_per_svc) {
+            const int nc = data_.n_controllers();
+            if (data_.held.size() != nc) return;
+            for (int j = 0; j < nc; ++j) {
+                if (!data_.is_held(j) || data_.kind(j) != VoltageControlSolverData::SVC) continue;
+                const int svc_id = data_.elem_id(j);
+                if (svc_id < 0 || static_cast<std::size_t>(svc_id) >= target_vm_per_svc.size()) continue;
+                const real_type target = target_vm_per_svc[static_cast<std::size_t>(svc_id)];
+                if (!std::isfinite(target)) continue;
+                data_.held(j) = 0;
+                data_.v_set(data_.group(j)) = target;
+            }
+        }
+
         // J row of each group's voltage constraint (group order), what the gradient of
         // a loss with respect to that group's v_set is read from (dF_v/dv_set = -1).
         IntVect group_v_row() const {
@@ -1256,6 +1278,13 @@ public:
     void set_hvdc_status_override(const std::vector<int>& status_per_line, int keep) {
         Hvdc* hvdc = _find_extension<Hvdc>();
         if (hvdc != nullptr) hvdc->set_status_override(status_per_line, keep);
+    }
+
+    // Held SVCs switched on, see VoltageControl::release_held_svcs. No-op without the
+    // extension.
+    void release_held_svcs(const std::vector<real_type> & target_vm_per_svc) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->release_held_svcs(target_vm_per_svc);
     }
 
     // Per-solve group set-points of the VoltageControl extension (NaN = the grid's

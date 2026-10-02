@@ -100,7 +100,7 @@ scope.
 | 1 | `DistributedSlack` | slack-bus active mismatch above `slackBusPMaxMismatch` | re-share the **cumulative** mismatch from the units' initial target P, factor `maxP / droop`, clamped to `[minTargetP, maxTargetP]`, never across 0 MW, saturated units leave; FAILED if a residual remains | Sbus values only |
 | 2 | `FreezingHvdcACEmulation` | off (`startWithFrozenACEmulation` = false) | -- | -- |
 | 3 | `HvdcAcEmulationLimits` | droop flow beyond the per-direction max (to saturation), back inside or reversed (release) | per-line regime: linear / saturated each way | values only; the droop entries are declared in every regime |
-| 6 | `VoltageMonitoring` | a PQ bus holding a stand-by SVC outside its thresholds | the bus becomes PV at the high / low set-point | a reserved Vm / Q-row pin slot |
+| 6 | `VoltageMonitoring` | the voltage a stand-by SVC monitors outside its thresholds | the SVC regulates at the high / low set-point, for good | values only: the SVC is a held controller of its own group from the start |
 | 7 | `ReactiveLimits` | PV->PQ: generation Q (load Q included) beyond the bus' summed limits plus epsilon; PQ->PV: voltage back across the target on the right side; robust mode: remote controller outside the realistic band; limit moved since the freeze | freeze at the limit, release, V = 1 in robust mode, keep the strongest PV bus, at most `maxPqPvSwitch` PV->PQ per bus | switchable Vm / Q slots + pinning; remote / group controllers through the held-Q of `VoltageControl` |
 | 8 | `PhaseControl` (*off*) | iteration 0: any controller; afterwards a current limiter above its value | continuous alpha in the first solve, rounded to the closest tap; a limiter moves one tap | an alpha column per regulating PST, row `alpha = alpha0` or `P = target` |
 | 9 | `TransformerVoltageControl` (*off*) | controlled voltage outside half the deadband | INITIAL / CONTROL / COMPLETE step machine: continuous ratio, generators below 120 kV frozen PQ, bound clamping, initial-tap sharing, rounding | a ratio column per controller, row `rho = rho0`, the controlled bus' `V = target`, or an equal-sharing row |
@@ -265,6 +265,26 @@ check is part of lightsim2grid's refactor fallback (`LinearSolverPolicy::
 set_refactor_fallback`, on for `NROuter_*`, `NRRefactorRetry_*` and the batch algorithms
 that edit values), and the factorization it costs is counted as a fallback one.
 
+### The VoltageMonitoring loop
+
+With `svcVoltageMonitoring` (`OlfLoadingParameters.svc_voltage_monitoring`, on by default as
+in OpenLoadFlow), an SVC whose standby automaton is in standby is a voltage monitor, loaded
+idle: off, flagged standby with its thresholds and set-points (`LSGrid.set_svc_standby`).
+Every algorithm sees it as off, Q = 0. With the loop in the grid's list and an algorithm
+running outer loops, the voltage-control plan also enrols it as a held controller, alone in
+a group regulating its bus (`hold_monitors`): the group's row reads "Q = 0", and switching
+the SVC on rewrites it into the voltage row at the new set-point, by value. A monitor the
+plan cannot enrol (its regulated bus already regulated by a group, or without a Vm unknown)
+stays idle.
+
+The automaton's `b0` is a susceptance the SVC carries (`LSGrid.set_svc_b0`), in standby or
+not, stamped into Ybus at its bus and part of its reactive output, as OpenLoadFlow's
+`LfStandbyAutomatonShunt`. OpenLoadFlow's loading rules around monitors (two on a bus both
+regulate, one next to a regulating unit is switched off) are `_olf_rules.voltage_controllers`.
+
+As OpenLoadFlow, the loop only runs when a monitor regulates its own bus, and the
+thresholds are in pu of the SVC's own voltage level.
+
 ### Publishing the results
 
 `LSGrid::compute_results` splits a generator's P with the grid's own slack weights and its Q
@@ -309,8 +329,8 @@ Most of the detection, and some of the actions, already exist.
 | unit past its p limits (in-Newton slack) | `GenPCheck.hpp` | the `NR_*` algorithms' detection only |
 | OLF clamp-and-reshare, no sign change | `element_container/SlackRedistribution.hpp` | `DistributedSlack` action |
 | "can take part in the slack" vs "is a slack" | `SlackParticipation::can_participate*` | `DistributedSlack` |
-| PV <-> PQ at constant sparsity | `Base::set_switchable_vm_buses`, `NRSystem::set_pv_pinned_buses` | `ReactiveLimits`, `VoltageMonitoring` |
-| a controller of a group held at a fixed Q | `LSGrid::set_hold_frozen_regulators`, `VoltageControl` held rows | `ReactiveLimits` (remote / groups) |
+| PV <-> PQ at constant sparsity | `Base::set_switchable_vm_buses`, `NRSystem::set_pv_pinned_buses` | `ReactiveLimits` |
+| a controller of a group held at a fixed Q | `LSGrid::set_hold_frozen_regulators`, `VoltageControl` held rows | `ReactiveLimits` (remote / groups), `VoltageMonitoring` (`NRSystem::release_held_svcs`) |
 | refactorize -> factorize fallback, counters | `LinearSolverPolicy`, `LinearSolverStats` | the one-factorize accounting |
 
 The check headers depend on no batch state; they take the grid, the solver bus map, the
@@ -388,7 +408,7 @@ solves, on real grid snapshots.
 | 1 | `NRAlgo` split, `NROuterAlgo`, `BaseOuterLoop`, declaration, resume, driver, statistics, result hook, Python registration and persistence. With no loop it must match `NRSing_*`, with one analysis -- **done**, but for the persistence of a custom loop list in a pickle or a binary file (with the format bump of phase 6) |
 | 2 | `DistributedSlack`, participation rules unified -- **done** |
 | 3 | `HvdcAcEmulationLimits` -- **done**; the snapshots rarely reach their limits, the harness's `--hvdc-limit-factor` lowers them on both engines |
-| 4 | `VoltageMonitoring` |
+| 4 | `VoltageMonitoring` -- **done**, with OpenLoadFlow's voltage-control loading rules for SVCs, VSC stations and batteries; the harness's `--svc-thresholds-pu` moves the automata's thresholds on both engines |
 | 5 | `ReactiveLimits`, capability curves, unrealistic-voltage check |
 | 6 | tap and section data model, converter, binary format |
 | 7 | `PhaseControl` |

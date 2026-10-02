@@ -746,6 +746,19 @@ const std::string DocSolver::HvdcAcEmulationLimitsLoop = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::VoltageMonitoringLoop = R"mydelimiter(
+    OpenLoadFlow's VoltageMonitoring outer loop, around the Newton of the NROuter_* algorithms
+    (``name()`` is ``"VoltageMonitoring"``).
+
+    An SVC whose standby automaton is in standby is a voltage monitor (``init_from_pypowsybl``
+    with ``olf_rules``): idle at Q = 0 while the voltage of the bus it regulates stays inside
+    its thresholds. When it leaves them, the SVC is switched on for the rest of the solve,
+    regulating that bus at the automaton's low set-point (below the low threshold) or its
+    high one (above the high threshold). Only runs when a monitor regulates its own bus, as in
+    OpenLoadFlow.
+
+)mydelimiter";
+
 const std::string DocSolver::DC_KLU = R"mydelimiter(
     Alternative implementation of the DC solver, it uses the faster KLU solver available in the SuiteSparse library to solve for the DC voltage given the DC admitance matrix and
     the power injected at each nodes (can be unavailable if you build lightsim2grid from source).
@@ -2066,6 +2079,23 @@ const std::string DocIterator::svc_standby_low_vm_pu = R"mydelimiter(
     The low voltage threshold of this SVC's standby automaton, in pu of the nominal voltage of
     the bus it regulates (see :attr:`standby`); ``NaN`` when it has none.
 
+)mydelimiter";
+
+const std::string DocIterator::svc_standby_low_target_vm_pu = R"mydelimiter(
+    The set-point (pu) the standby automaton switches the SVC on at when the voltage it
+    monitors falls below :attr:`standby_low_vm_pu` (OpenLoadFlow's VoltageMonitoring loop).
+    ``NaN`` when unknown: the SVC is then never switched on.
+)mydelimiter";
+
+const std::string DocIterator::svc_standby_high_target_vm_pu = R"mydelimiter(
+    The set-point (pu) the standby automaton switches the SVC on at when the voltage it
+    monitors rises above :attr:`standby_high_vm_pu`. ``NaN`` when unknown.
+)mydelimiter";
+
+const std::string DocIterator::svc_b0_pu = R"mydelimiter(
+    The standby automaton's fixed susceptance (pu, at the nominal voltage of the SVC's bus): a
+    shunt OpenLoadFlow holds apart from the SVC's own range, in standby or not, whose
+    reactive output is part of the SVC's. ``0`` when there is none.
 )mydelimiter";
 
 const std::string DocIterator::svc_standby_high_vm_pu = R"mydelimiter(

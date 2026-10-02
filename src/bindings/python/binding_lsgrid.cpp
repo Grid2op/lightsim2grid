@@ -312,21 +312,33 @@ void bind_gridmodel(py::module_& m) {
              "a limit). What it is for: the physical checks report a flagged fixed-Q SVC whose "
              "regulated voltage would make an outer loop switch it back to voltage control "
              "(LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q on the SVC).")
-        .def("set_svc_standby", &LSGrid::set_svc_standby,
+        .def("set_svc_standby",
+             [](LSGrid & self, const std::vector<bool> & standby, const RealVect & low_vm_pu,
+                const RealVect & high_vm_pu, py::object low_target_vm_pu, py::object high_target_vm_pu){
+                 const RealVect none = RealVect::Constant(low_vm_pu.size(), std::numeric_limits<real_type>::quiet_NaN());
+                 const RealVect low_t = low_target_vm_pu.is_none() ? none : low_target_vm_pu.cast<RealVect>();
+                 const RealVect high_t = high_target_vm_pu.is_none() ? none : high_target_vm_pu.cast<RealVect>();
+                 self.set_svc_standby(standby, low_vm_pu, high_vm_pu, low_t, high_t);
+             },
              py::arg("standby"), py::arg("low_vm_pu"), py::arg("high_vm_pu"),
-             "Flag the SVCs an outer loop left idle under their standby automaton: one bool per "
-             "SVC (`SvcInfo.standby`, False by default), with that automaton's low / high voltage "
-             "thresholds in pu of the nominal voltage of the bus each SVC regulates (ignored "
-             "where not flagged; a flagged SVC needs finite thresholds with low < high). Never "
-             "enforced and never read by a powerflow.\n\n"
-             "lightsim2grid does not model the automaton, and cannot tell such an SVC -- a fixed-Q "
-             "one after `bake_outer_loops` -- from one that never regulates: the caller says so "
-             "(`init_from_pypowsybl(can_be_pv=...)` passes the SVCs `bake_outer_loops` left idle). "
-             "What it is for: the physical checks (`get_physical_violations`, the batch "
-             "algorithms' `compute_physical_violations`) report a flagged non-regulating SVC whose "
-             "regulated voltage is outside those thresholds, which OpenLoadFlow's "
-             "MonitoringVoltageOuterLoop would switch to voltage control "
-             "(LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY).")
+             py::arg("low_target_vm_pu") = py::none(), py::arg("high_target_vm_pu") = py::none(),
+             "Flag the SVCs that sit idle under their standby automaton: one bool per SVC "
+             "(`SvcInfo.standby`, False by default), with that automaton's low / high voltage "
+             "thresholds in pu of the nominal voltage of the SVC's own bus (ignored where not "
+             "flagged; a flagged SVC needs finite thresholds with low < high), and optionally the "
+             "set-points it switches on at below / above them (NaN, or None for all, where unknown).\n\n"
+             "lightsim2grid cannot tell such an SVC -- a fixed-Q one after `bake_outer_loops`, or "
+             "an idle voltage monitor of `init_from_pypowsybl(olf_rules=...)` -- from one that "
+             "never regulates: the caller says so. What it is for: the physical checks "
+             "(`get_physical_violations`, the batch algorithms' `compute_physical_violations`) "
+             "report a flagged non-regulating SVC whose regulated voltage is outside those "
+             "thresholds (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY), and an idle one "
+             "with both set-points is switched on by the `VoltageMonitoring` outer loop of the "
+             "NROuter_* algorithms.")
+        .def("set_svc_b0", &LSGrid::set_svc_b0, py::arg("b0_pu"),
+             "The standby automaton's fixed susceptance of each SVC, pu (sn_mva base, at the "
+             "nominal voltage of the SVC's own bus; 0 for none): a shunt at the SVC's bus, in "
+             "standby or not, whose reactive output is part of the SVC's (as OpenLoadFlow).")
         .def("set_storage_p_limits", &LSGrid::set_storage_p_limits,
              py::arg("p_min_mw"), py::arg("p_max_mw"),
              "Active power limits (MW) of the storage units, OPTIONAL and never enforced -- "

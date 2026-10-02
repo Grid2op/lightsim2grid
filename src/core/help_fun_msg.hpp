@@ -110,6 +110,7 @@ struct LS2G_API DocSolver
     static const std::string OuterLoopStatus;
     static const std::string DistributedSlackLoop;
     static const std::string HvdcAcEmulationLimitsLoop;
+    static const std::string VoltageMonitoringLoop;
 
     static const std::string NR_NICSLU;
     static const std::string NRSing_NICSLU;
@@ -205,6 +206,9 @@ struct LS2G_API DocIterator
     static const std::string can_participate_slack_overshoot_mw;
     static const std::string svc_standby_low_vm_pu;
     static const std::string svc_standby_high_vm_pu;
+    static const std::string svc_standby_low_target_vm_pu;
+    static const std::string svc_standby_high_target_vm_pu;
+    static const std::string svc_b0_pu;
 
     // specific to loads (and storage units)
     static const std::string LoadContainer;

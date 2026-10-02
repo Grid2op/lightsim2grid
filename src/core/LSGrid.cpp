@@ -124,6 +124,16 @@ void LSGrid::add_outer_loop(const std::shared_ptr<BaseOuterLoop> & loop)
         }
     }
     outer_loops_.push_back(loop);
+    _tell_outer_loops_changed();
+}
+
+bool LSGrid::_holds_svc_monitors() const
+{
+    if (!_algo.supports_outer_loops()) return false;
+    for (const auto & loop : get_outer_loops()) {
+        if (loop->holds_svc_monitors()) return true;
+    }
+    return false;
 }
 
 std::vector<std::shared_ptr<BaseOuterLoop> > LSGrid::get_outer_loops() const
@@ -978,7 +988,7 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     plan.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                            ac_cache_.id_me_to_solver, ac_cache_.id_solver_to_me,
                            ac_cache_.slack_bus_id_solver, ac_cache_.bus_pq,
-                           hold_frozen_regulators_);
+                           hold_frozen_regulators_, _holds_svc_monitors());
     data = plan.controllers();
 }
 
@@ -1411,7 +1421,7 @@ CplxVect LSGrid::_build_into_cache(
         cache.voltage_control.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                                                 cache.id_me_to_solver, cache.id_solver_to_me,
                                                 cache.slack_bus_id_solver, cache.bus_pq,
-                                                hold_frozen);
+                                                hold_frozen, _holds_svc_monitors());
     }
 
     // type-specific injection assembly (complex Sbus for AC, real Pbus for DC)
@@ -2977,13 +2987,6 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
                 [this](int gen_id){ return generators_.get_target_vm_pu(gen_id); },
                 [](int){ return false; }, out);
         }
-        // the idle standby SVCs the caller flagged, whose automaton would switch them on
-        svc_standby_check::SvcStandbyPlan standby_plan;
-        svc_standby_check::build_svc_standby_plan(*this, layout.id_me_to_solver, standby_plan);
-        if(!standby_plan.empty()){
-            svc_standby_check::check_svc_standby_violations(standby_plan, algo.get_V(), tol_vm_pu,
-                                                            no_mask, out);
-        }
         // the generators holding a remote bus from an unrealistic voltage of their own
         remote_voltage_control_check::RemoteVoltageControlPlan remote_plan;
         remote_voltage_control_check::build_remote_voltage_control_plan(
@@ -2996,7 +2999,7 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
     // the outer loops' own triggers (detection mode): what the grid's outer loops would still
     // do after this solve -- the hvdc droop limits, the slack left on a single slack bus (with
     // several, the Newton shared the imbalance already and gen_p_check below reads what that
-    // left)
+    // left), the idle standby SVCs whose automaton would switch them on
     {
         const CplxVect V = algo.get_V();
         const RealVect Va = algo.get_Va();
@@ -3011,6 +3014,8 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
         ctx.slack_bus = layout.slack_bus_id_solver.size() == 1 ? layout.slack_bus_id_solver[0].cast_int() : -1;
         ctx.slack_absorbed = ac ? algo.get_slack_absorbed() : 0.;
         ctx.tol_mw = tol_mva;
+        ctx.tol_vm_pu = tol_vm_pu;
+        ctx.vm_checks = ac;
         ctx.masked = no_mask;
         ctx.id_me_to_solver = &layout.id_me_to_solver;
         for(const auto & loop : get_outer_loops()) loop->detect(ctx, out);

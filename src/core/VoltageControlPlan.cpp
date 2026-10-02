@@ -9,6 +9,7 @@
 #include "VoltageControlPlan.hpp"
 
 #include <cmath>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 
@@ -191,10 +192,12 @@ void VoltageControlPlan::build_solver_side(const GeneratorContainer & generators
                                            const GlobalBusIdVect & id_solver_to_me,
                                            const SolverBusIdVect & slack_bus_id_solver,
                                            const SolverBusIdVect & bus_pq,
-                                           bool hold_frozen)
+                                           bool hold_frozen,
+                                           bool hold_monitors)
 {
     build_free_vm_slack(generators, storages, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
-    build_controllers(generators, svcs, hvdc_lines, id_me_to_solver, id_solver_to_me, bus_pq, hold_frozen);
+    build_controllers(generators, svcs, hvdc_lines, id_me_to_solver, id_solver_to_me, bus_pq, hold_frozen,
+                      hold_monitors);
 }
 
 std::vector<int> VoltageControlPlan::group_controlled_solver_buses(const SolverBusIdVect & id_me_to_solver) const
@@ -279,7 +282,8 @@ void VoltageControlPlan::build_controllers(const GeneratorContainer & generators
                                            const SolverBusIdVect & id_me_to_solver,
                                            const GlobalBusIdVect & id_solver_to_me,
                                            const SolverBusIdVect & bus_pq,
-                                           bool hold_frozen)
+                                           bool hold_frozen,
+                                           bool hold_monitors)
 {
     controllers_.clear();
     const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
@@ -315,6 +319,7 @@ void VoltageControlPlan::build_controllers(const GeneratorContainer & generators
     _collect_station_controllers(hvdc_lines, id_me_to_solver, is_pq, has_free_q, raws);
     // last, so that within a group every held controller comes after the active ones
     if(hold_frozen) _collect_held_gen_controllers(generators, id_me_to_solver, is_pq, has_free_q, raws);
+    if(hold_monitors) _collect_monitor_svc_controllers(svcs, id_me_to_solver, is_pq, has_free_q, raws);
     if(raws.empty()) return;
 
     _group_and_emit(raws, _collect_passive_gens(generators, id_me_to_solver, raws));
@@ -437,6 +442,37 @@ void VoltageControlPlan::_collect_held_gen_controllers(const GeneratorContainer 
         raws.push_back({ctrl_solver, reg_solver, generators.get_target_vm_pu(gen_id),
                         static_cast<real_type>(0.), w, VoltageControlSolverData::GEN, gen_id,
                         generators.get_reactive_key(gen_id), true});
+    }
+}
+
+void VoltageControlPlan::_collect_monitor_svc_controllers(const SvcContainer & svcs,
+                                                          const SolverBusIdVect & id_me_to_solver,
+                                                          const std::vector<bool> & is_pq,
+                                                          const std::vector<bool> & has_free_q,
+                                                          std::vector<Raw> & raws) const
+{
+    // the idle standby SVCs a VoltageMonitoring loop may switch on, held at Q = 0 (their
+    // Sbus entry, an OFF SVC stamping nothing), with the rules of a held generator: left
+    // out where they cannot be expressed, never an error. Their group's set-point is the
+    // high one; nothing reads it before the loop switches the SVC on with its own.
+    const int nb_svc = static_cast<int>(svcs.nb());
+    const GlobalBusIdVect & svc_buses = svcs.get_bus_id();
+    const int nb_bus_solver = static_cast<int>(is_pq.size());
+    for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
+        if(!svcs.is_voltage_monitor(svc_id)) continue;
+        const int ctrl_grid = svc_buses(svc_id).cast_int();
+        const int reg_grid  = svcs.get_regulated_bus_id(svc_id);
+        if(ctrl_grid < 0 || reg_grid < 0) continue;
+        const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
+        const int reg_solver  = id_me_to_solver[reg_grid].cast_int();
+        if(ctrl_solver < 0 || ctrl_solver >= nb_bus_solver) continue;
+        if(reg_solver < 0 || reg_solver >= nb_bus_solver) continue;
+        if(!is_pq[ctrl_solver] && !has_free_q[ctrl_solver]) continue;   // no Q equation of its own
+        if(!is_pq[reg_solver] && !has_free_q[reg_solver]) continue;     // nothing to regulate
+        const real_type w = svcs.get_b_max(svc_id) - svcs.get_b_min(svc_id);
+        raws.push_back({ctrl_solver, reg_solver, svcs.get_standby_high_target_vm_pu(svc_id),
+                        static_cast<real_type>(0.), w, VoltageControlSolverData::SVC, svc_id,
+                        std::numeric_limits<real_type>::quiet_NaN(), true});
     }
 }
 
@@ -563,6 +599,9 @@ void VoltageControlPlan::_group_and_emit(const std::vector<Raw> & raws,
             grp_reg.push_back(raws[i].reg_bus);
             grp_vset.push_back(raws[i].v_set);
             grp_members.push_back(std::vector<int>());
+        } else if(raws[i].held && raws[i].kind == VoltageControlSolverData::SVC){
+            // a held SVC (a voltage monitor) only ever has a group of its own
+            continue;
         } else if(std::abs(grp_vset[g] - raws[i].v_set) > BaseConstants::_tol_equal_float){
             if(raws[i].held) continue;
             std::ostringstream exc_;

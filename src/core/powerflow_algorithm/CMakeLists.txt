@@ -10,5 +10,6 @@ list(APPEND SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/DefaultOuterLoops.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/DistributedSlackLoop.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/HvdcAcEmulationLimitsLoop.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/VoltageMonitoringLoop.cpp"
 )
 set(SOURCES ${SOURCES} PARENT_SCOPE)

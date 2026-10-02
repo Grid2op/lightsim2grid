@@ -2035,12 +2035,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
                     _physical_violations_[i]);
             }
-            if(_gen_pv_release_check_on_ && !_svc_standby_plan_.empty()){
-                // no batch disconnects an SVC per row: only a stranded bus skips one
-                svc_standby_check::check_svc_standby_violations(
-                    _svc_standby_plan_, V_solver, _physical_tol_vm_pu_, masked,
-                    _physical_violations_[i]);
-            }
             if(_gen_pv_release_check_on_ && !_remote_vc_plan_.empty()){
                 remote_voltage_control_check::check_remote_voltage_control_violations(
                     _remote_vc_plan_, V_solver, _physical_tol_vm_pu_, masked,
@@ -2125,7 +2119,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _prepare_physical_check(size_t nb_steps, bool ac_solver_used){
             _bus_q_plan_.clear();
             _gen_pv_release_plan_.clear();
-            _svc_standby_plan_.clear();
             _remote_vc_plan_.clear();
             _gen_p_plan_.clear();
             _physical_violations_.clear();
@@ -2171,8 +2164,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 // varies a reactive setpoint
                 gen_pv_release_check::build_gen_pv_release_plan(
                     _grid_model, active_layout().id_me_to_solver, _gen_pv_release_plan_);
-                svc_standby_check::build_svc_standby_plan(
-                    _grid_model, active_layout().id_me_to_solver, _svc_standby_plan_);
                 remote_voltage_control_check::build_remote_voltage_control_plan(
                     _grid_model, active_layout().id_me_to_solver,
                     active_layout().voltage_control.controllers(), _remote_vc_plan_);
@@ -2184,7 +2175,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         // The grid's outer loops' own triggers (detection mode, see BaseOuterLoop::detect),
         // as LSGrid::get_physical_violations reads them (the hvdc droop limits, the slack
-        // left on a single slack bus).
+        // left on a single slack bus, the standby SVCs' thresholds -- the voltage checks
+        // only with an algorithm that can feed the reactive ones).
         void _record_outer_detect(const AlgorithmSelector & algo,
                                   const Eigen::Ref<const CplxVect> & V_solver,
                                   const std::vector<int> * masked,
@@ -2205,6 +2197,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             ctx.slack_bus = layout.slack_bus_id_solver.size() == 1 ? layout.slack_bus_id_solver[0].cast_int() : -1;
             ctx.slack_absorbed = ac ? algo.get_slack_absorbed() : 0.;
             ctx.tol_mw = _physical_tol_mva_;
+            ctx.tol_vm_pu = _physical_tol_vm_pu_;
+            ctx.vm_checks = ac && _gen_pv_release_check_on_;
             ctx.masked = masked;
             ctx.id_me_to_solver = &layout.id_me_to_solver;
             for(const auto & loop : _outer_detect_loops_) loop->detect(ctx, out);
@@ -2234,11 +2228,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     _gen_pv_release_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,
                     [this](int gen_id){ return this->_grid_model.get_generators().get_target_vm_pu(gen_id); },
                     [](int){ return false; },
-                    _physical_violations_n_);
-            }
-            if(_gen_pv_release_check_on_ && !_svc_standby_plan_.empty()){
-                svc_standby_check::check_svc_standby_violations(
-                    _svc_standby_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,
                     _physical_violations_n_);
             }
             if(_gen_pv_release_check_on_ && !_remote_vc_plan_.empty()){
@@ -3591,7 +3580,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         bool _gen_pv_release_check_on_ = false;
         bus_q_check::BusQPlan _bus_q_plan_;
         gen_pv_release_check::GenPvReleasePlan _gen_pv_release_plan_;
-        svc_standby_check::SvcStandbyPlan _svc_standby_plan_;
         remote_voltage_control_check::RemoteVoltageControlPlan _remote_vc_plan_;
         gen_p_check::GenPPlan _gen_p_plan_;
         std::vector<std::vector<LimitViolation> > _physical_violations_;

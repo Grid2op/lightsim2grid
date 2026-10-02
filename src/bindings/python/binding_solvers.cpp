@@ -12,6 +12,7 @@
 #include "Solvers.hpp"
 #include "powerflow_algorithm/outer_loop/DistributedSlackLoop.hpp"
 #include "powerflow_algorithm/outer_loop/HvdcAcEmulationLimitsLoop.hpp"
+#include "powerflow_algorithm/outer_loop/VoltageMonitoringLoop.hpp"
 #include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
 #include "powerflow_algorithm/ScalingPolicies.hpp"
@@ -174,6 +175,10 @@ void bind_solvers(py::module_& m) {
 
     py::class_<HvdcAcEmulationLimitsLoop, BaseOuterLoop, std::shared_ptr<HvdcAcEmulationLimitsLoop> >(
             m, "HvdcAcEmulationLimits", DocSolver::HvdcAcEmulationLimitsLoop.c_str())
+        .def(py::init<>());
+
+    py::class_<VoltageMonitoringLoop, BaseOuterLoop, std::shared_ptr<VoltageMonitoringLoop> >(
+            m, "VoltageMonitoring", DocSolver::VoltageMonitoringLoop.c_str())
         .def(py::init<>());
 
     // ---- TimerJac ----

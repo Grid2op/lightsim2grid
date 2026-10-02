@@ -148,6 +148,7 @@ def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_v
                     svc_slope_pu[svc_pos] = slope_kv_per_mvar * sn_mva_used / svc_reg_vn[svc_pos]
 
     olf_monitor = np.zeros(nb_svc, dtype=bool)
+    olf_b0 = None
     if olf_rules is not None and nb_svc:
         if not olf_rules.voltage_per_reactive_power_control:
             svc_slope_pu[:] = 0.
@@ -180,8 +181,14 @@ def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_v
         # the automaton's fixed b0, so the total output lightsim2grid models ranges over the
         # shifted interval (see `_svc_standby_b0`).
         b0 = _svc_standby_b0(net, df_svc.index)
-        if olf_rules is not None and not olf_rules.svc_voltage_monitoring:
-            b0 = np.zeros(nb_svc)  # OpenLoadFlow reads the automaton only to monitor
+        if olf_rules is not None:
+            if olf_rules.svc_voltage_monitoring:
+                # OpenLoadFlow's: a shunt of its own (LSGrid.set_svc_b0), carried by an SVC
+                # that regulates voltage in the network, in standby or not
+                regulates_voltage = (mode_str == "VOLTAGE") & regulating
+                olf_b0 = np.where(regulates_voltage, b0, 0.)
+            # the range is the SVC's own; without monitoring the automaton is not read
+            b0 = np.zeros(nb_svc)
         b_min = (df_svc["b_min"].values.astype(float) + b0) * (svc_reg_vn ** 2) / sn_mva_used
         b_max = (df_svc["b_max"].values.astype(float) + b0) * (svc_reg_vn ** 2) / sn_mva_used
     else:
@@ -201,6 +208,10 @@ def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_v
         if disco:
             model.deactivate_svc(svc_id)
     model.set_svc_names(df_svc.index)
+    own_vn = voltage_levels.loc[df_svc["voltage_level_id"].values, "nominal_v"].to_numpy(float) if nb_svc else np.zeros(0)
+    if olf_b0 is not None and (olf_b0 != 0.).any():
+        # S -> pu at the SVC's own bus
+        model.set_svc_b0(olf_b0 * own_vn ** 2 / sn_mva_used)
 
     # the SVCs an outer loop froze out of voltage control (what `bake_outer_loops` returns):
     # nothing in the powerflow reads the flags, they only open them to a physical check
@@ -222,12 +233,18 @@ def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_v
     standby = (flagged & df_svc.index.isin(in_standby)) | olf_monitor
     if standby.any():
         ids = df_svc.index[standby]
-        own_vn = voltage_levels.loc[df_svc["voltage_level_id"].values, "nominal_v"].to_numpy(float)
         low_vm_pu = np.full(nb_svc, np.nan)
         high_vm_pu = np.full(nb_svc, np.nan)
         low_vm_pu[standby] = automaton.loc[ids, "low_voltage_threshold"].to_numpy(float) / own_vn[standby]
         high_vm_pu[standby] = automaton.loc[ids, "high_voltage_threshold"].to_numpy(float) / own_vn[standby]
-        model.set_svc_standby(standby, low_vm_pu, high_vm_pu)
+        # a monitor's set-points, for the VoltageMonitoring loop (the bake's idle SVCs have none)
+        low_target = np.full(nb_svc, np.nan)
+        high_target = np.full(nb_svc, np.nan)
+        if olf_monitor.any():
+            mon_ids = df_svc.index[olf_monitor]
+            low_target[olf_monitor] = automaton.loc[mon_ids, "low_voltage_setpoint"].to_numpy(float) / own_vn[olf_monitor]
+            high_target[olf_monitor] = automaton.loc[mon_ids, "high_voltage_setpoint"].to_numpy(float) / own_vn[olf_monitor]
+        model.set_svc_standby(standby, low_vm_pu, high_vm_pu, low_target, high_target)
     # any other flagged one: frozen at a reactive limit, the release of the generators' can_be_pv
     release = flagged & ~standby
     if release.any():

@@ -50,6 +50,10 @@ void SvcContainer::init(const std::vector<int> & regulation_mode,
     standby_ = std::vector<bool>(size, false);
     standby_low_vm_pu_ = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
     standby_high_vm_pu_ = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
+    standby_low_target_vm_pu_ = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
+    standby_high_target_vm_pu_ = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
+    b0_pu_ = RealVect::Zero(size);
+    res_q_b0_ = RealVect::Zero(size);
     can_be_pv_ = std::vector<bool>(size, false);
     _derive_voltage_regulator_on();
     reset_results();
@@ -57,14 +61,20 @@ void SvcContainer::init(const std::vector<int> & regulation_mode,
 
 void SvcContainer::set_standby(const std::vector<bool> & standby,
                                const Eigen::Ref<const RealVect> & low_vm_pu,
-                               const Eigen::Ref<const RealVect> & high_vm_pu)
+                               const Eigen::Ref<const RealVect> & high_vm_pu,
+                               const Eigen::Ref<const RealVect> & low_target_vm_pu,
+                               const Eigen::Ref<const RealVect> & high_target_vm_pu)
 {
     const int size = nb();
     check_size(standby, size, "SvcContainer::set_standby (standby)");
     check_size(low_vm_pu, size, "SvcContainer::set_standby (low_vm_pu)");
     check_size(high_vm_pu, size, "SvcContainer::set_standby (high_vm_pu)");
+    check_size(low_target_vm_pu, size, "SvcContainer::set_standby (low_target_vm_pu)");
+    check_size(high_target_vm_pu, size, "SvcContainer::set_standby (high_target_vm_pu)");
     RealVect low = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
     RealVect high = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
+    RealVect low_target = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
+    RealVect high_target = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
     for(int svc_id = 0; svc_id < size; ++svc_id){
         if(!standby[svc_id]) continue;
         const real_type lo = low_vm_pu(svc_id);
@@ -78,11 +88,57 @@ void SvcContainer::set_standby(const std::vector<bool> & standby,
         }
         low(svc_id) = lo;
         high(svc_id) = hi;
+        // a set-point is optional (NaN: never switched on), but a given one is a voltage
+        for(real_type target : {low_target_vm_pu(svc_id), high_target_vm_pu(svc_id)}){
+            if(!std::isnan(target) && !(std::isfinite(target) && target > 0.)){
+                std::ostringstream exc_;
+                exc_ << "SvcContainer::set_standby: the svc with id " << svc_id
+                     << " has a set-point that is neither NaN nor a positive voltage (got "
+                     << target << " pu).";
+                throw std::runtime_error(exc_.str());
+            }
+        }
+        low_target(svc_id) = low_target_vm_pu(svc_id);
+        high_target(svc_id) = high_target_vm_pu(svc_id);
     }
-    // nothing a powerflow reads: no AlgoControl flag to raise
+    // read by the voltage-control plan only: LSGrid::set_svc_standby raises the flags
     standby_ = standby;
     standby_low_vm_pu_ = low;
     standby_high_vm_pu_ = high;
+    standby_low_target_vm_pu_ = low_target;
+    standby_high_target_vm_pu_ = high_target;
+}
+
+void SvcContainer::set_b0(const Eigen::Ref<const RealVect> & b0_pu)
+{
+    check_size(b0_pu, nb(), "SvcContainer::set_b0");
+    if(!b0_pu.allFinite()) throw std::runtime_error("SvcContainer::set_b0: every b0 must be finite.");
+    b0_pu_ = b0_pu;
+}
+
+void SvcContainer::_fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                             bool ac,
+                             const SolverBusIdVect & id_grid_to_solver,
+                             real_type sn_mva) const
+{
+    if(!ac) return;  // a susceptance: nothing in DC
+    // b0_pu_ is already in pu (sn_mva base): sn_mva is not read
+    static_cast<void>(sn_mva);
+    const int nb_svc = nb();
+    for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
+        if(!status_[svc_id]) continue;
+        const real_type b0 = b0_pu_.coeff(svc_id);
+        if(b0 == 0.) continue;
+        const SolverBusId bus_id_solver = id_grid_to_solver[bus_id_(svc_id).cast_int()];
+        if(bus_id_solver.cast_int() == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "SvcContainer::fillYbus: Svc with id " << svc_id
+                 << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
+        res.push_back(Eigen::Triplet<cplx_type>(bus_id_solver.cast_int(), bus_id_solver.cast_int(),
+                                                cplx_type(0., b0)));
+    }
 }
 
 SvcContainer::StateRes SvcContainer::get_state() const
@@ -95,8 +151,12 @@ SvcContainer::StateRes SvcContainer::get_state() const
     std::vector<int> regulated_bus(regulated_bus_id_.begin(), regulated_bus_id_.end());
     std::vector<real_type> standby_low(standby_low_vm_pu_.begin(), standby_low_vm_pu_.end());
     std::vector<real_type> standby_high(standby_high_vm_pu_.begin(), standby_high_vm_pu_.end());
+    std::vector<real_type> low_target(standby_low_target_vm_pu_.begin(), standby_low_target_vm_pu_.end());
+    std::vector<real_type> high_target(standby_high_target_vm_pu_.begin(), standby_high_target_vm_pu_.end());
+    std::vector<real_type> b0(b0_pu_.begin(), b0_pu_.end());
     SvcContainer::StateRes res(get_osc_pq_state(), mode, vm_pu, slope, bmin, bmax, regulated_bus,
-                               standby_, standby_low, standby_high, can_be_pv_);
+                               standby_, standby_low, standby_high, can_be_pv_,
+                               low_target, high_target, b0);
     return res;
 }
 
@@ -113,6 +173,9 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     std::vector<real_type> & standby_low = std::get<StateResIdx::STANDBY_LOW_VM_PU>(my_state);
     std::vector<real_type> & standby_high = std::get<StateResIdx::STANDBY_HIGH_VM_PU>(my_state);
     std::vector<bool> & can_be_pv = std::get<StateResIdx::CAN_BE_PV>(my_state);
+    std::vector<real_type> & low_target = std::get<StateResIdx::STANDBY_LOW_TARGET_VM_PU>(my_state);
+    std::vector<real_type> & high_target = std::get<StateResIdx::STANDBY_HIGH_TARGET_VM_PU>(my_state);
+    std::vector<real_type> & b0 = std::get<StateResIdx::B0_PU>(my_state);
 
     const auto size = nb();
     check_size(mode, size, "regulation_mode");
@@ -125,6 +188,9 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     check_size(standby_low, size, "standby_low_vm_pu");
     check_size(standby_high, size, "standby_high_vm_pu");
     check_size(can_be_pv, size, "can_be_pv");
+    check_size(low_target, size, "standby_low_target_vm_pu");
+    check_size(high_target, size, "standby_high_target_vm_pu");
+    check_size(b0, size, "b0_pu");
 
     regulation_mode_ = IntVect::Map(mode.data(), mode.size());
     target_vm_pu_ = RealVect::Map(vm_pu.data(), vm_pu.size());
@@ -136,6 +202,10 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     standby_low_vm_pu_ = RealVect::Map(standby_low.data(), standby_low.size());
     standby_high_vm_pu_ = RealVect::Map(standby_high.data(), standby_high.size());
     can_be_pv_ = can_be_pv;
+    standby_low_target_vm_pu_ = RealVect::Map(low_target.data(), low_target.size());
+    standby_high_target_vm_pu_ = RealVect::Map(high_target.data(), high_target.size());
+    b0_pu_ = RealVect::Map(b0.data(), b0.size());
+    res_q_b0_ = RealVect::Zero(size);
     _derive_voltage_regulator_on();
     reset_results();
 }
@@ -183,16 +253,18 @@ void SvcContainer::_fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & 
 
 void SvcContainer::_compute_res_pq(
     const Eigen::Ref<const RealVect> & /*Va*/,
-    const Eigen::Ref<const RealVect> & /*Vm*/,
+    const Eigen::Ref<const RealVect> & Vm,
     const Eigen::Ref<const CplxVect> & /*V*/,
-    const SolverBusIdVect & /*id_grid_to_solver*/,
+    const SolverBusIdVect & id_grid_to_solver,
     const Eigen::Ref<const RealVect> & /*bus_vn_kv*/,
-    real_type /*sn_mva*/,
+    real_type sn_mva,
     bool ac)
 {
     const int nb_svc = nb();
+    if(res_q_b0_.size() != nb_svc) res_q_b0_ = RealVect::Zero(nb_svc);
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
         res_p_(svc_id) = 0.;  // an SVC has no active power
+        res_q_b0_(svc_id) = 0.;
         if(!ac){
             res_q_(svc_id) = 0.;  // no reactive result in DC
             continue;
@@ -201,12 +273,21 @@ void SvcContainer::_compute_res_pq(
             res_q_(svc_id) = 0.;
             continue;
         }
+        // the b0 shunt produces b0.V^2 (generator convention), whatever the mode
+        if(b0_pu_.coeff(svc_id) != 0.){
+            const int bus_solver = id_grid_to_solver[bus_id_(svc_id).cast_int()].cast_int();
+            if(bus_solver != _deactivated_bus_id){
+                const real_type vm = Vm(bus_solver);
+                res_q_b0_(svc_id) = b0_pu_.coeff(svc_id) * vm * vm * sn_mva;
+            }
+        }
         if(regulation_mode_(svc_id) == RegulationMode::REACTIVE_POWER){
-            res_q_(svc_id) = target_q_mvar_(svc_id);
+            res_q_(svc_id) = target_q_mvar_(svc_id) + res_q_b0_(svc_id);
         } else {
-            // VOLTAGE mode: set by the VoltageControl write-back (LSGrid::compute_results);
-            // OFF: nothing. Initialise to 0 here (write-back overrides VOLTAGE).
-            res_q_(svc_id) = 0.;
+            // VOLTAGE mode (and a standby SVC an outer loop holds or switched on): set by
+            // the VoltageControl write-back (LSGrid::compute_results), which adds the b0
+            // part; OFF otherwise: b0 alone
+            res_q_(svc_id) = res_q_b0_(svc_id);
         }
     }
 }

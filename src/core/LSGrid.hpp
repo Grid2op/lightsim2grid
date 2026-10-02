@@ -357,12 +357,14 @@ class LS2G_API LSGrid final
         void clear_outer_loops() {
             outer_loops_.clear();
             outer_loops_default_ = false;
+            _tell_outer_loops_changed();
         }
         void add_outer_loop(const std::shared_ptr<BaseOuterLoop> & loop);
         /// back to OpenLoadFlow's default list
         void reset_outer_loops() {
             outer_loops_.clear();
             outer_loops_default_ = true;
+            _tell_outer_loops_changed();
         }
         [[nodiscard]] std::vector<std::shared_ptr<BaseOuterLoop> > get_outer_loops() const;
 
@@ -1201,20 +1203,43 @@ class LS2G_API LSGrid final
             }
         }
         /**
-         * Flag the SVCs a caller knows an outer loop left idle under their standby
-         * automaton (one bool per SVC, false by default), with that automaton's low / high
-         * voltage thresholds in pu of the nominal voltage of the bus each SVC regulates
-         * (ignored where not flagged). lightsim2grid does not model the automaton, and
-         * cannot tell such an SVC -- a fixed-Q one after `bake_outer_loops` -- from one
-         * that never regulates: the caller says so (init_from_pypowsybl passes what
-         * bake_outer_loops left idle). Nothing enforces or reads it in a powerflow; it
-         * only opens that SVC to the physical check of its switch to voltage control (see
-         * `get_physical_violations` and SvcStandbyCheck.hpp).
+         * Flag the SVCs a caller knows sit idle under their standby automaton (one bool per
+         * SVC, false by default) -- left idle by an outer loop (`bake_outer_loops`) or loaded
+         * as OpenLoadFlow's voltage monitors (`init_from_pypowsybl(olf_rules=...)`) -- with
+         * that automaton's low / high voltage thresholds in pu of the nominal voltage of the
+         * SVC's own bus (ignored where not flagged), and the set-points it switches on at
+         * below / above them (NaN where unknown). It opens that SVC to the physical check
+         * of its switch to voltage control (see `get_physical_violations` and
+         * SvcStandbyCheck.hpp) and, an idle (off) one with both set-points, to OpenLoadFlow's
+         * VoltageMonitoring outer loop (VoltageMonitoringLoop), which holds it in its
+         * voltage-control group until it switches it on.
          */
         void set_svc_standby(const std::vector<bool> & standby,
                              const Eigen::Ref<const RealVect> & low_vm_pu,
+                             const Eigen::Ref<const RealVect> & high_vm_pu,
+                             const Eigen::Ref<const RealVect> & low_target_vm_pu,
+                             const Eigen::Ref<const RealVect> & high_target_vm_pu){
+            svcs_.set_standby(standby, low_vm_pu, high_vm_pu, low_target_vm_pu, high_target_vm_pu);
+            // who the voltage-control plan holds for the VoltageMonitoring loop
+            algo_controler_.tell_pv_changed();
+            algo_controler_.ac_algo_controler().tell_voltage_control_changed();
+        }
+        void set_svc_standby(const std::vector<bool> & standby,
+                             const Eigen::Ref<const RealVect> & low_vm_pu,
                              const Eigen::Ref<const RealVect> & high_vm_pu){
-            svcs_.set_standby(standby, low_vm_pu, high_vm_pu);
+            const RealVect none = RealVect::Constant(low_vm_pu.size(), std::numeric_limits<real_type>::quiet_NaN());
+            set_svc_standby(standby, low_vm_pu, high_vm_pu, none, none);
+        }
+        /**
+         * The standby automaton's fixed susceptance `b0` of each SVC, pu (sn_mva base, at the
+         * nominal voltage of the SVC's own bus; 0 for none). OpenLoadFlow holds it apart from
+         * the SVC's own range, in standby or not: a shunt at the SVC's bus, whose reactive
+         * output is part of the SVC's.
+         */
+        void set_svc_b0(const Eigen::Ref<const RealVect> & b0_pu){
+            svcs_.set_b0(b0_pu);
+            tell_recompute_ybus();
+            tell_ybus_change_sparsity_pattern();
         }
         /**
          * The generators' `set_gen_can_be_pv`, for the SVCs: flag the SVCs a caller knows
@@ -3147,6 +3172,14 @@ class LS2G_API LSGrid final
         void _tell_dc_can_participate_changed(){
             if(!dc_slack_on_can_participate_) return;
             algo_controler_.dc_algo_controler().tell_slack_weight_changed();
+        }
+        // whether the voltage-control plan holds the idle standby SVCs: the AC algorithm
+        // runs outer loops and one of them asks for it (BaseOuterLoop::holds_svc_monitors)
+        bool _holds_svc_monitors() const;
+        // a loop list may change who that plan holds
+        void _tell_outer_loops_changed() {
+            algo_controler_.tell_pv_changed();
+            algo_controler_.ac_algo_controler().tell_voltage_control_changed();
         }
         // see clear_outer_loops / add_outer_loop; empty and `default` until edited
         std::vector<std::shared_ptr<BaseOuterLoop> > outer_loops_;

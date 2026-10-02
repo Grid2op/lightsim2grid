@@ -43,6 +43,7 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
     state_.gen_target_p.clear();
     state_.storage_target_p.clear();
     state_.hvdc_status.clear();
+    state_.svc_target_vm.clear();
     OuterState & state = state_;
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
@@ -147,6 +148,10 @@ bool NROuterAlgo<LinearSolver>::_solve(int max_iter, real_type tol, bool & need_
     // what the loops changed outside the injection: the hvdc lines' regimes
     if (!state_.hvdc_status.empty()) {
         this->_system.set_hvdc_status_override(state_.hvdc_status, OuterState::HVDC_KEEP);
+    }
+    // ... and the idle standby SVCs switched on (a release is never undone in a solve)
+    if (!state_.svc_target_vm.empty()) {
+        this->_system.release_held_svcs(state_.svc_target_vm);
     }
     bool converged = this->_newton(max_iter, tol, need_init);
     // the first iteration analyzed (or tried to): every later solve only refactorizes. A

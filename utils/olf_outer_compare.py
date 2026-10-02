@@ -100,13 +100,29 @@ def find_snapshots(paths):
     return sorted(set(found))
 
 
-def load(path, extra_load_mw=0., hvdc_limit_factor=None):
+def load(path, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None):
     """The snapshot, with ``extra_load_mw`` added to its largest load of the main synchronous
     component (a mismatch for the slack loops to share; the same on both engines), and, with
     ``hvdc_limit_factor``, every line in AC emulation limited in both directions to that
     fraction of its droop set point (at least 1 MW): lines the AcHvdcAcEmulationLimits loop
-    has to saturate, where the snapshot's own limits are rarely reached."""
+    has to saturate, where the snapshot's own limits are rarely reached. With
+    ``svc_thresholds_pu`` (low, high), every standby SVC's automaton thresholds are set there,
+    in pu of the SVC's nominal voltage: monitors the VoltageMonitoring loop has to switch on,
+    where the snapshot's own thresholds are rarely crossed."""
     net = pp.network.load(path, LOAD_PARAMETERS)
+    if svc_thresholds_pu is not None:
+        sa = net.get_extensions("standbyAutomaton")
+        if len(sa):
+            vn = net.get_static_var_compensators()["voltage_level_id"].map(
+                net.get_voltage_levels()["nominal_v"]).reindex(sa.index).astype(float)
+            low, high = svc_thresholds_pu
+            # pypowsybl checks low <= high after each field, SVC by SVC: lower every low
+            # threshold first, then set the high ones, then the low ones
+            ids = list(sa.index)
+            first_low = np.minimum(low * vn, sa["low_voltage_threshold"].astype(float))
+            net.update_extensions("standbyAutomaton", id=ids, low_voltage_threshold=list(first_low))
+            net.update_extensions("standbyAutomaton", id=ids, high_voltage_threshold=list(high * vn))
+            net.update_extensions("standbyAutomaton", id=ids, low_voltage_threshold=list(low * vn))
     if hvdc_limit_factor is not None:
         droop = net.get_extensions("hvdcAngleDroopActivePowerControl")
         droop = droop[droop["enabled"]] if len(droop) else droop
@@ -173,7 +189,7 @@ def olf_parameters(loops, slack_bus_id=None, conv_eps=1e-9, max_nr_iter=50):
     return params
 
 
-def olf_dc_angles(path, params, extra_load_mw=0., hvdc_limit_factor=None):
+def olf_dc_angles(path, params, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None):
     """The angles (deg, per IIDM bus) OpenLoadFlow's DC_VALUES start gives the Newton:
     DcValueVoltageInitializer runs a DC load flow on the AC run's own network, with the
     run's transformer-ratio and DC-approximation settings and its distributed slack (left on
@@ -184,15 +200,15 @@ def olf_dc_angles(path, params, extra_load_mw=0., hvdc_limit_factor=None):
     provider.pop("outerLoopNames", None)  # AC loop names, a DC run rejects them
     provider["slackDistributionFailureBehavior"] = "LEAVE_ON_SLACK_BUS"
     dc_params.provider_parameters = provider
-    net = load(path, extra_load_mw, hvdc_limit_factor)
+    net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu)
     res = lf.run_dc(net, dc_params)[0]
     if res.status != lf.ComponentStatus.CONVERGED:
         return None
     return net.get_buses()["v_angle"]
 
 
-def solve_olf(path, params, extra_load_mw=0., hvdc_limit_factor=None):
-    net = load(path, extra_load_mw, hvdc_limit_factor)
+def solve_olf(path, params, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None):
+    net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu)
     res = lf.run_ac(net, params)
     return net, res[0]
 
@@ -214,16 +230,17 @@ def _enable_max_voltage_change(model, max_dva=1.0, max_dvm=0.4):
 LIGHTSIM_LOOPS = {
     "DistributedSlack": lambda: _algorithm.DistributedSlack(),
     "AcHvdcAcEmulationLimits": lambda: _algorithm.HvdcAcEmulationLimits(),
+    "VoltageMonitoring": lambda: _algorithm.VoltageMonitoring(),
 }
 
 
 def solve_lightsim(path, gen_slack_id, algo=None, max_iter=50, tol=1e-8, olf_rules=None, loops=(),
-                   extra_load_mw=0., hvdc_limit_factor=None, start_angles_deg=None):
+                   extra_load_mw=0., hvdc_limit_factor=None, start_angles_deg=None, svc_thresholds_pu=None):
     """Build the grid from the unbaked snapshot and solve it from a DC start: lightsim2grid's
     own (dc_start), or ``start_angles_deg`` (per IIDM bus, see olf_dc_angles) at 1 pu.
     ``olf_rules`` (an ``OlfLoadingParameters``, or None for none) are OpenLoadFlow's loading
     rules: OLF always applies them, so a comparison needs them on this side too."""
-    net = load(path, extra_load_mw, hvdc_limit_factor)
+    net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
         model = init_from_pypowsybl(net, gen_slack_id=gen_slack_id, sort_index=False,
@@ -320,7 +337,8 @@ def compare(net_olf, olf_result, net_ls, model, V, ref_bus, slack_gen_id):
     out["d_slack_mw"] = float(abs(olf_slack - ls_slack))
 
     for what, olf_df, ls_df in (("gen", net_olf.get_generators(), ls_gen),
-                                ("vsc", net_olf.get_vsc_converter_stations(), ls_net.get_vsc_converter_stations())):
+                                ("vsc", net_olf.get_vsc_converter_stations(), ls_net.get_vsc_converter_stations()),
+                                ("svc", net_olf.get_static_var_compensators(), ls_net.get_static_var_compensators())):
         olf_df = olf_df[olf_df["connected"] & olf_df["bus_id"].isin(common)] if len(olf_df) else olf_df
         ids = olf_df.index.intersection(ls_df.index)
         for col in ("p", "q"):
@@ -351,7 +369,7 @@ def run_one(path, args):
     t0 = time.perf_counter()
     params = olf_parameters(args.loops, slack_bus_id if args.slack_mode == "name" else None,
                             conv_eps=args.olf_eps, max_nr_iter=args.max_iter)
-    net_olf, res = solve_olf(path, params, args.extra_load_mw, args.hvdc_limit_factor)
+    net_olf, res = solve_olf(path, params, args.extra_load_mw, args.hvdc_limit_factor, args.svc_thresholds_pu)
     row["olf_status"] = res.status.name
     row["olf_status_text"] = res.status_text
     row["olf_s"] = time.perf_counter() - t0
@@ -362,10 +380,10 @@ def run_one(path, args):
                                  svc_voltage_monitoring="VoltageMonitoring" in args.loops) if args.olf_rules else None
     start = None
     if args.start == "olf":
-        start = olf_dc_angles(path, params, args.extra_load_mw, args.hvdc_limit_factor)
+        start = olf_dc_angles(path, params, args.extra_load_mw, args.hvdc_limit_factor, args.svc_thresholds_pu)
         row["olf_dc_start"] = start is not None
     net_ls, model, V = solve_lightsim(path, gen_slack_id, args.algo, args.max_iter, args.tol, rules, args.loops,
-                                      args.extra_load_mw, args.hvdc_limit_factor, start)
+                                      args.extra_load_mw, args.hvdc_limit_factor, start, args.svc_thresholds_pu)
     row["ls_converged"] = V.shape[0] > 0
     row["ls_s"] = time.perf_counter() - t0
     stats = model.get_algo().get_linear_solver_stats() if hasattr(model.get_algo(), "get_linear_solver_stats") else None
@@ -400,6 +418,10 @@ def main(argv=None):
     parser.add_argument("--hvdc-limit-factor", type=float, default=None,
                         help="limit the lines in AC emulation to this fraction of their droop "
                              "set point, both directions (so that some saturate)")
+    parser.add_argument("--svc-thresholds-pu", default=None,
+                        type=lambda s: tuple(float(x) for x in s.split(",")),
+                        help="LOW,HIGH: every standby SVC's automaton thresholds, in pu of its nominal "
+                             "voltage (so that some monitors switch on)")
     parser.add_argument("--start", choices=("lightsim", "olf"), default="lightsim",
                         help="the Newton's start: lightsim2grid's own DC (default), or OpenLoadFlow's "
                              "DC_VALUES angles, to tell a difference of start from one of solve")
@@ -429,7 +451,7 @@ def main(argv=None):
                   f"dVa={row['max_dva_deg']:.1e} deg, slack {row['olf_slack_mw']:.2f} MW "
                   f"(d={row['d_slack_mw']:.1e}), dP gen={row['max_dp_gen']:.1e} MW, "
                   f"dQ bus={_q(row['max_dq_bus'])} / gen={_q(row['max_dq_gen'])} MVar, "
-                  f"dP vsc={row['max_dp_vsc']:.1e} MW, "
+                  f"dP vsc={row['max_dp_vsc']:.1e} MW, dQ svc={_q(row.get('max_dq_svc', 0.))} MVar, "
                   f"loops [{row.get('ls_loop_iterations', '')}], "
                   f"OLF {row['olf_s']:.1f}s / ls {row['ls_s']:.1f}s", flush=True)
 

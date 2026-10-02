@@ -217,6 +217,13 @@ class LS2G_API VoltageControlPlan
          * one: a held controller the formulation cannot express (its own bus without a
          * Q equation, its regulated bus without a Vm unknown, a set-point other than its
          * group's, a group holding an SVC) is simply left out, PQ as before.
+         *
+         * `hold_monitors` (an algorithm running OpenLoadFlow's VoltageMonitoring loop, see
+         * LSGrid::_holds_svc_monitors) enrols every idle standby SVC with its set-points
+         * (SvcContainer::is_voltage_monitor) as a HELD controller, at Q = 0, alone in a
+         * group regulating its bus, for the loop to switch it on by value. Left out, never
+         * an error, where that cannot be: its own bus without a Q equation, its regulated
+         * bus without a Vm unknown, or that bus regulated by a group already.
          */
         void build_controllers(const GeneratorContainer & generators,
                                const SvcContainer & svcs,
@@ -224,7 +231,8 @@ class LS2G_API VoltageControlPlan
                                const SolverBusIdVect & id_me_to_solver,
                                const GlobalBusIdVect & id_solver_to_me,
                                const SolverBusIdVect & bus_pq,
-                               bool hold_frozen = false);
+                               bool hold_frozen = false,
+                               bool hold_monitors = false);
 
         // ---- layers 3 and 4, which is what an AC solve wants ----------------------
         /**
@@ -240,7 +248,8 @@ class LS2G_API VoltageControlPlan
                                const GlobalBusIdVect & id_solver_to_me,
                                const SolverBusIdVect & slack_bus_id_solver,
                                const SolverBusIdVect & bus_pq,
-                               bool hold_frozen = false);
+                               bool hold_frozen = false,
+                               bool hold_monitors = false);
 
         // ---- the guard an algorithm without the bordered block needs ---------------
         /**
@@ -332,6 +341,11 @@ class LS2G_API VoltageControlPlan
                                            const std::vector<bool> & is_pq,
                                            const std::vector<bool> & has_free_q,
                                            std::vector<Raw> & raws) const;
+        void _collect_monitor_svc_controllers(const SvcContainer & svcs,
+                                              const SolverBusIdVect & id_me_to_solver,
+                                              const std::vector<bool> & is_pq,
+                                              const std::vector<bool> & has_free_q,
+                                              std::vector<Raw> & raws) const;
         /// what the connected generators of a controller bus that control nothing add to
         /// that bus' share of its group (OpenLoadFlow counts every generator of the bus)
         struct PassiveBus {

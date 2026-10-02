@@ -35,6 +35,9 @@ class LS2G_API SvcInfo : public OneSideContainer_PQ::OneSidePQInfo
         bool standby;              // carries a standby automaton (SvcContainer::set_standby)
         real_type standby_low_vm_pu;   // its low voltage threshold, pu of the regulated bus (NaN if none)
         real_type standby_high_vm_pu;  // its high voltage threshold, pu of the regulated bus (NaN if none)
+        real_type standby_low_target_vm_pu;   // the set-point it switches on at below the low threshold (NaN if none)
+        real_type standby_high_target_vm_pu;  // ... above the high one (NaN if none)
+        real_type b0_pu;           // the automaton's fixed susceptance, pu (0 if none)
         bool can_be_pv;            // frozen at a reactive limit by an outer loop (SvcContainer::set_can_be_pv)
 
         inline SvcInfo(const SvcContainer & r_data_svc, int my_id) noexcept;
@@ -67,7 +70,13 @@ regulates stays inside [low, high] thresholds, and that OpenLoadFlow's
 MonitoringVoltageOuterLoop switches to voltage control as soon as it leaves them.
 Like the generators' `can_be_pv`, it is NEVER enforced nor read by a powerflow:
 it only opens a non-regulating SVC to the physical check of that switch (see
-SvcStandbyCheck.hpp).
+SvcStandbyCheck.hpp) -- or, with its set-points, to OpenLoadFlow's VoltageMonitoring outer
+loop (VoltageMonitoringLoop), which holds such an idle SVC in its voltage-control group and
+switches it on by value.
+
+`b0` (`set_b0`) is the automaton's fixed susceptance, which OpenLoadFlow holds apart from
+the SVC's own range, in standby or not: a shunt at the SVC's bus, its reactive output part
+of the SVC's.
 
 `can_be_pv` (`set_can_be_pv`) is the generators' flag, for an SVC an outer loop
 froze at a reactive limit (a voltage-mode SVC `bake_outer_loops` turned into a
@@ -105,7 +114,10 @@ class LS2G_API SvcContainer final : public VoltageSourceContainer<SvcContainer>,
            std::vector<bool>,       // standby_ (appended; all false by default)
            std::vector<real_type>,  // standby_low_vm_pu_ (appended; NaN by default)
            std::vector<real_type>,  // standby_high_vm_pu_ (appended; NaN by default)
-           std::vector<bool>        // can_be_pv_ (appended; all false by default)
+           std::vector<bool>,       // can_be_pv_ (appended; all false by default)
+           std::vector<real_type>,  // standby_low_target_vm_pu_ (NaN by default)
+           std::vector<real_type>,  // standby_high_target_vm_pu_ (NaN by default)
+           std::vector<real_type>   // b0_pu_ (0 by default)
         >;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -119,6 +131,9 @@ class LS2G_API SvcContainer final : public VoltageSourceContainer<SvcContainer>,
             STANDBY_LOW_VM_PU,
             STANDBY_HIGH_VM_PU,
             CAN_BE_PV,
+            STANDBY_LOW_TARGET_VM_PU,
+            STANDBY_HIGH_TARGET_VM_PU,
+            B0_PU,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -157,17 +172,46 @@ class LS2G_API SvcContainer final : public VoltageSourceContainer<SvcContainer>,
          * The "standby automaton" of each SVC (one entry per SVC): whether it carries
          * one, and its low / high voltage thresholds, in pu of the nominal voltage of the
          * bus it regulates (ignored, and stored as NaN, where `standby` is false). A
-         * flagged SVC needs finite thresholds with low < high. Never enforced nor read by
-         * a powerflow: it only opens a non-regulating SVC to the physical check of its
-         * switch to voltage control (SvcStandbyCheck.hpp).
+         * flagged SVC needs finite thresholds with low < high. It opens a non-regulating
+         * SVC to the physical check of its switch to voltage control
+         * (SvcStandbyCheck.hpp) and, with the set-points it switches on at (NaN where
+         * unknown: it is then never switched on), to the VoltageMonitoring outer loop,
+         * which reads it through the voltage-control plan (VoltageControlPlan).
          */
         void set_standby(const std::vector<bool> & standby,
                          const Eigen::Ref<const RealVect> & low_vm_pu,
-                         const Eigen::Ref<const RealVect> & high_vm_pu);
+                         const Eigen::Ref<const RealVect> & high_vm_pu,
+                         const Eigen::Ref<const RealVect> & low_target_vm_pu,
+                         const Eigen::Ref<const RealVect> & high_target_vm_pu);
         bool get_standby(int svc_id) const {return standby_[svc_id];}
         const std::vector<bool> & get_standby() const {return standby_;}
         real_type get_standby_low_vm_pu(int svc_id) const {return standby_low_vm_pu_.coeff(svc_id);}
         real_type get_standby_high_vm_pu(int svc_id) const {return standby_high_vm_pu_.coeff(svc_id);}
+        real_type get_standby_low_target_vm_pu(int svc_id) const {return standby_low_target_vm_pu_.coeff(svc_id);}
+        real_type get_standby_high_target_vm_pu(int svc_id) const {return standby_high_target_vm_pu_.coeff(svc_id);}
+        /**
+         * An idle standby SVC OpenLoadFlow's VoltageMonitoring loop may switch on: connected,
+         * off (not regulating yet), flagged standby with both its set-points.
+         */
+        bool is_voltage_monitor(int svc_id) const {
+            return status_[svc_id] && standby_[svc_id] &&
+                   regulation_mode_(svc_id) == RegulationMode::OFF &&
+                   std::isfinite(standby_low_target_vm_pu_.coeff(svc_id)) &&
+                   std::isfinite(standby_high_target_vm_pu_.coeff(svc_id));
+        }
+
+        /**
+         * The standby automaton's fixed susceptance of each SVC, pu (sn_mva base, at the
+         * nominal voltage of the SVC's own bus; 0 for none): stamped into Ybus at the SVC's
+         * bus whatever its mode, its reactive output added to the SVC's. Raises nothing
+         * by itself: LSGrid::set_svc_b0 does.
+         */
+        void set_b0(const Eigen::Ref<const RealVect> & b0_pu);
+        real_type get_b0_pu(int svc_id) const {return b0_pu_.coeff(svc_id);}
+
+        // the voltage-control write-back (LSGrid::compute_results): the reactive output the
+        // Newton solved for, plus the b0 part this container computed itself
+        void set_voltage_control_q(int svc_id, real_type q_mvar) {res_q_(svc_id) = q_mvar + res_q_b0_.coeff(svc_id);}
         int get_regulation_mode(int svc_id) const {return regulation_mode_.coeff(svc_id);}
 
         /**
@@ -203,6 +247,11 @@ class LS2G_API SvcContainer final : public VoltageSourceContainer<SvcContainer>,
                      const SolverBusIdVect & /*id_grid_to_solver*/) const override final {}
 
         void _fillSbus(Eigen::Ref<CplxVect> Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const override;
+        // b0, a shunt at the SVC's bus (AC only)
+        void _fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                       bool ac,
+                       const SolverBusIdVect & id_grid_to_solver,
+                       real_type sn_mva) const override;
         // P is always 0; Q is the setpoint in REACTIVE_POWER mode, the write-back
         // in VOLTAGE mode, nothing when OFF
         void _compute_res_pq(
@@ -230,6 +279,10 @@ class LS2G_API SvcContainer final : public VoltageSourceContainer<SvcContainer>,
         std::vector<bool> standby_;           // all false unless set
         RealVect standby_low_vm_pu_;          // pu of the regulated bus, NaN where not standby
         RealVect standby_high_vm_pu_;         // pu of the regulated bus, NaN where not standby
+        RealVect standby_low_target_vm_pu_;   // the set-points it switches on at, NaN where unknown
+        RealVect standby_high_target_vm_pu_;
+        RealVect b0_pu_;                      // the automaton's fixed susceptance, 0 where none
+        RealVect res_q_b0_;                   // its reactive output at the last solve, MVar
         // frozen at a reactive limit by an outer loop (see set_can_be_pv): never read by a powerflow
         std::vector<bool> can_be_pv_;         // all false unless set
 };
@@ -245,6 +298,9 @@ regulated_bus_id(-1),
 standby(false),
 standby_low_vm_pu(std::numeric_limits<real_type>::quiet_NaN()),
 standby_high_vm_pu(std::numeric_limits<real_type>::quiet_NaN()),
+standby_low_target_vm_pu(std::numeric_limits<real_type>::quiet_NaN()),
+standby_high_target_vm_pu(std::numeric_limits<real_type>::quiet_NaN()),
+b0_pu(0.),
 can_be_pv(false)
 {
     if((my_id >= 0) && (my_id < r_data_svc.nb()))
@@ -259,6 +315,9 @@ can_be_pv(false)
         standby_low_vm_pu = r_data_svc.standby_low_vm_pu_.coeff(my_id);
         standby_high_vm_pu = r_data_svc.standby_high_vm_pu_.coeff(my_id);
         can_be_pv = r_data_svc.can_be_pv_[my_id];
+        standby_low_target_vm_pu = r_data_svc.standby_low_target_vm_pu_.coeff(my_id);
+        standby_high_target_vm_pu = r_data_svc.standby_high_target_vm_pu_.coeff(my_id);
+        b0_pu = r_data_svc.b0_pu_.coeff(my_id);
     }
 }
 

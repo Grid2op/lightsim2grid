@@ -44,13 +44,15 @@ void VoltageControl::update_state(
     // A held controller (LSGrid::set_hold_frozen_regulators) holds the reactive output
     // its generator was frozen at -- read here, every solve, off the generator itself, so
     // that a new set-point is never stale. A generator disconnected since the plan was
-    // built holds nothing (and has nothing in Sbus).
+    // built holds nothing (and has nothing in Sbus). A held SVC (an idle standby one, see
+    // VoltageControlPlan::build_controllers' `hold_monitors`) holds 0.
     q_held_ = RealVect::Zero(my_size_);
     if(lsgrid_ptr != nullptr && data_.held.size() == my_size_){
         const GeneratorContainer & gens = lsgrid_ptr->get_generators();
         const real_type sn_mva = lsgrid_ptr->get_sn_mva();
         for(int j = 0; j < my_size_; ++j){
             if(!data_.is_held(j)) continue;
+            if(data_.kind(j) != VoltageControlSolverData::GEN) continue;
             const int gen_id = data_.elem_id(j);
             if(gens.get_status(gen_id)) q_held_(j) = gens.get_target_q_mvar(gen_id) / sn_mva;
         }

@@ -73,6 +73,9 @@ struct OuterState
     /// the droop regime (0 linear, +1 saturated 1 -> 2, -1 saturated 2 -> 1) a loop set for
     /// each hvdc line (grid id), HVDC_KEEP where it kept the grid's; empty until a loop sizes it
     std::vector<int> hvdc_status;
+    /// the set-point (pu) a loop switched each idle standby SVC on at (grid id), NaN where it
+    /// is still held at Q = 0; empty until a loop sizes it
+    std::vector<real_type> svc_target_vm;
     static constexpr int HVDC_KEEP = 2;
 };
 
@@ -98,6 +101,11 @@ struct OuterContext
     /// the tolerance of a detection, MW (the caller's, eg compute_physical_violations'; 0
     /// in the outer-loop mode, where OpenLoadFlow compares strictly)
     real_type tol_mw = 0.;
+    /// the same for a voltage comparison, pu (0 in the outer-loop mode)
+    real_type tol_vm_pu = 0.;
+    /// whether the voltage magnitudes are the solve's: false after a DC solve, or in a
+    /// batch whose algorithm cannot feed the reactive checks
+    bool vm_checks = true;
     /// the solver buses this solve left out (a batch row's stranded buses), sorted; may be null
     const std::vector<int> * masked = nullptr;
     /// the grid -> solver bus map of the solve (null: the grid's AC one); a DC solve, a
@@ -182,6 +190,11 @@ class LS2G_API BaseOuterLoop
         /// canFixUnrealisticState): the check is deferred until after the last such loop
         bool can_fix_unrealistic_state() const { return _can_fix_unrealistic_state(); }
 
+        /// whether this loop needs the idle standby SVCs held in their voltage-control
+        /// groups (VoltageControlPlan::build_controllers' `hold_monitors`): read by the grid
+        /// when it builds the solver input, before any declaration
+        bool holds_svc_monitors() const { return _holds_svc_monitors(); }
+
         std::unique_ptr<BaseOuterLoop> clone() const { return _clone(); }
 
         /// the loop's parameters, flattened like an AlgoConfig (persistence, copies)
@@ -197,6 +210,7 @@ class LS2G_API BaseOuterLoop
         virtual OuterLoopStatus _check(OuterContext & ctx) = 0;
         virtual void _cleanup(OuterContext & /*ctx*/) {}
         virtual bool _can_fix_unrealistic_state() const { return false; }
+        virtual bool _holds_svc_monitors() const { return false; }
         virtual std::unique_ptr<BaseOuterLoop> _clone() const = 0;
         virtual AlgoConfig _get_params() const { return AlgoConfig(); }
         virtual void _set_params(const AlgoConfig & /*params*/) {}

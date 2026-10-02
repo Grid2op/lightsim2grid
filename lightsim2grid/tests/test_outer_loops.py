@@ -141,7 +141,7 @@ class TestDistributedSlack(unittest.TestCase):
         from lightsim2grid.algorithm import DistributedSlack
         grid = self._grid(gen_slack_id="B1-G")
         self.assertEqual([loop.name() for loop in grid.get_outer_loops()],
-                         ["DistributedSlack", "AcHvdcAcEmulationLimits"])
+                         ["DistributedSlack", "AcHvdcAcEmulationLimits", "VoltageMonitoring"])
         loop = DistributedSlack(slack_bus_p_max_mismatch_mw=2., fail_on_residue=False)
         self.assertEqual(loop.slack_bus_p_max_mismatch_mw, 2.)
         self.assertFalse(loop.fail_on_residue)
@@ -262,6 +262,101 @@ class TestHvdcAcEmulationLimits(unittest.TestCase):
                  if v.violation_type == LimitViolationType.HIGH_P]
         self.assertEqual(len(found), 1)
         self.assertGreater(found[0].value, 15.)
+
+
+class TestVoltageMonitoring(unittest.TestCase):
+    """OpenLoadFlow's VoltageMonitoring loop, from python, against OpenLoadFlow itself: a
+    standby SVC on load bus 9 of pypowsybl's IEEE 14-bus grid."""
+
+    def _net(self, low_pu, high_pu, b0=0.):
+        try:
+            import pypowsybl as pp
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        net = pp.network.create_ieee14()
+        vn = float(net.get_voltage_levels().loc["VL9", "nominal_v"])
+        net.create_static_var_compensators(id="SVC9", voltage_level_id="VL9", bus_id="B9",
+                                           connectable_bus_id="B9", b_min=-0.5, b_max=0.5,
+                                           regulation_mode="VOLTAGE", target_v=vn, target_q=0.,
+                                           regulating=True)
+        net.create_extensions("standbyAutomaton", id="SVC9", b0=b0, standby=True,
+                              low_voltage_threshold=low_pu * vn, high_voltage_threshold=high_pu * vn,
+                              low_voltage_setpoint=0.98 * vn, high_voltage_setpoint=1.02 * vn)
+        return net
+
+    @staticmethod
+    def _olf(net):
+        import pypowsybl.loadflow as lf
+        from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages
+        params = lf.Parameters(distributed_slack=False, use_reactive_limits=False,
+                               read_slack_bus=False, twt_split_shunt_admittance=True)
+        params.provider_parameters = {
+            "slackBusSelectionMode": "NAME",
+            "slackBusesIds": net.get_generators().loc["B1-G", "bus_id"],
+            "outerLoopNames": "VoltageMonitoring", "svcVoltageMonitoring": "true",
+            "newtonRaphsonConvEpsPerEq": "1e-12", "maxNewtonRaphsonIterations": "50"}
+        res = lf.run_ac(net, params)[0]
+        return res, iidm_bus_voltages(net)["vm_pu"], net.get_static_var_compensators().loc["SVC9", "q"]
+
+    def _ls(self, net):
+        from lightsim2grid.algorithm import VoltageMonitoring
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
+        from lightsim2grid.network.from_pypowsybl._olf_compare import lightsim_bus_to_iidm
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                       olf_rules=OlfLoadingParameters(reactive_limits=False))
+        grid.change_algorithm(OUTER)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(VoltageMonitoring())
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-12)
+        self.assertGreater(V.shape[0], 0)
+        self.assertEqual(grid.get_algo().get_linear_solver_stats().nb_analyze, 1)
+        to_iidm = lightsim_bus_to_iidm(grid, net)
+        vm = {to_iidm[i]: abs(V[i]) for i in range(V.shape[0]) if i in to_iidm}
+        svc = next(svc for svc in grid.get_svcs() if svc.name == "SVC9")
+        return grid, vm, svc
+
+    def _same_as_olf(self, low_pu, high_pu, b0=0.):
+        net = self._net(low_pu, high_pu, b0)
+        grid, vm, svc = self._ls(net)
+        res, olf_vm, olf_q = self._olf(self._net(low_pu, high_pu, b0))
+        self.assertEqual(res.status.name, "CONVERGED")
+        self.assertLess(max(abs(vm[b] - olf_vm[b]) for b in vm if b in olf_vm.index), 1e-9)
+        # OpenLoadFlow reports the SVC's Q, b0 included, in the load convention
+        self.assertAlmostEqual(svc.res_q_mvar, -olf_q, places=5)
+        return grid, vm, svc
+
+    def test_switched_on_above_the_high_threshold(self):
+        grid, vm, svc = self._same_as_olf(0.90, 1.00)
+        self.assertAlmostEqual(vm["VL9_0"], 1.02, places=9)
+        stats = grid.get_algo().get_outer_loop_stats()
+        self.assertEqual(stats.loop_iterations, [("VoltageMonitoring", 1)])
+        # the SVC itself is untouched
+        self.assertEqual(svc.regulation_mode, 0)
+        self.assertTrue(svc.standby)
+
+    def test_switched_on_below_the_low_threshold(self):
+        _, vm, _ = self._same_as_olf(1.10, 1.20)
+        self.assertAlmostEqual(vm["VL9_0"], 0.98, places=9)
+
+    def test_idle_inside_the_thresholds(self):
+        grid, _, svc = self._same_as_olf(0.90, 1.20)
+        self.assertEqual(grid.get_algo().get_outer_loop_stats().nb_outer_iterations, 0)
+        self.assertAlmostEqual(svc.res_q_mvar, 0., places=9)
+
+    def test_b0(self):
+        # a fixed susceptance carried by the SVC, idle and switched on
+        _, _, svc = self._same_as_olf(0.90, 1.20, b0=0.05)
+        self.assertGreater(svc.b0_pu, 0.)
+        self.assertGreater(svc.res_q_mvar, 0.)
+        self._same_as_olf(0.90, 1.00, b0=0.05)
+
+    def test_in_the_default_list(self):
+        grid, _, _ = self._ls(self._net(0.90, 1.20))
+        grid.reset_outer_loops()
+        self.assertEqual([loop.name() for loop in grid.get_outer_loops()],
+                         ["DistributedSlack", "AcHvdcAcEmulationLimits", "VoltageMonitoring"])
 
 
 if __name__ == "__main__":
