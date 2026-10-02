@@ -632,7 +632,8 @@ class ScenarioSweep:
         kV), ``element_type`` ``HVDC`` with ``HIGH_P`` and ``side`` naming the direction (the
         active power of an angle-droop hvdc line), or ``element_type`` ``GENERATOR`` /
         ``STORAGE`` with ``LOW_P`` / ``HIGH_P`` (the distributed slack). Every entry has
-        ``category == ViolationCategory.PHYSICAL``.
+        ``category == ViolationCategory.PHYSICAL``, or ``ViolationCategory.CONTROL`` for a
+        control the solution does not apply (the flagged unit and the standby SVC).
 
         A row that did not converge has an **empty** entry, not a sentinel (unlike
         :func:`get_violations`) -- use ``self.computer.converged_mask()`` to tell that from
@@ -672,7 +673,8 @@ class ScenarioSweep:
         else a ``RuntimeError`` is raised. ``physical_violations`` is filled as well when
         :attr:`compute_physical_violations` is on, and is an empty list otherwise -- it is
         kept apart from ``limit_violations`` because those are PHYSICAL statements (the
-        solution is unreachable) rather than operational ones.
+        solution is unreachable) or CONTROL ones (a control it does not apply) rather than
+        operational ones.
 
         Unlike :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.run`,
         rows are already in caller-set order here (no dedup / reordering concept,

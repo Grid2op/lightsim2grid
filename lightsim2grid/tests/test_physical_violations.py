@@ -701,7 +701,7 @@ class TestGenPvReleaseFromPython(unittest.TestCase):
         self.assertEqual(len(viols), 1)
         v = viols[0]
         self.assertEqual(v.violation_type, LimitViolationType.LOW_VOLTAGE_AT_MIN_Q)
-        self.assertEqual(v.category, ViolationCategory.PHYSICAL)
+        self.assertEqual(v.category, ViolationCategory.CONTROL)
         self.assertEqual(v.name, "pinned")
         self.assertAlmostEqual(v.value, abs(V[1]) * self.VN_KV, places=6)
         self.assertAlmostEqual(v.limit, 1.10 * self.VN_KV, places=9)

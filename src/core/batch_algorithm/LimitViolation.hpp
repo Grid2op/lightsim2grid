@@ -88,11 +88,13 @@ enum class LS2G_API LimitViolationType : int {
     // the caller, see LSGrid::set_gen_can_be_pv) whose regulated bus sits BELOW the target
     // it would hold: it absorbs too much for that target, and OpenLoadFlow's ReactiveLimits
     // loop would switch it back to PV (its PQ -> PV direction, the mirror of LOW_Q /
-    // HIGH_Q). Physical for the same reason: the converged solution assumes a control the
-    // loop would not leave in place. `value` the regulated bus' voltage and `limit` the
-    // target, both in kV; the "LOW" in the name says which side the excess is on (value
-    // below limit), and downstream code relies on it. See GenPvReleaseCheck.hpp. Also on an
+    // HIGH_Q): the converged solution assumes a control the loop would not leave in place.
+    // `value` the regulated bus' voltage and `limit` the target, both in kV; the "LOW" in
+    // the name says which side the excess is on (value below limit), and downstream code
+    // relies on it. See GenPvReleaseCheck.hpp. Also on an
     // SVC flagged as frozen at a reactive limit (LSGrid::set_svc_can_be_pv).
+    // ViolationCategory::CONTROL: the unit could hold its set-point again, nothing physical
+    // stops it.
     LOW_VOLTAGE_AT_MIN_Q = 9,
     // ... and the mirror: pinned at its MAXIMUM, regulated bus ABOVE the target (value
     // above limit).
@@ -100,7 +102,7 @@ enum class LS2G_API LimitViolationType : int {
     // A non-regulating SVC carrying a standby automaton (flagged by the caller, see
     // LSGrid::set_svc_standby) whose regulated bus sits BELOW the automaton's low voltage
     // threshold: OpenLoadFlow's MonitoringVoltageOuterLoop would switch it to voltage
-    // control. Physical for the same reason as LOW_VOLTAGE_AT_MIN_Q: the converged
+    // control. ViolationCategory::CONTROL, like LOW_VOLTAGE_AT_MIN_Q: the converged
     // solution assumes a control the loop would not leave in place. `value` the regulated
     // bus' voltage and `limit` the threshold, both in kV (value below limit). See
     // SvcStandbyCheck.hpp.
@@ -111,8 +113,8 @@ enum class LS2G_API LimitViolationType : int {
     // caller deems realistic for a controller (LSGrid::set_remote_voltage_control_vm_range):
     // OpenLoadFlow's ReactiveLimits loop, in its "robust" remote voltage control mode,
     // switches such a controller to PQ at its target reactive power rather than let it hold
-    // the remote target at that price. Physical for the same reason as LOW_VOLTAGE_AT_MIN_Q:
-    // the converged solution assumes a control the loop would not leave in place. `value`
+    // the remote target at that price. ViolationCategory::PHYSICAL: a controller's own bus
+    // at that voltage is a state the equipment is not meant to reach. `value`
     // the generator's own bus voltage and `limit` the threshold, both in kV of that bus
     // (value below limit). See RemoteVoltageControlCheck.hpp.
     LOW_VOLTAGE_REMOTE_CONTROL = 13,
@@ -121,8 +123,8 @@ enum class LS2G_API LimitViolationType : int {
     // An angle-droop ("AC emulation") HVDC line an outer loop froze at its active power
     // limit (flagged by the caller, see LSGrid::set_hvdc_ac_emulation_frozen) whose droop
     // would now ask for LESS than that limit: OpenLoadFlow's AcHvdcAcEmulationLimits loop
-    // would not saturate it, the line would follow its droop. Physical for the same reason
-    // as LOW_VOLTAGE_AT_MIN_Q: the converged solution assumes a control the loop would not
+    // would not saturate it, the line would follow its droop. ViolationCategory::CONTROL,
+    // like LOW_VOLTAGE_AT_MIN_Q: the converged solution assumes a control the loop would not
     // leave in place. `side` the direction it is frozen in (1: 1 -> 2), `value` the flow its
     // droop asks for in that direction and `limit` the limit, both in MW (value below limit).
     // See HvdcPCheck.hpp.
@@ -131,6 +133,7 @@ enum class LS2G_API LimitViolationType : int {
     // slackBusPMaxMismatch: its DistributedSlack loop would share it on the units that take
     // part in the slack (see outer_loop/DistributedSlackLoop.hpp). element_type GRID,
     // `value` the mismatch (MW, > 0: the units must inject more) and `limit` the threshold.
+    // ViolationCategory::CONTROL: the units can take it, the solve just did not share it.
     SLACK_MISMATCH = 16
 };
 
@@ -154,15 +157,22 @@ enum class LS2G_API ViolationCategory : int {
     /// reactive power they do not have, an hvdc converter transmitting more than it can, a
     /// distributed slack asking a machine for power it does not have) cannot happen. It is a
     /// statement about the model's assumptions, not about how the grid is being operated.
-    /// LOW_Q, HIGH_Q, LOW_P, HIGH_P, LOW_VOLTAGE_AT_MIN_Q, HIGH_VOLTAGE_AT_MAX_Q,
-    /// LOW_VOLTAGE_SVC_STANDBY, HIGH_VOLTAGE_SVC_STANDBY, LOW_VOLTAGE_REMOTE_CONTROL,
-    /// HIGH_VOLTAGE_REMOTE_CONTROL, HVDC_AC_EMULATION_RELEASE, SLACK_MISMATCH.
+    /// LOW_Q, HIGH_Q, LOW_P, HIGH_P, LOW_VOLTAGE_REMOTE_CONTROL, HIGH_VOLTAGE_REMOTE_CONTROL.
     PHYSICAL = 1,
     /// Not a limit at all: what the solver did. A divergence in particular says nothing
     /// about the grid -- the state may be perfectly feasible and the algorithm simply
     /// failed to find it, or there may be no solution; this does not distinguish the two.
     /// NOT_SIMULATED, DIVERGENCE.
-    SOLVER = 2
+    SOLVER = 2,
+    /// Not a limit either: a control or an automaton whose action the solution did not apply,
+    /// so a set-point is not followed. The equipment could do it -- an idle standby SVC its
+    /// automaton would switch on, a unit frozen at a reactive limit that could hold its
+    /// set-point again, a saturated hvdc droop that would release, a slack mismatch the units
+    /// could take -- and an outer loop would. The state is reachable; it is not the one the
+    /// controls would settle in.
+    /// LOW_VOLTAGE_AT_MIN_Q, HIGH_VOLTAGE_AT_MAX_Q, LOW_VOLTAGE_SVC_STANDBY,
+    /// HIGH_VOLTAGE_SVC_STANDBY, HVDC_AC_EMULATION_RELEASE, SLACK_MISMATCH.
+    CONTROL = 3
 };
 
 /// The category of a violation type. Every type has exactly one; see ViolationCategory.
@@ -177,15 +187,16 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
         case LimitViolationType::HIGH_Q:
         case LimitViolationType::HIGH_P:
         case LimitViolationType::LOW_P:
+        case LimitViolationType::LOW_VOLTAGE_REMOTE_CONTROL:
+        case LimitViolationType::HIGH_VOLTAGE_REMOTE_CONTROL:
+            return ViolationCategory::PHYSICAL;
         case LimitViolationType::LOW_VOLTAGE_AT_MIN_Q:
         case LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q:
         case LimitViolationType::LOW_VOLTAGE_SVC_STANDBY:
         case LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY:
-        case LimitViolationType::LOW_VOLTAGE_REMOTE_CONTROL:
-        case LimitViolationType::HIGH_VOLTAGE_REMOTE_CONTROL:
         case LimitViolationType::HVDC_AC_EMULATION_RELEASE:
         case LimitViolationType::SLACK_MISMATCH:
-            return ViolationCategory::PHYSICAL;
+            return ViolationCategory::CONTROL;
         default:  // NOT_SIMULATED, DIVERGENCE
             return ViolationCategory::SOLVER;
     }

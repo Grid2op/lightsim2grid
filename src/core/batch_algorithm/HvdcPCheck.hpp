@@ -67,7 +67,8 @@ namespace ls2g {
  * from this row's angles, below that limit by more than the tolerance, says the loop would
  * have left it in AC emulation -- reported as HVDC_AC_EMULATION_RELEASE, `side` the direction
  * it is frozen in. (The same test as the PQ -> PV release of GenPvReleaseCheck.hpp: the
- * frozen state's own angles, not the ones the released line would lead to.)
+ * frozen state's own angles, not the ones the released line would lead to.) That one is a
+ * control the solution does not apply (ViolationCategory::CONTROL), not a physical limit.
  */
 namespace hvdc_p_check {
 

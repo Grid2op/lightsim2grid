@@ -90,7 +90,11 @@ reach at all: the converged solution assumes a set-point that could not be held,
 a statement about the model's assumptions rather than about how the grid is operated. The
 third category, `SOLVER` (`NOT_SIMULATED`, `DIVERGENCE`), is not a limit at all — a
 divergence does not distinguish "no solution exists" from "this algorithm did not find
-one".
+one". The fourth, `CONTROL`, is not a limit either: a control or an automaton the
+solution does not apply — a standby SVC its automaton would switch on, a unit frozen at a
+reactive limit that could hold its set-point again, a saturated droop that would release,
+a slack mismatch, and the tap changers and switched shunts to come. The state is
+reachable; it is not the one the controls would settle in.
 
 What is still missing around it:
 

@@ -275,7 +275,8 @@ class TimeSerie:
     def get_physical_violations(self):
         """Per step (same order as the ``modify_*`` inputs): the list of ``LimitViolation``
         of the physical limits that step's solution leaves. Every entry has ``category ==
-        ViolationCategory.PHYSICAL`` and one of five shapes:
+        ViolationCategory.PHYSICAL`` (or ``ViolationCategory.CONTROL`` for a control the
+        solution does not apply: the flagged unit and the standby SVC) and one of five shapes:
 
         * ``element_type`` ``BUS``, ``violation_type`` ``LOW_Q`` / ``HIGH_Q``,
           ``element_id`` the grid bus id, ``value`` the reactive power the machines holding

@@ -116,7 +116,7 @@ class TestSvcRelease(unittest.TestCase):
         self.assertEqual(len(viols), 1)
         v = viols[0]
         self.assertEqual(v.violation_type, LimitViolationType.LOW_VOLTAGE_AT_MIN_Q)
-        self.assertEqual(v.category, ViolationCategory.PHYSICAL)
+        self.assertEqual(v.category, ViolationCategory.CONTROL)
         self.assertEqual(v.name, "frozen")
         self.assertAlmostEqual(v.value, abs(V[2]) * VN_KV, places=6)
         self.assertAlmostEqual(v.limit, 1.0 * VN_KV, places=9)

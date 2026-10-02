@@ -34,7 +34,7 @@ namespace ls2g {
  * `bake_outer_loops` produces: a fixed-Q SVC) cannot do that switch, so a solution whose
  * regulated voltage is outside the thresholds assumes an SVC the loop would not leave idle
  * -- the same kind of statement as the PQ -> PV release of GenPvReleaseCheck.hpp
- * (ViolationCategory::PHYSICAL), and nothing here re-solves or switches anything: a row
+ * (ViolationCategory::CONTROL: an automaton not triggered), and nothing here re-solves or switches anything: a row
  * is reported, not fixed.
  *
  * ONLY THE SVCS A CALLER FLAGGED. After a bake, an idle standby SVC is a plain fixed-Q

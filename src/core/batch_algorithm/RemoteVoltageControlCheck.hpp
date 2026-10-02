@@ -36,9 +36,9 @@ namespace ls2g {
  * reactive power as soon as its voltage leaves
  * [minRealisticVoltage * 1.02, maxRealisticVoltage / 1.02] (pu of its nominal voltage).
  * An outer-loop-free solve cannot do that switch, so a solution whose remote controller sits
- * outside that range assumes a control the loop would not leave in place -- the same kind of
- * statement as the PQ -> PV release of GenPvReleaseCheck.hpp (ViolationCategory::PHYSICAL),
- * and nothing here re-solves or switches anything: a row is reported, not fixed.
+ * outside that range assumes a control the loop would not leave in place, at a voltage a
+ * controller's own bus is not meant to reach (ViolationCategory::PHYSICAL), and nothing
+ * here re-solves or switches anything: a row is reported, not fixed.
  *
  * WHICH GENERATORS. The controllers of the voltage-control plan the solve used whose own bus
  * is not the bus their group regulates: the generators that actually hold a remote bus in

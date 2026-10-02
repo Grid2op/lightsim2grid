@@ -644,7 +644,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         // ---- physical-limit checks (EVERY instantiation) ---------------------------
         // Opt in to the checks whose violation says the converged row is not a state the
-        // grid can reach at all -- ViolationCategory::PHYSICAL, as opposed to the
+        // grid can reach at all -- ViolationCategory::PHYSICAL -- or that it leaves a control
+        // an outer loop would apply -- ViolationCategory::CONTROL --, as opposed to the
         // operational limits `compute_limit_violations` reports (a voltage band, a thermal
         // rating: states the grid does reach and should not sit in). Four today, each a
         // condition an OpenLoadFlow outer loop acts on, and none enforced here -- no bus is

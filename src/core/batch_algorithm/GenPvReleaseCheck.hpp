@@ -35,8 +35,9 @@ namespace ls2g {
  * the loop pinned at its minimum (resp. maximum) reactive power, whose regulated voltage
  * then sits BELOW (resp. ABOVE) its target, is a machine that absorbs (resp. produces) too
  * much for that target and would regulate again if the grid let it. The converged solution
- * then assumes a control that the loop would not leave in place: the same kind of statement
- * as LOW_Q / HIGH_Q (ViolationCategory::PHYSICAL), and nothing here re-solves or switches
+ * then assumes a control that the loop would not leave in place: a set-point not followed,
+ * which the machine could follow (ViolationCategory::CONTROL, unlike LOW_Q / HIGH_Q), and
+ * nothing here re-solves or switches
  * anything -- a row is reported, not fixed.
  *
  * ONLY THE MACHINES A CALLER FLAGGED. lightsim2grid never pins a machine itself, so it

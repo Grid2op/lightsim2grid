@@ -233,6 +233,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   The units' new P is in the results only, their targets are not modified.
 - [ADDED] ``HvdcAcEmulationLimits`` outer loop: OpenLoadFlow's, saturating an AC-emulation hvdc
   line at the limit its droop flow exceeds and releasing it. In the results only.
+- [BREAKING] New ``ViolationCategory.CONTROL``: a control the solution does not apply rather than a
+  physical limit. The PQ -> PV release, standby SVC, hvdc droop release and slack mismatch move there.
 - [BREAKING] The hvdc droop limits and the standby SVCs of ``get_physical_violations`` /
   ``compute_physical_violations`` come from the grid's outer loops, and a saturated line reversed
   beyond its other limit is ``HIGH_P`` on that side, as in OpenLoadFlow.

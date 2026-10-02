@@ -51,9 +51,11 @@ class PreContingencyResult:
     #: hvdc line beyond what its converters can transmit (HIGH_P), or a generator the
     #: distributed slack pushed outside its active power limits (LOW_P / HIGH_P). Kept apart from
     #: `limit_violations` because it is a different KIND of statement: every entry here has
-    #: `category == ViolationCategory.PHYSICAL` -- a state the grid cannot reach -- where
-    #: `limit_violations` carries OPERATIONAL limits it can leave (and the SOLVER sentinel of
-    #: a non-converged case).
+    #: `category == ViolationCategory.PHYSICAL` -- a state the grid cannot reach -- or
+    #: `ViolationCategory.CONTROL` -- a control the solution does not apply (the release of a
+    #: pinned unit, a standby automaton, a saturated droop) -- where `limit_violations`
+    #: carries OPERATIONAL limits it can leave (and the SOLVER sentinel of a non-converged
+    #: case).
     physical_violations: List[LimitViolation] = field(default_factory=list)
 
 
@@ -833,7 +835,8 @@ class ContingencyAnalysis(object):
             its voltage band, a branch above its rating) versus a PHYSICAL one it cannot (a bus
             needing reactive power its machines do not have, an hvdc converter transmitting more
             than it can -- either makes the converged solution unreachable rather than merely
-            undesirable). `physical_violations` is an empty list unless
+            undesirable) or a CONTROL the solution does not apply (an automaton or a regulator
+            an outer loop would act on). `physical_violations` is an empty list unless
             `compute_physical_violations` is also `True`.
 
         .. note::
