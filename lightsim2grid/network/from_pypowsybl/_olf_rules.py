@@ -70,6 +70,15 @@ class OlfLoadingParameters:
     use_active_limits: bool = True
     #: ``plausibleActivePowerLimit``, MW: a unit with a larger max P never takes part in it
     plausible_active_power_limit: float = _MAX_PLAUSIBLE_ACTIVE_POWER_MW
+    #: ``disableVoltageControlOfGeneratorsOutsideActivePowerLimits`` (with ``use_active_limits``):
+    #: a unit whose target P is outside its active range does not regulate
+    disable_voltage_control_outside_active_limits: bool = False
+    #: ``svcVoltageMonitoring``: an SVC whose ``standbyAutomaton`` says ``standby`` is a voltage
+    #: monitor (idle until the VoltageMonitoring loop switches it on), and the automaton's
+    #: ``b0`` is a fixed susceptance of every SVC carrying it
+    svc_voltage_monitoring: bool = True
+    #: ``voltagePerReactivePowerControl``: off, an SVC's slope is ignored
+    voltage_per_reactive_power_control: bool = False
 
 
 GEN_ATTRIBUTES = ["target_p", "min_p", "target_q", "target_v", "voltage_regulator_on",
@@ -158,15 +167,18 @@ def generator_limits_at_target_p(network, gen, params=OlfLoadingParameters()):
     return qmin, qmax
 
 
-def generator_max_reactive_range(network, gen_index):
+def generator_max_reactive_range(network, gen_index, box=None):
     """OpenLoadFlow's ``reactiveRangeCheckMode`` = MAX: the widest ``max_q - min_q`` across
     the whole active-power range of the capability curve of a CURVE-kind generator, simply
     ``max_q - min_q`` for a MIN_MAX (fixed box) one. A ``pandas.Series`` of ranges (MVar)
-    indexed like ``gen_index``, NaN for an id not found."""
+    indexed like ``gen_index``, NaN for an id not found. ``box`` (``reactive_limits_kind``,
+    ``min_q``, ``max_q``) is the generators' by default; a battery's or a VSC station's frame
+    gives theirs, their capability curves being read the same way."""
     rng = pd.Series(np.nan, index=gen_index)
     if not len(gen_index):
         return rng
-    box = network.get_generators(attributes=["reactive_limits_kind", "min_q", "max_q"])
+    if box is None:
+        box = network.get_generators(attributes=["reactive_limits_kind", "min_q", "max_q"])
     box = box.loc[box.index.intersection(gen_index)]
     is_box = box["reactive_limits_kind"] == "MIN_MAX"
     rng.loc[box.index[is_box]] = (box["max_q"] - box["min_q"])[is_box]
@@ -255,29 +267,187 @@ def generator_voltage_control(network, gen=None, params=OlfLoadingParameters(), 
     boolean column per reason a regulating unit is discarded, in the order OpenLoadFlow
     checks them, and ``discarded`` (any of them). A unit not regulating in the first place
     reads False everywhere. ``bus_nominal_v`` maps a bus-view id to its nominal voltage (kV),
-    read from the network when not given.
+    read from the network when not given. The generators' rows of
+    :func:`voltage_controllers`, so a generator sharing its bus with another kind of
+    regulating unit is judged together with it, as OpenLoadFlow does.
     """
     gen = generators(network) if gen is None else gen
-    regulating = gen["voltage_regulator_on"].fillna(False).astype(bool) & gen["connected"].astype(bool)
+    res = voltage_controllers(network, params, gen=gen, bus_nominal_v=bus_nominal_v)
+    res = res[res["kind"] == "generator"].drop(columns=["kind", "monitor"])
+    return res.reindex(gen.index).fillna(False).astype(bool)
+
+
+# ---------------------------------------------------------------------------------------
+# voltage control of every generator-like unit
+# ---------------------------------------------------------------------------------------
+
+#: the generator-like units OpenLoadFlow sets up the same way
+#: (``AbstractLfGenerator.setVoltageControl``). OpenLoadFlow orders the units of a bus as
+#: IIDM visits its terminals, which the dataframes do not give: they are taken by kind, in
+#: this order. That order only decides which unit's target the others of a bus are compared
+#: with (``disableInconsistentVoltageControls``).
+UNIT_KINDS = ("generator", "battery", "svc", "vsc")
+
+#: the reasons a regulating unit is discarded, in the order OpenLoadFlow checks them
+DISCARD_REASONS = ("reactive_range_too_small", "not_started", "outside_active_limits",
+                   "regulated_bus_unresolved", "target_v_implausible", "monitor_with_regulator",
+                   "inconsistent_controls")
+
+
+def _extension(network, name):
+    try:
+        ext = network.get_extensions(name)
+    except Exception:  # noqa: BLE001 - extension unsupported / absent on this pypowsybl
+        return None
+    return ext if ext is not None and len(ext) else None
+
+
+def _box(frame):
+    """The reactive box frame :func:`generator_max_reactive_range` reads (MIN_MAX when the
+    kind is not reported)."""
+    kind = frame["reactive_limits_kind"] if "reactive_limits_kind" in frame else "MIN_MAX"
+    return pd.DataFrame({"reactive_limits_kind": kind, "min_q": frame["min_q"],
+                         "max_q": frame["max_q"]}, index=frame.index)
+
+
+def _units(network, gen):
+    """One frame over every generator-like unit of ``network`` (``gen``: the generators'),
+    with what the voltage-control rules read: ``kind``, ``bus_id``, ``regulating``,
+    ``regulated_bus_id`` ("" if unresolved), ``target_v`` (kV), ``target_p`` / ``min_p`` /
+    ``max_p`` (MW), ``forced`` (exempt from the not-started rule), ``range_q`` (MVar, the
+    reactive range of ``reactiveRangeCheckMode`` = MAX, NaN where unknown) and ``standby``
+    (an SVC whose automaton is in standby)."""
+    parts = []
+    # generators
+    g = gen
+    max_p = network.get_generators(attributes=["max_p"])["max_p"].reindex(g.index)
+    parts.append(pd.DataFrame({
+        "kind": "generator", "bus_id": g["bus_id"],
+        "regulating": g["voltage_regulator_on"].fillna(False).astype(bool) & g["connected"].astype(bool),
+        "regulated_bus_id": generator_regulated_bus(g), "target_v": g["target_v"],
+        "target_p": g["target_p"], "min_p": g["min_p"], "max_p": max_p,
+        "forced": g["condenser"].fillna(False).astype(bool), "fictitious": g["fictitious"].fillna(False).astype(bool),
+        "range_q": generator_max_reactive_range(network, g.index), "standby": False}, index=g.index))
+    # batteries: regulating through the voltageRegulation extension, their own bus
+    b = network.get_batteries(all_attributes=True)
+    if len(b):
+        ext = _extension(network, "voltageRegulation")
+        on = pd.Series(False, index=b.index)
+        tv = pd.Series(np.nan, index=b.index)
+        if ext is not None and "voltage_regulator_on" in ext.columns:
+            ext = ext.reindex(b.index)
+            on = ext["voltage_regulator_on"].fillna(False).astype(bool)
+            tv = ext["target_v"].astype(float)
+        parts.append(pd.DataFrame({
+            "kind": "battery", "bus_id": b["bus_id"], "regulating": on & b["connected"].astype(bool),
+            "regulated_bus_id": b["bus_id"].fillna("").astype(str), "target_v": tv,
+            "target_p": b["target_p"], "min_p": b["min_p"], "max_p": b["max_p"],
+            "forced": False, "fictitious": False,
+            "range_q": generator_max_reactive_range(network, b.index, _box(b)), "standby": False}, index=b.index))
+    # SVCs: the range of B over [b_min, b_max] at the voltage the snapshot stores (NaN: none)
+    sv = network.get_static_var_compensators(all_attributes=True)
+    if len(sv):
+        regulating = (sv["regulation_mode"].astype(str) == "VOLTAGE") & sv["connected"].astype(bool)
+        if "regulating" in sv.columns:
+            regulating &= sv["regulating"].fillna(False).astype(bool)
+        v_kv = sv["bus_id"].map(network.get_buses(attributes=["v_mag"])["v_mag"]).astype(float)
+        standby = pd.Series(False, index=sv.index)
+        sa = _extension(network, "standbyAutomaton")
+        if sa is not None and "standby" in sa.columns:
+            standby = sa["standby"].reindex(sv.index).fillna(False).astype(bool)
+        parts.append(pd.DataFrame({
+            "kind": "svc", "bus_id": sv["bus_id"], "regulating": regulating,
+            "regulated_bus_id": sv["regulated_bus_id"].fillna("").astype(str), "target_v": sv["target_v"],
+            "target_p": 0., "min_p": -np.inf, "max_p": np.inf, "forced": False, "fictitious": False,
+            "range_q": (sv["b_max"] - sv["b_min"]) * v_kv ** 2, "standby": standby}, index=sv.index))
+    # VSC stations: local control only; their active range is the hvdc line's
+    vs = network.get_vsc_converter_stations(all_attributes=True)
+    if len(vs):
+        hvdc = network.get_hvdc_lines(attributes=["converter_station1_id", "converter_station2_id",
+                                                  "max_p", "target_p"])
+        line_max_p = pd.concat([hvdc.set_index("converter_station1_id")["max_p"],
+                                hvdc.set_index("converter_station2_id")["max_p"]])
+        line_target_p = pd.concat([hvdc.set_index("converter_station1_id")["target_p"],
+                                   hvdc.set_index("converter_station2_id")["target_p"]])
+        mp = line_max_p.reindex(vs.index).astype(float).fillna(np.inf)
+        parts.append(pd.DataFrame({
+            "kind": "vsc", "bus_id": vs["bus_id"],
+            "regulating": vs["voltage_regulator_on"].fillna(False).astype(bool) & vs["connected"].astype(bool),
+            "regulated_bus_id": vs["bus_id"].fillna("").astype(str), "target_v": vs["target_v"],
+            # the size of the transfer: what the active range is checked against
+            "target_p": line_target_p.reindex(vs.index).astype(float).abs(), "min_p": -mp, "max_p": mp,
+            "forced": False, "fictitious": False,
+            "range_q": generator_max_reactive_range(network, vs.index, _box(vs)), "standby": False}, index=vs.index))
+    units = pd.concat(parts)
+    units["regulated_bus_id"] = units["regulated_bus_id"].fillna("").astype(str)
+    return units
+
+
+def voltage_controllers(network, params=OlfLoadingParameters(), gen=None, bus_nominal_v=None):
+    """Which voltage-regulating units -- generators, batteries, SVCs, VSC stations --
+    OpenLoadFlow lets regulate, which SVCs it makes voltage monitors, and why.
+
+    ``AbstractLfGenerator.setVoltageControl`` for each unit (its reactive range, a unit not
+    started, a target P outside the active range, a regulated bus out of reach, an
+    implausible target), then ``LfNetworkLoaderImpl.createVoltageControls`` for each bus:
+    with ``svc_voltage_monitoring``, an SVC whose automaton is in standby is a monitor; two
+    monitors on a bus both regulate instead, and a monitor sharing its bus with a regulating
+    unit is switched off (``monitor_with_regulator``); then the units left on a bus,
+    monitors included, are checked for consistency (``disableInconsistentVoltageControls``).
+
+    Returns a ``pandas.DataFrame`` indexed by unit id with ``kind`` (see ``UNIT_KINDS``), a
+    boolean column per reason (``DISCARD_REASONS``), ``discarded`` (any of them) and
+    ``monitor``. A unit not regulating in the first place reads False everywhere.
+    ``gen`` is the generators' frame (by default :func:`generators`), ``bus_nominal_v`` maps a
+    bus-view id to its nominal voltage (kV), read from the network when not given.
+    """
+    gen = generators(network) if gen is None else gen
+    units = _units(network, gen)
+    buses = network.get_buses(attributes=["voltage_level_id", "synchronous_component"])
     if bus_nominal_v is None:
-        buses = network.get_buses(attributes=["voltage_level_id"])
         vls = network.get_voltage_levels(attributes=["nominal_v"])
         bus_nominal_v = buses["voltage_level_id"].map(vls["nominal_v"])
-    reg_bus = generator_regulated_bus(gen)
-    reg_nominal_v = reg_bus.map(bus_nominal_v).to_numpy(float)
+    reg = units["regulating"].to_numpy(bool)
+    reg_bus = units["regulated_bus_id"]
+    sync = buses["synchronous_component"]
 
-    res = pd.DataFrame(index=gen.index)
-    # AbstractLfGenerator.setVoltageControl, in its order: consistency (range, started),
-    # then the regulated terminal, then the plausibility of the target
-    res["reactive_range_too_small"] = regulating & generator_reactive_range_too_small(network, gen, params)
-    res["not_started"] = regulating & generator_not_started(gen, params)
-    res["regulated_bus_unresolved"] = regulating & (reg_bus == "")
-    res["target_v_implausible"] = regulating & generator_target_v_implausible(gen, reg_nominal_v, params)
-    kept = regulating & ~res.any(axis=1)
+    res = pd.DataFrame(index=units.index)
+    res["kind"] = units["kind"]
+    # AbstractLfGenerator.setVoltageControl, in its order
+    if params.reactive_limits:
+        res["reactive_range_too_small"] = reg & (units["range_q"] < _MIN_REACTIVE_RANGE_MVAR).to_numpy(bool)
+    else:
+        res["reactive_range_too_small"] = False
+    forced = units["forced"].to_numpy(bool)
+    if params.fictitious_voltage_control_forced:
+        forced = forced | units["fictitious"].to_numpy(bool)
+    not_started = ((units["target_p"].abs() < _NOT_STARTED_P_TOL_MW) & (units["min_p"] > _NOT_STARTED_P_TOL_MW)).to_numpy(bool)
+    res["not_started"] = reg & params.zero_mw_target_not_started & not_started & ~forced
+    outside = ((units["target_p"] < units["min_p"]) | (units["target_p"] > units["max_p"])).to_numpy(bool)
+    res["outside_active_limits"] = (reg & outside & params.use_active_limits
+                                    & params.disable_voltage_control_outside_active_limits)
+    other_component = (reg_bus.map(sync) != units["bus_id"].map(sync)).to_numpy(bool)
+    res["regulated_bus_unresolved"] = reg & ((reg_bus == "").to_numpy(bool) | other_component)
+    reg_nominal_v = reg_bus.map(bus_nominal_v).to_numpy(float)
+    implausible = generator_target_v_implausible(units, reg_nominal_v, params).to_numpy(bool)
+    res["target_v_implausible"] = reg & implausible
+    kept = reg & ~res[list(DISCARD_REASONS[:5])].any(axis=1).to_numpy(bool)
+
+    # LfNetworkLoaderImpl.createVoltageControls: the monitors of each bus
+    monitor = kept & params.svc_voltage_monitoring & units["standby"].to_numpy(bool)
+    bus = units["bus_id"]
+    n_monitors = pd.Series(monitor, index=units.index).groupby(bus).transform("sum").to_numpy()
+    n_regulators = pd.Series(kept & ~monitor, index=units.index).groupby(bus).transform("sum").to_numpy()
+    monitor = monitor & (n_monitors == 1)          # several on a bus: they all regulate
+    res["monitor_with_regulator"] = monitor & (n_regulators > 0)
+    monitor = monitor & (n_regulators == 0)
+    kept = kept & ~res["monitor_with_regulator"].to_numpy(bool)
     with np.errstate(invalid="ignore", divide="ignore"):
-        target_v_pu = pd.Series(gen["target_v"].to_numpy(float) / reg_nominal_v, index=gen.index)
-    res["inconsistent_controls"] = generator_inconsistent_controls(gen, kept, reg_bus, target_v_pu, params)
-    res["discarded"] = res.any(axis=1)
+        target_v_pu = pd.Series(units["target_v"].to_numpy(float) / reg_nominal_v, index=units.index)
+    res["inconsistent_controls"] = generator_inconsistent_controls(
+        units, pd.Series(kept, index=units.index), reg_bus, target_v_pu, params).to_numpy(bool)
+    res["discarded"] = res[list(DISCARD_REASONS)].any(axis=1)
+    res["monitor"] = monitor & ~res["inconsistent_controls"].to_numpy(bool)
     return res
 
 

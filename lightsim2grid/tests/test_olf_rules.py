@@ -229,5 +229,87 @@ class TestOlfRulesAgainstOLF(unittest.TestCase):
             self._solve_ls(False)
 
 
+def _net_with_monitors():
+    """IEEE 14 with stand-by SVCs: alone on a load bus (SVC9), next to a regulating
+    generator (SVC8), and two on one bus (SVC10a, SVC10b)."""
+    net = _net()
+    nominal_v = net.get_voltage_levels()["nominal_v"]
+    for svc_id, bus in (("SVC9", "B9"), ("SVC8", "B8"), ("SVC10a", "B10"), ("SVC10b", "B10")):
+        vn = float(nominal_v.loc["VL" + bus[1:]])
+        net.create_static_var_compensators(id=svc_id, voltage_level_id="VL" + bus[1:], bus_id=bus,
+                                           connectable_bus_id=bus, b_min=-0.01, b_max=0.01,
+                                           regulation_mode="VOLTAGE", target_v=vn, target_q=0.,
+                                           regulating=True)
+        net.create_extensions("standbyAutomaton", id=svc_id, b0=0., standby=True,
+                              low_voltage_threshold=0.9 * vn, high_voltage_threshold=1.1 * vn,
+                              low_voltage_setpoint=0.95 * vn, high_voltage_setpoint=1.05 * vn)
+    return net
+
+
+@unittest.skipIf(not PP_OK, "pypowsybl is not installed")
+class TestOlfVoltageControllers(unittest.TestCase):
+    """The voltage-control rules over every kind of unit (``voltage_controllers``)."""
+
+    def test_monitors(self):
+        vc = _olf_rules.voltage_controllers(_net_with_monitors())
+        self.assertTrue(vc.loc["SVC9", "monitor"])
+        self.assertFalse(vc.loc["SVC9", "discarded"])
+        # next to a regulating unit, the monitor is switched off; the unit keeps regulating
+        self.assertTrue(vc.loc["SVC8", "monitor_with_regulator"])
+        self.assertFalse(vc.loc["SVC8", "monitor"])
+        self.assertFalse(vc.loc["B8-G", "discarded"])
+        # two on a bus: both regulate
+        for svc_id in ("SVC10a", "SVC10b"):
+            self.assertFalse(vc.loc[svc_id, "monitor"])
+            self.assertFalse(vc.loc[svc_id, "discarded"])
+        # without svcVoltageMonitoring, a standby SVC is an ordinary regulator
+        vc = _olf_rules.voltage_controllers(_net_with_monitors(),
+                                            OlfLoadingParameters(svc_voltage_monitoring=False))
+        self.assertFalse(vc["monitor"].any())
+        self.assertFalse(vc.loc["SVC9", "discarded"])
+        # SVC8 then regulates its bus with the generator there, at another target
+        self.assertTrue(vc.loc["SVC8", "inconsistent_controls"])
+
+    def test_monitors_in_the_grid(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(_net_with_monitors(), olf_rules=True)
+        svcs = {svc.name: svc for svc in grid.get_svcs()}
+        # idle (off) and flagged standby with its thresholds, in pu of its own nominal voltage
+        self.assertEqual(svcs["SVC9"].regulation_mode, 0)
+        self.assertTrue(svcs["SVC9"].standby)
+        self.assertAlmostEqual(svcs["SVC9"].standby_low_vm_pu, 0.9)
+        self.assertAlmostEqual(svcs["SVC9"].standby_high_vm_pu, 1.1)
+        self.assertEqual(svcs["SVC8"].regulation_mode, 0)
+        self.assertFalse(svcs["SVC8"].standby)
+        self.assertEqual(svcs["SVC10a"].regulation_mode, 1)
+
+    def test_svc_reactive_range(self):
+        net = _net_with_monitors()
+        # (b_max - b_min) * V^2 below 1 MVar at the voltage the snapshot stores
+        net.update_static_var_compensators(id="SVC10a", b_min=-1e-6, b_max=1e-6)
+        vc = _olf_rules.voltage_controllers(net, OlfLoadingParameters(svc_voltage_monitoring=False))
+        self.assertTrue(vc.loc["SVC10a", "reactive_range_too_small"])
+        self.assertFalse(vc.loc["SVC10b", "discarded"])
+
+    def test_kinds_judged_together(self):
+        net = pp.network.create_four_substations_node_breaker_network()
+        vc = _olf_rules.voltage_controllers(net)
+        self.assertEqual(set(vc["kind"]), {"generator", "svc", "vsc"})
+        self.assertFalse(vc["discarded"].any())
+        # a VSC station regulating its bus with a target 0.025 pu away from the generators'
+        net.update_vsc_converter_stations(id="VSC1", target_v=410.)
+        vc = _olf_rules.voltage_controllers(net)
+        for unit in ("GH1", "GH2", "GH3", "VSC1"):
+            self.assertTrue(vc.loc[unit, "inconsistent_controls"], unit)
+        self.assertTrue(_olf_rules.generator_voltage_control(net).loc["GH1", "discarded"])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, olf_rules=True)
+        gens = {gen.name: gen for gen in grid.get_generators()}
+        self.assertFalse(gens["GH1"].voltage_regulator_on)
+        self.assertTrue(gens["GTH2"].voltage_regulator_on)
+
+
 if __name__ == "__main__":
     unittest.main()

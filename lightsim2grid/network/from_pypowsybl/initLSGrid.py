@@ -27,6 +27,7 @@ from ...lightsim2grid_cpp import LSGrid  # type: ignore
 from ._aux_common import _aux_ensure_net_pu, _aux_get_operational_limits_current
 from ._aux_add_buses import _aux_add_buses
 from ._aux_add_generators import _aux_add_generators
+from . import _olf_rules
 from ._olf_rules import OlfLoadingParameters
 from ._aux_add_slack import _aux_olf_slack_participation
 from ._aux_add_loads import _aux_add_loads
@@ -373,22 +374,27 @@ def init(net : pypo.network.Network,
         ol_current, keep_half_open_lines, fuse_zero_impedance_branches, fused_trafo_ids,
     )
 
+    # OpenLoadFlow's voltage-control loading rules, over every kind of unit at once
+    olf_vc = _olf_rules.voltage_controllers(net, olf_rules) if olf_rules is not None else None
+
     # shunts
     df_shunt, sh_sub = _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
 
     # SVCs
     df_svc = _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used,
-                          can_be_pv=can_be_pv)
+                          can_be_pv=can_be_pv, olf_rules=olf_rules, olf_vc=olf_vc)
 
     # HVDC lines
     df_dc, hvdc_sub_from_id, hvdc_sub_to_id = _aux_add_hvdc(
         model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
         can_be_pv=can_be_pv,
         ac_emulation_frozen=hvdc_ac_emulation_frozen,
+        olf_vc=olf_vc,
     )
 
     # storage units
-    df_batt, batt_sub = _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
+    df_batt, batt_sub = _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
+                                         olf_vc=olf_vc)
 
     # slack bus(es)
     gen_slack_ids_int = _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,

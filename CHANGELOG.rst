@@ -245,6 +245,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``init_from_pypowsybl(olf_rules=True)``: OpenLoadFlow's loading rules (which
   generators may regulate a voltage, target Q clamped into the limits, who shares the slack
   and within what range), shared with ``bake_outer_loops``.
+- [ADDED] ``init_from_pypowsybl(olf_rules=...)``: OpenLoadFlow's voltage-control rules for SVCs,
+  VSC stations and batteries too, all units of a bus judged together (``_olf_rules.voltage_controllers``).
+- [ADDED] With ``olf_rules``, a standby SVC is an idle voltage monitor (``svc_voltage_monitoring``,
+  on by default as in OpenLoadFlow), and an SVC's slope is ignored as OpenLoadFlow does by default.
 - [FIXED] ``bake_outer_loops``: a generator is "not started" below 0.01 MW, not 1e-4 MW
   (OpenLoadFlow compares per-unit values), and a condenser or fictitious one never is.
 - [FIXED] the default distributed slack of ``init_from_pypowsybl`` follows OpenLoadFlow's

@@ -87,7 +87,7 @@ def _aux_battery_p_limits(df_batt):
     return min_p_mw, max_p_mw
 
 
-def _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl):
+def _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, olf_vc=None):
     """Add every storage unit (IIDM battery) of ``net`` to ``model``. IIDM gives
     the battery setpoints in the *generator* convention (positive target_p =
     power produced / injected) while lightsim2grid stores storage as PQ in the
@@ -95,7 +95,9 @@ def _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_p
     as pandapower and grid2op. We negate to convert, and sanitize NaN (IIDM
     allows an unset target_q). A battery whose IIDM ``voltageRegulation``
     extension is on regulates the voltage of its own bus (a PV bus, as
-    OpenLoadFlow runs it; see :func:`_aux_battery_voltage_regulation`). Returns
+    OpenLoadFlow runs it; see :func:`_aux_battery_voltage_regulation`), unless ``olf_vc``
+    (:func:`._olf_rules.voltage_controllers`, with ``olf_rules``) says OpenLoadFlow
+    discards its voltage control. Returns
     ``(df_batt, batt_sub)``, used by the final substation-id bookkeeping and
     ``return_sub_id`` in `initLSGrid.py`."""
     if sort_index:
@@ -108,6 +110,8 @@ def _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_p
     batt_p = np.where(np.isfinite(batt_p), batt_p, 0.)
     batt_q = np.where(np.isfinite(batt_q), batt_q, 0.)
     vreg, target_vm = _aux_battery_voltage_regulation(net, df_batt, batt_bus, batt_disco, voltage_levels)
+    if olf_vc is not None:
+        vreg = vreg & ~olf_vc["discarded"].reindex(df_batt.index).fillna(False).to_numpy(bool)
     min_q, max_q = _aux_battery_q_limits(df_batt)
     model.init_storages_full(-batt_p,  # IIDM generator convention -> lightsim2grid load convention
                              -batt_q,

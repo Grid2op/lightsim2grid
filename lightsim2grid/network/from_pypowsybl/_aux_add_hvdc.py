@@ -38,7 +38,7 @@ def _hvdc_pmax_per_direction(net, hvdc_ids, max_p_mw):
 
 
 def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, can_be_pv=None,
-                  ac_emulation_frozen=None):
+                  ac_emulation_frozen=None, olf_vc=None):
     """Add every HVDC line of ``net`` (VSC / LCC converter stations, possibly
     carrying the angle-droop ("AC emulation") extension) to ``model``. Returns
     ``(df_dc, hvdc_sub_from_id, hvdc_sub_to_id)``, used by the final
@@ -50,7 +50,10 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
 
     The hvdc line ids ``ac_emulation_frozen`` holds (what `bake_outer_loops` froze at their
     AC-emulation limit) are flagged with ``LSGrid.set_hvdc_ac_emulation_frozen``, their droop
-    parameters read off the extension although it is disabled."""
+    parameters read off the extension although it is disabled.
+
+    ``olf_vc`` (:func:`._olf_rules.voltage_controllers`, with ``olf_rules``) says which
+    voltage-regulating stations OpenLoadFlow lets regulate: the others inject their target Q."""
     if sort_index:
         df_dc = net.get_hvdc_lines().sort_index()
     else:
@@ -78,6 +81,8 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         loss_factor = np.where(np.isfinite(loss_factor), loss_factor, 0.)
         vreg_on = df_side["voltage_regulator_on"].values.astype(bool) if nb_dc else np.zeros(0, dtype=bool)
         vreg_on = vreg_on & ~is_lcc  # lcc never regulates (NaN -> random bool otherwise)
+        if olf_vc is not None:
+            vreg_on = vreg_on & ~olf_vc["discarded"].reindex(df_side.index).fillna(False).to_numpy(bool)
         vl_kv = voltage_levels.loc[df_side["voltage_level_id"].values]["nominal_v"].values
         vset_pu = df_side["target_v"].values / vl_kv
         vset_pu = np.where(np.isfinite(vset_pu), vset_pu, 1.0)

@@ -357,8 +357,9 @@ def run_one(path, args):
     row["olf_s"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    # the loading rules depend on use_reactive_limits, set as on the OLF side
-    rules = OlfLoadingParameters(reactive_limits=params.use_reactive_limits) if args.olf_rules else None
+    # the loading rules depend on use_reactive_limits and svcVoltageMonitoring, set as on the OLF side
+    rules = OlfLoadingParameters(reactive_limits=params.use_reactive_limits,
+                                 svc_voltage_monitoring="VoltageMonitoring" in args.loops) if args.olf_rules else None
     start = None
     if args.start == "olf":
         start = olf_dc_angles(path, params, args.extra_load_mw, args.hvdc_limit_factor)
