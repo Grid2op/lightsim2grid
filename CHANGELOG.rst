@@ -3,6 +3,9 @@ Change Log
 
 [TODO]
 --------
+- ``PhaseControl``: OpenLoadFlow's current-limiter one-tap move can undo itself depending on how its
+  Newton rounds the shift it writes back (see ``PhaseControlLoop.hpp``); not reproduced, so a limiter
+  can end one tap apart. Follow-up: decide whether to mirror it or leave it documented.
 - OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: ``DistributedSlack``,
   ``HvdcAcEmulationLimits``, ``VoltageMonitoring`` and ``ReactiveLimits`` are there, the others
   are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
