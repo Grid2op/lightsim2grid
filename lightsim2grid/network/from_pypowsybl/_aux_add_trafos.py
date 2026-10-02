@@ -75,10 +75,12 @@ def _aux_bus_pu(bus_ids, bus_df, voltage_levels):
     return bus, vn
 
 
-def _aux_tap_changers(model, net, trafo_index, bus_df, voltage_levels):
+def _aux_tap_changers(model, net, trafo_index, bus_df, voltage_levels, olf_rules=None):
     """The ratio and phase tap changers of the 2-winding transformers ``trafo_index``: their
     step tables and positions (the pi model is then taken at the taps, as OpenLoadFlow takes
-    it), and what they regulate. Legs of 3-winding transformers are not in ``trafo_index``."""
+    it), and what they regulate. Legs of 3-winding transformers are not in ``trafo_index``.
+    With ``olf_rules``, a ratio tap changer with an implausible target voltage does not regulate
+    (OpenLoadFlow's VoltageControl.checkTargetV, as for the generators)."""
     pos = pd.Series(np.arange(len(trafo_index)), index=trafo_index)
     for phase in (False, True):
         try:
@@ -125,6 +127,10 @@ def _aux_tap_changers(model, net, trafo_index, bus_df, voltage_levels):
                 regulating &= changers["oltc"].to_numpy(bool)
             target = changers["target_v"].to_numpy(float) / vn
             deadband = changers["target_deadband"].to_numpy(float) / vn
+            if olf_rules is not None:
+                implausible = ((vn > olf_rules.min_nominal_voltage_target_voltage_check) &
+                               ((target < olf_rules.min_plausible_target_v) | (target > olf_rules.max_plausible_target_v)))
+                regulating &= ~implausible
             for k, tid in enumerate(changers.index):
                 model.set_trafo_ratio_tap_regulation(
                     int(pos[tid]), bool(regulating[k] and bus[k] >= 0),
@@ -133,7 +139,7 @@ def _aux_tap_changers(model, net, trafo_index, bus_df, voltage_levels):
 
 
 def _aux_add_trafos(model, net, net_pu, sort_index, voltage_levels, bus_df, first_bus_per_vl,
-                    ol_current, keep_half_open_lines, fuse_zero_impedance_branches, fused_trafo_ids):
+                    ol_current, keep_half_open_lines, fuse_zero_impedance_branches, fused_trafo_ids, olf_rules=None):
     """Add every 2-winding transformer of ``net`` to ``model``. ``ol_current``
     (``net.get_operational_limits()`` filtered to CURRENT, or ``None``) is shared
     with `_aux_add_lines.py`, computed once in `initLSGrid.py`. Returns
@@ -207,6 +213,6 @@ def _aux_add_trafos(model, net, net_pu, sort_index, voltage_levels, bus_df, firs
     if any(len(a) for a in ps_alpha):
         model.set_trafo_shift_dependent_rx(True, ps_alpha, ps_rx_corr)
     # the tap changers: the pi model at the taps (r, x, g, b corrected by each step)
-    _aux_tap_changers(model, net, df_trafo.index, bus_df, voltage_levels)
+    _aux_tap_changers(model, net, df_trafo.index, bus_df, voltage_levels, olf_rules=olf_rules)
 
     return df_trafo, tor_sub, tex_sub

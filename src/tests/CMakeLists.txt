@@ -94,6 +94,7 @@ add_executable(lightsim2grid_unit_tests
     test_reactive_limits_loop.cpp
     test_tap_changers.cpp
     test_phase_control_loop.cpp
+    test_transformer_voltage_control_loop.cpp
     test_dc_slack_on_can_participate.cpp
     test_bus_element_count.cpp
     test_kcl_from_results.cpp

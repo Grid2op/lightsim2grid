@@ -625,7 +625,11 @@ void bind_batch(py::module_& m) {
         .value("PHASE_LIMITER_CURRENT", LimitViolationType::PHASE_LIMITER_CURRENT,
                "A transformer whose phase tap changer limits the current through its side `side` "
                "above that limit (element_type TRAFO): the PhaseControl loop would move the tap. "
-               "Category CONTROL. `value` the current and `limit` the limit, A.");
+               "Category CONTROL. `value` the current and `limit` the limit, A.")
+        .value("TRANSFORMER_VOLTAGE_DEADBAND", LimitViolationType::TRANSFORMER_VOLTAGE_DEADBAND,
+               "A bus whose voltage transformers regulate (and no generator does) off their target by "
+               "more than half their deadband (element_type BUS): OpenLoadFlow's TransformerVoltageControl "
+               "loop would move the taps. Category CONTROL. `value` the voltage and `limit` the target, kV.");
 
     py::enum_<ViolationCategory>(m, "ViolationCategory",
         "What KIND of statement a LimitViolation is -- a property of its violation_type, and "
@@ -659,7 +663,7 @@ void bind_batch(py::module_& m) {
                "reachable; it is not the one the controls would settle in. "
                "LOW_VOLTAGE_AT_MIN_Q, HIGH_VOLTAGE_AT_MAX_Q, LOW_VOLTAGE_SVC_STANDBY, "
                "HIGH_VOLTAGE_SVC_STANDBY, HVDC_AC_EMULATION_RELEASE, SLACK_MISMATCH, PHASE_CONTROL_P, "
-               "PHASE_LIMITER_CURRENT.");
+               "PHASE_LIMITER_CURRENT, TRANSFORMER_VOLTAGE_DEADBAND.");
 
     m.def("violation_category", &violation_category, py::arg("violation_type"),
           "The ViolationCategory of a LimitViolationType. Every type has exactly one.");

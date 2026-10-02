@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <sstream>
+#include <limits>
 
 namespace ls2g {
 
@@ -325,57 +326,81 @@ std::array<cplx_type, 4> TrafoContainer::_pi_coeffs(real_type r, real_type x, cp
             ys + h2};                        // ys + h2
 }
 
-std::array<cplx_type, 4> TrafoContainer::pi_block_at(int el, int phase_position, real_type shift_rad) const
+std::array<cplx_type, 4> TrafoContainer::pi_block_at(int el, int ratio_position, int phase_position,
+                                                     real_type shift_rad) const
 {
     _check_in_range(el, ratio_, "TrafoContainer::pi_block_at");
     const bool tapped = ratio_taps_.has(el) || phase_taps_.has(el);
     if(!tapped) return _pi_coeffs(r_(el), x_(el), h_side_1_(el), h_side_2_(el), ratio_(el), shift_rad,
                                   is_tap_side1_[el], ignore_tap_side_for_shift_);
+    const int rpos = ratio_taps_.has(el) ? ratio_position : 0;
     const int ppos = phase_taps_.has(el) ? phase_position : 0;
-    const real_type r = base_r_(el) * ratio_taps_.r_factor(el) * phase_taps_.r_factor_at(el, ppos);
-    const real_type x = base_x_(el) * ratio_taps_.x_factor(el) * phase_taps_.x_factor_at(el, ppos);
-    const real_type g_factor = ratio_taps_.g_factor(el) * phase_taps_.g_factor_at(el, ppos);
-    const real_type b_factor = ratio_taps_.b_factor(el) * phase_taps_.b_factor_at(el, ppos);
+    const real_type r = base_r_(el) * ratio_taps_.r_factor_at(el, rpos) * phase_taps_.r_factor_at(el, ppos);
+    const real_type x = base_x_(el) * ratio_taps_.x_factor_at(el, rpos) * phase_taps_.x_factor_at(el, ppos);
+    const real_type g_factor = ratio_taps_.g_factor_at(el, rpos) * phase_taps_.g_factor_at(el, ppos);
+    const real_type b_factor = ratio_taps_.b_factor_at(el, rpos) * phase_taps_.b_factor_at(el, ppos);
     const cplx_type h1 = {std::real(base_h1_(el)) * g_factor, std::imag(base_h1_(el)) * b_factor};
     const cplx_type h2 = {std::real(base_h2_(el)) * g_factor, std::imag(base_h2_(el)) * b_factor};
-    const real_type ratio = base_ratio_(el) * ratio_taps_.rho(el) * phase_taps_.rho_at(el, ppos);
-    return _pi_coeffs(r, x, h1, h2, ratio, shift_rad, is_tap_side1_[el], ignore_tap_side_for_shift_);
+    return _pi_coeffs(r, x, h1, h2, ratio_at(el, rpos, ppos), shift_rad, is_tap_side1_[el], ignore_tap_side_for_shift_);
 }
 
-std::vector<int> TrafoContainer::_apply_results_phase_tap_override()
+std::vector<int> TrafoContainer::_apply_results_tap_override()
 {
     const int n = nb();
     res_phase_tap_position_.assign(static_cast<std::size_t>(n), 0);
+    res_ratio_tap_position_.assign(static_cast<std::size_t>(n), 0);
     for(int el = 0; el < n; ++el){
         if(phase_taps_.nb() > el && phase_taps_.has(el)) res_phase_tap_position_[static_cast<std::size_t>(el)] = phase_taps_.position(el);
+        if(ratio_taps_.nb() > el && ratio_taps_.has(el)) res_ratio_tap_position_[static_cast<std::size_t>(el)] = ratio_taps_.position(el);
     }
     std::vector<int> moved;
-    results_saved_.clear();
-    if(static_cast<int>(results_phase_tap_override_.size()) != n) return moved;
+    results_saved_values_.clear();
+    results_saved_positions_.clear();
+    const bool phase_on = static_cast<int>(results_phase_tap_override_.size()) == n;
+    const bool ratio_on = static_cast<int>(results_ratio_tap_override_.size()) == n;
+    if(!phase_on && !ratio_on) return moved;
+    // a position to move to, NONE for none (a position may be negative)
+    const int NONE = std::numeric_limits<int>::min();
+    auto wanted = [NONE](const TapChangers & taps, const std::vector<int> & over, bool on, int el) {
+        if(!on || !taps.has(el)) return NONE;
+        const int pos = over[static_cast<std::size_t>(el)];
+        if(pos < taps.low_tap(el) || pos > taps.high_tap(el) || pos == taps.position(el)) return NONE;
+        return pos;
+    };
     for(int el = 0; el < n; ++el){
-        if(!phase_taps_.has(el)) continue;
-        const int pos = results_phase_tap_override_[static_cast<std::size_t>(el)];
-        if(pos < phase_taps_.low_tap(el) || pos > phase_taps_.high_tap(el) || pos == phase_taps_.position(el)) continue;
-        moved.push_back(phase_taps_.position(el));
-        results_saved_.push_back({el, {ratio_(el), shift_(el)}});
-        phase_taps_.set_position(el, pos, "TrafoContainer::compute_results");
+        const int ppos = wanted(phase_taps_, results_phase_tap_override_, phase_on, el);
+        const int rpos = wanted(ratio_taps_, results_ratio_tap_override_, ratio_on, el);
+        if(ppos == NONE && rpos == NONE) continue;
+        moved.push_back(el);
+        results_saved_values_.push_back({ratio_(el), shift_(el)});
+        results_saved_positions_.push_back({phase_taps_.has(el) ? phase_taps_.position(el) : 0,
+                                            ratio_taps_.has(el) ? ratio_taps_.position(el) : 0});
+        if(ppos != NONE){
+            phase_taps_.set_position(el, ppos, "TrafoContainer::compute_results");
+            res_phase_tap_position_[static_cast<std::size_t>(el)] = ppos;
+        }
+        if(rpos != NONE){
+            ratio_taps_.set_position(el, rpos, "TrafoContainer::compute_results");
+            res_ratio_tap_position_[static_cast<std::size_t>(el)] = rpos;
+        }
         _apply_tap_position(el);
         _update_internal_coeffs(el);
-        res_phase_tap_position_[static_cast<std::size_t>(el)] = pos;
     }
     return moved;
 }
 
-void TrafoContainer::_restore_results_phase_tap_override(const std::vector<int> & moved)
+void TrafoContainer::_restore_results_tap_override(const std::vector<int> & moved)
 {
     for(std::size_t k = 0; k < moved.size(); ++k){
-        const int el = results_saved_[k].first;
-        phase_taps_.set_position(el, moved[k], "TrafoContainer::compute_results");
-        ratio_(el) = results_saved_[k].second[0];
-        shift_(el) = results_saved_[k].second[1];
+        const int el = moved[k];
+        if(phase_taps_.has(el)) phase_taps_.set_position(el, results_saved_positions_[k].first, "TrafoContainer::compute_results");
+        if(ratio_taps_.has(el)) ratio_taps_.set_position(el, results_saved_positions_[k].second, "TrafoContainer::compute_results");
+        ratio_(el) = results_saved_values_[k].first;
+        shift_(el) = results_saved_values_[k].second;
         _update_internal_coeffs(el);
     }
-    results_saved_.clear();
+    results_saved_values_.clear();
+    results_saved_positions_.clear();
 }
 
 void TrafoContainer::set_tap_changer(bool phase, int el, int low_tap, int position,

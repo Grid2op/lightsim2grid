@@ -372,6 +372,7 @@ def init(net : pypo.network.Network,
     df_trafo, tor_sub, tex_sub = _aux_add_trafos(
         model, net, net_pu, sort_index, voltage_levels, bus_df, first_bus_per_vl,
         ol_current, keep_half_open_lines, fuse_zero_impedance_branches, fused_trafo_ids,
+        olf_rules=olf_rules,
     )
 
     # OpenLoadFlow's voltage-control loading rules, over every kind of unit at once

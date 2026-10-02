@@ -314,6 +314,9 @@ class LS2G_API AlgorithmSelector final
         void get_outer_phase_tap(std::vector<int> & positions) const {
             get_prt_solver("get_outer_phase_tap", false)->get_outer_phase_tap(positions);
         }
+        void get_outer_ratio_tap(std::vector<int> & positions) const {
+            get_prt_solver("get_outer_ratio_tap", false)->get_outer_ratio_tap(positions);
+        }
 
         // continuation powerflow primitives (ContinuationSweep) -- NR-based
         // algorithms only, guarded exactly like get_J: both read state the last

@@ -143,7 +143,13 @@ enum class LS2G_API LimitViolationType : int {
     // A TRANSFORMER whose phase tap changer limits the current through one of its sides
     // (`side`) above that limit: the loop would move the tap. `value` the current and `limit`
     // the limit, A. ViolationCategory::CONTROL.
-    PHASE_LIMITER_CURRENT = 18
+    PHASE_LIMITER_CURRENT = 18,
+    // A BUS whose voltage transformers regulate (their ratio tap changers, LSGrid::
+    // set_trafo_ratio_tap_regulation) and no generator does, off their target by more than
+    // half their deadband: OpenLoadFlow's TransformerVoltageControl loop would move the taps
+    // (see outer_loop/TransformerVoltageControlLoop.hpp). `value` the voltage and `limit` the
+    // target, kV. ViolationCategory::CONTROL.
+    TRANSFORMER_VOLTAGE_DEADBAND = 19
 };
 
 /**
@@ -181,7 +187,7 @@ enum class LS2G_API ViolationCategory : int {
     /// controls would settle in.
     /// LOW_VOLTAGE_AT_MIN_Q, HIGH_VOLTAGE_AT_MAX_Q, LOW_VOLTAGE_SVC_STANDBY,
     /// HIGH_VOLTAGE_SVC_STANDBY, HVDC_AC_EMULATION_RELEASE, SLACK_MISMATCH, PHASE_CONTROL_P,
-    /// PHASE_LIMITER_CURRENT.
+    /// PHASE_LIMITER_CURRENT, TRANSFORMER_VOLTAGE_DEADBAND.
     CONTROL = 3
 };
 
@@ -208,6 +214,7 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
         case LimitViolationType::SLACK_MISMATCH:
         case LimitViolationType::PHASE_CONTROL_P:
         case LimitViolationType::PHASE_LIMITER_CURRENT:
+        case LimitViolationType::TRANSFORMER_VOLTAGE_DEADBAND:
             return ViolationCategory::CONTROL;
         default:  // NOT_SIMULATED, DIVERGENCE
             return ViolationCategory::SOLVER;

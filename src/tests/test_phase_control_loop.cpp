@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-// OpenLoadFlow's PhaseControl outer loop (PhaseControlLoop + the PhaseShift extension): an
+// OpenLoadFlow's PhaseControl outer loop (PhaseControlLoop + the BranchControl extension): an
 // active power controller solved for its shift then rounded, a current limiter moved tap by
 // tap, on one symbolic analysis, the inputs untouched. C++14 only.
 

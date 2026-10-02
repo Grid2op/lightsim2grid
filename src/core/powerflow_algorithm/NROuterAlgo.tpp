@@ -32,9 +32,9 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
     Sbus_target_ = Sbus;
     Sbus_ = Sbus;
 
-    // ... and Ybus, whose values the phase shifters patch (see PhaseShift)
+    // ... and Ybus, whose values the phase shifters patch (see BranchControl)
     Ybus_ = Ybus;
-    this->_system.set_phase_mutable_ybus(&Ybus_);
+    this->_system.set_branch_mutable_ybus(&Ybus_);
 
     bool need_init = false;
     if (!this->_setup(Ybus_, V, Sbus_, slack_ids, slack_weights, pv, pq, need_init)) {
@@ -55,6 +55,9 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
     state_.controller_hold_q.clear();
     state_.phase_tap.clear();
     state_.phase_control.clear();
+    state_.ratio_tap.clear();
+    state_.ratio_control.clear();
+    state_.suspended_buses.clear();
     OuterState & state = state_;
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
@@ -167,13 +170,22 @@ bool NROuterAlgo<LinearSolver>::_solve(int max_iter, real_type tol, bool & need_
     // the voltage controllers a loop holds (none: the plan's own state)
     this->_system.set_held_voltage_controllers(state_.controller_hold_q);
     // the phase taps a loop moved, then the shifts it lets the Newton solve for
-    PhaseShift * phase = this->_system.phase_shift();
+    BranchControl * phase = this->_system.branch_control();
     if (phase != nullptr) {
         for (std::size_t t = 0; t < state_.phase_tap.size(); ++t) {
             if (state_.phase_tap[t] != OuterState::TAP_KEEP) phase->set_tap(static_cast<int>(t), state_.phase_tap[t]);
         }
         for (std::size_t t = 0; t < state_.phase_control.size(); ++t) {
             if (state_.phase_control[t] >= 0) phase->set_control_on(static_cast<int>(t), state_.phase_control[t] == 1);
+        }
+        // the ratio taps (a move once), then the voltage controls
+        for (std::size_t t = 0; t < state_.ratio_tap.size(); ++t) {
+            if (state_.ratio_tap[t] == OuterState::TAP_KEEP) continue;
+            phase->set_ratio_tap(static_cast<int>(t), state_.ratio_tap[t]);
+            state_.ratio_tap[t] = OuterState::TAP_KEEP;
+        }
+        for (std::size_t t = 0; t < state_.ratio_control.size(); ++t) {
+            if (state_.ratio_control[t] >= 0) phase->set_ratio_control_on(static_cast<int>(t), state_.ratio_control[t] == 1);
         }
     }
     // the switchable buses: PV (pinned) unless a loop made them PQ, a caller's on top
@@ -240,6 +252,16 @@ void NROuterAlgo<LinearSolver>::_before_init_topology()
     this->_system.set_switchable_vm_buses(switchable);  // a set there: duplicates are fine
     this->_system.set_may_hold_voltage_controllers(decl.holds_voltage_controllers());
     this->_system.set_phase_controllers(decl.phase_shifters(), decl.phase_shifter_column());
+    std::vector<BranchControl::RatioGroupDecl> groups;
+    for (const auto & g : decl.ratio_groups()) {
+        BranchControl::RatioGroupDecl d;
+        d.bus_solver = g.bus_solver;
+        d.target_vm = g.target_vm;
+        d.trafos = g.trafos;
+        d.solved = g.solved;
+        groups.push_back(d);
+    }
+    this->_system.set_ratio_groups(groups);
 }
 
 template<class LinearSolver>

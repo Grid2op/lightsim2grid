@@ -14,6 +14,7 @@
 #include "powerflow_algorithm/outer_loop/HvdcAcEmulationLimitsLoop.hpp"
 #include "powerflow_algorithm/outer_loop/VoltageMonitoringLoop.hpp"
 #include "powerflow_algorithm/outer_loop/PhaseControlLoop.hpp"
+#include "powerflow_algorithm/outer_loop/TransformerVoltageControlLoop.hpp"
 #include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
 #include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
@@ -217,6 +218,25 @@ void bind_solvers(py::module_& m) {
             "above its limit moves one tap at a time. The positions it leaves are in the results "
             "(TrafoInfo.res_phase_tap_position), the inputs are not modified.")
         .def(py::init([]() { return std::make_shared<PhaseControlLoop>(); }));
+
+    py::class_<TransformerVoltageControlLoop, BaseOuterLoop, std::shared_ptr<TransformerVoltageControlLoop> >(
+            m, "TransformerVoltageControl",
+            "OpenLoadFlow's TransformerVoltageControl outer loop (AFTER_GENERATOR_VOLTAGE_CONTROL, what its "
+            "transformerVoltageControlOn creates with that mode; not in the default list). The transformers "
+            "whose ratio tap changer regulates a voltage (LSGrid.set_trafo_ratio_tap_regulation) are solved "
+            "for their ratios, the generators of the low voltage buses frozen meanwhile, then rounded to their "
+            "closest tap. The positions it leaves are in the results (TrafoInfo.res_ratio_tap_position), the "
+            "inputs are not modified.")
+        .def(py::init([](bool use_initial_tap_position, real_type max_controlled_nominal_voltage) {
+                 auto res = std::make_shared<TransformerVoltageControlLoop>();
+                 res->use_initial_tap_position = use_initial_tap_position;
+                 res->max_controlled_nominal_voltage = max_controlled_nominal_voltage;
+                 return res;
+             }), py::arg("use_initial_tap_position") = true, py::arg("max_controlled_nominal_voltage") = 120.)
+        .def_readwrite("use_initial_tap_position", &TransformerVoltageControlLoop::use_initial_tap_position,
+                       "OpenLoadFlow's transformerVoltageControlUseInitialTapPosition")
+        .def_readwrite("max_controlled_nominal_voltage", &TransformerVoltageControlLoop::max_controlled_nominal_voltage,
+                       "OpenLoadFlow's generatorVoltageControlMinNominalVoltage, kV (< 0: automatic)");
 
     // ---- TimerJac ----
     py::class_<TimerJac>(m, "TimerJac", DocSolver::TimerJac.c_str())

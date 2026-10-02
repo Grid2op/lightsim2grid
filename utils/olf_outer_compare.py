@@ -273,6 +273,7 @@ LIGHTSIM_LOOPS = {
     "VoltageMonitoring": lambda: _algorithm.VoltageMonitoring(),
     "ReactiveLimits": lambda: _algorithm.ReactiveLimits(),
     "PhaseControl": lambda: _algorithm.PhaseControl(),
+    "TransformerVoltageControl": lambda: _algorithm.TransformerVoltageControl(),
 }
 
 
@@ -383,6 +384,17 @@ def compare(net_olf, olf_result, net_ls, model, V, ref_bus, slack_gen_id):
     out["olf_slack_mw"] = float(olf_slack)
     out["d_slack_mw"] = float(abs(olf_slack - ls_slack))
 
+    # the ratio taps the loops left (regulating ones), the same way
+    olf_rtc = net_olf.get_ratio_tap_changers(all_attributes=True)
+    olf_rtc = olf_rtc[olf_rtc["regulating"].astype(bool)] if len(olf_rtc) else olf_rtc
+    if len(olf_rtc):
+        ls_rtap = {tr.name: tr.res_ratio_tap_position for tr in model.get_trafos()}
+        olf_rtap = olf_rtc["solved_tap_position"].where(olf_rtc["solved_tap_position"].notna(), olf_rtc["tap"])
+        rdiff = [t for t in olf_rtc.index if t in ls_rtap and int(olf_rtap[t]) != int(ls_rtap[t])]
+        out["n_rtc_regulating"] = len(olf_rtc)
+        out["n_rtc_tap_diff"] = len(rdiff)
+        out["n_rtc_moved"] = int((olf_rtap != olf_rtc["tap"]).sum())
+        out["rtc_tap_diff_ids"] = ";".join(rdiff[:20])
     # the phase taps the loops left: OpenLoadFlow's solved positions against the results'
     olf_ptc = net_olf.get_phase_tap_changers(all_attributes=True)
     olf_ptc = olf_ptc[olf_ptc["regulating"].astype(bool)] if len(olf_ptc) else olf_ptc
@@ -525,6 +537,8 @@ def main(argv=None):
                   f"dQ bus={_q(row['max_dq_bus'])} / gen={_q(row['max_dq_gen'])} MVar, "
                   f"dP vsc={row['max_dp_vsc']:.1e} MW, dQ svc={_q(row.get('max_dq_svc', 0.))} MVar, "
                   f"dQ vsc={_q(row.get('max_dq_vsc', 0.))} MVar, "
+                  + (f"rtc taps {row['n_rtc_tap_diff']} off of {row['n_rtc_regulating']} "
+                     f"({row['n_rtc_moved']} moved), " if 'n_rtc_regulating' in row else "")
                   + (f"pst taps {row['n_pst_tap_diff']} off of {row['n_pst_regulating']} "
                      f"({row['n_pst_moved']} moved), " if 'n_pst_regulating' in row else "") +
                   f"loops [{row.get('ls_loop_iterations', '')}], "

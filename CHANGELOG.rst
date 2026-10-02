@@ -3,6 +3,8 @@ Change Log
 
 [TODO]
 --------
+- Without ``ReactiveLimits``, a bus' reactive power is split between its units differently from
+  OpenLoadFlow (the bus total matches). Follow-up: OpenLoadFlow's dispatch when its reactive limits are off.
 - ``PhaseControl``: OpenLoadFlow's current-limiter one-tap move can undo itself depending on how its
   Newton rounds the shift it writes back (see ``PhaseControlLoop.hpp``); not reproduced, so a limiter
   can end one tap apart. Follow-up: decide whether to mirror it or leave it documented.
@@ -236,6 +238,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   The units' new P is in the results only, their targets are not modified.
 - [ADDED] ``HvdcAcEmulationLimits`` outer loop: OpenLoadFlow's, saturating an AC-emulation hvdc
   line at the limit its droop flow exceeds and releasing it. In the results only.
+- [ADDED] ``TransformerVoltageControl`` outer loop (OpenLoadFlow's AFTER_GENERATOR_VOLTAGE_CONTROL; not in
+  the default list): ratios solved, then rounded to a tap, low voltage generators frozen meanwhile.
+- [ADDED] ``LimitViolationType.TRANSFORMER_VOLTAGE_DEADBAND``, ``TrafoInfo.res_ratio_tap_position``.
 - [ADDED] ``PhaseControl`` outer loop (OpenLoadFlow's, continuous then rounded; not in the default list):
   active power phase shifters solved for their shift, current limiters moved tap by tap.
 - [ADDED] ``LimitViolationType.PHASE_CONTROL_P`` / ``PHASE_LIMITER_CURRENT`` (``ViolationCategory.CONTROL``),

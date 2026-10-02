@@ -214,6 +214,10 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
     for (std::size_t k = 0; k < buses_.size(); ++k) {
         const ControllerBus & bus = buses_[k];
         const int ki = static_cast<int>(k);
+        // a bus whose voltage control another loop suspended (TransformerVoltageControl): neither
+        // a PV bus to check nor one this loop switched, as OpenLoadFlow's (a frozen bus with no
+        // reactive limit type)
+        if (ctx.state != nullptr && ctx.state->suspended_buses.count(bus.bus_solver)) continue;
         real_type target_vm = bus.target_vm;
         if (bus.monitor_svc >= 0) {
             static const std::vector<real_type> none;

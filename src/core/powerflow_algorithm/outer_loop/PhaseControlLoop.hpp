@@ -27,13 +27,13 @@ class LSGrid;
  * set_trafo_phase_tap_regulation), connected at both ends, on two different buses, through
  * one of its own sides:
  *  - ACTIVE_POWER (OpenLoadFlow's CONTROLLER): the Newton first solves for the shift that
- *    gives the target active power on the regulated side (PhaseShift); at the loop's first
+ *    gives the target active power on the regulated side (BranchControl); at the loop's first
  *    check the control is switched off and the shift rounded to the closest tap. A
  *    controller whose transformer is needed for the connectivity of the grid does not
  *    regulate (fixPhaseShifterNecessaryForConnectivity);
  *  - CURRENT_LIMITER (LIMITER): from the second check on, a current above the limit moves
  *    the tap one position, the way that lowers it (the sign of dI/da).
- * Every one of them is declared up front (PhaseShift: a column and a row per controller,
+ * Every one of them is declared up front (BranchControl: a column and a row per controller,
  * the block of every one patched by value), so the whole solve is one symbolic analysis.
  *
  * One known difference with OpenLoadFlow's current limiter. Its one-tap move

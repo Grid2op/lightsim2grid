@@ -123,9 +123,9 @@ void PhaseControlLoop::_initialize(OuterContext & ctx)
 
 OuterLoopStatus PhaseControlLoop::_check(OuterContext & ctx)
 {
-    if (shifters_.empty() || ctx.phase_shift == nullptr) return OuterLoopStatus::STABLE;
+    if (shifters_.empty() || ctx.branch_control == nullptr) return OuterLoopStatus::STABLE;
     OuterState & st = *ctx.state;
-    const PhaseShift & phase = *ctx.phase_shift;
+    const BranchControl & phase = *ctx.branch_control;
     const TapChangers & ptc = ctx.grid->get_trafos().get_tap_changers(true);
     if (ctx.iteration == 0) {
         // the active power controllers are switched off, their shift rounded to the

@@ -85,9 +85,14 @@ public:
     }
     void get_outer_phase_tap(std::vector<int> & positions) const override {
         positions.clear();
-        const PhaseShift * phase = this->_system.phase_shift();
+        const BranchControl * phase = this->_system.branch_control();
         if (phase == nullptr) return;
         phase->positions(positions);  // TAP_KEEP for the transformers it does not handle
+    }
+    void get_outer_ratio_tap(std::vector<int> & positions) const override {
+        positions.clear();
+        const BranchControl * branch = this->_system.branch_control();
+        if (branch != nullptr) branch->ratio_positions(positions);
     }
 
     const OuterLoopDriverParams & get_driver_params() const { return params_; }
@@ -228,7 +233,7 @@ OuterContext NROuterAlgo<LinearSolver>::_context(OuterState * state)
     ctx.slack_bus = slack_bus_;
     ctx.slack_absorbed = this->_system.slack_absorbed();
     ctx.state = state;
-    ctx.phase_shift = this->_system.phase_shift();
+    ctx.branch_control = this->_system.branch_control();
     return ctx;
 }
 
