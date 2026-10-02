@@ -53,9 +53,19 @@ def _ieee14_remote(target_v_kv):
 
 
 def _olf_switches(n):
-    """whether OpenLoadFlow's robust remote voltage control switched a controller to PQ"""
+    """whether OpenLoadFlow's robust remote voltage control switched a controller to PQ.
+
+    Its realistic voltage range is passed explicitly, the one lightsim2grid checks against
+    by default: pypowsybl builds ship different defaults for it (the public one a range so
+    wide the robust mode never triggers here)."""
+    from lightsim2grid.network.from_pypowsybl._olf_const import (
+        _OLF_MIN_REALISTIC_VOLTAGE_PU, _OLF_MAX_REALISTIC_VOLTAGE_PU)
+    params = lf.Parameters()
+    params.provider_parameters = {"voltageRemoteControlRobustMode": "true",
+                                  "minRealisticVoltage": str(_OLF_MIN_REALISTIC_VOLTAGE_PU),
+                                  "maxRealisticVoltage": str(_OLF_MAX_REALISTIC_VOLTAGE_PU)}
     report = rp.ReportNode()
-    lf.run_ac(n, lf.Parameters(), report_node=report)
+    lf.run_ac(n, params, report_node=report)
     return any("remote voltage target is maintained" in line for line in str(report).splitlines())
 
 
