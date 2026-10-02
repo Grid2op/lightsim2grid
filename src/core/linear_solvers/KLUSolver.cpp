@@ -60,6 +60,13 @@ ErrorType KLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
         // std::cout << "\t KLU: refactor error" << std::endl;
         return ErrorType::SolverReFactor;
     }
+    if(rgrowth_threshold_ > 0.){
+        ok = klu_rgrowth(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
+                         const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
+                         const_cast<real_type*>(J.valuePtr()),
+                         symbolic_.get(), numeric_.get(), &common_);
+        if(ok != 1 || !(common_.rgrowth >= rgrowth_threshold_)) return ErrorType::SolverReFactor;
+    }
     return ErrorType::NoError;
 }
 

@@ -235,6 +235,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [BREAKING] The hvdc droop limits of ``get_physical_violations`` / ``compute_physical_violations``
   come from the grid's outer loops, and a saturated line reversed beyond its other limit is
   ``HIGH_P`` on that side, as in OpenLoadFlow.
+- [FIXED] With the refactor fallback on (``NROuter_*``, ``NRRefactorRetry_*``, the batch algorithms),
+  a KLU refactorization with too small a pivot growth is factorized again, as OpenLoadFlow does.
 - [ADDED] ``LimitViolationType.SLACK_MISMATCH``: a single slack absorbing more than the
   ``DistributedSlack`` loop's threshold, on a grid with units flagged to share it.
 - [ADDED] ``LSGrid.set_dc_distribute_slack_on_can_participate`` (off by default): ``dc_pf``

@@ -248,12 +248,22 @@ weights. Only its angles are kept: `DC_VALUES` starts every magnitude at 1 pu
 expressed relative to it -- a start rotated away from the slack is a different start, not
 the same one.
 
-**Open:** that is still not OpenLoadFlow's start. lightsim2grid's DC load flow is not
-OpenLoadFlow's (`DcValueVoltageInitializer` builds its own DC equations), and their angles
-differ by up to a few degrees on real grid snapshots. Most snapshots do not care; on a few,
-with a load increase, the first Newton reaches the other root and `DistributedSlack` then
-disagrees with OpenLoadFlow, or does not converge. Matching OpenLoadFlow's DC equations (or
-starting from its angles when comparing) is what is left for the slack loop.
+With those angles the start is OpenLoadFlow's to a fraction of a degree: lightsim2grid's
+DC (`1/x`, the transformer ratio, the same injections and the same sharing) is the DC that
+`DcValueVoltageInitializer` solves. The comparison harness can also start from
+OpenLoadFlow's own DC angles (`--start olf`), to tell a difference of start from a
+difference of solve.
+
+**The linear solver matters too.** A KLU refactorization reuses the pivots chosen at the
+last factorization, here the Jacobian at the DC start. After a long first solve and a
+large redistribution, one of those pivots can become tiny without being zero:
+`klu_refactor` accepts it, the factors are too inaccurate, and the next Newton diverges
+(SparseLU, which pivots again every time, does not). powsybl-math-native, hence
+OpenLoadFlow, checks the reciprocal pivot growth (`klu_rgrowth`) after every
+refactorization and factorizes again below powsybl's `DEFAULT_RGROWTH_THRESHOLD`. The same
+check is part of lightsim2grid's refactor fallback (`LinearSolverPolicy::
+set_refactor_fallback`, on for `NROuter_*`, `NRRefactorRetry_*` and the batch algorithms
+that edit values), and the factorization it costs is counted as a fallback one.
 
 ### Publishing the results
 

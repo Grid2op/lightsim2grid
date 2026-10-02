@@ -29,6 +29,17 @@ pointer/reference), so plain method-hiding is correct here and avoids an unneces
 vtable / indirect-call overhead that a virtual interface would add to every single
 solver call for no actual polymorphism ever exercised.
 **/
+namespace detail {
+    // a solver that can reject a refactorization on its pivot growth gets the threshold,
+    // any other one is left as it is
+    template<class T>
+    auto set_rgrowth_threshold_impl(T & solver, real_type val, int) -> decltype(solver.set_rgrowth_threshold(val)) {
+        return solver.set_rgrowth_threshold(val);
+    }
+    template<class T>
+    void set_rgrowth_threshold_impl(T &, real_type, long) {}
+}  // namespace detail
+
 template<class LinearSolver>
 class LinearSolverPolicy
 {
@@ -98,7 +109,16 @@ class LinearSolverPolicy
         // RefactorRetryLinearSolver is this policy with the switch on from
         // construction; the batch algorithms turn it on for whatever algorithm they
         // run when they mask buses or switch PV / PQ (BaseAlgo::set_refactor_fallback).
-        void set_refactor_fallback(bool val) noexcept { refactor_fallback_ = val; }
+        //
+        // With it on, a refactorize that went through but with pivots now too small to
+        // trust (a solver that can tell, see KLULinearSolver::set_rgrowth_threshold)
+        // takes the same fallback: OpenLoadFlow's threshold (powsybl's
+        // DEFAULT_RGROWTH_THRESHOLD) on the reciprocal pivot growth. Off, nothing is
+        // checked, so a plain algorithm's results are unchanged.
+        void set_refactor_fallback(bool val) noexcept {
+            refactor_fallback_ = val;
+            detail::set_rgrowth_threshold_impl(inner_, val ? RGROWTH_THRESHOLD : 0., 0);
+        }
         bool refactor_fallback() const noexcept { return refactor_fallback_; }
 
         ErrorType solve(Eigen::Ref<RealVect> b) {
@@ -124,6 +144,10 @@ class LinearSolverPolicy
         }
 
         const LinearSolverStats & get_linear_solver_stats() const noexcept { return stats_; }
+
+        /// the reciprocal pivot growth below which a refactorization is not trusted when
+        /// the fallback is on (powsybl-core's SparseLUDecomposition.DEFAULT_RGROWTH_THRESHOLD)
+        static constexpr real_type RGROWTH_THRESHOLD = 1e-10;
 
         // Called from the owning algorithm's reset_timer() (itself invoked at the start
         // of every compute_pf/compute_pf_dc): zeroes only the timer_* fields, so

@@ -65,7 +65,7 @@ import pypowsybl.loadflow as lf
 
 from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
 from lightsim2grid.network.from_pypowsybl import LightsimResultNetwork, OlfLoadingParameters
-from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages
+from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages, lightsim_bus_to_iidm
 from lightsim2grid.network.from_pypowsybl._aux_add_slack import _default_distributed_slack
 from lightsim2grid.lightsim2grid_cpp import ScalingPolicyType
 from lightsim2grid import algorithm as _algorithm
@@ -173,6 +173,24 @@ def olf_parameters(loops, slack_bus_id=None, conv_eps=1e-9, max_nr_iter=50):
     return params
 
 
+def olf_dc_angles(path, params, extra_load_mw=0., hvdc_limit_factor=None):
+    """The angles (deg, per IIDM bus) OpenLoadFlow's DC_VALUES start gives the Newton:
+    DcValueVoltageInitializer runs a DC load flow on the AC run's own network, with the
+    run's transformer-ratio and DC-approximation settings and its distributed slack (left on
+    the slack bus when it cannot be shared), and keeps the angles. OLF does not hand them
+    over (it refuses a Newton of 0 iterations); this is the same DC load flow, run alone."""
+    dc_params = lf.Parameters.from_json(params.to_json()) if hasattr(lf.Parameters, "from_json") else params
+    provider = dict(dc_params.provider_parameters)
+    provider.pop("outerLoopNames", None)  # AC loop names, a DC run rejects them
+    provider["slackDistributionFailureBehavior"] = "LEAVE_ON_SLACK_BUS"
+    dc_params.provider_parameters = provider
+    net = load(path, extra_load_mw, hvdc_limit_factor)
+    res = lf.run_dc(net, dc_params)[0]
+    if res.status != lf.ComponentStatus.CONVERGED:
+        return None
+    return net.get_buses()["v_angle"]
+
+
 def solve_olf(path, params, extra_load_mw=0., hvdc_limit_factor=None):
     net = load(path, extra_load_mw, hvdc_limit_factor)
     res = lf.run_ac(net, params)
@@ -200,10 +218,11 @@ LIGHTSIM_LOOPS = {
 
 
 def solve_lightsim(path, gen_slack_id, algo=None, max_iter=50, tol=1e-8, olf_rules=None, loops=(),
-                   extra_load_mw=0., hvdc_limit_factor=None):
-    """Build the grid from the unbaked snapshot and solve it from a DC start. ``olf_rules``
-    (an ``OlfLoadingParameters``, or None for none) are OpenLoadFlow's loading rules: OLF
-    always applies them, so a comparison needs them on this side too."""
+                   extra_load_mw=0., hvdc_limit_factor=None, start_angles_deg=None):
+    """Build the grid from the unbaked snapshot and solve it from a DC start: lightsim2grid's
+    own (dc_start), or ``start_angles_deg`` (per IIDM bus, see olf_dc_angles) at 1 pu.
+    ``olf_rules`` (an ``OlfLoadingParameters``, or None for none) are OpenLoadFlow's loading
+    rules: OLF always applies them, so a comparison needs them on this side too."""
     net = load(path, extra_load_mw, hvdc_limit_factor)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
@@ -225,6 +244,8 @@ def solve_lightsim(path, gen_slack_id, algo=None, max_iter=50, tol=1e-8, olf_rul
     model.set_keep_vinit_at_group_controlled_buses(True)  # before any dc_pf
     _enable_max_voltage_change(model)
     v_start = dc_start(model, distributed="DistributedSlack" in loops, max_iter=max_iter, tol=tol)
+    if start_angles_deg is not None:
+        v_start = start_from_angles(model, net, gen_slack_id, start_angles_deg, v_start)
     V = model.ac_pf(v_start, max_iter, tol)
     return net, model, V
 
@@ -240,6 +261,20 @@ def dc_start(model, distributed, max_iter=50, tol=1e-8):
     model.set_dc_distribute_slack_on_can_participate(distributed)
     v_dc = model.dc_pf(flat, max_iter, tol)
     return np.exp(1j * np.angle(v_dc)) if v_dc.shape[0] > 0 else flat
+
+
+def start_from_angles(model, net, gen_slack_id, angles_deg, fallback):
+    """A start at 1 pu with the given angles (per IIDM bus), ``fallback``'s where a bus has
+    none, expressed relative to the slack bus: the Newton keeps the slack bus' own angle,
+    so a start rotated away from it would be another start."""
+    va = np.angle(fallback)
+    for ls_bus, iidm_bus in lightsim_bus_to_iidm(model, net).items():
+        angle = angles_deg.get(iidm_bus, np.nan)
+        if np.isfinite(angle):
+            va[ls_bus] = np.deg2rad(angle)
+    gens = list(model.get_generators())
+    slack_bus = next(g.bus_id for g in gens if g.name == gen_slack_id)
+    return np.exp(1j * (va - va[slack_bus]))
 
 
 def _rotated(angles_deg, ref):
@@ -324,8 +359,12 @@ def run_one(path, args):
     t0 = time.perf_counter()
     # the loading rules depend on use_reactive_limits, set as on the OLF side
     rules = OlfLoadingParameters(reactive_limits=params.use_reactive_limits) if args.olf_rules else None
+    start = None
+    if args.start == "olf":
+        start = olf_dc_angles(path, params, args.extra_load_mw, args.hvdc_limit_factor)
+        row["olf_dc_start"] = start is not None
     net_ls, model, V = solve_lightsim(path, gen_slack_id, args.algo, args.max_iter, args.tol, rules, args.loops,
-                                      args.extra_load_mw, args.hvdc_limit_factor)
+                                      args.extra_load_mw, args.hvdc_limit_factor, start)
     row["ls_converged"] = V.shape[0] > 0
     row["ls_s"] = time.perf_counter() - t0
     stats = model.get_algo().get_linear_solver_stats() if hasattr(model.get_algo(), "get_linear_solver_stats") else None
@@ -360,6 +399,9 @@ def main(argv=None):
     parser.add_argument("--hvdc-limit-factor", type=float, default=None,
                         help="limit the lines in AC emulation to this fraction of their droop "
                              "set point, both directions (so that some saturate)")
+    parser.add_argument("--start", choices=("lightsim", "olf"), default="lightsim",
+                        help="the Newton's start: lightsim2grid's own DC (default), or OpenLoadFlow's "
+                             "DC_VALUES angles, to tell a difference of start from one of solve")
     parser.add_argument("--csv", default=None, help="write one row per snapshot there")
     parser.add_argument("--limit", type=int, default=None, help="only the first N snapshots")
     args = parser.parse_args(argv)

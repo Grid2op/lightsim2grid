@@ -63,6 +63,16 @@ class LS2G_API KLULinearSolver final
         // can this linear solver solve J^T x = b out of the factorization of J
         static constexpr bool CAN_SOLVE_TRANSPOSE = true;  // klu_tsolve
 
+        // klu_refactor keeps the pivot sequence of the last klu_factor and only stops on
+        // a pivot that is now exactly zero: a pivot that became merely tiny goes through
+        // and the factors it gives can be too inaccurate for a Newton to converge. Above
+        // 0, a refactorize whose reciprocal pivot growth (klu_rgrowth) falls below this
+        // threshold fails instead, so that the caller factorizes again (choosing new
+        // pivots) -- what powsybl-math-native, hence OpenLoadFlow, does after every
+        // refactorization. 0 (the default): no check, klu_refactor alone.
+        void set_rgrowth_threshold(real_type val) noexcept { rgrowth_threshold_ = val; }
+        real_type rgrowth_threshold() const noexcept { return rgrowth_threshold_; }
+
     private:
         // KLU frees its symbolic / numeric handles through a pair of functions that
         // also need the `klu_common` control struct, so the deleters are stateful and
@@ -93,6 +103,7 @@ class LS2G_API KLULinearSolver final
         klu_common common_;
         std::unique_ptr<klu_symbolic, SymbolicDeleter> symbolic_;
         std::unique_ptr<klu_numeric, NumericDeleter> numeric_;
+        real_type rgrowth_threshold_ = 0.;
 
         // no copy allowed
         KLULinearSolver(const KLULinearSolver&) = delete;
