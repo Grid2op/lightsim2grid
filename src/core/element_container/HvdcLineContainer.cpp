@@ -251,7 +251,11 @@ real_type HvdcLineContainer::recv_mw(int hvdc_id, real_type p_ctrl_abs_mw, bool 
 
 void HvdcLineContainer::droop_flows_mw(int hvdc_id, real_type raw_mw, real_type & p1_flow_mw, real_type & p2_flow_mw) const
 {
-    const int status = status_droop_(hvdc_id);
+    droop_flows_mw(hvdc_id, raw_mw, status_droop_(hvdc_id), p1_flow_mw, p2_flow_mw);
+}
+
+void HvdcLineContainer::droop_flows_mw(int hvdc_id, real_type raw_mw, int status, real_type & p1_flow_mw, real_type & p2_flow_mw) const
+{
     if(status == 0){
         // linear regime: the flow follows the angle-droop equation
         if(raw_mw >= 0.){
@@ -444,16 +448,22 @@ void HvdcLineContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
         const real_type theta_1 = Va(bus_1_solver.cast_int());
         const real_type theta_2 = Va(bus_2_solver.cast_int());
         const real_type raw = p0_mw_(hvdc_id) + k_mw_per_rad_(hvdc_id) * (theta_1 - theta_2);
+        // the regime the solve used: an outer loop's, where it set one
+        int status = status_droop_(hvdc_id);
+        if(static_cast<std::size_t>(hvdc_id) < results_status_override_.size()){
+            const int over = results_status_override_[static_cast<std::size_t>(hvdc_id)];
+            if(over >= -1 && over <= 1) status = over;
+        }
         real_type p1_flow, p2_flow;
         if(ac){
-            droop_flows_mw(hvdc_id, raw, p1_flow, p2_flow);
+            droop_flows_mw(hvdc_id, raw, status, p1_flow, p2_flow);
         }else{
-            if(status_droop_(hvdc_id) == 0){
+            if(status == 0){
                 // DC linear regime: lossless, mirror of pyloadflow dc.py
                 p1_flow = raw;
                 p2_flow = -raw;
             }else{
-                droop_flows_mw(hvdc_id, raw, p1_flow, p2_flow);
+                droop_flows_mw(hvdc_id, raw, status, p1_flow, p2_flow);
             }
         }
         // res_p is the station injection (generator convention) = -flow

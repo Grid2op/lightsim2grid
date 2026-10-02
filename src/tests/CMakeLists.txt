@@ -88,6 +88,7 @@ add_executable(lightsim2grid_unit_tests
     test_gen_v_gradient.cpp
     test_outer_loop_driver.cpp
     test_distributed_slack_loop.cpp
+    test_hvdc_ac_emulation_limits_loop.cpp
     test_dc_slack_on_can_participate.cpp
     test_bus_element_count.cpp
     test_kcl_from_results.cpp

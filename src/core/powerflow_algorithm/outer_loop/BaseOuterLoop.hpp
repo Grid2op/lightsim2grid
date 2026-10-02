@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "Utils.hpp"
+#include "TaggedIdVec.hpp"
 #include "AlgoConfig.hpp"
 #include "batch_algorithm/LimitViolation.hpp"
 
@@ -69,6 +70,10 @@ struct OuterState
     /// as the grid stores them. Published by LSGrid::compute_results.
     std::vector<real_type> gen_target_p;
     std::vector<real_type> storage_target_p;
+    /// the droop regime (0 linear, +1 saturated 1 -> 2, -1 saturated 2 -> 1) a loop set for
+    /// each hvdc line (grid id), HVDC_KEEP where it kept the grid's; empty until a loop sizes it
+    std::vector<int> hvdc_status;
+    static constexpr int HVDC_KEEP = 2;
 };
 
 /**
@@ -83,12 +88,21 @@ struct OuterContext
 {
     const LSGrid * grid = nullptr;
     const CplxVect * V = nullptr;              ///< complex voltages, pu
+    const RealVect * Va = nullptr;             ///< the angles, rad (a DC solve's are only here)
     const CplxVect * bus_mismatch = nullptr;   ///< see BaseAlgo::get_bus_mismatch
     const RealVect * controller_q = nullptr;   ///< see BaseAlgo::get_controller_q
-    int slack_bus = -1;                        ///< solver id of the (single) slack bus
+    int slack_bus = -1;                        ///< solver id of the slack bus, -1 when several
     /// the distributed slack's unknown, pu (see BaseAlgo::get_slack_absorbed): 0 for a
     /// single-slack Newton, where the slack bus' mismatch carries the whole imbalance
     real_type slack_absorbed = 0.;
+    /// the tolerance of a detection, MW (the caller's, eg compute_physical_violations'; 0
+    /// in the outer-loop mode, where OpenLoadFlow compares strictly)
+    real_type tol_mw = 0.;
+    /// the solver buses this solve left out (a batch row's stranded buses), sorted; may be null
+    const std::vector<int> * masked = nullptr;
+    /// the grid -> solver bus map of the solve (null: the grid's AC one); a DC solve, a
+    /// batch's own labelling, have theirs
+    const SolverBusIdVect * id_me_to_solver = nullptr;
     /// how many times THIS loop was unstable so far in the solve (OpenLoadFlow's
     /// `context.getIteration()`: 0 means it has not changed anything yet)
     int iteration = 0;

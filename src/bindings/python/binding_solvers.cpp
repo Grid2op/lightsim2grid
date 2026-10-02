@@ -11,6 +11,7 @@
 #include "binding_declarations.hpp"
 #include "Solvers.hpp"
 #include "powerflow_algorithm/outer_loop/DistributedSlackLoop.hpp"
+#include "powerflow_algorithm/outer_loop/HvdcAcEmulationLimitsLoop.hpp"
 #include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
 #include "powerflow_algorithm/ScalingPolicies.hpp"
@@ -170,6 +171,10 @@ void bind_solvers(py::module_& m) {
         .def_readwrite("fail_on_residue", &DistributedSlackLoop::fail_on_residue,
                        "OpenLoadFlow's slackDistributionFailureBehavior: FAIL (True) or LEAVE_ON_SLACK_BUS (False) "
                        "when every unit reached a bound before the mismatch was shared");
+
+    py::class_<HvdcAcEmulationLimitsLoop, BaseOuterLoop, std::shared_ptr<HvdcAcEmulationLimitsLoop> >(
+            m, "HvdcAcEmulationLimits", DocSolver::HvdcAcEmulationLimitsLoop.c_str())
+        .def(py::init<>());
 
     // ---- TimerJac ----
     py::class_<TimerJac>(m, "TimerJac", DocSolver::TimerJac.c_str())

@@ -240,11 +240,20 @@ load flow, and with the distributed slack on, that DC load flow already shares t
 imbalance on the participating units. A single-slack DC instead (the slack generator taking
 the whole imbalance) gives initial angles far enough from OpenLoadFlow's for the first
 Newton to reach another root of a weak, radial part of a grid: both converge, to visibly
-different voltages there, and the loop then keeps sharing from that other root. Started
-like OpenLoadFlow, the two agree. `LSGrid.set_dc_distribute_slack_on_can_participate(True)`
+different voltages there, and the loop then keeps sharing from that other root (or a later
+re-solve diverges from it). `LSGrid.set_dc_distribute_slack_on_can_participate(True)`
 makes `dc_pf` share the imbalance on the units flagged "can participate" with their
-weights; the magnitudes need nothing new (a flat 1 pu start, with
-`set_keep_vinit_at_group_controlled_buses` for the buses regulated remotely).
+weights. Only its angles are kept: `DC_VALUES` starts every magnitude at 1 pu
+(`DcValueVoltageInitializer`), and the slack bus keeps its own angle, so a start must be
+expressed relative to it -- a start rotated away from the slack is a different start, not
+the same one.
+
+**Open:** that is still not OpenLoadFlow's start. lightsim2grid's DC load flow is not
+OpenLoadFlow's (`DcValueVoltageInitializer` builds its own DC equations), and their angles
+differ by up to a few degrees on real grid snapshots. Most snapshots do not care; on a few,
+with a load increase, the first Newton reaches the other root and `DistributedSlack` then
+disagrees with OpenLoadFlow, or does not converge. Matching OpenLoadFlow's DC equations (or
+starting from its angles when comparing) is what is left for the slack loop.
 
 ### Publishing the results
 
@@ -368,7 +377,7 @@ solves, on real grid snapshots.
 | 0 | this note; the comparison harness (`utils/olf_outer_compare.py`), baseline with no loop on either side |
 | 1 | `NRAlgo` split, `NROuterAlgo`, `BaseOuterLoop`, declaration, resume, driver, statistics, result hook, Python registration and persistence. With no loop it must match `NRSing_*`, with one analysis -- **done**, but for the persistence of a custom loop list in a pickle or a binary file (with the format bump of phase 6) |
 | 2 | `DistributedSlack`, participation rules unified -- **done** |
-| 3 | `HvdcAcEmulationLimits` |
+| 3 | `HvdcAcEmulationLimits` -- **done**; the snapshots rarely reach their limits, the harness's `--hvdc-limit-factor` lowers them on both engines |
 | 4 | `VoltageMonitoring` |
 | 5 | `ReactiveLimits`, capability curves, unrealistic-voltage check |
 | 6 | tap and section data model, converter, binary format |

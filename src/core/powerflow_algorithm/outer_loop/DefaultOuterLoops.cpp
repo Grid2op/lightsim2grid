@@ -10,6 +10,7 @@
 
 #include "LSGrid.hpp"
 #include "DistributedSlackLoop.hpp"
+#include "HvdcAcEmulationLimitsLoop.hpp"
 
 namespace ls2g {
 
@@ -21,6 +22,7 @@ std::vector<std::shared_ptr<BaseOuterLoop> > make_default_outer_loops(const LSGr
     // ShuntVoltageControl, (AutomationSystem). Each loop joins this list as it is implemented.
     std::vector<std::shared_ptr<BaseOuterLoop> > res;
     res.push_back(std::make_shared<DistributedSlackLoop>());
+    res.push_back(std::make_shared<HvdcAcEmulationLimitsLoop>());
     return res;
 }
 

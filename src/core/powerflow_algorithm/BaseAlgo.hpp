@@ -613,6 +613,9 @@ class LS2G_API BaseAlgo : public BaseConstants
             gen_p_mw.clear();
             storage_p_mw.clear();
         }
+        // the droop regime the last solve's outer loops set per hvdc line (OuterState::
+        // hvdc_status), empty when none did
+        virtual void get_outer_hvdc_status(std::vector<int> & status) const { status.clear(); }
 
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}

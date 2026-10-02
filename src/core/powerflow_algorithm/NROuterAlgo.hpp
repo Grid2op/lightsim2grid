@@ -80,6 +80,9 @@ public:
         gen_p_mw = state_.gen_target_p;
         storage_p_mw = state_.storage_target_p;
     }
+    void get_outer_hvdc_status(std::vector<int> & status) const override {
+        status = state_.hvdc_status;
+    }
 
     const OuterLoopDriverParams & get_driver_params() const { return params_; }
     void set_driver_params(const OuterLoopDriverParams & params) {
@@ -200,6 +203,7 @@ OuterContext NROuterAlgo<LinearSolver>::_context(OuterState * state)
     OuterContext ctx;
     ctx.grid = this->lsgrid_ptr_;
     ctx.V = &this->V_;
+    ctx.Va = &this->Va_;
     ctx.bus_mismatch = &this->mis_bus_;
     controller_q_ = this->_system.controller_q();
     ctx.controller_q = &controller_q_;

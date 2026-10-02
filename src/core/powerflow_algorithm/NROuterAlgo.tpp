@@ -42,6 +42,7 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
     state_.Sbus_init = &Sbus_init_;
     state_.gen_target_p.clear();
     state_.storage_target_p.clear();
+    state_.hvdc_status.clear();
     OuterState & state = state_;
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
@@ -49,6 +50,7 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
     {
         OuterContext ctx = _context(&state);
         ctx.V = nullptr;  // nothing solved yet
+        ctx.Va = nullptr;
         for (auto & loop : loops_) {
             if (loop->is_needed(ctx)) active.push_back(loop.get());
         }
@@ -142,6 +144,10 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
 template<class LinearSolver>
 bool NROuterAlgo<LinearSolver>::_solve(int max_iter, real_type tol, bool & need_init, bool check_unrealistic)
 {
+    // what the loops changed outside the injection: the hvdc lines' regimes
+    if (!state_.hvdc_status.empty()) {
+        this->_system.set_hvdc_status_override(state_.hvdc_status, OuterState::HVDC_KEEP);
+    }
     bool converged = this->_newton(max_iter, tol, need_init);
     // the first iteration analyzed (or tried to): every later solve only refactorizes. A
     // solve that converged in zero iterations factorized nothing, so it does not count.
@@ -168,6 +174,7 @@ void NROuterAlgo<LinearSolver>::_before_init_topology()
     state_.Sbus_init = &Sbus_init_;
     OuterContext ctx = _context(&state_);
     ctx.V = nullptr;
+    ctx.Va = nullptr;
     OuterDeclaration decl;
     for (const auto & loop : loops_) loop->declare(ctx, decl);
     std::vector<int> switchable = caller_switchable_;

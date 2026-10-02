@@ -308,6 +308,9 @@ class LS2G_API AlgorithmSelector final
         void get_outer_target_p(std::vector<real_type> & gen_p_mw, std::vector<real_type> & storage_p_mw) const {
             get_prt_solver("get_outer_target_p", false)->get_outer_target_p(gen_p_mw, storage_p_mw);
         }
+        void get_outer_hvdc_status(std::vector<int> & status) const {
+            get_prt_solver("get_outer_hvdc_status", false)->get_outer_hvdc_status(status);
+        }
 
         // continuation powerflow primitives (ContinuationSweep) -- NR-based
         // algorithms only, guarded exactly like get_J: both read state the last

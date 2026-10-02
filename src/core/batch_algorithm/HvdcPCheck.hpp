@@ -201,14 +201,27 @@ inline void check_hvdc_p_violations(const HvdcPPlan & plan,
         if(!std::isfinite(p_mw)) continue;
 
         if(entry.frozen_dir != 0){
-            // frozen at its limit in that direction: released when its droop asks for less
-            const int side = entry.frozen_dir > 0 ? 1 : 2;
-            const real_type flow = entry.frozen_dir > 0 ? p_mw : -p_mw;
-            const real_type limit = entry.frozen_dir > 0 ? entry.pmax_1to2_mw : entry.pmax_2to1_mw;
-            if(std::isfinite(limit) && (flow < limit - tol_mw)){
+            // saturated (frozen) at its limit in that direction: OpenLoadFlow's
+            // AbstractHvdcAcEmulationLimitsOuterLoop.checkSaturationMode. Its droop flow,
+            // strictly inside the limit of the direction it now flows in, releases it; a flow
+            // reversed beyond the other direction's limit saturates it on that side instead.
+            const bool inside = (p_mw > 0. && p_mw < entry.pmax_1to2_mw - tol_mw) ||
+                                (p_mw < 0. && -p_mw < entry.pmax_2to1_mw - tol_mw);
+            if(inside){
+                const int side = entry.frozen_dir > 0 ? 1 : 2;
+                const real_type flow = entry.frozen_dir > 0 ? p_mw : -p_mw;
+                const real_type limit = entry.frozen_dir > 0 ? entry.pmax_1to2_mw : entry.pmax_2to1_mw;
                 out.push_back(LimitViolation{ViolationElementType::HVDC, entry.hvdc_id, side,
                                              LimitViolationType::HVDC_AC_EMULATION_RELEASE, flow,
                                              limit, entry.name});
+            } else if(entry.frozen_dir > 0 && p_mw < 0.){
+                out.push_back(LimitViolation{ViolationElementType::HVDC, entry.hvdc_id, 2,
+                                             LimitViolationType::HIGH_P, -p_mw,
+                                             entry.pmax_2to1_mw, entry.name});
+            } else if(entry.frozen_dir < 0 && p_mw > 0.){
+                out.push_back(LimitViolation{ViolationElementType::HVDC, entry.hvdc_id, 1,
+                                             LimitViolationType::HIGH_P, p_mw,
+                                             entry.pmax_1to2_mw, entry.name});
             }
             continue;
         }

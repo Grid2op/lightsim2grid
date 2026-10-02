@@ -57,7 +57,7 @@ void collect_units(const Container & container,
 
 bool DistributedSlackLoop::_is_needed(const OuterContext & ctx) const
 {
-    return _has_participant(*ctx.grid);
+    return _has_participant(*ctx.grid, ctx.grid->id_me_to_ac_solver());
 }
 
 void DistributedSlackLoop::_initialize(OuterContext & ctx)
@@ -99,20 +99,22 @@ void DistributedSlackLoop::_detect(const OuterContext & ctx, std::vector<LimitVi
     if(!_triggered(ctx, mismatch)) return;
     // only on a grid that says who would share the slack (see is_needed); the outer-loop
     // mode never gets here otherwise
-    if(ctx.is_detection() && !_has_participant(*ctx.grid)) return;
+    if(ctx.is_detection() &&
+       !_has_participant(*ctx.grid, ctx.id_me_to_solver != nullptr ? *ctx.id_me_to_solver
+                                                                   : ctx.grid->id_me_to_ac_solver())) return;
     out.push_back(LimitViolation{ViolationElementType::GRID, -1, 0, LimitViolationType::SLACK_MISMATCH,
                                  mismatch, slack_bus_p_max_mismatch_mw, std::string()});
 }
 
-bool DistributedSlackLoop::_has_participant(const LSGrid & grid)
+bool DistributedSlackLoop::_has_participant(const LSGrid & grid, const SolverBusIdVect & id_me_to_solver)
 {
     std::vector<slack_redistribution::Participant> units;
     std::vector<int> solver_bus;
     collect_units(grid.get_generators(), slack_redistribution::UnitKind::GENERATOR, 1.,
-                  grid.id_me_to_ac_solver(), units, solver_bus);
+                  id_me_to_solver, units, solver_bus);
     if(!units.empty()) return true;
     collect_units(grid.get_storages(), slack_redistribution::UnitKind::STORAGE, -1.,
-                  grid.id_me_to_ac_solver(), units, solver_bus);
+                  id_me_to_solver, units, solver_bus);
     return !units.empty();
 }
 

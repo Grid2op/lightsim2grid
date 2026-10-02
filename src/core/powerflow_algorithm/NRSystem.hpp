@@ -691,6 +691,21 @@ class LS2G_API Hvdc
 
         void apply_step(const Eigen::Ref<const RealVect>& /*dx*/) {}
 
+        /**
+         * The regime (0 linear, +1 saturated 1 -> 2, -1 saturated 2 -> 1) of each droop
+         * line, indexed by its id in the grid; `keep` leaves a line as update_state read it
+         * from the grid. A value edit: every regime's Jacobian entries are declared (an
+         * outer loop changes it between two solves, see HvdcAcEmulationLimitsLoop).
+         */
+        void set_status_override(const std::vector<int>& status_per_line, int keep) {
+            for (int k = 0; k < my_size_; ++k) {
+                const int hvdc_id = data_.hvdc_id[static_cast<std::size_t>(k)];
+                if (hvdc_id < 0 || static_cast<std::size_t>(hvdc_id) >= status_per_line.size()) continue;
+                const int status = status_per_line[static_cast<std::size_t>(hvdc_id)];
+                if (status != keep) data_.status(k) = status;
+            }
+        }
+
         void clear() {
             my_size_ = 0;
             data_.clear();
@@ -1234,6 +1249,13 @@ public:
     void set_may_mask_voltage_control(bool val) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_may_mask_voltage_control(val);
+    }
+
+    // Per-line droop regime of the Hvdc extension, see Hvdc::set_status_override. No-op
+    // without the extension.
+    void set_hvdc_status_override(const std::vector<int>& status_per_line, int keep) {
+        Hvdc* hvdc = _find_extension<Hvdc>();
+        if (hvdc != nullptr) hvdc->set_status_override(status_per_line, keep);
     }
 
     // Per-solve group set-points of the VoltageControl extension (NaN = the grid's

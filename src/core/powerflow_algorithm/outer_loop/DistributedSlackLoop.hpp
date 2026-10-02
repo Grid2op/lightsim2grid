@@ -72,7 +72,7 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         /// OpenLoadFlow's trigger: the mismatch (written in `mismatch_mw`) above the threshold
         bool _triggered(const OuterContext & ctx, real_type & mismatch_mw) const;
         /// whether some unit of `grid` takes part in the slack
-        static bool _has_participant(const LSGrid & grid);
+        static bool _has_participant(const LSGrid & grid, const SolverBusIdVect & id_me_to_solver);
 
         // per solve (see _initialize): the participants, with their initial injection
         // (generator convention, MW), and where each one is now

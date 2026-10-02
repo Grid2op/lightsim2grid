@@ -3,8 +3,8 @@ Change Log
 
 [TODO]
 --------
-- OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: ``DistributedSlack`` is there,
-  the others are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
+- OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: ``DistributedSlack`` and
+  ``HvdcAcEmulationLimits`` are there, the others are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
 - Control limits are detected but never **enforced**: ``compute_physical_violations`` reports a
   distributed-slack machine past ``get_min_p`` / ``get_max_p`` (``GenPCheck``) and a bus past its
   reactive capability (``BusQCheck``), but no algorithm reads a limit, so the solve still
@@ -230,6 +230,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``DistributedSlack`` outer loop (``lightsim2grid.algorithm``): OpenLoadFlow's,
   sharing the slack bus' mismatch on the units flagged "can participate", within their limits.
   The units' new P is in the results only, their targets are not modified.
+- [ADDED] ``HvdcAcEmulationLimits`` outer loop: OpenLoadFlow's, saturating an AC-emulation hvdc
+  line at the limit its droop flow exceeds and releasing it. In the results only.
+- [BREAKING] The hvdc droop limits of ``get_physical_violations`` / ``compute_physical_violations``
+  come from the grid's outer loops, and a saturated line reversed beyond its other limit is
+  ``HIGH_P`` on that side, as in OpenLoadFlow.
 - [ADDED] ``LimitViolationType.SLACK_MISMATCH``: a single slack absorbing more than the
   ``DistributedSlack`` loop's threshold, on a grid with units flagged to share it.
 - [ADDED] ``LSGrid.set_dc_distribute_slack_on_can_participate`` (off by default): ``dc_pf``

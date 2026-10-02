@@ -733,6 +733,19 @@ const std::string DocSolver::DistributedSlackLoop = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::HvdcAcEmulationLimitsLoop = R"mydelimiter(
+    OpenLoadFlow's AcHvdcAcEmulationLimits outer loop, around the Newton of the NROuter_*
+    algorithms (``name()`` is ``"AcHvdcAcEmulationLimits"``).
+
+    An angle-droop ("AC emulation") hvdc line whose droop flow leaves what its converters can
+    transmit in that direction is saturated there: the sending side injects its maximum, the
+    receiving side that minus the losses. A saturated line whose droop flow comes back inside
+    the limit of the direction it now flows in goes back to its droop; one whose flow reversed
+    beyond the other direction's limit is saturated on that side. The flows are published in
+    the regime the loop ended with; the line's own ``status_droop`` is not modified.
+
+)mydelimiter";
+
 const std::string DocSolver::DC_KLU = R"mydelimiter(
     Alternative implementation of the DC solver, it uses the faster KLU solver available in the SuiteSparse library to solve for the DC voltage given the DC admitance matrix and
     the power injected at each nodes (can be unavailable if you build lightsim2grid from source).

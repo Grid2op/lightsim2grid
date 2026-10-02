@@ -9,5 +9,6 @@ list(APPEND SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/OuterLoopDriver.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/DefaultOuterLoops.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/DistributedSlackLoop.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/HvdcAcEmulationLimitsLoop.cpp"
 )
 set(SOURCES ${SOURCES} PARENT_SCOPE)

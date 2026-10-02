@@ -898,6 +898,7 @@ void LSGrid::fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) co
     data.pmax21 = RealVect(nb_droop);
     data.connected1.assign(nb_droop, true);
     data.connected2.assign(nb_droop, true);
+    data.hvdc_id = indices;
     for(int pos = 0; pos < nb_droop; ++pos){
         const int hvdc_id = indices[pos];
         // angle-droop ("AC emulation") needs both remote angles: this must never
@@ -2086,9 +2087,14 @@ void LSGrid::compute_results(bool ac){
     const auto & V = ac ? _algo.get_V() : _dc_algo.get_V();
 
     const SolverBusIdVect & id_me_to_solver = ac ? ac_cache_.id_me_to_solver : dc_cache_.id_me_to_solver;
+    // the hvdc regimes the outer loops chose (NROuter_*): the flows are published in them
+    std::vector<int> hvdc_status;
+    if(ac) _algo.get_outer_hvdc_status(hvdc_status);
+    hvdc_lines_.set_results_status_override(hvdc_status);
     for(GenericContainer * container : _all_containers()){
         container->compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     }
+    hvdc_lines_.set_results_status_override(std::vector<int>());
 
     // the targets the outer loops moved (NROuter_*): what each unit injects before its share
     // of the slack, in place of the grid's own target
@@ -2978,22 +2984,6 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
             svc_standby_check::check_svc_standby_violations(standby_plan, algo.get_V(), tol_vm_pu,
                                                             no_mask, out);
         }
-        // the outer loops' own triggers (detection mode): what the grid's outer loops would
-        // still do after this solve. Only after a solve with ONE slack bus: with several,
-        // the Newton shared the imbalance already and gen_p_check below reads what that left
-        if(layout.slack_bus_id_solver.size() == 1){
-            const CplxVect V = algo.get_V();
-            const CplxVect mismatch = algo.get_bus_mismatch();
-            const RealVect ctrl_q = algo.get_controller_q();
-            OuterContext ctx;
-            ctx.grid = this;
-            ctx.V = &V;
-            ctx.bus_mismatch = &mismatch;
-            ctx.controller_q = &ctrl_q;
-            ctx.slack_bus = layout.slack_bus_id_solver[0].cast_int();
-            ctx.slack_absorbed = algo.get_slack_absorbed();
-            for(const auto & loop : get_outer_loops()) loop->detect(ctx, out);
-        }
         // the generators holding a remote bus from an unrealistic voltage of their own
         remote_voltage_control_check::RemoteVoltageControlPlan remote_plan;
         remote_voltage_control_check::build_remote_voltage_control_plan(
@@ -3003,10 +2993,27 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
                 remote_plan, algo.get_V(), tol_vm_pu, no_mask, [](int){ return false; }, out);
         }
     }
-    hvdc_p_check::HvdcPPlan hvdc_plan;
-    hvdc_p_check::build_hvdc_p_plan(*this, layout.id_me_to_solver, hvdc_plan);
-    if(!hvdc_plan.empty()){
-        hvdc_p_check::check_hvdc_p_violations(hvdc_plan, algo.get_Va(), tol_mva, no_mask, out);
+    // the outer loops' own triggers (detection mode): what the grid's outer loops would still
+    // do after this solve -- the hvdc droop limits, the slack left on a single slack bus (with
+    // several, the Newton shared the imbalance already and gen_p_check below reads what that
+    // left)
+    {
+        const CplxVect V = algo.get_V();
+        const RealVect Va = algo.get_Va();
+        const CplxVect mismatch = ac ? CplxVect(algo.get_bus_mismatch()) : CplxVect();
+        const RealVect ctrl_q = ac ? algo.get_controller_q() : RealVect();
+        OuterContext ctx;
+        ctx.grid = this;
+        ctx.V = &V;
+        ctx.Va = &Va;
+        ctx.bus_mismatch = ac ? &mismatch : nullptr;
+        ctx.controller_q = &ctrl_q;
+        ctx.slack_bus = layout.slack_bus_id_solver.size() == 1 ? layout.slack_bus_id_solver[0].cast_int() : -1;
+        ctx.slack_absorbed = ac ? algo.get_slack_absorbed() : 0.;
+        ctx.tol_mw = tol_mva;
+        ctx.masked = no_mask;
+        ctx.id_me_to_solver = &layout.id_me_to_solver;
+        for(const auto & loop : get_outer_loops()) loop->detect(ctx, out);
     }
     gen_p_check::GenPPlan gen_plan;
     gen_p_check::build_gen_p_plan(*this, layout.id_me_to_solver, gen_plan);

@@ -11,6 +11,8 @@ from python. The driver itself is tested in C++ (src/tests/test_outer_loop_drive
 scripted loops; each loop has its own test file."""
 
 import copy
+import os
+import sys
 import unittest
 import warnings
 
@@ -138,7 +140,8 @@ class TestDistributedSlack(unittest.TestCase):
     def test_in_the_default_list(self):
         from lightsim2grid.algorithm import DistributedSlack
         grid = self._grid(gen_slack_id="B1-G")
-        self.assertEqual([loop.name() for loop in grid.get_outer_loops()], ["DistributedSlack"])
+        self.assertEqual([loop.name() for loop in grid.get_outer_loops()],
+                         ["DistributedSlack", "AcHvdcAcEmulationLimits"])
         loop = DistributedSlack(slack_bus_p_max_mismatch_mw=2., fail_on_residue=False)
         self.assertEqual(loop.slack_bus_p_max_mismatch_mw, 2.)
         self.assertFalse(loop.fail_on_residue)
@@ -183,6 +186,82 @@ class TestDistributedSlack(unittest.TestCase):
         self.assertGreater(_solve(grid).shape[0], 0)
         self.assertFalse([v for v in grid.get_physical_violations()
                           if v.violation_type == LimitViolationType.SLACK_MISMATCH])
+
+
+class TestHvdcAcEmulationLimits(unittest.TestCase):
+    """OpenLoadFlow's AcHvdcAcEmulationLimits loop, from python: an angle-droop hvdc line on
+    case14 whose linear flow (from bus 3 to bus 9) is above what its converters transmit."""
+
+    LF = 0.011
+
+    def _model(self, **kwargs):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from _aux_make_hvdc import make_case14_hvdc
+        params = dict(loss_factor1=self.LF, loss_factor2=self.LF, droop_enabled=True, p0=10.,
+                      droop_mw_per_deg=5., pmax12=15., pmax21=300.)
+        params.update(kwargs)
+        _, model = make_case14_hvdc(3, 9, **params)
+        return model
+
+    def _outer(self, **kwargs):
+        from lightsim2grid.algorithm import HvdcAcEmulationLimits
+        model = self._model(**kwargs)
+        model.change_algorithm(OUTER)
+        model.clear_outer_loops()
+        model.add_outer_loop(HvdcAcEmulationLimits())
+        return model
+
+    def test_saturates_the_line(self):
+        from _aux_make_hvdc import recv_mw
+        model = self._outer()
+        V = _solve(model)
+        self.assertGreater(V.shape[0], 0)
+        stats = model.get_algo().get_outer_loop_stats()
+        self.assertEqual(stats.status, OuterLoopStatus.STABLE)
+        self.assertEqual(stats.loop_iterations, [("AcHvdcAcEmulationLimits", 1)])
+        self.assertEqual(model.get_algo().get_linear_solver_stats().nb_analyze, 1)
+        line = model.get_dclines()[0]
+        self.assertAlmostEqual(line.res_p1_mw, -15., places=8)
+        self.assertAlmostEqual(line.res_p2_mw, recv_mw(15., self.LF, self.LF), places=8)
+        # the regime is the algorithm's: the line's own is untouched
+        self.assertEqual(model.get_status_droop_hvdc(0), 0)
+
+        # the same as a single-slack Newton with the line saturated by hand
+        ref = self._model()
+        ref.change_algorithm(SING)
+        ref.set_status_droop_hvdc(0, 1)
+        V_ref = _solve(ref)
+        self.assertLess(np.abs(V - V_ref).max(), 1e-8)
+
+    def test_saturates_in_the_reverse_direction(self):
+        model = self._outer(p0=-60., pmax12=300., pmax21=20.)
+        self.assertGreater(_solve(model).shape[0], 0)
+        self.assertEqual(model.get_algo().get_outer_loop_stats().status, OuterLoopStatus.STABLE)
+        self.assertAlmostEqual(model.get_dclines()[0].res_p2_mw, -20., places=8)
+
+    def test_inside_its_limits(self):
+        model = self._outer(pmax12=300.)
+        V = _solve(model)
+        stats = model.get_algo().get_outer_loop_stats()
+        self.assertEqual(stats.nb_outer_iterations, 0)
+        ref = self._model(pmax12=300.)
+        ref.change_algorithm(SING)
+        self.assertTrue(np.array_equal(V, _solve(ref)))
+
+    def test_not_needed_without_ac_emulation(self):
+        model = self._outer(droop_enabled=False)
+        self.assertGreater(_solve(model).shape[0], 0)
+        self.assertEqual(model.get_algo().get_outer_loop_stats().loop_iterations, [])
+
+    def test_detection(self):
+        from lightsim2grid.lightsim2grid_cpp import LimitViolationType
+        model = self._model()
+        model.change_algorithm(SING)
+        self.assertGreater(_solve(model).shape[0], 0)
+        found = [v for v in model.get_physical_violations()
+                 if v.violation_type == LimitViolationType.HIGH_P]
+        self.assertEqual(len(found), 1)
+        self.assertGreater(found[0].value, 15.)
 
 
 if __name__ == "__main__":

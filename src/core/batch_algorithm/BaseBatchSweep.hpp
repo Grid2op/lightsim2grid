@@ -209,7 +209,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _violations_n_.clear();
             _physical_violations_.clear();
             _bus_q_plan_.clear();
-            _hvdc_p_plan_.clear();
             _gen_p_plan_.clear();
             // NOT _physical_violations_n_: it describes the BASE CASE, which is L2 (see
             // clear_batch_inputs). A compute() that reuses the base case does not re-solve
@@ -2048,12 +2047,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
                     _physical_violations_[i]);
             }
-            _record_outer_detect(algo, V_solver, _physical_violations_[i]);
-            if(!_hvdc_p_plan_.empty()){
-                hvdc_p_check::check_hvdc_p_violations(_hvdc_p_plan_, algo.get_Va(),
-                                                      _physical_tol_mva_, masked,
-                                                      _physical_violations_[i]);
-            }
+            _record_outer_detect(algo, V_solver, masked, _physical_violations_[i]);
             if(!_gen_p_plan_.empty()){
                 // the weights are THIS row's (a generator contingency re-derives them),
                 // and so is the slack the solve absorbed -- both belong to the system the
@@ -2133,7 +2127,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _gen_pv_release_plan_.clear();
             _svc_standby_plan_.clear();
             _remote_vc_plan_.clear();
-            _hvdc_p_plan_.clear();
             _gen_p_plan_.clear();
             _physical_violations_.clear();
             _bus_q_check_on_ = false;
@@ -2184,33 +2177,36 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     _grid_model, active_layout().id_me_to_solver,
                     active_layout().voltage_control.controllers(), _remote_vc_plan_);
             }
-            hvdc_p_check::build_hvdc_p_plan(_grid_model, active_layout().id_me_to_solver,
-                                            _hvdc_p_plan_);
             gen_p_check::build_gen_p_plan(_grid_model, active_layout().id_me_to_solver,
                                           _gen_p_plan_);
             _outer_detect_loops_ = _grid_model.get_outer_loops();
         }
 
         // The grid's outer loops' own triggers (detection mode, see BaseOuterLoop::detect),
-        // as LSGrid::get_physical_violations reads them: only after a solve with ONE slack
-        // bus (with several, the Newton shared the imbalance already and gen_p_check reads
-        // what that left).
+        // as LSGrid::get_physical_violations reads them (the hvdc droop limits, the slack
+        // left on a single slack bus).
         void _record_outer_detect(const AlgorithmSelector & algo,
                                   const Eigen::Ref<const CplxVect> & V_solver,
+                                  const std::vector<int> * masked,
                                   std::vector<LimitViolation> & out){
-            if(_outer_detect_loops_.empty() || !algo.ac_solver_used()) return;
+            if(_outer_detect_loops_.empty()) return;
             const SolverBusLayout & layout = active_layout();
-            if(layout.slack_bus_id_solver.size() != 1) return;
+            const bool ac = algo.ac_solver_used();
             const CplxVect V(V_solver);
-            const CplxVect mismatch(algo.get_bus_mismatch());
-            const RealVect ctrl_q = algo.get_controller_q();
+            const RealVect Va = algo.get_Va();
+            const CplxVect mismatch = ac ? CplxVect(algo.get_bus_mismatch()) : CplxVect();
+            const RealVect ctrl_q = ac ? algo.get_controller_q() : RealVect();
             OuterContext ctx;
             ctx.grid = &_grid_model;
             ctx.V = &V;
-            ctx.bus_mismatch = &mismatch;
+            ctx.Va = &Va;
+            ctx.bus_mismatch = ac ? &mismatch : nullptr;
             ctx.controller_q = &ctrl_q;
-            ctx.slack_bus = layout.slack_bus_id_solver[0].cast_int();
-            ctx.slack_absorbed = algo.get_slack_absorbed();
+            ctx.slack_bus = layout.slack_bus_id_solver.size() == 1 ? layout.slack_bus_id_solver[0].cast_int() : -1;
+            ctx.slack_absorbed = ac ? algo.get_slack_absorbed() : 0.;
+            ctx.tol_mw = _physical_tol_mva_;
+            ctx.masked = masked;
+            ctx.id_me_to_solver = &layout.id_me_to_solver;
             for(const auto & loop : _outer_detect_loops_) loop->detect(ctx, out);
         }
 
@@ -2251,12 +2247,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     [](int){ return false; },  // the base case disconnects no generator
                     _physical_violations_n_);
             }
-            _record_outer_detect(_algo, _algo.get_V(), _physical_violations_n_);
-            if(!_hvdc_p_plan_.empty()){
-                hvdc_p_check::check_hvdc_p_violations(_hvdc_p_plan_, _algo.get_Va(),
-                                                      _physical_tol_mva_, nullptr,
-                                                      _physical_violations_n_);
-            }
+            _record_outer_detect(_algo, _algo.get_V(), nullptr, _physical_violations_n_);
             if(!_gen_p_plan_.empty()){
                 // the base case is the grid's own: its targets, its weights, no
                 // contingency -- and, in DC, the injection _solve_n_case handed the solver
@@ -3602,7 +3593,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         gen_pv_release_check::GenPvReleasePlan _gen_pv_release_plan_;
         svc_standby_check::SvcStandbyPlan _svc_standby_plan_;
         remote_voltage_control_check::RemoteVoltageControlPlan _remote_vc_plan_;
-        hvdc_p_check::HvdcPPlan _hvdc_p_plan_;
         gen_p_check::GenPPlan _gen_p_plan_;
         std::vector<std::vector<LimitViolation> > _physical_violations_;
         std::vector<LimitViolation> _physical_violations_n_;

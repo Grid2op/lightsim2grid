@@ -278,6 +278,16 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         }
 
         // droop API
+        /**
+         * The droop regime the next compute_results publishes each line's flows in, by line
+         * id: what an outer loop decided (OuterState::hvdc_status) rather than the line's own
+         * status_droop, which is not modified. A value other than -1, 0 or +1 keeps the
+         * line's own; an empty vector (the default) keeps every line's.
+         */
+        void set_results_status_override(const std::vector<int> & status){
+            results_status_override_ = status;
+        }
+
         bool is_droop_active(int hvdc_id) const {
             return droop_enabled_[hvdc_id] && status_global_[hvdc_id];
         }
@@ -336,6 +346,8 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
          * given by `status_droop_`. Mirror of pyloadflow `ac_emulation_flows`.
          */
         void droop_flows_mw(int hvdc_id, real_type raw_mw, real_type & p1_flow_mw, real_type & p2_flow_mw) const;
+        /// the same, in the regime `status` (0 linear, +1 / -1 saturated) rather than the line's own
+        void droop_flows_mw(int hvdc_id, real_type raw_mw, int status, real_type & p1_flow_mw, real_type & p2_flow_mw) const;
 
     protected:
         // solver stuff
@@ -488,6 +500,8 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         RealVect k_mw_per_rad_;
         RealVect pmax_1to2_mw_;
         RealVect pmax_2to1_mw_;
+        // see set_results_status_override (not part of the state: set before each compute_results)
+        std::vector<int> results_status_override_;
         IntVect status_droop_;      // INPUT: 0 linear, +1 sat 1->2, -1 sat 2->1
 };
 
