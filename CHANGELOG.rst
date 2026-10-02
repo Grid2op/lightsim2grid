@@ -3,9 +3,8 @@ Change Log
 
 [TODO]
 --------
-- OpenLoadFlow-style outer loops (reactive limits, slack limits, hvdc saturation) as a
-  non-default ``NROuter_*`` algorithm, keeping one ``analyze`` per solve or batch: assessed in
-  ``docs/dev_notes/outer_loops_fixed_sparsity.md``, nothing implemented.
+- OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: the driver is there, the loops
+  themselves are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
 - Control limits are detected but never **enforced**: ``compute_physical_violations`` reports a
   distributed-slack machine past ``get_min_p`` / ``get_max_p`` (``GenPCheck``) and a bus past its
   reactive capability (``BusQCheck``), but no algorithm reads a limit, so the solve still
@@ -225,6 +224,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [ADDED] ``NROuter_*`` algorithms: a single-slack Newton-Raphson run inside OpenLoadFlow's
+  outer-loop driver (``LSGrid.add_outer_loop``), one symbolic analysis per solve.
+- [ADDED] ``ErrorType.OuterLoopFailed`` and ``ErrorType.UnrealisticState``.
 - [FIXED] ``bake_outer_loops`` no longer freezes a unit at its reactive limit whose bus still has a
   regulating unit with headroom (OpenLoadFlow switches buses, not units).
 - [FIXED] The controllers holding a remote bus share it with the other generators of their bus counted

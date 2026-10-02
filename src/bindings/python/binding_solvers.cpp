@@ -6,6 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+#include <sstream>
+
 #include "binding_declarations.hpp"
 #include "Solvers.hpp"
 #include "AlgorithmSelector.hpp"
@@ -96,7 +98,64 @@ void bind_fdpf_linear_solver_stats(py::class_<Solver>& cls) {
         ;
 }
 
+// Bind what the NROuter_* algorithms add to an NRAlgo: the outer-loop statistics and the
+// driver's parameters (OpenLoadFlow's names, see OuterLoopDriverParams).
+template<typename Solver>
+void bind_outer_algo(py::class_<Solver>& cls) {
+    cls
+        .def("get_outer_loop_stats", &Solver::get_outer_loop_stats, DocSolver::OuterLoopStats.c_str())
+        .def_property("max_outer_iterations",
+            [](const Solver & self){ return self.get_driver_params().max_outer_iterations; },
+            [](Solver & self, int v){ auto p = self.get_driver_params(); p.max_outer_iterations = v; self.set_driver_params(p); },
+            "OpenLoadFlow's maxOuterLoopIterations: cap on the outer iterations of one solve, over every loop")
+        .def_property("voltage_remote_control_robust_mode",
+            [](const Solver & self){ return self.get_driver_params().voltage_remote_control_robust_mode; },
+            [](Solver & self, bool v){ auto p = self.get_driver_params(); p.voltage_remote_control_robust_mode = v; self.set_driver_params(p); },
+            "OpenLoadFlow's voltageRemoteControlRobustMode: defer the unrealistic-voltage check until after the last loop able to fix it")
+        .def_property("min_realistic_voltage",
+            [](const Solver & self){ return self.get_driver_params().min_realistic_voltage; },
+            [](Solver & self, real_type v){ auto p = self.get_driver_params(); p.min_realistic_voltage = v; self.set_driver_params(p); },
+            "OpenLoadFlow's minRealisticVoltage, pu")
+        .def_property("max_realistic_voltage",
+            [](const Solver & self){ return self.get_driver_params().max_realistic_voltage; },
+            [](Solver & self, real_type v){ auto p = self.get_driver_params(); p.max_realistic_voltage = v; self.set_driver_params(p); },
+            "OpenLoadFlow's maxRealisticVoltage, pu")
+        .def_property("min_nominal_voltage_realistic_check",
+            [](const Solver & self){ return self.get_driver_params().min_nominal_voltage_realistic_check; },
+            [](Solver & self, real_type v){ auto p = self.get_driver_params(); p.min_nominal_voltage_realistic_check = v; self.set_driver_params(p); },
+            "OpenLoadFlow's minNominalVoltageRealisticVoltageCheck, kV: buses below it are not checked")
+        ;
+}
+
 void bind_solvers(py::module_& m) {
+    // ---- outer loops (NROuter_*) ----
+    py::enum_<OuterLoopStatus>(m, "OuterLoopStatus", DocSolver::OuterLoopStatus.c_str())
+        .value("STABLE", OuterLoopStatus::STABLE)
+        .value("UNSTABLE", OuterLoopStatus::UNSTABLE)
+        .value("FAILED", OuterLoopStatus::FAILED)
+        .export_values();
+
+    py::class_<OuterLoopStats>(m, "OuterLoopStats", DocSolver::OuterLoopStats.c_str())
+        .def_readonly("status", &OuterLoopStats::status)
+        .def_readonly("failed_loop", &OuterLoopStats::failed_loop)
+        .def_readonly("unrealistic_state", &OuterLoopStats::unrealistic_state)
+        .def_readonly("nb_outer_iterations", &OuterLoopStats::nb_outer_iterations)
+        .def_readonly("nb_passes", &OuterLoopStats::nb_passes)
+        .def_readonly("loop_iterations", &OuterLoopStats::loop_iterations)
+        .def_readonly("nr_iterations", &OuterLoopStats::nr_iterations)
+        .def("__repr__", [](const OuterLoopStats & self){
+            std::ostringstream out;
+            out << "OuterLoopStats(status=" << static_cast<int>(self.status)
+                << ", nb_outer_iterations=" << self.nb_outer_iterations
+                << ", nb_passes=" << self.nb_passes << ")";
+            return out.str();
+        });
+
+    // abstract: the loops themselves are bound with their parameters next to it
+    py::class_<BaseOuterLoop, std::shared_ptr<BaseOuterLoop> >(m, "BaseOuterLoop", DocSolver::BaseOuterLoop.c_str())
+        .def("name", &BaseOuterLoop::name)
+        .def("__repr__", [](const BaseOuterLoop & self){ return self.name() + "()"; });
+
     // ---- TimerJac ----
     py::class_<TimerJac>(m, "TimerJac", DocSolver::TimerJac.c_str())
         .def_readonly("timer_Fx",         &TimerJac::timer_Fx_, DocSolver::timer_Fx.c_str())
@@ -188,6 +247,15 @@ void bind_solvers(py::module_& m) {
         bind_linear_solver_stats(cls);
     }
     {
+        auto cls = py::class_<NROuter_SparseLU>(m, "NROuter_SparseLU", DocSolver::NROuter.c_str())
+            .def(py::init<>())
+            .def("get_J", &NROuter_SparseLU::get_J_python, DocSolver::get_J_python.c_str());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
         auto cls = py::class_<DC_SparseLU>(m, "DC_SparseLU", DocSolver::DC_SparseLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
@@ -253,6 +321,15 @@ void bind_solvers(py::module_& m) {
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
+    {
+        auto cls = py::class_<NROuter_KLU>(m, "NROuter_KLU", DocSolver::NROuter.c_str())
+            .def(py::init<>())
+            .def("get_J", &NROuter_KLU::get_J_python, DocSolver::get_J_python.c_str());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
 #endif  // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
 #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -297,6 +374,15 @@ void bind_solvers(py::module_& m) {
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
+    }
+    {
+        auto cls = py::class_<NROuter_NICSLU>(m, "NROuter_NICSLU", DocSolver::NROuter.c_str())
+            .def(py::init<>())
+            .def("get_J", &NROuter_NICSLU::get_J_python, DocSolver::get_J_python.c_str());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
     }
 #endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
@@ -343,6 +429,15 @@ void bind_solvers(py::module_& m) {
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
+    {
+        auto cls = py::class_<NROuter_CKTSO>(m, "NROuter_CKTSO", DocSolver::NROuter.c_str())
+            .def(py::init<>())
+            .def("get_J", &NROuter_CKTSO::get_J_python, DocSolver::get_J_python.c_str());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
 #endif  // CKTSO_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
     {
@@ -379,6 +474,9 @@ void bind_solvers(py::module_& m) {
             "All-zero if the active solver doesn't track them (e.g. GaussSeidel, or the "
             "FDPF family which exposes get_linear_solver_stats_bp/_bpp on its own concrete "
             "Python type instead, since it holds two linear solvers).")
+        .def("supports_outer_loops", &AlgorithmSelector::supports_outer_loops,
+            "Whether the active algorithm runs outer loops (the NROuter_* family)")
+        .def("get_outer_loop_stats", &AlgorithmSelector::get_outer_loop_stats, DocSolver::OuterLoopStats.c_str())
         .def("get_fdpf_xb_lu",       &AlgorithmSelector::get_fdpf_xb_lu,  py::return_value_policy::reference_internal, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_fdpf_bx_lu",       &AlgorithmSelector::get_fdpf_bx_lu,  py::return_value_policy::reference_internal, DocLSGrid::_internal_do_not_use.c_str());
 }

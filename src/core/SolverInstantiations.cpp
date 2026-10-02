@@ -40,6 +40,7 @@ template class LS2G_API NRAlgo<LinearSolverPolicy<SparseLULinearSolver>, SingleS
 template class LS2G_API BaseDCAlgo<LinearSolverPolicy<SparseLULinearSolver>>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, FDPFMethod::XB>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, FDPFMethod::BX>;
+template class LS2G_API NROuterAlgo<LinearSolverPolicy<SparseLULinearSolver>>;
 
 // ---- KLU (optional, or a doc-only stand-in under _READ_THE_DOCS -- see
 // linear_solvers/KLUSolver.hpp) ----
@@ -50,6 +51,7 @@ template class LS2G_API BaseDCAlgo<LinearSolverPolicy<KLULinearSolver>>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<KLULinearSolver>, FDPFMethod::XB>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<KLULinearSolver>, FDPFMethod::BX>;
 template class LS2G_API NRAlgo<RefactorRetryLinearSolver<KLULinearSolver>, MultiSlackNRSystem>;
+template class LS2G_API NROuterAlgo<LinearSolverPolicy<KLULinearSolver>>;
 #endif
 
 // ---- NICSLU (optional, or a doc-only stand-in under _READ_THE_DOCS -- see
@@ -61,6 +63,7 @@ template class LS2G_API BaseDCAlgo<LinearSolverPolicy<NICSLULinearSolver>>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<NICSLULinearSolver>, FDPFMethod::XB>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<NICSLULinearSolver>, FDPFMethod::BX>;
 template class LS2G_API NRAlgo<RefactorRetryLinearSolver<NICSLULinearSolver>, MultiSlackNRSystem>;
+template class LS2G_API NROuterAlgo<LinearSolverPolicy<NICSLULinearSolver>>;
 #endif
 
 // ---- CKTSO (optional, or a doc-only stand-in under _READ_THE_DOCS -- see
@@ -72,6 +75,7 @@ template class LS2G_API BaseDCAlgo<LinearSolverPolicy<CKTSOLinearSolver>>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<CKTSOLinearSolver>, FDPFMethod::XB>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<CKTSOLinearSolver>, FDPFMethod::BX>;
 template class LS2G_API NRAlgo<RefactorRetryLinearSolver<CKTSOLinearSolver>, MultiSlackNRSystem>;
+template class LS2G_API NROuterAlgo<LinearSolverPolicy<CKTSOLinearSolver>>;
 #endif
 
 } // namespace ls2g

@@ -345,6 +345,28 @@ class LS2G_API LSGrid final
         [[nodiscard]] const AlgorithmSelector & get_dc_algo() const {return _dc_algo;}
 
         /**
+         * The OpenLoadFlow-style outer loops an NROuter_* algorithm runs around its
+         * Newton-Raphson, in the order they are run (see
+         * docs/dev_notes/outer_loops_fixed_sparsity.md). Until the list is edited it is
+         * OpenLoadFlow's default list (make_default_outer_loops); the first edit starts
+         * from it. Other algorithms ignore the list.
+         *
+         * The grid keeps the loops it is given (a later change of their parameters is
+         * seen by the next solve); the algorithm runs clones of them.
+         */
+        void clear_outer_loops() {
+            outer_loops_.clear();
+            outer_loops_default_ = false;
+        }
+        void add_outer_loop(const std::shared_ptr<BaseOuterLoop> & loop);
+        /// back to OpenLoadFlow's default list
+        void reset_outer_loops() {
+            outer_loops_.clear();
+            outer_loops_default_ = true;
+        }
+        [[nodiscard]] std::vector<std::shared_ptr<BaseOuterLoop> > get_outer_loops() const;
+
+        /**
          * The limits the LAST converged powerflow (ac_pf when `ac`, dc_pf otherwise)
          * cannot physically meet -- the same checks the batch algorithms run with
          * `compute_physical_violations`, on this grid's own solve: a voltage
@@ -3092,6 +3114,9 @@ class LS2G_API LSGrid final
         // to solve the newton raphson
         AlgorithmSelector _algo;
         AlgorithmSelector _dc_algo;
+        // see clear_outer_loops / add_outer_loop; empty and `default` until edited
+        std::vector<std::shared_ptr<BaseOuterLoop> > outer_loops_;
+        bool outer_loops_default_ = true;
 
         // forced angle-reference slack bus (gridmodel id, -1 = none).
         // See set_reference_slack_bus.

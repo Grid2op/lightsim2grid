@@ -30,9 +30,13 @@ namespace ls2g {
  *
  * Step-scaling and refactorization strategies are runtime-configurable enums,
  * not template parameters, so the same binary can switch strategy at run time.
+ *
+ * A solve is three protected pieces -- _setup, _newton, _finalize -- that compute_pf
+ * runs in sequence. NROuterAlgo (outer loops around the Newton) derives from this class
+ * and runs _newton again between its loops, from the state the previous call left.
  */
 template<class LinearSolver, class NRSystem>
-class NRAlgo final : public BaseAlgo
+class NRAlgo : public BaseAlgo
 {
 public:
     NRAlgo() noexcept :
@@ -442,6 +446,26 @@ public:
     // }
 
 protected:
+    // the three pieces of a solve, see NRAlgo.tpp
+    bool _setup(const EigenRefConstCplxSpMat     & Ybus,
+                const Eigen::Ref<const CplxVect> & V,
+                const Eigen::Ref<const CplxVect> & Sbus,
+                const Eigen::Ref<const IntVect>  & slack_ids,
+                const Eigen::Ref<const RealVect> & slack_weights,
+                const Eigen::Ref<const IntVect>  & pv,
+                const Eigen::Ref<const IntVect>  & pq,
+                bool                             & need_init);
+    bool _newton(int max_iter, real_type tol, bool need_init);
+    void _finalize();
+
+    // Called by _setup only when the topology is rebuilt: right before the system
+    // claims its rows / columns in the ledger (the last moment to change what it
+    // reserves, eg set_switchable_vm_buses), and right after the sparsity of J is
+    // built (the first moment the positions of its coefficients are known, eg to
+    // push the pinned buses again). No-ops here.
+    virtual void _before_init_topology() {}
+    virtual void _after_build_J_sparsity() {}
+
     void reset_timer() override {
         BaseAlgo::reset_timer();
         detail::reset_stats_timers_impl(_linear_solver, 0);
@@ -463,7 +487,6 @@ protected:
         }
     }
 
-private:
     static IntVect _to_intvect(const std::vector<int>& v) {
         return Eigen::Map<const IntVect>(v.data(), static_cast<Eigen::Index>(v.size()));
     }
@@ -505,6 +528,7 @@ private:
     double timer_scale_;
     double timer_mismatch_;
 
+private:
     // No copy
     NRAlgo(const NRAlgo&) = delete;
     NRAlgo(NRAlgo&&) = delete;

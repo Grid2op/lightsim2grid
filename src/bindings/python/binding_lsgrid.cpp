@@ -101,6 +101,14 @@ void bind_gridmodel(py::module_& m) {
         .def("get_dc_algo_type", &LSGrid::get_dc_algo_type, DocLSGrid::get_dc_algo_type.c_str())
         .def("get_algo", &LSGrid::get_algo, py::return_value_policy::reference_internal, DocLSGrid::get_algo.c_str())
         .def("get_dc_algo", &LSGrid::get_dc_algo, py::return_value_policy::reference_internal, DocLSGrid::get_dc_algo.c_str())
+        .def("clear_outer_loops", &LSGrid::clear_outer_loops,
+             "Empty the list of outer loops an NROuter_* algorithm runs (then add_outer_loop the ones wanted, in order)")
+        .def("add_outer_loop", &LSGrid::add_outer_loop, py::arg("loop"),
+             "Append an outer loop to the list an NROuter_* algorithm runs (starting from OpenLoadFlow's default list if it was never edited)")
+        .def("reset_outer_loops", &LSGrid::reset_outer_loops,
+             "Back to OpenLoadFlow's default list of outer loops")
+        .def("get_outer_loops", &LSGrid::get_outer_loops,
+             "The outer loops an NROuter_* algorithm runs, in order")
         // deprecated method
         .def("change_solver", py::overload_cast<const AlgorithmType&>(&LSGrid::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
         .def("change_solver", py::overload_cast<const std::string&>(&LSGrid::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")

@@ -295,6 +295,17 @@ class LS2G_API AlgorithmSelector final
             get_prt_solver("set_pv_pinned_buses", false)->set_pv_pinned_buses(solver_bus_ids);
         }
 
+        // OpenLoadFlow-style outer loops (NROuter_*), see BaseAlgo::set_outer_loops
+        bool supports_outer_loops() const {
+            return get_prt_solver("supports_outer_loops", false)->supports_outer_loops();
+        }
+        void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops) {
+            get_prt_solver("set_outer_loops", false)->set_outer_loops(loops);
+        }
+        OuterLoopStats get_outer_loop_stats() const {
+            return get_prt_solver("get_outer_loop_stats", false)->get_outer_loop_stats();
+        }
+
         // continuation powerflow primitives (ContinuationSweep) -- NR-based
         // algorithms only, guarded exactly like get_J: both read state the last
         // powerflow left behind, so asking a solver that did not run it is a bug.

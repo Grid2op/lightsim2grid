@@ -671,6 +671,50 @@ const std::string DocSolver::NRRefactorRetry_KLU = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::NROuter = R"mydelimiter(
+    Single-slack Newton-Raphson with OpenLoadFlow's outer loops run around it (the
+    ``NROuter_*`` family: ``NROuter_SparseLU``, ``NROuter_KLU``, ...).
+
+    The loops are the grid's (:func:`lightsim2grid.network.LSGrid.add_outer_loop`); without
+    any edit it is OpenLoadFlow's default list, in its order. The driver follows
+    OpenLoadFlow's: passes over the loops, a re-solve after every loop that changed
+    something, a cap on the total number of outer iterations, and the check that no
+    voltage ended up outside the realistic band.
+
+    Every solve is one symbolic analysis: what any loop may need is reserved in the
+    Jacobian up front, and a loop only rewrites values between two Newton solves. A
+    refactorization that fails falls back to a fresh numeric factorization (counted in
+    `get_linear_solver_stats()`).
+
+    `get_outer_loop_stats()` tells what the last solve's loops did.
+
+)mydelimiter";
+
+const std::string DocSolver::OuterLoopStats = R"mydelimiter(
+    What the outer loops of the last NROuter_* solve did: the final `status`
+    (:class:`OuterLoopStatus`), the loop that failed if any (`failed_loop`), whether the
+    unrealistic-voltage check failed (`unrealistic_state`), the number of outer iterations
+    and of passes, the number of times each loop changed something (`loop_iterations`, in
+    the order of the list) and the Newton iterations of every inner solve
+    (`nr_iterations`, the first solve included).
+
+)mydelimiter";
+
+const std::string DocSolver::BaseOuterLoop = R"mydelimiter(
+    One of OpenLoadFlow's outer loops, run by the NROuter_* algorithms around their
+    Newton-Raphson (see :func:`lightsim2grid.network.LSGrid.add_outer_loop`). `name()` is
+    the OpenLoadFlow name of the loop.
+
+)mydelimiter";
+
+const std::string DocSolver::OuterLoopStatus = R"mydelimiter(
+    What an outer loop concluded after a Newton solve, or the final status of a solve's
+    outer loops: STABLE (nothing left to change), UNSTABLE (the cap on outer iterations
+    was reached while a loop still had something to change) or FAILED (a loop could not
+    go on).
+
+)mydelimiter";
+
 const std::string DocSolver::DC_KLU = R"mydelimiter(
     Alternative implementation of the DC solver, it uses the faster KLU solver available in the SuiteSparse library to solve for the DC voltage given the DC admitance matrix and
     the power injected at each nodes (can be unavailable if you build lightsim2grid from source).

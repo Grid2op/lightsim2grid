@@ -6,5 +6,7 @@ list(APPEND SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemHvdc.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemVoltageControl.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemMultiSlack.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/OuterLoopDriver.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/DefaultOuterLoops.cpp"
 )
 set(SOURCES ${SOURCES} PARENT_SCOPE)

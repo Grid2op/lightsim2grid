@@ -104,6 +104,10 @@ struct LS2G_API DocSolver
     static const std::string FDPF_XB_KLU;
     static const std::string FDPF_BX_KLU;
     static const std::string NRRefactorRetry_KLU;
+    static const std::string NROuter;
+    static const std::string OuterLoopStats;
+    static const std::string BaseOuterLoop;
+    static const std::string OuterLoopStatus;
 
     static const std::string NR_NICSLU;
     static const std::string NRSing_NICSLU;

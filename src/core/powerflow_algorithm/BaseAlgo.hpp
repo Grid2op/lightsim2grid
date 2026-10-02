@@ -26,6 +26,7 @@
 #include "BaseConstants.hpp"
 #include "AlgoConfig.hpp"
 #include "linear_solvers/LinearSolverStats.hpp"
+#include "outer_loop/BaseOuterLoop.hpp"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -588,6 +589,23 @@ class LS2G_API BaseAlgo : public BaseConstants
                                      "not Newton-Raphson based and cannot support a continuation "
                                      "powerflow (see supports_cpf).");
         }
+
+        // ---- OpenLoadFlow-style outer loops (NROuter_* only) --------------------------
+        //
+        // The loops run around the Newton-Raphson are the grid's (LSGrid::add_outer_loop):
+        // the grid hands its list over before each solve and the algorithm keeps a clone of
+        // each, so that a loop's per-solve state is the algorithm's own. Only the NROuter_*
+        // family runs them (see supports_outer_loops); the others reject a list.
+        virtual bool supports_outer_loops() const noexcept { return false; }
+        virtual void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops){
+            if(!loops.empty()){
+                throw std::runtime_error("BaseAlgo::set_outer_loops: this algorithm does not run "
+                                         "outer loops, use an NROuter_* algorithm (see "
+                                         "supports_outer_loops).");
+            }
+        }
+        // what the last solve's outer loops did; empty for an algorithm without them
+        virtual OuterLoopStats get_outer_loop_stats() const { return OuterLoopStats{}; }
 
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}

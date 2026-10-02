@@ -23,6 +23,7 @@
 #include "batch_algorithm/HvdcPCheck.hpp"
 // ... and the operational ones (LSGrid::get_violations)
 #include "batch_algorithm/OperationalCheck.hpp"
+#include "powerflow_algorithm/outer_loop/DefaultOuterLoops.hpp"
 
 #include <cmath>      // std::isfinite (check_positive_finite)
 #include <queue>
@@ -96,6 +97,37 @@ LSGrid::LSGrid(const LSGrid & other)
     _algo.set_config(other.get_algo().get_config());
     _dc_algo.change_algorithm(other._dc_algo.get_name());
     _dc_algo.set_config(other.get_dc_algo().get_config());
+
+    // the copy gets its own loops: a parameter changed on one grid's must not reach the other
+    outer_loops_default_ = other.outer_loops_default_;
+    outer_loops_.clear();
+    for (const auto & loop : other.outer_loops_) outer_loops_.push_back(loop->clone());
+}
+
+void LSGrid::add_outer_loop(const std::shared_ptr<BaseOuterLoop> & loop)
+{
+    if (loop == nullptr) throw std::runtime_error("LSGrid::add_outer_loop: the loop is None.");
+    if (outer_loops_default_) {
+        outer_loops_ = make_default_outer_loops(*this);
+        outer_loops_default_ = false;
+    }
+    const std::string name = loop->name();
+    for (const auto & other : outer_loops_) {
+        if (other->name() == name) {
+            // OpenLoadFlow refuses a list holding the same loop twice as well
+            std::ostringstream exc_;
+            exc_ << "LSGrid::add_outer_loop: the list already holds a '" << name << "' loop "
+                 << "(call clear_outer_loops() first to build a list of your own).";
+            throw std::runtime_error(exc_.str());
+        }
+    }
+    outer_loops_.push_back(loop);
+}
+
+std::vector<std::shared_ptr<BaseOuterLoop> > LSGrid::get_outer_loops() const
+{
+    if (outer_loops_default_) return make_default_outer_loops(*this);
+    return outer_loops_;
 }
 
 //pickle
@@ -804,6 +836,11 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
     bool is_ac = true;
     CplxVect V = pre_process_solver(Vinit,
                                     solve_control.ac_algo_controler());
+
+    if (_algo.supports_outer_loops()) {
+        const std::vector<std::shared_ptr<BaseOuterLoop> > loops = get_outer_loops();
+        _algo.set_outer_loops(std::vector<std::shared_ptr<const BaseOuterLoop> >(loops.begin(), loops.end()));
+    }
 
     // start the solver
     conv = _algo.compute_pf(

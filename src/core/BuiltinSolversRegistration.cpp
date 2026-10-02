@@ -37,6 +37,8 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<FDPF_XB_SparseLU>(); });
     add_builtin("FDPF_BX_SparseLU",
         []{ return std::make_unique<FDPF_BX_SparseLU>(); });
+    add_builtin("NROuter_SparseLU",
+        []{ return std::make_unique<NROuter_SparseLU>(); });
 
 #ifdef KLU_SOLVER_AVAILABLE
     add_builtin("NR_KLU",
@@ -51,6 +53,8 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<FDPF_BX_KLU>(); });
     add_builtin("NRRefactorRetry_KLU",
         []{ return std::make_unique<NRRefactorRetry_KLU>(); });
+    add_builtin("NROuter_KLU",
+        []{ return std::make_unique<NROuter_KLU>(); });
 #endif // KLU_SOLVER_AVAILABLE
 
 #ifdef NICSLU_SOLVER_AVAILABLE
@@ -66,6 +70,8 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<FDPF_BX_NICSLU>(); });
     add_builtin("NRRefactorRetry_NICSLU",
         []{ return std::make_unique<NRRefactorRetry_NICSLU>(); });
+    add_builtin("NROuter_NICSLU",
+        []{ return std::make_unique<NROuter_NICSLU>(); });
 #endif // NICSLU_SOLVER_AVAILABLE
 
 #ifdef CKTSO_SOLVER_AVAILABLE
@@ -81,6 +87,8 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<FDPF_BX_CKTSO>(); });
     add_builtin("NRRefactorRetry_CKTSO",
         []{ return std::make_unique<NRRefactorRetry_CKTSO>(); });
+    add_builtin("NROuter_CKTSO",
+        []{ return std::make_unique<NROuter_CKTSO>(); });
 #endif // CKTSO_SOLVER_AVAILABLE
 }
 
