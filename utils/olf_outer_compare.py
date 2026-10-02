@@ -64,8 +64,8 @@ import pypowsybl as pp
 import pypowsybl.loadflow as lf
 
 from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
-from lightsim2grid.network.from_pypowsybl import LightsimResultNetwork
-from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages, lightsim_bus_to_iidm
+from lightsim2grid.network.from_pypowsybl import LightsimResultNetwork, OlfLoadingParameters
+from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages
 from lightsim2grid.network.from_pypowsybl._aux_add_slack import _default_distributed_slack
 from lightsim2grid.lightsim2grid_cpp import ScalingPolicyType
 
@@ -162,14 +162,17 @@ def _enable_max_voltage_change(model, max_dva=1.0, max_dvm=0.4):
     model.set_ac_algo_config(cfg)
 
 
-def solve_lightsim(path, gen_slack_id, algo=None, max_iter=50, tol=1e-8):
-    """Build the grid from the unbaked snapshot and solve it from a DC start."""
+def solve_lightsim(path, gen_slack_id, algo=None, max_iter=50, tol=1e-8, olf_rules=None):
+    """Build the grid from the unbaked snapshot and solve it from a DC start. ``olf_rules``
+    (an ``OlfLoadingParameters``, or None for none) are OpenLoadFlow's loading rules: OLF
+    always applies them, so a comparison needs them on this side too."""
     net = load(path)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
         model = init_from_pypowsybl(net, gen_slack_id=gen_slack_id, sort_index=False,
                                     buses_for_sub=False, keep_half_open_lines=True,
-                                    fuse_zero_impedance_branches=True)
+                                    fuse_zero_impedance_branches=True,
+                                    olf_rules=olf_rules if olf_rules is not None else False)
     if algo is not None:
         model.change_algorithm(algo)
     model.set_keep_vinit_at_group_controlled_buses(True)  # before any dc_pf
@@ -198,10 +201,13 @@ def compare(net_olf, olf_result, net_ls, model, V, ref_bus, slack_gen_id):
     (a hard-coded 1e-5 pu, so 1e-3 MVar) and publishes 0 there, however exact the solve."""
     out = {}
     olf_v = iidm_bus_voltages(net_olf)
-    solver_to_iidm = lightsim_bus_to_iidm(model, net_ls)
-    ls_v = pd.DataFrame({"vm_pu": np.abs(V), "va_deg": np.degrees(np.angle(V))},
-                        index=[solver_to_iidm.get(s) for s in range(V.shape[0])])
-    ls_v = ls_v[ls_v.index.notna()]
+    # through the result view: it reads a bus merged by fuse_zero_impedance_branches at the
+    # bus it was merged into (the merged one is left unsolved, at its starting voltage)
+    ls_net = LightsimResultNetwork(model, net_ls)
+    ls_bus = ls_net.get_buses()
+    nominal = net_ls.get_voltage_levels()["nominal_v"]
+    ls_v = pd.DataFrame({"vm_pu": ls_bus["v_mag"] / ls_bus["voltage_level_id"].map(nominal),
+                         "va_deg": ls_bus["v_angle"]}).dropna()
     common = olf_v.index.intersection(ls_v.index)
     out["n_bus"] = len(common)
     dvm = (olf_v.loc[common, "vm_pu"] - ls_v.loc[common, "vm_pu"]).abs()
@@ -211,7 +217,6 @@ def compare(net_olf, olf_result, net_ls, model, V, ref_bus, slack_gen_id):
     out["max_dva_deg"] = float(dva.max())
     out["worst_va_bus"] = dva.idxmax()
 
-    ls_net = LightsimResultNetwork(model, net_ls)
     ls_gen = ls_net.get_generators()
     olf_slack = sum(r.active_power_mismatch for r in olf_result.slack_bus_results)
     ls_slack = -ls_gen.loc[slack_gen_id, "p"] - net_ls.get_generators().loc[slack_gen_id, "target_p"]
@@ -256,7 +261,9 @@ def run_one(path, args):
     row["olf_s"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    net_ls, model, V = solve_lightsim(path, gen_slack_id, args.algo, args.max_iter, args.tol)
+    # the loading rules depend on use_reactive_limits, set as on the OLF side
+    rules = OlfLoadingParameters(reactive_limits=params.use_reactive_limits) if args.olf_rules else None
+    net_ls, model, V = solve_lightsim(path, gen_slack_id, args.algo, args.max_iter, args.tol, rules)
     row["ls_converged"] = V.shape[0] > 0
     row["ls_s"] = time.perf_counter() - t0
     stats = model.get_algo().get_linear_solver_stats() if hasattr(model.get_algo(), "get_linear_solver_stats") else None
@@ -279,6 +286,8 @@ def main(argv=None):
     parser.add_argument("--olf-eps", type=float, default=1e-9, help="OpenLoadFlow newtonRaphsonConvEpsPerEq")
     parser.add_argument("--max-iter", type=int, default=50, help="Newton iterations, both engines")
     parser.add_argument("--tol", type=float, default=1e-8, help="lightsim2grid ac_pf tolerance")
+    parser.add_argument("--no-olf-rules", dest="olf_rules", action="store_false",
+                        help="build the lightsim2grid grid without OpenLoadFlow's loading rules")
     parser.add_argument("--csv", default=None, help="write one row per snapshot there")
     parser.add_argument("--limit", type=int, default=None, help="only the first N snapshots")
     args = parser.parse_args(argv)

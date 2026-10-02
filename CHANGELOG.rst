@@ -227,6 +227,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``NROuter_*`` algorithms: a single-slack Newton-Raphson run inside OpenLoadFlow's
   outer-loop driver (``LSGrid.add_outer_loop``), one symbolic analysis per solve.
 - [ADDED] ``ErrorType.OuterLoopFailed`` and ``ErrorType.UnrealisticState``.
+- [ADDED] ``init_from_pypowsybl(olf_rules=True)``: OpenLoadFlow's loading rules (which
+  generators may regulate a voltage, target Q clamped into the limits), shared with
+  ``bake_outer_loops``.
+- [FIXED] ``bake_outer_loops``: a generator is "not started" below 0.01 MW, not 1e-4 MW
+  (OpenLoadFlow compares per-unit values), and a condenser or fictitious one never is.
 - [FIXED] ``bake_outer_loops`` no longer freezes a unit at its reactive limit whose bus still has a
   regulating unit with headroom (OpenLoadFlow switches buses, not units).
 - [FIXED] The controllers holding a remote bus share it with the other generators of their bus counted

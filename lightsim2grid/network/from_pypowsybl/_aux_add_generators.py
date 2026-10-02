@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from ._aux_common import _aux_get_bus, _aux_regulated_bus_view_ids
+from . import _olf_rules
 
 
 def _aux_can_be_pv_flags(can_be_pv, gen_index, other_ids=None):
@@ -43,13 +44,14 @@ def _aux_can_be_pv_flags(can_be_pv, gen_index, other_ids=None):
 
 
 def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
-                        can_be_pv=None, can_be_pv_other_ids=None):
+                        can_be_pv=None, can_be_pv_other_ids=None, olf_rules=None):
     """Add every generator of ``net`` to ``model``. Returns ``(df_gen, gen_sub)``:
     ``df_gen`` is reused by the slack-assignment phase (`_aux_add_slack.py`),
     ``gen_sub`` by the final substation-id bookkeeping in `initLSGrid.py`.
     ``can_be_pv`` flags the generators an outer loop pinned at a reactive limit (see
     `_aux_can_be_pv_flags` for what it accepts, ``can_be_pv_other_ids`` being its
-    ``other_ids``)."""
+    ``other_ids``). ``olf_rules`` (an ``OlfLoadingParameters``, or None) applies
+    OpenLoadFlow's loading rules to the voltage control and the target Q."""
     gen_attrs = [
         "connected", "min_p", "max_p", "target_p", "target_v", "target_q", "p",
         "voltage_regulator_on", "regulated_element_id", "voltage_level_id", "bus_id",
@@ -125,11 +127,18 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
             mask_remote_gen[remote_idx[unresolved]] = False
             gen_reg_bus_view = gen_reg_bus_view[~unresolved]
         vl_reg[mask_remote_gen] = bus_df.loc[gen_reg_bus_view, "voltage_level_id"].values
+    voltage_regulator_on = df_gen["voltage_regulator_on"].to_numpy(bool)
+    target_q = df_gen["target_q"].to_numpy(float)
+    if olf_rules is not None:
+        rules_gen = _olf_rules.generators(net).reindex(df_gen.index)
+        discarded = _olf_rules.generator_voltage_control(net, rules_gen, olf_rules)["discarded"]
+        voltage_regulator_on = voltage_regulator_on & ~discarded.to_numpy(bool)
+        target_q = _olf_rules.generator_target_q(net, rules_gen, olf_rules).to_numpy(float)
     model.init_generators_full(df_gen["target_p"].values,
                             #    df_gen["target_v"].values / voltage_levels.loc[df_gen["voltage_level_id"].values]["nominal_v"].values,
                                df_gen["target_v"].values / voltage_levels.loc[vl_reg]["nominal_v"].values,
-                               df_gen["target_q"].values,
-                               df_gen["voltage_regulator_on"].values,
+                               target_q,
+                               voltage_regulator_on,
                                min_q,
                                max_q,
                                gen_bus

@@ -19,9 +19,22 @@ updated once.
 # OpenLoadFlow's own constants, mirrored
 # ---------------------------------------------------------------------------------------
 
-# Tolerance (MW) for deciding an active power target is "zero": mirrors OLF's own
-# POWER_EPSILON_SI = 1e-4 MW (AbstractLfGenerator.checkIfGeneratorStartedForVoltageControl).
+# OLF's per-unit base (PerUnit.SB, MVA).
+_OLF_SB_MVA = 100.0
+
+# OLF's POWER_EPSILON_SI = 1e-4 (AbstractLfGenerator), compared with active powers in MW in
+# checkActivePowerControl (slack participation: a zero target, a degenerate range): the
+# tolerance (MW) for deciding an active power target is "zero" there.
 _ZERO_P_TOL = 1e-4
+
+# The same POWER_EPSILON_SI, but compared with PER-UNIT values in
+# checkIfGeneratorStartedForVoltageControl (``getTargetP()`` / ``getMinP()`` are per unit
+# there): a generator is "not started" for voltage control below 1e-4 pu, ie this many MW.
+_NOT_STARTED_P_TOL_MW = 1e-4 * _OLF_SB_MVA
+
+# OLF's TARGET_V_EPSILON (LfNetworkLoaderImpl), compared with targets in per unit: two units
+# of one bus regulating one bus with targets further apart are inconsistent.
+_TARGET_V_EPSILON_PU = 1e-2
 
 # OLF's own PlausibleValues.MIN_REACTIVE_RANGE (1 MVar): with the default
 # reactiveRangeCheckMode ("MAX"), a generator whose widest reactive range across its

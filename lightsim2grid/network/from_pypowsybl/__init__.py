@@ -15,7 +15,8 @@ __all__ = ["init",
            "get_pypowsybl_loopfree_distributed_slack_parameters",
            "compare_baked",
            "ComparisonResult",
-           "LightsimResultNetwork"]
+           "LightsimResultNetwork",
+           "OlfLoadingParameters"]
 
 from .initLSGrid import init
 from ._aux_add_buses import dangling_line_boundary_bus
@@ -27,3 +28,4 @@ from ._olf_params import (
 )
 from ._olf_compare import compare_baked, ComparisonResult
 from ._result_network import LightsimResultNetwork
+from ._olf_rules import OlfLoadingParameters

@@ -155,13 +155,11 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 
+# OpenLoadFlow's loading rules, shared with init_from_pypowsybl(olf_rules=...)
+from . import _olf_rules
 # every OLF-mirrored constant and reading-back tolerance lives in one module, see there
 from ._olf_const import (
     _MAX_PLAUSIBLE_ACTIVE_POWER_MW,
-    _MAX_PLAUSIBLE_TARGET_V_PU,
-    _MIN_NOMINAL_V_FOR_TARGET_V_CHECK_KV,
-    _MIN_PLAUSIBLE_TARGET_V_PU,
-    _MIN_REACTIVE_RANGE_MVAR,
     _Q_LIMIT_TOL_ABS,
     _Q_LIMIT_TOL_REL,
     _TARGET_Q_TOL_MVAR,
@@ -680,15 +678,12 @@ def _bake_generator_not_started(network, keep_only_main_comp=True, held=None, df
     """
     df_bus = _get_buses(network) if df_bus is None else df_bus
     gen = network.get_generators(
-        attributes=["voltage_regulator_on", "target_p", "min_p", "q", "connected", "bus_id"]
+        attributes=["voltage_regulator_on", "target_p", "min_p", "q", "connected", "bus_id",
+                    "condenser", "fictitious"]
     )
     if keep_only_main_comp:
         gen = _keep_only_main_comp(gen, df_bus)
-    not_started = (
-        gen["voltage_regulator_on"]
-        & (gen["target_p"].abs() < _ZERO_P_TOL)
-        & (gen["min_p"] > _ZERO_P_TOL)
-    )
+    not_started = gen["voltage_regulator_on"] & _olf_rules.generator_not_started(gen)
     if held is not None:
         not_started &= ~held.reindex(gen.index).fillna(False).astype(bool)
     if not not_started.any():
@@ -700,31 +695,7 @@ def _bake_generator_not_started(network, keep_only_main_comp=True, held=None, df
     network.update_generators(upd)
 
 
-def _generator_max_reactive_range(network, gen_index):
-    """OLF's own default ``reactiveRangeCheckMode`` is ``MAX``: the widest
-    ``max_q - min_q`` across the whole active-power range of the reactive
-    capability curve for a CURVE-kind generator, or simply ``max_q - min_q``
-    for a MIN_MAX (fixed box) generator. Returns a ``pandas.Series`` of ranges
-    (MVAr), indexed like ``gen_index``, ``NaN`` for any id not found.
-    """
-    rng = pd.Series(np.nan, index=gen_index)
-    if not len(gen_index):
-        return rng
-    box = network.get_generators(attributes=["reactive_limits_kind", "min_q", "max_q"])
-    box = box.loc[box.index.intersection(gen_index)]
-    is_box = box["reactive_limits_kind"] == "MIN_MAX"
-    rng.loc[box.index[is_box]] = (box["max_q"] - box["min_q"])[is_box]
-    curve_ids = box.index[~is_box]
-    if len(curve_ids):
-        pts = network.get_reactive_capability_curve_points()
-        # pts is indexed on a (id, num) MultiIndex -- intersecting it directly against
-        # a flat Index of generator ids matches nothing, since a tuple never equals a
-        # bare id; filter on the first level instead.
-        pts = pts.loc[pts.index.get_level_values(0).isin(curve_ids)]
-        if len(pts):
-            pt_range = pts["max_q"] - pts["min_q"]
-            rng.update(pt_range.groupby(level=0).max())
-    return rng
+_generator_max_reactive_range = _olf_rules.generator_max_reactive_range
 
 
 def _bake_generator_voltage_control_discards(network, keep_only_main_comp=True, held=None, df_bus=None,
@@ -770,15 +741,8 @@ def _bake_generator_voltage_control_discards(network, keep_only_main_comp=True, 
 
     reg_nominal_v = _generator_regulated_nominal_v(network, reg, df_bus, reg_bus)
 
-    max_range = _generator_max_reactive_range(network, reg.index).to_numpy()
-    too_small_range = max_range < _MIN_REACTIVE_RANGE_MVAR
-
-    with np.errstate(invalid="ignore", divide="ignore"):
-        target_v_pu = reg["target_v"].to_numpy() / reg_nominal_v
-    implausible_v = (
-        (reg_nominal_v > _MIN_NOMINAL_V_FOR_TARGET_V_CHECK_KV)
-        & ((target_v_pu < _MIN_PLAUSIBLE_TARGET_V_PU) | (target_v_pu > _MAX_PLAUSIBLE_TARGET_V_PU))
-    )
+    too_small_range = _olf_rules.generator_reactive_range_too_small(network, reg).to_numpy(bool)
+    implausible_v = _olf_rules.generator_target_v_implausible(reg, reg_nominal_v).to_numpy(bool)
 
     mask = too_small_range | implausible_v
     if held is not None:
@@ -995,52 +959,17 @@ def _extrapolate_curve_limits(network, df: pd.DataFrame):
     pypowsybl's columns clamp to the end point. On real grid snapshots, units running
     below the P range of their curve are switched at the *extrapolated* limit, which sits
     a visible distance from the clamped one -- far enough that the freeze below would
-    otherwise bake the wrong value. Rows inside their curve, without a curve, or with
-    fewer than two points are untouched.
+    otherwise bake the wrong value. See :func:`_olf_rules.curve_limits_at`.
     """
     if not len(df) or "p" not in df.columns or "min_q_at_p" not in df.columns:
         return df
-    try:
-        pts = network.get_reactive_capability_curve_points()
-    except Exception:  # noqa: BLE001 - no curve support in this pypowsybl
-        return df
-    pts = pts.loc[pts.index.get_level_values(0).isin(df.index)]
-    if not len(pts):
-        return df
-    # one vectorised pass over every curve (a per-curve loop dominates the whole bake on
-    # a large grid): sort the points by (element, p), then read each curve's first two
-    # and last two points by position
-    ids = pts.index.get_level_values(0).to_numpy()
-    p_pt = pts["p"].to_numpy(float)
-    codes = pd.factorize(ids)[0]
-    order = np.lexsort((p_pt, codes))  # stable: points of equal p keep their curve order
-    ids, codes, p_pt = ids[order], codes[order], p_pt[order]
-    qmin_pt = pts["min_q"].to_numpy(float)[order]
-    qmax_pt = pts["max_q"].to_numpy(float)[order]
-    start = np.flatnonzero(np.r_[True, codes[1:] != codes[:-1]])
-    count = np.diff(np.r_[start, len(ids)])
-    start, count = start[count >= 2], count[count >= 2]
-    if not len(start):
-        return df
-    el_ids = ids[start]
     # result column is load convention; curves are in generator convention
-    power = -df["p"].reindex(el_ids).to_numpy(float)
-    below = power < p_pt[start]
-    above = power > p_pt[start + count - 1]
-    # the end segment on the side the unit lies (NaN power is neither below nor above)
-    i1 = np.where(below, start, start + count - 2)
-    i2 = i1 + 1
-    p1, p2 = p_pt[i1], p_pt[i2]
-    keep = (below | above) & (p2 != p1)
-    if not keep.any():
-        return df
-    i1, i2, p1, p2, power = i1[keep], i2[keep], p1[keep], p2[keep], power[keep]
+    qmin, qmax = _olf_rules.curve_limits_at(network, df.index, -df["p"].to_numpy(float),
+                                            df["min_q_at_p"].to_numpy(float),
+                                            df["max_q_at_p"].to_numpy(float))
     df = df.copy()
-    rows = df.index.get_indexer(el_ids[keep])
-    for col, q in (("min_q_at_p", qmin_pt), ("max_q_at_p", qmax_pt)):
-        vals = df[col].to_numpy(float, copy=True)
-        vals[rows] = q[i1] + (q[i2] - q[i1]) * (power - p1) / (p2 - p1)
-        df[col] = vals
+    df["min_q_at_p"] = qmin
+    df["max_q_at_p"] = qmax
     return df
 
 

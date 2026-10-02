@@ -27,6 +27,7 @@ from ...lightsim2grid_cpp import LSGrid  # type: ignore
 from ._aux_common import _aux_ensure_net_pu, _aux_get_operational_limits_current
 from ._aux_add_buses import _aux_add_buses
 from ._aux_add_generators import _aux_add_generators
+from ._olf_rules import OlfLoadingParameters
 from ._aux_add_loads import _aux_add_loads
 from ._aux_add_lines import _aux_add_lines
 from ._aux_add_trafos import _aux_add_trafos
@@ -64,6 +65,7 @@ def init(net : pypo.network.Network,
          can_participate_slack_overshoot=None,
          hvdc_ac_emulation_frozen=None,
          remote_voltage_control_vm_range="olf",
+         olf_rules=False,
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -284,9 +286,26 @@ def init(net : pypo.network.Network,
         side off), ``None`` checks nothing. Never read by a powerflow.
     :type remote_voltage_control_vm_range: str, None or tuple(float, float)
 
+    :param olf_rules: Apply OpenLoadFlow's network-loading rules (``_olf_rules``): a
+        generator OpenLoadFlow would not let regulate a voltage (not started, too small a
+        reactive range, an unreachable regulated bus, an implausible target, inconsistent
+        controls on its bus) is added without voltage control, and a non-regulating
+        generator injects its target Q clamped into its reactive limits at its target P.
+        ``True`` uses the default parameters (``OlfLoadingParameters()``), an
+        ``OlfLoadingParameters`` is used as is. ``False`` (default) reads the network as it
+        is written.
+    :type olf_rules: bool or OlfLoadingParameters
+
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
     """
+    if olf_rules is True:
+        olf_rules = OlfLoadingParameters()
+    elif olf_rules is False:
+        olf_rules = None
+    elif not isinstance(olf_rules, OlfLoadingParameters):
+        raise TypeError(f"olf_rules: expected a bool or an OlfLoadingParameters, got {type(olf_rules).__name__}")
+
     model = LSGrid()
     if hasattr(net, "_nominal_apparent_power"):
         sn_mva_used = getattr(net, "_nominal_apparent_power")
@@ -325,7 +344,8 @@ def init(net : pypo.network.Network,
         svc_ids = net.get_static_var_compensators(attributes=["connected"]).index.append(
             net.get_vsc_converter_stations(attributes=["connected"]).index)
     df_gen, gen_sub = _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
-                                          can_be_pv=can_be_pv, can_be_pv_other_ids=svc_ids)
+                                          can_be_pv=can_be_pv, can_be_pv_other_ids=svc_ids,
+                                          olf_rules=olf_rules)
 
     # loads
     df_load, load_sub = _aux_add_loads(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, df_dl)

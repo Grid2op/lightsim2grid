@@ -292,12 +292,16 @@ New trigger kinds: `SLACK_MISMATCH`, `UNREALISTIC_VOLTAGE`, `REACTIVE_LIMIT_MOVE
   sections and regulation; it has to read them (`get_ratio_tap_changers` and steps,
   `get_phase_tap_changers` and steps, `get_shunt_compensators` and the section frames,
   `get_reactive_capability_curve_points`), with r / x / g / b at the current tap.
-- **The loading rules.** OpenLoadFlow's network-loading rules (not-started units, reactive
-  range below 1 MVar, implausible target voltage, inconsistent controls on one bus,
-  `checkActivePowerControl`, remote / local conflicts, target Q forced into the limits) live
-  only inside `bake_outer_loops`, mixed with result-baking. They move to pure predicates in one
-  Python module, used by `bake_outer_loops` and, opt-in, by `init_from_pypowsybl`. The battery
-  and generator participation rules become the same rule.
+- **The loading rules.** OpenLoadFlow's network-loading rules are pure predicates in
+  `from_pypowsybl/_olf_rules.py`, read by `init_from_pypowsybl(olf_rules=True)` and by
+  `bake_outer_loops`. Done for the generators' voltage control (not started, reactive range,
+  unresolved regulated bus, implausible target, inconsistent controls on one bus) and their
+  target Q (clamped into the limits at target P, curves extrapolated). Still to move there:
+  `checkActivePowerControl` (the generators and the batteries must follow the same rule), and
+  the same voltage-control rules for batteries, VSC stations and SVCs -- OpenLoadFlow's
+  inconsistency check sees every voltage-controlling unit of a bus, not only generators.
+  OpenLoadFlow's `POWER_EPSILON_SI` is compared with per-unit values in the not-started rule
+  (so 0.01 MW) and with MW in the participation rule (1e-4 MW).
 
 ## The continuous controls in the Jacobian
 
