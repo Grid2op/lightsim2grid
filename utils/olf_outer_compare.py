@@ -54,6 +54,7 @@ import argparse
 import csv
 import glob
 import os
+import re
 import sys
 import time
 import warnings
@@ -62,6 +63,7 @@ import numpy as np
 import pandas as pd
 import pypowsybl as pp
 import pypowsybl.loadflow as lf
+import pypowsybl.report as rp
 
 from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
 from lightsim2grid.network.from_pypowsybl import LightsimResultNetwork, OlfLoadingParameters
@@ -127,6 +129,25 @@ def _regulating_phase_shifters(path, pst, extra_load_mw, hvdc_limit_factor, svc_
     return ids, "CURRENT_LIMITER", list(value * flow[keep])
 
 
+#: the lines the current case disconnects (an N-1 case of --n1, set by main): every load of
+#: the snapshot, for either engine, opens them at both ends
+_DISCONNECTED_LINES = ()
+
+
+def pick_lines(path, count, seed):
+    """`count` lines of the snapshot, closed at both ends in its main synchronous component,
+    drawn at random -- the same ones for the same snapshot name and seed."""
+    import zlib
+    net = pp.network.load(path, LOAD_PARAMETERS)
+    lines = net.get_lines(attributes=["connected1", "connected2", "bus1_id"])
+    sync = net.get_buses(attributes=["synchronous_component"])["synchronous_component"]
+    main_component = sync.value_counts().idxmax()
+    ok = lines["connected1"] & lines["connected2"] & (lines["bus1_id"].map(sync) == main_component)
+    ids = sorted(lines.index[ok])
+    rng = np.random.default_rng(seed + zlib.crc32(os.path.basename(path).encode()))
+    return list(rng.choice(ids, size=min(count, len(ids)), replace=False))
+
+
 def load(path, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None, pst=None):
     """The snapshot, with ``extra_load_mw`` added to its largest load of the main synchronous
     component (a mismatch for the slack loops to share; the same on both engines), and, with
@@ -141,6 +162,9 @@ def load(path, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None,
     pst_edit = _regulating_phase_shifters(path, pst, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu) \
         if pst is not None else None
     net = pp.network.load(path, LOAD_PARAMETERS)
+    if _DISCONNECTED_LINES:
+        net.update_lines(id=list(_DISCONNECTED_LINES), connected1=[False] * len(_DISCONNECTED_LINES),
+                         connected2=[False] * len(_DISCONNECTED_LINES))
     if svc_thresholds_pu is not None:
         sa = net.get_extensions("standbyAutomaton")
         if len(sa):
@@ -247,10 +271,103 @@ def olf_dc_angles(path, params, extra_load_mw=0., hvdc_limit_factor=None, svc_th
     return net.get_buses()["v_angle"]
 
 
-def solve_olf(path, params, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None, pst=None):
+def solve_olf(path, params, extra_load_mw=0., hvdc_limit_factor=None, svc_thresholds_pu=None, pst=None,
+              report=None):
+    """OpenLoadFlow on the snapshot; ``report`` (a ``pypowsybl.report.ReportNode``) collects its report."""
     net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu, pst)
-    res = lf.run_ac(net, params)
+    res = lf.run_ac(net, params, report_node=report) if report is not None else lf.run_ac(net, params)
     return net, res[0]
+
+
+def olf_loops_acted(report_text):
+    """{loop name: iterations} of the outer loops OpenLoadFlow's run acted on, from its report:
+    an "Outer loop <name>" node holds an "Outer loop iteration <n>" child per change -- but only
+    for a change it logs something about (the transformer, phase and shunt loops act silently:
+    see olf_controls_moved)."""
+    acted = {}
+    current = None
+    for line in report_text.splitlines():
+        if "Outer loop iteration" in line:
+            if current is not None:
+                acted[current] = acted.get(current, 0) + 1
+            continue
+        m = re.search(r"Outer loop (\w+)\s*$", line)
+        if m:
+            current = m.group(1)
+    return acted
+
+
+def olf_controls_moved(net_olf):
+    """The silent loops OpenLoadFlow's solved state shows acted: a regulating tap changer or
+    shunt left at another position than its input one."""
+    moved = set()
+    for loop, frame, col, initial in (
+            ("TransformerVoltageControl", net_olf.get_ratio_tap_changers(all_attributes=True), "solved_tap_position", "tap"),
+            ("PhaseControl", net_olf.get_phase_tap_changers(all_attributes=True), "solved_tap_position", "tap"),
+            ("ShuntVoltageControl", net_olf.get_shunt_compensators(all_attributes=True), "solved_section_count",
+             "section_count")):
+        if not len(frame):
+            continue
+        reg = frame["voltage_regulation_on" if loop == "ShuntVoltageControl" else "regulating"].astype(bool)
+        solved = frame.loc[reg, col]
+        if ((solved != frame.loc[reg, initial]) & solved.notna()).any():
+            moved.add(loop)
+    return moved
+
+
+#: the loop a violation of a plain solve says would act (detection mode); None: not a loop's
+DETECTED_LOOP = {
+    "SLACK_MISMATCH": "DistributedSlack",
+    "HVDC_AC_EMULATION_RELEASE": "AcHvdcAcEmulationLimits",
+    "LOW_VOLTAGE_SVC_STANDBY": "VoltageMonitoring",
+    "HIGH_VOLTAGE_SVC_STANDBY": "VoltageMonitoring",
+    "LOW_Q": "ReactiveLimits",
+    "HIGH_Q": "ReactiveLimits",
+    "LOW_VOLTAGE_AT_MIN_Q": "ReactiveLimits",
+    "HIGH_VOLTAGE_AT_MAX_Q": "ReactiveLimits",
+    "LOW_VOLTAGE_REMOTE_CONTROL": "ReactiveLimits",
+    "HIGH_VOLTAGE_REMOTE_CONTROL": "ReactiveLimits",
+    "PHASE_CONTROL_P": "PhaseControl",
+    "PHASE_LIMITER_CURRENT": "PhaseControl",
+    "TRANSFORMER_VOLTAGE_DEADBAND": "TransformerVoltageControl",
+    "SHUNT_VOLTAGE_CONTROL": "ShuntVoltageControl",
+}
+
+
+def detected_loops(path, gen_slack_id, loops, olf_rules, max_iter, tol, olf_eps, extra_load_mw=0.,
+                   hvdc_limit_factor=None, svc_thresholds_pu=None, pst=None):
+    """{loop name: violations} a plain single-slack solve of the snapshot reports, with the
+    grid's loop list set to ``loops`` (their detection rules) and OpenLoadFlow's tolerances: its
+    maxReactivePowerMismatch (``olf_eps``, pu of 100 MVA) on the reactive power, strict on the
+    voltages."""
+    net = load(path, extra_load_mw, hvdc_limit_factor, svc_thresholds_pu, pst)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        model = init_from_pypowsybl(net, gen_slack_id=gen_slack_id, sort_index=False,
+                                    buses_for_sub=False, keep_half_open_lines=True,
+                                    fuse_zero_impedance_branches=True, init_vm_pu=1.,
+                                    olf_rules=olf_rules if olf_rules is not None else False)
+    # SparseLU: the plain KLU algorithm has no refactorization fallback and gives up on some
+    # snapshots where a refactorization meets a zero pivot (the outer one falls back)
+    model.change_algorithm("NRSing_SparseLU")
+    model.clear_outer_loops()
+    for name in OLF_ORDER:
+        if name in loops:
+            model.add_outer_loop(LIGHTSIM_LOOPS[name]())
+    model.set_keep_vinit_at_group_controlled_buses(True)
+    _enable_max_voltage_change(model)
+    # the start the outer-loop solve takes (and OpenLoadFlow's DC_VALUES, slack distributed)
+    V = model.ac_pf(dc_start(model, distributed="DistributedSlack" in loops, max_iter=max_iter, tol=tol), max_iter, tol)
+    if V.shape[0] == 0:
+        return None
+    found = {}
+    for v in model.get_physical_violations(True, olf_eps * 100., 0.):
+        loop = DETECTED_LOOP.get(v.violation_type.name)
+        if v.violation_type.name == "HIGH_P" and v.element_type.name == "HVDC":
+            loop = "AcHvdcAcEmulationLimits"
+        if loop is not None:
+            found[loop] = found.get(loop, 0) + 1
+    return found
 
 
 def _enable_max_voltage_change(model, max_dva=1.0, max_dvm=0.4):
@@ -439,8 +556,13 @@ def run_one(path, args):
     t0 = time.perf_counter()
     params = olf_parameters(args.loops, slack_bus_id if args.slack_mode == "name" else None,
                             conv_eps=args.olf_eps, max_nr_iter=args.max_iter)
+    report = rp.ReportNode() if args.detection else None
     net_olf, res = solve_olf(path, params, args.extra_load_mw, args.hvdc_limit_factor, args.svc_thresholds_pu,
-                             args.pst)
+                             args.pst, report)
+    if report is not None:
+        acted = olf_loops_acted(str(report))
+        acted = set(acted) | olf_controls_moved(net_olf)
+        row["olf_loops_acted"] = " ".join(sorted(acted))
     row["olf_status"] = res.status.name
     row["olf_status_text"] = res.status_text
     row["olf_s"] = time.perf_counter() - t0
@@ -470,6 +592,20 @@ def run_one(path, args):
         row["ls_loop_iterations"] = " ".join(f"{name}={nb}" for name, nb in outer.loop_iterations)
     if row["ls_converged"] and res.status == lf.ComponentStatus.CONVERGED:
         row.update(compare(net_olf, res, net_ls, model, V, slack_bus_id, gen_slack_id))
+    if args.detection:
+        found = detected_loops(path, gen_slack_id, args.loops, rules, args.max_iter, args.tol, args.olf_eps,
+                               args.extra_load_mw, args.hvdc_limit_factor, args.svc_thresholds_pu, args.pst)
+        row["detected_loops"] = "" if found is None else " ".join(f"{k}={v}" for k, v in found.items())
+        if found is not None:
+            # against what OpenLoadFlow shows it did, and against the loops NROuter ran
+            row["detection_missed"] = " ".join(sorted(acted - set(found)))
+            row["detection_extra"] = " ".join(sorted(set(found) - acted))
+            ran = set()
+            if model.get_algo().supports_outer_loops():
+                ran = {name for name, nb in model.get_algo().get_outer_loop_stats().loop_iterations if nb > 0}
+            row["ls_loops_acted"] = " ".join(sorted(ran))
+            row["detection_missed_vs_ls"] = " ".join(sorted(ran - set(found)))
+            row["detection_extra_vs_ls"] = " ".join(sorted(set(found) - ran))
     return row
 
 
@@ -507,6 +643,13 @@ def main(argv=None):
     parser.add_argument("--start", choices=("lightsim", "olf"), default="lightsim",
                         help="the Newton's start: lightsim2grid's own DC (default), or OpenLoadFlow's "
                              "DC_VALUES angles, to tell a difference of start from one of solve")
+    parser.add_argument("--detection", action="store_true",
+                        help="also compare the loops a plain solve's get_physical_violations says would act "
+                             "with the ones OpenLoadFlow's run acted on (its report)")
+    parser.add_argument("--n1", type=int, default=0,
+                        help="instead of the snapshot as it is, this many N-1 cases of it: each one random "
+                             "line of its main component opened (see --seed)")
+    parser.add_argument("--seed", type=int, default=0, help="the draw of the --n1 lines")
     parser.add_argument("--csv", default=None, help="write one row per snapshot there")
     parser.add_argument("--limit", type=int, default=None, help="only the first N snapshots")
     args = parser.parse_args(argv)
@@ -519,12 +662,23 @@ def main(argv=None):
     if not snapshots:
         parser.error("no snapshot found (give a path or set $LS2G_SNAPSHOTS)")
 
-    rows = []
+    global _DISCONNECTED_LINES
+    cases = []
     for path in snapshots:
+        if args.n1 > 0:
+            cases.extend((path, (line,)) for line in pick_lines(path, args.n1, args.seed))
+        else:
+            cases.append((path, ()))
+    rows = []
+    for path, opened in cases:
+        _DISCONNECTED_LINES = opened
         try:
             row = run_one(path, args)
+            if opened:
+                row["snapshot"] += " -" + "+".join(opened)
         except Exception as exc:  # one broken snapshot must not stop the sweep
-            row = {"snapshot": os.path.basename(path), "error": f"{type(exc).__name__}: {exc}"}
+            row = {"snapshot": os.path.basename(path) + (" -" + "+".join(opened) if opened else ""),
+                   "error": f"{type(exc).__name__}: {exc}"}
         rows.append(row)
         if "error" in row:
             print(f"{row['snapshot']}: ERROR {row['error']}", flush=True)

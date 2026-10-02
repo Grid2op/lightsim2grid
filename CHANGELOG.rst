@@ -3,6 +3,9 @@ Change Log
 
 [TODO]
 --------
+- ``NRSing_KLU`` (and the other plain KLU algorithms) give up on some real grid snapshots when a
+  refactorization meets a zero pivot: they have no refactorization fallback, which ``NROuter_*`` has.
+  Follow-up: decide whether the fallback (``set_refactor_fallback``) should be on by default.
 - Without ``ReactiveLimits``, a bus' reactive power is split between its units differently from
   OpenLoadFlow (the bus total matches). Follow-up: OpenLoadFlow's dispatch when its reactive limits are off.
 - ``PhaseControl``: OpenLoadFlow's current-limiter one-tap move can undo itself depending on how its
