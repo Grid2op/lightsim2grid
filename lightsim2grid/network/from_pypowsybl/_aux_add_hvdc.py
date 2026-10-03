@@ -11,7 +11,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from ._aux_common import _aux_get_bus
+from ._aux_common import _aux_get_bus, _aux_reactive_limits_at_target_p
 
 
 def _hvdc_pmax_per_direction(net, hvdc_ids, max_p_mw):
@@ -83,15 +83,8 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         vset_pu = np.where(np.isfinite(vset_pu), vset_pu, 1.0)
         qset = df_side["target_q"].values
         qset = np.where(np.isfinite(qset), qset, 0.)
-        # as for the generators (see `_aux_add_generators.py`): "min_q" / "max_q" are NaN
-        # for a station whose reactive_limits_kind is CURVE, its limits are the curve at
-        # its target P -- read alone, such a station was unlimited
-        no_curve = pd.Series(np.nan, index=df_side.index)
-        min_q = df_side.get("min_q_at_target_p", no_curve).fillna(df_side["min_q"]).to_numpy(float)
-        max_q = df_side.get("max_q_at_target_p", no_curve).fillna(df_side["max_q"]).to_numpy(float)
-        # malformed curve data can give min_q > max_q at the target P (as for the generators)
-        swapped = np.isfinite(min_q) & np.isfinite(max_q) & (min_q > max_q)
-        min_q[swapped], max_q[swapped] = max_q[swapped], min_q[swapped].copy()
+        # as for the generators: the curve at the target P for a CURVE-kind station
+        min_q, max_q = _aux_reactive_limits_at_target_p(df_side)
         min_q = np.where(np.isfinite(min_q), min_q, -_max_hvdc_mva)
         max_q = np.where(np.isfinite(max_q), max_q, _max_hvdc_mva)
         power_factor = df_side["power_factor"].values

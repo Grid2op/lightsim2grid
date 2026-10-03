@@ -11,7 +11,7 @@ import copy
 import numpy as np
 import pandas as pd
 
-from ._aux_common import _aux_get_bus, _aux_regulated_bus_view_ids
+from ._aux_common import _aux_get_bus, _aux_reactive_limits_at_target_p, _aux_regulated_bus_view_ids
 
 
 def _aux_can_be_pv_flags(can_be_pv, gen_index, other_ids=None):
@@ -63,27 +63,8 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
     # to handle encoding in 32 bits and overflow when "splitting" the Q values among
     min_float_value = np.finfo(np.float32).min * 1e-4 + 1.
     max_float_value = np.finfo(np.float32).max * 1e-4 + 1.
-    # "min_q"/"max_q" (the flat MIN_MAX box) are NaN for a generator whose
-    # reactive_limits_kind is CURVE -- pypowsybl only populates those through
-    # "min_q_at_target_p"/"max_q_at_target_p" (the capability curve evaluated at the
-    # generator's own target P, available even before any loadflow has been run,
-    # unlike "min_q_at_p" which depends on a solved "p"). Without this, every
-    # CURVE-kind generator silently got the "no limit" float32 sentinel below
-    # regardless of its real reactive range.
-    min_q_src = df_gen["min_q_at_target_p"].where(df_gen["min_q_at_target_p"].notna(), df_gen["min_q"])
-    max_q_src = df_gen["max_q_at_target_p"].where(df_gen["max_q_at_target_p"].notna(), df_gen["max_q"])
-    min_q_aux = 1. * min_q_src.values
-    max_q_aux = 1. * max_q_src.values
-    # malformed source curve data (eg a reactive capability curve point entered with
-    # min_q/max_q swapped) can make the "at target p" interpolation yield min_q > max_q.
-    # OpenLoadFlow tolerates this silently; lightsim2grid's GeneratorContainer::init
-    # hard-rejects it (real case found on a real grid snapshot). Restore a valid
-    # interval by sorting the pair instead of crashing -- this only ever affects the
-    # (already tiny) width of the interval, never which generators get a reactive
-    # constraint at all.
-    swapped = min_q_aux > max_q_aux
-    if swapped.any():
-        min_q_aux[swapped], max_q_aux[swapped] = max_q_aux[swapped], min_q_aux[swapped].copy()
+    # the curve at the target P for a CURVE-kind generator, inverted pairs sorted
+    min_q_aux, max_q_aux = _aux_reactive_limits_at_target_p(df_gen)
     too_small = min_q_aux < min_float_value
     min_q_aux[too_small] = min_float_value
     min_q = min_q_aux.astype(np.float32)

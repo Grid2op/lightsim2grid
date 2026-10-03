@@ -12,6 +12,7 @@ Covers the four regimes: angle-droop linear, fixed setpoint (VSC), fixed setpoin
 (LCC inverter side) and forced saturation. Skipped when pypowsybl is unavailable.
 """
 
+import contextlib
 import unittest
 import numpy as np
 
@@ -157,6 +158,32 @@ class TestHvdcPypowsybl(unittest.TestCase):
         st = model.get_dclines()[0].station2
         self.assertEqual(st.min_q_mvar, -40.0)
         self.assertEqual(st.max_q_mvar, 30.0)
+
+    def test_vsc_reactive_limits_under_copy_on_write(self):
+        # pandas copy-on-write (the default from pandas 3) hands out read-only arrays: the
+        # station limits must be read into arrays the converter may write to
+        import pandas as pd
+        n = _build_net(droop_enabled=False)
+        n.create_curve_reactive_limits(id=["VSC2", "VSC2"], p=[0.0, 200.0],
+                                       min_q=[-40.0, -40.0], max_q=[30.0, 30.0])
+        try:
+            ctx = pd.option_context("mode.copy_on_write", True)
+        except (KeyError, ValueError, pd.errors.OptionError):
+            ctx = contextlib.nullcontext()  # no such option: copy-on-write is always on
+        with ctx:
+            model, _ = self._run_ls(n)
+        st = model.get_dclines()[0].station2
+        self.assertEqual(st.min_q_mvar, -40.0)
+        self.assertEqual(st.max_q_mvar, 30.0)
+
+    def test_compare_sees_the_frozen_flag(self):
+        # two grids that differ only by the hvdc lines flagged frozen are not the same input
+        from lightsim2grid.network.compare_lsgrid import compare_network_input
+        model, _ = self._run_ls(_build_net(max_p=300.0))
+        other = model.copy()
+        self.assertEqual(len(compare_network_input(model, other)), 0)
+        other.set_hvdc_ac_emulation_frozen([True])
+        self.assertGreater(len(compare_network_input(model, other)), 0)
 
     def test_frozen_line_release_is_reported(self):
         # baked at a 100 MW load, OLF saturated the line at its 12 MW operator range: the bake

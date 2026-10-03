@@ -64,8 +64,8 @@ struct Participant {
     /// in the slack", see SlackParticipation::set_can_participate)
     bool in_slack = true;
     /// for a unit only flagged "can participate in the slack": how far BEYOND the limit it
-    /// sits at it was in the reference solve, MW (see
-    /// SlackParticipation::set_can_participate_overshoot); 0 otherwise
+    /// sits at it was in the reference solve, MW, > 0 above its upper limit and < 0 below
+    /// its lower one (see SlackParticipation::set_can_participate_overshoot); 0 otherwise
     real_type overshoot_mw = 0.;
 };
 
@@ -109,7 +109,7 @@ inline Report distribute(const std::vector<Participant> & units,
     // a unit that sat beyond its limit in the reference solve: the exact rule (see
     // distribute_with_overshoot); without one, this one, which gives the same answer
     for(const Participant & unit : units){
-        if(unit.overshoot_mw > 0.){
+        if(unit.overshoot_mw != 0.){
             return distribute_with_overshoot(units, mismatch_mw, eps_mw, new_injection_mw, saturated);
         }
     }
@@ -223,16 +223,18 @@ inline Report distribute_with_overshoot(const std::vector<Participant> & units,
     if(weight_sum <= 0.) return report;
     for(std::size_t k = 0; k < nb; ++k){
         const real_type inj = units[k].injection_mw;
+        const real_type over = units[k].overshoot_mw;
         real_type l = std::isfinite(units[k].min_p_mw) ? units[k].min_p_mw : -inf;
         real_type h = std::isfinite(units[k].max_p_mw) ? units[k].max_p_mw : inf;
-        if(inj < 0.) h = std::min(h, 0.);
+        // the side of 0 MW the unit is on: that of its injection, and at 0 MW the one its
+        // overshoot gives -- a drawing unit capped at 0 MW sits beyond it from below (> 0)
+        const bool drawing = inj < 0. || (inj <= eps_mw && over > 0.);
+        if(drawing) h = std::min(h, 0.);
         else l = std::max(l, 0.);
-        // the overshoot is on the side of the limit the unit sits at
+        // the overshoot is beyond the limit its sign says the unit sits at
         real_type offset = 0.;
-        if(units[k].overshoot_mw > 0.){
-            if(std::isfinite(h) && inj >= h - eps_mw) offset = units[k].overshoot_mw;
-            else if(std::isfinite(l) && inj <= l + eps_mw) offset = -units[k].overshoot_mw;
-        }
+        if(over > 0. && std::isfinite(h) && inj >= h - eps_mw) offset = over;
+        else if(over < 0. && std::isfinite(l) && inj <= l + eps_mw) offset = over;
         lo[k] = std::min(l, inj);
         hi[k] = std::max(h, inj);
         virt[k] = inj + offset;
@@ -289,6 +291,22 @@ inline Report distribute_with_overshoot(const std::vector<Participant> & units,
         }
     }
     report.not_distributed_mw = mismatch_mw - done;
+    // as `distribute`: a unit only flagged "can participate" still moving cannot keep the
+    // solve's slack from being emptied, every unit of it at its bound keeps them all in it
+    bool any_in_slack = false;
+    bool slack_left = false;
+    for(std::size_t k = 0; k < nb; ++k){
+        if(!units[k].in_slack) continue;
+        any_in_slack = true;
+        if(!saturated[k]){
+            slack_left = true;
+            break;
+        }
+    }
+    if(any_in_slack && !slack_left){
+        report.all_saturated = true;
+        saturated.assign(nb, 0);
+    }
     return report;
 }
 

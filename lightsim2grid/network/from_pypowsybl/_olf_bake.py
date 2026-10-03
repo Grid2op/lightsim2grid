@@ -444,7 +444,8 @@ class BakeResult(NamedTuple):
     #: the generators and batteries left out of the slack only because OLF capped them
     #: at an active limit -- for ``init_from_pypowsybl(can_participate_slack=...)``
     can_participate_slack: pd.Index
-    #: how far beyond that limit each of them was in the reference distribution, MW (indexed
+    #: how far beyond that limit each of them was in the reference distribution, MW (> 0 above
+    #: an upper limit, < 0 below a lower one, indexed
     #: like ``can_participate_slack``) -- for
     #: ``init_from_pypowsybl(can_participate_slack_overshoot=...)``
     can_participate_slack_overshoot: pd.Series = None
@@ -541,12 +542,14 @@ def _bake_hvdc_ac_emulation_limits(network, keep_only_main_comp=True, df_bus=Non
         network.get_vsc_converter_stations(attributes=["p", "connected", "bus_id"]),
         network.get_lcc_converter_stations(attributes=["p", "connected", "bus_id"]),
     ])
+    if keep_only_main_comp:
+        stations_in = stations.index.isin(_keep_only_main_comp(stations, df_bus).index)
+    else:
+        stations_in = stations["connected"].to_numpy(bool)
+    stations_in = pd.Series(stations_in, index=stations.index)
     st1 = stations.loc[hvdc["converter_station1_id"].to_numpy()]
     st2 = stations.loc[hvdc["converter_station2_id"].to_numpy()]
-    in_service = st1["connected"].to_numpy(bool) & st2["connected"].to_numpy(bool)
-    if keep_only_main_comp:
-        comp = df_bus["synchronous_component"]
-        in_service &= (st1["bus_id"].map(comp).to_numpy() == 0) & (st2["bus_id"].map(comp).to_numpy() == 0)
+    in_service = stations_in.loc[st1.index].to_numpy() & stations_in.loc[st2.index].to_numpy()
     max_p = hvdc["max_p"].to_numpy(float)
     pmax_1to2, pmax_2to1 = _hvdc_pmax_per_direction(network, hvdc.index, np.where(np.isfinite(max_p), max_p, np.inf))
     p1 = st1["p"].to_numpy(float)
@@ -1484,9 +1487,9 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
     ``bake_outer_loops(..., return_details=True)``). A unit excluded for one of OLF's own
     ``checkActivePowerControl`` reasons is not in it, nor is a pinned battery (its range
     is gone). ``overshoot`` (MW, indexed like ``capped``) is how far beyond its limit each
-    capped unit was: ``target_p + lambda * weight`` minus that limit, lambda the common factor
-    of OLF's distribution read off the units it neither excluded nor capped (0 when there is
-    none).
+    capped unit was: ``target_p + lambda * weight`` minus that limit (> 0 above an upper
+    limit, < 0 below a lower one), lambda the common factor of OLF's distribution read off
+    the units it neither excluded nor capped (0 when there is none).
     """
     # not at the top: _aux_battery_apc reads its OLF constants from this module
     from ._aux_battery_apc import (
@@ -1576,11 +1579,14 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
     lam = float(np.median(lam_samples)) if lam_samples.size else np.nan
 
     def _overshoot(raw, weight, low, high):
+        # signed: > 0 above the upper limit, < 0 below the lower one -- for a unit capped at
+        # 0 MW, the only thing that tells which side of 0 it came from
         if not np.isfinite(lam):
             return np.zeros(len(raw))
         unclamped = raw + lam * weight
         beyond = unclamped - high if mismatch > 0. else low - unclamped
-        return np.maximum(np.where(np.isfinite(beyond), beyond, 0.), 0.)
+        beyond = np.maximum(np.where(np.isfinite(beyond), beyond, 0.), 0.)
+        return beyond if mismatch > 0. else -beyond
 
     excluded |= capped
 

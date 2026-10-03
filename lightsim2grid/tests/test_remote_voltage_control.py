@@ -106,14 +106,24 @@ class TestRemoteVoltageControlCheck(unittest.TestCase):
                 self.assertEqual(el.category, ViolationCategory.PHYSICAL)
 
     def test_value_and_limit(self):
-        grid = _ls(_ieee14_remote(14.2))
+        # an explicit range (OpenLoadFlow's default differs from one version to the next)
+        grid = _ls(_ieee14_remote(14.2), remote_voltage_control_vm_range=(0.8 * 1.02, 1.2 / 1.02))
         viols = _remote(grid.get_physical_violations(True, 0., 0.))
         self.assertEqual(len(viols), 1)
         self.assertEqual(viols[0].violation_type, LimitViolationType.HIGH_VOLTAGE_REMOTE_CONTROL)
-        # the bound in kV of its own (12 kV) bus, OpenLoadFlow's default maxRealisticVoltage
-        # with its margin
+        # the bound in kV of its own (12 kV) bus
         self.assertAlmostEqual(viols[0].limit, 12. * 1.2 / 1.02, places=9)
         self.assertGreater(viols[0].value, viols[0].limit)
+
+    def test_olf_range_is_the_installed_olf_default(self):
+        # "olf" reads minRealisticVoltage / maxRealisticVoltage off the OpenLoadFlow pypowsybl
+        # ships (its defaults changed between versions), with the margin of its loop
+        params = lf.get_provider_parameters("OpenLoadFlow")
+        vmin = float(params.loc["minRealisticVoltage", "default"])
+        vmax = float(params.loc["maxRealisticVoltage", "default"])
+        grid = _ls(_ieee14_remote(13.85))
+        self.assertAlmostEqual(grid.get_remote_voltage_control_min_vm_pu(), vmin * 1.02, places=12)
+        self.assertAlmostEqual(grid.get_remote_voltage_control_max_vm_pu(), vmax / 1.02, places=12)
 
     def test_switched_off(self):
         grid = _ls(_ieee14_remote(14.2), remote_voltage_control_vm_range=None)
@@ -128,7 +138,7 @@ class TestRemoteVoltageControlCheck(unittest.TestCase):
         self.assertEqual(_remote(_ls(n).get_physical_violations(True, 0., 0.)), [])
 
     def test_contingency_analysis_matches_the_single_solve(self):
-        grid = _ls(_ieee14_remote(14.2))
+        grid = _ls(_ieee14_remote(14.2), remote_voltage_control_vm_range=(0.8 * 1.02, 1.2 / 1.02))
         ref = _remote(grid.get_physical_violations(True, 0., 0.))
         self.assertEqual(len(ref), 1)
         ca = ContingencyAnalysisCPP(grid)

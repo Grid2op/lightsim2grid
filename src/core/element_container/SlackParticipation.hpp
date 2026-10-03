@@ -125,10 +125,11 @@ class SlackParticipation
 
         /**
          * How far BEYOND the limit it sits at an element flagged "can participate in the
-         * slack" was in the reference solve, in MW (>= 0, 0 by default): OpenLoadFlow shares
+         * slack" was in the reference solve, in MW (0 by default): OpenLoadFlow shares
          * the slack from the raw set-points, `p = clamp(raw + lambda * weight)`, so a unit it
-         * capped at max_p had `raw + lambda * weight` above max_p by that much (below min_p
-         * for a unit capped at min_p). A later imbalance of the other sign only moves it once
+         * capped at max_p had `raw + lambda * weight` above max_p by that much (> 0), one
+         * capped at min_p below it (< 0). The sign is what tells, for a unit sitting at 0 MW,
+         * the side of 0 it was capped from. A later imbalance of the other sign only moves it once
          * the common shift of the distribution has used that up -- before, OpenLoadFlow
          * still caps it. 0 means it leaves its limit at once (an element whose reference
          * solve sat exactly at it).
@@ -147,10 +148,10 @@ class SlackParticipation
             std::vector<real_type> res(nb_el, 0.);
             for(std::size_t el_id = 0; el_id < nb_el; ++el_id){
                 const real_type o = overshoot_mw(static_cast<Eigen::Index>(el_id));
-                if(!std::isfinite(o) || o < 0.){
+                if(!std::isfinite(o)){
                     std::ostringstream exc_;
                     exc_ << fun_name << ": the element with id " << el_id
-                         << " has an overshoot that is not a finite, non negative number (got " << o << ").";
+                         << " has an overshoot that is not a finite number (got " << o << ").";
                     throw std::runtime_error(exc_.str());
                 }
                 res[el_id] = o;

@@ -101,9 +101,12 @@ class TestFlag(unittest.TestCase):
     def test_overshoot_default_and_refused(self):
         grid = _grid()
         self.assertEqual(grid.get_generators()[CAPPED].can_participate_slack_overshoot_mw, 0.)
-        for bad in ([0., -1.], [0., np.nan], [0.]):
+        for bad in ([0., np.nan], [0., np.inf], [0.]):
             with self.assertRaises(RuntimeError):
                 grid.set_gen_can_participate_slack_overshoot(np.array(bad))
+        # signed: < 0 for a unit capped at its lower limit
+        grid.set_gen_can_participate_slack_overshoot(np.array([0., -1.]))
+        self.assertEqual(grid.get_generators()[CAPPED].can_participate_slack_overshoot_mw, -1.)
 
 
 class TestPrepass(unittest.TestCase):
@@ -265,12 +268,25 @@ class TestFromPypowsybl(unittest.TestCase):
         n, res = self._baked()
         over = res.can_participate_slack_overshoot
         self.assertEqual(list(over.index), list(res.can_participate_slack))
+        # capped at its max_p by a positive mismatch: beyond its upper limit, > 0
         self.assertTrue(np.all(np.isfinite(over.to_numpy())) and np.all(over.to_numpy() >= 0.))
         grid = init_from_pypowsybl(n, sort_index=False, buses_for_sub=False,
                                    can_participate_slack=res.can_participate_slack,
                                    can_participate_slack_overshoot=over)
         gens = {g.name: g for g in grid.get_generators()}
         self.assertAlmostEqual(gens["GTH1"].can_participate_slack_overshoot_mw, over["GTH1"], places=9)
+
+    def test_overshoot_without_the_flag_refused(self):
+        # the overshoot only means something for a flagged unit: given alone (or with an
+        # explicit slack) it is refused, as `can_participate_slack` itself is
+        n, res = self._baked()
+        over = res.can_participate_slack_overshoot
+        with self.assertRaises(ValueError):
+            init_from_pypowsybl(n, sort_index=False, buses_for_sub=False,
+                                can_participate_slack_overshoot=over)
+        with self.assertRaises(ValueError):
+            init_from_pypowsybl(n, sort_index=False, buses_for_sub=False, gen_slack_id="GTH2",
+                                can_participate_slack_overshoot=over)
 
     def test_init_flags_it_with_olf_weight(self):
         n, res = self._baked()

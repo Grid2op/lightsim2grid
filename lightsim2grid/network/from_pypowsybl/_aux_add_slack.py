@@ -320,6 +320,10 @@ def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
     if can_participate_slack is not None and len(can_participate_slack) and not default_slack:
         raise ValueError("`can_participate_slack` needs OpenLoadFlow's default distributed slack "
                          "(gen_slack_id=None and slack_bus_id=None): its weights are on that scale.")
+    if (can_participate_slack_overshoot is not None and len(can_participate_slack_overshoot)
+            and (can_participate_slack is None or not len(can_participate_slack))):
+        raise ValueError("`can_participate_slack_overshoot` is only read for the units of "
+                         "`can_participate_slack`, which is not given.")
     if default_slack:
         # Default: reproduce OpenLoadFlow's distributed slack, sharing the
         # active-power mismatch over the participating generators (see
@@ -369,14 +373,14 @@ def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
                 if (batt_w > 0.).any():
                     model.set_storage_can_participate_slack(batt_w > 0., batt_w / total_weight)
                 if can_participate_slack_overshoot is not None and len(can_participate_slack_overshoot):
-                    # how far beyond its limit each flagged unit was (MW), where it is flagged
+                    # how far beyond its limit each flagged unit was (MW, signed), where it is flagged
                     over = pd.Series(can_participate_slack_overshoot, dtype=float)
                     over.index = over.index.astype(str)
                     gen_o = np.where(gen_w > 0., over.reindex(df_gen.index).fillna(0.).to_numpy(), 0.)
-                    model.set_gen_can_participate_slack_overshoot(np.maximum(gen_o, 0.))
+                    model.set_gen_can_participate_slack_overshoot(gen_o)
                     if df_batt is not None and len(df_batt):
                         batt_o = np.where(batt_w > 0., over.reindex(df_batt.index).fillna(0.).to_numpy(), 0.)
-                        model.set_storage_can_participate_slack_overshoot(np.maximum(batt_o, 0.))
+                        model.set_storage_can_participate_slack_overshoot(batt_o)
     elif slack_bus_id is not None:
         gen_bus = np.array([el.bus_id for el in model.get_generators()])
         gen_is_conn_slack = gen_bus == model._orig_to_ls[slack_bus_id]
