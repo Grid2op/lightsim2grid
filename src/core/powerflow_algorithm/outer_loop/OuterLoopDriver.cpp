@@ -14,6 +14,11 @@
 
 namespace ls2g {
 
+// out-of-class definitions: the C++14 build odr-uses these (vector::assign takes a const reference),
+// and a static constexpr member is only implicitly inline from C++17 on
+constexpr int OuterState::HVDC_KEEP;
+constexpr int OuterState::TAP_KEEP;
+
 bool is_state_unrealistic(const LSGrid & grid,
                           const CplxVect & V,
                           const std::vector<bool> & vm_unknown,
