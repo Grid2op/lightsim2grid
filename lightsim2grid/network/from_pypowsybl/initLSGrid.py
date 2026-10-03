@@ -257,7 +257,8 @@ def init(net : pypo.network.Network,
     :type can_participate_slack: None or Iterable[str]
 
     :param can_participate_slack_overshoot: For the units of ``can_participate_slack``: how
-        far beyond the limit it sits at each one was in the reference distribution, in MW --
+        far beyond the limit it sits at each one was in the reference distribution, in MW (> 0
+        above its upper limit, < 0 below its lower one) --
         what ``bake_outer_loops(..., return_details=True).can_participate_slack_overshoot``
         returns. OpenLoadFlow shares the slack from the raw set-points, so a unit it capped
         well beyond its limit stays capped until the shift of a later imbalance has used that

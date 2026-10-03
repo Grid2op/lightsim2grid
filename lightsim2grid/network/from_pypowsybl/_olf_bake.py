@@ -444,7 +444,8 @@ class BakeResult(NamedTuple):
     #: the generators and batteries left out of the slack only because OLF capped them
     #: at an active limit -- for ``init_from_pypowsybl(can_participate_slack=...)``
     can_participate_slack: pd.Index
-    #: how far beyond that limit each of them was in the reference distribution, MW (indexed
+    #: how far beyond that limit each of them was in the reference distribution, MW (> 0 above
+    #: an upper limit, < 0 below a lower one, indexed
     #: like ``can_participate_slack``) -- for
     #: ``init_from_pypowsybl(can_participate_slack_overshoot=...)``
     can_participate_slack_overshoot: pd.Series = None
@@ -1484,9 +1485,9 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
     ``bake_outer_loops(..., return_details=True)``). A unit excluded for one of OLF's own
     ``checkActivePowerControl`` reasons is not in it, nor is a pinned battery (its range
     is gone). ``overshoot`` (MW, indexed like ``capped``) is how far beyond its limit each
-    capped unit was: ``target_p + lambda * weight`` minus that limit, lambda the common factor
-    of OLF's distribution read off the units it neither excluded nor capped (0 when there is
-    none).
+    capped unit was: ``target_p + lambda * weight`` minus that limit (> 0 above an upper
+    limit, < 0 below a lower one), lambda the common factor of OLF's distribution read off
+    the units it neither excluded nor capped (0 when there is none).
     """
     # not at the top: _aux_battery_apc reads its OLF constants from this module
     from ._aux_battery_apc import (
@@ -1576,11 +1577,14 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
     lam = float(np.median(lam_samples)) if lam_samples.size else np.nan
 
     def _overshoot(raw, weight, low, high):
+        # signed: > 0 above the upper limit, < 0 below the lower one -- for a unit capped at
+        # 0 MW, the only thing that tells which side of 0 it came from
         if not np.isfinite(lam):
             return np.zeros(len(raw))
         unclamped = raw + lam * weight
         beyond = unclamped - high if mismatch > 0. else low - unclamped
-        return np.maximum(np.where(np.isfinite(beyond), beyond, 0.), 0.)
+        beyond = np.maximum(np.where(np.isfinite(beyond), beyond, 0.), 0.)
+        return beyond if mismatch > 0. else -beyond
 
     excluded |= capped
 

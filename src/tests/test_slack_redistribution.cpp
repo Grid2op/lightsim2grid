@@ -145,10 +145,10 @@ TEST_CASE("distribute: every slack unit saturated keeps them in the slack, a fla
 
 TEST_CASE("distribute with an overshoot: every slack unit saturated keeps them in the slack", "[slack_redistribution]"){
     // the same as above, but the flagged unit carries an overshoot (it sat at its min_p,
-    // 5 MW beyond it): the bisection path has to keep the slack from being emptied too
+    // 5 MW below it): the bisection path has to keep the slack from being emptied too
     std::vector<Participant> units = {unit(0, 30., 1., 0., 32.), unit(1, 40., 1., 40., 100.)};
     units[1].in_slack = false;
-    units[1].overshoot_mw = 5.;
+    units[1].overshoot_mw = -5.;
     std::vector<real_type> new_inj;
     std::vector<char> sat;
     const Report rep = distribute(units, 10., default_eps_mw, new_inj, sat);
@@ -164,6 +164,32 @@ TEST_CASE("distribute with an overshoot: every slack unit saturated keeps them i
         REQUIRE_FALSE(rep2.all_saturated);
         CHECK(sat[0] == 1);
         CHECK(sat[2] == 0);
+    }
+}
+
+TEST_CASE("distribute with an overshoot: a drawing unit capped at 0 MW keeps its side", "[slack_redistribution]"){
+    // a charging storage unit (range [-50, 50]) a positive mismatch pushed up to 0 MW, 5 MW
+    // beyond it: the overshoot is above 0 MW (> 0), and 0 MW stays its UPPER bound
+    std::vector<Participant> units = {unit(0, 30., 1., NaN, NaN), unit(1, 0., 1., -50., 50.)};
+    units[1].kind = UnitKind::STORAGE;
+    units[1].in_slack = false;
+    units[1].overshoot_mw = 5.;
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    SECTION("pushed down: it moves once the shift used up its overshoot"){
+        // equal weights, shift -25: the slack unit gives 12.5, the storage unit 5 - 12.5
+        const Report rep = distribute(units, -20., default_eps_mw, new_inj, sat);
+        REQUIRE_FALSE(rep.all_saturated);
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(17.5, 1e-6));
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(-7.5, 1e-6));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-6));
+    }
+    SECTION("pushed up: it stays at 0 MW, never crossing it"){
+        const Report rep = distribute(units, 10., default_eps_mw, new_inj, sat);
+        CHECK(sat[1] == 1);
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(0., 1e-6));
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(40., 1e-6));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-6));
     }
 }
 

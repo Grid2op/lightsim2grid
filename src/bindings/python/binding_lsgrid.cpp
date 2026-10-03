@@ -261,8 +261,9 @@ void bind_gridmodel(py::module_& m) {
         .def("set_gen_can_participate_slack_overshoot", &LSGrid::set_gen_can_participate_slack_overshoot,
              py::arg("overshoot_mw"),
              "For the generators flagged with `set_gen_can_participate_slack`: how far BEYOND the "
-             "limit it sits at each one was in the reference solve, in MW (>= 0, one value per "
-             "generator, 0 by default; `GenInfo.can_participate_slack_overshoot_mw`). OpenLoadFlow "
+             "limit it sits at each one was in the reference solve, in MW (> 0 above its upper "
+             "limit, < 0 below its lower one, one value per generator, 0 by default; "
+             "`GenInfo.can_participate_slack_overshoot_mw`). OpenLoadFlow "
              "shares the slack from the raw set-points, so a unit it capped at max_p had "
              "raw + lambda * weight above max_p by that much, and an imbalance of the other sign "
              "only moves it once the common shift of the distribution has used that up. Only the "
