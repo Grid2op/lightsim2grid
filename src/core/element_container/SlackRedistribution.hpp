@@ -289,6 +289,22 @@ inline Report distribute_with_overshoot(const std::vector<Participant> & units,
         }
     }
     report.not_distributed_mw = mismatch_mw - done;
+    // as `distribute`: a unit only flagged "can participate" still moving cannot keep the
+    // solve's slack from being emptied, every unit of it at its bound keeps them all in it
+    bool any_in_slack = false;
+    bool slack_left = false;
+    for(std::size_t k = 0; k < nb; ++k){
+        if(!units[k].in_slack) continue;
+        any_in_slack = true;
+        if(!saturated[k]){
+            slack_left = true;
+            break;
+        }
+    }
+    if(any_in_slack && !slack_left){
+        report.all_saturated = true;
+        saturated.assign(nb, 0);
+    }
     return report;
 }
 
