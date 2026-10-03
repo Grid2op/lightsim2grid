@@ -121,7 +121,9 @@ def _aux_tap_changers(model, net, trafo_index, bus_df, voltage_levels, olf_rules
                                                      side)
         else:
             bus, vn = _aux_bus_pu(changers["regulating_bus_id"].fillna("").to_numpy(object), bus_df, voltage_levels)
-            regulating = changers["regulating"].to_numpy(bool)
+            # a copy: it is modified in place below, and under pandas' copy-on-write `to_numpy`
+            # returns a read-only view of the frame when no conversion is needed
+            regulating = changers["regulating"].to_numpy(bool, copy=True)
             if "oltc" in changers:
                 # OpenLoadFlow only regulates with a changer able to move on load
                 regulating &= changers["oltc"].to_numpy(bool)

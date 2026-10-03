@@ -233,6 +233,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``init_from_pypowsybl`` failed with "output array is read-only" under pandas' copy-on-write
+  (pandas 3): ratio tap changers, hvdc and battery reactive limits.
 - [FIXED] ``LSGrid`` pickling converts its state one element at a time: the single huge tuple cast
   overflowed MSVC (C1067) and OOM-killed gcc 8 on ``binding_lsgrid.cpp``.
 - [ADDED] ``NROuter_*`` algorithms: a single-slack Newton-Raphson run inside OpenLoadFlow's

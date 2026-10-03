@@ -56,10 +56,14 @@ def _aux_battery_q_limits(df_batt):
     otherwise; NaN / absurd values become the float32 "unbounded" sentinels the
     generators use (see `_aux_add_generators.py`)."""
     def col(name, fallback):
+        # copies: swapped in place below, and under pandas' copy-on-write `to_numpy` can
+        # return a read-only view of the frame
         if name in df_batt.columns:
             s = df_batt[name]
-            return s.where(s.notna(), df_batt[fallback] if fallback in df_batt.columns else np.nan).to_numpy(float)
-        return df_batt[fallback].to_numpy(float) if fallback in df_batt.columns else np.full(len(df_batt), np.nan)
+            return s.where(s.notna(), df_batt[fallback] if fallback in df_batt.columns else np.nan).to_numpy(
+                float, copy=True)
+        return (df_batt[fallback].to_numpy(float, copy=True) if fallback in df_batt.columns
+                else np.full(len(df_batt), np.nan))
     min_q = col("min_q_at_target_p", "min_q")
     max_q = col("max_q_at_target_p", "max_q")
     min_float_value = np.finfo(np.float32).min * 1e-4 + 1.

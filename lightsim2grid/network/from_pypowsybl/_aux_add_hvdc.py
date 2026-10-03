@@ -94,10 +94,11 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         qset = np.where(np.isfinite(qset), qset, 0.)
         # as for the generators (see `_aux_add_generators.py`): "min_q" / "max_q" are NaN
         # for a station whose reactive_limits_kind is CURVE, its limits are the curve at
-        # its target P -- read alone, such a station was unlimited
+        # its target P -- read alone, such a station was unlimited. Copies: they are swapped in
+        # place below, and under pandas' copy-on-write `to_numpy` can return a read-only view
         no_curve = pd.Series(np.nan, index=df_side.index)
-        min_q = df_side.get("min_q_at_target_p", no_curve).fillna(df_side["min_q"]).to_numpy(float)
-        max_q = df_side.get("max_q_at_target_p", no_curve).fillna(df_side["max_q"]).to_numpy(float)
+        min_q = df_side.get("min_q_at_target_p", no_curve).fillna(df_side["min_q"]).to_numpy(float, copy=True)
+        max_q = df_side.get("max_q_at_target_p", no_curve).fillna(df_side["max_q"]).to_numpy(float, copy=True)
         if olf_rules is not None and nb_dc:
             p_station = _olf_rules.vsc_station_target_p(net).reindex(df_side.index).fillna(0.).to_numpy(float)
             min_q, max_q = _olf_rules.curve_limits_at_p(net, df_side.index, p_station, min_q, max_q)
