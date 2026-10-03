@@ -12,8 +12,11 @@ Covers the four regimes: angle-droop linear, fixed setpoint (VSC), fixed setpoin
 (LCC inverter side) and forced saturation. Skipped when pypowsybl is unavailable.
 """
 
+import contextlib
 import unittest
 import numpy as np
+
+from lightsim2grid.lightsim2grid_cpp import LimitViolationType, ViolationElementType
 
 try:
     import pypowsybl as pp
@@ -51,6 +54,12 @@ def _build_net(max_p=300.0, droop_enabled=True, lcc=False, target_p=50.0):
     if droop_enabled:
         n.create_extensions("hvdcAngleDroopActivePowerControl", id="HVDC",
                             p0=20.0, droop=180.0, enabled=True)
+    return n
+
+
+def add_operator_range(n, opr_from_cs1_to_cs2, opr_from_cs2_to_cs1):
+    n.create_extensions("hvdcOperatorActivePowerRange", id="HVDC",
+                        opr_from_cs1_to_cs2=opr_from_cs1_to_cs2, opr_from_cs2_to_cs1=opr_from_cs2_to_cs1)
     return n
 
 
@@ -125,6 +134,105 @@ class TestHvdcPypowsybl(unittest.TestCase):
             # agreement is ~1e-13, but other environments (CI) drift to ~1e-6. Allow that band
             # for the angle so the test tracks parity rather than a single build's rounding.
             self.assertLess(abs(np.angle(V[i]) - np.deg2rad(row["v_angle"])), 5e-6, f"saturated ang {bus_id}")
+
+    def test_operator_range_is_the_limit(self):
+        # OLF saturates an angle-droop line at its hvdcOperatorActivePowerRange, one value
+        # per direction, and only falls back on max_p without the extension
+        model, _ = self._run_ls(_build_net(max_p=300.0))
+        h = model.get_dclines()[0]
+        self.assertEqual(h.pmax_1to2_mw, 300.0)
+        self.assertEqual(h.pmax_2to1_mw, 300.0)
+        model, _ = self._run_ls(add_operator_range(_build_net(max_p=300.0), 12.0, 8.0))
+        h = model.get_dclines()[0]
+        self.assertEqual(h.pmax_1to2_mw, 12.0)
+        self.assertEqual(h.pmax_2to1_mw, 8.0)
+
+    def test_vsc_curve_reactive_limits(self):
+        # a station whose reactive limits are a capability curve has NaN min_q / max_q:
+        # its limits are the curve at its target P (as for a generator), not "unlimited"
+        n = _build_net(droop_enabled=False)
+        n.create_curve_reactive_limits(id=["VSC2", "VSC2"], p=[0.0, 200.0],
+                                       min_q=[-40.0, -40.0], max_q=[30.0, 30.0])
+        self.assertEqual(n.get_vsc_converter_stations().loc["VSC2", "reactive_limits_kind"], "CURVE")
+        model, _ = self._run_ls(n)
+        st = model.get_dclines()[0].station2
+        self.assertEqual(st.min_q_mvar, -40.0)
+        self.assertEqual(st.max_q_mvar, 30.0)
+
+    def test_vsc_reactive_limits_under_copy_on_write(self):
+        # pandas copy-on-write (the default from pandas 3) hands out read-only arrays: the
+        # station limits must be read into arrays the converter may write to
+        import pandas as pd
+        n = _build_net(droop_enabled=False)
+        n.create_curve_reactive_limits(id=["VSC2", "VSC2"], p=[0.0, 200.0],
+                                       min_q=[-40.0, -40.0], max_q=[30.0, 30.0])
+        try:
+            ctx = pd.option_context("mode.copy_on_write", True)
+        except (KeyError, ValueError, pd.errors.OptionError):
+            ctx = contextlib.nullcontext()  # no such option: copy-on-write is always on
+        with ctx:
+            model, _ = self._run_ls(n)
+        st = model.get_dclines()[0].station2
+        self.assertEqual(st.min_q_mvar, -40.0)
+        self.assertEqual(st.max_q_mvar, 30.0)
+
+    def test_compare_sees_the_frozen_flag(self):
+        # two grids that differ only by the hvdc lines flagged frozen are not the same input
+        from lightsim2grid.network.compare_lsgrid import compare_network_input
+        model, _ = self._run_ls(_build_net(max_p=300.0))
+        other = model.copy()
+        self.assertEqual(len(compare_network_input(model, other)), 0)
+        other.set_hvdc_ac_emulation_frozen([True])
+        self.assertGreater(len(compare_network_input(model, other)), 0)
+
+    def test_frozen_line_release_is_reported(self):
+        # baked at a 100 MW load, OLF saturated the line at its 12 MW operator range: the bake
+        # froze it there. Lightening the load at its receiving end brings the flow its droop
+        # asks for below 12 MW, which OLF leaves in AC emulation -- reported exactly then.
+        from lightsim2grid.network import bake_outer_loops
+        def make(load_mw):
+            n = add_operator_range(_build_net(max_p=300.0), 12.0, 8.0)
+            n.update_loads(id="LD", p0=load_mw)
+            return n
+        n = make(100.)
+        pp.loadflow.run_ac(n)
+        res = bake_outer_loops(n, return_details=True)
+        self.assertEqual(list(res.hvdc_ac_emulation_frozen), ["HVDC"])
+        n.per_unit = False
+        for load_mw in (100., 10., 5.):
+            ref = make(load_mw)
+            pp.loadflow.run_ac(ref)
+            olf_saturated = abs(ref.get_vsc_converter_stations().loc["VSC1", "p"] - 12.) < 1e-6
+            model = init_from_pypowsybl(n, gen_slack_id="G", sort_index=True,
+                                        hvdc_ac_emulation_frozen=res.hvdc_ac_emulation_frozen)
+            h = model.get_dclines()[0]
+            self.assertTrue(h.ac_emulation_frozen)
+            self.assertFalse(h.droop_enabled)
+            self.assertEqual(h.droop_p0_mw, 20.0)
+            model.change_p_load(0, load_mw)
+            V = model.ac_pf(np.ones(len(model.get_bus_status()), dtype=np.complex128), 30, 1e-10)
+            self.assertGreater(V.shape[0], 0)
+            viols = [el for el in model.get_physical_violations(True, 0., 0.)
+                     if el.violation_type == LimitViolationType.HVDC_AC_EMULATION_RELEASE]
+            self.assertEqual(len(viols) == 1, not olf_saturated, f"load {load_mw} MW")
+            for el in viols:
+                self.assertEqual(el.side, 1)
+                self.assertEqual(el.limit, 12.0)
+                self.assertLess(el.value, 12.0)
+
+    def test_beyond_operator_range_is_reported(self):
+        # in its linear regime the line transmits more than its operator range (but less
+        # than max_p): a physical violation against the operator range
+        model, _ = self._run_ls(add_operator_range(_build_net(max_p=300.0), 12.0, 8.0))
+        h = model.get_dclines()[0]
+        self.assertGreater(-h.res_p1_mw, 12.0)
+        self.assertLess(-h.res_p1_mw, 300.0)
+        viols = [el for el in model.get_physical_violations(True, 0., 0.)
+                 if el.element_type == ViolationElementType.HVDC]
+        self.assertEqual(len(viols), 1)
+        self.assertEqual(viols[0].violation_type, LimitViolationType.HIGH_P)
+        self.assertEqual(viols[0].side, 1)
+        self.assertAlmostEqual(viols[0].limit, 12.0, places=9)
 
 
 if __name__ == "__main__":

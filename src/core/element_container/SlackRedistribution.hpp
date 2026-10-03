@@ -63,6 +63,10 @@ struct Participant {
     /// it when it saturates), or only of this pre-pass (a unit flagged "can participate
     /// in the slack", see SlackParticipation::set_can_participate)
     bool in_slack = true;
+    /// for a unit only flagged "can participate in the slack": how far BEYOND the limit it
+    /// sits at it was in the reference solve, MW, > 0 above its upper limit and < 0 below
+    /// its lower one (see SlackParticipation::set_can_participate_overshoot); 0 otherwise
+    real_type overshoot_mw = 0.;
 };
 
 /// What the redistribution did (exposed to python as `SlackRedistributionReport`).
@@ -90,12 +94,25 @@ constexpr real_type default_eps_mw = 1e-6;
  * unit only flagged "can participate" still has room: it takes the rest of the
  * mismatch here, but the solve cannot distribute on it.
  */
+inline Report distribute_with_overshoot(const std::vector<Participant> & units,
+                                        real_type mismatch_mw,
+                                        real_type eps_mw,
+                                        std::vector<real_type> & new_injection_mw,
+                                        std::vector<char> & saturated);
+
 inline Report distribute(const std::vector<Participant> & units,
                          real_type mismatch_mw,
                          real_type eps_mw,
                          std::vector<real_type> & new_injection_mw,
                          std::vector<char> & saturated)
 {
+    // a unit that sat beyond its limit in the reference solve: the exact rule (see
+    // distribute_with_overshoot); without one, this one, which gives the same answer
+    for(const Participant & unit : units){
+        if(unit.overshoot_mw != 0.){
+            return distribute_with_overshoot(units, mismatch_mw, eps_mw, new_injection_mw, saturated);
+        }
+    }
     const std::size_t nb = units.size();
     Report report;
     report.mismatch_mw = mismatch_mw;
@@ -170,6 +187,130 @@ inline Report distribute(const std::vector<Participant> & units,
 }
 
 /**
+ * `distribute`, when some unit carries an overshoot: OpenLoadFlow's rule written as what it
+ * is, `p_k = clamp(v_k + delta * w_k / W, lo_k, hi_k)` with ONE common shift `delta` (MW of the
+ * whole mismatch) chosen so that the units take `mismatch_mw` between them. `v_k` is where the
+ * unit would be without its bounds: its injection, plus its overshoot beyond the limit it sits
+ * at -- so a unit OpenLoadFlow capped well beyond its max_p stays there until the shift has
+ * used that up, as when OpenLoadFlow shares the slack from the raw set-points -- and `w_k / W`
+ * its normalised weight. The bounds are the round-based algorithm's (0 MW on the side the unit
+ * is not on), widened to its injection when it already sits beyond one, so that a unit above
+ * its max_p is never pulled down to it by a positive mismatch. The total is monotone in the
+ * shift: bisection.
+ *
+ * Same outputs and same "all saturated" convention as `distribute`; `nb_rounds` counts the
+ * bisection steps.
+ */
+inline Report distribute_with_overshoot(const std::vector<Participant> & units,
+                                        real_type mismatch_mw,
+                                        real_type eps_mw,
+                                        std::vector<real_type> & new_injection_mw,
+                                        std::vector<char> & saturated)
+{
+    const std::size_t nb = units.size();
+    Report report;
+    report.mismatch_mw = mismatch_mw;
+    report.nb_participants = static_cast<int>(nb);
+    new_injection_mw.resize(nb);
+    saturated.assign(nb, 0);
+    for(std::size_t k = 0; k < nb; ++k) new_injection_mw[k] = units[k].injection_mw;
+    if(nb == 0 || std::abs(mismatch_mw) <= eps_mw) return report;
+
+    const real_type inf = std::numeric_limits<real_type>::infinity();
+    std::vector<real_type> lo(nb), hi(nb), virt(nb), share(nb);
+    real_type weight_sum = 0.;
+    for(std::size_t k = 0; k < nb; ++k) weight_sum += units[k].weight;
+    if(weight_sum <= 0.) return report;
+    for(std::size_t k = 0; k < nb; ++k){
+        const real_type inj = units[k].injection_mw;
+        const real_type over = units[k].overshoot_mw;
+        real_type l = std::isfinite(units[k].min_p_mw) ? units[k].min_p_mw : -inf;
+        real_type h = std::isfinite(units[k].max_p_mw) ? units[k].max_p_mw : inf;
+        // the side of 0 MW the unit is on: that of its injection, and at 0 MW the one its
+        // overshoot gives -- a drawing unit capped at 0 MW sits beyond it from below (> 0)
+        const bool drawing = inj < 0. || (inj <= eps_mw && over > 0.);
+        if(drawing) h = std::min(h, 0.);
+        else l = std::max(l, 0.);
+        // the overshoot is beyond the limit its sign says the unit sits at
+        real_type offset = 0.;
+        if(over > 0. && std::isfinite(h) && inj >= h - eps_mw) offset = over;
+        else if(over < 0. && std::isfinite(l) && inj <= l + eps_mw) offset = over;
+        lo[k] = std::min(l, inj);
+        hi[k] = std::max(h, inj);
+        virt[k] = inj + offset;
+        share[k] = units[k].weight / weight_sum;
+    }
+    auto taken = [&](real_type delta){
+        real_type res = 0.;
+        for(std::size_t k = 0; k < nb; ++k){
+            const real_type p = std::min(hi[k], std::max(lo[k], virt[k] + delta * share[k]));
+            res += p - units[k].injection_mw;
+        }
+        return res;
+    };
+    // what the units can take at most in the direction asked
+    real_type capacity = 0.;
+    for(std::size_t k = 0; k < nb; ++k){
+        capacity += (mismatch_mw > 0.) ? hi[k] - units[k].injection_mw : lo[k] - units[k].injection_mw;
+    }
+    const bool all_saturated = std::isfinite(capacity) && std::abs(capacity) <= std::abs(mismatch_mw) + eps_mw;
+    real_type delta = 0.;
+    if(all_saturated){
+        // every unit ends at its bound: as far as the shift can push them
+        for(std::size_t k = 0; k < nb; ++k){
+            new_injection_mw[k] = (mismatch_mw > 0.) ? hi[k] : lo[k];
+        }
+        report.not_distributed_mw = mismatch_mw - capacity;
+        report.nb_rounds = 1;
+        // as `distribute`: counted, then left out of the "saturated" mask (none leaves the slack)
+        report.nb_saturated = static_cast<int>(nb);
+        report.all_saturated = true;
+        return report;
+    }
+    // bracket then bisect: the total is continuous and non decreasing in the shift
+    real_type a = 0., b = mismatch_mw;
+    int guard = 0;
+    while(std::abs(taken(b)) < std::abs(mismatch_mw) && guard < 200){ a = b; b *= 2.; ++guard; }
+    for(int it = 0; it < 200; ++it){
+        const real_type mid = 0.5 * (a + b);
+        const real_type t = taken(mid);
+        ++report.nb_rounds;
+        if(std::abs(t - mismatch_mw) <= 1e-3 * eps_mw) { a = b = mid; break; }
+        if((t < mismatch_mw) == (mismatch_mw > 0.)) a = mid; else b = mid;
+    }
+    delta = 0.5 * (a + b);
+    real_type done = 0.;
+    for(std::size_t k = 0; k < nb; ++k){
+        const real_type target = virt[k] + delta * share[k];
+        const real_type p = std::min(hi[k], std::max(lo[k], target));
+        new_injection_mw[k] = p;
+        done += p - units[k].injection_mw;
+        if((mismatch_mw > 0. && target >= hi[k]) || (mismatch_mw < 0. && target <= lo[k])){
+            saturated[k] = 1;
+            ++report.nb_saturated;
+        }
+    }
+    report.not_distributed_mw = mismatch_mw - done;
+    // as `distribute`: a unit only flagged "can participate" still moving cannot keep the
+    // solve's slack from being emptied, every unit of it at its bound keeps them all in it
+    bool any_in_slack = false;
+    bool slack_left = false;
+    for(std::size_t k = 0; k < nb; ++k){
+        if(!units[k].in_slack) continue;
+        any_in_slack = true;
+        if(!saturated[k]){
+            slack_left = true;
+            break;
+        }
+    }
+    if(any_in_slack && !slack_left){
+        report.all_saturated = true;
+        saturated.assign(nb, 0);
+    }
+    return report;
+}
+
+/**
  * Append the participating units of one family (a GeneratorContainer or a
  * StorageContainer) to `out`: connected, flagged slack with a positive weight -- or
  * flagged "can participate in the slack" (an outer loop only left it out because it sat
@@ -211,6 +352,7 @@ inline void append_participants(const Container & container,
         part.min_p_mw = container.get_min_p(el_id);
         part.max_p_mw = container.get_max_p(el_id);
         part.in_slack = in_slack;
+        part.overshoot_mw = in_slack ? 0. : container.get_can_participate_slack_overshoot(el_id);
         out.push_back(part);
     }
 }

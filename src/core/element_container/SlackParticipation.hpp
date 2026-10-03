@@ -25,6 +25,8 @@
 // feature test for code built against this header (eg gpusim2grid): the per-element
 // "can participate in the slack" weight (SlackParticipation::set_can_participate)
 #define LS2G_HAS_CAN_PARTICIPATE_SLACK 1
+// ... and how far beyond its limit each such element was (SlackParticipation::set_can_participate_overshoot)
+#define LS2G_HAS_CAN_PARTICIPATE_SLACK_OVERSHOOT 1
 
 namespace ls2g {
 
@@ -57,6 +59,7 @@ class SlackParticipation
             slackbus_.assign(nb_el, false);
             weight_.assign(nb_el, 0.);
             can_participate_weight_.assign(nb_el, 0.);
+            can_participate_overshoot_mw_.assign(nb_el, 0.);
         }
 
         /**
@@ -118,6 +121,49 @@ class SlackParticipation
             for(std::size_t el_id = 0; el_id < slackbus_.size(); ++el_id){
                 if(slackbus_[el_id] && !(can_participate_weight_[el_id] > 0.)) can_participate_weight_[el_id] = weight_[el_id];
             }
+        }
+
+        /**
+         * How far BEYOND the limit it sits at an element flagged "can participate in the
+         * slack" was in the reference solve, in MW (0 by default): OpenLoadFlow shares
+         * the slack from the raw set-points, `p = clamp(raw + lambda * weight)`, so a unit it
+         * capped at max_p had `raw + lambda * weight` above max_p by that much (> 0), one
+         * capped at min_p below it (< 0). The sign is what tells, for a unit sitting at 0 MW,
+         * the side of 0 it was capped from. A later imbalance of the other sign only moves it once
+         * the common shift of the distribution has used that up -- before, OpenLoadFlow
+         * still caps it. 0 means it leaves its limit at once (an element whose reference
+         * solve sat exactly at it).
+         *
+         * Only the bounded redistribution pre-pass (SlackRedistribution.hpp) reads it, and
+         * only for an element flagged "can participate" (see set_can_participate).
+         */
+        void set_can_participate_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw,
+                                           const char * fun_name){
+            const std::size_t nb_el = slackbus_.size();
+            if(static_cast<std::size_t>(overshoot_mw.size()) != nb_el){
+                std::ostringstream exc_;
+                exc_ << fun_name << ": expected " << nb_el << " values, got " << overshoot_mw.size() << ".";
+                throw std::runtime_error(exc_.str());
+            }
+            std::vector<real_type> res(nb_el, 0.);
+            for(std::size_t el_id = 0; el_id < nb_el; ++el_id){
+                const real_type o = overshoot_mw(static_cast<Eigen::Index>(el_id));
+                if(!std::isfinite(o)){
+                    std::ostringstream exc_;
+                    exc_ << fun_name << ": the element with id " << el_id
+                         << " has an overshoot that is not a finite number (got " << o << ").";
+                    throw std::runtime_error(exc_.str());
+                }
+                res[el_id] = o;
+            }
+            // nothing a powerflow reads: no AlgoControl flag to raise
+            can_participate_overshoot_mw_ = res;
+        }
+        [[nodiscard]] real_type can_participate_overshoot(int el_id) const {return can_participate_overshoot_mw_[el_id];}
+        [[nodiscard]] const std::vector<real_type> & can_participate_overshoots() const {return can_participate_overshoot_mw_;}
+        /// restore a serialized state (sizes are checked by the caller)
+        void set_can_participate_overshoots(const std::vector<real_type> & overshoot_mw){
+            can_participate_overshoot_mw_ = overshoot_mw;
         }
 
         [[nodiscard]] bool is_slack(int el_id) const {return slackbus_[el_id];}
@@ -335,6 +381,8 @@ class SlackParticipation
         // the weight it has when it can be in the slack, 0 if it cannot: its slack weight
         // for a participant, what the pre-pass uses for one out of it (see set_can_participate)
         std::vector<real_type> can_participate_weight_;
+        // how far beyond its limit it was in the reference solve, MW (see set_can_participate_overshoot)
+        std::vector<real_type> can_participate_overshoot_mw_;
 };
 
 } // namespace ls2g

@@ -1968,6 +1968,15 @@ const std::string DocIterator::can_participate_slack_weight = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::can_participate_slack_overshoot_mw = R"mydelimiter(
+    When :attr:`can_participate_slack`: how far beyond the limit it sits at this unit was in the
+    reference solve, in MW (``0`` by default). The redistribution pre-pass only moves it away
+    from that limit once the common shift of the distribution has used it up, as OpenLoadFlow,
+    which shares the slack from the raw set-points, does (see
+    :func:`lightsim2grid.network.LSGrid.set_gen_can_participate_slack_overshoot`).
+
+)mydelimiter";
+
 const std::string DocIterator::svc_can_be_pv = R"mydelimiter(
     Whether this SVC, when it does not regulate a voltage (:attr:`regulation_mode` is
     ``REACTIVE_POWER``), is one an outer loop froze at the edge of its susceptance range -- so
@@ -4231,6 +4240,11 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
       ``MonitoringVoltageOuterLoop`` would switch it to voltage control
       (``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on the ``SVC``, ``value`` the
       regulated voltage and ``limit`` the threshold, in kV; AC only);
+    - a generator regulating a remote bus whose own bus leaves the realistic range set with
+      :func:`set_remote_voltage_control_vm_range` by more than ``tol_vm_pu``: OpenLoadFlow's
+      robust remote voltage control would switch it to PQ (``LOW_VOLTAGE_REMOTE_CONTROL`` /
+      ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the ``GENERATOR``, ``value`` its own bus voltage and
+      ``limit`` the bound, in kV; AC only);
     - an hvdc line in angle-droop mode pushed past its maximum power (``HIGH_P``);
     - a generator or storage unit of the distributed slack whose share of the imbalance lands it
       past its ``[min_p, max_p]`` (:func:`set_gen_p_limits` / :func:`set_storage_p_limits`;
@@ -5968,6 +5982,38 @@ const std::string DocLSGrid::set_keep_vinit_at_group_controlled_buses = R"mydeli
     ----------
     keep: ``bool``
         ``True`` to keep the starting magnitude at those buses.
+
+)mydelimiter";
+
+const std::string DocLSGrid::set_remote_voltage_control_vm_range = R"mydelimiter(
+    Set the range of voltage (pu of its own bus' nominal voltage) a generator regulating a
+    REMOTE bus may sit at, for the physical checks: a remote controller whose own bus ends up
+    below ``min_vm_pu`` or above ``max_vm_pu`` is reported as ``LOW_VOLTAGE_REMOTE_CONTROL`` /
+    ``HIGH_VOLTAGE_REMOTE_CONTROL`` (on the ``GENERATOR``, ``value`` its own bus voltage and
+    ``limit`` the bound, both in kV) by :func:`get_physical_violations` and every batch's
+    ``compute_physical_violations``.
+
+    This mirrors PowSyBl OpenLoadFlow's "robust" remote voltage control
+    (``voltageRemoteControlRobustMode``), which switches such a controller to PQ at its target
+    reactive power: there the range is ``[minRealisticVoltage * 1.02, maxRealisticVoltage / 1.02]``.
+    :func:`lightsim2grid.network.init_from_pypowsybl` sets it to OpenLoadFlow's defaults.
+
+    Never read by a powerflow. ``NaN`` (the default) on both sides: no check; ``NaN`` on one
+    side only checks the other. Copied with the grid, so a batch algorithm built from it
+    inherits it; not part of ``get_state`` / the binary format.
+
+    Parameters
+    ----------
+    min_vm_pu: ``float``
+        Lowest realistic voltage of a remote controller's own bus, pu (``NaN``: not checked)
+    max_vm_pu: ``float``
+        Highest realistic voltage of a remote controller's own bus, pu (``NaN``: not checked)
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_remote_voltage_control_vm_range = R"mydelimiter(
+    One bound of the range set by :func:`set_remote_voltage_control_vm_range` (``NaN`` by
+    default: not checked).
 
 )mydelimiter";
 
@@ -7886,8 +7932,9 @@ const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
     magnitude limit) or ``CURRENT`` (a line / transformer thermal limit) for an ordinary,
     element-level violation; ``NOT_SIMULATED`` or ``DIVERGENCE`` for a contingency-level one (see
     :class:`ViolationElementType`'s ``GRID``); ``LOW_Q`` / ``HIGH_Q``, ``LOW_P`` / ``HIGH_P`` and
-    ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` and ``LOW_VOLTAGE_SVC_STANDBY`` /
-    ``HIGH_VOLTAGE_SVC_STANDBY`` for the physical checks of ``compute_physical_violations`` (see
+    ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``, ``LOW_VOLTAGE_SVC_STANDBY`` /
+    ``HIGH_VOLTAGE_SVC_STANDBY`` and ``LOW_VOLTAGE_REMOTE_CONTROL`` /
+    ``HIGH_VOLTAGE_REMOTE_CONTROL`` for the physical checks of ``compute_physical_violations`` (see
     each value's own documentation):
 
     - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
@@ -7933,8 +7980,9 @@ const std::string DocContingencyAnalysis::value = R"mydelimiter(
     The value actually reached (the voltage magnitude or the current, matching
     :attr:`violation_type`; for ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` the voltage,
     in kV, of the bus the pinned generator would regulate; for ``LOW_VOLTAGE_SVC_STANDBY`` /
-    ``HIGH_VOLTAGE_SVC_STANDBY`` the voltage, in kV, of the bus the standby SVC regulates);
-    unused (``NaN``) for
+    ``HIGH_VOLTAGE_SVC_STANDBY`` the voltage, in kV, of the bus the standby SVC regulates; for
+    ``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` the voltage, in kV, of the
+    remote controller's own bus); unused (``NaN``) for
     ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";
@@ -7942,7 +7990,9 @@ const std::string DocContingencyAnalysis::value = R"mydelimiter(
 const std::string DocContingencyAnalysis::limit = R"mydelimiter(
     The limit that was violated (for ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` the
     generator's target voltage, for ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY``
-    the standby automaton's threshold, both in kV of the regulated bus); unused (``NaN``) for
+    the standby automaton's threshold, both in kV of the regulated bus; for
+    ``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` the realistic bound, in kV
+    of the controller's own bus); unused (``NaN``) for
     ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";

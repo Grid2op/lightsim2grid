@@ -317,7 +317,35 @@ void VoltageControlPlan::build_controllers(const GeneratorContainer & generators
     if(hold_frozen) _collect_held_gen_controllers(generators, id_me_to_solver, is_pq, has_free_q, raws);
     if(raws.empty()) return;
 
-    _group_and_emit(raws);
+    _group_and_emit(raws, _collect_passive_gens(generators, id_me_to_solver, raws));
+}
+
+std::map<int, VoltageControlPlan::PassiveBus> VoltageControlPlan::_collect_passive_gens(
+    const GeneratorContainer & generators,
+    const SolverBusIdVect & id_me_to_solver,
+    const std::vector<Raw> & raws) const
+{
+    std::map<int, PassiveBus> out;
+    std::set<int> ctrl_buses, ctrl_gens;
+    for(const Raw & r : raws){
+        ctrl_buses.insert(r.bus);
+        if(r.kind == VoltageControlSolverData::GEN) ctrl_gens.insert(r.elem_id);
+    }
+    const int nb_gen = static_cast<int>(generators.nb());
+    const GlobalBusIdVect & gen_buses = generators.get_bus_id();
+    const int nb_bus_solver = static_cast<int>(id_me_to_solver.size());
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if(!generators.get_status(gen_id) || ctrl_gens.count(gen_id)) continue;
+        const int bus_me = gen_buses(gen_id).cast_int();
+        if(bus_me < 0 || bus_me >= nb_bus_solver) continue;
+        const int bus = id_me_to_solver[bus_me].cast_int();
+        if(!ctrl_buses.count(bus)) continue;
+        PassiveBus & p = out[bus];
+        p.range += generators.get_max_q(gen_id) - generators.get_min_q(gen_id);
+        const real_type key = generators.get_reactive_key(gen_id);
+        if(std::isfinite(key) && key > 0.) p.keys += key; else p.keyed = false;
+    }
+    return out;
 }
 
 void VoltageControlPlan::_collect_gen_controllers(const GeneratorContainer & generators,
@@ -510,7 +538,8 @@ void VoltageControlPlan::_collect_station_controllers(const HvdcLineContainer & 
     }
 }
 
-void VoltageControlPlan::_group_and_emit(const std::vector<Raw> & raws)
+void VoltageControlPlan::_group_and_emit(const std::vector<Raw> & raws,
+                                         const std::map<int, PassiveBus> & passive)
 {
     // 2. group by regulated solver bus (merge gens that share a regulated bus),
     //    checking the v_set agree within tolerance.
@@ -583,34 +612,22 @@ void VoltageControlPlan::_group_and_emit(const std::vector<Raw> & raws)
     data.v_set = RealVect(ng);
     data.grp_start = Eigen::VectorXi(ng);
     data.grp_count = Eigen::VectorXi(ng);
-    // The sharing key, OpenLoadFlow's rule, which works bus by bus. Inside one
-    // controller bus the controllers share by their keys when they all have one, by
-    // their reactive ranges otherwise; the buses of the group share by the sum of
-    // their controllers' keys when every bus has one, by the sum of their ranges
-    // otherwise. The sharing rows hold Q_i / w_i equal across the group, so
-    // w_i = (share of its bus) * (its share inside the bus), which reduces to the key
-    // when every bus is keyed and to the range when its own bus is not.
-    const auto has_key = [](real_type key) { return std::isfinite(key) && key > 0.; };
-    const auto sharing_weight = [&](const std::vector<int> & members, int idx) {
-        const Raw & r = raws[idx];
-        bool all_buses_keyed = true;
-        bool own_bus_keyed = true;
-        real_type own_bus_keys = 0.;
-        real_type own_bus_range = 0.;
-        for(int other : members){
-            const Raw & o = raws[other];
-            bool other_bus_keyed = true;
-            for(int third : members){
-                if(raws[third].bus == o.bus && !has_key(raws[third].key)) other_bus_keyed = false;
-            }
-            all_buses_keyed = all_buses_keyed && other_bus_keyed;
-            if(o.bus != r.bus) continue;
-            own_bus_range += o.weight;
-            if(has_key(o.key)) own_bus_keys += o.key; else own_bus_keyed = false;
+    // The sharing key, OpenLoadFlow's rule, which works bus by bus. The buses of the
+    // group share by the sum of the keys of ALL their generators (a connected one that
+    // controls nothing, or is held, counts too: `passive`) when every one of them has
+    // a key, by the sum of their reactive ranges otherwise. Inside one controller bus
+    // the controllers share that by their keys when they all have one, by their
+    // reactive ranges otherwise. The sharing rows hold Q_i / w_i equal across the
+    // group, so w_i = (share of its bus) * (its share inside the bus).
+    // the sums over some controllers of one bus, accumulated in the order they are added
+    struct BusSum {
+        real_type keys = 0.;
+        real_type range = 0.;
+        bool keyed = true;
+        void add(const Raw & o){
+            range += o.weight;
+            if(std::isfinite(o.key) && o.key > 0.) keys += o.key; else keyed = false;
         }
-        if(all_buses_keyed) return r.key;
-        if(own_bus_keyed) return own_bus_range * (r.key / own_bus_keys);
-        return r.weight;
     };
 
     int cursor = 0;
@@ -619,22 +636,53 @@ void VoltageControlPlan::_group_and_emit(const std::vector<Raw> & raws)
         data.v_set(g) = grp_vset[g];
         data.grp_start(g) = cursor;
         data.grp_count(g) = static_cast<int>(grp_members[g].size());
-        // The keys of the ACTIVE members are worked out among themselves, so that the
-        // held ones change nothing of the system the grid poses; a held one gets the key
-        // it would have among the active ones once released.
-        std::vector<int> active;
-        for(int idx : grp_members[g]) if(!raws[idx].held) active.push_back(idx);
-        for(int idx : grp_members[g]){
+        // The keys of the ACTIVE members are shared among themselves (a held one counts
+        // in its bus' share, as it would were it not held), so that the held ones change
+        // nothing of the system the grid poses; a held one gets the key it would have
+        // among the active ones once released.
+        // Everything but the controller's own membership is the same for the whole group,
+        // so it is summed once here: the share of each bus (every member there, and its
+        // passive generators), whether every bus of the active members is keyed, and the
+        // sums inside each bus over its active members. A held controller's peers are the
+        // active members plus itself, so it adds its own bus (to the keyed test) and its own
+        // terms (to the sums inside its bus) on top of them.
+        const std::vector<int> & members = grp_members[g];
+        std::map<int, BusSum> bus_share;    // per controller bus, over the members
+        for(int idx : members) bus_share[raws[idx].bus].add(raws[idx]);
+        for(auto & bs : bus_share){
+            const auto it = passive.find(bs.first);
+            if(it != passive.end()){
+                bs.second.keys += it->second.keys;
+                bs.second.range += it->second.range;
+                bs.second.keyed = bs.second.keyed && it->second.keyed;
+            }
+        }
+        bool active_buses_keyed = true;
+        std::map<int, BusSum> inside;       // per controller bus, over the active members
+        for(int idx : members){
+            if(raws[idx].held) continue;
+            active_buses_keyed = bus_share[raws[idx].bus].keyed && active_buses_keyed;
+            inside[raws[idx].bus].add(raws[idx]);
+        }
+        for(int idx : members){
             const Raw & r = raws[idx];
             data.bus(cursor) = r.bus;
             data.kind(cursor) = r.kind;
             data.elem_id(cursor) = r.elem_id;
             data.slope(cursor) = r.slope;
             if(r.held) data.held(cursor) = 1;
-            std::vector<int> peers = active;
-            if(r.held) peers.push_back(idx);
+            // the share of its bus: by keys when every bus of its peers is keyed
+            const BusSum & own_bus = bus_share[r.bus];
+            const bool all_buses_keyed = active_buses_keyed && own_bus.keyed;
+            const real_type share = all_buses_keyed ? own_bus.keys : own_bus.range;
+            // its share inside the bus, among its peers there
+            BusSum in_bus;
+            const auto it = inside.find(r.bus);
+            if(it != inside.end()) in_bus = it->second;
+            if(r.held) in_bus.add(r);
+            const real_type w = in_bus.keyed ? share * (r.key / in_bus.keys)
+                                             : share * (r.weight / in_bus.range);
             // floor the sharing key to keep the N>1 sharing rows non-singular
-            const real_type w = sharing_weight(peers, idx);
             data.weight(cursor) = (std::abs(w) > BaseConstants::_tol_equal_float) ? w : BaseConstants::_tol_equal_float;
             data.group(cursor) = g;
             ++cursor;

@@ -202,13 +202,15 @@ class TestVoltageControlPypowsybl(unittest.TestCase):
     # ----- reactive sharing keys (coordinatedReactiveControl.q_percent) ---------
     # The ranges of G1 / G2 are 100 / 300 (and 20 for G1b), so a range split is
     # 25 % / 75 %: every key below is chosen to give a different split.
-    def _star_keyed(self, keys, extra_gen_on_b1=False):
+    def _star_keyed(self, keys, extra_gen_on_b1=False, extra_gen_regulating=True):
         n = _star(extra_q_g1=(-50.0, 50.0), extra_q_g2=(-100.0, 200.0), g1_reg="LD", g2_reg="LD")
         if extra_gen_on_b1:
-            n.create_generators(id="G1b", voltage_level_id="VL1", bus_id="B1", target_p=30.0, target_q=0.0,
+            n.create_generators(id="G1b", voltage_level_id="VL1", bus_id="B1", target_p=30.0, target_q=5.0,
                                 target_v=405.0, voltage_regulator_on=True, max_p=1000.0, min_p=0.0)
             n.create_minmax_reactive_limits(id="G1b", min_q=-10.0, max_q=10.0)
             n.update_generators(id="G1b", regulated_element_id="LD")
+            if not extra_gen_regulating:
+                n.update_generators(id="G1b", voltage_regulator_on=False)
         for gid, key in keys.items():
             n.create_extensions("coordinatedReactiveControl", generator_id=gid, q_percent=key)
         return n
@@ -219,8 +221,8 @@ class TestVoltageControlPypowsybl(unittest.TestCase):
         for gen_name, share in expected.items():
             self.assertAlmostEqual(q[gen_name] / total, share, places=6, msg=f"{name}: share of {gen_name}")
 
-    def _keyed_shares(self, keys, expected, extra_gen_on_b1=False):
-        n = self._star_keyed(keys, extra_gen_on_b1)
+    def _keyed_shares(self, keys, expected, extra_gen_on_b1=False, extra_gen_regulating=True):
+        n = self._star_keyed(keys, extra_gen_on_b1, extra_gen_regulating)
         name = f"remote-gen-keys-{keys}"
         model = self._compare(n, "VL0", "G0", name)
         self._assert_shares(model, expected, name)
@@ -241,6 +243,14 @@ class TestVoltageControlPypowsybl(unittest.TestCase):
         # B1 keyed but not G2's bus: the buses share by range (120 / 300), B1 inside by keys
         self._keyed_shares({"G1": 30.0, "G1b": 30.0},
                            {"G1": 1. / 7., "G1b": 1. / 7., "G2": 5. / 7.}, extra_gen_on_b1=True)
+
+    def test_remote_gen_share_counts_a_non_regulating_gen_of_the_bus(self):
+        # G1b on B1 regulates nothing: OLF still counts it in B1's share (key 30 + 10
+        # against 40; ranges 100 + 20 against 300), G1 alone takes that share
+        self._keyed_shares({"G1": 30.0, "G1b": 10.0, "G2": 40.0}, {"G1": 0.5, "G2": 0.5},
+                           extra_gen_on_b1=True, extra_gen_regulating=False)
+        self._keyed_shares({}, {"G1": 2. / 7., "G2": 5. / 7.},
+                           extra_gen_on_b1=True, extra_gen_regulating=False)
 
     def test_gen_reactive_key_setter(self):
         n = self._star_keyed({"G1": 60.0, "G2": 40.0})

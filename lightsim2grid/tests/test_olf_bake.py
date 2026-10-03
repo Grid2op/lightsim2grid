@@ -38,6 +38,7 @@ try:
 except ImportError:
     HAS_PYPOWSYBL = False
 
+from lightsim2grid.network.from_pypowsybl._olf_const import _Q_SATURATED_HELD_TOL_MVAR
 from global_var_tests import (
     CURRENT_PYPOW_VERSION,
     VERSION_PHASESHIFT_OK_PYPOW,
@@ -568,6 +569,22 @@ class TestOlfBake(unittest.TestCase):
             self.assertLess((cmp["v_mag_r"] - cmp["v_mag_b"]).abs().max(), TOL_VM_KV)
             self.assertLess((cmp["v_angle_r"] - cmp["v_angle_b"]).abs().max(), 1e-2)
 
+    def test_olf_held_unit_with_headroom_not_frozen(self):
+        """bake_saturated_voltage_control only freezes a held unit at its limit to
+        _Q_SATURATED_HELD_TOL_MVAR: one still inside the relative tolerance of its limit but
+        with more headroom than that keeps regulating, as OLF does."""
+        for headroom_mvar, frozen in [(0.5 * _Q_SATURATED_HELD_TOL_MVAR, True),
+                                      (5. * _Q_SATURATED_HELD_TOL_MVAR, False)]:
+            n = pp.network.create_ieee14()
+            n.update_generators(id=list(n.get_generators().index), min_q=[-9999] * 5, max_q=[9999] * 5)
+            lf.run_ac(n, _with_loops_params())
+            q_b3 = -n.get_generators(attributes=["q"]).at["B3-G", "q"]
+            # a Q range wide enough for the relative tolerance to cover the headroom
+            n.update_generators(id="B3-G", min_q=q_b3 - 1000., max_q=q_b3 + headroom_mvar)
+            bake_outer_loops(n, bake_saturated_voltage_control=True)
+            reg = n.get_generators(attributes=["voltage_regulator_on"]).at["B3-G", "voltage_regulator_on"]
+            self.assertEqual(reg, not frozen, f"headroom {headroom_mvar} MVAr")
+
     def test_hit_qlimit_picks_the_nearer_limit(self):
         from lightsim2grid.network.from_pypowsybl._olf_bake import _hit_qlimit
         import pandas as pd
@@ -699,6 +716,38 @@ class TestOlfBake(unittest.TestCase):
         cmp = ref.join(n.get_buses()[["v_mag", "v_angle"]], lsuffix="_r", rsuffix="_b")
         self.assertLess((cmp["v_mag_r"] - cmp["v_mag_b"]).abs().max(), TOL_VM_KV)
         self.assertLess((cmp["v_angle_r"] - cmp["v_angle_b"]).abs().max(), 1e-2)
+
+    def test_olf_reactive_range_too_small_sharing_a_held_bus_frozen(self):
+        """A unit with too small a reactive range on the bus of a controller OLF keeps:
+        the bus is held (by that other unit), but OLF discarded the small one all the
+        same. Bake must freeze it at its realized q -- left regulating, it would add its
+        range to the bus' capability -- and leave the other one regulating; the baked
+        loop-free re-solve reproduces the reference."""
+        def make():
+            n = pp.network.create_ieee14()
+            n.create_generators(id="B2-SMALL", voltage_level_id="VL2", bus_id="B2",
+                                target_p=5.0, target_q=0.1, target_v=141.075,
+                                voltage_regulator_on=True, min_p=0.0, max_p=20.0)
+            n.update_generators(id="B2-SMALL", min_q=-0.3, max_q=0.3)
+            return n
+        n_ref = make()
+        lf.run_ac(n_ref, _with_loops_params())
+        q_ref = n_ref.get_generators(attributes=["q"])["q"]
+        # OLF did not regulate it: its raw target_q, not a share of the bus' reactive power
+        self.assertAlmostEqual(-q_ref["B2-SMALL"], 0.1, places=6)
+
+        n = make()
+        lf.run_ac(n, _with_loops_params())
+        bake_outer_loops(n)
+        g = n.get_generators(attributes=["voltage_regulator_on", "target_q"])
+        self.assertFalse(g.loc["B2-SMALL", "voltage_regulator_on"])
+        self.assertAlmostEqual(g.loc["B2-SMALL", "target_q"], 0.1, places=6)
+        self.assertTrue(g.loc["B2-G", "voltage_regulator_on"])
+
+        res = lf.run_ac(n, remove_outer_loops(_with_loops_params()))
+        self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+        q_redo = n.get_generators(attributes=["q"])["q"]
+        self.assertLess((q_redo - q_ref).abs().max(), 1e-2)
 
     def test_olf_reactive_range_too_small_frozen(self):
         """A CURVE-kind generator with a sub-1-MVar reactive range is not
@@ -923,9 +972,102 @@ class TestOlfBake(unittest.TestCase):
 
         # a hair inside its limit, far within the relative tolerance, target held
         self.assertEqual(_baked_mode(12.9), "VOLTAGE")
-        self.assertEqual(_baked_mode(12.9, bake_saturated_voltage_control=True), "REACTIVE_POWER")
+        # ... but with more headroom than _Q_SATURATED_HELD_TOL_MVAR: still regulating
+        self.assertEqual(_baked_mode(12.9, bake_saturated_voltage_control=True), "VOLTAGE")
         # saturated for real: the target is not held
         self.assertEqual(_baked_mode(10.), "REACTIVE_POWER")
+
+    def test_saturated_held_svc_frozen_on_request(self):
+        """With ``bake_saturated_voltage_control``, a held SVC is frozen only when its Q sits
+        at its limit to ``_Q_SATURATED_HELD_TOL_MVAR``."""
+        n = four_substations()
+        lf.run_ac(n, _with_loops_params())
+        q_svc = -n.get_static_var_compensators().loc["SVC", "q"]  # generator convention
+        self.assertGreater(q_svc, 1.)
+        for headroom_mvar, mode in [(0.5 * _Q_SATURATED_HELD_TOL_MVAR, "REACTIVE_POWER"),
+                                    (5. * _Q_SATURATED_HELD_TOL_MVAR, "VOLTAGE")]:
+            n = four_substations()
+            lf.run_ac(n, _with_loops_params())
+            v_kv = n.get_buses().loc[n.get_static_var_compensators().loc["SVC", "bus_id"], "v_mag"]
+            n.update_static_var_compensators(id="SVC", b_max=(q_svc + headroom_mvar) / v_kv ** 2)
+            bake_outer_loops(n, bake_saturated_voltage_control=True)
+            self.assertEqual(n.get_static_var_compensators().loc["SVC", "regulation_mode"], mode,
+                             f"headroom {headroom_mvar} MVAr")
+
+    def test_unit_clamped_inside_a_regulating_bus_not_frozen(self):
+        """GB2 shares bus B with GB, both holding the remote load bus: OLF splits the bus'
+        reactive power among them and clamps GB2 at its small limit, the bus (GB2 too)
+        still regulating. Neither freezing rule freezes it."""
+        def build():
+            n = pp.network.create_empty()
+            n.create_substations(id=["S"])
+            n.create_voltage_levels(id=["VR", "VA", "VB", "VS"], substation_id=["S"] * 4,
+                                    topology_kind=["BUS_BREAKER"] * 4, nominal_v=[225., 20., 20., 225.])
+            n.create_buses(id=["R", "A", "B", "SB"], voltage_level_id=["VR", "VA", "VB", "VS"])
+            n.create_lines(id="LSR", voltage_level1_id="VS", voltage_level2_id="VR", bus1_id="SB", bus2_id="R",
+                           r=1., x=10., g1=0., b1=0., g2=0., b2=0.)
+            for t, vl, b in (("TA", "VA", "A"), ("TB", "VB", "B")):
+                n.create_2_windings_transformers(id=t, voltage_level1_id="VR", bus1_id="R", voltage_level2_id=vl,
+                                                 bus2_id=b, rated_u1=225., rated_u2=20., r=0.5, x=3., g=0., b=0.)
+            n.create_generators(id="GS", voltage_level_id="VS", bus_id="SB", target_p=0., target_q=0.,
+                                target_v=230., voltage_regulator_on=True, min_p=0., max_p=1000.)
+            for gid, vl, b in (("GA", "VA", "A"), ("GB", "VB", "B"), ("GB2", "VB", "B")):
+                n.create_generators(id=gid, voltage_level_id=vl, bus_id=b, target_p=20., target_q=0.,
+                                    target_v=232., voltage_regulator_on=True, min_p=0., max_p=50.)
+            n.create_minmax_reactive_limits(id=["GA", "GB", "GB2"], min_q=[-100., -100., -30.],
+                                            max_q=[100., 100., 2.])
+            n.create_loads(id="LR", voltage_level_id="VR", bus_id="R", p0=60., q0=-40.)
+            n.update_generators(id=["GA", "GB", "GB2"], regulated_element_id=["LR"] * 3)
+            # equal keys: inside bus B, GB2 is asked as much as GB, beyond its range
+            n.create_extensions("coordinatedReactiveControl", generator_id=["GA", "GB", "GB2"],
+                                q_percent=[50.] * 3)
+            return n
+        params = lf.Parameters(distributed_slack=False)
+        n = build()
+        self.assertEqual(lf.run_ac(n, params)[0].status, lf.ComponentStatus.CONVERGED)
+        q = -n.get_generators().loc["GB2", "q"]
+        self.assertAlmostEqual(q, 2., places=6)  # clamped at its limit by the dispatch
+        for saturated in (False, True):
+            n = build()
+            lf.run_ac(n, params)
+            bake_outer_loops(n, bake_saturated_voltage_control=saturated)
+            self.assertTrue(n.get_generators().loc["GB2", "voltage_regulator_on"], f"saturated={saturated}")
+
+    def test_olf_hvdc_saturated_at_its_limit_baked(self):
+        """An angle-droop hvdc line OLF saturated at its operator range is baked as a fixed
+        setpoint at that limit, in the direction it flowed: the loop-free re-solve then
+        reproduces the reference. A line in its linear regime keeps its droop."""
+        from test_hvdc_pypowsybl import _build_net, add_operator_range
+        loop_free = remove_outer_loops(_with_loops_params())
+        # p0 sets the direction of the flow; (12, 8) MW is well below what the droop asks
+        for p0, opr, mode, limit in [(20.0, (12.0, 8.0), "SIDE_1_RECTIFIER_SIDE_2_INVERTER", 12.0),
+                                     (-200.0, (12.0, 8.0), "SIDE_1_INVERTER_SIDE_2_RECTIFIER", 8.0),
+                                     (20.0, (500.0, 500.0), None, None)]:
+            def make():
+                n = add_operator_range(_build_net(max_p=300.0), *opr)
+                n.update_extensions("hvdcAngleDroopActivePowerControl", id="HVDC", p0=p0)
+                return n
+            n_ref = make()
+            lf.run_ac(n_ref, _with_loops_params())
+            p_ref = n_ref.get_vsc_converter_stations()["p"]
+
+            n = make()
+            lf.run_ac(n, _with_loops_params())
+            bake_outer_loops(n)
+            droop_on = bool(n.get_extensions("hvdcAngleDroopActivePowerControl").loc["HVDC", "enabled"])
+            hvdc = n.get_hvdc_lines().loc["HVDC"]
+            if limit is None:
+                self.assertTrue(droop_on, "a line in its linear regime must keep its droop")
+                continue
+            self.assertFalse(droop_on)
+            self.assertEqual(hvdc["converters_mode"], mode)
+            self.assertAlmostEqual(hvdc["target_p"], limit, places=6)
+            self.assertAlmostEqual(p_ref.max(), limit, places=6)  # what the rectifier took
+            res = lf.run_ac(n, loop_free)
+            self.assertEqual(res[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+            p_baked = n.get_vsc_converter_stations()["p"]
+            self.assertLess((p_baked - p_ref).abs().max(), 1e-4)
+
 
 if __name__ == "__main__":
     unittest.main()
