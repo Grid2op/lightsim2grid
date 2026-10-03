@@ -493,21 +493,28 @@ jobs:
                 command: |
                     .\venv_test\Scripts\activate
                     pip install gymnasium pybind11 scipy
+                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
                     git clone https://github.com/Grid2Op/grid2op.git _grid2op
+                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
                     pip install -e _grid2op
+                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             - run:
                 name: "Install lightsim2grid"
                 command: |
                     .\venv_test\Scripts\activate
                     git submodule update --init
+                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
                     python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v -e .
+                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
                     pip freeze
             - run:
                 name: "Show package versions"
                 command: |
                     .\venv_test\Scripts\activate
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
+                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
                     pip install matpowercaseframes  # optional dep, reads the ".m" of a matpower case
+                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
                     pip freeze
             - run:
                 name: "Build external algo plugin"
@@ -517,7 +524,9 @@ jobs:
                     mkdir examples\external_algorithm\build -Force
                     Set-Location examples\external_algorithm\build
                     cmake .. "-DLIGHTSIM2GRID_CPP_LIB=$ls2g_lib"
+                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
                     cmake --build . --config Release
+                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
                     Set-Location ..\..\..
             - run:
                 name: "make basic tests" # otherwise it takes too long (time out)
