@@ -542,12 +542,14 @@ def _bake_hvdc_ac_emulation_limits(network, keep_only_main_comp=True, df_bus=Non
         network.get_vsc_converter_stations(attributes=["p", "connected", "bus_id"]),
         network.get_lcc_converter_stations(attributes=["p", "connected", "bus_id"]),
     ])
+    if keep_only_main_comp:
+        stations_in = stations.index.isin(_keep_only_main_comp(stations, df_bus).index)
+    else:
+        stations_in = stations["connected"].to_numpy(bool)
+    stations_in = pd.Series(stations_in, index=stations.index)
     st1 = stations.loc[hvdc["converter_station1_id"].to_numpy()]
     st2 = stations.loc[hvdc["converter_station2_id"].to_numpy()]
-    in_service = st1["connected"].to_numpy(bool) & st2["connected"].to_numpy(bool)
-    if keep_only_main_comp:
-        comp = df_bus["synchronous_component"]
-        in_service &= (st1["bus_id"].map(comp).to_numpy() == 0) & (st2["bus_id"].map(comp).to_numpy() == 0)
+    in_service = stations_in.loc[st1.index].to_numpy() & stations_in.loc[st2.index].to_numpy()
     max_p = hvdc["max_p"].to_numpy(float)
     pmax_1to2, pmax_2to1 = _hvdc_pmax_per_direction(network, hvdc.index, np.where(np.isfinite(max_p), max_p, np.inf))
     p1 = st1["p"].to_numpy(float)
