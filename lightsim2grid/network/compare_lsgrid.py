@@ -153,6 +153,9 @@ ATTR_DCLINE_INPUT = (ATTR_2SIDES_INPUT +
         "droop_k_mw_per_rad",
         "pmax_1to2_mw",
         "pmax_2to1_mw",
+        # frozen at its AC-emulation limit by a bake (see LSGrid.set_hvdc_ac_emulation_frozen):
+        # False unless set
+        "ac_emulation_frozen",
     ]
 )
 

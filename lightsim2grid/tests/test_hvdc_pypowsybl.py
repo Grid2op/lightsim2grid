@@ -176,6 +176,15 @@ class TestHvdcPypowsybl(unittest.TestCase):
         self.assertEqual(st.min_q_mvar, -40.0)
         self.assertEqual(st.max_q_mvar, 30.0)
 
+    def test_compare_sees_the_frozen_flag(self):
+        # two grids that differ only by the hvdc lines flagged frozen are not the same input
+        from lightsim2grid.network.compare_lsgrid import compare_network_input
+        model, _ = self._run_ls(_build_net(max_p=300.0))
+        other = model.copy()
+        self.assertEqual(len(compare_network_input(model, other)), 0)
+        other.set_hvdc_ac_emulation_frozen([True])
+        self.assertGreater(len(compare_network_input(model, other)), 0)
+
     def test_frozen_line_release_is_reported(self):
         # baked at a 100 MW load, OLF saturated the line at its 12 MW operator range: the bake
         # froze it there. Lightening the load at its receiving end brings the flow its droop
