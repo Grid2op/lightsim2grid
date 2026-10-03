@@ -276,6 +276,18 @@ class TestFromPypowsybl(unittest.TestCase):
         gens = {g.name: g for g in grid.get_generators()}
         self.assertAlmostEqual(gens["GTH1"].can_participate_slack_overshoot_mw, over["GTH1"], places=9)
 
+    def test_overshoot_without_the_flag_refused(self):
+        # the overshoot only means something for a flagged unit: given alone (or with an
+        # explicit slack) it is refused, as `can_participate_slack` itself is
+        n, res = self._baked()
+        over = res.can_participate_slack_overshoot
+        with self.assertRaises(ValueError):
+            init_from_pypowsybl(n, sort_index=False, buses_for_sub=False,
+                                can_participate_slack_overshoot=over)
+        with self.assertRaises(ValueError):
+            init_from_pypowsybl(n, sort_index=False, buses_for_sub=False, gen_slack_id="GTH2",
+                                can_participate_slack_overshoot=over)
+
     def test_init_flags_it_with_olf_weight(self):
         n, res = self._baked()
         grid = init_from_pypowsybl(n, sort_index=False, buses_for_sub=False,

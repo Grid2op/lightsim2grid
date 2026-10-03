@@ -320,6 +320,10 @@ def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
     if can_participate_slack is not None and len(can_participate_slack) and not default_slack:
         raise ValueError("`can_participate_slack` needs OpenLoadFlow's default distributed slack "
                          "(gen_slack_id=None and slack_bus_id=None): its weights are on that scale.")
+    if (can_participate_slack_overshoot is not None and len(can_participate_slack_overshoot)
+            and (can_participate_slack is None or not len(can_participate_slack))):
+        raise ValueError("`can_participate_slack_overshoot` is only read for the units of "
+                         "`can_participate_slack`, which is not given.")
     if default_slack:
         # Default: reproduce OpenLoadFlow's distributed slack, sharing the
         # active-power mismatch over the participating generators (see
