@@ -224,6 +224,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   grid2op backend and ``init_from_pypowsybl`` do.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 10 -> 11: ``GeneratorContainer`` serializes the
   ``can_be_pv`` flag. A file saved with format 10 must be re-exported.
+- [FIXED] ``LSGrid`` pickling converts its state one element at a time: the single huge tuple cast
+  overflowed MSVC (C1067) and OOM-killed gcc 8 on ``binding_lsgrid.cpp``.
 - [FIXED] ``bake_outer_loops`` no longer freezes a unit at its reactive limit whose bus still has a
   regulating unit with headroom (OpenLoadFlow switches buses, not units).
 - [FIXED] The controllers holding a remote bus share it with the other generators of their bus counted
