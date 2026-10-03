@@ -174,6 +174,54 @@ class TestPrepass(unittest.TestCase):
         np.testing.assert_allclose(tp[:2], [40., 40.], atol=1e-9)
         self.assertTrue(grid.get_generators()[0].is_slack)   # did not saturate
 
+    def _grid_only_flagged_has_room(self):
+        # the island produces more than it consumes (+10 MW): the units must inject more.
+        # The slack unit can only take 2 MW (max_p 12), the flagged one has room to spare.
+        # 10 + 40 + 30 MW of generation for 80 MW of load: balanced but for the losses
+        grid = _grid(flagged=True, leaf_gen_mw=30.)
+        grid.change_p_gen(0, 10.)
+        grid.set_gen_p_limits(np.zeros(3), np.array([12., 100., 100.]))
+        return grid
+
+    def test_slack_kept_when_only_a_flagged_unit_has_room(self):
+        # the flagged unit takes the rest, but it is not in the slack the powerflow
+        # distributes on: the saturated slack unit must stay in it, or there is none left
+        grid = self._grid_only_flagged_has_room()
+        grid.deactivate_powerline(LEAF_LINE)
+        report = grid.consider_only_main_component(True)
+        self.assertAlmostEqual(report.mismatch_mw, 10., places=9)
+        self.assertTrue(report.all_saturated)
+        np.testing.assert_allclose(_target_p(grid)[:2], [12., 48.], atol=1e-9)
+        gens = grid.get_generators()
+        self.assertTrue(gens[0].is_slack)
+        self.assertFalse(gens[CAPPED].is_slack)
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        self.assertGreater(V.shape[0], 0)
+
+    def test_batch_keeps_the_slack_when_only_a_flagged_unit_has_room(self):
+        # same as above, row by row: the slack unit keeps its share of the losses, and the
+        # p-limit check sees it past its max_p, as on the single solve
+        ref = self._grid_only_flagged_has_room()
+        ref.deactivate_powerline(LEAF_LINE)
+        ref.consider_only_main_component(True)
+        V_ref = ref.ac_pf(np.full(ref.total_bus(), 1.0 + 0j), 30, 1e-11)
+        self.assertGreater(V_ref.shape[0], 0)
+        viol_ref = {(v.element_type, v.element_id, v.violation_type) for v in ref.get_physical_violations()}
+
+        grid = self._grid_only_flagged_has_room()
+        ca = ContingencyAnalysisCPP(grid, True)
+        ca.handle_disconnected_grid = True
+        ca.redistribute_slack = True
+        ca.compute_physical_violations = True
+        ca.add_n1(LEAF_LINE)
+        ca.compute(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-11)
+        assert list(ca.converged()) == [True]
+        V_batch = np.asarray(ca.get_voltages())[0]
+        np.testing.assert_allclose(V_batch[:4], V_ref[:4], atol=1e-9)
+        viol_batch = {(v.element_type, v.element_id, v.violation_type) for v in ca.get_physical_violations()[0]}
+        self.assertEqual(viol_batch, viol_ref)
+        self.assertTrue(any(el_id == 0 for _, el_id, _ in viol_batch), "the slack unit ends past its max_p")
+
     def test_the_batch_matches_the_single_solve(self):
         ref = _grid(flagged=True)
         ref.deactivate_powerline(LEAF_LINE)
@@ -235,9 +283,10 @@ class TestFromPypowsybl(unittest.TestCase):
         # max_p / droop, normalised with the slack weights: GTH1 100 MW, GTH2 400 MW
         self.assertAlmostEqual(gens["GTH1"].can_participate_slack_weight / gens["GTH2"].slack_weight,
                                100. / 400., places=12)
-        # nothing flagged by default, an unknown id is refused, and an explicit slack too
+        # nothing flagged out of the slack by default (a slack unit carries the flag on its
+        # own), an unknown id is refused, and an explicit slack too
         grid = init_from_pypowsybl(n, sort_index=False, buses_for_sub=False)
-        self.assertFalse(any(g.can_participate_slack for g in grid.get_generators()))
+        self.assertFalse(any(g.can_participate_slack and not g.is_slack for g in grid.get_generators()))
         with self.assertRaises(ValueError):
             init_from_pypowsybl(n, sort_index=False, buses_for_sub=False,
                                 can_participate_slack=["NOT-A-UNIT"])

@@ -18,6 +18,7 @@
 #include "Eigen/Core"
 
 #include "BaseConstants.hpp"
+#include "SlackRedistribution.hpp"
 #include "TaggedIdVec.hpp"
 #include "Utils.hpp"
 
@@ -62,19 +63,23 @@ class SlackParticipation
         }
 
         /**
-         * "Can participate in the slack": the elements a caller knows an outer loop only
-         * left out of the distributed slack because they sat at an active limit in the
-         * reference solve (OpenLoadFlow caps a unit at max_p when the mismatch it
-         * distributes is positive, at min_p when it is negative -- so that unit takes no
-         * share of a mismatch of that sign, and a full one of the other). One weight per
-         * element, on the same scale as the slack weights, 0 for an element not flagged.
+         * "Can participate in the slack": every element that can be in the distributed
+         * slack, with the weight it has there (on the same scale as the slack weights, 0
+         * for an element that cannot). A slack participant carries it on its own (`add`
+         * sets it, `remove` clears it); what this call adds are the elements a caller
+         * knows an outer loop only left out of the slack because they sat at an active
+         * limit in the reference solve (OpenLoadFlow caps a unit at max_p when the
+         * mismatch it distributes is positive, at min_p when it is negative -- so that
+         * unit takes no share of a mismatch of that sign, and a full one of the other).
+         * The slack participants keep their flag, whatever `flags` says of them.
          *
-         * Never read by the Newton solve (its distributed slack has no bounds, so it
-         * would push such a unit past its limit); only the bounded redistribution
-         * pre-pass (SlackRedistribution.hpp) counts a flagged element as a participant,
-         * within its [min_p, max_p] -- which lets it move away from the limit it sits at,
-         * never across it. A flagged element that is also a slack participant takes part
-         * with its slack weight.
+         * A flagged element out of the slack is not read by the Newton solve (its
+         * distributed slack has no bounds, so it would push such a unit past its limit).
+         * The bounded redistribution pre-pass (SlackRedistribution.hpp) counts it as a
+         * participant, within its [min_p, max_p] -- which lets it move away from the limit
+         * it sits at, never across it -- and it goes back into the slack as soon as it is
+         * connected with a set-point off its limits (`rejoin_if_able`). A flagged element
+         * that is also a slack participant takes part with its slack weight.
          */
         void set_can_participate(const std::vector<bool> & flags,
                                  const Eigen::Ref<const RealVect> & weights,
@@ -98,6 +103,9 @@ class SlackParticipation
                 }
                 res[el_id] = w;
             }
+            for(std::size_t el_id = 0; el_id < nb_el; ++el_id){
+                if(!flags[el_id] && slackbus_[el_id]) res[el_id] = weight_[el_id];
+            }
             // nothing a powerflow reads: no AlgoControl flag to raise
             can_participate_weight_ = res;
         }
@@ -106,9 +114,13 @@ class SlackParticipation
         }
         [[nodiscard]] real_type can_participate_weight(int el_id) const {return can_participate_weight_[el_id];}
         [[nodiscard]] const std::vector<real_type> & can_participate_weights() const {return can_participate_weight_;}
-        /// restore a serialized state (sizes are checked by the caller)
+        /// restore a serialized state (sizes are checked by the caller). A slack participant
+        /// of a state saved before it carried its own flag gets it.
         void set_can_participate_weights(const std::vector<real_type> & weights){
             can_participate_weight_ = weights;
+            for(std::size_t el_id = 0; el_id < slackbus_.size(); ++el_id){
+                if(slackbus_[el_id] && !(can_participate_weight_[el_id] > 0.)) can_participate_weight_[el_id] = weight_[el_id];
+            }
         }
 
         /**
@@ -199,24 +211,44 @@ class SlackParticipation
                 solver_control.tell_slack_weight_changed();
                 weight_[el_id] = weight;
             }
+            // it can be in the slack: it can come back to it (see leave / rejoin_if_able)
+            can_participate_weight_[el_id] = weight;
         }
+        /// take `el_id` out of the slack for good: it can no longer participate either
         void remove(int el_id, DualAlgoControl & solver_control){
-            if(slackbus_[el_id]){ solver_control.tell_slack_participate_changed(); }
-            if(std::abs(weight_[el_id]) > BaseConstants::_tol_equal_float){ solver_control.tell_slack_weight_changed(); }
-            slackbus_[el_id] = false;
-            weight_[el_id] = 0.;
+            _take_out(el_id, solver_control);
+            can_participate_weight_[el_id] = 0.;
         }
-        /// remove every participant whose bus is not flagged in `bus_kept` (see
-        /// LSGrid::consider_only_main_component). An element without a bus is left as is.
-        void remove_if_bus_not_in(const std::vector<bool> & bus_kept, const GlobalBusIdVect & bus_id,
-                                  DualAlgoControl & solver_control){
-            const int nb_el = static_cast<int>(slackbus_.size());
-            for(int el_id = 0; el_id < nb_el; ++el_id){
-                if(!slackbus_[el_id]) continue;
-                const int bus_me = bus_id(el_id).cast_int();
-                if(bus_me < 0) continue;
-                if(!bus_kept[bus_me]) remove(el_id, solver_control);
-            }
+        /**
+         * Take `el_id` out of the slack while it sits at the active limit it saturated
+         * at (LSGrid::redistribute_active_power), keeping it flagged "can participate"
+         * with its weight -- what a unit the bake capped there looks like -- so that
+         * `rejoin_if_able` puts it back once it is moved off that limit. (A unit that is
+         * merely disconnected does not leave the slack: see `append_slack_buses`.)
+         */
+        void leave(int el_id, DualAlgoControl & solver_control){
+            if(slackbus_[el_id] && weight_[el_id] > 0.) can_participate_weight_[el_id] = weight_[el_id];
+            _take_out(el_id, solver_control);
+        }
+        /**
+         * Put back into the slack an element that can participate in it and is out of it
+         * only because it sat at an active limit (saturated by the pre-pass, or capped by
+         * the bake): `connected` (the container's status, on a bus) and its injection (MW,
+         * generator convention) strictly inside its [min_p, max_p] (NaN: no limit on that
+         * side). A unit ON a limit, up to the pre-pass tolerance, stays out: that is where
+         * the pre-pass leaves a saturated one. Returns whether it rejoined.
+         */
+        bool rejoin_if_able(int el_id, bool connected, real_type injection_mw,
+                            real_type min_p_mw, real_type max_p_mw,
+                            DualAlgoControl & solver_control, const char * fun_name){
+            if(slackbus_[el_id] || !connected) return false;
+            const real_type w = can_participate_weight_[el_id];
+            if(!(w > 0.)) return false;
+            const real_type eps = slack_redistribution::default_eps_mw;
+            if(std::isfinite(max_p_mw) && injection_mw >= max_p_mw - eps) return false;
+            if(std::isfinite(min_p_mw) && injection_mw <= min_p_mw + eps) return false;
+            add(el_id, w, solver_control, fun_name);
+            return true;
         }
         void remove_all(){
             DualAlgoControl unused_solver_control;
@@ -261,12 +293,16 @@ class SlackParticipation
             }
         }
 
-        /// append the grid buses of the flagged elements (connected or not) that are not in `buses` yet
+        /// append the grid buses of the flagged elements (connected or not) that are not in
+        /// `buses` yet. A disconnected participant stays flagged and takes no share until it
+        /// is reconnected (see `participates`); its bus stays a slack bus as long as it is in
+        /// the grid (LSGrid::_slack_bus_id_me drops the ones that are not).
         void append_slack_buses(std::vector<int> & buses, const GlobalBusIdVect & bus_id) const {
             const int nb_el = static_cast<int>(slackbus_.size());
             for(int el_id = 0; el_id < nb_el; ++el_id){
                 if(!slackbus_[el_id]) continue;
                 const int bus_me = bus_id(el_id).cast_int();
+                if(bus_me == BaseConstants::_deactivated_bus_id) continue;
                 bool already_there = false;
                 for(int b : buses) if(b == bus_me) { already_there = true; break; }
                 if(!already_there) buses.push_back(bus_me);
@@ -332,9 +368,17 @@ class SlackParticipation
         }
 
     private:
+        void _take_out(int el_id, DualAlgoControl & solver_control){
+            if(slackbus_[el_id]){ solver_control.tell_slack_participate_changed(); }
+            if(std::abs(weight_[el_id]) > BaseConstants::_tol_equal_float){ solver_control.tell_slack_weight_changed(); }
+            slackbus_[el_id] = false;
+            weight_[el_id] = 0.;
+        }
+
         std::vector<bool> slackbus_;     // is this element flagged a slack participant
         std::vector<real_type> weight_;  // its raw weight (does not sum to 1)
-        // its weight in the redistribution pre-pass only, 0 if not flagged (see set_can_participate)
+        // the weight it has when it can be in the slack, 0 if it cannot: its slack weight
+        // for a participant, what the pre-pass uses for one out of it (see set_can_participate)
         std::vector<real_type> can_participate_weight_;
         // how far beyond its limit it was in the reference solve, MW (see set_can_participate_overshoot)
         std::vector<real_type> can_participate_overshoot_mw_;

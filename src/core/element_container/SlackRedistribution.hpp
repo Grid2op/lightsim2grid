@@ -76,7 +76,7 @@ struct Report {
     int nb_saturated = 0;              // units that reached a bound (and left the slack)
     int nb_rounds = 0;                 // 0: nothing was shared
     real_type not_distributed_mw = 0.; // what no unit could take (all saturated)
-    bool all_saturated = false;        // every unit hit its bound: none left the slack
+    bool all_saturated = false;        // every unit of the slack hit its bound: none left it
 };
 
 constexpr real_type default_eps_mw = 1e-6;
@@ -87,10 +87,12 @@ constexpr real_type default_eps_mw = 1e-6;
  * is deterministic). Writes each unit's new injection in `new_injection_mw` and whether
  * it reached a bound in `saturated` (both resized to `units.size()`).
  *
- * When EVERY unit hits its bound, `saturated` is cleared (all zero) and
- * `all_saturated` is set: the caller keeps them all in the slack (a solve with no
- * slack is impossible, so a bound will have to give) and `not_distributed_mw` says
- * how much was left.
+ * When every unit of the Newton solve's distributed slack (`in_slack`) hits its bound,
+ * `saturated` is cleared (all zero) and `all_saturated` is set: the caller keeps them
+ * all in the slack (a solve with no slack is impossible, so a bound will have to give)
+ * and `not_distributed_mw` says how much no unit could take. That holds even when a
+ * unit only flagged "can participate" still has room: it takes the rest of the
+ * mismatch here, but the solve cannot distribute on it.
  */
 inline Report distribute_with_overshoot(const std::vector<Participant> & units,
                                         real_type mismatch_mw,
@@ -165,7 +167,19 @@ inline Report distribute(const std::vector<Participant> & units,
     }
     report.not_distributed_mw = remaining;
     for(std::size_t k = 0; k < nb; ++k) if(saturated[k]) ++report.nb_saturated;
-    if(nb_active == 0){
+    // what is left of the solve's slack: the units still active that are in it (a unit only
+    // flagged "can participate" is not, so it cannot keep the slack from being emptied)
+    bool any_in_slack = false;
+    bool slack_left = false;
+    for(std::size_t k = 0; k < nb; ++k){
+        if(!units[k].in_slack) continue;
+        any_in_slack = true;
+        if(active[k]){
+            slack_left = true;
+            break;
+        }
+    }
+    if(nb_active == 0 || (any_in_slack && !slack_left)){
         report.all_saturated = true;
         saturated.assign(nb, 0);
     }

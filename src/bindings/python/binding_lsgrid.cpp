@@ -19,7 +19,7 @@ void bind_gridmodel(py::module_& m) {
         "What LSGrid.redistribute_active_power / consider_only_main_component(redistribute_slack=True) did: "
         "the imbalance shared (MW, > 0: the units inject more), how many units took part, how many reached "
         "a bound (and left the distributed slack), how many rounds it took, what could not be placed, and "
-        "whether EVERY unit saturated (in which case none left the slack).")
+        "whether every unit of the distributed slack saturated (in which case none left it).")
         .def_readonly("mismatch_mw", &slack_redistribution::Report::mismatch_mw)
         .def_readonly("nb_participants", &slack_redistribution::Report::nb_participants)
         .def_readonly("nb_saturated", &slack_redistribution::Report::nb_saturated)
@@ -113,6 +113,9 @@ void bind_gridmodel(py::module_& m) {
         .def("get_physical_violations", &LSGrid::get_physical_violations,
              py::arg("ac") = true, py::arg("tol_mva") = 1e-4, py::arg("tol_vm_pu") = 1e-4,
              DocLSGrid::get_physical_violations.c_str())
+        .def("cap_slack_at_active_limits", &LSGrid::cap_slack_at_active_limits,
+             py::arg("max_iter") = 10, py::arg("tol") = 1e-8, py::arg("tol_mw") = 1e-6,
+             py::arg("max_rounds") = 10, DocLSGrid::cap_slack_at_active_limits.c_str())
         .def("get_violations", &LSGrid::get_violations,
              py::arg("threshold") = 1., py::arg("ac") = true,
              py::arg("rel_tol") = DEFAULT_VIOLATION_REL_TOL, DocLSGrid::get_violations.c_str())
@@ -243,11 +246,14 @@ void bind_gridmodel(py::module_& m) {
              "max_p when the mismatch it distributes is positive, at min_p when negative), with "
              "the weight each would have as a participant, on the same scale as the slack "
              "weights (ignored where not flagged; `GenInfo.can_participate_slack` / "
-             "`can_participate_slack_weight`). Never read by the Newton solve, whose distributed "
-             "slack has no bounds: only the bounded redistribution pre-pass "
-             "(`consider_only_main_component(True)`, the batch algorithms' `redistribute_slack`) "
-             "counts them, within their [min_p, max_p], so they only move away from the limit "
-             "they sit at. `init_from_pypowsybl(can_participate_slack=...)` fills it from what "
+             "`can_participate_slack_weight`). The slack participants carry the flag on their own "
+             "and keep it whatever `flags` says. While out of the slack, a flagged unit is not "
+             "read by the Newton solve, whose distributed slack has no bounds: only the bounded "
+             "redistribution pre-pass (`consider_only_main_component(True)`, the batch algorithms' "
+             "`redistribute_slack`) counts it, within its [min_p, max_p], so it only moves away "
+             "from the limit it sits at. It goes back into the slack, with this weight, when it "
+             "is reconnected or its set-point is moved off its limits (`change_p_gen`). "
+             "`init_from_pypowsybl(can_participate_slack=...)` fills it from what "
              "`bake_outer_loops(..., return_details=True)` capped.")
         .def("set_storage_can_participate_slack", &LSGrid::set_storage_can_participate_slack,
              py::arg("flags"), py::arg("weights"),

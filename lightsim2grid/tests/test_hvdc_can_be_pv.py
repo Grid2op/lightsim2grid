@@ -120,6 +120,11 @@ class TestHvdcRelease(unittest.TestCase):
             self.assertTrue(list(LSGrid.load_binary(path).get_dclines())[0].station2.can_be_pv)
         with self.assertRaises(RuntimeError):
             grid.set_hvdc_can_be_pv(np.array([True, True, True]), np.array([True, False]))
+        # a wrong side 2 is refused before side 1 is written: nothing is half applied
+        with self.assertRaises(RuntimeError):
+            grid.set_hvdc_can_be_pv(np.array([True, True]), np.array([True, False, False]))
+        stations_1 = [line.station1.can_be_pv for line in grid.get_dclines()]
+        self.assertEqual(stations_1, [False, False])
 
 
 if __name__ == "__main__":

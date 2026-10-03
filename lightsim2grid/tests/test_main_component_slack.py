@@ -9,10 +9,10 @@
 """Distributed slack across the boundary of ``consider_only_main_component``.
 
 When islanding strands a generator of the distributed slack, ``consider_only_main_component``
-deactivates it. It used to leave it in the slack: its (now disconnected) bus was still
-listed as a slack bus and the next ``ac_pf`` threw "One of the slack bus is disconnected".
-It now removes such generators from the slack first, as OpenLoadFlow, which only
-distributes the slack on the main component.
+deactivates it. Its (now disconnected) bus used to be listed as a slack bus, and the next
+``ac_pf`` threw "One of the slack bus is disconnected". A disconnected slack unit now takes no
+share, as in OpenLoadFlow, which only distributes the slack on the main component, and it
+stays in the slack: reconnecting it gives it its share back.
 
 With ``redistribute_slack=True`` (the default) it also shares the power the islanding took
 out on the remaining slack units as OpenLoadFlow's ``DistributedSlack`` outer loop does,
@@ -104,7 +104,7 @@ class TestMainComponentSlack(unittest.TestCase):
         that islanding it loses something"""
         self.model.change_p_gen(self.leaf_gen[0], _LEAF_P_MW)
 
-    def test_stranded_gen_leaves_slack(self):
+    def test_stranded_gen_takes_no_share(self):
         gens = self.model.get_generators()
         assert gens[self.leaf_gen[0]].is_slack
         nb_slack = sum(gen.is_slack for gen in gens)
@@ -112,10 +112,11 @@ class TestMainComponentSlack(unittest.TestCase):
         self.model.consider_only_main_component()
         gens = self.model.get_generators()
         self.assertFalse(gens[self.leaf_gen[0]].connected)
-        self.assertFalse(gens[self.leaf_gen[0]].is_slack, "the stranded generator must leave the slack")
-        self.assertEqual(sum(gen.is_slack for gen in gens), nb_slack - 1)
+        self.assertTrue(gens[self.leaf_gen[0]].is_slack, "the stranded generator stays in the slack")
+        self.assertEqual(sum(gen.is_slack for gen in gens), nb_slack)
         V = self._ac_pf()
         self.assertGreater(V.shape[0], 0, "ac_pf diverged after islanding a slack generator")
+        self.assertEqual(self.model.get_generators()[self.leaf_gen[0]].res_p_mw, 0.)
 
     def test_stranded_forced_reference_is_cleared(self):
         self.model.set_reference_slack_bus(_LEAF_BUS)
@@ -124,6 +125,18 @@ class TestMainComponentSlack(unittest.TestCase):
         self.assertEqual(self.model.get_reference_slack_bus(), -1)
         V = self._ac_pf()
         self.assertGreater(V.shape[0], 0)
+
+    def test_reference_out_of_range_is_refused(self):
+        # consider_only_main_component indexes its per-bus flags with the reference: an id
+        # past the last bus must be refused when it is set, not read out of bounds there
+        nb_bus = self.model.total_bus()
+        for bad in (nb_bus, nb_bus + 10_000, -2):
+            with self.assertRaises(RuntimeError):
+                self.model.set_reference_slack_bus(bad)
+            self.assertEqual(self.model.get_reference_slack_bus(), -1)
+        self.model.set_reference_slack_bus(nb_bus - 1)
+        self.model.set_reference_slack_bus(-1)
+        self.assertEqual(self.model.get_reference_slack_bus(), -1)
 
     def test_nothing_stranded_unchanged(self):
         self.model.set_reference_slack_bus(_LEAF_BUS)
@@ -266,15 +279,17 @@ class TestMainComponentSlack(unittest.TestCase):
         np.testing.assert_array_equal(self._slack_flags(), ~sat)
         self.assertGreater(int(sat.sum()), 0, "this test wants at least one saturation")
 
-        # second call, the other way: the saturated units are out of the slack now
+        # second call, the other way: the saturated units are out of the slack, but they
+        # can still participate (can_participate_slack): the pre-pass moves them down, away
+        # from their max_p, as OLF lets a capped unit take a share of a mismatch of the
+        # other sign. Its own moves do not bring them back into the slack.
         still_in = ~sat
         targets2 = self._targets()
         report2 = self.model.redistribute_active_power(-25.)
-        exp2, sat2, remaining2 = olf_distribute(targets2[still_in], weights[still_in],
-                                                min_p[still_in], max_p[still_in], -25.)
-        self.assertEqual(report2.nb_participants, int(still_in.sum()))
-        np.testing.assert_allclose(self._targets()[still_in], exp2, atol=1e-9)
-        np.testing.assert_allclose(self._targets()[~still_in], targets2[~still_in], atol=1e-12)
+        exp2, sat2, remaining2 = olf_distribute(targets2, weights, min_p, max_p, -25.)
+        self.assertEqual(report2.nb_participants, self.n_gen)
+        np.testing.assert_allclose(self._targets(), exp2, atol=1e-9)
+        np.testing.assert_array_equal(self._slack_flags(), still_in & ~sat2)
         self.assertAlmostEqual(report2.not_distributed_mw, remaining2, places=9)
         V = self._ac_pf()
         self.assertGreater(V.shape[0], 0)
@@ -371,6 +386,184 @@ class TestMainComponentSlack(unittest.TestCase):
         self.assertFalse(sto.is_slack)
         V = model.ac_pf(np.ones(net.bus.shape[0], dtype=np.complex128), 30, 1e-10)
         self.assertGreater(V.shape[0], 0)
+
+
+
+class TestSlackRejoin(unittest.TestCase):
+    """The slack a grid solves with must not drift away from the one it was given. A slack
+    unit stranded by ``consider_only_main_component`` stays in the slack and takes its share
+    again once reconnected (what the grid2op backend does every step). A unit that can be in
+    the slack (``can_participate_slack``) but is out of it because it sat at one of its
+    active limits comes back when its set-point moves off that limit."""
+    def setUp(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.net = pn.case14()
+            self.model = init_from_pandapower(self.net)
+        for gen in self.model.get_generators():
+            self.model.add_gen_slackbus(gen.id, 1.)
+        gens = self.model.get_generators()
+        self.leaf_gen = [gen.id for gen in gens if gen.bus_id == _LEAF_BUS][0]
+        # a generator in the main component, producing something
+        self.other = [gen.id for gen in gens if gen.id != self.leaf_gen and gen.target_p_mw > 1.][0]
+        self.n_gen = len(gens)
+        # read once: a disconnected branch no longer reports its buses
+        self.leaf_lines = [line.id for line in self.model.get_lines() if _LEAF_BUS in (line.bus1_id, line.bus2_id)]
+        self.leaf_trafos = [trafo.id for trafo in self.model.get_trafos() if _LEAF_BUS in (trafo.bus1_id, trafo.bus2_id)]
+
+    def _leaf_branches(self, action):
+        for line_id in self.leaf_lines:
+            getattr(self.model, f"{action}_powerline")(line_id)
+        for trafo_id in self.leaf_trafos:
+            getattr(self.model, f"{action}_trafo")(trafo_id)
+
+    def _gen(self, gen_id):
+        return self.model.get_generators()[gen_id]
+
+    def _ac_pf(self):
+        V = self.model.ac_pf(np.ones(self.net.bus.shape[0], dtype=np.complex128), 30, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+
+    def test_every_slack_unit_can_participate(self):
+        for gen in self.model.get_generators():
+            self.assertTrue(gen.can_participate_slack)
+            self.assertEqual(gen.can_participate_slack_weight, 1.)
+
+    def test_stranded_unit_takes_its_share_again_when_reconnected(self):
+        # the leaf generator sits at 0 MW, on its min_p: stranded, it must come back as it
+        # was (in the slack), not be judged by that limit as a unit the bake capped
+        self._leaf_branches("deactivate")
+        self.model.consider_only_main_component(False)
+        gen = self._gen(self.leaf_gen)
+        self.assertFalse(gen.connected)
+        self.assertTrue(gen.is_slack)
+        self._ac_pf()
+        self.assertEqual(self._gen(self.leaf_gen).res_p_mw, 0.)
+        self._leaf_branches("reactivate")
+        self.model.reactivate_gen(self.leaf_gen)
+        gen = self._gen(self.leaf_gen)
+        self.assertTrue(gen.is_slack)
+        self.assertEqual(gen.slack_weight, 1.)
+        self._ac_pf()
+        gen = self._gen(self.leaf_gen)
+        self.assertGreater(abs(gen.res_p_mw - gen.target_p_mw), 1e-3, "it takes a share of the slack again")
+
+    def test_saturated_unit_rejoins_when_moved_off_its_limit(self):
+        target = self._gen(self.other).target_p_mw
+        max_p = np.full(self.n_gen, 1e4)
+        max_p[self.other] = target + 2.
+        self.model.set_gen_p_limits(np.full(self.n_gen, -1e4), max_p)
+        self.model.redistribute_active_power(30.)
+        gen = self._gen(self.other)
+        self.assertAlmostEqual(gen.target_p_mw, target + 2., places=9)
+        self.assertFalse(gen.is_slack)
+        self.assertTrue(gen.can_participate_slack)
+        self.model.change_p_gen(self.other, target + 2.)   # still on its limit
+        self.assertFalse(self._gen(self.other).is_slack)
+        self.model.change_p_gen(self.other, target - 5.)   # off it
+        self.assertTrue(self._gen(self.other).is_slack)
+        self.assertEqual(self._gen(self.other).slack_weight, 1.)
+        self._ac_pf()
+
+    def test_capped_unit_joins_when_moved_off_its_limit(self):
+        # what the bake does to a unit OLF capped at its max_p: out of the slack, flagged
+        target = self._gen(self.other).target_p_mw
+        self.model.remove_gen_slackbus(self.other)
+        flags = np.zeros(self.n_gen, dtype=bool)
+        flags[self.other] = True
+        self.model.set_gen_can_participate_slack(flags, np.where(flags, 0.5, 0.))
+        max_p = np.full(self.n_gen, 1e4)
+        max_p[self.other] = target
+        self.model.set_gen_p_limits(np.full(self.n_gen, -1e4), max_p)
+        self.assertTrue(self._gen(self.leaf_gen).can_participate_slack, "the slack units keep their flag")
+        self.model.change_p_gen(self.other, target)
+        self.assertFalse(self._gen(self.other).is_slack)
+        self.model.change_p_gen(self.other, target - 5.)
+        self.assertTrue(self._gen(self.other).is_slack)
+        self.assertEqual(self._gen(self.other).slack_weight, 0.5)
+
+    def test_explicitly_removed_unit_stays_out(self):
+        target = self._gen(self.other).target_p_mw
+        self.model.remove_gen_slackbus(self.other)
+        self.assertFalse(self._gen(self.other).can_participate_slack)
+        self.model.change_p_gen(self.other, target - 5.)
+        self.model.deactivate_gen(self.other)
+        self.model.reactivate_gen(self.other)
+        self.assertFalse(self._gen(self.other).is_slack)
+
+    def test_storage_rejoins(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            net = pn.case14()
+            pp.create_storage(net, bus=3, p_mw=-5., max_e_mwh=100., min_p_mw=-20., max_p_mw=20.)
+            model = init_from_pandapower(net)
+        if len(model.get_storages()) == 0:
+            self.skipTest("this pandapower converter has no storage unit")
+        for gen in model.get_generators():
+            model.add_gen_slackbus(gen.id, 1.)
+        model.add_storage_slackbus(0, 1.)
+        n_gen = len(model.get_generators())
+        model.set_gen_p_limits(np.full(n_gen, -1e4), np.full(n_gen, 1e4))
+        # generator convention: injecting 5 MW, can inject up to 7
+        model.set_storage_p_limits(np.array([-20.]), np.array([7.]))
+        model.redistribute_active_power(40.)
+        sto = model.get_storages()[0]
+        self.assertAlmostEqual(sto.target_p_mw, -7., places=9)
+        self.assertFalse(sto.is_slack)
+        self.assertTrue(sto.can_participate_slack)
+        model.change_p_storage(0, -7.)     # load convention: still injecting its max
+        self.assertFalse(model.get_storages()[0].is_slack)
+        model.change_p_storage(0, -3.)
+        self.assertTrue(model.get_storages()[0].is_slack)
+        model.deactivate_storage(0)
+        model.consider_only_main_component(False)
+        model.reactivate_storage(0)
+        self.assertTrue(model.get_storages()[0].is_slack)
+
+
+
+class TestSlackRejoinBackend(unittest.TestCase):
+    """The same, through the grid2op backend, which calls consider_only_main_component on
+    its own grid after every topology change: the generator of the leaf substation
+    stranded by one step must take its share of the slack again once a later step
+    reconnects it."""
+    def test_reconnected_generator_is_back_in_the_slack(self):
+        import grid2op
+        from lightsim2grid import LightSimBackend
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            env = grid2op.make("l2rpn_case14_sandbox", test=True, allow_detachment=True,
+                               backend=LightSimBackend(automatically_disconnect=True))
+        try:
+            env.reset(seed=0, options={"time serie id": 0})
+            degree = np.bincount(np.concatenate([env.line_or_to_subid, env.line_ex_to_subid]),
+                                 minlength=env.n_sub)
+            leaf_sub = int(np.nonzero(degree == 1)[0][0])
+            leaf_line = int(np.nonzero((env.line_or_to_subid == leaf_sub) |
+                                       (env.line_ex_to_subid == leaf_sub))[0][0])
+            leaf_gen = int(np.nonzero(env.gen_to_subid == leaf_sub)[0][0])
+            grid = env.backend._grid
+            for gen in grid.get_generators():
+                if not gen.is_slack:
+                    grid.add_gen_slackbus(gen.id, 1.)
+
+            _, _, done, info = env.step(env.action_space({"set_line_status": [(leaf_line, -1)]}))
+            self.assertFalse(done, info["exception"])
+            gen = env.backend._grid.get_generators()[leaf_gen]
+            self.assertFalse(gen.connected)
+            self.assertTrue(gen.is_slack)
+
+            _, _, done, info = env.step(env.action_space({"set_bus": {"lines_or_id": [(leaf_line, 1)],
+                                                                       "lines_ex_id": [(leaf_line, 1)],
+                                                                       "generators_id": [(leaf_gen, 1)]}}))
+            self.assertFalse(done, info["exception"])
+            gen = env.backend._grid.get_generators()[leaf_gen]
+            self.assertTrue(gen.connected)
+            self.assertTrue(gen.is_slack)
+            self.assertEqual(gen.slack_weight, 1.)
+            self.assertGreater(abs(gen.res_p_mw - gen.target_p_mw), 1e-3, "it takes a share of the slack again")
+        finally:
+            env.close()
 
 
 if __name__ == "__main__":
