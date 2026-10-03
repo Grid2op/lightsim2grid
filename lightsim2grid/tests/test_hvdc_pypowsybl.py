@@ -12,6 +12,7 @@ Covers the four regimes: angle-droop linear, fixed setpoint (VSC), fixed setpoin
 (LCC inverter side) and forced saturation. Skipped when pypowsybl is unavailable.
 """
 
+import contextlib
 import unittest
 import numpy as np
 
@@ -154,6 +155,23 @@ class TestHvdcPypowsybl(unittest.TestCase):
                                        min_q=[-40.0, -40.0], max_q=[30.0, 30.0])
         self.assertEqual(n.get_vsc_converter_stations().loc["VSC2", "reactive_limits_kind"], "CURVE")
         model, _ = self._run_ls(n)
+        st = model.get_dclines()[0].station2
+        self.assertEqual(st.min_q_mvar, -40.0)
+        self.assertEqual(st.max_q_mvar, 30.0)
+
+    def test_vsc_reactive_limits_under_copy_on_write(self):
+        # pandas copy-on-write (the default from pandas 3) hands out read-only arrays: the
+        # station limits must be read into arrays the converter may write to
+        import pandas as pd
+        n = _build_net(droop_enabled=False)
+        n.create_curve_reactive_limits(id=["VSC2", "VSC2"], p=[0.0, 200.0],
+                                       min_q=[-40.0, -40.0], max_q=[30.0, 30.0])
+        try:
+            ctx = pd.option_context("mode.copy_on_write", True)
+        except (KeyError, ValueError, pd.errors.OptionError):
+            ctx = contextlib.nullcontext()  # no such option: copy-on-write is always on
+        with ctx:
+            model, _ = self._run_ls(n)
         st = model.get_dclines()[0].station2
         self.assertEqual(st.min_q_mvar, -40.0)
         self.assertEqual(st.max_q_mvar, 30.0)

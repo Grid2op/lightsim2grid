@@ -86,9 +86,10 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         # as for the generators (see `_aux_add_generators.py`): "min_q" / "max_q" are NaN
         # for a station whose reactive_limits_kind is CURVE, its limits are the curve at
         # its target P -- read alone, such a station was unlimited
+        # (copies: under pandas copy-on-write `to_numpy` hands out a read-only view)
         no_curve = pd.Series(np.nan, index=df_side.index)
-        min_q = df_side.get("min_q_at_target_p", no_curve).fillna(df_side["min_q"]).to_numpy(float)
-        max_q = df_side.get("max_q_at_target_p", no_curve).fillna(df_side["max_q"]).to_numpy(float)
+        min_q = df_side.get("min_q_at_target_p", no_curve).fillna(df_side["min_q"]).to_numpy(float, copy=True)
+        max_q = df_side.get("max_q_at_target_p", no_curve).fillna(df_side["max_q"]).to_numpy(float, copy=True)
         # malformed curve data can give min_q > max_q at the target P (as for the generators)
         swapped = np.isfinite(min_q) & np.isfinite(max_q) & (min_q > max_q)
         min_q[swapped], max_q[swapped] = max_q[swapped], min_q[swapped].copy()
