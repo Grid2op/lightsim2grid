@@ -142,6 +142,13 @@ struct LS2G_API SbusPolicy
         // row of that matrix, bit for bit.
         void fill_row(Eigen::Index i, CplxVect & row) const;
 
+        // How much row `i` changes the active injection of the solved system
+        // against the grid's own targets, in MW (generator convention): the sum of
+        // (row - target) over the generators and static generators, minus the same
+        // over the loads, for the elements fill_row routes (the generators the row
+        // disconnects included). Exactly 0 when no active-power axis was set.
+        real_type row_p_change_mw(Eigen::Index i) const;
+
         // the whole matrix, for whoever wants it (get_sbuses()): every row through
         // fill_row, built at most once per prepare().
         const CplxMat & materialize() const;

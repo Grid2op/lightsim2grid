@@ -440,9 +440,8 @@ class TestViolationThreshold(unittest.TestCase):
         assert SA.violation_threshold == 1.0
 
     def test_default_reproduces_legacy_behaviour(self):
-        # the legacy checks are strict (`>` / `<`); with threshold == 1. they become
-        # `>=` / `<=`, which only differ if a value lands *exactly* on its limit. With
-        # the deliberately extreme limits of `_set_tight_limits` nothing does, so the
+        # the legacy checks are strict (`>` / `<`), and so are the thresholded ones: with
+        # threshold == 1. the effective bounds are the configured limits themselves, so the
         # reported violations must be exactly the ones the pre-threshold code reported.
         _set_tight_limits(self.env.backend._grid)
         SA = ContingencyAnalysisCPP(self.env.backend._grid, True)
@@ -512,9 +511,11 @@ class TestViolationThresholdBoundary(unittest.TestCase):
         self.grid.set_trafo_current_limit_side1(np.full(self.n_trafo, np.nan))
         self.grid.set_trafo_current_limit_side2(np.full(self.n_trafo, np.nan))
 
-    def _violations_n(self, threshold):
+    def _violations_n(self, threshold, rel_tol=None):
         SA = ContingencyAnalysisCPP(self.grid, True)
         SA.violation_threshold = threshold
+        if rel_tol is not None:
+            SA.violation_rel_tol = rel_tol
         SA.add_n1(0)
         SA.compute(self.env.backend.V, self.env.backend.max_it, self.env.backend.tol)
         return SA.get_violations_n()
@@ -529,6 +530,13 @@ class TestViolationThresholdBoundary(unittest.TestCase):
                      if v.element_type == ViolationElementType.LINE and v.element_id == line_id]
         assert len(harvested) == 1
         amps = harvested[0].value
+
+        # a limit exactly equal to the current is not violated (the check is strict) ...
+        lim1[line_id] = amps
+        self.grid.set_line_current_limit_side1(lim1)
+        assert not any(v.element_type == ViolationElementType.LINE and v.element_id == line_id
+                       and v.side == 1 for v in self._violations_n(1.0)), \
+            "a current exactly on its limit is not a violation"
 
         # place the limit 1% above it: no violation at threshold == 1.
         lim1[line_id] = amps * 1.01
@@ -545,8 +553,8 @@ class TestViolationThresholdBoundary(unittest.TestCase):
     def _harvest_bus_voltage(self):
         """returns (bus_id, v_kv, vnom_kv) for the bus furthest ABOVE its nominal voltage, as
         computed by the checker itself. `vmax == vn` is the tightest upper bound a grid may
-        declare (the band must bracket vn), and every bus at or above nominal violates it, so
-        it doubles as a probe reporting each such bus's exact voltage."""
+        declare (the band must bracket vn), and every bus above nominal violates it, so it
+        doubles as a probe reporting each such bus's exact voltage."""
         vn = self.grid.get_bus_vn_kv()
         self.grid.set_bus_voltage_limits(np.full(self.nb_bus, np.nan), 1. * vn)
         harvested = {v.element_id: v.value for v in self._violations_n(1.0)
@@ -575,8 +583,67 @@ class TestViolationThresholdBoundary(unittest.TestCase):
 
         assert not violates(1.0), "v is below v_max: nothing to report at the nominal threshold"
         assert not violates(0.55), "high_eff has not come down to v yet"
-        assert violates(0.5), "high_eff == vnom + excess == v exactly, and the test is `>=`"
         assert violates(0.45)
+
+    def test_voltage_exactly_on_its_limit_is_not_a_violation(self):
+        """a bus whose voltage is on its v_max up to rounding (a regulated bus held at its
+        upper bound, say) is not reported: the value must clear the limit by more than
+        `violation_rel_tol` (1e-9 by default); with a tolerance of 0 the comparison is the
+        bare strict one, and one ulp is enough."""
+        bus_id, v0, vnom = self._harvest_bus_voltage()
+        vmax = np.full(self.nb_bus, np.nan)
+
+        def violates(bound, rel_tol=None):
+            vmax[bus_id] = bound
+            self.grid.set_bus_voltage_limits(np.full(self.nb_bus, np.nan), vmax)
+            return any(v.element_type == ViolationElementType.BUS and v.element_id == bus_id
+                       and v.violation_type == LimitViolationType.HIGH_VOLTAGE
+                       for v in self._violations_n(1.0, rel_tol))
+
+        one_ulp_below = np.nextafter(v0, -np.inf)
+        assert not violates(v0), "v == v_max exactly: not a violation"
+        assert not violates(one_ulp_below), "v one ulp above v_max: within the default tolerance"
+        assert not violates(v0 / (1. + 5e-10)), "v 5e-10 above v_max: within the default tolerance"
+        assert violates(v0 / (1. + 2e-9)), "v 2e-9 above v_max: beyond the default tolerance"
+        assert not violates(v0, rel_tol=0.), "strict: v == v_max is still not a violation"
+        assert violates(one_ulp_below, rel_tol=0.), "strict: one ulp above v_max is a violation"
+        assert not violates(v0 / (1. + 2e-9), rel_tol=1e-8), "a larger tolerance absorbs it"
+
+    def test_violation_rel_tol_property(self):
+        """the knob itself: default 1e-9, validated to [0, 1[, and a change clears the
+        computed results (either direction) but keeps the contingencies"""
+        SA = ContingencyAnalysisCPP(self.grid, True)
+        assert SA.violation_rel_tol == 1e-9
+        for bad in (-1e-9, 1., 2.):
+            with self.assertRaises(RuntimeError):
+                SA.violation_rel_tol = bad
+        assert SA.violation_rel_tol == 1e-9
+        SA.add_n1(0)
+        SA.compute(self.env.backend.V, self.env.backend.max_it, self.env.backend.tol)
+        SA.violation_rel_tol = 1e-9          # same value: nothing cleared
+        assert len(SA.get_violations()) == 1
+        SA.violation_rel_tol = 1e-6          # larger: cleared
+        assert len(SA.get_violations()) == 0
+        SA.compute(self.env.backend.V, self.env.backend.max_it, self.env.backend.tol)
+        assert len(SA.get_violations()) == 1, "the contingency was kept"
+        SA.violation_rel_tol = 0.            # smaller: cleared too
+        assert len(SA.get_violations()) == 0
+
+        # the python wrapper validates and forwards
+        from lightsim2grid.contingencyAnalysis import ContingencyAnalysis
+        sa = ContingencyAnalysis(self.env, compute_limit_violations=True)
+        assert sa.violation_rel_tol == 1e-9
+        with self.assertRaises(ValueError):
+            sa.violation_rel_tol = -1.
+        sa.violation_rel_tol = 1e-7
+        assert sa.computer.violation_rel_tol == 1e-7
+        from lightsim2grid.scenarioSweep import ScenarioSweep
+        ss = ScenarioSweep(self.env)
+        assert ss.violation_rel_tol == 1e-9
+        with self.assertRaises(ValueError):
+            ss.violation_rel_tol = 1.
+        ss.violation_rel_tol = 0.
+        assert ss.computer.violation_rel_tol == 0.
 
     def test_bus_above_nominal_is_never_low_voltage(self):
         """the anti-saturation property: because the low bound is interpolated towards
@@ -665,7 +732,7 @@ class TestViolationThresholdLowVoltage(unittest.TestCase):
         `threshold * v_min + (1 - threshold) * v_nom`, so placing v_min at exactly TWICE the
         bus's sag below nominal puts the crossover at exactly threshold == 0.5."""
         # harvest the sagging bus: `vmin == vn` is the tightest lower bound a grid may
-        # declare, and every bus at or below nominal violates it, so it reports their values
+        # declare, and every bus below nominal violates it, so it reports their values
         vn = self.grid.get_bus_vn_kv()
         self.grid.set_bus_voltage_limits(1. * vn, np.full(self.nb_bus, np.nan))
         harvested = {v.element_id: v.value for v in self._violations_n(1.0)
@@ -686,8 +753,11 @@ class TestViolationThresholdLowVoltage(unittest.TestCase):
 
         assert not violates(1.0), "v is above v_min: nothing to report at the nominal threshold"
         assert not violates(0.55), "low_eff has not come up to v yet"
-        assert violates(0.5), "low_eff == vnom - sag == v exactly, and the test is `<=`"
         assert violates(0.45)
+        # ... and exactly on v_min: not a violation (the check is strict)
+        vmin[bus_id] = v0
+        self.grid.set_bus_voltage_limits(vmin, np.full(self.nb_bus, np.nan))
+        assert not violates(1.0), "v == v_min exactly: not a violation"
 
 
     def test_low_and_high_checks_are_independent(self):
@@ -717,21 +787,20 @@ class TestViolationThresholdLowVoltage(unittest.TestCase):
                 assert low == ref_low, \
                     f"LOW_VOLTAGE changed when v_max was set to {vmax_pu} pu (threshold={th})"
 
-            # ... and symmetrically: v_max fixed at nominal, v_min varied
-            _, ref_high = sets(None, 1.0, th)
-            assert len(ref_high) > 0, "the slack bus sits exactly at nominal, so it violates"
+            # ... and symmetrically: v_max fixed (a hair below nominal: nothing on this feeder
+            # is strictly above nominal, the slack sits exactly on it), v_min varied
+            _, ref_high = sets(None, 0.999, th)
+            assert len(ref_high) > 0, "the slack bus (1.0 pu) is above 0.999 pu, so it violates"
             for vmin_pu in (0.95, 0.90, 0.10):
-                _, high = sets(vmin_pu, 1.0, th)
+                _, high = sets(vmin_pu, 0.999, th)
                 assert high == ref_high, \
                     f"HIGH_VOLTAGE changed when v_min was set to {vmin_pu} pu (threshold={th})"
 
-    def test_fully_degenerate_band_reports_low_voltage(self):
-        """the one -- measure-zero -- exception to "a bus is never both too low and too
-        high": the band collapsed onto nominal (v_min == v_nom == v_max) makes both effective
-        bounds equal to v_nom, so a bus sitting EXACTLY at nominal satisfies `v <= low_eff`
-        and `v >= high_eff` at once. It is still reported once, as LOW_VOLTAGE (the checks
-        are an `if low ... else if high` chain). Pinned here so the precedence is a decision
-        rather than an accident."""
+    def test_fully_degenerate_band_reports_each_bus_at_most_once(self):
+        """the band collapsed onto nominal (v_min == v_nom == v_max) makes both effective
+        bounds equal to v_nom. The checks are strict, so a bus sitting EXACTLY at nominal is
+        neither too low nor too high and is not reported at all; every other bus is reported
+        once, on its own side (the sagging feeder buses as LOW_VOLTAGE)."""
         vn = self.grid.get_bus_vn_kv()
         self.grid.set_bus_voltage_limits(1. * vn, 1. * vn)
         kinds = {}
@@ -739,9 +808,10 @@ class TestViolationThresholdLowVoltage(unittest.TestCase):
             if v.element_type == ViolationElementType.BUS:
                 kinds.setdefault(v.element_id, []).append(v.violation_type)
         # bus 0 is the slack, held exactly at 1.0 pu == v_nom
-        assert kinds[0] == [LimitViolationType.LOW_VOLTAGE]
-        for bus_id, k in kinds.items():
-            assert len(k) == 1, f"bus {bus_id} was reported twice ({k})"
+        assert 0 not in kinds, f"the slack bus sits exactly on its limits, got {kinds.get(0)}"
+        for bus_id in (1, 2, 3):
+            assert kinds.get(bus_id) == [LimitViolationType.LOW_VOLTAGE], \
+                f"bus {bus_id} should be reported once as LOW_VOLTAGE ({kinds.get(bus_id)})"
 
 class TestBandNotBracketingNominal(unittest.TestCase):
     """A band is NOT required to bracket the bus nominal voltage: real IIDM data violates it

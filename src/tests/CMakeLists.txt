@@ -89,6 +89,7 @@ add_executable(lightsim2grid_unit_tests
     test_solve_transpose.cpp
     test_batch_adjoint.cpp
     test_base_case_reuse.cpp
+    test_slack_redistribution.cpp
 )
 target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
 

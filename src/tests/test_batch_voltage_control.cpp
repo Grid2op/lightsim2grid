@@ -45,6 +45,7 @@ using ls2g::CplxVect;
 using ls2g::GlobalBusId;
 using ls2g::IntVect;
 using ls2g::LSGrid;
+using ls2g::LimitViolationType;
 using ls2g::RealVect;
 using ls2g::TimeSeries;
 using ls2g::cplx_type;
@@ -471,13 +472,14 @@ TEST_CASE("a contingency stranding a regulated bus is reported, not silently wro
     // the very bus the generator controls.
     //
     // In the default mode such a contingency is skipped outright (zero voltages).
-    // In "handle disconnected grid" mode the stranded bus is masked -- its P/Q
-    // rows are replaced by identity rows -- but masking is deliberately a
-    // value-only change that must not touch the J pattern, so the VoltageControl
-    // extension keeps its bordered row `Vm(3) - v_set = 0` against a bus whose Vm
-    // the mask pins. That system has no solution and the contingency comes back as
-    // a DIVERGENCE. Not a good answer, but an honest one: what must never happen
-    // is a converged row computed with the regulation quietly dropped.
+    // In "handle disconnected grid" mode the stranded bus would be masked -- its P/Q
+    // rows replaced by identity rows -- but masking is deliberately a value-only
+    // change that must not touch the J pattern, so the VoltageControl extension
+    // would keep its bordered row `Vm(3) - v_set = 0` against a bus whose Vm the
+    // mask pins. That system has no solution: the row is skipped before the solve
+    // (NOT_SIMULATED, see BaseBatchSweep::_skip_rows_stranding_regulated_bus), where
+    // it used to run every iteration to a DIVERGENCE. What must never happen is a
+    // converged row computed with the regulation quietly dropped.
     for (bool handle_disconnected : {false, true}) {
         INFO("handle_disconnected_grid = " << handle_disconnected);
         LSGrid grid = make_remote_gen_grid();
@@ -489,6 +491,10 @@ TEST_CASE("a contingency stranding a regulated bus is reported, not silently wro
         REQUIRE(ca.get_voltages().rows() == 1);
         REQUIRE(ca.converged().size() == 1);
         CHECK(ca.converged()[0] == 0);
+        REQUIRE(ca.get_violations().size() == 1);
+        REQUIRE(ca.get_violations()[0].size() == 1);
+        CHECK(ca.get_violations()[0][0].violation_type == LimitViolationType::NOT_SIMULATED);
+        CHECK(ca.nb_solved() == 0);  // never reached the solver
         for (int b = 0; b < NB_BUS; ++b) CHECK(std::abs(ca.get_voltages()(0, b)) == 0.);
     }
 }

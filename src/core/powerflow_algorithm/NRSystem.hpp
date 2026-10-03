@@ -790,17 +790,23 @@ class LS2G_API VoltageControl
         ) {}
 
         // ContingencyAnalysis "handle_disconnected_grid" mode (see NRSystem::
-        // set_masked_buses, which forwards here): scope is a SINGLETON group
-        // (cnt == 1) whose sole controller sits on a bus this contingency masks.
-        // That controller's own equipment is isolated from the live component --
-        // there is nobody left to hold the regulated bus at v_set -- so its
-        // voltage row is repurposed (fill_feature_values / fill_custom_rows) from
-        // the voltage constraint into a plain "Q_c = 0" pin, freeing the
-        // regulated bus back to its own ordinary PQ equations. That reproduces
-        // what a rebuilt (single-shot) topology does once the disconnected
-        // controller drops out of the group. A multi-controller (cnt > 1) group
-        // with a stranded member is NOT covered: the row/column structure stays
-        // singular for it, exactly as before this method existed.
+        // set_masked_buses, which forwards here): scope is a group whose EVERY
+        // controller sits on a bus this contingency masks (a stranded group).
+        // Their equipment is isolated from the live component -- there is nobody
+        // left to hold the regulated bus at v_set -- so the group's voltage row is
+        // repurposed (fill_feature_values / fill_custom_rows) from the voltage
+        // constraint into a plain "Q_first = 0" pin, freeing the regulated bus back
+        // to its own ordinary PQ equations. Its sharing rows are kept as they are:
+        // with Q_first = 0 they give Q_c = 0 for every other controller. That
+        // reproduces what a rebuilt (single-shot) topology does once the
+        // disconnected controllers drop out of the group. A group with only SOME of
+        // its controllers stranded needs nothing: its voltage row is held by the live
+        // ones (their bus Q rows), the sharing rows still give every Q_c a value, and
+        // the stranded ones' land on masked rows, so the live controllers share among
+        // themselves as if the others were gone. A regulated bus stranded while some
+        // controllers stay live cannot be solved (its masked magnitude cannot reach
+        // v_set): the batch skips such a row before the solve (see
+        // BaseBatchSweep::_skip_rows_stranding_regulated_bus).
         //
         // Only STORES the list here: `data_` may still hold the previous contingency's
         // (or, on a freshly spawned per-thread algo, no) content at this point -- the
@@ -814,8 +820,8 @@ class LS2G_API VoltageControl
             masked_buses_ = masked_buses;
         }
 
-        // Gates the extra (v_row, q_col) slot declare_feature_entries reserves for a
-        // lone (cnt==1) GEN controller (see there): only worth it when THIS run might
+        // Gates the extra (v_row, q_col) slot declare_feature_entries reserves for the
+        // first controller of each group (see there): only worth it when THIS run might
         // ever call set_masked_buses with a non-empty list. Caller-set, once, before
         // the first declare_feature_entries() it should affect -- see NRSystem::
         // set_may_mask_voltage_control / BaseAlgo::set_may_mask_voltage_control.
@@ -884,13 +890,17 @@ class LS2G_API VoltageControl
                     if (q_rows_[j] >= 0 && q_cols_[j] >= 0) h_qrow_[j] = sink.add(q_rows_[j], q_cols_[j]);
                     // slope coupling Vm(reg) <- s.Q_c, declared for every SVC (slope-independent
                     // pattern, needed regardless of masking) and, ONLY when this run might ever
-                    // mask a bus (may_mask_, see set_may_mask_voltage_control), for a lone
-                    // (cnt == 1) controller of any kind: reserved with value 0 in the normal case
-                    // so set_masked_buses can repurpose it into a "pin Q_c to 0" coefficient (see
-                    // fill_feature_values) without ever touching J's sparsity pattern. Gating this
-                    // on may_mask_ keeps every other caller -- plain ac_pf, TimeSeries, an
-                    // un-masked batch -- exactly as cheap as before this feature existed.
-                    if ((data_.kind(j) == VoltageControlSolverData::SVC || (cnt == 1 && may_mask_)) &&
+                    // mask a bus (may_mask_, see set_may_mask_voltage_control), for the first
+                    // controller of each group, of any kind: reserved with value 0 in the normal
+                    // case so set_masked_buses can repurpose it into a "pin Q_first to 0"
+                    // coefficient (see fill_feature_values) without ever touching J's sparsity
+                    // pattern. Gating this on may_mask_ keeps every other caller -- plain ac_pf,
+                    // TimeSeries, an un-masked batch -- exactly as cheap as before this feature
+                    // existed.
+                    // ... and for a group whose first controller is HELD (so all of them are,
+                    // see VoltageControlSolverData::held): its voltage row is "Q_first = q"
+                    if ((data_.kind(j) == VoltageControlSolverData::SVC ||
+                         (off == 0 && (may_mask_ || data_.is_held(j)))) &&
                         v_row >= 0 && q_cols_[j] >= 0)
                         h_slope_[j] = sink.add(v_row, q_cols_[j]);
                 }
@@ -915,18 +925,32 @@ class LS2G_API VoltageControl
                 const int first = data_.grp_start(g);
                 const int cnt   = data_.grp_count(g);
                 const bool stranded = have_stranded && group_stranded_[g];
+                // every controller held (the first one is held only then): the voltage row
+                // is "Q_first = q_held", the same rewrite as a stranded group's
+                const bool pinned_vrow = stranded || data_.is_held(first);
                 for (int off = 0; off < cnt; ++off) {
                     const int j = first + off;
                     if (h_qrow_[j]  >= 0) writer.add(h_qrow_[j],  static_cast<real_type>(-1.));
-                    if (h_slope_[j] >= 0) writer.add(h_slope_[j], stranded ? static_cast<real_type>(1.) : data_.slope(j));
+                    if (h_slope_[j] >= 0){
+                        // stranded: the voltage row is "Q_first = 0", the other controllers
+                        // (an SVC's slope slot) leave it
+                        const real_type coeff = !pinned_vrow ? data_.slope(j)
+                                                             : (off == 0 ? static_cast<real_type>(1.)
+                                                                         : static_cast<real_type>(0.));
+                        writer.add(h_slope_[j], coeff);
+                    }
                 }
-                // stranded (singleton, masked controller): drop the Vm(reg) coupling -- the row
-                // is now "Q_c = 0" (see fill_custom_rows), not the voltage constraint.
-                if (h_vm_[g] >= 0) writer.add(h_vm_[g], stranded ? static_cast<real_type>(0.) : static_cast<real_type>(1.));
+                // stranded (every controller masked): drop the Vm(reg) coupling -- the row
+                // is now "Q_first = 0" (see fill_custom_rows), not the voltage constraint.
+                // The sharing rows below are unchanged: they pin the other Q_c to 0 too.
+                if (h_vm_[g] >= 0) writer.add(h_vm_[g], pinned_vrow ? static_cast<real_type>(0.) : static_cast<real_type>(1.));
                 const real_type w_first = data_.weight(first);
                 for (int k = 0; k < cnt - 1; ++k) {
-                    if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], w_first);
-                    if (h_shareB_[g][k] >= 0) writer.add(h_shareB_[g][k], -data_.weight(first + (k + 1)));
+                    // a held controller's sharing row is "Q_c = q_held" instead
+                    const bool held = data_.is_held(first + (k + 1));
+                    if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], held ? static_cast<real_type>(1.) : w_first);
+                    if (h_shareB_[g][k] >= 0) writer.add(h_shareB_[g][k], held ? static_cast<real_type>(0.)
+                                                                              : -data_.weight(first + (k + 1)));
                 }
             }
         }
@@ -935,8 +959,10 @@ class LS2G_API VoltageControl
         void adjust_mismatch(const Eigen::Ref<const CplxVect>& /*V_t*/, const Eigen::Ref<const RealVect>& dx, Eigen::Ref<CplxVect> mis) const
         {
             const int nc = data_.n_controllers();
+            // a held controller's frozen output is already in Sbus (it is a PQ generator
+            // there): only what it moves away from it enters here
             for (int j = 0; j < nc; ++j)
-                mis(data_.bus(j)) -= cplx_type(static_cast<real_type>(0.), q_(j) + dx(q_cols_[j]));
+                mis(data_.bus(j)) -= cplx_type(static_cast<real_type>(0.), q_(j) + dx(q_cols_[j]) - q_held_(j));
         }
 
         // the bordered voltage and sharing rows
@@ -950,30 +976,34 @@ class LS2G_API VoltageControl
             for (int g = 0; g < ng; ++g) {
                 const int first = data_.grp_start(g);
                 const int cnt   = data_.grp_count(g);
+                const real_type Qt_first = q_(first) + dx(q_cols_[first]);
                 if (have_stranded && group_stranded_[g]) {
-                    // stranded singleton controller: pin Q_c = 0 instead of the voltage
-                    // constraint (see set_masked_buses); cnt == 1 here, so there are no
-                    // sharing rows to fill for this group.
-                    const real_type Qt_first = q_(first) + dx(q_cols_[first]);
+                    // stranded group (every controller masked): pin Q_first = 0 instead
+                    // of the voltage constraint (see set_masked_buses); the sharing rows
+                    // below then pin the others to 0
                     res(v_rows_[g]) -= Qt_first;
-                    continue;
+                } else if (data_.is_held(first)) {
+                    // every controller held: nobody regulates, the first one holds its
+                    // frozen output (and the sharing rows below the others theirs)
+                    res(v_rows_[g]) -= Qt_first - q_held_(first);
+                } else {
+                    // voltage constraint  Vm(reg) + sum s_c.Q_c - v_set
+                    real_type vm_trial = Vm(data_.reg_bus(g));
+                    if (vm_cols_[g] >= 0) vm_trial += dx(vm_cols_[g]);
+                    real_type slope_term = static_cast<real_type>(0.);
+                    for (int off = 0; off < cnt; ++off) {
+                        const int j = first + off;
+                        slope_term += data_.slope(j) * (q_(j) + dx(q_cols_[j]));
+                    }
+                    res(v_rows_[g]) -= vm_trial + slope_term - data_.v_set(g);
                 }
-                // voltage constraint  Vm(reg) + sum s_c.Q_c - v_set
-                real_type vm_trial = Vm(data_.reg_bus(g));
-                if (vm_cols_[g] >= 0) vm_trial += dx(vm_cols_[g]);
-                real_type slope_term = static_cast<real_type>(0.);
-                for (int off = 0; off < cnt; ++off) {
-                    const int j = first + off;
-                    slope_term += data_.slope(j) * (q_(j) + dx(q_cols_[j]));
-                }
-                res(v_rows_[g]) -= vm_trial + slope_term - data_.v_set(g);
                 // sharing rows w_1.Q_{k+1} - w_{k+1}.Q_1
                 const real_type w_first  = data_.weight(first);
-                const real_type Qt_first = q_(first) + dx(q_cols_[first]);
                 for (int k = 0; k < cnt - 1; ++k) {
                     const int j = first + (k + 1);
                     const real_type Qt_j = q_(j) + dx(q_cols_[j]);
-                    res(share_rows_[g][k]) -= w_first * Qt_j - data_.weight(j) * Qt_first;
+                    if (data_.is_held(j)) res(share_rows_[g][k]) -= Qt_j - q_held_(j);
+                    else res(share_rows_[g][k]) -= w_first * Qt_j - data_.weight(j) * Qt_first;
                 }
             }
         }
@@ -988,6 +1018,7 @@ class LS2G_API VoltageControl
             my_size_ = 0;
             data_.clear();
             q_ = RealVect();
+            q_held_ = RealVect();
             q_cols_.clear();
             q_rows_.clear();
             v_rows_.clear();
@@ -1029,15 +1060,25 @@ class LS2G_API VoltageControl
             group_stranded_.assign(ng, 0);
             if (masked_buses_.empty()) return;
             for (int g = 0; g < ng; ++g) {
-                if (data_.grp_count(g) != 1) continue;
-                const int ctrl_bus = data_.bus(data_.grp_start(g));
-                if (std::find(masked_buses_.begin(), masked_buses_.end(), ctrl_bus) != masked_buses_.end())
-                    group_stranded_[g] = 1;
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                if (cnt <= 0) continue;
+                // only the ACTIVE controllers hold the bus: a held one is pinned whatever
+                // its bus, and a group of held ones only is never stranded
+                bool all_masked = true;
+                bool any_active = false;
+                for (int off = 0; off < cnt && all_masked; ++off) {
+                    if (data_.is_held(first + off)) continue;
+                    any_active = true;
+                    const int ctrl_bus = data_.bus(first + off);
+                    all_masked = std::find(masked_buses_.begin(), masked_buses_.end(), ctrl_bus) != masked_buses_.end();
+                }
+                if (all_masked && any_active) group_stranded_[g] = 1;
             }
         }
 
         // Caller-set run config, NOT reset by clear() (see set_may_mask_voltage_control):
-        // whether a lone controller's Jacobian slot is worth reserving in
+        // whether the first controller's Jacobian slot is worth reserving in
         // declare_feature_entries. The batch code that owns this decision
         // (BaseBatchSweep::_maybe_prepare_masks) re-asserts it before every
         // compute(), so it never actually goes stale across a clear_jacobian().
@@ -1046,6 +1087,7 @@ class LS2G_API VoltageControl
         VoltageControlSolverData       data_;        // per-solve controller data (refreshed every update_state)
         RealVect                       v_set_override_;  // per group, NaN = grid's own (see set_v_set_override)
         RealVect                       q_;           // running reactive injection per controller (pu, gen convention)
+        RealVect                       q_held_;      // per controller, the frozen output a held one holds (pu), 0 otherwise
         std::vector<int>               q_cols_;      // J column of each controller's Q unknown
         std::vector<int>               q_rows_;      // q_row of each controller bus (-1 if none)
         std::vector<int>               v_rows_;      // voltage row of each group
@@ -1053,14 +1095,15 @@ class LS2G_API VoltageControl
         std::vector<std::vector<int> > share_rows_;  // sharing rows of each group (size N-1)
         std::vector<int>               h_qrow_;      // handle (q_row, q_col) per controller
         std::vector<int>               h_slope_;     // handle (v_row, q_col) per controller (-1 unless
-                                                       // SVC or a lone (cnt==1) controller -- see
-                                                       // declare_feature_entries / set_masked_buses)
+                                                       // SVC or, when masking, the first controller
+                                                       // of its group -- see declare_feature_entries
+                                                       // / set_masked_buses)
         std::vector<int>               h_vm_;        // handle (v_row, vm_col) per group
         std::vector<std::vector<int> > h_shareA_;    // handle (share_row, q_col_{k+1}) per group
         std::vector<std::vector<int> > h_shareB_;    // handle (share_row, q_col_1) per group
         std::vector<int>               masked_buses_;    // last set_masked_buses() argument, verbatim
-        std::vector<char>              group_stranded_;  // per group: 1 iff cnt==1 and its lone
-                                                           // controller's bus is masked; derived from
+        std::vector<char>              group_stranded_;  // per group: 1 iff the bus of each of its
+                                                           // controllers is masked; derived from
                                                            // masked_buses_ by _recompute_group_stranded(),
                                                            // called from update_state(); empty when unset
 };
@@ -1152,7 +1195,8 @@ public:
         masked_dirty_ = true;
         // forward to the VoltageControl extension when present (both AC
         // instantiations carry it -- see the SingleSlackNRSystem / MultiSlackNRSystem
-        // aliases below): lets a stranded singleton controller's voltage row be
+        // aliases below): lets the voltage row of a group whose controllers are all
+        // stranded be
         // repurposed instead of staying structurally singular. A no-op elsewhere
         // (_find_extension returns nullptr when VoltageControl is not in Rest...).
         VoltageControl* vc = _find_extension<VoltageControl>();

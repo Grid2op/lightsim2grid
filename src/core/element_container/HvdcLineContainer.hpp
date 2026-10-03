@@ -427,6 +427,14 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
 
         const ConverterStationContainer & get_stations_side_1() const {return side_1_;}
         const ConverterStationContainer & get_stations_side_2() const {return side_2_;}
+        /// see ConverterStationContainer::set_can_be_pv (LSGrid::set_hvdc_can_be_pv)
+        void set_stations_can_be_pv(const std::vector<bool> & side_1, const std::vector<bool> & side_2){
+            // both sizes first: a wrong side 2 must not leave side 1 already written
+            check_size(side_1, nb(), "HvdcLineContainer::set_stations_can_be_pv (side 1)");
+            check_size(side_2, nb(), "HvdcLineContainer::set_stations_can_be_pv (side 2)");
+            side_1_.set_can_be_pv(side_1);
+            side_2_.set_can_be_pv(side_2);
+        }
 
     private:
         /**

@@ -9,6 +9,7 @@
 __all__ = ["init",
            "dangling_line_boundary_bus",
            "bake_outer_loops",
+           "BakeResult",
            "remove_outer_loops",
            "get_pypowsybl_loopfree_parameters",
            "get_pypowsybl_loopfree_distributed_slack_parameters",
@@ -18,7 +19,7 @@ __all__ = ["init",
 
 from .initLSGrid import init
 from ._aux_add_buses import dangling_line_boundary_bus
-from ._olf_bake import bake_outer_loops
+from ._olf_bake import bake_outer_loops, BakeResult
 from ._olf_params import (
     remove_outer_loops,
     get_pypowsybl_loopfree_parameters,
