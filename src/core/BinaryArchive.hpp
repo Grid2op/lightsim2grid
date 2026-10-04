@@ -121,7 +121,9 @@ namespace ls2g {
 // v17: HvdcLineContainer::StateRes carries the per-line `ac_emulation_frozen_` flag (an
 //     angle-droop line an outer loop froze at its active power limit -- see
 //     LSGrid::set_hvdc_ac_emulation_frozen; all false unless set). Appended.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 17;
+// v18: LSGrid::StateRes carries the remote voltage control range of the physical checks
+//     (see LSGrid::set_remote_voltage_control_vm_range; NaN unless set). Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 18;
 
 class LS2G_API BinaryArchive
 {

@@ -153,7 +153,9 @@ LSGrid::StateRes LSGrid::get_state() const
                             res_dc_algo_cfg,
                             init_kwargs_keys,
                             init_kwargs_values,
-                            bus_fusion_rep
+                            bus_fusion_rep,
+                            remote_vc_min_vm_pu_,
+                            remote_vc_max_vm_pu_
                             );
     return res;
 };
@@ -290,6 +292,11 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // fused-bus representative lookup -- must run after substations_ is restored
     // above, same reasoning as set_ls_to_orig() (validates against total_bus()).
     set_bus_fusion_rep(IntVect::Map(bus_fusion_rep.data(), bus_fusion_rep.size()));
+
+    // the remote voltage control range of the physical checks: through the setter, which
+    // refuses what a crafted file could hold (an empty or non-positive range)
+    set_remote_voltage_control_vm_range(std::get<REMOTE_VC_MIN_VM_PU_ID>(my_state),
+                                        std::get<REMOTE_VC_MAX_VM_PU_ID>(my_state));
 
     // Now that every container has been restored, validate the whole grid: a
     // pickle or binary file is only length-checked while being read, so an

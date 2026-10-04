@@ -210,11 +210,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
-- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 17: ``SvcContainer`` serializes the standby automaton
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 18: ``SvcContainer`` serializes the standby automaton
   and the ``can_be_pv`` flag of each SVC, the generators and storage units their "can participate
   in the slack" weight and overshoot, the converter stations their ``can_be_pv`` flag, the hvdc
-  lines their AC-emulation frozen flag. Files of format 11 no
-  longer load.
+  lines their AC-emulation frozen flag, the grid its remote voltage control range. Files of
+  format 11 no longer load.
 - [BREAKING] Operational limit checks ignore a value on its limit up to ``violation_rel_tol``
   (new, default ``1e-9``; ``rel_tol`` of ``LSGrid.get_violations``). They used ``>=`` /
   ``<=``, so the last bit of rounding decided.

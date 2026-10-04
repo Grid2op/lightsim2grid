@@ -6005,7 +6005,7 @@ const std::string DocLSGrid::set_remote_voltage_control_vm_range = R"mydelimiter
 
     Never read by a powerflow. ``NaN`` (the default) on both sides: no check; ``NaN`` on one
     side only checks the other. Copied with the grid, so a batch algorithm built from it
-    inherits it; not part of ``get_state`` / the binary format.
+    inherits it, and kept by a pickle and by :func:`save_binary`.
 
     Parameters
     ----------
